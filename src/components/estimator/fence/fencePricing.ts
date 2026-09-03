@@ -40,6 +40,9 @@ export interface FencePricingConfig {
   materialPerFt: Record<string, number>; // $ / linear ft (before height multiplier)
   openingPrice: Record<OpeningKind, Record<string, number>>; // $ / each
   demolitionPerFt: number; // $ / linear ft
+  /** Labor difficulty multipliers for sloped footage (1.0 = no surcharge).
+   *  Optional so rate cards persisted before terrain existed stay valid. */
+  slopeMult?: { racked: number; stepped: number };
 }
 
 // A fresh rate card seeded from the defaults (deep-cloned so edits never mutate the
@@ -52,6 +55,7 @@ export function defaultPricing(): FencePricingConfig {
       door: { ...OPENING_PRICE.door },
     },
     demolitionPerFt: DEMOLITION_FEE_PER_FT,
+    slopeMult: { racked: 1.0, stepped: 1.0 },
   };
 }
 
@@ -139,6 +143,10 @@ export interface FencePriceInput {
   material: MaterialId;
   openings: OpeningLite[];
   demolition: boolean;
+  /** Measured ground (fenceTerrain): when present, every footage-priced line
+   *  bills the ALONG-GRADE length and the labor splits by install method.
+   *  `gradeLenFt` supersedes `lengthFt`; racked/stepped are grade footage. */
+  terrain?: { gradeLenFt: number; rackedFt: number; steppedFt: number } | null;
 }
 
 export interface FencePriceLine {
@@ -204,7 +212,10 @@ export function buildFenceLineItems(
   pricing: FencePricingConfig = defaultPricing(),
   labels?: FenceLabels,
 ): FenceLineItems {
-  const len = Math.max(0, Math.round(i.lengthFt * 10) / 10);
+  // Measured terrain bills the along-grade footage; a flat (or unmeasured)
+  // fence keeps the plan length — the two are the same number on level ground.
+  const t = i.terrain;
+  const len = Math.max(0, Math.round((t ? t.gradeLenFt : i.lengthFt) * 10) / 10);
   const perFt = materialRate(pricing, i.material) * heightMultiplier(i.height);
 
   const materials: FenceExportLine[] = [
@@ -215,14 +226,47 @@ export function buildFenceLineItems(
       unit: "ln ft",
     },
   ];
-  const labor: FenceExportLine[] = [
-    {
+  const labor: FenceExportLine[] = [];
+  const rackedFt = t ? Math.round(Math.max(0, t.rackedFt) * 10) / 10 : 0;
+  const steppedFt = t ? Math.round(Math.max(0, t.steppedFt) * 10) / 10 : 0;
+  if (rackedFt >= 0.1 || steppedFt >= 0.1) {
+    // Sloped footage installs differently and says so on its own line; the
+    // multipliers live on the rate card (default 1.0 — a callout, not a fee).
+    const rMult = pricing.slopeMult?.racked ?? 1;
+    const sMult = pricing.slopeMult?.stepped ?? 1;
+    const levelFt = Math.round(Math.max(0, len - rackedFt - steppedFt) * 10) / 10;
+    if (levelFt >= 0.1) {
+      labor.push({
+        name: "Install labor · layout, post-setting, panels",
+        quantity: levelFt,
+        unitPrice: round2(perFt * 0.45),
+        unit: "ln ft",
+      });
+    }
+    if (rackedFt >= 0.1) {
+      labor.push({
+        name: "Install labor · racked sections (panels follow the grade)",
+        quantity: rackedFt,
+        unitPrice: round2(perFt * 0.45 * rMult),
+        unit: "ln ft",
+      });
+    }
+    if (steppedFt >= 0.1) {
+      labor.push({
+        name: "Install labor · stepped sections (stair-stepped panels)",
+        quantity: steppedFt,
+        unitPrice: round2(perFt * 0.45 * sMult),
+        unit: "ln ft",
+      });
+    }
+  } else {
+    labor.push({
       name: "Install labor · layout, post-setting, panels",
       quantity: len,
       unitPrice: round2(perFt * 0.45),
       unit: "ln ft",
-    },
-  ];
+    });
+  }
   for (const e of aggregateOpenings(i.openings ?? [], pricing, labels)) {
     materials.push({ name: `${e.label} + hardware`, quantity: e.n, unitPrice: e.unit, unit: "ea" });
   }

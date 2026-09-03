@@ -22,7 +22,16 @@ import {
   FenceDrawMap,
   type FenceDrawMapApi,
   type FenceDrawMapProps,
+  type TerrainSegView,
 } from "@/components/estimator/fence/FenceDrawMap";
+import {
+  sampleFencePath,
+  terrainFromProfile,
+  terrainAssumption,
+  type FencePathSampling,
+  type FenceTerrainReport,
+} from "@/components/estimator/fence/fenceTerrain";
+import { fetchElevationProfile } from "@/actions/fenceTerrain";
 import {
   buildingsToFootprints,
   latLngToLocalFeet,
@@ -261,19 +270,42 @@ export function initFenceEstimatorContent(
       // Same: no storage or a corrupt value, no restore.
     }
   }
+  /** Billed footage: each run's (possibly hand-edited) plan feet times its
+   *  segment's measured grade factor. Runs without measured ground bill flat —
+   *  the honest fallback the assumptions then own up to. */
+  function billFt() {
+    return fs.runs.reduce(function (a, r, i) { return a + (r.ft || 0) * segFactor(i); }, 0);
+  }
+  /** Billed footage of one slope class (racked / stepped), for the labor split. */
+  function classFt(cls: string) {
+    const t = usableTerrain();
+    if (!t) return 0;
+    return fs.runs.reduce(function (a, r, i) {
+      const s = t.segs[i];
+      return a + (s && s.cls === cls ? (r.ft || 0) * segFactor(i) : 0);
+    }, 0);
+  }
   function price() {
     const ft = totalFt();
+    const gradeFt = billFt();
     const perFt = cardPerFt();
-    const fence = ft * perFt;
+    const fence = gradeFt * perFt;
     const ops = fs.openings.reduce(function (a, o) { return a + opType(o.type).price; }, 0);
-    const demo = fs.demo ? ft * DEMO_PER_FT : 0;
+    const demo = fs.demo ? gradeFt * DEMO_PER_FT : 0;
     const total = fence + ops + demo;
-    return { ft: ft, perFt: perFt, fence: fence, ops: ops, demo: demo, total: total, perAll: ft ? total / ft : 0 };
+    return { ft: ft, gradeFt: gradeFt, perFt: perFt, fence: fence, ops: ops, demo: demo, total: total, perAll: gradeFt ? total / gradeFt : 0 };
   }
 
-  /** The donor rebuilt this strip in two places — the markup is identical. */
+  /** The donor rebuilt this strip in two places — the markup is identical.
+   *  With measured non-flat ground the Total cell carries a second line: the
+   *  along-grade footage, which is the one the ticket bills. */
   function statStripHtml() {
-    return '<div class="stat-cell"><div class="kpi-lbl">Total</div><div class="stat-v accent">' + Math.round(totalFt()) + ' ft</div></div>' +
+    const plan = Math.round(totalFt());
+    const grade = Math.round(billFt());
+    const gradeLine = grade !== plan
+      ? '<div class="stat-sub">' + grade + ' ft along grade</div>'
+      : '';
+    return '<div class="stat-cell"><div class="kpi-lbl">Total</div><div class="stat-v accent">' + plan + ' ft</div>' + gradeLine + '</div>' +
       '<div class="stat-cell"><div class="kpi-lbl">Runs</div><div class="stat-v">' + fs.runs.length + '</div></div>' +
       '<div class="stat-cell"><div class="kpi-lbl">Openings</div><div class="stat-v">' + fs.openings.length + '</div></div>';
   }
@@ -295,7 +327,9 @@ export function initFenceEstimatorContent(
       return;
     }
     tkTotal.textContent = money(p.total);
-    tkSub.textContent = Math.round(p.ft) + ' lf · ' + money(p.perAll) + '/lf';
+    // The ticket bills the along-grade footage; on level (or unmeasured)
+    // ground it IS the plan footage, so nothing changes shape.
+    tkSub.textContent = Math.round(p.gradeFt) + ' lf · ' + money(p.perAll) + '/lf';
     const groups: Record<string, number> = {};
     fs.openings.forEach(function (o) {
       const t = opType(o.type);
@@ -305,7 +339,7 @@ export function initFenceEstimatorContent(
     // footage means an opening was added before any run was measured, and
     // "Composite · 6 ft · 0 lf — $0" is a line about nothing.
     let html = p.ft > 0
-      ? '<li><span>' + mat().label + ' · ' + fs.height + ' ft · ' + Math.round(p.ft) + ' lf</span><span>' + money(p.fence) + '</span></li>'
+      ? '<li><span>' + mat().label + ' · ' + fs.height + ' ft · ' + Math.round(p.gradeFt) + ' lf</span><span>' + money(p.fence) + '</span></li>'
       : '';
     Object.keys(groups).forEach(function (k) {
       // The keys came out of `opType(...).label`, so the lookup always hits.
@@ -1035,6 +1069,166 @@ export function initFenceEstimatorContent(
    */
   let mapOwnsRuns = false;
 
+  // ================= TERRAIN (Google Elevation profile) =================
+  // Every settled change of the traced line re-profiles the ground under it:
+  // samples ~every 10 ft → the fetchElevationProfile action (disk-cached,
+  // GOOGLE_MAPS_API_KEY) → fenceTerrain turns the answer into per-segment
+  // slope facts. Debounced so a vertex drag costs ONE request, not sixty.
+  // Failure is a state, not a throw: the price falls back to plan footage and
+  // the proposal's assumptions say so.
+  let terrainReport: FenceTerrainReport | null = null;
+  let terrainSampling: FencePathSampling | null = null;
+  /** The raw per-sample elevations of the last good profile (ft) — the strip. */
+  let terrainElev: number[] | null = null;
+  let terrainStatus: 'idle' | 'busy' | 'ok' | 'failed' = 'idle';
+  /** Bumped on every trace commit; an answer for an older stamp is dropped. */
+  let terrainStamp = 0;
+  let terrainTimer: ReturnType<typeof setTimeout> | null = null;
+  const TERRAIN_DEBOUNCE_MS = 700;
+
+  function scheduleTerrain() {
+    terrainStamp += 1;
+    if (terrainTimer) { clearTimeout(terrainTimer); timers.delete(terrainTimer); }
+    const id = setTimeout(function () {
+      timers.delete(id);
+      terrainTimer = null;
+      void refreshTerrain();
+    }, TERRAIN_DEBOUNCE_MS);
+    timers.add(id);
+    terrainTimer = id;
+  }
+
+  async function refreshTerrain() {
+    const stamp = terrainStamp;
+    const o = mapOrigin;
+    if (!o || !tracedSegments(mapPoints).length) {
+      terrainReport = null;
+      terrainSampling = null;
+      terrainStatus = 'idle';
+      paintTerrain();
+      return;
+    }
+    terrainStatus = 'busy';
+    const sampling = sampleFencePath(mapPoints, o);
+    try {
+      const res = await fetchElevationProfile(sampling.samples);
+      if (stamp !== terrainStamp) return; // the line moved on — a newer request is queued
+      if (res.ok) {
+        terrainReport = terrainFromProfile(sampling.segs, res.elevFt);
+        terrainSampling = sampling;
+        terrainElev = res.elevFt;
+        terrainStatus = 'ok';
+      } else {
+        terrainReport = null;
+        terrainSampling = null;
+        terrainElev = null;
+        terrainStatus = 'failed';
+        console.warn('[fence-estimator] elevation profile failed:', res.error);
+      }
+    } catch (err) {
+      if (stamp !== terrainStamp) return;
+      terrainReport = null;
+      terrainSampling = null;
+      terrainElev = null;
+      terrainStatus = 'failed';
+      console.warn('[fence-estimator] elevation profile failed:', err);
+    }
+    paintTerrain();
+  }
+
+  /** Everything the measured ground repaints: the figures (billed footage),
+   *  the profile strip, and the map's slope overlay. */
+  function paintTerrain() {
+    renderFigures();
+    renderProfile();
+    pushMap();
+  }
+
+  /** The report, but only while it still DESCRIBES the trace on screen: after
+   *  an add/remove of a segment (and until the refetch lands) the per-segment
+   *  indices no longer line up, and pricing off them would be a lie. */
+  function usableTerrain(): FenceTerrainReport | null {
+    if (terrainStatus !== 'ok' || !terrainReport || !mapOwnsRuns) return null;
+    if (terrainReport.segs.length !== tracedSegments(mapPoints).length) return null;
+    return terrainReport;
+  }
+
+  /** Grade factor (along-ground / plan, ≥ 1) for the run at ledger index i. */
+  function segFactor(i: number): number {
+    const t = usableTerrain();
+    const s = t?.segs[i];
+    if (!s || s.planFt <= 0) return 1;
+    return s.gradeFt / s.planFt;
+  }
+
+  /** Non-level segments for the map overlay, in the surface's vocabulary. */
+  function terrainOverlay(): TerrainSegView[] | null {
+    const t = usableTerrain();
+    if (!t) return null;
+    const out: TerrainSegView[] = [];
+    t.segs.forEach(function (s) {
+      if (s.cls === 'level') return;
+      out.push({
+        seg: s.seg,
+        cls: s.cls,
+        thetaDeg: s.thetaDeg,
+        riseFt: s.riseFt,
+        gradeFt: s.gradeFt,
+        steps: s.steps,
+        stepDropFt: s.stepDropFt,
+      });
+    });
+    return out.length ? out : null;
+  }
+
+  /** The elevation strip under the stage: the measured profile as one compact
+   *  sparkline, coloured by slope class, with the relief called out. Hidden
+   *  whenever there is nothing measured (or nothing worth saying). */
+  function renderProfile() {
+    const box = $('#terrainProfile');
+    if (!box) return;
+    const t = usableTerrain();
+    const sampling = terrainSampling;
+    if (!t || !sampling || t.segs.length !== sampling.segs.length) {
+      box.classList.add('is-hidden');
+      box.innerHTML = '';
+      return;
+    }
+    const elev = terrainElev;
+    const relief = t.maxElevFt - t.minElevFt;
+    if (!elev || relief < 1) {
+      box.classList.add('is-hidden');
+      box.innerHTML = '';
+      return;
+    }
+    // The measured ground itself, sample by sample: x = cumulative plan feet,
+    // y = elevation, one polyline per traced segment coloured by its class.
+    const W = 560, H = 44, PAD = 3;
+    const totalPlan = t.planFt || 1;
+    const zSpan = Math.max(1, relief);
+    const X = function (v: number) { return PAD + (v / totalPlan) * (W - PAD * 2); };
+    const Y = function (v: number) { return H - PAD - ((v - t.minElevFt) / zSpan) * (H - PAD * 2); };
+    const CLS_COLOR: Record<string, string> = { level: 'var(--blueprint)', racked: '#c47f17', stepped: '#b3261e' };
+    let svg = '';
+    let planSoFar = 0;
+    sampling.segs.forEach(function (s, si) {
+      const ds = s.planFt / (s.count - 1);
+      const cls = t.segs[si].cls;
+      const path: string[] = [];
+      for (let k = 0; k < s.count; k++) {
+        path.push(X(planSoFar + ds * k).toFixed(1) + ',' + Y(elev[s.start + k]).toFixed(1));
+      }
+      svg += '<polyline points="' + path.join(' ') + '" fill="none" stroke="' + CLS_COLOR[cls] +
+        '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+      planSoFar += s.planFt;
+    });
+    box.innerHTML =
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">' + svg + '</svg>' +
+      '<div class="tp-meta">Ground profile · ' + Math.round(relief) + ' ft relief · ' +
+      Math.round(t.planFt) + ' ft plan → ' + Math.round(t.gradeFt) + ' ft along grade</div>';
+    box.classList.remove('is-hidden');
+  }
+
   const hintEl = $('.stage-hint');
   const hintIdle = hintEl?.textContent ?? '';
 
@@ -1132,6 +1326,7 @@ export function initFenceEstimatorContent(
           }
         : null,
       parcelTiles: lotLines,
+      terrain: terrainOverlay(),
     };
   }
 
@@ -1238,6 +1433,10 @@ export function initFenceEstimatorContent(
     reseatOpenings();
     renderFigures();
     pushMap();
+    // The ground under the new line: one debounced Elevation profile per
+    // settled edit. Stale per-segment factors stop applying immediately
+    // (usableTerrain checks the segment count) and refresh when this lands.
+    scheduleTerrain();
     // The 3D scene reads the same `mapPoints`, so it follows the trace — and
     // mounts here if the user is already sitting on the 3D panel.
     syncStage();
@@ -1424,6 +1623,9 @@ export function initFenceEstimatorContent(
       // The scene is opaque and covers the slot, so the placeholder underneath
       // it goes. `unmountModel` puts it back.
       slot.querySelector<HTMLElement>('.map-slot-in')?.classList.add('is-hidden');
+      // The scene renders the ground as a plane; measured slope is priced but
+      // not drawn, and the note keeps that from being a silent lie.
+      $('#modelNote')?.classList.remove('is-hidden');
     } catch (err) {
       console.error('[fence-estimator] 3D preview failed to load:', err);
       sayHint('The 3D preview could not be loaded. The map, the ledger and the price are unaffected.');
@@ -1448,6 +1650,7 @@ export function initFenceEstimatorContent(
     // microtasks run in order, so this one lands second.
     if (host) queueMicrotask(function () { host.remove(); });
     $('#stage3d .map-slot-in')?.classList.remove('is-hidden');
+    $('#modelNote')?.classList.add('is-hidden');
   }
 
   /** Which stage panel is showing, and whether the scene should exist at all.
@@ -1529,6 +1732,9 @@ export function initFenceEstimatorContent(
       // time the contractor looks down from the address field. Cache-first on
       // the server, so a repeat search costs no quota.
       void loadParcelForOrigin();
+      // A new origin re-frames the local-feet trace: whatever profile was
+      // measured belongs to the old ground, so it re-measures here.
+      if (mapPoints.length >= 2) scheduleTerrain();
     }
   }
 
@@ -2065,6 +2271,11 @@ export function initFenceEstimatorContent(
     say('i-file', 'Creating…');
     try {
       const lengthFt = p.ft;
+      // Measured ground (when the profile is current): the proposal bills the
+      // along-grade footage and splits the labor by install method.
+      const measured = usableTerrain() !== null;
+      const rackedFt = classFt('racked');
+      const steppedFt = classFt('stepped');
       const { materials, labor } = buildFenceLineItems(
         {
           lengthFt: lengthFt,
@@ -2075,6 +2286,7 @@ export function initFenceEstimatorContent(
             return { kind: (t.kind === 'door' ? 'door' : 'gate') as OpeningKind, variant: o.type };
           }),
           demolition: fs.demo,
+          terrain: measured ? { gradeLenFt: p.gradeFt, rackedFt: rackedFt, steppedFt: steppedFt } : null,
         },
         pageRateCard(),
         // Only the material label is overridden: leaving `opening` unset lets the
@@ -2085,7 +2297,8 @@ export function initFenceEstimatorContent(
       );
 
       const where = sitePlace ? (sitePlace.formatted || sitePlace.address) : '';
-      const lf = Math.round(lengthFt);
+      // The billed footage: along the ground when measured, plan otherwise.
+      const lf = Math.round(p.gradeFt);
       const gateN = fs.openings.filter(function (o) { return opType(o.type).kind === 'gate'; }).length;
       const doorN = fs.openings.length - gateN;
       const openingNote = [
@@ -2102,6 +2315,14 @@ export function initFenceEstimatorContent(
         assumptions: [
           mat().label + ' fence, ' + fs.height + ' ft tall',
           lf + ' linear ft across ' + countPhrase(fs.runs.length, 'run'),
+          // The one honest line about the ground: measured (with the plan →
+          // grade split), failed, or never traced. Replaces the old silent
+          // "level ground" default.
+          terrainAssumption(
+            usableTerrain(),
+            terrainStatus === 'failed' ? 'failed' : usableTerrain() ? 'ok' : mapOwnsRuns ? 'failed' : 'idle',
+            { billedPlanFt: p.ft, billedGradeFt: p.gradeFt, billedRackedFt: rackedFt, billedSteppedFt: steppedFt },
+          ),
           openingNote || 'No gates or doors',
           fs.demo
             ? 'Includes removal and haul-away of the existing fence'

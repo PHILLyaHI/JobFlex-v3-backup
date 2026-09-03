@@ -1375,6 +1375,20 @@
 .bp :global(.content .zoom-btn.done) { background: var(--blueprint); color: #fff; border-color: var(--blueprint-dark); }
 .bp :global(.content .stage-hint) { padding: 9px 14px; border-top: 1.5px solid var(--hair-soft); font-family: var(--font-mono); font-size: 10.5px; line-height: 1.5; color: var(--muted); }
 
+/* ground profile strip — the measured elevation along the traced line,
+   filled by the behavior module once the terrain profile lands */
+.bp :global(.content .stage-profile) { padding: 8px 14px 10px; border-top: 1.5px solid var(--hair-soft); }
+.bp :global(.content .stage-profile.is-hidden) { display: none; }
+.bp :global(.content .stage-profile svg) { display: block; width: 100%; height: 44px; }
+.bp :global(.content .stage-profile .tp-meta) { margin-top: 6px; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* the 3D scene draws the ground flat — the note says so while it is mounted */
+.bp :global(.content .model-note) { position: absolute; left: 12px; bottom: 12px; z-index: 3; padding: 5px 9px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .model-note.is-hidden) { display: none; }
+
+/* stat strip: the along-grade footage under the plan Total, when they differ */
+.bp :global(.content .stat-sub) { margin-top: 3px; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); font-variant-numeric: tabular-nums; }
+
 /* parcel sides panel — filled when /api/parcels returns the lot */
 .bp :global(.content .parcel-panel) { border-top: 1.5px solid var(--hair-soft); padding: 12px 14px 14px; }
 .bp :global(.content .parcel-head) { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 10px; }

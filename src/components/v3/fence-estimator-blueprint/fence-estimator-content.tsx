@@ -203,6 +203,9 @@ export function FenceEstimatorContent() {
                 <div className="ms-h">The 3D preview is built from the traced run. Draw the fence on
                   the map and it renders here.</div>
               </div>
+              {/* The scene draws the ground flat; measured slope is priced but
+                  not rendered, and this keeps that from being a silent lie. */}
+              <div className="model-note is-hidden" id="modelNote">Terrain not shown — ground rendered flat</div>
             </div>
             <div className="stage-zoom">
               <button className="zoom-btn" type="button" data-zoom="1" data-flash-icon="" aria-label="Zoom in">+</button>
@@ -212,6 +215,13 @@ export function FenceEstimatorContent() {
 
           <div className="stage-hint">Click to trace — dots magnet when close (close / connect) · right-click to stop ·
             after stopping, click open ground to start a separate fence · right-click a dot to remove</div>
+
+          {/* GROUND PROFILE. Filled by the behavior module once the Elevation
+              profile of the traced line lands: a sparkline of the measured
+              ground, coloured by slope class (blue level / amber racked / red
+              stepped). Hidden while there is nothing measured, or under a foot
+              of relief — a flat line saying "flat" is noise. */}
+          <div className="stage-profile is-hidden" id="terrainProfile"></div>
 
           {/* PARCEL SIDES. Filled by the behavior module when /api/parcels
               returns the property for the searched address: one checkbox row per

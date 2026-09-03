@@ -143,7 +143,28 @@ export type FenceDrawMapProps = {
   parcel?: { ring: LatLng[]; rings?: LatLng[][]; highlight?: LatLng[] | null } | null;
   /** Raster parcel-boundary tiles (proxied ReportAll layer, zoom 14–21). */
   parcelTiles?: boolean;
+  /**
+   * Measured slope per NON-LEVEL traced segment (fenceTerrain classes). Each
+   * entry recolours its segment on the map — amber for racked, red for
+   * stepped — and a click on the coloured line answers with the slope and the
+   * rise. Level segments stay the accent colour and are not listed here.
+   */
+  terrain?: TerrainSegView[] | null;
 };
+
+/** One non-level segment's slope facts, for the overlay and its click card. */
+export interface TerrainSegView {
+  seg: number; // segment = points[seg] → points[seg + 1]
+  cls: "racked" | "stepped";
+  thetaDeg: number;
+  riseFt: number;
+  gradeFt: number;
+  steps?: number;
+  stepDropFt?: number;
+}
+
+const RACKED_COLOR = "#c47f17"; // amber — panels rack to follow the grade
+const STEPPED_COLOR = "#b3261e"; // red — panels must stair-step
 
 export function FenceDrawMap({
   lat,
@@ -165,6 +186,7 @@ export function FenceDrawMap({
   doorColor = DEFAULT_DOOR_INK,
   parcel = null,
   parcelTiles = false,
+  terrain = null,
 }: FenceDrawMapProps) {
   const mountRef = React.useRef<HTMLDivElement>(null);
   const measureRef = React.useRef<HTMLDivElement>(null);
@@ -1131,6 +1153,54 @@ export function FenceDrawMap({
       if (idx >= 0) map.overlayMapTypes.removeAt(idx);
     };
   }, [parcelTiles, mapEpoch]);
+
+  // ── Terrain overlay ────────────────────────────────────────────────────────
+  // Non-level segments recoloured over the trace (amber racked / red stepped);
+  // a click on the coloured line answers with the slope. Display objects torn
+  // down whole on every change, same reasoning as the parcel overlay. While an
+  // opening is armed the overlay goes non-clickable so the placement click
+  // still reaches the map underneath.
+  React.useEffect(() => {
+    const map = gmapRef.current;
+    const maps = mapsLibRef.current;
+    if (!map || !maps || !terrain?.length) return;
+    const origin: LatLng = typeof lat === "number" && typeof lng === "number" ? { lat, lng } : DEFAULT_CENTER;
+    const info = new maps.InfoWindow({ disableAutoPan: true });
+    const lines: GMaps[] = [];
+    for (const t of terrain) {
+      const a = points[t.seg];
+      const b = points[t.seg + 1];
+      if (!a || !b || b.gap) continue;
+      const line = new maps.Polyline({
+        map,
+        path: [localFeetToLatLng(origin, a), localFeetToLatLng(origin, b)],
+        clickable: !armed,
+        strokeColor: t.cls === "stepped" ? STEPPED_COLOR : RACKED_COLOR,
+        strokeOpacity: 0.95,
+        strokeWeight: 5,
+        zIndex: 3,
+      });
+      line.addListener("click", (e: { latLng?: GMaps }) => {
+        const rise = Math.abs(t.riseFt);
+        const how =
+          t.cls === "stepped"
+            ? `stepped — ${t.steps ?? 1} step${(t.steps ?? 1) === 1 ? "" : "s"} of ~${(t.stepDropFt ?? rise).toFixed(1)} ft`
+            : "racked — panels follow the grade";
+        info.setContent(
+          `<div style="font:600 12px/1.5 system-ui;color:#1c1c1c">` +
+            `${t.thetaDeg.toFixed(0)}° slope · rise ${rise.toFixed(1)} ft · ` +
+            `${Math.round(t.gradeFt)} ft along grade<br>${how}</div>`,
+        );
+        if (e.latLng) info.setPosition(e.latLng);
+        info.open({ map });
+      });
+      lines.push(line);
+    }
+    return () => {
+      info.close();
+      lines.forEach((l) => l.setMap(null));
+    };
+  }, [terrain, points, armed, lat, lng, mapEpoch]);
 
   if (!enabled) {
     // A chrome-less host renders its own empty state (the blueprint studio keeps
