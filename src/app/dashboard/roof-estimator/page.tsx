@@ -31,5 +31,17 @@ export default async function RoofEstimatorPage() {
     redirect("/auth/login?next=%2Fdashboard%2Froof-estimator");
   }
 
-  return <RoofEstimatorContent evEnabled={isEagleViewEnabled()} aiEnabled={isOpenAIEnabled()} />;
+  // SERVER flag (deliberately not NEXT_PUBLIC): while the 2D/3D engine is
+  // being reworked, ROOF_DRAWING_ENABLED=false swaps the page to the data-only
+  // view — Instant numbers, ortho with the outline, no reconstruction run at
+  // all. Unset or any other value keeps the drawing tool as it was.
+  const drawingEnabled = process.env.ROOF_DRAWING_ENABLED !== "false";
+
+  return (
+    <RoofEstimatorContent
+      evEnabled={isEagleViewEnabled()}
+      aiEnabled={isOpenAIEnabled()}
+      drawingEnabled={drawingEnabled}
+    />
+  );
 }

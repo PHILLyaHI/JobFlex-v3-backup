@@ -105,7 +105,7 @@ interface P2 {
   x: number;
   y: number;
 }
-interface Plane {
+export interface Plane {
   a: number; //  z = a*x + b*y + c, in feet
   b: number;
   c: number;
@@ -126,7 +126,7 @@ function planeNormal(p: Plane): { x: number; y: number; z: number } {
 }
 
 // Pitch as rise per 12 (EagleView's convention).
-function planePitch12(p: Plane): number {
+export function planePitch12(p: Plane): number {
   return Math.hypot(p.a, p.b) * 12;
 }
 
@@ -137,7 +137,7 @@ function planeAzimuth(p: Plane): number {
   return (deg + 360) % 360;
 }
 
-function fitPlane(pts: Array<{ x: number; y: number; z: number }>): Plane | null {
+export function fitPlane(pts: Array<{ x: number; y: number; z: number }>): Plane | null {
   // Normal equations for z = ax + by + c.
   let sx = 0, sy = 0, sz = 0, sxx = 0, syy = 0, sxy = 0, sxz = 0, syz = 0;
   const n = pts.length;

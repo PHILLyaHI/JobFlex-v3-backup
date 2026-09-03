@@ -20,16 +20,22 @@
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initRoofEstimatorContent } from "./roof-estimator-behavior";
 import { RoofEstimatorBlueprintForm } from "./roof-estimator-blueprint-form";
+import { RoofEstimatorDataForm } from "./roof-estimator-data-form";
 import { RoofEstimatorSprite } from "./sprite";
 
 export function RoofEstimatorContent({
   evEnabled,
   aiEnabled,
+  drawingEnabled = true,
 }: {
   /** EagleView credentials present — read on the server, in page.tsx. */
   evEnabled: boolean;
   /** OpenAI key present; without it the estimate generator returns a sample. */
   aiEnabled: boolean;
+  /** ROOF_DRAWING_ENABLED (server env, page.tsx): false = the 2D/3D tool is
+   *  hidden while the engine is reworked, and the page shows the data-only
+   *  view — Instant numbers + ortho with the outline, no reconstruction. */
+  drawingEnabled?: boolean;
 }) {
   useBlueprintContent(initRoofEstimatorContent);
 
@@ -46,7 +52,11 @@ export function RoofEstimatorContent({
       </div>
 
       {evEnabled ? (
-        <RoofEstimatorBlueprintForm aiEnabled={aiEnabled} />
+        drawingEnabled ? (
+          <RoofEstimatorBlueprintForm aiEnabled={aiEnabled} />
+        ) : (
+          <RoofEstimatorDataForm />
+        )
       ) : (
         <div className="card rf-card">
           <div className="rf-body">
