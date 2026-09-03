@@ -529,14 +529,44 @@
    ============================================================ */
 @media (max-width: 1080px) {
   .bp :global(.content .set) { grid-template-columns: 1fr; gap: 18px; }
+  /* THE HANDHELD ROOT FIX (mobile audit, 2026-09-03). A grid item's implicit
+     `min-width: auto` let the rail's non-shrinking tab row dictate the
+     column's min-content (~627px on a 390px phone), so every pane — cards,
+     forms, inputs — rendered wider than the screen and the whole .main
+     scrolled sideways. min-width: 0 lets the column compress; the rail then
+     scrolls inside itself (overflow-x below) and the panes fit the viewport. */
+  .bp :global(.content .set > *) { min-width: 0; }
   .bp :global(.content .rail) { position: static; }
   .bp :global(.content .rail-nav) { flex-direction: row; gap: 8px; overflow-x: auto; padding-bottom: 4px;
     scrollbar-width: none; }
   /* The pseudo-element sits OUTSIDE `:global(...)` — the shape every other page
      module uses, and the one Lightning CSS is known to accept. */
   .bp :global(.content .rail-nav)::-webkit-scrollbar { display: none; }
-  .bp :global(.content .rail-a) { flex-shrink: 0; margin-bottom: 0; padding: 9px 12px; font-size: 12px; }
+  /* ≥44px touch targets for the pane tabs (CLAUDE.md's handheld floor). */
+  .bp :global(.content .rail-a) { flex-shrink: 0; margin-bottom: 0; padding: 12px 14px; min-height: 44px; font-size: 13px; }
   .bp :global(.content .rail-a .ic) { width: 15px; height: 15px; }
+  /* 16px keeps iOS Safari from zooming the viewport on focus; height rides
+     along so the taller text keeps the donor's inset rhythm. */
+  .bp :global(.content .fin) { font-size: 16px; height: 44px; }
+  /* Same 44px floor for the action buttons (Save changes was 36px). */
+  .bp :global(.content .sactions .btn) { min-height: 44px; }
+}
+
+/* Phone: the five pane tabs fit WITHOUT a sideways scroll (owner's call,
+   2026-09-03) — a 3-over-2 grid on six tracks, so the top row's three tabs
+   span 2 tracks each and the bottom row's two span 3, both rows flush with
+   the pane edges. The 561-1080px range keeps the scrolling strip above. */
+@media (max-width: 560px) {
+  .bp :global(.content .rail-nav) {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 8px;
+    overflow-x: visible;
+    padding-bottom: 0;
+  }
+  .bp :global(.content .rail-a) { justify-content: center; padding: 12px 6px; }
+  .bp :global(.content .rail-a:nth-child(-n + 3)) { grid-column: span 2; }
+  .bp :global(.content .rail-a:nth-child(n + 4)) { grid-column: span 3; }
   .bp :global(.content .rail-sep) { display: none; }
   .bp :global(.content .fgrid) { grid-template-columns: 1fr; }
   /* F1 at narrow width: one column, bottom dividers, the donor `.prow` 14px
@@ -547,3 +577,23 @@
   .bp :global(.content .seccol:first-child) { padding-top: 0; }
   .bp :global(.content .seccol:last-child) { padding-bottom: 0; border-bottom: none; }
 }
+
+/* ── Inner scrollbars, in the page scrollbar's own dress ──────────────
+   (owner's call, 2026-09-03). The hub's inner scrollers — the notification
+   channel matrix (.nwrap, horizontal), the custom dropdown list (.sel-list)
+   and the modal body — rendered the browser default, foreign next to the
+   shell's .main scrollbar (blueprint-global.css: paper track, hair edge,
+   muted-faint thumb in a 2px paper frame, square corners). Same treatment
+   here, height for the horizontal one. */
+.bp :global(.content .nwrap)::-webkit-scrollbar,
+.bp :global(.content .sel-list)::-webkit-scrollbar,
+.bp :global(.content .modal-b)::-webkit-scrollbar { width: 10px; height: 10px; }
+.bp :global(.content .nwrap)::-webkit-scrollbar-track,
+.bp :global(.content .sel-list)::-webkit-scrollbar-track,
+.bp :global(.content .modal-b)::-webkit-scrollbar-track { background: var(--paper); border-top: 1px solid var(--hair-soft); }
+.bp :global(.content .nwrap)::-webkit-scrollbar-thumb,
+.bp :global(.content .sel-list)::-webkit-scrollbar-thumb,
+.bp :global(.content .modal-b)::-webkit-scrollbar-thumb { background: var(--muted-faint); border: 2px solid var(--paper); border-radius: 0; }
+.bp :global(.content .nwrap)::-webkit-scrollbar-thumb:hover,
+.bp :global(.content .sel-list)::-webkit-scrollbar-thumb:hover,
+.bp :global(.content .modal-b)::-webkit-scrollbar-thumb:hover { background: var(--muted-light); }

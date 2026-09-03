@@ -1048,6 +1048,11 @@
   .bp :global(.layout) { grid-template-columns: 1fr; }
   .bp :global(.main)::before { left: 0; }
   .bp :global(.search kbd) { display: none; }
+  /* Handheld topbar (mobile settings audit, 2026-09-03): the fixed-width
+     search plus the full CTA overflowed a 390px phone and put a sideways
+     scroll on the whole .main. The search now yields, and under 560px the
+     CTA collapses to its plus glyph (aria-label keeps its name). */
+  .bp :global(.search) { flex: 1; min-width: 0; max-width: none; }
   /* Sidebar — slide-out drawer */
   .bp :global(.sb) {
     position: fixed; top: 0;
@@ -1138,3 +1143,13 @@
 }
 .bp :global(.content .d-toast-x:hover) { border-color: var(--ink); color: var(--ink); }
 @keyframes dToastIn { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+@media (max-width: 560px) {
+  /* The CTA sheds its label on phones — the plus glyph and the aria-label
+     carry it; the search keeps the room (see the 860px block's note). And as
+     a bare glyph it sizes itself like its icon-button neighbours: the .btn
+     padding alone left it a few px shorter than the 40px burger/bell row. */
+  .bp :global(.topbar-right .btn-primary .cta-label) { display: none; }
+  .bp :global(.topbar-right .btn-primary) { width: 40px; height: 40px; padding: 0; justify-content: center; }
+  .bp :global(.topbar-right) { gap: 8px; }
+}

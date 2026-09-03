@@ -32,7 +32,11 @@
 //   · the 11-row feature MATRIX with per-tier columns — the catalog stores a
 //     flat `features: string[]` per plan, not a feature × tier grid, so each
 //     plan card lists its own real features (see "PLAN COMPARISON" below).
-//   · "Build your plan" / "Custom" tier — not a row in /admin/plans.
+//   · "Build your plan" / "Custom" — not a row in /admin/plans, but since
+//     2026-09-03 (owner's call) it renders the way the DESKTOP page renders
+//     it: a synthetic card, marked current when Subscription.plan says
+//     "custom", otherwise closing the list with the same Get started → the
+//     upgrade flow. Same rule, both form factors.
 //
 // THE THREE HANDHELD PROBLEMS, and how they are solved:
 //
@@ -70,6 +74,8 @@
 // in the house style, with the shared swipe-to-dismiss hook.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import type { Route } from "next";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
@@ -281,6 +287,38 @@ export function MobileSubscription({
   }, [plans, currentSlug]);
 
   const featureBlocks = useMemo(() => planFeatureBlocks(plans), [plans]);
+
+  /* The desktop page's "Build your plan" column, in this build's card shape:
+     synthetic (not a catalog row), CURRENT when Subscription.plan is "custom",
+     otherwise the list's closing card with the same Get started → upgrade. */
+  const customIsCurrent = currentSlug === "custom";
+  const customCard = (
+    <article key="custom" className={`jfms-plan ${customIsCurrent ? "jfms-isCur" : ""}`}>
+      <div className="jfms-planTop">
+        <div className="jfms-planHeadRow">
+          <div className="jfms-planName">Build your plan</div>
+        </div>
+        <div className="jfms-planPrice">
+          <b>Custom</b>
+        </div>
+        <p className="jfms-planDesc">
+          Pick the pages and limits your crew actually uses — priced to match.
+        </p>
+      </div>
+      <div className="jfms-planFoot">
+        {customIsCurrent ? (
+          <div className="jfms-planCur">
+            <Icon id="i-check" />
+            Current plan
+          </div>
+        ) : (
+          <Link className="jfms-btn" href={"/dashboard/upgrade" as Route}>
+            Get started
+          </Link>
+        )}
+      </div>
+    </article>
+  );
 
   const selected = plans.find((p) => p.slug === target) ?? null;
   const yearlyAvailable = !!selected?.yearlyPriceCents;
@@ -582,6 +620,7 @@ export function MobileSubscription({
           </div>
 
           <div className="jfms-plans">
+            {currentSlug === "custom" ? customCard : null}
             {planCards.map((p) => {
               const current = p.slug === currentSlug;
               const block = featureBlocks.get(p.slug);
@@ -656,6 +695,7 @@ export function MobileSubscription({
                 </article>
               );
             })}
+            {currentSlug !== "custom" ? customCard : null}
           </div>
 
           {/* ============ BILLING HISTORY ============ */}

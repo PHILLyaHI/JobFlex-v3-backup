@@ -64,11 +64,14 @@ export function Topbar() {
             A dumb dispatcher, like the ⌘K chip beside it — the dialog owns its
             own state and is mounted once in the shell. */}
         {canEstimate && (
-          <button className="btn btn-primary" type="button" onClick={openPicker}>
+          <button className="btn btn-primary" type="button" onClick={openPicker} aria-label="New Estimate">
             <svg className="ic">
               <use href="#i-plus" />
             </svg>
-            New Estimate
+            {/* Wrapped so the handheld topbar can shrink the CTA to its plus
+                glyph (blueprint.module.css ≤560px) without losing the name —
+                aria-label above keeps it. */}
+            <span className="cta-label">New Estimate</span>
           </button>
         )}
         {/* The bell now has a real feed — see ./notification-bell.tsx. It used
