@@ -39,6 +39,7 @@ import {
   ensureWithinLimit,
 } from "@/stores/usePlanLimitStore";
 import { attachPlacesSuggest, type PickedPlace } from "@/components/v3/blueprint-shell/places-suggest";
+import { isMapsBrowserEnabled, loadMapsLibrary } from "@/lib/googleMaps";
 
 const STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA",
@@ -73,6 +74,16 @@ const yesNo = (v: boolean | null | undefined) => (v == null ? "—" : v ? "Yes" 
 
 type Panel = "intake" | "measuring" | "report";
 type PhotoView = "satellite" | "ortho";
+
+// Live Google map on the SATELLITE tab (owner's call: pan + zoom). Minimal
+// structural types for the JS SDK — the repo carries no @types/google.maps,
+// same approach as lead-map.tsx. Initial zoom matches the static photo's z20.
+const LIVE_MAP_ZOOM = 20;
+interface LiveGoogleMap {
+  setCenter(c: { lat: number; lng: number }): void;
+  setZoom(z: number): void;
+}
+type GMapsLib = { Map: new (el: HTMLElement, opts: Record<string, unknown>) => LiveGoogleMap };
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const stripId = ({ id: _id, ...rest }: EstimateLine) => rest;
 
@@ -114,6 +125,11 @@ export function RoofEstimatorDataForm() {
   const [orthoPhoto, setOrthoPhoto] = React.useState<string | null>(null);
   const [orthoErr, setOrthoErr] = React.useState<string | null>(null);
   const [photoBusy, setPhotoBusy] = React.useState(false);
+  // Live satellite map. `mapDown` flips once when the JS SDK refuses to load —
+  // the cached static photo then takes over for the rest of the session.
+  const mapHostRef = React.useRef<HTMLDivElement | null>(null);
+  const liveMapRef = React.useRef<{ host: HTMLDivElement; map: LiveGoogleMap } | null>(null);
+  const [mapDown, setMapDown] = React.useState(false);
 
   // The data path never draws, so the CONFIDENCE verdict comes straight from
   // the stored provenance (coverage, completeness, EagleView's own occlusion
@@ -292,11 +308,72 @@ export function RoofEstimatorDataForm() {
     if (v === "ortho" && savedId && !orthoPhoto && !orthoErr && !photoBusy) loadOrtho(savedId);
   }
 
+  // Live SATELLITE map (owner's call: drag to pan, scroll to zoom). Needs the
+  // browser key and the measurement's pin; either missing → the cached static
+  // photo (getMeasurementPhoto) serves exactly as before.
+  const mapLat = measurement?.instant?.lat ?? null;
+  const mapLng = measurement?.instant?.lng ?? null;
+  const liveMap = isMapsBrowserEnabled() && !mapDown && mapLat != null && mapLng != null;
+
+  // The map is built only while the SATELLITE tab is visible (the SDK lays
+  // out broken tiles inside display:none), and recentred only when the OPEN
+  // MEASUREMENT changes — a mere tab flip keeps the user's pan/zoom.
+  const centeredOnRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!liveMap || panel !== "report" || view !== "satellite" || mapLat == null || mapLng == null) return;
+    let cancelled = false;
+    void loadMapsLibrary<GMapsLib>("maps")
+      .then(({ Map: GMap }) => {
+        const host = mapHostRef.current;
+        if (cancelled || !host) return;
+        const center = { lat: mapLat, lng: mapLng };
+        const key = `${mapLat},${mapLng}`;
+        if (liveMapRef.current?.host === host) {
+          if (centeredOnRef.current !== key) {
+            liveMapRef.current.map.setCenter(center);
+            liveMapRef.current.map.setZoom(LIVE_MAP_ZOOM);
+          }
+        } else {
+          liveMapRef.current = {
+            host,
+            map: new GMap(host, {
+              center,
+              zoom: LIVE_MAP_ZOOM,
+              mapTypeId: "satellite",
+              tilt: 0,
+              disableDefaultUI: true,
+              zoomControl: true,
+              gestureHandling: "greedy",
+              clickableIcons: false,
+            }),
+          };
+        }
+        centeredOnRef.current = key;
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setMapDown(true);
+        if (savedId) loadSatellite(savedId);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [liveMap, panel, view, mapLat, mapLng, savedId, loadSatellite]);
+
+  // The "back to the house" button: the live map's escape hatch after a wander.
+  function recenterMap() {
+    const m = liveMapRef.current?.map;
+    if (!m || mapLat == null || mapLng == null) return;
+    m.setCenter({ lat: mapLat, lng: mapLng });
+    m.setZoom(LIVE_MAP_ZOOM);
+  }
+
   function showMeasurement(m: RoofMeasurementDTO, wasUnsaved: boolean) {
     setMeasurement(m);
     setUnsaved(wasUnsaved);
     setPanel("report");
-    if (!wasUnsaved && m.id !== "unsaved") loadSatellite(m.id);
+    const willLiveMap = isMapsBrowserEnabled() && !mapDown && m.instant?.lat != null && m.instant?.lng != null;
+    if (!wasUnsaved && m.id !== "unsaved" && !willLiveMap) loadSatellite(m.id);
   }
 
   // Instant measure. A repeat of an address the org already paid for REUSES
@@ -704,24 +781,40 @@ export function RoofEstimatorDataForm() {
                   {/* `.rfx` exempts the viewer from the donor reset; `.rf-stage`
                       gives the photo the same fixed box the drawing had. */}
                   <div className="rfx rf-stage">
-                    {photoShown ? (
+                    {/* The live map stays mounted across the tab switch so the
+                        user's pan/zoom survives a look at the ortho. */}
+                    {liveMap && <div ref={mapHostRef} className="rf-map" hidden={view !== "satellite"} aria-label="Satellite map" />}
+                    {liveMap && view === "satellite" && (
+                      <button
+                        type="button"
+                        className="rf-home"
+                        onClick={recenterMap}
+                        title="Back to the house"
+                        aria-label="Back to the house"
+                      >
+                        <svg className="ic"><use href="#i-roof" /></svg>
+                      </button>
+                    )}
+                    {(view === "ortho" || !liveMap) && (photoShown ? (
                       // eslint-disable-next-line @next/next/no-img-element -- data: URL from the server-side photo cache; next/image adds nothing here
                       <img
                         src={photoShown}
                         alt={view === "satellite" ? "Satellite view" : "EagleView ortho"}
-                        className={"rf-photo" + (view === "ortho" ? " rf-photo--ortho" : "")}
+                        className="rf-photo"
                       />
                     ) : (
                       <div className="rf-3d-loading">
                         {photoBusy ? "Loading photo…" : photoError ? `Photo unavailable — ${photoError}` : " "}
                       </div>
-                    )}
+                    ))}
                   </div>
                 </div>
                 <div className="rf-legend" id="rfLegend">
                   <span className="lg">
                     {view === "satellite"
-                      ? "Google Maps satellite"
+                      ? liveMap
+                        ? "Google Maps satellite · drag to pan · scroll to zoom"
+                        : "Google Maps satellite"
                       : `EagleView ortho${orthoShotDate ? ` · ${orthoShotDate}` : ""}`}
                   </span>
                 </div>
@@ -888,15 +981,32 @@ export function RoofEstimatorDataForm() {
         showRemeasure={panel === "report" && reusedInstant != null}
         onRemeasure={() => void runInstant(true)}
       />
-      {/* The photo frame is ALWAYS SQUARE (owner's call), both modes in the
-          same box: the satellite square fills it edge to edge; the EagleView
-          ortho keeps its own framing inside it (contain, never cropped). */}
+      {/* The photo CARD is square (owner's call): the card hugs the square
+          stage, head and caption ride above/below it, and DETAILS/STRUCTURES
+          move up beside it in the same grid row — no black bars, no holes.
+          A non-square ortho is centre-cropped to fill (cover), never
+          letterboxed. On handheld the square goes full-width, details under.
+          --sq sizes the square: bigger than the old 460px viewer (owner's
+          call), scaling with the window so DETAILS keeps a real column. */}
       <style jsx global>{`
+        .jf-blueprint .content .rf-grid {
+          grid-template-columns: auto minmax(0, 1fr);
+        }
+        .jf-blueprint .content .rf-viewer {
+          --sq: clamp(460px, 42vw, 680px);
+          width: calc(var(--sq) + 3px);
+          max-width: 100%;
+        }
+        .jf-blueprint .content .rf-viewer .card-sub {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 100%;
+        }
         .jf-blueprint .content .rf-canvas--live .rf-stage {
-          height: var(--viewer-h);
-          aspect-ratio: 1 / 1;
-          width: auto;
-          margin: 0 auto;
+          width: var(--sq);
+          height: var(--sq);
+          max-width: 100%;
         }
         .jf-blueprint .content .rf-stage .rf-photo {
           width: 100%;
@@ -904,9 +1014,52 @@ export function RoofEstimatorDataForm() {
           object-fit: cover;
           display: block;
         }
-        .jf-blueprint .content .rf-stage .rf-photo--ortho {
-          object-fit: contain;
-          background: #0d0f12;
+        .jf-blueprint .content .rf-stage .rf-map {
+          width: 100%;
+          height: 100%;
+        }
+        .jf-blueprint .content .rf-stage .rf-map[hidden] {
+          display: none;
+        }
+        /* Back-to-the-house: top-right of the stage, clear of Google's
+           bottom-right zoom control; the vsw's own hairline language. */
+        .jf-blueprint .content .rf-stage .rf-home {
+          position: absolute;
+          top: 12px;
+          right: 12px;
+          z-index: 5;
+          width: 44px;
+          height: 44px;
+          display: grid;
+          place-items: center;
+          padding: 0;
+          background: #fff;
+          border: 1.5px solid var(--hair-soft);
+          border-radius: var(--radius);
+          color: var(--ink);
+          cursor: pointer;
+          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+          transition: background 0.12s;
+        }
+        .jf-blueprint .content .rf-stage .rf-home:hover {
+          background: var(--paper-deep);
+        }
+        .jf-blueprint .content .rf-stage .rf-home .ic {
+          width: 19px;
+          height: 19px;
+        }
+        @media (max-width: 1100px) {
+          .jf-blueprint .content .rf-grid {
+            grid-template-columns: minmax(0, 1fr);
+          }
+          .jf-blueprint .content .rf-viewer {
+            width: auto;
+          }
+          .jf-blueprint .content .rf-canvas--live .rf-stage {
+            width: 100%;
+            height: auto;
+            aspect-ratio: 1 / 1;
+          }
         }
       `}</style>
     </>
