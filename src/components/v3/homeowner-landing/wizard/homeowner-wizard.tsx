@@ -27,7 +27,7 @@
 // increments at EXACTLY the donor's `render()` call sites and keys the pane —
 // remounting the subtree and replaying the animations on the same events, and
 // only on those events. Consequently:
-//   · typing in `.desc` does NOT rebuild the pane… unless the category guess
+//   · typing in `.desc` does NOT rebuild the pane (the category guess/menu are
 //     appears or disappears, which is the one case the donor rebuilds on, and
 //     the one case it restores focus and caret afterwards. Both survive.
 //   · typing in a `.q-in` does NOT rebuild the pane, so answers are kept twice:
@@ -37,7 +37,7 @@
 //     would have re-read `S.answers`. That is also why a `.chip` stays lit until
 //     the next rebuild even after you type over it: donor behavior, preserved
 //     rather than "fixed".
-//   · opening the category menu does NOT rebuild the pane (the donor only
+//     gone since 2026-09-04 — the AI detects the trade at submit; the donor only
 //     toggles a class), so `.cats.open`'s slide-in plays and nothing else does.
 //
 // ── FILES ──────────────────────────────────────────────────────────────────
@@ -50,9 +50,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  CATEGORIES,
   CONTACT_FIELDS,
-  KEYWORDS,
   QUESTIONS,
   STEP_NAMES,
   type Question,
@@ -73,27 +71,11 @@ type Upload = { name: string; kind: "pdf" | "photo"; progress: number };
 /** useLayoutEffect warns during SSR; useEffect is inert there, so it stands in. */
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
-/** donor `detect()` — first KEYWORDS hit wins, and only past 8 characters.
- *  A chosen category always clears the guess, which is why this is derived
- *  rather than stored: `S.suggested` is a pure function of desc + category. */
-function detectSuggestion(desc: string, category: string | null): string | null {
-  if (category) return null;
-  let hit: string | null = null;
-  for (let i = 0; i < KEYWORDS.length; i++) {
-    if (KEYWORDS[i][0].test(desc)) {
-      hit = KEYWORDS[i][1];
-      break;
-    }
-  }
-  return hit && desc.length > 8 ? hit : null;
-}
 
 export function HomeownerWizard({ uid }: { uid: string }) {
   /* donor `S` */
   const [step, setStep] = useState(0);
   const [desc, setDesc] = useState("");
-  const [category, setCategory] = useState<string | null>(null);
-  const [showCats, setShowCats] = useState(false);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [thinking, setThinking] = useState(false);
   /* not donor state — `root.classList.add('drag')`, expressed as a class */
@@ -135,15 +117,14 @@ export function HomeownerWizard({ uid }: { uid: string }) {
     setPaneKey((k) => k + 1);
   }, []);
 
-  /* donor `questions()` / `canRefine()` / `catLabel()` */
-  const suggested = detectSuggestion(desc, category);
-  const questions: Question[] = aiQs ?? QUESTIONS[category ?? ""] ?? QUESTIONS["default"];
+  /* donor `questions()` / `canRefine()`. The category picker is gone (owner,
+     2026-09-04): the description is the one source, and the TRADE is detected
+     server-side by AI at submit — see submitHomeownerRequest. */
+  const questions: Question[] = aiQs ?? QUESTIONS["default"];
   const canRefine = desc.trim().length > 12;
-  const catLabel = category || suggested || "project";
 
   /* donor `renderHead()` */
-  let headLabel = step < 4 ? STEP_NAMES[step] : "Done";
-  if (step === 1 && category) headLabel += " · " + category;
+  const headLabel = step < 4 ? STEP_NAMES[step] : "Done";
   const tickClass = (i: number) => "tick" + (i < step ? " past" : i === step ? " now" : "");
 
   /* ── attachments ───────────────────────────────────────────────────── */
@@ -234,20 +215,6 @@ export function HomeownerWizard({ uid }: { uid: string }) {
     };
   }, []);
 
-  /* donor: a document-level click closes the category menu unless the click
-     landed inside this wizard's own `.cat-wrap`. */
-  useEffect(() => {
-    const onDocClick = (e: MouseEvent) => {
-      if (!showCats) return;
-      const target = e.target as Element | null;
-      const wrap = target && target.closest ? target.closest(".cat-wrap") : null;
-      if (wrap && rootRef.current && rootRef.current.contains(wrap)) return;
-      setShowCats(false);
-    };
-    document.addEventListener("click", onDocClick);
-    return () => document.removeEventListener("click", onDocClick);
-  }, [showCats]);
-
   /* donor, on the one render that happens mid-typing:
      `nd.focus(); nd.setSelectionRange(pos, pos);` */
   useIsomorphicLayoutEffect(() => {
@@ -267,32 +234,7 @@ export function HomeownerWizard({ uid }: { uid: string }) {
   /* ── handlers ──────────────────────────────────────────────────────── */
 
   const onDescInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const el = e.currentTarget;
-    const value = el.value;
-    const had = detectSuggestion(desc, category);
-    const now = detectSuggestion(value, category);
-    const pos = el.selectionStart;
-    setDesc(value);
-    if (had !== now) {
-      caret.current = pos;
-      bump();
-    }
-  };
-
-  const onGuess = () => {
-    setCategory(suggested);
-    bump();
-  };
-
-  const onCatToggle = (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation();
-    setShowCats((v) => !v);
-  };
-
-  const onCatPick = (value: string) => {
-    setCategory(value);
-    setShowCats(false);
-    bump();
+    setDesc(e.currentTarget.value);
   };
 
   const onRefine = () => {
@@ -300,7 +242,7 @@ export function HomeownerWizard({ uid }: { uid: string }) {
     setAiQs(null);
     answers.current = [];
     setShown([]);
-    const work = suggestHomeownerQuestions({ description: desc, category })
+    const work = suggestHomeownerQuestions({ description: desc, category: null })
       .then((res) => {
         if (res.questions && res.questions.length) setAiQs(res.questions);
       })
@@ -365,7 +307,6 @@ export function HomeownerWizard({ uid }: { uid: string }) {
         email,
         phone: phone || undefined,
         zip,
-        projectType: category ?? undefined,
         description: extra ? desc.trim() + "\n\n" + extra : desc.trim(),
       });
       setStep(4);
@@ -384,11 +325,9 @@ export function HomeownerWizard({ uid }: { uid: string }) {
   const onRestart = () => {
     setStep(0);
     setDesc("");
-    setCategory(null);
     uploadsRef.current = [];
     setUploads([]);
     answers.current = [];
-    /* donor does not reset `S.showCats` here — neither do we */
     bump();
   };
 
@@ -409,9 +348,7 @@ export function HomeownerWizard({ uid }: { uid: string }) {
 
   const paneDescribe = (
     <div className="pane" key={paneKey}>
-      {/* The field and the category guess share ONE focus ring: the guess is
-          part of what you are writing, not a control that happens to sit
-          under it. */}
+
       <div className="desc-wrap">
         <textarea
           className="desc"
@@ -421,11 +358,6 @@ export function HomeownerWizard({ uid }: { uid: string }) {
           defaultValue={desc}
           onChange={onDescInput}
         />
-        {suggested && !category ? (
-          <button className="guess" type="button" onClick={onGuess}>
-            Looks like: {suggested} — tap to confirm
-          </button>
-        ) : null}
       </div>
       {uploads.length ? (
         <div className="ups">
@@ -465,33 +397,6 @@ export function HomeownerWizard({ uid }: { uid: string }) {
           </svg>
           Photos &amp; video
         </button>
-        <div className="cat-wrap">
-          <button
-            className={category ? "tool tool-cat on" : "tool tool-cat"}
-            type="button"
-            onClick={onCatToggle}
-          >
-            <svg className="ic">
-              <use href="#i-grid" />
-            </svg>
-            {category || "Category"}
-          </button>
-          <div className={showCats ? "cats open" : "cats"}>
-            <div className="cats-in">
-              {CATEGORIES.map((c) => (
-                <button
-                  key={c}
-                  className={category === c ? "cat on" : "cat"}
-                  type="button"
-                  data-cat={c}
-                  onClick={() => onCatPick(c)}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
         <button className="go go-refine" type="button" disabled={!canRefine} onClick={onRefine}>
           Continue
           <svg className="ic">
@@ -592,7 +497,7 @@ export function HomeownerWizard({ uid }: { uid: string }) {
         <span className="scope-stamp">Structured by JobFlex</span>
       </div>
       <div className="sheet">
-        <div className="sheet-n">Scope of work · {catLabel}</div>
+        <div className="sheet-n">Scope of work</div>
         <p className="sheet-p">{desc.trim() || "Homeowner project description."}</p>
         <div className="sheet-list">{scopeRows()}</div>
       </div>

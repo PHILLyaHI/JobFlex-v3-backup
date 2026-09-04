@@ -26,6 +26,19 @@ export async function startCascade(platformLeadId: string): Promise<void> {
   // that already progressed.
   if (!pl || pl.status !== "MATCHING") return;
 
+  // No usable detected trade — this lead must not cascade at all (owner,
+  // 2026-09-04: the AI classification is the ONLY trade source, and an
+  // unclassified lead goes to a human, never to the "Other" bucket). The
+  // intake normally parks these itself; this guard covers the cron re-drive
+  // of leads whose submission crashed between insert and routing.
+  if (!pl.detectedTrade || !isTradeType(pl.detectedTrade) || pl.detectedTrade === "Other") {
+    await db.platformLead.update({
+      where: { id: platformLeadId },
+      data: { status: "MANUAL_QUEUE", queueReason: "TRADE_UNDETERMINED: no routable detected trade" },
+    });
+    return;
+  }
+
   const ranking = await buildRanking(pl);
   await db.platformLead.update({
     where: { id: platformLeadId },

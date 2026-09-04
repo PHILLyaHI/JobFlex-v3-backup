@@ -7,19 +7,18 @@
 // desktop build (src/components/v3/homeowner-landing/wizard/homeowner-wizard.tsx):
 //   describe → (thinking 850ms) → clarify → (thinking 850ms) → scope →
 //   contact → done, with `‹ Back` jumps to 0 / 1 / 2 and `restart` back to 0.
-//   `canRefine()` is `desc.trim().length > 12`; `detect()` walks KEYWORDS in
-//   order and only fires past 8 characters; `go()` collapses its delay to 0
+//   `canRefine()` is `desc.trim().length > 12`; `go()` collapses its delay to 0
 //   under reduced motion; the simulated upload pump ticks every 160ms at
 //   12 + rand(18)% and rebuilds the pane only when a file COMPLETES.
 //
 // `paneKey` is the same fidelity device: it increments at exactly the donor's
 // `render()` call sites and keys the pane, so `.pane` / `.q` / `.sl` / `.up` /
 // `.guess` replay their entrance animations on the same events and only those.
-// Consequently typing in `.desc` does not rebuild the pane unless the category
-// guess appears or disappears (the one case that also restores focus and
-// caret), typing in a `.q-in` does not rebuild it, and a chip stays lit until
-// the next rebuild even after you type over it. Donor behaviour, kept rather
-// than "fixed".
+// Consequently typing in `.desc` does not rebuild the pane, typing in a
+// `.q-in` does not rebuild it, and a chip stays lit until the next rebuild
+// even after you type over it. Donor behaviour, kept rather than "fixed".
+// (The category guess/picker are gone since 2026-09-04 — the description is
+// the one source and the AI detects the trade at submit.)
 //
 // The attachments never leave the browser (the uploader is simulated). The
 // PROJECT does: `.go-send` calls `submitHomeownerRequest`, which writes the
@@ -36,24 +35,12 @@
 //    absolutely positions `.go-refine` 14px BELOW the card at ≤700px, which
 //    only works for step 0 and leaves the other three primaries off-screen
 //    behind a scroll.
-// 2. THE CATEGORY PICKER IS A BOTTOM SHEET. The desktop popover is 274px wide
-//    and opens upward from a half-width button — unusable at 320px, and
-//    CLAUDE.md prefers sheets over dialogs on handheld anyway. Same
-//    interaction: nine options, pick commits and closes, scrim tap or Escape
-//    cancels. Hand-rolled, no Radix. Page scroll is held by the shared
-//    reference-counted `lib/scrollLock` rather than a hand-rolled
-//    `body.style.overflow`, which nests safely.
-//    The sheet renders as a SIBLING of `.win`, never inside `.pane`: the pane
-//    carries a transform during its 380ms entrance and a transformed ancestor
-//    would re-root `position: fixed` onto it.
-// 3. Every touch target is ≥44px, the chips and the category options included.
+// 2. Every touch target is ≥44px, the chips included.
 //    Text inputs are 16px so iOS Safari does not zoom the viewport on focus.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  CATEGORIES,
   CONTACT_FIELDS,
-  KEYWORDS,
   QUESTIONS,
   STEP_NAMES,
   type Question,
@@ -61,25 +48,11 @@ import {
 import { submitHomeownerRequest, suggestHomeownerQuestions } from "@/actions/homeowner";
 import { prefersReducedMotion } from "../homeowner-landing/use-homeowner-behavior";
 import { usePlaceholderCycle } from "../homeowner-landing/wizard/use-placeholder-cycle";
-import { lockScroll } from "@/lib/scrollLock";
 
 type Upload = { name: string; kind: "pdf" | "photo"; progress: number };
 
 /** useLayoutEffect warns during SSR; useEffect is inert there, so it stands in. */
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
-
-/** donor `detect()` — first KEYWORDS hit wins, and only past 8 characters. */
-function detectSuggestion(desc: string, category: string | null): string | null {
-  if (category) return null;
-  let hit: string | null = null;
-  for (let i = 0; i < KEYWORDS.length; i++) {
-    if (KEYWORDS[i][0].test(desc)) {
-      hit = KEYWORDS[i][1];
-      break;
-    }
-  }
-  return hit && desc.length > 8 ? hit : null;
-}
 
 /** How long the thinking pane waits for the adaptive questions. */
 const AI_WAIT_MS = 6500;
@@ -93,8 +66,6 @@ const NEWLINE = "\n";
 export function MobileHomeownerWizard({ uid }: { uid: string }) {
   const [step, setStep] = useState(0);
   const [desc, setDesc] = useState("");
-  const [category, setCategory] = useState<string | null>(null);
-  const [showCats, setShowCats] = useState(false);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [thinking, setThinking] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -112,7 +83,6 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
   const uploadsRef = useRef<Upload[]>([]);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const catBtnRef = useRef<HTMLButtonElement | null>(null);
   const caret = useRef<number | null>(null);
   const pumpTimer = useRef<number | null>(null);
   const goTimer = useRef<number | null>(null);
@@ -131,13 +101,12 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
     setPaneKey((k) => k + 1);
   }, []);
 
-  const suggested = detectSuggestion(desc, category);
-  const questions: Question[] = aiQs ?? QUESTIONS[category ?? ""] ?? QUESTIONS["default"];
+  /* The category picker/sheet are gone (owner, 2026-09-04): the description
+     is the one source, the TRADE is detected server-side by AI at submit. */
+  const questions: Question[] = aiQs ?? QUESTIONS["default"];
   const canRefine = desc.trim().length > 12;
-  const catLabel = category || suggested || "project";
 
-  let headLabel = step < 4 ? STEP_NAMES[step] : "Done";
-  if (step === 1 && category) headLabel += " · " + category;
+  const headLabel = step < 4 ? STEP_NAMES[step] : "Done";
   const tickClass = (i: number) => "tick" + (i < step ? " past" : i === step ? " now" : "");
 
   /* ── attachments ───────────────────────────────────────────────────── */
@@ -224,30 +193,6 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
     };
   }, []);
 
-  /* ── the category sheet ────────────────────────────────────────────── */
-
-  /* Scroll lock + Escape while the sheet is open. `lockScroll()` is the shared
-     reference-counted lock; releasing it is the whole teardown. */
-  useEffect(() => {
-    if (!showCats) return;
-    const release = lockScroll();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setShowCats(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      release();
-    };
-  }, [showCats]);
-
-  /* Focus returns to the control that opened the sheet, which is what a
-     keyboard or screen-reader user expects and what a dropdown gave for free. */
-  const closeCats = useCallback(() => {
-    setShowCats(false);
-    catBtnRef.current?.focus();
-  }, []);
-
   /* donor, on the one render that happens mid-typing:
      `nd.focus(); nd.setSelectionRange(pos, pos);` */
   useIsomorphicLayoutEffect(() => {
@@ -267,27 +212,7 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
   /* ── handlers ──────────────────────────────────────────────────────── */
 
   const onDescInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const el = e.currentTarget;
-    const value = el.value;
-    const had = detectSuggestion(desc, category);
-    const now = detectSuggestion(value, category);
-    const pos = el.selectionStart;
-    setDesc(value);
-    if (had !== now) {
-      caret.current = pos;
-      bump();
-    }
-  };
-
-  const onGuess = () => {
-    setCategory(suggested);
-    bump();
-  };
-
-  const onCatPick = (value: string) => {
-    setCategory(value);
-    setShowCats(false);
-    bump();
+    setDesc(e.currentTarget.value);
   };
 
   const onRefine = () => {
@@ -295,7 +220,7 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
     setAiQs(null);
     answers.current = [];
     setShown([]);
-    const work = suggestHomeownerQuestions({ description: desc, category })
+    const work = suggestHomeownerQuestions({ description: desc, category: null })
       .then((res) => {
         if (res.questions && res.questions.length) setAiQs(res.questions);
       })
@@ -352,7 +277,6 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
         email,
         phone: phone || undefined,
         zip,
-        projectType: category ?? undefined,
         description: extra ? desc.trim() + NEWLINE + NEWLINE + extra : desc.trim(),
       });
       setStep(4);
@@ -371,7 +295,6 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
   const onRestart = () => {
     setStep(0);
     setDesc("");
-    setCategory(null);
     uploadsRef.current = [];
     setUploads([]);
     answers.current = [];
@@ -395,7 +318,6 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
 
   const paneDescribe = (
     <div className="pane" key={paneKey}>
-      {/* One focus ring around the field AND the category guess. */}
       <div className="desc-wrap">
         <textarea
           className="desc"
@@ -405,11 +327,6 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
           defaultValue={desc}
           onChange={onDescInput}
         />
-        {suggested && !category ? (
-          <button className="guess" type="button" onClick={onGuess}>
-            Looks like: {suggested} — tap to confirm
-          </button>
-        ) : null}
       </div>
       {uploads.length ? (
         <div className="ups">
@@ -449,21 +366,6 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
           </svg>
           <span className="tool-l">Photos &amp; video</span>
         </button>
-        <div className="cat-wrap">
-          <button
-            className={category ? "tool tool-cat on" : "tool tool-cat"}
-            type="button"
-            ref={catBtnRef}
-            aria-haspopup="dialog"
-            aria-expanded={showCats}
-            onClick={() => setShowCats((v) => !v)}
-          >
-            <svg className="ic">
-              <use href="#jfmh-i-grid" />
-            </svg>
-            <span className="tool-l">{category || "Category"}</span>
-          </button>
-        </div>
       </div>
       <div className="pane-foot">
         <button className="go go-refine" type="button" disabled={!canRefine} onClick={onRefine}>
@@ -565,7 +467,7 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
           <span className="scope-stamp">Structured by JobFlex</span>
         </div>
         <div className="sheet">
-          <div className="sheet-n">Scope of work · {catLabel}</div>
+          <div className="sheet-n">Scope of work</div>
           <p className="sheet-p">{desc.trim() || "Homeowner project description."}</p>
           <div className="sheet-list">{scopeRows()}</div>
         </div>
@@ -701,36 +603,6 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
         </div>
         <div className="pane-host">{pane}</div>
       </div>
-
-      {showCats ? (
-        <>
-          <div className="cat-scrim" onClick={closeCats} aria-hidden="true"></div>
-          <div className="cat-sheet" role="dialog" aria-modal="true" aria-label="Choose a category">
-            <div className="cat-grab" aria-hidden="true"></div>
-            <div className="cat-head">
-              <span className="cat-t">Project category</span>
-              <button className="cat-x" type="button" aria-label="Close" onClick={closeCats}>
-                <svg className="ic">
-                  <use href="#jfmh-i-x" />
-                </svg>
-              </button>
-            </div>
-            <div className="cats-in">
-              {CATEGORIES.map((c) => (
-                <button
-                  key={c}
-                  className={category === c ? "cat on" : "cat"}
-                  type="button"
-                  data-cat={c}
-                  onClick={() => onCatPick(c)}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-        </>
-      ) : null}
     </div>
   );
 }

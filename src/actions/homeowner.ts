@@ -2,7 +2,7 @@
 import { randomBytes } from "crypto";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { detectTrade } from "@/lib/ai/detectTrade";
+import { detectTrade, routeDecision } from "@/lib/ai/detectTrade";
 import { geocodeAddress } from "@/lib/maps";
 import { startCascade } from "@/lib/leadCenter/cascade";
 import { getRoutingMode, MANUAL_MODE_REASON } from "@/lib/leadCenter/routingMode";
@@ -86,6 +86,9 @@ export async function submitHomeownerRequest(raw: unknown) {
     },
   });
 
+  // The description is the ONE trade source (owner, 2026-09-04) — the wizards
+  // no longer carry a specialty picker. `projectType` stays accepted in the
+  // schema for older clients but is only context, never the classification.
   const [detected, geo] = await Promise.all([
     detectTrade(`${data.projectType ?? ""}\n${data.description}`).catch(() => null),
     geocodeOrReuse({
@@ -119,13 +122,28 @@ export async function submitHomeownerRequest(raw: unknown) {
     },
   });
 
-  // AUTO routes it now; MANUAL parks it in the Lead Center queue for an admin
-  // to place. The mode is a platform switch (lib/leadCenter/routingMode).
+  // Routing. Three gates, in order:
+  //   1. platform MANUAL mode parks everything (lib/leadCenter/routingMode);
+  //   2. an unavailable or unsure detector parks THIS lead (routeDecision) —
+  //      the request is never lost and never sent to a random trade, and the
+  //      homeowner still gets the ordinary "request received";
+  //   3. a confident classification starts the cascade as before.
   try {
+    const decision = routeDecision(detected);
     if ((await getRoutingMode()) === "MANUAL") {
       await db.platformLead.update({
         where: { id: platformLead.id },
         data: { status: "MANUAL_QUEUE", queueReason: MANUAL_MODE_REASON },
+      });
+    } else if (decision.route === "MANUAL_QUEUE") {
+      await db.platformLead.update({
+        where: { id: platformLead.id },
+        // queueReason is a free string column; the honest cause plus the
+        // model's one-liner is what the admin placing it by hand needs.
+        data: {
+          status: "MANUAL_QUEUE",
+          queueReason: `${decision.queueReason}: ${decision.note}`.slice(0, 250),
+        },
       });
     } else {
       await startCascade(platformLead.id);

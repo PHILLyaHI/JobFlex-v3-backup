@@ -5,22 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Check, ChevronRight, ChevronLeft } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
-import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { submitHomeownerRequest } from "@/actions/homeowner";
-
-const PROJECT_TYPES = [
-  "Roofing",
-  "Kitchen remodel",
-  "Bathroom remodel",
-  "Fencing",
-  "Decking",
-  "Flooring",
-  "Siding",
-  "Windows",
-  "Painting",
-  "Other",
-];
 
 const STEPS = ["About you", "The project", "Details"] as const;
 
@@ -38,13 +24,12 @@ export function HomeownerForm() {
     city: "",
     state: "",
     zip: "",
-    projectType: "",
     description: "",
   });
 
   const canNext = React.useMemo(() => {
     if (step === 0) return values.name && /\S+@\S+\.\S+/.test(values.email);
-    if (step === 1) return values.projectType && values.description.length > 10;
+    if (step === 1) return values.description.length > 10;
     return true;
   }, [step, values]);
 
@@ -72,7 +57,7 @@ export function HomeownerForm() {
         </div>
         <h2 className="mt-6 font-display text-[32px] tracking-[-0.02em]">Thanks, {values.name.split(" ")[0] || "there"}.</h2>
         <p className="mt-2 text-[14px] text-[color:var(--ink-muted)]">
-          We've got your request and a contractor will reach out within 24 hours.
+          We&apos;ve got your request and a contractor will reach out within 24 hours.
         </p>
       </div>
     );
@@ -124,14 +109,11 @@ export function HomeownerForm() {
           )}
           {step === 1 && (
             <>
-              <Select label="Project type" value={values.projectType} onChange={(e) => update("projectType", e.target.value)}>
-                <option value="">— Select —</option>
-                {PROJECT_TYPES.map((p) => (
-                  <option key={p}>{p}</option>
-                ))}
-              </Select>
+              {/* The Project-type select is gone (owner, 2026-09-04): the
+                  description is the one source and the AI detects the trade
+                  server-side at submit (see submitHomeownerRequest). */}
               <Textarea
-                label="Describe what you have in mind"
+                label="What needs to be done?"
                 rows={5}
                 value={values.description}
                 onChange={(e) => update("description", e.target.value)}
