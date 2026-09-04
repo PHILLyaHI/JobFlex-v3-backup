@@ -9,6 +9,7 @@
 // interactive transaction, so a failure anywhere leaves that account untouched and
 // --dry-run is simply "do all of it for real, then roll back". In batch mode the
 // accounts are independent: one failing does not stop or undo the others.
+import bcrypt from "bcryptjs";
 import { disconnectAll, getReader, getWriter } from "./client";
 import type { Reader, Writer } from "./client";
 import { INTERNAL_ACCOUNTS, parseFlags, RollbackSignal, TX } from "./config";
@@ -124,9 +125,6 @@ async function runOne(
   // what must work there.
   if (flags.localTestPassword) {
     if (flags.target !== "local") throw new Error("--local-test-password is refused against prod");
-    // bcryptjs is CJS: under tsx the functions hang off `default`.
-    const mod = await import("bcryptjs");
-    const bcrypt = ((mod as { default?: typeof mod }).default ?? mod) as typeof mod;
     await writer.user.update({
       where: { id: manifest.userId },
       data: { hashedPassword: await bcrypt.hash(flags.localTestPassword, 10) },

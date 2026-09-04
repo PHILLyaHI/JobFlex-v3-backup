@@ -85,9 +85,12 @@ const skip = (ctx: Ctx, model: string) => {
  * `update` clause would revert whatever the customer changed after cutover, which
  * is the opposite of what a re-run should do.
  */
+// Method signatures on purpose: TypeScript checks method parameters bivariantly,
+// which is what lets every Prisma delegate (whose create() takes its own exact
+// input type) satisfy one structural shape.
 interface Delegate {
-  findUnique: (args: { where: { id: string }; select: { id: true } }) => Promise<{ id: string } | null>;
-  create: (args: { data: Record<string, unknown> }) => Promise<unknown>;
+  findUnique(args: { where: { id: string }; select: { id: true } }): Promise<{ id: string } | null>;
+  create(args: { data: Record<string, unknown> }): Promise<unknown>;
 }
 
 /**
@@ -98,7 +101,7 @@ interface Delegate {
  */
 async function assertOwnedByOrg(
   ctx: Ctx,
-  model: { findUnique: (a: { where: { id: string }; select: { organizationId: true } }) => Promise<{ organizationId: string } | null> },
+  model: { findUnique(a: { where: { id: string }; select: { organizationId: true } }): Promise<{ organizationId: string } | null> },
   modelName: string,
   id: string,
 ): Promise<void> {
