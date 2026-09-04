@@ -34,6 +34,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID ?? "",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+      // Always show Google's account chooser. Without it, a browser that has
+      // already consented is bounced through Google invisibly, so the landing's
+      // "Sign up with Google" looked like it skipped Google and went straight
+      // to the signup form (owner's report, 2026-09-04).
+      authorization: { params: { prompt: "select_account" } },
     }),
     Credentials({
       credentials: {
