@@ -2,6 +2,7 @@ import { PhoneOverview } from "./blueprint-phone";
 import { REGISTER } from "./routes";
 import { DashboardMock } from "./dashboard-mock";
 import { Reveal } from "./reveal";
+import { GoogleSignupButton } from "./google-signup-button";
 
 export function Hero() {
   return (
@@ -29,10 +30,7 @@ export function Hero() {
             <a href={REGISTER} className="lp-btn-dark lp-cta lp-cta--solid">
               Start 14-Day Free Trial
             </a>
-            <a
-              href={REGISTER}
-              className="lp-cta lp-cta--ghost"
-            >
+            <GoogleSignupButton className="lp-cta lp-cta--ghost">
               <svg viewBox="0 0 48 48" className="h-[18px] w-[18px]" aria-hidden>
                 <path
                   fill="#FFC107"
@@ -52,7 +50,7 @@ export function Hero() {
                 />
               </svg>
               Sign up with Google
-            </a>
+            </GoogleSignupButton>
           </div>
         </Reveal>
       </div>
