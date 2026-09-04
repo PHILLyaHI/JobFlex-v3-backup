@@ -68,3 +68,8 @@ marketing/jobflex-ad-pack.zip
 .claude/skills/motion-design/
 .claude/skills/client-finder/
 scripts/qa/roof/filmstrip/
+
+# legacy-import tool (scripts/migrate-v2): generated Postgres Prisma client
+scripts/migrate-v2/pgclient.prisma
+scripts/migrate-v2/.generated/
+scripts/migrate-v2/reports/

@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "noEmit": true, "module": "esnext", "moduleResolution": "bundler", "jsx": "preserve" },
+  "include": ["./*.ts"],
+  "exclude": ["./.generated", "./reports"]
+}

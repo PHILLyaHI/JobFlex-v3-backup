@@ -206,8 +206,17 @@ function lastEventOf(sub: Stripe.Subscription): { at: Date; kind: ChangeKind } {
   return { at: new Date(sub.created * 1000), kind: "created" };
 }
 
-/** Plan label, preferring the planTier metadata stamped at checkout. */
-function planFor(sub: Stripe.Subscription): string {
+/**
+ * Plan label. The PlanPrice ledger comes first: it is what every write path
+ * (the webhooks, the reconcile cron, the admin sync) names a plan by, so the
+ * badge here must say the same thing — a subscription on an older Stripe price
+ * otherwise read as one plan in this list and another in its stored row. Only
+ * a price the ledger has never seen falls through to the checkout metadata.
+ */
+function planFor(sub: Stripe.Subscription, slugByPrice: ReadonlyMap<string, string>): string {
+  const priceId = sub.items.data[0]?.price?.id;
+  const ledgerSlug = priceId ? slugByPrice.get(priceId) : undefined;
+  if (ledgerSlug) return ledgerSlug;
   const m = sub.metadata ?? {};
   if (m.planTier) return m.planTier.toUpperCase();
   if (m.planName) return m.planName.toUpperCase();
@@ -332,6 +341,10 @@ async function fromStripe(): Promise<SubscribersData> {
   const recordBySubId = uniqueBy(records, (r) => r.externalSubId);
   const recordByCustId = uniqueBy(records, (r) => r.externalCustomerId);
   const attrBySub = new Map(attributions.map((a) => [a.stripeSubscriptionId, a]));
+  // Small table, read whole: the ledger names a plan for any price it knows,
+  // archived rows included — an old price that still bills is still that plan.
+  const ledger = await db.planPrice.findMany({ select: { stripePriceId: true, planSlug: true } });
+  const slugByPrice = new Map(ledger.map((p) => [p.stripePriceId, p.planSlug.toUpperCase()]));
 
   // The account's own currency decides what the total is denominated in. A
   // restricted key may not read the account; the commonest currency on the
@@ -422,7 +435,7 @@ async function fromStripe(): Promise<SubscribersData> {
       orgName: org?.name ?? cust?.name ?? custEmail ?? "Unknown customer",
       ownerEmail: org?.ownerEmail ?? org?.billingEmail ?? custEmail,
       customerEmail: custEmail,
-      plan: planFor(sub),
+      plan: planFor(sub, slugByPrice),
       status,
       paid: PAID_STATUSES.has(status) && !paused,
       paused,

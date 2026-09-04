@@ -11,6 +11,9 @@ export default [
       "tsconfig.tsbuildinfo",
       "prisma/migrations/**",
       "**/*.css",
+      // Generated Prisma client + one-off report scripts for the legacy importer.
+      "scripts/migrate-v2/.generated/**",
+      "scripts/migrate-v2/reports/**",
     ],
   },
   ...nextCoreWebVitals,

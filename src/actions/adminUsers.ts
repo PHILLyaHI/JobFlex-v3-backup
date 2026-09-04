@@ -262,8 +262,14 @@ export async function getAdminUsersData(): Promise<AdminUsersData> {
     offSecond: 0,
   };
   for (const { status, plan } of shown.values()) {
-    // A plan nothing named is counted as an org, but not under a name.
-    if (plan && plan !== "NONE") byPlan.set(plan, (byPlan.get(plan) ?? 0) + 1);
+    // A plan nothing named is counted as an org, but not under a name. Keyed
+    // case-insensitively: planLabel() on the client already treats "enterprise"
+    // and "ENTERPRISE" as the same catalog plan, so grouping on the raw string
+    // put one plan in the strip three times under one name.
+    if (plan && plan !== "NONE") {
+      const key = plan.toUpperCase();
+      byPlan.set(key, (byPlan.get(key) ?? 0) + 1);
+    }
     switch (status) {
       case "ACTIVE":
         summary.active += 1;
