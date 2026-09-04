@@ -131,6 +131,27 @@ those today; the admin page can hand-grant a higher tier per account if it ever 
 Plan strings are written UPPER-CASE, as signup and the admin grants do — the admin
 "By plan" strip groups on the raw string, and `entitlements.ts` compares case-sensitively.
 
+## Local -> production copy (`copy.ts`)
+
+Production was emptied on 2026-09-04 and is being filled from the local `dev.db`,
+which holds the verified imports. `copy.ts` copies in foreign-key order with ids
+preserved: tables with no foreign keys (plan catalogue, Stripe price ledger, caches,
+influencers/promo codes) whole; everything else only when every foreign key it
+carries points at a row that is itself being copied. Roots are the chosen
+organisations and their members, plus platform admins who belong to no organisation.
+
+```bash
+PROD='postgresql://…@ep-blue-hall-….neon.tech/neondb?…'   # NON-pooling
+TARGET_DATABASE_URL="$PROD" npx tsx scripts/migrate-v2/copy.ts --org <orgId> --dry-run
+TARGET_DATABASE_URL="$PROD" npx tsx scripts/migrate-v2/copy.ts --org <orgId>
+TARGET_DATABASE_URL="$PROD" npx tsx scripts/migrate-v2/copy.ts --migrated --allow-nonempty   # the legacy-import orgs
+```
+
+`--migrated` selects the organisations the legacy import created (each has a
+`migrate:v2:*` manifest). Never use `--all-orgs` against production — the local
+database also holds the Acme demo org and dozens of test signups. Re-running is
+safe: existing ids are skipped. Nothing here writes to the local database.
+
 ## How it stays safe
 
 - **One transaction.** A failure anywhere leaves the target untouched.
