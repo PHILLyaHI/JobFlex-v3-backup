@@ -31,6 +31,11 @@ const CSP_REPORT_ONLY = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   typedRoutes: true,
+  // Readable stacks on Vercel PREVIEW builds only: a minified "reading '0' at
+  // b (3jtyjojq….js:1:5704)" is undebuggable, and previews are where the
+  // owner reproduces production-data bugs. Production stays without maps —
+  // they would publish the source to anyone who opens DevTools.
+  productionBrowserSourceMaps: process.env.VERCEL_ENV === "preview",
   // Do not advertise the framework in every response.
   poweredByHeader: false,
   // Deployment skew protection. A phone that loaded the app from one build and
