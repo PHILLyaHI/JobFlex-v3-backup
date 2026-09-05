@@ -74,7 +74,8 @@ export const VIP = "VIP";
  * stripped first, which is what keeps the "M." initial from becoming ".".
  */
 export function initials(name: string): string {
-  const parts = name.replace(/[^A-Za-z ]/g, " ").split(/\s+/).filter(Boolean);
+  // Letters in any script count — a Cyrillic or CJK client is not a "?".
+  const parts = (name || "").replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).filter(Boolean);
   if (!parts.length) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();

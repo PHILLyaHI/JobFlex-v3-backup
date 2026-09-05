@@ -152,8 +152,14 @@ export function initClientsContent(
   function money(n: number) {
     return "$" + n.toLocaleString("en-US");
   }
+  /** Two letters for the avatar plate. Letters in ANY script count (the old
+   *  Latin-only strip turned a Cyrillic or CJK name into an empty list and
+   *  `parts[0][0]` threw — the "Cannot read properties of undefined
+   *  (reading '0')" that took the whole Clients page down on production,
+   *  2026-09-04). Nothing usable → "?", same as the handheld build. */
   function initials(name: string) {
-    const parts = name.replace(/[^A-Za-z. ]/g, "").split(" ").filter(Boolean);
+    const parts = (name || "").replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).filter(Boolean);
+    if (!parts.length) return "?";
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
