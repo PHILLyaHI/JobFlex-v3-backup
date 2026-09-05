@@ -11,6 +11,8 @@ import { isStripeEnabled } from "@/lib/sdk/stripe";
 import { getStripeMode, stripeKeyFor } from "@/lib/stripeMode";
 import { parsePlanLimits } from "@/lib/planLimits";
 import { parseFeatures } from "@/lib/planCatalogServer";
+import { getCustomPlanTrialDays } from "@/lib/customPlanConfig";
+import { CUSTOM_BASE_CENTS, CUSTOM_PAGE_CENTS, CUSTOM_PAGES } from "@/lib/customPlan";
 import { describeCommission } from "@/lib/commission";
 import {
   AdminPlansContent,
@@ -28,13 +30,14 @@ export const metadata: Metadata = {
 
 export default async function AdminPlansPage() {
   await requirePlatformAdmin();
-  const [plans, planPrices, promoCodes] = await Promise.all([
+  const [plans, planPrices, promoCodes, customTrialDays] = await Promise.all([
     db.pricingPlan.findMany({ orderBy: { order: "asc" } }),
     db.planPrice.findMany({ where: { active: true } }),
     db.promoCode.findMany({
       orderBy: { createdAt: "desc" },
       include: { influencer: { select: { displayName: true } } },
     }),
+    getCustomPlanTrialDays(),
   ]);
 
   const hydrated: HydratedPlan[] = plans.map((p) => ({
@@ -77,6 +80,12 @@ export default async function AdminPlansPage() {
       synced={synced}
       stripeEnabled={isStripeEnabled()}
       promos={promos}
+      customPlan={{
+        trialDays: customTrialDays,
+        baseCents: CUSTOM_BASE_CENTS,
+        pageCents: CUSTOM_PAGE_CENTS,
+        pages: CUSTOM_PAGES.map((p) => p.label),
+      }}
       stripeMode={await getStripeMode()}
       stripeModes={{ live: Boolean(stripeKeyFor("live")), test: Boolean(stripeKeyFor("test")) }}
     />

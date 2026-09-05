@@ -17,7 +17,7 @@ import { useRouter } from "next/navigation";
 import { Plus, Pencil, Trash2, RefreshCw, ArrowUpRight } from "lucide-react";
 import { toast } from "@/components/ui/Toast";
 import { money } from "@/lib/format";
-import { upsertPricingPlan, deletePricingPlan } from "@/actions/admin";
+import { upsertPricingPlan, deletePricingPlan, setCustomPlanTrial } from "@/actions/admin";
 import { syncPlanToStripe } from "@/actions/plans";
 import { setPromoActive } from "@/actions/influencers";
 import { LIMIT_DEFS, DEFAULT_FREE_LIMITS, type PlanLimits, type LimitKey } from "@/lib/planLimits";
@@ -55,6 +55,16 @@ export interface HydratedPlan {
   limits: PlanLimits;
   active: boolean;
   highlight: boolean;
+}
+
+/** The custom plan, which has no PricingPlan row: its price is computed from
+ *  the pages a shop ticks (lib/customPlan), so only the trial is editable. */
+export interface CustomPlanDTO {
+  trialDays: number;
+  baseCents: number;
+  pageCents: number;
+  /** Add-on page labels, for the card's "what can be bought" line. */
+  pages: string[];
 }
 
 export interface SyncedInfo {
@@ -136,6 +146,7 @@ export function AdminPlansContent({
   synced,
   stripeEnabled,
   promos,
+  customPlan,
   stripeMode,
   stripeModes,
 }: {
@@ -143,6 +154,8 @@ export function AdminPlansContent({
   synced: Record<string, SyncedInfo>;
   stripeEnabled: boolean;
   promos: PromoDTO[];
+  /** The pay-per-page plan. Listed beside the catalog, edited on its own. */
+  customPlan: CustomPlanDTO;
   /** The live/sandbox payments switch — same control /admin/integrations has. */
   stripeMode: "live" | "test";
   stripeModes: { live: boolean; test: boolean };
@@ -158,6 +171,10 @@ export function AdminPlansContent({
   const [warning, setWarning] = useState<string | null>(null);
   const editSheet = useSheet();
   const delSheet = useSheet();
+  const customSheet = useSheet();
+  const [customTrial, setCustomTrial] = useState(String(customPlan.trialDays));
+  const [customBusy, setCustomBusy] = useState(false);
+  const [customErr, setCustomErr] = useState<string | null>(null);
 
   const openEditor = useCallback(
     (p: HydratedPlan) => {
@@ -177,6 +194,31 @@ export function AdminPlansContent({
     [delSheet],
   );
   const closeDelete = useCallback(() => delSheet.close(() => setDeleting(null)), [delSheet]);
+
+  function openCustom() {
+    setCustomTrial(String(customPlan.trialDays));
+    setCustomErr(null);
+    customSheet.open();
+  }
+
+  async function saveCustom() {
+    if (customBusy) return;
+    setCustomBusy(true);
+    setCustomErr(null);
+    try {
+      const res = await setCustomPlanTrial(Number(customTrial));
+      toast.success(
+        "Custom plan saved",
+        res.trialDays > 0 ? `${res.trialDays}-day trial at checkout.` : "No trial — charged immediately.",
+      );
+      router.refresh();
+      customSheet.close();
+    } catch (e) {
+      setCustomErr(errorMessage(e, "Couldn't save."));
+    } finally {
+      setCustomBusy(false);
+    }
+  }
 
   async function save(p: HydratedPlan) {
     const res = await upsertPricingPlan({
@@ -384,8 +426,122 @@ export function AdminPlansContent({
               </article>
             );
           })}
+
+          {/* THE CUSTOM PLAN — sold on every plan surface but not a catalog
+              row: the price is the base plus whatever pages the shop ticks,
+              so there is no fixed priceCents to store. Listed here because
+              "which plans do we sell, and on what trial" is asked in one
+              place (owner, 2026-09-05). */}
+          <article className={cx("pl-card")} aria-label="Custom plan">
+            <div className={cx("pl-head")}>
+              <div className={cx("pl-titles")}>
+                <div className={cx("pl-name")}>Custom</div>
+                <div className={cx("pl-slug")}>custom · pay per page</div>
+              </div>
+              <div className={cx("pl-plates")}>
+                <span className={cx("st", "st--ok")}>Always on</span>
+              </div>
+            </div>
+
+            <div className={cx("pl-strip")}>
+              <div className={cx("pl-price")}>
+                <span className={cx("pl-amt")}>{money(customPlan.baseCents / 100)}</span>
+                <span className={cx("pl-per")}>/mo base</span>
+              </div>
+              <div className={cx("pl-price", "pl-price--yr")}>
+                <span className={cx("pl-amt")}>{money(customPlan.pageCents / 100)}</span>
+                <span className={cx("pl-per")}>per page</span>
+              </div>
+              <div className={cx("pl-tags")}>
+                {customPlan.trialDays > 0 ? (
+                  <span className={cx("tag")}>{customPlan.trialDays}-day trial</span>
+                ) : (
+                  <span className={cx("tag")}>No trial</span>
+                )}
+                <span className={cx("tag")}>{customPlan.pages.length} add-on pages</span>
+              </div>
+            </div>
+
+            <div className={cx("pl-body")}>
+              <p className={cx("pl-desc")}>
+                The everyday workspace, plus only the pages a shop picks. Priced at checkout from the
+                selection, so it carries no fixed price and no Stripe product of its own.
+              </p>
+              <ul className={cx("pl-feats")}>
+                {customPlan.pages.slice(0, 5).map((label) => (
+                  <li key={label}>{label}</li>
+                ))}
+                {customPlan.pages.length > 5 ? (
+                  <li className={cx("pl-more")}>+{customPlan.pages.length - 5} more</li>
+                ) : null}
+              </ul>
+              <dl className={cx("pl-ledger")}>
+                <div className={cx("pl-led")}>
+                  <dt>Range</dt>
+                  <span className={cx("pl-led-lead")} aria-hidden="true" />
+                  <dd>
+                    {money(customPlan.baseCents / 100)} –{" "}
+                    {money((customPlan.baseCents + customPlan.pages.length * customPlan.pageCents) / 100)} / mo
+                  </dd>
+                </div>
+                <div className={cx("pl-led-all")}>Limits follow the pages bought · everything else unlimited</div>
+              </dl>
+            </div>
+
+            <div className={cx("pl-foot")}>
+              <button type="button" className={cx("btn", "btn-sm", "btn-ghost")} onClick={openCustom}>
+                <Pencil className={cx("ic")} aria-hidden="true" />
+                Edit trial
+              </button>
+              <span className={cx("pl-foot-gap")} />
+            </div>
+          </article>
         </div>
       )}
+
+      <Sheet
+        handle={customSheet}
+        kicker="custom · pay per page"
+        title="Custom plan"
+        onClose={() => customSheet.close()}
+      >
+        <SheetBody>
+          {customErr ? <Note tone="danger">{customErr}</Note> : null}
+          <Note>
+            Price is computed at checkout: {money(customPlan.baseCents / 100)} base plus{" "}
+            {money(customPlan.pageCents / 100)} for each of the {customPlan.pages.length} add-on pages, with a
+            year priced as ten months. Those amounts are fixed in the build, so the trial is the only thing
+            editable here. The trial applies to signup and to switching to Custom from the subscription page.
+          </Note>
+          <div className={cx("sec")}>
+            <div className={cx("sec-h")}>
+              <span className={cx("sec-t")}>Trial</span>
+              <span className={cx("sec-m")}>Applied by both checkout routes</span>
+            </div>
+            <div className={cx("row")}>
+              <Field label="Trial days" htmlFor="cp-trial" hint="0 = charge immediately">
+                <input
+                  id="cp-trial"
+                  className={cx("in", "in--mono", "in--num")}
+                  type="number"
+                  min={0}
+                  max={365}
+                  value={customTrial}
+                  onChange={(e) => setCustomTrial(e.target.value)}
+                />
+              </Field>
+            </div>
+          </div>
+        </SheetBody>
+        <SheetFoot>
+          <button type="button" className={cx("btn", "btn-ghost")} onClick={() => customSheet.close()}>
+            Cancel
+          </button>
+          <button type="button" className={cx("btn", "btn-primary")} disabled={customBusy} onClick={saveCustom}>
+            {customBusy ? "Saving…" : "Save"}
+          </button>
+        </SheetFoot>
+      </Sheet>
 
       <PromoCodesCard promos={promos} />
 

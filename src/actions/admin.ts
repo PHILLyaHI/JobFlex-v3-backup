@@ -9,6 +9,7 @@ import { syncPlanPricesToStripe } from "@/lib/planStripeSync";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
 import { isStripeWriteAllowed } from "@/lib/stripeSafety";
 import { setStripeMode, getStripeMode, stripeKeyFor, type StripeMode } from "@/lib/stripeMode";
+import { setCustomPlanTrialDays, MAX_TRIAL_DAYS } from "@/lib/customPlanConfig";
 
 // ── Pricing plans ─────────────────────────────────────
 
@@ -96,6 +97,21 @@ export async function upsertPricingPlan(
 
   revalidatePlanSurfaces();
   return { ok: true, id: row.id, syncWarning };
+}
+
+/**
+ * The custom plan's trial length. It has no PricingPlan row to hold a
+ * trialDays column (its price is computed from the pages a shop ticks), so the
+ * value lives in SyncState — see lib/customPlanConfig. Both checkout routes
+ * and the signup plan step read it back.
+ */
+export async function setCustomPlanTrial(days: unknown): Promise<{ ok: true; trialDays: number }> {
+  await requirePlatformAdmin();
+  const parsed = z.number().int().min(0).max(MAX_TRIAL_DAYS).safeParse(Number(days));
+  if (!parsed.success) throw new Error(`Trial days must be between 0 and ${MAX_TRIAL_DAYS}.`);
+  const trialDays = await setCustomPlanTrialDays(parsed.data);
+  revalidatePlanSurfaces();
+  return { ok: true, trialDays };
 }
 
 export async function deletePricingPlan(id: string) {

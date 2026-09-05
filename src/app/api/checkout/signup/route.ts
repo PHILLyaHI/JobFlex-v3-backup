@@ -19,12 +19,13 @@ import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { readPendingSignup } from "@/actions/signupCheckout";
 import { CUSTOM_PLAN_SLUG, customPriceCents } from "@/lib/customPlan";
+import { getCustomPlanTrialDays } from "@/lib/customPlanConfig";
 import { ensureRecurringPrice } from "@/lib/stripePriceCache";
 import { validateAttribution } from "@/lib/attribution";
 import { ensureReferralCoupon, referralCouponMonths } from "@/lib/referralDiscount";
 
-/** The custom plan trials for the same fortnight the catalog plans do. */
-const CUSTOM_TRIAL_DAYS = 14;
+// The custom plan's trial is set in /admin/plans (SyncState, not a catalog
+// column — see lib/customPlanConfig for why) and read per request.
 
 export const runtime = "nodejs";
 
@@ -72,7 +73,7 @@ export async function POST(req: Request) {
   if (isCustom) {
     const pages = pending.customPages;
     const amount = customPriceCents(pages, interval);
-    trialDays = CUSTOM_TRIAL_DAYS;
+    trialDays = await getCustomPlanTrialDays();
     planLabel = CUSTOM_PLAN_SLUG;
     /* A REUSED price, not inline price_data: inline data mints a fresh
        Product+Price per checkout and would litter the Stripe dashboard with a

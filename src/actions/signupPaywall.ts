@@ -16,6 +16,7 @@ import { REFERRAL_DISCOUNT_PCT } from "@/lib/referralDiscount";
 //     the organization when that organization is created. One discount system,
 //     one binding path.
 import { getPlanCatalog } from "@/lib/planCatalogServer";
+import { getCustomPlanTrialDays } from "@/lib/customPlanConfig";
 import { validateAttribution } from "@/lib/attribution";
 import { isStripeEnabled } from "@/lib/sdk/stripe";
 
@@ -45,8 +46,14 @@ export async function signupPlans(): Promise<{
   promo: SignupPromo | null;
   /** False when Stripe is not configured — the step then offers only "skip". */
   checkoutReady: boolean;
+  /** The custom plan's trial, set in /admin/plans. It has no catalog row, so
+   *  it rides alongside the list rather than inside it. */
+  customTrialDays: number;
 }> {
-  const catalog = await getPlanCatalog();
+  const [catalog, customTrialDays] = await Promise.all([
+    getPlanCatalog(),
+    getCustomPlanTrialDays(),
+  ]);
   // Whatever the visitor arrived with is carried in the client's attribution
   // pill and applied at account creation; there is no organization to read a
   // stamp from at this point in the flow.
@@ -69,6 +76,7 @@ export async function signupPlans(): Promise<{
       })),
     promo,
     checkoutReady: isStripeEnabled(),
+    customTrialDays,
   };
 }
 

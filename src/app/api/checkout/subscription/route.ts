@@ -8,6 +8,7 @@ import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { ensureRecurringPrice } from "@/lib/stripePriceCache";
 import { ensureReferralCoupon } from "@/lib/referralDiscount";
 import { CUSTOM_PLAN_SLUG, customPriceCents, normalizeCustomPages } from "@/lib/customPlan";
+import { getCustomPlanTrialDays } from "@/lib/customPlanConfig";
 
 // Real SaaS subscription checkout. A captured influencer promo (the org's
 // permanent signup stamp, falling back to the 30-day capture cookie) is
@@ -47,7 +48,8 @@ export async function POST(req: Request) {
         name: "Custom plan",
         priceCents: customPriceCents(pages),
         yearlyPriceCents: customPriceCents(pages, "YEAR"),
-        trialDays: 14,
+        // The length the admin set in /admin/plans, not a literal.
+        trialDays: await getCustomPlanTrialDays(),
         active: true,
         isFree: false,
       }

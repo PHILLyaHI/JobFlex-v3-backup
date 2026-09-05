@@ -62,6 +62,7 @@ import {
   CUSTOM_PAGES,
   CUSTOM_PAGE_CENTS,
   CUSTOM_PLAN_SLUG,
+  DEFAULT_CUSTOM_TRIAL_DAYS,
   CUSTOM_YEAR_MULTIPLIER,
   customPriceCents,
 } from "@/lib/customPlan";
@@ -170,6 +171,9 @@ export function RegisterContent({
      account exists — the step cannot price itself before there is an org to
      price for, and `signupPlans` is owner-scoped. */
   const [plans, setPlans] = React.useState<SignupPlan[]>([]);
+  /* The custom plan has no catalog row, so its trial arrives beside the list
+     (set in /admin/plans). The constant is only the pre-answer placeholder. */
+  const [customTrialDays, setCustomTrialDays] = React.useState(DEFAULT_CUSTOM_TRIAL_DAYS);
   /* THE CAROUSEL STARTS AT THE FIRST CARD. With `scroll-snap-type: x
      mandatory` Chrome picks its initial snap target while the plan sheet is
      still sliding in, and lands on the LAST card (verified at 390×844: the
@@ -287,7 +291,7 @@ export function RegisterContent({
   const [token, setToken] = React.useState<string | null>(ret?.token ?? null);
   const trialDays =
     planSlug === CUSTOM_PLAN_SLUG
-      ? DEFAULT_TRIAL_DAYS
+      ? customTrialDays
       : plans.find((p) => p.slug === planSlug)?.trialDays || DEFAULT_TRIAL_DAYS;
   const customCents = customPriceCents(customPages, interval);
   /* Every feature any plan lists, in the order the catalog gives them, and
@@ -468,6 +472,7 @@ export function RegisterContent({
       .then((res) => {
         if (!live) return;
         setPlans(res.plans);
+        setCustomTrialDays(res.customTrialDays);
         setCheckoutReady(res.checkoutReady);
         if (res.promo) setPromo(res.promo);
         // Pre-select what the catalog marks as the one to pick, else the first
@@ -512,7 +517,7 @@ export function RegisterContent({
     if (payBusy || !slug) return;
     // The clicked card can differ from the selection until React commits it.
     const clickedTrialDays = slug === CUSTOM_PLAN_SLUG
-      ? DEFAULT_TRIAL_DAYS
+      ? customTrialDays
       : plans.find((p) => p.slug === slug)?.trialDays ?? 0;
     trackTraffic(TRAFFIC_EVENTS.attempt, { plan: slug, interval, intent: clickedTrialDays > 0 ? "trial" : "purchase", flow: trafficFlow });
     setPayBusy(true);
@@ -1465,7 +1470,7 @@ export function RegisterContent({
                   {payBusy && planSlug === CUSTOM_PLAN_SLUG
                     ? "Opening checkout…"
                     : checkoutReady
-                      ? `Start ${DEFAULT_TRIAL_DAYS}-day trial`
+                      ? `Start ${customTrialDays}-day trial`
                       : "Checkout is not configured"}
                 </button>
               </div>

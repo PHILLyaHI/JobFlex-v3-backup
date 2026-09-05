@@ -80,6 +80,12 @@ export function customPriceCents(
 /** The slug the rest of the app recognises for this plan. */
 export const CUSTOM_PLAN_SLUG = "custom";
 
+/** Trial length when nothing has been set in /admin/plans. The admin value
+ *  lives in SyncState (lib/customPlanConfig) because the custom plan has no
+ *  PricingPlan row to hold a trialDays column; this is the client-safe floor
+ *  the signup step labels itself with until the server answers. */
+export const DEFAULT_CUSTOM_TRIAL_DAYS = 7;
+
 // ── Access, derived from the selection ──────────────────────────────────────
 // Pure helpers, shared by the server gate (lib/customPageAccess) and the nav
 // filters, which are client components. The DB read stays server-side; what a
