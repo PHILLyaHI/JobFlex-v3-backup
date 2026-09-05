@@ -256,8 +256,11 @@ async function countUsage(
       // invites (a pending invite reserves its seat so acceptInvite never gets
       // stranded by a limit lowered after the invite went out). INSTALLER
       // seats are metered separately by "workers" (WorkerProfile).
+      // The OWNER is not a seat (owner's rule, 2026-09-04): a fresh account
+      // read "Office team seats 1 / 1" before anyone was invited, because the
+      // founder's own membership was counted against the plan's seat cap.
       const [members, pending] = await Promise.all([
-        db.membership.count({ where: { organizationId, role: { not: "INSTALLER" } } }),
+        db.membership.count({ where: { organizationId, role: { notIn: ["INSTALLER", "OWNER"] } } }),
         db.invite.count({
           where: {
             organizationId,
