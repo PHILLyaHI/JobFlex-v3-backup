@@ -1,5 +1,5 @@
-import type { TrafficBreakdown, TrafficFilters, TrafficReport, TrafficTotals } from "./traffic-contract";
-import { buildTrafficQueries, shiftDate } from "./traffic-query";
+import type { StageVisitor, StageVisitorsReport, TrafficBreakdown, TrafficFilters, TrafficReport, TrafficTotals } from "./traffic-contract";
+import { buildStageVisitorsQuery, buildTrafficQueries, funnelStages, shiftDate } from "./traffic-query";
 
 type Rows = unknown[][];
 const cache = new Map<string, { at: number; promise: Promise<TrafficReport> }>();
@@ -81,11 +81,8 @@ async function loadReport(filters: TrafficFilters): Promise<TrafficReport> {
       (report[key as "sources"] as TrafficBreakdown[]).push({ name: String(r[1]), visitors: numeric(r[2]), sessions: numeric(r[3]), conversions: numeric(r[4]) });
     }
   }
-  const stages = [["landing", "Landing"], ["registration", "Registration"],
-    ...(filters.flow === "standard" ? [["account", "1 / Account"]] : []),
-    ["company", "2 / Company"], ["plan", "3 / Plan"], ["attempt", "Trial / purchase attempt"],
-    ["checkout", "Checkout opened"], ["completed", "Verified signup"]];
-  report.funnel = results.funnel?.[0] ? stages.map(([id, label], i) => ({ id, label, visitors: numeric(results.funnel[0][i]) })) : [];
+  const stages = funnelStages(filters);
+  report.funnel = results.funnel?.[0] ? stages.map(({ id, label }, i) => ({ id, label, visitors: numeric(results.funnel[0][i]) })) : [];
   if (results.funnel?.[0]) {
     const row = results.funnel[0].slice(stages.length);
     report.funnelOutcomes = { trials: numeric(row[0]), purchases: numeric(row[1]), other: numeric(row[2]), trialAttempts: numeric(row[3]), purchaseAttempts: numeric(row[4]) };
@@ -102,5 +99,39 @@ export async function getTrafficReport(filters: TrafficFilters): Promise<Traffic
   if (cache.size >= 24) cache.delete(cache.keys().next().value!);
   const promise = loadReport(filters);
   cache.set(cacheKey, { at: Date.now(), promise });
+  return promise;
+}
+
+const text = (v: unknown) => v == null ? "" : String(v);
+// HogQL returns UTC datetimes as "YYYY-MM-DD HH:MM:SS[.ffffff]" or ISO strings; both become ISO.
+const stamp = (v: unknown) => { const raw = text(v).trim(); if (!raw) return ""; const iso = raw.replace(" ", "T") + (/[Zz]$|[+-]\d\d:?\d\d$/.test(raw) ? "" : "Z"); const d = new Date(iso); return Number.isNaN(d.getTime()) ? "" : d.toISOString(); };
+const stageCache = new Map<string, { at: number; promise: Promise<StageVisitorsReport> }>();
+
+/** Everyone who reached one funnel stage under the current filters, newest first. */
+export async function getStageVisitors(filters: TrafficFilters, stageId: string): Promise<StageVisitorsReport> {
+  const stage = funnelStages(filters).find(s => s.id === stageId);
+  if (!stage) throw new Error("Choose a funnel stage.");
+  const cacheKey = JSON.stringify([process.env.POSTHOG_PROJECT_ID, process.env.POSTHOG_HOST, filters, stageId]);
+  const hit = stageCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < 60_000) return hit.promise;
+  if (stageCache.size >= 24) stageCache.delete(stageCache.keys().next().value!);
+  const promise = (async () => {
+    const config = posthogApiConfig();
+    if (!config) throw new Error("Connect PostHog to inspect visitors.");
+    const sql = buildStageVisitorsQuery(filters, stageId);
+    if (!sql) throw new Error("Choose a funnel stage.");
+    const rows = await runTrafficQuery(sql, `stage visitors / ${stageId}`);
+    const visitors: StageVisitor[] = rows.map(r => ({
+      id: text(r[0]), reachedAt: stamp(r[2]), lastSeen: stamp(r[3]),
+      device: text(r[4]), browser: text(r[5]), os: text(r[6]),
+      country: text(r[7]), region: text(r[8]), city: text(r[9]),
+      source: text(r[10]), referrer: text(r[11]), campaign: text(r[12]).trim() === "/  /" ? "" : text(r[12]),
+      sessions: numeric(r[13]), views: numeric(r[14]), furthest: text(r[15]),
+      personUrl: r[1] ? `${config.host}/project/${config.id}/person/${encodeURIComponent(text(r[1]))}` : null,
+    }));
+    return { stage: { id: stage.id, label: stage.label }, filters, total: numeric(rows[0]?.[16]) || visitors.length, visitors, fetchedAt: new Date().toISOString() };
+  })();
+  promise.catch(() => stageCache.delete(cacheKey));
+  stageCache.set(cacheKey, { at: Date.now(), promise });
   return promise;
 }

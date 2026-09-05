@@ -34,6 +34,31 @@ export interface ExperimentResult {
   completed: number;
   mixedVisitors: number;
 }
+export interface StageVisitor {
+  id: string;
+  reachedAt: string;
+  lastSeen: string;
+  device: string;
+  browser: string;
+  os: string;
+  country: string;
+  region: string;
+  city: string;
+  source: string;
+  referrer: string;
+  campaign: string;
+  sessions: number;
+  views: number;
+  furthest: string;
+  personUrl: string | null;
+}
+export interface StageVisitorsReport {
+  stage: { id: string; label: string };
+  filters: TrafficFilters;
+  total: number;
+  visitors: StageVisitor[];
+  fetchedAt: string;
+}
 export interface TrafficReport {
   filters: TrafficFilters;
   fetchedAt: string;

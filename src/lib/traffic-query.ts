@@ -32,7 +32,25 @@ export function parseTrafficFilters(input: Record<string, unknown> = {}, now = n
 
 // Only validated literals enter HogQL; the client never supplies SQL or identifiers.
 export const literal = (s: string) => "'" + s.replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "'";
-export function buildTrafficQueries(f: TrafficFilters): Record<string, string> {
+
+export interface FunnelStageSpec { id: string; label: string; where: string }
+/** The cohort stages, in order. The Google flow skips the account step. */
+export function funnelStages(f: TrafficFilters): FunnelStageSpec[] {
+  const q = literal;
+  return [
+    { id: "landing", label: "Landing", where: "event = '$pageview' AND pathname = '/'" },
+    { id: "registration", label: "Registration", where: "event = '$pageview' AND pathname = '/auth/register'" },
+    ...(f.flow === "google" ? [] : [{ id: "account", label: "1 / Account", where: `event = ${q(E.step)} AND step = '1'` }]),
+    { id: "company", label: "2 / Company", where: `event = ${q(E.step)} AND step = '2'${f.flow === "google" ? " AND flow = 'google'" : " AND flow = 'standard'"}` },
+    { id: "plan", label: "3 / Plan", where: `event = ${q(E.step)} AND step = '3'` },
+    { id: "attempt", label: "Trial / purchase attempt", where: `event = ${q(E.attempt)}` },
+    { id: "checkout", label: "Checkout opened", where: `event = ${q(E.opened)}` },
+    { id: "completed", label: "Verified signup", where: `event = ${q(E.completed)} AND verified = 'true'` },
+  ];
+}
+
+/** The shared CTE scaffolding every traffic report is built on. */
+function trafficParts(f: TrafficFilters) {
   const q = literal;
   const start = `toDateTime(${q(f.from + " 00:00:00")}, ${q(f.timezone)})`;
   const end = `toDateTime(${q(shiftDate(f.to, 1) + " 00:00:00")}, ${q(f.timezone)})`;
@@ -43,7 +61,7 @@ export function buildTrafficQueries(f: TrafficFilters): Record<string, string> {
   const env = f.environment === "all" ? "1 = 1" : `environment = ${q(f.environment)}`;
   const hostFilter = f.host ? `hostname = ${q(f.host === "__unknown__" ? "" : f.host)}` : "1 = 1";
   const base = `WITH raw AS (
-    SELECT timestamp, toString(person_id) AS visitor, event,
+    SELECT timestamp, toString(person_id) AS visitor, toString(distinct_id) AS distinct_id, event,
       ${eventPath} AS pathname,
       ifNull(nullIf(${prop("jf_hostname")}, ''), domain(${prop("$current_url")})) AS hostname,
       ${prop("$session_id")} AS session_id,
@@ -51,8 +69,8 @@ export function buildTrafficQueries(f: TrafficFilters): Record<string, string> {
       ${prop("utm_source")} AS utm_source, ${prop("utm_medium")} AS medium,
       ${prop("utm_campaign")} AS campaign, ${prop("utm_term")} AS term,
       ${prop("$referring_domain")} AS referrer,
-      ${prop("$device_type")} AS device, ${prop("$browser")} AS browser,
-      ${prop("$geoip_country_name")} AS country,
+      ${prop("$device_type")} AS device, ${prop("$browser")} AS browser, ${prop("$os")} AS os,
+      ${prop("$geoip_country_name")} AS country, ${prop("$geoip_subdivision_1_name")} AS region, ${prop("$geoip_city_name")} AS city,
       ${prop("step")} AS step, ${prop("flow")} AS flow,
       ${prop("experiment")} AS experiment, ${prop("variant")} AS variant,
       ${prop("verified")} AS verified, ${prop("billing_mode")} AS billing_mode,
@@ -88,6 +106,18 @@ export function buildTrafficQueries(f: TrafficFilters): Record<string, string> {
     : `event = '$pageview'${f.page ? ` AND page = ${q(f.page)}` : ""}`;
   const selected = `timestamp >= ${start} AND timestamp < ${end} AND ${segment} AND ${aud(start)}`;
   const previous = `timestamp >= ${prev} AND timestamp < ${start} AND ${segment} AND ${aud(prev)}`;
+  // The cohort starts with its first eligible landing. Every later stage must follow
+  // the preceding stage and fit inside that visitor's conversion window.
+  const stages = funnelStages(f);
+  const ctes = [`s0 AS (SELECT *, minOrNullIf(timestamp, ${selected} AND ${stages[0].where}) OVER (PARTITION BY visitor) AS t0 FROM enriched)`];
+  for (let i = 1; i < stages.length; i++) ctes.push(`s${i} AS (
+    SELECT *, minOrNullIf(timestamp, t${i - 1} IS NOT NULL AND timestamp >= t${i - 1}
+      AND timestamp <= t0 + INTERVAL ${f.windowDays} DAY AND ${stages[i].where}) OVER (PARTITION BY visitor) AS t${i} FROM s${i - 1})`);
+  return { q, start, end, prev, base, scopedBase, audienceBase, aud, selected, previous, page, stages, ctes };
+}
+
+export function buildTrafficQueries(f: TrafficFilters): Record<string, string> {
+  const { q, start, end, prev, base, scopedBase, audienceBase, aud, selected, previous, page, stages, ctes } = trafficParts(f);
   const totals = (where: string, boundary: string) => `SELECT count() AS visitors,
     countIf(visitor_first_seen >= ${boundary}) AS new_visitors, countIf(visitor_first_seen < ${boundary}) AS returning_visitors,
     countIf(sessions >= 2) AS repeat_visitors, sum(sessions) AS session_total, sum(views) AS pageview_total
@@ -113,23 +143,6 @@ export function buildTrafficQueries(f: TrafficFilters): Record<string, string> {
       uniqExactIf(visitor, next_completed >= timestamp AND next_completed <= timestamp + INTERVAL ${f.windowDays} DAY) AS conversions
     FROM (SELECT *, arrayJoin([${Object.entries(dimensions).map(([key, column]) => `tuple(${q(key)}, ${column})`).join(",")}]) AS dimension FROM enriched)
     WHERE ${selected} AND ${page} GROUP BY kind, name ORDER BY visitors DESC LIMIT 20 BY kind LIMIT 160`;
-
-  // The cohort starts with its first eligible landing. Every later stage must follow
-  // the preceding stage and fit inside that visitor's conversion window.
-  const stages = [
-    ["landing", "Landing", "event = '$pageview' AND pathname = '/'"],
-    ["registration", "Registration", "event = '$pageview' AND pathname = '/auth/register'"],
-    ...(f.flow === "google" ? [] : [["account", "1 / Account", `event = ${q(E.step)} AND step = '1'`]]),
-    ["company", "2 / Company", `event = ${q(E.step)} AND step = '2'${f.flow === "google" ? " AND flow = 'google'" : " AND flow = 'standard'"}`],
-    ["plan", "3 / Plan", `event = ${q(E.step)} AND step = '3'`],
-    ["attempt", "Trial / purchase attempt", `event = ${q(E.attempt)}`],
-    ["checkout", "Checkout opened", `event = ${q(E.opened)}`],
-    ["completed", "Verified signup", `event = ${q(E.completed)} AND verified = 'true'`],
-  ];
-  const ctes = [`s0 AS (SELECT *, minOrNullIf(timestamp, ${selected} AND ${stages[0][2]}) OVER (PARTITION BY visitor) AS t0 FROM enriched)`];
-  for (let i = 1; i < stages.length; i++) ctes.push(`s${i} AS (
-    SELECT *, minOrNullIf(timestamp, t${i - 1} IS NOT NULL AND timestamp >= t${i - 1}
-      AND timestamp <= t0 + INTERVAL ${f.windowDays} DAY AND ${stages[i][2]}) OVER (PARTITION BY visitor) AS t${i} FROM s${i - 1})`);
   const funnel = `${audienceBase}, ${ctes.join(",\n")}
     SELECT ${stages.map((_, i) => `uniqExactIf(visitor, t${i} IS NOT NULL)`).join(", ")},
       uniqExactIf(visitor, timestamp = t${stages.length - 1} AND event = ${q(E.completed)} AND outcome = 'trial_started'),
@@ -153,4 +166,33 @@ export function buildTrafficQueries(f: TrafficFilters): Record<string, string> {
   ) SELECT experiment, assigned_variant, countIf(variants = 1), countIf(variants = 1 AND attempted), countIf(variants = 1 AND completed), countIf(variants > 1)
     FROM outcomes GROUP BY experiment, assigned_variant ORDER BY experiment, assigned_variant LIMIT 100`;
   return { overview, lifetime, trend, pages, breakdowns, funnel, experiments };
+}
+
+export const STAGE_VISITOR_LIMIT = 200;
+/**
+ * Who reached one funnel stage: one row per visitor with the device, place and
+ * source they arrived with, plus how far along the funnel they got.
+ * Columns: visitor, distinct_id, reached_at, last_seen, device, browser, os, country,
+ * region, city, source, referrer, campaign, sessions, views, furthest, total.
+ */
+export function buildStageVisitorsQuery(f: TrafficFilters, stageId: string): string | null {
+  const { audienceBase, stages, ctes } = trafficParts(f);
+  const index = stages.findIndex(stage => stage.id === stageId);
+  if (index < 0) return null;
+  const last = stages.length - 1;
+  const inWindow = `timestamp >= t0 AND timestamp <= t0 + INTERVAL ${f.windowDays} DAY`;
+  const pick = (column: string, extra = "") => `ifNull(argMinIf(${column}, timestamp, ${column} != '' AND ${inWindow}${extra}), '')`;
+  const furthest = `multiIf(${stages.map((stage, i) => last - i).map(i => `any(t${i}) IS NOT NULL, ${literal(stages[i].id)}`).join(", ")}, '')`;
+  return `${audienceBase}, ${ctes.join(",\n")}
+    SELECT visitor, ifNull(argMin(distinct_id, timestamp), '') AS distinct_id, any(t${index}) AS reached_at, max(timestamp) AS last_seen,
+      ${pick("device")}, ${pick("browser")}, ${pick("os")},
+      ${pick("country")}, ${pick("region")}, ${pick("city")},
+      ${pick("traffic_source")}, ${pick("referrer", " AND referrer NOT IN ('$direct')")},
+      ${pick("campaign", " AND event = '$pageview'")},
+      uniqExactIf(session_id, session_id != '' AND ${inWindow}) AS sessions,
+      countIf(event = '$pageview' AND ${inWindow}) AS views,
+      ${furthest} AS furthest,
+      count() OVER () AS total
+    FROM s${last} WHERE t${index} IS NOT NULL
+    GROUP BY visitor ORDER BY reached_at DESC LIMIT ${STAGE_VISITOR_LIMIT}`;
 }

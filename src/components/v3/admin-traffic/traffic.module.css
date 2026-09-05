@@ -1,186 +1,250 @@
-/* Traffic is a scoped drafting sheet inside the existing admin shell. */
-:global(.jf-blueprint) .root { --traffic-line: var(--hair); display:flex; flex-direction:column; gap:20px; min-width:0; font-family:var(--font); color:var(--ink); }
+/* Traffic is a scoped drafting sheet inside the existing admin shell.
+   Scale: mono annotations never drop below 11px, body copy is 13px, and every
+   card is a white plate with a 2px ink frame on the paper ground. */
+:global(.jf-blueprint) .root { --traffic-line: var(--hair); --traffic-plate: var(--paper-deep); --traffic-label: var(--ink-soft); display:flex; flex-direction:column; gap:24px; min-width:0; font-family:var(--font); color:var(--ink); }
 :global(.jf-blueprint) .root * { box-sizing:border-box; }
 :global(.jf-blueprint) .root button { cursor:pointer; font-family:inherit; }
 :global(.jf-blueprint) .root button:disabled { opacity:.5; cursor:wait; }
 :global(.jf-blueprint) .root :is(button, input, select, summary, a):focus-visible { outline:3px solid var(--blueprint); outline-offset:3px; }
+
+/* ── Header ─────────────────────────────────────────────────── */
 :global(.jf-blueprint) .header { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; }
-:global(.jf-blueprint) .eyebrow { font:700 10px/1.5 var(--font-mono); text-transform:uppercase; letter-spacing:.12em; color:var(--blueprint); }
-:global(.jf-blueprint) .header h1 { margin:4px 0 0; font:900 clamp(38px,4vw,58px)/1 var(--font); letter-spacing:-.065em; }
+:global(.jf-blueprint) .eyebrow { font:700 11px/1.5 var(--font-mono); text-transform:uppercase; letter-spacing:.12em; color:var(--blueprint); }
+:global(.jf-blueprint) .header h1 { margin:6px 0 0; font:900 clamp(40px,4vw,56px)/1 var(--font); letter-spacing:-.06em; }
 :global(.jf-blueprint) .header h1 > span { color:var(--blueprint); }
 :global(.jf-blueprint) .headerActions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-:global(.jf-blueprint) :is(.button,.iconButton,.primary,.dateButton) { min-height:44px; border:2px solid var(--ink); border-radius:2px; background:var(--paper-deep); color:var(--ink); display:inline-flex; align-items:center; justify-content:center; gap:9px; padding:0 14px; font-size:12px; font-weight:800; }
-:global(.jf-blueprint) :is(.button,.iconButton,.dateButton):hover { background:var(--paper); box-shadow:2px 2px 0 var(--ink); }
+:global(.jf-blueprint) :is(.button,.iconButton,.primary,.dateButton) { min-height:44px; border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); color:var(--ink); display:inline-flex; align-items:center; justify-content:center; gap:9px; padding:0 16px; font-size:13px; font-weight:800; transition:box-shadow .12s var(--ease), background .12s var(--ease); }
+:global(.jf-blueprint) :is(.button,.iconButton,.dateButton):hover { box-shadow:2px 2px 0 var(--ink); }
 :global(.jf-blueprint) .iconButton { width:44px; padding:0; }
 :global(.jf-blueprint) .primary { background:var(--blueprint); border-color:var(--blueprint); color:white; }
 :global(.jf-blueprint) .primary:hover { background:var(--blueprint-dark); box-shadow:2px 2px 0 var(--ink); }
-:global(.jf-blueprint) .status { display:inline-flex; align-items:center; gap:7px; font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.04em; color:var(--success-dark); }
-:global(.jf-blueprint) .status i { width:6px; height:6px; background:currentColor; }
+:global(.jf-blueprint) .status { display:inline-flex; align-items:center; gap:8px; font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--success-dark); }
+:global(.jf-blueprint) .status i { width:8px; height:8px; background:currentColor; }
 :global(.jf-blueprint) .status[data-state="warning"] { color:var(--warning-dark); }
-:global(.jf-blueprint) .lifetime { border-top:2px solid var(--ink); border-bottom:1px solid var(--ink); display:flex; align-items:center; gap:24px; padding:12px 0; font:500 11px var(--font-mono); }
-:global(.jf-blueprint) .lifetime > span:not(.scope):not(.updated) { display:flex; gap:10px; align-items:center; }
-:global(.jf-blueprint) .lifetime strong { font:850 20px var(--font); letter-spacing:-.04em; }
-:global(.jf-blueprint) .scope { color:var(--muted); font-size:10px; }
-:global(.jf-blueprint) .updated { margin-left:auto; font-size:10px; color:var(--muted); white-space:nowrap; }
-:global(.jf-blueprint) .filterPanel { position:relative; z-index:5; border:1.5px solid var(--ink); border-radius:2px; background:var(--paper); }
-:global(.jf-blueprint) .rangeRow { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:14px 18px; border-bottom:1px solid var(--traffic-line); }
-:global(.jf-blueprint) .filterCaption { display:flex; gap:8px; align-items:center; margin-right:auto; font:700 11px var(--font-mono); text-transform:uppercase; }
-:global(.jf-blueprint) .segment { display:flex; border:1.5px solid var(--ink); border-radius:2px; background:var(--paper-deep); width:max-content; }
-:global(.jf-blueprint) .segment button { min-height:40px; padding:0 13px; border:0; border-right:1px solid var(--traffic-line); background:transparent; color:var(--ink); font:700 11px var(--font-mono); }
+
+/* ── All-time strip ─────────────────────────────────────────── */
+:global(.jf-blueprint) .lifetime { border-top:2px solid var(--ink); border-bottom:1px solid var(--ink); display:flex; align-items:center; gap:28px; padding:14px 0; font:600 12px var(--font-mono); color:var(--traffic-label); }
+:global(.jf-blueprint) .lifetime > span:not(.scope):not(.updated) { display:flex; gap:10px; align-items:baseline; }
+:global(.jf-blueprint) .lifetime strong { font:850 22px var(--font); letter-spacing:-.04em; color:var(--ink); }
+:global(.jf-blueprint) .scope { color:var(--muted); font-size:11px; }
+:global(.jf-blueprint) .updated { margin-left:auto; font-size:11px; color:var(--muted); white-space:nowrap; }
+
+/* ── Filter panel: one white plate, three rows ──────────────── */
+:global(.jf-blueprint) .filterPanel { position:relative; z-index:5; border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); }
+:global(.jf-blueprint) .rangeRow { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:16px 20px; border-bottom:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .filterCaption { display:flex; gap:9px; align-items:center; margin-right:auto; font:700 12px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; }
+:global(.jf-blueprint) .filterCaption svg { color:var(--blueprint); }
+:global(.jf-blueprint) .segment { display:flex; border:1.5px solid var(--ink); border-radius:2px; background:var(--traffic-plate); width:max-content; overflow:hidden; }
+:global(.jf-blueprint) .segment button { min-height:42px; padding:0 14px; border:0; border-right:1px solid var(--traffic-line); background:transparent; color:var(--ink); font:700 12px var(--font-mono); }
 :global(.jf-blueprint) .segment button:last-child { border-right:0; }
+:global(.jf-blueprint) .segment button:hover:not([aria-pressed="true"]) { background:var(--paper); }
 :global(.jf-blueprint) .segment button[aria-pressed="true"] { background:var(--ink); color:var(--paper); }
-:global(.jf-blueprint) .filters { display:grid; grid-template-columns:1.6fr repeat(5,minmax(0,1fr)); gap:12px; padding:16px 18px; }
-:global(.jf-blueprint) .filtersDisclosure > summary { display:flex; gap:10px; align-items:center; cursor:pointer; min-height:46px; padding:12px 18px; font:600 11px var(--font); }
-:global(.jf-blueprint) .filtersDisclosure > summary::before { content:"+"; font:700 16px var(--font-mono); color:var(--blueprint); }
+:global(.jf-blueprint) .filters { display:grid; grid-template-columns:1.6fr repeat(5,minmax(0,1fr)); gap:14px; padding:18px 20px; }
+:global(.jf-blueprint) .filtersDisclosure > summary { display:flex; gap:10px; align-items:center; cursor:pointer; min-height:48px; padding:12px 20px; font:700 13px var(--font); list-style:none; }
+:global(.jf-blueprint) .filtersDisclosure > summary::-webkit-details-marker { display:none; }
+:global(.jf-blueprint) .filtersDisclosure > summary::before { content:"+"; font:700 18px var(--font-mono); color:var(--blueprint); }
 :global(.jf-blueprint) .filtersDisclosure[open] > summary::before { content:"-"; }
-:global(.jf-blueprint) .filtersDisclosure > summary > span { margin-left:auto; font:600 9px var(--font-mono); color:var(--muted); }
-:global(.jf-blueprint) .filtersDisclosure > .timezone { padding:0 18px 12px; }
-:global(.jf-blueprint) .activeTimezone { font:500 10px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .filtersDisclosure > summary > span { margin-left:auto; font:600 11px var(--font-mono); color:var(--muted); letter-spacing:.04em; }
+:global(.jf-blueprint) .filtersDisclosure > .timezone { padding:0 20px 14px; }
+:global(.jf-blueprint) .activeTimezone { font:600 11px var(--font-mono); color:var(--muted); }
 :global(.jf-blueprint) .filterLabel { display:flex; flex-direction:column; gap:7px; min-width:0; margin:0; }
-:global(.jf-blueprint) .filterLabel > span { font:700 9px var(--font-mono); text-transform:uppercase; letter-spacing:.07em; }
+:global(.jf-blueprint) .filterLabel > span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.07em; color:var(--traffic-label); }
 :global(.jf-blueprint) .selectWrap { width:100%; min-width:0; }
-:global(.jf-blueprint) .selectWrap select { width:100%; min-height:44px; padding:8px 27px 8px 10px; font:600 12px var(--font); color:var(--ink); border:1.5px solid var(--ink); border-radius:2px; background:var(--paper-deep); text-overflow:ellipsis; }
-:global(.jf-blueprint) .filterFooter { display:flex; align-items:center; gap:14px; padding:12px 18px; border-top:1px solid var(--traffic-line); }
-:global(.jf-blueprint) .timezone { display:flex; align-items:center; gap:8px; font:500 10px var(--font-mono); color:var(--muted); }
-:global(.jf-blueprint) .timezone select { max-width:190px; min-height:44px; background:transparent; color:var(--ink); border:0; font:600 10px var(--font-mono); }
-:global(.jf-blueprint) .unsaved { margin-left:auto; color:var(--muted); font:500 10px var(--font-mono); }
-:global(.jf-blueprint) .textButton { min-height:44px; border:0; padding:0 8px; background:transparent; text-decoration:underline; font-size:12px; font-weight:700; }
-:global(.jf-blueprint) .sectionLabel { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:8px 0 -9px; color:var(--muted); font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; }
+/* The wrapper draws the chevron; the native one must go or two show at once. */
+:global(.jf-blueprint) .selectWrap select { appearance:none; -webkit-appearance:none; width:100%; min-height:44px; padding:8px 32px 8px 12px; font:600 13px var(--font); letter-spacing:0; color:var(--ink); border:1.5px solid var(--ink); border-radius:2px; background:var(--traffic-plate); text-overflow:ellipsis; }
+:global(.jf-blueprint) .filterFooter { display:flex; align-items:center; gap:16px; padding:14px 20px; border-top:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .timezone { display:flex; align-items:center; gap:10px; font:600 11px var(--font-mono); color:var(--traffic-label); text-transform:uppercase; letter-spacing:.06em; }
+:global(.jf-blueprint) .timezone select { max-width:220px; min-height:44px; background:transparent; color:var(--ink); border:0; font:600 12px var(--font-mono); text-transform:none; letter-spacing:0; }
+:global(.jf-blueprint) .unsaved { margin-left:auto; color:var(--muted); font:600 11px var(--font-mono); }
+:global(.jf-blueprint) .textButton { min-height:44px; border:0; padding:0 8px; background:transparent; text-decoration:underline; text-underline-offset:3px; font-size:13px; font-weight:700; }
+
+/* ── Section labels ─────────────────────────────────────────── */
+:global(.jf-blueprint) .sectionLabel { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:8px 0 -12px; color:var(--muted); font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.1em; }
 :global(.jf-blueprint) .sectionLabel > span:first-child { color:var(--blueprint); }
-:global(.jf-blueprint) .metrics { display:grid; grid-template-columns:1.4fr repeat(5,1fr); border:2px solid var(--ink); border-radius:2px; background:var(--paper-deep); overflow:hidden; }
-:global(.jf-blueprint) .metrics > div { padding:20px 16px; display:flex; flex-direction:column; border-right:1px solid var(--traffic-line); min-width:0; gap:10px; }
+
+/* ── Audience metrics ───────────────────────────────────────── */
+:global(.jf-blueprint) .metrics { display:grid; grid-template-columns:1.4fr repeat(5,1fr); border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); overflow:hidden; }
+:global(.jf-blueprint) .metrics > div { padding:22px 20px; display:flex; flex-direction:column; border-right:1px solid var(--traffic-line); min-width:0; gap:12px; }
 :global(.jf-blueprint) .metrics > div:last-child { border-right:0; }
-:global(.jf-blueprint) .metrics > div > span { font:700 9px var(--font-mono); text-transform:uppercase; letter-spacing:.05em; }
-:global(.jf-blueprint) .metrics strong { font:850 clamp(26px,2.8vw,42px)/1 var(--font); letter-spacing:-.055em; font-variant-numeric:tabular-nums; }
-:global(.jf-blueprint) .metrics small { font:500 10px/1.5 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .metrics > div > span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); }
+:global(.jf-blueprint) .metrics strong { font:850 clamp(28px,2.8vw,42px)/1 var(--font); letter-spacing:-.055em; font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .metrics small { font:600 11px/1.5 var(--font-mono); color:var(--muted); }
 :global(.jf-blueprint) .metrics .metricLead { background:var(--blueprint); color:white; }
-:global(.jf-blueprint) .metricLead small { color:var(--paper); }
-:global(.jf-blueprint) .card { background:var(--paper-deep); border:2px solid var(--ink); border-radius:2px; min-width:0; overflow:clip; }
-:global(.jf-blueprint) .cardHead { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:20px 24px; border-bottom:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .metricLead > span, :global(.jf-blueprint) .metricLead small { color:white; }
+
+/* ── Cards ──────────────────────────────────────────────────── */
+:global(.jf-blueprint) .card { background:var(--traffic-plate); border:2px solid var(--ink); border-radius:2px; min-width:0; overflow:clip; }
+:global(.jf-blueprint) .cardHead { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:22px 24px; border-bottom:1px solid var(--traffic-line); }
 :global(.jf-blueprint) .root h2 { font:800 20px/1.2 var(--font); letter-spacing:-.035em; margin:0; }
-:global(.jf-blueprint) .micro { display:block; font:500 10px/1.6 var(--font-mono); color:var(--muted); margin:6px 0 0; }
-:global(.jf-blueprint) .stamp { border:1.5px solid var(--blueprint); padding:7px 9px; color:var(--blueprint); font:700 9px var(--font-mono); text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; }
-:global(.jf-blueprint) .chartToolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 24px 0; }
-:global(.jf-blueprint) .legend { display:flex; align-items:center; flex-wrap:wrap; gap:16px; font:500 10px var(--font-mono); }
-:global(.jf-blueprint) .legend span { display:flex; align-items:center; gap:6px; }
-:global(.jf-blueprint) .legend i { width:7px; height:7px; background:var(--ink); }
+:global(.jf-blueprint) .micro { display:block; font:600 11px/1.6 var(--font-mono); color:var(--muted); margin:6px 0 0; }
+:global(.jf-blueprint) .stamp { border:1.5px solid var(--blueprint); padding:8px 10px; color:var(--blueprint); font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; }
+
+/* ── Chart ──────────────────────────────────────────────────── */
+:global(.jf-blueprint) .chartToolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 24px 0; }
+:global(.jf-blueprint) .legend { display:flex; align-items:center; flex-wrap:wrap; gap:18px; font:600 12px var(--font-mono); color:var(--traffic-label); }
+:global(.jf-blueprint) .legend span { display:flex; align-items:center; gap:7px; }
+:global(.jf-blueprint) .legend i { width:9px; height:9px; background:var(--ink); }
 :global(.jf-blueprint) .legend span:nth-child(2) i { background:var(--blueprint); }
 :global(.jf-blueprint) .legend span:nth-child(3) i { background:var(--sky); }
-:global(.jf-blueprint) .chartReadout { display:flex; align-items:baseline; gap:12px; padding:14px 24px 0; min-height:47px; font:500 10px var(--font-mono); color:var(--muted); }
-:global(.jf-blueprint) .chartReadout strong { color:var(--ink); font:850 24px var(--font); letter-spacing:-.04em; }
+:global(.jf-blueprint) .chartReadout { display:flex; align-items:baseline; gap:12px; padding:16px 24px 0; min-height:48px; font:600 12px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .chartReadout strong { color:var(--ink); font:850 26px var(--font); letter-spacing:-.04em; }
 :global(.jf-blueprint) .chart { display:block; width:100%; height:auto; min-height:220px; padding:0 18px; overflow:visible; background-image:linear-gradient(var(--chart-minor) 1px,transparent 1px),linear-gradient(90deg,var(--chart-minor) 1px,transparent 1px); background-size:32px 32px; background-clip:content-box; }
 :global(.jf-blueprint) .chart text { font:11px var(--font-mono); fill:var(--muted); }
 :global(.jf-blueprint) .chart g[tabindex] { cursor:crosshair; }
 :global(.jf-blueprint) .chart g[tabindex]:focus-visible { outline:none; }
 :global(.jf-blueprint) .chart g[tabindex]:focus-visible rect { stroke:var(--blueprint); stroke-width:2; }
-:global(.jf-blueprint) .details { padding:12px 24px; font:500 10px var(--font-mono); }
-:global(.jf-blueprint) .details summary { cursor:pointer; min-height:32px; align-content:center; }
-:global(.jf-blueprint) .composition { border-top:1px solid var(--traffic-line); display:flex; align-items:center; gap:18px; padding:16px 24px; font:500 11px var(--font-mono); }
-:global(.jf-blueprint) .compositionBar { width:170px; height:10px; background:var(--sky); border:1px solid var(--ink); }
+:global(.jf-blueprint) .details { padding:12px 24px; font:600 12px var(--font-mono); }
+:global(.jf-blueprint) .details summary { cursor:pointer; min-height:36px; align-content:center; }
+:global(.jf-blueprint) .composition { border-top:1px solid var(--traffic-line); display:flex; align-items:center; gap:20px; padding:16px 24px; font:600 12px var(--font-mono); color:var(--traffic-label); }
+:global(.jf-blueprint) .composition b { color:var(--ink); }
+:global(.jf-blueprint) .compositionBar { width:180px; height:10px; background:var(--sky); border:1px solid var(--ink); }
 :global(.jf-blueprint) .compositionBar > span { display:block; height:100%; background:var(--blueprint); }
 :global(.jf-blueprint) .compositionBar[data-empty="true"] { background:var(--paper); }
-:global(.jf-blueprint) .funnelControls { display:flex; gap:10px; }
-:global(.jf-blueprint) .funnelLayout { display:grid; grid-template-columns:minmax(0,1fr) 250px; }
+
+/* ── Funnel ─────────────────────────────────────────────────── */
+:global(.jf-blueprint) .funnelControls { display:flex; gap:12px; }
+:global(.jf-blueprint) .funnelLayout { display:grid; grid-template-columns:minmax(0,1fr) 260px; }
 :global(.jf-blueprint) .funnelTable { padding:8px 24px 16px; min-width:0; }
-:global(.jf-blueprint) .funnelHeading, :global(.jf-blueprint) .funnelRow { display:grid; grid-template-columns:minmax(150px,1fr) 72px 72px 90px; gap:10px; align-items:center; text-align:right; }
-:global(.jf-blueprint) .funnelHeading { padding:12px 0; font:700 9px var(--font-mono); color:var(--muted); text-transform:uppercase; }
+:global(.jf-blueprint) .funnelHeading, :global(.jf-blueprint) .funnelRow { display:grid; grid-template-columns:minmax(150px,1fr) 80px 80px 96px; gap:12px; align-items:center; text-align:right; }
+:global(.jf-blueprint) .funnelHeading { padding:14px 0; font:700 11px var(--font-mono); color:var(--traffic-label); text-transform:uppercase; letter-spacing:.06em; }
 :global(.jf-blueprint) .funnelHeading > span:first-child { text-align:left; }
-:global(.jf-blueprint) .funnelRow { min-height:70px; border-top:1px solid var(--traffic-line); font:600 12px var(--font-mono); }
-:global(.jf-blueprint) .funnelRow > strong { font:850 22px var(--font); letter-spacing:-.04em; }
-:global(.jf-blueprint) .stage { display:flex; align-items:flex-start; gap:10px; text-align:left; padding:13px 0; }
-:global(.jf-blueprint) .stageNumber { width:24px; flex-shrink:0; color:var(--blueprint); font:600 10px var(--font-mono); padding-top:2px; }
-:global(.jf-blueprint) .stage > div { width:100%; }
-:global(.jf-blueprint) .stage b { display:block; font:700 12px var(--font); }
-:global(.jf-blueprint) .stage small { display:block; margin-top:5px; color:var(--muted); font:500 9px var(--font-mono); }
-:global(.jf-blueprint) .funnelBar { margin-top:8px; width:100%; height:7px; background:var(--paper); }
+:global(.jf-blueprint) .funnelHeading em { font-style:normal; text-transform:none; letter-spacing:0; color:var(--muted); font-weight:600; }
+/* Each stage is a button: the whole row opens the visitor sheet. */
+:global(.jf-blueprint) .funnelRow { width:100%; min-height:72px; border:0; border-top:1px solid var(--traffic-line); border-radius:0; padding:0 8px 0 0; margin:0; background:transparent; color:inherit; font:600 13px var(--font-mono); transition:background .12s var(--ease); }
+:global(.jf-blueprint) .funnelRow:hover:not(:disabled), :global(.jf-blueprint) .funnelRow[aria-pressed="true"] { background:var(--paper); }
+:global(.jf-blueprint) .funnelRow:hover:not(:disabled) .stage b, :global(.jf-blueprint) .funnelRow[aria-pressed="true"] .stage b { color:var(--blueprint); }
+:global(.jf-blueprint) .funnelRow:disabled { cursor:default; opacity:.6; }
+:global(.jf-blueprint) .funnelRow:focus-visible { outline-offset:-3px; }
+:global(.jf-blueprint) .funnelRow > strong { font:850 24px var(--font); letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .stage { display:flex; align-items:flex-start; gap:12px; text-align:left; padding:14px 0; }
+:global(.jf-blueprint) .stageNumber { width:26px; flex-shrink:0; color:var(--blueprint); font:700 11px var(--font-mono); padding-top:3px; }
+:global(.jf-blueprint) .stageBody { display:block; width:100%; }
+:global(.jf-blueprint) .stage b { display:flex; align-items:center; gap:4px; font:700 14px var(--font); letter-spacing:-.01em; transition:color .12s var(--ease); }
+:global(.jf-blueprint) .stage b svg { color:var(--muted); opacity:0; transition:opacity .12s var(--ease), transform .12s var(--ease); }
+:global(.jf-blueprint) .funnelRow:hover:not(:disabled) .stage b svg { opacity:1; transform:translateX(2px); color:var(--blueprint); }
+:global(.jf-blueprint) .stage small { display:block; margin-top:6px; color:var(--muted); font:600 11px var(--font-mono); }
+:global(.jf-blueprint) .funnelBar { display:block; margin-top:8px; width:100%; height:8px; background:var(--paper); border:1px solid var(--traffic-line); }
 :global(.jf-blueprint) .funnelBar span { display:block; height:100%; background:var(--blueprint); }
-:global(.jf-blueprint) .conversionPlate { padding:28px 24px; border-left:1.5px solid var(--ink); background-color:var(--paper); background-image:linear-gradient(var(--chart-minor) 1px,transparent 1px),linear-gradient(90deg,var(--chart-minor) 1px,transparent 1px); background-size:20px 20px; }
+:global(.jf-blueprint) .conversionPlate { padding:28px 24px; border-left:2px solid var(--ink); background-color:var(--traffic-plate); background-image:linear-gradient(var(--chart-minor) 1px,transparent 1px),linear-gradient(90deg,var(--chart-minor) 1px,transparent 1px); background-size:20px 20px; }
 :global(.jf-blueprint) .conversionPlate > strong { display:block; font:900 46px/1.1 var(--font); letter-spacing:-.065em; margin:16px 0 6px; color:var(--blueprint); }
-:global(.jf-blueprint) .conversionPlate > span { font:600 11px var(--font-mono); }
-:global(.jf-blueprint) .conversionPlate p { margin:14px 0 0; font:500 11px/1.7 var(--font); color:var(--ink-soft); }
-:global(.jf-blueprint) .plateRule { width:32px; height:2px; background:var(--ink); margin:28px 0 18px; }
-:global(.jf-blueprint) .outcomes { margin:22px 0 0; border-top:1.5px solid var(--ink); }
-:global(.jf-blueprint) .outcomes > div { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--traffic-line); }
-:global(.jf-blueprint) .outcomes dt { font:500 10px var(--font-mono); }
-:global(.jf-blueprint) .outcomes dd { margin:0; font:850 18px var(--font); }
-:global(.jf-blueprint) .inlineNote { display:flex; gap:9px; align-items:center; padding:12px 24px; margin:0; border-bottom:1px solid var(--traffic-line); background:var(--paper); font:500 11px/1.6 var(--font); }
+:global(.jf-blueprint) .conversionPlate > span { font:600 12px var(--font-mono); color:var(--traffic-label); }
+:global(.jf-blueprint) .conversionPlate p { margin:14px 0 0; font:500 12px/1.65 var(--font); color:var(--ink-soft); }
+:global(.jf-blueprint) .outcomes { margin:22px 0 0; border-top:2px solid var(--ink); }
+:global(.jf-blueprint) .outcomes > div { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .outcomes dt { font:600 12px var(--font-mono); color:var(--traffic-label); }
+:global(.jf-blueprint) .outcomes dd { margin:0; font:850 18px var(--font); font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .inlineNote { display:flex; gap:10px; align-items:center; padding:12px 24px; margin:0; border-bottom:1px solid var(--traffic-line); border-left:4px solid var(--blueprint); background:var(--traffic-plate); font:500 13px/1.6 var(--font); color:var(--ink-soft); }
 :global(.jf-blueprint) .inlineNote svg { flex-shrink:0; color:var(--blueprint); }
-:global(.jf-blueprint) .exploreTabs { display:flex; border-bottom:2px solid var(--ink); background:var(--paper); }
-:global(.jf-blueprint) .exploreTabs button { min-height:58px; display:flex; align-items:center; justify-content:center; gap:14px; padding:12px 24px; border:0; border-right:1px solid var(--traffic-line); background:transparent; font-size:13px; font-weight:800; }
+
+/* ── Explore ────────────────────────────────────────────────── */
+:global(.jf-blueprint) .exploreTabs { display:flex; border-bottom:2px solid var(--ink); background:var(--traffic-plate); }
+:global(.jf-blueprint) .exploreTabs button { min-height:58px; display:flex; align-items:center; justify-content:center; gap:14px; padding:12px 24px; border:0; border-right:1px solid var(--traffic-line); background:transparent; font-size:14px; font-weight:800; transition:background .12s var(--ease); }
+:global(.jf-blueprint) .exploreTabs button:hover:not([aria-pressed="true"]) { background:var(--paper); }
 :global(.jf-blueprint) .exploreTabs button[aria-pressed="true"] { background:var(--ink); color:var(--paper); }
-:global(.jf-blueprint) .exploreTabs button > span { font:600 10px var(--font-mono); opacity:.75; }
+:global(.jf-blueprint) .exploreTabs button > span { font:700 11px var(--font-mono); opacity:.8; }
 :global(.jf-blueprint) .exploreBody { padding:24px; }
 :global(.jf-blueprint) .exploreHead { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:20px; }
-:global(.jf-blueprint) .pageTools { display:flex; align-items:flex-end; gap:10px; }
-:global(.jf-blueprint) .pageTools input { min-height:44px; width:210px; max-width:100%; padding:10px; border:1.5px solid var(--ink); border-radius:2px; font:500 12px var(--font); background:var(--paper-deep); }
+:global(.jf-blueprint) .pageTools { display:flex; align-items:flex-end; gap:12px; }
+:global(.jf-blueprint) .pageTools input { min-height:44px; width:230px; max-width:100%; padding:10px 12px; border:1.5px solid var(--ink); border-radius:2px; font:500 13px var(--font); background:var(--traffic-plate); }
 :global(.jf-blueprint) .pageShortcuts, :global(.jf-blueprint) .dimensionTabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
-:global(.jf-blueprint) .pageShortcuts button, :global(.jf-blueprint) .dimensionTabs button { min-height:38px; border:1px solid var(--traffic-line); border-radius:2px; padding:8px 10px; background:var(--paper); color:var(--ink); font:600 10px var(--font-mono); }
+:global(.jf-blueprint) .pageShortcuts button, :global(.jf-blueprint) .dimensionTabs button { min-height:40px; border:1.5px solid var(--traffic-line); border-radius:2px; padding:8px 12px; background:var(--traffic-plate); color:var(--ink); font:700 11px var(--font-mono); letter-spacing:.02em; transition:border-color .12s var(--ease), background .12s var(--ease); }
+:global(.jf-blueprint) :is(.pageShortcuts,.dimensionTabs) button:hover:not([aria-pressed="true"]) { border-color:var(--ink); }
 :global(.jf-blueprint) :is(.pageShortcuts,.dimensionTabs) button[aria-pressed="true"] { background:var(--blueprint); border-color:var(--blueprint); color:white; }
 :global(.jf-blueprint) .tableScroll { overflow:auto; max-width:100%; overscroll-behavior-x:contain; }
-:global(.jf-blueprint) .table { width:100%; border-collapse:collapse; font-size:12px; }
-:global(.jf-blueprint) .table th { padding:12px 10px; border-bottom:2px solid var(--ink); font:700 9px var(--font-mono); text-transform:uppercase; letter-spacing:.04em; color:var(--muted); text-align:right; white-space:nowrap; }
-:global(.jf-blueprint) .table td { padding:13px 10px; border-bottom:1px solid var(--traffic-line); text-align:right; font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .table { width:100%; border-collapse:collapse; font-size:13px; }
+:global(.jf-blueprint) .table th { padding:12px 10px; border-bottom:2px solid var(--ink); font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); text-align:right; white-space:nowrap; }
+:global(.jf-blueprint) .table td { padding:10px 10px; border-bottom:1px solid var(--traffic-line); text-align:right; font-variant-numeric:tabular-nums; }
 :global(.jf-blueprint) .table :is(th,td):first-child { text-align:left; padding-left:0; }
 :global(.jf-blueprint) .table tbody tr:hover, :global(.jf-blueprint) .table tr[data-selected="true"] { background:var(--paper); }
-:global(.jf-blueprint) .table td small { display:block; margin-top:4px; font:500 9px var(--font-mono); color:var(--muted); }
-:global(.jf-blueprint) .pageLink { min-height:44px; width:100%; min-width:160px; max-width:340px; display:flex; align-items:center; justify-content:space-between; gap:10px; background:transparent; border:0; text-align:left; color:var(--blueprint); font:700 12px var(--font); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .table td small { display:block; margin-top:3px; font:600 11px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .pageLink { min-height:44px; width:100%; min-width:160px; max-width:360px; display:flex; align-items:center; justify-content:space-between; gap:10px; background:transparent; border:0; text-align:left; color:var(--blueprint); font:700 13px var(--font); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .pageLink small { font:600 11px var(--font-mono); color:var(--muted); }
 :global(.jf-blueprint) .pageLink svg { flex-shrink:0; }
-:global(.jf-blueprint) .footnote { margin:18px 0 0; color:var(--muted); font:500 10px/1.7 var(--font-mono); }
+:global(.jf-blueprint) .footnote { margin:18px 0 0; color:var(--muted); font:600 11px/1.7 var(--font-mono); }
 :global(.jf-blueprint) .pagination { display:flex; align-items:center; gap:10px; padding-top:16px; }
-:global(.jf-blueprint) .pagination > span { margin-right:auto; font:500 10px var(--font-mono); color:var(--muted); }
-:global(.jf-blueprint) .acquisitionLayout { display:grid; grid-template-columns:minmax(0,1fr) 250px; gap:28px; }
-:global(.jf-blueprint) .sourceName { min-width:170px; max-width:340px; overflow-wrap:anywhere; }
+:global(.jf-blueprint) .pagination > span { margin-right:auto; font:600 12px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .acquisitionLayout { display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:28px; }
+:global(.jf-blueprint) .sourceName { min-width:170px; max-width:360px; overflow-wrap:anywhere; }
 :global(.jf-blueprint) .sourceName button { min-height:44px; display:flex; align-items:center; gap:8px; border:0; padding:0; background:transparent; color:var(--blueprint); font-weight:700; text-align:left; }
-:global(.jf-blueprint) .sourceBar { height:5px; background:var(--paper); margin-top:8px; }
+:global(.jf-blueprint) .sourceBar { height:6px; background:var(--paper); border:1px solid var(--traffic-line); margin-top:8px; }
 :global(.jf-blueprint) .sourceBar > span { display:block; height:100%; background:var(--blueprint); }
 :global(.jf-blueprint) .acquisitionNotes { border-left:1px solid var(--traffic-line); padding-left:24px; }
-:global(.jf-blueprint) .acquisitionNotes h3 { font:700 10px var(--font-mono); text-transform:uppercase; color:var(--blueprint); margin:0 0 8px; }
-:global(.jf-blueprint) .acquisitionNotes p { margin:0 0 22px; font:500 12px/1.7 var(--font); color:var(--ink-soft); }
-:global(.jf-blueprint) .acquisitionNotes a { display:flex; align-items:center; gap:6px; min-height:44px; font:700 11px var(--font); color:var(--blueprint); }
+:global(.jf-blueprint) .acquisitionNotes h3 { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--blueprint); margin:0 0 8px; }
+:global(.jf-blueprint) .acquisitionNotes p { margin:0 0 22px; font:500 13px/1.65 var(--font); color:var(--ink-soft); }
+:global(.jf-blueprint) .acquisitionNotes a { display:flex; align-items:center; gap:6px; min-height:44px; font:700 13px var(--font); color:var(--blueprint); }
 :global(.jf-blueprint) .experimentEmpty { display:grid; grid-template-columns:170px minmax(0,1fr); gap:30px; padding:28px 18px; align-items:center; }
 :global(.jf-blueprint) .experimentMark { display:flex; align-items:center; justify-content:center; flex-direction:column; gap:18px; min-height:170px; background-image:linear-gradient(var(--chart-minor) 1px,transparent 1px),linear-gradient(90deg,var(--chart-minor) 1px,transparent 1px); background-size:16px 16px; border:1.5px solid var(--blueprint); color:var(--blueprint); font:800 22px var(--font-mono); }
 :global(.jf-blueprint) .experimentEmpty h3 { font:800 24px var(--font); letter-spacing:-.04em; margin:0 0 12px; }
-:global(.jf-blueprint) .experimentEmpty p { max-width:570px; font:500 13px/1.7 var(--font); color:var(--muted); margin:0; }
-:global(.jf-blueprint) .experimentSteps { display:flex; flex-wrap:wrap; gap:16px; margin-top:24px; font:700 10px var(--font-mono); color:var(--blueprint); }
+:global(.jf-blueprint) .experimentEmpty p { max-width:570px; font:500 14px/1.65 var(--font); color:var(--ink-soft); margin:0; }
+:global(.jf-blueprint) .experimentSteps { display:flex; flex-wrap:wrap; gap:16px; margin-top:24px; font:700 11px var(--font-mono); color:var(--blueprint); }
 :global(.jf-blueprint) .experimentControls { display:flex; gap:18px; margin-bottom:20px; }
-:global(.jf-blueprint) .experimentNote { display:flex; gap:10px; align-items:flex-start; margin-top:20px; border-top:1px solid var(--traffic-line); padding-top:18px; color:var(--muted); font:500 11px/1.7 var(--font); }
-:global(.jf-blueprint) .experimentNote svg { flex-shrink:0; margin-top:2px; }
-:global(.jf-blueprint) .notice { display:flex; gap:12px; align-items:flex-start; padding:16px 18px; border:1.5px solid var(--warning); border-left-width:5px; background:var(--warning-soft); font:500 12px/1.7 var(--font); }
+:global(.jf-blueprint) .experimentNote { display:flex; gap:10px; align-items:flex-start; margin-top:20px; border-top:1px solid var(--traffic-line); padding-top:18px; color:var(--ink-soft); font:500 13px/1.65 var(--font); }
+:global(.jf-blueprint) .experimentNote svg { flex-shrink:0; margin-top:2px; color:var(--blueprint); }
+:global(.jf-blueprint) .notice { display:flex; gap:12px; align-items:flex-start; padding:16px 18px; border:1.5px solid var(--warning); border-left-width:5px; background:var(--warning-soft); font:500 13px/1.65 var(--font); }
 :global(.jf-blueprint) .notice > svg { flex-shrink:0; margin-top:2px; }
 :global(.jf-blueprint) .notice summary { cursor:pointer; padding-top:6px; }
 :global(.jf-blueprint) .notice p { margin:6px 0; }
-:global(.jf-blueprint) .empty { padding:36px 20px; color:var(--muted); font:500 12px/1.7 var(--font-mono); text-align:center; }
+:global(.jf-blueprint) .empty { padding:36px 20px; color:var(--muted); font:600 13px/1.7 var(--font-mono); text-align:center; }
 :global(.jf-blueprint) .methodology { border-top:1px solid var(--ink); padding:4px 0 20px; }
-:global(.jf-blueprint) .methodology summary { display:flex; align-items:center; gap:8px; min-height:44px; cursor:pointer; font:700 10px var(--font-mono); text-transform:uppercase; }
+:global(.jf-blueprint) .methodology summary { display:flex; align-items:center; gap:8px; min-height:44px; cursor:pointer; font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; }
 :global(.jf-blueprint) .methodology summary::after { content:"+"; margin-left:auto; font-size:20px; }
 :global(.jf-blueprint) .methodology[open] summary::after { content:"-"; }
 :global(.jf-blueprint) .methodology > div { display:grid; grid-template-columns:1fr 1fr; gap:10px 30px; }
-:global(.jf-blueprint) .methodology p { margin:0; font:500 11px/1.7 var(--font); color:var(--muted); }
+:global(.jf-blueprint) .methodology p { margin:0; font:500 13px/1.65 var(--font); color:var(--ink-soft); }
 
+/* ── Stage visitors sheet ───────────────────────────────────── */
+:global(.jf-blueprint) .drill { display:flex; flex-direction:column; gap:20px; font-family:var(--font); color:var(--ink); }
+:global(.jf-blueprint) .drillLead { display:flex; align-items:center; gap:14px; padding:4px 0 18px; border-bottom:2px solid var(--ink); }
+:global(.jf-blueprint) .drillLead svg { color:var(--blueprint); flex-shrink:0; }
+:global(.jf-blueprint) .drillLead strong { display:block; font:900 34px/1 var(--font); letter-spacing:-.05em; }
+:global(.jf-blueprint) .drillLead span { display:block; margin-top:6px; font:600 11px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .drillSummary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }
+:global(.jf-blueprint) .drillSummary h3 { margin:0 0 8px; font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; color:var(--blueprint); }
+:global(.jf-blueprint) .drillSummary ul { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+:global(.jf-blueprint) .drillSummary li { position:relative; display:flex; justify-content:space-between; gap:8px; padding-bottom:6px; font:500 12px var(--font); }
+:global(.jf-blueprint) .drillSummary li span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+:global(.jf-blueprint) .drillSummary li b { font:800 12px var(--font-mono); }
+:global(.jf-blueprint) .drillSummary li i { position:absolute; left:0; bottom:0; height:3px; background:var(--blueprint); }
+:global(.jf-blueprint) .drillSkeleton { display:flex; flex-direction:column; gap:10px; }
+:global(.jf-blueprint) .drillSkeleton span { display:block; height:64px; background:var(--paper); animation:pulse 1.2s ease-in-out infinite; }
+:global(.jf-blueprint) .drillList { list-style:none; margin:0; padding:0; border-top:2px solid var(--ink); }
+:global(.jf-blueprint) .drillList li { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:6px 16px; padding:14px 0; border-bottom:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .drillWho { display:flex; flex-direction:column; gap:4px; min-width:0; }
+:global(.jf-blueprint) .drillWho b { font:700 13px/1.35 var(--font); letter-spacing:-.01em; overflow-wrap:anywhere; }
+:global(.jf-blueprint) .drillWho span { font:500 12px/1.4 var(--font); color:var(--ink-soft); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .drillWho span:last-child { font:600 11px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .drillFacts { display:flex; flex-direction:column; gap:4px; min-width:0; font:600 12px var(--font-mono); color:var(--ink); }
+:global(.jf-blueprint) .drillFacts span { display:flex; gap:8px; align-items:baseline; overflow-wrap:anywhere; }
+:global(.jf-blueprint) .drillFacts em { flex-shrink:0; width:62px; font-style:normal; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+:global(.jf-blueprint) .drillFacts a { display:inline-flex; align-items:center; gap:4px; margin-top:4px; min-height:32px; font:700 12px var(--font); color:var(--blueprint); }
+
+/* ── Date picker ────────────────────────────────────────────── */
 :global(.jf-blueprint) .dateRoot { position:relative; }
-:global(.jf-blueprint) .dateButton { font:600 11px var(--font-mono); }
-:global(.jf-blueprint) .dateButton > span { color:var(--muted); }
-:global(.jf-blueprint) .calendar { position:absolute; right:0; top:calc(100% + 8px); width:352px; max-width:calc(100vw - 40px); padding:14px; z-index:30; background:var(--paper-deep); border:2px solid var(--ink); box-shadow:5px 5px 0 var(--ink); }
-:global(.jf-blueprint) .calendarHead { display:flex; justify-content:space-between; align-items:center; font-size:13px; }
-:global(.jf-blueprint) .calendarHead button { width:44px; min-height:44px; border:1px solid var(--ink); background:var(--paper); }
-:global(.jf-blueprint) .calendar > p { font:500 10px var(--font-mono); color:var(--blueprint); margin:14px 0; }
+:global(.jf-blueprint) .dateButton { font:700 12px var(--font-mono); }
+:global(.jf-blueprint) .dateButton > span { color:var(--muted); font-weight:600; }
+:global(.jf-blueprint) .calendar { position:absolute; right:0; top:calc(100% + 8px); width:352px; max-width:calc(100vw - 40px); padding:14px; z-index:30; background:var(--traffic-plate); border:2px solid var(--ink); box-shadow:5px 5px 0 var(--ink); }
+:global(.jf-blueprint) .calendarHead { display:flex; justify-content:space-between; align-items:center; font-size:13px; font-weight:700; }
+:global(.jf-blueprint) .calendarHead button { width:44px; min-height:44px; border:1px solid var(--ink); background:var(--traffic-plate); }
+:global(.jf-blueprint) .calendar > p { font:600 11px var(--font-mono); color:var(--blueprint); margin:14px 0; }
 :global(.jf-blueprint) .calendarGrid { display:grid; grid-template-columns:repeat(7,1fr); }
-:global(.jf-blueprint) .calendarGrid > span { text-align:center; font:700 10px var(--font-mono); padding:8px 0; color:var(--muted); }
-:global(.jf-blueprint) .calendarGrid button { min-height:44px; border:1px solid transparent; background:transparent; font:600 12px var(--font); color:var(--ink); }
+:global(.jf-blueprint) .calendarGrid > span { text-align:center; font:700 11px var(--font-mono); padding:8px 0; color:var(--muted); }
+:global(.jf-blueprint) .calendarGrid button { min-height:44px; border:1px solid transparent; background:transparent; font:600 13px var(--font); color:var(--ink); }
 :global(.jf-blueprint) .calendarGrid button[data-outside="true"] { color:var(--muted); }
 :global(.jf-blueprint) .calendarGrid button[aria-pressed="true"] { background:var(--blueprint); color:white; }
 :global(.jf-blueprint) .calendarGrid button:hover { border-color:var(--ink); }
 :global(.jf-blueprint) .dateInputs { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:12px 0; }
-:global(.jf-blueprint) .dateInputs label { font:600 10px var(--font-mono); }
-:global(.jf-blueprint) .dateInputs input { width:100%; min-height:44px; border:1px solid var(--ink); padding:8px; margin-top:5px; background:var(--paper); font:500 11px var(--font-mono); }
+:global(.jf-blueprint) .dateInputs label { font:700 11px var(--font-mono); }
+:global(.jf-blueprint) .dateInputs input { width:100%; min-height:44px; border:1px solid var(--ink); padding:8px; margin-top:5px; background:var(--traffic-plate); font:500 12px var(--font-mono); }
 :global(.jf-blueprint) .calendar > .primary { width:100%; }
 
 @keyframes sheetIn { from { opacity:0; transform:translateY(9px); } to { opacity:1; transform:translateY(0); } }
 @keyframes spin { to { transform:rotate(360deg); } }
+@keyframes pulse { 0%, 100% { opacity:.55; } 50% { opacity:1; } }
 :global(.jf-blueprint) .root > :is(.header,.filterPanel,.metrics,.card) { animation:sheetIn .4s var(--ease) backwards; }
 :global(.jf-blueprint) .root > .metrics { animation-delay:60ms; }
 :global(.jf-blueprint) .root > .card { animation-delay:100ms; }
 :global(.jf-blueprint) .spin { animation:spin 1s linear infinite; }
+
 @media (max-width:1250px) {
   :global(.jf-blueprint) .filters { grid-template-columns:repeat(3,minmax(0,1fr)); }
   :global(.jf-blueprint) .metrics { grid-template-columns:repeat(3,minmax(0,1fr)); }
@@ -190,20 +254,19 @@
   :global(.jf-blueprint) .lifetime { flex-wrap:wrap; gap:10px 20px; }
   :global(.jf-blueprint) .scope { order:3; width:100%; }
   :global(.jf-blueprint) .funnelLayout { grid-template-columns:minmax(0,1fr); }
-  :global(.jf-blueprint) .conversionPlate { border-left:0; border-top:1px solid var(--ink); display:grid; grid-template-columns:1fr 1fr; gap:10px 30px; padding:20px 24px; }
+  :global(.jf-blueprint) .conversionPlate { border-left:0; border-top:2px solid var(--ink); display:grid; grid-template-columns:1fr 1fr; gap:10px 30px; padding:20px 24px; }
   :global(.jf-blueprint) .conversionPlate > strong { grid-row:2 / 4; margin:0; }
   :global(.jf-blueprint) .conversionPlate p { margin:0; }
   :global(.jf-blueprint) .outcomes { grid-column:1 / -1; }
-  :global(.jf-blueprint) .plateRule { display:none; }
   :global(.jf-blueprint) .acquisitionLayout { grid-template-columns:minmax(0,1fr); }
   :global(.jf-blueprint) .acquisitionNotes { border-left:0; border-top:1px solid var(--traffic-line); padding:20px 0 0; }
   :global(.jf-blueprint) .exploreHead { align-items:flex-start; flex-wrap:wrap; }
 }
 @media (max-width:860px) {
-  :global(.jf-blueprint) .root { gap:16px; }
+  :global(.jf-blueprint) .root { gap:20px; }
   :global(.jf-blueprint) .header { align-items:flex-start; }
   :global(.jf-blueprint) .headerActions { justify-content:flex-end; gap:8px; }
-  :global(.jf-blueprint) .status { width:100%; justify-content:flex-end; font-size:9px; }
+  :global(.jf-blueprint) .status { width:100%; justify-content:flex-end; }
   :global(.jf-blueprint) .header h1 { font-size:44px; }
   :global(.jf-blueprint) .filterFooter { flex-wrap:wrap; }
   :global(.jf-blueprint) .unsaved { order:4; width:100%; margin:0; }
@@ -216,25 +279,24 @@
   :global(.jf-blueprint) .exploreBody { padding:18px; }
   :global(.jf-blueprint) :is(.segment,.dimensionTabs,.pageShortcuts) button { min-height:44px; }
   :global(.jf-blueprint) .details summary { min-height:44px; }
+  :global(.jf-blueprint) .drillSummary { grid-template-columns:1fr; gap:14px; }
 }
 @media (max-width:600px) {
-  :global(.jf-blueprint) .header .eyebrow { font-size:8px; letter-spacing:.04em; }
-  :global(.jf-blueprint) .headerActions .button { padding:0 10px; font-size:10px; }
+  :global(.jf-blueprint) .header .eyebrow { font-size:10px; letter-spacing:.08em; }
+  :global(.jf-blueprint) .headerActions .button { padding:0 12px; font-size:12px; }
   :global(.jf-blueprint) .lifetime { gap:10px 16px; }
-  :global(.jf-blueprint) .lifetime strong { font-size:19px; }
+  :global(.jf-blueprint) .lifetime strong { font-size:20px; }
   :global(.jf-blueprint) .updated { width:100%; margin:0; }
-  :global(.jf-blueprint) .scope { font-size:9px; }
   :global(.jf-blueprint) .filterCaption { width:100%; }
   :global(.jf-blueprint) .dateRoot, :global(.jf-blueprint) .dateButton { width:100%; }
   :global(.jf-blueprint) .calendar { position:fixed; top:auto; bottom:8px; left:50%; right:auto; transform:translateX(-50%); width:352px; max-width:calc(100vw - 8px); max-height:calc(100dvh - 16px); overflow-y:auto; padding:0; }
   :global(.jf-blueprint) .calendar > :not(.calendarGrid) { padding:8px; }
-  :global(.jf-blueprint) .calendarGrid button { min-height:44px; }
   :global(.jf-blueprint) .filters { grid-template-columns:1fr 1fr; }
   :global(.jf-blueprint) .timezone { width:100%; justify-content:space-between; }
   :global(.jf-blueprint) .activeTimezone { width:100%; }
   :global(.jf-blueprint) .filterFooter .textButton { margin-left:0; }
   :global(.jf-blueprint) .filterFooter .primary { margin-left:auto; min-width:140px; }
-  :global(.jf-blueprint) .sectionLabel { font-size:8px; letter-spacing:.04em; }
+  :global(.jf-blueprint) .sectionLabel { font-size:10px; letter-spacing:.06em; }
   :global(.jf-blueprint) .sectionLabel > span:last-child { text-align:right; max-width:55%; overflow-wrap:anywhere; }
   :global(.jf-blueprint) .metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
   :global(.jf-blueprint) .metrics > div { padding:18px 14px; }
@@ -242,43 +304,44 @@
   :global(.jf-blueprint) .metrics > div:nth-child(3n) { border-right:1px solid var(--traffic-line); }
   :global(.jf-blueprint) .metrics > div:nth-child(2n) { border-right:0; }
   :global(.jf-blueprint) .metrics > div:nth-child(4) { border-bottom:1px solid var(--traffic-line); }
-  :global(.jf-blueprint) .metrics small { font-size:9px; }
   :global(.jf-blueprint) .cardHead { align-items:flex-start; flex-wrap:wrap; padding:16px; }
   :global(.jf-blueprint) .root h2 { font-size:19px; }
-  :global(.jf-blueprint) .stamp { font-size:8px; }
-  :global(.jf-blueprint) .legend { font-size:9px; gap:12px; }
+  :global(.jf-blueprint) .legend { gap:12px; }
   :global(.jf-blueprint) .chartReadout { flex-wrap:wrap; gap:6px 10px; }
   :global(.jf-blueprint) .chart { min-height:190px; padding:0 8px; }
-  :global(.jf-blueprint) .composition { flex-wrap:wrap; gap:12px; padding:16px; font-size:10px; }
+  :global(.jf-blueprint) .composition { flex-wrap:wrap; gap:12px; padding:16px; }
   :global(.jf-blueprint) .compositionBar { width:100%; }
-  :global(.jf-blueprint) .funnelControls { width:100%; }
-  :global(.jf-blueprint) .funnelControls > label { flex:1; }
+  :global(.jf-blueprint) .funnelControls { width:100%; flex-wrap:wrap; }
+  :global(.jf-blueprint) .funnelControls > label { flex:1 1 130px; }
   :global(.jf-blueprint) .funnelTable { padding:8px 12px 12px; }
-  :global(.jf-blueprint) .funnelHeading, :global(.jf-blueprint) .funnelRow { grid-template-columns:minmax(0,1fr) 44px 48px 55px; gap:6px; }
-  :global(.jf-blueprint) .funnelHeading { font-size:7px; }
-  :global(.jf-blueprint) .funnelRow { font-size:9px; }
+  :global(.jf-blueprint) .funnelHeading, :global(.jf-blueprint) .funnelRow { grid-template-columns:minmax(0,1fr) 48px 52px 58px; gap:6px; }
+  :global(.jf-blueprint) .funnelHeading { font-size:10px; }
+  :global(.jf-blueprint) .funnelHeading em { display:none; }
+  :global(.jf-blueprint) .funnelRow { font-size:11px; padding-right:0; }
   :global(.jf-blueprint) .funnelRow > strong { font-size:20px; }
-  :global(.jf-blueprint) .stage { gap:5px; }
-  :global(.jf-blueprint) .stageNumber { width:18px; font-size:8px; }
-  :global(.jf-blueprint) .stage b { font-size:10px; }
-  :global(.jf-blueprint) .stage small { font-size:8px; }
+  :global(.jf-blueprint) .stage { gap:6px; }
+  :global(.jf-blueprint) .stageNumber { width:20px; }
+  :global(.jf-blueprint) .stage b { font-size:12px; }
+  :global(.jf-blueprint) .stage b svg { opacity:1; }
   :global(.jf-blueprint) .conversionPlate { grid-template-columns:1fr; padding:20px; }
   :global(.jf-blueprint) .conversionPlate > strong { grid-row:auto; }
   :global(.jf-blueprint) .conversionPlate p { margin-top:6px; }
-  :global(.jf-blueprint) .exploreTabs button { flex:1; padding:12px 8px; font-size:10px; gap:5px; }
+  :global(.jf-blueprint) .exploreTabs button { flex:1; padding:12px 8px; font-size:12px; gap:5px; }
   :global(.jf-blueprint) .exploreTabs button > span { display:none; }
   :global(.jf-blueprint) .pageTools { width:100%; flex-wrap:wrap; }
   :global(.jf-blueprint) .pageTools input { flex:1; min-width:140px; }
   :global(.jf-blueprint) .pageTools .filterLabel { width:100%; }
   :global(.jf-blueprint) .exploreBody { padding:16px; }
-  :global(.jf-blueprint) .table { font-size:11px; }
-  :global(.jf-blueprint) .table th { font-size:8px; }
+  :global(.jf-blueprint) .table { font-size:12px; }
+  :global(.jf-blueprint) .table th { font-size:10px; }
   :global(.jf-blueprint) .experimentEmpty { grid-template-columns:1fr; padding:12px 0; gap:20px; }
   :global(.jf-blueprint) .experimentMark { min-height:120px; flex-direction:row; }
   :global(.jf-blueprint) .experimentEmpty h3 { font-size:21px; }
   :global(.jf-blueprint) .experimentControls { flex-direction:column; }
   :global(.jf-blueprint) .methodology > div { grid-template-columns:1fr; }
+  :global(.jf-blueprint) .drillList li { grid-template-columns:1fr; }
+  :global(.jf-blueprint) .drillLead strong { font-size:28px; }
 }
 @media (prefers-reduced-motion:reduce) {
-  :global(.jf-blueprint) .root > :is(.header,.filterPanel,.metrics,.card), :global(.jf-blueprint) .spin { animation:none; }
+  :global(.jf-blueprint) .root > :is(.header,.filterPanel,.metrics,.card), :global(.jf-blueprint) .spin, :global(.jf-blueprint) .drillSkeleton span { animation:none; }
 }

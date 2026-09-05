@@ -1,10 +1,11 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { ArrowDownToLine, ArrowUpRight, RefreshCw, SlidersHorizontal, FlaskConical, Info } from "lucide-react";
-import { getTrafficDashboard } from "@/actions/trafficDashboard";
-import { conversionInterval, pageLabel, percent, type TrafficFilters, type TrafficReport } from "@/lib/traffic-contract";
+import { ArrowDownToLine, ArrowUpRight, ChevronRight, RefreshCw, SlidersHorizontal, FlaskConical, Info, Users } from "lucide-react";
+import { getTrafficDashboard, getTrafficStageVisitors } from "@/actions/trafficDashboard";
+import { conversionInterval, pageLabel, percent, type StageVisitor, type StageVisitorsReport, type TrafficFilters, type TrafficReport } from "@/lib/traffic-contract";
 import { dateInZone, shiftDate } from "@/lib/traffic-query";
+import { Sheet, useMdl } from "@/components/v3/admin-influencers/admin-ui";
 import { TrafficChart } from "./traffic-chart";
 import { TrafficDatePicker } from "./traffic-date-picker";
 import s from "./traffic.module.css";
@@ -21,7 +22,14 @@ function delta(current: number | undefined, previous: number | undefined) {
   return `${d > 0 ? "+" : ""}${d.toFixed(1)}% vs previous period`;
 }
 function Select({ label, value, onChange, children }: { label: string; value: string; onChange: (v: string) => void; children: React.ReactNode }) {
-  return <label className={s.filterLabel}><span>{label}</span><div className={`bp-sel ${s.selectWrap}`}><select value={value} onChange={e => onChange(e.target.value)}>{children}</select></div></label>;
+  // `bp-sel-in` is load-bearing: the wrapper draws the chevron, and only that class removes the native one.
+  return <label className={s.filterLabel}><span>{label}</span><div className={`bp-sel ${s.selectWrap}`}><select className="bp-sel-in" value={value} onChange={e => onChange(e.target.value)}>{children}</select></div></label>;
+}
+/** Top values of one visitor attribute, for the drill-down summary. */
+function tally(rows: StageVisitor[], pick: (v: StageVisitor) => string, limit = 4) {
+  const counts = new Map<string, number>();
+  for (const row of rows) { const key = pick(row) || "Unknown"; counts.set(key, (counts.get(key) || 0) + 1); }
+  return Array.from(counts, ([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, limit);
 }
 function csvCell(value: unknown) {
   const text = String(value ?? "");
@@ -99,6 +107,27 @@ export function AdminTrafficContent({ data }: { data: TrafficReport }) {
   const failed = (name: string) => report.errors.some(e => e.startsWith(name + ":"));
   const today = dateInZone(new Date(), draft.timezone);
 
+  // Stage drill-down: who reached a funnel stage, with device, place and source.
+  const [drill, setDrill] = useState<{ id: string; label: string } | null>(null);
+  const [drillReport, setDrillReport] = useState<StageVisitorsReport | null>(null);
+  const [drillError, setDrillError] = useState("");
+  const [drillPending, setDrillPending] = useState(false);
+  const drillRequest = useRef(0);
+  const sheet = useMdl();
+  function inspect(stage: { id: string; label: string }) {
+    const id = ++drillRequest.current;
+    setDrill(stage); setDrillReport(null); setDrillError(""); setDrillPending(true);
+    sheet.open();
+    getTrafficStageVisitors({ ...filters }, stage.id)
+      .then(result => { if (id === drillRequest.current) setDrillReport(result); })
+      .catch(err => { if (id === drillRequest.current) setDrillError(err instanceof Error ? err.message : "Could not load visitors."); })
+      .finally(() => { if (id === drillRequest.current) setDrillPending(false); });
+  }
+  const when = (iso: string) => iso ? new Intl.DateTimeFormat("en-US", { timeZone: filters.timezone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(iso)) : "--";
+  const stageLabel = (id: string) => report.funnel.find(stage => stage.id === id)?.label || id || "--";
+  const visitors = drillReport?.visitors ?? [];
+  const place = (v: StageVisitor) => [v.city, v.region, v.country].filter(Boolean).join(", ");
+
   return <div className={s.root} aria-busy={pending}>
     <header className={s.header}>
       <div><div className={s.eyebrow}>Platform intelligence / 01</div><h1>Traffic<span>.</span></h1></div>
@@ -150,12 +179,12 @@ export function AdminTrafficContent({ data }: { data: TrafficReport }) {
       {stepCoverageDate && coverageIncomplete && <div className={s.inlineNote}><Info size={16}/><span>Partial step coverage from {stepCoverageDate}. Entry-to-step and overall rates are hidden for this range.</span></div>}
       {filters.page && <p className={s.inlineNote}>The page filter affects audience reports, not the landing-to-signup funnel.</p>}
       <div className={s.funnelLayout}>
-        <div className={s.funnelTable}><div className={s.funnelHeading}><span>Stage</span><span>Visitors</span><span>Step rate</span><span>From landing</span></div>
+        <div className={s.funnelTable}><div className={s.funnelHeading}><span>Stage <em>/ select a stage to see who reached it</em></span><span>Visitors</span><span>Step rate</span><span>From landing</span></div>
           {report.funnel.map((stage, i) => {
             const untracked = !report.firstStepAt && i >= 2;
             const base = report.funnel[0]?.visitors || 0;
             const prev = report.funnel[i - 1]?.visitors || 0;
-            return <div className={s.funnelRow} key={stage.id}><div className={s.stage}><span className={s.stageNumber}>{String(i + 1).padStart(2, "0")}</span><div><b>{stage.label}</b><div className={s.funnelBar}><span style={{ width: `${untracked ? 0 : percent(stage.visitors, base) ?? 0}%` }}/></div>{i > 0 && !untracked && !(i === 2 && coverageIncomplete) && <small>{n(Math.max(0, prev - stage.visitors))} did not reach this step</small>}</div></div><strong>{untracked ? "--" : n(stage.visitors)}</strong><span>{untracked || !i || (i === 2 && coverageIncomplete) ? "--" : rate(percent(stage.visitors, prev))}</span><span>{untracked || (i >= 2 && coverageIncomplete) ? "--" : rate(percent(stage.visitors, base))}</span></div>;
+            return <button type="button" className={s.funnelRow} key={stage.id} disabled={untracked || pending} aria-pressed={drill?.id === stage.id && sheet.isOpen} aria-label={`${stage.label}: ${untracked ? "not tracked" : n(stage.visitors) + " visitors"}. Show who reached this stage.`} onClick={() => inspect(stage)}><span className={s.stage}><span className={s.stageNumber}>{String(i + 1).padStart(2, "0")}</span><span className={s.stageBody}><b>{stage.label}<ChevronRight size={15} aria-hidden="true"/></b><span className={s.funnelBar}><span style={{ width: `${untracked ? 0 : percent(stage.visitors, base) ?? 0}%` }}/></span>{i > 0 && !untracked && !(i === 2 && coverageIncomplete) && <small>{n(Math.max(0, prev - stage.visitors))} did not reach this step</small>}</span></span><strong>{untracked ? "--" : n(stage.visitors)}</strong><span>{untracked || !i || (i === 2 && coverageIncomplete) ? "--" : rate(percent(stage.visitors, prev))}</span><span>{untracked || (i >= 2 && coverageIncomplete) ? "--" : rate(percent(stage.visitors, base))}</span></button>;
           })}
           {!report.funnel.length && <div className={s.empty}>Funnel unavailable. Retry the report.</div>}
         </div>
@@ -199,6 +228,24 @@ export function AdminTrafficContent({ data }: { data: TrafficReport }) {
         <div className={s.experimentNote}><Info size={16}/><span>No automatic winner. The 95% Wilson interval shows uncertainty in each rate, not statistical significance between variants. Let cohorts mature before deciding.</span></div>
       </div>}
     </section>
+    <Sheet mdlRef={sheet.ref} title={drill ? `${drill.label} / who reached it` : "Stage visitors"} titleId="trafficStageVisitors" size="drawer" onClose={sheet.close} error={drillError || null}>
+      <div className={s.drill}>
+        <div className={s.drillLead}><Users size={18}/><div><strong>{drillPending ? "Loading" : n(drillReport?.total)}</strong><span>{drillPending ? "Querying PostHog..." : `visitor${drillReport?.total === 1 ? "" : "s"} reached ${drill?.label ?? "this stage"} / ${filters.from} to ${filters.to}`}</span></div></div>
+        {visitors.length > 0 && <div className={s.drillSummary}>
+          {([["Devices", (v: StageVisitor) => v.device], ["Countries", (v: StageVisitor) => v.country], ["Sources", (v: StageVisitor) => v.source]] as const).map(([label, pick]) => <div key={label}><h3>{label}</h3><ul>{tally(visitors, pick).map(item => <li key={item.name}><span>{item.name}</span><b>{n(item.count)}</b><i style={{ width: `${percent(item.count, visitors.length) ?? 0}%` }}/></li>)}</ul></div>)}
+        </div>}
+        {drillPending && <div className={s.drillSkeleton} aria-hidden="true">{[0, 1, 2, 3].map(i => <span key={i}/>)}</div>}
+        {!drillPending && !drillError && drillReport && !visitors.length && <div className={s.empty}>No visitors reached this stage in the selected range.</div>}
+        {visitors.length > 0 && <ol className={s.drillList} aria-label="Visitors">
+          {visitors.map(v => <li key={v.id}>
+            <div className={s.drillWho}><b>{[v.device, v.browser, v.os].filter(Boolean).join(" / ") || "Unknown device"}</b><span>{place(v) || "Unknown location"}</span><span>{v.source || "Direct / unknown"}{v.referrer && v.referrer !== v.source ? ` / ${v.referrer}` : ""}{v.campaign ? ` / ${v.campaign}` : ""}</span></div>
+            <div className={s.drillFacts}><span><em>Reached</em>{when(v.reachedAt)}</span><span><em>Got to</em>{stageLabel(v.furthest)}</span><span><em>Activity</em>{n(v.sessions)} session{v.sessions === 1 ? "" : "s"} / {n(v.views)} view{v.views === 1 ? "" : "s"}</span>{v.personUrl && <a href={v.personUrl} target="_blank" rel="noreferrer">PostHog profile <ArrowUpRight size={13}/></a>}</div>
+          </li>)}
+        </ol>}
+        {drillReport && drillReport.total > visitors.length && <p className={s.footnote}>Showing the {n(visitors.length)} most recent of {n(drillReport.total)}. Narrow the date range for the rest.</p>}
+        <p className={s.footnote}>Device and browser come from the visitor&apos;s own browser. Location is estimated from IP address and can be approximate. Source is the first thing recorded in the landing session. Activity counts inside the {filters.windowDays}-day conversion window.</p>
+      </div>
+    </Sheet>
     <details className={s.methodology}><summary><Info size={15}/>Measurement notes</summary><div><p><b>Visitors</b> are distinct PostHog person IDs, not guaranteed distinct humans. Separate devices or cleared cookies can count again.</p><p><b>New</b> means first observed in the selected range. <b>Returning</b> means first observed before it. <b>Repeat</b> means 2+ recorded sessions within the range, and can include new visitors.</p><p><b>Coverage</b> begins {report.firstTrackedAt?.slice(0, 10) || "when the first event arrives"}. Admin pages are excluded. Historical production/development labels are inferred from hostname. Google signup skips the account step. Filters never reconstruct unrecorded historical events.</p><p><b>Freshness</b> Reports are cached for up to 60 seconds; ingestion may take additional time. Today follows the displayed timezone. All-time and today ignore page, audience, source and device filters.</p></div></details>
   </div>;
 }
