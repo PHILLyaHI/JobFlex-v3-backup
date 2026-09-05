@@ -135,13 +135,9 @@ function AcceptedCard({ row, index }: { row: ProposalCRow; index: number }) {
     try {
       const res = await updateProposalStatus(row.id, "PAID");
       if (!res.ok) {
-        if (res.reason === "payment_outstanding") {
-          // Money is still owed — record how it was paid, then the proposal
-          // flips to PAID on its own.
-          setRecording({ kind: "remaining", amount: res.remainingMinor / 100 });
-        } else {
-          toast.error("Couldn't mark completed", "This proposal can't be marked paid right now.");
-        }
+        // Completion no longer waits on the money (updateProposalStatus);
+        // the only refusals left are provider / draft rules.
+        toast.error("Couldn't mark completed", "This proposal can't be marked completed right now.");
         return;
       }
       toast.success("Marked completed", `${row.title} moved to the Completed tab.`);

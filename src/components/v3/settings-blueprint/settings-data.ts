@@ -57,7 +57,7 @@ export type IconName =
   | 'i-x';
 
 /** Donor `.badge2` tone classes. */
-export type BadgeTone = 'bg-live' | 'bg-ok' | 'bg-off' | 'bg-bad';
+export type BadgeTone = 'bg-live' | 'bg-ok' | 'bg-off' | 'bg-bad' | 'bg-warn';
 
 export interface Badge {
   readonly label: string;
@@ -202,6 +202,30 @@ export const SECURITY_ITEMS: readonly SecurityItem[] = [
 ];
 
 export const SIGN_OUT_LABEL = 'Log out' as const;
+
+/** Delete account — a launch-time debugging aid (owner's call, 2026-09-03):
+ *  HARD delete of the signed-in user and any company they alone belong to,
+ *  so the same address can be registered again. Slated for removal at launch. */
+export const DELETE_ACCOUNT_CARD: CardHead = {
+  title: 'Delete account',
+  sub: 'Removes you and any company you are the only member of. Immediate, no undo.',
+  badge: { label: 'Testing', tone: 'bg-warn' },
+};
+export const DELETE_ACCOUNT_ROW = {
+  name: 'Delete my account',
+  action: { label: 'Delete', icon: 'i-trash' } as ActionSpec,
+} as const;
+export const DELETE_ACCOUNT_MODAL = {
+  title: 'Delete account',
+  sub: 'Type your email address exactly to confirm.',
+  inputLabel: 'Email address',
+  confirmLabel: 'Delete my account',
+  cancelLabel: 'Keep it',
+  mismatch: "That doesn't match your email address.",
+} as const;
+export function deleteAccountDesc(email: string, orgName: string): string {
+  return `Deletes ${email} for good — proposals, leads, jobs and payment history of ${orgName} included if nobody else is a member. You can register the same address again afterwards.`;
+}
 
 /* ------------------------------------------------------------------ */
 /* Payments pane — processors                                          */
@@ -404,6 +428,18 @@ export type SubTabKey = 'gmail' | 'meta' | 'stripe' | 'square';
 export interface SubTab {
   readonly key: SubTabKey;
   readonly label: string;
+}
+
+/** An integration the PLATFORM has not switched on yet. The person can still
+ *  read the tab (and an operator with access can still connect), but the badge
+ *  says plainly that it is not open to everyone yet. It clears itself the
+ *  moment the platform credentials are in place — see loadSettingsData. */
+export const COMING_SOON_BADGE: Badge = { label: 'Coming soon', tone: 'bg-off' };
+export const COMING_SOON_TAB = 'Soon' as const;
+
+/** The line above a not-yet-live integration's cards. */
+export function comingSoonNote(name: string): string {
+  return `${name} isn't switched on for everyone yet. We're finishing the setup — you'll be able to connect it here as soon as it goes live.`;
 }
 
 export const INTEGRATION_SUBTABS: readonly SubTab[] = [
@@ -705,6 +741,9 @@ export interface BillingData {
 
 export interface GmailData {
   connected: boolean;
+  /** Google app still in Testing (or unconfigured) — only test users can
+   *  connect, so everyone else sees "Coming soon". */
+  comingSoon: boolean;
   connectedEmail: string;
   displayName: string;
   replyTo: string;
@@ -722,6 +761,8 @@ export interface GmailData {
 
 export interface MetaData {
   connected: boolean;
+  /** No Meta OAuth exists yet — the toggle is a local forwarding flag. */
+  comingSoon: boolean;
   orgName: string;
   /** Stored values, round-tripped untouched through updateMetaSettings. */
   defaultPage: string;
@@ -731,6 +772,8 @@ export interface MetaData {
 /** The deep view of one payment link (Integrations → Stripe / Square). */
 export interface ProcessorIntegrationData {
   key: 'stripe' | 'square';
+  /** Platform credentials missing — the tab is marked "Coming soon". */
+  comingSoon: boolean;
   webhookUrl: string;
   /** Formatted, or null when no event has ever arrived. */
   lastEventAt: string | null;

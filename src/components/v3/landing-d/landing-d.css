@@ -1161,3 +1161,8 @@
    only applies while this route is mounted. */
 html:has(.jf-lp) { scrollbar-width: none; -ms-overflow-style: none; }
 html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
+
+/* The Google CTA is a <button> now (it fires the OAuth sign-in instead of
+   linking to the form), so it takes the anchor's type and cursor. */
+.jf-lp button.lp-cta { font: inherit; cursor: pointer; }
+.jf-lp button.lp-cta:disabled { opacity: .7; cursor: progress; }

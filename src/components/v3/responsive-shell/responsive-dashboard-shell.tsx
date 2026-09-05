@@ -86,10 +86,6 @@ const MobileWorkers = dynamic(
   () => import("@/app/(mobile)/mobile-workers-v2/mobile-workers").then((m) => m.MobileWorkers),
   { ssr: false, loading: MobileHold },
 );
-const MobileHire = dynamic(
-  () => import("@/app/(mobile)/mobile-hire-v2/mobile-hire").then((m) => m.MobileHire),
-  { ssr: false, loading: MobileHold },
-);
 const MobileCompany = dynamic(
   () => import("@/app/(mobile)/mobile-company-v2/mobile-company").then((m) => m.MobileCompany),
   { ssr: false, loading: MobileHold },
@@ -114,26 +110,15 @@ const MobileFenceEstimator = dynamic(
   () => import("@/app/(mobile)/mobile-fence-estimator-v2/mobile-fence-estimator").then((m) => m.MobileFenceEstimator),
   { ssr: false, loading: MobileHold },
 );
-const MobilePhone = dynamic(
-  () => import("@/app/(mobile)/mobile-phone-v2/mobile-phone").then((m) => m.MobilePhone),
-  { ssr: false, loading: MobileHold },
-);
 const MobileMessages = dynamic(
   () => import("@/app/(mobile)/mobile-messages-v2/mobile-messages").then((m) => m.MobileMessages),
   { ssr: false, loading: MobileHold },
 );
-const MobileReviews = dynamic(
-  () => import("@/app/(mobile)/mobile-reviews-v2/mobile-reviews").then((m) => m.MobileReviews),
-  { ssr: false, loading: MobileHold },
-);
-const MobileTrade = dynamic(
-  () => import("@/app/(mobile)/mobile-trade-v2/mobile-trade").then((m) => m.MobileTrade),
-  { ssr: false, loading: MobileHold },
-);
-const MobileReferrals = dynamic(
-  () => import("@/app/(mobile)/mobile-referrals-v2/mobile-referrals").then((m) => m.MobileReferrals),
-  { ssr: false, loading: MobileHold },
-);
+// NOT here — five handheld builds whose data is the PAGE's, so each route sits
+// in PAGE_OWNED_STATIC below and its own page owns the switch (2026-09-03):
+// referrals, reports, trade, reviews and phone. Before that they were mounted
+// from this map with no props at all and drew donor fixtures on a phone while
+// the desk drew the org's real rows.
 // The manual builder, 2026-07-30. Its estimator PICKER has no handheld page of
 // its own — it is a dialog mounted in MobileNav, reachable from every mobile
 // surface — so only the builder needs a route here.
@@ -142,10 +127,6 @@ const MobileManualBuilder = dynamic(
     import("@/app/(mobile)/mobile-manual-builder-v2/mobile-manual-builder").then(
       (m) => m.MobileManualBuilder,
     ),
-  { ssr: false, loading: MobileHold },
-);
-const MobileReports = dynamic(
-  () => import("@/app/(mobile)/mobile-reports-v2/mobile-reports").then((m) => m.MobileReports),
   { ssr: false, loading: MobileHold },
 );
 
@@ -160,7 +141,6 @@ const HANDHELD_SURFACES: Record<string, React.ComponentType> = {
   "/dashboard/calendar": MobileCalendar,
   "/dashboard/jobs": MobileJobs,
   "/dashboard/workers": MobileWorkers,
-  "/dashboard/hire": MobileHire,
   "/dashboard/company": MobileCompany,
   "/dashboard/financials": MobileFinancials,
   // Automation. The route slug /dashboard/advanced-ai is historical; the
@@ -168,12 +148,7 @@ const HANDHELD_SURFACES: Record<string, React.ComponentType> = {
   "/dashboard/advanced-ai": MobileSmartProposal,
   "/dashboard/roof-estimator": MobileRoofEstimator,
   "/dashboard/fence-estimator": MobileFenceEstimator,
-  "/dashboard/phone": MobilePhone,
   "/dashboard/messages": MobileMessages,
-  "/dashboard/reviews": MobileReviews,
-  "/dashboard/trade": MobileTrade,
-  "/dashboard/referrals": MobileReferrals,
-  "/dashboard/reports": MobileReports,
   "/dashboard/estimators/manual": MobileManualBuilder,
 };
 
@@ -223,13 +198,33 @@ const PAGE_OWNED_STATIC = new Set([
   // in the props-less map above. Added 2026-08-22 with the wired estimator;
   // before it, a phone on this URL got the desktop page and no handheld nav.
   "/dashboard/video-estimator",
-  // Both editions need the caller's TradeNetworkProfile plus the two strings
-  // the talent directory prints for a row (their display name and their org
-  // name) — server facts — so the switch lives with the page
-  // (hire-profile-blueprint/hire-profile-viewport-switch.tsx) rather than in
-  // the props-less map above. Added 2026-08-24 with the listing editor; before
-  // it, this path resolved to a ComingSoon stub in the classic tree.
-  "/dashboard/hire/profile",
+  // The 2026-09-03 sweep. Each of these five handheld builds used to be
+  // mounted props-less from the map above and drew the donor's demo fixture on
+  // a phone while the desk drew the org's real rows: BELL-4T9K and eight
+  // Seattle roofers on Referrals, $221,250 collected on Reports, a seven-post
+  // board on Trade, an 11-record book on Reviews, a ten-call log on Phone.
+  // Every one now reads its page's own loader through that page's switch
+  // (app/dashboard/<route>/<route>-responsive.tsx), and every control that
+  // only mutated local state is either wired to the real server action or
+  // gone.
+  "/dashboard/referrals",
+  "/dashboard/reports",
+  "/dashboard/trade",
+  "/dashboard/reviews",
+  "/dashboard/phone",
+  // Hire & Work, rebuilt 2026-09-03. Both editions need the open board, the
+  // caller's own posts and who the caller is — all server reads — so the
+  // switch lives with the page (hire-blueprint/hire-viewport-switch.tsx). The
+  // old page's handheld twin was mounted props-less from the map above and was
+  // deleted with it; until this entry, a phone following the sidebar's Hire
+  // link got the desktop board.
+  "/dashboard/hire",
+  // Settings, wired 2026-09-03. Both editions need the one SettingsData read
+  // (src/lib/settings/loadSettingsData.ts) plus the resolved `?pane=` deep
+  // link, so the switch lives with the page
+  // (app/dashboard/settings/settings-responsive.tsx). Until this entry, a phone
+  // following the sidebar's Settings link got the desktop hub.
+  "/dashboard/settings",
 ]);
 
 /** Mapped handheld surfaces that do NOT render <MobileNav />.
@@ -257,10 +252,9 @@ const HANDHELD_SEEN: Record<string, SeenKey> = {
   "/dashboard/proposals": "proposals",
   "/dashboard/calendar": "calendar",
   "/dashboard/workers": "workers",
-  "/dashboard/trade": "trade",
-  "/dashboard/phone": "phone",
-  "/dashboard/referrals": "referrals",
-  "/dashboard/reviews": "reviews",
+  // Gone with the 2026-09-03 sweep: referrals, trade, phone and reviews are
+  // page-owned now, so each page's own <MarkNavSeen /> mounts on BOTH
+  // viewports and a stamp here would be a second, duplicate one.
 };
 
 // Module-scope so the identities are stable across renders — a fresh

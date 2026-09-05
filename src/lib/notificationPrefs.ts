@@ -93,6 +93,17 @@ export async function sendToUserByPref(
   if (!u?.email) return { sent: false };
   const tz = u.memberships[0]?.organization.timezone ?? "America/New_York";
   if (!allowsEmail(parseNotificationPrefs(u.notificationPrefsJson), key, new Date(), tz)) return { sent: false };
-  await sendEmail({ to: u.email, subject: message.subject, html: message.html }).catch(() => null);
-  return { sent: true };
+  // Report what actually happened. This used to `.catch(() => null)` and then
+  // return `{ sent: true }` regardless, so a rejected relay, a bad credential
+  // or an unaligned From produced a silent success: the caller logged a send,
+  // the recipient got nothing, and there was no trace anywhere. The throw is
+  // still swallowed — a failed notification must never fail the write that
+  // triggered it — but the failure is now logged and reported.
+  try {
+    await sendEmail({ to: u.email, subject: message.subject, html: message.html });
+    return { sent: true };
+  } catch (err) {
+    console.error(`[notify] email "${key}" to ${u.email} failed:`, err);
+    return { sent: false };
+  }
 }

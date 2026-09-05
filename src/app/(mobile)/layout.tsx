@@ -38,7 +38,7 @@ const DESKTOP_TWIN: Record<string, string> = {
   "/mobile-jobs-v2": "/dashboard/jobs",
   "/mobile-job-detail-v1": "/dashboard/jobs",
   "/mobile-workers-v2": "/dashboard/workers",
-  "/mobile-hire-v2": "/dashboard/hire",
+  "/mobile-hire-v1": "/dashboard/hire",
   "/mobile-company-v2": "/dashboard/company",
   "/mobile-financials-v2": "/dashboard/financials",
   "/mobile-overhead-v1": "/dashboard/financials",

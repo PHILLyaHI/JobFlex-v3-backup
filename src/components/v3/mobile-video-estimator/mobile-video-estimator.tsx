@@ -432,11 +432,16 @@ export function MobileVideoEstimator({
 
             {/* Outside both faces on purpose: the picker has to survive the
                 swap from empty to loaded and back. */}
+            {/* VISUALLY hidden, not `display: none` — a display:none file
+                input is refused a picker by iOS Safari and several Android
+                webviews, which is exactly where this build runs. */}
             <input
               ref={fileRef}
               type="file"
               accept={VIDEO_ACCEPT}
-              hidden
+              className="mve-file"
+              tabIndex={-1}
+              aria-hidden="true"
               onChange={(e) => {
                 takeFile(e.target.files);
                 e.target.value = "";

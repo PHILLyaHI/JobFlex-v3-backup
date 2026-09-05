@@ -27,33 +27,54 @@
 //  · DIRECTION IS THE STATUS. The desktop shows direction and status in two
 //    columns; on a phone they are one derived state — inbound / outbound /
 //    missed / live — carried by a tonal plate and a badge. Missed is danger.
-//  · A DIAL PAD. The one thing a handheld can do that a desktop table cannot.
-//    It is secondary to the log: it opens from the page head as a sheet and
-//    never competes with the feed for the page.
+//  · A DIAL PAD. The one thing a handheld can do that a desktop table cannot —
+//    and here it does the real thing: the Call button hands the number to the
+//    phone's own dialer. It is secondary to the log: it opens from the page
+//    head as a sheet and never competes with the feed for the page.
 //  · The right-hand popover becomes a bottom sheet, and the row "⋮" gets its
 //    own actions sheet (no hover on touch; CLAUDE.md prefers sheets).
 //  · A search box is added — it reaches the numbers, the summary, the lead id
 //    AND what was actually said, which is how you find a call again. It filters
-//    the same fixture client-side, no new endpoint.
-//  · No pager: ten entries under five dividers is one honest scroll, and the
+//    the rows already on the page client-side, no new endpoint.
+//  · No pager: the loader hands over the hundred most recent calls, and the
 //    desktop table pages nothing either.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off. No Prisma, no server actions, no network.
+// DATA: REAL, and the same line the desktop sheet shows. The page's server
+// loader (app/dashboard/phone/load-phone) reads the org's AiPhoneCall rows,
+// counts the three stat figures over the whole table, checks isTwilioEnabled()
+// and builds the deployment's own webhook URL, then hands them down as props
+// through the page's viewport switch (app/dashboard/phone/phone-responsive) or
+// the /mobile-phone-v2 preview page.
+//
+// WHAT THE FIXTURE BUILD FAKED, and what each control does now — the same four
+// corrections the desktop sheet made (see phone-behavior.ts):
+//  1. "Create lead" wrote `L-` + a counter into local state. It now awaits
+//     createLeadFromCall(callId) — the org-scoped, plan-limited action — and
+//     prints the action's own error text.
+//  2. "Open lead" closed the sheet. It now navigates to /dashboard/leads/<id>.
+//  3. "Call back" and the dial pad's Call opened a sheet / wrote a fake live
+//     row. Both are now `tel:` on the real number, and "Send a text" is `sms:`.
+//  4. The recording player advanced a bar over a fixture duration. It now
+//     drives a real <audio> off AiPhoneCall.recordingUrl, and says so when the
+//     URL will not load.
+// Also gone: "Delete from log" (no action exists to delete a call) and the
+// always-on Twilio banner, which now shows only when Twilio really is
+// unconfigured and prints the real webhook URL.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import styles from "./mobile-phone.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
+import { createLeadFromCall } from "@/actions/aiPhoneCalls";
+import type { PhoneProps } from "@/app/dashboard/phone/load-phone";
 import {
   ALL,
-  CALLS_SEED,
   FILTERS,
-  HOOK_URL,
   KEYS,
   KIND_LABEL,
-  SHOP_NUMBER,
+  actionError,
   counterparty,
   dayGroup,
   filterCount,
@@ -62,9 +83,14 @@ import {
   kindOf,
   matchesFilter,
   matchesQuery,
+  smsHref,
+  telHref,
   type Call,
   type Kind,
 } from "./phone-data";
+
+/** Fed by app/dashboard/phone/load-phone. One loader, two editions. */
+export type MobilePhoneProps = PhoneProps;
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -159,16 +185,23 @@ function copyText(text: string) {
   }
 }
 
-export function MobilePhone() {
+export function MobilePhone({ entries, stats, webhookUrl, twilioConfigured }: MobilePhoneProps) {
+  const router = useRouter();
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
-  /** Deterministic lead ids — a design surface should not roll dice. */
-  const leadSeq = useRef(0);
 
-  const [data, setData] = useState<Call[]>(() =>
-    CALLS_SEED.map((c) => ({ ...c, script: [...c.script] })),
-  );
+  /* The server's log, patched in place after a write RESOLVES. Re-seeded when
+     the server hands down a new list (a router.refresh() after a lead, or a
+     fresh navigation): the compare runs DURING render, React's own "adjusting
+     state when a prop changes" pattern, so the stale list is never painted for
+     a frame the way an effect would paint it. */
+  const [data, setData] = useState<Call[]>(entries);
+  const [seed, setSeed] = useState(entries);
+  if (seed !== entries) {
+    setSeed(entries);
+    setData(entries);
+  }
   const [filter, setFilter] = useState<string>(ALL);
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -177,18 +210,27 @@ export function MobilePhone() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [landedId, setLandedId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  /** The call whose lead is being created, so the button can say so and a
+   *  second tap cannot spend a second lead against the plan. */
+  const [makingLead, setMakingLead] = useState<string | null>(null);
+  const [leadErr, setLeadErr] = useState("");
+  /** Calls converted to a lead in THIS session. Used to carry the masthead's
+   *  lead figure until the server's own count catches up — see below. */
+  const [freshLeads, setFreshLeads] = useState<string[]>([]);
 
   /* ---- dial pad ---- */
   const [dial, setDial] = useState("");
 
-  /* ---- recording scrub ----
-     One object carrying the call it belongs to, so opening a different call
-     resets the transport BY DERIVATION rather than by an effect that writes
-     state back on every change. */
-  const [play, setPlay] = useState<{ id: string | null; t: number; on: boolean }>({
-    id: null,
-    t: 0,
+  /* ---- recording player ----
+     A real <audio> off AiPhoneCall.recordingUrl. One element at a time — the
+     sheet shows one call — and it is torn down whenever the sheet closes or
+     moves to another call. */
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [play, setPlay] = useState<{ on: boolean; t: number; total: number | null; err: boolean }>({
     on: false,
+    t: 0,
+    total: null,
+    err: false,
   });
 
   /* ---------- viewport height ------------------------------------------
@@ -340,16 +382,25 @@ export function MobilePhone() {
     return () => clearTimeout(t);
   }, [copied]);
 
-  /* ---------- derived ------------------------------------------------- */
+  /* ---------- derived -------------------------------------------------
+     The three masthead figures are the server's counts over the WHOLE table,
+     not over the hundred rows on the page, so they stay honest past the cap —
+     the same numbers the desktop stat cards print. Creating a lead here bumps
+     the lead figure locally until the refresh lands. */
   const visible = useMemo(
     () => data.filter((c) => matchesFilter(c, filter) && matchesQuery(c, query)),
     [data, filter, query],
   );
-  const todayCount = useMemo(
-    () => data.filter((c) => dayGroup(c.when) === "Today").length,
-    [data],
+  const weekCount = stats.week;
+  const todayCount = stats.today;
+  /* A lead created here is not in `stats` until the refresh lands, so it is
+     counted on top — and only while the server's own list still shows that
+     call without one, which is what makes the correction self-cancelling
+     rather than a number that drifts. */
+  const leadCount = useMemo(
+    () => stats.leads + freshLeads.filter((id) => !entries.find((c) => c.id === id)?.lead).length,
+    [stats.leads, freshLeads, entries],
   );
-  const leadCount = useMemo(() => data.filter((c) => c.lead).length, [data]);
 
   /** Runs of the same day become one framed block under one drawn divider. */
   const groups = useMemo(() => {
@@ -387,32 +438,66 @@ export function MobilePhone() {
     setQuery("");
   };
 
-  /* ---------- recording scrub ------------------------------------------
-     A transport over the fixture's duration at the donor's 40ms tick. There is
-     no audio element because there is no recording to fetch. The stop-at-the-
-     end lives INSIDE the tick, so the effect only ever subscribes — it never
-     writes state back synchronously. */
-  const playDur = detail?.dur ?? 0;
-  const playing = play.on && play.id === openId;
-  const playT = play.id === openId ? play.t : 0;
-
+  /* ---------- recording player -----------------------------------------
+     Mounted for the call the sheet is showing, torn down when it closes or
+     changes. `detail.rec` is the recording URL, so an absent one means the
+     section is not rendered at all rather than a dead transport. */
+  const recUrl = detail?.rec ?? null;
+  /* The transport belongs to ONE recording, so moving to another call resets
+     it during render rather than from inside the effect below — which keeps
+     the effect a pure subscription and never paints the old call's elapsed
+     time against the new call's clock. */
+  const [playFor, setPlayFor] = useState<string | null>(recUrl);
+  if (playFor !== recUrl) {
+    setPlayFor(recUrl);
+    setPlay({ on: false, t: 0, total: null, err: false });
+  }
   useEffect(() => {
-    if (!playing || !playDur) return;
-    const id = window.setInterval(() => {
-      setPlay((p) => {
-        const t = Math.min(playDur, p.t + 1);
-        return { id: p.id, t, on: t < playDur };
-      });
-    }, 40);
-    return () => window.clearInterval(id);
-  }, [playing, playDur]);
+    if (!recUrl) {
+      audioRef.current = null;
+      return;
+    }
+    const el = new Audio(recUrl);
+    el.preload = "metadata";
+    audioRef.current = el;
+    const total = () => (isFinite(el.duration) && el.duration > 0 ? el.duration : null);
+    const onTime = () => setPlay((p) => ({ ...p, t: el.currentTime, total: total() ?? p.total }));
+    const onMeta = () => setPlay((p) => ({ ...p, total: total() ?? p.total }));
+    const onPlay = () => setPlay((p) => ({ ...p, on: true, err: false }));
+    const onPause = () => setPlay((p) => ({ ...p, on: false }));
+    const onEnd = () => setPlay((p) => ({ ...p, on: false, t: 0 }));
+    // Twilio's URL is signed and can expire or 404; say so where the clock was
+    // rather than leaving a button that silently does nothing.
+    const onErr = () => setPlay((p) => ({ ...p, on: false, err: true }));
+    el.addEventListener("timeupdate", onTime);
+    el.addEventListener("loadedmetadata", onMeta);
+    el.addEventListener("play", onPlay);
+    el.addEventListener("pause", onPause);
+    el.addEventListener("ended", onEnd);
+    el.addEventListener("error", onErr);
+    return () => {
+      el.pause();
+      el.removeEventListener("timeupdate", onTime);
+      el.removeEventListener("loadedmetadata", onMeta);
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("pause", onPause);
+      el.removeEventListener("ended", onEnd);
+      el.removeEventListener("error", onErr);
+      el.removeAttribute("src");
+      el.load();
+      audioRef.current = null;
+    };
+  }, [recUrl]);
 
-  const togglePlay = (c: Call) => {
-    setPlay((p) => {
-      const dur = c.dur ?? 0;
-      if (p.id === c.id && p.on) return { id: c.id, t: p.t, on: false };
-      return { id: c.id, t: p.id === c.id && p.t < dur ? p.t : 0, on: true };
-    });
+  const playing = play.on;
+  const playT = play.t;
+  const playDur = play.total ?? detail?.dur ?? 0;
+
+  const togglePlay = () => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (el.paused) void el.play().catch(() => setPlay((p) => ({ ...p, on: false, err: true })));
+    else el.pause();
   };
 
   /* ---------- actions -------------------------------------------------- */
@@ -423,41 +508,67 @@ export function MobilePhone() {
     setDialOpen(true);
   };
 
-  const makeLead = (id: string) => {
-    leadSeq.current += 1;
-    const tag = `L-${6100 + leadSeq.current}`;
-    setData((prev) => prev.map((x) => (x.id === id ? { ...x, lead: tag } : x)));
-    setLandedId(id);
+  /** The REAL write: the same org-scoped, plan-limited action the desktop
+   *  sheet calls. The badge appears only once it resolves. */
+  const makeLead = async (id: string) => {
+    if (makingLead) return;
+    setMakingLead(id);
+    setLeadErr("");
+    try {
+      const res = await createLeadFromCall(id);
+      const leadId = typeof res === "object" && res && "id" in res ? String(res.id) : null;
+      setData((prev) => prev.map((x) => (x.id === id ? { ...x, lead: leadId ?? x.lead } : x)));
+      setFreshLeads((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      setLandedId(id);
+      router.refresh();
+    } catch (err) {
+      setLeadErr(actionError(err));
+    } finally {
+      setMakingLead(null);
+    }
   };
 
   const menuRows = useMemo<MenuRow[]>(() => {
     const c = actCall;
     if (!c) return [];
     const other = counterparty(c);
+    const tel = telHref(other);
+    const sms = smsHref(other);
     return [
-      { act: "call", icon: "i-phone", tone: styles.miBp, title: "Call back", sub: other },
-      { act: "text", icon: "i-msg", tone: styles.miSky, title: "Send a text", sub: `SMS to ${other}` },
+      { act: "call", icon: "i-phone", tone: styles.miBp, title: "Call back",
+        sub: tel ? other : "No number to dial", disabled: !tel },
+      { act: "text", icon: "i-msg", tone: styles.miSky, title: "Send a text",
+        sub: sms ? `SMS to ${other}` : "No number to text", disabled: !sms },
       {
         act: "script", icon: "i-file", tone: styles.miOk, title: "Read transcript",
-        sub: c.script.length ? `${c.script.length} lines on file` : "No transcript yet",
-        disabled: c.script.length === 0,
+        sub: c.script.length
+          ? `${c.script.length} lines on file`
+          : c.transcript
+            ? "Transcript on file"
+            : "No transcript yet",
+        disabled: c.script.length === 0 && !c.transcript,
       },
       c.lead
-        ? { act: "lead", icon: "i-arrow", tone: styles.miWarn, title: "Open lead", sub: `Lead ${c.lead}` }
-        : { act: "lead", icon: "i-target", tone: styles.miWarn, title: "Create lead", sub: "Start one from this call" },
+        ? { act: "lead", icon: "i-arrow", tone: styles.miWarn, title: "Open lead", sub: "Go to the lead record" }
+        : { act: "lead", icon: "i-target", tone: styles.miWarn, title: "Create lead",
+            sub: makingLead === c.id ? "Creating…" : "Start one from this call",
+            disabled: Boolean(makingLead) },
       { act: "copy", icon: "i-copy", title: "Copy number", sub: other },
-      {
-        act: "del", icon: "i-trash", tone: styles.miDanger, title: "Delete from log",
-        sub: "Removes the call and its transcript", danger: true,
-      },
     ];
-  }, [actCall]);
+  }, [actCall, makingLead]);
 
   const runMenu = (act: string) => {
     const c = actCall;
     if (!c) return;
+    const other = counterparty(c);
     if (act === "call") {
-      openDial(counterparty(c));
+      const tel = telHref(other);
+      if (tel) window.location.assign(tel);
+      return;
+    }
+    if (act === "text") {
+      const sms = smsHref(other);
+      if (sms) window.location.assign(sms);
       return;
     }
     if (act === "script") {
@@ -465,39 +576,26 @@ export function MobilePhone() {
       setOpenId(c.id);
       return;
     }
-    setActId(null);
-    if (act === "copy") {
-      copyText(counterparty(c));
-    } else if (act === "lead" && !c.lead) {
-      makeLead(c.id);
-    } else if (act === "del") {
-      setData((prev) => prev.filter((x) => x.id !== c.id));
+    if (act === "lead") {
+      if (c.lead) {
+        setActId(null);
+        router.push(`/dashboard/leads/${c.lead}`);
+      } else {
+        void makeLead(c.id);
+      }
+      return;
     }
+    setActId(null);
+    if (act === "copy") copyText(other);
   };
 
-  /** Placing a call writes a live OUTBOUND entry at the top of today — the
-   *  same state c6 already holds, reachable a second way. */
+  /** The phone's own dialer places the call — this app has no outbound line,
+   *  and the fixture build's "live OUTBOUND row" was a drawing of one. */
+  const dialHref = telHref(fmtDial(dial));
   const placeCall = () => {
-    const raw = dial.trim();
-    if (!raw) return;
-    const rec: Call = {
-      id: `c-new-${data.length}-${raw.length}`,
-      from: SHOP_NUMBER,
-      to: fmtDial(raw),
-      dir: "OUTBOUND",
-      status: "IN_PROGRESS",
-      dur: null,
-      rec: false,
-      lead: null,
-      when: "now",
-      summary: null,
-      script: [],
-    };
-    setData((prev) => [rec, ...prev]);
-    resetFilters();
-    setDial("");
+    if (!dialHref) return;
     setDialOpen(false);
-    setLandedId(rec.id);
+    window.location.assign(dialHref);
   };
 
   return (
@@ -525,44 +623,48 @@ export function MobilePhone() {
             </div>
           </div>
 
-          {/* CONFIGURATION BANNER — the desktop cfg-banner */}
-          <div className={styles.cfg}>
-            <span className={styles.cfgIc}>
-              <Icon id="i-gear" />
-            </span>
-            <div className={styles.cfgT}>Twilio isn&apos;t configured</div>
-            <div className={styles.cfgH}>
-              Add <span className={styles.cfgCode}>TWILIO_ACCOUNT_SID</span>,{" "}
-              <span className={styles.cfgCode}>TWILIO_AUTH_TOKEN</span> and{" "}
-              <span className={styles.cfgCode}>TWILIO_PHONE_NUMBER</span>, then point the
-              number&apos;s <span className={styles.cfgCode}>A call comes in</span> webhook here.
+          {/* CONFIGURATION BANNER — the desktop cfg-banner. Shown only when
+              Twilio really is unconfigured (the fixture build showed it
+              always), and the URL is this deployment's own. */}
+          {twilioConfigured ? null : (
+            <div className={styles.cfg}>
+              <span className={styles.cfgIc}>
+                <Icon id="i-gear" />
+              </span>
+              <div className={styles.cfgT}>Twilio isn&apos;t configured</div>
+              <div className={styles.cfgH}>
+                Add <span className={styles.cfgCode}>TWILIO_ACCOUNT_SID</span>,{" "}
+                <span className={styles.cfgCode}>TWILIO_AUTH_TOKEN</span> and{" "}
+                <span className={styles.cfgCode}>TWILIO_PHONE_NUMBER</span>, then point the
+                number&apos;s <span className={styles.cfgCode}>A call comes in</span> webhook here.
+              </div>
+              <div className={styles.cfgHook}>
+                <span className={styles.hookUrl}>{webhookUrl}</span>
+                <button
+                  className={`${styles.hookCopy} ${copied ? styles.done : ""}`}
+                  type="button"
+                  onClick={() => {
+                    copyText(webhookUrl);
+                    setCopied(true);
+                  }}
+                >
+                  <Icon id={copied ? "i-check" : "i-copy"} />
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
             </div>
-            <div className={styles.cfgHook}>
-              <span className={styles.hookUrl}>{HOOK_URL}</span>
-              <button
-                className={`${styles.hookCopy} ${copied ? styles.done : ""}`}
-                type="button"
-                onClick={() => {
-                  copyText(HOOK_URL);
-                  setCopied(true);
-                }}
-              >
-                <Icon id={copied ? "i-check" : "i-copy"} />
-                {copied ? "Copied" : "Copy"}
-              </button>
-            </div>
-          </div>
+          )}
 
           {/* MASTHEAD — the desktop's three stat cards as one numeral + two
-              annotations. All three are computed, so placing or deleting a
-              call moves them. */}
+              annotations. All three are the server's counts over the whole
+              table, not over the rows on this page. */}
           <div className={styles.mast}>
             <div className={styles.mastTop}>
               <div className={styles.mastLbl}>
                 Calls · 7 days
                 <span className={styles.mastRule} />
               </div>
-              <CountUp value={data.length} className={styles.mastVal} />
+              <CountUp value={weekCount} className={styles.mastVal} />
             </div>
             <div className={styles.mastCnt}>
               <div className={styles.mastSub}>
@@ -649,7 +751,7 @@ export function MobilePhone() {
                     their own — with a transcript and a lead.
                   </div>
                   <button className={styles.emptyA} type="button" onClick={() => openDial("")}>
-                    <Icon id="i-phone" />Dial a number
+                    <Icon id="i-phone" />Open the dial pad
                   </button>
                 </>
               ) : (
@@ -803,19 +905,22 @@ export function MobilePhone() {
                     <button
                       className={styles.playBtn}
                       type="button"
+                      disabled={play.err}
                       aria-label={playing ? "Pause recording" : "Play recording"}
-                      onClick={() => togglePlay(detail)}
+                      onClick={togglePlay}
                     >
                       <Icon id={playing ? "i-phone-pause" : "i-phone-play"} />
                     </button>
                     <span className={styles.playTrack}>
                       <span
                         className={styles.playFill}
-                        style={{ transform: `scaleX(${playDur ? playT / playDur : 0})` }}
+                        style={{ transform: `scaleX(${playDur ? Math.min(1, playT / playDur) : 0})` }}
                       />
                     </span>
                     <span className={styles.playTime}>
-                      {fmtDur(playT)} / {fmtDur(detail.dur)}
+                      {play.err
+                        ? "Recording unavailable"
+                        : `${fmtDur(playT)} / ${fmtDur(play.total ?? detail.dur)}`}
                     </span>
                   </div>
                 </div>
@@ -846,36 +951,55 @@ export function MobilePhone() {
                       </div>
                     ))}
                   </div>
+                ) : detail.transcript ? (
+                  /* Unlabelled transcription — Twilio's raw text has no
+                     speakers, and guessing would put half a conversation on the
+                     wrong side. One block, exactly as the desktop renders it. */
+                  <div className={styles.dSummary}>{detail.transcript}</div>
                 ) : (
                   <div className={styles.dNone}>
                     No transcript yet — it is posted once the recording completes.
                   </div>
                 )}
               </div>
+
+              {leadErr ? <div className={styles.actErr} role="alert">{leadErr}</div> : null}
             </>
           ) : null}
         </div>
         <div className={styles.formFoot}>
-          <button
+          {/* The device places the call — a `tel:` link, guarded so a stored
+              "number" cannot become another URL scheme. */}
+          <a
             className={`${styles.btn} ${styles.btnGhost}`}
-            type="button"
-            onClick={() => detail && openDial(counterparty(detail))}
+            href={detail ? telHref(counterparty(detail)) ?? "#" : "#"}
+            aria-disabled={detail ? !telHref(counterparty(detail)) : true}
           >
             <Icon id="i-phone" />Call back
-          </button>
+          </a>
           {detail?.lead ? (
-            <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => setOpenId(null)}>
+            <button
+              className={`${styles.btn} ${styles.btnPrimary}`}
+              type="button"
+              onClick={() => {
+                const leadId = detail.lead;
+                setOpenId(null);
+                if (leadId) router.push(`/dashboard/leads/${leadId}`);
+              }}
+            >
               <Icon id="i-arrow" />Open lead
             </button>
           ) : (
             <button
               className={`${styles.btn} ${styles.btnPrimary}`}
               type="button"
+              disabled={Boolean(makingLead)}
               onClick={() => {
-                if (detail) makeLead(detail.id);
+                if (detail) void makeLead(detail.id);
               }}
             >
-              <Icon id="i-target" />Create lead
+              <Icon id="i-target" />
+              {makingLead && detail && makingLead === detail.id ? "Creating…" : "Create lead"}
             </button>
           )}
         </div>
@@ -900,6 +1024,7 @@ export function MobilePhone() {
           <div className={styles.sheetTitle}>{actCall ? counterparty(actCall) : "Actions"}</div>
         </div>
         <div className={styles.sheetBody}>
+          {leadErr ? <div className={styles.actErr} role="alert">{leadErr}</div> : null}
           {menuRows.map((r) => (
             <button
               key={r.act}
@@ -934,7 +1059,9 @@ export function MobilePhone() {
       >
         <div className={styles.sheetGrab} {...dialDrag.handleProps} />
         <div className={styles.sheetHead} {...dialDrag.handleProps}>
-          <div className={styles.sheetKicker}>Outbound · from {SHOP_NUMBER}</div>
+          {/* The call is placed by the device, not by the app, so the kicker
+              names the handset rather than a shop line the app does not own. */}
+          <div className={styles.sheetKicker}>Outbound · from this phone</div>
           <div className={styles.sheetTitle}>Dial</div>
         </div>
         <div className={styles.sheetBody}>
@@ -982,7 +1109,7 @@ export function MobilePhone() {
           <button
             className={`${styles.btn} ${styles.btnPrimary}`}
             type="button"
-            disabled={!dial}
+            disabled={!dialHref}
             onClick={placeCall}
           >
             <Icon id="i-phone" />Call

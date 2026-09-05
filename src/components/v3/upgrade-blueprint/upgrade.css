@@ -624,3 +624,21 @@
 @media (prefers-reduced-motion: reduce) {
   .jf-upgrade .jf-up-pick-scrim, .jf-upgrade .jf-up-pick-box { transition: none; }
 }
+
+/* ── EMBEDDED on the subscription page (2026-09-04) ─────────────────────
+   The same cards, no page head; a section label where the H1 was, the
+   interval switch beside it. Padding belongs to the host page. */
+.jf-upgrade.jf-up-embed { padding-bottom: 0; gap: 14px; }
+.jf-upgrade .jf-up-head--embed { align-items: center; }
+.jf-upgrade .jf-up-embed-lbl {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--muted, #6b6b6b);
+}
+/* the custom card with no pages: one quiet line, no dash */
+.jf-upgrade .jf-up-f--none { font-style: italic; }
+/* picker rows on an existing custom plan: what leaves is struck, what is
+   new carries the blueprint tint the ticked state already has */
+.jf-upgrade .jf-up-pick-row.drop .jf-up-pick-n { text-decoration: line-through; color: var(--muted, #6b6b6b); }
+.jf-upgrade .jf-up-pick-row.drop .jf-up-pick-p { color: var(--danger, #b3261e); }
+.jf-upgrade .jf-up-pick-row.add .jf-up-pick-p { color: var(--blueprint, #1854a0); }

@@ -1267,3 +1267,12 @@ body:has(.jf-mobile-subscription) div:has(> nav[aria-label="Primary"]) { display
   }
   .jf-mobile-subscription .jfms-rv { opacity: 1; transform: none; }
 }
+
+/* ── 2026-09-04: the usage card's foot is one quiet line, smaller and
+   lower-contrast than the card body; the plan cards are the upgrade
+   page's own, embedded (see mobile-upgrade.css .mu-embed). */
+.jf-mobile-subscription .jfms-cardFoot--quiet {
+  font-size: 10px; letter-spacing: 0.08em; color: var(--muted-light, #8a8a8a);
+  text-transform: uppercase; opacity: 0.9;
+}
+.jf-mobile-subscription .jfms-plansEmbed { min-width: 0; }

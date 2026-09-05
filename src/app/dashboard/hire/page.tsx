@@ -1,77 +1,69 @@
-// Hire — Blueprint edition. Pixel-identical port of the canonical hire donor
-// (jobflex-hire-blueprint_4.html).
+// Hire & Work — /dashboard/hire. Blueprint edition, rebuilt from scratch on
+// 2026-09-03 as a two-sided board: HIRE lists everyone on the network who has
+// posted themselves for work (with their contact details and JobFlex reviews);
+// WORK is where the caller writes and manages their own post.
 //
 // The sidebar, topbar and sprite come from the shared shell mounted in
 // ../layout.tsx, so this page renders only the donor's `.content` children.
-// Child routes (/hub, /talent, /profile, /job-posts, /applications,
-// /contracts, /new, /[id]) live under the (dashboard) route group and keep the
-// classic layout.
 //
-// NOTHING on this page is a fixture any more:
-// - the applicant pipeline reads/writes through src/actions/applicants.ts;
-// - the hub tallies are the org's real trade-network numbers (open TradeJobs,
-//   interest received/sent) plus the pipeline's HIRED count;
-// - "Publish your profile" edits the caller's TradeNetworkProfile and
-//   "Discover talent" lists other orgs' opted-in profiles — both through
-//   src/actions/tradeServices.ts.
+// Nothing here is a fixture: the board is `listOpenTradeJobs`, the caller's
+// posts are `getMyTradeJobs`, and every write goes back through
+// src/actions/tradeServices.ts. `?tab=work` opens on the Work side (the
+// interest email links there).
 
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { NoOrgError, UnauthorizedError } from "@/lib/orgContext";
-import { getHireSeed } from "@/actions/applicants";
-import {
-  discoverTradeProfiles,
-  getMyTradeJobs,
-  listOpenTradeJobs,
-  getTradeInbox,
-} from "@/actions/tradeServices";
-import { HireContent } from "@/components/v3/hire-blueprint/hire-content";
-import type { HireTallies } from "@/components/v3/hire-blueprint/hire-data";
+import { getHireViewer, getMyHirePosts, listOpenTradeJobs } from "@/actions/tradeServices";
+import { HireViewportSwitch } from "@/components/v3/hire-blueprint/hire-viewport-switch";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "JobFlex · Hire",
-  description: "Hire — the marketplace hub and the applicant pipeline on one sheet.",
+  title: "JobFlex · Hire & Work",
+  description: "Find a tradesperson on the network, or post yourself for hire.",
 };
 
-export default async function HirePage() {
-  let seed: Awaited<
-    ReturnType<typeof buildSeed>
-  >;
+export default async function HirePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  let seed: Awaited<ReturnType<typeof load>>;
   try {
-    seed = await buildSeed();
+    seed = await load();
   } catch (err) {
     if (err instanceof UnauthorizedError) redirect("/auth/login?next=%2Fdashboard%2Fhire");
     if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
     throw err;
   }
+  const { tab } = await searchParams;
 
   return (
-    <HireContent
-      applicants={seed.applicants}
-      myPosts={seed.myJobs}
-      tallies={seed.tallies}
-      talent={seed.talent}
-      networkJobs={seed.networkJobs}
-    />
+    <>
+      <MarkNavSeen surface="hire" />
+      {/* One URL, both designs: the desktop board above 768px, the handheld
+          rebuild at or below it. The switch lives HERE rather than in the
+          shell's props-less HANDHELD_SURFACES map because both editions need
+          the three server reads above; the shell carries a matching
+          PAGE_OWNED_STATIC entry so this route renders bare on a phone
+          instead of inside BlueprintShell. */}
+      <HireViewportSwitch
+        posts={seed.posts}
+        mine={seed.mine}
+        viewer={seed.viewer}
+        initialTab={tab === "work" ? "work" : "hire"}
+      />
+    </>
   );
 }
 
-async function buildSeed() {
-  const [applicants, myJobs, inbox, talent, networkJobs] = await Promise.all([
-    getHireSeed(),
-    getMyTradeJobs(),
-    getTradeInbox(),
-    discoverTradeProfiles(),
+async function load() {
+  const [posts, mine, viewer] = await Promise.all([
     listOpenTradeJobs(),
+    getMyHirePosts(),
+    getHireViewer(),
   ]);
-  const tallies: HireTallies = {
-    hired: applicants.filter((a) => a.status === "HIRED").length,
-    openPosts: myJobs.filter((j) => j.status === "OPEN").length,
-    totalPosts: myJobs.length,
-    interestReceived: myJobs.reduce((n, j) => n + j.interestedCount, 0),
-    interestSent: inbox.engaged.length,
-  };
-  return { applicants, myJobs, tallies, talent, networkJobs };
+  return { posts, mine, viewer };
 }

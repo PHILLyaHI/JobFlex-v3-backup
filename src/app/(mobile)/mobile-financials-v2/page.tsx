@@ -12,8 +12,10 @@
 // offset shadows, 2px radii and Inter 900 caps stay, rather than the mobile
 // skill's soft-shadow / rounded-3xl defaults.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// REAL DATA, NOT A FIXTURE. The component asks for the org's book itself, on
+// mount, through the org-scoped `loadFinancials()` action — the same read
+// /dashboard/financials makes on the desk — so this preview URL and the live
+// one describe the same records and cannot drift.
 //
 // Auth: middleware only matches /dashboard and /admin, so this page enforces
 // its own redirect-to-login like the other design routes. The route key is a

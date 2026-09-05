@@ -48,14 +48,14 @@ function ago(d: Date): string {
 
 export function NotificationBell({
   buttonClassName = "icon-btn",
-  dotClassName = "bell-dot",
+
   iconClassName = "ic",
 }: {
   /** The host shell's icon-button class. The desktop topbar's chrome is global
    *  (`icon-btn`); the handheld shells style theirs with CSS modules, so they
    *  pass their own hashed names. */
   buttonClassName?: string;
-  dotClassName?: string;
+
   /** Likewise for the icon. A module-scoped `.ic` is what sizes the glyph on
    *  the handheld surfaces; passing the global string there rendered the bell
    *  as a full-size black slab, because nothing matched and the SVG fell back
@@ -128,7 +128,15 @@ export function NotificationBell({
     };
   }, [open]);
 
-  const unread = newest > seenAt && newest > 0;
+  // How many rows arrived since this viewer last opened the panel. The badge
+  // shows the number rather than a dot (owner call, 2026-09-03) — "something
+  // happened" is less useful than "three things happened", and the same figure
+  // is what the Hire & Work post counters are showing.
+  const unreadCount = (items ?? []).reduce(
+    (n, i) => (new Date(i.createdAt).getTime() > seenAt ? n + 1 : n),
+    0,
+  );
+  const unread = unreadCount > 0 && newest > seenAt && newest > 0;
 
   function toggle() {
     const next = !open;
@@ -167,7 +175,11 @@ export function NotificationBell({
         className={buttonClassName}
         type="button"
         title="Notifications"
-        aria-label={unread ? "Notifications — new items" : "Notifications"}
+        aria-label={
+          unread
+            ? `Notifications — ${unreadCount} new`
+            : "Notifications"
+        }
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={toggle}
@@ -185,7 +197,11 @@ export function NotificationBell({
         >
           <use href="#i-bell" />
         </svg>
-        {unread && <span className={dotClassName} aria-hidden="true" />}
+        {unread && (
+          <span className="bell-n" aria-hidden="true">
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
       </button>
 
       {open && (

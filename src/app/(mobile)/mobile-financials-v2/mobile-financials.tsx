@@ -44,31 +44,35 @@
 //    amber: status colours are for statuses, and 24 amber bars would blow the
 //    ~5% accent budget on a phone-sized sheet.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// CONTENT IS THE ORG'S REAL BOOK. It was the donor demo fixture while the
+// layout was being judged; it is now the same read the desktop sheet makes —
+// `loadFinancials()` (actions/financialsMobile.ts → lib/financialsSnapshot.ts)
+// on mount — and the same server actions for every gesture that writes:
+// scanReceipt / saveReceiptExpense for capture, addJobExpense for a logged
+// line, deleteJobExpense, sendChangeOrder and deleteChangeOrder for the row
+// menus. Nothing here mutates a local array and calls it a save. The invoices
+// book is read-only, exactly as it is on the desk.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import styles from "./mobile-financials.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
+import { safeHref } from "@/lib/safeHref";
+import { loadFinancials } from "@/actions/financialsMobile";
+import { scanReceipt, saveReceiptExpense } from "@/actions/receiptOcr";
+import { addJobExpense, deleteJobExpense } from "@/actions/expenses";
+import { deleteChangeOrder, sendChangeOrder } from "@/actions/changeOrders";
 import {
   ALL,
   CO_STATUSES,
+  EMPTY_ROLLUP,
   EXPENSE_CATEGORIES,
-  EXPENSES_SEED,
-  EXP_SEQ_START,
-  INVOICES,
   INV_STATUSES,
-  MONTHLY,
-  ORDERS_SEED,
   PAGE_SIZE,
-  ROLLUP,
-  SEED_COLLECTED,
-  SEED_LOGGED,
-  STAGE_JOBS,
   TABS,
   initials,
   matchesExpense,
@@ -76,7 +80,10 @@ import {
   matchesOrder,
   type ChangeOrder,
   type Expense,
+  type FinancialsJob,
   type Invoice,
+  type MonthPoint,
+  type Rollup,
   type TabKey,
 } from "./financials-data";
 
@@ -89,6 +96,29 @@ const signed = (n: number) => (n < 0 ? `−${money(Math.abs(n))}` : money(n));
 /** Chart axis ticks only — the donor's helper. */
 const shortMoney = (n: number) => (n >= 1000 ? `$${Math.round(n / 1000)}k` : `$${Math.round(n)}`);
 const sentence = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
+/** The ledger plate a row just written gets, so it reads the same before and
+ *  after a reload — the server stamps every other row exactly this way. */
+const plate = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
+
+/** The known vocabulary first, then anything the rows actually carry that it
+ *  does not name — see the filter options below. */
+const withPresent = (known: string[], present: string[]) => [
+  ...known,
+  ...Array.from(new Set(present))
+    .filter((v) => v && !known.includes(v))
+    .sort(),
+];
+
+/** Server actions reject with an Error whose message is written for the user
+ *  ("Only drafts can be deleted.", "Not found"). Surface that text; fall back
+ *  to a generic line for anything unrecognisable. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
 
 /* Chart geometry. 1 viewBox unit ≈ 1 CSS px at 360px, so the mono annotations
    land at their real size instead of being scaled down to noise. */
@@ -203,11 +233,22 @@ export function MobileFinancials() {
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  /* All three collections are cloned per mount, so runtime mutations never leak
-     between mounts — a remount starts where a fresh page load would. */
-  const [expenses, setExpenses] = useState<Expense[]>(() => EXPENSES_SEED.map((e) => ({ ...e })));
-  const [orders, setOrders] = useState<ChangeOrder[]>(() => ORDERS_SEED.map((o) => ({ ...o })));
-  const [invoices, setInvoices] = useState<Invoice[]>(() => INVOICES.map((i) => ({ ...i })));
+  const router = useRouter();
+
+  /* ---------- the org's book ------------------------------------------
+     The responsive shell mounts this component with NO props, so the page
+     asks for its own data: one org-scoped read on mount, then local patches
+     from the writes the row menus and the expense form make — the same way
+     the desktop sheet patches its copy after a successful action. Empty until
+     the read lands; never a fixture. */
+  const [jobs, setJobs] = useState<FinancialsJob[]>([]);
+  const [monthly, setMonthly] = useState<MonthPoint[]>([]);
+  const [rollup, setRollup] = useState<Rollup>(EMPTY_ROLLUP);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [orders, setOrders] = useState<ChangeOrder[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [ready, setReady] = useState(false);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
 
   const [tab, setTab] = useState<TabKey>("overview");
   const [filter, setFilter] = useState<string>(ALL);
@@ -215,6 +256,11 @@ export function MobileFinancials() {
   const [page, setPage] = useState(1);
   const [filterOpen, setFilterOpen] = useState(false);
   const [sheet, setSheet] = useState<SheetRef | null>(null);
+  /** What the row sheet's kicker carries instead of the record line: the write
+   *  that is on the wire, or the reason the server refused it. The sheet stays
+   *  OPEN while a write runs, so the refusal lands on the record it names. */
+  const [sheetNote, setSheetNote] = useState("");
+  const [menuBusy, setMenuBusy] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [staged, setStaged] = useState(false);
   const [landedId, setLandedId] = useState<string | null>(null);
@@ -224,19 +270,50 @@ export function MobileFinancials() {
   const [gaugeReady, setGaugeReady] = useState(false);
 
   const filterRef = useRef<HTMLDivElement>(null);
-  const seqRef = useRef(EXP_SEQ_START);
 
-  /* ---- expense form ---- */
+  /* ---- expense form ----
+     `job` is a real Job id now, and `receipt` is the image itself: the bytes
+     that were captured, held so the SAME file that was reviewed is the one
+     uploaded. */
   const [form, setForm] = useState({
     vendor: "",
     amount: "",
     category: EXPENSE_CATEGORIES[0],
-    job: STAGE_JOBS[0],
-    receipt: false,
+    job: "",
   });
+  const [image, setImage] = useState<{ dataUrl: string; filename: string } | null>(null);
   const [vendorErr, setVendorErr] = useState(false);
   const [amountErr, setAmountErr] = useState(false);
+  const [saving, setSaving] = useState(false);
+  /** The status line the form sheet's kicker carries: what the receipt reader
+   *  is doing, or why a save was refused. */
+  const [formNote, setFormNote] = useState("");
   const vendorRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  /** "scan" — the page-head Capture button, which runs OCR and stages the
+   *  result. "attach" — the form's own Receipt toggle, which only attaches. */
+  const pickMode = useRef<"scan" | "attach">("scan");
+
+  /* ---------- the one read ---------------------------------------------- */
+  const load = useCallback(async () => {
+    setLoadErr(null);
+    try {
+      const snap = await loadFinancials();
+      setJobs(snap.jobs);
+      setMonthly(snap.monthly);
+      setRollup(snap.rollup);
+      setExpenses(snap.expenses);
+      setOrders(snap.orders);
+      setInvoices(snap.invoices);
+      setReady(true);
+    } catch (err) {
+      setLoadErr(actionError(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   /* ---------- viewport height ------------------------------------------
      Mandatory rule: viewport heights only via var(--app-h). A phone's URL bar
@@ -261,8 +338,11 @@ export function MobileFinancials() {
     };
   }, []);
 
-  /* ---------- Motion: reveal on load + adaptive reveal on scroll -------- */
+  /* ---------- Motion: reveal on load + adaptive reveal on scroll --------
+     Runs when the BOOK lands, not on mount: before that the scroller holds the
+     loading state, and the blocks this observes do not exist yet. */
   useEffect(() => {
+    if (!ready) return;
     if (prefersReducedMotion()) return;
     const host = scrollRef.current;
     const content = contentRef.current;
@@ -314,7 +394,7 @@ export function MobileFinancials() {
       io.disconnect();
       host.removeEventListener("scroll", onScroll);
     };
-  }, []);
+  }, [ready]);
 
   /* ---------- Motion: graph-paper parallax ----------------------------- */
   useEffect(() => {
@@ -358,13 +438,16 @@ export function MobileFinancials() {
     if (!filterOpen && !formOpen && !sheet) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // Never while a write is on the wire, or the user is left unsure whether
+      // it went through.
       if (filterOpen) setFilterOpen(false);
-      else if (formOpen) setFormOpen(false);
-      else if (sheet) setSheet(null);
+      else if (formOpen) {
+        if (!saving) setFormOpen(false);
+      } else if (sheet && !menuBusy) setSheet(null);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [filterOpen, formOpen, sheet]);
+  }, [filterOpen, formOpen, sheet, saving, menuBusy]);
 
   /* ---------- Filter dropdown: close on outside pointerdown ------------ */
   useEffect(() => {
@@ -389,6 +472,13 @@ export function MobileFinancials() {
     scrollRef.current?.scrollTo({ top: 0, behavior: prefersReducedMotion() ? "auto" : "smooth" });
   }, [page]);
 
+  /* ---------- A new record, a clean status line ------------------------
+     Keyed on the sheet REFERENCE, so opening another row's menu clears the
+     last refusal while a note set on the row already open survives. */
+  useEffect(() => {
+    setSheetNote("");
+  }, [sheet]);
+
   /* ---------- The one blue flash on a record you just changed ----------- */
   useEffect(() => {
     if (!landedId) return;
@@ -405,11 +495,14 @@ export function MobileFinancials() {
   /* ---------- Row void: strike (240ms) → gone --------------------------
      The desktop plays three beats (strike / lift / FLIP-close). The first is
      the one that carries the information — WHICH line is being voided — so it
-     is kept verbatim; the rows below then close the gap. */
+     is kept verbatim; the rows below then close the gap.
+
+     A row only leaves after the DELETE has landed on the server — the strike
+     reports a write that happened, not one being attempted. Invoices are never
+     removed here: the invoices book is read-only on both editions. */
   const commitRemove = useCallback((ref: SheetRef) => {
     if (ref.kind === "exp") setExpenses((prev) => prev.filter((x) => x.id !== ref.id));
     else if (ref.kind === "co") setOrders((prev) => prev.filter((x) => x.id !== ref.id));
-    else setInvoices((prev) => prev.filter((x) => x.id !== ref.id));
   }, []);
 
   useEffect(() => {
@@ -427,9 +520,13 @@ export function MobileFinancials() {
   };
 
   /* ---------- live roll-up ---------------------------------------------
-     See financials-data.ts: the 30-day figures are the fixture's roll-up plus
-     whatever the ledgers have moved since the seed, so every number on the
-     Overview tab responds to the page's own mutations. */
+     The four 30-day figures are the server's (`getFinancialsRollup`): paid
+     PAYMENTS against job expenses over a rolling 30 days, which is a different
+     scope from the rows this page lists, so they are never re-derived from the
+     ledgers. They are patched — the way the desktop patches them — when this
+     page itself books an expense into that window.
+     The masthead's own figures below ARE the rows: what is logged, what has
+     been collected, what is still out. */
   const logged = useMemo(() => expenses.reduce((a, e) => a + e.amount, 0), [expenses]);
   const collected = useMemo(
     () => invoices.filter((i) => i.status === "PAID").reduce((a, i) => a + i.amount, 0),
@@ -439,10 +536,26 @@ export function MobileFinancials() {
     () => invoices.filter((i) => i.status === "PENDING").reduce((a, i) => a + i.amount, 0),
     [invoices],
   );
-  const revenue30d = ROLLUP.revenue30d + (collected - SEED_COLLECTED);
-  const expenses30d = ROLLUP.expenses30d + (logged - SEED_LOGGED);
-  const profit30d = revenue30d - expenses30d;
-  const marginPct = revenue30d ? (profit30d / revenue30d) * 100 : 0;
+  const revenue30d = rollup.revenue30d;
+  const expenses30d = rollup.expenses30d;
+  const profit30d = rollup.profit30d;
+  const marginPct = rollup.marginPct;
+
+  /** An expense this page just booked is inside the window the gauge and the
+   *  stat strip read, so the roll-up moves with it. Same arithmetic the
+   *  desktop runs after `saveReceiptExpense`. */
+  const bookExpense = useCallback((amount: number) => {
+    setRollup((r) => {
+      const expenses30dNext = r.expenses30d + amount;
+      const profitNext = r.revenue30d - expenses30dNext;
+      return {
+        ...r,
+        expenses30d: expenses30dNext,
+        profit30d: profitNext,
+        marginPct: r.revenue30d > 0 ? (profitNext / r.revenue30d) * 100 : 0,
+      };
+    });
+  }, []);
 
   const ordersValue = useMemo(() => orders.reduce((a, o) => a + o.amount, 0), [orders]);
   const awaitingCo = useMemo(
@@ -451,24 +564,17 @@ export function MobileFinancials() {
   );
   const pendingInv = useMemo(() => invoices.filter((i) => i.status === "PENDING").length, [invoices]);
   const failedInv = useMemo(() => invoices.filter((i) => i.status === "FAILED").length, [invoices]);
-  const noReceipt = useMemo(() => expenses.filter((e) => !e.receipt).length, [expenses]);
+  const noReceipt = useMemo(() => expenses.filter((e) => !e.receiptUrl).length, [expenses]);
 
   /* ---------- chart series --------------------------------------------
-     The donor's last month IS the 30-day roll-up (Jul 48,250 / 26,900), so the
-     live figures replace it and the plot moves with the ledgers. */
-  const monthly = useMemo(
-    () =>
-      MONTHLY.map((m, i) =>
-        i === MONTHLY.length - 1 ? { ...m, revenue: revenue30d, expenses: expenses30d } : m,
-      ),
-    [revenue30d, expenses30d],
-  );
-
+     Twelve CALENDAR months from the server (`getMonthlyRollup`), drawn as they
+     were read. The 30-day roll-up is a rolling window, not this month, so it
+     never overwrites the last column. */
   const chart = useMemo(() => {
     const max = Math.max(...monthly.map((m) => Math.max(m.revenue, m.expenses)), 1);
     const step = Math.max(10000, Math.ceil(max / 4 / 10000) * 10000);
     const top = step * 4;
-    const gw = CH_IW / monthly.length;
+    const gw = CH_IW / Math.max(1, monthly.length);
     const bars = monthly.map((m, i) => {
       const x = CH.x0 + gw * i;
       const cx = x + gw / 2;
@@ -478,6 +584,11 @@ export function MobileFinancials() {
         m,
         x,
         cx,
+        // The net point sits over the CENTRE OF THE REVENUE COLUMN, not the
+        // month's midpoint: the midpoint is the seam between the two bars, and
+        // in a month with no expenses that seam is the revenue bar's right
+        // edge — the dot read as pinned to the side of the column.
+        netX: cx - CH.bw / 2 - 1,
         rh,
         eh,
         revY: CH.y1 - rh,
@@ -550,7 +661,7 @@ export function MobileFinancials() {
       tone: profit30d < 0 ? styles.toneBad : "",
       d: { txt: `${marginPct.toFixed(1)}%`, up: marginPct >= 0 },
     },
-    { l: "Pipeline value", v: money(ROLLUP.pipelineValue), h: "Open proposals", tone: styles.accent },
+    { l: "Pipeline value", v: money(rollup.pipelineValue), h: "Open proposals", tone: styles.accent },
   ];
 
   const attention = [
@@ -613,12 +724,16 @@ export function MobileFinancials() {
     collected, invoices.length, outstanding, profit30d, revenue30d, marginPct,
   ]);
 
-  /* ---------- filter options for the active ledger --------------------- */
+  /* ---------- filter options for the active ledger ---------------------
+     The known vocabulary FIRST, then anything the rows actually carry that it
+     does not name. A real book can hold a value this page never listed — the
+     receipt reader is allowed to answer "Tools" or "Subcontractor" — and a row
+     no filter can reach is a row the owner cannot find. */
   const options = useMemo(() => {
     if (tab === "expenses") {
       return [
         { k: ALL, l: "All", n: expenses.length },
-        ...EXPENSE_CATEGORIES.map((c) => ({
+        ...withPresent(EXPENSE_CATEGORIES, expenses.map((e) => e.category)).map((c) => ({
           k: c,
           l: c,
           n: expenses.filter((e) => e.category === c).length,
@@ -628,7 +743,7 @@ export function MobileFinancials() {
     if (tab === "orders") {
       return [
         { k: ALL, l: "All", n: orders.length },
-        ...CO_STATUSES.map((s) => ({
+        ...withPresent(CO_STATUSES, orders.map((o) => o.status)).map((s) => ({
           k: s,
           l: sentence(s),
           n: orders.filter((o) => o.status === s).length,
@@ -637,7 +752,7 @@ export function MobileFinancials() {
     }
     return [
       { k: ALL, l: "All", n: invoices.length },
-      ...INV_STATUSES.map((s) => ({
+      ...withPresent(INV_STATUSES, invoices.map((i) => i.status)).map((s) => ({
         k: s,
         l: sentence(s),
         n: invoices.filter((i) => i.status === s).length,
@@ -733,20 +848,31 @@ export function MobileFinancials() {
   const sheetInv = sheet?.kind === "inv" ? invoices.find((i) => i.id === sheet.id) ?? null : null;
   const sheetOpen = Boolean(sheetExp || sheetCo || sheetInv);
 
-  const sheetHead = sheetExp
+  const record = sheetExp
     ? { kicker: `${sheetExp.category} · ${sheetExp.when} · ${money(sheetExp.amount)}`, title: sheetExp.job }
     : sheetCo
       ? { kicker: `${sentence(sheetCo.status)} · ${sheetCo.when} · ${money(sheetCo.amount)}`, title: sheetCo.title }
       : sheetInv
         ? { kicker: `${sheetInv.num} · ${sheetInv.provider} · due ${sheetInv.due}`, title: sheetInv.client }
         : { kicker: "Record · —", title: "Actions" };
+  // A write in flight, or one the server refused, takes the kicker line: it is
+  // the one place in this sheet that is already a status line, and it sits
+  // directly above the record the message is about.
+  const sheetHead = sheetNote ? { kicker: sheetNote, title: record.title } : record;
 
+  /* Only gestures with a REAL action behind them are offered. The fixture
+     edition listed five invoice actions and a change-order approval that no
+     server action implements — a control that cannot do what it says is worse
+     than no control. What the server does implement, and this sheet calls:
+     deleteJobExpense, addJobExpense, sendChangeOrder, deleteChangeOrder. The
+     invoices book is read-only, so its one row is a link to the contract. */
   const menuRows = useMemo<MenuRow[]>(() => {
     if (sheetExp) {
       const e = sheetExp;
+      const receipt = safeHref(e.receiptUrl);
       return [
         { act: "receipt", icon: "i-financials-ext", tone: styles.miBp, title: "View receipt",
-          sub: e.receipt ? "Opens the captured image" : "No receipt attached", disabled: !e.receipt },
+          sub: receipt ? "Opens the captured image" : "No receipt attached", disabled: !receipt },
         { act: "job", icon: "i-jobs", tone: styles.miSky, title: "Open job", sub: e.job },
         { act: "dup", icon: "i-copy", title: "Log another like this", sub: `${e.category} · ${money(e.amount)}` },
         { act: "del", icon: "i-trash", tone: styles.miDanger, title: "Delete expense",
@@ -756,96 +882,237 @@ export function MobileFinancials() {
     if (sheetCo) {
       const o = sheetCo;
       const sent = o.status !== "DRAFT";
-      const settled = o.status === "APPROVED" || o.status === "DECLINED";
       return [
-        { act: "open", icon: "i-file", tone: styles.miBp, title: "Open change order", sub: "Scope, pricing and signature" },
         { act: "send", icon: "i-send", tone: styles.miSky, title: sent ? "Already sent" : "Send to client",
           sub: sent ? `Sent ${o.when}` : "Emails it for signature", disabled: sent },
-        { act: "approve", icon: "i-check", tone: styles.miOk,
-          title: o.status === "APPROVED" ? "Already approved" : "Mark approved",
-          sub: settled ? `${sentence(o.status)} ${o.when}` : `Adds ${money(o.amount)} to the contract`,
-          disabled: settled },
-        { act: "job", icon: "i-jobs", tone: styles.miWarn, title: "Open job", sub: o.job },
+        { act: "job", icon: "i-jobs", tone: styles.miWarn, title: "Open job",
+          sub: o.jobId ? o.job : "Amends a proposal, not a job", disabled: !o.jobId },
         { act: "del", icon: "i-trash", tone: styles.miDanger, title: "Delete change order",
-          sub: "Voids the line permanently", danger: true },
+          sub: sent ? "Only drafts can be deleted" : "Voids the line permanently",
+          danger: true, disabled: sent },
       ];
     }
     if (sheetInv) {
       const i = sheetInv;
-      const paid = i.status === "PAID";
-      const closed = paid || i.status === "REFUNDED";
-      const manual = i.provider === "Manual";
       return [
-        { act: "open", icon: "i-file", tone: styles.miBp, title: "Open invoice", sub: `${i.num} · ${i.client}` },
-        { act: "remind", icon: "i-send", tone: styles.miSky, title: closed ? "Nothing to chase" : "Send reminder",
-          sub: closed ? `${sentence(i.status)} ${i.due}` : "Nudges the client by email", disabled: closed },
-        { act: "paid", icon: "i-check", tone: styles.miOk, title: paid ? "Already collected" : "Mark collected",
-          sub: paid ? `Banked ${i.due}` : `Books ${money(i.amount)} as revenue`, disabled: paid },
-        { act: "link", icon: "i-copy", tone: styles.miWarn, title: "Copy payment link",
-          sub: manual ? "Manual invoice — no link" : `${i.provider} checkout`, disabled: manual },
-        { act: "void", icon: "i-trash", tone: styles.miDanger, title: "Void invoice",
-          sub: "Removes it from the ledger", danger: true },
+        { act: "open", icon: "i-file", tone: styles.miBp, title: "Open invoice",
+          sub: i.proposalId ? `${i.num} · ${i.client}` : "No proposal behind this invoice",
+          disabled: !i.proposalId },
       ];
     }
     return [];
   }, [sheetExp, sheetCo, sheetInv]);
 
-  const runMenu = (act: string) => {
+  /** Every row here is a real write or a real destination. Writes keep the
+   *  sheet open until the server answers; navigation and the receipt link
+   *  close it at once. */
+  const runMenu = async (act: string) => {
     const ref = sheet;
-    setSheet(null);
-    if (!ref) return;
-    if (act === "del" || act === "void") {
+    if (!ref || menuBusy) return;
+
+    if (act === "receipt") {
+      const href = sheetExp ? safeHref(sheetExp.receiptUrl) : null;
+      setSheet(null);
+      if (href) window.open(href, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (act === "job") {
+      const jobId = sheetExp?.jobId ?? sheetCo?.jobId ?? null;
+      setSheet(null);
+      if (jobId) router.push(`/dashboard/jobs/${jobId}` as Route);
+      return;
+    }
+    if (act === "open") {
+      const proposalId = sheetInv?.proposalId ?? null;
+      setSheet(null);
+      if (proposalId) router.push(`/dashboard/proposals/${proposalId}` as Route);
+      return;
+    }
+
+    if (act === "del") {
+      setMenuBusy(true);
+      setSheetNote("Deleting…");
+      try {
+        if (ref.kind === "exp") await deleteJobExpense(ref.id);
+        else await deleteChangeOrder(ref.id);
+      } catch (err) {
+        setMenuBusy(false);
+        setSheetNote(actionError(err));
+        return;
+      }
+      setMenuBusy(false);
+      setSheetNote("");
+      setSheet(null);
       removeRow(ref);
       return;
     }
-    if (ref.kind === "exp" && act === "dup") {
+
+    if (act === "send" && ref.kind === "co") {
+      setMenuBusy(true);
+      setSheetNote("Sending…");
+      try {
+        await sendChangeOrder(ref.id);
+      } catch (err) {
+        setMenuBusy(false);
+        setSheetNote(actionError(err));
+        return;
+      }
+      setMenuBusy(false);
+      setSheetNote("");
+      setSheet(null);
+      setOrders((prev) => prev.map((o) => (o.id === ref.id ? { ...o, status: "SENT" } : o)));
+      setLandedId(ref.id);
+      return;
+    }
+
+    if (act === "dup" && ref.kind === "exp") {
       const src = expenses.find((e) => e.id === ref.id);
       if (!src) return;
-      seqRef.current += 1;
-      const rec: Expense = { ...src, id: `x${seqRef.current}`, when: "Jul 22" };
+      setMenuBusy(true);
+      setSheetNote("Logging…");
+      let created: { id: string };
+      try {
+        created = await addJobExpense({
+          jobId: src.jobId,
+          category: src.category,
+          amount: src.amount,
+          note: src.note || null,
+        });
+      } catch (err) {
+        setMenuBusy(false);
+        setSheetNote(actionError(err));
+        return;
+      }
+      setMenuBusy(false);
+      setSheetNote("");
+      setSheet(null);
+      const rec: Expense = { ...src, id: created.id, when: plate(new Date()), receiptUrl: null };
       setExpenses((prev) => [rec, ...prev]);
+      bookExpense(rec.amount);
       clearFind();
       setLandedId(rec.id);
-      return;
-    }
-    if (ref.kind === "co" && (act === "send" || act === "approve")) {
-      const next = act === "send" ? "SENT" : "APPROVED";
-      setOrders((prev) => prev.map((o) => (o.id === ref.id ? { ...o, status: next } : o)));
-      setLandedId(ref.id);
-      return;
-    }
-    if (ref.kind === "inv" && act === "paid") {
-      setInvoices((prev) => prev.map((i) => (i.id === ref.id ? { ...i, status: "PAID" } : i)));
-      setLandedId(ref.id);
     }
   };
 
-  /* ---------- the expense form ---------------------------------------- */
-  const openForm = (fromReceipt: boolean) => {
-    setStaged(fromReceipt);
+  /* ---------- the expense form ----------------------------------------
+     Two ways in, one form, one save path. "Log expense" opens it empty;
+     "Capture receipt" opens the camera / photo picker, sends the image past
+     the same OCR the desktop uses (`scanReceipt`) and stages what came back
+     for review. Nothing is written until Save. */
+
+  /** The category chips, plus whatever the reader answered if it is not one of
+   *  them — the desktop's own rule, so a "Tools" receipt is not silently
+   *  re-filed under "Materials". */
+  const formCategories = useMemo(
+    () => withPresent(EXPENSE_CATEGORIES, [form.category]),
+    [form.category],
+  );
+
+  const openForm = () => {
+    setStaged(false);
     setVendorErr(false);
     setAmountErr(false);
-    if (fromReceipt) {
-      // The desktop's parsed values, verbatim — staged for review, not saved.
-      const job = expenses[0]?.job;
-      setForm({
-        vendor: "Bothell Building Supply",
-        amount: "1284.40",
-        category: "Materials",
-        job: job && STAGE_JOBS.includes(job) ? job : STAGE_JOBS[0],
-        receipt: true,
-      });
-    } else {
-      setForm({ vendor: "", amount: "", category: EXPENSE_CATEGORIES[0], job: STAGE_JOBS[0], receipt: false });
-    }
+    setFormNote("");
+    setImage(null);
+    setForm({ vendor: "", amount: "", category: EXPENSE_CATEGORIES[0], job: jobs[0]?.id ?? "" });
     setFormOpen(true);
     // Focus after the slide settles — focusing mid-transform makes the
     // keyboard fight the animation.
     window.setTimeout(() => vendorRef.current?.focus(), prefersReducedMotion() ? 0 : 320);
   };
 
-  const submitForm = (e: React.FormEvent) => {
+  /** Open the picker. `mode` decides what happens to the file that comes back:
+   *  "scan" reads it, "attach" simply carries it into the save. */
+  const pickFile = (mode: "scan" | "attach") => {
+    if (!jobs.length) {
+      setFormNote("A receipt is charged to a job, and this org has none yet.");
+      if (mode === "scan") {
+        setStaged(true);
+        setFormOpen(true);
+      }
+      return;
+    }
+    pickMode.current = mode;
+    const el = fileRef.current;
+    if (!el) return;
+    el.value = "";
+    el.click();
+  };
+
+  const onPickFile = async (ev: React.ChangeEvent<HTMLInputElement>) => {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    const mode = pickMode.current;
+    // The desktop's guards, verbatim: 8MB is comfortably above a phone photo
+    // and below anything that would stall the vision call or the upload.
+    if (!/^image\//.test(file.type)) {
+      setFormNote("That is not an image — receipts upload as JPG, PNG or WebP.");
+      if (mode === "scan") setFormOpen(true);
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setFormNote("That image is over 8MB — try a smaller photo.");
+      if (mode === "scan") setFormOpen(true);
+      return;
+    }
+
+    let dataUrl: string;
+    try {
+      dataUrl = await new Promise<string>((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(String(fr.result || ""));
+        fr.onerror = () => reject(new Error("Could not read that file"));
+        fr.readAsDataURL(file);
+      });
+    } catch {
+      setFormNote("Could not read that file.");
+      if (mode === "scan") setFormOpen(true);
+      return;
+    }
+    const filename = file.name || "receipt.jpg";
+    setImage({ dataUrl, filename });
+
+    if (mode === "attach") {
+      setFormNote("");
+      return;
+    }
+
+    // Staged for review, not saved. The sheet opens straight away so the wait
+    // happens somewhere the user can see it.
+    const jobId = jobs[0].id;
+    setStaged(true);
+    setVendorErr(false);
+    setAmountErr(false);
+    setForm({ vendor: "", amount: "", category: EXPENSE_CATEGORIES[0], job: jobId });
+    setFormNote("Reading the receipt…");
+    setFormOpen(true);
+
+    let res: Awaited<ReturnType<typeof scanReceipt>>;
+    try {
+      res = await scanReceipt({ jobId, dataUrl });
+    } catch (err) {
+      setFormNote(actionError(err));
+      return;
+    }
+    if (!res.ok) {
+      setFormNote(res.error || "Could not read that receipt.");
+      return;
+    }
+    const ocr = res.ocr;
+    setForm({
+      vendor: ocr.vendor || "",
+      amount: ocr.total ? String(ocr.total) : "",
+      category: ocr.category || EXPENSE_CATEGORIES[0],
+      job: jobId,
+    });
+    setFormNote(
+      res.disabled ? "Vision is off, so these are placeholder values — check every field." : "",
+    );
+  };
+
+  const submitForm = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
     const vendor = form.vendor.trim();
     const raw = form.amount.trim().replace(/[$,\s]/g, "");
     const n = Number(raw);
@@ -857,17 +1124,65 @@ export function MobileFinancials() {
       return;
     }
     if (badAmount) return;
-    seqRef.current += 1;
+    if (!form.job) {
+      setFormNote("Pick the job this receipt belongs to.");
+      return;
+    }
+
+    setSaving(true);
+    setFormNote("");
+    let id: string;
+    let receiptUrl: string | null = null;
+    // saveReceiptExpense uploads the image and creates the JobExpense with its
+    // receiptUrl — which is what makes the receipt ATTACHED to the job rather
+    // than merely mentioned in a note. With no image there is nothing to
+    // upload, so a plain line goes through addJobExpense.
+    const note = image ? (vendor ? `Vendor: ${vendor}` : "") : vendor;
+    try {
+      if (image) {
+        const saved = await saveReceiptExpense({
+          jobId: form.job,
+          dataUrl: image.dataUrl,
+          filename: image.filename,
+          vendor,
+          total: n,
+          category: form.category,
+          note: null,
+          ocrJson: null,
+        });
+        id = saved.id;
+        receiptUrl = saved.receiptUrl;
+      } else {
+        const saved = await addJobExpense({
+          jobId: form.job,
+          category: form.category,
+          amount: n,
+          note: note || null,
+        });
+        id = saved.id;
+      }
+    } catch (err) {
+      setSaving(false);
+      setFormNote(actionError(err));
+      return;
+    }
+
+    // The id is the DATABASE id the action just created — which is what makes
+    // the new row's own Delete work without a reload.
     const rec: Expense = {
-      id: `x${seqRef.current}`,
-      job: form.job,
+      id,
+      jobId: form.job,
+      job: jobs.find((j) => j.id === form.job)?.title ?? "—",
       category: form.category,
       amount: n,
-      note: vendor,
-      when: "Jul 22",
-      receipt: form.receipt,
+      note,
+      when: plate(new Date()),
+      receiptUrl,
     };
+    setSaving(false);
     setExpenses((prev) => [rec, ...prev]);
+    bookExpense(n);
+    setImage(null);
     setFormOpen(false);
     setTab("expenses");
     setScrub(null);
@@ -878,11 +1193,48 @@ export function MobileFinancials() {
   const anyOverlay = sheetOpen || formOpen;
 
   // Swipe-down dismissal, one gesture per sheet, wired to the close paths the
-  // scrim and Cancel already use.
-  const actionsDrag = useSheetDrag(sheetOpen, () => setSheet(null));
-  const formDrag = useSheetDrag(formOpen, () => setFormOpen(false));
+  // scrim and Cancel already use — and, like them, inert while a write runs.
+  const actionsDrag = useSheetDrag(sheetOpen, () => {
+    if (!menuBusy) setSheet(null);
+  });
+  const formDrag = useSheetDrag(formOpen, () => {
+    if (!saving) setFormOpen(false);
+  });
   const rowCls = (id: string) =>
     `${styles.rowIn} ${strike?.id === id ? styles.striking : ""} ${landedId === id ? styles.landed : ""}`;
+
+  /* ============ BEFORE THE BOOK LANDS ============
+     The head, and one honest line about what is happening. No masthead, no
+     tabs, no chart: a zero, a dash and an empty ledger are all claims about
+     the org's money, and none of them is known yet. Same box, same dashed
+     vocabulary, as the ledger empty states below. */
+  if (!ready) {
+    return (
+      <div className={styles.app} onClick={onRootClick}>
+        <MobileNav />
+        <main className={styles.scroll} ref={scrollRef}>
+          <div className={styles.content} ref={contentRef}>
+            <div className={styles.pageHead}>
+              <div className={styles.kicker}>Money</div>
+              <h1 className={styles.pageTitle}>Financials</h1>
+            </div>
+            <div className={styles.fempty}>
+              <div className={styles.femptyT}>{loadErr ? "Could not load" : "Reading the books"}</div>
+              <div className={styles.femptyS}>
+                {loadErr ?? "Revenue, expenses, change orders and invoices for this company."}
+              </div>
+              {loadErr ? (
+                <button className={styles.femptyA} type="button" onClick={() => void load()}>
+                  <Icon id="i-arrow" />Try again
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </main>
+        <FinancialsIcons />
+      </div>
+    );
+  }
 
   return (
     <div className={styles.app} onClick={onRootClick}>
@@ -898,13 +1250,25 @@ export function MobileFinancials() {
             <div className={styles.kicker}>Money</div>
             <h1 className={styles.pageTitle}>Financials</h1>
             <div className={styles.pageActions}>
-              <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => openForm(true)}>
+              <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => pickFile("scan")}>
                 <Icon id="i-financials-receipt" />Capture receipt
               </button>
-              <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={() => openForm(false)}>
+              <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={openForm}>
                 <Icon id="i-plus" />Log expense
               </button>
             </div>
+            {/* The camera / photo picker behind both entry points. Off-screen
+                rather than hidden: a display:none input cannot be opened by
+                .click() in every browser. */}
+            <input
+              ref={fileRef}
+              style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+              type="file"
+              accept="image/*"
+              tabIndex={-1}
+              aria-hidden="true"
+              onChange={(e) => void onPickFile(e)}
+            />
           </div>
 
           {/* MASTHEAD — key on tab so the 320ms slide-in replays */}
@@ -1084,7 +1448,7 @@ export function MobileFinancials() {
                   {/* Net profit above the bars, with SQUARE dots */}
                   <polyline
                     className={styles.netLine}
-                    points={chart.bars.map((b) => `${b.cx.toFixed(1)},${b.netY.toFixed(1)}`).join(" ")}
+                    points={chart.bars.map((b) => `${b.netX.toFixed(1)},${b.netY.toFixed(1)}`).join(" ")}
                   />
                   {chart.bars.map((b) => (
                     <rect
@@ -1336,7 +1700,7 @@ export function MobileFinancials() {
                       Capture a receipt and the vendor, total and category are read off it and
                       staged for your review.
                     </div>
-                    <button className={styles.femptyA} type="button" onClick={() => openForm(true)}>
+                    <button className={styles.femptyA} type="button" onClick={() => pickFile("scan")}>
                       <Icon id="i-financials-receipt" />Capture receipt
                     </button>
                   </>
@@ -1393,7 +1757,7 @@ export function MobileFinancials() {
                   <div className={styles.frowFoot}>
                     <span className={styles.frowTags}>
                       <span className={`${styles.badge} ${styles.stCat}`}>{e.category}</span>
-                      {e.receipt ? null : (
+                      {e.receiptUrl ? null : (
                         <span className={`${styles.badge} ${styles.stNone}`}>No receipt</span>
                       )}
                     </span>
@@ -1508,8 +1872,8 @@ export function MobileFinancials() {
       <div
         className={`${styles.scrim} ${anyOverlay ? styles.on : ""}`}
         onClick={() => {
-          setSheet(null);
-          setFormOpen(false);
+          if (!menuBusy) setSheet(null);
+          if (!saving) setFormOpen(false);
         }}
         aria-hidden="true"
       />
@@ -1533,9 +1897,9 @@ export function MobileFinancials() {
             <button
               key={r.act}
               type="button"
-              disabled={r.disabled}
+              disabled={r.disabled || menuBusy}
               className={`${styles.menuItem} ${r.danger ? styles.menuItemDanger : ""}`}
-              onClick={() => runMenu(r.act)}
+              onClick={() => void runMenu(r.act)}
             >
               <span className={`${styles.miIc} ${r.tone ?? ""}`}>
                 <Icon id={r.icon} />
@@ -1547,7 +1911,12 @@ export function MobileFinancials() {
             </button>
           ))}
         </div>
-        <button className={styles.sheetCancel} type="button" onClick={() => setSheet(null)}>
+        <button
+          className={styles.sheetCancel}
+          type="button"
+          disabled={menuBusy}
+          onClick={() => setSheet(null)}
+        >
           Cancel
         </button>
       </div>
@@ -1564,13 +1933,18 @@ export function MobileFinancials() {
         <div className={styles.sheetGrab} {...formDrag.handleProps} />
         <div className={styles.sheetHead} {...formDrag.handleProps}>
           <div className={styles.sheetKicker}>
-            {staged ? "Staged from receipt — check before saving" : "Money out / new record"}
+            {formNote || (staged ? "Staged from receipt — check before saving" : "Money out / new record")}
           </div>
           <div className={styles.sheetTitle} id="mfFormTitle">
             {staged ? "Review expense" : "Log expense"}
           </div>
         </div>
-        <form className={`${styles.sheetBody} ${styles.formBody}`} id="mfExpForm" noValidate onSubmit={submitForm}>
+        <form
+          className={`${styles.sheetBody} ${styles.formBody}`}
+          id="mfExpForm"
+          noValidate
+          onSubmit={(e) => void submitForm(e)}
+        >
           <div className={`${styles.fld} ${vendorErr ? styles.invalid : ""}`}>
             <label className={styles.fldLbl} htmlFor="mfVendor">
               Vendor or note<span className={styles.req}>*</span>
@@ -1632,7 +2006,7 @@ export function MobileFinancials() {
           <div className={styles.fld}>
             <span className={styles.fldLbl}>Category</span>
             <div className={styles.choice}>
-              {EXPENSE_CATEGORIES.map((c) => (
+              {formCategories.map((c) => (
                 <button
                   key={c}
                   className={styles.choiceBtn}
@@ -1649,15 +2023,15 @@ export function MobileFinancials() {
           <div className={styles.fld}>
             <span className={styles.fldLbl}>Job</span>
             <div className={styles.jobList}>
-              {STAGE_JOBS.map((j) => (
+              {jobs.map((j) => (
                 <button
-                  key={j}
+                  key={j.id}
                   className={styles.jobOpt}
                   type="button"
-                  aria-pressed={form.job === j}
-                  onClick={() => setForm((f) => ({ ...f, job: j }))}
+                  aria-pressed={form.job === j.id}
+                  onClick={() => setForm((f) => ({ ...f, job: j.id }))}
                 >
-                  {j}
+                  {j.title}
                   <Icon id="i-check" />
                 </button>
               ))}
@@ -1666,11 +2040,14 @@ export function MobileFinancials() {
 
           <div className={styles.fld}>
             <span className={styles.fldLbl}>Receipt</span>
+            {/* The toggle IS the image: pressed means bytes are held and will
+                be uploaded with the line; pressing it opens the picker, and
+                pressing it again drops the photo. */}
             <button
               className={styles.fchk}
               type="button"
-              aria-pressed={form.receipt}
-              onClick={() => setForm((f) => ({ ...f, receipt: !f.receipt }))}
+              aria-pressed={Boolean(image)}
+              onClick={() => (image ? setImage(null) : pickFile("attach"))}
             >
               <span className={styles.fchkBox}>
                 <Icon id="i-check" />
@@ -1681,11 +2058,22 @@ export function MobileFinancials() {
           </div>
         </form>
         <div className={styles.formFoot}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={() => setFormOpen(false)}>
+          <button
+            className={`${styles.btn} ${styles.btnGhost}`}
+            type="button"
+            disabled={saving}
+            onClick={() => setFormOpen(false)}
+          >
             Discard
           </button>
-          <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" form="mfExpForm">
-            <Icon id="i-check" />Save expense
+          <button
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            type="submit"
+            form="mfExpForm"
+            disabled={saving}
+          >
+            <Icon id="i-check" />
+            {saving ? "Saving…" : "Save expense"}
           </button>
         </div>
       </div>

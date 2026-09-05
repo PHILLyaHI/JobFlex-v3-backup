@@ -14,6 +14,39 @@
    `.bell-dot` is deliberately NOT re-styled here — the page modules already own
    it, and two definitions of one dot is how they drift apart. */
 
+/* ── The unread COUNT ───────────────────────────────────────────────────────
+   Replaces the old `.bell-dot`, which every page module styled its own copy of
+   (`.bp :global(.bell-dot)` and the handheld shell's `.bellDot`). This one is
+   declared HERE and nowhere else, so there is a single definition to change —
+   the same reasoning the header gives for keeping the panel's rules in one
+   file. `.bell-wrap` is already `position: relative`, so the badge anchors to
+   the wrapper on both shells rather than depending on each button being
+   positioned.
+
+   Tabular numerals so 11 and 18 are the same width and the badge does not
+   twitch as the count changes. */
+.bell-wrap .bell-n {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1.5px solid var(--paper);
+  border-radius: 9px;
+  background: var(--blueprint);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
 .bell-wrap {
   --paper: #f2f0eb;
   --ink: #0a0a0a;

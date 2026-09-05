@@ -656,9 +656,13 @@ export function initProposalsContent(
       '<div class="pcol"><div class="kpi-lbl">Start</div><div class="pcol-val">' +
       esc(p.accepted || "—") +
       '</div><div class="pcol-sub">Work began</div></div>' +
-      '<div class="pcol"><div class="kpi-lbl">Completed</div><div class="pcol-val good">' +
+      '<div class="pcol"><div class="kpi-lbl">Completed</div><div class="pcol-val' +
+      (p.owed > 0 ? "" : " good") +
+      '">' +
       esc(p.paid || "—") +
-      '</div><div class="pcol-sub">Paid in full</div></div>' +
+      '</div><div class="pcol-sub">' +
+      (p.owed > 0 ? fmtMoney(p.owed) + " still owed" : "Paid in full") +
+      "</div></div>" +
       "</div>" +
       '<div class="psheet-body">' +
       '<div class="psheet-check">' +
@@ -681,7 +685,7 @@ export function initProposalsContent(
       encodeURIComponent(p.id) +
       '/pdf" target="_blank" rel="noopener noreferrer"><svg class="ic"><use href="#i-download"/></svg>Download PDF</a>' +
       "</div>" +
-      '<button class="btn btn-ghost btn--sm" type="button" data-act="unmark"><svg class="ic"><use href="#i-undo"/></svg>Unmark as paid</button>' +
+      '<button class="btn btn-ghost btn--sm" type="button" data-act="unmark"><svg class="ic"><use href="#i-undo"/></svg>Reopen job</button>' +
       "</div>" +
       "</div>"
     );
@@ -1152,11 +1156,11 @@ export function initProposalsContent(
         return;
       }
       if (kind === "markpaid" && p) {
-        openMarkPaidPicker(act, p, act.dataset.inst ?? "");
-        return;
-      }
-      if (kind === "markpaid-go" && p) {
-        void runMarkPaid(p, act.dataset.inst ?? "", act.dataset.method ?? "OTHER", act);
+        // ONE TAP (owner, 2026-09-03). The in-place bank / cash / check picker
+        // read as the button breaking into three new buttons, and a stage was
+        // never actually recorded until one of them was pressed — which is
+        // how "I marked both paid and it still won't complete" happened.
+        void runMarkPaid(p, act.dataset.inst ?? "", "OTHER");
         return;
       }
       if (kind === "unmark-line" && p) {
@@ -1366,13 +1370,7 @@ export function initProposalsContent(
       if (!res.ok) {
         pstate.writing = false;
         card.classList.remove("is-busy");
-        if (res.reason === "payment_outstanding") {
-          showAlert(
-            "Money still owed",
-            fmtMoney(res.remainingMinor / 100) +
-              " is outstanding. Use Mark paid on each stage (or Record payment) first, then mark completed.",
-          );
-        } else if (res.reason === "provider_paid") {
+        if (res.reason === "provider_paid") {
           showAlert(
             "Paid through Stripe / Square",
             "Refund it from that dashboard — the proposal syncs back automatically.",
@@ -1416,43 +1414,58 @@ export function initProposalsContent(
   }
 
   /**
-   * Mark paid (manual). The button turns into a three-way method picker in
-   * place — bank / cash / check — so recording a payment is two taps and no
-   * modal. The stage's own amount is recorded; a different figure is a job
-   * for the desktop editor.
+   * Mark paid (manual). One tap records the stage's own amount as a manual
+   * payment (method OTHER); a different figure or a named method is a job
+   * for the desktop editor's Record payment dialog.
    */
-  function openMarkPaidPicker(btn: HTMLElement, p: ProposalRow, instId: string) {
-    const host = btn.parentElement;
-    if (!host) return;
-    host.innerHTML =
-      '<span class="pinst-pick">' +
-      ["BANK_TRANSFER|Bank", "CASH|Cash", "CHECK|Check"]
-        .map((m) => {
-          const [key, label] = m.split("|");
-          return (
-            '<button class="btn btn-ghost btn--sm" type="button" data-act="markpaid-go" data-inst="' +
-            esc(instId) +
-            '" data-method="' +
-            key +
-            '">' +
-            label +
-            "</button>"
-          );
-        })
-        .join("") +
-      "</span>";
-    void p;
-  }
-  async function runMarkPaid(p: ProposalRow, instId: string, method: string, btn: HTMLElement) {
+  async function runMarkPaid(p: ProposalRow, instId: string, method: string) {
     if (pstate.writing) return;
     pstate.writing = true;
-    (btn as HTMLButtonElement).disabled = true;
+
+    /* OPTIMISTIC, AND VISIBLY IN FLIGHT.
+       The write is a server action that re-reads the whole proposal book
+       afterwards; on a cold dev server that is seconds, and all the button
+       did was grey itself out — the page read as frozen and the click as
+       lost. Two changes, and they answer different halves of that:
+
+         · the stage flips to "Paid · manual" HERE, before the request, so
+           the tap has an answer on the same frame;
+         · the card takes `.is-busy` for as long as the request is out —
+           dimmed, inert, and carrying the spinner the stylesheet draws on
+           that class — so "already done" is never confused with "still
+           going".
+
+       The server's answer still wins: the refetch below replaces the whole
+       row (and moves the card to Completed when that payment settles the
+       schedule), and a failure puts the stage back exactly as it was. */
+    const stage = p.inst?.find((i) => i.id === instId);
+    const prev = stage ? { status: stage.status, paidVia: stage.paidVia } : null;
+    if (stage) {
+      stage.status = "PAID";
+      stage.paidVia = "MANUAL";
+    }
+    renderAccepted();
+    findRow($("#propStack"), p.id)?.classList.add("is-busy");
     try {
-      await markInstallmentPaid({ installmentId: instId, method });
-      proposalsData = cloneRows(await loadProposalBook());
+      const res = await markInstallmentPaid({ installmentId: instId, method });
+      // RE-READ ONLY WHEN THE ANSWER CAN DIFFER. Refetching the whole book
+      // after every stage doubled the wait — the write itself is ~3s on a
+      // cold server and the refetch is another round trip, so the card sat
+      // dimmed for six. The optimistic flip above already IS the new state
+      // for a part payment; only a payment that settles the schedule
+      // changes anything else (the other stages are waived and the card
+      // moves to Completed), and that is the one case worth re-reading.
+      if (res.outcome !== "settled" || res.proposalPaid) {
+        proposalsData = cloneRows(await loadProposalBook());
+      }
       renderAccepted();
       repaintExcept("acc");
     } catch (err) {
+      if (stage && prev) {
+        stage.status = prev.status;
+        stage.paidVia = prev.paidVia;
+      }
+      renderAccepted();
       showAlert("Couldn't record payment", actionError(err));
     } finally {
       pstate.writing = false;

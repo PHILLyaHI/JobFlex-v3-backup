@@ -1,3 +1,5 @@
+import { isStripeEnabled } from "@/lib/sdk/stripe";
+import { getStripeMode } from "@/lib/stripeMode";
 // The subscription surface's ONE data read.
 //
 // Extracted verbatim from this folder's page.tsx on 2026-08-12 so the handheld
@@ -60,6 +62,9 @@ export interface SubscriptionViewProps {
   invoices: { available: boolean; invoices: SubscriptionInvoice[]; upcoming?: UpcomingInvoice | null };
   /** Pages a CUSTOM-plan org owns (lib/customPlan ids); [] otherwise. */
   customPages?: string[];
+  /** What the embedded plan cards need to offer checkout (owner-only page). */
+  checkoutReady: boolean;
+  sandbox: boolean;
   referral: {
     code: string;
     shareUrl: string;
@@ -131,7 +136,7 @@ export async function loadSubscriptionData(
       used: u.used,
     }));
 
-  const appUrl = await appBaseUrl();
+  const [appUrl, stripeMode] = await Promise.all([appBaseUrl(), getStripeMode()]);
   const shareUrl = `${appUrl}/auth/register?ref=${code.code}`;
   const rewardSummary =
     "Each contractor who signs up with it and goes paid takes 50% off one month of your subscription";
@@ -152,6 +157,8 @@ export async function loadSubscriptionData(
     usageUnlimited,
     invoices: invoiceResult,
     customPages,
+    checkoutReady: isStripeEnabled(),
+    sandbox: stripeMode === "test",
     referral: {
       code: code.code,
       shareUrl,

@@ -63,6 +63,12 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
+    // Turbopack's on-disk dev cache corrupted twice on 2026-09-03 ("Restore of
+    // All for task … failed in another thread" panic, then a segfault on the
+    // next start) and took the whole dev server down mid-session. Off until
+    // Next ships a fix; cold starts are a few seconds slower, nothing else
+    // changes. Re-enable by deleting this line (the default is true).
+    turbopackFileSystemCacheForDev: false,
     // "Jest worker encountered 2 child process exceptions, exceeding retry
     // limit" — the dev server's static-paths worker, not app code.
     //

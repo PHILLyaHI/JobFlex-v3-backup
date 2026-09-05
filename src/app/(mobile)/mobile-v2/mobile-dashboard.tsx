@@ -45,7 +45,14 @@ import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-v2.module.css";
-import { useNavIdentity, useNavLocked, useNavRole } from "@/components/v3/blueprint-shell/nav-role";
+import {
+  useNavBadges,
+  useNavIdentity,
+  useNavLimits,
+  useNavLocked,
+  useNavRole,
+  type NavLimit,
+} from "@/components/v3/blueprint-shell/nav-role";
 import { canOpen } from "@/components/v3/blueprint-shell/nav-map";
 import { ACTIVE_ENGINE_HREFS } from "@/components/v3/estimators-blueprint/estimators-data";
 import { EstimatorPicker } from "@/components/v3/estimators-blueprint/estimator-picker";
@@ -217,6 +224,15 @@ function useListLimit(ref: React.RefObject<HTMLDivElement | null>, count: number
    Split in two so every hook below runs against real data and
    none of them is conditional.
    ============================================================ */
+/** The quota pill's copy — the desk sidebar's tooltip, as the title here. */
+function quotaTip(q: NavLimit): string {
+  const cycle = q.scope === "absolute" ? "" : " this cycle";
+  if (q.remaining <= 0) {
+    return `You've used all ${q.limit} ${q.label} in your plan${cycle}. Upgrade to add more.`;
+  }
+  return `${q.remaining} of ${q.limit} ${q.label} left${cycle}.`;
+}
+
 export function MobileDashboard({ data: seed }: { data?: DashboardData }) {
   const [data, setData] = useState<DashboardData | null>(seed ?? null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -788,6 +804,11 @@ function DashboardView({ data }: { data: DashboardData }) {
   const navRole = useNavRole();
   // Custom-plan page locks, same provider; empty on every other plan.
   const navLocked = useNavLocked();
+  /* Unread counts and remaining plan quota per href — the desk sidebar's
+     badge + pill, in this drawer since 2026-09-04 (owner: the phone showed
+     neither). Both come from the same provider the shell mounts. */
+  const navBadges = useNavBadges();
+  const navLimits = useNavLimits();
   const navSections = navSectionsFor(navRole, navLocked);
   /* The composer this page's Help button opens is mounted by the responsive
      shell, which only wraps the authenticated route. On the standalone
@@ -867,11 +888,7 @@ function DashboardView({ data }: { data: DashboardData }) {
               <Icon id="i-plus" />
             </button>
           )}
-          <NotificationBell
-            buttonClassName={styles.tbarBtn}
-            dotClassName={styles.bellDot}
-            iconClassName={styles.ic}
-          />
+          <NotificationBell buttonClassName={styles.tbarBtn} iconClassName={styles.ic} />
         </div>
       </header>
 
@@ -1380,8 +1397,7 @@ function DashboardView({ data }: { data: DashboardData }) {
                 ) : (
                   <Link
                     key={item.label}
-                    className={cls}
-                    style={item.locked ? { opacity: 0.5 } : undefined}
+                    className={cls + (item.locked ? ` ${styles.sbLockd}` : "")}
                     href={item.href as Route}
                     aria-current={isActive ? "page" : undefined}
                     onClick={() => setNavOpen(false)}
@@ -1404,7 +1420,24 @@ function DashboardView({ data }: { data: DashboardData }) {
                         <rect x="5" y="11" width="14" height="10" rx="1.5" />
                         <path d="M8 11V7a4 4 0 0 1 8 0v4" />
                       </svg>
-                    ) : null}
+                    ) : (
+                      <>
+                        {(navBadges[item.href] ?? 0) > 0 ? (
+                          <span className={styles.sbBadge} aria-label={`${navBadges[item.href]} new`}>
+                            {navBadges[item.href] > 99 ? "99+" : navBadges[item.href]}
+                          </span>
+                        ) : null}
+                        {navLimits[item.href] ? (
+                          <span
+                            className={`${styles.sbQuota}${navLimits[item.href].remaining <= 0 ? ` ${styles.isOut}` : ""}${(navBadges[item.href] ?? 0) > 0 ? "" : ` ${styles.sbQuotaEnd}`}`}
+                            title={quotaTip(navLimits[item.href])}
+                            aria-label={quotaTip(navLimits[item.href])}
+                          >
+                            {navLimits[item.href].remaining > 99 ? "99+" : navLimits[item.href].remaining}
+                          </span>
+                        ) : null}
+                      </>
+                    )}
                   </Link>
                 );
               })}
@@ -1617,6 +1650,22 @@ function Sprite() {
         </symbol>
         <symbol id="i-check" viewBox="0 0 24 24">
           <path d="M20 6 9 17l-5-5" />
+        </symbol>
+        {/* The drawer (mobile-shell/mobile-nav) draws every nav-map icon from
+            THIS sprite on this route — it was missing these two, so Video
+            estimator and Subscription rendered without a glyph (owner's
+            report, 2026-09-03). Same paths as mobile-shell/sprite.tsx. */}
+        <symbol id="i-video" viewBox="0 0 24 24">
+          <rect x="2" y="6" width="13" height="12" rx="1.5" />
+          <path d="M15 10.5 21 7v10l-6-3.5" />
+        </symbol>
+        <symbol id="i-card" viewBox="0 0 24 24">
+          <rect x="2" y="5" width="20" height="14" rx="1" />
+          <path d="M2 10h20" />
+        </symbol>
+        <symbol id="i-pen" viewBox="0 0 24 24">
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
         </symbol>
         <symbol id="i-menu" viewBox="0 0 24 24">
           <path d="M4 6h16" />

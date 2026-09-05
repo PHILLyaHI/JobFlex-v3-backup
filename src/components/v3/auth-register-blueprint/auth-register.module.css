@@ -1142,3 +1142,217 @@
 .bp :global(.gsu-note b) { font-weight: 800; color: var(--ink); }
 .bp :global(.gsu-note .ic) { width: 16px; height: 16px; margin-top: 1px; flex: 0 0 auto; }
 .bp :global(.fld-in[readonly]) { background: var(--paper-deep); color: var(--muted); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   PLAN STEP — 2026-09-04 batch (owner)
+   · every card ends on its own control, full width;
+   · the custom card's page picker is a ghost button above it;
+   · a phone gets a swipe carousel, fixed-height cards, no inner scroll,
+     and the trial button pinned to the bottom once a plan is chosen.
+   ══════════════════════════════════════════════════════════════════════ */
+.bp :global(.pw-pick) {
+  align-self: stretch; margin-top: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 42px; padding: 0 14px;
+  font-size: 11.5px; letter-spacing: 0.12em;
+  background: var(--paper); color: var(--ink);
+}
+.bp :global(.pw-plan:hover) :global(.pw-pick) { background: var(--ink); color: var(--paper); }
+.bp :global(.pw-plan.on) :global(.pw-pick) { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+.bp :global(.pw-edit) {
+  align-self: stretch; margin-top: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 42px; padding: 0 14px;
+  background: var(--paper); color: var(--ink);
+  font-size: 11.5px; letter-spacing: 0.12em;
+  border-style: dashed;
+}
+.bp :global(.pw-edit:hover) { background: var(--paper-deep); color: var(--ink); border-style: solid; }
+.bp :global(.pw-edit) + :global(.pw-pick) { margin-top: 8px; }
+.bp :global(.pw-feats) { margin-bottom: 10px; }
+/* "Show all" — drawn only on a phone; the desk list scrolls itself. */
+.bp :global(.pw-more) { display: none; }
+
+@media (max-width: 768px) {
+  /* THE SHEET SCROLLS, NOTHING INSIDE IT DOES. The plan lists used to be
+     scroll containers with overscroll-behavior: contain, which swallowed
+     every vertical pan that started on a card (owner's report). */
+  .bp :global(.plan-sheet-in) { height: auto; min-height: 100%; padding: 16px 0 140px; }
+  .bp :global(.plan-sheet .brand), .bp :global(.plan-sheet .stepper), .bp :global(.pw-head),
+  .bp :global(#stepPlan > .err), .bp :global(.pw-promo-ok), .bp :global(#stepPlan > .err), .bp :global(.pw-note) {
+    margin-left: 18px; margin-right: 18px;
+  }
+  .bp :global(.pw-head) { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .bp :global(#stepPlan) :global(.auth-h1) { font-size: 30px; }
+
+  /* the carousel */
+  .bp :global(.pw-plans) {
+    display: flex; flex-wrap: nowrap; gap: 12px;
+    padding: 14px 18px 8px;
+    overflow-x: auto; overflow-y: hidden;
+    scroll-snap-type: x mandatory; scroll-padding: 0 18px;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+    scrollbar-width: none;
+  }
+  .bp :global(.pw-plans::-webkit-scrollbar) { display: none; }
+  .bp :global(.pw-plan) {
+    flex: 0 0 min(84vw, 340px);
+    scroll-snap-align: center;
+    /* one height for every card, chosen so the foot control is inside the
+       viewport with the trial bar below it at 390×844 */
+    height: min(560px, calc(100dvh - 330px));
+    min-height: 440px;
+    padding: 16px 16px 14px;
+    transition: none;
+  }
+  .bp :global(.pw-plan:hover) { transform: none; box-shadow: none; }
+  .bp :global(.pw-plan.on) { box-shadow: 4px 4px 0 var(--blueprint); }
+  .bp :global(.pw-feats) {
+    flex: 0 1 auto; overflow: hidden !important; overscroll-behavior: auto;
+    max-height: 250px; margin-bottom: 4px;
+    -webkit-mask-image: none; mask-image: none;
+  }
+  .bp :global(.pw-feats.is-open) { max-height: none; }
+  .bp :global(.pw-f) { padding: 5px 0; font-size: 12px; }
+  .bp :global(.pw-more) {
+    display: inline-block; align-self: flex-start; margin: 0 0 10px;
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--blueprint);
+    text-decoration: underline; text-underline-offset: 3px;
+  }
+  .bp :global(.pw-plan) :global(.pw-pick), .bp :global(.pw-plan) :global(.pw-edit) { min-height: 44px; }
+
+  /* the foot: hidden until a plan is chosen. Then the promo row stays in
+     the flow under the carousel and ONLY the trial button is pinned to the
+     bottom edge — a pinned promo+button block was 128px tall and sat on
+     top of the chosen card's own button (verified at 390×844). */
+  .bp :global(.pw-foot) { display: none; }
+  .bp :global(.pw-foot.is-armed) {
+    display: flex; flex-direction: column; gap: 10px;
+    position: static; margin-top: 14px;
+    padding: 0 0 calc(76px + env(safe-area-inset-bottom));
+  }
+  .bp :global(.pw-foot.is-armed) :global(.pw-promo) { min-width: 0; flex: 0 0 auto; }
+  .bp :global(.pw-foot.is-armed) :global(.pw-promo-in) { height: 44px; }
+  .bp :global(.pw-foot.is-armed) :global(.pw-go) {
+    position: fixed; left: 14px; right: 14px; z-index: 8;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    box-shadow: 4px 4px 0 var(--ink), 0 -10px 0 8px var(--paper);
+  }
+  .bp :global(.pw-go.pw-go) { height: 52px; font-size: 14px; }
+  .bp :global(.pw-skip) { position: static; display: block; margin: 12px auto 0; }
+  .bp :global(#stepPlan) { padding-bottom: 0; }
+
+  /* the page picker is a bottom sheet */
+  .bp :global(.pwp) { align-items: end; place-items: end center; padding: 0; }
+  .bp :global(.pwp-box) {
+    width: 100%; max-height: 88dvh;
+    border-left: none; border-right: none; border-bottom: none;
+    border-radius: 6px 6px 0 0; box-shadow: none;
+    transform: translateY(32px);
+  }
+  .bp :global(.pwp.is-on) :global(.pwp-box) { transform: none; }
+  .bp :global(.pwp-done.pwp-done) { min-height: 46px; }
+}
+/* The portal host is a scope, not a box: `.bp` alone would paint a full
+   paper page over the app. */
+.bp:global(.pwp-host) { display: contents; }
+
+/* ── NO ART PANEL ONCE THE COLUMNS STACK (owner, 2026-09-04): the photo
+   under "Your shop is live" read as a broken image on a phone. */
+@media (max-width: 1000px) {
+  .bp :global(.auth) { grid-template-columns: minmax(0, 1fr); }
+  .bp :global(.auth-side) { display: none; }
+  .bp :global(.side-wash), .bp :global(.side-art) { display: none; }
+  /* the step-2 promise card still shows — under the form, in the flow */
+  .bp :global(.auth-side:has(.side-perk.is-on)) {
+    display: block; position: static; min-height: 0; height: auto;
+    padding: 0 32px 36px; background: transparent;
+  }
+  /* outranks the centred desktop placement (`.auth-side .side-perk.is-on`
+     translates the card to the panel's middle) */
+  .bp :global(.auth-side .side-perk), .bp :global(.auth-side .side-perk.is-on) {
+    position: static; inset: auto; transform: none;
+    width: 100%; max-width: 560px; margin: 0 auto;
+  }
+}
+
+/* ============================================================
+   PHONE PASS — owner's visual critique, 2026-09-04.
+   Last in the file so it outranks the unscoped rhythm block above at
+   equal specificity.
+   ============================================================ */
+@media (max-width: 560px) {
+  /* STEP 2 ON A PHONE. The heading was the desk's 40px on a 390px column
+     (four lines of "Welcome, Phillipp. Tell us about your company.") and the
+     form started ~120px down; the whole step read as a poster, not a form.
+     A size down, the lede tighter, the form pulled up to the heading. */
+  .bp :global(.auth-form) { padding: clamp(52px, 7.5vh, 68px) 22px 28px; }
+  .bp :global(.auth-form .brand) { left: 22px; }
+  .bp :global(.stepper) { margin-bottom: 16px; }
+  .bp :global(.auth-h1) { font-size: 27px; line-height: 1.08; letter-spacing: -0.025em; }
+  .bp :global(.auth-lede) { margin-top: 8px; font-size: 13.5px; line-height: 1.45; }
+  .bp :global(form) { margin-top: 16px; }
+  .bp :global(.fld) { margin-bottom: 12px; }
+  .bp :global(.fld-in) { height: 46px; }
+  .bp :global(.chips) { gap: 7px; margin-top: 8px; }
+  .bp :global(.chip) { height: 36px; padding: 0 12px; font-size: 12.5px; }
+  /* The pair: Back is the small, secondary way out; Create account is the
+     commitment and takes the width (owner asked for it wider). */
+  .bp :global(.btn-pair) { margin-top: 18px; gap: 10px; }
+  .bp :global(.btn-pair .btn:first-child) { flex: 0 0 auto; width: 34%; padding-left: 30px; padding-right: 16px; }
+  .bp :global(.btn-pair .btn:last-child) { flex: 1 1 auto; padding-left: 16px; padding-right: 16px; }
+  /* THE WALL. `.auth-side` keeps its desk `border-left: 2px ink` when it is
+     re-shown under the form for the promise card, which drew a black rule
+     down the left edge past the card's bottom. */
+  .bp :global(.auth-side:has(.side-perk.is-on)) { border-left: none; padding: 0 22px 32px; }
+  /* Step 3's title is the one that goes UP a notch (owner). */
+  .bp :global(#stepPlan) :global(.auth-h1) { font-size: 34px; }
+}
+
+@media (max-width: 768px) {
+  /* THE PINNED TRIAL BUTTON DID NOT FOLLOW THE SCROLL. `.pw-go` is
+     `position: fixed`, but `.plan-sheet` — the element that scrolls — carries
+     `will-change: transform`, which makes it the containing block for fixed
+     descendants; the button was therefore laid out against the sheet's own
+     box and scrolled away with it, and sat on top of the chosen card's
+     "Selected" plate. The hint is only needed while the sheet slides in; at
+     rest it goes, and the button attaches to the viewport again. */
+  .bp :global(.plan-sheet.is-in) { will-change: auto; }
+  .bp :global(.pw-head) { gap: 8px; }
+  /* CARDS SIZE TO THEIR CONTENT. A forced ~514px height at 844px pushed the
+     promo field and the terms below the fold; with the list capped at 176px
+     (+ "Show all") a card is ~380px and the foot is in view on arrival. */
+  .bp :global(.pw-plan) { height: auto; min-height: 0; max-height: none; padding: 16px 16px 14px; }
+  .bp :global(.pw-feats) { max-height: 176px; }
+  .bp :global(.pw-foot.is-armed) { margin-top: 12px; }
+  /* One ink shadow, and a paper apron so the content sliding beneath the
+     button never bleeds through its offset. */
+  .bp :global(.pw-foot.is-armed) :global(.pw-go) {
+    box-shadow: 4px 4px 0 var(--ink);
+    outline: 8px solid var(--paper);
+  }
+}
+@media (max-width: 768px) {
+  /* Three stepper items on a 390px row wrapped every label; the sub-line
+     ("Required", "14 days free") goes and the names stay whole. */
+  .bp :global(.plan-sheet .st-h) { display: none; }
+  .bp :global(.plan-sheet .st-t) { white-space: nowrap; }
+  /* The foot sits in the page gutter like the head above it (the promo row
+     ran edge to edge and its Apply was cut at the right), and it no longer
+     reserves a second band for the pinned button — .plan-sheet-in's 140px
+     bottom padding already does, so the terms sat 100px below the promo. */
+  .bp :global(.pw-foot.is-armed) { margin-left: 18px; margin-right: 18px; padding-bottom: 0; }
+  /* Whole rows only: six of them, no half-cut seventh above "Show all". */
+  .bp :global(.pw-feats) { max-height: 162px; }
+}
+@media (max-width: 560px) {
+  /* Three items across 354px: the connector lines go, the boxes and type
+     come down a step, and the row spreads — "Your plan" was cut at the edge. */
+  .bp :global(.plan-sheet .stepper) { gap: 8px; justify-content: space-between; }
+  .bp :global(.plan-sheet .st-line) { display: none; }
+  .bp :global(.plan-sheet .st-item) { gap: 6px; }
+  .bp :global(.plan-sheet .st-n) { width: 24px; height: 24px; font-size: 11px; }
+  .bp :global(.plan-sheet .st-t) { font-size: 11.5px; }
+}

@@ -21,39 +21,40 @@
 //  · the conversion list → row cards with initials avatars and all three status
 //    tones (credited / converted / pending)
 //  · the empty state, plus a second one for a search that matches nothing
-//  · the desktop's (unpopulated) row popover → a bottom sheet with tonal boxes,
-//    a disabled row and a danger row
+//  · the desktop's (unpopulated) row popover → a bottom sheet with tonal boxes
 //
 // What changes versus the desktop sheet, and why:
 //  · The hero's prose note is dropped. The beige strip already states the whole
 //    programme — 50%, one month, per paid referral — so the paragraph repeated
 //    what was visible.
 //  · A search box is added: these records are identified by email, and typing
-//    three letters beats scanning eight long strings on a phone. It filters the
-//    same fixture client-side, no new endpoint.
+//    three letters beats scanning forty long strings on a phone. It filters the
+//    rows already on the sheet client-side, no new endpoint.
 //  · The ledger pages at 6. A handheld row is three lines tall.
 //  · The two URL chips cannot hold one line at 320px, so they became sheet rows
 //    where the full address has room and the copy target is 60px tall.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off — nothing here calls Prisma, a server action
-// or the network.
+// DATA: REAL, and the same rows the desktop sheet shows. The page's server
+// loader (app/dashboard/referrals/load-referrals) reads the org's ReferralCode
+// and its newest forty ReferralConversion rows plus the all-time counts and the
+// PAID-reward aggregate, and hands them down as props through the page's
+// viewport switch (app/dashboard/referrals/referrals-responsive) or the
+// /mobile-referrals-v2 preview page. Nothing here fetches; nothing here is a
+// fixture. The row sheet offers only what has a real effect — mail the
+// contractor, copy their address — because there is no endpoint behind
+// "nudge", "apply credit" or "remove" (credits land on the Stripe balance on
+// their own; see lib/referralRewards).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-referrals.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
+import type { ReferralsProps } from "@/app/dashboard/referrals/load-referrals";
 import {
   ALL,
-  CONVERSIONS_SEED,
   FILTERS,
-  HOMEOWNER_LINK,
   PAGE_SIZE,
-  REFERRAL_CODE,
-  REWARD_PCT,
-  SIGNUP_LINK,
-  creditedCents,
   domainOf,
   initials,
   matchesQuery,
@@ -62,9 +63,12 @@ import {
   pendingCents,
   statusCount,
   statusLabel,
-  type Conversion,
   type FilterKey,
 } from "./referrals-data";
+
+/** Fed by app/dashboard/referrals/load-referrals — the desktop sheet's props
+ *  plus the reward percentage. One loader, two editions. */
+export type MobileReferralsProps = ReferralsProps;
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -120,27 +124,30 @@ type MenuRow = {
   tone?: string;
   title: string;
   sub: string;
-  disabled?: boolean;
-  danger?: boolean;
 };
 
-type ShareRow = { key: string; icon: string; tone: string; title: string; value: string };
+/** `value` is what the tap copies (the full URL); `show` is the line under the
+ *  title — the same address without its scheme, so it fits a 320px row. */
+type ShareRow = { key: string; icon: string; tone: string; title: string; value: string; show: string };
 
-/** The desktop hero's two link chips, plus the code itself. */
-const SHARE_ROWS: ShareRow[] = [
-  { key: "signup", icon: "i-userplus", tone: styles.rmiBp, title: "Contractor signup link", value: SIGNUP_LINK },
-  { key: "homeowners", icon: "i-users", tone: styles.rmiSky, title: "Homeowner link", value: HOMEOWNER_LINK },
-  { key: "code", icon: "i-copy", tone: styles.rmiWarn, title: "Referral code", value: REFERRAL_CODE },
-];
+const bare = (url: string) => url.replace(/^https?:\/\//, "");
 
-export function MobileReferrals() {
+export function MobileReferrals({
+  code,
+  signupUrl,
+  homeownerUrl,
+  conversions,
+  uses,
+  creditedCents,
+  rewardPct,
+}: MobileReferralsProps) {
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
 
-  /* Cloned per mount: the row sheet removes records, and a mutation must not
-     leak into the next mount of the page. */
-  const [data, setData] = useState<Conversion[]>(() => CONVERSIONS_SEED.map((c) => ({ ...c })));
+  /* The newest forty rows, straight from the loader. Nothing on this page
+     mutates them — every row action is a copy or a mailto. */
+  const data = conversions;
   const [filter, setFilter] = useState<FilterKey>(ALL);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -323,8 +330,20 @@ export function MobileReferrals() {
     () => data.filter((c) => matchesStatus(c, filter) && matchesQuery(c, query)),
     [data, filter, query],
   );
-  const credited = useMemo(() => creditedCents(data), [data]);
+  /* Credit earned is the loader's PAID aggregate over EVERY conversion, not
+     just the forty on the sheet — same figure as the desktop's first tile. */
+  const credited = creditedCents;
   const onTheWay = useMemo(() => pendingCents(data), [data]);
+
+  /** The desktop hero's two link chips, plus the code itself. */
+  const shareRows = useMemo<ShareRow[]>(
+    () => [
+      { key: "signup", icon: "i-userplus", tone: styles.rmiBp, title: "Contractor signup link", value: signupUrl, show: bare(signupUrl) },
+      { key: "homeowners", icon: "i-users", tone: styles.rmiSky, title: "Homeowner link", value: homeownerUrl, show: bare(homeownerUrl) },
+      { key: "code", icon: "i-copy", tone: styles.rmiWarn, title: "Referral code", value: code, show: code },
+    ],
+    [code, signupUrl, homeownerUrl],
+  );
 
   const activeOption = FILTERS.find((o) => o.k === filter) ?? FILTERS[0];
   const pages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
@@ -339,7 +358,7 @@ export function MobileReferrals() {
   };
 
   const copyCode = () => {
-    copyText(REFERRAL_CODE);
+    copyText(code);
     setCodeCopied(true);
   };
 
@@ -349,32 +368,15 @@ export function MobileReferrals() {
   };
 
   /* ---------- row sheet -------------------------------------------------
-     Every record shows exactly one disabled row, and which one is decided by
-     the fixture: a PENDING referral has no credit to apply, a converted one has
-     nothing left to nudge. */
+     Only actions with a real effect. "Send a message" hands the address to the
+     phone's mail app; "Copy email" copies it. There is no endpoint for
+     nudging, applying or removing a referral, so no row pretends to. */
   const menuRows = useMemo<MenuRow[]>(() => {
     const c = sheetRec;
     if (!c) return [];
-    const upgraded = c.status !== "PENDING";
     return [
       { act: "mail", icon: "i-mail", tone: styles.rmiSky, title: "Send a message", sub: c.email },
-      {
-        act: "nudge", icon: "i-send", tone: styles.rmiBp, title: "Nudge to upgrade",
-        sub: upgraded ? "Already on a paid plan" : `Signed up ${c.when}, hasn't upgraded yet`,
-        disabled: upgraded,
-      },
-      {
-        act: "credit", icon: "i-card", tone: styles.rmiOk, title: "Apply credit",
-        sub: c.reward > 0
-          ? `${money(c.reward)} off your next invoice`
-          : "No credit earned yet",
-        disabled: c.reward === 0,
-      },
       { act: "copy", icon: "i-copy", title: "Copy email", sub: domainOf(c.email) },
-      {
-        act: "del", icon: "i-trash", tone: styles.rmiDanger, title: "Remove referral",
-        sub: "Stops tracking this signup", danger: true,
-      },
     ];
   }, [sheetRec]);
 
@@ -382,12 +384,11 @@ export function MobileReferrals() {
     const c = sheetRec;
     setSheetId(null);
     if (!c) return;
-    if (act === "del") {
-      setData((prev) => prev.filter((x) => x.id !== c.id));
-    } else if (act === "copy") {
+    if (act === "copy") {
       copyText(c.email);
       setLandedId(c.id);
-    } else if (act === "nudge" || act === "mail" || act === "credit") {
+    } else if (act === "mail") {
+      window.location.assign(`mailto:${c.email}`);
       setLandedId(c.id);
     }
   };
@@ -438,10 +439,10 @@ export function MobileReferrals() {
                 <button
                   className={styles.progVal}
                   type="button"
-                  aria-label={`Copy referral code ${REFERRAL_CODE}`}
+                  aria-label={`Copy referral code ${code}`}
                   onClick={copyCode}
                 >
-                  {REFERRAL_CODE}
+                  {code}
                 </button>
                 <button
                   className={`${styles.progCopy} ${codeCopied ? styles.isDone : ""}`}
@@ -454,12 +455,13 @@ export function MobileReferrals() {
               </div>
             </div>
             <div className={styles.progFoot}>
-              <span className={styles.progRwV}>{REWARD_PCT}%</span>
+              <span className={styles.progRwV}>{rewardPct}%</span>
               <span className={styles.progRwL}>off one month, per paid referral</span>
             </div>
           </div>
 
-          {/* MASTHEAD — computed, so removing a referral moves all three */}
+          {/* MASTHEAD — the loader's aggregates: credit banked, credit owed,
+              and every use of the code, not just the forty rows below */}
           <div className={styles.mast}>
             <div className={styles.mastTop}>
               <div className={styles.mastLbl}>
@@ -475,7 +477,7 @@ export function MobileReferrals() {
               </div>
               <div className={styles.mastSub}>
                 <div className={styles.mastSubL}>Code uses</div>
-                <div className={styles.mastSubV}>{data.length}</div>
+                <div className={styles.mastSubV}>{uses}</div>
               </div>
             </div>
           </div>
@@ -626,8 +628,8 @@ export function MobileReferrals() {
         </div>
         <div className={styles.sheetBody}>
           {menuRows.map((r) => (
-            <button key={r.act} type="button" disabled={r.disabled}
-              className={`${styles.rmenuItem} ${r.danger ? styles.rmenuItemDanger : ""}`}
+            <button key={r.act} type="button"
+              className={styles.rmenuItem}
               onClick={() => runMenu(r.act)}>
               <span className={`${styles.rmiIc} ${r.tone ?? ""}`}><Icon id={r.icon} /></span>
               <span className={styles.rmiTxt}>
@@ -649,7 +651,7 @@ export function MobileReferrals() {
           <div className={styles.sheetTitle} id="mrShareTitle">Share your code</div>
         </div>
         <div className={styles.sheetBody}>
-          {SHARE_ROWS.map((r) => {
+          {shareRows.map((r) => {
             const done = sharedKey === r.key;
             return (
               <button
@@ -663,7 +665,7 @@ export function MobileReferrals() {
                 </span>
                 <span className={styles.rmiTxt}>
                   <span className={styles.rmenuItemT}>{r.title}</span>
-                  <span className={styles.rmenuItemS}>{r.value}</span>
+                  <span className={styles.rmenuItemS}>{r.show}</span>
                 </span>
                 <span className={styles.rmiFlag} role="status">{done ? "Copied" : ""}</span>
               </button>

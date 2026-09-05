@@ -47,10 +47,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import { useRouter } from "next/navigation";
-import { toast } from "@/components/ui/Toast";
-import { changePlan } from "@/actions/billing";
-import { ConfirmPlanChange } from "@/components/billing/ConfirmPlanChange";
+import { UpgradeContent, type UpgradePlan } from "@/components/v3/upgrade-blueprint/upgrade-content";
 import { longDate } from "@/lib/format";
 import { customPlanAddable, customPlanIncludes, customPriceCents } from "@/lib/customPlan";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
@@ -148,47 +145,24 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
   /* THE PLAN BUTTONS DO THE THING (owner, 2026-09-02). A shop with a Stripe
      subscription is switched in place — up charges the difference, down is
      free — and one without is sent through checkout. */
-  const router = useRouter();
-  const [switching, setSwitching] = useState<string | null>(null);
-  // Every change asks first (owner, 2026-09-02). An UPGRADE is then paid on
-  // Stripe's page and replaces the current subscription on the return; a
-  // DOWNGRADE is switched in place, free.
-  const [confirmSlug, setConfirmSlug] = useState<string | null>(null);
-  const onPickPlan = useCallback(
-    async (slug: string, dir: "up" | "down") => {
-      if (switching) return;
-      setSwitching(slug);
-      try {
-        if (dir === "down") {
-          const res = await changePlan(slug, "MONTH");
-          if (!res.ok) {
-            toast.error("Couldn't change the plan", res.error);
-            return;
-          }
-          if (res.mode === "switched") {
-            toast.success(`Moved to ${res.planName}`, "Nothing was charged. The lower price starts now.");
-            router.refresh();
-            return;
-          }
-        }
-        const r = await fetch("/api/checkout/subscription", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ planSlug: slug, interval: "MONTH" }),
-        });
-        const body = (await r.json().catch(() => ({}))) as { url?: string; error?: string };
-        if (body.url) {
-          window.location.assign(body.url);
-          return;
-        }
-        toast.error("Couldn't open checkout", body.error ?? "Try again.");
-      } catch {
-        toast.error("Couldn't change the plan", "Try again.");
-      } finally {
-        setSwitching(null);
-      }
-    },
-    [switching, router],
+  /* THE CARDS are the upgrade page's own (owner, 2026-09-04: one set of
+     plan cards everywhere): same labels, same confirm dialogs, same custom
+     picker, embedded here without its page head. */
+  const upgradePlans = useMemo<UpgradePlan[]>(
+    () =>
+      props.plans
+        .filter((p) => !p.isFree)
+        .map((p) => ({
+          slug: p.slug,
+          name: p.name,
+          description: p.description,
+          priceCents: p.priceCents,
+          yearlyPriceCents: p.yearlyPriceCents,
+          trialDays: p.trialDays,
+          features: p.features,
+          highlight: p.highlight,
+        })),
+    [props.plans],
   );
 
   /* The comparison rows, "Everything in <plan>" expanded — the same rule the
@@ -292,80 +266,20 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
         </div>
       </section>
 
-      {/* TIER SPECTRUM */}
-      <section className={cx("card", "card--flush", RV)} id="plans">
-        <div className={cx("spec")} id="specGrid">
-          {plansStrip.map((p) => (
-            <div key={p.slug} className={cx("spec-cell", p.cur && "is-cur")}>
-              <div className={cx("spec-name")}>{p.name}</div>
-              <div className={cx("spec-price")}>{price(p.mo)}</div>
-              <div className={cx("spec-foot")}>
-                {p.cur ? (
-                  <span className={cx("spec-cur")}>Current plan</span>
-                ) : p.slug === "custom" ? (
-                  <Link className={cx("btn", "btn-ghost")} href={`${UPGRADE}?custom=1` as Route}>
-                    Build it
-                  </Link>
-                ) : (
-                  <button
-                    type="button"
-                    className={cx("btn", p.dir === "up" ? "btn-primary" : "btn-ghost")}
-                    disabled={switching !== null}
-                    onClick={() => setConfirmSlug(p.slug)}
-                  >
-                    {switching === p.slug ? "Switching…" : p.dir === "up" ? "Upgrade" : "Downgrade"}
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+      {/* PLANS — the upgrade page's cards, embedded */}
+      <section className={cx("plans-embed", RV)} id="plans">
+        <UpgradeContent
+          embedded
+          plans={upgradePlans}
+          currentPlan={props.currentSlug}
+          customPages={props.customPages ?? []}
+          isOwner
+          checkoutReady={props.checkoutReady}
+          sandbox={props.sandbox}
+          upgradedTo={null}
+          cancelled={false}
+        />
       </section>
-
-      {(() => {
-        const target = plansStrip.find((p) => p.slug === confirmSlug) ?? null;
-        const down = target?.dir === "down";
-        return (
-          <ConfirmPlanChange
-            open={confirmSlug !== null}
-            kicker={down ? "Downgrade" : "Upgrade"}
-            title={
-              target
-                ? down
-                  ? `Downgrade to ${target.name}?`
-                  : `Upgrade to ${target.name}?`
-                : ""
-            }
-            body={
-              target ? (
-                down ? (
-                  <>
-                    You&rsquo;ll move to <b>{target.name}</b> right away. Nothing is charged
-                    today; pages and limits that plan does not include close as soon as you
-                    confirm.
-                  </>
-                ) : (
-                  <>
-                    You&rsquo;ll be taken to Stripe to pay{" "}
-                    <b>{target.mo !== null ? `$${target.mo}/mo` : "the plan price"}</b> for{" "}
-                    <b>{target.name}</b>. Your current plan is replaced the moment the payment
-                    goes through.
-                  </>
-                )
-              ) : null
-            }
-            confirmLabel={down ? "Downgrade" : "Continue to payment"}
-            busy={switching !== null}
-            onConfirm={() => {
-              const slug = confirmSlug;
-              if (!slug || !target) return;
-              if (down) setConfirmSlug(null);
-              void onPickPlan(slug, down ? "down" : "up");
-            }}
-            onCancel={() => setConfirmSlug(null)}
-          />
-        );
-      })()}
 
       {/* USAGE + BILLING */}
       <div className={cx("row-ub", RV)}>
@@ -412,69 +326,87 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
               : "This plan has no caps · counts reset each billing cycle"}
           </div>
         </div>
-        <div className={cx("card")} id="billCard">
+        <div className={cx("card", "bill-card")} id="billCard">
           <div className={cx("card-head")}>
             <h2>Billing history</h2>
-            <svg className={cx("ic", "card-head-ic")}>
-              <use href="#i-file" />
-            </svg>
+            <span className={cx("bill-count")}>
+              {props.invoices.invoices.length === 0
+                ? "No invoices yet"
+                : `${props.invoices.invoices.length} invoice${props.invoices.invoices.length === 1 ? "" : "s"}`}
+            </span>
           </div>
-          <div className={cx("inv-head")}>
-            <span>Invoice</span>
-            <span>Date</span>
-            <span>Status</span>
-            <span className={cx("ta-r")}>Amount</span>
-          </div>
-          <div className={cx("inv-list")} id="invList">
-            {/* THE NEXT BILL, as Stripe will charge it — every coupon and the
-                referral credit already netted out (owner, 2026-09-02). */}
-            {props.invoices.upcoming ? (
-              <div className={cx("inv-row", "inv-row--next")}>
-                <span className={cx("inv-no")}>
-                  Next bill
-                  {props.invoices.upcoming.notes.length ? (
-                    <span className={cx("inv-notes")}>{props.invoices.upcoming.notes.join(" · ")}</span>
-                  ) : null}
+
+          {/* THE NEXT BILL, as Stripe will charge it — one framed block, the
+              amount first, every coupon and referral credit itemised under
+              it (owner, 2026-09-02; redrawn 2026-09-04 after the critique:
+              the old row crammed three lines into a ledger cell). */}
+          {props.invoices.upcoming ? (
+            <div className={cx("bill-next")}>
+              <div className={cx("bill-next-l")}>
+                <span className={cx("bill-next-k")}>Next bill</span>
+                <span className={cx("bill-next-d")}>
+                  {props.invoices.upcoming.dueAt ? fmtDate(props.invoices.upcoming.dueAt) : "Date pending"}
                 </span>
-                <span className={cx("inv-date")}>
-                  {props.invoices.upcoming.dueAt ? fmtDate(props.invoices.upcoming.dueAt) : "—"}
-                </span>
-                <span>
-                  <span className={cx("st-badge", "warn")}>upcoming</span>
-                </span>
-                <span className={cx("inv-amt")}>
-                  {props.invoices.upcoming.discountCents + props.invoices.upcoming.creditCents > 0 ? (
-                    <s className={cx("inv-was")}>
-                      {"$" + (props.invoices.upcoming.subtotalCents / 100).toFixed(2)}
-                    </s>
-                  ) : null}
+              </div>
+              <div className={cx("bill-next-r")}>
+                {props.invoices.upcoming.discountCents + props.invoices.upcoming.creditCents > 0 ? (
+                  <s className={cx("bill-next-was")}>
+                    {"$" + (props.invoices.upcoming.subtotalCents / 100).toFixed(2)}
+                  </s>
+                ) : null}
+                <span className={cx("bill-next-amt")}>
                   {"$" + (props.invoices.upcoming.amountDueCents / 100).toFixed(2)}
                 </span>
               </div>
-            ) : null}
-            {!props.invoices.available ||
-            (props.invoices.invoices.length === 0 && !props.invoices.upcoming) ? (
-              <div className={cx("us-note")}>No invoices yet.</div>
-            ) : null}
-            {props.invoices.invoices.map((v) => (
-              <div key={v.id} className={cx("inv-row")}>
-                <span className={cx("inv-no")}>
-                  {v.hostedInvoiceUrl ? (
-                    <a href={v.hostedInvoiceUrl} target="_blank" rel="noreferrer">
-                      {v.number ?? v.id.slice(0, 12)}
-                    </a>
-                  ) : (
-                    (v.number ?? v.id.slice(0, 12))
-                  )}
-                </span>
-                <span className={cx("inv-date")}>{fmtDate(v.created)}</span>
-                <span>
-                  <span className={cx("st-badge")}>{v.status ?? "—"}</span>
-                </span>
-                <span className={cx("inv-amt")}>{"$" + (v.amountPaidCents / 100).toFixed(2)}</span>
+              {props.invoices.upcoming.notes.length ? (
+                <ul className={cx("bill-lines")}>
+                  {props.invoices.upcoming.notes.map((n) => (
+                    <li key={n}>{n}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+
+          {props.invoices.available && props.invoices.invoices.length > 0 ? (
+            <>
+              <div className={cx("inv-head")}>
+                <span>Invoice</span>
+                <span>Date</span>
+                <span>Status</span>
+                <span className={cx("ta-r")}>Amount</span>
               </div>
-            ))}
-          </div>
+              <div className={cx("inv-list")} id="invList">
+                {props.invoices.invoices.map((v) => (
+                  <div key={v.id} className={cx("inv-row")}>
+                    <span className={cx("inv-no")}>
+                      {v.hostedInvoiceUrl ? (
+                        <a href={v.hostedInvoiceUrl} target="_blank" rel="noreferrer">
+                          {v.number ?? v.id.slice(0, 12)}
+                        </a>
+                      ) : (
+                        (v.number ?? v.id.slice(0, 12))
+                      )}
+                    </span>
+                    <span className={cx("inv-date")}>{fmtDate(v.created)}</span>
+                    <span>
+                      <span className={cx("st-badge", v.status === "paid" ? "" : "warn")}>
+                        {v.status ?? "—"}
+                      </span>
+                    </span>
+                    <span className={cx("inv-amt")}>{"$" + (v.amountPaidCents / 100).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className={cx("bill-foot")}>Receipts open on Stripe · amounts in USD</div>
+            </>
+          ) : (
+            <div className={cx("bill-empty")}>
+              {!props.invoices.available
+                ? "Invoices appear here once Stripe billing is active for your account."
+                : "Your first invoice lands here after it is issued."}
+            </div>
+          )}
         </div>
       </div>
 

@@ -45,22 +45,28 @@
 //    reads as a drawn mono badge with the Reviews thumb, in a neutral frame
 //    rather than a status tone.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// DATA: REAL, and the same rollup the desktop sheet shows. The page's server
+// loader (app/dashboard/reports/load-reports) runs getReportsRollup(), which
+// buckets the org's invoices, payments, leads, proposals and job assignments
+// into all four ranges in one pass, and hands it down as a prop through the
+// page's viewport switch (app/dashboard/reports/reports-responsive) or the
+// /mobile-reports-v2 preview page. Nothing here fetches; nothing here is a
+// fixture. Export builds a REAL CSV from the rollup on screen — the desktop's
+// own buildCsv(), shared through ./reports-data.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-reports.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
+import type { ReportsProps } from "@/app/dashboard/reports/load-reports";
 import {
-  CREW,
   FORMATS,
-  RANGES,
-  RANGE_MONTHS,
   avgDaysFor,
+  buildReportCsv,
   conversionFor,
-  crewInRange,
+  crewFigures,
+  crewFor,
   funnelFor,
   initials,
   jobsFor,
@@ -70,6 +76,9 @@ import {
   type CrewMember,
   type RangeKey,
 } from "./reports-data";
+
+/** Fed by app/dashboard/reports/load-reports. One loader, two editions. */
+export type MobileReportsProps = ReportsProps;
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -125,7 +134,7 @@ function CountUp({ value, className }: { value: number; className?: string }) {
 const FILL_CLS = ["", styles.s2, styles.s3, styles.s4];
 
 /* The dropdown FACE gets a compact echo of the range; the menu cells keep the
-   fixture's own labels. "Last 12 months · 136" overruns the face's ~149px of
+   rollup's own labels. "Last 12 months · 136" overruns the face's ~149px of
    value room at 320px, and an ellipsed range reads as a bug. */
 const FACE: Record<RangeKey, string> = {
   mtd: "This month",
@@ -144,20 +153,22 @@ type MenuRow = {
   danger?: boolean;
 };
 
-export function MobileReports() {
+export function MobileReports({ rollup }: MobileReportsProps) {
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
 
   const [range, setRange] = useState<RangeKey>("q");
   const [filterOpen, setFilterOpen] = useState(false);
-  /* Cloned per mount: the row sheet can exclude a crew member from the report,
-     and that must not leak into the next mount. */
-  const [crew, setCrew] = useState<CrewMember[]>(() => CREW.map((c) => ({ ...c })));
+  /* Which crew members the reader has taken OUT of the report, by name. A view
+     preference over the server's rollup, not an edit to it: nothing is written
+     back, and it resets when the page is opened again. */
+  const [excluded, setExcluded] = useState<string[]>([]);
   const [sheetName, setSheetName] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [format, setFormat] = useState("csv");
   const [busy, setBusy] = useState(false);
+  const [exportErr, setExportErr] = useState("");
   const [scrub, setScrub] = useState<number | null>(null);
 
   /* ---------- viewport height ------------------------------------------
@@ -295,23 +306,29 @@ export function MobileReports() {
   }, [filterOpen]);
 
   /* ---------- derived --------------------------------------------------- */
-  const cur = rangeOf(range);
-  const months = useMemo(() => monthsFor(range), [range]);
-  const sum = useMemo(() => summaryFor(range), [range]);
-  const funnel = useMemo(() => funnelFor(range), [range]);
-  const conv = useMemo(() => conversionFor(range), [range]);
-  const avgDays = avgDaysFor(range);
+  const cur = rangeOf(rollup, range);
+  const months = useMemo(() => monthsFor(rollup, range), [rollup, range]);
+  const sum = useMemo(() => summaryFor(rollup, range), [rollup, range]);
+  const funnel = useMemo(() => funnelFor(rollup, range), [rollup, range]);
+  const conv = useMemo(() => conversionFor(rollup, range), [rollup, range]);
+  const avgDays = avgDaysFor(rollup, range);
 
+  /* The rollup already scopes each crew member's figures to the range, so the
+     range switch re-reads the server's numbers rather than scaling one set. */
+  const rangeCrew = useMemo<CrewMember[]>(() => crewFor(rollup, range), [rollup, range]);
   const rows = useMemo(
-    () => crew.map((c) => ({ c, f: crewInRange(c, range) })),
-    [crew, range],
+    () =>
+      rangeCrew
+        .filter((c) => !excluded.includes(c.name))
+        .map((c) => ({ c, f: crewFigures(c) })),
+    [rangeCrew, excluded],
   );
   const crewTotal = useMemo(
     () => rows.reduce((a, r) => ({ jobs: a.jobs + r.f.jobs, revenue: a.revenue + r.f.revenue }),
       { jobs: 0, revenue: 0 }),
     [rows],
   );
-  const excluded = CREW.length - crew.length;
+  const hiddenCount = rangeCrew.length - rows.length;
 
   /* ---------- chart ----------------------------------------------------- */
   const chart = useMemo(() => {
@@ -374,52 +391,73 @@ export function MobileReports() {
   /* ---------- crew row sheet -------------------------------------------- */
   const sheetCrew = sheetName === null ? null : rows.find((r) => r.c.name === sheetName) ?? null;
 
+  /* Only what has an effect. "Exclude from report" is a view filter over the
+     rollup; the four navigation rows the fixture build offered (crew profile,
+     jobs in range, reviews, compare) had no destination and are gone. */
   const menuRows = useMemo<MenuRow[]>(() => {
     if (!sheetCrew) return [];
     const { c, f } = sheetCrew;
     return [
-      { act: "open", icon: "i-user", tone: styles.miBp, title: "Open crew profile",
-        sub: "Full record and job history" },
       { act: "jobs", icon: "i-jobs", tone: styles.miSky, title: "Jobs in this range",
         sub: `${f.jobs} delivered · ${cur.note}` },
-      { act: "reviews", icon: "i-thumb", tone: styles.miOk, title: "Reviews",
-        sub: `Rated ${c.rating.toFixed(1)} by ${c.name.split(" ")[0]}'s clients` },
-      // The fixture holds twelve months and no more, so the widest range has
-      // nothing behind it to compare against. Reachable: pick Last 12 months.
-      { act: "compare", icon: "i-chart", tone: styles.miWarn, title: "Compare with previous range",
-        sub: range === "12m" ? "No earlier months on file" : `Against the ${RANGE_MONTHS[range]} months before`,
-        disabled: range === "12m" },
       { act: "exclude", icon: "i-x", tone: styles.miDanger, title: "Exclude from report",
-        sub: "Drops the row and its share of the total", danger: true },
+        sub: `Drops ${c.name.split(" ")[0]} from the table, the total and the export`, danger: true },
     ];
-  }, [sheetCrew, range, cur.note]);
+  }, [sheetCrew, cur.note]);
 
   const runMenu = (act: string) => {
     const target = sheetCrew?.c.name ?? null;
     setSheetName(null);
-    if (act === "exclude" && target) setCrew((prev) => prev.filter((c) => c.name !== target));
+    if (act === "exclude" && target) {
+      setExcluded((prev) => (prev.includes(target) ? prev : [...prev, target]));
+    }
   };
 
-  const restoreCrew = () => setCrew(CREW.map((c) => ({ ...c })));
+  const restoreCrew = () => setExcluded([]);
 
-  /* ---------- export sheet ---------------------------------------------- */
-  const downloadTimer = useRef<number | null>(null);
+  /* ---------- export sheet ----------------------------------------------
+     A REAL file. The CSV is built from the rollup on screen (the desktop's own
+     buildCsv, shared through ./reports-data) and handed to the browser; the
+     two formats the app cannot produce are disabled rather than pretending. */
+  const busyTimer = useRef<number | null>(null);
   useEffect(() => () => {
-    if (downloadTimer.current) clearTimeout(downloadTimer.current);
+    if (busyTimer.current) clearTimeout(busyTimer.current);
   }, []);
 
   const openExport = () => {
     setBusy(false);
+    setExportErr("");
     setExportOpen(true);
   };
   const submitExport = (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
+    const picked = FORMATS.find((f) => f.id === format);
+    if (!picked?.available) return;
     setBusy(true);
-    downloadTimer.current = window.setTimeout(() => {
+    setExportErr("");
+    let url: string | null = null;
+    try {
+      const csv = buildReportCsv(rollup, range, excluded);
+      url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `jobflex-report-${range}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch {
+      setExportErr("Couldn't build the file. Try again.");
+      setBusy(false);
+      return;
+    }
+    // Revoked on a later tick: revoking synchronously can cancel the download
+    // in some browsers, which have only just been handed the URL.
+    busyTimer.current = window.setTimeout(() => {
+      if (url) URL.revokeObjectURL(url);
       setBusy(false);
       setExportOpen(false);
-    }, 1400);
+    }, 600);
   };
 
   const anyOverlay = Boolean(sheetCrew) || exportOpen;
@@ -488,12 +526,12 @@ export function MobileReports() {
                 <Icon id="i-filter" />
                 Filter
                 <span className={styles.ddValue}>
-                  {FACE[range]} · {jobsFor(range)}
+                  {FACE[range]} · {jobsFor(rollup, range)}
                 </span>
                 <Icon id="i-chev" className={`${styles.ic} ${styles.ddCaret}`} />
               </button>
               <div className={styles.ddMenu} role="listbox" aria-label="Report range">
-                {RANGES.map((r) => (
+                {rollup.ranges.map((r) => (
                   <button
                     key={r.key}
                     className={`${styles.ddItem} ${range === r.key ? styles.active : ""}`}
@@ -507,7 +545,7 @@ export function MobileReports() {
                     }}
                   >
                     {r.label}
-                    <span className={styles.ddCount}>{jobsFor(r.key)}</span>
+                    <span className={styles.ddCount}>{jobsFor(rollup, r.key)}</span>
                     {range === r.key ? <Icon id="i-check" /> : null}
                   </button>
                 ))}
@@ -719,8 +757,11 @@ export function MobileReports() {
                   <div className={styles.convL}>Average time to close</div>
                   <div className={styles.convS}>Proposal sent to signature</div>
                 </div>
+                {/* Null when nothing closed in the range — an em dash, never a
+                    number the book cannot support. */}
                 <div className={styles.convV}>
-                  {avgDays}<span className={styles.convUnit}>days</span>
+                  {avgDays ?? "—"}
+                  {avgDays ? <span className={styles.convUnit}>days</span> : null}
                 </div>
               </div>
             </div>
@@ -737,9 +778,9 @@ export function MobileReports() {
 
             {/* The way back sits where the loss shows. When the last crew member
                 goes, the empty state carries it instead — one restore, not two. */}
-            {excluded > 0 && rows.length > 0 ? (
+            {hiddenCount > 0 && rows.length > 0 ? (
               <div className={styles.note}>
-                {excluded} of {CREW.length} crew excluded
+                {hiddenCount} of {rangeCrew.length} crew excluded
                 <button className={styles.noteBtn} type="button" onClick={restoreCrew}>
                   <Icon id="i-rotate" />Show all
                 </button>
@@ -748,13 +789,24 @@ export function MobileReports() {
 
             {rows.length === 0 ? (
               <div className={styles.empty}>
-                <div className={styles.emptyT}>No crew in this report</div>
-                <div className={styles.emptyS}>
-                  Every crew member is excluded, so delivery per person has nothing to draw.
-                </div>
-                <button className={styles.emptyA} type="button" onClick={restoreCrew}>
-                  <Icon id="i-rotate" />Show all crew
-                </button>
+                {rangeCrew.length === 0 ? (
+                  <>
+                    <div className={styles.emptyT}>No crew work in this range</div>
+                    <div className={styles.emptyS}>
+                      Assign a worker to a job and their delivery shows up here.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className={styles.emptyT}>No crew in this report</div>
+                    <div className={styles.emptyS}>
+                      Every crew member is excluded, so delivery per person has nothing to draw.
+                    </div>
+                    <button className={styles.emptyA} type="button" onClick={restoreCrew}>
+                      <Icon id="i-rotate" />Show all crew
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               <div className={styles.book}>
@@ -776,8 +828,10 @@ export function MobileReports() {
                     </button>
                     <div className={styles.crole}>{c.role}</div>
                     <div className={styles.crowFoot}>
+                      {/* Null when no client has rated their jobs yet — the
+                          badge says so rather than printing a 0.0. */}
                       <span className={styles.rate}>
-                        <Icon id="i-thumb" />{c.rating.toFixed(1)}
+                        <Icon id="i-thumb" />{c.rating == null ? "—" : c.rating.toFixed(1)}
                       </span>
                       <span className={styles.crowFigs}>
                         <span className={styles.cjobs}>{f.jobs} jobs</span>
@@ -820,7 +874,9 @@ export function MobileReports() {
         <div className={styles.sheetGrab} {...crewDrag.handleProps} />
         <div className={styles.sheetHead} {...crewDrag.handleProps}>
           <div className={styles.sheetKicker}>
-            {sheetCrew ? `${sheetCrew.c.role} · rated ${sheetCrew.c.rating.toFixed(1)}` : "Crew · —"}
+            {sheetCrew
+              ? `${sheetCrew.c.role}${sheetCrew.c.rating == null ? "" : ` · rated ${sheetCrew.c.rating.toFixed(1)}`}`
+              : "Crew · —"}
           </div>
           <div className={styles.sheetTitle}>{sheetCrew?.c.name ?? "Actions"}</div>
         </div>
@@ -888,6 +944,7 @@ export function MobileReports() {
                 type="button"
                 role="radio"
                 aria-checked={format === f.id}
+                disabled={!f.available}
                 onClick={() => setFormat(f.id)}
               >
                 <span className={styles.expMark} />
@@ -898,6 +955,9 @@ export function MobileReports() {
               </button>
             ))}
           </div>
+          {exportErr ? (
+            <div className={styles.actErr} role="alert">{exportErr}</div>
+          ) : null}
         </form>
         <div className={styles.formFoot}>
           <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={() => setExportOpen(false)}>

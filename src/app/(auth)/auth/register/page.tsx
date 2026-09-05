@@ -25,7 +25,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { isPlaceholderOrgName, needsCompanySetup } from "@/lib/orgSetup";
-import { RegisterResponsive, type SetupPrefill } from "./register-responsive";
+import { readGoogleSignup } from "@/lib/googleSignup";
+import { RegisterResponsive, type GooglePrefill, type SetupPrefill } from "./register-responsive";
 
 // Title is the donor's <head> verbatim. The mockup ships no <meta
 // name="description">; the line below is this repo's own convention.
@@ -46,6 +47,23 @@ export default async function RegisterPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = await searchParams;
+
+  /* THE RETURN FROM GOOGLE, resolved HERE rather than in the browser. The
+     client used to fetch the parked identity after mount, so the first frame
+     was step 1 and the jump to step 2 happened a beat later — it read as
+     being bounced back to the start (owner's report, 2026-09-03). Reading it
+     on the server means the first paint IS step 2, with the name and address
+     Google gave us already in place. An expired or unknown handle simply
+     yields null and the normal signup renders. */
+  const gsuParam = typeof sp.gsu === "string" ? sp.gsu : null;
+  let google: GooglePrefill | null = null;
+  if (gsuParam) {
+    const identity = await readGoogleSignup(gsuParam);
+    if (identity) {
+      google = { handle: gsuParam, email: identity.email, name: identity.name ?? "" };
+    }
+  }
+
   let setup: SetupPrefill | null = null;
   let sendToApp = false;
   try {
@@ -68,7 +86,11 @@ export default async function RegisterPage({
           businessName: isPlaceholderOrgName(m.organization.name) ? "" : m.organization.name,
           companyPhone: m.organization.phone ?? "",
         };
-      } else if (m && !sp.signup) {
+      } else if (m && !sp.signup && !google) {
+        /* A signed-in owner arriving with a FRESH Google identity (a Google
+           account JobFlex has never seen) is here to start a second shop with
+           it, not to be bounced into the app they are already in — the Google
+           return wins over the "you belong in the app" rule (owner, 2026-09-04). */
         sendToApp = true;
       }
     }
@@ -76,5 +98,5 @@ export default async function RegisterPage({
     // Session read hiccup: render the normal signup.
   }
   if (sendToApp) redirect("/dashboard");
-  return <RegisterResponsive setup={setup} />;
+  return <RegisterResponsive setup={setup} google={google} />;
 }

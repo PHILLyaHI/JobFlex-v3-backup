@@ -336,7 +336,11 @@ export function initFinancialsContent(
         money(m.revenue - m.expenses) +
         "</title>" +
         "</g>";
-      pts.push([cx, base - ((m.revenue - m.expenses) / range) * ih]);
+      // The net point sits over the CENTRE OF THE REVENUE COLUMN, not the
+      // month's midpoint. The midpoint is the 2px seam between the two bars,
+      // and in any month with no expenses that seam is the revenue bar's
+      // right edge — the dot looked pinned to the side of the column.
+      pts.push([rx + bw / 2, base - ((m.revenue - m.expenses) / range) * ih]);
     });
 
     // net-profit line above the bars + dots

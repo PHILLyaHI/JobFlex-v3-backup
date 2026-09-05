@@ -467,7 +467,6 @@ export async function sendProposal(id: string) {
 
 export type StatusResult =
   | { ok: true }
-  | { ok: false; reason: "payment_outstanding"; remainingMinor: number }
   | { ok: false; reason: "provider_paid" }
   | { ok: false; reason: "has_paid_stages" };
 
@@ -487,12 +486,13 @@ export async function updateProposalStatus(id: string, status: ProposalStatus): 
   });
   if (!p) throw new Error("Not found");
   const paidStages = p.installments.filter((s) => s.status === InstallmentStatus.PAID);
-  if (status === "PAID") {
-    const schedule = resolveSchedule({ total: p.total, currency: p.currency, installments: p.installments });
-    if (schedule.remainingMinor > 0) {
-      return { ok: false, reason: "payment_outstanding", remainingMinor: schedule.remainingMinor };
-    }
-  }
+  // COMPLETED IS A FACT ABOUT THE WORK, NOT THE MONEY (owner, 2026-09-03).
+  // "Mark completed" used to refuse while any stage was owed, which left a
+  // finished job parked under Accepted until the last cheque cleared. It
+  // files now regardless; the unpaid stages stay open on the sheet, Mark
+  // paid still works on each, and the row carries what is still owed
+  // (ProposalRow.owed). The other direction is unchanged: paying the last
+  // stage still files the job automatically (payments/settle.ts).
   if (status === "ACCEPTED" && p.status === "PAID") {
     if (paidStages.some((s) => s.payment && s.payment.provider !== "MANUAL")) {
       return { ok: false, reason: "provider_paid" };

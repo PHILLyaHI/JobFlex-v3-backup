@@ -1512,7 +1512,30 @@
 .bp :global(.content .pmdl .btn.is-busy) { opacity: 0.72; cursor: progress; }
 .bp :global(.content .pmdl .btn.is-busy:hover) { transform: none; box-shadow: none; }
 .bp :global(.content .pt-open.is-busy) { opacity: 0.45; pointer-events: none; }
-.bp :global(.content .pjob.is-busy), .bp :global(.content .psheet.is-busy) { opacity: 0.72; pointer-events: none; }
+.bp :global(.content .pjob.is-busy), .bp :global(.content .psheet.is-busy) { opacity: 0.72; pointer-events: none; position: relative; }
+/* THE WRITE IS VISIBLE. Dimming alone said "wait" without saying anything
+   was happening, and a server action that re-reads the whole book takes long
+   enough on a cold server to read as a frozen page. A SQUARE spinner — this
+   system draws no circles — sits in the card's top-right corner for exactly
+   as long as the request is out. */
+.bp :global(.content .pjob.is-busy)::after,
+.bp :global(.content .psheet.is-busy)::after {
+  content: "";
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--ink);
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  animation: pBusySpin 0.7s linear infinite;
+}
+@keyframes pBusySpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.content .pjob.is-busy)::after,
+  .bp :global(.content .psheet.is-busy)::after { animation: none; }
+}
 
 /* A record on its way out — leaveRow fades and slides that one node while the
    rows below close the gap. The wash says WHICH row is going while it does. */

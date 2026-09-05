@@ -26,7 +26,7 @@ const doors = [
     cta: "Browse the marketplace",
   },
   {
-    href: "/dashboard/hire/profile",
+    href: "/dashboard/hire?tab=work",
     icon: UserPlus,
     kicker: "For workers",
     title: "Publish your profile",

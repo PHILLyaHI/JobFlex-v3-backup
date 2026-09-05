@@ -417,3 +417,29 @@
   fill: none; stroke: currentColor; stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round; opacity: 0.8;
 }
+
+/* Remaining-quota pill — the desktop sidebar's sb-quota, same tokens:
+   outlined in blueprint with mono numerals, danger when nothing is left.
+   Sits after the unread badge (or alone, pushed to the row's right edge). */
+.sbScroll .sbQuota {
+  flex: 0 0 auto;
+  min-width: 22px; height: 20px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--blueprint);
+  border-radius: var(--radius);
+  color: var(--blueprint);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px; font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.sbScroll .sbQuotaEnd { margin-left: auto; }
+.sbScroll .sbQuota.isOut { border-color: var(--danger, #a83232); color: var(--danger, #a83232); }
+.sbScroll .sbLink.active .sbQuota { border-color: var(--ink); color: var(--ink); }
+.sbScroll .sbLink.active .sbQuota.isOut { border-color: var(--danger, #a83232); color: var(--danger, #a83232); }
+/* Locked rows dim to the desk sidebar's value (it reads 0.48, the drawer
+   read 0.5) — one number, so the two never disagree. */
+.sbLockd { opacity: 0.48; }
+/* The row itself is animated in (sbItemIn, fill-mode both), which pins its
+   own opacity at 1 — so the lock dims the row's CONTENT instead, to the
+   desk sidebar's 0.48. */
+.sbScroll .sbLink.sbLockd > * { opacity: 0.48; }

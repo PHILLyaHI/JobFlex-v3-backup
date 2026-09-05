@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
-import { requireUser, requireManager, requireOrg } from "@/lib/orgContext";
+import { requireUser, requireManager, requireOrg, isLimitedRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import type {
   TradeJob,
@@ -225,7 +225,10 @@ function mapInboxJob(row: RecipientRow, orgNames: Map<string, string>): TradeJob
     timeWindow: j.timeWindow ?? undefined,
     urgency: asUrgency(j.urgency),
     status: j.status as JobStatus,
-    // Never surface the poster's account email cross-org; fall back to org name.
+    // The INBOX does not surface the poster's account email — a broadcast
+    // recipient did not ask to be handed one. (The Hire & Work BOARD does, at
+    // `listOpenTradeJobs`: a post there exists to be answered by email, and
+    // that disclosure is the owner's explicit call, 2026-09-03.)
     postedByName: j.author.name ?? orgNames.get(j.authorOrgId) ?? "A contractor",
     postedByCompany: orgNames.get(j.authorOrgId) ?? undefined,
     hoursAgo: hoursSince(j.createdAt),
@@ -347,7 +350,18 @@ function mapOwnPost(j: OwnPostRow): OwnPost {
   };
 }
 
-/** One open post on the network, as the Talent directory lists it. */
+/** JobFlex reviews the poster's company has collected — the Reviews feature's
+ *  completed requests, aggregated per org. `avg` is null until one is rated. */
+export type ReviewSummaryDTO = {
+  avg: number | null;
+  count: number;
+  /** Newest two with a written comment, for the detail's review lines. */
+  latest: { rating: number; comment: string; client: string | null; when: string }[];
+};
+
+const NO_REVIEWS: ReviewSummaryDTO = { avg: null, count: 0, latest: [] };
+
+/** One post on the Hire & Work board, with everything the detail sheet prints. */
 export type NetworkJobDTO = {
   id: string;
   title: string;
@@ -357,21 +371,83 @@ export type NetworkJobDTO = {
   location: string | null;
   budget: string | null;
   hoursAgo: number;
-  /** The posting company, and the poster's display name. Never an email. */
+  /** The posting company, and the poster's display name. */
   company: string;
   postedBy: string;
-  /** Posted by the viewer's own company. */
+  /** How to reach them. Surfaced on purpose (owner, 2026-09-03): a post is an
+   *  invitation to be contacted, and email is the channel the board runs on.
+   *  The phone is the company's, from its settings — null when unset. */
+  email: string;
+  phone: string | null;
+  reviews: ReviewSummaryDTO;
+  /** Posted by the viewer's own COMPANY — someone here wrote it, maybe a
+   *  colleague. Gates "I'm interested", which the server refuses org-internally. */
   isMine: boolean;
-  /** The viewer's recipient state, or null when the post was not sent to them
-   *  (only recipients can raise a hand — respondToTradeJob enforces that). */
+  /** Written by the viewer THEMSELVES. Gates Edit and the "You" stamp: a
+   *  colleague's post is your company's, but only its author may change it,
+   *  and `getMyTradeJobs` is author-scoped, so stamping every org-mate's post
+   *  "You" offered an Edit button that could never find its row. */
+  isOwnPost: boolean;
+  /** The viewer's recipient state, or null when they have not acted on it. */
   viewerStatus: "NEW" | "INTERESTED" | "NOT_INTERESTED" | null;
+  /** Hands raised on this post. */
+  interestedCount: number;
 };
 
-/** Every OPEN post on the network, newest first — the directory's second
- *  list (owner, 2026-09-02: "I can't see the job I posted, from any account").
- *  The inbox only ever showed posts BROADCAST to the viewer; this shows the
- *  whole board, the viewer's own posts included. Bodies are public by design:
- *  a post exists to be read by strangers. */
+function monthLabel(d: Date): string {
+  return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
+
+/** Per-org rating aggregate plus the two newest written reviews. One groupBy
+ *  for the numbers, then one small read per rated org for the quotes — the
+ *  board lists at most 200 posts, so the org set stays small. */
+async function reviewSummaries(orgIds: string[]): Promise<Map<string, ReviewSummaryDTO>> {
+  const out = new Map<string, ReviewSummaryDTO>();
+  if (!orgIds.length) return out;
+  const rated = { status: "COMPLETED", rating: { not: null } } as const;
+  const agg = await db.reviewRequest.groupBy({
+    by: ["organizationId"],
+    where: { organizationId: { in: orgIds }, ...rated },
+    _avg: { rating: true },
+    _count: { rating: true },
+  });
+  const quotes = await Promise.all(
+    agg.map((a) =>
+      db.reviewRequest.findMany({
+        where: { organizationId: a.organizationId, ...rated, comment: { not: null } },
+        orderBy: { completedAt: "desc" },
+        take: 2,
+        select: {
+          rating: true,
+          comment: true,
+          completedAt: true,
+          createdAt: true,
+          client: { select: { name: true } },
+        },
+      }),
+    ),
+  );
+  agg.forEach((a, i) => {
+    out.set(a.organizationId, {
+      avg: a._avg.rating,
+      count: a._count.rating,
+      latest: quotes[i]
+        .filter((q) => q.rating != null && q.comment && q.comment.trim())
+        .map((q) => ({
+          rating: q.rating as number,
+          comment: (q.comment as string).trim(),
+          client: q.client?.name ?? null,
+          when: monthLabel(q.completedAt ?? q.createdAt),
+        })),
+    });
+  });
+  return out;
+}
+
+/** Every OPEN post on the network, newest first — the whole board, the
+ *  viewer's own posts included (owner, 2026-09-02: "I can't see the job I
+ *  posted, from any account"). Bodies and contact details are public to the
+ *  network by design: a post exists to be read and answered by strangers. */
 export async function listOpenTradeJobs(): Promise<NetworkJobDTO[]> {
   const { user, organizationId } = await requireOrg();
   const jobs = await db.tradeJob.findMany({
@@ -387,18 +463,27 @@ export async function listOpenTradeJobs(): Promise<NetworkJobDTO[]> {
       location: true,
       budget: true,
       createdAt: true,
+      authorId: true,
       authorOrgId: true,
-      author: { select: { name: true } },
+      author: { select: { name: true, email: true } },
       recipients: { where: { recipientId: user.id }, select: { status: true }, take: 1 },
+      _count: { select: { recipients: { where: { status: "INTERESTED" } } } },
     },
   });
   const orgIds = Array.from(new Set(jobs.map((j) => j.authorOrgId)));
-  const orgs = orgIds.length
-    ? await db.organization.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } })
-    : [];
-  const orgNames = new Map(orgs.map((o) => [o.id, o.name]));
+  const [orgs, reviews] = await Promise.all([
+    orgIds.length
+      ? db.organization.findMany({
+          where: { id: { in: orgIds } },
+          select: { id: true, name: true, phone: true },
+        })
+      : Promise.resolve([]),
+    reviewSummaries(orgIds),
+  ]);
+  const orgById = new Map(orgs.map((o) => [o.id, o]));
   return jobs.map((j) => {
-    const company = orgNames.get(j.authorOrgId) ?? "A contractor";
+    const org = orgById.get(j.authorOrgId);
+    const company = org?.name ?? "A contractor";
     const rs = j.recipients[0]?.status;
     return {
       id: j.id,
@@ -411,8 +496,13 @@ export async function listOpenTradeJobs(): Promise<NetworkJobDTO[]> {
       hoursAgo: hoursSince(j.createdAt),
       company,
       postedBy: j.author.name ?? company,
+      email: j.author.email,
+      phone: org?.phone ?? null,
+      reviews: reviews.get(j.authorOrgId) ?? NO_REVIEWS,
       isMine: j.authorOrgId === organizationId,
+      isOwnPost: j.authorId === user.id,
       viewerStatus: rs === "NEW" || rs === "INTERESTED" || rs === "NOT_INTERESTED" ? rs : null,
+      interestedCount: j._count.recipients,
     };
   });
 }
@@ -511,6 +601,7 @@ export async function createTradeJob(raw: unknown): Promise<{ id: string; broadc
   }
 
   revalidatePath(ROUTE);
+  revalidatePath(HIRE_ROUTE);
   return { id: job.id, broadcastCount: recipientIds.length };
 }
 
@@ -779,4 +870,320 @@ export async function sendTradeMessage(jobId: string, body: string): Promise<Cha
   });
   revalidatePath(ROUTE);
   return mapMessage(msg, user.id);
+}
+
+// ─── Hire & Work board (rebuilt 2026-09-03) ─────────────────────────────────
+
+/** Who is looking at the board. Printed on their own post's detail the moment
+ *  it is created, before any round trip could read it back. */
+export type HireViewerDTO = {
+  name: string;
+  company: string;
+  email: string;
+  phone: string | null;
+  reviews: ReviewSummaryDTO;
+  /** Limited roles (installer / sales / estimator) read the board but cannot
+   *  post — `createTradeJob` is manager-gated. */
+  canPost: boolean;
+};
+
+export async function getHireViewer(): Promise<HireViewerDTO> {
+  const { user, organizationId, role } = await requireOrg();
+  const [me, org, reviews] = await Promise.all([
+    db.user.findUnique({ where: { id: user.id }, select: { name: true, email: true } }),
+    db.organization.findUnique({
+      where: { id: organizationId },
+      select: { name: true, phone: true },
+    }),
+    reviewSummaries([organizationId]),
+  ]);
+  const company = org?.name ?? "";
+  return {
+    name: me?.name ?? (company || "You"),
+    company,
+    email: me?.email ?? "",
+    phone: org?.phone ?? null,
+    reviews: reviews.get(organizationId) ?? NO_REVIEWS,
+    canPost: !isLimitedRole(role),
+  };
+}
+
+/** "I'm interested" on the board. Unlike `respondToTradeJob`, which only lets
+ *  a BROADCAST recipient answer, anyone signed in may raise a hand on any open
+ *  post — the board is public to the network by design. The recipient row is
+ *  created on the spot, the same conversation slot opens, and the poster hears
+ *  it: bell awaited, mail after the response. A second press is a no-op. */
+export async function expressInterest(jobId: string): Promise<{ ok: true; already: boolean }> {
+  const { user, organizationId } = await requireOrg();
+  const job = await db.tradeJob.findUnique({
+    where: { id: jobId },
+    select: { authorId: true, authorOrgId: true, status: true },
+  });
+  if (!job || job.status !== "OPEN") throw new Error("This post is no longer open.");
+  if (job.authorId === user.id || job.authorOrgId === organizationId) {
+    throw new Error("That is your own post.");
+  }
+  const key = { tradeJobId_recipientId: { tradeJobId: jobId, recipientId: user.id } };
+  const existing = await db.tradeJobRecipient.findUnique({ where: key, select: { status: true } });
+  if (existing?.status === "INTERESTED") return { ok: true, already: true };
+
+  const now = new Date();
+  await db.tradeJobRecipient.upsert({
+    where: key,
+    create: { tradeJobId: jobId, recipientId: user.id, status: "INTERESTED", interestedAt: now },
+    update: { status: "INTERESTED", interestedAt: now, notInterestedAt: null },
+  });
+  await db.tradeJobConversation.upsert({
+    where: key,
+    create: { tradeJobId: jobId, authorId: job.authorId, recipientId: user.id },
+    update: { updatedAt: now },
+  });
+  // The bell and the EMAIL are both awaited here (owner, 2026-09-03: "make a
+  // person receive an email if somebody was interested in his work").
+  //
+  // The email used to run in `after()`, so the button never waited on the SMTP
+  // handshake — but a deferred send is also one that nobody can observe, and a
+  // notification the poster does not receive is the whole feature missing. The
+  // send costs about a second, the button already says "Sending…" while it
+  // happens, and a failure is now logged rather than swallowed. Neither call
+  // can fail the write: the interest is already committed above.
+  try {
+    const { recordHireInterest } = await import("@/lib/notify");
+    await recordHireInterest(jobId, user.id);
+  } catch (err) {
+    console.warn("[tradeServices] interest bell failed:", err);
+  }
+  try {
+    const { emailHireInterest } = await import("@/lib/notify");
+    const r = await emailHireInterest(jobId, user.id);
+    if (r.skipped) {
+      console.warn(
+        `[tradeServices] interest email NOT sent for job ${jobId} — no transport configured, the poster has trade-reply email off, or they have no address.`,
+      );
+    }
+  } catch (err) {
+    console.warn("[tradeServices] interest email failed:", err);
+  }
+  revalidatePath(HIRE_ROUTE);
+  revalidatePath(ROUTE);
+  return { ok: true, already: false };
+}
+
+// ─── Hire & Work: result-envelope wrappers ──────────────────────────────────
+// WHY THESE EXIST. Next REDACTS a thrown server-action error's message in a
+// production build — the client receives a generic "an error occurred in the
+// Server Components render" paragraph instead. So every user-facing sentence
+// the actions above throw ("You're posting too fast", "That is your own post",
+// "Only the poster can edit this post") is readable in dev and invisible in
+// prod, which is where it matters.
+//
+// A RETURNED value is not redacted. These wrappers call the same author-gated
+// actions and hand back `{ ok, message }`, so the board can print the real
+// sentence. The originals keep throwing and keep their signatures, because
+// /trade-services and its handheld twin still call them.
+
+export type HireResult<T = undefined> =
+  | { ok: true; data: T }
+  | { ok: false; message: string };
+
+/** The message a caught server error should show a human. An unrecognised
+ *  error is a fault, not a rule the user broke, so it gets a neutral line. */
+function hireMessage(err: unknown, fallback: string): string {
+  const raw = err instanceof Error ? err.message.trim() : "";
+  // Next's redaction paragraph, a stack, or an empty message are all "a fault
+  // happened" — never show them. A short authored sentence is the real thing.
+  if (!raw || raw.length > 160 || /server components render|digest property/i.test(raw)) {
+    return fallback;
+  }
+  return raw;
+}
+
+export async function hireExpressInterest(jobId: string): Promise<HireResult<{ already: boolean }>> {
+  try {
+    const r = await expressInterest(jobId);
+    return { ok: true, data: { already: r.already } };
+  } catch (err) {
+    return { ok: false, message: hireMessage(err, "Couldn't send that. Try again.") };
+  }
+}
+
+export async function hireCreatePost(
+  raw: unknown,
+): Promise<HireResult<{ id: string; broadcastCount: number }>> {
+  try {
+    return { ok: true, data: await createTradeJob(raw) };
+  } catch (err) {
+    return { ok: false, message: hireMessage(err, "Couldn't post. Try again.") };
+  }
+}
+
+export async function hireUpdatePost(jobId: string, raw: unknown): Promise<HireResult<OwnPost>> {
+  try {
+    return { ok: true, data: await updateTradeJob(jobId, raw) };
+  } catch (err) {
+    return { ok: false, message: hireMessage(err, "Couldn't save. Try again.") };
+  }
+}
+
+export async function hireDeletePost(jobId: string): Promise<HireResult> {
+  try {
+    await deleteTradeJob(jobId);
+    return { ok: true, data: undefined };
+  } catch (err) {
+    return { ok: false, message: hireMessage(err, "Couldn't delete. Try again.") };
+  }
+}
+
+/** Everyone who raised a hand on one of YOUR posts, with how to reach them.
+ *
+ *  The interest email tells the poster to open their posts and see who
+ *  answered; until this existed, all that was there was a number. Author-gated
+ *  against the row — the id from the client is only ever a lookup key. */
+export type InterestedPartyDTO = {
+  id: string;
+  name: string;
+  company: string | null;
+  email: string;
+  phone: string | null;
+  agoHours: number;
+};
+
+export async function getPostInterest(jobId: string): Promise<HireResult<InterestedPartyDTO[]>> {
+  try {
+    const user = await requireUser();
+    const job = await db.tradeJob.findUnique({
+      where: { id: jobId },
+      select: { authorId: true },
+    });
+    if (!job || job.authorId !== user.id) {
+      return { ok: false, message: "Only the poster can see who answered." };
+    }
+    const rows = await db.tradeJobRecipient.findMany({
+      where: { tradeJobId: jobId, status: "INTERESTED" },
+      orderBy: { interestedAt: "desc" },
+      take: 100,
+      select: {
+        id: true,
+        interestedAt: true,
+        createdAt: true,
+        recipient: {
+          select: {
+            name: true,
+            email: true,
+            phone: true,
+            memberships: {
+              orderBy: { createdAt: "asc" },
+              take: 1,
+              select: { organization: { select: { name: true, phone: true } } },
+            },
+          },
+        },
+      },
+    });
+    return {
+      ok: true,
+      data: rows.map((r) => {
+        const org = r.recipient.memberships[0]?.organization;
+        return {
+          id: r.id,
+          name: r.recipient.name ?? org?.name ?? "A contractor",
+          company: org?.name ?? null,
+          email: r.recipient.email,
+          phone: r.recipient.phone ?? org?.phone ?? null,
+          agoHours: hoursSince(r.interestedAt ?? r.createdAt),
+        };
+      }),
+    };
+  } catch (err) {
+    return { ok: false, message: hireMessage(err, "Couldn't load that list. Try again.") };
+  }
+}
+
+// ─── Unseen interest, per post ──────────────────────────────────────────────
+// Owner ask, 2026-09-03: a post whose interest you have not looked at yet
+// should say so — a counter on the post, and the same number in the bell.
+//
+// "Looked at" is per POST, not per page: opening Hire & Work does not mean you
+// read who answered on post #3. The stamp is a NavSeen row keyed
+// `hire-post:<jobId>`, written when that post's interested list is unfolded.
+// NavSeen is already (userId, organizationId, key) unique and free-form on
+// `key`, so this needs no migration — `markNavSeen` is left alone because it
+// validates against the fixed SEEN_SURFACES list.
+
+const POST_SEEN_PREFIX = "hire-post:";
+
+/** The author's own posts, each carrying how many hands raised on it the
+ *  author has not looked at yet. Same rows as `getMyTradeJobs`, plus that. */
+export type HireOwnPostDTO = OwnPost & {
+  /** INTERESTED responses newer than the author's last look at THIS post. */
+  newInterest: number;
+};
+
+export async function getMyHirePosts(): Promise<HireOwnPostDTO[]> {
+  const { user, organizationId } = await requireOrg();
+  const jobs = await db.tradeJob.findMany({
+    where: { authorId: user.id, ...NOT_DELETED },
+    orderBy: { createdAt: "desc" },
+    select: ownPostSelect,
+  });
+  if (!jobs.length) return [];
+
+  const ids = jobs.map((j) => j.id);
+  const [seenRows, interested] = await Promise.all([
+    db.navSeen.findMany({
+      where: {
+        userId: user.id,
+        organizationId,
+        key: { in: ids.map((id) => `${POST_SEEN_PREFIX}${id}`) },
+      },
+      select: { key: true, seenAt: true },
+    }),
+    // Every raised hand on these posts, with when. Folded in JS rather than a
+    // count-per-post round trip: an author has a handful of posts, and one
+    // read cannot drift from another.
+    db.tradeJobRecipient.findMany({
+      where: { tradeJobId: { in: ids }, status: "INTERESTED" },
+      select: { tradeJobId: true, interestedAt: true, createdAt: true },
+    }),
+  ]);
+
+  const seenAt = new Map(
+    seenRows.map((r) => [r.key.slice(POST_SEEN_PREFIX.length), r.seenAt.getTime()]),
+  );
+  const fresh = new Map<string, number>();
+  for (const r of interested) {
+    const at = (r.interestedAt ?? r.createdAt).getTime();
+    const since = seenAt.get(r.tradeJobId);
+    // Never looked at this post → every hand on it is new.
+    if (since === undefined || at > since) {
+      fresh.set(r.tradeJobId, (fresh.get(r.tradeJobId) ?? 0) + 1);
+    }
+  }
+
+  return jobs.map((j) => ({ ...mapOwnPost(j), newInterest: fresh.get(j.id) ?? 0 }));
+}
+
+/** Stamp one post's interest as read — called when its list is unfolded.
+ *  Author-only, checked against the row. */
+export async function markPostInterestSeen(jobId: string): Promise<HireResult> {
+  try {
+    const { user, organizationId } = await requireOrg();
+    const job = await db.tradeJob.findUnique({
+      where: { id: jobId },
+      select: { authorId: true },
+    });
+    if (!job || job.authorId !== user.id) {
+      return { ok: false, message: "Only the poster can do that." };
+    }
+    const key = `${POST_SEEN_PREFIX}${jobId}`;
+    await db.navSeen.upsert({
+      where: { userId_organizationId_key: { userId: user.id, organizationId, key } },
+      create: { userId: user.id, organizationId, key },
+      update: { seenAt: new Date() },
+    });
+    return { ok: true, data: undefined };
+  } catch {
+    // Nothing on screen waits on this — the count is cleared optimistically.
+    return { ok: false, message: "Couldn't save that." };
+  }
 }

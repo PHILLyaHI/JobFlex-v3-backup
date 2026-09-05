@@ -26,7 +26,7 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { expandPlanFeatures } from "@/lib/planCatalog";
-import { addCustomPages, changePlan } from "@/actions/billing";
+import { changePlan, removeCustomPages } from "@/actions/billing";
 import { ConfirmPlanChange } from "@/components/billing/ConfirmPlanChange";
 import { toast } from "@/components/ui/Toast";
 import {
@@ -58,6 +58,7 @@ export function UpgradeContent({
   sandbox,
   upgradedTo,
   cancelled,
+  embedded = false,
 }: {
   plans: UpgradePlan[];
   /** Subscription.plan as stored ("PROFESSIONAL", "CUSTOM", …), or null. */
@@ -72,6 +73,9 @@ export function UpgradeContent({
   /** Slug just purchased on this request's ?session_id return, if any. */
   upgradedTo: string | null;
   cancelled: boolean;
+  /** Rendered inside another page (the subscription page's plan section):
+   *  no page head, no return-leg banners — just the cards and their dialogs. */
+  embedded?: boolean;
 }) {
   const router = useRouter();
   // False on the server render and the hydration pass, true after: the portal
@@ -82,7 +86,10 @@ export function UpgradeContent({
     () => true,
     () => false,
   );
-  const [interval, setInterval] = useState<"MONTH" | "YEAR">("MONTH");
+  /* MONTHLY ONLY for now (owner, 2026-09-04): the yearly tier is unreviewed,
+     so the billing switch is gone from every plan surface. The type is kept
+     wide so the price math below stays ready for the day it comes back. */
+  const interval = "MONTH" as "MONTH" | "YEAR"; // cast, not annotation: TS narrows an annotated const to its literal
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // The current plan as the page knows it; moved locally after an in-place
@@ -115,22 +122,20 @@ export function UpgradeContent({
   // signup step applies (lib/planCatalog.expandPlanFeatures).
   const { rows: featureRows, included } = useMemo(() => expandPlanFeatures(plans), [plans]);
 
-  const yearlySavePct = useMemo(() => {
-    const ref =
-      plans.find((p) => p.highlight && p.priceCents > 0 && p.yearlyPriceCents) ??
-      plans.find((p) => p.priceCents > 0 && p.yearlyPriceCents);
-    if (!ref?.yearlyPriceCents) return null;
-    const list = ref.priceCents * 12;
-    return list > ref.yearlyPriceCents ? Math.round((1 - ref.yearlyPriceCents / list) * 100) : null;
-  }, [plans]);
 
-  /* Up or down, by price against the current plan. A custom plan (base plus
-     pages) sits below every catalog tier. */
   const curCents = useMemo(() => {
     if (cur === CUSTOM_PLAN_SLUG) return customPriceCents(owned);
     return plans.find((p) => p.slug === cur)?.priceCents ?? -1;
   }, [cur, owned, plans]);
-  const direction = (p: UpgradePlan): "up" | "down" => (p.priceCents > curCents ? "up" : "down");
+  /* UP OR DOWN — by tier, not by price (owner, 2026-09-04). The catalog's
+     own order is the ladder (Starter < Professional < Enterprise, as
+     /admin/plans sorts them) and the Custom plan is the rung below Starter
+     whatever its page count adds up to. So from Custom every catalog plan is
+     an upgrade, and from any catalog plan Custom is a downgrade. No plan at
+     all ranks below everything. */
+  const rankOf = (slug: string): number =>
+    slug === CUSTOM_PLAN_SLUG ? -1 : slug ? plans.findIndex((p) => p.slug === slug) : -2;
+  const direction = (p: UpgradePlan): "up" | "down" => (rankOf(p.slug) > rankOf(cur) ? "up" : "down");
 
   /* What is being asked. "up" and "custom" go to Stripe to be paid for (the
      owner's rule: an upgrade is confirmed, then paid on Stripe's page, and it
@@ -140,6 +145,7 @@ export function UpgradeContent({
     | { kind: "up"; plan: UpgradePlan }
     | { kind: "down"; plan: UpgradePlan }
     | { kind: "custom"; pages: string[] }
+    | { kind: "remove"; pages: string[]; removing: string[] }
     | null
   >(null);
 
@@ -197,7 +203,7 @@ export function UpgradeContent({
         setConfirm(null);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [busy, interval, router],
   );
 
@@ -225,30 +231,38 @@ export function UpgradeContent({
     setPickerOn(false);
     window.setTimeout(() => setPickerOpen(false), 220);
   }, []);
+  /* The picker is the whole selection (owner, 2026-09-04: "add or remove").
+     On the plan it opens with the owned pages ticked; what is ticked when
+     the user is done is the plan they want. Ticking a new page is PAID —
+     the new selection replaces the subscription on Stripe's page, like any
+     upgrade. Un-ticking only is free: the pages close now and the price
+     steps down from the next bill (actions/billing.removeCustomPages). */
   const [picked, setPicked] = useState<string[]>([]);
-  const addable = onCustom ? CUSTOM_PAGES.filter((pg) => !owned.includes(pg.id)) : CUSTOM_PAGES;
-  const addNowCents = picked.length * CUSTOM_PAGE_CENTS;
-  const nextMonthlyCents = customPriceCents(onCustom ? [...owned, ...picked] : picked);
+  const openPicker = useCallback(() => {
+    setPicked(onCustom ? owned : []);
+    setPickerOpen(true);
+  }, [onCustom, owned]);
+  const adds = picked.filter((id) => !owned.includes(id));
+  const removes = onCustom ? owned.filter((id) => !picked.includes(id)) : [];
+  const nextMonthlyCents = customPriceCents(picked);
 
-  async function confirmAddPages() {
-    if (busy || picked.length === 0) return;
+  async function removePages(removing: string[]) {
+    if (busy || removing.length === 0) return;
     setErr(null);
-    setBusy("custom-add");
+    setBusy("custom-remove");
     try {
-      const res = await addCustomPages(picked);
+      const res = await removeCustomPages(removing);
       if (!res.ok) throw new Error(res.error);
       setOwned(res.pages);
-      setPicked([]);
-      closePicker();
+      setConfirm(null);
       toast.success(
-        `${res.added} page${res.added === 1 ? "" : "s"} added`,
-        res.chargedCents > 0
-          ? `$${(res.chargedCents / 100).toFixed(0)} charged now. Your plan is $${(res.monthlyCents / 100).toFixed(0)}/mo from the next bill.`
-          : `Your plan is $${(res.monthlyCents / 100).toFixed(0)}/mo from the next bill.`,
+        `${res.removed} page${res.removed === 1 ? "" : "s"} removed`,
+        `Your plan is $${(res.monthlyCents / 100).toFixed(0)}/mo from the next bill.`,
       );
       router.refresh();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Couldn't add the pages.");
+      setErr(e instanceof Error ? e.message : "Couldn't remove the pages.");
+      setConfirm(null);
     } finally {
       setBusy(null);
     }
@@ -261,8 +275,11 @@ export function UpgradeContent({
       : null;
 
   return (
-    <div className="jf-upgrade">
-      <div className="jf-up-head">
+    <div className={"jf-upgrade" + (embedded ? " jf-up-embed" : "")}>
+      <div className={"jf-up-head" + (embedded ? " jf-up-head--embed" : "")}>
+        {embedded ? (
+          <div className="jf-up-embed-lbl">Plans</div>
+        ) : (
         <div>
           <div className="jf-up-kick">Billing · plans</div>
           <h1 className="jf-up-h1">Plans &amp; upgrade.</h1>
@@ -280,20 +297,7 @@ export function UpgradeContent({
             </p>
           ) : null}
         </div>
-        <div className="jf-up-int" role="group" aria-label="Billing period">
-          {(["MONTH", "YEAR"] as const).map((i) => (
-            <button
-              key={i}
-              type="button"
-              className={"jf-up-int-b" + (interval === i ? " on" : "")}
-              aria-pressed={interval === i}
-              onClick={() => setInterval(i)}
-            >
-              {i === "MONTH" ? "Monthly" : "Yearly"}
-              {i === "YEAR" && yearlySavePct ? <i>Save {yearlySavePct}%</i> : null}
-            </button>
-          ))}
-        </div>
+        )}
       </div>
 
       {sandbox ? (
@@ -301,12 +305,12 @@ export function UpgradeContent({
           Sandbox mode — payments here are Stripe TEST charges. Card 4242 4242 4242 4242 works.
         </div>
       ) : null}
-      {doneMsg ? (
+      {doneMsg && !embedded ? (
         <div className="jf-up-ok" role="status">
           Done — you&apos;re on <b>{doneName}</b> now.
         </div>
       ) : null}
-      {cancelled ? (
+      {cancelled && !embedded ? (
         <div className="jf-up-err" role="alert">
           Checkout was cancelled — nothing changed.
         </div>
@@ -366,9 +370,7 @@ export function UpgradeContent({
                   title={cannot ?? undefined}
                   onClick={() => onPick(p)}
                 >
-                  {busy === p.slug
-                    ? "Switching…"
-                    : `${dir === "down" && cur ? "Downgrade" : "Switch"} to ${p.name}`}
+                  {busy === p.slug ? "Switching…" : dir === "down" && cur ? "Downgrade" : "Upgrade"}
                 </button>
               )}
             </div>
@@ -386,32 +388,42 @@ export function UpgradeContent({
               ${(CUSTOM_BASE_CENTS / 100).toFixed(0)} base · ${(CUSTOM_PAGE_CENTS / 100).toFixed(0)}{" "}
               per page
             </span>
+            {/* ON THE PLAN: only the pages it holds — nothing when it holds
+                none (owner, 2026-09-04). OFF it: every page, ticked as picked. */}
             <span className="jf-up-feats">
-              {CUSTOM_PAGES.map((pg) => {
-                const has = onCustom ? owned.includes(pg.id) : picked.includes(pg.id);
-                return (
-                  <span key={pg.id} className={"jf-up-f" + (has ? "" : " no")}>
-                    <svg viewBox="0 0 24 24" className="jf-up-fic" aria-hidden="true">
-                      {has ? <path d="M20 6 9 17l-5-5" /> : <path d="M12 5v14M5 12h14" />}
-                    </svg>
-                    {pg.label}
-                  </span>
-                );
-              })}
+              {onCustom
+                ? CUSTOM_PAGES.filter((pg) => owned.includes(pg.id)).map((pg) => (
+                    <span key={pg.id} className="jf-up-f">
+                      <svg viewBox="0 0 24 24" className="jf-up-fic" aria-hidden="true">
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
+                      {pg.label}
+                    </span>
+                  ))
+                : CUSTOM_PAGES.map((pg) => {
+                    const has = picked.includes(pg.id);
+                    return (
+                      <span key={pg.id} className={"jf-up-f" + (has ? "" : " no")}>
+                        <svg viewBox="0 0 24 24" className="jf-up-fic" aria-hidden="true">
+                          {has ? <path d="M20 6 9 17l-5-5" /> : <path d="M12 5v14M5 12h14" />}
+                        </svg>
+                        {pg.label}
+                      </span>
+                    );
+                  })}
+              {onCustom && owned.length === 0 ? (
+                <span className="jf-up-f no jf-up-f--none">No add-on pages yet</span>
+              ) : null}
             </span>
             <button
               className="jf-up-go"
               type="button"
-              disabled={Boolean(cannot) || (onCustom && addable.length === 0) || busy !== null}
-              title={
-                cannot ?? (onCustom && addable.length === 0 ? "Every page is already in your plan" : undefined)
-              }
-              onClick={() => setPickerOpen(true)}
+              disabled={Boolean(cannot) || busy !== null}
+              title={cannot ?? undefined}
+              onClick={openPicker}
             >
               {onCustom
-                ? addable.length === 0
-                  ? "All pages added"
-                  : "Add extra page"
+                ? "Add or remove pages"
                 : busy === CUSTOM_PLAN_SLUG
                   ? "Opening Stripe…"
                   : "Choose pages"}
@@ -433,13 +445,23 @@ export function UpgradeContent({
 
       <ConfirmPlanChange
         open={confirm !== null}
-        kicker={confirm?.kind === "down" ? "Downgrade" : "Upgrade"}
+        kicker={
+          confirm?.kind === "down"
+            ? "Downgrade"
+            : confirm?.kind === "remove"
+              ? "Custom plan"
+              : "Upgrade"
+        }
         title={
           confirm?.kind === "down"
             ? `Downgrade to ${confirm.plan.name}?`
             : confirm?.kind === "up"
               ? `Upgrade to ${confirm.plan.name}?`
-              : "Switch to a Custom plan?"
+              : confirm?.kind === "remove"
+                ? `Remove ${confirm.removing.length} page${confirm.removing.length === 1 ? "" : "s"}?`
+                : onCustom
+                  ? "Change your Custom plan?"
+                  : "Switch to a Custom plan?"
         }
         body={
           confirm?.kind === "down" ? (
@@ -474,13 +496,24 @@ export function UpgradeContent({
               for the base plus {confirm.pages.length} page{confirm.pages.length === 1 ? "" : "s"}.
               {cur ? " Your current plan is replaced the moment the payment goes through." : ""}
             </>
+          ) : confirm?.kind === "remove" ? (
+            <>
+              <b>
+                {confirm.removing
+                  .map((id) => CUSTOM_PAGES.find((pg) => pg.id === id)?.label ?? id)
+                  .join(", ")}
+              </b>{" "}
+              close{confirm.removing.length === 1 ? "s" : ""} as soon as you confirm. Your plan is{" "}
+              <b>${(customPriceCents(confirm.pages) / 100).toFixed(0)}/mo</b> from the next bill;
+              nothing is refunded for the rest of this cycle.
+            </>
           ) : null
         }
         confirmLabel={
           confirm?.kind === "down"
             ? `Downgrade to ${confirm.plan.name}`
-            : confirm?.kind === "up"
-              ? "Continue to payment"
+            : confirm?.kind === "remove"
+              ? "Remove pages"
               : "Continue to payment"
         }
         busy={busy !== null}
@@ -488,6 +521,7 @@ export function UpgradeContent({
           if (!confirm) return;
           if (confirm.kind === "down") void switchDown(confirm.plan);
           else if (confirm.kind === "up") void payFor(confirm.plan.slug);
+          else if (confirm.kind === "remove") void removePages(confirm.removing);
           else void payFor(CUSTOM_PLAN_SLUG, confirm.pages);
         }}
         onCancel={() => setConfirm(null)}
@@ -503,12 +537,12 @@ export function UpgradeContent({
            <body>, invisible, and "Choose pages" read as dead (owner). */
         <div className="jf-upgrade jf-up-portal">
         <div className={"jf-up-pick" + (pickerOn ? " is-on" : "")} role="dialog" aria-modal="true" aria-label="Add pages to your plan">
-          <div className="jf-up-pick-scrim" onClick={() => busy !== "custom-add" && closePicker()} />
+          <div className="jf-up-pick-scrim" onClick={() => busy !== "custom-remove" && closePicker()} />
           <div className="jf-up-pick-box">
             <div className="jf-up-pick-head">
               <div>
                 <div className="jf-up-kick">Custom plan</div>
-                <h2 className="jf-up-pick-h">{onCustom ? "Add pages." : "Pick your pages."}</h2>
+                <h2 className="jf-up-pick-h">{onCustom ? "Your pages." : "Pick your pages."}</h2>
               </div>
               <button
                 type="button"
@@ -521,17 +555,23 @@ export function UpgradeContent({
             </div>
             <p className="jf-up-pick-lede">
               {onCustom
-                ? `Each page is $${(CUSTOM_PAGE_CENTS / 100).toFixed(0)}/mo. You pay for the new pages once now; from the next bill they are part of your plan.`
+                ? `Tick what you want in the plan — $${(CUSTOM_PAGE_CENTS / 100).toFixed(0)}/mo each. Adding a page is paid on Stripe and replaces your plan; removing one is free and the lower price starts on the next bill.`
                 : `$${(CUSTOM_BASE_CENTS / 100).toFixed(0)}/mo covers the everyday workspace — proposals, clients, projects, jobs, invoices. Everything below is $${(CUSTOM_PAGE_CENTS / 100).toFixed(0)}/mo each.`}
             </p>
             <div className="jf-up-pick-list">
-              {addable.map((pg) => {
+              {CUSTOM_PAGES.map((pg) => {
                 const on = picked.includes(pg.id);
+                const had = owned.includes(pg.id);
                 return (
                   <button
                     key={pg.id}
                     type="button"
-                    className={"jf-up-pick-row" + (on ? " on" : "")}
+                    className={
+                      "jf-up-pick-row" +
+                      (on ? " on" : "") +
+                      (onCustom && had && !on ? " drop" : "") +
+                      (onCustom && !had && on ? " add" : "")
+                    }
                     aria-pressed={on}
                     onClick={() =>
                       setPicked((cur) =>
@@ -550,35 +590,42 @@ export function UpgradeContent({
                       <span className="jf-up-pick-n">{pg.label}</span>
                       <span className="jf-up-pick-note">{pg.note}</span>
                     </span>
-                    <span className="jf-up-pick-p">+${(CUSTOM_PAGE_CENTS / 100).toFixed(0)}</span>
+                    <span className="jf-up-pick-p">
+                      {onCustom && had ? (on ? "Yours" : "Removing") : `+$${(CUSTOM_PAGE_CENTS / 100).toFixed(0)}`}
+                    </span>
                   </button>
                 );
               })}
             </div>
             <div className="jf-up-pick-foot">
-              {onCustom ? (
-                <span className="jf-up-pick-total">
-                  <b>${(addNowCents / 100).toFixed(0)}</b> now
-                  <i>then ${(nextMonthlyCents / 100).toFixed(0)}/mo</i>
-                </span>
-              ) : (
-                <span className="jf-up-pick-total">
-                  <b>${(nextMonthlyCents / 100).toFixed(0)}</b>
-                  <i>per month · paid on Stripe</i>
-                </span>
-              )}
+              <span className="jf-up-pick-total">
+                <b>${(nextMonthlyCents / 100).toFixed(0)}</b>
+                <i>
+                  {onCustom
+                    ? adds.length > 0
+                      ? "per month · paid on Stripe"
+                      : removes.length > 0
+                        ? "per month from the next bill"
+                        : "per month · your plan today"
+                    : "per month · paid on Stripe"}
+                </i>
+              </span>
               {onCustom ? (
                 <button
                   type="button"
-                  className="jf-up-go"
-                  disabled={picked.length === 0 || busy === "custom-add"}
-                  onClick={() => void confirmAddPages()}
+                  className={"jf-up-go" + (adds.length === 0 && removes.length > 0 ? " down" : "")}
+                  disabled={(adds.length === 0 && removes.length === 0) || busy !== null}
+                  onClick={() => {
+                    closePicker();
+                    if (adds.length > 0) setConfirm({ kind: "custom", pages: picked });
+                    else setConfirm({ kind: "remove", pages: picked, removing: removes });
+                  }}
                 >
-                  {busy === "custom-add"
-                    ? "Adding…"
-                    : picked.length === 0
-                      ? "Pick a page"
-                      : `Add ${picked.length} page${picked.length === 1 ? "" : "s"} · $${(addNowCents / 100).toFixed(0)}`}
+                  {adds.length > 0
+                    ? `Continue to payment · $${(nextMonthlyCents / 100).toFixed(0)}/mo`
+                    : removes.length > 0
+                      ? `Remove ${removes.length} page${removes.length === 1 ? "" : "s"}`
+                      : "No changes"}
                 </button>
               ) : (
                 <button

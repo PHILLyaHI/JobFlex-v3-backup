@@ -957,6 +957,72 @@ export async function notifyTradeInterest(jobId: string, recipientUserId: string
   return { skipped: !sent };
 }
 
+// ── Hire & Work board (rebuilt 2026-09-03) ──────────────────────────────────
+// Someone pressed "I'm interested" on a post. Split like the talent-contact
+// pair above: the bell is awaited by the caller, the mail runs after the
+// response. The mail carries the interested party's contact details, because
+// on the board the conversation continues by email, not in an in-app thread.
+
+async function hireInterestParties(jobId: string, fromUserId: string) {
+  const [job, from] = await Promise.all([
+    db.tradeJob.findUnique({
+      where: { id: jobId },
+      select: { title: true, authorId: true, authorOrgId: true },
+    }),
+    db.user.findUnique({
+      where: { id: fromUserId },
+      select: {
+        name: true,
+        email: true,
+        phone: true,
+        memberships: {
+          orderBy: { createdAt: "asc" },
+          take: 1,
+          select: { organization: { select: { name: true, phone: true } } },
+        },
+      },
+    }),
+  ]);
+  if (!job || !from) return null;
+  const company = from.memberships[0]?.organization.name ?? null;
+  return {
+    job,
+    who: tradeWho({ fromName: from.name ?? company ?? "A contractor", fromCompany: company }),
+    email: from.email,
+    phone: from.phone ?? from.memberships[0]?.organization.phone ?? null,
+  };
+}
+
+export async function recordHireInterest(jobId: string, fromUserId: string) {
+  const p = await hireInterestParties(jobId, fromUserId);
+  if (!p) return { skipped: true as const };
+  await db.activityEvent.create({
+    data: {
+      organizationId: p.job.authorOrgId,
+      kind: "TRADE_INTEREST",
+      summary: `${p.who} is interested in your post "${p.job.title}"`,
+    },
+  });
+  return { skipped: false as const };
+}
+
+export async function emailHireInterest(jobId: string, fromUserId: string) {
+  if (!isEmailEnabled()) return { skipped: true as const };
+  const p = await hireInterestParties(jobId, fromUserId);
+  if (!p) return { skipped: true as const };
+  const appUrl = await appBaseUrl();
+  const phoneLine = p.phone ? `<p>Phone: ${tradeEsc(p.phone)}</p>` : "";
+  const { sent } = await sendToUserByPref(p.job.authorId, "trade-reply", {
+    subject: `${p.who} is interested in "${p.job.title}"`,
+    html:
+      `<p>${tradeEsc(p.who)} pressed <b>I'm interested</b> on your Hire &amp; Work post <b>${tradeEsc(p.job.title)}</b>.</p>` +
+      `<p>Email: <a href="mailto:${tradeEsc(p.email)}">${tradeEsc(p.email)}</a></p>` +
+      phoneLine +
+      `<p>Reply to them directly, or <a href="${appUrl}/dashboard/hire?tab=work">open your posts</a> to see everyone who has answered this one.</p>`,
+  });
+  return { skipped: !sent };
+}
+
 /** The poster marked a job FILLED — everyone who raised a hand hears it. The
  *  contractor they actually hired reads it as "you're hired"; the rest read it
  *  as the thread closing, which is also true. */

@@ -282,11 +282,18 @@ export function VideoEstimatorContent({
           <span className={cx("vt-crop", "bl")}></span>
           <span className={cx("vt-crop", "br")}></span>
 
+          {/* VISUALLY hidden, not `display: none`. This module carries a
+              `[hidden] { display: none !important }` rule, and a file input
+              that is display:none is refused a picker by iOS Safari and
+              several Android webviews — the click lands and nothing opens.
+              Same off-screen pattern the Smart Proposal's photo input uses. */}
           <input
             ref={inputRef}
             type="file"
             accept={VIDEO_ACCEPT}
-            hidden
+            className={cx("vt-file")}
+            tabIndex={-1}
+            aria-hidden="true"
             onChange={(e) => {
               takeFiles(e.target.files);
               // Picking the same file twice must fire again.

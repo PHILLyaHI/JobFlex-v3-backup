@@ -2,26 +2,23 @@
 // Referrals surface in the Blueprint design system, sibling to /mobile-v2
 // (Overview), /mobile-proposals-v2, /mobile-clients-v2 and the rest of the
 // handheld fleet. Lives beside the desktop /dashboard/referrals rather than
-// replacing it, per the mobile route strategy.
+// replacing it, per the mobile route strategy — and since 2026-09-03 it is
+// the SECOND entry point to the same build /dashboard/referrals mounts at
+// ≤768px (see app/dashboard/referrals/referrals-responsive.tsx).
 //
 // Built with the jobflex-page-styler skill (visual system: tokens, palette,
 // type scale, Motion System "Balanced", FLUID SCALE) and the
 // mobile-app-ui-design skill (structure: thumb zone, ≥44px targets, bottom
 // sheets over modals, search over paging, initials over generic glyphs).
-// Where the two disagree the house system wins — hard 3px offset shadows, 2px
-// radii and Inter 900 caps stay, rather than the mobile skill's soft-shadow /
-// rounded-3xl defaults.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
-//
-// Auth: middleware only matches /dashboard and /admin, so this page enforces
-// its own redirect-to-login like the other design routes. The route key is not
-// in V3_PORTED_ROUTES yet, so the literal path is used here.
+// Data: REAL. The same loader the desktop page runs (app/dashboard/referrals/
+// load-referrals) reads the org's ReferralCode and ReferralConversion rows and
+// hands them down as props; nothing here is a fixture. The loader also owns
+// the auth ladder (login redirect, no-org, limited role), with this route as
+// the return path.
 
 import type { Metadata, Viewport } from "next";
-import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { loadReferralsProps } from "@/app/dashboard/referrals/load-referrals";
 import { MobileReferrals } from "./mobile-referrals";
 
 export const dynamic = "force-dynamic";
@@ -43,10 +40,6 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileReferralsV2Page() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect(`/auth/login?next=${encodeURIComponent("/mobile-referrals-v2")}`);
-  }
-
-  return <MobileReferrals />;
+  const props = await loadReferralsProps("/mobile-referrals-v2");
+  return <MobileReferrals {...props} />;
 }

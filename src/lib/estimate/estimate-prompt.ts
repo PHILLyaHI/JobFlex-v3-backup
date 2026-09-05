@@ -1,4 +1,5 @@
-// THE ESTIMATE CALL — one model call that writes the whole estimate.
+// THE TRADE RULES BLOCK — the phases, price anchors and hard rules that ride
+// in the old prompt's "extra admin" slot (see lib/estimate/legacy-estimate).
 //
 // Estimate first, shop second (owner, 2026-09-03). The pipeline used to plan a
 // bill of MATERIALS, shop it, and only then ask a matcher to turn products into
@@ -11,7 +12,14 @@
 // search runs AFTER, per line, purely to attach a shop-list link and listing
 // price; it never re-prices a line.
 //
-// Plain module, no "use server": actions/advancedEstimator imports it.
+// This module used to BE the estimate call. Since 2026-09-03 the call itself is
+// the previous JobFlex's quote-draft prompt, verbatim (./legacy/prompt.ts), and
+// what survives here is the block that brings a gpt-4o-class model up to the
+// completeness the old gpt-5.1 reached on the bare prompt: the detected trade's
+// required phases, its unit-price anchors, and the ten hard rules. A gpt-5-class
+// model gets the bare old prompt and never sees this.
+//
+// Plain module, no "use server": lib/estimate/legacy-estimate imports it.
 
 import { ESTIMATOR_MASTER_PROMPT, UNIT_RULES } from "./master-prompt";
 import { detectTrade, stateCostIndex, type TradeProfile } from "./trade-knowledge";
@@ -99,38 +107,4 @@ export function buildEstimateSystemPrompt(trade: TradeProfile, input: EstimatePr
     "",
     `Return JSON only, matching exactly: ${ESTIMATE_JSON_SHAPE}`,
   ].join("\n");
-}
-
-export function buildEstimateUserPrompt(trade: TradeProfile, input: EstimatePromptInput): string {
-  const clean = (input.assumptions ?? []).map((a) => a.trim()).filter(Boolean);
-  const lines = [
-    `Trade: ${trade.name}`,
-    input.projectType?.trim() ? `Project type given by the contractor: ${input.projectType.trim()}` : "",
-    input.location?.trim() ? `Location: ${input.location.trim()}` : "Location: not given",
-    `Quality tier: ${input.qualityTier}`,
-    "",
-    "Project description from the contractor:",
-    input.description.trim(),
-  ];
-  if (clean.length) {
-    lines.push("", "Honor these contractor assumptions and constraints as ground truth (adjust scope, quantities and pricing to fit them):", ...clean.map((a) => `- ${a}`));
-  }
-  if (input.photoCount) {
-    lines.push("", `${input.photoCount} site photo(s) are attached. Read them FIRST: they identify the room or structure, the existing materials, condition and access, and they outrank the text where the two disagree.`);
-  }
-  lines.push(
-    "",
-    "Write the complete estimate now: every phase, scope-sentence names, measured quantities with the right unit, a material price and a labor price per unit on every line, anchored to the trade profile and adjusted for the location. JSON only.",
-  );
-  return lines.filter((l) => l !== null).join("\n");
-}
-
-/** Convenience: detect the trade and build both halves. */
-export function buildEstimatePrompts(input: EstimatePromptInput): {
-  trade: TradeProfile;
-  system: string;
-  user: string;
-} {
-  const trade = detectTrade(`${input.projectType ?? ""} ${input.description}`);
-  return { trade, system: buildEstimateSystemPrompt(trade, input), user: buildEstimateUserPrompt(trade, input) };
 }

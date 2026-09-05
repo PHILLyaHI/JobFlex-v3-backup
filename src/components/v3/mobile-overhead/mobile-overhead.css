@@ -676,18 +676,20 @@ body:has(.jf-mobile-overhead)::before { content: none; }
 }
 /* The status line sits ABOVE the row, full width: a refused write says why,
    and a server message is a sentence, not a chip. */
+/* The receipt ("Saving…", "Saved", "Saves as you type") is a few words and
+   sits in the row's right slot on ONE line — it must never wrap into a column
+   beside the total. */
 .jf-mobile-overhead .moh-note {
   display: block;
   min-width: 0;
-  max-width: 58%;
   text-align: right;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--ink-soft);
-  overflow-wrap: anywhere;
 }
 /* The idle receipt — "Saves as you type" — is a hint, not a state. */
 .jf-mobile-overhead .moh-note.is-hint {
@@ -696,6 +698,22 @@ body:has(.jf-mobile-overhead)::before { content: none; }
   text-transform: none;
   color: var(--muted);
 }
+/* A server message is a sentence. It leaves the right slot, takes the whole
+   width ABOVE the total row, wraps freely, and is drawn as a proper notice
+   (danger rule + wash) rather than a chip that collides with the figure. */
+.jf-mobile-overhead .moh-note.is-bad {
+  grid-column: 1 / -1;
+  order: -1;
+  max-width: none;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 8px 10px;
+  margin-bottom: 2px;
+  border: 1.5px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--danger-soft, rgba(168, 50, 50, 0.08));
+}
 .jf-mobile-overhead .moh-note.is-warn { color: var(--warning-dark); }
 .jf-mobile-overhead .moh-note.is-ok { color: var(--success-dark); }
 .jf-mobile-overhead .moh-note.is-bad {
@@ -703,6 +721,7 @@ body:has(.jf-mobile-overhead)::before { content: none; }
   text-transform: none;
   letter-spacing: 0.02em;
 }
+.jf-mobile-overhead .moh-foot-row { grid-auto-flow: row; }
 
 /* ============================================================
    BUTTONS — coloured, always. Primary is a blueprint fill with a 2px ink

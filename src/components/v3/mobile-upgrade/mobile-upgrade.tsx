@@ -39,7 +39,7 @@ import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { expandPlanFeatures } from "@/lib/planCatalog";
-import { addCustomPages, changePlan } from "@/actions/billing";
+import { changePlan, removeCustomPages } from "@/actions/billing";
 import { toast } from "@/components/ui/Toast";
 import {
   CUSTOM_BASE_CENTS,
@@ -62,7 +62,8 @@ const dollars = (cents: number) => `$${(cents / 100).toFixed(0)}`;
 type Confirm =
   | { kind: "up"; plan: UpgradePlan }
   | { kind: "down"; plan: UpgradePlan }
-  | { kind: "custom"; pages: string[] };
+  | { kind: "custom"; pages: string[] }
+  | { kind: "remove"; pages: string[]; removing: string[] };
 
 export type MobileUpgradeProps = {
   plans: UpgradePlan[];
@@ -78,6 +79,9 @@ export type MobileUpgradeProps = {
   /** Slug just purchased on this request's ?session_id return, if any. */
   upgradedTo: string | null;
   cancelled: boolean;
+  /** Rendered inside the subscription page: no shell, no head, no return-leg
+   *  banners — the cards as a swipe carousel plus their sheets. */
+  embedded?: boolean;
 };
 
 function Tick({ on }: { on: boolean }) {
@@ -97,9 +101,13 @@ export function MobileUpgradeContent({
   sandbox,
   upgradedTo,
   cancelled,
+  embedded = false,
 }: MobileUpgradeProps) {
   const router = useRouter();
-  const [interval, setBilling] = useState<"MONTH" | "YEAR">("MONTH");
+  /* MONTHLY ONLY for now (owner, 2026-09-04): the yearly tier is unreviewed,
+     so the billing switch is gone from every plan surface. The type is kept
+     wide so the price math below stays ready for the day it comes back. */
+  const interval = "MONTH" as "MONTH" | "YEAR"; // cast, not annotation: TS narrows an annotated const to its literal
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -136,14 +144,6 @@ export function MobileUpgradeContent({
   // desktop build and the signup step apply.
   const { rows: featureRows, included } = useMemo(() => expandPlanFeatures(plans), [plans]);
 
-  const yearlySavePct = useMemo(() => {
-    const ref =
-      plans.find((p) => p.highlight && p.priceCents > 0 && p.yearlyPriceCents) ??
-      plans.find((p) => p.priceCents > 0 && p.yearlyPriceCents);
-    if (!ref?.yearlyPriceCents) return null;
-    const list = ref.priceCents * 12;
-    return list > ref.yearlyPriceCents ? Math.round((1 - ref.yearlyPriceCents / list) * 100) : null;
-  }, [plans]);
 
   /* Up or down, by price against the current plan. A custom plan (base plus
      pages) sits below every catalog tier. */
@@ -151,7 +151,12 @@ export function MobileUpgradeContent({
     if (cur === CUSTOM_PLAN_SLUG) return customPriceCents(owned);
     return plans.find((p) => p.slug === cur)?.priceCents ?? -1;
   }, [cur, owned, plans]);
-  const direction = (p: UpgradePlan): "up" | "down" => (p.priceCents > curCents ? "up" : "down");
+  /* UP OR DOWN — by tier, not by price (owner, 2026-09-04): the catalog's
+     own order is the ladder and Custom is the rung below Starter whatever
+     its pages add up to. */
+  const rankOf = (slug: string): number =>
+    slug === CUSTOM_PLAN_SLUG ? -1 : slug ? plans.findIndex((p) => p.slug === slug) : -2;
+  const direction = (p: UpgradePlan): "up" | "down" => (rankOf(p.slug) > rankOf(cur) ? "up" : "down");
 
   const onCustom = cur === CUSTOM_PLAN_SLUG;
 
@@ -186,12 +191,40 @@ export function MobileUpgradeContent({
     window.setTimeout(() => setPickerOpen(false), SHEET_EXIT_MS);
   }, []);
 
+  /* The picker is the whole selection (owner, 2026-09-04: "add or remove").
+     Ticking a new page is PAID — the selection replaces the subscription on
+     Stripe's page; un-ticking only is free, the price steps down from the
+     next bill (actions/billing.removeCustomPages). */
   const [picked, setPicked] = useState<string[]>([]);
-  const addable = onCustom ? CUSTOM_PAGES.filter((pg) => !owned.includes(pg.id)) : CUSTOM_PAGES;
-  const addNowCents = picked.length * CUSTOM_PAGE_CENTS;
-  const nextMonthlyCents = customPriceCents(onCustom ? [...owned, ...picked] : picked);
+  const openPicker = useCallback(() => {
+    setPicked(onCustom ? owned : []);
+    setPickerOpen(true);
+  }, [onCustom, owned]);
+  const adds = picked.filter((id) => !owned.includes(id));
+  const removes = onCustom ? owned.filter((id) => !picked.includes(id)) : [];
+  const nextMonthlyCents = customPriceCents(picked);
 
-  /* ── THE THREE WRITES ─────────────────────────────────────────────────── */
+  async function removePages(removing: string[]) {
+    if (busy || removing.length === 0) return;
+    setErr(null);
+    setBusy("custom-remove");
+    try {
+      const res = await removeCustomPages(removing);
+      if (!res.ok) throw new Error(res.error);
+      setOwned(res.pages);
+      closeConfirm();
+      toast.success(
+        `${res.removed} page${res.removed === 1 ? "" : "s"} removed`,
+        `Your plan is ${dollars(res.monthlyCents)}/mo from the next bill.`,
+      );
+      router.refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't remove the pages.");
+      closeConfirm();
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function checkout(slug: string, customPagesToBuy?: string[]) {
     const res = await fetch("/api/checkout/subscription", {
@@ -247,33 +280,9 @@ export function MobileUpgradeContent({
         closeConfirm();
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [busy, interval, router, closeConfirm],
   );
-
-  async function confirmAddPages() {
-    if (busy || picked.length === 0) return;
-    setErr(null);
-    setBusy("custom-add");
-    try {
-      const res = await addCustomPages(picked);
-      if (!res.ok) throw new Error(res.error);
-      setOwned(res.pages);
-      setPicked([]);
-      closePicker();
-      toast.success(
-        `${res.added} page${res.added === 1 ? "" : "s"} added`,
-        res.chargedCents > 0
-          ? `${dollars(res.chargedCents)} charged now. Your plan is ${dollars(res.monthlyCents)}/mo from the next bill.`
-          : `Your plan is ${dollars(res.monthlyCents)}/mo from the next bill.`,
-      );
-      router.refresh();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Couldn't add the pages.");
-    } finally {
-      setBusy(null);
-    }
-  }
 
   function onPick(p: UpgradePlan) {
     setConfirm({ kind: direction(p) === "down" && cur ? "down" : "up", plan: p });
@@ -390,8 +399,14 @@ export function MobileUpgradeContent({
             <span className="mu-name">{p.name}</span>
             {p.description ? <span className="mu-desc">{p.description}</span> : null}
           </div>
-          {p.highlight ? <span className="mu-tag">Most picked</span> : null}
-          {isCur ? <span className="mu-tag is-cur">Current</span> : null}
+          {/* Badges stack in a column beside the name (owner, 2026-09-04):
+              side by side they squeezed "Professional" into a two-line break. */}
+          {p.highlight || isCur ? (
+            <span className="mu-tags">
+              {p.highlight ? <span className="mu-tag">Most picked</span> : null}
+              {isCur ? <span className="mu-tag is-cur">Current</span> : null}
+            </span>
+          ) : null}
         </div>
 
         <div className="mu-price">
@@ -401,9 +416,6 @@ export function MobileUpgradeContent({
             <span className="mu-save">
               <s>{dollars(listCents)}</s> save {savePct}%
             </span>
-          ) : null}
-          {p.trialDays > 0 && !isCur ? (
-            <span className="mu-trial">{p.trialDays}-day trial</span>
           ) : null}
         </div>
 
@@ -458,9 +470,7 @@ export function MobileUpgradeContent({
               title={cannot ?? undefined}
               onClick={() => onPick(p)}
             >
-              {busy === p.slug
-                ? "Switching…"
-                : `${dir === "down" && cur ? "Downgrade" : "Switch"} to ${p.name}`}
+              {busy === p.slug ? "Switching…" : dir === "down" && cur ? "Downgrade" : "Upgrade"}
             </button>
           )}
         </div>
@@ -475,10 +485,18 @@ export function MobileUpgradeContent({
       ? `Downgrade to ${confirm.plan.name}?`
       : confirm?.kind === "up"
         ? `Upgrade to ${confirm.plan.name}?`
-        : "Switch to a Custom plan?";
+        : confirm?.kind === "remove"
+          ? `Remove ${confirm.removing.length} page${confirm.removing.length === 1 ? "" : "s"}?`
+          : onCustom
+            ? "Change your Custom plan?"
+            : "Switch to a Custom plan?";
 
   const confirmLabel =
-    confirm?.kind === "down" ? `Downgrade to ${confirm.plan.name}` : "Continue to payment";
+    confirm?.kind === "down"
+      ? `Downgrade to ${confirm.plan.name}`
+      : confirm?.kind === "remove"
+        ? "Remove pages"
+        : "Continue to payment";
 
   const confirmSheet =
     confirm && typeof document !== "undefined"
@@ -504,7 +522,11 @@ export function MobileUpgradeContent({
                 <span className="mu-grab" aria-hidden="true" />
                 <div className="mu-box-head">
                   <div className="mu-kick">
-                    {confirm.kind === "down" ? "Downgrade" : "Upgrade"}
+                    {confirm.kind === "down"
+                      ? "Downgrade"
+                      : confirm.kind === "remove"
+                        ? "Custom plan"
+                        : "Upgrade"}
                   </div>
                   <h2 className="mu-box-h">{confirmTitle}</h2>
                 </div>
@@ -529,6 +551,17 @@ export function MobileUpgradeContent({
                       </b>{" "}
                       for <b>{confirm.plan.name}</b>. Your current plan is replaced the moment the
                       payment goes through.
+                    </>
+                  ) : confirm.kind === "remove" ? (
+                    <>
+                      <b>
+                        {confirm.removing
+                          .map((id) => CUSTOM_PAGES.find((pg) => pg.id === id)?.label ?? id)
+                          .join(", ")}
+                      </b>{" "}
+                      close{confirm.removing.length === 1 ? "s" : ""} as soon as you confirm. Your
+                      plan is <b>{dollars(customPriceCents(confirm.pages))}/mo</b> from the next
+                      bill; nothing is refunded for the rest of this cycle.
                     </>
                   ) : (
                     <>
@@ -560,6 +593,7 @@ export function MobileUpgradeContent({
                     onClick={() => {
                       if (confirm.kind === "down") void switchDown(confirm.plan);
                       else if (confirm.kind === "up") void payFor(confirm.plan.slug);
+                      else if (confirm.kind === "remove") void removePages(confirm.removing);
                       else void payFor(CUSTOM_PLAN_SLUG, confirm.pages);
                     }}
                   >
@@ -581,19 +615,19 @@ export function MobileUpgradeContent({
               className={`mu-sheet is-tall${pickerOn ? " is-on" : ""}`}
               role="dialog"
               aria-modal="true"
-              aria-label={onCustom ? "Add pages to your plan" : "Pick your pages"}
+              aria-label={onCustom ? "Add or remove pages" : "Pick your pages"}
             >
               <div
                 className="mu-scrim"
                 onClick={() => {
-                  if (busy !== "custom-add") closePicker();
+                  if (busy !== "custom-remove") closePicker();
                 }}
               />
               <div className="mu-box">
                 <span className="mu-grab" aria-hidden="true" />
                 <div className="mu-box-head">
                   <div className="mu-kick">Custom plan</div>
-                  <h2 className="mu-box-h">{onCustom ? "Add pages." : "Pick your pages."}</h2>
+                  <h2 className="mu-box-h">{onCustom ? "Your pages." : "Pick your pages."}</h2>
                   <button
                     type="button"
                     className="mu-x"
@@ -607,17 +641,18 @@ export function MobileUpgradeContent({
                 </div>
                 <p className="mu-box-body">
                   {onCustom
-                    ? `Each page is ${dollars(CUSTOM_PAGE_CENTS)}/mo. You pay for the new pages once now; from the next bill they are part of your plan.`
+                    ? `Tick what you want in the plan — ${dollars(CUSTOM_PAGE_CENTS)}/mo each. Adding a page is paid on Stripe and replaces your plan; removing one is free and the lower price starts on the next bill.`
                     : `${dollars(CUSTOM_BASE_CENTS)}/mo covers the everyday workspace — proposals, clients, projects, jobs, invoices. Everything below is ${dollars(CUSTOM_PAGE_CENTS)}/mo each.`}
                 </p>
                 <div className="mu-list">
-                  {addable.map((pg) => {
+                  {CUSTOM_PAGES.map((pg) => {
                     const on = picked.includes(pg.id);
+                    const had = owned.includes(pg.id);
                     return (
                       <button
                         key={pg.id}
                         type="button"
-                        className={`mu-row${on ? " is-on" : ""}`}
+                        className={`mu-row${on ? " is-on" : ""}${onCustom && had && !on ? " is-drop" : ""}${onCustom && !had && on ? " is-add" : ""}`}
                         aria-pressed={on}
                         onClick={() =>
                           setPicked((prev) =>
@@ -638,44 +673,42 @@ export function MobileUpgradeContent({
                           <span className="mu-row-n">{pg.label}</span>
                           <span className="mu-row-note">{pg.note}</span>
                         </span>
-                        <span className="mu-row-p">+{dollars(CUSTOM_PAGE_CENTS)}</span>
+                        <span className="mu-row-p">
+                          {onCustom && had ? (on ? "Yours" : "Removing") : `+${dollars(CUSTOM_PAGE_CENTS)}`}
+                        </span>
                       </button>
                     );
                   })}
-                  {addable.length === 0 ? (
-                    <div className="mu-empty">
-                      <b>Every page is yours</b>
-                      <span>Nothing left to add</span>
-                    </div>
-                  ) : null}
                 </div>
                 <div className="mu-list-foot">
                   <span className="mu-total">
-                    {onCustom ? (
-                      <>
-                        <b>{dollars(addNowCents)}</b>
-                        <i>now · then {dollars(nextMonthlyCents)}/mo</i>
-                      </>
-                    ) : (
-                      <>
-                        <b>{dollars(nextMonthlyCents)}</b>
-                        <i>per month · paid on Stripe</i>
-                      </>
-                    )}
+                    <b>{dollars(nextMonthlyCents)}</b>
+                    <i>
+                      {onCustom
+                        ? adds.length > 0
+                          ? "per month · paid on Stripe"
+                          : removes.length > 0
+                            ? "per month from the next bill"
+                            : "per month · your plan today"
+                        : "per month · paid on Stripe"}
+                    </i>
                   </span>
                   {onCustom ? (
                     <button
                       type="button"
-                      className="mu-cta is-primary"
-                      disabled={picked.length === 0 || busy === "custom-add"}
-                      aria-busy={busy === "custom-add"}
-                      onClick={() => void confirmAddPages()}
+                      className={`mu-cta${adds.length === 0 && removes.length > 0 ? " is-ghost" : " is-primary"}`}
+                      disabled={(adds.length === 0 && removes.length === 0) || busy !== null}
+                      onClick={() => {
+                        closePicker();
+                        if (adds.length > 0) setConfirm({ kind: "custom", pages: picked });
+                        else setConfirm({ kind: "remove", pages: picked, removing: removes });
+                      }}
                     >
-                      {busy === "custom-add"
-                        ? "Adding…"
-                        : picked.length === 0
-                          ? "Pick a page"
-                          : `Add ${picked.length} page${picked.length === 1 ? "" : "s"} · ${dollars(addNowCents)}`}
+                      {adds.length > 0
+                        ? `Continue to payment · ${dollars(nextMonthlyCents)}/mo`
+                        : removes.length > 0
+                          ? `Remove ${removes.length} page${removes.length === 1 ? "" : "s"}`
+                          : "No changes"}
                     </button>
                   ) : (
                     <button
@@ -702,6 +735,113 @@ export function MobileUpgradeContent({
 
   const customOpen = openList === CUSTOM_PLAN_SLUG;
   const customPreview = CUSTOM_PAGES.slice(0, 3);
+
+  /* THE CUSTOM CARD. On the plan already: add or remove pages. Not on it:
+     build one — pick pages, confirm, pay on Stripe like any other plan. */
+  const customCard = (
+          <section
+            className={`mu-card is-custom${onCustom ? " is-cur" : ""}`}
+            aria-label={onCustom ? "Custom plan" : "Build your plan"}
+          >
+
+            <div className="mu-card-top">
+              <div className="mu-card-id">
+                <span className="mu-name">{onCustom ? "Custom" : "Build your plan"}</span>
+                <span className="mu-desc">
+                  {dollars(CUSTOM_BASE_CENTS)} base · {dollars(CUSTOM_PAGE_CENTS)} per page
+                </span>
+              </div>
+              {onCustom ? <span className="mu-tag is-cur">Current</span> : null}
+            </div>
+
+            <div className="mu-price">
+              <b>{dollars(onCustom ? curCents : customPriceCents(picked))}</b>
+              <i>/mo</i>
+            </div>
+
+            {/* ON THE PLAN: only the pages it holds, nothing when none
+                (owner, 2026-09-04). OFF it: the add-on list, ticked as picked. */}
+            <ul className="mu-feats">
+              {onCustom
+                ? CUSTOM_PAGES.filter((pg) => owned.includes(pg.id)).map((pg) => (
+                    <li key={pg.id} className="mu-f">
+                      <Tick on />
+                      <span>{pg.label}</span>
+                    </li>
+                  ))
+                : (customOpen ? CUSTOM_PAGES : customPreview).map((pg) => {
+                    const has = picked.includes(pg.id);
+                    return (
+                      <li key={pg.id} className={`mu-f${has ? "" : " is-no"}`}>
+                        <Tick on={has} />
+                        <span>{pg.label}</span>
+                      </li>
+                    );
+                  })}
+              {onCustom && owned.length === 0 ? (
+                <li className="mu-f is-no mu-f--none">No add-on pages yet</li>
+              ) : null}
+            </ul>
+
+            {!onCustom ? (
+              <button
+                type="button"
+                className={`mu-more${customOpen ? " is-open" : ""}`}
+                aria-expanded={customOpen}
+                onClick={() => setOpenList(customOpen ? null : CUSTOM_PLAN_SLUG)}
+              >
+                {customOpen ? "Hide the list" : `Add-on pages · ${picked.length} of ${CUSTOM_PAGES.length}`}
+                <svg className="mu-chev" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+            ) : null}
+
+            <div className="mu-foot">
+              <button
+                type="button"
+                className="mu-cta is-primary"
+                disabled={Boolean(cannot) || busy !== null}
+                title={cannot ?? undefined}
+                onClick={openPicker}
+              >
+                {onCustom
+                  ? "Add or remove pages"
+                  : busy === CUSTOM_PLAN_SLUG
+                    ? "Opening Stripe…"
+                    : "Choose pages"}
+              </button>
+            </div>
+          </section>
+  );
+
+  /* EMBEDDED (the subscription page): the same cards as a swipe carousel,
+     the interval switch above it, no shell chrome and no page head. The
+     sheets still portal to <body>, so they work the same either way. */
+  if (embedded) {
+    return (
+      <div className="jf-mobile-upgrade mu-embed" onClick={onRootClick} onAnimationEnd={onRootAnimEnd}>
+        <div className="mu-embed-head">
+          <div className="mu-embed-lbl">Plans</div>
+        </div>
+        {err ? (
+          <div className="mu-note is-bad" role="alert">
+            <b>That didn&rsquo;t go through</b>
+            <span>{err}</span>
+          </div>
+        ) : null}
+        <div className="mu-rail" ref={contentRef}>
+          {plans.map(planCard)}
+          {customCard}
+        </div>
+        {!isOwner ? (
+          <p className="mu-fine">Plan changes are owner-only — ask the account owner.</p>
+        ) : null}
+        {confirmSheet}
+        {pickerSheet}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -733,20 +873,6 @@ export function MobileUpgradeContent({
             ) : null}
           </div>
 
-          <div className="mu-seg" role="group" aria-label="Billing period">
-            {(["MONTH", "YEAR"] as const).map((i) => (
-              <button
-                key={i}
-                type="button"
-                className={`mu-seg-b${interval === i ? " is-on" : ""}`}
-                aria-pressed={interval === i}
-                onClick={() => setBilling(i)}
-              >
-                {i === "MONTH" ? "Monthly" : "Yearly"}
-                {i === "YEAR" && yearlySavePct ? <i>save {yearlySavePct}%</i> : null}
-              </button>
-            ))}
-          </div>
 
           {sandbox ? (
             <div className="mu-note is-warn" role="status">
@@ -775,78 +901,12 @@ export function MobileUpgradeContent({
             </div>
           ) : null}
 
-          {plans.map(planCard)}
-
-          {/* THE CUSTOM CARD. On the plan already: add pages. Not on it: build
-              one — pick pages, confirm, pay on Stripe like any other plan. */}
-          <section
-            className={`mu-card is-custom${onCustom ? " is-cur" : ""}`}
-            aria-label={onCustom ? "Custom plan" : "Build your plan"}
-          >
-            <div className="mu-card-top">
-              <div className="mu-card-id">
-                <span className="mu-name">{onCustom ? "Custom" : "Build your plan"}</span>
-                <span className="mu-desc">
-                  {dollars(CUSTOM_BASE_CENTS)} base · {dollars(CUSTOM_PAGE_CENTS)} per page
-                </span>
-              </div>
-              {onCustom ? <span className="mu-tag is-cur">Current</span> : null}
-            </div>
-
-            <div className="mu-price">
-              <b>{dollars(onCustom ? curCents : customPriceCents(picked))}</b>
-              <i>/mo</i>
-            </div>
-
-            <ul className="mu-feats">
-              {(customOpen ? CUSTOM_PAGES : customPreview).map((pg) => {
-                const has = onCustom ? owned.includes(pg.id) : picked.includes(pg.id);
-                return (
-                  <li key={pg.id} className={`mu-f${has ? "" : " is-no"}`}>
-                    <Tick on={has} />
-                    <span>{pg.label}</span>
-                  </li>
-                );
-              })}
-            </ul>
-
-            <button
-              type="button"
-              className={`mu-more${customOpen ? " is-open" : ""}`}
-              aria-expanded={customOpen}
-              onClick={() => setOpenList(customOpen ? null : CUSTOM_PLAN_SLUG)}
-            >
-              {customOpen
-                ? "Hide the list"
-                : `Add-on pages · ${onCustom ? owned.length : picked.length} of ${CUSTOM_PAGES.length}`}
-              <svg className="mu-chev" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </button>
-
-            <div className="mu-foot">
-              <button
-                type="button"
-                className="mu-cta is-primary"
-                disabled={Boolean(cannot) || (onCustom && addable.length === 0) || busy !== null}
-                title={
-                  cannot ??
-                  (onCustom && addable.length === 0
-                    ? "Every page is already in your plan"
-                    : undefined)
-                }
-                onClick={() => setPickerOpen(true)}
-              >
-                {onCustom
-                  ? addable.length === 0
-                    ? "All pages added"
-                    : "Add extra page"
-                  : busy === CUSTOM_PLAN_SLUG
-                    ? "Opening Stripe…"
-                    : "Choose pages"}
-              </button>
-            </div>
-          </section>
+          {/* ONE ROW, swiped (owner, 2026-09-04) — the same rail the
+              subscription page embeds, instead of a tall stack of cards. */}
+          <div className="mu-rail">
+            {plans.map(planCard)}
+            {customCard}
+          </div>
 
           {!isOwner ? (
             <p className="mu-fine">Plan changes are owner-only — ask the account owner.</p>

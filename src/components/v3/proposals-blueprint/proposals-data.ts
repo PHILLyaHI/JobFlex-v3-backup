@@ -64,6 +64,10 @@ export type ProposalRow = {
   maps: string | null;
   accepted?: string;
   paid?: string;
+  /** Dollars still owed on the schedule — 0 once settled. A COMPLETED job can
+   *  carry a balance (completion is about the work), so the tear-sheet reads
+   *  this rather than assuming "paid in full". */
+  owed: number;
   inst?: Installment[];
   materials: MaterialLine[];
   /** Proposal.beforePhotos / afterPhotos, already parsed. */

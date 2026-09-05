@@ -136,19 +136,25 @@ export async function POST(req: Request) {
   // 400 the session. Test runs fall back to typing a code on Stripe's page.
   if (mode === "test") autoApplyPromotionCode = null;
 
-  /* THE REFERRED SHOP'S DISCOUNT (lib/referralDiscount). An org that came in
-     on a member's referral code carries a ReferralConversion naming it; a
-     visitor whose capture cookie holds a referral is treated the same. Promo
+  /* THE REFERRED SHOP'S DISCOUNT (lib/referralDiscount) — ONCE, on the first
+     bill only (owner, 2026-09-04: an Enterprise upgrade was getting the 10%
+     again). It applies here only when this checkout IS the shop's first
+     subscription: no Stripe subscription has ever been recorded for the org
+     and its referral (if any) is still PENDING — settleReferrals marks it
+     CONVERTED the moment a subscription starts, and a replacement checkout
+     (upgrade) never qualifies. The signup route is the usual first bill;
+     this path covers a referred shop that skipped the plan at signup. Promo
      wins when both apply — one discount per session at Stripe. */
   let referralCoupon: string | null = null;
-  if (!autoApplyPromotionCode) {
-    let referred = Boolean(
-      await db.referralConversion.findFirst({
-        where: { signupOrgId: organizationId },
-        select: { id: true },
-      }),
-    );
-    if (!referred) {
+  const everSubscribed = Boolean(sub?.externalSubId);
+  if (!autoApplyPromotionCode && !everSubscribed) {
+    const conversion = await db.referralConversion.findFirst({
+      where: { signupOrgId: organizationId },
+      orderBy: { createdAt: "desc" },
+      select: { status: true },
+    });
+    let referred = conversion?.status === "PENDING";
+    if (!conversion) {
       const captured = await readAttributionCookie();
       if (captured?.k === "ref") referred = Boolean(await validateAttribution("ref", captured.c));
     }

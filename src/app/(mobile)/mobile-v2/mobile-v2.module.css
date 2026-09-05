@@ -1993,3 +1993,37 @@
    strip it stands in — otherwise the last row of every list ends
    underneath it with no way to scroll clear. */
 .scroll { padding-bottom: 60px; }
+
+/* ── DRAWER COUNTERS (2026-09-04) — the desk sidebar's voice, same tokens:
+   unread = blueprint plate with mono numerals; remaining quota = outlined
+   blueprint pill, danger when nothing is left; a locked page dims to the
+   desk value (0.48) and keeps its padlock. */
+.sbScroll .sbBadge {
+  margin-left: auto; flex: 0 0 auto;
+  min-width: 20px; height: 20px; padding: 0 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius);
+  background: var(--blueprint); color: #fff;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px; font-weight: 700; line-height: 1;
+}
+.sbScroll .sbQuota {
+  flex: 0 0 auto;
+  min-width: 22px; height: 20px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--blueprint); border-radius: var(--radius);
+  color: var(--blueprint);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px; font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.sbScroll .sbBadge + .sbQuota { margin-left: 6px; }
+.sbScroll .sbQuotaEnd { margin-left: auto; }
+.sbScroll .sbQuota.isOut { border-color: var(--danger, #a83232); color: var(--danger, #a83232); }
+.sbScroll .sbLink.active .sbQuota { border-color: var(--ink); color: var(--ink); }
+.sbScroll .sbLink.active .sbQuota.isOut { border-color: var(--danger, #a83232); color: var(--danger, #a83232); }
+.sbLockd { opacity: 0.48; }
+/* The row itself is animated in (sbItemIn, fill-mode both), which pins its
+   own opacity at 1 — so the lock dims the row's CONTENT instead, to the
+   desk sidebar's 0.48. */
+.sbScroll .sbLink.sbLockd > * { opacity: 0.48; }

@@ -18,6 +18,7 @@
 
 import { requireProposalStaff } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { resolveSchedule } from "@/lib/paymentSchedule";
 import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
 import { describeAddress, zillowSearchUrl } from "@/lib/zillow";
 import type { Installment, ProposalRow } from "./proposals-data";
@@ -134,6 +135,9 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
       total: p.total,
       updated: agoLabel(p.updatedAt),
       views: p.viewCount,
+      owed:
+        resolveSchedule({ total: p.total, currency: p.currency, installments: p.installments })
+          .remainingMinor / 100,
       // The donor prints a single given name in the Owner column.
       owner: p.owner?.name?.trim().split(/\s+/)[0] || "—",
       mat: shoppable.length,

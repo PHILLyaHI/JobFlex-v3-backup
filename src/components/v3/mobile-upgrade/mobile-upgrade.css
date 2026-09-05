@@ -1001,3 +1001,48 @@ body:has(.jf-mobile-upgrade.mu-shell) .jf-blueprint > .jfsup {
   .jf-mobile-upgrade .mu-box { transform: none; opacity: 1; }
   .jf-mobile-upgrade .mu-scrim { opacity: 1; }
 }
+
+/* ── EMBEDDED on the subscription page (2026-09-04) ─────────────────────
+   Same cards, no shell: a section label + interval switch, then the cards
+   as one snap carousel. Tokens come from the host page's root. */
+.jf-mobile-upgrade.mu-embed {
+  display: flex; flex-direction: column; gap: 12px; min-width: 0;
+  --pad-x: 16px;
+}
+.jf-mobile-upgrade .mu-embed-head { display: flex; flex-direction: column; gap: 10px; }
+.jf-mobile-upgrade .mu-embed-lbl {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--muted, #6b6b6b);
+}
+.jf-mobile-upgrade .mu-rail {
+  display: flex; flex-wrap: nowrap; gap: 12px; align-items: flex-start;
+  margin: 0 calc(-1 * var(--pad-x)); padding: 4px var(--pad-x) 10px;
+  overflow-x: auto; overflow-y: hidden;
+  scroll-snap-type: x mandatory; scroll-padding-inline: var(--pad-x);
+  -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y; scrollbar-width: none;
+}
+.jf-mobile-upgrade .mu-rail::-webkit-scrollbar { display: none; }
+.jf-mobile-upgrade .mu-rail > .mu-card {
+  flex: 0 0 min(82vw, 330px); scroll-snap-align: start;
+}
+.jf-mobile-upgrade .mu-f--none { font-style: italic; }
+.jf-mobile-upgrade .mu-row.is-drop .mu-row-n { text-decoration: line-through; color: var(--muted, #6b6b6b); }
+.jf-mobile-upgrade .mu-row.is-drop .mu-row-p { color: var(--danger, #b3261e); }
+.jf-mobile-upgrade .mu-row.is-add .mu-row-p { color: var(--blueprint, #1854a0); }
+
+/* ── 2026-09-04 (owner): badges in a column, cards on one swiped rail, no
+   billing switch. ─────────────────────────────────────────────────────── */
+/* "MOST PICKED" + "CURRENT" side by side left the name ~110px and broke
+   "Professional" over two lines. Stacked, right-aligned, the name keeps the
+   column and never breaks inside a word. */
+.jf-mobile-upgrade .mu-tags { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex: 0 0 auto; }
+.jf-mobile-upgrade .mu-card-id { flex: 1 1 auto; }
+.jf-mobile-upgrade .mu-name { overflow-wrap: normal; word-break: normal; }
+/* The upgrade page uses the same rail the subscription page embeds; inside
+   .mu-content there is no --pad-x bleed to undo. */
+.jf-mobile-upgrade .mu-shell .mu-rail { margin: 0; padding: 4px 0 12px; scroll-padding-inline: 0; }
+.jf-mobile-upgrade .mu-shell .mu-rail > .mu-card { scroll-snap-align: start; }
+/* The Monthly / Yearly segment is gone from the markup; the rule stays inert. */
+.jf-mobile-upgrade .mu-seg { display: none; }

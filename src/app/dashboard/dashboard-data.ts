@@ -362,10 +362,11 @@ export async function buildDashboardData(): Promise<DashboardData> {
       name: user.name || user.email || "Account",
       role: humanRole(role),
     },
-    leadProfile:
-      needsCompany || needsAddress || needsTrades
-        ? { needsCompany, needsAddress, needsTrades }
-        : null,
+    // The Lead Center nag is shown only to a shop that has picked NO trades
+    // (owner, 2026-09-04) — a company/address gap alone no longer raises it.
+    // The other two flags still ride along so the sentence names everything
+    // that is missing once it does show.
+    leadProfile: needsTrades ? { needsCompany, needsAddress, needsTrades } : null,
     kpis: {
       revenue: money(revenue30),
       pipeline: money(pipelineTotal),

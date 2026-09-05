@@ -5,7 +5,26 @@ import { requireManager, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { relative } from "@/lib/format";
 import { ApplicantStatus } from "@/lib/prismaEnums";
-import type { Applicant, HireColumnKey } from "@/components/v3/hire-blueprint/hire-data";
+
+// The pipeline's row shape used to live in the blueprint hire page's data
+// module; that page was rebuilt as the Hire & Work marketplace (2026-09-03) and
+// no longer renders applicants, so the shape lives with the actions that own it.
+export type HireColumnKey = "APPLIED" | "INTERVIEWING" | "HIRED" | "REJECTED";
+
+export type Applicant = {
+  /** The real `Applicant.id` (cuid). */
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  role: string;
+  status: HireColumnKey;
+  source: string | null;
+  /** Relative "applied" plate — `relative(createdAt)` from @/lib/format. */
+  age: string;
+  notes: string;
+  resumeUrl?: string | null;
+};
 
 const applicantInput = z.object({
   fullName: z.string().min(1),

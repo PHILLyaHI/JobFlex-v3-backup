@@ -787,12 +787,27 @@
   animation: noteIn 0.24s var(--ease) both;
 }
 .noteBad { background: var(--danger); border-color: var(--ink); }
+/* A LIVE note is a request still out, not a result. It carries a SQUARE
+   spinner — this system draws no circles — so the strip reads as "working"
+   rather than as a statement, and the row it belongs to has already flipped
+   optimistically above it. */
+.noteLive { display: flex; align-items: center; gap: 10px; }
+.noteSpin {
+  flex: 0 0 auto;
+  width: 13px; height: 13px;
+  border: 2px solid var(--paper);
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  animation: noteSpin 0.7s linear infinite;
+}
+@keyframes noteSpin { to { transform: rotate(360deg); } }
 @keyframes noteIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .note { animation: none; }
+  .noteSpin { animation: none; }
 }
 .psheetFoot {
   padding: var(--card-pad);

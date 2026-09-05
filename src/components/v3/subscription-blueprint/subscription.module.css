@@ -1012,3 +1012,69 @@
   display: block; font-size: 11px; font-weight: 600; color: var(--muted-light, #888);
   text-decoration-thickness: 1.5px;
 }
+
+/* ── PLANS (embedded upgrade cards, 2026-09-04) ──────────────────────── */
+:global(.jf-blueprint) .plans-embed { display: block; }
+
+/* ── BILLING HISTORY, redrawn 2026-09-04 ─────────────────────────────────
+   Critique findings: the card stretched to the usage card's height and sat
+   two-thirds empty; the "next bill" row squeezed a title, a green note and
+   a struck price into one ledger cell; the file icon was decoration with
+   no job. Now: the card sizes to its content, the next bill is its own
+   framed block with the amount first and the credits itemised under it,
+   and the ledger keeps four aligned columns on a 44px row. */
+:global(.jf-blueprint) .bill-card { align-self: start; }
+:global(.jf-blueprint) .bill-count {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted);
+}
+:global(.jf-blueprint) .bill-next {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 16px;
+  margin: 0 0 18px; padding: 14px 16px;
+  border: 2px solid var(--ink); border-radius: var(--radius);
+  background: var(--paper-deep); box-shadow: 4px 4px 0 var(--ink);
+}
+:global(.jf-blueprint) .bill-next-l { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+:global(.jf-blueprint) .bill-next-k {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--blueprint);
+}
+:global(.jf-blueprint) .bill-next-d { font-size: 14px; font-weight: 700; color: var(--ink); }
+:global(.jf-blueprint) .bill-next-r { display: flex; align-items: baseline; gap: 8px; }
+:global(.jf-blueprint) .bill-next-was {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--muted);
+  text-decoration-thickness: 1.5px;
+}
+:global(.jf-blueprint) .bill-next-amt {
+  font-size: 26px; font-weight: 800; letter-spacing: -0.02em; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+:global(.jf-blueprint) .bill-lines {
+  grid-column: 1 / -1; margin: 10px 0 0; padding: 10px 0 0; list-style: none;
+  border-top: 1.5px solid rgba(10,10,10,.14);
+  display: flex; flex-direction: column; gap: 4px;
+}
+:global(.jf-blueprint) .bill-lines li {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  color: var(--success);
+}
+:global(.jf-blueprint) .bill-lines li::before {
+  content: ""; width: 10px; height: 1.5px; background: currentColor; flex: 0 0 auto;
+}
+:global(.jf-blueprint) .inv-head { grid-template-columns: 1.4fr 1fr .8fr .9fr; padding-bottom: 8px; }
+:global(.jf-blueprint) .inv-row {
+  grid-template-columns: 1.4fr 1fr .8fr .9fr; min-height: 44px; padding: 8px 2px;
+  border-bottom: 1px solid rgba(10,10,10,.12);
+}
+:global(.jf-blueprint) .inv-no a { color: var(--ink); text-decoration: underline; text-underline-offset: 3px;
+  text-decoration-thickness: 1.5px; text-decoration-color: var(--blueprint); }
+:global(.jf-blueprint) .inv-no a:hover { color: var(--blueprint); }
+:global(.jf-blueprint) .st-badge { font-family: var(--font-mono); font-size: 9.5px; padding: 3px 8px; }
+:global(.jf-blueprint) .bill-foot, :global(.jf-blueprint) .bill-empty {
+  margin-top: 14px; padding-top: 12px; border-top: 1.5px solid rgba(10,10,10,.12);
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted);
+}
+:global(.jf-blueprint) .bill-empty { border-top: none; padding-top: 0; margin-top: 4px;
+  text-transform: none; letter-spacing: 0; font-family: var(--font); font-size: 13px; font-weight: 500; }

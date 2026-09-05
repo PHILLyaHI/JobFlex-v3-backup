@@ -33,10 +33,11 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSession, signIn } from "next-auth/react";
+import { createPortal } from "react-dom";
 import { attachPlacesSuggest } from "@/components/v3/blueprint-shell/places-suggest";
 import { toast } from "@/components/ui/Toast";
 import { checkEmailAvailable, completeCompanySetup } from "@/actions/auth";
-import type { SetupPrefill } from "@/app/(auth)/auth/register/register-responsive";
+import type { GooglePrefill, SetupPrefill } from "@/app/(auth)/auth/register/register-responsive";
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
 import { RegisterSprite } from "./register-sprite";
 import { ReferralBanner, type RegisterAttribution } from "./referral-banner";
@@ -92,7 +93,15 @@ function tradeNote(n: number): string {
     : n + (n === 1 ? " trade" : " trades") + " selected — leads will be matched to these.";
 }
 
-export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null }) {
+export function RegisterContent({
+  setup = null,
+  google: googlePrefill = null,
+}: {
+  setup?: SetupPrefill | null;
+  /* Resolved from `?gsu=` on the server, so step 2 is what the first frame
+     paints. Null on every other arrival. */
+  google?: GooglePrefill | null;
+}) {
   const router = useRouter();
   /* SETUP MODE: a Google signup finishing step 2. Step 1 is done (Google did
      it), the plan step follows in the app (/dashboard/upgrade), and there is
@@ -128,14 +137,16 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
      shop is live" — which read as being sent back (owner's report). The done
      panel now carries a finalizing state (`payBusy`) for that second. */
   const [step, setStep] = React.useState<Step>(
-    setupMode ? 2 : ret ? (ret.sessionId && !ret.cancelled ? 4 : 3) : 1,
+    setupMode ? 2 : ret ? (ret.sessionId && !ret.cancelled ? 4 : 3) : googlePrefill ? 2 : 1,
   );
   /* GOOGLE ON THIS PAGE proves who the visitor is and nothing more (owner,
      2026-09-03). The auth callback parks the verified identity and comes back
      here with ?gsu=<handle>; the handle is read once and step 1 is filled
      from it, with the password fields replaced by a "verified" note. */
   const gsu = React.useMemo(() => searchParams?.get("gsu") ?? null, [searchParams]);
-  const [google, setGoogle] = React.useState<{ handle: string; email: string } | null>(null);
+  const [google, setGoogle] = React.useState<{ handle: string; email: string } | null>(
+    googlePrefill ? { handle: googlePrefill.handle, email: googlePrefill.email } : null,
+  );
   /* True once the ticket minted by completePendingSignup has been redeemed:
      the browser holds a session, and step 4 may point at the dashboard. */
   const [signedIn, setSignedIn] = React.useState(false);
@@ -144,8 +155,51 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
      account exists — the step cannot price itself before there is an org to
      price for, and `signupPlans` is owner-scoped. */
   const [plans, setPlans] = React.useState<SignupPlan[]>([]);
+  /* THE CAROUSEL STARTS AT THE FIRST CARD. With `scroll-snap-type: x
+     mandatory` Chrome picks its initial snap target while the plan sheet is
+     still sliding in, and lands on the LAST card (verified at 390×844: the
+     sheet arrived showing "Custom"). One reset after the cards exist and
+     the sheet has settled puts Starter first; a later swipe is untouched. */
+  const plansRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (step !== 3 || plans.length === 0) return;
+    if (!window.matchMedia("(max-width: 768px)").matches) return;
+    /* …and the card it settles on is the MOST-PICKED one, centred (owner,
+       2026-09-04), not Starter: the same three passes, aimed at the hero. */
+    const settle = () => {
+      const rail = plansRef.current;
+      if (!rail) return;
+      const hero = rail.querySelector<HTMLElement>(".pw-plan--hero");
+      rail.scrollLeft = hero ? Math.max(0, hero.offsetLeft - (rail.clientWidth - hero.offsetWidth) / 2) : 0;
+    };
+    settle();
+    const t1 = window.setTimeout(settle, 120);
+    const t2 = window.setTimeout(settle, 520);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [step, plans.length]);
+  /* Feature lists a phone shows in full — the rest are cut at ~9 rows with a
+     "Show all" toggle, so a card is never a scroll container of its own. */
+  const [openFeats, setOpenFeats] = React.useState<Set<string>>(() => new Set());
+  const isClient = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+  const toggleFeats = (slug: string) =>
+    setOpenFeats((cur) => {
+      const next = new Set(cur);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
   const [planSlug, setPlanSlug] = React.useState<string | null>(null);
-  const [interval, setInterval] = React.useState<"MONTH" | "YEAR">("MONTH");
+  /* MONTHLY ONLY for now (owner, 2026-09-04): the yearly tier is unreviewed,
+     so the billing switch is gone from every plan surface. The type is kept
+     wide so the price math below stays ready for the day it comes back. */
+  const interval = "MONTH" as "MONTH" | "YEAR"; // cast, not annotation: TS narrows an annotated const to its literal
   const [plansErr, setPlansErr] = React.useState<string | null>(
     ret?.cancelled ? "Checkout was cancelled — your account has not been created yet." : null,
   );
@@ -212,14 +266,6 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
      a seeded $1 tier whose annual price is two dollars discounts by 83%, and
      advertising that against a $79 plan that saves 17% is a promise the
      checkout will not keep. Null when nothing in the catalog prices a year. */
-  const yearlySavePct = React.useMemo(() => {
-    const ref = plans.find((p) => p.highlight && p.priceCents > 0 && p.yearlyPriceCents)
-      ?? plans.find((p) => p.priceCents > 0 && p.yearlyPriceCents);
-    if (!ref?.yearlyPriceCents) return null;
-    const list = ref.priceCents * 12;
-    if (list <= ref.yearlyPriceCents) return null;
-    return Math.round((1 - ref.yearlyPriceCents / list) * 100);
-  }, [plans]);
 
   /** The pending signup this plan step belongs to. Parked by step 2, or carried
    *  back from Stripe on the return URL. */
@@ -299,9 +345,9 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
     };
   }, [step, plans, customPages, interval]);
 
-  const [name, setName] = React.useState(setup?.name ?? "");
+  const [name, setName] = React.useState(setup?.name ?? googlePrefill?.name ?? "");
   const [biz, setBiz] = React.useState(setup?.businessName ?? "");
-  const [email, setEmail] = React.useState(setup?.email ?? "");
+  const [email, setEmail] = React.useState(setup?.email ?? googlePrefill?.email ?? "");
   const [password, setPassword] = React.useState("");
   const [password2, setPassword2] = React.useState("");
   const [showPw, setShowPw] = React.useState(false);
@@ -333,9 +379,13 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
   const [googleBusy, setGoogleBusy] = React.useState(false);
 
   React.useEffect(() => {
-    if (!gsu) return;
+    /* Already resolved on the server (the normal path) — nothing to fetch, and
+       nothing to move: the page opened on step 2. This effect is only the
+       fallback for a client-side arrival at `?gsu=`, where no server render
+       ran for this URL. */
+    if (!gsu || googlePrefill) return;
     let live = true;
-    void googleSignupIdentity(gsu).then((g) => {
+    void googleSignupIdentity(gsu).then(async (g) => {
       if (!live) return;
       if (!g) {
         setErr1("Your Google sign-in expired. Continue with Google again.");
@@ -344,13 +394,33 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
       setGoogle({ handle: gsu, email: g.email });
       setEmail(g.email);
       if (g.name) setName(g.name);
-      // Stays on step 1: Google gives a name and an address, not the business
-      // name, and the password fields are what it replaces.
+      /* STRAIGHT TO STEP 2 (owner's report, 2026-09-03). Coming back from
+         Google used to land on step 1 with the fields filled in, which reads
+         as being sent back to the start — the visitor has just told us who
+         they are. Google supplies everything step 1 asks for EXCEPT the
+         business name, so that one field is drawn on step 2 instead (the same
+         `biz2` field the setup mode already uses) and step 1 is skipped.
+         The email-availability check step 1 would have run happens here; a
+         taken address stops on step 1 with the reason, which is the one case
+         where the visitor still has something to do there. */
+      try {
+        const res = await checkEmailAvailable(g.email);
+        if (!live) return;
+        if (!res.available) {
+          setErr1(res.message || "That email is already registered. Try signing in instead.");
+          return;
+        }
+      } catch {
+        /* The check is a courtesy — startPendingSignup re-checks server-side
+           before anything is created, so a failed lookup must not strand a
+           verified visitor on a step they cannot complete. */
+      }
+      if (live) setStep(2);
     });
     return () => {
       live = false;
     };
-  }, [gsu]);
+  }, [gsu, googlePrefill]);
 
   /* ADDRESS SUGGESTIONS on the company address (owner, 2026-09-02). The same
      Google Places attach every blueprint page uses; the list is appended to
@@ -382,8 +452,12 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
         setPlans(res.plans);
         setCheckoutReady(res.checkoutReady);
         if (res.promo) setPromo(res.promo);
-        // Pre-select what the catalog marks as the one to pick, else the first.
-        setPlanSlug((cur) => cur ?? (res.plans.find((p) => p.highlight) ?? res.plans[0])?.slug ?? null);
+        // Pre-select what the catalog marks as the one to pick, else the first
+        // — on every width now (owner, 2026-09-04: "arrive already looking at
+        // the most-picked plan"). On a phone the carousel is also scrolled so
+        // that card is the one in view.
+        const pick = (res.plans.find((p) => p.highlight) ?? res.plans[0])?.slug ?? null;
+        setPlanSlug((cur) => cur ?? pick);
       })
       .catch(() => {
         if (live) setPlansErr("Couldn't load the plans. You can pick one later in Subscription.");
@@ -640,6 +714,12 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
      "Skip — set this up later" exit is gone with it. */
   async function finish() {
     if (creating) return;
+    /* Drawn on this step for the setup and Google paths, so it is validated
+       here rather than in onStep1, which those paths skip. */
+    if ((setupMode || google) && !biz.trim()) {
+      setErr2("Enter your business name.");
+      return;
+    }
     if (!addr.trim()) {
       setErr2("Enter your company address — leads are matched by distance.");
       return;
@@ -652,10 +732,6 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
     setErr2(null);
     try {
       if (setupMode) {
-        if (!biz.trim()) {
-          setErr2("Enter your business name.");
-          return;
-        }
         await completeCompanySetup({
           businessName: biz.trim(),
           companyAddress: addr.trim(),
@@ -669,6 +745,7 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
         router.push("/dashboard/upgrade" as Route);
         return;
       }
+      setDoneNote(biz.trim() + " is ready.");
       const res = await startPendingSignup({
         name: name.trim(),
         businessName: biz.trim(),
@@ -924,12 +1001,16 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
           {/* ───── ШАГ 2 ───── */}
           <div className={step === 2 ? "step" : "step is-hidden"} id="step2">
             <h1 className="auth-h1">
-              {setupMode
+              {setupMode || google
                 ? `Welcome${name.trim() ? `, ${name.trim().split(" ")[0]}` : ""}. Tell us about your company.`
                 : "Tell us what you do."}
             </h1>
             {setupMode ? (
               <p className="auth-lede">{`Signed in with Google as ${email}. One more step and your shop is live.`}</p>
+            ) : google ? (
+              /* The account does NOT exist yet on this path — it is created
+                 when checkout returns — so this says verified, not signed in. */
+              <p className="auth-lede">{`Verified by Google as ${email}. No password needed.`}</p>
             ) : null}
 
             <form
@@ -940,7 +1021,7 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
                 void finish();
               }}
             >
-              {setupMode ? (
+              {setupMode || google ? (
                 <label className="fld">
                   <span className="fld-lbl">Business name</span>
                   <input
@@ -1136,22 +1217,6 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
                 CTA, where the rest of the terms are. */}
             <div className="pw-head">
               <h1 className="auth-h1">Pick a plan.</h1>
-              <div className="pw-int" role="group" aria-label="Billing period">
-                {(["MONTH", "YEAR"] as const).map((i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    className={"pw-int-b" + (interval === i ? " on" : "")}
-                    aria-pressed={interval === i}
-                    onClick={() => setInterval(i)}
-                  >
-                    {i === "MONTH" ? "Monthly" : "Yearly"}
-                    {/* The real number, not a hand-written one: it is read off
-                        the catalog the shop is about to be charged from. */}
-                    {i === "YEAR" && yearlySavePct ? <i>Save {yearlySavePct}%</i> : null}
-                  </button>
-                ))}
-              </div>
             </div>
 
             {plansErr ? (
@@ -1160,7 +1225,7 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
               </div>
             ) : null}
 
-            <div className="pw-plans">
+            <div className="pw-plans" ref={plansRef}>
               {plans.map((p) => {
                 const yearly = interval === "YEAR" ? p.yearlyPriceCents : null;
                 const cents = yearly ?? p.priceCents;
@@ -1211,10 +1276,10 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
                         {per}
                       </span>
                     ) : null}
-                    <span className="pw-pick" aria-hidden="true">
-                      {on ? "Selected" : "Choose"}
-                    </span>
-                    <span className="pw-feats">
+                    <span
+                      className={"pw-feats" + (openFeats.has(p.slug) ? " is-open" : "")}
+                      data-cut={openFeats.has(p.slug) ? "0" : undefined}
+                    >
                       {featureRows.map((f) => {
                         const included = has.has(f.toLowerCase());
                         return (
@@ -1226,6 +1291,32 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
                           </span>
                         );
                       })}
+                    </span>
+                    {featureRows.length > 9 ? (
+                      <span
+                        className="pw-more"
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFeats(p.slug);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toggleFeats(p.slug);
+                          }
+                        }}
+                      >
+                        {openFeats.has(p.slug) ? "Show less" : `Show all ${featureRows.length}`}
+                      </span>
+                    ) : null}
+                    {/* THE CARD'S OWN CONTROL, at its foot and full width (owner,
+                        2026-09-04): the whole card is the target, this is the
+                        label of its state. */}
+                    <span className="pw-pick" aria-hidden="true">
+                      {on ? "Selected" : "Choose"}
                     </span>
                   </button>
                 );
@@ -1257,9 +1348,6 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
                     {((customPriceCents(customPages) * 12 - customCents) / 100).toFixed(0)}
                   </span>
                 ) : null}
-                <span className="pw-pick" aria-hidden="true">
-                  {planSlug === CUSTOM_PLAN_SLUG ? "Selected" : "Build it"}
-                </span>
                 <span className="pw-feats">
                   {CUSTOM_BASE_FEATURES.map((f) => (
                     <span key={f} className="pw-f">
@@ -1289,6 +1377,9 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
                     ) : null;
                   })}
                 </span>
+                {/* TWO CONTROLS, two looks (owner, 2026-09-04): the page
+                    picker is the ghost, the plan's state label is the blue
+                    plate every other card ends on. */}
                 <span
                   className="pw-edit"
                   role="presentation"
@@ -1298,7 +1389,10 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
                     openPicker();
                   }}
                 >
-                  Choose pages
+                  Select pages
+                </span>
+                <span className="pw-pick" aria-hidden="true">
+                  {planSlug === CUSTOM_PLAN_SLUG ? "Selected" : "Choose"}
                 </span>
               </button>
 
@@ -1307,7 +1401,7 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
               ) : null}
             </div>
 
-            <div className="pw-foot">
+            <div className={"pw-foot" + (planSlug ? " is-armed" : "")}>
               {/* PROMO — the same codes the ?promo / ?ref links carry. Applying
                   one stamps it on the shop and checkout picks it up there. */}
               <div className={"pw-promo" + (promo ? " is-on" : "")}>
@@ -1344,7 +1438,7 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
                 {payBusy
                   ? "Opening checkout…"
                   : checkoutReady
-                    ? `Start ${trialDays} days free`
+                    ? `Start ${trialDays}-day trial`
                     : "Checkout is not configured"}
               </button>
             </div>
@@ -1378,7 +1472,8 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
             {/* THE PAGE PICKER. Hand-rolled (no Radix here, same as every other
                 dialog in this fleet): a scrim, one panel, Escape closes it. The
                 price in its foot is the same function the server charges by. */}
-            {pickerOpen ? (
+            {pickerOpen && isClient ? createPortal(
+              <div className={styles.bp + " pwp-host"}>
               <div
                 className={"pwp" + (pickerOn ? " is-on" : "")}
                 role="dialog"
@@ -1462,6 +1557,8 @@ export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null 
                   </div>
                 </div>
               </div>
+              </div>,
+              document.body,
             ) : null}
           </div>
         </div>

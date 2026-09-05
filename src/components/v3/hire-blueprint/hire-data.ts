@@ -1,98 +1,207 @@
-// Hire blueprint — static shape of the hub + pipeline, typed from the donor
-// (jobflex-hire-blueprint_4.html). Every value that used to be a fixture is
-// now real:
+// Hire & Work — the board's shared shapes and pure helpers.
 //
-// - The applicant pipeline is read in src/app/dashboard/hire/page.tsx (via
-//   getHireSeed in src/actions/applicants.ts) and every change goes back
-//   through the applicant server actions. There is NO fixture fallback — a
-//   render with nothing to query shows the board's own empty state.
-// - The hub tallies are computed from the org's trade-network records
-//   (TradeJob / TradeJobRecipient) plus the pipeline's HIRED count — see
-//   HireTallies below and buildTally in hire-behavior.ts.
-// - Both marketplace doors open real panels: the talent directory
-//   (discoverTradeProfiles) and the open-for-work profile
-//   (get/setTradeNetworkOptIn), both in src/actions/tradeServices.ts.
+// The desktop page (hire-content.tsx) and the handheld builds import from
+// here, so the rate string, the age label and the search match cannot drift
+// between surfaces. Nothing here touches the network: every read and write is
+// a server action in src/actions/tradeServices.ts.
 
-export type HireColumnKey = "APPLIED" | "INTERVIEWING" | "HIRED" | "REJECTED";
+import type {
+  HireOwnPostDTO,
+  HireViewerDTO,
+  NetworkJobDTO,
+  ReviewSummaryDTO,
+} from "@/actions/tradeServices";
+import { TRADE_TYPES } from "@/lib/tradeTypes";
 
-export type HireColumn = {
-  key: HireColumnKey;
-  label: string;
-  tone: string;
-};
+/** One post as the board lists it — the poster, their contact, their reviews. */
+export type HirePost = NetworkJobDTO;
+/** One of the viewer's own posts, as the Work side lists it. */
+export type HireOwnPost = HireOwnPostDTO;
+export type HireViewer = HireViewerDTO;
+export type HireReviews = ReviewSummaryDTO;
+export type HireTab = "hire" | "work";
 
-export type Applicant = {
-  /** The real `Applicant.id` (cuid). */
-  id: string;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  role: string;
-  status: HireColumnKey;
-  source: string | null;
-  /** Relative "applied" plate — `relative(createdAt)` from @/lib/format. */
-  age: string;
-  notes: string;
-  resumeUrl?: string | null;
-};
+export const TRADES: readonly string[] = TRADE_TYPES;
 
-export type HubDoor = {
-  icon: string;
-  kicker: string;
+export const RATE_UNITS = [
+  { key: "hour", label: "per hour", short: "/ hr" },
+  { key: "day", label: "per day", short: "/ day" },
+  { key: "job", label: "per job", short: "/ job" },
+] as const;
+export type RateUnit = (typeof RATE_UNITS)[number]["key"];
+
+/** What the composer collects. The Specialties chip field was removed on the
+ *  owner's call (2026-09-03) — trade, headline and rate already say what a
+ *  person does. The field stays on the type because an EDIT has to round-trip
+ *  whatever a post was created with, here or at /trade-services. */
+export type PostDraft = {
+  tradeType: string;
   title: string;
-  body: string;
-  cta: string;
-  /** The in-route panel the door opens (data-panel name). */
-  goto: string;
+  location: string;
+  rateMin: string;
+  rateMax: string;
+  rateUnit: RateUnit;
+  specialties: string[];
+  description: string;
 };
 
-export type HubLink = {
-  icon: string;
-  label: string;
-  sub: string;
-  /** Swap to another panel on this route… */
-  goto?: string;
-  /** …or navigate to another route entirely. */
-  href?: string;
+export const EMPTY_DRAFT: PostDraft = {
+  tradeType: "",
+  title: "",
+  location: "",
+  rateMin: "",
+  rateMax: "",
+  rateUnit: "hour",
+  specialties: [],
+  description: "",
 };
 
-/** The three "Your activity" numbers, computed server-side in page.tsx:
- *  - hired: pipeline records in HIRED
- *  - openPosts / totalPosts: the caller's TradeJobs (getMyTradeJobs)
- *  - interestReceived: INTERESTED responses on the caller's TradeJobs
- *  - interestSent: trade jobs the caller raised a hand for (getTradeInbox) */
-export type HireTallies = {
-  hired: number;
-  openPosts: number;
-  totalPosts: number;
-  interestReceived: number;
-  interestSent: number;
+export type ParsedRate = {
+  /** "$90–150" — or the string as typed when it did not parse. */
+  amount: string;
+  unit: RateUnit | null;
+  /** Numeric halves when the string parsed; empty otherwise. */
+  min: string;
+  max: string;
 };
 
-// Applicant: fullName, email, phone, role, status, source, notes, createdAt.
-export const HK_COLUMNS: HireColumn[] = [
-  { key: "APPLIED", label: "Applied", tone: "var(--blueprint)" },
-  { key: "INTERVIEWING", label: "Interviewing", tone: "var(--warning)" },
-  { key: "HIRED", label: "Hired", tone: "var(--success)" },
-  { key: "REJECTED", label: "Rejected", tone: "var(--danger)" },
-];
+const RATE_RE =
+  /^\s*\$?\s*([\d,]+(?:\.\d+)?)\s*(?:[–—-]\s*\$?\s*([\d,]+(?:\.\d+)?))?\s*(?:\/|per)?\s*(hour|hr|day|job)?\s*$/i;
 
-export const SOURCES: string[] = ["Indeed", "Referral", "Walk-in", "LinkedIn", "Job fair", "Other"];
+/** "$90–150 / hour" → { amount: "$90–150", unit: "hour", min: "90", max: "150" }. */
+export function parseRate(budget: string | null | undefined): ParsedRate | null {
+  if (!budget || !budget.trim()) return null;
+  const m = RATE_RE.exec(budget);
+  if (!m || !m[1]) return { amount: budget.trim(), unit: null, min: "", max: "" };
+  const w = (m[3] ?? "").toLowerCase();
+  const unit: RateUnit | null =
+    w === "hour" || w === "hr" ? "hour" : w === "day" ? "day" : w === "job" ? "job" : null;
+  return {
+    amount: m[2] ? `$${m[1]}–${m[2]}` : `$${m[1]}`,
+    unit,
+    min: m[1],
+    max: m[2] ?? "",
+  };
+}
 
-export const HUB_DOORS: HubDoor[] = [
-  { icon: 'i-search', kicker: '', title: 'Find a contractor',
-    body: 'Companies near you that are open for work.',
-    cta: 'Open the directory', goto: 'talent' },
-  // Was "Publish your profile" — the panel behind it became the Post-a-job
-  // composer (owner, 2026-08-23). Listing management moved to a hub row below
-  // (/trade-services carries the same opt-in form the panel used to).
-  { icon: 'i-send', kicker: '', title: 'Post a job',
-    body: 'Send work you can\'t take to contractors who can.',
-    cta: 'Post a job', goto: 'profile' },
-];
+export function unitShort(unit: RateUnit | null): string {
+  return RATE_UNITS.find((u) => u.key === unit)?.short ?? "";
+}
 
-export const HUB_LINKS: HubLink[] = [
-  // Applicant pipeline / Job posts / Applications were dropped (owner,
-  // 2026-08-24); "Manage your profile" followed on 2026-09-02 — the "Go
-  // deeper" card is gone and Your listing is a head action instead.
-];
+export function unitLabel(unit: RateUnit | null): string {
+  return RATE_UNITS.find((u) => u.key === unit)?.label ?? "";
+}
+
+/** The stored form — "$90–150 / hour", the same string the older composer
+ *  wrote, so /trade-services keeps reading it. Null when no figure was given. */
+export function composeRate(min: string, max: string, unit: RateUnit): string | null {
+  const a = min.replace(/[^\d.]/g, "");
+  const b = max.replace(/[^\d.]/g, "");
+  if (!a && !b) return null;
+  const span = a && b ? `$${a}–${b}` : `$${a || b}`;
+  return `${span} / ${unit}`;
+}
+
+export function draftFromPost(p: HireOwnPost): PostDraft {
+  const r = parseRate(p.budget);
+  return {
+    tradeType: p.tradeType,
+    title: p.title,
+    location: p.location ?? "",
+    rateMin: r?.min ?? "",
+    rateMax: r?.max ?? "",
+    rateUnit: r?.unit ?? "hour",
+    specialties: [...p.specialties],
+    description: p.description,
+  };
+}
+
+/** The payload both write actions validate (createInput / updateInput). */
+export function draftToInput(d: PostDraft) {
+  return {
+    title: d.title.trim(),
+    description: d.description.trim(),
+    tradeType: d.tradeType,
+    specialties: d.specialties.map((s) => s.trim()).filter(Boolean),
+    location: d.location.trim() || null,
+    budget: composeRate(d.rateMin, d.rateMax, d.rateUnit),
+  };
+}
+
+export function agoLabel(hoursAgo: number): string {
+  if (hoursAgo < 1) return "just now";
+  if (hoursAgo < 24) return `${hoursAgo}h ago`;
+  const d = Math.floor(hoursAgo / 24);
+  if (d < 14) return `${d}d ago`;
+  return `${Math.floor(d / 7)}w ago`;
+}
+
+/** US numbers read as (425) 470-1700; anything else is shown as stored. */
+export function formatPhone(raw: string): string {
+  const d = raw.replace(/\D/g, "");
+  const n = d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
+  if (n.length !== 10) return raw;
+  return `(${n.slice(0, 3)}) ${n.slice(3, 6)}-${n.slice(6)}`;
+}
+
+/** Two letters for the row plate: first and last name, or the first two. */
+export function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const s =
+    parts.length >= 2
+      ? parts[0][0] + parts[parts.length - 1][0]
+      : (parts[0] ?? "").slice(0, 2);
+  return s.toUpperCase() || "?";
+}
+
+/** Every word of the query must appear somewhere in the post. */
+export function matchesQuery(p: HirePost, q: string): boolean {
+  const n = q.trim().toLowerCase();
+  if (!n) return true;
+  const hay = [p.postedBy, p.company, p.title, p.tradeType, p.location ?? "", ...p.specialties]
+    .join(" ")
+    .toLowerCase();
+  return n.split(/\s+/).every((w) => hay.includes(w));
+}
+
+export const STATUS_LABEL: Record<HireOwnPost["status"], string> = {
+  OPEN: "Open",
+  FILLED: "Filled",
+  CANCELLED: "Cancelled",
+};
+
+/** The board row for a post the viewer just wrote — the shape the server would
+ *  return on the next load, built here so it lands without a round trip. */
+export function ownToBoard(p: HireOwnPost, v: HireViewer): HirePost {
+  return {
+    id: p.id,
+    title: p.title,
+    description: p.description,
+    tradeType: p.tradeType,
+    specialties: p.specialties,
+    location: p.location ?? null,
+    budget: p.budget ?? null,
+    hoursAgo: p.hoursAgo,
+    company: v.company,
+    postedBy: v.name,
+    email: v.email,
+    phone: v.phone,
+    reviews: v.reviews,
+    isMine: true,
+    isOwnPost: true,
+    viewerStatus: null,
+    interestedCount: p.interestedCount,
+  };
+}
+
+/** For a caller that still awaits a THROWING action rather than one of the
+ *  `hire*` result wrappers in actions/tradeServices. Prefer the wrappers: Next
+ *  redacts a thrown message in a production build, so the sentence the server
+ *  wrote is only readable when it is RETURNED. */
+export function actionError(err: unknown, fallback: string): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  if (!msg || msg.length > 160 || /fetch failed|failed to fetch|network|server components render/i.test(msg)) {
+    return fallback;
+  }
+  return msg;
+}

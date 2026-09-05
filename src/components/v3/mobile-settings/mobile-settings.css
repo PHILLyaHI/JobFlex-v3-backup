@@ -1,0 +1,1311 @@
+/* ============================================================================
+   SETTINGS · HANDHELD  —  /dashboard/settings on a phone, preview at
+   /mobile-settings-v1
+   ============================================================================
+
+   The settings hub on a phone. It stands BESIDE the desktop build
+   (src/components/v3/settings-blueprint/*, untouched) and reads and writes the
+   SAME database through the same loader (src/lib/settings/loadSettingsData.ts)
+   and the same actions. No fixture, no second data layer, and not one string
+   of copy rewritten — every label comes from settings-data.ts.
+
+   The design language is the desktop port's, unchanged: paper #f2f0eb,
+   ink #0a0a0a, blueprint #1854a0, Inter 800–900 uppercase headings, JetBrains
+   Mono for the drawing-annotation layer, 2px ink frames, 2px radii, hard 3px
+   offset shadows with NO blur, tabular numerals. What changes is the
+   COMPOSITION — the left rail collapses into a sticky dropdown, the two-column
+   field grids restack, the notification matrix becomes a chip ledger, and every
+   card's save bar pins itself to the bottom of its own card.
+
+   ── PLAIN STYLESHEET, NOT A CSS MODULE (deliberate) ────────────────────────
+   Two constructs here cannot survive class hashing:
+     · the scoped universal reset `.jf-mobile-settings *` — `*` is not a class,
+       so the modules pipeline leaves it UNSCOPED and it flattens every page in
+       the app;
+     · `[hidden] { display: none !important }` — an attribute selector, and
+       load-bearing next to rules that declare `display: block`/`flex`.
+   A module would need a `:global()` escape on each, and one missed escape
+   silently drops this design's own reset so Tailwind preflight + globals.css
+   fill the vacuum — borders, backgrounds, padding and fonts all fall back.
+   That has been reverted twice on this project. Same call, same reasoning, as
+   the sibling mobile-overhead.css and mobile-proposal-client.css.
+
+   Every selector below therefore carries the single literal root class
+   `.jf-mobile-settings`, uniformly — so relative specificity among these rules
+   is exactly what it would be unprefixed, and nothing leaks out. The only
+   exceptions are the two host neutralizers, which have to reach <body>; both
+   are `:has()`-gated so they undo themselves on unmount.
+
+   ── DOCUMENT-GLOBAL NAMES ──────────────────────────────────────────────────
+   `.jf-mobile-settings` and the element prefix `mst-` are new literals,
+   checked against every other `.jf-*` root and every prefix in the repo. The
+   fleet's literal globals `rv` / `rv-in` / `pressed` are NOT used — this page
+   writes `mst-rv` / `mst-rv-in` / `mst-pressed`. The keyframes are namespaced
+   `jf-mst-*`; keyframe names are document-global and `press2` / `rowIn` are
+   each declared 20+ times across this app. The page's own sprite declares only
+   the seven symbols the shared handheld sprite lacks (see ./sprite.tsx).
+
+   The badge tone classes `bg-live` / `bg-ok` / `bg-off` / `bg-bad` come
+   straight off the shared `Badge` type in settings-data.ts, so they are
+   consumed as data rather than renamed; every rule for them is prefixed with
+   the root class and cannot escape it.
+
+   ── SCOPE ──────────────────────────────────────────────────────────────────
+   Light mode only, no `.dark`. globals.css NOT touched. No `md:`/`lg:`
+   variants and no desktop breakpoint: the page is fluid 320px → 768px on
+   clamp() and intrinsic grids. Verified at 320 / 360 / 390 / 430 / 768.
+   ========================================================================= */
+
+.jf-mobile-settings {
+  /* ---- PALETTE — the desktop port's values, verbatim ---- */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --sheet: #ffffff;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555555;
+  --muted-light: #888888;
+  --muted-faint: #b0aea8;
+
+  /* Status colours. STATUSES ONLY — never decoration. */
+  --success: #3a7d44;
+  --success-dark: #2c6335;
+  --success-soft: rgba(58, 125, 68, 0.08);
+  --warning: #b88420;
+  --warning-dark: #96691a;
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+  --dash: rgba(10, 10, 10, 0.16);
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- FLUID SCALE — one composition, 320px → 768px, no breakpoint ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(13px, 4vw, 20px);
+  /* "SETTINGS" is 8 characters and the only H1: 26px at 320, 38px at 768. */
+  --fs-h1: clamp(26px, 7.4vw, 38px);
+  --topbar-h: 64px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* Touch floor. CLAUDE.md and DESIGN.md both put it at 44px; every control on
+     this page is sized from this token so an audit has one number to check. */
+  --tap: 44px;
+  /* Field height. NOT --tap: inputs carry a 1.5px frame and box-sizing:
+     border-box, so a 44px box hands the control inside it 41px — measurably
+     under the floor. +4px puts every INNER surface at >= 44px. */
+  --field-h: calc(var(--tap) + 4px);
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr);
+  /* minmax(0, 1fr) on the single column, not the implicit `auto`: an auto track
+     grows to its widest item's max-content, and the shared topbar's max-content
+     is ~361px at a 320px viewport — which would widen the scroller under it and
+     clip the right edge off every card behind this element's own
+     `overflow: hidden`. Same fix as the sibling handheld pages. */
+  grid-template-columns: minmax(0, 1fr);
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: auto;
+
+  /* ── HOST NEUTRALIZERS, part 1 (the two that live on the root) ──────────
+     Tailwind preflight sets `html { line-height: 1.5 }` and globals.css sets
+     `text-rendering: optimizeLegibility`; both inherit, and without these two
+     lines every box that declares no line-height of its own grows 2–5px and a
+     page of forty labelled rows drifts past a screen.
+     font-feature-settings is deliberately RESTATED rather than neutralised to
+     `normal`: globals puts 'cv11','ss01','ss03' on html+body and every sibling
+     handheld page re-declares exactly that, so `normal` here would make this
+     the one page whose Inter draws different digits. */
+  line-height: normal;
+  text-rendering: auto;
+  font-feature-settings: "cv11", "ss01", "ss03";
+}
+
+/* Scoped universal reset — the construct a CSS Module cannot express.
+   WRAPPED IN :where(). Written bare it scores (0,1,0), the same as every class
+   rule in mobile-nav.module.css, and this sheet is imported after that module
+   — so `padding: 0` would win every tie and cancel the shared topbar's own
+   padding, leaving the nav flush to both screen edges on this page alone. */
+:where(.jf-mobile-settings),
+:where(.jf-mobile-settings *) {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* :where() holds the control reset at element-level specificity (0,0,1).
+   Un-wrapped — the root class as a plain ancestor of a type selector — it
+   scores (0,2,1) and silently beats EVERY rule below that styles a button or
+   an input by class (0,2,0): every background and every border on this page
+   would be cancelled at render time, and it would parse, lint and typecheck
+   clean while doing it. That trap has cost this fleet a day. Do not un-wrap. */
+:where(.jf-mobile-settings) button {
+  font-family: inherit;
+  font-size: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+}
+:where(.jf-mobile-settings) input,
+:where(.jf-mobile-settings) textarea {
+  font-family: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+:where(.jf-mobile-settings) a { text-decoration: none; color: inherit; }
+:where(.jf-mobile-settings) h1,
+:where(.jf-mobile-settings) h2 { font-size: inherit; font-weight: inherit; }
+:where(.jf-mobile-settings) code { font-family: var(--font-mono); }
+
+/* Attribute selector — the second construct a module cannot scope. */
+.jf-mobile-settings [hidden] { display: none !important; }
+
+.jf-mobile-settings ::selection { background: var(--blueprint); color: #fff; }
+.jf-mobile-settings :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+
+/* Icons. `display: block` is declared rather than inherited: preflight sets
+   `svg { display: block }` and the bare browser sets `inline`, so stating it
+   makes the icon box identical either way. No global `svg` override is written
+   — MobileNav's product mark is an <img> whose crop window is tuned against
+   preflight, and reaching into the shared nav from here would break it. */
+.jf-mobile-settings .mst-ic {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+/* The Google mark is the one multi-colour icon: a currentColor stroke smears
+   its four fills, so the stroke dies here (the desktop's `.ic--brand`). */
+.jf-mobile-settings .mst-ic--brand { stroke: none; fill: none; width: 18px; height: 18px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HOST NEUTRALIZERS, part 2 — the only rules here that do not start with the
+   root class. globals.css paints a 40px drafting grid on <body> (fixed
+   attachment) and a `body::before` paper-grain overlay with
+   mix-blend-mode: multiply. This page paints its own graph paper inside its own
+   scroller, parallaxed; the body copy would sit a second, non-parallaxing grid
+   behind it, and the grain's multiply blend would tint every white card and
+   every white input. Switched off for this page's lifetime only — `:has()`
+   restores them on unmount, which matters because the App Router keeps this
+   stylesheet in the document after a client-side navigation away.
+   ══════════════════════════════════════════════════════════════════════════ */
+body:has(.jf-mobile-settings) { background-image: none; }
+body:has(.jf-mobile-settings)::before { content: none; }
+
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax
+   ============================================================ */
+.jf-mobile-settings .mst-scroll {
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+  /* No rail down the edge of the sheet — the graph paper reads as one
+     continuous drawing. globals' `* { scrollbar-width: thin }` is left alone
+     everywhere else. */
+  scrollbar-width: none;
+}
+.jf-mobile-settings .mst-scroll::-webkit-scrollbar { width: 0; height: 0; }
+.jf-mobile-settings .mst-scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.jf-mobile-settings .mst-content {
+  position: relative;
+  z-index: 1;
+  /* The bottom pad clears the shared shell's floating support widget, which
+     sits fixed at the bottom-left corner: without it the Log out button ends
+     up under that circle once the page is scrolled to the end. */
+  padding: 16px var(--pad-x) calc(76px + var(--safe-b));
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  /* Every child is width-constrained by the flex column; this is the belt to
+     that braces: nothing in this tree may widen the page. */
+  min-width: 0;
+}
+
+/* ============================================================
+   PAGE HEAD — kicker (the open section) + H1
+   ============================================================ */
+.jf-mobile-settings .mst-head { display: flex; flex-direction: column; gap: 8px; }
+.jf-mobile-settings .mst-kick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--ink-soft);
+}
+.jf-mobile-settings .mst-kick::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  background: var(--sky);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.jf-mobile-settings .mst-title {
+  font-size: var(--fs-h1);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 0.98;
+  text-transform: uppercase;
+  /* A page title wraps, never truncates — a clipped H1 reads as a bug. */
+  overflow-wrap: break-word;
+}
+
+/* ============================================================
+   SECTION DROPDOWN — the desktop's left rail, collapsed into one control
+   (owner's call, 2026-09-03).
+
+   It was a horizontally scrolling chip row. Five labelled 48px chips need
+   ~560px, so at 390px two of the five sat off-screen behind a scroll gesture
+   with nothing to advertise it. One full-width trigger states where you are;
+   the panel under it puts all five one tap away, and nothing is hidden.
+
+   The trigger keeps the chip's blueprint FILL — the owner's rule is that
+   controls stay coloured, so this is never a tonal grey outline. Sticky to the
+   top of the scroller so the switch is never scrolled away; the wrapper is the
+   positioning context for the panel, so it cannot clip its own menu
+   (`overflow` stays visible here).
+   ============================================================ */
+.jf-mobile-settings .mst-sw {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  display: block;
+  margin: 0 calc(var(--pad-x) * -1);
+  padding: 8px var(--pad-x) 10px;
+  background: var(--paper);
+  border-bottom: var(--border);
+  box-shadow: 0 3px 0 var(--shadow);
+}
+.jf-mobile-settings .mst-swBtn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--blueprint);
+  color: #fff;
+  box-shadow: 3px 3px 0 var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: left;
+  transition: background 0.14s var(--ease-out), box-shadow 0.14s var(--ease-out),
+    transform 0.14s var(--ease-out);
+}
+/* The label takes the slack so the chevron stays pinned right; the NEW badge
+   sits with the label rather than floating in the middle of the bar. */
+.jf-mobile-settings .mst-swV {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Open: the shadow is taken in and the chevron points up, so the bar reads as
+   the head of the panel rather than a button floating over it. */
+.jf-mobile-settings .mst-swBtn.is-open {
+  box-shadow: 1px 1px 0 var(--ink);
+  transform: translate(1px, 1px);
+}
+.jf-mobile-settings .mst-swBtn .mst-ic:last-child {
+  transition: transform 0.16s var(--ease-out);
+}
+.jf-mobile-settings .mst-swBtn.is-open .mst-ic:last-child { transform: rotate(180deg); }
+
+/* The panel. Anchored to the trigger, full width, and it OVERLAYS the page —
+   it must not push the cards down, or opening the menu would move the very
+   thing being navigated to. */
+.jf-mobile-settings .mst-swMenu {
+  position: absolute;
+  left: var(--pad-x);
+  right: var(--pad-x);
+  top: calc(100% - 6px);
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.jf-mobile-settings .mst-swOpt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: left;
+  transition: background 0.12s var(--ease-out);
+}
+/* A hairline BETWEEN rows only — a rule under the last one would double the
+   panel's own border. */
+.jf-mobile-settings .mst-swOpt + .mst-swOpt { border-top: var(--border-thin); }
+.jf-mobile-settings .mst-swOptV {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jf-mobile-settings .mst-swOpt .mst-ic { color: var(--blueprint); }
+/* The row you are on: a blueprint wash plus the check, so the state survives
+   for anyone who cannot separate the two by colour alone. */
+.jf-mobile-settings .mst-swOpt.is-on {
+  background: color-mix(in srgb, var(--blueprint) 12%, transparent);
+  color: var(--blueprint-dark);
+}
+@media (hover: hover) {
+  .jf-mobile-settings .mst-swOpt:hover { background: var(--paper-deep); }
+  .jf-mobile-settings .mst-swBtn:hover { background: var(--blueprint-dark); }
+}
+.jf-mobile-settings .mst-new {
+  padding: 2px 5px;
+  border: 1.5px solid currentColor;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+/* ============================================================
+   PANES — every one MOUNTED, shown by a class.
+   `display: none` (not opacity) so a hidden pane holds no tab stops.
+   ============================================================ */
+.jf-mobile-settings .mst-panes { min-width: 0; }
+.jf-mobile-settings .mst-pane { display: none; }
+.jf-mobile-settings .mst-pane.is-on {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  min-width: 0;
+}
+.jf-mobile-settings .mst-subpane { display: none; }
+.jf-mobile-settings .mst-subpane.is-on {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  min-width: 0;
+}
+
+/* The Integrations sub-rail: the same device, one step quieter. */
+.jf-mobile-settings .mst-subrail { min-width: 0; }
+.jf-mobile-settings .mst-subrailIn {
+  display: flex;
+  gap: 7px;
+  padding: 2px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.jf-mobile-settings .mst-subrailIn::-webkit-scrollbar { width: 0; height: 0; }
+.jf-mobile-settings .mst-subtab {
+  flex: 0 0 auto;
+  min-height: var(--tap);
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: background 0.14s var(--ease-out), color 0.14s var(--ease-out);
+}
+.jf-mobile-settings .mst-subtab.is-on {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
+/* ============================================================
+   CARDS — white sheet, 2px ink frame, hard 3px offset shadow, no blur
+   ============================================================ */
+.jf-mobile-settings .mst-card {
+  background: var(--sheet);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 3px 3px 0 var(--shadow);
+  min-width: 0;
+}
+/* Card head — a beige service strip, as on the desktop sheets. */
+.jf-mobile-settings .mst-cardH {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px var(--card-pad);
+  border-bottom: var(--border-thin);
+  background: var(--paper-deep);
+}
+.jf-mobile-settings .mst-cardHt { min-width: 0; }
+.jf-mobile-settings .mst-cardT {
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.15;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-settings .mst-cardS {
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+  /* Lifted off the desktop's --muted for glare: this page is read outdoors. */
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-settings .mst-cardB {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: var(--card-pad);
+  min-width: 0;
+}
+/* A body of ruled rows carries no gap and no side padding — the rules run wall
+   to wall, like a ledger. */
+.jf-mobile-settings .mst-cardB--rows { gap: 0; padding: 0; }
+
+/* ============================================================
+   BADGES — 1.5px frame in the tone + soft fill + caps
+   ============================================================ */
+.jf-mobile-settings .mst-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border: 1.5px solid currentColor;
+  border-radius: var(--radius);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.jf-mobile-settings .mst-badge i { width: 6px; height: 6px; background: currentColor; }
+.jf-mobile-settings .bg-ok { color: var(--success); background: var(--success-soft); }
+.jf-mobile-settings .bg-live { color: var(--blueprint); background: rgba(24, 84, 160, 0.08); }
+.jf-mobile-settings .bg-bad { color: var(--danger); background: var(--danger-soft); }
+.jf-mobile-settings .bg-off {
+  color: var(--ink-soft);
+  background: var(--paper);
+  border-color: var(--hair);
+}
+
+/* ============================================================
+   FIELDS — one column, 48px inner surface, mono caps label
+   ============================================================ */
+.jf-mobile-settings .mst-fld { display: block; min-width: 0; }
+.jf-mobile-settings .mst-fldL {
+  display: block;
+  margin-bottom: 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.jf-mobile-settings .mst-in {
+  display: block;
+  width: 100%;
+  height: var(--field-h);
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.14s var(--ease-out), background 0.14s var(--ease-out);
+}
+.jf-mobile-settings .mst-in:focus { border-color: var(--blueprint); }
+.jf-mobile-settings .mst-in::placeholder { color: var(--muted); opacity: 1; }
+.jf-mobile-settings .mst-in:disabled,
+.jf-mobile-settings .mst-in[readonly] {
+  background: var(--paper-deep);
+  color: var(--muted);
+  border-color: var(--hair);
+}
+.jf-mobile-settings .mst-area {
+  height: auto;
+  min-height: calc(var(--field-h) * 2);
+  padding: 11px 12px;
+  line-height: 1.5;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  resize: vertical;
+}
+
+/* The picker trigger. A native <select> renders the OS chevron and OS metrics,
+   which do not belong to the drawing. */
+.jf-mobile-settings .mst-sel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  height: var(--field-h);
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+}
+.jf-mobile-settings .mst-selV { min-width: 0; overflow-wrap: anywhere; }
+.jf-mobile-settings .mst-sel .mst-ic { color: var(--blueprint); }
+
+/* ============================================================
+   TOGGLE — green on, red off. The colour carries the whole state read-out;
+   the desktop dropped the check/cross glyphs inside the switch for good.
+
+   The BUTTON is 52 x 44 — the real touch floor, measurable by an audit — and
+   the drawn switch is a 52 x 30 track painted by `::before`, so the graphic
+   keeps the desktop's proportions without the hit area shrinking to match it.
+   ============================================================ */
+.jf-mobile-settings .mst-tg {
+  position: relative;
+  flex-shrink: 0;
+  width: 52px;
+  height: var(--tap);
+  background: transparent;
+}
+/* the track */
+.jf-mobile-settings .mst-tg::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 52px;
+  height: 30px;
+  transform: translateY(-50%);
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: rgba(168, 50, 50, 0.14);
+  transition: background 0.2s var(--ease);
+}
+/* the knob */
+.jf-mobile-settings .mst-tg::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  background: var(--danger);
+  transform: translateY(-50%);
+  transition: transform 0.2s var(--ease-out), background 0.2s var(--ease);
+}
+.jf-mobile-settings .mst-tg[aria-checked="true"]::before { background: rgba(58, 125, 68, 0.18); }
+.jf-mobile-settings .mst-tg[aria-checked="true"]::after {
+  transform: translate(23px, -50%);
+  background: var(--success);
+}
+
+/* ============================================================
+   ROWS — a processor / connection line: icon, body, then its actions on
+   their own line. Wall to wall, each group owning the rule beneath it, so a
+   row's sub-block sits INSIDE the group above the rule rather than floating
+   between two rules (the desktop's ledger fix, ported).
+   ============================================================ */
+.jf-mobile-settings .mst-grp { border-bottom: var(--border-thin); }
+.jf-mobile-settings .mst-row { padding: 14px var(--card-pad); min-width: 0; }
+.jf-mobile-settings .mst-row.is-off { opacity: 0.72; }
+.jf-mobile-settings .mst-rowTop {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.jf-mobile-settings .mst-rowIc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--blueprint);
+}
+.jf-mobile-settings .mst-rowB {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.jf-mobile-settings .mst-rowN {
+  display: block;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.005em;
+  line-height: 1.3;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-settings .mst-rowD {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-settings .mst-rowConn {
+  display: block;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-settings .mst-rowConn.is-ok { color: var(--success-dark); }
+.jf-mobile-settings .mst-rowConn.is-warn,
+.jf-mobile-settings .mst-rowD.is-warn,
+.jf-mobile-settings .mst-note .is-warn { color: var(--warning-dark); }
+.jf-mobile-settings .mst-rowBadge { display: block; margin-top: 8px; }
+
+/* Actions live on their own line under the body: three ghost buttons cannot
+   share a 320px row with a name and a description without one of them
+   truncating to nothing. */
+.jf-mobile-settings .mst-rowAct {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.jf-mobile-settings .mst-rowAct .mst-btn { flex: 1 1 auto; min-width: 128px; }
+
+/* The sub-block a row owns (the ACH switch, the bank-details field). */
+.jf-mobile-settings .mst-grpSub {
+  padding: 12px var(--card-pad) 14px;
+  background: var(--paper);
+  border-top: 1px solid var(--hair-soft);
+}
+
+/* ============================================================
+   TOGGLE ROWS — label + description left, switch right
+   ============================================================ */
+.jf-mobile-settings .mst-trow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px var(--card-pad);
+  border-bottom: 1px solid var(--hair-soft);
+  min-width: 0;
+}
+.jf-mobile-settings .mst-cardB--rows > .mst-trow:last-child { border-bottom: none; }
+.jf-mobile-settings .mst-grpSub .mst-trow {
+  padding: 0;
+  border-bottom: none;
+}
+.jf-mobile-settings .mst-trowB { display: block; flex: 1 1 auto; min-width: 0; }
+.jf-mobile-settings .mst-trowN {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-settings .mst-trowD {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================
+   SECURITY — the desktop's three columns become stacked rows with a
+   full-width action, because a 152px button beside a description does not
+   survive 320px.
+   ============================================================ */
+.jf-mobile-settings .mst-sec {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 14px var(--card-pad);
+  border-bottom: 1px solid var(--hair-soft);
+}
+.jf-mobile-settings .mst-cardB--rows > .mst-sec:last-child { border-bottom: none; }
+.jf-mobile-settings .mst-secAct { grid-column: 1 / -1; width: 100%; margin-top: 2px; }
+
+/* ============================================================
+   FOOTNOTE BAND — two drawing annotations, kicker + line
+   ============================================================ */
+.jf-mobile-settings .mst-note {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  padding: 14px var(--card-pad);
+  background: var(--paper);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-settings .mst-noteK {
+  margin-top: 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.jf-mobile-settings .mst-note > .mst-noteK:first-child { margin-top: 0; }
+
+/* ============================================================
+   PLAN — the one large numeral-voice block on the page
+   ============================================================ */
+.jf-mobile-settings .mst-planBig {
+  font-size: clamp(30px, 8.4vw, 40px);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-settings .mst-planMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+.jf-mobile-settings .mst-planNote { margin-top: 0; }
+
+/* ============================================================
+   SCOPES — granted permissions, as drawing annotations
+   ============================================================ */
+.jf-mobile-settings .mst-scopes { display: flex; flex-direction: column; gap: 8px; }
+.jf-mobile-settings .mst-scope {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 11px;
+  border: 1.5px dashed var(--dash);
+  border-radius: var(--radius);
+  background: var(--paper);
+  min-width: 0;
+}
+.jf-mobile-settings .mst-scope i {
+  font-style: normal;
+  font-weight: 900;
+  color: var(--success);
+  flex-shrink: 0;
+}
+.jf-mobile-settings .mst-scope code {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================
+   MONO BOX — the webhook endpoint + its Copy button
+   ============================================================ */
+.jf-mobile-settings .mst-mono {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  min-width: 0;
+}
+.jf-mobile-settings .mst-mono code {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 11px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-settings .mst-copy {
+  flex: 0 0 auto;
+  min-width: 72px;
+  min-height: var(--tap);
+  padding: 0 12px;
+  border-left: var(--border-thin);
+  background: var(--sheet);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--blueprint);
+}
+.jf-mobile-settings .mst-copy.is-done { background: var(--success); color: #fff; }
+
+/* ============================================================
+   NOTIFICATIONS — the matrix as a ledger.
+
+   The desktop draws one table: Event | In-app | Email. At 320px three columns
+   leave ~150px for a name and a description, and a bare checkbox under a
+   header two screens up cannot be aimed at one-handed. Each event therefore
+   keeps its own two labelled chips, and the column masters move to one band
+   above the list.
+   ============================================================ */
+.jf-mobile-settings .mst-nHead {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 13px var(--card-pad);
+  background: var(--paper);
+  border-bottom: var(--border-thin);
+}
+.jf-mobile-settings .mst-nHeadL {
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.jf-mobile-settings .mst-nList { min-width: 0; }
+.jf-mobile-settings .mst-nRow {
+  padding: 13px var(--card-pad);
+  border-bottom: 1px solid var(--hair-soft);
+  min-width: 0;
+}
+.jf-mobile-settings .mst-nRow:last-child { border-bottom: none; }
+.jf-mobile-settings .mst-nTop {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.jf-mobile-settings .mst-nEv {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-settings .mst-nSub {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-settings .mst-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 11px;
+}
+.jf-mobile-settings .mst-nHead .mst-chips { margin-top: 0; }
+.jf-mobile-settings .mst-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 116px;
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: background 0.14s var(--ease-out), color 0.14s var(--ease-out),
+    border-color 0.14s var(--ease-out);
+}
+/* Checked: the BOX takes the blueprint fill, the chip takes a blueprint wash
+   and ink text. Filling all 22 chips solid would put blue on more than half
+   the screen — DESIGN.md budgets blueprint at ~15% — while the filled box and
+   the tinted ground still read as on from arm's length in sunlight. */
+.jf-mobile-settings .mst-chip.is-on {
+  background: rgba(24, 84, 160, 0.09);
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.jf-mobile-settings .mst-chipBox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: #fff;
+  transition: background 0.14s var(--ease-out), border-color 0.14s var(--ease-out);
+}
+.jf-mobile-settings .mst-chip.is-on .mst-chipBox {
+  background: var(--blueprint);
+  border-color: var(--ink);
+}
+.jf-mobile-settings .mst-chipIc {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  transition: opacity 0.14s var(--ease-out);
+}
+.jf-mobile-settings .mst-chip.is-on .mst-chipIc { opacity: 1; }
+/* An event nobody emails carries a tag, not a ghost checkbox that reads as
+   unticked. */
+.jf-mobile-settings .mst-chipOff {
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 116px;
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: 1.5px dashed var(--dash);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-settings .mst-nFoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 13px var(--card-pad);
+  background: var(--paper);
+  border-top: var(--border-thin);
+}
+.jf-mobile-settings .mst-nFoot .mst-btn { flex: 1 1 auto; min-width: 140px; }
+.jf-mobile-settings .mst-nFootNote {
+  flex: 1 1 100%;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================
+   SAVE BAR — the card's write, at the foot of its own card.
+
+   It was built `position: sticky; bottom: 0` first, so a long section's action
+   stayed in the thumb zone. Read at 390px that is worse, not better: three
+   cards are on screen at once, so THREE save bars pin themselves to the
+   viewport at the same time and each one covers the middle of its own card's
+   fields. One bar per card, in flow, at the card's foot — which is where a
+   thumb reaches it anyway once the card is the thing being filled.
+   ============================================================ */
+.jf-mobile-settings .mst-save {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px var(--card-pad);
+  background: var(--paper-deep);
+  border-top: var(--border-thin);
+}
+.jf-mobile-settings .mst-saveRow { display: flex; flex-wrap: wrap; gap: 8px; }
+.jf-mobile-settings .mst-saveRow .mst-btn { flex: 1 1 auto; }
+.jf-mobile-settings .mst-saveMsg {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-settings .mst-saveMsg.is-ok { color: var(--success-dark); text-transform: uppercase; }
+.jf-mobile-settings .mst-saveMsg.is-bad { color: var(--danger); }
+
+/* ============================================================
+   BUTTONS — coloured, always. Primary is a blueprint fill with a 2px ink
+   frame; ghost is white with the same frame; both press into a hard 3px
+   offset shadow with NO blur. Never flattened to an outline-only grey.
+   ============================================================ */
+.jf-mobile-settings .mst-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: var(--tap);
+  padding: 0 16px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  text-align: center;
+  line-height: 1.2;
+  transition: transform 0.12s var(--ease-out), box-shadow 0.12s var(--ease-out),
+    background 0.12s var(--ease-out), color 0.12s var(--ease-out);
+}
+.jf-mobile-settings .mst-btn--wide { width: 100%; }
+.jf-mobile-settings .mst-btn--primary { background: var(--blueprint); color: #fff; }
+.jf-mobile-settings .mst-btn--ghost { background: var(--sheet); color: var(--ink); }
+.jf-mobile-settings .mst-btn--danger { background: var(--danger); color: #fff; }
+/* Enables = green, disables = red — the desktop's `.is-on` / `.is-off`. */
+.jf-mobile-settings .mst-btn.is-on { border-color: var(--success); color: var(--success-dark); }
+.jf-mobile-settings .mst-btn.is-off { border-color: var(--danger); color: var(--danger); }
+.jf-mobile-settings .mst-btn:disabled { opacity: 0.5; cursor: default; }
+@media (hover: hover) {
+  .jf-mobile-settings .mst-btn:hover:not(:disabled) {
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0 var(--ink);
+  }
+  .jf-mobile-settings .mst-btn--primary:hover:not(:disabled) { background: var(--blueprint-dark); }
+  .jf-mobile-settings .mst-btn--ghost:hover:not(:disabled) { background: var(--paper-deep); }
+  .jf-mobile-settings .mst-btn--danger:hover:not(:disabled) { background: #8d2929; }
+  .jf-mobile-settings .mst-subtab:hover:not(.is-on) { background: var(--paper-deep); }
+  .jf-mobile-settings .mst-chip:hover:not(.is-on) { background: var(--paper-deep); }
+  .jf-mobile-settings .mst-copy:hover:not(.is-done) { background: var(--paper-deep); }
+  .jf-mobile-settings .mst-sel:hover { background: var(--paper-deep); }
+}
+.jf-mobile-settings .mst-btn:active:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+/* ============================================================
+   LOG OUT — the last thing on the page, in every section (owner's call).
+   Red fill, full width, sitting on its own above the safe-area inset.
+   ============================================================ */
+.jf-mobile-settings .mst-logout {
+  padding-top: 4px;
+  min-width: 0;
+}
+
+/* ============================================================
+   THE OPTION PICKER — a bottom sheet, never a centred dialog.
+   Hand-rolled (no Radix), and closed it is translated fully off-screen with
+   `visibility: hidden`, so it holds no tab stops and cannot be reached.
+   ============================================================ */
+.jf-mobile-settings .mst-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(10, 10, 10, 0.42);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.22s var(--ease-out), visibility 0s linear 0.22s;
+}
+.jf-mobile-settings .mst-scrim.is-on {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.22s var(--ease-out), visibility 0s;
+}
+.jf-mobile-settings .mst-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  max-height: min(72vh, 520px);
+  padding-bottom: var(--safe-b);
+  background: var(--paper);
+  border-top: var(--border);
+  box-shadow: 0 -4px 0 var(--shadow);
+  transform: translateY(101%);
+  visibility: hidden;
+  transition: transform 0.28s var(--ease-out), visibility 0s linear 0.28s;
+}
+.jf-mobile-settings .mst-sheet.is-on {
+  transform: none;
+  visibility: visible;
+  transition: transform 0.28s var(--ease-out), visibility 0s;
+}
+.jf-mobile-settings .mst-sheetGrab {
+  width: 44px;
+  height: 3px;
+  margin: 10px auto 0;
+  background: var(--hair);
+  flex-shrink: 0;
+}
+.jf-mobile-settings .mst-sheetHead {
+  padding: 12px var(--pad-x) 11px;
+  border-bottom: var(--border-thin);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.jf-mobile-settings .mst-sheetBody {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px var(--pad-x) 14px;
+}
+.jf-mobile-settings .mst-sheetOpt {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 14px;
+  margin-top: 8px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+}
+.jf-mobile-settings .mst-sheetOpt.is-sel {
+  background: var(--blueprint);
+  border-color: var(--ink);
+  color: #fff;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+/* ============================================================
+   MOTION — Balanced. Reveal on load, press stamp, graph-paper parallax.
+   No MutationObserver anywhere: the reveal is applied once, at mount, by the
+   component — a keystroke must never replay a section's entrance.
+   ============================================================ */
+.jf-mobile-settings .mst-rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.jf-mobile-settings .mst-rv-in { opacity: 1; transform: none; }
+
+@keyframes jf-mst-press {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.jf-mobile-settings .mst-pressed { animation: jf-mst-press 0.18s var(--ease-out); }
+/* The section trigger already carries a translate while open; a scale
+   animation on top of it would drop the offset for the length of the press. */
+.jf-mobile-settings .mst-swBtn.is-open.mst-pressed { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-mobile-settings *,
+  .jf-mobile-settings *::before,
+  .jf-mobile-settings *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .jf-mobile-settings .mst-rv { opacity: 1; transform: none; }
+  /* The chevron flip is the dropdown's only motion; with motion off it snaps. */
+  .jf-mobile-settings .mst-swBtn .mst-ic:last-child { transition: none; }
+}

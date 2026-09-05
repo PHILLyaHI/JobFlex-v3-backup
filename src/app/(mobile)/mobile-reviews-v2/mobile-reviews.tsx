@@ -32,37 +32,54 @@
 //    prefers sheets over modals). It doubles as the DETAIL sheet: the entry
 //    card clamps its comment to two lines, the sheet carries the full text.
 //  · A "Request review" form sheet is added for the head's primary action. The
-//    desktop leaves request creation to the job flow; on a phone, standing in
-//    a finished driveway, asking for the review is the whole job.
-//  · No search box and no pager: eight completed reviews is not a surface where
-//    paging to find one is the real work. Score is the only dimension worth a
-//    control, and it has one.
+//    desktop dialog is the same thing in a modal: pick one of the jobs that has
+//    no request yet, and the server sends the client their link.
+//  · No search box and no pager: a score is the only dimension worth a control
+//    on this feed, and it has one.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// DATA: REAL, and the same book the desktop sheet shows. The page's server
+// loader (app/dashboard/reviews/load-reviews) reads the org's ReviewRequest
+// rows — with each open row's public token — plus the jobs that have no
+// request yet, and hands them down as props through the page's viewport switch
+// (app/dashboard/reviews/reviews-responsive) or the /mobile-reviews-v2 preview
+// page. "Send request" calls the SAME createReviewRequest action the desktop
+// dialog calls, which is what emails the client their link; the row only
+// appears once that action resolves.
+//
+// What is NOT here, and why: there is no resend, cancel or delete action in
+// src/actions, and no public "feature this review" surface — the fixture build
+// offered all four and only mutated local state, so a nudge that never sent an
+// email read as a send. The row sheet now carries what has a destination: the
+// client's link, the comment, and the job.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useRouter } from "next/navigation";
 import styles from "./mobile-reviews.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
+import { createReviewRequest } from "@/actions/reviewRequests";
+import type { ReviewsProps } from "@/app/dashboard/reviews/load-reviews";
 import {
   ALL,
   FILTER_KEYS,
-  REVIEWS_SEED,
-  REVIEW_LINK,
   SCORE_KEYS,
+  actionError,
   filterLabel,
   groupByAge,
   initials,
   isCompleted,
   isOpenRequest,
   matchesScore,
+  reviewLink,
   scoreCount,
   scoreTone,
   type ReviewRequest,
   type Tone,
 } from "./reviews-data";
+
+/** Fed by app/dashboard/reviews/load-reviews. One loader, two editions. */
+export type MobileReviewsProps = ReviewsProps;
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -152,16 +169,31 @@ type MenuRow = {
   danger?: boolean;
 };
 
-export function MobileReviews() {
+export function MobileReviews({ entries, jobs }: MobileReviewsProps) {
+  const router = useRouter();
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const [data, setData] = useState<ReviewRequest[]>(() => REVIEWS_SEED.map((r) => ({ ...r })));
+  /* The server's book and its eligible-job list, patched in place after a send
+     RESOLVES. Re-seeded when the server hands down new ones (a
+     router.refresh() after a send, or a fresh navigation): the compare runs
+     DURING render, React's own "adjusting state when a prop changes" pattern,
+     so the stale list is never painted for a frame the way an effect would
+     paint it. */
+  const [data, setData] = useState<ReviewRequest[]>(entries);
+  /** Jobs with no request yet — the send sheet's options, minus the ones sent
+   *  in this session so a second send cannot look like a new one. */
+  const [openJobs, setOpenJobs] = useState(jobs);
+  const [seed, setSeed] = useState({ entries, jobs });
+  if (seed.entries !== entries || seed.jobs !== jobs) {
+    setSeed({ entries, jobs });
+    setData(entries);
+    setOpenJobs(jobs);
+  }
   const [filter, setFilter] = useState<string>(ALL);
   const [filterOpen, setFilterOpen] = useState(false);
   const [sheetId, setSheetId] = useState<string | null>(null);
   const [askOpen, setAskOpen] = useState(false);
-  const [nudged, setNudged] = useState<string | null>(null);
   const [landedId, setLandedId] = useState<string | null>(null);
   const [copy, setCopy] = useState<"idle" | "ok" | "fail">("idle");
   /* The drawn instruments (masthead meter + spread bars) fill in from zero on
@@ -171,11 +203,14 @@ export function MobileReviews() {
 
   const filterRef = useRef<HTMLDivElement>(null);
 
-  /* ---- request-review form ---- */
-  const [form, setForm] = useState({ client: "", job: "", to: "" });
-  const [sendNow, setSendNow] = useState(true);
-  const [clientErr, setClientErr] = useState(false);
-  const clientRef = useRef<HTMLInputElement>(null);
+  /* ---- request-review form ----
+     One field, because the action takes one: which job. The client and the
+     address are the job's own, and the server emails them their link. */
+  const [jobId, setJobId] = useState("");
+  const [jobErr, setJobErr] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [askErr, setAskErr] = useState("");
+  const jobRef = useRef<HTMLSelectElement>(null);
 
   /* ---------- viewport height ------------------------------------------
      Mandatory rule: viewport heights only via var(--app-h). A phone's URL bar
@@ -324,19 +359,6 @@ export function MobileReviews() {
     return () => clearTimeout(t);
   }, [landedId]);
 
-  /* ---------- Nudge: the donor's 1200ms confirmation, then the flip ---- */
-  useEffect(() => {
-    if (!nudged) return;
-    const t = window.setTimeout(() => {
-      setData((prev) =>
-        prev.map((r) => (r.id === nudged ? { ...r, status: "SENT", when: "just now" } : r)),
-      );
-      setLandedId(nudged);
-      setNudged(null);
-    }, 1200);
-    return () => clearTimeout(t);
-  }, [nudged]);
-
   useEffect(() => {
     if (copy === "idle") return;
     const t = window.setTimeout(() => setCopy("idle"), 1600);
@@ -382,44 +404,9 @@ export function MobileReviews() {
 
   const resetFilter = () => setFilter(ALL);
 
-  /* ---------- row / entry sheet ---------------------------------------
-     One sheet, two row sets. A completed submission and an open request are
-     different records with different verbs, but they are the same object in
-     the same list, so they share the sheet rather than forking the markup. */
-  const menuRows = useMemo<MenuRow[]>(() => {
-    const r = sheetRec;
-    if (!r) return [];
-    if (isCompleted(r)) {
-      return [
-        { act: "open", icon: "i-thumb", tone: styles.rmiBp, title: "Open review",
-          sub: "Full submission and job record" },
-        { act: "reply", icon: "i-msg", tone: styles.rmiSky, title: "Reply to review",
-          sub: `Answer ${r.client} directly` },
-        { act: "copy", icon: "i-copy", title: "Copy the comment",
-          sub: r.comment ? "Paste it into a listing or post" : "No comment left with this score",
-          disabled: !r.comment },
-        { act: "feature", icon: "i-megaphone", tone: styles.rmiOk, title: "Feature on your site",
-          sub: "Show it on the public reviews page" },
-        { act: "job", icon: "i-jobs", tone: styles.rmiWarn, title: "Open the job", sub: r.job },
-        { act: "del", icon: "i-trash", tone: styles.rmiDanger, title: "Delete review",
-          sub: "Removes it from your rating", danger: true },
-      ];
-    }
-    const sent = r.status === "SENT";
-    return [
-      { act: "nudge", icon: "i-send", tone: styles.rmiSky, title: sent ? "Resend request" : "Send request",
-        sub: sent ? `Nudge ${r.client} again` : `First send to ${r.client}` },
-      { act: "msg", icon: "i-msg", title: "Message client", sub: `Open the thread with ${r.client}` },
-      { act: "copy", icon: "i-copy", title: "Copy review link", sub: "Paste it into a text" },
-      { act: "job", icon: "i-jobs", tone: styles.rmiWarn, title: "Open the job", sub: r.job },
-      { act: "cancel", icon: "i-trash", tone: styles.rmiDanger, title: "Cancel request",
-        sub: "Stops the reminders for this job", danger: true },
-    ];
-  }, [sheetRec]);
-
-  /* ---------- clipboard: the public submission link, or a comment -------
-     Not a network call — the data layer stays out of scope. The result is
-     reported honestly: a blocked clipboard says so rather than pretending. */
+  /* ---------- clipboard -------------------------------------------------
+     The result is reported honestly: a blocked clipboard says so rather than
+     pretending. */
   const copyText = useCallback((text: string) => {
     const clip = typeof navigator === "undefined" ? undefined : navigator.clipboard;
     if (!clip?.writeText) {
@@ -431,52 +418,103 @@ export function MobileReviews() {
       () => setCopy("fail"),
     );
   }, []);
-  const copyLink = useCallback(() => copyText(REVIEW_LINK), [copyText]);
+
+  /* ---------- row / entry sheet ---------------------------------------
+     One sheet, two row sets. A completed submission and an open request are
+     different records with different verbs, but they are the same object in
+     the same list, so they share the sheet rather than forking the markup.
+     Every row here has a real destination or a real clipboard write; the
+     fixture build's resend / cancel / delete / feature rows are gone because
+     no action behind them exists. */
+  const menuRows = useMemo<MenuRow[]>(() => {
+    const r = sheetRec;
+    if (!r) return [];
+    if (isCompleted(r)) {
+      return [
+        { act: "copy-comment", icon: "i-copy", title: "Copy the comment",
+          sub: r.comment ? "Paste it into a listing or post" : "No comment left with this score",
+          disabled: !r.comment },
+        { act: "job", icon: "i-jobs", tone: styles.rmiWarn, title: "Open the job",
+          sub: r.jobId ? r.job : "This review is not linked to a job",
+          disabled: !r.jobId },
+      ];
+    }
+    return [
+      { act: "copy-link", icon: "i-copy", tone: styles.rmiSky, title: "Copy review link",
+        sub: r.token ? `Text or email it to ${r.client}` : "No link on this request",
+        disabled: !r.token },
+      { act: "job", icon: "i-jobs", tone: styles.rmiWarn, title: "Open the job",
+        sub: r.jobId ? r.job : "This request is not linked to a job",
+        disabled: !r.jobId },
+    ];
+  }, [sheetRec]);
 
   const runMenu = (act: string) => {
     const r = sheetRec;
     setSheetId(null);
     if (!r) return;
-    if (act === "del" || act === "cancel") {
-      setData((prev) => prev.filter((x) => x.id !== r.id));
-    } else if (act === "nudge") {
-      setNudged(r.id);
-    } else if (act === "copy") {
-      copyText(isCompleted(r) && r.comment ? r.comment : REVIEW_LINK);
+    if (act === "copy-comment" && r.comment) {
+      copyText(r.comment);
+    } else if (act === "copy-link") {
+      const url = reviewLink(r);
+      if (url) copyText(url);
+      else setCopy("fail");
+    } else if (act === "job" && r.jobId) {
+      router.push(`/dashboard/jobs/${r.jobId}`);
     }
   };
 
-  /* ---------- request-review form -------------------------------------- */
+  /* ---------- request-review form --------------------------------------
+     The real send: createReviewRequest(jobId) creates the request, counts it
+     against the plan's review-request limit and emails the client their link.
+     The row is added only once it resolves, carrying the id the server gave. */
   const openAsk = () => {
-    setForm({ client: "", job: "", to: "" });
-    setSendNow(true);
-    setClientErr(false);
+    setJobId(openJobs[0]?.id ?? "");
+    setJobErr(false);
+    setAskErr("");
     setAskOpen(true);
     // Focus after the slide settles — focusing mid-transform makes the
     // keyboard fight the animation.
-    window.setTimeout(() => clientRef.current?.focus(), prefersReducedMotion() ? 0 : 320);
+    window.setTimeout(() => jobRef.current?.focus(), prefersReducedMotion() ? 0 : 320);
   };
 
-  const submitAsk = (e: React.FormEvent) => {
+  const submitAsk = async (e: React.FormEvent) => {
     e.preventDefault();
-    const client = form.client.trim();
-    if (!client) {
-      setClientErr(true);
-      clientRef.current?.focus();
+    if (sending) return;
+    const job = openJobs.find((j) => j.id === jobId);
+    if (!job) {
+      setJobErr(true);
+      jobRef.current?.focus();
       return;
     }
-    const rec: ReviewRequest = {
-      id: `r-new-${data.length}-${client.length}`,
-      status: sendNow ? "SENT" : "PENDING",
-      rating: null,
-      client,
-      job: form.job.trim() || "No job named",
-      when: "just now",
-      comment: null,
-    };
-    setData((prev) => [rec, ...prev]);
-    setAskOpen(false);
-    setLandedId(rec.id);
+    setSending(true);
+    setAskErr("");
+    try {
+      const res = await createReviewRequest(job.id);
+      setData((prev) => [
+        {
+          id: res.id,
+          jobId: job.id,
+          status: "SENT",
+          rating: null,
+          client: job.client,
+          job: job.title,
+          when: "just now",
+          comment: null,
+          token: res.publicToken,
+        },
+        ...prev,
+      ]);
+      // The job has a request now, so it leaves the option list.
+      setOpenJobs((prev) => prev.filter((j) => j.id !== job.id));
+      setAskOpen(false);
+      setLandedId(res.id);
+      router.refresh();
+    } catch (err) {
+      setAskErr(actionError(err));
+    } finally {
+      setSending(false);
+    }
   };
 
   const anyOverlay = Boolean(sheetRec) || askOpen;
@@ -502,14 +540,25 @@ export function MobileReviews() {
             <div className={styles.kicker}>Reputation</div>
             <h1 className={styles.pageTitle}>Reviews</h1>
             <div className={styles.pageActions}>
-              <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={openAsk}>
+              {/* The head's ghost "Copy link" is gone: there is no org-wide
+                  review URL to copy. A link belongs to ONE request and is
+                  copied from that row's sheet, which is where its token is. */}
+              <button
+                className={`${styles.btn} ${styles.btnPrimary}`}
+                type="button"
+                onClick={openAsk}
+                disabled={openJobs.length === 0}
+              >
                 <Icon id="i-send" />Request review
               </button>
-              <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={copyLink}>
-                <Icon id={copy === "ok" ? "i-check" : "i-copy"} />
-                {copy === "ok" ? "Link copied" : copy === "fail" ? "Copy failed" : "Copy link"}
-              </button>
             </div>
+            {/* Where a row-sheet copy reports back, since the sheet that
+                started it has already closed. */}
+            {copy !== "idle" ? (
+              <div className={styles.actErr} role="status" data-ok={copy === "ok" ? "" : undefined}>
+                {copy === "ok" ? "Copied to the clipboard." : "Couldn't reach the clipboard."}
+              </div>
+            ) : null}
           </div>
 
           {/* MASTHEAD — the desktop's 3-stat grid, folded into one numeral, a
@@ -601,12 +650,14 @@ export function MobileReviews() {
                 <>
                   <div className={styles.emptyT}>No reviews yet</div>
                   <div className={styles.emptyS}>
-                    Mark a job as completed and the client gets a review link. Their submission
-                    appears here.
+                    Send a request when a job wraps and the client gets a review link. Their
+                    submission appears here.
                   </div>
-                  <button className={styles.emptyA} type="button" onClick={openAsk}>
-                    <Icon id="i-send" />Request review
-                  </button>
+                  {openJobs.length ? (
+                    <button className={styles.emptyA} type="button" onClick={openAsk}>
+                      <Icon id="i-send" />Request review
+                    </button>
+                  ) : null}
                 </>
               ) : (
                 <>
@@ -683,9 +734,11 @@ export function MobileReviews() {
                 <div className={styles.emptyS}>
                   Every request has come back. Send another when the next job closes.
                 </div>
-                <button className={styles.emptyA} type="button" onClick={openAsk}>
-                  <Icon id="i-send" />Request review
-                </button>
+                {openJobs.length ? (
+                  <button className={styles.emptyA} type="button" onClick={openAsk}>
+                    <Icon id="i-send" />Request review
+                  </button>
+                ) : null}
               </div>
             ) : (
               <div className={styles.plist}>
@@ -706,10 +759,20 @@ export function MobileReviews() {
                       <span className={`${styles.pbadge} ${r.status === "SENT" ? styles.stSent : styles.stPending}`}>
                         {r.status === "SENT" ? "Sent" : "Pending"}
                       </span>
-                      <button className={styles.pbtn} type="button" disabled={nudged === r.id}
-                        onClick={() => setNudged(r.id)}>
-                        <Icon id={nudged === r.id ? "i-check" : "i-send"} />
-                        {nudged === r.id ? "Sent" : r.status === "SENT" ? "Resend" : "Send"}
+                      {/* The fixture build offered Send / Resend here and only
+                          flipped a local badge — there is no resend action, so
+                          the useful control is the client's own link. */}
+                      <button
+                        className={styles.pbtn}
+                        type="button"
+                        disabled={!r.token}
+                        onClick={() => {
+                          const url = reviewLink(r);
+                          if (url) copyText(url);
+                          else setCopy("fail");
+                        }}
+                      >
+                        <Icon id="i-copy" />Copy link
                       </button>
                     </div>
                   </div>
@@ -794,53 +857,57 @@ export function MobileReviews() {
           <div className={styles.sheetTitle} id="mrAskTitle">Request review</div>
         </div>
         <form className={`${styles.sheetBody} ${styles.formBody}`} id="mrAskForm" noValidate onSubmit={submitAsk}>
-          <div className={`${styles.fld} ${clientErr ? styles.invalid : ""}`}>
-            <label className={styles.fldLbl} htmlFor="mrClient">
-              Client<span className={styles.req}>*</span>
+          {/* One field, because the action takes one. The client, their email
+              and the job title all come off the job the server already has —
+              typing them again here would be three chances to disagree with
+              the record. Jobs that already have a request are not offered:
+              createReviewRequest is idempotent per job, so sending again would
+              look like a send and do nothing. */}
+          <div className={`${styles.fld} ${jobErr ? styles.invalid : ""}`}>
+            <label className={styles.fldLbl} htmlFor="mrJob">
+              Job<span className={styles.req}>*</span>
             </label>
-            <input ref={clientRef} className={styles.pinput} id="mrClient" name="client" type="text"
-              placeholder="D. Reyes" autoComplete="off" value={form.client}
-              aria-invalid={clientErr} aria-describedby={clientErr ? "mrClientErr" : undefined}
+            <select
+              ref={jobRef}
+              className={styles.pinput}
+              id="mrJob"
+              name="job"
+              value={jobId}
+              aria-invalid={jobErr}
+              aria-describedby={jobErr ? "mrJobErr" : undefined}
               onChange={(e) => {
-                setForm((f) => ({ ...f, client: e.target.value }));
-                if (e.target.value.trim()) setClientErr(false);
-              }} />
-            {clientErr ? <span className={styles.fldErr} id="mrClientErr">Enter a client name</span> : null}
-          </div>
-
-          <div className={styles.fld}>
-            <label className={styles.fldLbl} htmlFor="mrJob">Job</label>
-            <input className={styles.pinput} id="mrJob" name="job" type="text"
-              placeholder="Cedar fence — 902 Alder Ct" autoComplete="off" value={form.job}
-              onChange={(e) => setForm((f) => ({ ...f, job: e.target.value }))} />
+                setJobId(e.target.value);
+                if (e.target.value) setJobErr(false);
+              }}
+            >
+              <option value="">Choose a job…</option>
+              {openJobs.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.title} — {j.client}
+                </option>
+              ))}
+            </select>
+            {jobErr ? <span className={styles.fldErr} id="mrJobErr">Choose the job to ask about</span> : null}
             <span className={styles.fldHint}>
-              It goes in the request so the client knows which job you mean.
+              {openJobs.length
+                ? "The client gets an email with their review link."
+                : "Every job already has a request out."}
             </span>
           </div>
 
-          <div className={styles.fld}>
-            <label className={styles.fldLbl} htmlFor="mrTo">Send to</label>
-            <input className={styles.pinput} id="mrTo" name="to" type="text"
-              placeholder="d.reyes@mail.com or (425) 555-0134" autoComplete="off" value={form.to}
-              onChange={(e) => setForm((f) => ({ ...f, to: e.target.value }))} />
-          </div>
-
-          <div className={styles.fld}>
-            <span className={styles.fldLbl}>Delivery</span>
-            <button className={styles.fchk} type="button" aria-pressed={sendNow}
-              onClick={() => setSendNow((v) => !v)}>
-              <span className={styles.fchkBox}><Icon id="i-check" /></span>
-              Send it right away
-              <span className={styles.fchkSub}>{sendNow ? "sent" : "pending"}</span>
-            </button>
-          </div>
+          {askErr ? <div className={styles.actErr} role="alert">{askErr}</div> : null}
         </form>
         <div className={styles.formFoot}>
           <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={() => setAskOpen(false)}>
             Cancel
           </button>
-          <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" form="mrAskForm">
-            <Icon id="i-send" />Send request
+          <button
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            type="submit"
+            form="mrAskForm"
+            disabled={sending || openJobs.length === 0}
+          >
+            <Icon id="i-send" />{sending ? "Sending…" : "Send request"}
           </button>
         </div>
       </div>

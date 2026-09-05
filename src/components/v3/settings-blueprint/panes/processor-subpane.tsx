@@ -18,6 +18,7 @@ import {
 } from "@/actions/paymentConnections";
 import type { Badge, CardHead, ProcessorIntegrationData } from "../settings-data";
 import {
+  COMING_SOON_BADGE,
   CONNECTED_BADGE,
   CONNECT_ACTION,
   DASHBOARD_HREF,
@@ -104,7 +105,10 @@ export function ProcessorSubpane({
     <>
       {/* ── Connection ── */}
       <section className="sc">
-        <CardHeader card={PROCESSOR_CONNECTION_CARD} badge={connected ? CONNECTED_BADGE : NOT_CONNECTED_BADGE} />
+        <CardHeader
+          card={PROCESSOR_CONNECTION_CARD}
+          badge={d.comingSoon && !connected ? COMING_SOON_BADGE : connected ? CONNECTED_BADGE : NOT_CONNECTED_BADGE}
+        />
         <div className={hasRow ? "sc-b sc-b--rows" : "sc-b"}>
           {hasRow ? (
             <div className="prow">

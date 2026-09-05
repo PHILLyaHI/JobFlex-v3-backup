@@ -2,25 +2,22 @@
 // surface in the Blueprint design system, sibling to /mobile-v2 (Overview),
 // /mobile-clients-v2, /mobile-proposals-v2 and the rest of the handheld family.
 // Lives beside the desktop /dashboard/reports rather than replacing it, per the
-// mobile route strategy.
+// mobile route strategy — and since 2026-09-03 it is the SECOND entry point to
+// the same build /dashboard/reports mounts at ≤768px (see
+// app/dashboard/reports/reports-responsive.tsx).
 //
 // Built with the jobflex-page-styler skill (visual system: tokens, palette,
 // type scale, Motion System "Balanced", FLUID SCALE) and the
 // mobile-app-ui-design skill (structure: thumb zone, ≥44px targets, bottom
-// sheets over modals, touch scrub instead of hover). Where the two disagree the
-// house system wins — hard 3px offset shadows, 2px radii and Inter 900 caps
-// stay, rather than the mobile skill's soft-shadow / rounded-3xl defaults.
+// sheets over modals, touch scrub instead of hover).
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
-//
-// Auth: middleware only matches /dashboard and /admin, so this page enforces
-// its own redirect-to-login like the other design routes. The route key is the
-// literal path — V3_PORTED_ROUTES does not carry this surface yet.
+// Data: REAL. The same loader the desktop page runs
+// (app/dashboard/reports/load-reports) computes the org's rollup and hands it
+// down as props; nothing here is a fixture. The loader also owns the auth
+// ladder (login redirect, no-org), with this route as the return path.
 
 import type { Metadata, Viewport } from "next";
-import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { loadReportsProps } from "@/app/dashboard/reports/load-reports";
 import { MobileReports } from "./mobile-reports";
 
 export const dynamic = "force-dynamic";
@@ -42,10 +39,6 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileReportsV2Page() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect(`/auth/login?next=${encodeURIComponent("/mobile-reports-v2")}`);
-  }
-
-  return <MobileReports />;
+  const props = await loadReportsProps("/mobile-reports-v2");
+  return <MobileReports {...props} />;
 }

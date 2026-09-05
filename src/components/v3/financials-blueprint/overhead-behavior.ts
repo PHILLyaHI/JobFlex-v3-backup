@@ -41,8 +41,16 @@ export type OverheadOptions = {
  *  fall back to a generic line for anything unrecognisable. */
 function actionError(err: unknown): string {
   const msg = err instanceof Error ? err.message.trim() : "";
-  if (!msg || msg.toLowerCase().includes("fetch failed")) {
-    return "Something went wrong. Check your connection and try again.";
+  const low = msg.toLowerCase();
+  // "fetch failed" is the network; "An unexpected response was received from
+  // the server" is Next's own line when the action behind the call has moved
+  // (a redeploy, a dev-server restart). Both mean the same thing to the person
+  // typing: nothing they did was wrong, and a reload fixes it.
+  if (!msg || low.includes("fetch failed")) {
+    return "Not saved — check your connection and try again.";
+  }
+  if (low.includes("unexpected response")) {
+    return "Not saved — the app was updated. Reload the page and your figures will save.";
   }
   return msg;
 }

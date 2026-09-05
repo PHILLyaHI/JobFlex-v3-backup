@@ -205,3 +205,92 @@ export async function deleteOrganization(raw: unknown) {
   });
   return { ok: true as const, already: false as const, warnings };
 }
+
+/* ───────────────────────────── delete account ────────────────────────── */
+
+const deleteAccountSchema = z.object({ confirmEmail: z.string().trim().max(200) });
+
+/**
+ * HARD delete of the signed-in user — a launch-time debugging aid (owner's
+ * call, 2026-09-03: create an account, delete it, create the same address
+ * again). Nothing is kept and there is no grace period, unlike the org's soft
+ * delete above.
+ *
+ * Order: every organization where this user is the ONLY member is hard-
+ * deleted (subscription cancelled and processors disconnected best-effort
+ * first; `organization.delete` cascades the rest). In an org that has other
+ * members only the membership goes — their data stays, and every optional
+ * pointer at this user (proposal owner, lead assignee, message author, …) is
+ * nulled so the rows survive. Cross-org trade-network rows that REQUIRE the
+ * user are deleted. Then the User row goes; Account / Session / Membership /
+ * profile rows cascade.
+ */
+export async function deleteMyAccount(raw: unknown) {
+  const user = await requireUser();
+  const { confirmEmail } = deleteAccountSchema.parse(raw);
+  if (confirmEmail.toLowerCase() !== (user.email ?? "").toLowerCase()) {
+    throw new Error("That doesn't match your email address.");
+  }
+  const uid = user.id;
+
+  const memberships = await db.membership.findMany({
+    where: { userId: uid },
+    select: {
+      organizationId: true,
+      organization: {
+        select: {
+          id: true,
+          name: true,
+          _count: { select: { memberships: true } },
+          subscription: { select: { externalSubId: true } },
+        },
+      },
+    },
+  });
+
+  for (const m of memberships) {
+    const org = m.organization;
+    if (org._count.memberships > 1) continue; // others remain — membership cascades with the user
+    if (org.subscription?.externalSubId && isStripeEnabled()) {
+      try {
+        const canceled = await getStripe().subscriptions.cancel(org.subscription.externalSubId);
+        await markSubscriptionCanceled(canceled);
+      } catch (err) {
+        console.error("[deleteMyAccount] stripe cancel failed", org.id, err);
+      }
+    }
+    try {
+      await disconnectStripeConnectFor(org.id);
+    } catch (err) {
+      console.error("[deleteMyAccount] stripe connect", org.id, err);
+    }
+    try {
+      await disconnectSquareFor(org.id);
+    } catch (err) {
+      console.error("[deleteMyAccount] square", org.id, err);
+    }
+    await db.organization.delete({ where: { id: org.id } });
+  }
+
+  // Optional pointers at this user in whatever survived: null them.
+  await db.$transaction([
+    db.proposal.updateMany({ where: { ownerId: uid }, data: { ownerId: null } }),
+    db.lead.updateMany({ where: { assignedToId: uid }, data: { assignedToId: null } }),
+    db.lead.updateMany({ where: { claimedById: uid }, data: { claimedById: null } }),
+    db.invite.updateMany({ where: { invitedById: uid }, data: { invitedById: null } }),
+    db.jobEvent.updateMany({ where: { createdById: uid }, data: { createdById: null } }),
+    db.message.updateMany({ where: { authorId: uid }, data: { authorId: null } }),
+    db.activityEvent.updateMany({ where: { actorId: uid }, data: { actorId: null } }),
+    db.appointment.updateMany({ where: { createdById: uid }, data: { createdById: null } }),
+    db.blockedTime.updateMany({ where: { ownerId: uid }, data: { ownerId: null } }),
+    // Required pointers (trade network) — the rows go with the user.
+    db.tradeJobMessage.deleteMany({ where: { authorId: uid } }),
+    db.tradeJobConversation.deleteMany({ where: { OR: [{ authorId: uid }, { recipientId: uid }] } }),
+    db.tradeJobRecipient.deleteMany({ where: { recipientId: uid } }),
+    db.tradeJob.deleteMany({ where: { authorId: uid } }),
+    db.tradeReply.deleteMany({ where: { authorId: uid } }),
+    db.tradePost.deleteMany({ where: { authorId: uid } }),
+    db.user.delete({ where: { id: uid } }),
+  ]);
+  return { ok: true as const };
+}

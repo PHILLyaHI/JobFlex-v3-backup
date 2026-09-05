@@ -290,7 +290,7 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
   /** Guards a second write while one is on the wire. */
   const [writing, setWriting] = useState(false);
   /** One-line report for a write that succeeded or refused. */
-  const [note, setNote] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
+  const [note, setNote] = useState<{ tone: "ok" | "bad" | "live"; text: string } | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   /* The filter menu's placement AND the outside-tap closer share one node.
      `useAnchoredMenu` caps the panel at the room actually left under the trigger
@@ -578,11 +578,9 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
         setNote({
           tone: "bad",
           text:
-            res.reason === "payment_outstanding"
-              ? `${money(res.remainingMinor / 100)} is still owed — mark each stage paid first.`
-              : res.reason === "provider_paid"
-                ? "Paid through Stripe / Square — refund from that dashboard and it syncs back."
-                : "A proposal with paid stages can't go back to draft.",
+            res.reason === "provider_paid"
+              ? "Paid through Stripe / Square — refund from that dashboard and it syncs back."
+              : "A proposal with paid stages can't go back to draft.",
         });
         return;
       }
@@ -602,20 +600,40 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
     }
   }
 
-  /** Mark a stage paid by hand (bank / cash / check). Two taps: the Mark paid
-   *  button becomes a method picker in place. The book is re-read afterwards
-   *  so the row shows the frozen amount the server recorded. */
-  const [pickingId, setPickingId] = useState<string | null>(null);
-  async function runMarkPaid(instId: string, method: string) {
+  /** Mark a stage paid by hand. ONE TAP (owner, 2026-09-03): the in-place
+   *  bank / cash / check picker read as the button breaking into three, and
+   *  the stage was not recorded until one was pressed. The stage's own amount
+   *  is recorded as a manual payment; the book is re-read afterwards so the
+   *  row shows the frozen amount the server recorded. */
+  async function runMarkPaid(instId: string) {
     if (writing) return;
     setWriting(true);
+    /* OPTIMISTIC, AND VISIBLY IN FLIGHT — same reasoning as the desk build.
+       The action re-reads the whole book before it answers, which on a cold
+       server is seconds of a screen that has not moved. The stage reads
+       "Paid" on the same frame as the tap, the card dims while the request
+       is out, and the note strip carries a spinner. The refetch below is
+       still the source of truth, and a failure restores the snapshot. */
+    const snapshot = data;
+    setData((prev) =>
+      prev.map((row) => ({
+        ...row,
+        inst: row.inst?.map((i) => (i.id === instId ? { ...i, status: "PAID", paidVia: "MANUAL" } : i)),
+      })),
+    );
+    setNote({ tone: "live", text: "Recording payment…" });
     try {
-      await markInstallmentPaid({ installmentId: instId, method });
-      setData(await loadProposalBook());
-      setPickingId(null);
+      const res = await markInstallmentPaid({ installmentId: instId, method: "OTHER" });
+      // Re-read only when the answer can differ — see the desk build's note.
+      // A part payment is already on screen; a payment that settles the
+      // schedule waives the rest and moves the card, so that one re-reads.
+      if (res.outcome !== "settled" || res.proposalPaid) {
+        setData(await loadProposalBook());
+      }
       setNote({ tone: "ok", text: "Payment recorded." });
       router.refresh();
     } catch (err) {
+      setData(snapshot);
       setNote({ tone: "bad", text: actionError(err) });
     } finally {
       setWriting(false);
@@ -960,17 +978,8 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                                 <div className={styles.pcolVal}>{money(instDollars(p, it))}</div>
                                 {sub ? <div className={styles.pcolSub}>{sub}</div> : null}
                                 {!paid && it.status !== "WAIVED" ? (
-                                  pickingId === it.id ? (
-                                    <div className={styles.pickRow}>
-                                      {[["BANK_TRANSFER", "Bank"], ["CASH", "Cash"], ["CHECK", "Check"]].map(([k, l]) => (
-                                        <button key={k} className={styles.pschedRem} type="button" disabled={writing}
-                                          onClick={() => void runMarkPaid(it.id, k)}>{l}</button>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <button className={styles.pschedRem} type="button" disabled={writing}
-                                      onClick={() => setPickingId(it.id)}>Mark paid</button>
-                                  )
+                                  <button className={styles.pschedRem} type="button" disabled={writing}
+                                    onClick={() => void runMarkPaid(it.id)}>Mark paid</button>
                                 ) : null}
                               </div>
                             );
@@ -985,17 +994,10 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                               <div className={styles.pschedDue}>
                                 {it.status === "PAID" ? "Paid" : it.due ? `due ${it.due}` : "on completion"}
                               </div>
-                              {it.status === "PAID" || it.status === "WAIVED" ? null : pickingId === it.id ? (
-                                <div className={styles.pickRow}>
-                                  {[["BANK_TRANSFER", "Bank"], ["CASH", "Cash"], ["CHECK", "Check"]].map(([k, l]) => (
-                                    <button key={k} className={styles.pschedRem} type="button" disabled={writing}
-                                      onClick={() => void runMarkPaid(it.id, k)}>{l}</button>
-                                  ))}
-                                </div>
-                              ) : (
+                              {it.status === "PAID" || it.status === "WAIVED" ? null : (
                                 <>
                                   <button className={styles.pschedRem} type="button" disabled={writing}
-                                    onClick={() => setPickingId(it.id)}>Mark paid</button>
+                                    onClick={() => void runMarkPaid(it.id)}>Mark paid</button>
                                   {/* Real: mails THIS instalment's reminder. */}
                                   <button className={styles.pschedRem} type="button"
                                     disabled={writing || !p.clientEmail}
@@ -1046,7 +1048,10 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                 {sliceDone.map((p, i) => (
                   <div key={p.id} className={`${styles.psheet} ${styles.rowIn}`} style={{ animationDelay: `${i * 60}ms` }}>
                     <div className={styles.psheetHead}>
-                      <div className={styles.psheetStamp}><Icon id="i-check" />Paid in full</div>
+                      <div className={styles.psheetStamp}>
+                        <Icon id="i-check" />
+                        {p.owed > 0 ? `Completed · ${money(p.owed)} owed` : "Paid in full"}
+                      </div>
                       <div className={styles.pjobTitle}>{p.title}</div>
                       <div className={styles.pjobSub}>
                         <span>{p.client}</span>{p.city ? <span>{p.city}</span> : null}
@@ -1133,7 +1138,7 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                         </a>
                         <button className={styles.btnStamp} type="button" disabled={writing}
                           onClick={() => void runStatus(p, "ACCEPTED", `"${p.title}" is back in contracts.`)}>
-                          <Icon id="i-rotate" />Unmark paid
+                          <Icon id="i-rotate" />Reopen job
                         </button>
                       </div>
                     </div>
@@ -1157,7 +1162,13 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
       {/* What a write did, or why it refused. Silence would read as "the tap
           did nothing", which is exactly the failure this page had. */}
       {note ? (
-        <div className={`${styles.note} ${note.tone === "bad" ? styles.noteBad : ""}`} role="status">
+        <div
+          className={`${styles.note} ${note.tone === "bad" ? styles.noteBad : ""} ${note.tone === "live" ? styles.noteLive : ""}`}
+          role="status"
+        >
+          {/* A live note is a request still out — it carries the spinner, so
+              the strip says "working" rather than just stating a fact. */}
+          {note.tone === "live" ? <span className={styles.noteSpin} aria-hidden="true" /> : null}
           {note.text}
         </div>
       ) : null}

@@ -73,3 +73,6 @@ scripts/qa/roof/filmstrip/
 scripts/migrate-v2/pgclient.prisma
 scripts/migrate-v2/.generated/
 scripts/migrate-v2/reports/
+
+.vercel
+.env*.local

@@ -34,7 +34,6 @@ import clientsStyles from "@/components/v3/clients-blueprint/clients.module.css"
 import companyStyles from "@/components/v3/company-blueprint/company.module.css";
 import crmStyles from "@/components/v3/crm-blueprint/crm.module.css";
 import financialsStyles from "@/components/v3/financials-blueprint/financials.module.css";
-import hireStyles from "@/components/v3/hire-blueprint/hire.module.css";
 import jobsStyles from "@/components/v3/jobs-blueprint/jobs.module.css";
 import leadsStyles from "@/components/v3/leads-blueprint/leads.module.css";
 import projectsStyles from "@/components/v3/projects-blueprint/projects.module.css";
@@ -75,7 +74,8 @@ const PAGE_STYLES: Record<string, string> = {
   estimators: estimatorsStyles.bp,
   "fence-estimator": fenceEstimatorStyles.bp,
   financials: financialsStyles.bp,
-  hire: hireStyles.bp,
+  // NOTE: no "hire" entry — the Hire & Work board (2026-09-03) is a plain
+  // stylesheet scoped `.jf-blueprint .content .hm-*`, imported by its page.
   jobs: jobsStyles.bp,
   leads: leadsStyles.bp,
   messages: messagesStyles.bp,

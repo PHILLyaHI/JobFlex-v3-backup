@@ -52,7 +52,10 @@ import {
   GMAIL_FROM_LABELS,
   GMAIL_PERMISSIONS_CARD,
   GMAIL_SCOPES_EMPTY,
+  COMING_SOON_BADGE,
+  COMING_SOON_TAB,
   INTEGRATION_SUBTABS,
+  comingSoonNote,
   META_CONNECTED_DESC,
   META_CONNECTION_CARD,
   META_CONNECTION_ICON,
@@ -182,9 +185,38 @@ export function IntegrationsPane({ data, sub: wanted }: PaneProps) {
     }
   }
 
+  /** Which tabs the platform has not switched on yet. */
+  const soon: Record<SubTabKey, boolean> = {
+    gmail: gmail.comingSoon,
+    meta: meta.comingSoon,
+    stripe: stripe.comingSoon,
+    square: square.comingSoon,
+  };
+  const SOON_NAME: Record<SubTabKey, string> = {
+    gmail: "Gmail sending",
+    meta: "Meta business",
+    stripe: "Stripe",
+    square: "Square",
+  };
+
   return (
     <>
-      {/* ── subtab bar ── */}
+      {/* The one banner, above the tabs, for whichever tab is open. */}
+      {soon[sub] ? (
+        <div className="note note--soon" style={{ marginBottom: "14px" }}>
+          <svg className="ic">
+            <use href="#i-bell" />
+          </svg>
+          <div>
+            <b>{`${SOON_NAME[sub]} — coming soon`}</b>
+            <span>{comingSoonNote(SOON_NAME[sub])}</span>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ── subtab bar ──
+          A tab whose integration the platform has not switched on yet carries
+          a "Soon" tag, so the state is visible before the tab is opened. */}
       <div className="sub">
         {INTEGRATION_SUBTABS.map((t) => (
           <button
@@ -195,6 +227,7 @@ export function IntegrationsPane({ data, sub: wanted }: PaneProps) {
             onClick={() => setSub(t.key)}
           >
             {t.label}
+            {soon[t.key] ? <span className="sub-soon">{COMING_SOON_TAB}</span> : null}
           </button>
         ))}
       </div>
@@ -205,7 +238,13 @@ export function IntegrationsPane({ data, sub: wanted }: PaneProps) {
         <section className="sc">
           <CardHeader
             card={GMAIL_CONNECTION_CARD}
-            badge={gmail.connected ? CONNECTED_BADGE : NOT_CONNECTED_BADGE}
+            badge={
+              gmail.comingSoon && !gmail.connected
+                ? COMING_SOON_BADGE
+                : gmail.connected
+                  ? CONNECTED_BADGE
+                  : NOT_CONNECTED_BADGE
+            }
           />
           <div className={gmail.connected ? "sc-b sc-b--rows" : "sc-b"}>
             {gmail.connected ? (

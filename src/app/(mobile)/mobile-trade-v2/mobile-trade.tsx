@@ -33,33 +33,39 @@
 //    tile with the excerpt printed on it; a handheld row has no room for the
 //    excerpt, so the read gets its own sheet rather than being folded into the
 //    action menu where nobody browsing would look for it.
-//  · `budget` and `place` are lifted out of the body prose into spec rows —
-//    what it pays and where it is are the two facts that decide whether the
-//    rest of the posting is worth reading. Both are fixture-only keys.
 //  · A search box is added. The board's whole job is finding the one posting
-//    that fits, and on a phone that is faster than paging. It filters the same
-//    fixture client-side — no new endpoint.
+//    that fits, and on a phone that is faster than paging. It filters the rows
+//    already on the board client-side — no new endpoint.
 //  · The 3-line body excerpt leaves the card. A ledger row is three lines; the
 //    full body reads in the actions sheet instead.
 //  · A closed thread is marked with its badge and a muted title rather than
 //    the desktop's 0.72 opacity — dimmed type does not survive direct sun.
 //  · Page size 7-at-once → 6: a handheld row is three lines tall.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// DATA: REAL, and the same board the desktop shows. The page's server loader
+// (app/dashboard/trade/load-trade) reads the org's TradePost rows with their
+// author and reply joins and hands them down as props through the page's
+// viewport switch (app/dashboard/trade/trade-responsive) or the
+// /mobile-trade-v2 preview page. Every write goes to the SAME server action
+// the desktop board calls — createTradePost, closeTradePost, deleteTradePost —
+// and the row is only patched after that action resolves; a rejection is
+// printed where the action was pressed. Whose post it is comes from the
+// server's `mine` flag, never from a name comparison.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Route } from "next";
+import { useRouter } from "next/navigation";
 import styles from "./mobile-trade.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
+import { closeTradePost, createTradePost, deleteTradePost } from "@/actions/tradePosts";
+import type { TradeProps } from "@/app/dashboard/trade/load-trade";
 import {
   ALL,
   CATEGORIES,
-  ME,
   PAGE_SIZE,
-  POSTS_SEED,
-  POST_SEQ_START,
+  actionError,
   catCount,
   catLabel,
   initials,
@@ -67,6 +73,9 @@ import {
   matchesQuery,
   type TradePost,
 } from "./trade-data";
+
+/** Fed by app/dashboard/trade/load-trade. One loader, two editions. */
+export type MobileTradeProps = TradeProps;
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -130,15 +139,29 @@ type MenuRow = {
   danger?: boolean;
 };
 
-export function MobileTrade() {
+export function MobileTrade({ entries, viewer }: MobileTradeProps) {
+  const router = useRouter();
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  /* A per-mount COPY of the fixture. The sheet closes, reopens and removes
-     posts and the form publishes into it — mutating the module-level seed
-     would leak every change into the next mount. */
-  const [data, setData] = useState<TradePost[]>(() => POSTS_SEED.map((p) => ({ ...p })));
-  const [seq, setSeq] = useState(POST_SEQ_START);
+  /* The server's board, patched in place after a write RESOLVES — never
+     before, and never instead. Re-seeded when the server hands down a new list
+     (a router.refresh() after a publish, or a fresh navigation): the compare
+     runs DURING render, React's own "adjusting state when a prop changes"
+     pattern, so the stale list is never painted for a frame the way an effect
+     would paint it. */
+  const [data, setData] = useState<TradePost[]>(entries);
+  const [seed, setSeed] = useState(entries);
+  if (seed !== entries) {
+    setSeed(entries);
+    setData(entries);
+  }
+  /** The action a sheet row is waiting on, so the row can say "Working…" and
+   *  a second tap cannot fire the same write twice. */
+  const [working, setWorking] = useState<string | null>(null);
+  const [menuErr, setMenuErr] = useState("");
+  const [formErr, setFormErr] = useState("");
+  const [publishing, setPublishing] = useState(false);
   const [cat, setCat] = useState<string>(ALL);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -337,8 +360,8 @@ export function MobileTrade() {
   const detailPost = detailId === null ? null : (data.find((p) => p.id === detailId) ?? null);
 
   /* One masthead, one subject: how much of the board is still live. All three
-     figures come off the fixture, so publishing, closing or removing a post
-     moves them. */
+     figures are counted off the org's own posts, so publishing, closing or
+     removing one moves them. */
   const mast = {
     kicker: "Open threads",
     value: openCount,
@@ -353,66 +376,98 @@ export function MobileTrade() {
   };
 
   /* ---------- row sheet -------------------------------------------------
-     The desktop board has no row menu; six affordances cannot sit inline on a
-     phone card, so they become a sheet. Two rows are disabled from REAL
-     fixture state: replying to a CLOSED thread (p5, p7), and closing a thread
-     you did not write (everything except p3 and anything you publish). */
+     The desktop board has no row menu; a phone card cannot carry these inline,
+     so they become a sheet. Every row here has a real destination or a real
+     write. Disabled states come from the server's own rules, which the actions
+     enforce again: replying to a CLOSED thread, and closing or deleting a post
+     you did not author (`mine`, stamped by the loader). Reopening is absent
+     because there is no action for it — closeTradePost only closes. */
   const menuRows = useMemo<MenuRow[]>(() => {
     const p = sheetPost;
     if (!p) return [];
     const closed = p.status === "CLOSED";
-    const mine = p.author === ME;
+    const mine = Boolean(p.mine);
     return [
       { act: "open", icon: "i-msg", tone: styles.cmiBp, title: "Open thread",
         sub: p.replies ? `Read all ${p.replies} replies` : "No replies yet" },
       { act: "reply", icon: "i-send", tone: styles.cmiSky, title: "Reply",
         sub: closed ? "This thread is closed" : "Add to the thread", disabled: closed },
-      { act: "dm", icon: "i-mail", tone: styles.cmiOk, title: "Message author",
-        sub: `Direct message ${p.author}` },
       { act: "copy", icon: "i-copy", title: "Copy link", sub: "Share this posting" },
-      { act: "state", icon: closed ? "i-rotate" : "i-check", tone: styles.cmiWarn,
-        title: closed ? "Reopen thread" : "Close thread",
-        sub: mine
-          ? closed ? "Puts it back on the board" : "Marks it settled, replies stop"
-          : `Only ${p.author} can do that`,
-        disabled: !mine },
+      ...(closed
+        ? []
+        : [{
+            act: "state", icon: "i-check", tone: styles.cmiWarn, title: "Close thread",
+            sub: mine ? "Marks it settled, replies stop" : `Only ${p.author} can do that`,
+            disabled: !mine,
+          }]),
       { act: "del", icon: "i-trash", tone: styles.cmiDanger, title: "Remove post",
-        sub: "Takes it off your board", danger: true },
+        sub: mine ? "Deletes it for everyone" : `Only ${p.author} can do that`,
+        disabled: !mine, danger: true },
     ];
   }, [sheetPost]);
 
   /* ---------- detail sheet spec rows -----------------------------------
-     The drawing's dimension block: six labelled facts, in the order a
-     contractor triages them — what trade, what it pays, where it is, how
-     old, how much talk, and whether it is still live. Budget and place are
-     optional on the fixture (a question thread has no price, and a post you
-     just published has neither), so an absent value is stated as absent
-     rather than dropping the row and shortening the block unpredictably. */
+     The drawing's dimension block: four labelled facts, in the order a
+     contractor triages them — what trade, how old, how much talk, and whether
+     it is still live. The fixture build printed Budget and Location rows; the
+     TradePost model has no such columns, so a real posting states what it pays
+     in its own body rather than in an invented field. */
   const specRows = useMemo(() => {
     const p = detailPost;
     if (!p) return [];
     const c = CATEGORIES.find((x) => x.key === p.cat);
     return [
       { k: "Trade", v: c ? c.label : catLabel(p.cat), missing: false },
-      { k: "Budget", v: p.budget ?? "Not stated", missing: !p.budget },
-      { k: "Location", v: p.place ?? "Not stated", missing: !p.place },
       { k: "Posted", v: p.when, missing: false },
       { k: "Replies", v: p.replies ? num(p.replies) : "None yet", missing: !p.replies },
       { k: "Status", v: p.status === "CLOSED" ? "Closed" : "Open", missing: false },
     ];
   }, [detailPost]);
 
-  const runMenu = (act: string) => {
+  /** The thread page, which is where reading and replying actually happen.
+   *  Typed as a Route so `router.push` accepts it — a bare `string` loses the
+   *  template-literal type typedRoutes checks against. */
+  const threadHref = (id: string) => `/dashboard/trade/${id}` as Route;
+
+  const runMenu = async (act: string) => {
     const p = sheetPost;
-    setSheetId(null);
-    if (!p) return;
-    if (act === "del") {
-      setData((prev) => prev.filter((x) => x.id !== p.id));
-    } else if (act === "state") {
-      setData((prev) =>
-        prev.map((x) => (x.id === p.id ? { ...x, status: x.status === "CLOSED" ? "OPEN" : "CLOSED" } : x)),
-      );
+    if (!p || working) return;
+    setMenuErr("");
+
+    if (act === "open" || act === "reply") {
+      setSheetId(null);
+      router.push(threadHref(p.id));
+      return;
+    }
+    if (act === "copy") {
+      setSheetId(null);
+      if (typeof window !== "undefined") {
+        navigator.clipboard?.writeText(`${window.location.origin}${threadHref(p.id)}`).catch(() => undefined);
+      }
       setLandedId(p.id);
+      return;
+    }
+
+    // The two real writes. The row is patched only after the action resolves,
+    // and the action's own message is what a rejection prints.
+    setWorking(act);
+    try {
+      if (act === "state") {
+        await closeTradePost(p.id);
+        setData((prev) => prev.map((x) => (x.id === p.id ? { ...x, status: "CLOSED" } : x)));
+        setSheetId(null);
+        setLandedId(p.id);
+      } else if (act === "del") {
+        await deleteTradePost(p.id);
+        setData((prev) => prev.filter((x) => x.id !== p.id));
+        setSheetId(null);
+        setDetailId(null);
+      }
+      router.refresh();
+    } catch (err) {
+      setMenuErr(actionError(err));
+    } finally {
+      setWorking(null);
     }
   };
 
@@ -421,14 +476,16 @@ export function MobileTrade() {
     setForm({ title: "", body: "", cat: "question" });
     setTitleErr(false);
     setBodyErr(false);
+    setFormErr("");
     setNewOpen(true);
     // Focus after the slide settles — focusing mid-transform makes the
     // keyboard fight the animation.
     window.setTimeout(() => titleRef.current?.focus(), prefersReducedMotion() ? 0 : 320);
   };
 
-  const submitNew = (e: React.FormEvent) => {
+  const submitNew = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (publishing) return;
     const title = form.title.trim();
     const body = form.body.trim();
     if (!title) {
@@ -441,15 +498,29 @@ export function MobileTrade() {
       bodyRef.current?.focus();
       return;
     }
-    const id = `p${seq + 1}`;
-    setSeq((s) => s + 1);
-    setData((prev) => [
-      { id, cat: form.cat, status: "OPEN", title, body, author: ME, when: "just now", replies: 0 },
-      ...prev,
-    ]);
-    resetFilters();
-    setNewOpen(false);
-    setLandedId(id);
+    setPublishing(true);
+    setFormErr("");
+    try {
+      // The real write — the same action, payload shape and org scope the
+      // desktop board posts with. The row that lands carries the id the
+      // server gave it, so opening the thread works immediately.
+      const res = await createTradePost({ title, body, category: form.cat });
+      setData((prev) => [
+        {
+          id: res.id, cat: form.cat, status: "OPEN", title, body,
+          author: viewer, when: "just now", replies: 0, mine: true,
+        },
+        ...prev,
+      ]);
+      resetFilters();
+      setNewOpen(false);
+      setLandedId(res.id);
+      router.refresh();
+    } catch (err) {
+      setFormErr(actionError(err));
+    } finally {
+      setPublishing(false);
+    }
   };
 
   const anyOverlay = Boolean(sheetPost) || Boolean(detailPost) || newOpen;
@@ -589,7 +660,7 @@ export function MobileTrade() {
                       affordances from fighting over the same pixels. */}
                   <button className={styles.trowTap} type="button"
                     aria-label={`Open posting: ${p.title}`} onClick={() => setDetailId(p.id)} />
-                  <span className={`${styles.tav} ${p.author === ME ? styles.isMine : ""}`}>
+                  <span className={`${styles.tav} ${p.mine ? styles.isMine : ""}`}>
                     {initials(p.author)}
                   </span>
                   <div className={styles.ttitle}>{p.title}</div>
@@ -665,7 +736,7 @@ export function MobileTrade() {
                   ) : null}
                 </span>
                 <span className={styles.dtWho}>
-                  <span className={`${styles.tav} ${detailPost.author === ME ? styles.isMine : ""}`}>
+                  <span className={`${styles.tav} ${detailPost.mine ? styles.isMine : ""}`}>
                     {initials(detailPost.author)}
                   </span>
                   <span className={styles.dtWhoText}>
@@ -673,7 +744,7 @@ export function MobileTrade() {
                     {/* A thread of your own is worth calling out here: it is
                         what makes Close thread reachable in the act sheet. */}
                     <span className={styles.dtWhoMeta}>
-                      {detailPost.author === ME ? "Posted by you" : "Posted by"} · {detailPost.when}
+                      {detailPost.mine ? "Posted by you" : "Posted by"} · {detailPost.when}
                     </span>
                   </span>
                 </span>
@@ -723,13 +794,16 @@ export function MobileTrade() {
         <div className={styles.sheetBody}>
           {/* The body the row card refuses to carry, in full. */}
           {sheetPost ? <div className={styles.sheetQuote}>{sheetPost.body}</div> : null}
+          {menuErr ? <div className={styles.actErr} role="alert">{menuErr}</div> : null}
           {menuRows.map((r) => (
-            <button key={r.act} type="button" disabled={r.disabled}
+            <button key={r.act} type="button" disabled={r.disabled || Boolean(working)}
               className={`${styles.cmenuItem} ${r.danger ? styles.cmenuItemDanger : ""}`}
-              onClick={() => runMenu(r.act)}>
+              onClick={() => void runMenu(r.act)}>
               <span className={`${styles.cmiIc} ${r.tone ?? ""}`}><Icon id={r.icon} /></span>
               <span>
-                <span className={styles.cmenuItemT}>{r.title}</span>
+                <span className={styles.cmenuItemT}>
+                  {working === r.act ? "Working…" : r.title}
+                </span>
                 <span className={styles.cmenuItemS}>{r.sub}</span>
               </span>
             </button>
@@ -789,13 +863,15 @@ export function MobileTrade() {
               ))}
             </div>
           </div>
+
+          {formErr ? <div className={styles.actErr} role="alert">{formErr}</div> : null}
         </form>
         <div className={styles.formFoot}>
           <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={() => setNewOpen(false)}>
             Cancel
           </button>
-          <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" form="mtNewForm">
-            <Icon id="i-check" />Post
+          <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" form="mtNewForm" disabled={publishing}>
+            <Icon id="i-check" />{publishing ? "Posting…" : "Post"}
           </button>
         </div>
       </div>

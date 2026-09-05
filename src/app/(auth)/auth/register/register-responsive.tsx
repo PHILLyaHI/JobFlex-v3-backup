@@ -23,7 +23,7 @@
 // which nothing linked to. That preview URL still works; this is what makes
 // the real URL serve it.
 
-import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useSyncExternalStore } from "react";
 import { RegisterContent } from "@/components/v3/auth-register-blueprint/register-content";
 
@@ -36,21 +36,11 @@ const HANDHELD = "(max-width: 768px)";
 // than a load. Inline styles on purpose: this has to paint before the handheld
 // stylesheet has been fetched, which is also why the #f2f0eb drafting cream is
 // written out rather than read from a token.
-const MobileHold = () => (
-  <div style={{ position: "fixed", inset: 0, zIndex: 45, background: "#f2f0eb" }} />
-);
 
 // Imported out of the (mobile) tree rather than copied, so /auth/register and
 // /mobile-v1/auth/register cannot drift apart — one implementation, two entry
 // points. Lazy and `ssr: false` so a desktop visitor never downloads the
 // handheld bundle or its stylesheet for a tree they will not render.
-const MobileRegister = dynamic(
-  () =>
-    import("@/components/v3/mobile-auth-register/mobile-register-content").then(
-      (m) => m.MobileRegisterContent,
-    ),
-  { ssr: false, loading: MobileHold },
-);
 
 // Module scope so the identities are stable across renders — a fresh
 // `subscribe` on every render makes useSyncExternalStore re-subscribe each
@@ -68,6 +58,16 @@ const getSnapshot = () => window.matchMedia(HANDHELD).matches;
 // at every viewport, a worse trade on a signup page.
 const getServerSnapshot = () => false;
 
+/** A Google identity resolved ON THE SERVER from `?gsu=`, so the first paint
+ *  is already step 2. Reading it client-side meant one frame of step 1 before
+ *  the fetch resolved — the "shows step 1 for a second" the owner reported
+ *  (2026-09-03). */
+export interface GooglePrefill {
+  handle: string;
+  email: string;
+  name: string;
+}
+
 /** What a Google signup already gave us: the page opens on step 2 with it. */
 export interface SetupPrefill {
   name: string;
@@ -77,18 +77,52 @@ export interface SetupPrefill {
   companyPhone: string;
 }
 
-function RegisterSwitch({ setup }: { setup: SetupPrefill | null }) {
+function RegisterSwitch({
+  setup,
+  google,
+}: {
+  setup: SetupPrefill | null;
+  google: GooglePrefill | null;
+}) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  return isHandheld ? <MobileRegister setup={setup} /> : <RegisterContent setup={setup} />;
+  const params = useSearchParams();
+  /* PHASES THE HANDHELD BUILD DOES NOT IMPLEMENT (owner's report, 2026-09-03:
+     "mobile authentication with Google doesn't work"). The handheld register is
+     still the pre-paywall flow — it reads neither `?gsu=` (the return from
+     Google) nor `?signup=` (the plan step and the return from Stripe), so a
+     phone visitor who signed in with Google landed back on an empty step 1.
+     For those two phases the blueprint build is mounted at every width; its
+     stylesheet carries ≤1000px and ≤560px layouts, so it is a real phone
+     layout rather than a desktop page squeezed onto a phone.
+     This is a BRIDGE, not the destination: the handheld build still needs the
+     pending-signup + plan port for its own password path. */
+  /* 2026-09-04 (owner's batch): the blueprint build is the register at EVERY
+     width. The handheld build was still the pre-paywall flow — it created the
+     account at the end of step 2 with no plan, which is the one thing the
+     owner's rule forbids — and it had no plan step, no Google hand-off and no
+     Stripe return. The blueprint build carries ≤1000px / ≤768px / ≤560px
+     layouts (a phone carousel for the plan step) so it is a real phone layout,
+     not a desktop page squeezed. The handheld build stays reachable at
+     /mobile-v1/auth/register as a preview only. `isHandheld` is kept for the
+     day the handheld build is ported to the pending-signup flow. */
+  void isHandheld;
+  void params;
+  return <RegisterContent setup={setup} google={google} />;
 }
 
 // The attribution capture under either tree reads the query string, so the
 // boundary wraps the switch rather than either branch — a bare useSearchParams
 // without one is a static-prerender bailout in Next.
-export function RegisterResponsive({ setup = null }: { setup?: SetupPrefill | null }) {
+export function RegisterResponsive({
+  setup = null,
+  google = null,
+}: {
+  setup?: SetupPrefill | null;
+  google?: GooglePrefill | null;
+}) {
   return (
     <Suspense fallback={null}>
-      <RegisterSwitch setup={setup} />
+      <RegisterSwitch setup={setup} google={google} />
     </Suspense>
   );
 }

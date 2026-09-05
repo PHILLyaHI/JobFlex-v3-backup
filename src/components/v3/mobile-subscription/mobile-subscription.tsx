@@ -74,29 +74,17 @@
 // in the house style, with the shared swipe-to-dismiss hook.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import type { Route } from "next";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
-import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
-import { lockScroll } from "@/lib/scrollLock";
 import { money, longDate } from "@/lib/format";
 import {
   formatPlanPrice,
   priceCadence,
-  planCtaLabel,
-  featureTierForSlug,
   type PlanDTO,
 } from "@/lib/planCatalog";
-import {
-  ALL_FEATURES,
-  FEATURE_LABELS,
-  PLAN_TIERS,
-  hasFeature,
-  type Feature,
-} from "@/lib/entitlements";
-import { LIMIT_DEFS, type LimitKey } from "@/lib/planLimits";
-import { usePlanCheckout } from "@/components/billing/usePlanCheckout";
 import type { SubscriptionInvoice } from "@/actions/billing";
+import type { SubscriptionViewProps } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
+import { MobileUpgradeContent } from "@/components/v3/mobile-upgrade/mobile-upgrade";
+import type { UpgradePlan } from "@/components/v3/upgrade-blueprint/upgrade-content";
 import "./mobile-subscription.css";
 
 /** One enforced-limit row from the limits engine (finite caps only). */
@@ -107,29 +95,8 @@ export interface MobileUsageRow {
   limit: number;
 }
 
-export interface MobileSubscriptionProps {
-  /** Display name of the current plan (catalog name, or title-cased orphan slug). */
-  planName: string;
-  /** Monthly price of the current plan; null when the slug left the catalog. */
-  priceCents: number | null;
-  /** Lowercase slug used to mark "current" among the plan cards. */
-  currentSlug: string;
-  /** Active catalog plans, display-ordered — /admin/plans is the only source. */
-  plans: PlanDTO[];
-  status: string;
-  nextBill: string | null;
-  trialEndsAt: string | null;
-  usage: MobileUsageRow[];
-  invoices: { available: boolean; invoices: SubscriptionInvoice[] };
-  referral: {
-    code: string;
-    shareUrl: string;
-    rewardSummary: string;
-    uses: number;
-    converted: number;
-    pending: number;
-  };
-}
+/** The page's server props — one shape for both editions (subscription-load). */
+export type MobileSubscriptionProps = SubscriptionViewProps;
 
 const PROBLEM_STATUSES = ["PAST_DUE", "CANCELED", "EXPIRED"];
 /** A cap at or past this share of its limit raises the banner. */
@@ -176,55 +143,8 @@ function stampTone(status: string): string {
   return "jfms-stNeutral";
 }
 
-/** The features a plan turns on. Same source the desktop comparison matrix
- *  uses — ALL_FEATURES gated by MINIMUM_PLAN_FOR through the plan's slug — so
- *  the two surfaces can never disagree, and nothing here is authored copy. */
-function includedFeatures(slug: string): Feature[] {
-  const tier = featureTierForSlug(slug);
-  return ALL_FEATURES.filter((f) => hasFeature(tier, f));
-}
 
-/**
- * The stacked-card answer to a comparison matrix: each plan says what it adds
- * to the plan one tier below it ("Everything in Starter, plus …"), so two
- * adjacent cards read as a comparison instead of a repetition.
- *
- * The base is chosen by TIER RANK, not by catalog display order, because the
- * gating is rank-monotonic and only a rank-lower plan is guaranteed to be a
- * subset. When no lower plan exists, or it turns nothing on, the card lists its
- * own features in full and claims no inheritance.
- */
-function planFeatureBlocks(plans: PlanDTO[]) {
-  const rank = (slug: string) => PLAN_TIERS.indexOf(featureTierForSlug(slug));
-  const byRank = [...plans].sort((a, b) => rank(a.slug) - rank(b.slug));
-  const out = new Map<string, { inherits: string | null; features: Feature[] }>();
-  plans.forEach((p) => {
-    const mine = includedFeatures(p.slug);
-    const lower = byRank.filter((q) => rank(q.slug) < rank(p.slug));
-    const base = lower.length ? lower[lower.length - 1] : null;
-    const baseFeatures = base ? includedFeatures(base.slug) : [];
-    if (base && baseFeatures.length > 0 && baseFeatures.every((f) => mine.includes(f))) {
-      out.set(p.slug, {
-        inherits: base.name,
-        features: mine.filter((f) => !baseFeatures.includes(f)),
-      });
-    } else {
-      out.set(p.slug, { inherits: null, features: mine });
-    }
-  });
-  return out;
-}
 
-/** The plan's own enforced caps, off PricingPlan.limitsJson. Keys with no
- *  entry are unlimited and simply do not appear — the same rule the limits
- *  engine applies, so a cap shown here is a cap that actually enforces. */
-function planCaps(p: PlanDTO): Array<{ key: string; label: string; value: number }> {
-  return LIMIT_DEFS.filter((d) => typeof p.limits[d.key as LimitKey] === "number").map((d) => ({
-    key: d.key,
-    label: d.label,
-    value: p.limits[d.key as LimitKey] as number,
-  }));
-}
 
 /** Tier tone, positional exactly as the live view's is: plans cycle by catalog
  *  order; a slug outside the catalog takes the neutral graphite. See the CSS
@@ -247,8 +167,10 @@ export function MobileSubscription({
   usage,
   invoices,
   referral,
+  customPages,
+  checkoutReady,
+  sandbox,
 }: MobileSubscriptionProps) {
-  const { start, pendingSlug } = usePlanCheckout();
 
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -257,11 +179,6 @@ export function MobileSubscription({
   const [copied, setCopied] = useState<"code" | "url" | null>(null);
   const copyTimer = useRef(0);
   const [bannerOpen, setBannerOpen] = useState(true);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [target, setTarget] = useState(currentSlug);
-  const [interval, setIntervalChoice] = useState<"MONTH" | "YEAR">("MONTH");
-
-  const sheetDrag = useSheetDrag(sheetOpen, () => setSheetOpen(false));
 
   /* ---------- Derived, all from the server props ---------------------- */
 
@@ -278,51 +195,24 @@ export function MobileSubscription({
   const tightest = usageSorted[0];
   const showBanner = bannerOpen && !!tightest && tightest.pct >= PRESSURE_ALERT;
 
-  // Current plan first, then the catalog's own display order. A slug that has
-  // left the catalog simply has no card — the hero still names it.
-  const planCards = useMemo(() => {
-    const cur = plans.filter((p) => p.slug === currentSlug);
-    const rest = plans.filter((p) => p.slug !== currentSlug);
-    return [...cur, ...rest];
-  }, [plans, currentSlug]);
-
-  const featureBlocks = useMemo(() => planFeatureBlocks(plans), [plans]);
-
-  /* The desktop page's "Build your plan" column, in this build's card shape:
-     synthetic (not a catalog row), CURRENT when Subscription.plan is "custom",
-     otherwise the list's closing card with the same Get started → upgrade. */
-  const customIsCurrent = currentSlug === "custom";
-  const customCard = (
-    <article key="custom" className={`jfms-plan ${customIsCurrent ? "jfms-isCur" : ""}`}>
-      <div className="jfms-planTop">
-        <div className="jfms-planHeadRow">
-          <div className="jfms-planName">Build your plan</div>
-        </div>
-        <div className="jfms-planPrice">
-          <b>Custom</b>
-        </div>
-        <p className="jfms-planDesc">
-          Pick the pages and limits your crew actually uses — priced to match.
-        </p>
-      </div>
-      <div className="jfms-planFoot">
-        {customIsCurrent ? (
-          <div className="jfms-planCur">
-            <Icon id="i-check" />
-            Current plan
-          </div>
-        ) : (
-          <Link className="jfms-btn" href={"/dashboard/upgrade" as Route}>
-            Get started
-          </Link>
-        )}
-      </div>
-    </article>
+  /* THE CARDS are the upgrade page's own (owner, 2026-09-04: one set of
+     plan cards everywhere), embedded as a carousel below. */
+  const upgradePlans = useMemo<UpgradePlan[]>(
+    () =>
+      plans
+        .filter((p) => !p.isFree)
+        .map((p) => ({
+          slug: p.slug,
+          name: p.name,
+          description: p.description,
+          priceCents: p.priceCents,
+          yearlyPriceCents: p.yearlyPriceCents,
+          trialDays: p.trialDays,
+          features: p.features,
+          highlight: p.highlight,
+        })),
+    [plans],
   );
-
-  const selected = plans.find((p) => p.slug === target) ?? null;
-  const yearlyAvailable = !!selected?.yearlyPriceCents;
-  const busy = pendingSlug !== null;
 
   const shareHost = referral.shareUrl.replace(/^https?:\/\//, "");
 
@@ -341,35 +231,6 @@ export function MobileSubscription({
       block: "start",
     });
   }, []);
-
-  const openSheet = useCallback(() => {
-    setTarget(plans.some((p) => p.slug === currentSlug) ? currentSlug : (plans[0]?.slug ?? ""));
-    setIntervalChoice("MONTH");
-    setSheetOpen(true);
-  }, [plans, currentSlug]);
-
-  // The shared reference-counted lock — never a hand-rolled body.style.overflow,
-  // which poisons every other lock on the page.
-  useEffect(() => {
-    if (!sheetOpen) return;
-    const release = lockScroll();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSheetOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      release();
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [sheetOpen]);
-
-  /** The sheet's confirm. Same call the live change-plan dialog makes, with
-   *  the same interval argument — the plan goes to Stripe Checkout, which
-   *  navigates away. */
-  const applyTarget = useCallback(async () => {
-    if (!selected) return;
-    await start(selected, yearlyAvailable ? interval : "MONTH");
-  }, [selected, start, yearlyAvailable, interval]);
 
   /* ---------- Motion: usage bars draw to their real value -------------- */
   // Width is written here rather than in JSX so the bars animate from 0 on
@@ -567,14 +428,10 @@ export function MobileSubscription({
               <h2 className="jfms-cardTitle" id="jfmsUsageT">
                 Usage
               </h2>
-              <button type="button" className="jfms-btn jfms-btnSm" onClick={openSheet}>
-                Change plan
-              </button>
             </div>
             <div className="jfms-cardBody">
               {usageSorted.length === 0 ? (
                 <div className="jfms-empty">
-                  <Icon id="i-check" className="jfms-ic jfms-emptyIc" />
                   <div className="jfms-emptyT">No caps on this plan</div>
                   <div className="jfms-emptyS">Everything on your plan is unlimited.</div>
                 </div>
@@ -605,97 +462,22 @@ export function MobileSubscription({
                 })
               )}
             </div>
-            <div className="jfms-cardFoot">
-              Limits reset each billing cycle · hitting one never blocks existing work
-            </div>
+            <div className="jfms-cardFoot jfms-cardFoot--quiet">Limits reset each billing cycle.</div>
           </section>
 
-          {/* ============ PLANS ============ */}
-          {/* Just the word (owner's call, 2026-08-12): the drawn rule and the
-              "N available" tally were mono annotation on a heading that is
-              already the loudest break on the page. Set as a real headline
-              rather than a mono kicker. */}
-          <div className="jfms-sectionLbl" ref={plansRef}>
-            Plans
-          </div>
-
-          <div className="jfms-plans">
-            {currentSlug === "custom" ? customCard : null}
-            {planCards.map((p) => {
-              const current = p.slug === currentSlug;
-              const block = featureBlocks.get(p.slug);
-              const caps = planCaps(p);
-              return (
-                <article
-                  key={p.slug}
-                  className={`jfms-plan ${toneClass(plans, p.slug)} ${current ? "jfms-isCur" : ""}`}
-                >
-                  <div className="jfms-planTop">
-                    <div className="jfms-planHeadRow">
-                      <div className="jfms-planName">{p.name}</div>
-                      {p.highlight && !current ? (
-                        <span className="jfms-planFlag">Most popular</span>
-                      ) : null}
-                    </div>
-                    <div className="jfms-planPrice">
-                      <b>{formatPlanPrice(p.priceCents)}</b>
-                      <i>{priceCadence(true)}</i>
-                    </div>
-                    {p.description ? <p className="jfms-planDesc">{p.description}</p> : null}
-                    {caps.length > 0 ? (
-                      <div className="jfms-planCaps">
-                        {caps.map((c) => (
-                          <div key={c.key} className="jfms-planCap">
-                            <span>{c.label}</span>
-                            <span className="jfms-planCapV">{c.value.toLocaleString()}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                    {block?.inherits ? (
-                      <div className="jfms-planInherit">
-                        {block.features.length > 0
-                          ? `Everything in ${block.inherits}, plus`
-                          : `Everything in ${block.inherits}`}
-                      </div>
-                    ) : null}
-                    {block && block.features.length > 0 ? (
-                      <ul className="jfms-planFeat">
-                        {block.features.map((f) => (
-                          <li key={f}>
-                            <span className="jfms-featTick" aria-hidden="true">
-                              ✓
-                            </span>
-                            <span>{FEATURE_LABELS[f]}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </div>
-                  <div className="jfms-planFoot">
-                    {!current && p.trialDays > 0 ? (
-                      <div className="jfms-planTrial">{p.trialDays}-day free trial</div>
-                    ) : null}
-                    {current ? (
-                      <div className="jfms-planCur">
-                        <Icon id="i-check" />
-                        Current plan
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        className={`jfms-btn ${p.highlight ? "jfms-btnPrimary" : ""}`}
-                        disabled={busy}
-                        onClick={() => start(p)}
-                      >
-                        {pendingSlug === p.slug ? "Working…" : planCtaLabel(p.trialDays)}
-                      </button>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-            {currentSlug !== "custom" ? customCard : null}
+          {/* ============ PLANS — the upgrade page's cards, as a carousel ============ */}
+          <div className="jfms-plansEmbed" ref={plansRef}>
+            <MobileUpgradeContent
+              embedded
+              plans={upgradePlans}
+              currentPlan={currentSlug}
+              customPages={customPages ?? []}
+              isOwner
+              checkoutReady={checkoutReady}
+              sandbox={sandbox}
+              upgradedTo={null}
+              cancelled={false}
+            />
           </div>
 
           {/* ============ BILLING HISTORY ============ */}
@@ -779,115 +561,10 @@ export function MobileSubscription({
         </div>
       </main>
 
-      {/* ============ CHANGE-PLAN SHEET ============
-          The live view's change-plan dialog, re-laid-out as a bottom sheet.
-          It keeps the one thing the per-plan buttons cannot offer: the
-          monthly / yearly interval, which is passed straight through to the
-          same checkout call. */}
-      <div
-        className={`jfms-scrim ${sheetOpen ? "jfms-on" : ""}`}
-        onClick={() => setSheetOpen(false)}
-        aria-hidden="true"
-      />
-      <div
-        className={`jfms-sheet ${sheetOpen ? "jfms-on" : ""}`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="jfmsSheetT"
-        aria-hidden={!sheetOpen}
-        {...sheetDrag.sheetProps}
-      >
-        <div className="jfms-sheetGrab" {...sheetDrag.handleProps} />
-        <div className="jfms-sheetHead" {...sheetDrag.handleProps}>
-          <div className="jfms-sheetKicker">Account / billing</div>
-          <div className="jfms-sheetTitle" id="jfmsSheetT">
-            Change plan
-          </div>
-        </div>
-        <div className="jfms-sheetBody">
-          {plans.map((p) => {
-            const sel = p.slug === target;
-            return (
-              <button
-                key={p.slug}
-                type="button"
-                className={`jfms-sheetOpt ${sel ? "jfms-isSel" : ""}`}
-                onClick={() => setTarget(p.slug)}
-                aria-pressed={sel}
-              >
-                <span className="jfms-optMark" aria-hidden="true">
-                  <Icon id="i-check" />
-                </span>
-                <span className="jfms-optTxt">
-                  <span className="jfms-optName">{p.name}</span>
-                  <span className="jfms-optSub">
-                    {p.slug === currentSlug
-                      ? "Current plan"
-                      : p.trialDays > 0
-                        ? `${p.trialDays}-day trial`
-                        : "Billed monthly"}
-                  </span>
-                </span>
-                <span className="jfms-optPrice">{formatPlanPrice(p.priceCents)}</span>
-              </button>
-            );
-          })}
-
-          {selected && yearlyAvailable ? (
-            <div className="jfms-seg" role="group" aria-label="Billing period">
-              <button
-                type="button"
-                className={`jfms-segBtn ${interval === "MONTH" ? "jfms-isSel" : ""}`}
-                aria-pressed={interval === "MONTH"}
-                onClick={() => setIntervalChoice("MONTH")}
-              >
-                {formatPlanPrice(selected.priceCents)} / mo
-              </button>
-              <button
-                type="button"
-                className={`jfms-segBtn ${interval === "YEAR" ? "jfms-isSel" : ""}`}
-                aria-pressed={interval === "YEAR"}
-                onClick={() => setIntervalChoice("YEAR")}
-              >
-                {formatPlanPrice(selected.yearlyPriceCents ?? 0)} / yr
-              </button>
-            </div>
-          ) : null}
-
-          <p className="jfms-sheetNote">
-            Plans go through Stripe Checkout — you can apply a promo code there.
-          </p>
-        </div>
-        <div className="jfms-sheetFoot">
-          <button
-            type="button"
-            className="jfms-btn"
-            onClick={() => setSheetOpen(false)}
-            disabled={busy}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="jfms-btn jfms-btnInk"
-            onClick={applyTarget}
-            disabled={busy || !selected || selected.slug === currentSlug}
-          >
-            {busy
-              ? "Working…"
-              : selected && selected.slug === currentSlug
-                ? "Current plan"
-                : selected
-                  ? planCtaLabel(selected.trialDays)
-                  : "Continue"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
 
-/* ── Invoice rows, with the live view's two honest empty states ───────── */
 function InvoiceRows({ data }: { data: { available: boolean; invoices: SubscriptionInvoice[] } }) {
   if (!data.available) {
     return (

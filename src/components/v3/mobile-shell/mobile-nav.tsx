@@ -42,7 +42,13 @@ import {
   type NavItem,
   type NavSection,
 } from "@/components/v3/blueprint-shell/nav-map";
-import { useNavBadges, useNavIdentity, useNavLocked } from "@/components/v3/blueprint-shell/nav-role";
+import {
+  useNavBadges,
+  useNavIdentity,
+  useNavLimits,
+  useNavLocked,
+  type NavLimit,
+} from "@/components/v3/blueprint-shell/nav-role";
 import { NotificationBell } from "@/components/v3/blueprint-shell/notification-bell";
 import { SignOutButton } from "@/components/v3/blueprint-shell/sign-out";
 import { EstimatorPicker } from "@/components/v3/estimators-blueprint/estimator-picker";
@@ -68,6 +74,16 @@ function Icon({ id }: { id: string }) {
 function roleTitle(role: string | null): string {
   if (!role) return "";
   return role.charAt(0) + role.slice(1).toLowerCase();
+}
+
+/** The pill's spoken copy: what the number counts and when it resets — the
+ *  desktop sidebar's hover tooltip, as the tap/long-press title here. */
+function quotaTip(q: NavLimit): string {
+  const cycle = q.scope === "absolute" ? "" : " this cycle";
+  if (q.remaining <= 0) {
+    return `You've used all ${q.limit} ${q.label} in your plan${cycle}. Upgrade to add more.`;
+  }
+  return `${q.remaining} of ${q.limit} ${q.label} left${cycle}.`;
 }
 
 /** Initials for the account plate — the same rule the desktop sidebar uses. */
@@ -134,6 +150,10 @@ export function MobileNav() {
      rides. Outside it (the standalone /mobile-*-v2 review URLs) the map is
      empty and no badge is drawn — exactly what those routes showed before. */
   const badges = useNavBadges();
+  /* Remaining plan quota per href (lib/navLimits) — the same pills the desk
+     sidebar draws, in the drawer since 2026-09-04 (owner: the phone showed
+     none of the counters). */
+  const limits = useNavLimits();
   /* Every engine in the picker lives outside a field worker's allow-list, so
      for them the handheld New Estimate button could only open a dialog whose
      every card bounces. Asked of the engine list itself, not a copy of it. */
@@ -285,7 +305,7 @@ export function MobileNav() {
               desktop topbar mounts, wearing this shell's chrome classes; the
               dot now appears only when something is genuinely newer than the
               last time this person opened it. */}
-          <NotificationBell buttonClassName={styles.tbarBtn} dotClassName={styles.bellDot} iconClassName={styles.ic} />
+          <NotificationBell buttonClassName={styles.tbarBtn} iconClassName={styles.ic} />
         </div>
       </header>
 
@@ -361,11 +381,22 @@ export function MobileNav() {
                         <path d="M8 11V7a4 4 0 0 1 8 0v4" />
                       </svg>
                     ) : (
-                      count > 0 && (
-                        <span className={styles.sbBadge} aria-label={`${count} new`}>
-                          {count > 99 ? "99+" : count}
-                        </span>
-                      )
+                      <>
+                        {count > 0 && (
+                          <span className={styles.sbBadge} aria-label={`${count} new`}>
+                            {count > 99 ? "99+" : count}
+                          </span>
+                        )}
+                        {limits[item.href] ? (
+                          <span
+                            className={`${styles.sbQuota}${limits[item.href].remaining <= 0 ? ` ${styles.isOut}` : ""}${count > 0 ? "" : ` ${styles.sbQuotaEnd}`}`}
+                            title={quotaTip(limits[item.href])}
+                            aria-label={quotaTip(limits[item.href])}
+                          >
+                            {limits[item.href].remaining > 99 ? "99+" : limits[item.href].remaining}
+                          </span>
+                        ) : null}
+                      </>
                     )}
                   </Link>
                 );

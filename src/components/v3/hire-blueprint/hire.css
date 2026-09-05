@@ -1,0 +1,1322 @@
+/* ============================================================================
+   HIRE & WORK — /dashboard/hire   (rebuilt 2026-09-03)
+   ============================================================================
+
+   PLAIN STYLESHEET, NOT A CSS MODULE — deliberate. Every selector is scoped
+   `.jf-blueprint .content .hm-*` (0,3,0), which outranks the shell's shared
+   `.bp .card` / `.bp .btn` rules (0,2,0) wherever this page restates them and
+   cannot reach anything outside the page's own `hm-` vocabulary. No element
+   selectors, no `*` reset, no host neutralizers: the shell already owns the
+   environment, and a module's hashing is exactly what flattened the app when
+   it met bare element selectors before.
+
+   Tokens come from the shell root (`.bp`): --paper, --ink, --ink-soft,
+   --blueprint, --blueprint-dark, --sky, --muted, --muted-light, --muted-faint,
+   --success(-soft), --warning(-soft), --danger(-soft), --hair, --hair-soft,
+   --border, --radius, --font, --font-mono, --ease, --topbar-h.
+
+   Shared vocabulary reused as-is: .page-head .kicker .page-title .page-actions
+   .btn .btn-primary .btn-ghost .card .card-head .card-titles .card-title .chip
+   .tag .bp-sel .bp-sel-in
+   ========================================================================= */
+
+/* ── Icons ──────────────────────────────────────────────────────────────── */
+.jf-blueprint .content .hm-ic {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── Entrance ───────────────────────────────────────────────────────────── */
+.jf-blueprint .content .hm-rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 0.42s cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 0.42s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition-delay: calc(var(--i, 0) * 60ms);
+}
+.jf-blueprint .content .hm-armed.hm-rv,
+.jf-blueprint .content .hm-armed .hm-rv {
+  opacity: 1;
+  transform: none;
+}
+
+/* ── Head: live count + the joined side switch ──────────────────────────── */
+.jf-blueprint .content .hm-head .page-title {
+  overflow-wrap: break-word;
+}
+.jf-blueprint .content .hm-switch {
+  gap: 0;
+  padding-bottom: 0;
+  margin-bottom: 4px;
+  border-radius: var(--radius);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.jf-blueprint .content .hm-tab {
+  height: 44px;
+  padding: 0 22px;
+  background: #fff;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+}
+.jf-blueprint .content .hm-tab + .hm-tab {
+  border-left: 0;
+}
+.jf-blueprint .content .hm-tab .ic {
+  width: 16px;
+  height: 16px;
+}
+.jf-blueprint .content .hm-tab:hover:not(.is-on) {
+  transform: none;
+  box-shadow: none;
+  background: var(--paper-deep);
+  color: var(--blueprint);
+}
+.jf-blueprint .content .hm-tab.is-on,
+.jf-blueprint .content .hm-tab.is-on:hover {
+  background: var(--blueprint);
+  color: #fff;
+}
+.jf-blueprint .content .hm-tab:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 2px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── The split ──────────────────────────────────────────────────────────── */
+.jf-blueprint .content .hm-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(380px, 0.85fr);
+  gap: 22px;
+  align-items: start;
+}
+.jf-blueprint .content .hm-split.is-solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+.jf-blueprint .content .hm-split--work {
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 0.9fr);
+}
+.jf-blueprint .content .hm-col {
+  min-width: 0;
+}
+.jf-blueprint .content .hm-detail {
+  position: sticky;
+  top: calc(var(--topbar-h, 62px) + 16px);
+}
+
+/* ── The schedule ───────────────────────────────────────────────────────── */
+.jf-blueprint .content .hm-sheet {
+  padding: 0;
+  overflow: hidden;
+}
+.jf-blueprint .content .hm-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--paper);
+  border-bottom: 2px solid var(--ink);
+}
+.jf-blueprint .content .hm-search {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--muted);
+  transition: box-shadow 0.12s var(--ease);
+}
+.jf-blueprint .content .hm-search:focus-within {
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.jf-blueprint .content .hm-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.jf-blueprint .content .hm-search input::placeholder {
+  color: var(--muted-light);
+}
+.jf-blueprint .content .hm-search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.jf-blueprint .content .hm-trade {
+  width: 196px;
+  flex-shrink: 0;
+}
+.jf-blueprint .content .hm-trade .bp-sel-in {
+  height: 40px;
+  padding-left: 12px;
+  border-color: var(--ink);
+}
+.jf-blueprint .content .hm-count {
+  flex-shrink: 0;
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.jf-blueprint .content .hm-rows {
+  display: flex;
+  flex-direction: column;
+}
+.jf-blueprint .content .hm-rows:focus-visible {
+  outline: none;
+}
+.jf-blueprint .content .hm-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 13px 18px 13px 16px;
+  border: 0;
+  border-bottom: 1.5px solid var(--hair);
+  border-radius: 0;
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s var(--ease),
+    box-shadow 0.15s var(--ease);
+}
+.jf-blueprint .content .hm-row:last-child {
+  border-bottom: 0;
+}
+.jf-blueprint .content .hm-row:hover {
+  background: var(--paper);
+}
+.jf-blueprint .content .hm-row.is-sel {
+  background: var(--paper);
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+.jf-blueprint .content .hm-row:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: -2px;
+}
+.jf-blueprint .content .hm-plate {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: #fff;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  transition:
+    background 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+.jf-blueprint .content .hm-row.is-sel .hm-plate {
+  background: var(--ink);
+  color: #fff;
+}
+.jf-blueprint .content .hm-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.jf-blueprint .content .hm-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.jf-blueprint .content .hm-name-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.jf-blueprint .content .hm-you {
+  flex-shrink: 0;
+  padding: 2px 6px 2px 7px;
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+.jf-blueprint .content .hm-chip-sm {
+  padding: 2px 6px;
+  font-size: 9px;
+}
+.jf-blueprint .content .hm-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jf-blueprint .content .hm-meta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jf-blueprint .content .hm-rate {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  max-width: 150px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.jf-blueprint .content .hm-rate--raw {
+  max-width: 130px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: right;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.jf-blueprint .content .hm-rate--raw b {
+  font-size: 11px;
+  font-weight: 600;
+}
+.jf-blueprint .content .hm-rate b {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.jf-blueprint .content .hm-rate-unit {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Empty notes — a dashed note on the drawing. */
+.jf-blueprint .content .hm-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin: 16px;
+  padding: 34px 20px;
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  text-align: center;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.jf-blueprint .content .hm-empty--flush {
+  margin: 0;
+}
+.jf-blueprint .content .hm-btn-sm {
+  height: 36px;
+  padding: 0 14px;
+  font-size: 11px;
+}
+
+/* ── The title block ────────────────────────────────────────────────────── */
+.jf-blueprint .content .hm-tb {
+  padding: 0;
+  overflow: hidden;
+}
+.jf-blueprint .content .hm-tb-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 24px 16px;
+}
+.jf-blueprint .content .hm-tb-who {
+  min-width: 0;
+}
+.jf-blueprint .content .hm-tb-name {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+.jf-blueprint .content .hm-tb-meta {
+  margin-top: 9px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.jf-blueprint .content .hm-tb-rate {
+  flex-shrink: 0;
+  max-width: 40%;
+  text-align: right;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.jf-blueprint .content .hm-tb-rate b {
+  display: block;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.jf-blueprint .content .hm-tb-rate span {
+  display: block;
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-blueprint .content .hm-tb-body {
+  padding: 0 24px 20px;
+  /* A post body has a 20,000-character ceiling on the server. Unbounded, one
+     long post pushes the actions below the fold of a sticky panel — so the
+     brief scrolls inside the sheet and the foot stays reachable. */
+  max-height: 42vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.jf-blueprint .content .hm-tb-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.jf-blueprint .content .hm-tb-desc {
+  margin: 10px 0 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink-soft);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.jf-blueprint .content .hm-tb-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.jf-blueprint .content .hm-tb-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0;
+  border-top: 2px solid var(--ink);
+}
+.jf-blueprint .content .hm-tb-cell {
+  min-width: 0;
+  padding: 12px 16px 13px;
+  border-bottom: 1.5px solid var(--ink);
+}
+.jf-blueprint .content .hm-tb-cell:nth-child(odd) {
+  border-right: 1.5px solid var(--ink);
+}
+.jf-blueprint .content .hm-tb-cell:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+.jf-blueprint .content .hm-tb-cell dt {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-blueprint .content .hm-tb-cell dd {
+  margin: 5px 0 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.jf-blueprint .content .hm-tb-cell dd a {
+  color: var(--blueprint);
+  text-decoration: none;
+  border-bottom: 1.5px solid currentColor;
+  transition: color 0.12s;
+}
+.jf-blueprint .content .hm-tb-cell dd a:hover {
+  color: var(--blueprint-dark);
+}
+.jf-blueprint .content .hm-tb-cell dd a:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 2px;
+}
+.jf-blueprint .content .hm-mono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.jf-blueprint .content .hm-dim {
+  color: var(--muted);
+  font-weight: 600;
+}
+.jf-blueprint .content .hm-rating {
+  display: inline-flex;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+}
+.jf-blueprint .content .hm-sqs {
+  display: inline-flex;
+  gap: 3px;
+  margin-right: 8px;
+}
+.jf-blueprint .content .hm-sq {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--ink);
+  background: #fff;
+}
+.jf-blueprint .content .hm-sq.is-on {
+  background: var(--ink);
+}
+
+.jf-blueprint .content .hm-tb-reviews {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 30vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 24px 18px;
+  border-top: 2px solid var(--ink);
+}
+.jf-blueprint .content .hm-quote {
+  margin: 0;
+}
+.jf-blueprint .content .hm-quote-k {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-blueprint .content .hm-quote p {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.jf-blueprint .content .hm-tb-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 24px;
+  border-top: 2px solid var(--ink);
+  background: var(--paper);
+}
+.jf-blueprint .content .hm-tb-foot .btn {
+  flex: 1;
+  justify-content: center;
+  height: 44px;
+  text-decoration: none;
+}
+.jf-blueprint .content .hm-tb-foot .btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+.jf-blueprint .content .hm-stamp {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.jf-blueprint .content .hm-chip-lg {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 16px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.jf-blueprint .content .hm-chip-lg .hm-ic {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.5;
+}
+
+.jf-blueprint .content .hm-err {
+  margin: 0 24px 16px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.jf-blueprint .content .hm-form .hm-err {
+  margin: 0;
+}
+.jf-blueprint .content .hm-err--rows {
+  margin: 16px 20px 0;
+}
+
+/* ── Work: the composer ─────────────────────────────────────────────────── */
+/* No `overflow: hidden` here, deliberately. The ruled header band needs no
+   clipping at a 2px radius, and hiding overflow made the card a scrollable box
+   that a dropdown could shunt sideways — which is exactly how opening the rate
+   unit picker shifted the whole form. It would also clip any menu that opened
+   past the card's edge. */
+.jf-blueprint .content .hm-form {
+  padding: 0;
+}
+.jf-blueprint .content .hm-form .card-head {
+  margin: 0;
+  padding: 17px 20px;
+  border-bottom: 2px solid var(--ink);
+}
+.jf-blueprint .content .hm-form .card-head .hm-act {
+  margin-left: auto;
+}
+.jf-blueprint .content .hm-form form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+}
+.jf-blueprint .content .hm-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.jf-blueprint .content .hm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+/* The field's own name outranks the hint inside it: bigger, darker, and set
+   against placeholders that are deliberately quiet. Owner call, 2026-09-03. */
+.jf-blueprint .content .hm-lbl {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.jf-blueprint .content .hm-in {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: #fff;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  outline: 0;
+  transition: box-shadow 0.12s var(--ease);
+}
+.jf-blueprint .content .hm-in:focus {
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.jf-blueprint .content .hm-in::placeholder {
+  color: var(--muted-light);
+  font-weight: 400;
+}
+.jf-blueprint .content .hm-ta {
+  height: auto;
+  min-height: 132px;
+  padding: 10px 12px;
+  line-height: 1.55;
+  resize: vertical;
+}
+.jf-blueprint .content .hm-field .bp-sel-in,
+.jf-blueprint .content .hm-unit .bp-sel-in {
+  height: 42px;
+  padding-left: 12px;
+  border-color: var(--ink);
+}
+.jf-blueprint .content .hm-rate-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) 150px;
+  gap: 8px;
+  align-items: center;
+}
+.jf-blueprint .content .hm-money {
+  display: flex;
+  align-items: center;
+  height: 42px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: #fff;
+  transition: box-shadow 0.12s var(--ease);
+}
+.jf-blueprint .content .hm-money:focus-within {
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.jf-blueprint .content .hm-cur {
+  padding-left: 12px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.jf-blueprint .content .hm-money input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 12px 0 6px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+/* Quieter than the rest: a live '$' already sits beside it, so a dark
+   placeholder read as an entered figure. Owner call, 2026-09-03. */
+.jf-blueprint .content .hm-money input::placeholder {
+  color: var(--muted-faint);
+  font-weight: 500;
+}
+.jf-blueprint .content .hm-dash {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--muted);
+}
+.jf-blueprint .content .hm-form-foot {
+  display: flex;
+  gap: 10px;
+  padding-top: 4px;
+}
+.jf-blueprint .content .hm-form-foot .btn {
+  height: 44px;
+  padding: 0 22px;
+}
+.jf-blueprint .content .hm-form-foot .btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+.jf-blueprint .content .hm-form-foot .btn.is-done,
+.jf-blueprint .content .hm-form-foot .btn.is-done:hover {
+  background: var(--success);
+  border-color: var(--success);
+}
+
+/* ── Work: your posts ───────────────────────────────────────────────────── */
+.jf-blueprint .content .hm-mine {
+  padding: 0;
+  overflow: hidden;
+}
+.jf-blueprint .content .hm-mine .card-head {
+  margin: 0;
+  padding: 17px 20px;
+  border-bottom: 2px solid var(--ink);
+}
+.jf-blueprint .content .hm-mine .card-head .hm-count {
+  margin-left: auto;
+}
+.jf-blueprint .content .hm-mrows {
+  display: flex;
+  flex-direction: column;
+}
+.jf-blueprint .content .hm-mrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1.5px solid var(--hair);
+}
+.jf-blueprint .content .hm-mrow:last-child {
+  border-bottom: 0;
+}
+.jf-blueprint .content .hm-mrow.is-editing {
+  background: var(--paper);
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+.jf-blueprint .content .hm-mrow.is-new {
+  animation: jf-hm-land 0.9s var(--ease) both;
+}
+@keyframes jf-hm-land {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+    background: color-mix(in srgb, var(--blueprint) 8%, transparent);
+  }
+  60% {
+    opacity: 1;
+    transform: none;
+    background: color-mix(in srgb, var(--blueprint) 8%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+.jf-blueprint .content .hm-mrow-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.jf-blueprint .content .hm-mrow-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.jf-blueprint .content .hm-mrow-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.jf-blueprint .content .hm-int {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--success);
+}
+.jf-blueprint .content .hm-int b {
+  font-weight: 700;
+}
+.jf-blueprint .content .hm-acts {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.jf-blueprint .content .hm-act {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 0 4px;
+  border: 0;
+  border-bottom: 1.5px solid currentColor;
+  border-radius: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition: color 0.12s;
+}
+.jf-blueprint .content .hm-act:hover {
+  color: var(--blueprint);
+}
+.jf-blueprint .content .hm-act--danger {
+  color: var(--danger);
+}
+.jf-blueprint .content .hm-act--danger:hover {
+  color: color-mix(in srgb, var(--danger) 78%, #000);
+}
+.jf-blueprint .content .hm-act--danger {
+  color: var(--danger);
+}
+.jf-blueprint .content .hm-act-q {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--danger);
+}
+.jf-blueprint .content .hm-st {
+  flex-shrink: 0;
+}
+.jf-blueprint .content .hm-st--open {
+  color: var(--ink);
+  background: var(--paper);
+}
+.jf-blueprint .content .hm-st--filled {
+  color: var(--success);
+  background: var(--success-soft);
+}
+.jf-blueprint .content .hm-st--cancelled {
+  color: var(--muted);
+  background: var(--paper);
+}
+
+/* ── The drawn select (hire-select.tsx) ─────────────────────────────────────
+   The owner asked for a styled dropdown with search. A native <select> gives
+   neither portably — its popup belongs to the OS and it has no filter — so the
+   page paints its own listbox in the same ink-frame language as the fields
+   around it. One component serves both the trade picker (searchable) and the
+   rate-unit picker (not). */
+.jf-blueprint .content .hm-sel {
+  position: relative;
+  min-width: 0;
+}
+.jf-blueprint .content .hm-sel-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: #fff;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 0.12s var(--ease);
+}
+.jf-blueprint .content .hm-sel-btn:hover {
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.jf-blueprint .content .hm-sel-btn[aria-expanded="true"] {
+  box-shadow: 2px 2px 0 var(--ink);
+}
+/* Nothing picked is a placeholder, not a value — the same signal the shell's
+   own controls give with [data-empty]. */
+.jf-blueprint .content .hm-sel-btn[data-empty="1"] {
+  color: var(--muted-light);
+  font-weight: 500;
+}
+.jf-blueprint .content .hm-sel-btn:disabled {
+  color: var(--muted-light);
+  cursor: not-allowed;
+}
+.jf-blueprint .content .hm-sel-val {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A drawn chevron: two strokes meeting at a point, matching the ink line
+   weight the rest of the system uses rather than a glyph. */
+.jf-blueprint .content .hm-sel-caret {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: -3px;
+  border-right: 1.5px solid var(--ink);
+  border-bottom: 1.5px solid var(--ink);
+  transform: rotate(45deg);
+  transition: transform 0.18s var(--ease);
+}
+.jf-blueprint .content .hm-sel-btn[aria-expanded="true"] .hm-sel-caret {
+  margin-top: 3px;
+  transform: rotate(-135deg);
+}
+
+.jf-blueprint .content .hm-sel-pop {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  min-width: 210px;
+  padding: 4px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: #fff;
+  box-shadow: 4px 4px 0 var(--ink);
+  animation: jf-hm-pop 0.16s var(--ease) both;
+}
+@keyframes jf-hm-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.jf-blueprint .content .hm-sel-q {
+  width: 100%;
+  height: 36px;
+  margin-bottom: 4px;
+  padding: 0 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  outline: 0;
+}
+.jf-blueprint .content .hm-sel-q::placeholder {
+  color: var(--muted);
+  font-weight: 500;
+}
+.jf-blueprint .content .hm-sel-q:focus {
+  box-shadow: inset 2px 2px 0 rgba(10, 10, 10, 0.06);
+}
+.jf-blueprint .content .hm-sel-list {
+  max-height: 264px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  outline: 0;
+}
+.jf-blueprint .content .hm-sel-opt {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 1px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  cursor: pointer;
+}
+.jf-blueprint .content .hm-sel-opt.is-active {
+  background: var(--paper);
+}
+.jf-blueprint .content .hm-sel-opt.is-on {
+  background: var(--blueprint);
+  color: #fff;
+}
+.jf-blueprint .content .hm-sel-opt.is-clear {
+  color: var(--muted);
+}
+.jf-blueprint .content .hm-sel-opt.is-clear.is-on {
+  color: #fff;
+}
+.jf-blueprint .content .hm-sel-none {
+  padding: 12px 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+/* The filter bar's copy of the control sits on the paper strip, not in a card. */
+.jf-blueprint .content .hm-trade {
+  width: 200px;
+  flex-shrink: 0;
+}
+.jf-blueprint .content .hm-trade .hm-sel-btn {
+  height: 40px;
+}
+.jf-blueprint .content .hm-unit {
+  min-width: 0;
+}
+/* The unit picker is the RIGHTMOST control on its row and its options are
+   short, so its menu takes the trigger's own width and opens leftward from the
+   right edge. The shared 210px floor would have pushed it 60px past the column
+   and out through the card. */
+.jf-blueprint .content .hm-unit .hm-sel-pop {
+  left: auto;
+  right: 0;
+  min-width: 100%;
+}
+
+/* ── Composer: the disclosure line and the broadcast receipt ───────────────
+   Both carry information the screen does not otherwise hold — what becomes
+   public, and how far the post actually went. */
+.jf-blueprint .content .hm-note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.jf-blueprint .content .hm-sent {
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--success);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Your posts: the row head, and the interested list it opens ────────────
+   The interest email tells the poster to come and see who answered; until this
+   existed the answer was a bare number. */
+.jf-blueprint .content .hm-mrow {
+  display: block;
+}
+.jf-blueprint .content .hm-mrow-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+/* The answers control. Owner call, 2026-09-03: it reads "Interested", it is
+   bolder, and it is drawn as a button rather than a line of text — it opens
+   something, so it should look like it does. */
+.jf-blueprint .content .hm-int {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: #fff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background 0.12s var(--ease),
+    box-shadow 0.12s var(--ease),
+    transform 0.12s var(--ease);
+}
+.jf-blueprint .content .hm-int:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+/* The count rides inside the button as a filled plate, so the number is
+   readable at a glance without a second element beside it. */
+.jf-blueprint .content .hm-int-n {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+/* Unopened answers turn the whole control green — the one place on this page
+   where a status colour carries a state rather than decorating one. */
+.jf-blueprint .content .hm-int.has-new {
+  border-color: var(--success);
+  background: var(--success-soft);
+  color: var(--success-dark);
+}
+.jf-blueprint .content .hm-int.has-new .hm-int-n {
+  background: var(--success);
+}
+.jf-blueprint .content .hm-int.has-new:hover {
+  box-shadow: 2px 2px 0 var(--success);
+}
+.jf-blueprint .content .hm-int--none {
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-weight: 600;
+  color: var(--muted-light);
+  cursor: default;
+}
+.jf-blueprint .content .hm-int--none:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+/* The unseen counter, on the WORK TAB (owner, 2026-09-03 — moved off the post:
+   the badge exists to pull you to the side where the answers are, so it has to
+   be readable from the Hire side too). Tabular numerals so the plate does not
+   twitch as the count changes. */
+.jf-blueprint .content .hm-tab-n {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 18px;
+  margin-left: 2px;
+  padding: 0 5px;
+  border-radius: var(--radius);
+  background: var(--success);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+/* On the active (blueprint-filled) tab the green plate would fight the fill,
+   so it inverts to paper-on-blue and stays legible. */
+.jf-blueprint .content .hm-tab.is-on .hm-tab-n {
+  background: #fff;
+  color: var(--blueprint);
+}
+.jf-blueprint .content .hm-int-c {
+  width: 5px;
+  height: 5px;
+  margin-top: -2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.18s var(--ease);
+}
+.jf-blueprint .content .hm-int-c.is-on {
+  margin-top: 2px;
+  transform: rotate(-135deg);
+}
+.jf-blueprint .content .hm-ilist {
+  margin-top: 12px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+.jf-blueprint .content .hm-ilist-note {
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.jf-blueprint .content .hm-ilist-note--bad {
+  color: var(--danger);
+}
+.jf-blueprint .content .hm-irow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 14px;
+  border-bottom: 1.5px solid var(--hair-soft);
+}
+.jf-blueprint .content .hm-irow:last-child {
+  border-bottom: 0;
+}
+.jf-blueprint .content .hm-irow-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.jf-blueprint .content .hm-irow-side {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.jf-blueprint .content .hm-ilink {
+  color: var(--blueprint);
+  text-decoration: none;
+  border-bottom: 1.5px solid currentColor;
+  overflow-wrap: anywhere;
+  transition: color 0.12s;
+}
+.jf-blueprint .content .hm-ilink:hover {
+  color: var(--blueprint-dark);
+}
+
+/* ── A colleague's post: your company's, but not yours to edit ─────────────*/
+.jf-blueprint .content .hm-you--org {
+  background: var(--paper-deep);
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+  padding: 1px 5px;
+}
+.jf-blueprint .content .hm-stamp--org {
+  background: var(--paper-deep);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .jf-blueprint .content .hm-rv {
+    transition: none;
+    opacity: 1;
+    transform: none;
+  }
+  .jf-blueprint .content .hm-mrow.is-new,
+  .jf-blueprint .content .hm-sel-pop {
+    animation: none;
+  }
+  .jf-blueprint .content .hm-sel-caret,
+  .jf-blueprint .content .hm-int-c {
+    transition: none;
+  }
+}
+
+/* ── Narrow desktop / tablet: the columns stack ─────────────────────────── */
+@media (max-width: 1100px) {
+  .jf-blueprint .content .hm-split,
+  .jf-blueprint .content .hm-split--work {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .jf-blueprint .content .hm-detail {
+    position: static;
+  }
+}

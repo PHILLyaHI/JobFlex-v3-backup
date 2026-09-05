@@ -267,8 +267,15 @@ export async function countNewForSurface(
         where: { organizationId, status: "ACCEPTED", jobs: { none: {} }, acceptedAt: after },
       });
     case "hire":
-      return db.applicant.count({
-        where: { organizationId, status: "APPLIED", createdAt: after },
+      // Hire & Work (rebuilt 2026-09-03): hands raised on this company's open
+      // posts since the page was last opened. The applicant pipeline the badge
+      // used to count no longer renders on /dashboard/hire.
+      return db.tradeJobRecipient.count({
+        where: {
+          status: "INTERESTED",
+          interestedAt: after,
+          tradeJob: { authorOrgId: organizationId, status: "OPEN" },
+        },
       });
     case "reviews":
       return db.reviewRequest.count({

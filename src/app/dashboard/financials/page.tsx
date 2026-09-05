@@ -5,7 +5,7 @@
 // ../layout.tsx, so this page renders only the donor's `.content` children.
 //
 // NOTHING ON THIS PAGE IS A FIXTURE ANY MORE. The chart, the margin gauge, the
-// stat strip, the attention list and all three books are read here, from the
+// stat strip, the attention list and all three books are read from the
 // database, through the same queries the classic financials pages use:
 //   - overview          → old-design-pages/dashboard/financials/page.tsx
 //   - expenses book     → (dashboard)/dashboard/financials/expenses/page.tsx
@@ -14,23 +14,20 @@
 // The row actions (delete expense, send / delete change order) call the same
 // server actions those tables call — see financials-behavior.ts.
 //
-// Dates are formatted here rather than in the behavior module so the ledger
+// That read now lives in lib/financialsSnapshot, because the HANDHELD edition
+// of this same route is mounted props-less by the responsive shell and has to
+// ask for the data itself (src/actions/financialsMobile.ts). One module, two
+// editions, no chance of the phone and the desk describing different books.
+// Dates are still formatted on the server, inside that module, so the ledger
 // plates ("Jul 22") are produced once, by one clock, for every row.
 
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
-import { db } from "@/lib/db";
-import { getFinancialsRollup, getMonthlyRollup } from "@/actions/financials";
+import { getMonthlyRollup } from "@/actions/financials";
+import { getFinancialsSnapshot } from "@/lib/financialsSnapshot";
 import { getOverheadSheets, toOverheadMonths } from "@/lib/overhead";
 import { FinancialsContent } from "@/components/v3/financials-blueprint/financials-content";
-import type {
-  ChangeOrder,
-  Expense,
-  Invoice,
-  MonthPoint,
-  Rollup,
-} from "@/components/v3/financials-blueprint/financials-data";
 
 export const dynamic = "force-dynamic";
 
@@ -39,12 +36,6 @@ export const metadata: Metadata = {
   description:
     "Financials — revenue against expenses, margin gauge, receipt capture and the expense, change-order and invoice books on one sheet.",
 };
-
-/** The ledger plate the tables print: "Jul 22", never a full date. */
-function plate(d: Date | null): string {
-  if (!d) return "—";
-  return d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
-}
 
 export default async function FinancialsPage() {
   let organizationId: string;
@@ -57,110 +48,31 @@ export default async function FinancialsPage() {
     throw err;
   }
 
-  const [rollupRaw, monthlyRaw, overheadSheets, expenseRows, orderRows, invoiceRows, jobs] =
-    await Promise.all([
-    getFinancialsRollup(organizationId),
-    getMonthlyRollup(organizationId, 12),
+  const [snapshot, overheadSheets, monthlyRaw] = await Promise.all([
+    // The chart, the gauge, the stat strip, the attention list and all three
+    // books — the read the handheld edition makes too.
+    getFinancialsSnapshot(organizationId),
     // Every sheet the org has saved. A dozen small rows — cheaper to hand over
     // whole than to round-trip each time the Overhead tab steps a month.
     getOverheadSheets(organizationId),
-    db.jobExpense.findMany({
-      where: { job: { organizationId } },
-      orderBy: { createdAt: "desc" },
-      take: 200,
-      include: { job: { select: { id: true, title: true } } },
-    }),
-    db.changeOrder.findMany({
-      where: { organizationId },
-      orderBy: { createdAt: "desc" },
-      take: 200,
-      include: {
-        job: { select: { id: true, title: true } },
-        proposal: { select: { title: true } },
-      },
-    }),
-    db.invoice.findMany({
-      where: { organizationId },
-      orderBy: { createdAt: "desc" },
-      take: 200,
-    }),
-    // Jobs a receipt can be charged to. Live work first — a receipt in hand
-    // almost always belongs to something open — then the rest, newest first.
-    db.job.findMany({
-      where: { organizationId },
-      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-      select: { id: true, title: true, status: true },
-      take: 200,
-    }),
+    // The Overhead tab walks the SAME twelve months the chart draws, but needs
+    // the raw figures the chart's MonthPoint drops: the month key it saves
+    // against, and the net the work actually cleared. Read alongside the
+    // snapshot rather than through it — the snapshot's contract is the six
+    // books both editions share, and the Overhead tab is desktop-side here.
+    getMonthlyRollup(organizationId, 12),
   ]);
 
-  // Invoices carry a clientId, not a client relation, so the names are looked
-  // up in one extra query — same shape as the classic invoices page.
-  const clientIds = Array.from(
-    new Set(invoiceRows.map((i) => i.clientId).filter((x): x is string => Boolean(x))),
-  );
-  const clients = clientIds.length
-    ? await db.client.findMany({ where: { id: { in: clientIds } }, select: { id: true, name: true } })
-    : [];
-  const clientName = new Map(clients.map((c) => [c.id, c.name]));
-
-  const now = new Date();
-
-  const monthly: MonthPoint[] = monthlyRaw.map((m) => ({
-    m: m.label,
-    revenue: m.revenue,
-    expenses: m.expenses,
-  }));
-
-  const rollup: Rollup = { ...rollupRaw };
-
-  // The Overhead tab walks the SAME twelve months the chart draws, but needs
-  // the raw figures the chart's MonthPoint drops: the month key it saves
-  // against, and the net the work actually cleared.
   const overheadMonths = toOverheadMonths(monthlyRaw);
-
-  const expenses: Expense[] = expenseRows.map((e) => ({
-    id: e.id,
-    jobId: e.jobId,
-    job: e.job.title,
-    category: e.category,
-    amount: e.amount,
-    note: e.note ?? "",
-    when: plate(e.createdAt),
-    receiptUrl: e.receiptUrl,
-  }));
-
-  const orders: ChangeOrder[] = orderRows.map((c) => ({
-    id: c.id,
-    title: c.title,
-    jobId: c.jobId,
-    // A change order hangs off a job OR a proposal; name whichever it amends.
-    job: c.job?.title ?? c.proposal?.title ?? "—",
-    status: c.status,
-    when: plate(c.createdAt),
-    amount: c.amount,
-  }));
-
-  const invoices: Invoice[] = invoiceRows.map((i) => ({
-    id: i.id,
-    num: i.number,
-    client: i.clientId ? (clientName.get(i.clientId) ?? "—") : "—",
-    status: i.status,
-    provider: i.provider,
-    due: plate(i.dueDate),
-    amount: i.amount,
-    proposalId: i.proposalId,
-    overdue: i.status === "PENDING" && !!i.dueDate && i.dueDate < now,
-  }));
 
   return (
     <FinancialsContent
-      jobs={jobs}
-      monthly={monthly}
-      rollup={rollup}
-      expenses={expenses}
-      orders={orders}
-      invoices={invoices}
+      jobs={snapshot.jobs}
+      monthly={snapshot.monthly}
+      rollup={snapshot.rollup}
+      expenses={snapshot.expenses}
+      orders={snapshot.orders}
+      invoices={snapshot.invoices}
       overheadMonths={overheadMonths}
       overheadSheets={overheadSheets}
     />

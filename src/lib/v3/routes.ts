@@ -123,7 +123,7 @@ export const V3_PORTED_ROUTES = {
   mobileCalendarV2: "/mobile-calendar-v2",
   mobileJobsV2: "/mobile-jobs-v2",
   mobileWorkersV2: "/mobile-workers-v2",
-  mobileHireV2: "/mobile-hire-v2",
+  mobileHireV1: "/mobile-hire-v1",
   mobileCompanyV2: "/mobile-company-v2",
   mobileFinancialsV2: "/mobile-financials-v2",
   // ── The Automation section, 2026-07-30 ───────────────────────────────────

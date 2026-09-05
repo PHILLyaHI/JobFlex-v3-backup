@@ -698,3 +698,20 @@
   .bp :global(.content .sc-b--matrix .nfoot) { padding: 12px 18px; }
   .bp :global(.content .nfoot-b) { min-height: 44px; }
 }
+
+/* Phone: the flush title+action row (Delete account) stacks — the button
+   goes full width under the text instead of squeezing it to a sliver. */
+@media (max-width: 560px) {
+  .bp :global(.content .prow--flush) { flex-wrap: wrap; gap: 12px; }
+  .bp :global(.content .prow--flush .prow-act) { width: 100%; margin-left: 0; }
+  .bp :global(.content .prow--flush .prow-act .btn-sm) { width: 100%; min-height: 44px; }
+}
+
+/* "Soon" tag inside an integration subtab, and the banner above the tabs.
+   The tab stays clickable — the tag reports state, it does not gate. */
+.bp :global(.content .sub-b) { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.bp :global(.content .sub-soon) { padding: 2px 6px; border: 1.5px solid currentColor; border-radius: 999px;
+  font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: .1em; line-height: 1.2;
+  opacity: .75; }
+.bp :global(.content .note--soon) { border-color: var(--blueprint); background: rgba(35, 79, 140, .05); }
+

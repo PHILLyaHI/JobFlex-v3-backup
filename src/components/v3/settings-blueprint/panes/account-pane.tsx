@@ -14,22 +14,32 @@
 // GONE (owner's call, 2026-09-03): the Role field (the header badge already
 // says it) and the Danger zone card — deleteOrganization stays in
 // src/actions/accountSettings.ts, nothing on this page calls it.
+//
+// ADDED the same day, flagged "Testing": a Delete-account card. HARD delete
+// of the user (deleteMyAccount) so the owner can register the same address
+// again while debugging signup; it is slated for removal at launch.
 
 import { useState } from "react";
 
-import { updateBusiness, updateProfile } from "@/actions/accountSettings";
+import { signOut } from "next-auth/react";
+
+import { deleteMyAccount, updateBusiness, updateProfile } from "@/actions/accountSettings";
 import { SignOutButton, logOutEverywhere } from "@/components/v3/blueprint-shell/sign-out";
 import type { Badge, CardHead, PaneProps, SecurityKey } from "../settings-data";
 import {
   BUSINESS_CARD,
   BUSINESS_LABELS,
+  DELETE_ACCOUNT_CARD,
+  DELETE_ACCOUNT_MODAL,
+  DELETE_ACCOUNT_ROW,
   PROFILE_CARD,
   PROFILE_LABELS,
   SECURITY_CARD,
   SECURITY_ITEMS,
   SIGN_OUT_LABEL,
+  deleteAccountDesc,
 } from "../settings-data";
-import { Field, SaveBar } from "../ui";
+import { Field, Modal, SaveBar, actionError } from "../ui";
 
 function Badge2({ badge }: { badge: Badge }) {
   return (
@@ -65,6 +75,24 @@ export function AccountPane({ data }: PaneProps) {
   const [bizPhone, setBizPhone] = useState(a.business.phone);
 
   const [signingOutAll, setSigningOutAll] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErr, setDeleteErr] = useState("");
+  const emailMatches = confirm.trim().toLowerCase() === a.email.toLowerCase();
+
+  async function runDelete() {
+    if (!emailMatches || deleting) return;
+    setDeleting(true);
+    setDeleteErr("");
+    try {
+      await deleteMyAccount({ confirmEmail: confirm.trim() });
+      await signOut({ callbackUrl: "/" });
+    } catch (e) {
+      setDeleteErr(actionError(e));
+      setDeleting(false);
+    }
+  }
 
   const securityDesc: Record<SecurityKey, string> = {
     password: a.security.passwordDesc,
@@ -147,10 +175,79 @@ export function AccountPane({ data }: PaneProps) {
         </div>
       </section>
 
+      {/* ── Delete account (testing) ── */}
+      <section className="sc">
+        <CardHeader card={DELETE_ACCOUNT_CARD} />
+        <div className="sc-b">
+          <div className="prow prow--flush">
+            <span className="prow-b">
+              <span className="prow-n">{DELETE_ACCOUNT_ROW.name}</span>
+              <span className="prow-d">{deleteAccountDesc(a.email, a.business.name)}</span>
+            </span>
+            <span className="prow-act">
+              <button
+                className="btn btn-danger btn-sm"
+                type="button"
+                onClick={() => {
+                  setConfirm("");
+                  setDeleteErr("");
+                  setDeleteOpen(true);
+                }}
+              >
+                {DELETE_ACCOUNT_ROW.action.icon ? (
+                  <svg className="ic">
+                    <use href={`#${DELETE_ACCOUNT_ROW.action.icon}`} />
+                  </svg>
+                ) : null}
+                {DELETE_ACCOUNT_ROW.action.label}
+              </button>
+            </span>
+          </div>
+        </div>
+      </section>
+
       {/* ── Log out — last thing on the page, red like the other exit. ── */}
       <div className="sactions sactions--logout">
         <SignOutButton className="btn btn-danger" iconClassName="ic" label={SIGN_OUT_LABEL} />
       </div>
+
+      {deleteOpen ? (
+        <Modal
+          title={DELETE_ACCOUNT_MODAL.title}
+          sub={DELETE_ACCOUNT_MODAL.sub}
+          onClose={() => (deleting ? undefined : setDeleteOpen(false))}
+          footer={
+            <>
+              <button className="btn btn-ghost" type="button" disabled={deleting} onClick={() => setDeleteOpen(false)}>
+                {DELETE_ACCOUNT_MODAL.cancelLabel}
+              </button>
+              <button
+                className="btn btn-danger"
+                type="button"
+                disabled={!emailMatches || deleting}
+                onClick={() => void runDelete()}
+              >
+                {deleting ? "Deleting…" : DELETE_ACCOUNT_MODAL.confirmLabel}
+              </button>
+            </>
+          }
+        >
+          <div className="prow-d" style={{ marginBottom: 12 }}>
+            {deleteAccountDesc(a.email, a.business.name)}
+          </div>
+          <Field label={DELETE_ACCOUNT_MODAL.inputLabel} value={confirm} onChange={setConfirm} placeholder={a.email} />
+          {confirm && !emailMatches ? (
+            <div className="prow-d prow-warn" style={{ marginTop: 8 }}>
+              {DELETE_ACCOUNT_MODAL.mismatch}
+            </div>
+          ) : null}
+          {deleteErr ? (
+            <div className="prow-d prow-warn" style={{ marginTop: 8 }}>
+              {deleteErr}
+            </div>
+          ) : null}
+        </Modal>
+      ) : null}
     </>
   );
 }

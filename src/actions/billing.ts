@@ -403,3 +403,80 @@ export async function addCustomPages(rawIds: unknown): Promise<AddCustomPagesRes
     monthlyCents: customPriceCents(next),
   };
 }
+
+/* ── REMOVE PAGES FROM A CUSTOM PLAN ────────────────────────────────────
+   (owner, 2026-09-04) The mirror of adding: the pages leave the plan now,
+   the subscription's price steps DOWN with no proration, and the next
+   regular bill is simply the new total. Nothing is refunded for the rest of
+   the cycle — the same rule as a downgrade. Adding pages is a paid checkout
+   (the new selection replaces the subscription on Stripe's page), so this is
+   the only in-place edit a custom plan has. */
+export type RemoveCustomPagesResult =
+  | { ok: true; pages: string[]; removed: number; monthlyCents: number }
+  | { ok: false; error: string };
+
+export async function removeCustomPages(rawIds: unknown): Promise<RemoveCustomPagesResult> {
+  const { organizationId } = await requireOwner();
+  const sub = await db.subscription.findUnique({ where: { organizationId } });
+  if ((sub?.plan ?? "").toUpperCase() !== CUSTOM_PLAN_SLUG.toUpperCase()) {
+    return { ok: false, error: "Pages can only be removed from the Custom plan." };
+  }
+  const key = `orgPages:${organizationId}`;
+  const row = await db.syncState.findUnique({ where: { key } }).catch(() => null);
+  let owned: string[] = [];
+  try {
+    owned = normalizeCustomPages(row ? (JSON.parse(row.cursor) as string[]) : []);
+  } catch {
+    owned = [];
+  }
+  const dropping = normalizeCustomPages(Array.isArray(rawIds) ? rawIds.map(String) : []).filter(
+    (id) => owned.includes(id),
+  );
+  if (dropping.length === 0) return { ok: false, error: "Pick a page you have." };
+  const next = owned.filter((id) => !dropping.includes(id));
+
+  if (sub?.externalSubId && isStripeEnabled()) {
+    const { stripe, mode } = await getStripeClient();
+    let current;
+    try {
+      current = await stripe.subscriptions.retrieve(sub.externalSubId);
+    } catch {
+      return { ok: false, error: "Couldn't reach your subscription. Try again." };
+    }
+    const item = current.items.data[0];
+    if (!item) return { ok: false, error: "Your subscription has no plan line to update." };
+    const interval: "MONTH" | "YEAR" = item.price.recurring?.interval === "year" ? "YEAR" : "MONTH";
+    const priceId = await ensureRecurringPrice({
+      stripe,
+      mode,
+      kind: "custom",
+      name: "JobFlex Custom plan",
+      interval,
+      cents: customPriceCents(next, interval),
+    });
+    try {
+      await stripe.subscriptions.update(current.id, {
+        items: [{ id: item.id, price: priceId }],
+        // No proration and no credit: this cycle was paid; the lower price
+        // is what the next bill charges.
+        proration_behavior: "none",
+        metadata: { ...(current.metadata ?? {}), customPages: next.join(",") },
+      });
+    } catch (err) {
+      console.warn("[billing] removeCustomPages price update failed:", err);
+      return { ok: false, error: "Couldn't update your plan. Try again." };
+    }
+    await db.subscription.update({ where: { organizationId }, data: { stripePriceId: priceId } });
+  }
+
+  await db.syncState.upsert({
+    where: { key },
+    update: { cursor: JSON.stringify(next) },
+    create: { key, cursor: JSON.stringify(next) },
+  });
+  revalidatePlanSurfaces();
+  revalidatePath("/dashboard/upgrade");
+  revalidatePath("/dashboard/subscription");
+  revalidatePath("/dashboard", "layout");
+  return { ok: true, pages: next, removed: dropping.length, monthlyCents: customPriceCents(next) };
+}

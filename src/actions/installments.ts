@@ -93,7 +93,9 @@ export async function recordRemainingPayment(raw: unknown) {
     select: { id: true, total: true, currency: true, clientId: true, status: true },
   });
   if (!proposal) throw new Error("Not found");
-  if (proposal.status === ProposalStatus.PAID) throw new Error("This proposal is already paid");
+  // A COMPLETED proposal may still owe money (completion is about the work,
+  // see updateProposalStatus); the "nothing is owed" check below is the real
+  // guard.
   await expireOpenCheckoutsForProposal(proposal.id);
   const installments = await ensureSchedule(proposal.id);
   const schedule = resolveSchedule({ total: proposal.total, currency: proposal.currency, installments });
