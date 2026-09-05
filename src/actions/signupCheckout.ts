@@ -38,12 +38,15 @@ import { enforceRateLimit, clientIp, HOUR } from "@/lib/rateLimit";
 import { mintSigninTicket } from "@/lib/signinTicket";
 import { readGoogleSignup } from "@/lib/googleSignup";
 import { settleReferralsForSignupOrg } from "@/lib/referralRewards";
+import { after } from "next/server";
+import { captureSignupOutcome, trafficIdentitySchema } from "@/lib/traffic-capture-server";
 
 /** How long an unpaid intent is honoured. Long enough to pay, short enough
  *  that an abandoned card never becomes an account a week later. */
 const PENDING_TTL_MS = 2 * 60 * 60 * 1000;
 
 const pendingSchema = z.object({
+  analytics: trafficIdentitySchema.optional().catch(undefined),
   name: z.string().trim().min(1, "Enter your name").max(120),
   businessName: z.string().trim().min(1, "Enter your business name").max(120),
   email: z.string().trim().toLowerCase().email("Enter a valid email"),
@@ -103,6 +106,7 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
 
   const token = randomUUID();
   const record: PendingRecord = {
+    analytics: data.analytics,
     name: data.name,
     businessName: data.businessName,
     email: data.email,
@@ -286,6 +290,8 @@ export async function completePendingSignup(
   let planSlug: string | null = null;
   let trialEnd: Date | null = null;
   let periodEnd: Date | null = null;
+  let analyticsOutcome = "subscription_activated";
+  let analyticsLive = false;
   // The page selection the customer actually PAID for. Stamped into the
   // Checkout session's metadata by the checkout route from the intent as it
   // was when the price was computed; read back from Stripe (immutable to the
@@ -309,9 +315,12 @@ export async function completePendingSignup(
       }
       const paid = session.status === "complete" || session.payment_status === "paid";
       if (!paid) return { ok: false, error: "The payment has not completed yet." };
+      analyticsLive = session.livemode;
+      if (session.payment_status === "paid" && (session.amount_total ?? 0) > 0) analyticsOutcome = "subscription_purchased";
       stripeCustomerId = typeof session.customer === "string" ? session.customer : null;
       const sub = session.subscription;
       if (sub && typeof sub !== "string") {
+        if (sub.status === "trialing") analyticsOutcome = "trial_started";
         stripeSubscriptionId = sub.id;
         trialEnd = sub.trial_end ? new Date(sub.trial_end * 1000) : null;
         periodEnd = sub.current_period_end ? new Date(sub.current_period_end * 1000) : null;
@@ -456,6 +465,9 @@ export async function completePendingSignup(
   // at the login wall with a password it typed two screens and one Stripe
   // round-trip ago.
   const ticket = await mintSigninTicket(userId);
+  if (sessionId && rec.analytics) {
+    after(() => captureSignupOutcome(rec.analytics, sessionId, analyticsOutcome, planSlug, analyticsLive));
+  }
   return { ok: true, email: rec.email, ticket };
 }
 

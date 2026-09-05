@@ -2,70 +2,63 @@
 import * as React from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
-
-// The send half of the analytics loop. src/lib/posthog.ts is the read half:
-// it runs HogQL over `$pageview` events to fill /admin/traffic and the
-// visitors tile on /admin. Nothing ever estimates those numbers, so if this
-// component does not fire, the admin correctly shows zeros.
-//
-// Configuration (public — this key is meant to ship to the browser):
-//   NEXT_PUBLIC_POSTHOG_KEY   the project API key (phc_…)
-//   NEXT_PUBLIC_POSTHOG_HOST  optional, defaults to https://us.i.posthog.com
-//
-// Unset key = no init, no network, no cookies. That is the local default.
-//
-// Two deliberate choices:
-//  * `capture_pageview: false` — posthog-js only auto-captures the first
-//    load, and App Router client navigations never reload. Pageviews are
-//    fired manually from the pathname effect below instead, so a route
-//    change counts exactly once.
-//  * `/admin` is not captured. Those pages ARE the analytics dashboard;
-//    counting an admin reading them as site traffic would inflate the very
-//    number they are reading.
+import { trafficReady } from "@/lib/traffic-client";
+import { TRAFFIC_EXPERIMENTS } from "@/lib/traffic-experiments";
 
 const KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
 const HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
+const internal = (path: string) => path === "/admin" || path.startsWith("/admin/");
 
-function isInternal(pathname: string): boolean {
-  return pathname === "/admin" || pathname.startsWith("/admin/");
+// Preserve attribution, never signup tickets, OAuth handles or Stripe return tokens.
+function safeUrl(value: string): string {
+  if (!value || value === "$direct") return value;
+  try {
+    const url = new URL(value, window.location.origin);
+    if (!["http:", "https:"].includes(url.protocol)) return "";
+    for (const key of Array.from(url.searchParams.keys())) {
+      if (!/^utm_(source|medium|campaign|content|term)$/.test(key)) url.searchParams.delete(key);
+    }
+    url.hash = "";
+    return url.toString();
+  } catch { return ""; }
+}
+function scrubUrls(properties: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(properties)) {
+    if (typeof value === "string" && /\$(?:(initial_)?(current_url|referrer)|session_entry_url)$/.test(key)) properties[key] = safeUrl(value);
+    if ((key === "$set" || key === "$set_once") && value && typeof value === "object") scrubUrls(value as Record<string, unknown>);
+  }
 }
 
 export function PostHogCapture() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const lastUrl = React.useRef("");
 
   React.useEffect(() => {
-    if (!KEY || typeof window === "undefined") return;
-    if (posthog.__loaded) return;
+    if (!KEY || posthog.__loaded) return;
     posthog.init(KEY, {
-      api_host: HOST,
-      // Manual — see the note above.
-      capture_pageview: false,
-      // Anonymous visitors still get a person_id (so uniq(person_id) in the
-      // admin's HogQL is a real visitor count) without creating a stored
-      // person profile for every drive-by hit.
-      person_profiles: "identified_only",
-      capture_pageleave: true,
-      // Nothing here reads feature flags, and this is a contractor CRM —
-      // skip the per-load /flags/ round trip, and never let a project-side
-      // toggle silently start recording customers' screens.
-      advanced_disable_feature_flags: true,
-      disable_session_recording: true,
+      api_host: HOST, capture_pageview: false, person_profiles: "identified_only",
+      capture_pageleave: true, autocapture: false,
+      advanced_disable_feature_flags: TRAFFIC_EXPERIMENTS.length === 0, disable_session_recording: true,
+      before_send: (event) => {
+        if (!event || internal(window.location.pathname)) return null;
+        scrubUrls(event.properties);
+        return event;
+      },
     });
   }, []);
 
   React.useEffect(() => {
     if (!KEY || !pathname || !posthog.__loaded) return;
-    if (isInternal(pathname)) return;
-    const qs = searchParams?.toString();
-    // $current_url / $pathname are what PATHS_SQL groups by, so send them
-    // explicitly rather than trusting the auto-property capture on a
-    // manually-fired event.
-    posthog.capture("$pageview", {
-      $current_url: window.location.origin + pathname + (qs ? `?${qs}` : ""),
-      $pathname: pathname,
-    });
+    if (internal(pathname)) { lastUrl.current = ""; return; }
+    posthog.register({ jf_hostname: window.location.hostname,
+      jf_environment: ["localhost", "127.0.0.1"].includes(window.location.hostname) ? "development" : "production" });
+    const url = safeUrl(window.location.origin + pathname + (searchParams?.size ? `?${searchParams}` : ""));
+    if (lastUrl.current !== url) {
+      lastUrl.current = url;
+      posthog.capture("$pageview", { $current_url: url, $pathname: pathname });
+    }
+    trafficReady();
   }, [pathname, searchParams]);
-
   return null;
 }
