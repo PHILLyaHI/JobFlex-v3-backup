@@ -1360,13 +1360,18 @@
      the column's top padding and the stepper touched it.
    Last in the file so it outranks the blocks above at equal specificity.
    ============================================================ */
+/* No Choose / Selected plate any more (owner, 2026-09-05): the button sits
+   at the card's foot on its own; on the custom card the page picker keeps
+   its place just above it. */
 .bp :global(.pw-plan) :global(.pw-go.pw-go) {
   flex: 0 0 auto; align-self: stretch; width: 100%;
-  height: auto; min-height: 42px; margin-top: 8px; padding: 0 14px;
+  height: auto; min-height: 42px; margin-top: auto; padding: 0 14px;
   font-size: 11.5px; letter-spacing: 0.12em;
   box-shadow: 3px 3px 0 var(--ink);
 }
 .bp :global(.pw-plan:focus-visible) { outline: 3px solid var(--blueprint); outline-offset: 3px; }
+.bp :global(.pw-plan) :global(.pw-edit) { margin-top: auto; }
+.bp :global(.pw-edit) + :global(.pw-go.pw-go) { margin-top: 8px; }
 @media (max-width: 768px) {
   .bp :global(.pw-plan) :global(.pw-go.pw-go) { min-height: 44px; font-size: 12px; }
   .bp :global(.plan-sheet-in) { padding-bottom: 40px; }

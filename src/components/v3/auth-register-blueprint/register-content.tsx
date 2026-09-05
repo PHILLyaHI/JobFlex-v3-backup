@@ -1346,12 +1346,9 @@ export function RegisterContent({
                         {openFeats.has(p.slug) ? "Show less" : `Show all ${featureRows.length}`}
                       </span>
                     ) : null}
-                    {/* THE CARD'S OWN CONTROL, at its foot and full width (owner,
-                        2026-09-04): the whole card is the target, this is the
-                        label of its state. */}
-                    <span className="pw-pick" aria-hidden="true">
-                      {on ? "Selected" : "Choose"}
-                    </span>
+                    {/* No Choose / Selected plate (owner, 2026-09-05): the
+                        frame and shadow say which card is picked; the button
+                        below is the card's only control. */}
                     {/* THE START BUTTON LIVES IN THE CARD (owner, 2026-09-05):
                         directly under the card's own state plate, so choosing
                         and committing are one reach. Starting from a card that
@@ -1454,9 +1451,6 @@ export function RegisterContent({
                   }}
                 >
                   Select pages
-                </span>
-                <span className="pw-pick" aria-hidden="true">
-                  {planSlug === CUSTOM_PLAN_SLUG ? "Selected" : "Choose"}
                 </span>
                 <button
                   type="button"
