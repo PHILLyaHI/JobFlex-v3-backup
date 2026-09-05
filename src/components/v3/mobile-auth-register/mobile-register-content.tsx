@@ -684,7 +684,7 @@ export function MobileRegisterContent({ setup = null }: { setup?: SetupPrefill |
             </svg>
           </div>
           <p className="mr-kicker">Account created</p>
-          <h1 className="mr-h1">Your shop is live.</h1>
+          <h1 className="mr-h1">You&apos;re all set.</h1>
           <p className="mr-lede">{doneNote}</p>
           <p className="mr-note" role="status">
             {countdown > 0 ? `Taking you there in ${countdown}…` : "Opening your dashboard…"}

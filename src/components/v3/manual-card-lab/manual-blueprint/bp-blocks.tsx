@@ -24,6 +24,9 @@
 // here that is not a yes/no: it picks between two named documents, and folding
 // it into the grid would claim a symmetry that does not exist.
 //
+// 2026-09-05 (owner): quote style (labor-only) and scope of work moved to
+// card 04, beside the cost sliders they belong with. Two switches remain.
+//
 // The labels lost their verbs with the layout. "Print the scope of work" in a
 // third of the measure wraps to three lines and repeats a word the card title
 // ("What prints") has already said; "Scope of work" says the same thing in one
@@ -36,7 +39,7 @@
 import type { ProposalOptions, StagedFile } from "../manual-focus/manual-focus-types";
 import { fileSize, newId } from "../manual-focus/manual-focus-math";
 import styles from "./manual-blueprint.module.css";
-import { Btn, Ic, IconBtn, Segmented, ToggleCell, cx } from "./bp-ui";
+import { Btn, Ic, IconBtn, ToggleCell, cx } from "./bp-ui";
 import { useRef } from "react";
 
 /* ============================================================
@@ -52,25 +55,11 @@ export function PrintOptions({
 }) {
   return (
     <div className={styles.toggles}>
-      <Segmented<"full" | "summary">
-        label="Quote style"
-        value={options.laborOnly ? "summary" : "full"}
-        options={[
-          { value: "full", label: "Full" },
-          { value: "summary", label: "Summary" },
-        ]}
-        onChange={(v) => onPatch({ laborOnly: v === "summary" })}
-      />
       <div className={styles.switchRow}>
         <ToggleCell
           label="Cost breakdown per line"
           on={!options.hideBreakdown}
           onChange={(on) => onPatch({ hideBreakdown: !on })}
-        />
-        <ToggleCell
-          label="Scope of work"
-          on={options.showScope}
-          onChange={(on) => onPatch({ showScope: on })}
         />
         <ToggleCell
           label="Signature lines"

@@ -79,7 +79,13 @@ import type {
 // the user presses, not seeded content) and the address → sales-tax lookup.
 // Every fixture record, the seeded draft and the fake org identity are gone.
 import { TERMS_TEMPLATE, estimateFromAddress, taxForState } from "../manual-focus/manual-focus-data";
-import { computeTotals, money, newId } from "../manual-focus/manual-focus-math";
+import {
+  bakeAdjustments,
+  computeTotals,
+  money,
+  newId,
+  spreadLabor,
+} from "../manual-focus/manual-focus-math";
 import styles from "./manual-blueprint.module.css";
 import { Btn, Card, Field, Group, Pair, TextArea, TextField, cx } from "./bp-ui";
 import { ClientField, ProjectField, type NewClientInput } from "./bp-pickers";
@@ -371,7 +377,11 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
        the setDraft it triggers has not flushed by the time the send runs. */
     draftOverride?: Draft,
   ) {
-    const d = draftOverride ?? draft;
+    /* THE SLIDERS ARE BAKED IN HERE (owner, 2026-09-05). Card 04's two cost
+       adjustments are a tool until save: the saved lines carry the adjusted
+       costs and the sliders go back to neutral — no memory of the original
+       numbers after that. */
+    const d = bakeAdjustments(draftOverride ?? draft);
     const why = whyNotSavable(d);
     if (why) {
       setNote({ tone: "err", text: why });
@@ -442,6 +452,15 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
     try {
       const res = await saveProposal(payloadFromDraft(d, savedId ?? undefined));
       setSavedId(res.id);
+      // What was saved is what the sheet now holds: the baked costs, the two
+      // sliders at zero. Merged, not replaced, so an edit made while the save
+      // was in flight is not thrown away.
+      setDraft((cur) => ({
+        ...cur,
+        lines: d.lines,
+        materialMarkupPct: 0,
+        laborMarkupPct: 0,
+      }));
       const ref = proposalRef(res.publicId);
       setIdentity((prev) => ({ ...prev, ref }));
       window.history.replaceState(
@@ -724,7 +743,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
             Still deliberately NOT merged with the deposits below — the split is
             by question ("what am I charging?" vs "when do they pay it?"), not
             by arithmetic. ------------------------------------------- */}
-        <Card num="04" title="Markup & margin" id="q-04">
+        <Card num="04" title="Cost adjustment" id="q-04">
           <MarkupBlock
             materialMarkupPct={draft.materialMarkupPct}
             laborMarkupPct={draft.laborMarkupPct}
@@ -745,6 +764,10 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
             taxState={draft.taxState}
             onPatch={patch}
             onTaxPct={(n) => patch({ taxPct: n, taxAuto: false, taxState: "" })}
+            laborOnly={draft.options.laborOnly}
+            showScope={draft.options.showScope}
+            onOptions={patchOptions}
+            onSpreadLabor={(n) => edit((d) => ({ ...d, lines: spreadLabor(d.lines, n) }))}
             totals={totals}
           />
         </Card>

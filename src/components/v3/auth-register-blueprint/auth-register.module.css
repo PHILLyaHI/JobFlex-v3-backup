@@ -48,6 +48,9 @@
   --font: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: var(--font-jbmono), 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
   --radius: 2px; --border: 2px solid var(--ink);
+  /* The one vertical interval between the brand mark and whatever sits
+     under it (the stepper). Owner, 2026-09-05: on a phone the two touched. */
+  --gap-brand: clamp(18px, 3vh, 28px);
   --ease: cubic-bezier(0.4, 0, 0.2, 1); --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
 
   /* donor `body` */
@@ -1235,12 +1238,6 @@
   }
   .bp :global(.pw-foot.is-armed) :global(.pw-promo) { min-width: 0; flex: 0 0 auto; }
   .bp :global(.pw-foot.is-armed) :global(.pw-promo-in) { height: 44px; }
-  .bp :global(.pw-foot.is-armed) :global(.pw-go) {
-    position: fixed; left: 14px; right: 14px; z-index: 8;
-    bottom: calc(12px + env(safe-area-inset-bottom));
-    box-shadow: 4px 4px 0 var(--ink), 0 -10px 0 8px var(--paper);
-  }
-  .bp :global(.pw-go.pw-go) { height: 52px; font-size: 14px; }
   .bp :global(.pw-skip) { position: static; display: block; margin: 12px auto 0; }
   .bp :global(#stepPlan) { padding-bottom: 0; }
 
@@ -1327,12 +1324,6 @@
   .bp :global(.pw-plan) { height: auto; min-height: 0; max-height: none; padding: 16px 16px 14px; }
   .bp :global(.pw-feats) { max-height: 176px; }
   .bp :global(.pw-foot.is-armed) { margin-top: 12px; }
-  /* One ink shadow, and a paper apron so the content sliding beneath the
-     button never bleeds through its offset. */
-  .bp :global(.pw-foot.is-armed) :global(.pw-go) {
-    box-shadow: 4px 4px 0 var(--ink);
-    outline: 8px solid var(--paper);
-  }
 }
 @media (max-width: 768px) {
   /* Three stepper items on a 390px row wrapped every label; the sub-line
@@ -1355,4 +1346,32 @@
   .bp :global(.plan-sheet .st-item) { gap: 6px; }
   .bp :global(.plan-sheet .st-n) { width: 24px; height: 24px; font-size: 11px; }
   .bp :global(.plan-sheet .st-t) { font-size: 11.5px; }
+}
+
+/* ============================================================
+   IN-CARD START + BRAND GAP — owner, 2026-09-05.
+   · The trial button moved out of the foot and into EVERY plan card,
+     directly under the card's own state plate ("Selected" / "Choose"):
+     one reach to choose and commit. The foot keeps the promo row only,
+     and nothing is pinned to the phone's bottom edge any more.
+   · Step 2 on a phone: the brand leaves its absolute anchor and returns
+     to the flow, so the stepper is always one --gap-brand under it.
+     Anchored, on an 844px-tall phone the mark's bottom edge sat below
+     the column's top padding and the stepper touched it.
+   Last in the file so it outranks the blocks above at equal specificity.
+   ============================================================ */
+.bp :global(.pw-plan) :global(.pw-go.pw-go) {
+  flex: 0 0 auto; align-self: stretch; width: 100%;
+  height: auto; min-height: 42px; margin-top: 8px; padding: 0 14px;
+  font-size: 11.5px; letter-spacing: 0.12em;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.bp :global(.pw-plan:focus-visible) { outline: 3px solid var(--blueprint); outline-offset: 3px; }
+@media (max-width: 768px) {
+  .bp :global(.pw-plan) :global(.pw-go.pw-go) { min-height: 44px; font-size: 12px; }
+  .bp :global(.plan-sheet-in) { padding-bottom: 40px; }
+  .bp :global(.pw-foot.is-armed) { padding-bottom: 0; }
+  .bp :global(.auth-form) { padding-top: clamp(22px, 4vh, 40px); }
+  .bp :global(.auth-form .brand) { position: static; top: auto; left: auto; margin: 0 0 var(--gap-brand); }
+  .bp :global(.plan-sheet .brand) { margin-bottom: var(--gap-brand); }
 }

@@ -198,10 +198,6 @@ export function AdminSubscribersContent({
           </div>
           <div className={s.kpiSrc}>Past due · unpaid · incomplete</div>
         </div>
-        <div className="kpi">
-          <div className="kpi-lbl">Canceled</div>
-          <div className="kpi-val">{view.canceledCount}</div>
-        </div>
       </div>
 
       <div className={s.mix}>

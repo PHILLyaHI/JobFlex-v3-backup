@@ -184,16 +184,6 @@ export function AdminUsersContent({
       ? "Stripe unreachable"
       : "Platform record";
 
-  // One number for "not shown here" cannot be acted on. Each cause has a
-  // different fix: an id this database has no record of is a data problem, no
-  // id at all is a checkout that stamped no metadata, and the last two are
-  // about organizations rather than links.
-  const offCauses = [
-    { n: summary.offNamedUnknown, text: "name an id no account here holds" },
-    { n: summary.offNoLink, text: "name nobody" },
-    { n: summary.offOtherOrg, text: "sit on orgs with no account listed" },
-    { n: summary.offSecond, text: "are a second on a listed org" },
-  ].filter((c) => c.n > 0);
 
   const onRowKey = (e: KeyboardEvent<HTMLTableRowElement>, u: AdminUserDTO) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -281,22 +271,6 @@ export function AdminUsersContent({
             organizations while the table lists people. */}
         <div className={cx("au-scope")}>
           <span className={cx(source.stripeLive && "au-scope-live")}>{sourceLabel}</span>
-          <span>
-            {summary.orgs} organization{summary.orgs === 1 ? "" : "s"} on this page
-          </span>
-          {summary.offList > 0 ? (
-            <span className={cx("au-scope-bad")}>
-              {summary.offList} not shown here
-              {offCauses.length === 1 ? ` · all ${offCauses[0].text}` : ""}
-            </span>
-          ) : null}
-          {offCauses.length > 1
-            ? offCauses.map((c) => (
-                <span key={c.text}>
-                  {c.n} {c.text}
-                </span>
-              ))
-            : null}
           {source.truncated ? (
             <span className={cx("au-scope-bad")}>
               first {STRIPE_SCAN_CEILING_LABEL} only

@@ -194,8 +194,11 @@ export function emptyDraft(defaults: ManualDefaults): Draft {
     taxAuto: defaults.taxPct === 0,
     taxState: "",
 
-    materialMarkupPct: defaults.materialMarkupPct,
-    laborMarkupPct: defaults.laborMarkupPct,
+    // The two cost adjustments open at NEUTRAL (owner, 2026-09-05): they are a
+    // tool applied to this sheet, not a standing rate, and are baked into the
+    // lines on save. The org's default markup no longer seeds them.
+    materialMarkupPct: 0,
+    laborMarkupPct: 0,
     overheadPct: 0,
     profitPct: 0,
 
@@ -404,12 +407,13 @@ export function draftFromProposal(row: ProposalRowForDraft, defaults: ManualDefa
           })
         : [blankLine()],
 
-    taxPct: round2((row.taxRate ?? 0) * 100),
+    // A row with no rate of its own falls back to the org's default.
+    taxPct: row.taxRate == null ? defaults.taxPct : round2(row.taxRate * 100),
     taxAuto: false,
     taxState: estimateFromAddress(address)?.code ?? "",
 
     materialMarkupPct,
-    laborMarkupPct: row.laborMarkupPct ?? defaults.laborMarkupPct,
+    laborMarkupPct: row.laborMarkupPct ?? 0,
     overheadPct: row.overheadPct ?? 0,
     profitPct: row.profitPct ?? 0,
 

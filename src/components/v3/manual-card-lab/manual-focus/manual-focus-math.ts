@@ -200,6 +200,13 @@ export function computeTotals(draft: Draft): Totals {
     laborMarkupPct: draft.laborMarkupPct,
   };
   const named = draft.lines.filter(isNamed);
+  // LABOR-ONLY PROPOSAL (owner, 2026-09-05): the client buys their own
+  // materials, so the priced column carries labor alone. The material figures
+  // stay on the ledger for the contractor's reference and are excluded from
+  // everything the client pays — and from the margin's cost base, since the
+  // shop never buys them.
+  const laborOnly = draft.options.laborOnly === true;
+  const priced = laborOnly ? named.map((l) => ({ ...l, materialCost: 0 })) : named;
 
   let baseMaterials = 0;
   let baseLabor = 0;
@@ -216,7 +223,7 @@ export function computeTotals(draft: Draft): Totals {
   // The ledger's subtotal is the sum of the ROUNDED line prices, not the
   // unrounded halves above — otherwise the line column and the subtotal are
   // computed two different ways and disagree by a cent on long sheets.
-  const subtotalCosts = round2(named.reduce((sum, l) => sum + lineSell(l, rates), 0));
+  const subtotalCosts = round2(priced.reduce((sum, l) => sum + lineSell(l, rates), 0));
 
   const overheadAmount = round2(subtotalCosts * (safe(draft.overheadPct) / 100));
   const subtotalWithOverhead = round2(subtotalCosts + overheadAmount);
@@ -235,7 +242,7 @@ export function computeTotals(draft: Draft): Totals {
   // multiplies out, and the column adds up to the Subtotal printed beneath it.
   // With no named lines there is no column to add up, so the chain stands in —
   // it is 0 at that point anyway unless someone is quoting overhead on nothing.
-  const printed = printedLines(named, rates, load);
+  const printed = printedLines(priced, rates, load);
   const preTax =
     printed.length > 0 ? round2(printed.reduce((sum, r) => sum + r.amount, 0)) : chainPreTax;
 
@@ -259,7 +266,7 @@ export function computeTotals(draft: Draft): Totals {
   const tax = round2(taxable * (safe(draft.taxPct) / 100));
   const total = round2(taxable + tax);
 
-  const baseTotal = round2(baseMaterials + baseLabor);
+  const baseTotal = round2((laborOnly ? 0 : baseMaterials) + baseLabor);
   // Margin is measured against the DISCOUNTED revenue: money given away is not
   // margin. Quoting a headline margin that a discount has already spent is the
   // single most flattering way to get this wrong.
@@ -269,7 +276,7 @@ export function computeTotals(draft: Draft): Totals {
     baseMaterials,
     baseLabor,
     baseTotal,
-    materialsMarkup: round2(materialsAfter - baseMaterials),
+    materialsMarkup: laborOnly ? 0 : round2(materialsAfter - baseMaterials),
     laborMarkup: round2(laborAfter - baseLabor),
     subtotalCosts,
     overheadAmount,
@@ -284,6 +291,70 @@ export function computeTotals(draft: Draft): Totals {
     printed,
     unnamedCount: draft.lines.length - named.length,
   };
+}
+
+/* ============================================================
+   COST ADJUSTMENT — the two sliders on card 04 (owner, 2026-09-05)
+   Materials and Labor are each a percent multiplier on their whole
+   bucket, −50% to +50%: Material at +10% is every material cost
+   × 1.10, Labor at −20% is all labor × 0.80. Live, they flow through
+   `computeTotals` above as `materialMarkupPct` / `laborMarkupPct`.
+   They are a UI tool only until save: on save the multipliers are
+   BAKED into every line and the sliders return to neutral — "once
+   saved, the adjusted values become the actual costs." Proportions
+   between lines never change; what changes is the overall price and
+   the labor-vs-material mix of the whole proposal.
+   ============================================================ */
+
+/** The sliders' range, in percentage points. */
+export const ADJUST_MIN = -50;
+export const ADJUST_MAX = 50;
+
+/**
+ * Fold the two sliders into every line's stored costs and return them to 0.
+ * Line total = adjusted material + adjusted labor, always. Costs are rounded
+ * to cents per unit, the same quantum the fields hold.
+ */
+export function bakeAdjustments(draft: Draft): Draft {
+  const m = 1 + safe(draft.materialMarkupPct) / 100;
+  const l = 1 + safe(draft.laborMarkupPct) / 100;
+  if (m === 1 && l === 1) return draft;
+  return {
+    ...draft,
+    lines: draft.lines.map((line) => ({
+      ...line,
+      materialCost: round2(safe(line.materialCost) * m),
+      laborCost: round2(safe(line.laborCost) * l),
+    })),
+    materialMarkupPct: 0,
+    laborMarkupPct: 0,
+  };
+}
+
+/**
+ * Spread one labor figure for the whole job across the named lines in
+ * proportion to each line's material base cost (quantity × $material/unit): a
+ * line worth 30% of the material base gets 30% of the labor. The cents the
+ * rounding leaves over land on the largest line so the line amounts sum to the
+ * figure exactly. With no material anywhere the split is even. Each line's
+ * $labor/unit is its share ÷ quantity, rounded to the cent.
+ */
+export function spreadLabor(lines: Line[], totalLabor: number): Line[] {
+  const target = Math.max(0, round2(safe(totalLabor)));
+  const named = lines.filter((l) => isNamed(l) && safe(l.quantity) > 0);
+  if (named.length === 0) return lines;
+  const base = named.map((l) => safe(l.quantity) * safe(l.materialCost));
+  const baseSum = base.reduce((a, b) => a + b, 0);
+  const shares = baseSum > 0 ? base.map((b) => b / baseSum) : named.map(() => 1 / named.length);
+  const amounts = shares.map((sh) => round2(target * sh));
+  const drift = round2(target - amounts.reduce((a, b) => a + b, 0));
+  let big = 0;
+  shares.forEach((sh, i) => {
+    if (sh > shares[big]) big = i;
+  });
+  amounts[big] = round2(amounts[big] + drift);
+  const perUnit = new Map(named.map((l, i) => [l.id, round2(amounts[i] / safe(l.quantity))]));
+  return lines.map((l) => (perUnit.has(l.id) ? { ...l, laborCost: perUnit.get(l.id)! } : l));
 }
 
 /* ============================================================

@@ -1,6 +1,17 @@
 "use client";
 
-// MANUAL PROPOSAL / BLUEPRINT — the "Markup & margin" card body.
+// MANUAL PROPOSAL / BLUEPRINT — the "Cost adjustment" card body.
+//
+// ── 2026-09-05 (owner): MATERIALS AND LABOR ARE ADJUSTMENTS, NOT MARKUPS ──
+// The two cost-level sliders run −50% to +50% from a neutral centre. Each is a
+// percent multiplier on its whole bucket (Material +10% = every material cost
+// × 1.10); the ledger, tax and grand total follow live. They are a UI tool
+// until save, when the page bakes them into every line and returns them to 0
+// (see `bakeAdjustments`). Fine control: drag, arrows ±1 (shift ±5), or click
+// the number to type an exact percent. Under them: "labor for the whole job",
+// which spreads one figure across the lines by material cost
+// (`spreadLabor`), and the two proposal switches — labor-only and scope of
+// work — that used to live on card 06. Overhead and profit are unchanged.
 //
 // A reference layout the owner supplied, translated into the house system
 // rather than copied. Two columns: four rate CONTROLS on the left, one read-only
@@ -55,11 +66,32 @@
 // module for the same reason.
 
 import { useId, useRef, useState } from "react";
-import { money, pct, pct1, round2 } from "../manual-focus/manual-focus-math";
+import {
+  ADJUST_MAX,
+  ADJUST_MIN,
+  money,
+  pct,
+  pct1,
+  round2,
+} from "../manual-focus/manual-focus-math";
 import { stateDisplayName } from "../manual-focus/manual-focus-data";
 import type { Totals } from "../manual-focus/manual-focus-types";
-import { NumField, cx } from "./bp-ui";
+import { NumField, ToggleCell, cx } from "./bp-ui";
+import styles from "./manual-blueprint.module.css";
 import s from "./bp-markup.module.css";
+
+/** "+10.0%" / "−20.0%" / "0.0%" — the adjustment register is signed. */
+function signedPct1(n: number): string {
+  const v = Number.isFinite(n) ? n : 0;
+  return `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(1)}%`;
+}
+
+/** A signed dollar figure, em dash at zero (annotation register). */
+function signedMoney(n: number): string {
+  const v = Number.isFinite(n) ? n : 0;
+  if (v === 0) return "—";
+  return `${v > 0 ? "+" : "−"}${money(Math.abs(v))}`;
+}
 
 /* ============================================================
    PROPS
@@ -126,6 +158,13 @@ export type MarkupBlockProps = {
   }) => void;
   onTaxPct: (next: number) => void;
 
+  /** The two proposal switches that sit beside the sliders. */
+  laborOnly: boolean;
+  showScope: boolean;
+  onOptions: (patch: { laborOnly?: boolean; showScope?: boolean }) => void;
+  /** Spread one labor figure for the whole job across the lines. */
+  onSpreadLabor: (totalLabor: number) => void;
+
   totals: MarkupFigures;
 };
 
@@ -148,9 +187,9 @@ const COMMIT_MS = 80;
 /** PageUp / PageDown. Ten arrow presses is a long way to 20%. */
 const BIG_STEP = 5;
 
-function quantise(raw: number): number {
+function quantise(raw: number, min = 0, max = MAX): number {
   if (!Number.isFinite(raw)) return 0;
-  const clamped = Math.min(MAX, Math.max(0, raw));
+  const clamped = Math.min(max, Math.max(min, raw));
   // toFixed(2) kills the float dust that `Math.round(x / 0.5) * 0.5` leaves
   // behind, which would otherwise reach state as 18.500000000000004.
   return Number((Math.round(clamped / STEP) * STEP).toFixed(2));
@@ -166,8 +205,12 @@ function Rate({
   value,
   amount,
   onChange,
+  range,
 }: {
   name: string;
+  /** Absent: 0–100, filled from the left. Present with a negative floor: a
+   *  CENTRED control — filled from zero, zero tick on the track, signed. */
+  range?: { min: number; max: number };
   /** The short grey clause beside the name — what the percentage is OF. */
   qualifier: string;
   group: RateGroup;
@@ -195,20 +238,33 @@ function Rate({
   const pendingRef = useRef<number | null>(null);
   const timerRef = useRef<number | null>(null);
 
+  const min = range?.min ?? 0;
+  const max = range?.max ?? MAX;
+  const centered = min < 0;
+  const span = max - min;
   const shown = dragPos ?? value;
-  const ratio = Math.min(1, Math.max(0, shown / MAX));
+  const ratio = Math.min(1, Math.max(0, (shown - min) / span));
+  const zero = Math.min(1, Math.max(0, (0 - min) / span));
+  /* Click the number to type an exact percent. `null` = not typing. */
+  const [typing, setTyping] = useState<string | null>(null);
 
   function rawFromClientX(clientX: number): number | null {
     const el = trackRef.current;
     if (!el) return null;
     const r = el.getBoundingClientRect();
     if (r.width <= 0) return null;
-    return Math.min(MAX, Math.max(0, ((clientX - r.left) / r.width) * MAX));
+    return Math.min(max, Math.max(min, min + ((clientX - r.left) / r.width) * span));
   }
 
   function commit(next: number) {
-    const q = quantise(next);
+    const q = quantise(next, min, max);
     if (q !== value) onChange(q);
+  }
+
+  function commitTyped() {
+    const n = Number((typing ?? "").replace(/[%\s]/g, "").replace("−", "-"));
+    if (Number.isFinite(n)) commit(n);
+    setTyping(null);
   }
 
   /** Draw now, write to the page a little later. Repeated calls inside one
@@ -258,7 +314,36 @@ function Rate({
           </span>
           <span className={s.rateQual}>{qualifier}</span>
         </span>
-        <span className={s.ratePct}>{pct1(value)}</span>
+        {typing !== null ? (
+          <input
+            className={cx(s.ratePct, s.ratePctIn)}
+            type="text"
+            inputMode="decimal"
+            autoFocus
+            value={typing}
+            aria-label={`${name}, exact percent`}
+            onChange={(e) => setTyping(e.target.value)}
+            onBlur={commitTyped}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitTyped();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                setTyping(null);
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className={cx(s.ratePct, s.ratePctBtn)}
+            title="Click to type an exact percent"
+            onClick={() => setTyping(String(value))}
+          >
+            {centered ? signedPct1(value) : pct1(value)}
+          </button>
+        )}
       </div>
 
       {/* A div, not a button: the module's rules are (0,2,0) and beat the shell's
@@ -269,8 +354,8 @@ function Rate({
         role="slider"
         tabIndex={0}
         aria-labelledby={labelId}
-        aria-valuemin={0}
-        aria-valuemax={MAX}
+        aria-valuemin={min}
+        aria-valuemax={max}
         aria-valuenow={value}
         aria-valuetext={`${pct1(value)}, worth ${money(amount)}`}
         onPointerDown={(e) => {
@@ -293,13 +378,15 @@ function Rate({
         onKeyDown={(e) => {
           let next: number | null = null;
           switch (e.key) {
+            // Arrows: ±1 on a centred control (shift ±5), the finer STEP on
+            // a 0–100 rate. PageUp/Down is ±5 on both.
             case "ArrowLeft":
             case "ArrowDown":
-              next = value - STEP;
+              next = value - (e.shiftKey ? BIG_STEP : centered ? 1 : STEP);
               break;
             case "ArrowRight":
             case "ArrowUp":
-              next = value + STEP;
+              next = value + (e.shiftKey ? BIG_STEP : centered ? 1 : STEP);
               break;
             case "PageDown":
               next = value - BIG_STEP;
@@ -308,23 +395,39 @@ function Rate({
               next = value + BIG_STEP;
               break;
             case "Home":
-              next = 0;
+              next = min;
               break;
             case "End":
-              next = MAX;
+              next = max;
               break;
             default:
               return;
           }
           e.preventDefault();
-          commit(quantise(next));
+          commit(quantise(next, min, max));
         }}
       >
         <div className={s.track} ref={trackRef}>
+          {/* A centred control fills FROM zero, either way; a rate fills
+              from the left. The zero tick marks the neutral position. */}
           <span
             className={cx(s.fill, group === "cost" ? s.fillCost : s.fillSheet)}
-            style={{ width: `${ratio * 100}%` }}
+            style={
+              centered
+                ? {
+                    left: `${Math.min(ratio, zero) * 100}%`,
+                    width: `${Math.abs(ratio - zero) * 100}%`,
+                  }
+                : { width: `${ratio * 100}%` }
+            }
           />
+          {centered ? (
+            <span
+              className={s.zero}
+              style={{ left: `calc(${zero} * (100% - 18px) + 9px)` }}
+              aria-hidden="true"
+            />
+          ) : null}
           {/* Inset by half the plate so the handle never hangs off either end —
               the same trick a native range thumb uses. */}
           <span
@@ -336,7 +439,9 @@ function Rate({
 
       {/* An annotation of the control, not an account — so this is the one place
           an em dash stands in for zero. */}
-      <span className={s.rateAmt}>{amount > 0 ? money(amount) : "—"}</span>
+      <span className={s.rateAmt}>
+        {centered ? signedMoney(amount) : amount > 0 ? money(amount) : "—"}
+      </span>
     </div>
   );
 }
@@ -510,6 +615,68 @@ function Adjustments({
 }
 
 /* ============================================================
+   THE TOOLS UNDER THE SLIDERS (owner, 2026-09-05)
+   One typed figure — labor for the whole job — that the page
+   spreads across the lines by material cost, and the two proposal
+   switches: labor-only (the client buys their own materials; the
+   priced column carries labor alone) and scope of work.
+   ============================================================ */
+
+function Tools({
+  baseLabor,
+  laborOnly,
+  showScope,
+  onOptions,
+  onSpreadLabor,
+}: Pick<MarkupBlockProps, "laborOnly" | "showScope" | "onOptions" | "onSpreadLabor"> & {
+  baseLabor: number;
+}) {
+  const id = useId();
+  // The field holds what is TYPED; the hint under it says what the lines hold
+  // now. The two agree only after "Spread".
+  const [total, setTotal] = useState<number>(round2(baseLabor));
+
+  return (
+    <div className={s.tools}>
+      <div>
+        <div className={s.adjTop}>
+          <label className={s.adjName} htmlFor={id}>
+            Labor for the whole job
+          </label>
+        </div>
+        <div className={s.toolRow}>
+          <span className={s.adjField}>
+            <NumField id={id} value={total} onChange={setTotal} ariaLabel="Labor for the whole job, dollars" />
+            <span className={s.unitStatic} aria-hidden="true">
+              $
+            </span>
+          </span>
+          <button type="button" className={s.toolBtn} onClick={() => onSpreadLabor(total)}>
+            Spread
+          </button>
+        </div>
+        <span className={s.toolHint}>
+          Split across the lines in proportion to each line&apos;s material cost. Lines hold{" "}
+          {money(baseLabor)} now.
+        </span>
+      </div>
+      <div className={styles.switchRow}>
+        <ToggleCell
+          label="Labor-only proposal"
+          on={laborOnly}
+          onChange={(on) => onOptions({ laborOnly: on })}
+        />
+        <ToggleCell
+          label="Scope of work"
+          on={showScope}
+          onChange={(on) => onOptions({ showScope: on })}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    MARGIN BADGE
    The one legitimate STATUS reading on the card: a margin is good,
    thin or dangerous in a way a markup percentage never is.
@@ -561,6 +728,10 @@ export function MarkupBlock({
   taxState,
   onPatch,
   onTaxPct,
+  laborOnly,
+  showScope,
+  onOptions,
+  onSpreadLabor,
   totals,
 }: MarkupBlockProps) {
   const headId = useId();
@@ -577,19 +748,21 @@ export function MarkupBlock({
         <div className={s.rates}>
           <Rate
             name="Materials"
-            qualifier="markup over base"
+            qualifier="adjust every material cost"
             group="cost"
             value={materialMarkupPct}
             amount={totals.materialsMarkup}
             onChange={onMaterialMarkupPct}
+            range={{ min: ADJUST_MIN, max: ADJUST_MAX }}
           />
           <Rate
             name="Labor"
-            qualifier="markup over base"
+            qualifier="adjust every labor cost"
             group="cost"
             value={laborMarkupPct}
             amount={totals.laborMarkup}
             onChange={onLaborMarkupPct}
+            range={{ min: ADJUST_MIN, max: ADJUST_MAX }}
           />
           <Rate
             name="Overhead"
@@ -618,6 +791,14 @@ export function MarkupBlock({
             onPatch={onPatch}
             onTaxPct={onTaxPct}
             totals={totals}
+          />
+
+          <Tools
+            baseLabor={totals.baseLabor}
+            laborOnly={laborOnly}
+            showScope={showScope}
+            onOptions={onOptions}
+            onSpreadLabor={onSpreadLabor}
           />
         </div>
 
@@ -649,16 +830,20 @@ export function MarkupBlock({
             <div className={s.lRow}>
               <span className={s.lLabel}>
                 <span className={cx(s.markSm, s.markCost)} aria-hidden="true" />
-                Materials markup ({pct1(materialMarkupPct)})
+                Materials adjustment ({signedPct1(materialMarkupPct)})
               </span>
-              <span className={s.lValue}>{money(totals.materialsMarkup)}</span>
+              <span className={cx(s.lValue, totals.materialsMarkup === 0 && s.lValueZero)}>
+                {signedMoney(totals.materialsMarkup)}
+              </span>
             </div>
             <div className={s.lRow}>
               <span className={s.lLabel}>
                 <span className={cx(s.markSm, s.markCost)} aria-hidden="true" />
-                Labor markup ({pct1(laborMarkupPct)})
+                Labor adjustment ({signedPct1(laborMarkupPct)})
               </span>
-              <span className={s.lValue}>{money(totals.laborMarkup)}</span>
+              <span className={cx(s.lValue, totals.laborMarkup === 0 && s.lValueZero)}>
+                {signedMoney(totals.laborMarkup)}
+              </span>
             </div>
 
             <div className={cx(s.lRow, s.rowSub)}>

@@ -33,6 +33,8 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSession, signIn } from "next-auth/react";
+import { trackTraffic, trafficIdentity } from "@/lib/traffic-client";
+import { TRAFFIC_EVENTS } from "@/lib/traffic-contract";
 import { createPortal } from "react-dom";
 import { attachPlacesSuggest } from "@/components/v3/blueprint-shell/places-suggest";
 import { toast } from "@/components/ui/Toast";
@@ -147,6 +149,19 @@ export function RegisterContent({
   const [google, setGoogle] = React.useState<{ handle: string; email: string } | null>(
     googlePrefill ? { handle: googlePrefill.handle, email: googlePrefill.email } : null,
   );
+  const lastTrackedStep = React.useRef("");
+  const trafficFlow = setupMode ? "setup" : google ? "google" : "standard";
+  React.useEffect(() => {
+    if (step === 4) return;
+    const key = `${trafficFlow}:${step}`;
+    if (lastTrackedStep.current === key) return;
+    // Parent route effects must record the entry pageview before this screen.
+    const timer = window.setTimeout(() => {
+      lastTrackedStep.current = key;
+      trackTraffic(TRAFFIC_EVENTS.step, { step, flow: trafficFlow });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [step, trafficFlow]);
   /* True once the ticket minted by completePendingSignup has been redeemed:
      the browser holds a session, and step 4 may point at the dashboard. */
   const [signedIn, setSignedIn] = React.useState(false);
@@ -376,6 +391,9 @@ export function RegisterContent({
   const [err2, setErr2] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [doneNote, setDoneNote] = React.useState("");
+  /* The first name on the done panel. Typed on step 1, or given by Google;
+     absent on a Stripe return (a fresh load) so the heading drops the comma. */
+  const doneName = name.trim().split(/\s+/)[0] || "";
   const [googleBusy, setGoogleBusy] = React.useState(false);
 
   React.useEffect(() => {
@@ -490,8 +508,13 @@ export function RegisterContent({
      the plan and interval and auto-applies whatever promo is stamped on the org
      — which is what `applySignupPromo` above writes. Nothing about discounts is
      re-implemented here. */
-  async function onStartTrial() {
-    if (payBusy || !planSlug) return;
+  async function onStartTrial(slug: string | null = planSlug) {
+    if (payBusy || !slug) return;
+    // The clicked card can differ from the selection until React commits it.
+    const clickedTrialDays = slug === CUSTOM_PLAN_SLUG
+      ? DEFAULT_TRIAL_DAYS
+      : plans.find((p) => p.slug === slug)?.trialDays ?? 0;
+    trackTraffic(TRAFFIC_EVENTS.attempt, { plan: slug, interval, intent: clickedTrialDays > 0 ? "trial" : "purchase", flow: trafficFlow });
     setPayBusy(true);
     setPlansErr(null);
     try {
@@ -499,7 +522,7 @@ export function RegisterContent({
          end of step 2, before any page was ticked, and the checkout route
          prices ONLY from the intent — so without this the custom plan always
          charged the bare $20 base whatever was selected. */
-      if (planSlug === CUSTOM_PLAN_SLUG && token) {
+      if (slug === CUSTOM_PLAN_SLUG && token) {
         const upd = await updatePendingSignupPages(token, customPages);
         if (!upd.ok) {
           setPlansErr(upd.error);
@@ -518,15 +541,18 @@ export function RegisterContent({
       const res = await fetch("/api/checkout/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, planSlug, interval, customPages }),
+        body: JSON.stringify({ token, planSlug: slug, interval, customPages }),
       });
       const body = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-      if (body.url) {
+      if (res.ok && body.url) {
+        trackTraffic(TRAFFIC_EVENTS.opened, { plan: slug, interval, flow: trafficFlow });
         window.location.href = body.url;
         return;
       }
+      trackTraffic(TRAFFIC_EVENTS.error, { step: 3, reason: "checkout_rejected" });
       setPlansErr(body.error || "Couldn't open checkout — your account has not been created.");
     } catch {
+      trackTraffic(TRAFFIC_EVENTS.error, { step: 3, reason: "checkout_unavailable" });
       setPlansErr("Couldn't reach checkout — your account has not been created.");
     } finally {
       setPayBusy(false);
@@ -551,7 +577,7 @@ export function RegisterContent({
         ? await signIn("signup-ticket", { ticket: res.ticket, redirect: false })
         : null;
       setSignedIn(Boolean(auth && !auth.error));
-      setDoneNote("Your workspace is ready.");
+      setDoneNote("Your workspace is ready to send its first proposal.");
       toast.success("Welcome to JobFlex", "Your workspace is ready.");
       setStep(4);
     } catch {
@@ -698,7 +724,7 @@ export function RegisterContent({
     } finally {
       setChecking(false);
     }
-    setDoneNote(b + " is ready.");
+    setDoneNote(b + " is ready to send its first proposal.");
     setStep(2);
   }
 
@@ -745,8 +771,9 @@ export function RegisterContent({
         router.push("/dashboard/upgrade" as Route);
         return;
       }
-      setDoneNote(biz.trim() + " is ready.");
+      setDoneNote(biz.trim() + " is ready to send its first proposal.");
       const res = await startPendingSignup({
+        analytics: trafficIdentity(),
         name: name.trim(),
         businessName: biz.trim(),
         email: email.trim(),
@@ -1132,7 +1159,7 @@ export function RegisterContent({
               </>
             ) : (
               <>
-                <h1 className="auth-h1">Your shop is live.</h1>
+                <h1 className="auth-h1">{doneName ? `You're all set, ${doneName}.` : "You're all set."}</h1>
                 <p className="auth-lede" id="doneNote">
                   {doneNote}
                 </p>
@@ -1242,12 +1269,19 @@ export function RegisterContent({
                 const on = planSlug === p.slug;
                 const has = includedBySlug.get(p.slug) ?? new Set<string>();
                 return (
-                  <button
+                  <div
                     key={p.slug}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     className={"pw-plan" + (on ? " on" : "") + (p.highlight ? " pw-plan--hero" : "")}
                     aria-pressed={on}
                     onClick={() => setPlanSlug(p.slug)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setPlanSlug(p.slug);
+                      }
+                    }}
                   >
                     {p.highlight ? <span className="pw-tag">Most picked</span> : null}
                     <span className="pw-plan-n">{p.name}</span>
@@ -1318,13 +1352,36 @@ export function RegisterContent({
                     <span className="pw-pick" aria-hidden="true">
                       {on ? "Selected" : "Choose"}
                     </span>
-                  </button>
+                    {/* THE START BUTTON LIVES IN THE CARD (owner, 2026-09-05):
+                        directly under the card's own state plate, so choosing
+                        and committing are one reach. Starting from a card that
+                        is not yet the selection selects it first. The card is a
+                        div-as-button for this reason — a button cannot hold
+                        a button. */}
+                    <button
+                      type="button"
+                      className="btn pw-go"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPlanSlug(p.slug);
+                        void onStartTrial(p.slug);
+                      }}
+                      disabled={payBusy || !checkoutReady}
+                    >
+                      {payBusy && on
+                        ? "Opening checkout…"
+                        : checkoutReady
+                          ? `Start ${p.trialDays || DEFAULT_TRIAL_DAYS}-day trial`
+                          : "Checkout is not configured"}
+                    </button>
+                  </div>
                 );
               })}
               {/* THE CUSTOM PLAN — the same card shape, priced by what is
                   ticked rather than by a tier somebody else drew. */}
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 className={
                   "pw-plan pw-plan--custom" + (planSlug === CUSTOM_PLAN_SLUG ? " on" : "")
                 }
@@ -1332,6 +1389,13 @@ export function RegisterContent({
                 onClick={() => {
                   setPlanSlug(CUSTOM_PLAN_SLUG);
                   openPicker();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setPlanSlug(CUSTOM_PLAN_SLUG);
+                    openPicker();
+                  }
                 }}
               >
                 <span className="pw-plan-n">Custom</span>
@@ -1394,7 +1458,23 @@ export function RegisterContent({
                 <span className="pw-pick" aria-hidden="true">
                   {planSlug === CUSTOM_PLAN_SLUG ? "Selected" : "Choose"}
                 </span>
-              </button>
+                <button
+                  type="button"
+                  className="btn pw-go"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPlanSlug(CUSTOM_PLAN_SLUG);
+                    void onStartTrial(CUSTOM_PLAN_SLUG);
+                  }}
+                  disabled={payBusy || !checkoutReady}
+                >
+                  {payBusy && planSlug === CUSTOM_PLAN_SLUG
+                    ? "Opening checkout…"
+                    : checkoutReady
+                      ? `Start ${DEFAULT_TRIAL_DAYS}-day trial`
+                      : "Checkout is not configured"}
+                </button>
+              </div>
 
               {plans.length === 0 && !plansErr ? (
                 <div className="fld-note">Loading plans…</div>
@@ -1428,19 +1508,6 @@ export function RegisterContent({
                   {promoBusy ? "…" : promo ? "✓" : "Apply"}
                 </button>
               </div>
-
-              <button
-                className="btn pw-go"
-                type="button"
-                onClick={() => void onStartTrial()}
-                disabled={payBusy || !planSlug || !checkoutReady}
-              >
-                {payBusy
-                  ? "Opening checkout…"
-                  : checkoutReady
-                    ? `Start ${trialDays}-day trial`
-                    : "Checkout is not configured"}
-              </button>
             </div>
 
             {promo ? (
