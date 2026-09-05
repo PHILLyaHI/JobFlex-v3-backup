@@ -18,7 +18,7 @@
 // Coordinate frame of the returned model: the tile's local-feet frame — origin
 // at the queried pin (the Solar tile centre), x east, y north, z feet above
 // ground. Geo rings convert into it via latLngRingToFrame(origin, ring).
-import { geocode } from "@/lib/maps";
+import { geocode, MapsCallError } from "@/lib/maps";
 import { fetchParcelRing, type ParcelRingLookup } from "@/lib/parcel";
 import {
   getBuildingInsights,
@@ -147,6 +147,15 @@ export async function buildReconModel(input: ReconBuildInput): Promise<ReconBuil
     try {
       hit = await geocode(query);
     } catch (err) {
+      // A refusal (bad key, API not enabled, quota) is Google ANSWERING, and
+      // "try again" is the wrong advice for it — the key is ours to fix. Only
+      // an unanswered call keeps the retry wording.
+      if (err instanceof MapsCallError && err.kind !== "unreachable") {
+        throw new ReconUnavailableError(
+          `${err.message}. This is the server's Google Maps key (GOOGLE_MAPS_API_KEY), not the address.`,
+          "error",
+        );
+      }
       throw new ReconUnavailableError(
         `The address lookup did not answer (${err instanceof Error ? err.message : String(err)}) — the address may be fine; try again.`,
         "timeout",

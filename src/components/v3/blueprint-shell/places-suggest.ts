@@ -83,7 +83,24 @@ export type PlacesSuggestOptions = {
    * a descendant selector, which outranks the desktop's single-class rules.
    */
   className?: string;
+  /**
+   * Called ONCE, the first time Google refuses to suggest — a browser key that
+   * is not entitled to the Places API (New), a referrer the key does not allow,
+   * a Maps SDK that never loaded. Until 2026-09-05 that refusal went only to
+   * console.error and the field simply showed no list, which on the live deploy
+   * read as "suggestions are broken" with nothing to act on. The page decides
+   * where the message goes (the fence studio puts it in its hint line); the
+   * field itself keeps working as a plain text input either way.
+   */
+  onError?: (message: string) => void;
 };
+
+/** Google's refusals come as Error objects with the API's own wording, or as
+ *  bare strings; both are trimmed to one line for the hint. */
+function errorLine(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err ?? "");
+  return raw.replace(/\s+/g, " ").trim().slice(0, 200) || "unknown error";
+}
 
 /**
  * Attach suggestions to an existing text input.
@@ -128,6 +145,8 @@ export function attachPlacesSuggest(
   // Set right before a pick rewrites the field, so the input handler does not
   // immediately re-query the address we just chose and reopen the list.
   let justChose = false;
+  // One refusal is one message: every further keystroke would otherwise repeat it.
+  let reported = false;
 
   input.setAttribute("role", "combobox");
   input.setAttribute("aria-expanded", "false");
@@ -211,6 +230,10 @@ export function attachPlacesSuggest(
       console.error("[places-suggest] suggestion fetch failed:", err);
       list = [];
       hide();
+      if (!reported) {
+        reported = true;
+        opts.onError?.(errorLine(err));
+      }
     }
   }
 

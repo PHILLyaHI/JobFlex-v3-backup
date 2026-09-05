@@ -1705,6 +1705,13 @@ export function initFenceEstimatorContent(
           sitePlace = p;
           showSite(p);
         },
+        // Google refused to suggest (browser key not entitled to Places (New),
+        // referrer not allowed, SDK failed to load). The bar still works as a
+        // plain field — Find geocodes whatever was typed — so say that, with
+        // Google's own reason, instead of a list that silently never opens.
+        onError(message) {
+          sayHint('Address suggestions are unavailable (' + message + '). Type the full address and press Find.');
+        },
       }),
     );
   }

@@ -63,13 +63,34 @@ export async function geocodeAddress(parts: {
 // all, a hung request held the whole measurement). A Maps outage therefore read
 // as "couldn't locate that address" — the wrong claim, inviting the user to fix
 // an address that was never wrong.
+//
+// A THIRD failure hid inside the first until 2026-09-05: Google answers a bad
+// or under-entitled key with HTTP 200 and `status: REQUEST_DENIED` (likewise
+// OVER_DAILY_LIMIT, OVER_QUERY_LIMIT, INVALID_REQUEST), which has an empty
+// results array and so read as "no such address". On the live deploy that
+// captioned a key problem as "Couldn't locate that address" for a house the
+// same code geocoded fine locally. Only ZERO_RESULTS is Google saying "no such
+// place"; every other non-OK status is Google refusing to look, and it says
+// why in `error_message` — so that text is what the user now sees.
 export async function geocode(address: string): Promise<{ lat: number; lng: number } | null> {
   if (!isMapsEnabled()) return null;
   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${process.env.GOOGLE_MAPS_API_KEY}`;
   const res = await externalFetch("maps", "geocode", url, {}, { timeoutMs: MAPS_TIMEOUT_MS });
   const data = (await res.json()) as {
+    status?: string;
+    error_message?: string;
     results?: { geometry?: { location?: { lat: number; lng: number } } }[];
   };
+  if (data.status && data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+    const why = data.error_message ? ` — ${data.error_message.slice(0, 200)}` : "";
+    throw new ExternalCallError(
+      `Google Geocoding refused the lookup (${data.status}${why})`,
+      "maps",
+      "geocode",
+      data.status === "REQUEST_DENIED" ? "auth" : "refused",
+      res.status,
+    );
+  }
   const loc = data.results?.[0]?.geometry?.location;
   return loc ? { lat: loc.lat, lng: loc.lng } : null;
 }

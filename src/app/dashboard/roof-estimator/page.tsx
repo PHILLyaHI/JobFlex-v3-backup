@@ -32,10 +32,17 @@ export default async function RoofEstimatorPage() {
   }
 
   // SERVER flag (deliberately not NEXT_PUBLIC): while the 2D/3D engine is
-  // being reworked, ROOF_DRAWING_ENABLED=false swaps the page to the data-only
-  // view — Instant numbers, ortho with the outline, no reconstruction run at
-  // all. Unset or any other value keeps the drawing tool as it was.
-  const drawingEnabled = process.env.ROOF_DRAWING_ENABLED !== "false";
+  // being reworked, the page shows the data-only view — Instant numbers, ortho
+  // with the outline, no reconstruction run at all. ROOF_DRAWING_ENABLED=true
+  // opts back into the drawing tool.
+  //
+  // OPT-IN since 2026-09-05. It used to be opt-out ("anything but false keeps
+  // the drawing tool"), and the live deploy — which had never been given the
+  // flag — showed the drawing tool while every local run had it set to false.
+  // Two different roof pages for one commit, and the live one depended on a
+  // server Google key entitled to Geocoding + Solar that the deploy did not
+  // have. A deploy with no flag now gets the same page as local dev.
+  const drawingEnabled = process.env.ROOF_DRAWING_ENABLED === "true";
 
   return (
     <RoofEstimatorContent

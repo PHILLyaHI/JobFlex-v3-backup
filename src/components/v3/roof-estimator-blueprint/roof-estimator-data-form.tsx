@@ -211,6 +211,11 @@ export function RoofEstimatorDataForm() {
         if (p.state) setStateCode(p.state);
         if (p.zip) setZip(p.zip);
       },
+      // The field still works typed out in full; say so, with Google's reason,
+      // rather than leave a list that never opens.
+      onError(message) {
+        toast.error("Address suggestions are unavailable", `${message}. Fill in the address, city, state and ZIP by hand.`);
+      },
     });
   }, [panel]);
 
