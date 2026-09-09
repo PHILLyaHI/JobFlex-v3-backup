@@ -1082,20 +1082,36 @@ export function FenceDrawMap({
     if (!all.length) return;
 
     const ACCENT = accentRef.current ?? DEFAULT_ACCENT;
-    const polygons: GMaps[] = all.map(
-      (r) =>
-        new maps.Polygon({
-          map,
-          paths: r,
-          clickable: false,
-          fillColor: ACCENT,
-          fillOpacity: 0.14,
-          strokeColor: PARCEL_BLUE,
-          strokeOpacity: 0.95,
-          strokeWeight: 2,
-          zIndex: 1,
-        }),
-    );
+    // Two strokes per ring, not one: a wide white HALO under a 3 px blue line.
+    // A single 2 px blue stroke vanished against satellite imagery — a kerb, a
+    // driveway edge or tree shadow are the same darkness, and the owner's
+    // testers reported they "could barely see" the property line. The halo
+    // separates the line from whatever the photo puts behind it, the way a
+    // survey overlay is inked, so the boundary reads on grass, asphalt and
+    // roof alike without the fence's own accent having to change.
+    const polygons: GMaps[] = all.flatMap((r) => [
+      new maps.Polygon({
+        map,
+        paths: r,
+        clickable: false,
+        fillColor: ACCENT,
+        fillOpacity: 0.16,
+        strokeColor: "#ffffff",
+        strokeOpacity: 0.92,
+        strokeWeight: 7,
+        zIndex: 1,
+      }),
+      new maps.Polygon({
+        map,
+        paths: r,
+        clickable: false,
+        fillOpacity: 0,
+        strokeColor: PARCEL_BLUE,
+        strokeOpacity: 1,
+        strokeWeight: 3,
+        zIndex: 2,
+      }),
+    ]);
 
     let highlightLine: GMaps | null = null;
     const hi = parcel?.highlight;
@@ -1106,8 +1122,8 @@ export function FenceDrawMap({
         clickable: false,
         strokeColor: ACCENT,
         strokeOpacity: 1,
-        strokeWeight: 5,
-        zIndex: 2,
+        strokeWeight: 6,
+        zIndex: 3,
       });
     }
 

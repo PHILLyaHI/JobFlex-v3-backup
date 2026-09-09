@@ -1953,3 +1953,19 @@
   gap: 8px;
   margin-top: 4px;
 }
+
+/* Hand-entered takeoff (2026-09-08) — the no-EagleView path on the intake
+   card. Same rhythm as .rf-actions above it: a ruled strip under the address
+   grid, fields at --field-h, the button matched to the fields' height. */
+.bp :global(.content .rf-manual) { margin-top: 16px; padding-top: 15px; border-top: 1.5px solid var(--hair-soft); }
+.bp :global(.content .rf-manual-head) { max-width: 66ch; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+.bp :global(.content .rf-manual-head b) { color: var(--ink); }
+.bp :global(.content .rf-manual-grid) { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 11px; margin-top: 12px; }
+.bp :global(.content .rf-manual-grid .est-field--sm) { width: 150px; }
+.bp :global(.content .rf-manual-grid .btn) { height: var(--field-h); padding: 0 15px; font-size: 12.5px; }
+.bp :global(.content .rf-manual-grid .btn .ic) { width: 15px; height: 15px; }
+.bp :global(.content .rf-manual-grid .btn:disabled) { opacity: 0.5; pointer-events: none; }
+@media (max-width: 860px) {
+  .bp :global(.content .rf-manual-grid .est-field--sm) { flex: 1 1 120px; width: auto; }
+  .bp :global(.content .rf-manual-grid .btn) { flex: 1 1 100%; justify-content: center; }
+}

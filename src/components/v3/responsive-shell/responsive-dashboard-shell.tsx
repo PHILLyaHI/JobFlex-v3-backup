@@ -102,14 +102,13 @@ const MobileSmartProposal = dynamic(
   () => import("@/app/(mobile)/mobile-advanced-ai-v2/mobile-advanced-ai").then((m) => m.MobileSmartProposal),
   { ssr: false, loading: MobileHold },
 );
-const MobileRoofEstimator = dynamic(
-  () => import("@/app/(mobile)/mobile-roof-estimator-v2/mobile-roof-estimator").then((m) => m.MobileRoofEstimator),
-  { ssr: false, loading: MobileHold },
-);
-const MobileFenceEstimator = dynamic(
-  () => import("@/app/(mobile)/mobile-fence-estimator-v2/mobile-fence-estimator").then((m) => m.MobileFenceEstimator),
-  { ssr: false, loading: MobileHold },
-);
+// NOT here either — the roof and fence estimators (2026-09-08). Their handheld
+// builds (/mobile-roof-estimator-v2, /mobile-fence-estimator-v2) are still the
+// donor FIXTURES: the roof one "measures" any address with canned numbers and
+// its "Convert to proposal" only flips a label, the fence one has no map and so
+// no property lines. A tester on a phone was told a proposal existed that did
+// not. Until those two get their data layer, the phone gets the real blueprint
+// pages, which carry their own ≤860px rules.
 const MobileMessages = dynamic(
   () => import("@/app/(mobile)/mobile-messages-v2/mobile-messages").then((m) => m.MobileMessages),
   { ssr: false, loading: MobileHold },
@@ -146,8 +145,8 @@ const HANDHELD_SURFACES: Record<string, React.ComponentType> = {
   // Automation. The route slug /dashboard/advanced-ai is historical; the
   // surface is called Smart Proposal everywhere a user can see it.
   "/dashboard/advanced-ai": MobileSmartProposal,
-  "/dashboard/roof-estimator": MobileRoofEstimator,
-  "/dashboard/fence-estimator": MobileFenceEstimator,
+  // /dashboard/roof-estimator and /dashboard/fence-estimator: real pages on
+  // every viewport — see the note above the dynamic imports.
   "/dashboard/messages": MobileMessages,
   "/dashboard/estimators/manual": MobileManualBuilder,
 };

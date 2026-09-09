@@ -1771,3 +1771,13 @@
 /* Align is a MODE, not a one-shot action: the tool has to rest in an active
    state for as long as the outline is draggable. */
 .bp :global(.content .tool.on) { border-color: var(--blueprint); color: var(--blueprint); background: var(--paper-deep); }
+
+/* Handheld (2026-09-08). The "square map area" block above re-declares the
+   two-column .fs-grid OUTSIDE any media query, after the ≤1100px single-column
+   rule, so on a phone the stage was squeezed to 42px beside a 300px rail. This
+   rule comes last, so it wins where the viewport is narrow; the desktop
+   columns are untouched. */
+@media (max-width: 1100px) {
+  .bp :global(.content .fs-grid) { grid-template-columns: minmax(0, 1fr); }
+  .bp :global(.content .fs-rail) { position: static; }
+}

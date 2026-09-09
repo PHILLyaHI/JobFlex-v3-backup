@@ -20,7 +20,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { nanoid } from "nanoid";
-import type { InstantStructure } from "@/lib/eagleview";
+import type { InstantRoofData, InstantStructure } from "@/lib/eagleview";
 import { toast } from "@/components/ui/Toast";
 import type { EstimateLine } from "@/components/estimator/EstimatorBreakdown";
 import { assessRoof, confidenceLabel } from "@/lib/roofDiagram/confidence";
@@ -74,6 +74,30 @@ const yesNo = (v: boolean | null | undefined) => (v == null ? "—" : v ? "Yes" 
 
 type Panel = "intake" | "measuring" | "report";
 type PhotoView = "satellite" | "ortho";
+
+// A takeoff the contractor typed in — squares and pitch, nothing measured.
+// This is the path that exists because EagleView Property Data is refusing
+// the account (403 "missing or incomplete entitlement", 2026-09-05): until the
+// entitlement lands, Instant measure fails for every address and nothing on
+// this page could ever reach a proposal. Hand-entered figures are the
+// contractor's own, so they price and convert like measured ones; they are
+// NOT the aerial "recon" estimate, which stays unpriceable on purpose.
+type ManualTakeoff = { squares: number; pitchLabel: string; address: string | null };
+const PITCHES = ["2/12", "3/12", "4/12", "5/12", "6/12", "7/12", "8/12", "9/12", "10/12", "12/12"];
+
+/** The report reads one `totals` shape; a hand takeoff fills the same fields. */
+function manualTotals(m: ManualTakeoff): InstantRoofData["totals"] {
+  const rise = Number(m.pitchLabel.split("/")[0]);
+  return {
+    areaSqft: m.squares * 100,
+    squares: m.squares,
+    predominantPitch: Number.isFinite(rise) ? rise : null,
+    pitchLabel: m.pitchLabel,
+    maxEaveFt: null,
+    facetCount: null,
+    footprintSqft: null,
+  };
+}
 
 // Live Google map on the SATELLITE tab (owner's call: pan + zoom). Minimal
 // structural types for the JS SDK — the repo carries no @types/google.maps,
@@ -227,6 +251,11 @@ export function RoofEstimatorDataForm() {
   const [labor, setLabor] = React.useState<EstimateLine[]>([]);
   const [assumptions, setAssumptions] = React.useState<string[]>([]);
   const [convertBusy, setConvertBusy] = React.useState(false);
+  // Hand-entered takeoff (runManual). Cleared by resetResult, so it never
+  // coexists with a measurement.
+  const [manual, setManual] = React.useState<ManualTakeoff | null>(null);
+  const [manSquares, setManSquares] = React.useState("");
+  const [manPitch, setManPitch] = React.useState("6/12");
 
   // A free estimate is never priced; the data path only saves Instant rows,
   // but old "recon" rows can still be opened from history.
@@ -239,6 +268,7 @@ export function RoofEstimatorDataForm() {
 
   function resetResult() {
     setMeasurement(null);
+    setManual(null);
     setUnsaved(false);
     setMaterials([]);
     setLabor([]);
@@ -427,6 +457,22 @@ export function RoofEstimatorDataForm() {
     }
   }
 
+  // Hand-entered takeoff: no lookup, nothing billed, nothing saved to history.
+  // The address is whatever is in the intake fields — typed or picked.
+  function runManual() {
+    const sq = Number(manSquares.replace(/,/g, ""));
+    if (!Number.isFinite(sq) || sq <= 0) {
+      toast.error("Enter the roof size in squares", "One square is 100 sq ft of roof surface.");
+      return;
+    }
+    resetResult();
+    setReusedInstant(null);
+    const street = (picked?.address ?? addrRef.current?.value ?? "").trim();
+    const address = [street, [city, stateCode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+    setManual({ squares: Math.round(sq * 10) / 10, pitchLabel: manPitch, address: address || null });
+    setPanel("report");
+  }
+
   // Reopen a saved measurement — no lookup, nothing billed.
   async function openRecent(id: string) {
     setOpeningId(id);
@@ -443,8 +489,8 @@ export function RoofEstimatorDataForm() {
   }
 
   async function generate() {
-    const t = measurement?.instant?.totals;
-    if (!measurement || t?.squares == null) return;
+    const t = totals;
+    if (t?.squares == null) return;
     if (isRecon) {
       toast.error(
         "Estimated measurements can’t be priced",
@@ -455,20 +501,24 @@ export function RoofEstimatorDataForm() {
     setGenBusy(true);
     try {
       const res = await estimateRoof({
-        address: measurement.address || undefined,
-        lat: measurement.lat ?? undefined,
-        lng: measurement.lng ?? undefined,
+        address: siteAddress || undefined,
+        lat: measurement?.lat ?? undefined,
+        lng: measurement?.lng ?? undefined,
         pitch: pitchMeasured ? `${Math.round(pitchRep!.families[0].pitch12)}/12` : (t.pitchLabel ?? "6/12"),
         squares: Number(t.squares.toFixed(1)),
         wastePct: waste,
-        measurementNotes: `EagleView Instant (calibrated): ${t.squares.toFixed(1)} squares (${num(
+        measurementNotes: manual
+          ? `Contractor-entered takeoff: ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft), pitch ${
+              t.pitchLabel ?? "6/12"
+            } as stated by the contractor — not an aerial measurement. No facet or linear-footage breakdown; allow for ridge, valley and flashing.`
+          : `EagleView Instant (calibrated): ${t.squares.toFixed(1)} squares (${num(
           t.areaSqft ?? 0,
         )} sq ft), predominant pitch ${
           pitchMeasured
             ? `${pitchRep!.families.map((f) => f.pitch12.toFixed(1)).join(" + ")}/12 (measured from aerial elevation data on ${Math.round((pitchRep!.trustedShare ?? 0) * 100)}% of the roof)`
             : `${t.pitchLabel ?? "?"} (EagleView published figure)`
         }, ${
-          measurement.instant?.structures.length ?? 1
+          measurement?.instant?.structures.length ?? 1
         } structure(s), footprint ${num(t.footprintSqft ?? 0)} sq ft. No facet or linear-footage breakdown — the drawing tool is offline; allow for ridge/valley/flashing from the aerial photo.`,
       });
       if (!res.ok) {
@@ -489,7 +539,7 @@ export function RoofEstimatorDataForm() {
   }
 
   async function convert() {
-    if (!measurement) return;
+    if (!measurement && !manual) return;
     if (isRecon) {
       toast.error("Estimated measurements can’t become a proposal", "Run Instant measure for this address first.");
       return;
@@ -498,7 +548,7 @@ export function RoofEstimatorDataForm() {
     setConvertBusy(true);
     try {
       const res = await convertRoofEstimateToProposal({
-        title: title || `Roof · ${measurement.address || "site"}`,
+        title: title || `Roof · ${siteAddress || "site"}`,
         scope: assumptions.join("\n"),
         materials: materials.map(stripId),
         labor: labor.map(stripId),
@@ -514,7 +564,8 @@ export function RoofEstimatorDataForm() {
   }
 
   // ── Derived report figures (all from EagleView Instant's totals) ──
-  const totals = measurement?.instant?.totals ?? null;
+  const totals = measurement?.instant?.totals ?? (manual ? manualTotals(manual) : null);
+  const siteAddress = measurement?.address ?? manual?.address ?? null;
 
   // Measured pitch (provenance.pitchMeasurement — the retired line's DSM
   // measurement, saved by the data path). Families are rounded to whole /12
@@ -535,7 +586,9 @@ export function RoofEstimatorDataForm() {
     : totals?.pitchLabel ?? "—";
   const pitchHint = pitchMeasured
     ? `measured · ${Math.round((pitchRep!.trustedShare ?? 0) * 100)}% of roof`
-    : "rise / 12 · EagleView";
+    : manual
+      ? "rise / 12 · entered by hand"
+      : "rise / 12 · EagleView";
   const structure = mainStructure(measurement?.instant?.structures);
   const eaveHeights = structure?.eaveHeightFt
     ? Object.entries(structure.eaveHeightFt).map(([facade, ft]) => ({ facade, ft }))
@@ -603,6 +656,47 @@ export function RoofEstimatorDataForm() {
                 <svg className="ic"><use href="#i-target" /></svg>
                 {instantBusy ? "Measuring…" : "Instant measure"}
               </button>
+            </div>
+
+            {/* The no-EagleView path: the contractor's own squares + pitch price
+                and convert exactly like a measured roof. See ManualTakeoff. */}
+            <div className="rf-manual">
+              <div className="rf-manual-head">
+                <b>Already know the roof?</b> Enter the takeoff yourself — the roof size in squares and the
+                pitch are enough to price it and turn it into a proposal. Nothing is ordered or billed.
+              </div>
+              <div className="rf-manual-grid">
+                <label className="est-field est-field--sm">
+                  <span className="est-lbl">Roof size · squares</span>
+                  <input
+                    className="est-in"
+                    id="manSquares"
+                    inputMode="decimal"
+                    placeholder="24"
+                    value={manSquares}
+                    onChange={(e) => setManSquares(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") runManual();
+                    }}
+                  />
+                </label>
+                <label className="est-field est-field--sm">
+                  <span className="est-lbl">Pitch</span>
+                  <span className="bp-sel">
+                    <select className="bp-sel-in est-in" id="manPitch" value={manPitch} onChange={(e) => setManPitch(e.target.value)}>
+                      {PITCHES.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                </label>
+                <button className="btn btn-ghost btn--sm" type="button" id="manualBtn" disabled={busy} onClick={runManual}>
+                  <svg className="ic"><use href="#i-file" /></svg>
+                  Price by hand
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -672,9 +766,21 @@ export function RoofEstimatorDataForm() {
       </section>
 
       {/* ===== RESULT ===== */}
-      <section className={"ppanel" + (panel === "report" && measurement ? "" : " is-hidden")} data-panel="report">
-        {measurement && (
+      <section className={"ppanel" + (panel === "report" && (measurement || manual) ? "" : " is-hidden")} data-panel="report">
+        {(measurement || manual) && (
           <>
+            {manual && (
+              <div className="rf-notice">
+                <div className="call info">
+                  <div>
+                    <span className="rf-stamp">ENTERED BY HAND</span>
+                    These figures are yours, not measured — {num(manual.squares, 1)} squares at {manual.pitchLabel}
+                    {manual.address ? ` for ${manual.address}` : ""}. The estimate and the proposal carry them as
+                    stated; nothing was ordered from EagleView and nothing is saved to Recent measurements.
+                  </div>
+                </div>
+              </div>
+            )}
             {(builtByOldPipeline || unsaved || reconDown || partialCoverage || pitchRep?.disagrees || (assessment && assessment.confidence !== "high")) && (
               <div className="rf-notice">
                 {builtByOldPipeline && (
@@ -754,6 +860,7 @@ export function RoofEstimatorDataForm() {
               <HeroCell l="Roof facets" v={totals?.facetCount != null ? String(totals.facetCount) : "—"} h="planes" />
             </div>
 
+            {measurement && (
             <div className="rf-grid">
               <div className="card rf-card rf-viewer">
                 <div className="rf-head rf-head--bar">
@@ -900,6 +1007,7 @@ export function RoofEstimatorDataForm() {
                 </div>
               </div>
             </div>
+            )}
 
             <div className="card rf-card rf-build">
               <div className="rf-head rf-head--bar">
@@ -908,9 +1016,11 @@ export function RoofEstimatorDataForm() {
                   <div className="card-sub">
                     {isRecon
                       ? "These measurements are estimated from aerial imagery, so they can’t be priced. Run Instant measure for this address to build a quote."
-                      : totals?.squares != null
-                        ? `Measurements feed the takeoff — adjust waste and price it out against the measured ${totals.squares.toFixed(1)} squares.`
-                        : "Measurements feed the takeoff."}
+                      : manual && totals?.squares != null
+                        ? `Priced from your own takeoff — ${totals.squares.toFixed(1)} squares at ${manual.pitchLabel}. Adjust waste and generate.`
+                        : totals?.squares != null
+                          ? `Measurements feed the takeoff — adjust waste and price it out against the measured ${totals.squares.toFixed(1)} squares.`
+                          : "Measurements feed the takeoff."}
                     {!isRecon ? " Linear footage is not included while the drawing tool is offline." : ""}
                   </div>
                 </div>
