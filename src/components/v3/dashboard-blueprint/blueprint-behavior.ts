@@ -684,6 +684,21 @@ export function initDashboardContent(content: HTMLElement, data: DashboardData):
       gD,
     );
     note.textContent = fmtK(mp.v);
+    // Keep the peak figure inside the plot. A fixed x-clamp of 100 let a peak
+    // on the first day ("$700.2K" at THU) hang over the y-axis and its labels —
+    // clamp by the label's own measured width, the way the hover tip does.
+    // Fonts may still be loading when this measures, so leave a little slack.
+    {
+      let half = note.textContent.length * 7; // generous for 18px bold mono, if getBBox is unavailable
+      try {
+        // Firefox throws on getBBox for an element that is not rendered yet.
+        const w = note.getBBox().width;
+        if (w > 0) half = w / 2 + 6;
+      } catch {
+        /* keep the estimate */
+      }
+      note.setAttribute("x", String(Math.min(Math.max(mp.x, 72 + half), 788 - half)));
+    }
     chartEls = { line, area, dots, note };
     // Draw (Balanced): the line draws itself, dots along the way, fill and peak after
     if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {

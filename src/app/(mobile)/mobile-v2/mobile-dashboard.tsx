@@ -1204,7 +1204,12 @@ function DashboardView({ data }: { data: DashboardData }) {
                 {peak ? (
                   <text
                     ref={noteRef}
-                    x={Math.min(Math.max(peak.x, 60), 306)}
+                    // Clamp by the label's own width (15px mono ≈ 9px/char) so a
+                    // first-day peak never hangs over the y-axis labels.
+                    x={Math.min(
+                      Math.max(peak.x, PLOT.x0 + peakLabel.length * 4.5 + 4),
+                      PLOT.x1 - peakLabel.length * 4.5 - 4,
+                    )}
                     y={Math.max(peak.y - 14, 22)}
                     textAnchor="middle"
                     className={styles.chNote}

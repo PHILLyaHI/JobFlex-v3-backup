@@ -1781,3 +1781,17 @@
   .bp :global(.content .fs-grid) { grid-template-columns: minmax(0, 1fr); }
   .bp :global(.content .fs-rail) { position: static; }
 }
+
+/* "Put down the fence" — sticky done face (2026-09-08). Once the fence is laid
+   the button rests on its filled "Fence down" face; the pointer brings the
+   offer back so a second lay is still one click away. Both faces are in the
+   markup; `.is-done` (fence-estimator-behavior) picks which one shows. */
+.bp :global(.content #fenceBtn .fb-idle),
+.bp :global(.content #fenceBtn .fb-done) { display: inline-flex; align-items: center; gap: 9px; }
+.bp :global(.content #fenceBtn .fb-done) { display: none; }
+.bp :global(.content #fenceBtn.is-done) { background: var(--blueprint); color: #fff; border-color: var(--blueprint-dark); }
+.bp :global(.content #fenceBtn.is-done .fb-idle) { display: none; }
+.bp :global(.content #fenceBtn.is-done .fb-done) { display: inline-flex; }
+.bp :global(.content #fenceBtn.is-done:hover) { background: var(--paper-deep); color: var(--ink); border-color: var(--ink); }
+.bp :global(.content #fenceBtn.is-done:hover .fb-done) { display: none; }
+.bp :global(.content #fenceBtn.is-done:hover .fb-idle) { display: inline-flex; }

@@ -79,11 +79,22 @@ export function FenceEstimatorContent() {
               there is nothing left to ask for. This button is the NEXT step:
               lay fence along the checked sides of the lot. It ADDS to whatever
               is already traced; nothing drawn by hand is replaced. */}
+          {/* Two faces, swapped by `.is-done` (set once the fence is laid, cleared
+              on reset / a new property): the button then RESTS on the done face
+              and shows the offer again only under the pointer. */}
           <button className="btn btn-ghost btn--sm" type="button" id="fenceBtn" disabled>
-            <svg className="ic">
-              <use href="#i-pen" />
-            </svg>
-            Put down the fence
+            <span className="fb-idle">
+              <svg className="ic">
+                <use href="#i-pen" />
+              </svg>
+              Put down the fence
+            </span>
+            <span className="fb-done" aria-hidden="true">
+              <svg className="ic">
+                <use href="#i-check" />
+              </svg>
+              Fence down
+            </span>
           </button>
           <div className="vsw" id="modeSwitch">
             <button className="vsw-btn active" type="button" data-mode="draw">

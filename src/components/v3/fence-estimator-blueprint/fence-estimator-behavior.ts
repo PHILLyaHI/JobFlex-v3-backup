@@ -872,6 +872,7 @@ export function initFenceEstimatorContent(
       fs.demo = false;
       fs.material = 'composite';
       fs.height = 6;
+      clearFenceDone();
       // The rate card and any materials the shop added SURVIVE: they are the
       // shop's prices, not this property's geometry.
       renderStudio();
@@ -1853,6 +1854,7 @@ export function initFenceEstimatorContent(
   }
 
   function hideParcelPanel() {
+    clearFenceDone();
     parcelLots = [];
     parcelHover = null;
     parcelRoads = [];
@@ -1866,6 +1868,13 @@ export function initFenceEstimatorContent(
     const btn = $('#fenceBtn') as HTMLButtonElement | null;
     if (!btn) return;
     btn.disabled = checkedParcelFt() <= 0;
+  }
+  /** Back to the offer face — a new property, a lost parcel, or a reset. */
+  function clearFenceDone() {
+    const btn = $('#fenceBtn');
+    if (!btn) return;
+    btn.classList.remove('is-done');
+    btn.removeAttribute('aria-label');
   }
 
   /** Turn one API lot into panel/map state. Returns null when the lot came back
@@ -2002,6 +2011,7 @@ export function initFenceEstimatorContent(
     const meta = $('#parcelMeta');
     const list = $('#parcelSides');
     if (!panel || !meta || !list || !parcelLots.length) return;
+    clearFenceDone(); // a freshly loaded property has no fence down yet
     const subject = parcelLots[0].choice;
     const bits: string[] = [];
     if (subject.owner) bits.push(subject.owner);
@@ -2167,10 +2177,11 @@ export function initFenceEstimatorContent(
     });
     applyTracedPath(pts);
 
-    const old = btn.innerHTML;
-    btn.dataset.busy = '1';
-    btn.innerHTML = '<svg class="ic"><use href="#i-check"/></svg>Fence down';
-    after(function () { btn.innerHTML = old; delete btn.dataset.busy; }, 1600);
+    // Sticky done face (owner's call, 2026-09-08): the button rests on "Fence
+    // down" until the property changes or the studio is reset; hovering shows
+    // the offer again (CSS), and a second click lays the checked sides again.
+    btn.classList.add('is-done');
+    btn.setAttribute('aria-label', 'Fence down — click to lay the checked sides again');
     sayHint(
       Math.round(checkedParcelFt()) + ' ft of fence laid along the property line' +
       (parcelLots.length > 1 ? ' across ' + parcelLots.length + ' lots' : '') +
