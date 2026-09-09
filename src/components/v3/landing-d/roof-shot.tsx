@@ -239,7 +239,7 @@ export function RoofShot({ active }: { active: boolean }) {
             style={{ opacity: aerial ? 1 : 0, transition: "opacity .5s ease" }}
           >
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: SKY }} />
-            {tilted ? "Wireframe · EagleView geometry" : traced ? "Tracing facets" : "Orthophoto located"}
+            {tilted ? "Wireframe · aerial geometry" : traced ? "Tracing facets" : "Orthophoto located"}
           </span>
         </div>
 

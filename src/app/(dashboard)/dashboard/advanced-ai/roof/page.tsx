@@ -9,7 +9,7 @@ export default function RoofEstimatorPage() {
       <PageHeader
         eyebrow="Automation · AI"
         title="Roof estimator"
-        description="Contract-grade EagleView measurements — every facet's pitch and area, a labeled 2D/3D model, and a pre-priced breakdown you can send as a proposal."
+        description="Contract-grade aerial measurements — every facet's pitch and area, a labeled 2D/3D model, and a pre-priced breakdown you can send as a proposal."
       />
       <RoofEstimatorForm evEnabled={isEagleViewEnabled()} aiEnabled={isOpenAIEnabled()} />
     </>

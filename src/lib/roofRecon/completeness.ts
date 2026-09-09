@@ -163,7 +163,7 @@ export function checkCompleteness(input: CompletenessInput): CompletenessReport 
       findings.push({
         level: "warn",
         code: "OUTLINE_NOT_PURCHASED",
-        message: `Outline not purchased (pack 007 not entitled) — building ${s.prefix} has EagleView figures but no outline to draw from.`,
+        message: `Outline not available — building ${s.prefix} has figures but no outline to draw from.`,
       });
       continue;
     }
@@ -183,7 +183,7 @@ export function checkCompleteness(input: CompletenessInput): CompletenessReport 
     findings.push({
       level: "warn",
       code: "STRUCTURE_FOREIGN",
-      message: `Building ${prefix} lies entirely outside this property's lot as EagleView's own imagery masks it — it is almost certainly a neighbour's, and the area and linear footage below include it. Check the drawing against the lot line before pricing.`,
+      message: `Building ${prefix} lies entirely outside this property's lot as the aerial imagery masks it — it is almost certainly a neighbour's, and the area and linear footage below include it. Check the drawing against the lot line before pricing.`,
     });
   }
 
@@ -219,7 +219,7 @@ export function checkCompleteness(input: CompletenessInput): CompletenessReport 
       findings.push({
         level: "warn",
         code: "FOOTPRINT_MISMATCH",
-        message: `The outlines this drawing was built from cover ${Math.round(contourSqft).toLocaleString("en-US")} sq ft, while EagleView's own footprint figure for the same buildings is ${Math.round(instantFootprint).toLocaleString("en-US")} sq ft — a ${(gap * 100).toFixed(0)}% disagreement about the size of the building itself.`,
+        message: `The outlines this drawing was built from cover ${Math.round(contourSqft).toLocaleString("en-US")} sq ft, while the reported footprint figure for the same buildings is ${Math.round(instantFootprint).toLocaleString("en-US")} sq ft — a ${(gap * 100).toFixed(0)}% disagreement about the size of the building itself.`,
       });
     }
   }

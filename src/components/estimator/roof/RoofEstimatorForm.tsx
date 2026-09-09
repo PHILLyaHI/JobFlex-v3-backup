@@ -252,7 +252,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
     if (model.source === "synthetic") {
       toast.error(
         "Estimated measurements can’t be priced",
-        "Order an EagleView measurement for this address to build a priced estimate.",
+        "Order an aerial measurement for this address to build a priced estimate.",
       );
       return;
     }
@@ -271,7 +271,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
         wastePct: Number(waste.replace("%", "")),
         // Always EagleView here — the guard above returns for synthetic models,
         // so a priced estimate can only ever be built from a measured report.
-        measurementNotes: `EagleView measured: ${model.totals.squares.toFixed(1)} squares (${model.totals.areaSqft.toFixed(0)} sqft) across ${model.totals.facetCount} facets. Ridge ${model.totals.footageByType.RIDGE.toFixed(0)}ft, Hip ${model.totals.footageByType.HIP.toFixed(0)}ft, Valley ${model.totals.footageByType.VALLEY.toFixed(0)}ft, Eave ${model.totals.footageByType.EAVE.toFixed(0)}ft, Rake ${model.totals.footageByType.RAKE.toFixed(0)}ft. Facets — ${facetSummary}.`,
+        measurementNotes: `Aerial data measured: ${model.totals.squares.toFixed(1)} squares (${model.totals.areaSqft.toFixed(0)} sqft) across ${model.totals.facetCount} facets. Ridge ${model.totals.footageByType.RIDGE.toFixed(0)}ft, Hip ${model.totals.footageByType.HIP.toFixed(0)}ft, Valley ${model.totals.footageByType.VALLEY.toFixed(0)}ft, Eave ${model.totals.footageByType.EAVE.toFixed(0)}ft, Rake ${model.totals.footageByType.RAKE.toFixed(0)}ft. Facets — ${facetSummary}.`,
       });
       if (!res.ok) {
         if (reportPlanLimitResult(res)) return;
@@ -294,7 +294,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
     if (model?.source === "synthetic") {
       toast.error(
         "Estimated measurements can’t become a proposal",
-        "Order an EagleView measurement for this address first.",
+        "Order an aerial measurement for this address first.",
       );
       return;
     }
@@ -333,7 +333,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
         <div className="flex items-start gap-3 p-1">
           <AlertCircle className="h-4 w-4 mt-0.5 text-amber-700 shrink-0" />
           <div className="text-[13px] leading-relaxed">
-            <div className="font-medium text-[color:var(--ink)]">EagleView isn’t configured.</div>
+            <div className="font-medium text-[color:var(--ink)]">Aerial data isn’t configured.</div>
             <div className="text-[color:var(--ink-muted)] mt-0.5">
               Set <code className="font-mono text-[11px]">EAGLEVIEW_CLIENT_ID</code> and{" "}
               <code className="font-mono text-[11px]">EAGLEVIEW_CLIENT_SECRET</code> in{" "}
@@ -355,7 +355,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
               <div>
                 <CardTitle>Measure a roof</CardTitle>
                 <CardSubtitle>
-                  Pull contract-grade EagleView geometry — every facet’s pitch, area, and edges.
+                  Pull contract-grade aerial geometry — every facet’s pitch, area, and edges.
                 </CardSubtitle>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -371,7 +371,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
             {diag && (
               <div className="mb-4 rounded-[var(--r-md)] hairline bg-[color:var(--paper-deep)] p-3">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="quiet-caps text-[color:var(--ink-faint)]">EagleView diagnostics</span>
+                  <span className="quiet-caps text-[color:var(--ink-faint)]">Aerial data diagnostics</span>
                   <span
                     className={
                       "text-[11px] font-medium tabular " +
@@ -436,7 +436,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                 <p className="text-[11px] text-[color:var(--ink-muted)] leading-relaxed">
                   <strong>Free estimate</strong> reconstructs the roof from Google aerial elevation data —
                   instant, no charge, accurate to a few percent on area and pitch, but an estimate: it can’t
-                  be priced or sent as a proposal. <strong>Order</strong> places a real EagleView measurement
+                  be priced or sent as a proposal. <strong>Order</strong> places a real Aerial measurement
                   for contract-grade geometry. The current <strong>sandbox</strong> account only returns the
                   canned samples — measuring a real address needs a <strong>production</strong> account.
                 </p>
@@ -582,7 +582,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
               <div className="relative flex items-end justify-between gap-4 flex-wrap">
                 <div className="min-w-0">
                   <div className="text-[10px] uppercase tracking-[0.16em] text-white/55">
-                    EagleView measurement
+                    Aerial measurement
                   </div>
                   <div className="rfx-hero-title text-[19px] font-semibold text-white truncate">
                     {model.location.address || "Roof model"}
@@ -590,9 +590,9 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                   </div>
                   <div
                     className="text-[12px] text-white/65"
-                    title="EagleView's price to produce this measurement report (the Bid Perfect report-tier fee). Sandbox samples are free; this is what it costs to order live."
+                    title="The provider's price to produce this measurement report (the Bid Perfect report-tier fee). Sandbox samples are free; this is what it costs to order live."
                   >
-                    {cost != null ? `EagleView report fee · $${cost}` : "Contract-grade measurement"}
+                    {cost != null ? `Report fee · $${cost}` : "Contract-grade measurement"}
                   </div>
                 </div>
                 <div className="flex items-center gap-5">
@@ -678,7 +678,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
             {model.reportId != null && (
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t border-[color:var(--ink-line)] bg-white">
                 <span className="text-[11px] text-[color:var(--ink-muted)]">
-                  Compare with EagleView’s own deliverables
+                  Compare with the provider’s own deliverables
                 </span>
                 <div className="flex items-center gap-2">
                   <a
@@ -687,7 +687,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 rounded-[var(--r-sm)] hairline px-3 py-1.5 text-[12px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--paper-deep)] transition-colors"
                   >
-                    <FileText className="h-3.5 w-3.5 text-[color:var(--ink-muted)]" /> EagleView PDF report
+                    <FileText className="h-3.5 w-3.5 text-[color:var(--ink-muted)]" /> Measurement PDF report
                     <ExternalLink className="h-3 w-3 text-[color:var(--ink-faint)]" />
                   </a>
                   <a
@@ -760,7 +760,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                 {isSynthetic ? (
                   <span className="text-[11px] text-[color:var(--ink-muted)] leading-relaxed max-w-[26rem]">
                     These measurements are <strong>estimated</strong> from aerial imagery, so they can’t be
-                    priced. Order an EagleView measurement for this address to build a quote.
+                    priced. Order an aerial measurement for this address to build a quote.
                   </span>
                 ) : (
                   !aiEnabled && (
@@ -810,7 +810,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
           <div className="paper-card p-5 max-w-sm w-full">
             <div className="font-medium text-[color:var(--ink)]">Place a billable order?</div>
             <p className="mt-1.5 text-[13px] text-[color:var(--ink-muted)] leading-relaxed">
-              This orders an EagleView measurement report{price != null ? ` for $${price}` : ""} on{" "}
+              This orders an aerial measurement report{price != null ? ` for $${price}` : ""} on{" "}
               <span className="text-[color:var(--ink)]">{picked?.address}</span>. The report takes a little
               time — we’ll poll for it.
             </p>

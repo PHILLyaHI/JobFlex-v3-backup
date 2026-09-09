@@ -159,7 +159,7 @@ export function getIntegrationStatuses(): IntegrationStatus[] {
     },
     {
       key: "eagleview",
-      name: "EagleView",
+      name: "Aerial data",
       group: "property",
       enabled: isEagleViewEnabled(),
       envKeys: ["EAGLEVIEW_CLIENT_ID", "EAGLEVIEW_CLIENT_SECRET"],

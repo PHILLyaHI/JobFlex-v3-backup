@@ -41,6 +41,7 @@ import {
 import { attachPlacesSuggest, type PickedPlace } from "@/components/v3/blueprint-shell/places-suggest";
 import { isMapsBrowserEnabled, loadMapsLibrary } from "@/lib/googleMaps";
 import { displayedPitchLabel, foreignIndices, instantTotalsOf, pickMainStructure, pitchFamilyShares } from "@/lib/roofDiagram/instantTotals";
+import { AERIAL } from "@/lib/vendorLabels";
 
 const STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA",
@@ -438,14 +439,14 @@ export function RoofEstimatorDataForm() {
       addrRef.current?.focus();
       return;
     }
-    if (forceNewOrder && !window.confirm("Order a NEW EagleView lookup for this address? This is billed, even though a paid answer already exists.")) {
+    if (forceNewOrder && !window.confirm(`Order a NEW ${AERIAL.vendor.toLowerCase()} lookup for this address? This is billed, even though a paid answer already exists.`)) {
       return;
     }
     resetResult();
     setInstantBusy(true);
     setReusedInstant(null);
     setMsReport("Instant measure");
-    setMsHint("EagleView Property Data (production, billed per lookup) — the measured totals, structures and imagery, saved to the history.");
+    setMsHint(`${AERIAL.property} (billed per lookup) — the measured totals, structures and imagery, saved to the history.`);
     setPanel("measuring");
     const stop = runStages();
     try {
@@ -481,7 +482,7 @@ export function RoofEstimatorDataForm() {
           (res.reusedInstant
             ? res.reusedInstant.how === "recovered"
               ? " · collected the earlier paid order — nothing new was billed"
-              : " · reused the already-paid EagleView answer — nothing new was billed"
+              : " · reused the already-paid aerial data — nothing new was billed"
             : ""),
       );
       if (!res.unsaved) void loadRecent();
@@ -537,7 +538,7 @@ export function RoofEstimatorDataForm() {
     }
     // No pitch, no price: the button is disabled in this state, this is the belt.
     if (!pitchForEstimate || !pitchKind) {
-      toast.error("Enter the pitch first", "EagleView did not supply a pitch for this roof (pack 002); pick one to price it.");
+      toast.error("Enter the pitch first", "The aerial data has no pitch for this roof; pick one to price it.");
       return;
     }
     setGenBusy(true);
@@ -549,7 +550,7 @@ export function RoofEstimatorDataForm() {
             ? `two-pitch roof: ${families.map((f) => `${Math.round(f.pitch12)}/12 (${Math.round(f.share * 100)}% of the roof)`).join(" + ")} — measured from aerial elevation data (${Math.round((pitchRep!.trustedShare ?? 0) * 100)}% of the roof read cleanly)`
             : `pitch ${pitchForEstimate} over the whole roof — measured from aerial elevation data (${Math.round((pitchRep!.trustedShare ?? 0) * 100)}% of the roof read cleanly; that is the measurement's coverage, not a share of the roof at this pitch)`
           : pitchKind === "eagleview"
-            ? `pitch ${pitchForEstimate} (EagleView published figure)`
+            ? `pitch ${pitchForEstimate} (${AERIAL.reported} figure)`
             : `pitch ${pitchForEstimate} entered by user — not measured`;
       const extrasNote =
         !manual && extra.size
@@ -568,7 +569,7 @@ export function RoofEstimatorDataForm() {
         wastePct: waste,
         measurementNotes: manual
           ? `Contractor-entered takeoff: ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft), ${pitchNote}. No facet or linear-footage breakdown; allow for ridge, valley and flashing.`
-          : `EagleView Instant (calibrated): ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft) for the main structure, ${pitchNote}, footprint ${
+          : `${AERIAL.vendor} (calibrated): ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft) for the main structure, ${pitchNote}, footprint ${
               structure?.footprintSqft != null ? num(structure.footprintSqft) + " sq ft" : "not purchased"
             }.${extrasNote} No facet or linear-footage breakdown — the drawing tool is offline; allow for ridge/valley/flashing from the aerial photo.`,
       });
@@ -681,22 +682,12 @@ export function RoofEstimatorDataForm() {
       : pitchKind === "entered"
         ? "rise / 12 · entered by hand"
         : pitchKind === "eagleview"
-          ? "rise / 12 · EagleView"
+          ? `rise / 12 · ${AERIAL.reported}`
           : measurement && !inst
             ? "drawing pipeline (legacy) · no source"
-            : "not purchased · pack 002";
+            : "pitch not available — enter pitch to price";
   // The pitch the estimate will be priced on, or null: no pitch, no estimate.
   const pitchForEstimate = pitchKind === "measured" ? `${Math.round(pitchRep!.families[0].pitch12)}/12` : pitchKind === "eagleview" ? evPitch : pitchKind === "entered" ? (manual ? manual.pitchLabel : pitchEntered) : null;
-  // Google Solar's independent whole-roof area, as a check on the figure shown.
-  const solarLine = (() => {
-    const g = prov?.googleAreaSqft;
-    if (g == null || !inst || totals?.areaSqft == null) return null;
-    const pct = ((totals.areaSqft - g) / g) * 100;
-    // One decimal, and the mark goes on strictly above 10.0 — so "+10.3%" is
-    // marked and reads as such, never a rounded "+10%" called "more than 10%".
-    const off = Math.abs(pct) > 10.0;
-    return { text: `Google Solar: ${num(g)} sq ft (${pct >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(1)}%)`, off };
-  })();
   const eaveHeights = structure?.eaveHeightFt
     ? Object.entries(structure.eaveHeightFt).map(([facade, ft]) => ({ facade, ft }))
     : [];
@@ -709,7 +700,7 @@ export function RoofEstimatorDataForm() {
     if (!ip || (!ip.denied.length && !ip.missing.length && !ip.failed.length && !ip.unknown?.length)) return null;
     const NAMES: Record<string, string> = {
       property_data_id_001: "area",
-      property_data_id_002: "pitch & eave",
+      property_data_id_002: "pitch",
       property_data_id_003: "material & condition",
       property_data_id_004: "roof age",
       property_data_id_005: "shape & details",
@@ -719,12 +710,10 @@ export function RoofEstimatorDataForm() {
     const parts = Object.keys(NAMES).map((pack) => {
       const name = NAMES[pack];
       if (ip.have.includes(pack)) return `${name} ✓`;
-      if (ip.denied.includes(pack)) return `${name} ✗ not entitled`;
-      if (ip.failed.includes(pack)) return `${name} ✗ failed`;
-      if (ip.unknown?.includes(pack)) return `${name} ? unknown`;
-      return `${name} ✗ not purchased`;
+      if (ip.unknown?.includes(pack)) return `${name} ?`;
+      return `${name} ✗`;
     });
-    return "EagleView data packs: " + parts.join(" · ");
+    return `${AERIAL.coverage}: ` + parts.join(" · ");
   }, [measurement]);
   const reconDown = measurement?.provenance?.reconUnavailable ?? null;
   const partialCoverage = measurement?.provenance?.partialCoverage ?? null;
@@ -739,14 +728,14 @@ export function RoofEstimatorDataForm() {
           <div className="rf-head rf-head--bar">
             <div>
               <div className="card-title">Measure a roof</div>
-              <div className="card-sub">One address → EagleView’s measured figures: area, pitch, structures and the aerial photo, ready to price.</div>
+              <div className="card-sub">One address → measured figures from aerial data: area, pitch, structures and the aerial photo, ready to price.</div>
             </div>
             <span className="chip ok">Instant · production</span>
           </div>
 
           <div className="rf-body">
             <p className="rf-note">
-              <b>Instant measure</b> pulls real EagleView Property Data in seconds — production account, billed
+              <b>Instant measure</b> pulls real aerial property data in seconds — production account, billed
               per lookup; an already-paid answer for the same address is reused automatically. The drawing tool
               is offline while it is reworked: the page shows the measured <b>data</b> and the aerial photo.
             </p>
@@ -909,7 +898,7 @@ export function RoofEstimatorDataForm() {
                     <span className="rf-stamp">ENTERED BY HAND</span>
                     These figures are yours, not measured — {num(manual.squares, 1)} squares at {manual.pitchLabel}
                     {manual.address ? ` for ${manual.address}` : ""}. The estimate and the proposal carry them as
-                    stated; nothing was ordered from EagleView and nothing is saved to Recent measurements.
+                    stated; nothing was ordered from the aerial data provider and nothing is saved to Recent measurements.
                   </div>
                 </div>
               </div>
@@ -921,7 +910,7 @@ export function RoofEstimatorDataForm() {
                     <div>
                       <span className="rf-stamp">MEASURED BY THE PREVIOUS PIPELINE</span>
                       This measurement was saved by the earlier drawing pipeline and is shown exactly as it was
-                      recorded — reopening a measurement never re-measures it. Its figures are EagleView’s
+                      recorded — reopening a measurement never re-measures it. Its figures are the aerial data’s
                       calibrated totals and remain valid.
                     </div>
                   </div>
@@ -933,7 +922,7 @@ export function RoofEstimatorDataForm() {
                       The aerial elevation data for this address did not arrive
                       {reconDown.kind === "config" ? " because the imagery service rejected our request" : " in time"}
                       , so the source-status figures (coverage, registration) are absent. This is not a statement
-                      about the address — EagleView’s measured totals above are unaffected. Measure again — the
+                      about the address — the measured totals above are unaffected. Measure again — the
                       paid answer is reused, so a retry costs nothing.
                       {reconDown.message && <span className="rf-why">{reconDown.message}</span>}
                       <button
@@ -969,8 +958,8 @@ export function RoofEstimatorDataForm() {
                 {pitchRep?.disagrees && (
                   <div className="call info">
                     <div>
-                      <b>Measured pitch disagrees with EagleView.</b> The elevation data measures{" "}
-                      {pitchRep.families[0].pitch12.toFixed(1)}/12 on this roof; EagleView publishes{" "}
+                      <b>Measured pitch differs from the reported figure.</b> The elevation data measures{" "}
+                      {pitchRep.families[0].pitch12.toFixed(1)}/12 on this roof; the reported figure is{" "}
                       {pitchRep.instantPitch12}/12. The measured figure is shown; both are recorded.
                     </div>
                   </div>
@@ -995,15 +984,9 @@ export function RoofEstimatorDataForm() {
             {/* Which EagleView packs this answer is made of. Shown only when the
                 measurement knows (rows since per-pack ordering, 2026-09-08) and
                 something is not there — a full seven-pack answer says nothing. */}
-            {(solarLine || packsLine) && (
+            {packsLine && (
               <div className="rf-notice">
-                {solarLine && (
-                  <div className="rf-note rf-solar">
-                    {solarLine.text}
-                    {solarLine.off && <> <span className="chip wait">differs by more than 10% · check the outline</span></>}
-                  </div>
-                )}
-                {packsLine && <div className="rf-note rf-packs">{packsLine}</div>}
+                <div className="rf-note rf-packs">{packsLine}</div>
               </div>
             )}
 
@@ -1030,7 +1013,7 @@ export function RoofEstimatorDataForm() {
                           aria-checked={view === v}
                           onClick={() => switchView(v)}
                         >
-                          {v === "satellite" ? "Satellite" : "Ortho"}
+                          {v === "satellite" ? "Satellite" : AERIAL.ortho}
                         </button>
                       ))}
                     </div>
@@ -1058,7 +1041,7 @@ export function RoofEstimatorDataForm() {
                       // eslint-disable-next-line @next/next/no-img-element -- data: URL from the server-side photo cache; next/image adds nothing here
                       <img
                         src={photoShown}
-                        alt={view === "satellite" ? "Satellite view" : "EagleView ortho"}
+                        alt={view === "satellite" ? "Satellite view" : AERIAL.ortho}
                         className="rf-photo"
                       />
                     ) : (
@@ -1074,7 +1057,7 @@ export function RoofEstimatorDataForm() {
                       ? liveMap
                         ? "Google Maps satellite · drag to pan · scroll to zoom"
                         : "Google Maps satellite"
-                      : `EagleView ortho${orthoShotDate ? ` · ${orthoShotDate}` : ""}`}
+                      : `${AERIAL.ortho}${orthoShotDate ? ` · ${orthoShotDate}` : ""}`}
                   </span>
                 </div>
               </div>
@@ -1084,14 +1067,14 @@ export function RoofEstimatorDataForm() {
                   <div className="card rf-card">
                     <div className="rf-head">
                       <div className="card-title">Details</div>
-                      <div className="card-sub">EagleView Instant Property Data</div>
+                      <div className="card-sub">{AERIAL.property}</div>
                     </div>
                     <dl className="rf-details" id="rfDetails">
                       {eaveHeights.length > 0 && (
                         <>
                           {/* EagleView's per-facade figure, in 10 ft classes (9903: 10 on every side;
                               12117: 20 on the house, 10 on the outbuildings) — a class, not a measurement. */}
-                          <div className="rf-details-sec">Eave height · EagleView · 10 ft classes</div>
+                          <div className="rf-details-sec">Eave height · {AERIAL.eave}</div>
                           {eaveHeights.map((e) => (
                             <div className="rf-details-row" key={e.facade}>
                               <dt>{FACADE[e.facade] ?? e.facade}</dt>
@@ -1253,7 +1236,7 @@ export function RoofEstimatorDataForm() {
                       assessment?.estimable === false
                         ? "Part of this property is missing from the figures, so they are not reliable enough to price from."
                         : !pitchForEstimate
-                          ? "Enter the pitch first — EagleView did not supply one for this roof."
+                          ? "Enter the pitch first — the aerial data has none for this roof."
                           : undefined
                     }
                     onClick={() => void generate()}
@@ -1470,7 +1453,7 @@ function AgainPortal({
           id="remeasureBtn"
           disabled={disabled}
           onClick={onRemeasure}
-          title="This result reused an already-paid EagleView answer. Re-measuring orders a fresh lookup, which is billed."
+          title="This result reused already-paid aerial data. Re-measuring orders a fresh lookup, which is billed."
         >
           Re-measure — new paid lookup
         </button>

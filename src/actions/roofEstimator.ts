@@ -97,7 +97,7 @@ await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
       : input.pitchSource === "entered"
         ? "Pitch source: entered by the contractor, not measured."
         : input.pitchSource === "eagleview"
-          ? "Pitch source: EagleView published figure."
+          ? "Pitch source: the reported figure from the aerial data."
           : "";
   try {
     const client = getOpenAI();

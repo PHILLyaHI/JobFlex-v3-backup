@@ -72,7 +72,7 @@ export async function reconRoofPreview(input: {
       return {
         ok: false,
         error:
-          "Google has no high-resolution roof data for this address. Order an EagleView report to measure it.",
+          "Google has no high-resolution roof data for this address. Use Instant measure to measure it.",
       };
     }
     if (layers.imageryQuality !== "HIGH") {
@@ -81,7 +81,7 @@ export async function reconRoofPreview(input: {
       // return a confident-looking wrong model.
       return {
         ok: false,
-        error: `Only ${layers.imageryQuality}-resolution imagery is available here, which is too coarse to measure a roof. Order an EagleView report instead.`,
+        error: `Only ${layers.imageryQuality}-resolution imagery is available here, which is too coarse to measure a roof. Use Instant measure instead.`,
       };
     }
 

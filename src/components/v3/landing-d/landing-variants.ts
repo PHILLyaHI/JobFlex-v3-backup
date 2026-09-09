@@ -93,7 +93,7 @@ export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> 
   },
   roofing: {
     h1: ["Measure the roof", "from the address."],
-    sub: "Type the address, get the measured pitch and EagleView roof data in about a minute.",
+    sub: "Type the address, get the measured pitch and aerial roof data in about a minute.",
     primaryCta: "Start free — measure a roof",
     showcaseSlide: "roof",
     visual: "roof",

@@ -409,7 +409,7 @@ export async function measureRoofInstant(
   } catch (err) {
     return { ok: false, error: errorMessage(err, "Not authorised") };
   }
-  if (!isEagleViewEnabled()) return { ok: false, error: "EagleView is not configured" };
+  if (!isEagleViewEnabled()) return { ok: false, error: "Aerial data is not configured" };
   if (!input.address && input.lat == null) return { ok: false, error: "Pick an address first" };
 
   // Instant: через леджер заказов (переиспользование, дозабор, покупка)
@@ -424,7 +424,7 @@ export async function measureRoofInstant(
   } catch (err) {
     const debug = { ...eagleViewIdentity(), stage: "instant order", error: errorMessage(err, String(err)) };
     console.warn("[roofMeasurement] instant failed", debug);
-    return { ok: false, error: errorMessage(err, "EagleView Instant request failed"), debug };
+    return { ok: false, error: errorMessage(err, "Aerial data request failed"), debug };
   }
   const debug = { ...eagleViewIdentity(), packs, reused: reuse ?? null, requestId: instant.requestId };
 

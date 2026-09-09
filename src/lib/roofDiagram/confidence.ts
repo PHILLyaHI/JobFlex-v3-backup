@@ -206,12 +206,12 @@ export function assessRoof(input: {
     // EagleView pitch at all (audit 2026-09-08: 11810 was captioned with a
     // published pitch it never had); that is a note, not a confidence hit.
     if (input.pitchSource.instantPitch12 == null) {
-      reasons.push("Pitch not purchased (pack 002) — enter pitch to price.");
+      reasons.push("Pitch not available — enter pitch to price.");
     } else {
       reasons.push(
         input.pitchSource.solarPanels
-          ? "The pitch is EagleView's published figure: this roof carries solar panels, and the aerial elevation data measures the panels rather than the roof beneath them."
-          : "The pitch is EagleView's published figure — too little of this roof reads as a clean plane from above to measure it ourselves.",
+          ? "The pitch is the reported figure: this roof carries solar panels, and the aerial elevation data measures the panels rather than the roof beneath them."
+          : "The pitch is the reported figure — too little of this roof reads as a clean plane from above to measure it ourselves.",
       );
     }
   }
@@ -267,15 +267,15 @@ export function assessRoof(input: {
     const certainty = conf != null ? ` (its own certainty ${Math.round(conf * 100)}%)` : "";
     if (instantCap && tier[instantCap] > tier[ours]) {
       reasons.push(
-        `The aerial elevation data covered this roof, but EagleView's survey of the same building reports ${worstSev} ${what}${certainty} — two sources disagree about how much of it is actually visible, and the more cautious one is shown here.`,
+        `The aerial elevation data covered this roof, but the aerial survey of the same building reports ${worstSev} ${what}${certainty} — two sources disagree about how much of it is actually visible, and the more cautious one is shown here.`,
       );
     } else {
       reasons.push(
-        `EagleView's own survey also reports ${worstSev} ${what} on this roof${certainty}.`,
+        `The aerial survey also reports ${worstSev} ${what} on this roof${certainty}.`,
       );
     }
   } else if (occ && worstSev === "none" && ours !== "high") {
-    reasons.push("EagleView's own survey reports this roof as unobstructed, so what is uncertain here is our reading of it, not the view of it.");
+    reasons.push("The aerial survey reports this roof as unobstructed, so what is uncertain here is our reading of it, not the view of it.");
   }
 
   if (confidence === "medium" && reasons.length === 0) {

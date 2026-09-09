@@ -44,7 +44,7 @@ export async function evProducts(): Promise<
   { ok: true; products: EvProduct[] } | { ok: false; error: string }
 > {
   await requireEstimatorOrManager();
-  if (!isEagleViewEnabled()) return { ok: false, error: "EagleView is not configured" };
+  if (!isEagleViewEnabled()) return { ok: false, error: "Aerial data is not configured" };
   try {
     return { ok: true, products: await getAvailableProducts() };
   } catch (err: any) {
@@ -58,7 +58,7 @@ export async function evRoofModel(
   reportId: number,
 ): Promise<{ ok: true; model: RoofModel; cached: boolean; totalCost: number | null } | { ok: false; error: string }> {
   const { organizationId, user } = await requireEstimatorOrManager();
-  if (!isEagleViewEnabled()) return { ok: false, error: "EagleView is not configured" };
+  if (!isEagleViewEnabled()) return { ok: false, error: "Aerial data is not configured" };
   if (!Number.isFinite(reportId)) return { ok: false, error: "Invalid report id" };
   try {
     const cachedRow = await db.eagleViewReport.findUnique({
@@ -124,7 +124,7 @@ export async function evPriceRoof(
   input: EvOrderInput,
 ): Promise<{ ok: true; price: unknown } | { ok: false; error: string }> {
   await requireEstimatorOrManager();
-  if (!isEagleViewEnabled()) return { ok: false, error: "EagleView is not configured" };
+  if (!isEagleViewEnabled()) return { ok: false, error: "Aerial data is not configured" };
   try {
     return { ok: true, price: await priceOrder(input) };
   } catch (err: any) {
@@ -139,7 +139,7 @@ export async function evOrderRoof(
 ): Promise<{ ok: true; reportId: number } | { ok: false; error: string }> {
   const { organizationId, user } = await requireEstimatorOrManager();
 await enforceRateLimit(`ev-order:${organizationId}`, 5, DAY, "roof report orders");
-  if (!isEagleViewEnabled()) return { ok: false, error: "EagleView is not configured" };
+  if (!isEagleViewEnabled()) return { ok: false, error: "Aerial data is not configured" };
   try {
     const { reportId } = await placeOrder(input);
     await db.eagleViewReport.upsert({
@@ -174,7 +174,7 @@ export async function evReportStatus(
   | { ok: false; error: string }
 > {
   const { organizationId } = await requireEstimatorOrManager();
-  if (!isEagleViewEnabled()) return { ok: false, error: "EagleView is not configured" };
+  if (!isEagleViewEnabled()) return { ok: false, error: "Aerial data is not configured" };
   try {
     const s = await getReportSummary(reportId);
     await db.eagleViewReport.updateMany({

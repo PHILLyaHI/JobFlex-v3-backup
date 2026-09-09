@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   } catch {
     return new Response("Unauthorized", { status: 401 });
   }
-  if (!isEagleViewEnabled()) return new Response("EagleView not configured", { status: 503 });
+  if (!isEagleViewEnabled()) return new Response("Aerial data not configured", { status: 503 });
 
   const url = new URL(req.url);
   const reportId = Number(url.searchParams.get("reportId"));
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
   try {
     const ev = await getReportFile(reportId, fileType);
     if (!ev.ok || !ev.body) {
-      return new Response(`EagleView file unavailable (${ev.status})`, { status: 502 });
+      return new Response(`Measurement file unavailable (${ev.status})`, { status: 502 });
     }
     return new Response(ev.body, {
       headers: {

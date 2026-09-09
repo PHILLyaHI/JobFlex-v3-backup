@@ -217,7 +217,7 @@ export async function buildReconModel(input: ReconBuildInput): Promise<ReconBuil
   const layers = cached?.layers ?? (await getDataLayers(lat, lng, radiusM));
   if (!layers.dsmUrl || !layers.maskUrl) {
     throw new ReconUnavailableError(
-      "Google has no high-resolution roof data for this address. Order an EagleView report to measure it.",
+      "Google has no high-resolution roof data for this address. Use Instant measure to measure it.",
       "no-coverage",
     );
   }
@@ -226,7 +226,7 @@ export async function buildReconModel(input: ReconBuildInput): Promise<ReconBuil
     // across and plane segmentation cannot resolve it. Refuse rather than
     // return a confident-looking wrong model.
     throw new ReconUnavailableError(
-      `Only ${layers.imageryQuality}-resolution imagery is available here, which is too coarse to measure a roof. Order an EagleView report instead.`,
+      `Only ${layers.imageryQuality}-resolution imagery is available here, which is too coarse to measure a roof. Use Instant measure instead.`,
       "no-coverage",
     );
   }

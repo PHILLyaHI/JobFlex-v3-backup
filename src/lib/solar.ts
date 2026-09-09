@@ -107,7 +107,7 @@ async function solarFetch(url: string, op: string): Promise<Response> {
     }
     if (err.kind === "no-data") {
       throw new SolarUnavailableError(
-        "Google has no high-resolution solar/roof data for this address. Order an EagleView report to measure it.",
+        "Google has no high-resolution solar/roof data for this address. Use Instant measure to measure it.",
         "no-coverage",
         op,
       );

@@ -60,7 +60,7 @@ export function RoofEstimatorContent({
       ) : (
         <div className="card rf-card">
           <div className="rf-body">
-            <div className="card-title">EagleView isn’t configured.</div>
+            <div className="card-title">Aerial data isn’t configured.</div>
             <p className="rf-note">
               Set <code>EAGLEVIEW_CLIENT_ID</code> and <code>EAGLEVIEW_CLIENT_SECRET</code> in{" "}
               <code>.env.local</code> to enable roof measurement.

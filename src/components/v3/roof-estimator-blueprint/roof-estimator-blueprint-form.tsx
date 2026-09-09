@@ -1,7 +1,7 @@
 "use client";
 
 // Roof estimator (Blueprint) — the donor's three-panel markup (intake →
-// measuring → report) over the EagleView measurement engine:
+// measuring → report) over the Aerial measurement engine:
 //
 //   evRoofModel        sample tiles + collected orders → contract-grade RoofModel
 //   reconRoofPreview   "Free estimate" — Google-DSM reconstruction, synthetic,
@@ -117,7 +117,7 @@ export function RoofEstimatorBlueprintForm({ aiEnabled }: { aiEnabled: boolean }
     return () => clearInterval(t);
   }, [panel]);
 
-  // ── EagleView diagnostics (intake) ──
+  // ── Aerial data diagnostics (intake) ──
   const [diag, setDiag] = React.useState<EvDiagnostics | null>(null);
   const [diagBusy, setDiagBusy] = React.useState(false);
 
@@ -313,7 +313,7 @@ export function RoofEstimatorBlueprintForm({ aiEnabled }: { aiEnabled: boolean }
     if (isSynthetic) {
       toast.error(
         "Estimated measurements can't be priced",
-        "Order an EagleView measurement for this address to build a priced estimate.",
+        "Order an aerial measurement for this address to build a priced estimate.",
       );
       return;
     }
@@ -330,7 +330,7 @@ export function RoofEstimatorBlueprintForm({ aiEnabled }: { aiEnabled: boolean }
         pitch: pitchLabel(model.totals.predominantPitch),
         squares: Number(model.totals.squares.toFixed(1)),
         wastePct: waste,
-        measurementNotes: `EagleView measured: ${model.totals.squares.toFixed(1)} squares (${model.totals.areaSqft.toFixed(0)} sqft) across ${model.totals.facetCount} facets. Ridge ${model.totals.footageByType.RIDGE.toFixed(0)}ft, Hip ${model.totals.footageByType.HIP.toFixed(0)}ft, Valley ${model.totals.footageByType.VALLEY.toFixed(0)}ft, Eave ${model.totals.footageByType.EAVE.toFixed(0)}ft, Rake ${model.totals.footageByType.RAKE.toFixed(0)}ft. Facets — ${facetSummary}.`,
+        measurementNotes: `Aerial data measured: ${model.totals.squares.toFixed(1)} squares (${model.totals.areaSqft.toFixed(0)} sqft) across ${model.totals.facetCount} facets. Ridge ${model.totals.footageByType.RIDGE.toFixed(0)}ft, Hip ${model.totals.footageByType.HIP.toFixed(0)}ft, Valley ${model.totals.footageByType.VALLEY.toFixed(0)}ft, Eave ${model.totals.footageByType.EAVE.toFixed(0)}ft, Rake ${model.totals.footageByType.RAKE.toFixed(0)}ft. Facets — ${facetSummary}.`,
       });
       if (!res.ok) {
         if (reportPlanLimitResult(res)) return;
@@ -353,7 +353,7 @@ export function RoofEstimatorBlueprintForm({ aiEnabled }: { aiEnabled: boolean }
     if (isSynthetic) {
       toast.error(
         "Estimated measurements can't become a proposal",
-        "Order an EagleView measurement for this address first.",
+        "Order an aerial measurement for this address first.",
       );
       return;
     }
@@ -414,10 +414,10 @@ export function RoofEstimatorBlueprintForm({ aiEnabled }: { aiEnabled: boolean }
           <div className="rf-head rf-head--bar">
             <div>
               <div className="card-title">Measure a roof</div>
-              <div className="card-sub">Pull contract-grade EagleView geometry — every facet’s pitch, area and edges, ready to price.</div>
+              <div className="card-sub">Pull contract-grade aerial geometry — every facet’s pitch, area and edges, ready to price.</div>
             </div>
             <span className={"chip" + (diag && !diag.isSandboxApi ? " ok" : "")}>
-              {diag ? (diag.isSandboxApi ? "Sandbox" : "Production") : "EagleView"}
+              {diag ? (diag.isSandboxApi ? "Sandbox" : "Production") : "Aerial data"}
             </span>
           </div>
 
@@ -425,7 +425,7 @@ export function RoofEstimatorBlueprintForm({ aiEnabled }: { aiEnabled: boolean }
             <p className="rf-note">
               <b>Free estimate</b> reconstructs the roof from Google aerial elevation data — instant, no
               charge, accurate to a few percent on area and pitch, but an estimate: it can’t be priced or
-              sent as a proposal. <b>Price → Order</b> places a real EagleView measurement for
+              sent as a proposal. <b>Price → Order</b> places a real Aerial measurement for
               contract-grade geometry.
             </p>
 
@@ -685,7 +685,7 @@ export function RoofEstimatorBlueprintForm({ aiEnabled }: { aiEnabled: boolean }
                         rel="noopener noreferrer"
                       >
                         <svg className="ic"><use href="#i-file" /></svg>
-                        EagleView PDF report
+                        Measurement PDF report
                       </a>
                       <a className="btn btn-ghost btn--sm" href={`/api/eagleview/file?reportId=${model.reportId}&fileType=26`}>
                         <svg className="ic"><use href="#i-download" /></svg>
@@ -775,7 +775,7 @@ export function RoofEstimatorBlueprintForm({ aiEnabled }: { aiEnabled: boolean }
                   <div className="card-title">Build an estimate</div>
                   <div className="card-sub">
                     {isSynthetic
-                      ? "These measurements are estimated from aerial imagery, so they can’t be priced. Order an EagleView measurement for this address to build a quote."
+                      ? "These measurements are estimated from aerial imagery, so they can’t be priced. Order an aerial measurement for this address to build a quote."
                       : `Measurements feed the takeoff — adjust waste and price it out against the measured ${totals.squares.toFixed(1)} squares.`}
                     {!isSynthetic && !aiEnabled ? " AI disabled — you’ll get a sample to tune." : ""}
                   </div>
@@ -850,7 +850,7 @@ export function RoofEstimatorBlueprintForm({ aiEnabled }: { aiEnabled: boolean }
           </div>
           <div className="mdl-body">
             <p className="rf-note">
-              This orders an EagleView measurement report{price != null ? ` for $${price}` : ""} on{" "}
+              This orders an aerial measurement report{price != null ? ` for $${price}` : ""} on{" "}
               <b>{picked?.address || "this address"}</b>. The report takes a little
               time — we’ll poll for it and open the drawing when it lands.
             </p>
