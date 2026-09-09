@@ -18,6 +18,8 @@ import {
   submitInstantOrder,
   fetchPropertyImage,
   PD_DIAGRAM_PACKS,
+  eagleViewIdentity,
+  type PdPack,
   type EvOrderInput,
   type InstantRoofData,
 } from "@/lib/eagleview";
@@ -40,8 +42,10 @@ type MeasureResult =
       measurement: RoofMeasurementDTO;
       unsaved?: boolean;
       reusedInstant?: { requestId: string; how: "stored" | "recovered" };
+      /** EagleView identity + the packs bought — for the browser console (EV_DEBUG). */
+      debug?: Record<string, unknown>;
     }
-  | { ok: false; error: string };
+  | { ok: false; error: string; debug?: Record<string, unknown> };
 
 interface LatLng {
   lat: number;
@@ -112,6 +116,8 @@ interface ObtainedInstant {
   instant: InstantRoofData;
   /** Absent when this call ordered (and paid for) a fresh lookup. */
   reuse?: { requestId: string; how: "stored" | "recovered" };
+  /** The packs the fresh order was ACCEPTED with (after any entitlement fallback). */
+  packs?: PdPack[];
 }
 
 /**
@@ -203,7 +209,8 @@ async function obtainInstant(input: EvOrderInput, organizationId: string, forceN
   }
 
   // 3. a new order. The ledger write sits BETWEEN accept and the first poll.
-  const { requestId, completeAddress } = await submitInstantOrder(input, PD_DIAGRAM_PACKS);
+  const { requestId, completeAddress, packs } = await submitInstantOrder(input, PD_DIAGRAM_PACKS);
+  console.info("[roofMeasurement] instant order placed", { requestId, packs, org: organizationId });
   try {
     await db.instantOrder.create({
       data: { organizationId, addressKey, address: input.address ?? null, requestId },
@@ -238,7 +245,7 @@ async function obtainInstant(input: EvOrderInput, organizationId: string, forceN
       data: { status: "complete", instantJson: JSON.stringify(got), ...(rawBody ? { instantRawJson: rawBody } : {}) },
     })
     .catch(() => {});
-  return { instant: got };
+  return { instant: got, packs };
 }
 
 // ── actions ──────────────────────────────────────────────────────────────────
@@ -365,13 +372,18 @@ export async function measureRoofInstant(
   // Instant: через леджер заказов (переиспользование, дозабор, покупка)
   let instant: InstantRoofData;
   let reuse: { requestId: string; how: "stored" | "recovered" } | undefined;
+  let packsBought: PdPack[] | undefined;
   try {
     const got = await obtainInstant(input, organizationId, opts?.forceNewOrder === true);
     instant = got.instant;
     reuse = got.reuse;
+    packsBought = got.packs;
   } catch (err) {
-    return { ok: false, error: errorMessage(err, "EagleView Instant request failed") };
+    const debug = { ...eagleViewIdentity(), stage: "instant order", error: errorMessage(err, String(err)) };
+    console.warn("[roofMeasurement] instant failed", debug);
+    return { ok: false, error: errorMessage(err, "EagleView Instant request failed"), debug };
   }
+  const debug = { ...eagleViewIdentity(), packs: packsBought ?? null, reused: reuse ?? null, requestId: instant.requestId };
 
   const origin: LatLng | null = instant.lat != null && instant.lng != null ? { lat: instant.lat, lng: instant.lng } : null;
   const contours = instant.structures.map((st) => st.outline ?? []).filter((r) => r.length >= 3);
@@ -477,24 +489,41 @@ export async function measureRoofInstant(
   }
 
   // completeness по строениям (контуры против Instant)
-  const planAreaSqft = frameContours.reduce((s, r) => s + Math.abs(areaOf(r)), 0);
-  const completeness = checkCompleteness({
-    planAreaSqft,
-    structures: instant.structures.map((st, i) => {
-      const fr = origin && st.outline && st.outline.length >= 3 ? (latLngRingToFrame(origin, st.outline).ring as FootprintPoint[]) : null;
-      return {
-        prefix: "s" + i,
-        ring: fr,
-        contourAreaSqft: fr ? Math.abs(areaOf(fr)) : 0,
-      };
-    }),
-    instant,
-  });
-  provenance.completeness = {
-    findings: completeness.findings,
-    planSqft: completeness.planSqft,
-    instantSqft: (completeness as unknown as { instantSqft?: number | null }).instantSqft ?? null,
-  } as unknown as MeasurementProvenance["completeness"];
+  //
+  // Only when at least one structure CAME WITH an outline. Without pack 007
+  // (the entitlement fallback in submitInstantOrder buys 001 + 002 only) no
+  // structure has a ring, and the check would call every building on the lot
+  // "could not be turned into a usable outline" — a LOW CONFIDENCE verdict
+  // that disables pricing on figures that are complete. Nothing was lost; an
+  // outline was never asked for.
+  const anyOutline = instant.structures.some((st) => st.outline && st.outline.length >= 3);
+  if (anyOutline) {
+    const planAreaSqft = frameContours.reduce((s, r) => s + Math.abs(areaOf(r)), 0);
+    const completeness = checkCompleteness({
+      planAreaSqft,
+      structures: instant.structures.map((st, i) => {
+        const fr = origin && st.outline && st.outline.length >= 3 ? (latLngRingToFrame(origin, st.outline).ring as FootprintPoint[]) : null;
+        return {
+          prefix: "s" + i,
+          ring: fr,
+          contourAreaSqft: fr ? Math.abs(areaOf(fr)) : 0,
+        };
+      }),
+      instant,
+    });
+    provenance.completeness = {
+      findings: completeness.findings,
+      planSqft: completeness.planSqft,
+      instantSqft: (completeness as unknown as { instantSqft?: number | null }).instantSqft ?? null,
+    } as unknown as MeasurementProvenance["completeness"];
+  } else {
+    provenance.completeness = {
+      findings: [],
+      planSqft: 0,
+      instantSqft: instant.totals.areaSqft ?? null,
+    } as unknown as MeasurementProvenance["completeness"];
+    console.info("[roofMeasurement] no outline pack in this answer — completeness check skipped", { packs: packsBought ?? null });
+  }
 
   // Google-сегменты: чтение roofSegmentStats (свидетель)
   if (origin) {
@@ -525,10 +554,10 @@ export async function measureRoofInstant(
       instant,
       provenance,
     });
-    return { ok: true, measurement, ...(reuse ? { reusedInstant: reuse } : {}) };
+    return { ok: true, measurement, ...(reuse ? { reusedInstant: reuse } : {}), debug };
   } catch (err) {
     console.warn("[roofMeasurement] row not saved:", errorMessage(err, String(err)));
-    return { ok: false, error: "Measured, but the row could not be saved" };
+    return { ok: false, error: "Measured, but the row could not be saved", debug };
   }
 }
 

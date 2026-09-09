@@ -431,6 +431,23 @@ export function RoofEstimatorDataForm() {
     const stop = runStages();
     try {
       const res = await measureRoofInstant(orderInput(), forceNewOrder ? { forceNewOrder } : undefined);
+      // DEBUG (2026-09-08, owner's call — on until told otherwise): the whole
+      // EagleView story for this click, in the browser console.
+      console.info(
+        "[roof:debug] Instant measure",
+        res.ok
+          ? {
+              ok: true,
+              requestId: res.measurement.instant?.requestId ?? null,
+              packs: res.debug?.packs ?? null,
+              reused: res.reusedInstant ?? null,
+              totals: res.measurement.instant?.totals ?? null,
+              structures: res.measurement.instant?.structures.length ?? 0,
+              source: res.measurement.source,
+              identity: res.debug,
+            }
+          : res,
+      );
       if (!res.ok) throw new Error(res.error);
       stop();
       setMsStage(MS_STAGES.length - 1);

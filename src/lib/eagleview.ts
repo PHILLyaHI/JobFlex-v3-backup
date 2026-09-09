@@ -18,6 +18,27 @@ export function isEagleViewEnabled(): boolean {
   return Boolean(process.env.EAGLEVIEW_CLIENT_ID && process.env.EAGLEVIEW_CLIENT_SECRET);
 }
 
+// ── Debug (2026-09-08, owner's call: ON until told otherwise) ─────────────────
+// Every Property Data order, refusal and token mint is logged with the identity
+// behind it (client id, the org claim in the token, both hosts, the packs), and
+// the same detail rides on the thrown message so the browser console and the
+// toast show it too. EAGLEVIEW_DEBUG=false silences all of it.
+export const EV_DEBUG = process.env.EAGLEVIEW_DEBUG !== "false";
+export function evDebug(...args: unknown[]): void {
+  if (EV_DEBUG) console.info("[eagleview:debug]", ...args);
+}
+/** The `org` claim of the last minted token — the account EagleView bills. */
+let tokenOrg: string | null = null;
+export function eagleViewIdentity(): { clientId: string; org: string | null; tokenHost: string; propertyHost: string } {
+  const id = process.env.EAGLEVIEW_CLIENT_ID ?? "";
+  return {
+    clientId: id ? `${id.slice(0, 6)}…${id.slice(-4)}` : "(unset)",
+    org: tokenOrg,
+    tokenHost: TOKEN_BASE,
+    propertyHost: process.env.EAGLEVIEW_PROPERTY_API_BASE_URL || "https://apis.eagleview.com",
+  };
+}
+
 // EagleView file-type codes (from the Measurement Orders Postman collection).
 export const EV_FILE = {
   MEASUREMENT_JSON: 107, // "EV Measurement JSON" — geometry: points/lines/faces
@@ -131,6 +152,13 @@ async function getToken(): Promise<string> {
     token: data.access_token,
     expiresAt: Date.now() + (data.expires_in - 120) * 1000,
   };
+  try {
+    const payload = JSON.parse(Buffer.from(data.access_token.split(".")[1] ?? "", "base64url").toString()) as Record<string, unknown>;
+    tokenOrg = String(payload.org ?? payload.orgId ?? "") || null;
+  } catch {
+    tokenOrg = null;
+  }
+  evDebug("token minted", { host: TOKEN_BASE, org: tokenOrg, expiresIn: data.expires_in });
   return data.access_token;
 }
 
@@ -1131,7 +1159,7 @@ export const instantCompleteAddress = (input: EvOrderInput): string =>
 export async function submitInstantOrder(
   input: EvOrderInput,
   packs: PdPack[] = PD_FIGURE_PACKS,
-): Promise<{ requestId: string; completeAddress: string }> {
+): Promise<{ requestId: string; completeAddress: string; packs: PdPack[] }> {
   const token = await getToken();
   // Prefer the address (their geocoder resolves it); coordinates back it up.
   const completeAddress = instantCompleteAddress(input);
@@ -1139,6 +1167,8 @@ export async function submitInstantOrder(
     completeAddress.length > 0
       ? { address: { completeAddress }, productIds: packs }
       : { address: { lat: input.lat, lon: input.lng }, productIds: packs };
+  const identity = eagleViewIdentity();
+  evDebug("property request", { ...identity, packs, address: completeAddress || `${input.lat},${input.lng}` });
 
   let res: Response;
   try {
@@ -1163,12 +1193,33 @@ export async function submitInstantOrder(
         "These EagleView credentials are for the other environment — Property Data requests must match the account (production keys → apis.eagleview.com).",
       );
     }
+    // ENTITLEMENT (403, errorCode 10880 / 10036). EagleView refuses the WHOLE
+    // order when any one pack is not entitled, and a refusal is not billed.
+    // Verified 2026-09-08 against org 347167560: 001 + 002 (roof area, pitch +
+    // eave) are entitled, the diagram extras (003/004/005/007/008) are not.
+    // So a refused diagram order is asked again with the figure packs only —
+    // the page's numbers come from those two anyway; outline, ortho and the
+    // detail classifiers are simply absent until the portal enables them.
+    if (err instanceof EagleViewUnavailableError && err.httpStatus === 403 && /entitlement/i.test(err.message)) {
+      evDebug("property request REFUSED (entitlement)", { ...identity, packs, detail: err.message.slice(0, 300) });
+      if (packs.length > PD_FIGURE_PACKS.length) {
+        evDebug("retrying with the figure packs only", { retry: PD_FIGURE_PACKS });
+        return submitInstantOrder(input, PD_FIGURE_PACKS);
+      }
+      throw new Error(
+        `EagleView refused the Property Data order — no active entitlement for ${packs.join(", ")} (403). ` +
+          `Account org ${identity.org ?? "?"}, client ${identity.clientId}, host ${identity.propertyHost}. ` +
+          `Entitlements are switched on per product in the EagleView developer portal (My Apps → this app → Property Data).`,
+      );
+    }
+    evDebug("property request FAILED", { ...identity, packs, error: (err as Error)?.message?.slice(0, 300) });
     throw err;
   }
   const accepted = (await res.json()) as { request?: { id?: string; status?: string } };
   const requestId = accepted?.request?.id;
   if (!requestId) throw new Error("Property Data returned no request id");
-  return { requestId, completeAddress };
+  evDebug("property request accepted", { requestId, packs, status: accepted.request?.status });
+  return { requestId, completeAddress, packs };
 }
 
 /**
