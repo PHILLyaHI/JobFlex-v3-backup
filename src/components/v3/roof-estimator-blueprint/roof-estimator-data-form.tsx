@@ -517,7 +517,15 @@ export function RoofEstimatorDataForm() {
 
   // Hand-entered takeoff: no lookup, nothing billed, nothing saved to history.
   // The address is whatever is in the intake fields — typed or picked.
-  function runManual() {
+  function runManual(preset?: ManualTakeoff) {
+    if (preset) {
+      // Pre-filled by the page itself (e.g. "price from Google's figure").
+      resetResult();
+      setReusedInstant(null);
+      setManual({ ...preset, squares: Math.round(preset.squares * 10) / 10 });
+      setPanel("report");
+      return;
+    }
     const sq = Number(manSquares.replace(/,/g, ""));
     if (!Number.isFinite(sq) || sq <= 0) {
       toast.error("Enter the roof size in squares", "One square is 100 sq ft of roof surface.");
@@ -716,6 +724,18 @@ export function RoofEstimatorDataForm() {
       ? manualTotals(manual)
       : null;
   const siteAddress = measurement?.address ?? manual?.address ?? null;
+  // EagleView answered about a FRACTION of the roof Google's imagery sees at
+  // the same pin. 6232 97th Dr NE, Lake Stevens (2026-09-08): EagleView gave
+  // one 122 sq ft structure — a shed — for an address whose house Google
+  // measures at 4,126 sq ft; the address, Google's rooftop point and the
+  // parcel centroid all came back with the same shed. Both figures are
+  // estimates, but a 2× gap is not an estimate, it is the wrong building, and
+  // a proposal priced from it would be off by an order of magnitude.
+  const googleSqft = measurement?.provenance?.googleAreaSqft ?? null;
+  const evUndercount =
+    !manual && totals?.areaSqft != null && googleSqft != null && googleSqft >= 400 && totals.areaSqft < googleSqft * 0.5
+      ? { evSqft: totals.areaSqft, googleSqft, structures: measurement?.instant?.structures.length ?? 0 }
+      : null;
 
   // Measured pitch (provenance.pitchMeasurement — the retired line's DSM
   // measurement, saved by the data path). Families are rounded to whole /12
@@ -917,7 +937,7 @@ export function RoofEstimatorDataForm() {
                     </select>
                   </span>
                 </label>
-                <button className="btn btn-ghost btn--sm" type="button" id="manualBtn" disabled={busy} onClick={runManual}>
+                <button className="btn btn-ghost btn--sm" type="button" id="manualBtn" disabled={busy} onClick={() => runManual()}>
                   <svg className="ic"><use href="#i-file" /></svg>
                   Price by hand
                 </button>
@@ -1007,8 +1027,33 @@ export function RoofEstimatorDataForm() {
                 </div>
               </div>
             )}
-            {(builtByOldPipeline || unsaved || reconDown || partialCoverage || pitchRep?.disagrees || (assessment && assessment.confidence !== "high")) && (
+            {(builtByOldPipeline || unsaved || reconDown || partialCoverage || evUndercount || pitchRep?.disagrees || (assessment && assessment.confidence !== "high")) && (
               <div className="rf-notice">
+                {evUndercount && (
+                  <div className="call warn">
+                    <div>
+                      <span className="rf-stamp">WRONG BUILDING?</span>
+                      The aerial data answered with {evUndercount.structures} structure{evUndercount.structures === 1 ? "" : "s"} totalling{" "}
+                      {num(evUndercount.evSqft)} sq ft, but Google’s imagery measures about {num(evUndercount.googleSqft)} sq ft of
+                      roof at this pin. That is usually an outbuilding standing in for the house in the provider’s records, so
+                      pricing from that figure is blocked. You can price from Google’s figure instead — it becomes a hand-entered
+                      takeoff you can adjust.
+                      <button
+                        type="button"
+                        className="btn btn-primary btn--sm"
+                        onClick={() =>
+                          runManual({
+                            squares: evUndercount.googleSqft / 100,
+                            pitchLabel: totals?.pitchLabel ?? "6/12",
+                            address: siteAddress,
+                          })
+                        }
+                      >
+                        Price from Google’s {num(evUndercount.googleSqft)} sq ft instead
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {builtByOldPipeline && (
                   <div className="call warn">
                     <div>
@@ -1373,9 +1418,11 @@ export function RoofEstimatorDataForm() {
                     className="btn btn-primary btn--sm"
                     type="button"
                     id="buildBtn"
-                    disabled={isRecon || genBusy || totals?.squares == null || assessment?.estimable === false || !pitchForEstimate}
+                    disabled={isRecon || genBusy || totals?.squares == null || assessment?.estimable === false || evUndercount != null || !pitchForEstimate}
                     title={
-                      assessment?.estimable === false
+                      evUndercount
+                        ? "The aerial figure covers a fraction of the roof Google sees here — price from Google's figure or enter the takeoff by hand."
+                        : assessment?.estimable === false
                         ? "Part of this property is missing from the figures, so they are not reliable enough to price from."
                         : !pitchForEstimate
                           ? "Enter the pitch first — the aerial data has none for this roof."
@@ -1390,7 +1437,7 @@ export function RoofEstimatorDataForm() {
                 </div>
               </div>
               {buildMode === "package" && roofFacts && !isRecon && (
-                <RoofPackageBuilder facts={roofFacts} disabled={assessment?.estimable === false || convertBusy} converting={convertBusy} onBuild={applyPackage} onConvert={convertPackage} />
+                <RoofPackageBuilder facts={roofFacts} disabled={assessment?.estimable === false || evUndercount != null || convertBusy} converting={convertBusy} onBuild={applyPackage} onConvert={convertPackage} />
               )}
               <div className={"build-out" + (hasEstimate ? "" : " is-hidden")} id="buildOut">
                 {hasEstimate && (

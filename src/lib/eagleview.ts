@@ -1222,7 +1222,11 @@ export async function submitInstantOrder(
   const body =
     completeAddress.length > 0
       ? { address: { completeAddress }, productIds: packs }
-      : { address: { lat: input.lat, lon: input.lng }, productIds: packs };
+      : // Coordinates ride in their OWN object, not inside `address` — the
+        // documented shape (developer.eagleview.com, Property Data v2 guides);
+        // `{ address: { lat, lon } }` is refused with 400 10875 "multi-line
+        // format is not as expected" (verified 2026-09-08).
+        { coordinates: { lat: input.lat, lon: input.lng }, productIds: packs };
   const identity = eagleViewIdentity();
   evDebug("property request", { ...identity, packs, address: completeAddress || `${input.lat},${input.lng}` });
 
