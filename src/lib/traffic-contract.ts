@@ -93,6 +93,9 @@ export const TRAFFIC_EVENTS = {
   completed: "jf_signup_completed",
   error: "jf_registration_error",
   exposure: "jf_experiment_exposed",
+  // One per landing load: which trade hero was shown ("default" when none)
+  // plus the visit's utm_*. Fired by landing-d's LandingVariantEffects.
+  landingView: "landing_view",
 } as const;
 
 export function pageLabel(page: string): string {

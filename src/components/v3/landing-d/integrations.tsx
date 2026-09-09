@@ -97,7 +97,7 @@ function Tiles({ side }: { side: "left" | "right" }) {
   );
 }
 
-export function Integrations() {
+export function Integrations({ registerHref = REGISTER }: { registerHref?: string }) {
   const fieldRef = useRef<HTMLDivElement>(null);
 
   // Cursor repulsion: tiles drift away from an approaching pointer, then settle back
@@ -159,7 +159,7 @@ export function Integrations() {
             <p className="mt-5 text-[19px] leading-[1.55] text-slate-600">
               Payments, texting, email, calendar and books — already connected.
             </p>
-            <a href={REGISTER} className="lp-cta lp-cta--solid mt-7">
+            <a href={registerHref} className="lp-cta lp-cta--solid mt-7">
               Browse integrations
             </a>
           </div>

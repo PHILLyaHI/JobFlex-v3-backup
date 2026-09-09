@@ -58,6 +58,10 @@ const pendingSchema = z.object({
   companyPhone: z.string().trim().max(40).optional(),
   tradeTypes: z.array(z.enum(TRADE_TYPES)).max(TRADE_TYPES.length).optional(),
   otherTrade: z.string().trim().max(80).optional(),
+  /** The trade hero the visitor arrived through (`?industry=` on the landing),
+   *  kept next to the promo/referral attribution so the signup can be read
+   *  back to its campaign. Advisory only — never overrides tradeTypes. */
+  landingIndustry: z.enum(TRADE_TYPES).optional(),
   attribution: z
     .object({ kind: z.enum(["promo", "ref"]), code: z.string().trim().min(3).max(40) })
     .nullish(),
@@ -114,6 +118,7 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
     companyPhone: data.companyPhone,
     tradeTypes: data.tradeTypes,
     otherTrade: data.otherTrade,
+    landingIndustry: data.landingIndustry,
     attribution: data.attribution ?? null,
     customPages: normalizeCustomPages(data.customPages),
     hashedPassword: google ? null : await bcrypt.hash(data.password as string, 10),
@@ -466,7 +471,7 @@ export async function completePendingSignup(
   // round-trip ago.
   const ticket = await mintSigninTicket(userId);
   if (sessionId && rec.analytics) {
-    after(() => captureSignupOutcome(rec.analytics, sessionId, analyticsOutcome, planSlug, analyticsLive));
+    after(() => captureSignupOutcome(rec.analytics, sessionId, analyticsOutcome, planSlug, analyticsLive, rec.landingIndustry ?? null));
   }
   return { ok: true, email: rec.email, ticket };
 }

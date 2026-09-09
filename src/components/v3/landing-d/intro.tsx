@@ -1,7 +1,7 @@
 import { REGISTER } from "./routes";
 import { Reveal } from "./reveal";
 
-export function Intro() {
+export function Intro({ registerHref = REGISTER }: { registerHref?: string }) {
   return (
     <div className="lp-intro relative overflow-hidden bg-white px-5 pb-[12vmin] pt-[11vmin] sm:px-6">
       {/* Same treatment as the hero: a real jobsite behind the words, held down
@@ -13,7 +13,7 @@ export function Intro() {
             JobFlex runs the business side of your trade. Quote the job, book the
             crew, send the invoice, get paid — all in one app.
           </p>
-          <a href={REGISTER} className="lp-btn-lime mt-9 inline-flex">
+          <a href={registerHref} className="lp-btn-lime mt-9 inline-flex">
             Try it free for 14 days
           </a>
         </Reveal>

@@ -19,7 +19,7 @@ const FOOT_HREF: Record<string, string> = {
   "Client portal": "/homeowner",
 };
 
-export function CtaFooter() {
+export function CtaFooter({ registerHref = REGISTER }: { registerHref?: string }) {
   return (
     <section className="relative overflow-hidden bg-lp-base px-5 text-white sm:px-6">
       <div className="lp-bg lp-bg--roofs" aria-hidden />
@@ -40,7 +40,7 @@ export function CtaFooter() {
               two primaries stacked is a choice, not a CTA. Blue keeps the page
               on one accent and is the only colour in this black section. */}
           <div className="mt-10 w-full sm:mt-12 sm:w-auto">
-            <a href={REGISTER} className="lp-btn-lime w-full sm:w-auto">
+            <a href={registerHref} className="lp-btn-lime w-full sm:w-auto">
               Start 14-Day Free Trial
               <span aria-hidden>→</span>
             </a>

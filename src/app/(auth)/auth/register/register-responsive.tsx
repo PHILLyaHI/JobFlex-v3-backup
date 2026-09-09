@@ -26,6 +26,7 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense, useSyncExternalStore } from "react";
 import { RegisterContent } from "@/components/v3/auth-register-blueprint/register-content";
+import type { TradeType } from "@/lib/tradeTypes";
 
 /** CLAUDE.md's handheld target: ≤768px. Matches the mobile module's own scale. */
 const HANDHELD = "(max-width: 768px)";
@@ -80,9 +81,11 @@ export interface SetupPrefill {
 function RegisterSwitch({
   setup,
   google,
+  industry,
 }: {
   setup: SetupPrefill | null;
   google: GooglePrefill | null;
+  industry: TradeType | null;
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const params = useSearchParams();
@@ -107,7 +110,7 @@ function RegisterSwitch({
      day the handheld build is ported to the pending-signup flow. */
   void isHandheld;
   void params;
-  return <RegisterContent setup={setup} google={google} />;
+  return <RegisterContent setup={setup} google={google} industry={industry} />;
 }
 
 // The attribution capture under either tree reads the query string, so the
@@ -116,13 +119,16 @@ function RegisterSwitch({
 export function RegisterResponsive({
   setup = null,
   google = null,
+  industry = null,
 }: {
   setup?: SetupPrefill | null;
   google?: GooglePrefill | null;
+  /** The landing's trade variant, resolved by the page — see page.tsx. */
+  industry?: TradeType | null;
 }) {
   return (
     <Suspense fallback={null}>
-      <RegisterSwitch setup={setup} google={google} />
+      <RegisterSwitch setup={setup} google={google} industry={industry} />
     </Suspense>
   );
 }

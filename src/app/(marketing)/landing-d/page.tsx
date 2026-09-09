@@ -9,10 +9,16 @@
 // As of 2026-08-25 this design IS the root landing: `/` renders the same
 // <LandingD /> this route does, so the two URLs cannot drift. The route stays
 // up under its own name for review and for linking to it directly.
+//
+// It reads the same `?industry=` / memory cookie as the root (2026-09-06), so a
+// review link can carry a trade variant too. Reading the cookie makes the
+// route dynamic; it was only ever a review URL, so nothing is lost.
 
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 
 import { LandingD } from "@/components/v3/landing-d/landing-d-page";
+import { readLandingVariant } from "@/components/v3/landing-d/landing-variant-server";
 
 export const metadata: Metadata = {
   title: "JobFlex — Turn your trade into a business",
@@ -20,6 +26,11 @@ export const metadata: Metadata = {
     "JobFlex is the operating system for small-shop contractors: estimating, proposals, scheduling, jobs, and invoicing in one workspace.",
 };
 
-export default function LandingDPage() {
-  return <LandingD />;
+export default async function LandingDPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const landing = readLandingVariant(await searchParams, await cookies());
+  return <LandingD {...landing} />;
 }

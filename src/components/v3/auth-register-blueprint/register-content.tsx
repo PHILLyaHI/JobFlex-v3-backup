@@ -99,11 +99,16 @@ function tradeNote(n: number): string {
 export function RegisterContent({
   setup = null,
   google: googlePrefill = null,
+  industry = null,
 }: {
   setup?: SetupPrefill | null;
   /* Resolved from `?gsu=` on the server, so step 2 is what the first frame
      paints. Null on every other arrival. */
   google?: GooglePrefill | null;
+  /* The trade the landing was opened on (`?industry=fencing`), resolved on
+     the server. Pre-selects that chip on step 2 — a suggestion the visitor
+     can change, never a lock — and rides along into the signup intent. */
+  industry?: TradeType | null;
 }) {
   const router = useRouter();
   /* SETUP MODE: a Google signup finishing step 2. Step 1 is done (Google did
@@ -377,7 +382,7 @@ export function RegisterContent({
 
   const [addr, setAddr] = React.useState("");
   const [phone, setPhone] = React.useState(setup?.companyPhone || setup?.phone || "");
-  const [trades, setTrades] = React.useState<TradeType[]>([]);
+  const [trades, setTrades] = React.useState<TradeType[]>(industry ? [industry] : []);
   // "Other" is the one chip that cannot say what it means on its own. Picking it
   // opens a free-text line so the trade the taxonomy has no word for still
   // reaches the company record instead of being flattened into a shrug.
@@ -789,6 +794,7 @@ export function RegisterContent({
         otherTrade:
           trades.includes("Other") && otherTrade.trim() ? otherTrade.trim() : undefined,
         attribution: attribution ?? undefined,
+        landingIndustry: industry ?? undefined,
       });
       setToken(res.token);
       setStep(3);

@@ -21,12 +21,18 @@
 // rather than inline. /mobile-v1/auth/register remains as a direct preview URL.
 
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { isPlaceholderOrgName, needsCompanySetup } from "@/lib/orgSetup";
 import { readGoogleSignup } from "@/lib/googleSignup";
 import { RegisterResponsive, type GooglePrefill, type SetupPrefill } from "./register-responsive";
+import {
+  INDUSTRY_COOKIE,
+  resolveLandingVariant,
+  variantTrade,
+} from "@/components/v3/landing-d/landing-variants";
 
 // Title is the donor's <head> verbatim. The mockup ships no <meta
 // name="description">; the line below is this repo's own convention.
@@ -47,6 +53,18 @@ export default async function RegisterPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = await searchParams;
+
+  /* THE TRADE THE VISITOR CAME IN ON. A landing opened with `?industry=fencing`
+     carries it into every register link; a visitor who lands here later with
+     no parameter still has the landing's 30-day memory cookie. Resolved here
+     so step 2's chips are right on the first paint. Advisory only: it
+     pre-selects a chip the visitor can un-pick. */
+  const industryParam = sp.industry ?? sp.trade;
+  const industry = variantTrade(
+    industryParam !== undefined
+      ? resolveLandingVariant(industryParam)
+      : resolveLandingVariant((await cookies()).get(INDUSTRY_COOKIE)?.value),
+  );
 
   /* THE RETURN FROM GOOGLE, resolved HERE rather than in the browser. The
      client used to fetch the parked identity after mount, so the first frame
@@ -98,5 +116,5 @@ export default async function RegisterPage({
     // Session read hiccup: render the normal signup.
   }
   if (sendToApp) redirect("/dashboard");
-  return <RegisterResponsive setup={setup} google={google} />;
+  return <RegisterResponsive setup={setup} google={google} industry={industry} />;
 }

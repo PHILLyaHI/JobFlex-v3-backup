@@ -16,7 +16,7 @@ function Caret() {
   );
 }
 
-export function Nav() {
+export function Nav({ registerHref = REGISTER }: { registerHref?: string }) {
   return (
     // Sticky on desktop only (owner, 2026-08-25): on a phone a pinned bar
     // eats a chunk of a short viewport for a two-item nav. The bar sits on the
@@ -45,7 +45,7 @@ export function Nav() {
           <a href={LOGIN} className="text-[15px] font-medium text-black/70 transition-colors hover:text-black">
             Sign in
           </a>
-          <a href={REGISTER} className="lp-btn-dark">
+          <a href={registerHref} className="lp-btn-dark">
             Start 14-Day Free Trial
           </a>
         </div>

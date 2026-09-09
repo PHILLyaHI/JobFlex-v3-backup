@@ -1,15 +1,32 @@
 import { PhoneOverview } from "./blueprint-phone";
 import { REGISTER } from "./routes";
 import { DashboardMock } from "./dashboard-mock";
+import { HeroVisual } from "./hero-visual";
+import { DEFAULT_LANDING, type LandingVariant } from "./landing-variants";
 import { Reveal } from "./reveal";
 import { GoogleSignupButton } from "./google-signup-button";
 
-export function Hero() {
+/* The first screen, and the one screen a trade variant may replace. The
+   headline, the line under it, the solid button's words and the product shot
+   come from the variant (landing-variants.ts); DEFAULT_LANDING IS the
+   original copy, so a page with no `?industry=` renders exactly what it did
+   before variants existed. Reveal and parallax wrappers are shared. */
+export function Hero({
+  variant = DEFAULT_LANDING,
+  registerHref = REGISTER,
+}: {
+  variant?: LandingVariant;
+  registerHref?: string;
+}) {
+  const shot = variant.visual !== "dashboard";
   return (
     <section className="lp-hero">
       <div className="lp-bg lp-bg--ridge" aria-hidden />
       <div className="relative z-[1] mx-auto flex max-w-[86rem] flex-col items-center gap-3 px-5 pt-[12vmin] text-center sm:pt-[14vmin]">
         <Reveal>
+          {/* The gold pill is the same on every variant — one launch line, one
+              link — and is deliberately NOT part of LandingVariant (owner,
+              2026-09-07). */}
           <a
             href={REGISTER}
             className="inline-flex items-center gap-1 rounded-full bg-lp-gold px-4 py-[7px] text-[13px] font-semibold text-lp-ink transition-transform duration-200 hover:scale-[1.03]"
@@ -20,15 +37,22 @@ export function Hero() {
         </Reveal>
         <Reveal delay={90}>
           <h1 className="text-[clamp(38px,6.7vw,96px)] font-bold leading-[1.02] tracking-[-0.025em] text-lp-ink">
-            Turn your trade
+            {variant.h1[0]}
             <br />
-            into a business.
+            {variant.h1[1]}
           </h1>
         </Reveal>
+        {/* The line under the headline exists only on trade variants; the
+            default hero never had one and renders nothing here. */}
+        {variant.sub && (
+          <Reveal delay={130}>
+            <p className="mx-auto max-w-[38rem] text-[15px] leading-[1.5] text-white/70 sm:text-[17px]">{variant.sub}</p>
+          </Reveal>
+        )}
         <Reveal delay={170} className="w-full sm:w-auto">
           <div className="mx-auto mt-4 flex w-full max-w-[22rem] flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:items-center sm:justify-center">
-            <a href={REGISTER} className="lp-btn-dark lp-cta lp-cta--solid">
-              Start 14-Day Free Trial
+            <a href={registerHref} className="lp-btn-dark lp-cta lp-cta--solid">
+              {variant.primaryCta}
             </a>
             <GoogleSignupButton className="lp-cta lp-cta--ghost">
               <svg viewBox="0 0 48 48" className="h-[18px] w-[18px]" aria-hidden>
@@ -59,15 +83,15 @@ export function Hero() {
         {/* Two builds of the same screen, not one build clipped: the desktop
             plate's 208px sidebar and four-across KPI row cannot survive a
             phone column (owner, 2026-08-25). The phone build also skips
-            lp-wrap, whose gutter would double the section's own px-5. */}
+            lp-wrap, whose gutter would double the section's own px-5.
+            An estimator shot is one build for both: its takeoff rail stacks
+            under the stage below 640px by its own media query. */}
         <Reveal delay={150} className="sm:hidden">
-          <PhoneOverview />
+          {shot ? <HeroVisual variant={variant} /> : <PhoneOverview />}
         </Reveal>
         <div className="mx-auto hidden lp-wrap sm:block">
           <Reveal delay={150}>
-            <div data-parallax="18">
-              <DashboardMock />
-            </div>
+            <div data-parallax="18">{shot ? <HeroVisual variant={variant} /> : <DashboardMock />}</div>
           </Reveal>
         </div>
       </div>
