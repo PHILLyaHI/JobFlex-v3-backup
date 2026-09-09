@@ -21,6 +21,7 @@
 // Plain module, no "use server".
 
 import { ESTIMATOR_MASTER_PROMPT } from "./master-prompt";
+import { hvacPromptBlock, isHvacBrief } from "./hvac-prompt";
 import { normalizeUnit } from "./console-model";
 import { buildQuoteDraftPrompt } from "./legacy/prompt";
 import { parseAiDraftResponse, type AiDraftOutput, type AiDraftPricingLineItem } from "./legacy/parse";
@@ -103,9 +104,14 @@ export type LegacyPromptOptions = {
 export function buildLegacyEstimatePrompt(
   input: LegacyEstimateInput,
   opts: LegacyPromptOptions = {},
-): { specialty: AiSpecialty; prompt: string } {
+): { specialty: AiSpecialty; prompt: string; hvac: boolean } {
   const { specialty } = specialtyFor(input);
   const locale = localeFromLocation(input.location);
+  // An HVAC brief gets the owner's HVAC proposal method right after the
+  // master prompt, whatever model answers (lib/estimate/hvac-prompt). Either
+  // detector saying HVAC is enough: the old specialty detector or the trade
+  // profile's keyword pass.
+  const hvac = specialty.id === "hvac" || isHvacBrief(`${input.projectType ?? ""} ${input.description}`);
   const clean = (input.assumptions ?? []).map((a) => a.trim()).filter(Boolean);
   const tier = input.qualityTier && input.qualityTier !== "standard" ? input.qualityTier : null;
   // The old summary was the contractor's text alone. The refine-loop
@@ -126,7 +132,7 @@ export function buildLegacyEstimatePrompt(
     companyName: input.companyName ?? undefined,
     locale,
     includePricing: true,
-    adminPrompt: ESTIMATOR_MASTER_PROMPT,
+    adminPrompt: hvac ? `${ESTIMATOR_MASTER_PROMPT}\n\n${hvacPromptBlock()}` : ESTIMATOR_MASTER_PROMPT,
     adminPromptExtra: opts.withTradeRules
       ? buildTradeRulesBlock({
           description: input.description,
@@ -137,7 +143,7 @@ export function buildLegacyEstimatePrompt(
       : null,
     pricingPrompt: null,
   });
-  return { specialty, prompt };
+  return { specialty, prompt, hvac };
 }
 
 // ── Mapping the old draft onto fused line items ─────────────────────────────

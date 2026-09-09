@@ -82,6 +82,13 @@ export function buildEstimateSystemPrompt(trade: TradeProfile, input: EstimatePr
     "PHASES A COMPLETE ESTIMATE FOR THIS TRADE COVERS. Every phase below is REQUIRED as its own line, in this order — including allowances, consumables, permit and cleanup — unless the brief explicitly excludes it (write the exclusion in `assumptions`). Add phases the brief calls for that are not listed:",
     ...trade.phases.map((p, i) => `  ${i + 1}. ${p}`),
     "",
+    ...(trade.checklist?.length
+      ? [
+          "LINES THIS TRADE'S JOB TYPES MUST CARRY — each its own line unless the brief marks that part not in scope (write the exclusion in `assumptions`):",
+          ...trade.checklist.map((c) => `  - ${c}`),
+          "",
+        ]
+      : []),
     "UNIT-PRICE ANCHORS (US national, standard grade — your PRIMARY reference; stay inside these ranges unless the item is not listed, and say why in notes when you leave them):",
     ...trade.anchors.map((a) => `  - ${a}`),
     "",
@@ -95,7 +102,7 @@ export function buildEstimateSystemPrompt(trade: TradeProfile, input: EstimatePr
     "HARD RULES — the output is rejected when any is broken",
     "═══════════════════════════════════════════════════════════════",
     "1. ONE LINE PER PHASE, BOTH COSTS ON EVERY LINE. Each item is a piece of WORK with a measured `quantity`, its `unit`, a `materialUnitPrice` (material $ per one unit) and a `laborUnitPrice` (labor $ per one unit). Material and labor are columns of every row — never separate rows, never a row called 'Labor' or 'Materials'. A supply-only line (a countertop from a fabricator) has laborUnitPrice 0; a labor-only line (demolition, cleanup) has materialUnitPrice 0 or a small consumables figure. Never both 0.",
-    "2. COMPLETE COVERAGE. A real job has 8-16 lines and ALWAYS includes: protection/mobilization or site prep; demolition or removal with disposal when anything existing comes out; every installation phase in the trade profile that the brief calls for; consumables and fasteners; the permit when the trade needs one; final cleanup and haul-off. A three-line estimate is wrong.",
+    `2. COMPLETE COVERAGE. A real job has ${trade.lineRange ?? "8-16"} lines and ALWAYS includes: protection/mobilization or site prep; demolition or removal with disposal when anything existing comes out; every installation phase in the trade profile that the brief calls for; consumables and fasteners; the permit when the trade needs one; final cleanup and haul-off. A three-line estimate is wrong.`,
     "3. NAMES READ LIKE A SCOPE SENTENCE. Each `name` states WHAT is done, HOW, and WITH WHAT — 'Remove existing asphalt shingles and debris down to the deck, load out and dispose at an approved facility', 'Supply and install self-adhered ice and water shield at eaves and valleys per manufacturer requirements'. Forbidden: bare product names ('Ice and water shield — 3 ft x 65 ft roll'), category words ('Roofing', 'Labor', 'Materials'), and any math or 'Calc:' text.",
     `4. ${UNIT_RULES}`,
     "5. QUANTITY IS THE MEASURED QUANTITY in that unit, waste applied where the methodology says so. 2,400 sqft of roof is 2,400 sqft of tear-off labor, ~2,640 sqft of underlayment with waste, 27 sq boards of shingles (24 + 12% waste, rounded up), ~220 linear ft of drip edge on a typical perimeter. Compute the derived quantities the brief does not state — perimeter, ridge, wall area — from standard proportions and record the assumption.",

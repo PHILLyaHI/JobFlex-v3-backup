@@ -30,6 +30,7 @@ import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { getOpenAI, isOpenAIEnabled } from "@/lib/sdk/openai";
+import { HVAC_READING_ADDENDUM, isHvacBrief } from "@/lib/estimate/hvac-prompt";
 import { checkPlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import {
@@ -113,6 +114,10 @@ export async function analyzeWalkthrough(
         : "The clip has no usable audio — read the frames only, and ask for anything you cannot see.";
 
   const frameIntro = `${frames.length} frames follow, in chronological order, each labelled with its index and timestamp.`;
+  // The HVAC reader's checklist rides along when the ticket or the audio
+  // says HVAC — the pricing call downstream picks up the HVAC prompt on the
+  // same signal (lib/estimate/hvac-prompt).
+  const hvac = isHvacBrief([input.project, input.notes, input.transcript].join(" "));
 
   const content: Array<
     { type: "text"; text: string } | { type: "image_url"; image_url: { url: string; detail: "auto" } }
@@ -130,7 +135,7 @@ export async function analyzeWalkthrough(
   try {
     const client = getOpenAI();
     console.info(
-      `[videoEstimator] reading walkthrough · ${frames.length} frames · audio=${input.audioState} · ${clock(input.duration)}`,
+      `[videoEstimator] reading walkthrough · ${frames.length} frames · audio=${input.audioState} · hvac=${hvac} · ${clock(input.duration)}`,
     );
     const completion = await client.chat.completions.create({
       model: VIDEO_MODEL,
@@ -141,7 +146,8 @@ export async function analyzeWalkthrough(
           content:
             "You are a senior construction estimator reading a contractor's jobsite walkthrough video. You receive still frames pulled from the clip in chronological order (each tagged with its index and timestamp) and, when there is audio, a timestamped transcript of what was said. Your job is to READ the job accurately — not to price it. " +
             'Return JSON ONLY matching: {"projectType": "roof"|"fence"|"deck"|"siding"|"gutters"|"other", "title": string, "location": string|null, "scope": string, "measurements": [{"label": string, "value": string, "unit"?: string, "confidence": "high"|"medium"|"low", "source": "spoken"|"visual"|"inferred"}], "observations": string[], "frames": [{"index": number, "label": string}], "enoughDetail": boolean, "questions": [{"id": string, "question": string, "kind": "select"|"number"|"text", "options"?: string[], "unit"?: string, "placeholder"?: string}], "confidence": number, "transcriptHighlights": string[]}. ' +
-            "Rules. (1) Anything SAID is ground truth: a spoken dimension, count, material or instruction outranks what you see — record it as source 'spoken', confidence 'high'. (2) A dimension READ OFF A FRAME must be grounded against a reference of known size (an entry door ≈ 80 in tall, a standard fence picket, 16 in stud spacing, a person, a vehicle, a brick course) — say which in `observations`, and mark it source 'visual' with confidence 'medium' or 'low'. Never invent a number you cannot ground; if a dimension matters and is unknown, ask for it in `questions` instead. (3) projectType: the one of the six that the pricing engine should use; 'other' for anything else. (4) title: a short job title a contractor would write on a ticket. (5) location: 'City, ST' only if it was said, is visible (a sign, a mailbox) or was typed on the ticket; otherwise null. (6) scope: 3–8 sentences a material planner can price from — what is being built, replaced or repaired, its dimensions, the materials seen or named, site conditions, access, demolition and haul-off, and anything the contractor said to include or exclude. (7) measurements: every dimension, count and area you can state, max 16. (8) observations: existing materials, condition and damage, obstacles, slope, access, utilities — short items, max 16. (9) frames: the indexes that carry the evidence, each with a 2–6 word caption, max 6 — the contractor will be shown these pictures with your captions. (10) enoughDetail and questions: if materials, dimensions, finish level or scope are too thin to price ACCURATELY, set enoughDetail=false and write 2–6 clarifying questions closing the biggest gaps first; kind 'select' needs 2–5 concrete options, 'number' needs a `unit`, 'text' a short `placeholder`; `id` is a kebab slug. Never ask for anything the frames or transcript already answer. (11) confidence: 0–100, how well this clip supports a priced estimate. (12) transcriptHighlights: up to 10 short verbatim quotes that change the estimate. Return JSON only.",
+            "Rules. (1) Anything SAID is ground truth: a spoken dimension, count, material or instruction outranks what you see — record it as source 'spoken', confidence 'high'. (2) A dimension READ OFF A FRAME must be grounded against a reference of known size (an entry door ≈ 80 in tall, a standard fence picket, 16 in stud spacing, a person, a vehicle, a brick course) — say which in `observations`, and mark it source 'visual' with confidence 'medium' or 'low'. Never invent a number you cannot ground; if a dimension matters and is unknown, ask for it in `questions` instead. (3) projectType: the one of the six that the pricing engine should use; 'other' for anything else. (4) title: a short job title a contractor would write on a ticket. (5) location: 'City, ST' only if it was said, is visible (a sign, a mailbox) or was typed on the ticket; otherwise null. (6) scope: 3–8 sentences a material planner can price from — what is being built, replaced or repaired, its dimensions, the materials seen or named, site conditions, access, demolition and haul-off, and anything the contractor said to include or exclude. (7) measurements: every dimension, count and area you can state, max 16. (8) observations: existing materials, condition and damage, obstacles, slope, access, utilities — short items, max 16. (9) frames: the indexes that carry the evidence, each with a 2–6 word caption, max 6 — the contractor will be shown these pictures with your captions. (10) enoughDetail and questions: if materials, dimensions, finish level or scope are too thin to price ACCURATELY, set enoughDetail=false and write 2–6 clarifying questions closing the biggest gaps first; kind 'select' needs 2–5 concrete options, 'number' needs a `unit`, 'text' a short `placeholder`; `id` is a kebab slug. Never ask for anything the frames or transcript already answer. (11) confidence: 0–100, how well this clip supports a priced estimate. (12) transcriptHighlights: up to 10 short verbatim quotes that change the estimate. Return JSON only." +
+            (hvac ? `\n\n${HVAC_READING_ADDENDUM}` : ""),
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         { role: "user", content: content as any },

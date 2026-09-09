@@ -22,6 +22,14 @@
 // Units are the manual builder's ten (console-model ESTIMATE_UNITS).
 
 export type TradeProfile = {
+  /** How many lines a real job in this trade runs (hard rule 2); "8-16" when unset. */
+  lineRange?: string;
+  /**
+   * Lines the trade's job types must carry, each as its own line — the
+   * merge-proof list for a gpt-4o-class model, which otherwise folds a walk
+   * into one line per phase. Printed after the phases in the trade rules block.
+   */
+  checklist?: string[];
   id: string;
   name: string;
   /** Words that name this trade outright; any one of them wins the match. */
@@ -455,17 +463,56 @@ export const TRADES: TradeProfile[] = [
     name: "HVAC",
     primary: ["hvac", "furnace", "heat pump", "air conditioner", "ac unit", "mini split", "ductwork", "condenser"],
     keywords: ["ton", "btu", "seer", "thermostat", "refrigerant", "duct", "register"],
+    // The phases mirror the owner's HVAC itemized-proposal method
+    // (lib/estimate/hvac-prompt), which rides with the master prompt on every
+    // HVAC brief. They are the grouping for the walk, not a cap of one line
+    // each — the method names the items inside each phase.
     preamble:
-      "HVAC proposal. Phases: permit (fixed), remove and dispose of old equipment (unit), equipment supplied (unit), installation labor (unit or fixed), line set and electrical whip (linear ft / fixed), ductwork (linear ft or unit per run), registers and grilles (unit), thermostat (unit), startup, commissioning and cleanup (fixed).",
-    phases: ["Permit and inspection", "Remove and dispose of old equipment", "Equipment", "Installation", "Line set, condensate and electrical connection", "Ductwork modifications", "Registers and grilles", "Thermostat", "Startup, commissioning and cleanup"],
-    anchors: [
-      "3-ton heat pump system: material $5,000-9,000/unit; labor $2,500-4,500/unit",
-      "Gas furnace 80k BTU: material $2,000-4,000/unit; labor $1,500-2,500/unit",
-      "Mini split single zone: material $1,500-3,500/unit; labor $1,200-2,500/unit",
-      "Ductwork: material $8-15/linear ft; labor $15-30/linear ft",
-      "Thermostat: material $80-300/unit; labor $100-180/unit",
+      "HVAC proposal. The HVAC ITEMIZED PROPOSAL METHOD above governs this brief: decide the job type (new construction, replacement, upgrade), size the system for the house (Manual J / Manual S), pick ONE system, then walk the job phase by phase and write EVERY item the walk names as its own line — the phases below are the grouping (the line's `system`), not a cap of one line per phase. A replacement or new-construction job normally runs 15-30 lines; an upgrade carries only what the improvement needs. A phase with nothing in scope is skipped (an all-electric job has no gas lines; a job that keeps its ducts carries only the duct test). Equipment, registers, thermostats and permits-per-trade are `unit`; ductwork runs and line sets are `linear ft`; permits, tests, recovery and commissioning are `fixed`. Do NOT default to sqft.",
+    phases: [
+      "Demolition and disposal — disconnect and remove the old equipment, EPA 608 refrigerant recovery, haul-away and disposal; on a fuel switch cap the gas and remove the flue (replacement only, never new construction)",
+      "Equipment — outdoor unit, indoor unit or furnace, cased coil, water heater when in scope, each its own line with model and size",
+      "Distribution — ducts kept, sealed or replaced, trunk and flex runs, returns and filter grille, supply boots and registers, plenums and transitions",
+      "Electrical — circuit sized to the equipment's MCA, disconnect and whip, low-voltage wiring, float switch, panel evaluation or subpanel when slots or amps are short",
+      "Gas and venting — gas line and sizing, sediment trap and shutoff, PVC or B-vent, combustion air, condensate neutralizer, liner or reroute for a water-heater flue orphaned by the change",
+      "Refrigerant — line set sized to the equipment, insulation, nitrogen pressure test, evacuation and charge",
+      "Placement and drains — pad or stand, drain pan with secondary drain, condensate pump where gravity fails, seismic strapping",
+      "Controls and air quality — thermostat and C-wire, and the IAQ items in scope",
+      "Testing and compliance — airflow and static pressure verification, duct leakage test, HERS tests where the state requires them, Manual J/S/D report",
+      "Permits and paperwork — mechanical, electrical and plumbing/gas permits, inspections, rebate application, warranty registration",
+      "Commissioning — startup, commissioning and final cleanup",
     ],
-    keyQuestions: ["Tonnage / load and fuel", "Existing ductwork condition", "Electrical capacity for the new unit"],
+    anchors: [
+      "3-ton heat pump system (outdoor + air handler or coil): material $5,000-9,000/unit; labor $2,500-4,500/unit",
+      "Cold-climate or variable-speed 3-ton heat pump: material $7,500-12,000/unit; labor $2,500-4,500/unit",
+      "Gas furnace 80k BTU (condensing): material $2,000-4,000/unit; labor $1,500-2,500/unit",
+      "Mini split single zone: material $1,500-3,500/unit; labor $1,200-2,500/unit",
+      "Heat pump water heater 50 gal: material $1,800-3,200/unit; labor $800-1,500/unit",
+      "Remove old equipment with EPA 608 recovery and disposal: material $0; labor $300-700/fixed",
+      "Ductwork (new runs, insulated flex or metal): material $8-15/linear ft; labor $15-30/linear ft",
+      "Duct sealing and insulation of existing ducts, tested: material $300-800/fixed; labor $600-1,500/fixed",
+      "Line set, insulated 3/8 x 3/4: material $6-12/linear ft; labor $8-18/linear ft",
+      "Dedicated 240 V circuit with disconnect and whip: material $150-400/unit; labor $400-900/unit",
+      "Condensing-furnace PVC venting with condensate drain and neutralizer: material $150-350/unit; labor $400-800/unit",
+      "Orphaned water-heater flue liner or reroute: material $250-500/unit; labor $400-800/unit",
+      "Thermostat: material $80-300/unit; labor $100-180/unit",
+      "Duct leakage or HERS test: material $0; labor $250-600/fixed",
+      "Mechanical + electrical permits and inspections: $250-900/fixed",
+    ],
+    keyQuestions: [
+      "Job type — new construction, replacement or upgrade — and the evidence for it",
+      "Heating and cooling load for this house (not the old nameplate), tonnage, fuel and refrigerant",
+      "Ducts, line set, circuit, gas line and flue: keep, fix or replace, each with its reason",
+      "Water heater in scope, and whether it shared the old flue",
+      "Panel main amps, free slots and the new equipment's MCA",
+      "Permits, tests and incentives that apply in this state",
+    ],
+    lineRange: "15-30",
+    checklist: [
+      "REPLACEMENT — fewer than 12 lines means items were merged; split them. Its own line each: disconnect and remove the old equipment with EPA 608 refrigerant recovery, haul-away and disposal; every new equipment piece (outdoor unit; indoor unit or furnace; cased coil; the water heater when in scope); the duct leakage test, then sealing or replacement as the evidence says; the line set (new when A2L equipment replaces R-410A or R-22 unless confirmed compatible); the circuit and breaker checked against the new equipment's MCA with disconnect and whip, plus a panel evaluation when slots or amps are short; the venting consequences (PVC vent, condensate drain and neutralizer on a condensing furnace; cap-and-abandon the gas line and remove the flue on a fuel switch; a liner or reroute for a water-heater flue left alone in a shared B-vent — REQUIRED whenever the brief says the water heater shared the furnace vent); pad when the old one is damaged or unrated, drain pan with float switch, seismic strap where the state requires it; thermostat and C-wire; startup and commissioning; airflow and static-pressure verification plus the HERS or duct tests the state requires; permits and inspections; rebate application, warranty registration and disposal documentation.",
+      "NEW CONSTRUCTION — fewer than 15 lines means items were merged. Its own line each: every equipment piece; whole-house ventilation where the state requires it; trunk lines (linear ft); flex runs (count and length); supply boots and registers; returns and the filter grille; duct insulation and sealing; plenums and transitions; dedicated circuits, disconnects and whips; low-voltage wiring and float switch; gas line, sediment trap and shutoff; vent and combustion air, neutralizer on a condensing furnace; line set with nitrogen test, evacuation and charge; pad or stand, seismic strapping and expansion tank, drain pan and condensate pump where gravity fails; startup and commissioning; the state's tests and the Manual J/S/D report; mechanical, electrical and plumbing/gas permits with inspections; rebate application and warranty registration. Zoning and dampers ride as an optional upsell on two stories or over 2,000 sqft.",
+      "UPGRADE — only what the improvement needs, each piece its own line, plus the permit when the jurisdiction requires it, commissioning, and the HERS test when the refrigerant circuit or ducts were touched.",
+    ],
   },
   {
     id: "windows-doors",

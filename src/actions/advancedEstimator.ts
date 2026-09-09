@@ -634,7 +634,7 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
       { withTradeRules: !reasoningModel },
     );
     console.info(
-      `[advancedEstimator] Step 1 (estimate) · specialty=${legacy.specialty.id} tier=${qualityTier} photos=${photos.length} prompt=${legacy.prompt.length}ch`
+      `[advancedEstimator] Step 1 (estimate) · specialty=${legacy.specialty.id} hvac=${legacy.hvac} tier=${qualityTier} photos=${photos.length} prompt=${legacy.prompt.length}ch`
     );
     const estimateCompletion = await client.chat.completions.create({
       model: OPENAI_MODEL,
