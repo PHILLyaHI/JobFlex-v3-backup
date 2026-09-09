@@ -271,6 +271,23 @@ export interface MeasurementProvenance {
     facetDeficit: number | null;
     facetDeficitShare: number | null;
   };
+  /**
+   * Which EagleView Property Data packs the Instant answer behind this row is
+   * made of (2026-09-08, partial entitlement — packs are bought one by one).
+   * `have` were bought, by this order or an earlier one for the address;
+   * `denied` the account is not entitled to (403 / 10880); `failed` errored
+   * for another reason; `missing` were not attempted. Absent on rows saved
+   * before per-pack ordering, which were single seven-pack orders.
+   */
+  instantPacks?: { have: string[]; denied: string[]; failed: string[]; missing: string[]; unknown?: string[] };
+  /**
+   * Which of the answer's structures the row's figures are about (audit
+   * 2026-09-08). EagleView returns every structure on the parcel; the hero,
+   * the columns and the estimate follow ONE — `how` says how it was chosen
+   * (lib/roofDiagram/instantTotals.pickMainStructure). `others` / `othersSqft`
+   * are the rest, listed on the page with checkboxes.
+   */
+  mainStructure?: { index: number; how: string; others: number; othersSqft: number };
   unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
   /** Share of roof PLAN area sitting in those facets, 0–1 — the figure the
    *  confidence gate judges the layout on. */
@@ -348,6 +365,10 @@ export interface PitchSourceProvenance {
   trustedShare: number;
   reason: string;
   solarPanels?: boolean;
+  /** EagleView's published rise/12 for the main structure, null when pack 002
+   *  was not bought. Lets the verdict say "published figure" only when there
+   *  IS one (audit 2026-09-08: 11810 was captioned with a pitch it never had). */
+  instantPitch12?: number | null;
 }
 
 /** The per-house frame registration, cached with the model: the two frames are
@@ -431,6 +452,8 @@ export interface RoofMeasurementSummary {
   squares: number | null;
   predominantPitch: string | null;
   facetCount: number | null;
+  /** Where the list's pitch comes from — `legacy` is a drawing-pipeline row with no EagleView answer. */
+  pitchKind: "measured" | "eagleview" | "none" | "legacy";
   pngUrl: string | null;
   createdAt: string;
 }

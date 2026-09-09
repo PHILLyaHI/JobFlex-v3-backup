@@ -11,28 +11,40 @@ import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 
-const STUB: GeneratedEstimate = {
-  title: "Roof replacement estimate · AI disabled",
-  scope: "Tear-off, synthetic underlayment, architectural shingles, ridge vents, cleanup.",
-  assumptions: [
-    "One-layer tear-off only",
-    "Standard pitch, no steep-slope surcharge",
-    "Add OPENAI_API_KEY for real estimates",
-  ],
-  materials: [
-    { name: "Architectural shingles (30-yr)", quantity: 24, unitPrice: 115, unit: "square" },
-    { name: "Synthetic underlayment", quantity: 24, unitPrice: 32, unit: "square" },
-    { name: "Ice & water shield", quantity: 400, unitPrice: 1.1, unit: "sqft" },
-    { name: "Ridge vent system", quantity: 60, unitPrice: 6, unit: "ln ft" },
-    { name: "Drip edge + flashing", quantity: 1, unitPrice: 480, unit: "lot" },
-  ],
-  labor: [
-    { name: "Tear-off + disposal", quantity: 2400, unitPrice: 0.8, unit: "sqft" },
-    { name: "Installation labor", quantity: 2400, unitPrice: 1.8, unit: "sqft" },
-    { name: "Cleanup + magnetic sweep", quantity: 1, unitPrice: 380, unit: "lot" },
-  ],
-  estimatedTimelineDays: 3,
-};
+/**
+ * The sample shown when no OpenAI key is set. Scaled from the REAL squares
+ * (audit 2026-09-08: it used to be a fixed 24-square roof whatever was
+ * measured): shingles and underlayment by the square, tear-off and install by
+ * the square foot, the per-foot and per-lot lines in proportion.
+ */
+function stubFor(squares: number, wastePct: number): GeneratedEstimate {
+  const sq = Math.max(1, squares);
+  const sqft = Math.round(sq * 100);
+  const withWaste = Math.ceil(sq * (1 + wastePct / 100));
+  const k = sq / 24;
+  return {
+    title: "Roof replacement estimate · AI disabled",
+    scope: "Tear-off, synthetic underlayment, architectural shingles, ridge vents, cleanup.",
+    assumptions: [
+      "One-layer tear-off only",
+      "Standard pitch, no steep-slope surcharge",
+      `Sample pricing scaled to the measured ${sq.toFixed(1)} squares — add OPENAI_API_KEY for real estimates`,
+    ],
+    materials: [
+      { name: "Architectural shingles (30-yr)", quantity: withWaste, unitPrice: 115, unit: "square" },
+      { name: "Synthetic underlayment", quantity: withWaste, unitPrice: 32, unit: "square" },
+      { name: "Ice & water shield", quantity: Math.round(400 * k), unitPrice: 1.1, unit: "sqft" },
+      { name: "Ridge vent system", quantity: Math.round(60 * k), unitPrice: 6, unit: "ln ft" },
+      { name: "Drip edge + flashing", quantity: 1, unitPrice: Math.round(480 * k), unit: "lot" },
+    ],
+    labor: [
+      { name: "Tear-off + disposal", quantity: sqft, unitPrice: 0.8, unit: "sqft" },
+      { name: "Installation labor", quantity: sqft, unitPrice: 1.8, unit: "sqft" },
+      { name: "Cleanup + magnetic sweep", quantity: 1, unitPrice: Math.round(380 * k), unit: "lot" },
+    ],
+    estimatedTimelineDays: Math.max(2, Math.round(3 * k)),
+  };
+}
 
 export async function estimateRoof(input: {
   address?: string;
@@ -45,6 +57,14 @@ export async function estimateRoof(input: {
   // can price ridge vent, valley/flashing metal, and steep-slope labor off real
   // geometry rather than a single average pitch.
   measurementNotes?: string;
+  /** Where `pitch` came from — the estimate must never price a pitch nobody stated. */
+  pitchSource?: "measured" | "eagleview" | "entered";
+  /**
+   * A two-pitch roof, when the elevation data measured one (audit
+   * 2026-09-08: 12958 is 4/12 on 53 % and 9/12 on 47 %, and the estimate saw
+   * only the 4/12). Each family is priced on its own share of the roof.
+   */
+  pitchFamilies?: Array<{ pitch12: number; share: number }>;
 }): Promise<
   | { ok: true; data: GeneratedEstimate; disabled?: false }
   | { ok: true; data: GeneratedEstimate; disabled: true }
@@ -64,8 +84,21 @@ await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
     };
   }
   if (!isOpenAIEnabled()) {
-    return { ok: true, data: STUB, disabled: true };
+    return { ok: true, data: stubFor(input.squares, input.wastePct), disabled: true };
   }
+  const families = (input.pitchFamilies ?? []).filter((f) => Number.isFinite(f.pitch12) && f.share > 0);
+  const pitchLine =
+    families.length > 1
+      ? `Roof pitch: ${families.map((f) => `${Math.round(f.pitch12)}/12 on ${Math.round(f.share * 100)}% of the roof`).join(" + ")} (two-pitch roof — price labor and steep-slope surcharge per family, by its share of the squares)`
+      : `Pitch: ${input.pitch}`;
+  const sourceLine =
+    input.pitchSource === "measured"
+      ? "Pitch source: measured from aerial elevation data."
+      : input.pitchSource === "entered"
+        ? "Pitch source: entered by the contractor, not measured."
+        : input.pitchSource === "eagleview"
+          ? "Pitch source: EagleView published figure."
+          : "";
   try {
     const client = getOpenAI();
     const completion = await client.chat.completions.create({
@@ -76,12 +109,12 @@ await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
         {
           role: "system",
           content:
-            'You are a senior roofing estimator. Produce a roof replacement estimate as JSON matching: {title, scope, assumptions: string[], materials: [{name, quantity, unitPrice, unit}], labor: [{name, quantity, unitPrice, unit}], estimatedTimelineDays}. Use realistic US 2026 pricing, account for pitch (steeper = more labor) and waste factor (bumps material qty). Return JSON only.',
+            'You are a senior roofing estimator. Produce a roof replacement estimate as JSON matching: {title, scope, assumptions: string[], materials: [{name, quantity, unitPrice, unit}], labor: [{name, quantity, unitPrice, unit}], estimatedTimelineDays}. Use realistic US 2026 pricing, account for pitch (steeper = more labor) and waste factor (bumps material qty). When the roof pitch line lists more than one pitch family, the roof has more than one slope: state EVERY family in `assumptions` as its own line with its pitch and its share of the roof (e.g. "4/12 on 53% of the roof", "9/12 on 47% of the roof — steep-slope labor applied to this share"), and price labor per family by that share. Return JSON only.',
         },
         {
           role: "user",
           content: `Address: ${input.address ?? "unknown"}
-Pitch: ${input.pitch}
+${pitchLine}${sourceLine ? `\n${sourceLine}` : ""}
 Roof size: ${input.squares} squares (${input.squares * 100} sqft)
 Waste factor: ${input.wastePct}%${input.measurementNotes ? `\n${input.measurementNotes}` : ""}`,
         },

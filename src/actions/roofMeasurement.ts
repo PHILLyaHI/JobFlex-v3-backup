@@ -17,12 +17,16 @@ import {
   pollInstantResult,
   submitInstantOrder,
   fetchPropertyImage,
+  mergeInstantResults,
   PD_DIAGRAM_PACKS,
   eagleViewIdentity,
-  type PdPack,
+  instantAddressKey,
+  PD_PACK,
   type EvOrderInput,
   type InstantRoofData,
 } from "@/lib/eagleview";
+import { orderPacksFor, packReport, packsFromContent, rowPacks, type OrderDeps, type PackReport } from "@/lib/eagleviewOrder";
+import { markPacks, readEntitlements } from "@/lib/eagleviewEntitlements";
 import { isSolarEnabled, getBuildingInsights, SOLAR_CALL_BUDGET_MS, SolarUnavailableError, type SolarFailureKind } from "@/lib/solar";
 import { buildReconModel, ReconUnavailableError, type ReconBuild } from "@/lib/roofReconBuild";
 import { latLngRingToFrame } from "@/lib/roofRecon/surveyDsm";
@@ -33,6 +37,7 @@ import { checkCompleteness } from "@/lib/roofRecon/completeness";
 import { lotMaskFromPair, ringWhollyOutsideLot, type LotMask } from "@/lib/roofDiagram/parcelMask";
 import type { ArbiterSegment } from "@/lib/roofRecon/googleArbiter";
 import { areaOf, type FootprintPoint } from "@/lib/roofRecon/footprint";
+import { foreignIndices, pickMainStructure, rowFigures } from "@/lib/roofDiagram/instantTotals";
 import { toDTO, toSummary, type StoredProvenance } from "@/lib/roofDiagram/dto";
 import type { MeasurementProvenance, MeasurementSource, RoofMeasurementDTO, RoofMeasurementSummary } from "@/lib/roofDiagram/types";
 
@@ -99,14 +104,6 @@ function reconFailureKind(err: unknown): SolarFailureKind {
   return "error";
 }
 
-/** ParcelCache-style address key: upper-cased, whitespace-collapsed, equality only. */
-
-
-
-const instantAddressKey = (input: EvOrderInput): string =>
-  [input.address, input.city, input.state, input.zip]
-    .map((part) => (part ?? "").toUpperCase().replace(/\s+/g, " ").trim())
-    .join("|");
 
 /** A terminal Property Data verdict (failed/rejected), as opposed to "not ready yet". */
 const isTerminalPdFailure = (err: unknown): boolean =>
@@ -116,44 +113,102 @@ interface ObtainedInstant {
   instant: InstantRoofData;
   /** Absent when this call ordered (and paid for) a fresh lookup. */
   reuse?: { requestId: string; how: "stored" | "recovered" };
-  /** The packs the fresh order was ACCEPTED with (after any entitlement fallback). */
-  packs?: PdPack[];
+  /** Which packs the answer is made of — see MeasurementProvenance.instantPacks. */
+  packs: PackReport;
+}
+
+/** The I/O the pack-by-pack planner needs, bound to this org's ledger. */
+function orderDeps(organizationId: string, addressKey: string, input: EvOrderInput): OrderDeps {
+  return {
+    submit: (inp, packs) => submitInstantOrder(inp, packs),
+    poll: (requestId, inp, completeAddress, onRaw) => pollInstantResult(requestId, inp, completeAddress, 30_000, { onRaw }),
+    ledger: {
+      create: async (requestId, packs) => {
+        console.info("[roofMeasurement] instant order placed", { requestId, packs, org: organizationId });
+        await db.instantOrder.create({
+          data: { organizationId, addressKey, address: input.address ?? null, requestId, packs: JSON.stringify(packs) },
+        });
+      },
+      complete: async (requestId, instant, raw) => {
+        await db.instantOrder.update({
+          where: { requestId },
+          data: { status: "complete", instantJson: JSON.stringify(instant), ...(raw ? { instantRawJson: raw } : {}) },
+        });
+      },
+      fail: async (requestId, error) => {
+        await db.instantOrder.update({ where: { requestId }, data: { status: "failed", error } });
+      },
+    },
+    entitlements: { read: readEntitlements, mark: markPacks },
+    isTerminalFailure: isTerminalPdFailure,
+    log: (msg) => console.error("[roofMeasurement] " + msg),
+  };
+}
+
+/** Every complete order for the address, oldest first, the pack-001 order first of all. */
+async function completeOrdersFor(organizationId: string, addressKey: string): Promise<{ parts: InstantRoofData[]; have: string[]; requestId: string | null }> {
+  const rows = await db.instantOrder.findMany({
+    where: { organizationId, addressKey, status: "complete", instantJson: { not: null } },
+    orderBy: { createdAt: "asc" },
+  });
+  const parsed: Array<{ instant: InstantRoofData; packs: string[] }> = [];
+  for (const row of rows) {
+    try {
+      parsed.push({ instant: JSON.parse(row.instantJson as string) as InstantRoofData, packs: rowPacks(row.packs) });
+    } catch {
+      /* an unreadable stored answer is skipped */
+    }
+  }
+  parsed.sort((a, b) => Number(b.packs.includes(PD_PACK.ROOF_AREA)) - Number(a.packs.includes(PD_PACK.ROOF_AREA)));
+  const have = [...new Set(parsed.flatMap((p) => p.packs))];
+  return { parts: parsed.map((p) => p.instant), have, requestId: parsed[0]?.instant.requestId ?? null };
+}
+
+/** What the account is currently refused, for the report of a reused answer. */
+async function deniedNow(): Promise<string[]> {
+  try {
+    return [...(await readEntitlements()).values()].filter((r) => r.status === "denied").map((r) => r.pack);
+  } catch {
+    return [];
+  }
 }
 
 /**
  * The only place the product path gets Instant data, and the reason each click
  * is no longer a new bill:
  *
- *   1. An already-paid answer for the same address — a complete InstantOrder
- *      row, or the latest saved measurement's instantJson — is reused as is.
+ *   1. An already-paid answer for the same address — every complete
+ *      InstantOrder row for it, merged (one address can be several pack
+ *      orders since 2026-09-08), or the latest saved measurement's
+ *      instantJson — is reused as is. Nothing is bought on this path, not
+ *      even packs the address lacks: buying is a deliberate act (re-measure).
  *   2. A pending order for the address is COLLECTED (result/{id}) instead of
  *      re-ordered. This is the recovery half: a poll that timed out earlier
  *      left the row pending, and the paid result is picked up here for free.
- *   3. Only then is a new order submitted — and its requestId is written to
- *      the ledger BEFORE the first poll, because from the moment EagleView
- *      accepts an order it is billable whether or not we wait. Losing the id
- *      to a timeout exception is how two paid Snohomish lookups became
- *      unrecoverable on 2026-08-26.
+ *   3. Only then is anything ordered — pack by pack through lib/eagleviewOrder,
+ *      each accepted request written to the ledger BEFORE its first poll,
+ *      because from the moment EagleView accepts an order it is billable
+ *      whether or not we wait. Losing the id to a timeout exception is how
+ *      two paid Snohomish lookups became unrecoverable on 2026-08-26.
  *
- * `forceNewOrder` skips step 1–2 for an explicit "re-measure at a new cost" —
- * a deliberate action, never a side effect of clicking measure again.
+ * `forceNewOrder` is the explicit "re-measure at a new cost": it buys the
+ * packs the address does not have yet (nothing already bought is bought
+ * twice), and only when the address already has every pack does it place a
+ * fresh full order.
  */
 async function obtainInstant(input: EvOrderInput, organizationId: string, forceNewOrder: boolean): Promise<ObtainedInstant> {
   const addressKey = instantAddressKey(input);
   const keyed = addressKey !== "|||";
+  const owned = keyed ? await completeOrdersFor(organizationId, addressKey) : { parts: [], have: [], requestId: null };
 
   if (keyed && !forceNewOrder) {
-    // 1a. a complete order in the ledger
-    const done = await db.instantOrder.findFirst({
-      where: { organizationId, addressKey, status: "complete", instantJson: { not: null } },
-      orderBy: { createdAt: "desc" },
-    });
-    if (done?.instantJson) {
-      try {
-        return { instant: JSON.parse(done.instantJson) as InstantRoofData, reuse: { requestId: done.requestId, how: "stored" } };
-      } catch {
-        /* an unreadable stored answer falls through to the other sources */
-      }
+    // 1a. complete orders in the ledger, merged
+    if (owned.parts.length && owned.requestId) {
+      return {
+        instant: mergeInstantResults(owned.parts),
+        reuse: { requestId: owned.requestId, how: "stored" },
+        packs: packReport(owned.have, await deniedNow(), []),
+      };
     }
     // 1b. an answer already saved on a measurement row (rows predate the ledger)
     const prior = await db.roofMeasurement.findMany({
@@ -167,7 +222,15 @@ async function obtainInstant(input: EvOrderInput, organizationId: string, forceN
       try {
         const parsed = JSON.parse(row.instantJson as string) as InstantRoofData;
         if (parsed.structures?.some((st) => (st.outline?.length ?? 0) >= 3)) {
-          return { instant: parsed, reuse: { requestId: row.instantRequestId ?? parsed.requestId, how: "stored" } };
+          // A pre-ledger row records what the answer CONTAINS, not what was
+          // asked for: the packs are read off the fields, the rest is unknown
+          // — never "all seven" by assumption (audit 2026-09-09).
+          const evident = packsFromContent(parsed);
+          return {
+            instant: parsed,
+            reuse: { requestId: row.instantRequestId ?? parsed.requestId, how: "stored" },
+            packs: packReport(evident.have, [], [], evident.unknown),
+          };
         }
       } catch {
         /* skip unreadable rows */
@@ -193,7 +256,11 @@ async function obtainInstant(input: EvOrderInput, organizationId: string, forceN
               data: { status: "complete", instantJson: JSON.stringify(got), ...(rawBody ? { instantRawJson: rawBody } : {}) },
             })
             .catch(() => {});
-          return { instant: got, reuse: { requestId: pending.requestId, how: "recovered" } };
+          return {
+            instant: got,
+            reuse: { requestId: pending.requestId, how: "recovered" },
+            packs: packReport(rowPacks(pending.packs), await deniedNow(), []),
+          };
         }
         throw new Error(
           `A Property Data order for this address is already processing (order ${pending.requestId}) — measuring again later will collect it without paying twice.`,
@@ -208,44 +275,13 @@ async function obtainInstant(input: EvOrderInput, organizationId: string, forceN
     }
   }
 
-  // 3. a new order. The ledger write sits BETWEEN accept and the first poll.
-  const { requestId, completeAddress, packs } = await submitInstantOrder(input, PD_DIAGRAM_PACKS);
-  console.info("[roofMeasurement] instant order placed", { requestId, packs, org: organizationId });
-  try {
-    await db.instantOrder.create({
-      data: { organizationId, addressKey, address: input.address ?? null, requestId },
-    });
-  } catch (err) {
-    // The order exists either way; without the ledger row a later timeout
-    // orphans it again, so say it as loudly as a log can.
-    console.error("[roofMeasurement] COULD NOT RECORD instant order %s — a poll timeout will orphan it:", requestId, err);
-  }
-  let got: InstantRoofData | null;
-  let rawBody: string | null = null;
-  try {
-    got = await pollInstantResult(requestId, input, completeAddress, 30_000, {
-      onRaw: (body) => { rawBody = body; },
-    });
-  } catch (err) {
-    if (isTerminalPdFailure(err)) {
-      await db.instantOrder
-        .update({ where: { requestId }, data: { status: "failed", error: errorMessage(err, String(err)) } })
-        .catch(() => {});
-    }
-    throw err;
-  }
-  if (!got) {
-    throw new Error(
-      `Property Data is taking longer than expected (order ${requestId}). The order is saved — measuring this address again will collect it without paying twice.`,
-    );
-  }
-  await db.instantOrder
-    .update({
-      where: { requestId },
-      data: { status: "complete", instantJson: JSON.stringify(got), ...(rawBody ? { instantRawJson: rawBody } : {}) },
-    })
-    .catch(() => {});
-  return { instant: got, packs };
+  // 3. buy — pack by pack, skipping what the address already has. A re-measure
+  // on an address that has every pack is the one case that orders everything again.
+  const hasAll = PD_DIAGRAM_PACKS.every((p) => owned.have.includes(p));
+  const skip = forceNewOrder && hasAll ? [] : owned.have;
+  const base = skip.length && owned.parts.length ? mergeInstantResults(owned.parts) : null;
+  const { instant, report } = await orderPacksFor(input, orderDeps(organizationId, addressKey, input), { skip, base });
+  return { instant, packs: report };
 }
 
 // ── actions ──────────────────────────────────────────────────────────────────
@@ -319,7 +355,14 @@ async function persistData(p: {
   instant: InstantRoofData | null;
   provenance: MeasurementProvenance;
 }): Promise<RoofMeasurementDTO> {
-  const t = p.instant?.totals;
+  // The row's figures are the MAIN structure's, and the pitch column is the
+  // pitch the page shows (measured families when there are any), so the
+  // Recent list and the hero cannot disagree (audit 2026-09-08).
+  const fig = rowFigures({
+    instant: p.instant,
+    provenance: p.provenance as Record<string, unknown>,
+    columns: { areaSqft: null, squares: null, lat: p.origin?.lat ?? null, lng: p.origin?.lng ?? null },
+  });
   const stored: StoredProvenance = { calibration: null, provenance: p.provenance };
   const row = await db.roofMeasurement.create({
     data: {
@@ -332,10 +375,10 @@ async function persistData(p: {
       zip: p.input.zip ?? null,
       lat: p.origin?.lat ?? p.instant?.lat ?? null,
       lng: p.origin?.lng ?? p.instant?.lng ?? null,
-      areaSqft: t?.areaSqft ?? null,
-      squares: t?.squares ?? null,
-      predominantPitch: t?.pitchLabel ?? null,
-      facetCount: t?.facetCount ?? null,
+      areaSqft: fig.areaSqft,
+      squares: fig.squares,
+      predominantPitch: fig.predominantPitch,
+      facetCount: fig.facetCount,
       instantRequestId: p.instant?.requestId ?? null,
       instantJson: p.instant ? JSON.stringify(p.instant) : null,
       // движок удалён: геометрия не пишется, поле схемы не тронуто
@@ -372,18 +415,18 @@ export async function measureRoofInstant(
   // Instant: через леджер заказов (переиспользование, дозабор, покупка)
   let instant: InstantRoofData;
   let reuse: { requestId: string; how: "stored" | "recovered" } | undefined;
-  let packsBought: PdPack[] | undefined;
+  let packs: PackReport;
   try {
     const got = await obtainInstant(input, organizationId, opts?.forceNewOrder === true);
     instant = got.instant;
     reuse = got.reuse;
-    packsBought = got.packs;
+    packs = got.packs;
   } catch (err) {
     const debug = { ...eagleViewIdentity(), stage: "instant order", error: errorMessage(err, String(err)) };
     console.warn("[roofMeasurement] instant failed", debug);
     return { ok: false, error: errorMessage(err, "EagleView Instant request failed"), debug };
   }
-  const debug = { ...eagleViewIdentity(), packs: packsBought ?? null, reused: reuse ?? null, requestId: instant.requestId };
+  const debug = { ...eagleViewIdentity(), packs, reused: reuse ?? null, requestId: instant.requestId };
 
   const origin: LatLng | null = instant.lat != null && instant.lng != null ? { lat: instant.lat, lng: instant.lng } : null;
   const contours = instant.structures.map((st) => st.outline ?? []).filter((r) => r.length >= 3);
@@ -392,8 +435,48 @@ export async function measureRoofInstant(
     ? contours.map((r) => latLngRingToFrame(origin, r).ring as FootprintPoint[])
     : [];
 
-  // DSM/Solar (бесплатно): покрытие и регистрация; отказ не валит замер
   const provenance: MeasurementProvenance = {};
+
+  // парсель-вето: строения целиком вне лота — BEFORE the main structure is
+  // chosen, because the choice excludes vetoed structures.
+  const lot = await lotMaskFor(instant, origin);
+  if (lot && origin) {
+    const foreign: string[] = [];
+    instant.structures.forEach((st, i) => {
+      const ring = st.outline ?? [];
+      if (ring.length >= 3 && ringWhollyOutsideLot(lot, ring)) foreign.push("s" + i);
+    });
+    if (foreign.length) (provenance as Record<string, unknown>).parcelVeto = { foreignStructures: foreign };
+  }
+
+  // THE MAIN STRUCTURE (audit 2026-09-08). EagleView answers with every
+  // structure on the parcel (12117: the house and nineteen outbuildings);
+  // the row's figures, the hero, the estimate — and every witness below:
+  // registration, coverage, measured pitch, completeness — are about ONE of
+  // them. The rest are listed on the page with checkboxes.
+  const veto = (provenance as Record<string, unknown>).parcelVeto as { foreignStructures?: string[] } | undefined;
+  const pick = pickMainStructure(instant.structures, {
+    foreign: foreignIndices(veto?.foreignStructures),
+    origin,
+    parcelKnown: lot != null,
+  });
+  const mainSt = pick.index != null ? instant.structures[pick.index] : null;
+  if (pick.index != null) {
+    const others = instant.structures.filter((_, i) => i !== pick.index);
+    provenance.mainStructure = {
+      index: pick.index,
+      how: pick.how,
+      others: others.length,
+      othersSqft: Math.round(others.reduce((a, s) => a + (s.areaSqft ?? 0), 0)),
+    };
+  }
+  const mainRing: FootprintPoint[] | null =
+    origin && mainSt?.outline && mainSt.outline.length >= 3
+      ? (latLngRingToFrame(origin, mainSt.outline).ring as FootprintPoint[])
+      : frameContours[0] ?? null;
+  const mainContours: FootprintPoint[][] = mainRing ? [mainRing] : frameContours;
+
+  // DSM/Solar (бесплатно): покрытие и регистрация; отказ не валит замер
   let recon: ReconBuild | null = null;
   if (isSolarEnabled()) {
     try {
@@ -423,7 +506,7 @@ export async function measureRoofInstant(
       : undefined;
     provenance.pixelSizeM = recon.dsm.pixelSizeM;
     provenance.googleAreaSqft = recon.googleAreaSqft ?? null;
-    const ring0 = frameContours[0];
+    const ring0 = mainRing;
     if (ring0) {
       try {
         const reg = registerContourToRaster({
@@ -446,7 +529,7 @@ export async function measureRoofInstant(
       mask: recon.mask as never,
       dsm: recon.dsm as never,
       groundElevFt: recon.diagnostics.groundElevFt,
-      rings: frameContours,
+      rings: mainContours,
     });
     if (cov) provenance.coverage = { seenSqft: cov.seenSqft, contourSqft: cov.contourSqft, share: cov.share, insetShare: cov.insetShare };
 
@@ -456,11 +539,12 @@ export async function measureRoofInstant(
     // shape confidence.ts already reads.
     try {
       const regT = provenance.registration as { dxFt: number; dyFt: number; thetaDeg: number } | undefined;
-      const instantPitch12 = instant.totals.pitchLabel ? Number(instant.totals.pitchLabel.split("/")[0]) : null;
-      const solarPanels = instant.structures.some((st) => st.solarPanels === true);
+      const pitchLabel = mainSt?.pitch ?? instant.totals.pitchLabel;
+      const instantPitch12 = pitchLabel ? Number(pitchLabel.split("/")[0]) : null;
+      const solarPanels = mainSt ? mainSt.solarPanels === true : instant.structures.some((st) => st.solarPanels === true);
       const pitchRep = measurePitch({
         dsm: recon.dsm as never,
-        contours: frameContours,
+        contours: mainContours,
         transform: regT ?? null,
         instantPitch12,
         solarPanels,
@@ -481,6 +565,7 @@ export async function measureRoofInstant(
         source: pitchRep.source,
         reason: pitchRep.reason,
         trustedShare: pitchRep.trustedShare,
+        instantPitch12,
         ...(solarPanels ? { solarPanels } : {}),
       } as unknown as MeasurementProvenance["pitchSource"];
     } catch (err) {
@@ -490,56 +575,37 @@ export async function measureRoofInstant(
 
   // completeness по строениям (контуры против Instant)
   //
-  // Only when at least one structure CAME WITH an outline. Without pack 007
-  // (the entitlement fallback in submitInstantOrder buys 001 + 002 only) no
-  // structure has a ring, and the check would call every building on the lot
-  // "could not be turned into a usable outline" — a LOW CONFIDENCE verdict
-  // that disables pricing on figures that are complete. Nothing was lost; an
-  // outline was never asked for.
-  const anyOutline = instant.structures.some((st) => st.outline && st.outline.length >= 3);
-  if (anyOutline) {
-    const planAreaSqft = frameContours.reduce((s, r) => s + Math.abs(areaOf(r)), 0);
-    const completeness = checkCompleteness({
-      planAreaSqft,
-      structures: instant.structures.map((st, i) => {
-        const fr = origin && st.outline && st.outline.length >= 3 ? (latLngRingToFrame(origin, st.outline).ring as FootprintPoint[]) : null;
-        return {
-          prefix: "s" + i,
-          ring: fr,
-          contourAreaSqft: fr ? Math.abs(areaOf(fr)) : 0,
-        };
-      }),
-      instant,
-    });
-    provenance.completeness = {
-      findings: completeness.findings,
-      planSqft: completeness.planSqft,
-      instantSqft: (completeness as unknown as { instantSqft?: number | null }).instantSqft ?? null,
-    } as unknown as MeasurementProvenance["completeness"];
-  } else {
-    provenance.completeness = {
-      findings: [],
-      planSqft: 0,
-      instantSqft: instant.totals.areaSqft ?? null,
-    } as unknown as MeasurementProvenance["completeness"];
-    console.info("[roofMeasurement] no outline pack in this answer — completeness check skipped", { packs: packsBought ?? null });
-  }
+  // Without pack 007 no structure has a ring; that is "outline not
+  // purchased", a warn, never the LOW CONFIDENCE "building missing" verdict
+  // that would disable pricing on figures that are complete.
+  const planAreaSqft = mainContours.reduce((s, r) => s + Math.abs(areaOf(r)), 0);
+  const completeness = checkCompleteness({
+    mainIndex: pick.index,
+    planAreaSqft,
+    structures: instant.structures.map((st, i) => {
+      const fr = origin && st.outline && st.outline.length >= 3 ? (latLngRingToFrame(origin, st.outline).ring as FootprintPoint[]) : null;
+      return {
+        prefix: "s" + i,
+        ring: fr,
+        contourAreaSqft: fr ? Math.abs(areaOf(fr)) : 0,
+      };
+    }),
+    instant,
+    // No outline is not a lost building when the outline pack was never
+    // bought: pack 007 refused or not attempted → a note, not an error.
+    outlinesNotPurchased: !packs.have.includes(PD_PACK.OUTLINES),
+  });
+  provenance.completeness = {
+    findings: completeness.findings,
+    planSqft: completeness.planSqft,
+    instantSqft: (completeness as unknown as { instantSqft?: number | null }).instantSqft ?? null,
+  } as unknown as MeasurementProvenance["completeness"];
+  provenance.instantPacks = packs;
 
   // Google-сегменты: чтение roofSegmentStats (свидетель)
   if (origin) {
     const segs = await googleSegsFor(origin);
     if (segs) (provenance as Record<string, unknown>).googleSegments = { count: segs.length };
-  }
-
-  // парсель-вето: строения целиком вне лота
-  const lot = await lotMaskFor(instant, origin);
-  if (lot && origin) {
-    const foreign: string[] = [];
-    instant.structures.forEach((st, i) => {
-      const ring = st.outline ?? [];
-      if (ring.length >= 3 && ringWhollyOutsideLot(lot, ring)) foreign.push("s" + i);
-    });
-    if (foreign.length) (provenance as Record<string, unknown>).parcelVeto = { foreignStructures: foreign };
   }
 
   if (reuse) provenance.instantReuse = reuse;
@@ -575,10 +641,28 @@ export async function listRoofMeasurements(limit = 20): Promise<RoofMeasurementS
     select: {
       id: true, source: true, address: true, city: true, state: true,
       areaSqft: true, squares: true, predominantPitch: true, facetCount: true,
-      pngUrl: true, createdAt: true,
+      pngUrl: true, createdAt: true, lat: true, lng: true,
+      instantJson: true, provenanceJson: true,
     },
   });
-  return rows.map(toSummary);
+  // The list shows the same figures the page it opens shows — the one rule
+  // in lib/roofDiagram/instantTotals.rowFigures, not the columns as saved by
+  // whichever pipeline wrote them (audit 2026-09-09).
+  return rows.map((row) => {
+    let instant: InstantRoofData | null = null;
+    let provenance: Record<string, unknown> | null = null;
+    try { instant = row.instantJson ? (JSON.parse(row.instantJson) as InstantRoofData) : null; } catch { instant = null; }
+    try { provenance = row.provenanceJson ? ((JSON.parse(row.provenanceJson) as { provenance?: Record<string, unknown> }).provenance ?? null) : null; } catch { provenance = null; }
+    const fig = rowFigures({ instant, provenance, columns: { areaSqft: row.areaSqft, squares: row.squares, lat: row.lat, lng: row.lng } });
+    return {
+      ...toSummary(row),
+      areaSqft: fig.areaSqft,
+      squares: fig.squares,
+      predominantPitch: fig.predominantPitch,
+      facetCount: fig.facetCount,
+      pitchKind: fig.pitchKind,
+    };
+  });
 }
 
 export async function getRoofMeasurement(id: string): Promise<RoofMeasurementDTO | null> {

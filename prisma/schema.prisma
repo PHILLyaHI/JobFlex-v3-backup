@@ -1931,10 +1931,32 @@ model InstantOrder {
   // orders placed before 2026-08-28 and for ones that never completed.
   instantRawJson String?
   error          String?
+  // JSON array of the Property Data pack ids this order asked for
+  // (["property_data_id_001", …]). Since 2026-09-08 an address is bought pack
+  // by pack when the account's entitlement is partial, so one address can
+  // have several complete rows that together make one answer. Null on rows
+  // from before that: those were single seven-pack orders.
+  packs          String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   @@index([addressKey, status])
+}
+
+/// Which EagleView Property Data packs the ACCOUNT may order — a fact about
+/// the credentials, not about any address, which is why it is not scoped to
+/// an organization. `denied` is EagleView's 403 / 10880 ("no active
+/// entitlement") on a single-pack order; a 403 costs nothing, so a denied pack
+/// is probed again once its record is older than a day. `live` is an accepted
+/// order. A pack with no row has never been probed. Reset by
+/// scripts/eagleview-recheck-entitlements.ts.
+model EagleViewEntitlement {
+  // property_data_id_001 … property_data_id_009
+  pack      String   @id
+  // live | denied
+  status    String
+  checkedAt DateTime @default(now())
+  error     String?
 }
 
 /// Google Solar answers for one place, frozen so a second measurement of the

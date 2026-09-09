@@ -107,7 +107,14 @@ export function assessRoof(input: {
    * used. On a roof under solar panels the elevation data describes the panels,
    * not the roof — a note about where one number came from, not a defect.
    */
-  pitchSource?: { source: "measured" | "instant"; reason: string; solarPanels?: boolean; trustedShare?: number } | null;
+  pitchSource?: {
+    source: "measured" | "instant";
+    reason: string;
+    solarPanels?: boolean;
+    trustedShare?: number;
+    /** EagleView's published rise/12, null when pack 002 was not bought. */
+    instantPitch12?: number | null;
+  } | null;
   /**
    * The lot-boundary lookup failed. Not a gate — the measured structures are
    * measured correctly — but the reader has to be told, because what may be
@@ -195,11 +202,18 @@ export function assessRoof(input: {
   }
 
   if (input.pitchSource?.source === "instant") {
-    reasons.push(
-      input.pitchSource.solarPanels
-        ? "The pitch is EagleView's published figure: this roof carries solar panels, and the aerial elevation data measures the panels rather than the roof beneath them."
-        : "The pitch is EagleView's published figure — too little of this roof reads as a clean plane from above to measure it ourselves.",
-    );
+    // "Published figure" only when there IS one. Without pack 002 there is no
+    // EagleView pitch at all (audit 2026-09-08: 11810 was captioned with a
+    // published pitch it never had); that is a note, not a confidence hit.
+    if (input.pitchSource.instantPitch12 == null) {
+      reasons.push("Pitch not purchased (pack 002) — enter pitch to price.");
+    } else {
+      reasons.push(
+        input.pitchSource.solarPanels
+          ? "The pitch is EagleView's published figure: this roof carries solar panels, and the aerial elevation data measures the panels rather than the roof beneath them."
+          : "The pitch is EagleView's published figure — too little of this roof reads as a clean plane from above to measure it ourselves.",
+      );
+    }
   }
 
   if (share != null && share < COVERAGE_CLEAR) {

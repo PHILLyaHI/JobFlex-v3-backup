@@ -39,7 +39,14 @@ const AREA_TOLERANCE = 0.05;
 export interface CompletenessFinding {
   /** `error` means something is missing from the drawing, not merely uncertain. */
   level: "error" | "warn";
-  code: "STRUCTURE_MISSING" | "PLAN_AREA_SHORT" | "FACETS_SHORT" | "FOOTPRINT_MISMATCH" | "STRUCTURE_FOREIGN";
+  code:
+    | "STRUCTURE_MISSING"
+    | "PLAN_AREA_SHORT"
+    | "FACETS_SHORT"
+    | "FOOTPRINT_MISMATCH"
+    | "STRUCTURE_FOREIGN"
+    | "OUTLINE_NOT_PURCHASED"
+    | "OUTLINE_MAY_INCLUDE_ATTACHED";
   message: string;
 }
 
@@ -87,11 +94,55 @@ export interface CompletenessInput {
    * someone else's, and its area and footage are inflating the figures.
    */
   foreignStructures?: readonly string[];
+  /**
+   * The outlines were never bought — EagleView pack 007 (Building Outlines)
+   * is not in the account's entitlement — rather than lost on the way. A
+   * structure with figures but no ring is then a note, not a missing building:
+   * nothing fell out of the drawing, there was no drawing input to begin with.
+   */
+  outlinesNotPurchased?: boolean;
+  /** Index of the structure the page is about, for the area-vs-footprint check. */
+  mainIndex?: number | null;
 }
 
+/**
+ * Sloped area against footprint and pitch: for a plain roof
+ * area ≈ footprint / cos(atan(rise/12)). A ratio well above that means the
+ * "structure" EagleView drew is more than the roof its pitch describes — an
+ * attached garage, a wing under its own pitch, a porch in the outline.
+ * 12117 202nd St SE: 3,747 / 2,580 = 1.45 against 1.08 for 5/12 (+34 %);
+ * 12621 NE 100th Pl: 1.19 against 1.12 (+6 %) is within the tolerance.
+ */
+export const AREA_FOOTPRINT_TOLERANCE = 0.15;
+
 export function checkCompleteness(input: CompletenessInput): CompletenessReport {
-  const { structures, instant } = input;
+  const { instant } = input;
   const findings: CompletenessFinding[] = [];
+
+  // ── 0. does the main structure's area agree with its footprint and pitch? ──
+  const main = input.mainIndex != null ? instant?.structures?.[input.mainIndex] : null;
+  // With a main structure named, every check below is about IT: the figures
+  // on the page are the main structure's, so an outbuilding without an
+  // outline is not a lost part of them, and its contour has no business in
+  // the footprint comparison (12117: 20 outlines, 10,312 sq ft, against the
+  // house's own 2,580 sq ft footprint read as a "300% disagreement").
+  const mainPrefix = input.mainIndex != null ? "s" + input.mainIndex : null;
+  const structures = mainPrefix ? input.structures.filter((s) => s.prefix === mainPrefix) : input.structures;
+  if (main?.areaSqft && main.footprintSqft && main.pitch) {
+    const rise = Number(main.pitch.split("/")[0]);
+    if (Number.isFinite(rise)) {
+      const expected = 1 / Math.cos(Math.atan(rise / 12));
+      const ratio = main.areaSqft / main.footprintSqft;
+      const over = ratio / expected - 1;
+      if (over > AREA_FOOTPRINT_TOLERANCE) {
+        findings.push({
+          level: "warn",
+          code: "OUTLINE_MAY_INCLUDE_ATTACHED",
+          message: `Roof area is ${Math.round(over * 100)}% above what the footprint and the ${main.pitch} pitch imply (${Math.round(main.areaSqft).toLocaleString("en-US")} sq ft over ${Math.round(main.footprintSqft).toLocaleString("en-US")} sq ft) — outline may include attached structures.`,
+        });
+      }
+    }
+  }
 
   // ── 1. did every structure that went in come out? ──
   const wentIn = structures.filter((s) => s.ring && s.ring.length >= 3);
@@ -108,6 +159,14 @@ export function checkCompleteness(input: CompletenessInput): CompletenessReport 
   // uncovered list, so nothing downstream mentions it.
   for (const s of structures) {
     if (s.ring && s.ring.length >= 3) continue;
+    if (input.outlinesNotPurchased) {
+      findings.push({
+        level: "warn",
+        code: "OUTLINE_NOT_PURCHASED",
+        message: `Outline not purchased (pack 007 not entitled) — building ${s.prefix} has EagleView figures but no outline to draw from.`,
+      });
+      continue;
+    }
     findings.push({
       level: "error",
       code: "STRUCTURE_MISSING",
@@ -120,6 +179,7 @@ export function checkCompleteness(input: CompletenessInput): CompletenessReport 
   // sample (its 4/4 was measured on containment, not on catches), and a signal
   // untested in battle does not get to block an estimate on its first day.
   for (const prefix of input.foreignStructures ?? []) {
+    if (mainPrefix && prefix !== mainPrefix) continue;
     findings.push({
       level: "warn",
       code: "STRUCTURE_FOREIGN",
@@ -152,7 +212,7 @@ export function checkCompleteness(input: CompletenessInput): CompletenessReport 
     facetDeficit != null && input.google?.segmentCount ? facetDeficit / input.google.segmentCount : null;
 
   // ── 4. EagleView's own footprint, the external value nothing has ever read ──
-  const instantFootprint = instant?.totals?.footprintSqft ?? null;
+  const instantFootprint = (main ? main.footprintSqft : instant?.totals?.footprintSqft) ?? null;
   if (!nested && instantFootprint != null && instantFootprint > 0 && contourSqft > 0) {
     const gap = Math.abs(contourSqft - instantFootprint) / instantFootprint;
     if (gap > AREA_TOLERANCE) {

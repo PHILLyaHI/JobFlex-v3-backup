@@ -103,6 +103,9 @@ export function toSummary(row: RoofMeasurementSummaryRow): RoofMeasurementSummar
     squares: row.squares,
     predominantPitch: row.predominantPitch,
     facetCount: row.facetCount,
+    // The column as saved; listRoofMeasurements replaces this with the
+    // page's rule (lib/roofDiagram/instantTotals.rowFigures).
+    pitchKind: row.predominantPitch ? "eagleview" : "none",
     pngUrl: row.pngUrl,
     createdAt: row.createdAt.toISOString(),
   };

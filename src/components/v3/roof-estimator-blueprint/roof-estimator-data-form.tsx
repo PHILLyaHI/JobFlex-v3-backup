@@ -40,6 +40,7 @@ import {
 } from "@/stores/usePlanLimitStore";
 import { attachPlacesSuggest, type PickedPlace } from "@/components/v3/blueprint-shell/places-suggest";
 import { isMapsBrowserEnabled, loadMapsLibrary } from "@/lib/googleMaps";
+import { displayedPitchLabel, foreignIndices, instantTotalsOf, pickMainStructure, pitchFamilyShares } from "@/lib/roofDiagram/instantTotals";
 
 const STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA",
@@ -111,12 +112,6 @@ type GMapsLib = { Map: new (el: HTMLElement, opts: Record<string, unknown>) => L
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const stripId = ({ id: _id, ...rest }: EstimateLine) => rest;
 
-/** The structure the report is about: the largest by roof area (footprint when area is missing). */
-function mainStructure(structures: InstantStructure[] | undefined): InstantStructure | null {
-  if (!structures?.length) return null;
-  const size = (s: InstantStructure) => s.areaSqft ?? s.footprintSqft ?? -1;
-  return structures.reduce((best, s) => (size(s) > size(best) ? s : best));
-}
 
 /** "2025-07-11" → "Jul 2025" for the photo caption; unparsable input passes through. */
 function shotDateLabel(v: string | undefined): string | null {
@@ -169,7 +164,20 @@ export function RoofEstimatorDataForm() {
           contourSqft: st.contourSqft,
           share: st.coverage?.insetShare ?? st.coverage?.share ?? null,
         })) ?? null,
-      pitchSource: p.pitchSource ?? null,
+      // Rows from before 2026-09-08 carry no instantPitch12: fall back to the
+      // published label the row has, so "published figure" is only claimed
+      // when a figure exists.
+      pitchSource: p.pitchSource
+        ? {
+            ...p.pitchSource,
+            instantPitch12:
+              p.pitchSource.instantPitch12 !== undefined
+                ? p.pitchSource.instantPitch12
+                : measurement.instant?.totals.pitchLabel
+                  ? Number(measurement.instant.totals.pitchLabel.split("/")[0])
+                  : null,
+          }
+        : null,
       completeness: p.completeness ?? null,
       parcelBlocked: p.parcelBlocked ?? null,
       instantOcclusion: p.instantSurvey
@@ -256,6 +264,13 @@ export function RoofEstimatorDataForm() {
   const [manual, setManual] = React.useState<ManualTakeoff | null>(null);
   const [manSquares, setManSquares] = React.useState("");
   const [manPitch, setManPitch] = React.useState("6/12");
+  // Other structures on the parcel the contractor has ticked INTO the figures
+  // (indices into instant.structures). Empty by default: the page is about the
+  // main structure; a barn joins the total only when someone says so.
+  const [extra, setExtra] = React.useState<ReadonlySet<number>>(() => new Set());
+  // The pitch the contractor typed when EagleView had none (pack 002 not
+  // bought). Nothing is priced on a pitch nobody stated.
+  const [pitchEntered, setPitchEntered] = React.useState<string | null>(null);
 
   // A free estimate is never priced; the data path only saves Instant rows,
   // but old "recon" rows can still be opened from history.
@@ -269,6 +284,8 @@ export function RoofEstimatorDataForm() {
   function resetResult() {
     setMeasurement(null);
     setManual(null);
+    setExtra(new Set());
+    setPitchEntered(null);
     setUnsaved(false);
     setMaterials([]);
     setLabor([]);
@@ -405,6 +422,8 @@ export function RoofEstimatorDataForm() {
 
   function showMeasurement(m: RoofMeasurementDTO, wasUnsaved: boolean) {
     setMeasurement(m);
+    setExtra(new Set());
+    setPitchEntered(null);
     setUnsaved(wasUnsaved);
     setPanel("report");
     const willLiveMap = isMapsBrowserEnabled() && !mapDown && m.instant?.lat != null && m.instant?.lng != null;
@@ -454,7 +473,8 @@ export function RoofEstimatorDataForm() {
       await sleep(420);
       showMeasurement(res.measurement, !!res.unsaved);
       setReusedInstant(res.reusedInstant?.how ?? null);
-      const t = res.measurement.instant?.totals;
+      // The row's own columns: the main structure's figures, not the parcel's.
+      const t = { facetCount: res.measurement.facetCount, squares: res.measurement.squares };
       toast.success(
         res.unsaved ? "Roof measured — not saved" : "Roof measured",
         `${t?.facetCount ?? "—"} facets · ${t?.squares != null ? t.squares.toFixed(1) : "—"} squares` +
@@ -515,28 +535,42 @@ export function RoofEstimatorDataForm() {
       );
       return;
     }
+    // No pitch, no price: the button is disabled in this state, this is the belt.
+    if (!pitchForEstimate || !pitchKind) {
+      toast.error("Enter the pitch first", "EagleView did not supply a pitch for this roof (pack 002); pick one to price it.");
+      return;
+    }
     setGenBusy(true);
     try {
+      const families = pitchMeasured ? pitchFamilyShares(pitchRep!.families) : [];
+      const pitchNote =
+        pitchKind === "measured"
+          ? families.length > 1
+            ? `two-pitch roof: ${families.map((f) => `${Math.round(f.pitch12)}/12 (${Math.round(f.share * 100)}% of the roof)`).join(" + ")} — measured from aerial elevation data (${Math.round((pitchRep!.trustedShare ?? 0) * 100)}% of the roof read cleanly)`
+            : `pitch ${pitchForEstimate} over the whole roof — measured from aerial elevation data (${Math.round((pitchRep!.trustedShare ?? 0) * 100)}% of the roof read cleanly; that is the measurement's coverage, not a share of the roof at this pitch)`
+          : pitchKind === "eagleview"
+            ? `pitch ${pitchForEstimate} (EagleView published figure)`
+            : `pitch ${pitchForEstimate} entered by user — not measured`;
+      const extrasNote =
+        !manual && extra.size
+          ? ` Includes ${extra.size} other structure(s) on the parcel the contractor ticked in (${num(
+              otherStructures.filter(({ i }) => extra.has(i)).reduce((a, { s }) => a + (s.areaSqft ?? 0), 0),
+            )} sq ft); the main structure alone is ${num(structure?.areaSqft ?? 0)} sq ft.`
+          : "";
       const res = await estimateRoof({
         address: siteAddress || undefined,
         lat: measurement?.lat ?? undefined,
         lng: measurement?.lng ?? undefined,
-        pitch: pitchMeasured ? `${Math.round(pitchRep!.families[0].pitch12)}/12` : (t.pitchLabel ?? "6/12"),
+        pitch: pitchForEstimate,
+        pitchSource: pitchKind,
+        pitchFamilies: families.length > 1 ? families : undefined,
         squares: Number(t.squares.toFixed(1)),
         wastePct: waste,
         measurementNotes: manual
-          ? `Contractor-entered takeoff: ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft), pitch ${
-              t.pitchLabel ?? "6/12"
-            } as stated by the contractor — not an aerial measurement. No facet or linear-footage breakdown; allow for ridge, valley and flashing.`
-          : `EagleView Instant (calibrated): ${t.squares.toFixed(1)} squares (${num(
-          t.areaSqft ?? 0,
-        )} sq ft), predominant pitch ${
-          pitchMeasured
-            ? `${pitchRep!.families.map((f) => f.pitch12.toFixed(1)).join(" + ")}/12 (measured from aerial elevation data on ${Math.round((pitchRep!.trustedShare ?? 0) * 100)}% of the roof)`
-            : `${t.pitchLabel ?? "?"} (EagleView published figure)`
-        }, ${
-          measurement?.instant?.structures.length ?? 1
-        } structure(s), footprint ${num(t.footprintSqft ?? 0)} sq ft. No facet or linear-footage breakdown — the drawing tool is offline; allow for ridge/valley/flashing from the aerial photo.`,
+          ? `Contractor-entered takeoff: ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft), ${pitchNote}. No facet or linear-footage breakdown; allow for ridge, valley and flashing.`
+          : `EagleView Instant (calibrated): ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft) for the main structure, ${pitchNote}, footprint ${
+              structure?.footprintSqft != null ? num(structure.footprintSqft) + " sq ft" : "not purchased"
+            }.${extrasNote} No facet or linear-footage breakdown — the drawing tool is offline; allow for ridge/valley/flashing from the aerial photo.`,
       });
       if (!res.ok) {
         if (reportPlanLimitResult(res)) return;
@@ -580,8 +614,36 @@ export function RoofEstimatorDataForm() {
     }
   }
 
-  // ── Derived report figures (all from EagleView Instant's totals) ──
-  const totals = measurement?.instant?.totals ?? (manual ? manualTotals(manual) : null);
+  // ── Derived report figures: the MAIN structure, plus whatever the contractor ticked ──
+  // EagleView answers with every structure on the parcel (12117: the house and
+  // nineteen outbuildings). The page is about one of them — the one the
+  // server chose and recorded (provenance.mainStructure), or, for rows saved
+  // before that existed, the same rule applied here — and the rest are listed
+  // with checkboxes. A ticked structure joins the total and the estimate.
+  const inst = measurement?.instant ?? null;
+  const prov = measurement?.provenance;
+  const veto = (prov as Record<string, unknown> | undefined)?.parcelVeto as { foreignStructures?: string[] } | undefined;
+  const mainPick: { index: number | null; how: string } = !inst
+    ? { index: null, how: "none" }
+    : prov?.mainStructure
+      ? { index: prov.mainStructure.index, how: prov.mainStructure.how }
+      : pickMainStructure(inst.structures, {
+          foreign: foreignIndices(veto?.foreignStructures),
+          origin: measurement?.lat != null && measurement?.lng != null ? { lat: measurement.lat, lng: measurement.lng } : null,
+          parcelKnown: !!veto,
+        });
+  const structure: InstantStructure | null = inst && mainPick.index != null ? (inst.structures[mainPick.index] ?? null) : null;
+  const otherStructures = inst ? inst.structures.map((s, i) => ({ s, i })).filter(({ i }) => i !== mainPick.index) : [];
+  const includedStructures: InstantStructure[] = structure
+    ? [structure, ...otherStructures.filter(({ i }) => extra.has(i)).map(({ s }) => s)]
+    : [];
+  const totals = inst
+    ? includedStructures.length
+      ? instantTotalsOf(includedStructures)
+      : inst.totals
+    : manual
+      ? manualTotals(manual)
+      : null;
   const siteAddress = measurement?.address ?? manual?.address ?? null;
 
   // Measured pitch (provenance.pitchMeasurement — the retired line's DSM
@@ -598,19 +660,72 @@ export function RoofEstimatorDataForm() {
       }
     | undefined;
   const pitchMeasured = pitchRep?.source === "measured" && pitchRep.families.length > 0;
-  const pitchLabelShown = pitchMeasured
-    ? [...new Set(pitchRep!.families.map((f) => `${Math.round(f.pitch12)}/12`))].join(" + ")
-    : totals?.pitchLabel ?? "—";
-  const pitchHint = pitchMeasured
-    ? `measured · ${Math.round((pitchRep!.trustedShare ?? 0) * 100)}% of roof`
-    : manual
-      ? "rise / 12 · entered by hand"
-      : "rise / 12 · EagleView";
-  const structure = mainStructure(measurement?.instant?.structures);
+  // EagleView's published pitch for the MAIN structure (null without pack 002).
+  const evPitch = manual ? null : structure?.pitch ?? null;
+  // Where the pitch the page shows (and prices) comes from — never a default.
+  const pitchKind: "measured" | "eagleview" | "entered" | null = manual
+    ? "entered"
+    : pitchMeasured
+      ? "measured"
+      : evPitch
+        ? "eagleview"
+        : pitchEntered
+          ? "entered"
+          : null;
+  const pitchLabelShown = manual
+    ? totals?.pitchLabel ?? "—"
+    : displayedPitchLabel(pitchRep, evPitch) ?? pitchEntered ?? "—";
+  const pitchHint =
+    pitchKind === "measured"
+      ? `measured · ${Math.round((pitchRep!.trustedShare ?? 0) * 100)}% of roof`
+      : pitchKind === "entered"
+        ? "rise / 12 · entered by hand"
+        : pitchKind === "eagleview"
+          ? "rise / 12 · EagleView"
+          : measurement && !inst
+            ? "drawing pipeline (legacy) · no source"
+            : "not purchased · pack 002";
+  // The pitch the estimate will be priced on, or null: no pitch, no estimate.
+  const pitchForEstimate = pitchKind === "measured" ? `${Math.round(pitchRep!.families[0].pitch12)}/12` : pitchKind === "eagleview" ? evPitch : pitchKind === "entered" ? (manual ? manual.pitchLabel : pitchEntered) : null;
+  // Google Solar's independent whole-roof area, as a check on the figure shown.
+  const solarLine = (() => {
+    const g = prov?.googleAreaSqft;
+    if (g == null || !inst || totals?.areaSqft == null) return null;
+    const pct = ((totals.areaSqft - g) / g) * 100;
+    // One decimal, and the mark goes on strictly above 10.0 — so "+10.3%" is
+    // marked and reads as such, never a rounded "+10%" called "more than 10%".
+    const off = Math.abs(pct) > 10.0;
+    return { text: `Google Solar: ${num(g)} sq ft (${pct >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(1)}%)`, off };
+  })();
   const eaveHeights = structure?.eaveHeightFt
     ? Object.entries(structure.eaveHeightFt).map(([facade, ft]) => ({ facade, ft }))
     : [];
   const hasDetails = eaveHeights.length > 0 || !!structure || (measurement?.chimneys.length ?? 0) > 0;
+  // "EagleView data packs: area ✓ · pitch ✗ (not entitled) · …" — one line
+  // under the hero figures naming what was bought and what the account was
+  // refused, so a "—" in a cell is read as "not purchased", not "not measured".
+  const packsLine = React.useMemo(() => {
+    const ip = measurement?.provenance?.instantPacks;
+    if (!ip || (!ip.denied.length && !ip.missing.length && !ip.failed.length && !ip.unknown?.length)) return null;
+    const NAMES: Record<string, string> = {
+      property_data_id_001: "area",
+      property_data_id_002: "pitch & eave",
+      property_data_id_003: "material & condition",
+      property_data_id_004: "roof age",
+      property_data_id_005: "shape & details",
+      property_data_id_007: "outline",
+      property_data_id_008: "imagery",
+    };
+    const parts = Object.keys(NAMES).map((pack) => {
+      const name = NAMES[pack];
+      if (ip.have.includes(pack)) return `${name} ✓`;
+      if (ip.denied.includes(pack)) return `${name} ✗ not entitled`;
+      if (ip.failed.includes(pack)) return `${name} ✗ failed`;
+      if (ip.unknown?.includes(pack)) return `${name} ? unknown`;
+      return `${name} ✗ not purchased`;
+    });
+    return "EagleView data packs: " + parts.join(" · ");
+  }, [measurement]);
   const reconDown = measurement?.provenance?.reconUnavailable ?? null;
   const partialCoverage = measurement?.provenance?.partialCoverage ?? null;
   const photoShown = view === "satellite" ? satPhoto : orthoPhoto;
@@ -746,6 +861,7 @@ export function RoofEstimatorDataForm() {
                           {dateShort(r.createdAt)}
                           {r.predominantPitch ? ` · ${r.predominantPitch}` : ""}
                           {r.facetCount != null ? ` · ${r.facetCount} facets` : ""}
+                          {r.pitchKind === "legacy" ? " · drawing pipeline (legacy)" : ""}
                         </span>
                       </span>
                       <span className={"chip rf-recent-src " + chip.tone}>{chip.label}</span>
@@ -876,6 +992,20 @@ export function RoofEstimatorDataForm() {
               <HeroCell l="Predominant pitch" v={pitchLabelShown} h={pitchHint} />
               <HeroCell l="Roof facets" v={totals?.facetCount != null ? String(totals.facetCount) : "—"} h="planes" />
             </div>
+            {/* Which EagleView packs this answer is made of. Shown only when the
+                measurement knows (rows since per-pack ordering, 2026-09-08) and
+                something is not there — a full seven-pack answer says nothing. */}
+            {(solarLine || packsLine) && (
+              <div className="rf-notice">
+                {solarLine && (
+                  <div className="rf-note rf-solar">
+                    {solarLine.text}
+                    {solarLine.off && <> <span className="chip wait">differs by more than 10% · check the outline</span></>}
+                  </div>
+                )}
+                {packsLine && <div className="rf-note rf-packs">{packsLine}</div>}
+              </div>
+            )}
 
             {measurement && (
             <div className="rf-grid">
@@ -959,7 +1089,9 @@ export function RoofEstimatorDataForm() {
                     <dl className="rf-details" id="rfDetails">
                       {eaveHeights.length > 0 && (
                         <>
-                          <div className="rf-details-sec">Eave height</div>
+                          {/* EagleView's per-facade figure, in 10 ft classes (9903: 10 on every side;
+                              12117: 20 on the house, 10 on the outbuildings) — a class, not a measurement. */}
+                          <div className="rf-details-sec">Eave height · EagleView · 10 ft classes</div>
                           {eaveHeights.map((e) => (
                             <div className="rf-details-row" key={e.facade}>
                               <dt>{FACADE[e.facade] ?? e.facade}</dt>
@@ -1017,10 +1149,46 @@ export function RoofEstimatorDataForm() {
                   <div className="rf-head">
                     <div className="card-title">Structures</div>
                     <div className="card-sub">
-                      {measurement.instant?.structures.length ?? 0} on the property
-                      {totals?.footprintSqft != null ? ` · footprint ${num(totals.footprintSqft)} sq ft` : ""}
+                      {structure
+                        ? `Main structure: ${structure.areaSqft != null ? num(structure.areaSqft) + " sq ft" : "no area"}${structure.footprintSqft != null ? ` · footprint ${num(structure.footprintSqft)} sq ft` : ""}${mainPick.how === "nearest-pin" ? " · nearest the pin" : mainPick.how === "area+parcel" ? " · largest on the parcel" : ""}`
+                        : `${measurement.instant?.structures.length ?? 0} on the property`}
                     </div>
                   </div>
+                  {otherStructures.length > 0 && (
+                    /* The Details card's own <dl> rhythm and the page's
+                       checklist mark (.rf-attach): nothing new is styled. */
+                    <dl className="rf-details rf-others">
+                      <div className="rf-details-sec">
+                        Other structures on the parcel · {otherStructures.length} ·{" "}
+                        {num(otherStructures.reduce((a, { s }) => a + (s.areaSqft ?? 0), 0))} sq ft
+                      </div>
+                      <div className="rf-note">Off by default. Tick one to add it to the total and the estimate.</div>
+                      {otherStructures.map(({ s, i }) => (
+                        <div className="rf-details-row" key={i}>
+                          <dt>
+                            <label className={"rf-attach" + (extra.has(i) ? "" : " is-off")}>
+                              <input
+                                type="checkbox"
+                                checked={extra.has(i)}
+                                onChange={(e) => {
+                                  const next = new Set(extra);
+                                  if (e.target.checked) next.add(i); else next.delete(i);
+                                  setExtra(next);
+                                }}
+                              />
+                              s{i}
+                            </label>
+                          </dt>
+                          <dd>
+                            {s.areaSqft != null ? num(s.areaSqft) : "—"}
+                            <span>sq ft</span>
+                            {s.pitch && <span>· {s.pitch}</span>}
+                            {s.footprintSqft != null && <span>· footprint {num(s.footprintSqft)}</span>}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
                 </div>
               </div>
             </div>
@@ -1054,15 +1222,39 @@ export function RoofEstimatorDataForm() {
                       </select>
                     </span>
                   </label>
+                  {!manual && !pitchMeasured && !evPitch && totals?.squares != null && (
+                    /* EagleView supplied no pitch (pack 002 not bought): the
+                       contractor states one, and the estimate says so. */
+                    <label className="est-field est-field--sm">
+                      <span className="est-lbl">Pitch · enter</span>
+                      <span className="bp-sel">
+                        <select
+                          className="bp-sel-in est-in"
+                          id="pitchEntered"
+                          value={pitchEntered ?? ""}
+                          onChange={(e) => setPitchEntered(e.target.value || null)}
+                        >
+                          <option value="">Select pitch…</option>
+                          {PITCHES.map((p) => (
+                            <option key={p} value={p}>
+                              {p}
+                            </option>
+                          ))}
+                        </select>
+                      </span>
+                    </label>
+                  )}
                   <button
                     className="btn btn-primary btn--sm"
                     type="button"
                     id="buildBtn"
-                    disabled={isRecon || genBusy || totals?.squares == null || assessment?.estimable === false}
+                    disabled={isRecon || genBusy || totals?.squares == null || assessment?.estimable === false || !pitchForEstimate}
                     title={
                       assessment?.estimable === false
                         ? "Part of this property is missing from the figures, so they are not reliable enough to price from."
-                        : undefined
+                        : !pitchForEstimate
+                          ? "Enter the pitch first — EagleView did not supply one for this roof."
+                          : undefined
                     }
                     onClick={() => void generate()}
                   >

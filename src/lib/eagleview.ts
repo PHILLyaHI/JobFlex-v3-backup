@@ -11,6 +11,7 @@
 // 500. Both hosts are overridable via env.
 
 import { ExternalCallError, externalFetch, type ExternalFailureKind } from "@/lib/externalCall";
+import { instantTotalsOf } from "@/lib/roofDiagram/instantTotals";
 const TOKEN_BASE = process.env.EAGLEVIEW_TOKEN_BASE_URL || "https://apicenter.eagleview.com";
 const API_BASE = process.env.EAGLEVIEW_API_BASE_URL || "https://sandbox.apicenter.eagleview.com";
 
@@ -769,6 +770,33 @@ export type PdPack = (typeof PD_PACK)[keyof typeof PD_PACK];
 
 /** The two packs the plain "instant figures" call needs. */
 export const PD_FIGURE_PACKS: PdPack[] = [PD_PACK.ROOF_AREA, PD_PACK.PITCH_EAVE];
+
+/** The Instant ledger's address key: upper-cased, whitespace-collapsed, equality only. */
+export function instantAddressKey(input: { address?: string | null; city?: string | null; state?: string | null; zip?: string | null }): string {
+  return [input.address, input.city, input.state, input.zip]
+    .map((part) => (part ?? "").toUpperCase().replace(/\s+/g, " ").trim())
+    .join("|");
+}
+
+/**
+ * EagleView refused an order because the ACCOUNT is not entitled to one or
+ * more of the packs asked for (HTTP 403, errorCode 10880 "No active
+ * entitlement found for one or more products requested in 'product_ids'", or
+ * 10036 "missing or incomplete entitlement"). A fact about the credentials,
+ * not the address — the caller records it per pack and orders around it.
+ * Nothing was billed: EagleView rejects the whole request.
+ */
+export class PdEntitlementError extends Error {
+  constructor(
+    message: string,
+    readonly packs: readonly PdPack[],
+    readonly errorCode: number | null,
+    readonly httpStatus = 403,
+  ) {
+    super(message);
+    this.name = "PdEntitlementError";
+  }
+}
 /** Everything the roof diagram consumes: figures + outline + flags + ortho. */
 export const PD_DIAGRAM_PACKS: PdPack[] = [
   PD_PACK.ROOF_AREA,
@@ -1108,14 +1136,6 @@ export function parseInstantResult(raw: PdResult, requestId: string, input: EvOr
     });
   }
 
-  const areaSqft = structures.reduce((a, s) => a + (s.areaSqft ?? 0), 0);
-  const main = structures.slice().sort((a, b) => (b.areaSqft ?? 0) - (a.areaSqft ?? 0))[0];
-  const pitchLabel = main?.pitch ?? null;
-  const pitchRise = pitchLabel ? Number(pitchLabel.split("/")[0]) : NaN;
-  const eaves = structures.flatMap((s) => (s.eaveHeightFt ? Object.values(s.eaveHeightFt) : []));
-  const facetCounts = structures.map((s) => s.facetCount).filter((n): n is number => n != null);
-  const footprints = structures.map((s) => s.footprintSqft).filter((n): n is number => n != null);
-
   return {
     requestId,
     address: raw.response_address?.full_address ?? (completeAddress || null),
@@ -1123,15 +1143,51 @@ export function parseInstantResult(raw: PdResult, requestId: string, input: EvOr
     lng: raw.response_coordinates?.lon ?? input.lng ?? null,
     structures,
     imagery,
-    totals: {
-      areaSqft,
-      squares: areaSqft / 100,
-      predominantPitch: Number.isFinite(pitchRise) ? pitchRise : null,
-      pitchLabel,
-      maxEaveFt: eaves.length ? Math.max(...eaves) : null,
-      facetCount: facetCounts.length ? facetCounts.reduce((a, b) => a + b, 0) : null,
-      footprintSqft: footprints.length ? footprints.reduce((a, b) => a + b, 0) : null,
-    },
+    totals: instantTotalsOf(structures),
+  };
+}
+
+/** The totals block lives in lib/roofDiagram/instantTotals (client-safe) so the
+ *  page and the persisted row derive the same numbers by the same rule; it is
+ *  re-exported here for the server callers that always imported it from here. */
+export { instantTotalsOf };
+
+/**
+ * One answer out of several pack orders for the same address (2026-09-08,
+ * partial entitlement). The first part is the base — the caller puts the
+ * roof-area order (pack 001) there. Structures are matched by index: the
+ * address is one, so EagleView lists the same buildings in the same order;
+ * every field the base has null takes the first later part's non-null value.
+ * Imagery is concatenated and de-duplicated by token. Totals are re-derived
+ * from the merged structures, never copied from a part.
+ */
+export function mergeInstantResults(parts: readonly InstantRoofData[]): InstantRoofData {
+  const [base, ...rest] = parts;
+  if (!base) throw new Error("mergeInstantResults: nothing to merge");
+  if (!rest.length) return base;
+  const count = Math.max(...parts.map((p) => p.structures.length));
+  const structures: InstantStructure[] = [];
+  for (let i = 0; i < count; i++) {
+    const owners = parts.map((p) => p.structures[i]).filter((s): s is InstantStructure => Boolean(s));
+    if (!owners.length) continue;
+    const out = { ...owners[0] } as Record<string, unknown>;
+    for (const o of owners.slice(1)) {
+      for (const [k, v] of Object.entries(o)) {
+        if (out[k] == null && v != null) out[k] = v;
+      }
+    }
+    structures.push(out as unknown as InstantStructure);
+  }
+  const seen = new Set<string>();
+  const imagery = parts.flatMap((p) => p.imagery).filter((im) => (seen.has(im.token) ? false : (seen.add(im.token), true)));
+  return {
+    requestId: base.requestId,
+    address: base.address ?? rest.find((p) => p.address)?.address ?? null,
+    lat: base.lat ?? rest.find((p) => p.lat != null)?.lat ?? null,
+    lng: base.lng ?? rest.find((p) => p.lng != null)?.lng ?? null,
+    structures,
+    imagery,
+    totals: instantTotalsOf(structures),
   };
 }
 
@@ -1193,23 +1249,23 @@ export async function submitInstantOrder(
         "These EagleView credentials are for the other environment — Property Data requests must match the account (production keys → apis.eagleview.com).",
       );
     }
-    // ENTITLEMENT (403, errorCode 10880 / 10036). EagleView refuses the WHOLE
-    // order when any one pack is not entitled, and a refusal is not billed.
-    // Verified 2026-09-08 against org 347167560: 001 + 002 (roof area, pitch +
-    // eave) are entitled, the diagram extras (003/004/005/007/008) are not.
-    // So a refused diagram order is asked again with the figure packs only —
-    // the page's numbers come from those two anyway; outline, ortho and the
-    // detail classifiers are simply absent until the portal enables them.
-    if (err instanceof EagleViewUnavailableError && err.httpStatus === 403 && /entitlement/i.test(err.message)) {
+    // ENTITLEMENT (403, errorCode 10880 / 10036 / "explicit deny"). EagleView
+    // refuses the WHOLE order when any one pack is not entitled, and a refusal
+    // is not billed. Verified 2026-09-08 against org 347167560: 001 + 002
+    // (roof area, pitch + eave) are entitled, so the entitlement is PARTIAL.
+    // The refusal is therefore typed, per pack, and the caller
+    // (lib/eagleviewOrder) buys pack by pack — no retry happens here, so that
+    // one place decides what is ordered and records the verdict per pack.
+    if (err instanceof EagleViewUnavailableError && err.httpStatus === 403) {
       evDebug("property request REFUSED (entitlement)", { ...identity, packs, detail: err.message.slice(0, 300) });
-      if (packs.length > PD_FIGURE_PACKS.length) {
-        evDebug("retrying with the figure packs only", { retry: PD_FIGURE_PACKS });
-        return submitInstantOrder(input, PD_FIGURE_PACKS);
-      }
-      throw new Error(
-        `EagleView refused the Property Data order — no active entitlement for ${packs.join(", ")} (403). ` +
-          `Account org ${identity.org ?? "?"}, client ${identity.clientId}, host ${identity.propertyHost}. ` +
-          `Entitlements are switched on per product in the EagleView developer portal (My Apps → this app → Property Data).`,
+      const m = err.message.match(/"errorCode"\s*:\s*(\d+)/);
+      const code = m ? Number(m[1]) : null;
+      throw new PdEntitlementError(
+        `EagleView refused the Property Data request for ${packs.join(", ")} (403${code != null ? ` / ${code}` : ""}): ` +
+          `this account is not entitled to one or more of these packs. Account org ${identity.org ?? "?"}, client ${identity.clientId}, host ${identity.propertyHost}. ` +
+          "Entitlements are switched on per product in the EagleView developer portal (My Apps → this app → Property Data).",
+        packs,
+        code,
       );
     }
     evDebug("property request FAILED", { ...identity, packs, error: (err as Error)?.message?.slice(0, 300) });
