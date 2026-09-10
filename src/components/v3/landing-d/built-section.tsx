@@ -1,5 +1,6 @@
 import { BlueprintShell, Ic } from "./dashboard-mock";
 import { PhoneJobs } from "./blueprint-phone";
+import type { BuiltJob, PhoneJob } from "./landing-groups";
 import { Reveal } from "./reveal";
 
 /* The Jobs plate. Same device as the hero's Overview shot — BlueprintShell is
@@ -7,7 +8,7 @@ import { Reveal } from "./reveal";
    of jobs, money in mono, and status carried by bordered chips whose colour is
    the status and nothing else. The donor's dark rounded admin card is gone. */
 
-type Status = "DRAFT" | "SCHEDULED" | "IN PROGRESS" | "PAID";
+type Status = BuiltJob["status"];
 
 const STATUS_CHIP: Record<Status, string> = {
   DRAFT: "border-dashed border-slate-400 text-slate-500",
@@ -16,7 +17,7 @@ const STATUS_CHIP: Record<Status, string> = {
   PAID: "border-emerald-600 bg-emerald-600/[0.07] text-emerald-700",
 };
 
-const JOBS: { t: string; by: string; inv: string; pct: number | null; status: Status }[] = [
+const JOBS: BuiltJob[] = [
   { t: "Nguyen kitchen — cabinet install", by: "Marco's crew · 2 days ago", inv: "$18,600", pct: null, status: "SCHEDULED" },
   { t: "Ortiz hall bath — tile & glass set", by: "Sam's crew · 3 days ago", inv: "$6,200", pct: null, status: "SCHEDULED" },
   { t: "Whitfield deck — footing inspection", by: "Marco's crew · just now", inv: "", pct: null, status: "DRAFT" },
@@ -30,7 +31,7 @@ const JOBS: { t: string; by: string; inv: string; pct: number | null; status: St
 
 const FILTERS = ["All jobs", "All crews", "All clients", "All tags"];
 
-export function BuiltSection() {
+export function BuiltSection({ jobs = JOBS, phoneJobs }: { jobs?: BuiltJob[]; phoneJobs?: PhoneJob[] }) {
   return (
     <section className="relative overflow-hidden bg-white px-5 py-[8vmin] max-sm:pb-[18vmin] sm:px-6">
       <div className="lp-bg lp-bg--frame" aria-hidden data-lazy />
@@ -50,7 +51,7 @@ export function BuiltSection() {
 
         {/* Mobile: black-and-white jobs board */}
         <Reveal delay={120} className="mt-10 sm:hidden">
-          <PhoneJobs />
+          <PhoneJobs jobs={phoneJobs} />
         </Reveal>
 
         {/* The Jobs page, on the same blueprint plate as the hero shot */}
@@ -84,7 +85,7 @@ export function BuiltSection() {
                 <span className="text-right">Collected</span>
                 <span className="text-right">Status</span>
               </div>
-              {JOBS.map((r) => (
+              {jobs.map((r) => (
                 <div
                   key={r.t}
                   className="grid grid-cols-[minmax(0,2.4fr)_92px_130px_120px] items-center gap-3 border-b border-black/[0.07] py-[8.5px] last:border-0 last:pb-0"

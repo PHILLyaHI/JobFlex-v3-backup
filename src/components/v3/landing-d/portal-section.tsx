@@ -1,10 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { PortalContent } from "./landing-groups";
 import { Reveal } from "./reveal";
 import { useInView } from "./use-in-view";
 
-export function PortalSection() {
+/* The default page's and the interior trades' job; other groups hand in theirs. */
+const KITCHEN: PortalContent = {
+  title: "Nguyen kitchen remodel · Proposal #P-1178",
+  baseOption: "Standard hardware",
+  upgradeOption: "Soft-close upgrade",
+  upgradePrice: "+$640",
+  total: "$27,860",
+  totalUpgraded: "$28,500",
+};
+
+export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) {
   const { ref, inView } = useInView<HTMLDivElement>(0.3);
   // 0 idle · 1 upgrade picked · 2 signing · 3 signed
   const [step, setStep] = useState(0);
@@ -57,7 +68,7 @@ export function PortalSection() {
                   </div>
                   <div className="mt-3 text-[19px] font-bold text-lp-ink">Review &amp; approve</div>
                   <div className="mt-1 text-[12px] text-slate-400">
-                    Nguyen kitchen remodel · Proposal #P-1178
+                    {portal.title}
                   </div>
                 </div>
 
@@ -76,7 +87,7 @@ export function PortalSection() {
                       >
                         {!upgraded && <span className="h-2 w-2 rounded-full bg-lp-blue" />}
                       </span>
-                      Standard hardware
+                      {portal.baseOption}
                     </span>
                     <span className="text-[12px] font-semibold text-slate-400">$0</span>
                   </div>
@@ -93,9 +104,9 @@ export function PortalSection() {
                       >
                         {upgraded && <span className="h-2 w-2 rounded-full bg-lp-blue" />}
                       </span>
-                      Soft-close upgrade
+                      {portal.upgradeOption}
                     </span>
-                    <span className="text-[12px] font-semibold text-lp-ink">+$640</span>
+                    <span className="text-[12px] font-semibold text-lp-ink">{portal.upgradePrice}</span>
                   </div>
                 </div>
 
@@ -107,7 +118,7 @@ export function PortalSection() {
                     className="text-[20px] font-bold tracking-tight text-lp-ink"
                     style={{ animation: "toast-in .4s cubic-bezier(.2,.6,.2,1)" }}
                   >
-                    {upgraded ? "$28,500" : "$27,860"}
+                    {upgraded ? portal.totalUpgraded : portal.total}
                   </span>
                 </div>
 

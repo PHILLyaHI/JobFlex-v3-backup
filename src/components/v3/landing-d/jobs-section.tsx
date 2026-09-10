@@ -1,6 +1,7 @@
 "use client";
 
 import { PhoneSchedule } from "./blueprint-phone";
+import type { CrewLane, PhoneLane } from "./landing-groups";
 import { Reveal } from "./reveal";
 import { useInView } from "./use-in-view";
 
@@ -9,8 +10,6 @@ import { useInView } from "./use-in-view";
    bordered job chips whose tone is the job's state — status colour for status
    only, never decoration. */
 
-type Tone = "bp" | "sky" | "ok" | "warn" | "bad" | "mute";
-type Event = { day: number; span: number; label: string; tone: Tone };
 
 const DAYS = [
   { d: "Mon", n: 14 },
@@ -20,7 +19,7 @@ const DAYS = [
   { d: "Fri", n: 18 },
 ];
 
-const CREW: { name: string; role: string; events: Event[] }[] = [
+const CREW: CrewLane[] = [
   {
     name: "Marco",
     role: "Lead carpenter",
@@ -60,7 +59,7 @@ const TOGGLES: [string, boolean][] = [
   ["Client updates", false],
 ];
 
-export function JobsSection() {
+export function JobsSection({ crew = CREW, phoneLanes }: { crew?: CrewLane[]; phoneLanes?: PhoneLane[] }) {
   const { ref, inView } = useInView<HTMLDivElement>(0.15);
 
   let chipIndex = 0;
@@ -78,7 +77,7 @@ export function JobsSection() {
 
         {/* Mobile: flagship crew calendar */}
         <Reveal delay={100} className="mt-8 sm:hidden">
-          <PhoneSchedule />
+          <PhoneSchedule lanes={phoneLanes} />
         </Reveal>
 
         <Reveal delay={120} className="relative mt-14 hidden sm:block">
@@ -101,7 +100,7 @@ export function JobsSection() {
             </div>
 
             {/* Crew rows */}
-            {CREW.map((c) => (
+            {crew.map((c) => (
               <div key={c.name} className="lp-jb-row">
                 <div className="lp-jb-crew">
                   <span className="lp-jb-av">{c.name[0]}</span>
@@ -150,7 +149,7 @@ export function JobsSection() {
             <div className="lp-jb-dispatch-job">Whitfield deck rebuild</div>
             <div className="lp-jb-dispatch-lbl">Assign to</div>
             <div className="lp-jb-avrow">
-              {CREW.map((c, i) => (
+              {crew.map((c, i) => (
                 <span key={c.name} className={`lp-jb-av${i === 0 ? " is-picked" : " is-dim"}`}>
                   {c.name[0]}
                   {i === 0 && <span className="lp-jb-av-tick" aria-hidden>✓</span>}

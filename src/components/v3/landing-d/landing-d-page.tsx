@@ -18,6 +18,7 @@ import dynamic from "next/dynamic";
 import { getPlanCatalog } from "@/lib/planCatalogServer";
 import { CtaFooter } from "./cta-footer";
 import { LandingFaq } from "./landing-faq";
+import { groupContentFor, showcaseSlidesFor } from "./landing-groups";
 import { LandingPricing } from "./landing-pricing";
 import { CtaTracker } from "./cta-tracker";
 import { LazyBg } from "./lazy-bg";
@@ -69,6 +70,10 @@ export async function LandingD({ variant, explicitVariant = false, utm = {} }: L
   // 2); a catalogue read that fails leaves the section out rather than the
   // page down.
   const plans = await getPlanCatalog().catch(() => []);
+  // The trade group's data for the sections under the hero (CRO stage 3):
+  // undefined for the default page and the interior trades, which keep the
+  // sections' own built-in kitchen.
+  const g = groupContentFor(variant);
   // Below the intro every section is wrapped in `.lp-cv`
   // (content-visibility: auto): the browser skips its style and layout until
   // it is near the viewport — the mobile LCP's render delay was style/layout
@@ -79,15 +84,15 @@ export async function LandingD({ variant, explicitVariant = false, utm = {} }: L
       <main>
         <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} />
         <Intro registerHref={register} />
-        <div className="lp-cv"><EstimatorsShowcase initialSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} /></div>
-        <div className="lp-cv"><Montage /></div>
-        <div className="lp-cv"><ProposalsSection /></div>
-        <div className="lp-cv"><PortalSection /></div>
-        <div className="lp-cv"><JobsSection /></div>
+        <div className="lp-cv"><EstimatorsShowcase initialSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} slides={showcaseSlidesFor(variant)} /></div>
+        {(g?.montage ?? true) && <div className="lp-cv"><Montage /></div>}
+        <div className="lp-cv"><ProposalsSection proposal={g?.proposal} /></div>
+        <div className="lp-cv"><PortalSection portal={g?.portal} /></div>
+        <div className="lp-cv"><JobsSection crew={g?.crew} phoneLanes={g?.phoneLanes} /></div>
         <div className="lp-cv"><FlowFeatures /></div>
         <div className="lp-cv"><Integrations registerHref={register} /></div>
-        <div className="lp-cv"><StatsSection /></div>
-        <div className="lp-cv"><BuiltSection /></div>
+        <div className="lp-cv"><StatsSection rows={g?.stats} /></div>
+        <div className="lp-cv"><BuiltSection jobs={g?.jobs} phoneJobs={g?.phoneJobs} /></div>
         <div className="lp-cv"><LandingPricing plans={plans} registerHref={register} cta={variant ? v.primaryCta : undefined} /></div>
         <div className="lp-cv"><LandingFaq variant={variant} /></div>
         <CtaFooter registerHref={register} cta={variant ? v.primaryCta : undefined} />

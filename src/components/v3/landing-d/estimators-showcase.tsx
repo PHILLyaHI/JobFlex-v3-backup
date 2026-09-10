@@ -221,17 +221,27 @@ function VideoShot({ active }: { active: boolean }) {
    THE SECTION
    ============================================================ */
 
-const SLIDES = [
-  { key: "smart", label: "Smart Proposal" },
-  { key: "roof", label: "Roof estimator" },
-  { key: "fence", label: "Fence estimator" },
-  { key: "video", label: "Video estimator" },
-];
+const SLIDE_LABEL: Record<ShowcaseSlideKey, string> = {
+  smart: "Smart Proposal",
+  roof: "Roof estimator",
+  fence: "Fence estimator",
+  video: "Video estimator",
+};
+/** The default page's four, in the order they always ran. */
+const DEFAULT_SLIDES: ShowcaseSlideKey[] = ["smart", "roof", "fence", "video"];
 
-export function EstimatorsShowcase({ initialSlide }: { initialSlide?: ShowcaseSlideKey }) {
+export function EstimatorsShowcase({
+  initialSlide,
+  slides: order,
+}: {
+  initialSlide?: ShowcaseSlideKey;
+  /** The trade group's slide set and order (landing-groups.ts); absent = the default four. */
+  slides?: ShowcaseSlideKey[];
+}) {
   const { ref, inView } = useInView<HTMLDivElement>(0.15);
+  const SLIDES = (order?.length ? order : DEFAULT_SLIDES).map((key) => ({ key, label: SLIDE_LABEL[key] }));
   // A trade variant opens on its own estimator (fence for `?industry=fencing`);
-  // auto-advance then carries on round the four as usual.
+  // auto-advance then carries on round its set as usual.
   const [slide, setSlide] = useState(() => Math.max(0, SLIDES.findIndex((s) => s.key === initialSlide)));
   const [run, setRun] = useState(0);
   const [reduced, setReduced] = useState(false);
@@ -307,10 +317,10 @@ export function EstimatorsShowcase({ initialSlide }: { initialSlide?: ShowcaseSl
 
           <Reveal delay={120}>
             <div className="mt-6 sm:mt-9" key={`${s.key}-${run}`} style={{ animation: `toast-in .5s ${EASE}` }}>
-              {slide === 0 && <SmartProposalShot active={inView} scenario={SMART_SCENARIOS.kitchen} />}
-              {slide === 1 && <RoofShot active={inView} />}
-              {slide === 2 && <FenceShot active={inView} />}
-              {slide === 3 && <VideoShot active={inView} />}
+              {s.key === "smart" && <SmartProposalShot active={inView} scenario={SMART_SCENARIOS.kitchen} />}
+              {s.key === "roof" && <RoofShot active={inView} />}
+              {s.key === "fence" && <FenceShot active={inView} />}
+              {s.key === "video" && <VideoShot active={inView} />}
             </div>
           </Reveal>
         </div>

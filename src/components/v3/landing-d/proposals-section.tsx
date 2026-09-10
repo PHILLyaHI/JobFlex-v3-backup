@@ -4,27 +4,47 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { AppWindow } from "./app-window";
 import { InvoiceMobile } from "./invoice-mobile";
+import type { ProposalContent } from "./landing-groups";
 import { Reveal } from "./reveal";
 import { useInView } from "./use-in-view";
 
+/* The document as it shipped — the kitchen — is the default page's and the
+   interior trades'; the other groups hand in their own (landing-groups.ts). */
+const KITCHEN: ProposalContent = {
+  number: "P-1178",
+  title: "Nguyen kitchen remodel — 10×10, maple & quartz",
+  blurb:
+    "Full scope for the kitchen: demo, rough-in for the relocated sink, semi-custom maple shaker cabinets and quartz counters. The price is complete — anything outside it gets a written change order first.",
+  linesMobile: [
+    ["Cabinets — maple shaker, 14 ln ft", "$8,400"],
+    ["Countertop — quartz, 42 sf", "$2,436"],
+    ["Labor — demo, install, finish", "$8,960"],
+  ],
+  linesDesktop: [
+    ["Cabinets — semi-custom maple shaker, 14 ln ft", "$8,400"],
+    ["Countertop — quartz, 42 sf installed", "$2,436"],
+    ["Sink relocation — plumbing rough-in", "$1,850"],
+    ["Labor — demo, install, finish (112 hrs)", "$8,960"],
+  ],
+  total: "$27,860",
+  option: { name: "Option — soft-close hardware", note: "Client adds this in the portal", price: "+$640" },
+  client: "M. Nguyen",
+};
+
 /* Mobile proposal card — a real document with a visible send action */
-function ProposalMobile() {
+function ProposalMobile({ p }: { p: ProposalContent }) {
   return (
-    <AppWindow title="app.jobflex.com/proposals/P-1178">
+    <AppWindow title={`app.jobflex.com/proposals/${p.number}`}>
       <div className="px-4 py-4">
         <div className="text-[10px] font-bold uppercase tracking-[1.4px] text-slate-400">
-          Proposal · #P-1178
+          Proposal · #{p.number}
         </div>
         <div className="mt-1.5 text-[17px] font-bold leading-snug tracking-tight text-lp-ink">
-          Nguyen kitchen remodel — 10×10, maple &amp; quartz
+          {p.title}
         </div>
 
         <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
-          {[
-            ["Cabinets — maple shaker, 14 ln ft", "$8,400"],
-            ["Countertop — quartz, 42 sf", "$2,436"],
-            ["Labor — demo, install, finish", "$8,960"],
-          ].map(([l, r], i) => (
+          {p.linesMobile.map(([l, r], i) => (
             <div
               key={l}
               className={`flex items-center justify-between px-3 py-2.5 text-[12px] ${i % 2 ? "bg-lp-paper" : "bg-white"}`}
@@ -35,7 +55,7 @@ function ProposalMobile() {
           ))}
           <div className="flex items-center justify-between border-t border-slate-200 px-3 py-3">
             <span className="text-[12px] font-bold text-lp-ink">Project total</span>
-            <span className="text-[16px] font-bold tracking-tight text-lp-ink">$27,860</span>
+            <span className="text-[16px] font-bold tracking-tight text-lp-ink">{p.total}</span>
           </div>
         </div>
 
@@ -65,7 +85,7 @@ type SendStage = "draft" | "pressing" | "delivered" | "signed";
    the same button becomes the
    signed confirmation. One stage value drives the button, the total, the
    scrawl and the stamp, so they can never disagree. */
-function ProposalDoc() {
+function ProposalDoc({ p }: { p: ProposalContent }) {
   const { ref, inView } = useInView<HTMLDivElement>(0.3);
   const [stage, setStage] = useState<SendStage>("draft");
 
@@ -136,7 +156,7 @@ function ProposalDoc() {
                       strokeLinejoin="round"
                     />
                   </svg>
-                  M. Nguyen signed the proposal
+                  {p.client} signed the proposal
                 </>
               ) : sent ? (
                 /* No blinking dot (owner, 2026-08-25): a pulsing indicator on a
@@ -145,7 +165,7 @@ function ProposalDoc() {
                   <svg viewBox="0 0 16 16" className="h-3 w-3" aria-hidden>
                     <path d="M1.5 8L14.5 1.5 10 14.5l-2.6-4.4L1.5 8z" fill="currentColor" />
                   </svg>
-                  Delivered to M. Nguyen
+                  Delivered to {p.client}
                 </>
               ) : (
                 <>
@@ -163,27 +183,18 @@ function ProposalDoc() {
       <div className="mx-auto max-w-[38rem] px-5 pb-6 pt-6 sm:px-8">
         <div className="flex items-center justify-between gap-3">
           <div className="text-[10px] font-bold uppercase tracking-[1.4px] text-slate-400">
-            Proposal · #P-1178
+            Proposal · #{p.number}
           </div>
           <div className="text-[10px] font-medium text-slate-400">Valid 30 days</div>
         </div>
         <h3 className="mt-1.5 text-[clamp(18px,2vw,26px)] font-bold leading-[1.15] tracking-[-0.02em] text-lp-ink">
-          Nguyen kitchen remodel — 10×10, maple &amp; quartz
+          {p.title}
         </h3>
-        <p className="mt-2.5 font-serif text-[12.5px] leading-[1.55] text-slate-600">
-          Full scope for the kitchen: demo, rough-in for the relocated sink,
-          semi-custom maple shaker cabinets and quartz counters. The price is
-          complete — anything outside it gets a written change order first.
-        </p>
+        <p className="mt-2.5 font-serif text-[12.5px] leading-[1.55] text-slate-600">{p.blurb}</p>
 
         {/* Line items */}
         <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
-          {[
-            ["Cabinets — semi-custom maple shaker, 14 ln ft", "$8,400"],
-            ["Countertop — quartz, 42 sf installed", "$2,436"],
-            ["Sink relocation — plumbing rough-in", "$1,850"],
-            ["Labor — demo, install, finish (112 hrs)", "$8,960"],
-          ].map(([l, r], i) => (
+          {p.linesDesktop.map(([l, r], i) => (
             <div
               key={l}
               className={`flex items-center justify-between gap-4 px-3 py-1.5 text-[11.5px] ${
@@ -200,7 +211,7 @@ function ProposalDoc() {
             }`}
           >
             <span className="text-[12px] font-bold text-lp-ink">Project total</span>
-            <span className="text-[15px] font-bold tracking-tight text-lp-ink">$27,860</span>
+            <span className="text-[15px] font-bold tracking-tight text-lp-ink">{p.total}</span>
           </div>
         </div>
 
@@ -208,14 +219,10 @@ function ProposalDoc() {
         <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
           <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 px-3 py-2">
             <div className="min-w-0">
-              <div className="truncate text-[11.5px] font-bold text-lp-ink">
-                Option — soft-close hardware
-              </div>
-              <div className="truncate text-[10px] text-slate-400">
-                Client adds this in the portal
-              </div>
+              <div className="truncate text-[11.5px] font-bold text-lp-ink">{p.option.name}</div>
+              <div className="truncate text-[10px] text-slate-400">{p.option.note}</div>
             </div>
-            <span className="shrink-0 text-[12.5px] font-bold text-lp-ink">+$640</span>
+            <span className="shrink-0 text-[12.5px] font-bold text-lp-ink">{p.option.price}</span>
           </div>
 
           {/* Signature block — the scrawl draws itself once the client signs,
@@ -251,7 +258,7 @@ function ProposalDoc() {
               </svg>
             </div>
             <div className="border-t border-slate-200 pt-1 text-[9.5px] text-slate-400">
-              {signed ? "M. Nguyen · signed today" : "Awaiting the client"}
+              {signed ? `${p.client} · signed today` : "Awaiting the client"}
             </div>
           </div>
         </div>
@@ -342,7 +349,7 @@ function ReceiptCluster() {
   );
 }
 
-export function ProposalsSection() {
+export function ProposalsSection({ proposal = KITCHEN }: { proposal?: ProposalContent }) {
   return (
     <section className="relative overflow-hidden bg-lp-band px-5 py-[8vmin] max-sm:pb-[16vmin] max-sm:pt-[16vmin] sm:px-6">
       <div className="mx-auto lp-wrap">
@@ -359,11 +366,11 @@ export function ProposalsSection() {
         </Reveal>
 
         <Reveal delay={120} className="mt-10 sm:hidden">
-          <ProposalMobile />
+          <ProposalMobile p={proposal} />
         </Reveal>
         <Reveal delay={120} className="mt-14 hidden sm:block">
           <div data-parallax="22">
-            <ProposalDoc />
+            <ProposalDoc p={proposal} />
           </div>
         </Reveal>
 

@@ -1,14 +1,8 @@
 import Image from "next/image";
+import type { StatsRow } from "./landing-groups";
 import { Reveal } from "./reveal";
 
-type Card = { src: string; name: string; tag: string; cls?: string };
-
-const ROWS: {
-  label: string;
-  lede: string;
-  sub: string;
-  cards: Card[];
-}[] = [
+const ROWS: StatsRow[] = [
   {
     label: "Remodelers",
     lede: "A kitchen is just the start",
@@ -44,7 +38,7 @@ const ROWS: {
   },
 ];
 
-export function StatsSection() {
+export function StatsSection({ rows = ROWS }: { rows?: StatsRow[] }) {
   return (
     <section className="relative overflow-hidden bg-lp-base px-5 py-[7vmin] text-white sm:px-6">
       <div className="mx-auto lp-wrap">
@@ -74,12 +68,21 @@ export function StatsSection() {
 
         {/* Audience rows */}
         <div className="mt-[4vmin] space-y-[7vmin]">
-          {ROWS.map((row) => (
+          {rows.map((row) => (
             <Reveal key={row.label}>
               <div className="border-t border-white/10 pt-[4vmin]">
                 <h3 className="text-[clamp(26px,2.6vw,36px)] font-bold tracking-[-0.01em]">
                   {row.label}
                 </h3>
+                {/* The row's line ("The roof is just the start") shows for a
+                    trade group only; the default page never rendered its
+                    lede and stays as it was (CRO stage 3). */}
+                {rows !== ROWS && (
+                  <p className="mt-2 text-[17px] font-semibold leading-snug text-slate-300 sm:text-[clamp(17px,1.5vw,22px)]">
+                    {row.lede}
+                    <span className="text-slate-500"> — {row.sub}</span>
+                  </p>
+                )}
                 <div className="mt-5 grid grid-cols-2 gap-2 sm:mt-7 sm:gap-4 lg:grid-cols-4 lg:gap-5">
                   {row.cards.map((c) => (
                     <figure key={c.name} className="group">

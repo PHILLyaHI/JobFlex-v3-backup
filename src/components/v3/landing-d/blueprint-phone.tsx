@@ -1,6 +1,7 @@
 "use client";
 
 import { Ic } from "./dashboard-mock";
+import type { PhoneJob, PhoneLane } from "./landing-groups";
 import { LogoMark } from "./logo";
 import { useCountUp, useInView } from "./use-in-view";
 
@@ -178,7 +179,7 @@ const WEEK = [
   { d: "Fri", n: 18 },
 ];
 
-type Lane = { who: string; jobs: { day: number; span: number; label: string; tone: string }[] };
+type Lane = PhoneLane;
 
 /* Labels are sized to the cell they land in — a one-day chip is ~48px wide,
    so anything past five characters comes back as an ellipsis. */
@@ -189,7 +190,7 @@ const LANES: Lane[] = [
   { who: "Dmitri", jobs: [{ day: 3, span: 1, label: "Insp.", tone: "tone-sky" }] },
 ];
 
-export function PhoneSchedule() {
+export function PhoneSchedule({ lanes = LANES }: { lanes?: PhoneLane[] }) {
   const { ref, inView } = useInView<HTMLDivElement>(0.25);
   let chip = 0;
 
@@ -207,7 +208,7 @@ export function PhoneSchedule() {
       </div>
 
       <div className="lp-ph-card">
-        {LANES.map((l) => (
+        {lanes.map((l) => (
           <div key={l.who} className="lp-ph-lane">
             <span className="lp-ph-lane-who">{l.who}</span>
             <span className="lp-ph-lane-grid">
@@ -242,7 +243,7 @@ export function PhoneSchedule() {
 
 /* ── 3 · Jobs — the ledger, phone width ──────────────────── */
 
-const JOBS: { t: string; who: string; amt: string; status: string; cls: string }[] = [
+const JOBS: PhoneJob[] = [
   { t: "Nguyen kitchen", who: "Marco’s crew", amt: "$18,600", status: "SCHEDULED", cls: "is-blue" },
   { t: "Ortiz hall bath", who: "Sam’s crew", amt: "$6,200", status: "SCHEDULED", cls: "is-blue" },
   { t: "Kowalski basement", who: "Sam’s crew", amt: "$9,900", status: "RUNNING", cls: "" },
@@ -250,7 +251,7 @@ const JOBS: { t: string; who: string; amt: string; status: string; cls: string }
   { t: "Delgado siding", who: "Sam’s crew", amt: "$21,300", status: "PAID", cls: "is-paid" },
 ];
 
-export function PhoneJobs() {
+export function PhoneJobs({ jobs = JOBS }: { jobs?: PhoneJob[] }) {
   const { ref, inView } = useInView<HTMLDivElement>(0.2);
 
   return (
@@ -267,7 +268,7 @@ export function PhoneJobs() {
           <span className="lp-ph-card-title">All jobs</span>
           <span className="lp-ph-tag">Newest</span>
         </div>
-        {JOBS.map((j) => (
+        {jobs.map((j) => (
           <div key={j.t} className="lp-ph-row">
             <Ic name="jobs" className="lp-ph-ic shrink-0 opacity-70" />
             <span className="lp-ph-row-body">
