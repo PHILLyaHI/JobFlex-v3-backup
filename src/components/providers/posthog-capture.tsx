@@ -3,6 +3,7 @@ import * as React from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
 import { trafficReady } from "@/lib/traffic-client";
+import { onConsent, readConsent } from "@/lib/consent";
 import { TRAFFIC_EXPERIMENTS } from "@/lib/traffic-experiments";
 
 const KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
@@ -69,6 +70,21 @@ export function PostHogCapture() {
   const searchParams = useSearchParams();
   const lastUrl = React.useRef("");
 
+  // The cookie banner's analytics choice (lib/consent): "essential only"
+  // opts the browser out of capture and replay; a later "accept" opts back
+  // in. No decision yet keeps the pre-banner behaviour (first-party capture).
+  React.useEffect(() => {
+    if (!KEY) return;
+    const apply = (analytics: boolean) => {
+      if (!posthog.__loaded) return;
+      if (analytics) posthog.opt_in_capturing();
+      else { posthog.stopSessionRecording(); posthog.opt_out_capturing(); }
+    };
+    const c = readConsent();
+    if (c) apply(c.analytics);
+    return onConsent((next) => apply(next.analytics));
+  }, []);
+
   React.useEffect(() => {
     if (!KEY || posthog.__loaded) return;
     posthog.init(KEY, {
@@ -89,6 +105,7 @@ export function PostHogCapture() {
   React.useEffect(() => {
     if (!KEY || !pathname || !posthog.__loaded) return;
     if (internal(pathname)) { lastUrl.current = ""; disarmRecording(); posthog.stopSessionRecording(); return; }
+    if (readConsent()?.analytics === false) { disarmRecording(); posthog.stopSessionRecording(); return; }
     if (recordable(pathname)) armRecording();
     else { disarmRecording(); posthog.stopSessionRecording(); }
     posthog.register({ jf_hostname: window.location.hostname,

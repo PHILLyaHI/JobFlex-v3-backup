@@ -42,6 +42,8 @@ import { checkEmailAvailable, completeCompanySetup } from "@/actions/auth";
 import type { GooglePrefill, SetupPrefill } from "@/app/(auth)/auth/register/register-responsive";
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
 import type { UtmParams } from "@/components/v3/landing-d/landing-variants";
+import { readConsent } from "@/lib/consent";
+import { metaTrack, newEventId, readMetaCookies } from "@/lib/metaPixel";
 import { RegisterSprite } from "./register-sprite";
 import { ReferralBanner, type RegisterAttribution } from "./referral-banner";
 import {
@@ -299,6 +301,37 @@ export function RegisterContent({
   /** The pending signup this plan step belongs to. Parked by step 2, or carried
    *  back from Stripe on the return URL. */
   const [token, setToken] = React.useState<string | null>(ret?.token ?? null);
+
+  /* META EVENT IDS (2026-09-09). One id for the browser's CompleteRegistration
+     and the server's Conversions API copy, one for InitiateCheckout. The
+     registration id is minted here and kept in sessionStorage under the
+     intent token, so the return from Stripe (a fresh page) fires the browser
+     event with the same id the server used. The pixel itself only runs after
+     marketing consent; metaTrack is a no-op otherwise. */
+  const metaIds = React.useRef<{ registration: string; checkout: string }>({ registration: newEventId(), checkout: newEventId() });
+  React.useEffect(() => {
+    if (!ret?.token) return;
+    try {
+      const saved = sessionStorage.getItem("jf_meta_reg:" + ret.token);
+      if (saved) metaIds.current.registration = saved;
+    } catch {
+      /* storage blocked — a fresh id, the server's copy is not deduplicated */
+    }
+  }, [ret?.token]);
+  const initiateSent = React.useRef(false);
+  React.useEffect(() => {
+    if (step === 3 && !initiateSent.current && !ret?.sessionId) {
+      initiateSent.current = true;
+      metaTrack("InitiateCheckout", { content_category: industry ?? "default" }, metaIds.current.checkout);
+    }
+  }, [step, industry, ret?.sessionId]);
+  const registrationSent = React.useRef(false);
+  React.useEffect(() => {
+    if (step === 4 && !registrationSent.current) {
+      registrationSent.current = true;
+      metaTrack("CompleteRegistration", { content_name: industry ?? "default", status: "true" }, metaIds.current.registration);
+    }
+  }, [step, industry]);
   const trialDays =
     planSlug === CUSTOM_PLAN_SLUG
       ? customTrialDays
@@ -801,7 +834,19 @@ export function RegisterContent({
         attribution: attribution ?? undefined,
         landingIndustry: industry ?? undefined,
         utm: utm ?? undefined,
+        meta: {
+          consent: readConsent()?.marketing === true,
+          registrationEventId: metaIds.current.registration,
+          checkoutEventId: metaIds.current.checkout,
+          ...readMetaCookies(),
+          sourceUrl: typeof window !== "undefined" ? window.location.origin + window.location.pathname : undefined,
+        },
       });
+      try {
+        sessionStorage.setItem("jf_meta_reg:" + res.token, metaIds.current.registration);
+      } catch {
+        /* storage blocked */
+      }
       setToken(res.token);
       setStep(3);
     } catch (err: unknown) {

@@ -1,3 +1,4 @@
+import { CookieSettingsLink, DoNotSellLink } from "@/components/consent/cookie-settings-link";
 import { CtaNote } from "./cta-note";
 import { Logo } from "./logo";
 import { REGISTER } from "./routes";
@@ -129,6 +130,8 @@ export function CtaFooter({
             <span className="flex gap-6">
               <a href="/terms" className="py-2 transition-colors hover:text-white md:py-0">Terms</a>
               <a href="/privacy" className="py-2 transition-colors hover:text-white md:py-0">Privacy</a>
+              <CookieSettingsLink className="py-2 transition-colors hover:text-white md:py-0" />
+              <DoNotSellLink className="py-2 text-left transition-colors hover:text-white md:py-0" />
 
             </span>
           </div>

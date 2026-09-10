@@ -40,6 +40,7 @@ import { readGoogleSignup } from "@/lib/googleSignup";
 import { settleReferralsForSignupOrg } from "@/lib/referralRewards";
 import { after } from "next/server";
 import { captureSignupOutcome, trafficIdentitySchema } from "@/lib/traffic-capture-server";
+import { sendMetaEvent, type MetaSignupContext } from "@/lib/metaCapi";
 
 /** How long an unpaid intent is honoured. Long enough to pay, short enough
  *  that an abandoned card never becomes an account a week later. */
@@ -75,6 +76,19 @@ const pendingSchema = z.object({
   attribution: z
     .object({ kind: z.enum(["promo", "ref"]), code: z.string().trim().min(3).max(40) })
     .nullish(),
+  /** Meta Pixel context from the browser (2026-09-09): the marketing consent
+   *  the banner recorded, the event ids the browser's own events carry (so
+   *  the server copies deduplicate), and the pixel's cookies when consented. */
+  meta: z
+    .object({
+      consent: z.boolean(),
+      registrationEventId: z.string().min(8).max(80),
+      checkoutEventId: z.string().min(8).max(80).optional(),
+      fbp: z.string().max(120).optional(),
+      fbc: z.string().max(400).optional(),
+      sourceUrl: z.string().max(400).optional(),
+    })
+    .optional(),
   /** Add-on pages, when the custom plan is the one being bought. Stored with
    *  the intent so checkout and account creation price and record the SAME
    *  selection — the client never gets to name a price. */
@@ -82,7 +96,9 @@ const pendingSchema = z.object({
 });
 
 type PendingRecord = z.infer<typeof pendingSchema> extends infer T
-  ? Omit<Extract<T, object>, "password" | "googleToken"> & {
+  ? Omit<Extract<T, object>, "password" | "googleToken" | "meta"> & {
+      /** The browser's Meta context plus, with consent, the request's IP and UA. */
+      meta?: MetaSignupContext;
       /** Null for a Google-backed signup — the finished account signs in with Google. */
       hashedPassword: string | null;
       viaGoogle?: boolean;
@@ -93,6 +109,26 @@ type PendingRecord = z.infer<typeof pendingSchema> extends infer T
 
 function key(token: string): string {
   return `signup:${token}`;
+}
+
+/** The IP and user agent join the Meta context ONLY with marketing consent;
+ *  without it the Conversions API gets the hashed email alone. */
+async function metaContextFor(meta: z.infer<typeof pendingSchema>["meta"]): Promise<MetaSignupContext | undefined> {
+  if (!meta) return undefined;
+  const ctx: MetaSignupContext = { consent: meta.consent, registrationEventId: meta.registrationEventId, checkoutEventId: meta.checkoutEventId, sourceUrl: meta.sourceUrl };
+  if (meta.consent) {
+    ctx.fbp = meta.fbp;
+    ctx.fbc = meta.fbc;
+    try {
+      const { headers } = await import("next/headers");
+      const h = await headers();
+      ctx.clientIp = await clientIp();
+      ctx.userAgent = h.get("user-agent")?.slice(0, 400) ?? undefined;
+    } catch {
+      /* no request headers — the event goes without them */
+    }
+  }
+  return ctx;
 }
 
 export async function startPendingSignup(raw: unknown): Promise<{ ok: true; token: string }> {
@@ -130,6 +166,7 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
     otherTrade: data.otherTrade,
     landingIndustry: data.landingIndustry,
     utm: data.utm,
+    meta: await metaContextFor(data.meta),
     attribution: data.attribution ?? null,
     customPages: normalizeCustomPages(data.customPages),
     hashedPassword: google ? null : await bcrypt.hash(data.password as string, 10),
@@ -381,6 +418,7 @@ export async function completePendingSignup(
           utmMedium: rec.utm?.utm_medium || null,
           utmCampaign: rec.utm?.utm_campaign || null,
           utmContent: rec.utm?.utm_content || null,
+          metaSignupJson: rec.meta ? JSON.stringify(rec.meta) : null,
         },
         select: { id: true },
       });
@@ -490,6 +528,30 @@ export async function completePendingSignup(
   const ticket = await mintSigninTicket(userId);
   if (sessionId && rec.analytics) {
     after(() => captureSignupOutcome(rec.analytics, sessionId, analyticsOutcome, planSlug, analyticsLive, rec.landingIndustry ?? null, rec.utm ?? null));
+  }
+  // Meta CompleteRegistration — the server copy of the browser's event (same
+  // event_id). Goes with or without consent; consent decides whether fbp/fbc,
+  // IP and UA ride along (lib/metaCapi).
+  if (rec.meta) {
+    const meta = rec.meta;
+    after(() =>
+      sendMetaEvent({
+        eventName: "CompleteRegistration",
+        eventId: meta.registrationEventId,
+        sourceUrl: meta.sourceUrl ?? null,
+        consent: meta.consent,
+        user: { email: rec.email, phone: rec.companyPhone ?? null, fbp: meta.fbp, fbc: meta.fbc, clientIp: meta.clientIp, userAgent: meta.userAgent, externalId: orgId },
+        custom: {
+          industry: rec.landingIndustry ?? "default",
+          plan: planSlug ?? "none",
+          billing_mode: analyticsLive ? "live" : "test",
+          utm_source: rec.utm?.utm_source,
+          utm_medium: rec.utm?.utm_medium,
+          utm_campaign: rec.utm?.utm_campaign,
+          utm_content: rec.utm?.utm_content,
+        },
+      }),
+    );
   }
   return { ok: true, email: rec.email, ticket };
 }
