@@ -89,6 +89,27 @@ function VideoShot({ active }: { active: boolean }) {
   // which put "Wood uppers" on a bare wall — the camera was not there yet.
   const [clipT, setClipT] = useState(0);
   const lastT = useRef(0);
+  // CRO stage 1 (2026-09-09): the 1.2 MB clip used to preload="auto" and
+  // autoplay from mount. Now only its metadata loads until the stage is at
+  // least half on screen, and it pauses again when scrolled away.
+  const videoRef = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (!("IntersectionObserver" in window)) {
+      if (active) void el.play().catch(() => {});
+      return;
+    }
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && active) void el.play().catch(() => {});
+        else el.pause();
+      },
+      { threshold: 0.5 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [active]);
   const read = phase >= 2;
   const notesOn = read && clipT >= V_NOTES_IN && clipT <= V_NOTES_OUT;
 
@@ -105,13 +126,13 @@ function VideoShot({ active }: { active: boolean }) {
             }}
           >
             <video
+              ref={videoRef}
               className="h-full w-full object-cover"
               src="/landing-d/walkthrough.mp4"
-              autoPlay
               muted
               loop
               playsInline
-              preload="auto"
+              preload="metadata"
               onTimeUpdate={(e) => {
                 const t = e.currentTarget.currentTime;
                 if (t < lastT.current - 0.5) setLoop((l) => l + 1);

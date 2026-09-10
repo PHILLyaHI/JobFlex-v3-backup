@@ -274,14 +274,25 @@ const VARIANT_ALIASES: Record<string, LandingVariantKey> = {
   // short forms and plurals
   fence: "fencing",
   fences: "fencing",
+  fencer: "fencing",
+  fencers: "fencing",
   roof: "roofing",
   roofs: "roofing",
+  roofer: "roofing",
+  roofers: "roofing",
   reroof: "roofing",
   deck: "decking",
   decks: "decking",
   paint: "painting",
   painter: "painting",
   painters: "painting",
+  sider: "siding",
+  siders: "siding",
+  "flooring-contractor": "flooring",
+  tiler: "tile",
+  tilers: "tile",
+  "hvac-contractor": "hvac",
+  "gc-contractor": "general-contractor",
   kitchen: "kitchen-bath",
   kitchens: "kitchen-bath",
   bath: "kitchen-bath",
@@ -314,6 +325,7 @@ const VARIANT_ALIASES: Record<string, LandingVariantKey> = {
   ac: "hvac",
   landscape: "landscaping",
   landscaper: "landscaping",
+  landscapers: "landscaping",
   hardscape: "landscaping",
   demo: "demolition",
   sheetrock: "drywall",
@@ -387,6 +399,36 @@ export function pickUtm(params: Record<string, string | string[] | undefined>): 
     if (value) out[key] = value.slice(0, 120);
   }
   return out;
+}
+
+/* The utm_* of the visit, remembered the same way as the trade (30 days,
+   first-party) so the Google button, the gold pill and a later visit with no
+   parameters still hand the campaign to the signup (CRO stage 1, 2026-09-09).
+   Stored as a query string; read back through pickUtm so the keys and caps
+   are the same as for a URL. */
+export const UTM_COOKIE = "jf_utm";
+
+export function serializeUtm(utm: UtmParams): string {
+  const q = new URLSearchParams();
+  for (const key of UTM_KEYS) {
+    const v = utm[key];
+    if (v) q.set(key, v);
+  }
+  return q.toString();
+}
+
+export function parseUtmCookie(value: string | undefined): UtmParams {
+  if (!value) return {};
+  try {
+    return pickUtm(Object.fromEntries(new URLSearchParams(value)));
+  } catch {
+    return {};
+  }
+}
+
+/** True when the visit carried any utm_* at all. */
+export function hasUtm(utm: UtmParams | undefined): boolean {
+  return !!utm && UTM_KEYS.some((k) => !!utm[k]);
 }
 
 /** `/auth/register` → `/auth/register?industry=fencing&utm_source=…`.

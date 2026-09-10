@@ -1,3 +1,4 @@
+import { CtaNote } from "./cta-note";
 import { Logo } from "./logo";
 import { REGISTER } from "./routes";
 import { Reveal } from "./reveal";
@@ -10,8 +11,10 @@ const COLUMNS: [string, string[]][] = [
   ["Support", ["Contact us", "System status", "API docs", "Security", "Terms & privacy"]],
 ];
 
-/* Only the routes that actually exist are wired; the rest of the site map is
-   still placeholder copy and stays inert rather than 404ing. */
+/* Only the routes that actually exist are wired. Since CRO stage 2
+   (2026-09-09) a link without a route is not rendered at all — no "#" that
+   scrolls to the top — so the columns and rows below show only what opens.
+   COLUMNS keeps the whole planned site map for the day the pages exist. */
 const FOOT_HREF: Record<string, string> = {
   About: "/about",
   Pricing: "/pricing",
@@ -19,10 +22,17 @@ const FOOT_HREF: Record<string, string> = {
   "Client portal": "/homeowner",
 };
 
-export function CtaFooter({ registerHref = REGISTER }: { registerHref?: string }) {
+export function CtaFooter({
+  registerHref = REGISTER,
+  cta,
+}: {
+  registerHref?: string;
+  /** A trade variant's primary CTA words; the default page keeps its own. */
+  cta?: string;
+}) {
   return (
     <section className="relative overflow-hidden bg-lp-base px-5 text-white sm:px-6">
-      <div className="lp-bg lp-bg--roofs" aria-hidden />
+      <div className="lp-bg lp-bg--roofs" aria-hidden data-lazy />
       {/* Final CTA */}
       <div id="final-cta" className="relative z-[1] mx-auto flex max-w-[86rem] flex-col items-center py-[12vmin] text-center max-sm:pb-[22vmin] max-sm:pt-[16vmin]">
         <Reveal>
@@ -40,10 +50,11 @@ export function CtaFooter({ registerHref = REGISTER }: { registerHref?: string }
               two primaries stacked is a choice, not a CTA. Blue keeps the page
               on one accent and is the only colour in this black section. */}
           <div className="mt-10 w-full sm:mt-12 sm:w-auto">
-            <a href={registerHref} className="lp-btn-lime w-full sm:w-auto">
-              Start 14-Day Free Trial
+            <a href={registerHref} className="lp-btn-lime w-full sm:w-auto" data-cta="footer">
+              {cta ?? "Start 14-Day Free Trial"}
               <span aria-hidden>→</span>
             </a>
+            <CtaNote tone="dark" className="mt-3 text-center" />
           </div>
         </Reveal>
       </div>
@@ -54,7 +65,7 @@ export function CtaFooter({ registerHref = REGISTER }: { registerHref?: string }
           <div className="flex flex-wrap items-center justify-between gap-4 md:gap-6">
             <div className="flex flex-wrap items-center gap-5 md:gap-9">
               <Logo dark />
-              {["About", "Features", "Careers", "Resources"].map((l) => (
+              {["About", "Features", "Careers", "Resources"].filter((l) => FOOT_HREF[l]).map((l) => (
                 <a
                   key={l}
                   href={FOOT_HREF[l] ?? "#"}
@@ -76,7 +87,7 @@ export function CtaFooter({ registerHref = REGISTER }: { registerHref?: string }
 
           {/* Mobile: one compact link row */}
           <div className="mt-7 flex flex-wrap gap-x-6 gap-y-1 md:hidden">
-            {["Pricing", "Help center", "Contact", "Security", "API docs"].map((l) => (
+            {["Pricing", "Help center", "Contact", "Security", "API docs"].filter((l) => FOOT_HREF[l]).map((l) => (
               <a
                 key={l}
                 href={FOOT_HREF[l] ?? "#"}
@@ -88,7 +99,7 @@ export function CtaFooter({ registerHref = REGISTER }: { registerHref?: string }
           </div>
 
           <div className="mt-8 hidden grid-cols-2 gap-x-6 gap-y-7 md:mt-14 md:grid md:grid-cols-3 md:gap-x-8 md:gap-y-12 lg:grid-cols-5">
-            {COLUMNS.map(([title, links]) => (
+            {COLUMNS.map(([title, links]) => [title, links.filter((l) => FOOT_HREF[l])] as const).filter(([, links]) => links.length > 0).map(([title, links]) => (
               <div key={title}>
                 <div className="text-[12.5px] font-bold text-white md:text-[15px]">{title}</div>
                 <ul className="mt-2 md:mt-4">
@@ -118,7 +129,7 @@ export function CtaFooter({ registerHref = REGISTER }: { registerHref?: string }
             <span className="flex gap-6">
               <a href="/terms" className="py-2 transition-colors hover:text-white md:py-0">Terms</a>
               <a href="/privacy" className="py-2 transition-colors hover:text-white md:py-0">Privacy</a>
-              <a href="#" className="py-2 transition-colors hover:text-white md:py-0">Status</a>
+
             </span>
           </div>
         </div>

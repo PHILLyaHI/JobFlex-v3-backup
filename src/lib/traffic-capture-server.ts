@@ -8,7 +8,8 @@ export const trafficIdentitySchema = z.object({
 });
 
 /** A verified server outcome, with the browser's anonymous ID to connect the funnel. */
-export async function captureSignupOutcome(identity: unknown, sessionId: string, outcome: string, plan: string | null, live: boolean, industry: string | null = null) {
+export async function captureSignupOutcome(identity: unknown, sessionId: string, outcome: string, plan: string | null, live: boolean, industry: string | null = null, utm: Record<string, string | undefined> | null = null) {
+  const utmProps = Object.fromEntries(Object.entries(utm ?? {}).filter(([k, v]) => /^utm_(source|medium|campaign|content|term)$/.test(k) && v));
   const parsed = trafficIdentitySchema.safeParse(identity);
   const token = process.env.NEXT_PUBLIC_POSTHOG_KEY;
   if (!parsed.success || !token) return;
@@ -22,7 +23,7 @@ export async function captureSignupOutcome(identity: unknown, sessionId: string,
         timestamp: new Date().toISOString(),
         properties: { $insert_id: createHash("sha256").update(`jf_signup_completed:${sessionId}`).digest("hex"),
           $session_id: context.sessionId, $process_person_profile: false, $pathname: "/auth/register",
-          jf_hostname: context.hostname, jf_environment: context.environment, verified: true, billing_mode: live ? "live" : "test", outcome, plan: plan || "unknown", industry: industry || "default" } }),
+          jf_hostname: context.hostname, jf_environment: context.environment, verified: true, billing_mode: live ? "live" : "test", outcome, plan: plan || "unknown", industry: industry || "default", ...utmProps } }),
       signal: AbortSignal.timeout(3000), cache: "no-store",
     });
     if (!response.ok) console.warn("[traffic] signup capture rejected", response.status);

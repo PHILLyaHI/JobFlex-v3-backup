@@ -41,6 +41,7 @@ import { toast } from "@/components/ui/Toast";
 import { checkEmailAvailable, completeCompanySetup } from "@/actions/auth";
 import type { GooglePrefill, SetupPrefill } from "@/app/(auth)/auth/register/register-responsive";
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
+import type { UtmParams } from "@/components/v3/landing-d/landing-variants";
 import { RegisterSprite } from "./register-sprite";
 import { ReferralBanner, type RegisterAttribution } from "./referral-banner";
 import {
@@ -100,8 +101,12 @@ export function RegisterContent({
   setup = null,
   google: googlePrefill = null,
   industry = null,
+  utm = null,
 }: {
   setup?: SetupPrefill | null;
+  /* The visit's utm_*, resolved on the server (query, else the landing's
+     cookie). Rides into the signup intent and onto the organization. */
+  utm?: UtmParams | null;
   /* Resolved from `?gsu=` on the server, so step 2 is what the first frame
      paints. Null on every other arrival. */
   google?: GooglePrefill | null;
@@ -795,6 +800,7 @@ export function RegisterContent({
           trades.includes("Other") && otherTrade.trim() ? otherTrade.trim() : undefined,
         attribution: attribution ?? undefined,
         landingIndustry: industry ?? undefined,
+        utm: utm ?? undefined,
       });
       setToken(res.token);
       setStep(3);

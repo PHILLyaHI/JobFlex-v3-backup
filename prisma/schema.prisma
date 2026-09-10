@@ -69,6 +69,16 @@ model Organization {
   signupPromoCode       String?
   signupPromoCodeId     String?
   attributionCapturedAt DateTime?
+  // Where the signup CAME FROM (CRO stage 1, 2026-09-09): the trade hero the
+  // visitor landed on (`?industry=` on the landing, a TRADE_TYPES value) and
+  // the visit's utm_* — copied from the pending signup record when the
+  // organization is created, first-write-wins, never overwritten. Advisory:
+  // tradeTypesJson is what the owner chose; this is what the ad promised.
+  landingIndustry       String?
+  utmSource             String?
+  utmMedium             String?
+  utmCampaign           String?
+  utmContent            String?
   // Soft delete (Settings → Danger zone). A deleted org is invisible to
   // requireOrg() and every public surface at once; the purge cron hard-deletes
   // (cascade) 30 days later. deletedById = the owner who confirmed.

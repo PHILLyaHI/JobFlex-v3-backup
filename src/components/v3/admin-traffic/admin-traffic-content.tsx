@@ -2,8 +2,8 @@
 
 import { useRef, useState, useTransition } from "react";
 import { ArrowDownToLine, ArrowUpRight, ChevronRight, RefreshCw, SlidersHorizontal, FlaskConical, Info, Users } from "lucide-react";
-import { getTrafficDashboard, getTrafficStageVisitors } from "@/actions/trafficDashboard";
-import { conversionInterval, pageLabel, percent, type StageVisitor, type StageVisitorsReport, type TrafficFilters, type TrafficReport } from "@/lib/traffic-contract";
+import { getSignupAttribution, getTrafficDashboard, getTrafficStageVisitors } from "@/actions/trafficDashboard";
+import { conversionInterval, pageLabel, percent, type SignupAttribution, type StageVisitor, type StageVisitorsReport, type TrafficFilters, type TrafficReport } from "@/lib/traffic-contract";
 import { dateInZone, shiftDate } from "@/lib/traffic-query";
 import { Sheet, useMdl } from "@/components/v3/admin-influencers/admin-ui";
 import { TrafficChart } from "./traffic-chart";
@@ -60,8 +60,13 @@ function exportReport(report: TrafficReport) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function AdminTrafficContent({ data }: { data: TrafficReport }) {
+const signupDimensions = { landingIndustry: "Landing trade", utmSource: "utm_source", utmMedium: "utm_medium", utmCampaign: "utm_campaign", utmContent: "utm_content" } as const;
+type SignupDimension = keyof typeof signupDimensions;
+
+export function AdminTrafficContent({ data, signups: initialSignups = null }: { data: TrafficReport; signups?: SignupAttribution | null }) {
   const [report, setReport] = useState(data);
+  const [signups, setSignups] = useState(initialSignups);
+  const [signupDimension, setSignupDimension] = useState<SignupDimension>("landingIndustry");
   const [draft, setDraft] = useState(data.filters);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState("");
@@ -81,8 +86,8 @@ export function AdminTrafficContent({ data }: { data: TrafficReport }) {
     setError("");
     startTransition(async () => {
       try {
-        const result = await getTrafficDashboard({ ...next });
-        if (id === request.current) { setReport(result); setDraft(result.filters); }
+        const [result, attributed] = await Promise.all([getTrafficDashboard({ ...next }), getSignupAttribution({ ...next }).catch(() => null)]);
+        if (id === request.current) { setReport(result); setDraft(result.filters); if (attributed) setSignups(attributed); }
       } catch (err) { if (id === request.current) setError(err instanceof Error ? err.message : "Could not refresh traffic."); }
     });
   }
@@ -209,7 +214,13 @@ export function AdminTrafficContent({ data }: { data: TrafficReport }) {
         <div className={s.dimensionTabs}>{Object.entries(dimensions).map(([key, label]) => <button key={key} aria-pressed={dimension === key} onClick={() => setDimension(key as Dimension)}>{label}</button>)}</div>
         <div className={s.acquisitionLayout}><div className={s.tableScroll}><table className={s.table}><thead><tr><th>{dimensions[dimension]}</th><th>Visitors</th><th>Sessions</th><th>Signups</th><th>Signup rate</th></tr></thead><tbody>{acquisition.map(row => <tr key={row.name}><td><div className={s.sourceName}>{dimension === "sources" ? <button onClick={() => apply({ source: row.name })}>{row.name}<ArrowUpRight size={14}/></button> : <b>{row.name === " /  / " ? "No UTM campaign" : row.name}</b>}<div className={s.sourceBar}><span style={{ width: `${percent(row.visitors, acquisition[0]?.visitors || 1) ?? 0}%` }}/></div></div></td><td><b>{n(row.visitors)}</b></td><td>{n(row.sessions)}</td><td>{report.firstStepAt ? n(row.conversions) : "--"}</td><td>{coverageIncomplete ? "--" : rate(percent(row.conversions, row.visitors))}</td></tr>)}</tbody></table>{!acquisition.length && <div className={s.empty}>{failed("breakdowns") ? "Acquisition report unavailable." : "No recorded data for this dimension."}</div>}</div>
           <aside className={s.acquisitionNotes}><h3>What we can see</h3><p>Google, Bing, Instagram and other referrers when the browser passes them. Tagged links also carry campaign and medium.</p><h3>What stays private</h3><p>Exact organic searches and browsing history are usually not shared. Missing referrers appear as direct / unknown.</p><h3>Search terms</h3><p>Campaign terms here come from <code>utm_term</code>, not organic search queries. Connect Search Console or Bing Webmaster Tools separately for aggregate search queries.</p><a href="https://search.google.com/search-console" target="_blank" rel="noreferrer">Google Search Console <ArrowUpRight size={14}/></a><a href="https://www.bing.com/webmasters" target="_blank" rel="noreferrer">Bing Webmaster Tools <ArrowUpRight size={14}/></a></aside>
-        </div><p className={s.footnote}>Signups are verified outcomes within the conversion window after an eligible visit. {coverageIncomplete && "Signup rates are hidden until the selected range has full tracking coverage. "}One visitor can use multiple sources. Browser privacy, consent and blockers can reduce coverage.</p>
+        </div>
+        {signups && <>
+          <div className={s.exploreHead}><div><h2>Signups by landing trade and campaign</h2><p className={s.micro}>From the database: what the landing recorded on each organization at signup / {signups.from} to {signups.to} / {n(signups.total)} signups</p></div><span className={s.stamp}>Database, not PostHog</span></div>
+          <div className={s.dimensionTabs}>{Object.entries(signupDimensions).map(([key, label]) => <button key={key} aria-pressed={signupDimension === key} onClick={() => setSignupDimension(key as SignupDimension)}>{label}</button>)}</div>
+          <div className={s.tableScroll}><table className={s.table}><thead><tr><th>{signupDimensions[signupDimension]}</th><th>Signups</th><th>Share</th></tr></thead><tbody>{signups.dimensions[signupDimension].map(row => <tr key={row.name}><td><b>{row.name}</b></td><td><b>{n(row.signups)}</b></td><td>{rate(percent(row.signups, signups.total))}</td></tr>)}</tbody></table>{!signups.dimensions[signupDimension].length && <div className={s.empty}>No signups in this range.</div>}</div>
+        </>}
+        <p className={s.footnote}>Signups are verified outcomes within the conversion window after an eligible visit. {coverageIncomplete && "Signup rates are hidden until the selected range has full tracking coverage. "}One visitor can use multiple sources. Browser privacy, consent and blockers can reduce coverage.</p>
       </div>}
 
       {tab === "experiments" && <div className={s.exploreBody}>

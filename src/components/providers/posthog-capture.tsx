@@ -19,6 +19,31 @@ const PRIVATE_PREFIXES = ["/dashboard", "/admin", "/w/", "/mobile-", "/v3", "/st
 const recordable = (path: string) =>
   !PRIVATE_PREFIXES.some((p) => path === p.replace(/\/$/, "") || path.startsWith(p));
 
+// RECORDING STARTS AT THE FIRST INTERACTION, NOT AT PAINT (CRO stage 1,
+// 2026-09-09). The recorder is a 64 KB script that used to load with the
+// landing's first screen; a visitor who only reads the hero and leaves now
+// costs nothing. The first scroll, tap, click or key on a public route starts
+// it, and it then stays on for the rest of the visit as before.
+const INTERACTION_EVENTS = ["scroll", "pointerdown", "keydown", "touchstart"] as const;
+let interacted = false;
+let armed = false;
+function onFirstInteraction() {
+  interacted = true;
+  disarmRecording();
+  if (recordable(window.location.pathname)) posthog.startSessionRecording();
+}
+function armRecording() {
+  if (interacted) { posthog.startSessionRecording(); return; }
+  if (armed) return;
+  armed = true;
+  for (const ev of INTERACTION_EVENTS) window.addEventListener(ev, onFirstInteraction, { passive: true });
+}
+function disarmRecording() {
+  if (!armed) return;
+  armed = false;
+  for (const ev of INTERACTION_EVENTS) window.removeEventListener(ev, onFirstInteraction);
+}
+
 // Preserve attribution, never signup tickets, OAuth handles or Stripe return tokens.
 function safeUrl(value: string): string {
   if (!value || value === "$direct") return value;
@@ -63,9 +88,9 @@ export function PostHogCapture() {
 
   React.useEffect(() => {
     if (!KEY || !pathname || !posthog.__loaded) return;
-    if (internal(pathname)) { lastUrl.current = ""; posthog.stopSessionRecording(); return; }
-    if (recordable(pathname)) posthog.startSessionRecording();
-    else posthog.stopSessionRecording();
+    if (internal(pathname)) { lastUrl.current = ""; disarmRecording(); posthog.stopSessionRecording(); return; }
+    if (recordable(pathname)) armRecording();
+    else { disarmRecording(); posthog.stopSessionRecording(); }
     posthog.register({ jf_hostname: window.location.hostname,
       jf_environment: ["localhost", "127.0.0.1"].includes(window.location.hostname) ? "development" : "production" });
     const url = safeUrl(window.location.origin + pathname + (searchParams?.size ? `?${searchParams}` : ""));

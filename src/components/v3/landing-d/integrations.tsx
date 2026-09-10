@@ -159,7 +159,7 @@ export function Integrations({ registerHref = REGISTER }: { registerHref?: strin
             <p className="mt-5 text-[19px] leading-[1.55] text-slate-600">
               Payments, texting, email, calendar and books — already connected.
             </p>
-            <a href={registerHref} className="lp-cta lp-cta--solid mt-7">
+            <a href={registerHref} className="lp-cta lp-cta--solid mt-7" data-cta="integrations">
               Browse integrations
             </a>
           </div>

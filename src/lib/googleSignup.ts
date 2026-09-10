@@ -34,6 +34,29 @@ export async function stashGoogleSignup(identity: GoogleSignupIdentity): Promise
   return raw;
 }
 
+/** Where a NEW Google address is sent after consent: the register form at
+ *  step 2, with the trade hero and the utm_* the landing remembered in its
+ *  cookies (the Google button writes them synchronously before leaving).
+ *  Runs inside the auth callback's request, so `cookies()` is the visitor's
+ *  jar; any read failure falls back to the bare handle (CRO stage 1). */
+export async function googleSignupReturnUrl(handle: string): Promise<string> {
+  const q = new URLSearchParams({ gsu: handle });
+  try {
+    const { cookies } = await import("next/headers");
+    const { INDUSTRY_COOKIE, UTM_COOKIE, UTM_KEYS, parseUtmCookie, resolveLandingVariant } = await import(
+      "@/components/v3/landing-d/landing-variants"
+    );
+    const jar = await cookies();
+    const industry = resolveLandingVariant(jar.get(INDUSTRY_COOKIE)?.value);
+    if (industry) q.set("industry", industry);
+    const utm = parseUtmCookie(jar.get(UTM_COOKIE)?.value);
+    for (const key of UTM_KEYS) if (utm[key]) q.set(key, utm[key] as string);
+  } catch {
+    /* no request cookies here — the register page reads the same cookies itself */
+  }
+  return `/auth/register?${q.toString()}`;
+}
+
 /** Read a parked identity (not consumed — the same handle serves the whole
  *  signup until the intent is created). Null when missing or stale. */
 export async function readGoogleSignup(raw: string): Promise<GoogleSignupIdentity | null> {

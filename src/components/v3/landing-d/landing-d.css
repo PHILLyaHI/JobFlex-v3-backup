@@ -809,7 +809,11 @@
      pure black behind it. */
   bottom: 0;
   height: 100%;
-  background-image: url("/landing-d/bg-hero-ridge.png");
+  /* CRO stage 1 (2026-09-09): the PNG master (2688 px, 3.7 MB) was the LCP
+     element on every variant. The page now ships WebP derivatives — 1600 px
+     here, 800 px under 860 px — made by scripts/landing-d-backgrounds.mjs;
+     the hero preloads the one the viewport will use (hero.tsx). */
+  background-image: url("/landing-d/bg-hero-ridge-1600.webp");
   background-size: cover;
   background-position: center 62%;
   opacity: 0.95;
@@ -823,7 +827,8 @@
 .jf-lp .lp-bg--truck {
   top: 0;
   height: 100%;
-  background-image: url("/landing-d/bg-intro-truck.png");
+  /* Below the fold: the image is set only once LazyBg marks the plate
+     `is-near` (within one screen), so the first paint fetches none of it. */
   background-position: center 58%;
   opacity: 0.16;
   -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 52%, transparent 94%);
@@ -834,7 +839,6 @@
 .jf-lp .lp-bg--frame {
   top: 0;
   height: 62%;
-  background-image: url("/landing-d/bg-field-frame.png");
   /* A whisper, not a picture: this section is text-led, and at any real
      opacity the timber ate the headline's contrast. */
   background-position: center top;
@@ -847,18 +851,34 @@
 .jf-lp .lp-bg--roofs {
   bottom: 0;
   height: 70%;
-  background-image: url("/landing-d/bg-cta-roofs.png");
   background-position: center bottom;
   opacity: 0.6;
   -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 46%, #000 100%);
   mask-image: linear-gradient(to bottom, transparent 0%, #000 46%, #000 100%);
 }
 
+/* Below-the-fold sections skip style and layout until they are near the
+   viewport (CRO stage 2, 2026-09-09). The intrinsic size keeps the scrollbar
+   honest before a section has been laid out; once it has, its real height
+   is remembered (`auto`). */
+.jf-lp .lp-cv { content-visibility: auto; contain-intrinsic-size: auto 900px; }
+
+/* The three plates under the fold load lazily (lazy-bg.tsx). */
+.jf-lp .lp-bg--truck.is-near { background-image: url("/landing-d/bg-intro-truck-1600.webp"); }
+.jf-lp .lp-bg--frame.is-near { background-image: url("/landing-d/bg-field-frame-1600.webp"); }
+.jf-lp .lp-bg--roofs.is-near { background-image: url("/landing-d/bg-cta-roofs-1600.webp"); }
+
 @media (max-width: 860px) {
   /* Narrow viewports crop the wide plates too hard to read as anything;
      keep only the two that still hold their shape. */
   .jf-lp .lp-bg--frame { opacity: 0.1; height: 46%; }
   .jf-lp .lp-bg--roofs { opacity: 0.5; }
+  /* Phones: the 800 px hero and intro plates; the field frame and the
+     closing roofline are not fetched at all (CRO stage 1, 2026-09-09). */
+  .jf-lp .lp-bg--ridge { background-image: url("/landing-d/bg-hero-ridge-800.webp"); }
+  .jf-lp .lp-bg--truck.is-near { background-image: url("/landing-d/bg-intro-truck-800.webp"); }
+  .jf-lp .lp-bg--frame.is-near,
+  .jf-lp .lp-bg--roofs.is-near { background-image: none; }
 }
 
 /* ── Navbar, on the inverted first screen ─────────────────

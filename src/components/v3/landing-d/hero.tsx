@@ -1,10 +1,12 @@
+import { preload } from "react-dom";
 import { PhoneOverview } from "./blueprint-phone";
 import { REGISTER } from "./routes";
 import { DashboardMock } from "./dashboard-mock";
 import { HeroVisual } from "./hero-visual";
-import { DEFAULT_LANDING, type LandingVariant } from "./landing-variants";
+import { DEFAULT_LANDING, type LandingVariant, type LandingVariantKey, type UtmParams } from "./landing-variants";
 import { Reveal } from "./reveal";
 import { GoogleSignupButton } from "./google-signup-button";
+import { CtaNote } from "./cta-note";
 
 /* The first screen, and the one screen a trade variant may replace. The
    headline, the line under it, the solid button's words and the product shot
@@ -13,12 +15,22 @@ import { GoogleSignupButton } from "./google-signup-button";
    before variants existed. Reveal and parallax wrappers are shared. */
 export function Hero({
   variant = DEFAULT_LANDING,
+  variantKey,
+  utm,
   registerHref = REGISTER,
 }: {
   variant?: LandingVariant;
+  /** The variant's key, for the Google button's cookie and callback. */
+  variantKey?: LandingVariantKey;
+  utm?: UtmParams;
   registerHref?: string;
 }) {
   const shot = variant.visual !== "dashboard";
+  // The hero plate is the LCP element: preload the one this viewport's CSS
+  // will ask for (landing-d.css switches at 860 px). One <link rel="preload">
+  // per breakpoint in <head>, with imagesrcset/imagesizes and a media query.
+  preload("/landing-d/bg-hero-ridge-800.webp", { as: "image", imageSrcSet: "/landing-d/bg-hero-ridge-800.webp 800w", imageSizes: "100vw", media: "(max-width: 860px)" });
+  preload("/landing-d/bg-hero-ridge-1600.webp", { as: "image", imageSrcSet: "/landing-d/bg-hero-ridge-1600.webp 1600w", imageSizes: "100vw", media: "(min-width: 861px)" });
   return (
     <section className="lp-hero">
       <div className="lp-bg lp-bg--ridge" aria-hidden />
@@ -28,7 +40,8 @@ export function Hero({
               link — and is deliberately NOT part of LandingVariant (owner,
               2026-09-07). */}
           <a
-            href={REGISTER}
+            href={registerHref}
+            data-cta="pill"
             className="inline-flex items-center gap-1 rounded-full bg-lp-gold px-4 py-[7px] text-[13px] font-semibold text-lp-ink transition-transform duration-200 hover:scale-[1.03]"
           >
             Just launched: JobFlex AI Estimator
@@ -51,10 +64,10 @@ export function Hero({
         )}
         <Reveal delay={170} className="w-full sm:w-auto">
           <div className="mx-auto mt-4 flex w-full max-w-[22rem] flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:items-center sm:justify-center">
-            <a href={registerHref} className="lp-btn-dark lp-cta lp-cta--solid">
+            <a href={registerHref} className="lp-btn-dark lp-cta lp-cta--solid" data-cta="hero">
               {variant.primaryCta}
             </a>
-            <GoogleSignupButton className="lp-cta lp-cta--ghost">
+            <GoogleSignupButton className="lp-cta lp-cta--ghost" industry={variantKey} utm={utm}>
               <svg viewBox="0 0 48 48" className="h-[18px] w-[18px]" aria-hidden>
                 <path
                   fill="#FFC107"
@@ -76,6 +89,7 @@ export function Hero({
               Sign up with Google
             </GoogleSignupButton>
           </div>
+          <CtaNote tone="dark" className="mt-3 text-center" />
         </Reveal>
       </div>
 

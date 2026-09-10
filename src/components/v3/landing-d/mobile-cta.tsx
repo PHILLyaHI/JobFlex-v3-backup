@@ -1,9 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CtaNote } from "./cta-note";
 import { REGISTER } from "./routes";
 
-export function MobileCta({ registerHref = REGISTER }: { registerHref?: string }) {
+export function MobileCta({
+  registerHref = REGISTER,
+  cta,
+}: {
+  registerHref?: string;
+  /** A trade variant's primary CTA words; the default page keeps its own. */
+  cta?: string;
+}) {
   const [scrolled, setScrolled] = useState(false);
   const [ctaVisible, setCtaVisible] = useState(false);
 
@@ -30,14 +38,13 @@ export function MobileCta({ registerHref = REGISTER }: { registerHref?: string }
       }`}
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div className="flex items-center gap-4 px-5 py-3">
-        <div className="min-w-0">
-          <div className="text-[13px] font-bold leading-tight text-lp-ink">Free for 14 days</div>
-          <div className="text-[12px] leading-tight text-slate-400">No card required</div>
-        </div>
-        <a href={registerHref} className="lp-btn-dark h-12 flex-1 text-[16px] font-semibold">
-          Start FREE Trial
+      {/* One full-width button with the note under it: a trade's CTA ("Start
+          free — measure a roof") needs the whole bar's width on a phone. */}
+      <div className="flex flex-col items-stretch gap-1.5 px-5 py-2.5">
+        <a href={registerHref} className="lp-btn-dark h-12 w-full text-[16px] font-semibold" data-cta="sticky">
+          {cta ?? "Start FREE Trial"}
         </a>
+        <CtaNote className="text-center" />
       </div>
     </div>
   );

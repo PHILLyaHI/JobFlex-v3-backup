@@ -1,10 +1,13 @@
 "use client";
 
 import { Logo } from "./logo";
+import { CtaNote } from "./cta-note";
 import { LOGIN, REGISTER } from "./routes";
 import Link from "next/link";
 
-const LINKS = ["Product", "Features", "Resources", "Pricing"];
+/* Product, Features and Resources have no pages yet and pointed at "#";
+   hidden until they exist (CRO stage 2, 2026-09-09). */
+const LINKS = ["Pricing"];
 
 const HREFS: Record<string, string> = { Pricing: "/pricing" };
 
@@ -16,7 +19,7 @@ function Caret() {
   );
 }
 
-export function Nav({ registerHref = REGISTER }: { registerHref?: string }) {
+export function Nav({ registerHref = REGISTER, cta }: { registerHref?: string; cta?: string }) {
   return (
     // Sticky on desktop only (owner, 2026-08-25): on a phone a pinned bar
     // eats a chunk of a short viewport for a two-item nav. The bar sits on the
@@ -45,9 +48,12 @@ export function Nav({ registerHref = REGISTER }: { registerHref?: string }) {
           <a href={LOGIN} className="text-[15px] font-medium text-black/70 transition-colors hover:text-black">
             Sign in
           </a>
-          <a href={registerHref} className="lp-btn-dark">
-            Start 14-Day Free Trial
-          </a>
+          <span className="flex flex-col items-center gap-1">
+            <a href={registerHref} className="lp-btn-dark" data-cta="nav">
+              {cta ?? "Start 14-Day Free Trial"}
+            </a>
+            <CtaNote />
+          </span>
         </div>
 
         {/* Handheld: the menu drawer is gone and the bar carries the one action

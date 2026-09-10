@@ -96,7 +96,19 @@ export const TRAFFIC_EVENTS = {
   // One per landing load: which trade hero was shown ("default" when none)
   // plus the visit's utm_*. Fired by landing-d's LandingVariantEffects.
   landingView: "landing_view",
+  // One per click on a landing CTA: placement (hero | google | pill | sticky |
+  // footer | nav | intro | integrations), the button's words, the trade hero
+  // shown, the target path. Fired by landing-d's CtaTracker (2026-09-09).
+  ctaClick: "cta_click",
 } as const;
+
+/** Signups read from the database by what the landing recorded on them. */
+export interface SignupAttribution {
+  from: string;
+  to: string;
+  total: number;
+  dimensions: Record<"landingIndustry" | "utmSource" | "utmMedium" | "utmCampaign" | "utmContent", Array<{ name: string; signups: number }>>;
+}
 
 export function pageLabel(page: string): string {
   const labels: Record<string, string> = {

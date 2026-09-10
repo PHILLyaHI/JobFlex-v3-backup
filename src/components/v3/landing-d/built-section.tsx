@@ -33,7 +33,7 @@ const FILTERS = ["All jobs", "All crews", "All clients", "All tags"];
 export function BuiltSection() {
   return (
     <section className="relative overflow-hidden bg-white px-5 py-[8vmin] max-sm:pb-[18vmin] sm:px-6">
-      <div className="lp-bg lp-bg--frame" aria-hidden />
+      <div className="lp-bg lp-bg--frame" aria-hidden data-lazy />
       <div className="relative z-[1] mx-auto lp-wrap">
         <Reveal>
           <h2 className="lp-eyebrow text-slate-500">Built for the field</h2>

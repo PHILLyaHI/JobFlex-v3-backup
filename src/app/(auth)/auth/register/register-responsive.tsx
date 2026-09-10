@@ -27,6 +27,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useSyncExternalStore } from "react";
 import { RegisterContent } from "@/components/v3/auth-register-blueprint/register-content";
 import type { TradeType } from "@/lib/tradeTypes";
+import type { UtmParams } from "@/components/v3/landing-d/landing-variants";
 
 /** CLAUDE.md's handheld target: ≤768px. Matches the mobile module's own scale. */
 const HANDHELD = "(max-width: 768px)";
@@ -82,10 +83,12 @@ function RegisterSwitch({
   setup,
   google,
   industry,
+  utm,
 }: {
   setup: SetupPrefill | null;
   google: GooglePrefill | null;
   industry: TradeType | null;
+  utm: UtmParams | null;
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const params = useSearchParams();
@@ -110,7 +113,7 @@ function RegisterSwitch({
      day the handheld build is ported to the pending-signup flow. */
   void isHandheld;
   void params;
-  return <RegisterContent setup={setup} google={google} industry={industry} />;
+  return <RegisterContent setup={setup} google={google} industry={industry} utm={utm} />;
 }
 
 // The attribution capture under either tree reads the query string, so the
@@ -120,15 +123,18 @@ export function RegisterResponsive({
   setup = null,
   google = null,
   industry = null,
+  utm = null,
 }: {
   setup?: SetupPrefill | null;
   google?: GooglePrefill | null;
   /** The landing's trade variant, resolved by the page — see page.tsx. */
   industry?: TradeType | null;
+  /** The visit's utm_*, resolved by the page the same way. */
+  utm?: UtmParams | null;
 }) {
   return (
     <Suspense fallback={null}>
-      <RegisterSwitch setup={setup} google={google} industry={industry} />
+      <RegisterSwitch setup={setup} google={google} industry={industry} utm={utm} />
     </Suspense>
   );
 }

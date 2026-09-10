@@ -62,6 +62,16 @@ const pendingSchema = z.object({
    *  kept next to the promo/referral attribution so the signup can be read
    *  back to its campaign. Advisory only — never overrides tradeTypes. */
   landingIndustry: z.enum(TRADE_TYPES).optional(),
+  /** The visit's utm_*, as the landing carried them (CRO stage 1, 2026-09-09). */
+  utm: z
+    .object({
+      utm_source: z.string().trim().max(120).optional(),
+      utm_medium: z.string().trim().max(120).optional(),
+      utm_campaign: z.string().trim().max(120).optional(),
+      utm_content: z.string().trim().max(120).optional(),
+      utm_term: z.string().trim().max(120).optional(),
+    })
+    .optional(),
   attribution: z
     .object({ kind: z.enum(["promo", "ref"]), code: z.string().trim().min(3).max(40) })
     .nullish(),
@@ -119,6 +129,7 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
     tradeTypes: data.tradeTypes,
     otherTrade: data.otherTrade,
     landingIndustry: data.landingIndustry,
+    utm: data.utm,
     attribution: data.attribution ?? null,
     customPages: normalizeCustomPages(data.customPages),
     hashedPassword: google ? null : await bcrypt.hash(data.password as string, 10),
@@ -363,6 +374,13 @@ export async function completePendingSignup(
           tradeTypesJson: JSON.stringify(rec.tradeTypes ?? []),
           otherTrade:
             rec.otherTrade && rec.tradeTypes?.includes("Other") ? rec.otherTrade : null,
+          // Where the signup came from — the landing's trade hero and the
+          // visit's utm_*, first write, never overwritten (CRO stage 1).
+          landingIndustry: rec.landingIndustry ?? null,
+          utmSource: rec.utm?.utm_source || null,
+          utmMedium: rec.utm?.utm_medium || null,
+          utmCampaign: rec.utm?.utm_campaign || null,
+          utmContent: rec.utm?.utm_content || null,
         },
         select: { id: true },
       });
@@ -471,7 +489,7 @@ export async function completePendingSignup(
   // round-trip ago.
   const ticket = await mintSigninTicket(userId);
   if (sessionId && rec.analytics) {
-    after(() => captureSignupOutcome(rec.analytics, sessionId, analyticsOutcome, planSlug, analyticsLive, rec.landingIndustry ?? null));
+    after(() => captureSignupOutcome(rec.analytics, sessionId, analyticsOutcome, planSlug, analyticsLive, rec.landingIndustry ?? null, rec.utm ?? null));
   }
   return { ok: true, email: rec.email, ticket };
 }
