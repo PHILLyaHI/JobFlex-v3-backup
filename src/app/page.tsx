@@ -11,13 +11,13 @@
 //
 // TRADE VARIANT (2026-09-06). `?industry=fencing` (alias `?trade=`) swaps the
 // hero for the fence estimator's; see landing-d/landing-variants.ts. Resolved
-// HERE, on the server, from the query first and the 30-day memory cookie
-// second, so the first byte already carries the right hero — no client-side
-// detection, no swap after paint. An explicit parameter beats the cookie; an
-// unknown value is the default page and leaves the cookie alone.
+// HERE, on the server, from the query ONLY, so the first byte already carries
+// the right hero — no client-side detection, no swap after paint. The
+// jf_industry cookie is never consulted for the landing (owner, 2026-09-10):
+// no parameter is always the default page; the cookie only pre-selects the
+// trade on /auth/register. An unknown value is the default page too.
 
 import type { Metadata, Viewport } from "next";
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { LandingD } from "@/components/v3/landing-d/landing-d-page";
@@ -48,6 +48,6 @@ export default async function HomePage({
   // Signed-in users have no use for the marketing landing — send them to work.
   const session = await auth();
   if (session?.user?.id) redirect("/dashboard");
-  const landing = readLandingVariant(await searchParams, await cookies());
+  const landing = readLandingVariant(await searchParams);
   return <LandingD {...landing} />;
 }

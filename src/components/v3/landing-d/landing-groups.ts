@@ -1,7 +1,7 @@
 /* TRADE GROUPS — what the page below the hero shows whom (CRO stage 3,
    2026-09-09). Every trade key belongs to one group, explicitly; the group
-   picks the estimator slides, the customer strip, the jobs ledger, the
-   proposal and portal examples and whether the montage runs. The default
+   picks the customer strip, the jobs ledger, the proposal and portal
+   examples and whether the montage runs. The default
    page (no `?industry=`) and the interior group keep the sections' own
    built-in data, so a page with no parameter is byte-for-byte what it was.
 
@@ -9,7 +9,7 @@
    Kenmore, Everett, Woodinville, Bellevue; $1,600–$24,600. The photographs
    are the ones the sections already ship — only names and tags change. */
 
-import type { LandingVariantKey, ShowcaseSlideKey } from "./landing-variants";
+import type { LandingVariantKey } from "./landing-variants";
 
 export type TradeGroup = "tools" | "exterior" | "interior" | "mep" | "general";
 
@@ -40,15 +40,9 @@ export function variantGroup(key: LandingVariantKey | undefined): TradeGroup | u
   return key ? TRADE_GROUP[key] : undefined;
 }
 
-/* ── estimators showcase ─────────────────────────────────── */
-
-/** The slide order for a trade; undefined = the default page's four. */
-export function showcaseSlidesFor(key: LandingVariantKey | undefined): ShowcaseSlideKey[] | undefined {
-  if (!key) return undefined;
-  if (key === "roofing") return ["roof", "smart", "video"];
-  if (key === "fencing") return ["fence", "smart", "video"];
-  return ["smart", "video"];
-}
+/* The estimators showcase is NOT per group any more (owner, 2026-09-10):
+   every trade shows all four slides, its own estimator first — see
+   estimators-showcase.tsx. */
 
 /* ── the sections' data shapes ───────────────────────────── */
 

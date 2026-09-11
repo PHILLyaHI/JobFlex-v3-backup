@@ -80,7 +80,7 @@ export function StatsSection({ rows = ROWS }: { rows?: StatsRow[] }) {
                 {rows !== ROWS && (
                   <p className="mt-2 text-[17px] font-semibold leading-snug text-slate-300 sm:text-[clamp(17px,1.5vw,22px)]">
                     {row.lede}
-                    <span className="text-slate-500"> — {row.sub}</span>
+                    <span className="text-slate-400"> — {row.sub}</span>
                   </p>
                 )}
                 <div className="mt-5 grid grid-cols-2 gap-2 sm:mt-7 sm:gap-4 lg:grid-cols-4 lg:gap-5">
@@ -97,13 +97,13 @@ export function StatsSection({ rows = ROWS }: { rows?: StatsRow[] }) {
                         />
                         {/* Mobile attribution overlay */}
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent px-2.5 pb-2 pt-8 sm:hidden">
-                          <div className="text-[12.5px] font-bold leading-tight text-white">{c.name}</div>
-                          <div className="text-[10px] text-white/70">{c.tag}</div>
+                          <div className="text-[15px] font-bold leading-tight text-white">{c.name}</div>
+                          <div className="text-[15px] leading-tight text-white/75">{c.tag}</div>
                         </div>
                       </div>
                       <figcaption className="mt-2.5 hidden items-baseline justify-between sm:flex">
                         <span className="text-[16px] font-bold">{c.name}</span>
-                        <span className="text-[12.5px] text-slate-500">{c.tag}</span>
+                        <span className="text-[14px] text-slate-400">{c.tag}</span>
                       </figcaption>
                     </figure>
                   ))}

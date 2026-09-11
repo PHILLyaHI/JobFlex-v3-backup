@@ -77,10 +77,10 @@ export function CtaFooter({
               ))}
             </div>
             <span className="flex items-center overflow-hidden rounded-md ring-1 ring-white/15">
-              <span className="flex items-center gap-1.5 bg-white/[0.08] px-2.5 py-1 text-[11.5px] font-semibold md:px-3 md:py-1.5 md:text-[12.5px]">
+              <span className="flex items-center gap-1.5 bg-white/[0.08] px-2.5 py-1 text-[15px] font-semibold md:px-3 md:py-1.5 md:text-[14px]">
                 <span className="text-lp-gold" aria-hidden>★</span> 4.9
               </span>
-              <span className="px-2.5 py-1 text-[11.5px] font-semibold text-white/60 md:px-3 md:py-1.5 md:text-[12.5px]">
+              <span className="px-2.5 py-1 text-[15px] font-semibold text-white/60 md:px-3 md:py-1.5 md:text-[14px]">
                 2,300+ contractor reviews
               </span>
             </span>
@@ -92,7 +92,7 @@ export function CtaFooter({
               <a
                 key={l}
                 href={FOOT_HREF[l] ?? "#"}
-                className="py-2 text-[13.5px] font-medium text-white/55 transition-colors hover:text-white"
+                className="py-2 text-[15px] font-medium text-white/70 transition-colors hover:text-white"
               >
                 {l}
               </a>
@@ -119,7 +119,10 @@ export function CtaFooter({
             ))}
           </div>
 
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] pt-5 text-[11.5px] text-white/35 md:mt-16 md:pt-8 md:text-[13px]">
+          {/* The legal row carries the two consent links (2026-09-10), so it
+              is read, not just present: 14 px, white/60 (5.6:1 on the ink),
+              and the links wrap on a phone instead of running off the edge. */}
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] pt-5 text-[15px] text-white/60 md:mt-16 md:pt-8 md:text-[14px]">
             <span>
               © 2026 JobFlex
               <span className="hidden md:inline">
@@ -127,7 +130,7 @@ export function CtaFooter({
                 — The operating system for small-shop contractors.
               </span>
             </span>
-            <span className="flex gap-6">
+            <span className="flex flex-wrap gap-x-6 gap-y-0">
               <a href="/terms" className="py-2 transition-colors hover:text-white md:py-0">Terms</a>
               <a href="/privacy" className="py-2 transition-colors hover:text-white md:py-0">Privacy</a>
               <CookieSettingsLink className="py-2 transition-colors hover:text-white md:py-0" />

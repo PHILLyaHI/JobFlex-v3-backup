@@ -10,12 +10,11 @@
 // <LandingD /> this route does, so the two URLs cannot drift. The route stays
 // up under its own name for review and for linking to it directly.
 //
-// It reads the same `?industry=` / memory cookie as the root (2026-09-06), so a
-// review link can carry a trade variant too. Reading the cookie makes the
-// route dynamic; it was only ever a review URL, so nothing is lost.
+// It reads the same `?industry=` as the root (2026-09-06), so a review link can
+// carry a trade variant too. The URL is the only source (owner, 2026-09-10);
+// the jf_industry cookie is for the register form's pre-select, not the page.
 
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
 
 import { LandingD } from "@/components/v3/landing-d/landing-d-page";
 import { readLandingVariant } from "@/components/v3/landing-d/landing-variant-server";
@@ -31,6 +30,6 @@ export default async function LandingDPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const landing = readLandingVariant(await searchParams, await cookies());
+  const landing = readLandingVariant(await searchParams);
   return <LandingD {...landing} />;
 }

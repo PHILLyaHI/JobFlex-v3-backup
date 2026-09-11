@@ -16,9 +16,10 @@
 
 import dynamic from "next/dynamic";
 import { getPlanCatalog } from "@/lib/planCatalogServer";
+import { CrewGuide } from "./crew-guide";
 import { CtaFooter } from "./cta-footer";
 import { LandingFaq } from "./landing-faq";
-import { groupContentFor, showcaseSlidesFor } from "./landing-groups";
+import { groupContentFor } from "./landing-groups";
 import { LandingPricing } from "./landing-pricing";
 import { CtaTracker } from "./cta-tracker";
 import { LazyBg } from "./lazy-bg";
@@ -84,12 +85,18 @@ export async function LandingD({ variant, explicitVariant = false, utm = {} }: L
       <main>
         <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} />
         <Intro registerHref={register} />
-        <div className="lp-cv"><EstimatorsShowcase initialSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} slides={showcaseSlidesFor(variant)} /></div>
+        <div className="lp-cv"><EstimatorsShowcase initialSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} /></div>
         {(g?.montage ?? true) && <div className="lp-cv"><Montage /></div>}
         <div className="lp-cv"><ProposalsSection proposal={g?.proposal} /></div>
         <div className="lp-cv"><PortalSection portal={g?.portal} /></div>
-        <div className="lp-cv"><JobsSection crew={g?.crew} phoneLanes={g?.phoneLanes} /></div>
-        <div className="lp-cv"><FlowFeatures /></div>
+        {/* One content-visibility box for the two sections the guide line runs
+            through, so both are laid out together and the line can be measured. */}
+        <div className="lp-cv">
+          <CrewGuide>
+            <JobsSection crew={g?.crew} phoneLanes={g?.phoneLanes} />
+            <FlowFeatures />
+          </CrewGuide>
+        </div>
         <div className="lp-cv"><Integrations registerHref={register} /></div>
         <div className="lp-cv"><StatsSection rows={g?.stats} /></div>
         <div className="lp-cv"><BuiltSection jobs={g?.jobs} phoneJobs={g?.phoneJobs} /></div>

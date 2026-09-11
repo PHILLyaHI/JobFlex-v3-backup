@@ -118,7 +118,7 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
   return (
     <div ref={ref} className="relative mx-auto max-w-[42rem]">
       <div
-        className="overflow-hidden rounded-xl bg-white shadow-lp-mock"
+        className="lp-prop-doc overflow-hidden rounded-xl bg-white shadow-lp-mock"
       >
         {/* Editor chrome — one button, and it reports the whole flow */}
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5 text-[12px] sm:px-5">
@@ -303,7 +303,7 @@ function ReceiptCluster() {
   return (
     <div ref={ref} className="relative mx-auto max-w-[34rem] py-6">
       {/* receipt */}
-      <div className="relative w-[58%] -rotate-3 rounded-lg bg-white p-4 shadow-lp-card">
+      <div className="lp-prop-card relative w-[58%] -rotate-3 rounded-lg bg-white p-4 shadow-lp-card">
         <div className="text-center text-[10px] font-bold tracking-widest text-slate-500">
           BIG BOX SUPPLY #214
         </div>
@@ -321,7 +321,7 @@ function ReceiptCluster() {
         )}
       </div>
       {/* extracted card */}
-      <div className="absolute right-0 top-10 w-[54%] rotate-2 rounded-lg bg-white p-4 shadow-lp-card">
+      <div className="lp-prop-card absolute right-0 top-10 w-[54%] rotate-2 rounded-lg bg-white p-4 shadow-lp-card">
         <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600">
           <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-100 text-[8px]">✓</span>
           3 ITEMS EXTRACTED
@@ -349,15 +349,23 @@ function ReceiptCluster() {
   );
 }
 
+/* THE TITLE SHEET (owner, 2026-09-10): paper, no grid, a double ink line
+   round the content width with the sheet stamp and corner ticks; the mocks
+   carry a 1 px ink line and a hard offset shadow (landing-d.css, .lp-props).
+   CSS only — no gradient, no image. */
 export function ProposalsSection({ proposal = KITCHEN }: { proposal?: ProposalContent }) {
   return (
-    <section className="relative overflow-hidden bg-lp-band px-5 py-[8vmin] max-sm:pb-[16vmin] max-sm:pt-[16vmin] sm:px-6">
-      <div className="mx-auto lp-wrap">
-        <Reveal>
+    <section
+      id="proposals"
+      className="lp-props relative overflow-hidden px-5 py-[8vmin] max-sm:pb-[16vmin] max-sm:pt-[16vmin] sm:px-6"
+    >
+      <div className="lp-props-wrap relative z-[1] mx-auto lp-wrap">
+        <SheetFrame />
+        <Reveal className="lp-props-copy">
           {/* The eyebrow is desktop-only: on a phone it just crowded the
               headline it was labelling (owner, 2026-08-25). */}
-          <h2 className="lp-eyebrow hidden text-slate-500 sm:block">Proposals &amp; contracts</h2>
-          <p className="max-w-[56rem] sm:mt-5 text-[clamp(36px,4.4vw,64px)] font-bold leading-[1.02] tracking-[-0.02em] text-lp-ink">
+          <h2 className="lp-eyebrow hidden text-slate-600 sm:block">Proposals &amp; contracts</h2>
+          <p className="lp-props-title max-w-[56rem] sm:mt-5 text-[clamp(36px,4.4vw,64px)] font-bold leading-[1.02] tracking-[-0.02em] text-lp-ink">
             Send proposals clients can sign.
           </p>
           <p className="mt-5 text-[17px] font-medium leading-[1.5] text-slate-600 sm:mt-7 sm:text-[clamp(19px,1.7vw,24px)]">
@@ -379,7 +387,7 @@ export function ProposalsSection({ proposal = KITCHEN }: { proposal?: ProposalCo
           <Reveal className="order-2 lg:order-1">
             <ReceiptCluster />
           </Reveal>
-          <Reveal delay={100} className="order-1 lg:order-2">
+          <Reveal delay={100} className="lp-props-copy order-1 lg:order-2">
             <h3 className="text-[clamp(26px,2.6vw,36px)] font-bold tracking-[-0.015em] text-lp-ink">
               Save every receipt.
             </h3>
@@ -392,7 +400,7 @@ export function ProposalsSection({ proposal = KITCHEN }: { proposal?: ProposalCo
 
         {/* Sub-feature: invoicing */}
         <div className="mt-[26vmin] grid items-center gap-10 sm:mt-[9vmin] lg:grid-cols-2 lg:gap-16">
-          <Reveal className="lg:order-1">
+          <Reveal className="lp-props-copy lg:order-1">
             <h3 className="text-[clamp(26px,2.6vw,36px)] font-bold tracking-[-0.015em] text-lp-ink">
               Send invoices to clients.
             </h3>
@@ -409,5 +417,20 @@ export function ProposalsSection({ proposal = KITCHEN }: { proposal?: ProposalCo
         </div>
       </div>
     </section>
+  );
+}
+
+/* The title sheet's frame: a double ink line (1 px + 4 px gap + 1 px)
+   round the content width, corner ticks, and the sheet stamp bottom right.
+   Drawn with borders and an outline; positioned by .lp-props-frame. */
+function SheetFrame() {
+  return (
+    <div className="lp-props-frame" aria-hidden>
+      <span className="lp-props-tick lp-props-tick--tl" />
+      <span className="lp-props-tick lp-props-tick--tr" />
+      <span className="lp-props-tick lp-props-tick--bl" />
+      <span className="lp-props-tick lp-props-tick--br" />
+      <span className="lp-props-stamp">Sheet 03 · Proposals &amp; Contracts</span>
+    </div>
   );
 }

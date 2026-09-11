@@ -6,7 +6,9 @@ import { Reveal } from "./reveal";
    fourth row is the trade's: the roofing and fencing heroes promise a
    measurement, so they get "where do the figures come from" (aerial data,
    never a provider's name); every other trade gets how a description is
-   priced. Static markup, no state. */
+   priced. Static markup, no state. Type floors (2026-09-10): the numbers
+   11 px mono caps, the answers 15 px, slate-600 so both clear 4.5:1 on the
+   paper ground (slate-500 on paper is 4.47). */
 type Faq = { q: string; a: string };
 
 const DATA_Q: Record<"roofing" | "fencing" | "other", Faq> = {
@@ -57,7 +59,7 @@ export function LandingFaq({ variant }: { variant?: LandingVariantKey }) {
     <section className="relative overflow-hidden bg-lp-paper px-5 py-[8vmin] sm:px-6">
       <div className="mx-auto lp-wrap">
         <Reveal>
-          <h2 className="lp-eyebrow text-slate-500">Questions</h2>
+          <h2 className="lp-eyebrow text-slate-600">Questions</h2>
           <p className="mt-6 max-w-[44rem] text-[clamp(26px,2.8vw,40px)] font-bold leading-[1.2] tracking-[-0.015em] text-lp-ink">
             The six things every shop asks first.
           </p>
@@ -69,11 +71,11 @@ export function LandingFaq({ variant }: { variant?: LandingVariantKey }) {
                 key={item.q}
                 className="grid grid-cols-[44px_minmax(0,1fr)] gap-x-4 border-b border-black/10 py-5 md:grid-cols-[64px_minmax(0,22rem)_minmax(0,1fr)] md:gap-x-8"
               >
-                <span className="pt-[3px] font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                <span className="pt-[3px] font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-slate-600 lg:text-[12px]">
                   {String(i + 1).padStart(2, "0")}
                 </span>
                 <dt className="text-[16px] font-bold leading-[1.35] tracking-[-0.01em] text-lp-ink sm:text-[17px]">{item.q}</dt>
-                <dd className="col-start-2 mt-2 text-[14.5px] leading-[1.6] text-slate-500 md:col-start-3 md:mt-0 md:text-[15px]">
+                <dd className="col-start-2 mt-2 text-[15px] leading-[1.6] text-slate-600 md:col-start-3 md:mt-0">
                   {item.a}
                 </dd>
               </div>

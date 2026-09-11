@@ -42,23 +42,26 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
   const upgraded = step >= 1;
 
   return (
-    <section className="relative overflow-hidden bg-lp-navy px-5 py-[8vmin] max-sm:pb-[12vmin] max-sm:pt-[11vmin] sm:px-6">
-      <div className="mx-auto lp-wrap">
+    // THE BLUEPRINT SHEET (owner, 2026-09-10): flat blueprint blue under the
+    // white drafting grid (landing-d.css, .lp-portal); the card inside carries
+    // a 1 px white line and a hard offset shadow of solid ink. No gradient
+    // anywhere — the band that used to run one is now the sheet itself.
+    <section id="portal" className="lp-portal relative overflow-hidden px-5 py-[8vmin] max-sm:pb-[12vmin] max-sm:pt-[11vmin] sm:px-6">
+      <div className="relative z-[1] mx-auto lp-wrap">
         <div className="grid items-center gap-8 sm:gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:gap-20">
           {/* Pink portal surface — full-bleed band on mobile, rounded card on sm+ */}
           <Reveal className="order-2 lg:order-1">
             <div
               ref={ref}
               /* The band hugs the card rather than framing it in a slab of
-                 sky (owner, 2026-08-25), and the gradient runs the blueprint
-                 blue instead of the donor's pale candy tone. */
-              className="relative flex items-center justify-center rounded-[12px] border-2 border-lp-ink px-3 py-6 sm:min-h-[560px] sm:rounded-[10px] sm:border-0 sm:px-6 sm:py-16"
-              style={{ background: "linear-gradient(165deg,#4A9EFF 0%,#1F62B4 62%,#12457F 100%)" }}
+                 sky (owner, 2026-08-25). Since the sheet is the blue, the
+                 band has no fill of its own: the card sits on the grid. */
+              className="relative flex items-center justify-center rounded-[12px] px-3 py-6 sm:min-h-[560px] sm:rounded-[10px] sm:px-6 sm:py-16"
             >
               {/* The inner plate takes the band's corner, not a softer one —
                   two different radii nested read as a mistake (owner,
                   2026-08-25). */}
-              <div className="w-full max-w-[360px] rounded-[12px] bg-white p-5 shadow-[0_24px_60px_-12px_rgb(10_35_70/0.4)] sm:max-w-[330px] sm:rounded-[10px] sm:p-6">
+              <div className="lp-portal-mock w-full max-w-[360px] rounded-[12px] bg-white p-5 sm:max-w-[330px] sm:rounded-[10px] sm:p-6">
                 <div className="text-center">
                   <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-lp-blue/10">
                     <svg viewBox="0 0 20 20" className="h-5 w-5 text-lp-blue" aria-hidden>
@@ -67,7 +70,7 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
                     </svg>
                   </div>
                   <div className="mt-3 text-[19px] font-bold text-lp-ink">Review &amp; approve</div>
-                  <div className="mt-1 text-[12px] text-slate-400">
+                  <div className="mt-1 text-[14px] text-slate-500">
                     {portal.title}
                   </div>
                 </div>
@@ -79,7 +82,7 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
                       !upgraded ? "border-lp-blue bg-lp-blue/[0.04]" : "border-slate-200"
                     }`}
                   >
-                    <span className="flex items-center gap-2.5 text-[12.5px] font-medium text-lp-ink">
+                    <span className="flex items-center gap-2.5 text-[14px] font-medium text-lp-ink">
                       <span
                         className={`flex h-4 w-4 items-center justify-center rounded-full border-2 transition-colors duration-300 ${
                           !upgraded ? "border-lp-blue" : "border-slate-300"
@@ -89,14 +92,14 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
                       </span>
                       {portal.baseOption}
                     </span>
-                    <span className="text-[12px] font-semibold text-slate-400">$0</span>
+                    <span className="text-[14px] font-semibold text-slate-500">$0</span>
                   </div>
                   <div
                     className={`flex items-center justify-between rounded-lg border px-3 py-2.5 transition-colors duration-300 ${
                       upgraded ? "border-lp-blue bg-lp-blue/[0.04]" : "border-slate-200"
                     }`}
                   >
-                    <span className="flex items-center gap-2.5 text-[12.5px] font-medium text-lp-ink">
+                    <span className="flex items-center gap-2.5 text-[14px] font-medium text-lp-ink">
                       <span
                         className={`flex h-4 w-4 items-center justify-center rounded-full border-2 transition-colors duration-300 ${
                           upgraded ? "border-lp-blue" : "border-slate-300"
@@ -106,13 +109,13 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
                       </span>
                       {portal.upgradeOption}
                     </span>
-                    <span className="text-[12px] font-semibold text-lp-ink">{portal.upgradePrice}</span>
+                    <span className="text-[14px] font-semibold text-lp-ink">{portal.upgradePrice}</span>
                   </div>
                 </div>
 
                 {/* Total */}
                 <div className="mt-4 flex items-baseline justify-between border-t border-slate-100 pt-3.5">
-                  <span className="text-[12px] text-slate-400">Total</span>
+                  <span className="text-[14px] text-slate-500">Total</span>
                   <span
                     key={String(upgraded)}
                     className="text-[20px] font-bold tracking-tight text-lp-ink"
@@ -124,7 +127,7 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
 
                 {/* Signature */}
                 <div className="relative mt-4 h-[74px] rounded-lg border border-dashed border-slate-300 bg-slate-50">
-                  <span className="absolute left-3 top-2 text-[9px] font-bold uppercase tracking-wider text-slate-300">
+                  <span className="absolute left-3 top-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
                     Sign here
                   </span>
                   <svg viewBox="0 0 260 60" className="absolute inset-0 h-full w-full" aria-hidden>
@@ -167,7 +170,7 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
               {/* signed-doc badge */}
               {step === 3 && (
                 <span
-                  className="absolute right-[14%] top-[12%] flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-lp-card"
+                  className="lp-portal-mock absolute right-[14%] top-[12%] flex h-12 w-12 items-center justify-center rounded-2xl bg-white"
                   style={{ animation: "envelope-pop .5s cubic-bezier(.2,.6,.2,1)" }}
                 >
                   <svg viewBox="0 0 24 24" className="h-6 w-6 text-lp-ink" aria-hidden>
@@ -190,7 +193,7 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
             <p className="text-[30px] font-bold leading-[1.08] tracking-[-0.02em] text-white sm:text-[clamp(34px,4vw,58px)] sm:leading-[1.05] sm:tracking-[-0.015em]">
               Get jobs signed.
             </p>
-            <p className="mt-4 max-w-[26rem] text-[17px] leading-[1.5] text-slate-300 sm:text-[20px] sm:leading-[1.55]">
+            <p className="mt-4 max-w-[26rem] text-[17px] leading-[1.5] text-white/80 sm:text-[20px] sm:leading-[1.55]">
               Homeowners pick options, sign, and pay the deposit — right from
               their phone.
             </p>

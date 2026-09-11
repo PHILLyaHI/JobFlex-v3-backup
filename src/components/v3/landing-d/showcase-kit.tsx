@@ -105,7 +105,7 @@ export function AppFrame({
     // `body` is the stage's own colour: the rail column sits on it and stays
     // invisible until the estimate slides in, instead of reading as a white slab.
     <div
-      className="overflow-hidden rounded-md shadow-lp-mock ring-1 ring-black/10"
+      className="lp-mock-frame overflow-hidden rounded-md shadow-lp-mock ring-1 ring-black/10"
       style={{ background: body, transition: "background .8s ease" }}
     >
       <div className="flex items-center gap-3 border-b-2 border-ink bg-white px-4 py-2.5">

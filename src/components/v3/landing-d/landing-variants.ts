@@ -1,4 +1,6 @@
 /* TRADE-ADAPTIVE HERO — the one table behind `?industry=`.
+   Copy pattern (owner, 2026-09-10): h1 "The full [result]. / From just
+   [input]."; sub lists what is inside, and the time.
    ============================================================
    An ad lands on jobflex.app/?industry=<trade> and the landing swaps ONLY its
    first screen: the headline, the line under it, the primary button's words,
@@ -6,9 +8,9 @@
    below the fold is shared. Without the parameter the page is byte-for-byte
    what it was — DEFAULT_LANDING is the hero's original copy moved here.
 
-   The variant is resolved ON THE SERVER (src/app/page.tsx reads the query and
-   the cookie) so the first paint already carries the right hero; nothing here
-   sniffs the client. This module is deliberately free of next/headers so both
+   The variant is resolved ON THE SERVER (src/app/page.tsx reads the query —
+   only the query) so the first paint already carries the right hero; nothing
+   here sniffs the client. This module is deliberately free of next/headers so both
    the server page and client components can import it.
 
    ONE KEY PER TRADE. The keys are the 20 real trades of TRADE_TYPES ("Other"
@@ -85,38 +87,38 @@ export const VARIANT_KEYS = Object.keys(VARIANT_TRADE) as LandingVariantKey[];
    shows these as TODO plates. */
 export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> = {
   fencing: {
-    h1: ["Quote the fence", "off the lot lines."],
-    sub: "Lot lines from the parcel, grade from the terrain, takeoff from the run you draw.",
+    h1: ["The whole fence takeoff.", "From the lot lines."],
+    sub: "Run, grade, stepped panels, posts, gates, concrete and labor — from the line you draw on the parcel.",
     primaryCta: "Start free — estimate a fence",
     showcaseSlide: "fence",
     visual: "fence",
   },
   roofing: {
-    h1: ["Measure the roof", "from the address."],
-    sub: "Type the address, get the measured pitch and aerial roof data in about a minute.",
+    h1: ["The full roof report.", "From just the address."],
+    sub: "Area, squares, pitch, facets, aerial photo and a priced proposal — in about a minute.",
     primaryCta: "Start free — measure a roof",
     showcaseSlide: "roof",
     visual: "roof",
   },
   "kitchen-bath": {
-    h1: ["Price the remodel", "from the description."],
-    sub: "Describe the kitchen or bath, attach a photo, and get a written estimate in minutes.",
+    h1: ["The full remodel estimate.", "From a description and a photo."],
+    sub: "Demo, rough-in, cabinets, tile, fixtures and labor — written in minutes.",
     primaryCta: "Start free — write an estimate",
     showcaseSlide: "smart",
     visual: "smart",
     scenario: "kitchen",
   },
   painting: {
-    h1: ["Quote the paint job", "by the square foot."],
-    sub: "Interior or exterior — prep, coats and trim priced per sq ft from what you type.",
+    h1: ["The whole paint bid.", "From the square footage."],
+    sub: "Prep, primer, coats, trim and labor — interior or exterior.",
     primaryCta: "Start free — quote a paint job",
     showcaseSlide: "smart",
     visual: "smart",
     scenario: "painting",
   },
   decking: {
-    h1: ["Estimate the deck", "board by board."],
-    sub: "Frame, boards, railing and stairs, priced from the size and the material you name.",
+    h1: ["The complete deck estimate.", "From the size and the material."],
+    sub: "Frame, boards, railing, stairs and labor, priced and ready to send.",
     primaryCta: "Start free — estimate a deck",
     showcaseSlide: "smart",
     visual: "smart",
@@ -127,40 +129,40 @@ export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> 
   // sequence with the trade's own job. Copy stays short and promises no
   // measurement.
   siding: {
-    h1: ["Quote the siding job", "from the wall area."],
-    sub: "Tear-off, wrap, lap siding and trim, priced per sq ft from what you describe.",
+    h1: ["The whole siding bid.", "From the wall area."],
+    sub: "Tear-off, wrap, lap siding, trim and labor — per sq ft, in one proposal.",
     primaryCta: "Start free — quote a siding job",
     showcaseSlide: "smart",
     visual: "smart",
     scenario: "siding",
   },
   concrete: {
-    h1: ["Price the pour", "before you order the mix."],
-    sub: "Demo, base, forms, rebar and finish, priced from the slab you describe.",
+    h1: ["The whole pour, priced.", "Before you order the mix."],
+    sub: "Demo, base, forms, rebar, finish and labor from the slab you describe.",
     primaryCta: "Start free — price a pour",
     showcaseSlide: "smart",
     visual: "smart",
     scenario: "concrete",
   },
   landscaping: {
-    h1: ["Estimate the yard", "patio, wall and lawn."],
-    sub: "Grading, pavers, retaining wall and sod, priced from the scope you type.",
+    h1: ["The full yard proposal.", "From what you describe."],
+    sub: "Grading, pavers, retaining wall, sod and labor — priced line by line.",
     primaryCta: "Start free — estimate a yard",
     showcaseSlide: "smart",
     visual: "smart",
     scenario: "landscaping",
   },
   flooring: {
-    h1: ["Quote the floor", "room by room."],
-    sub: "Tear-out, underlayment, planks and trim, priced per sq ft from your description.",
+    h1: ["The complete floor bid.", "From a room list."],
+    sub: "Tear-out, underlayment, planks, trim and labor — room by room.",
     primaryCta: "Start free — quote a floor",
     showcaseSlide: "smart",
     visual: "smart",
     scenario: "flooring",
   },
   tile: {
-    h1: ["Price the tile work", "floor to shower."],
-    sub: "Demo, prep, waterproofing, tile and grout, priced from the rooms you describe.",
+    h1: ["The whole tile job, priced.", "From the rooms you describe."],
+    sub: "Demo, prep, waterproofing, tile, grout and labor, floor to shower.",
     primaryCta: "Start free — price a tile job",
     showcaseSlide: "smart",
     visual: "smart",
@@ -171,40 +173,40 @@ export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> 
   // equipment, sheets, openings. Smart Estimator sequence, no measurement
   // promised.
   plumbing: {
-    h1: ["Price the job", "fixture by fixture."],
-    sub: "Water heater, fixtures and drain runs, priced per unit from what you describe.",
+    h1: ["The whole job, priced.", "Fixture by fixture."],
+    sub: "Water heater, rough-ins, fixtures, drain runs and labor from what you describe.",
     primaryCta: "Start free — price a plumbing job",
     showcaseSlide: "smart",
     visual: "smart",
     scenario: "plumbing",
   },
   electrical: {
-    h1: ["Quote the electrical", "point by point."],
-    sub: "Panel, circuits, outlets and cans, priced per point from the scope you type.",
+    h1: ["The full electrical quote.", "From the scope."],
+    sub: "Panel, circuits, outlets, cans and labor — point by point.",
     primaryCta: "Start free — quote electrical",
     showcaseSlide: "smart",
     visual: "smart",
     scenario: "electrical",
   },
   hvac: {
-    h1: ["Price the system", "before the first site visit."],
-    sub: "Heat pump or furnace, tonnage, duct runs and thermostat, priced per unit.",
+    h1: ["The whole system, priced.", "Before the first site visit."],
+    sub: "Heat pump or furnace, tonnage, duct runs, thermostat and labor per unit.",
     primaryCta: "Start free — price an HVAC job",
     showcaseSlide: "smart",
     visual: "smart",
     scenario: "hvac",
   },
   drywall: {
-    h1: ["Quote the drywall", "sheet by sheet."],
-    sub: "Hang, tape, level 4 finish and texture, priced per sheet and sq ft.",
+    h1: ["The complete drywall bid.", "From the sheet count."],
+    sub: "Hang, tape, level 4 finish, texture and labor per sheet.",
     primaryCta: "Start free — quote drywall",
     showcaseSlide: "smart",
     visual: "smart",
     scenario: "drywall",
   },
   windows: {
-    h1: ["Price the windows", "opening by opening."],
-    sub: "Replacement units, patio door and casing, priced per opening from your count.",
+    h1: ["Every opening, priced.", "From your count."],
+    sub: "Units, patio door, casing, install and haul-away in one proposal.",
     primaryCta: "Start free — price windows",
     showcaseSlide: "smart",
     visual: "smart",
@@ -215,40 +217,40 @@ export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> 
   // that differs in kind — a project assembled from phases, not one trade's
   // estimate — and its scenario prices each phase off the sub-trade's anchor.
   countertops: {
-    h1: ["Price the tops", "by the slab and the foot."],
-    sub: "Quartz by the sq ft, sink and backsplash by the unit, priced from the kitchen you describe.",
+    h1: ["The full countertop quote.", "From the slab and the foot."],
+    sub: "Quartz by the sq ft, sink cutout, backsplash, template and install.",
     primaryCta: "Start free — price countertops",
     showcaseSlide: "smart",
     visual: "smart",
     scenario: "countertops",
   },
   carpentry: {
-    h1: ["Quote the carpentry", "cut by cut."],
-    sub: "Trim by the foot, doors and built-ins by the unit, priced from the scope you type.",
+    h1: ["The complete carpentry bid.", "Cut by cut."],
+    sub: "Trim by the foot, doors, built-ins, framing and labor from the scope you type.",
     primaryCta: "Start free — quote carpentry",
     showcaseSlide: "smart",
     visual: "smart",
     scenario: "carpentry",
   },
   insulation: {
-    h1: ["Price the insulation", "by the R-value."],
-    sub: "Removal, blown-in attic, batts and air sealing, priced per sq ft at the R-value you name.",
+    h1: ["The whole insulation job, priced.", "From the R-value."],
+    sub: "Removal, blown-in attic, batts, air sealing and labor per sq ft.",
     primaryCta: "Start free — price insulation",
     showcaseSlide: "smart",
     visual: "smart",
     scenario: "insulation",
   },
   demolition: {
-    h1: ["Quote the tear-out", "dumpster to dumpster."],
-    sub: "Containment, demo by the sq ft, loads out and cleanup, priced from the rooms you name.",
+    h1: ["The whole tear-out, priced.", "Dumpster to dumpster."],
+    sub: "Containment, demo by the sq ft, loads out, disposal and cleanup.",
     primaryCta: "Start free — quote a tear-out",
     showcaseSlide: "smart",
     visual: "smart",
     scenario: "demolition",
   },
   "general-contractor": {
-    h1: ["Price the whole job", "phase by phase."],
-    sub: "One estimate across every trade on the job — demo to finish, each phase at its sub's price.",
+    h1: ["The whole job, every trade.", "One estimate."],
+    sub: "Demo to finish — each phase at its sub's price, in a single proposal.",
     primaryCta: "Start free — price the whole job",
     showcaseSlide: "smart",
     visual: "smart",
@@ -377,8 +379,9 @@ if (process.env.NODE_ENV !== "production") {
 /* ── memory ────────────────────────────────────────────────
    Same pattern as the promo/referral capture (attribution-capture.tsx):
    a 30-day first-party cookie, written by the page once a variant has been
-   asked for explicitly, read by the server on a later visit that carries no
-   parameter. An explicit parameter always wins over the cookie. */
+   asked for explicitly. Read by /auth/register (trade pre-select) and the
+   Google return only — the landing never reads it (owner, 2026-09-10): the
+   page with no `?industry=` is always the default page. */
 export const INDUSTRY_COOKIE = "jf_industry";
 export const INDUSTRY_MAX_AGE_S = 60 * 60 * 24 * 30; // 30 days
 

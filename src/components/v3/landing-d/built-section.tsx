@@ -6,7 +6,10 @@ import { Reveal } from "./reveal";
 /* The Jobs plate. Same device as the hero's Overview shot — BlueprintShell is
    the shared chrome — showing the app's actual Jobs page: filters, the ledger
    of jobs, money in mono, and status carried by bordered chips whose colour is
-   the status and nothing else. The donor's dark rounded admin card is gone. */
+   the status and nothing else. The donor's dark rounded admin card is gone.
+   Type floors on the ledger (2026-09-10): mono caps 11 px, titles 14 px, the
+   by-line 13 px (one under the rule — a second line in a mock ledger),
+   figures 13 px; every ink at 4.5:1 or better. */
 
 type Status = BuiltJob["status"];
 
@@ -31,22 +34,30 @@ const JOBS: BuiltJob[] = [
 
 const FILTERS = ["All jobs", "All crews", "All clients", "All tags"];
 
+/* The copy block (owner, 2026-09-10): two styles only — the problem and the
+   price line in regular slate-600, the answer at display size in ink — on a
+   2 px ink callout line that runs from the first sentence to the last; the
+   eyebrow stands above the line (landing-d.css, .lp-built-callout). */
 export function BuiltSection({ jobs = JOBS, phoneJobs }: { jobs?: BuiltJob[]; phoneJobs?: PhoneJob[] }) {
   return (
-    <section className="relative overflow-hidden bg-white px-5 py-[8vmin] max-sm:pb-[18vmin] sm:px-6">
+    <section id="built" className="relative overflow-hidden bg-white px-5 py-[8vmin] max-sm:pb-[18vmin] sm:px-6">
       <div className="lp-bg lp-bg--frame" aria-hidden data-lazy />
       <div className="relative z-[1] mx-auto lp-wrap">
         <Reveal>
-          <h2 className="lp-eyebrow text-slate-500">Built for the field</h2>
-          {/* Say the problem, not the pitch (owner, 2026-08-25). */}
-          <p className="mt-6 max-w-[44rem] text-[clamp(26px,2.8vw,40px)] font-bold leading-[1.2] tracking-[-0.015em] text-slate-500">
-            The job ends and the paperwork starts — the estimate, the invoice,
-            the three people still waiting on a text.{" "}
-            <span className="text-lp-ink">JobFlex does that half of the job.</span>
-          </p>
-          <p className="mt-6 text-[clamp(26px,2.8vw,40px)] font-bold tracking-[-0.015em] text-lp-ink">
-            One price. Add the whole crew.
-          </p>
+          <div className="max-w-[46rem]">
+            <h2 className="lp-eyebrow text-slate-500">Built for the field</h2>
+            <div className="lp-built-callout mt-5">
+              {/* Say the problem, not the pitch (owner, 2026-08-25). */}
+              <p className="text-[17px] leading-[1.5] text-slate-600 lg:text-[21px]">
+                The job ends and the paperwork starts — the estimate, the invoice,
+                the three people still waiting on a text.
+              </p>
+              <p className="mt-4 text-[clamp(32px,4.4vw,56px)] font-bold leading-[1.06] tracking-[-0.02em] text-lp-ink">
+                JobFlex does that half of the job.
+              </p>
+              <p className="mt-[18px] text-[17px] leading-[1.5] text-slate-600 lg:text-[21px]">One price. Add the whole crew.</p>
+            </div>
+          </div>
         </Reveal>
 
         {/* Mobile: black-and-white jobs board */}
@@ -65,7 +76,7 @@ export function BuiltSection({ jobs = JOBS, phoneJobs }: { jobs?: BuiltJob[]; ph
               {FILTERS.map((f) => (
                 <span
                   key={f}
-                  className="flex items-center gap-1 rounded-[2px] border-[1.5px] border-black/15 bg-white px-2 py-[3px] font-mono text-[9.5px] font-bold uppercase tracking-[0.06em] text-slate-500"
+                  className="flex items-center gap-1 rounded-[2px] border-[1.5px] border-black/15 bg-white px-2 py-[3px] font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500"
                 >
                   {f}
                   <svg viewBox="0 0 10 10" className="h-2 w-2" aria-hidden>
@@ -73,13 +84,13 @@ export function BuiltSection({ jobs = JOBS, phoneJobs }: { jobs?: BuiltJob[]; ph
                   </svg>
                 </span>
               ))}
-              <span className="ml-auto font-mono text-[9.5px] font-bold uppercase tracking-[0.06em] text-slate-400">
+              <span className="ml-auto font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">
                 Sort · Newest
               </span>
             </div>
 
             <div className="lp-bp-card">
-              <div className="grid grid-cols-[minmax(0,2.4fr)_92px_130px_120px] gap-3 border-b-[1.5px] border-lp-ink pb-2 font-mono text-[8.5px] font-bold uppercase tracking-[0.14em] text-slate-400">
+              <div className="grid grid-cols-[minmax(0,2.4fr)_92px_130px_120px] gap-3 border-b-[1.5px] border-lp-ink pb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
                 <span>Title</span>
                 <span className="text-right">Invoiced</span>
                 <span className="text-right">Collected</span>
@@ -93,11 +104,11 @@ export function BuiltSection({ jobs = JOBS, phoneJobs }: { jobs?: BuiltJob[]; ph
                   <div className="min-w-0">
                     <div className="flex min-w-0 items-center gap-2">
                       <Ic name="jobs" className="lp-bp-ic lp-bp-ic--sm" />
-                      <span className="truncate text-[12.5px] font-semibold text-lp-ink">{r.t}</span>
+                      <span className="truncate text-[14px] font-semibold text-lp-ink">{r.t}</span>
                     </div>
-                    <div className="mt-[1px] truncate pl-[21px] text-[10.5px] text-slate-500">By {r.by}</div>
+                    <div className="mt-[1px] truncate pl-[21px] text-[13px] text-slate-600">By {r.by}</div>
                   </div>
-                  <span className="text-right font-mono text-[12px] font-bold tabular-nums text-lp-ink">
+                  <span className="text-right font-mono text-[13px] font-bold tabular-nums text-lp-ink">
                     {r.inv || "—"}
                   </span>
                   <span className="flex items-center justify-end gap-2">
@@ -109,15 +120,15 @@ export function BuiltSection({ jobs = JOBS, phoneJobs }: { jobs?: BuiltJob[]; ph
                             style={{ width: `${r.pct}%`, background: r.pct === 100 ? "#059669" : "#1854A0" }}
                           />
                         </span>
-                        <span className="font-mono text-[11px] font-bold tabular-nums text-slate-600">{r.pct}%</span>
+                        <span className="font-mono text-[13px] font-bold tabular-nums text-slate-600">{r.pct}%</span>
                       </>
                     ) : (
-                      <span className="font-mono text-[11px] text-slate-300">—</span>
+                      <span className="font-mono text-[13px] text-slate-500">—</span>
                     )}
                   </span>
                   <span className="text-right">
                     <span
-                      className={`inline-block rounded-[2px] border-[1.5px] px-1.5 py-[2.5px] font-mono text-[8.5px] font-bold tracking-[0.08em] ${STATUS_CHIP[r.status]}`}
+                      className={`inline-block rounded-[2px] border-[1.5px] px-1.5 py-[2.5px] font-mono text-[11px] font-bold uppercase tracking-[0.1em] ${STATUS_CHIP[r.status]}`}
                     >
                       {r.status}
                     </span>

@@ -42,7 +42,7 @@ export function Hero({
           <a
             href={registerHref}
             data-cta="pill"
-            className="inline-flex items-center gap-1 rounded-full bg-lp-gold px-4 py-[7px] text-[13px] font-semibold text-lp-ink transition-transform duration-200 hover:scale-[1.03]"
+            className="inline-flex items-center gap-1 rounded-full bg-lp-gold px-4 py-[7px] text-[15px] font-semibold text-lp-ink transition-transform duration-200 hover:scale-[1.03] sm:text-[14px]"
           >
             Just launched: JobFlex AI Estimator
             <span aria-hidden>→</span>

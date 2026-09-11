@@ -119,6 +119,16 @@
   .jf-lp .lp-brand--lg .lp-brand-name { font-size: 19px; }
   .jf-lp .lp-brand--lg .lp-brand-sub { font-size: 9.5px; }
 }
+/* The nav mark, bigger (owner, 2026-09-10): the "J" alone — ×1.5 from
+   1024px, ×1.25 on a phone; the wordmark and kicker keep their size. The
+   lockup is a centred flex row, so the taller mark stays on the text's
+   axis; the bar keeps its height (94 / 72 px). */
+@media (min-width: 1024px) {
+  .jf-lp .lp-nav .lp-brand--lg .lp-mark-box { --lp-mark-size: 156px; }
+}
+@media (max-width: 640px) {
+  .jf-lp .lp-nav .lp-brand--lg .lp-mark-box { --lp-mark-size: 115px; }
+}
 
 /* ── Hero CTAs ────────────────────────────────────────────
    Both buttons take one size so the pair reads as a matched set — the donor
@@ -1160,6 +1170,178 @@
 /* Where the aerial plate sits inside the estimator stage. The prompt overlays
    the top of the stage, so a dead-centre plate crowded the field and left an
    empty strip along the floor (owner, 2026-08-25). */
+/* ── Estimators Showcase ground (owner, 2026-09-10) ──────────────
+   Flat lp-base ink under the blueprint drafting grid: the same geometry the
+   blueprint system draws everywhere — a 40 px fine cell and a 200 px major
+   cell, 1 px lines. Two layers, both pointer-transparent, both under the
+   content (the wrap sits at z-index 1). The lines are hard 1 px stops of a
+   linear-gradient because that is how a CSS grid is drawn; nothing fades. */
+.jf-lp .lp-est::before,
+.jf-lp .lp-est::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.jf-lp .lp-est::before {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+.jf-lp .lp-est::after {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.11) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.11) 1px, transparent 1px);
+  background-size: 200px 200px;
+}
+/* The mock's frame inside this section: a 1 px white/25 line on the ink,
+   the blurred elevation off. `--tw-shadow` is the Tailwind slot the
+   `shadow-lp-mock` utility fills; overriding it here leaves the ring alone.
+   The hard-offset variant of the design system, if chosen:
+   --tw-shadow: 6px 6px 0 rgba(255, 255, 255, 0.14); */
+.jf-lp .lp-est .lp-mock-frame {
+  --tw-ring-color: rgba(255, 255, 255, 0.25);
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+}
+
+/* ── Proposals & Contracts: THE TITLE SHEET (owner, 2026-09-10) ──────
+   Paper, no grid. A double ink line (1 px + 4 px gap + 1 px) round the
+   content width, corner ticks, the sheet stamp bottom right. The mocks —
+   proposal, receipt, invoice — carry a 1 px ink line and a hard offset
+   shadow of solid ink instead of their soft elevation. CSS only. */
+.jf-lp .lp-props { background: var(--paper, #f2f0eb); }
+.jf-lp .lp-props :is(.lp-app-window, .lp-prop-doc, .lp-prop-card) {
+  box-shadow: 0 0 0 1px #0a0a0a, 4px 4px 0 #0a0a0a;
+}
+.jf-lp .lp-props-frame {
+  position: absolute;
+  inset: -28px -24px;
+  pointer-events: none;
+  border: 1px solid #0a0a0a;
+  outline: 1px solid #0a0a0a;
+  outline-offset: 4px;
+}
+@media (max-width: 639px) {
+  .jf-lp .lp-props-frame { inset: -18px -9px; }
+}
+.jf-lp .lp-props-tick {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-color: #0a0a0a;
+  border-style: solid;
+  border-width: 0;
+}
+.jf-lp .lp-props-tick--tl { left: -1px; top: -1px; border-width: 1px 0 0 1px; transform: translate(-100%, -100%); }
+.jf-lp .lp-props-tick--tr { right: -1px; top: -1px; border-width: 1px 1px 0 0; transform: translate(100%, -100%); }
+.jf-lp .lp-props-tick--bl { left: -1px; bottom: -1px; border-width: 0 0 1px 1px; transform: translate(-100%, 100%); }
+.jf-lp .lp-props-tick--br { right: -1px; bottom: -1px; border-width: 0 1px 1px 0; transform: translate(100%, 100%); }
+.jf-lp .lp-props-stamp {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 5px 9px;
+  border: 1px solid #0a0a0a;
+  background: var(--paper, #f2f0eb);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #0a0a0a;
+  white-space: nowrap;
+}
+@media (max-width: 639px) {
+  .jf-lp .lp-props-stamp { right: 6px; bottom: 6px; font-size: 11px; padding: 4px 6px; }
+}
+
+/* ── Run your business: mocks and the guide line (owner, 2026-09-10) ──
+   The Revenue cards and the Change order drop their soft elevation for the
+   system's 1 px ink line and hard offset shadow. The guide line SVG covers
+   the wrapper of both sections (crew-guide.tsx) and takes no clicks. */
+.jf-lp .lp-mock-hard { box-shadow: 0 0 0 1px #0a0a0a, 4px 4px 0 #0a0a0a; }
+.jf-lp .lp-guide {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* ── Built for the field: the copy block (owner, 2026-09-10) ──────
+   A callout: a 2 px ink line down the block's left, from the first sentence
+   to the last line; the eyebrow stands above it. No plate — the frame
+   photograph stays around the words. */
+.jf-lp .lp-built-callout {
+  border-left: 2px solid #0a0a0a;
+  padding-left: 24px;
+}
+@media (max-width: 639px) {
+  .jf-lp .lp-built-callout { padding-left: 16px; }
+}
+
+/* ── Pricing: THE INK SHEET (owner, 2026-09-10) ──────────────────
+   lp-base under the showcase's drafting grid (40 px white/6, 200 px
+   white/11, hard 1 px stops). The plates are paper with a 1 px ink line and
+   a hard offset shadow of solid ink; the highlighted plate a 2 px line. No
+   gradient fill, no image. */
+.jf-lp .lp-price { background: #15171a; }
+.jf-lp .lp-price::before,
+.jf-lp .lp-price::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.jf-lp .lp-price::before {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+.jf-lp .lp-price::after {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.11) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.11) 1px, transparent 1px);
+  background-size: 200px 200px;
+}
+.jf-lp .lp-price-plate {
+  background: var(--paper, #f2f0eb);
+  box-shadow: 0 0 0 1px #0a0a0a, 4px 4px 0 #0a0a0a;
+}
+.jf-lp .lp-price-plate.is-hot { box-shadow: 0 0 0 2px #0a0a0a, 4px 4px 0 #0a0a0a; }
+
+/* ── Get jobs signed: THE BLUEPRINT SHEET (owner, 2026-09-10) ──────
+   Flat blueprint blue under the white drafting grid — 200 px major cell at
+   white/15, 40 px minor at white/7, hard 1 px stops, the blueprint way. The
+   portal card and its badge: a 1 px white/60 line and a hard offset shadow
+   of solid ink. No gradient, no image. */
+.jf-lp .lp-portal { background: #1854a0; }
+.jf-lp .lp-portal::before,
+.jf-lp .lp-portal::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.jf-lp .lp-portal::before {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+.jf-lp .lp-portal::after {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.15) 1px, transparent 1px);
+  background-size: 200px 200px;
+}
+.jf-lp .lp-portal .lp-portal-mock {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6), 6px 6px 0 #0a0a0a;
+}
+
 .jf-lp .lp-est-stage { --plan-y: 53%; --plan-inset: 0px; }
 @media (max-width: 639px) {
   /* Bled past the stage's own width so the 3:2 plate is tall enough to reach
@@ -1186,3 +1368,10 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
    linking to the form), so it takes the anchor's type and cursor. */
 .jf-lp button.lp-cta { font: inherit; cursor: pointer; }
 .jf-lp button.lp-cta:disabled { opacity: .7; cursor: progress; }
+
+/* ── Legibility floor on a phone (owner, 2026-09-10) ──────────────
+   Button labels 15 px at 640px and under. Last in the file on purpose: the
+   buttons' own rules above set 14 px at the same specificity. */
+@media (max-width: 640px) {
+  .jf-lp .lp-btn-dark, .jf-lp .lp-cta { font-size: 15px; }
+}

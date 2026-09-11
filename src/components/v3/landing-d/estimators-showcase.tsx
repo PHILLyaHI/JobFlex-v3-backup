@@ -227,22 +227,24 @@ const SLIDE_LABEL: Record<ShowcaseSlideKey, string> = {
   fence: "Fence estimator",
   video: "Video estimator",
 };
-/** The default page's four, in the order they always ran. */
+/** The four, in the order they always ran. */
 const DEFAULT_SLIDES: ShowcaseSlideKey[] = ["smart", "roof", "fence", "video"];
 
 export function EstimatorsShowcase({
   initialSlide,
-  slides: order,
 }: {
+  /** A trade's own estimator: it goes first, the other three follow in the
+   *  usual order (owner, 2026-09-10). Absent or "smart" = the default four. */
   initialSlide?: ShowcaseSlideKey;
-  /** The trade group's slide set and order (landing-groups.ts); absent = the default four. */
-  slides?: ShowcaseSlideKey[];
 }) {
   const { ref, inView } = useInView<HTMLDivElement>(0.15);
-  const SLIDES = (order?.length ? order : DEFAULT_SLIDES).map((key) => ({ key, label: SLIDE_LABEL[key] }));
-  // A trade variant opens on its own estimator (fence for `?industry=fencing`);
-  // auto-advance then carries on round its set as usual.
-  const [slide, setSlide] = useState(() => Math.max(0, SLIDES.findIndex((s) => s.key === initialSlide)));
+  // Every trade and the default page get all four slides. The tab order is
+  // the trade's slide, then the rest in Smart → Roof → Fence → Video; with
+  // no trade slide (or Smart) that is exactly the default order. Auto-advance
+  // then goes round all four as it always did.
+  const first = initialSlide ?? DEFAULT_SLIDES[0];
+  const SLIDES = [first, ...DEFAULT_SLIDES.filter((k) => k !== first)].map((key) => ({ key, label: SLIDE_LABEL[key] }));
+  const [slide, setSlide] = useState(0);
   const [run, setRun] = useState(0);
   const [reduced, setReduced] = useState(false);
 
@@ -264,8 +266,11 @@ export function EstimatorsShowcase({
       {/* One build for both viewports (owner, 2026-08-25). The phone used to
           get a separate, static estimates section; it now runs the same four
           sequences with the takeoff rail stacked under the stage. */}
-      <section className="relative overflow-hidden bg-lp-navy px-5 py-[11vmin] sm:py-[9vmin] sm:px-6">
-        <div ref={ref} className="mx-auto lp-wrap">
+      {/* Flat ink ground with the blueprint drafting grid (owner, 2026-09-10):
+          no plate, no overlay, no gradient — the grid is two CSS layers of
+          1 px white lines (landing-d.css, .lp-est). */}
+      <section className="lp-est relative overflow-hidden bg-lp-base px-5 py-[11vmin] sm:py-[9vmin] sm:px-6">
+        <div ref={ref} className="relative z-[1] mx-auto lp-wrap">
           <Reveal>
             <h2 className="mb-5 text-[clamp(34px,3.6vw,54px)] font-bold leading-[1.04] tracking-[-0.02em] text-white sm:mb-7">
               Estimates.
@@ -285,12 +290,16 @@ export function EstimatorsShowcase({
                   role="tab"
                   aria-selected={i === slide}
                   onClick={() => goTo(i)}
-                  className={`relative overflow-hidden rounded-[2px] px-3 pb-3 pt-2.5 text-left transition-colors duration-200 sm:flex-1 sm:px-4 sm:pb-3.5 sm:pt-3 ${
-                    i === slide ? "bg-white/[0.08] text-white" : "bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
+                  // Inactive tabs at half the transparency they had (owner,
+                  // 2026-09-10): ground 0.02 -> 0.04, text ~0.60 -> 0.80, track
+                  // 0.15 -> 0.30. The active tab is unchanged. From 1024px the
+                  // label is 2px larger and the track and padding follow.
+                  className={`relative overflow-hidden rounded-[2px] px-3 pb-3 pt-2.5 text-left transition-colors duration-200 sm:flex-1 sm:px-4 sm:pb-3.5 sm:pt-3 lg:px-5 lg:pb-4 lg:pt-3.5 ${
+                    i === slide ? "bg-white/[0.08] text-white" : "bg-white/[0.04] text-white/80 hover:bg-white/[0.06] hover:text-white/95"
                   }`}
                 >
-                  <span className="block text-[12px] font-semibold sm:text-[13.5px]">{sl.label}</span>
-                  <span className="mt-2 block h-[3px] overflow-hidden rounded-full bg-white/15 sm:mt-2.5">
+                  <span className="block text-[15px] font-semibold sm:text-[13.5px] lg:text-[15.5px]">{sl.label}</span>
+                  <span className="mt-2 block h-[3px] overflow-hidden rounded-full bg-white/30 sm:mt-2.5 lg:mt-3 lg:h-[4px]">
                     {i === slide && (
                       <span
                         key={`${slide}-${run}`}

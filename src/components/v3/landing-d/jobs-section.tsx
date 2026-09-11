@@ -77,11 +77,13 @@ export function JobsSection({ crew = CREW, phoneLanes }: { crew?: CrewLane[]; ph
 
         {/* Mobile: flagship crew calendar */}
         <Reveal delay={100} className="mt-8 sm:hidden">
-          <PhoneSchedule lanes={phoneLanes} />
+          <div data-guide="schedule">
+            <PhoneSchedule lanes={phoneLanes} />
+          </div>
         </Reveal>
 
         <Reveal delay={120} className="relative mt-14 hidden sm:block">
-          <div ref={ref} className="lp-jb">
+          <div ref={ref} className="lp-jb" data-guide="schedule">
             <div className="lp-jb-head">
               <span className="lp-jb-title">Schedule</span>
               <span className="lp-jb-tag">Aug 14 — 18</span>

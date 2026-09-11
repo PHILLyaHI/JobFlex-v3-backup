@@ -1,7 +1,6 @@
 "use client";
 
 import { Logo } from "./logo";
-import { CtaNote } from "./cta-note";
 import { LOGIN, REGISTER } from "./routes";
 import Link from "next/link";
 
@@ -48,12 +47,11 @@ export function Nav({ registerHref = REGISTER, cta }: { registerHref?: string; c
           <a href={LOGIN} className="text-[15px] font-medium text-black/70 transition-colors hover:text-black">
             Sign in
           </a>
-          <span className="flex flex-col items-center gap-1">
-            <a href={registerHref} className="lp-btn-dark" data-cta="nav">
-              {cta ?? "Start 14-Day Free Trial"}
-            </a>
-            <CtaNote />
-          </span>
+          {/* No note under this one (owner, 2026-09-10): the bar stays a bar.
+              The "no credit card" line lives under the hero pair. */}
+          <a href={registerHref} className="lp-btn-dark" data-cta="nav">
+            {cta ?? "Start 14-Day Free Trial"}
+          </a>
         </div>
 
         {/* Handheld: the menu drawer is gone and the bar carries the one action

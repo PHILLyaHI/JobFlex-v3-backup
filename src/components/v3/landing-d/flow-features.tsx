@@ -11,8 +11,8 @@ function CashflowCards() {
        clears the donut at 350px, and the donut takes a little more width back
        from the overlap (owner, 2026-08-25). */
     <div ref={ref} className="relative mx-auto max-w-[32rem] py-7 sm:py-8">
-      {/* line chart card */}
-      <div className="w-[80%] rounded-xl bg-gradient-to-b from-sky-50 to-white p-4 shadow-lp-card ring-1 ring-slate-100 sm:w-[78%] sm:p-5">
+      {/* line chart card — white, only the line and its grid (owner, 2026-09-10) */}
+      <div className="lp-mock-hard w-[80%] rounded-xl bg-white p-4 sm:w-[78%] sm:p-5" data-guide="revenue-in">
         <div className="text-[13px] font-bold text-lp-blue">Revenue</div>
         <div className="text-[26px] font-bold tracking-tight text-lp-ink">
           +24%{" "}
@@ -25,24 +25,18 @@ function CashflowCards() {
           <path
             d="M0 74 C40 66 54 48 84 52 C118 56 130 30 162 34 C196 38 210 16 244 22 C266 26 284 12 300 8"
             fill="none"
-            stroke="url(#cfLine)"
+            stroke="#1854A0"
             strokeWidth="2.5"
             pathLength={1}
             strokeDasharray={1}
             strokeDashoffset={inView ? 0 : 1}
             style={{ transition: "stroke-dashoffset 1.5s cubic-bezier(.2,.6,.2,1) .2s" }}
           />
-          <defs>
-            <linearGradient id="cfLine" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#1854A0" />
-              <stop offset="100%" stopColor="#4A9EFF" />
-            </linearGradient>
-          </defs>
         </svg>
       </div>
 
       {/* donut card — collected reads green, outstanding stays amber */}
-      <div className="absolute -bottom-2 left-0 w-[52%] rounded-xl bg-white p-3.5 shadow-lp-card ring-1 ring-slate-100 sm:w-[46%] sm:p-4">
+      <div className="lp-mock-hard absolute -bottom-2 left-0 w-[52%] rounded-xl bg-white p-3.5 sm:w-[46%] sm:p-4" data-guide="revenue-out">
         <div className="flex items-center gap-3 sm:gap-3.5">
           <svg viewBox="0 0 64 64" className="h-14 w-14 -rotate-90 sm:h-16 sm:w-16" aria-hidden>
             <circle cx="32" cy="32" r="24" fill="none" stroke="#f1f5f9" strokeWidth="12" />
@@ -75,7 +69,7 @@ function CashflowCards() {
       </div>
 
       {/* KPI pill */}
-      <div className="absolute right-0 bottom-9 flex items-center gap-1.5 rounded-full bg-white px-3 py-2 shadow-lp-card ring-1 ring-slate-100 sm:-right-1 sm:bottom-8 sm:gap-2 sm:px-4 sm:py-2.5">
+      <div className="lp-mock-hard absolute right-0 bottom-9 flex items-center gap-1.5 rounded-full bg-white px-3 py-2 sm:-right-1 sm:bottom-8 sm:gap-2 sm:px-4 sm:py-2.5">
         <span className="cursor-default text-[12px] text-emerald-600 sm:text-[14px]" aria-hidden>
           ▲
         </span>
@@ -145,7 +139,7 @@ function ChangeOrderMock() {
 
   return (
     <div ref={ref} className="relative mx-auto max-w-[28rem] py-6 sm:py-8">
-      <div className="rounded-xl bg-white p-5 shadow-lp-card ring-1 ring-slate-100 sm:p-6">
+      <div className="lp-mock-hard rounded-xl bg-white p-5 sm:p-6" data-guide="co">
         <div className="flex items-center justify-between">
           <span className="text-[13px] font-bold text-lp-ink">
             Change order #3

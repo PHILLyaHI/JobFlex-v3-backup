@@ -30,10 +30,10 @@ export function writeLandingCookies(industry: LandingVariantKey | undefined, utm
 
    1. MEMORY. When the variant came from an explicit `?industry=` the page
       remembers it for 30 days in a first-party cookie, the same way the promo
-      capture remembers `?promo=`. The SERVER reads that cookie on the next
-      visit that carries no parameter (src/app/page.tsx), so the returning
-      visitor's first byte is already the fence hero — no client swap, no
-      flash. A visit with a parameter never reads the cookie; it overwrites it.
+      capture remembers `?promo=`. The cookie is for /auth/register ONLY — it
+      pre-selects the trade when the visitor arrives there later with no
+      parameter (and on the return from Google). The landing itself never
+      reads it (owner, 2026-09-10): no parameter is always the default page.
 
    2. ANALYTICS. One `landing_view` per page load with the industry that was
       shown ("default" when none) and whatever utm_* the visit carried. Goes
