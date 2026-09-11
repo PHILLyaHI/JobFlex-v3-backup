@@ -319,7 +319,7 @@ export function MobileLoginContent() {
 
         <p className="foot">
           Don&apos;t have an account?{" "}
-          <Link className="link-ink" href={"/mobile-v1/auth/register" as Route}>
+          <Link className="link-ink" href={"/auth/register" as Route}>
             Create an account
           </Link>
         </p>

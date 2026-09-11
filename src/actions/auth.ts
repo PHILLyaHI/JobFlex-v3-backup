@@ -63,6 +63,16 @@ const registerSchema = z.object({
  * next-auth's signIn afterward so redirect/error handling stays on the client.
  */
 export async function registerAccount(raw: unknown): Promise<{ ok: true }> {
+  // NO SUBSCRIPTION, NO ACCOUNT (owner's rule, actions/signupCheckout). This
+  // action predates the paywall: it creates a workspace with no plan and no
+  // checkout, and until 2026-09-11 the retired handheld register still called
+  // it — one real contractor got a free account that way. The live register
+  // goes through startPendingSignup → Stripe → completePendingSignup and never
+  // calls this. It stays callable only when ALLOW_FREE_SIGNUP=true (local
+  // dev / seeding); in production it refuses before touching anything.
+  if (process.env.ALLOW_FREE_SIGNUP !== "true") {
+    throw new Error("Accounts are created after a plan is chosen — please sign up at /auth/register.");
+  }
   const data = registerSchema.parse(raw);
   await enforceRateLimit(`register:${await clientIp()}`, 5, HOUR, "sign-ups");
 
