@@ -40,7 +40,7 @@ const ROWS: StatsRow[] = [
 
 export function StatsSection({ rows = ROWS }: { rows?: StatsRow[] }) {
   return (
-    <section className="relative overflow-hidden bg-lp-base px-5 py-[7vmin] text-white sm:px-6">
+    <section id="stats" className="relative overflow-hidden bg-lp-base px-5 py-[7vmin] text-white sm:px-6">
       <div className="mx-auto lp-wrap">
         {/* Big number */}
         <Reveal>

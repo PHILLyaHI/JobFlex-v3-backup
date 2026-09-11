@@ -18,12 +18,15 @@ export function Hero({
   variantKey,
   utm,
   registerHref = REGISTER,
+  cta,
 }: {
   variant?: LandingVariant;
   /** The variant's key, for the Google button's cookie and callback. */
   variantKey?: LandingVariantKey;
   utm?: UtmParams;
   registerHref?: string;
+  /** landing-e: the first-person CTA replaces the variant's own words. */
+  cta?: string;
 }) {
   const shot = variant.visual !== "dashboard";
   // The hero plate is the LCP element: preload the one this viewport's CSS
@@ -32,7 +35,7 @@ export function Hero({
   preload("/landing-d/bg-hero-ridge-800.webp", { as: "image", imageSrcSet: "/landing-d/bg-hero-ridge-800.webp 800w", imageSizes: "100vw", media: "(max-width: 860px)" });
   preload("/landing-d/bg-hero-ridge-1600.webp", { as: "image", imageSrcSet: "/landing-d/bg-hero-ridge-1600.webp 1600w", imageSizes: "100vw", media: "(min-width: 861px)" });
   return (
-    <section className="lp-hero">
+    <section id="hero" className="lp-hero">
       <div className="lp-bg lp-bg--ridge" aria-hidden />
       <div className="relative z-[1] mx-auto flex max-w-[86rem] flex-col items-center gap-3 px-5 pt-[12vmin] text-center sm:pt-[14vmin]">
         <Reveal>
@@ -65,7 +68,7 @@ export function Hero({
         <Reveal delay={170} className="w-full sm:w-auto">
           <div className="mx-auto mt-4 flex w-full max-w-[22rem] flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:items-center sm:justify-center">
             <a href={registerHref} className="lp-btn-dark lp-cta lp-cta--solid" data-cta="hero">
-              {variant.primaryCta}
+              {cta ?? variant.primaryCta}
             </a>
             <GoogleSignupButton className="lp-cta lp-cta--ghost" industry={variantKey} utm={utm}>
               <svg viewBox="0 0 48 48" className="h-[18px] w-[18px]" aria-hidden>

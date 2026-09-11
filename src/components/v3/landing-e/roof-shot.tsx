@@ -132,10 +132,10 @@ function useTiltT(on: boolean) {
   return t;
 }
 
-export function RoofShot({ active }: { active: boolean }) {
+export function RoofShot({ active, instant = false }: { active: boolean; instant?: boolean }) {
   const compact = useCompact();
-  const phase = usePhases([1100, 2000, 3400, 4800], active);
-  const typed = useTyped("142 Alder Ridge Rd", active);
+  const phase = usePhases([1100, 2000, 3400, 4800], active, instant);
+  const typed = useTyped("142 Alder Ridge Rd", active, 20, instant);
   const lifted = phase >= 1;
   const aerial = phase >= 1;
   const traced = phase >= 2;

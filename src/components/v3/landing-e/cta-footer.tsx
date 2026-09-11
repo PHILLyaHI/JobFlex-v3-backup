@@ -32,7 +32,7 @@ export function CtaFooter({
   cta?: string;
 }) {
   return (
-    <section className="relative overflow-hidden bg-lp-base px-5 text-white sm:px-6">
+    <section id="final" className="relative overflow-hidden bg-lp-base px-5 text-white sm:px-6">
       <div className="lp-bg lp-bg--roofs" aria-hidden data-lazy />
       {/* Final CTA */}
       <div id="final-cta" className="relative z-[1] mx-auto flex max-w-[86rem] flex-col items-center py-[12vmin] text-center max-sm:pb-[22vmin] max-sm:pt-[16vmin]">

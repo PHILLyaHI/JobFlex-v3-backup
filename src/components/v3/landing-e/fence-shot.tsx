@@ -38,11 +38,11 @@ const LOT = { left: 127, right: 292, top: 39, bottom: 235 };
 const TILT = 42;
 const WALL_H = 30;
 
-export function FenceShot({ active }: { active: boolean }) {
+export function FenceShot({ active, instant = false }: { active: boolean; instant?: boolean }) {
   // A press beat of its own between the cursor arriving and the layer coming
   // on (owner, 2026-08-25). The colour used to flip with nothing moving, so
   // the button never looked pressed — it just changed.
-  const phase = usePhases([700, 1420, 1560, 2700, 4100, 5500], active);
+  const phase = usePhases([700, 1420, 1560, 2700, 4100, 5500], active, instant);
   const seeking = phase >= 1;
   const pressing = phase === 2;
   const clicked = phase >= 2;

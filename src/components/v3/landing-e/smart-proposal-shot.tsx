@@ -29,10 +29,10 @@ import {
   Beat,
 } from "./showcase-kit";
 
-export function SmartProposalShot({ active, scenario }: { active: boolean; scenario: SmartScenario }) {
+export function SmartProposalShot({ active, scenario, instant = false }: { active: boolean; scenario: SmartScenario; instant?: boolean }) {
   const compact = useCompact();
-  const phase = usePhases([1000, 1400], active);
-  const typed = useTyped(scenario.typedPrompt, active, 18);
+  const phase = usePhases([1000, 1400], active, instant);
+  const typed = useTyped(scenario.typedPrompt, active, 18, instant);
   const lifted = phase >= 1;
   const writing = phase >= 2;
   const lines = scenario.lines;

@@ -49,7 +49,8 @@ const SLIDE_MS = 9000;
 
 import { RoofShot } from "./roof-shot";
 import { SmartProposalShot } from "./smart-proposal-shot";
-import { SMART_SCENARIOS } from "./smart-scenarios";
+import { SMART_SCENARIOS, type SmartScenarioKey } from "./smart-scenarios";
+import { REGISTER } from "./routes";
 
 /* ============================================================
    4 · VIDEO — the real clip, the read as notes, the proposal
@@ -231,22 +232,30 @@ const SLIDE_LABEL: Record<ShowcaseSlideKey, string> = {
 const DEFAULT_SLIDES: ShowcaseSlideKey[] = ["smart", "roof", "fence", "video"];
 
 export function EstimatorsShowcase({
-  initialSlide,
+  ownSlide,
+  scenario,
+  registerHref = REGISTER,
+  cta = "Start my free trial",
 }: {
-  /** A trade's own estimator: it goes first, the other three follow in the
-   *  usual order (owner, 2026-09-10). Absent or "smart" = the default four. */
-  initialSlide?: ShowcaseSlideKey;
+  /** The trade's own estimator (roof / fence). landing-e (pass B): the
+   *  showcase opens on Smart so it does not repeat the hero's shot; the
+   *  trade's own slide comes second, then the rest in the usual order. */
+  ownSlide?: ShowcaseSlideKey;
+  /** The Smart slide plays the current trade's scenario, not the kitchen. */
+  scenario?: SmartScenarioKey;
+  registerHref?: string;
+  cta?: string;
 }) {
   const { ref, inView } = useInView<HTMLDivElement>(0.15);
-  // Every trade and the default page get all four slides. The tab order is
-  // the trade's slide, then the rest in Smart → Roof → Fence → Video; with
-  // no trade slide (or Smart) that is exactly the default order. Auto-advance
-  // then goes round all four as it always did.
-  const first = initialSlide ?? DEFAULT_SLIDES[0];
-  const SLIDES = [first, ...DEFAULT_SLIDES.filter((k) => k !== first)].map((key) => ({ key, label: SLIDE_LABEL[key] }));
+  const own = ownSlide && ownSlide !== "smart" ? ownSlide : undefined;
+  const SLIDES = (own ? ["smart" as const, own, ...DEFAULT_SLIDES.filter((k) => k !== "smart" && k !== own)] : DEFAULT_SLIDES).map((key) => ({ key, label: SLIDE_LABEL[key] }));
   const [slide, setSlide] = useState(0);
   const [run, setRun] = useState(0);
   const [reduced, setReduced] = useState(false);
+  /* Auto-advance pauses while the pointer is over the showcase or a finger
+     is on it; a horizontal swipe on the stage moves one slide (pass B). */
+  const [held, setHeld] = useState(false);
+  const touchX = useRef<number | null>(null);
 
   useEffect(() => {
     const id = requestAnimationFrame(() =>
@@ -269,8 +278,21 @@ export function EstimatorsShowcase({
       {/* Flat ink ground with the blueprint drafting grid (owner, 2026-09-10):
           no plate, no overlay, no gradient — the grid is two CSS layers of
           1 px white lines (landing-d.css, .lp-est). */}
-      <section className="lp-est relative overflow-hidden bg-lp-base px-5 py-[11vmin] sm:py-[9vmin] sm:px-6">
-        <div ref={ref} className="relative z-[1] mx-auto lp-wrap">
+      <section id="showcase" className="lp-est relative overflow-hidden bg-lp-base px-5 py-[11vmin] sm:py-[9vmin] sm:px-6">
+        <div
+          ref={ref}
+          className="relative z-[1] mx-auto lp-wrap"
+          onPointerEnter={(e) => { if (e.pointerType === "mouse") setHeld(true); }}
+          onPointerLeave={(e) => { if (e.pointerType === "mouse") setHeld(false); }}
+          onTouchStart={(e) => { setHeld(true); touchX.current = e.touches[0]?.clientX ?? null; }}
+          onTouchEnd={(e) => {
+            setHeld(false);
+            const x0 = touchX.current; touchX.current = null;
+            const x1 = e.changedTouches[0]?.clientX;
+            if (x0 !== null && x1 !== undefined && Math.abs(x1 - x0) > 40) goTo(slide + (x1 < x0 ? 1 : -1));
+          }}
+          onTouchCancel={() => { setHeld(false); touchX.current = null; }}
+        >
           <Reveal>
             <h2 className="mb-5 text-[clamp(34px,3.6vw,54px)] font-bold leading-[1.04] tracking-[-0.02em] text-white sm:mb-7">
               Estimates.
@@ -313,7 +335,7 @@ export function EstimatorsShowcase({
                                 // Nothing pauses this but scrolling away — a
                                 // hover-pause kept freezing the bar (and with
                                 // it the whole rotation) mid-play.
-                                animationPlayState: inView ? "running" : "paused",
+                                animationPlayState: inView && !held ? "running" : "paused",
                               }
                         }
                       />
@@ -326,11 +348,19 @@ export function EstimatorsShowcase({
 
           <Reveal delay={120}>
             <div className="mt-6 sm:mt-9" key={`${s.key}-${run}`} style={{ animation: `toast-in .5s ${EASE}` }}>
-              {s.key === "smart" && <SmartProposalShot active={inView} scenario={SMART_SCENARIOS.kitchen} />}
+              {s.key === "smart" && <SmartProposalShot active={inView} scenario={SMART_SCENARIOS[scenario ?? "kitchen"]} />}
               {s.key === "roof" && <RoofShot active={inView} />}
               {s.key === "fence" && <FenceShot active={inView} />}
               {s.key === "video" && <VideoShot active={inView} />}
             </div>
+          </Reveal>
+
+          {/* The section's own CTA (pass B): the top-of-page words, blue on ink. */}
+          <Reveal delay={160} className="mt-8 sm:mt-10">
+            <a href={registerHref} className="lp-btn-lime w-full sm:w-auto" data-cta="showcase">
+              {cta}
+              <span aria-hidden>→</span>
+            </a>
           </Reveal>
         </div>
       </section>

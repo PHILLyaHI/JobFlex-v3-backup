@@ -353,7 +353,7 @@ function ReceiptCluster() {
    round the content width with the sheet stamp and corner ticks; the mocks
    carry a 1 px ink line and a hard offset shadow (landing-d.css, .lp-props).
    CSS only — no gradient, no image. */
-export function ProposalsSection({ proposal = KITCHEN }: { proposal?: ProposalContent }) {
+export function ProposalsSection({ proposal = KITCHEN, registerHref = "/auth/register", cta = "Start my free trial" }: { proposal?: ProposalContent; registerHref?: string; cta?: string }) {
   return (
     <section
       id="proposals"
@@ -415,6 +415,18 @@ export function ProposalsSection({ proposal = KITCHEN }: { proposal?: ProposalCo
             </div>
           </Reveal>
         </div>
+
+        {/* The section's CTA (pass B): the trial, and the sample proposal —
+            a ghost link until the PDF exists. */}
+        <Reveal className="mt-[12vmin] flex flex-col items-start gap-4 sm:mt-[8vmin] sm:flex-row sm:items-center sm:gap-6">
+          <a href={registerHref} className="lp-btn-lime w-full sm:w-auto" data-cta="proposals">
+            {cta}
+            <span aria-hidden>→</span>
+          </a>
+          <a href="#" className="inline-flex items-center gap-2 text-[16px] font-semibold text-lp-ink underline underline-offset-4 hover:text-lp-blue" data-cta="proposals-sample">
+            See a sample proposal (PDF)
+          </a>
+        </Reveal>
       </div>
     </section>
   );

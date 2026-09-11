@@ -1,23 +1,16 @@
-import { CtaNote } from "./cta-note";
-import { REGISTER } from "./routes";
 import { Reveal } from "./reveal";
 
-export function Intro({ registerHref = REGISTER }: { registerHref?: string }) {
+/* landing-e (pass B): the intro is one line under the hero mock — no button,
+   no note. */
+export function Intro() {
   return (
-    <div className="lp-intro relative overflow-hidden bg-white px-5 pb-[12vmin] pt-[11vmin] sm:px-6">
-      {/* Same treatment as the hero: a real jobsite behind the words, held down
-          to a whisper so the type keeps its contrast (owner, 2026-08-24). */}
+    <div className="lp-intro relative overflow-hidden bg-white px-5 py-[6vmin] sm:px-6">
       <div className="lp-bg lp-bg--truck" aria-hidden data-lazy />
       <div className="relative z-[1] mx-auto lp-wrap">
         <Reveal>
-          <p className="max-w-[52rem] text-[clamp(24px,2.6vw,36px)] font-semibold leading-[1.32] tracking-[-0.01em] text-lp-ink">
-            JobFlex runs the business side of your trade. Quote the job, book the
-            crew, send the invoice, get paid — all in one app.
+          <p className="max-w-[52rem] text-[17px] font-semibold leading-[1.4] tracking-[-0.01em] text-lp-ink sm:text-[clamp(19px,1.6vw,22px)]">
+            Quote, book, invoice, get paid — one app.
           </p>
-          <a href={registerHref} className="lp-btn-lime mt-9 inline-flex" data-cta="intro">
-            Try it free for 14 days
-          </a>
-          <CtaNote className="mt-3" />
         </Reveal>
       </div>
     </div>

@@ -33,7 +33,7 @@ export function useCompact() {
 }
 
 /** Advances through a sequence on its own clock, and rewinds when it restarts. */
-export function usePhases(marks: number[], active: boolean) {
+export function usePhases(marks: number[], active: boolean, instant = false) {
   const [phase, setPhase] = useState(0);
   const [reduced, setReduced] = useState(false);
   const key = marks.join(",");
@@ -47,7 +47,7 @@ export function usePhases(marks: number[], active: boolean) {
 
   useEffect(() => {
     if (!active) return;
-    if (reduced) {
+    if (reduced || instant) {
       const id = requestAnimationFrame(() => setPhase(marks.length));
       return () => cancelAnimationFrame(id);
     }
@@ -55,13 +55,13 @@ export function usePhases(marks: number[], active: boolean) {
     return () => timers.forEach(clearTimeout);
     // marks is a literal per shot; key keeps the identity stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, reduced, key]);
+  }, [active, reduced, instant, key]);
 
   return phase;
 }
 
 /** Types a string out on a fixed cadence once it is allowed to start. */
-export function useTyped(text: string, active: boolean, speed = 20) {
+export function useTyped(text: string, active: boolean, speed = 20, instant = false) {
   const [n, setN] = useState(0);
   const [reduced, setReduced] = useState(false);
 
@@ -74,14 +74,14 @@ export function useTyped(text: string, active: boolean, speed = 20) {
 
   useEffect(() => {
     if (!active) return;
-    if (reduced) {
+    if (reduced || instant) {
       const id = requestAnimationFrame(() => setN(text.length));
       return () => cancelAnimationFrame(id);
     }
     if (n >= text.length) return;
     const t = setTimeout(() => setN((v) => v + 1), speed);
     return () => clearTimeout(t);
-  }, [active, reduced, n, text.length, speed]);
+  }, [active, reduced, instant, n, text.length, speed]);
 
   return text.slice(0, n);
 }

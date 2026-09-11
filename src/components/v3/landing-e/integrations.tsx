@@ -3,7 +3,6 @@
 import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import { IntegrationsMobile } from "./integrations-mobile";
-import { REGISTER } from "./routes";
 import { Reveal } from "./reveal";
 
 const TILE = "float-tile flex items-center justify-center lp-int-tile bg-white shadow-lp-tile ring-1 ring-lp-blue/25";
@@ -97,7 +96,7 @@ function Tiles({ side }: { side: "left" | "right" }) {
   );
 }
 
-export function Integrations({ registerHref = REGISTER }: { registerHref?: string }) {
+export function Integrations() {
   const fieldRef = useRef<HTMLDivElement>(null);
 
   // Cursor repulsion: tiles drift away from an approaching pointer, then settle back
@@ -145,7 +144,7 @@ export function Integrations({ registerHref = REGISTER }: { registerHref?: strin
   }, []);
 
   return (
-    <section className="relative flex flex-col items-center bg-white px-5 pb-[10vmin] pt-[6vmin] max-sm:pb-[18vmin] max-sm:pt-[12vmin] sm:px-6 lg:pt-[4vmin]">
+    <section id="integrations" className="relative flex flex-col items-center bg-white px-5 pb-[10vmin] pt-[6vmin] max-sm:pb-[18vmin] max-sm:pt-[12vmin] sm:px-6 lg:pt-[4vmin]">
       <div ref={fieldRef} className="relative mx-auto w-full max-w-[92rem]">
         <Tiles side="left" />
         <Tiles side="right" />
@@ -159,8 +158,10 @@ export function Integrations({ registerHref = REGISTER }: { registerHref?: strin
             <p className="mt-5 text-[19px] leading-[1.55] text-slate-600">
               Payments, texting, email, calendar and books — already connected.
             </p>
-            <a href={registerHref} className="lp-cta lp-cta--solid mt-7" data-cta="integrations">
+            {/* A link to the tiles, not a register button (pass B). */}
+            <a href="#integrations" className="mt-7 inline-flex items-center gap-2 text-[16px] font-semibold text-lp-blue underline underline-offset-4 hover:text-lp-blueDark" data-cta="integrations">
               Browse integrations
+              <span aria-hidden>→</span>
             </a>
           </div>
         </Reveal>

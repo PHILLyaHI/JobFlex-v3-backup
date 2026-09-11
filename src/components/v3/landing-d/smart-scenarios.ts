@@ -36,7 +36,9 @@ export type SmartScenario = {
     | "windows-doors"
     | "insulation"
     | "demolition"
-    | "general";
+    | "general"
+    | "roofing"
+    | "fencing";
   /** What the visitor watches being typed into the Scope field. */
   typedPrompt: string;
   /** 3–4 lines with realistic units and Seattle prices. */
@@ -505,6 +507,67 @@ export const SMART_SCENARIOS = {
       ["Margin", "22%"],
     ],
     total: "$25,860",
+    note: "Project total",
+  },
+
+  /* Roofing profile (landing-e pass B, 2026-09-10) — the Smart slide for
+     the roofing page, which opens on Smart so it does not repeat the hero's
+     roof shot. A 24-square tear-off and re-roof, architectural shingle,
+     two storeys, ridge vent; the same job the tools group's proposal shows.
+       tear-off   2,400 sqft × labor $1.20 (one layer, low band) = $2,880 × 1.15          = $3,310
+       shingles   27 sq (12% waste) × (material $110 + labor $150 × 1.15 two-storey = $282.50)
+                  = $7,627 × 1.15                                                       = $8,770
+       deck prep  synthetic 2,400 sqft × ($0.30 + $0.15) = $1,080; ice & water 300 sqft
+                  × ($0.60 + $0.30) = $270; ridge vent 48 lf × ($8 + $4) = $576
+                  → $1,926 × 1.15                                                       = $2,215
+       edges      drip edge 180 lf × ($1.50 + $1.50) = $540; 4 pipe boots × ($20 + $35)
+                  = $220; step flashing 24 lf × ($2 + $3) = $120 → $880 × 1.15         = $1,010
+     Materials (shingles $2,970, underlayment $720, ice & water $180, ridge $384,
+     drip $270, boots $80, flashing $48 = $4,652 × 1.15) $5,350 · Labor $9,955 ·
+     lines sum $15,305. */
+  roofing: {
+    profile: "roofing",
+    typedPrompt: "24 sq tear-off & re-roof, architectural shingle, 2-story, ridge vent",
+    lines: [
+      ["Tear-off & disposal, one layer", "24 sq", "$3,310"],
+      ["Architectural shingles, installed, 2-story", "27 sq", "$8,770"],
+      ["Underlayment, ice & water, ridge vent", "2,400 sf", "$2,215"],
+      ["Drip edge, pipe boots, step flashing", "180 lf", "$1,010"],
+    ],
+    rail: [
+      ["Materials", "$5,350"],
+      ["Labor", "$9,955"],
+      ["Margin", "22%"],
+    ],
+    total: "$15,305",
+    note: "Project total",
+  },
+
+  /* Fencing profile (landing-e pass B, 2026-09-10) — the Smart slide for
+     the fencing page. 120 lf of 6 ft cedar privacy, two walk gates, stepped
+     on grade; the tools group's fence proposal, priced from the anchors.
+       posts      16 × 4×4 set in concrete (material $24 + labor $45 = $69) = $1,104 × 1.15 = $1,270
+       run        120 lf × (material $24 + labor $17 = $41) = $4,920, stepped on grade
+                  +10% labor ($204) → $5,124 × 1.15                                    = $5,895
+       gates      2 × 4 ft walk gate (material $225 + labor $150 = $375) = $750 × 1.15  =   $865
+       removal    old fence 120 lf × labor $4 = $480 × 1.15                            =   $550
+     Materials (posts $384, cedar $2,880, gates $450 = $3,714 × 1.15) $4,270 ·
+     Labor $4,310 · lines sum $8,580. */
+  fencing: {
+    profile: "fencing",
+    typedPrompt: "120 lf cedar privacy, 6 ft, 2 gates, stepped on grade",
+    lines: [
+      ["Posts & concrete, 4×4 cedar, 8 ft centers", "16 ea", "$1,270"],
+      ["Cedar privacy, 6 ft, stepped on grade", "120 lf", "$5,895"],
+      ["Walk gates, 4 ft, hardware", "2 ea", "$865"],
+      ["Old fence removal & haul-off", "120 lf", "$550"],
+    ],
+    rail: [
+      ["Materials", "$4,270"],
+      ["Labor", "$4,310"],
+      ["Margin", "22%"],
+    ],
+    total: "$8,580",
     note: "Project total",
   },
 } as const satisfies Record<string, SmartScenario>;

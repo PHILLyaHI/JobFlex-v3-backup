@@ -53,10 +53,10 @@ function questions(variant: LandingVariantKey | undefined): Faq[] {
   ];
 }
 
-export function LandingFaq({ variant }: { variant?: LandingVariantKey }) {
+export function LandingFaq({ variant, registerHref = "/auth/register", cta = "Start my free trial" }: { variant?: LandingVariantKey; registerHref?: string; cta?: string }) {
   const items = questions(variant);
   return (
-    <section className="relative overflow-hidden bg-lp-paper px-5 py-[8vmin] sm:px-6">
+    <section id="faq" className="relative overflow-hidden bg-lp-paper px-5 py-[8vmin] sm:px-6">
       <div className="mx-auto lp-wrap">
         <Reveal>
           <h2 className="lp-eyebrow text-slate-600">Questions</h2>
@@ -81,6 +81,13 @@ export function LandingFaq({ variant }: { variant?: LandingVariantKey }) {
               </div>
             ))}
           </dl>
+        </Reveal>
+        {/* The section's CTA (pass B). */}
+        <Reveal delay={160} className="mt-10">
+          <a href={registerHref} className="lp-btn-lime w-full sm:w-auto" data-cta="faq">
+            {cta}
+            <span aria-hidden>→</span>
+          </a>
         </Reveal>
       </div>
     </section>

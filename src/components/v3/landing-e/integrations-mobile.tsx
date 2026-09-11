@@ -204,6 +204,10 @@ export function IntegrationsMobile() {
         <p className="mt-2 text-[15px] text-slate-500">
           Payments, calendars, files and books, synced to every job.
         </p>
+        <a href="#integrations" className="mt-4 inline-flex items-center gap-2 text-[16px] font-semibold text-lp-blue underline underline-offset-4" data-cta="integrations">
+          Browse integrations
+          <span aria-hidden>→</span>
+        </a>
       </div>
     </div>
   );

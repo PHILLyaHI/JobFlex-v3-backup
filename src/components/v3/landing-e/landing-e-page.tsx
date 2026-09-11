@@ -29,6 +29,7 @@ import { CtaTracker } from "./cta-tracker";
 import { LazyBg } from "./lazy-bg";
 import { Hero } from "./hero";
 import { Intro } from "./intro";
+import { LOW_CTA, firstPersonCta } from "./cta-copy";
 import { LandingVariantEffects } from "./landing-variant-effects";
 
 /* CRO stage 1 (2026-09-09): everything under the intro is code-split. The
@@ -79,19 +80,27 @@ export async function LandingE({ variant, explicitVariant = false, utm = {} }: L
   // undefined for the default page and the interior trades, which keep the
   // sections' own built-in kitchen.
   const g = groupContentFor(variant);
+  // CTA copy (pass B): first person with the trade's outcome at the top of
+  // the page, "Start my free trial" from Proposals down.
+  const top = firstPersonCta(variant);
+  const low = LOW_CTA;
+  // The showcase's Smart slide plays the trade's own job: the variant's
+  // scenario, or the roofing / fencing scenarios written for the pages whose
+  // hero is the roof or fence shot (smart-scenarios.ts).
+  const smart = v.scenario ?? (variant === "roofing" || variant === "fencing" ? variant : undefined);
   // Below the intro every section is wrapped in `.lp-cv`
   // (content-visibility: auto): the browser skips its style and layout until
   // it is near the viewport — the mobile LCP's render delay was style/layout
   // of the whole page.
   return (
     <div className="jf-lp min-h-full bg-white">
-      <Nav registerHref={register} cta={variant ? v.primaryCta : undefined} />
+      <Nav registerHref={register} cta={top} />
       <main>
-        <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} />
-        <Intro registerHref={register} />
-        <div className="lp-cv"><EstimatorsShowcase initialSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} /></div>
+        <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} cta={top} />
+        <Intro />
+        <div className="lp-cv"><EstimatorsShowcase ownSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} scenario={smart} registerHref={register} cta={top} /></div>
         {(g?.montage ?? true) && <div className="lp-cv"><Montage /></div>}
-        <div className="lp-cv"><ProposalsSection proposal={g?.proposal} /></div>
+        <div className="lp-cv"><ProposalsSection proposal={g?.proposal} registerHref={register} cta={low} /></div>
         <div className="lp-cv"><PortalSection portal={g?.portal} /></div>
         {/* One content-visibility box for the two sections the guide line runs
             through, so both are laid out together and the line can be measured. */}
@@ -101,14 +110,14 @@ export async function LandingE({ variant, explicitVariant = false, utm = {} }: L
             <FlowFeatures />
           </CrewGuide>
         </div>
-        <div className="lp-cv"><Integrations registerHref={register} /></div>
+        <div className="lp-cv"><Integrations /></div>
         <div className="lp-cv"><StatsSection rows={g?.stats} /></div>
         <div className="lp-cv"><BuiltSection jobs={g?.jobs} phoneJobs={g?.phoneJobs} /></div>
-        <div className="lp-cv"><LandingPricing plans={plans} registerHref={register} cta={variant ? v.primaryCta : undefined} /></div>
-        <div className="lp-cv"><LandingFaq variant={variant} /></div>
-        <CtaFooter registerHref={register} cta={variant ? v.primaryCta : undefined} />
+        <div className="lp-cv"><LandingPricing plans={plans} registerHref={register} cta={low} /></div>
+        <div className="lp-cv"><LandingFaq variant={variant} registerHref={register} cta={low} /></div>
+        <CtaFooter registerHref={register} cta={low} />
       </main>
-      <MobileCta registerHref={register} cta={variant ? v.primaryCta : undefined} />
+      <MobileCta registerHref={register} cta={top} />
       <ScrollFx />
       <LazyBg />
       <CtaTracker industry={variant} />

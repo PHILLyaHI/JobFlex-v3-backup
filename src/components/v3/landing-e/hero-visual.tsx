@@ -15,16 +15,28 @@ import type { LandingVariant } from "./landing-variants";
 import { RoofShot } from "./roof-shot";
 import { SmartProposalShot } from "./smart-proposal-shot";
 import { SMART_SCENARIOS } from "./smart-scenarios";
+import { useEffect, useState } from "react";
 import { useInView } from "./use-in-view";
 
 export function HeroVisual({ variant }: { variant: LandingVariant }) {
   const { ref, inView } = useInView<HTMLDivElement>(0.2);
+  /* landing-e (pass B): on a phone the shot opens FILLED — lines written,
+     total on the plate — so the first screen of the mock shows the result;
+     the typing sequence runs from 1024px. Decided after mount (no UA
+     sniffing); until then the shot waits, so nothing starts twice. */
+  const [instant, setInstant] = useState<boolean | null>(null);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setInstant(!window.matchMedia("(min-width: 1024px)").matches));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const active = instant === null ? false : inView;
+  const now = instant === true;
   return (
     <div ref={ref}>
-      {variant.visual === "fence" && <FenceShot active={inView} />}
-      {variant.visual === "roof" && <RoofShot active={inView} />}
+      {variant.visual === "fence" && <FenceShot active={active} instant={now} />}
+      {variant.visual === "roof" && <RoofShot active={active} instant={now} />}
       {variant.visual === "smart" && (
-        <SmartProposalShot active={inView} scenario={SMART_SCENARIOS[variant.scenario ?? "kitchen"]} />
+        <SmartProposalShot active={active} instant={now} scenario={SMART_SCENARIOS[variant.scenario ?? "kitchen"]} />
       )}
     </div>
   );
