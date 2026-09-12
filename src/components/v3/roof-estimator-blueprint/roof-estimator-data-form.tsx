@@ -110,7 +110,11 @@ interface LiveGoogleMap {
   setCenter(c: { lat: number; lng: number }): void;
   setZoom(z: number): void;
 }
+interface LiveMapMarker {
+  setPosition(c: { lat: number; lng: number }): void;
+}
 type GMapsLib = { Map: new (el: HTMLElement, opts: Record<string, unknown>) => LiveGoogleMap };
+type MarkerCtor = new (opts: Record<string, unknown>) => LiveMapMarker;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const stripId = ({ id: _id, ...rest }: EstimateLine) => rest;
 
@@ -149,7 +153,7 @@ export function RoofEstimatorDataForm() {
   // Live satellite map. `mapDown` flips once when the JS SDK refuses to load —
   // the cached static photo then takes over for the rest of the session.
   const mapHostRef = React.useRef<HTMLDivElement | null>(null);
-  const liveMapRef = React.useRef<{ host: HTMLDivElement; map: LiveGoogleMap } | null>(null);
+  const liveMapRef = React.useRef<{ host: HTMLDivElement; map: LiveGoogleMap; marker: LiveMapMarker | null } | null>(null);
   const [mapDown, setMapDown] = React.useState(false);
 
   // The data path never draws, so the CONFIDENCE verdict comes straight from
@@ -377,7 +381,14 @@ export function RoofEstimatorDataForm() {
     if (!liveMap || panel !== "report" || view !== "satellite" || mapLat == null || mapLng == null) return;
     let cancelled = false;
     void loadMapsLibrary<GMapsLib>("maps")
-      .then(({ Map: GMap }) => {
+      .then(async ({ Map: GMap }) => {
+        // Classic Marker comes off the global namespace once the marker
+        // library is up (AdvancedMarkerElement needs a Map ID) — the same way
+        // lead-map.tsx and the intake's pin preview read it. A failed marker
+        // library costs only the pin, never the map.
+        await loadMapsLibrary("marker").catch(() => null);
+        const Marker =
+          (window as unknown as { google?: { maps?: { Marker?: MarkerCtor } } }).google?.maps?.Marker ?? null;
         const host = mapHostRef.current;
         if (cancelled || !host) return;
         const center = { lat: mapLat, lng: mapLng };
@@ -386,21 +397,23 @@ export function RoofEstimatorDataForm() {
           if (centeredOnRef.current !== key) {
             liveMapRef.current.map.setCenter(center);
             liveMapRef.current.map.setZoom(LIVE_MAP_ZOOM);
+            liveMapRef.current.marker?.setPosition(center);
           }
         } else {
-          liveMapRef.current = {
-            host,
-            map: new GMap(host, {
-              center,
-              zoom: LIVE_MAP_ZOOM,
-              mapTypeId: "satellite",
-              tilt: 0,
-              disableDefaultUI: true,
-              zoomControl: true,
-              gestureHandling: "greedy",
-              clickableIcons: false,
-            }),
-          };
+          const map = new GMap(host, {
+            center,
+            zoom: LIVE_MAP_ZOOM,
+            mapTypeId: "satellite",
+            tilt: 0,
+            disableDefaultUI: true,
+            zoomControl: true,
+            gestureHandling: "greedy",
+            clickableIcons: false,
+          });
+          // The map's whole reason to exist on this panel is "which house was
+          // measured" — mark the point the measurement read.
+          const marker = Marker ? new Marker({ map, position: center, title: "The point the measurement read" }) : null;
+          liveMapRef.current = { host, map, marker };
         }
         centeredOnRef.current = key;
       })
@@ -1050,12 +1063,26 @@ export function RoofEstimatorDataForm() {
                       </button>
                     )}
                     {(view === "ortho" || !liveMap) && (photoShown ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- data: URL from the server-side photo cache; next/image adds nothing here
-                      <img
-                        src={photoShown}
-                        alt={view === "satellite" ? "Satellite view" : AERIAL.ortho}
-                        className="rf-photo"
-                      />
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element -- data: URL from the server-side photo cache; next/image adds nothing here */}
+                        <img
+                          src={photoShown}
+                          alt={view === "satellite" ? "Satellite view" : AERIAL.ortho}
+                          className="rf-photo"
+                        />
+                        {/* The static photo is CENTERED on the measured point
+                            (getMeasurementPhoto: center=lat,lng), so a pin
+                            anchored to the stage's centre is exact. Ortho is
+                            EagleView's own crop — no such guarantee, no pin. */}
+                        {view === "satellite" && (
+                          <div className="rf-pin-center" aria-hidden="true">
+                            <svg viewBox="0 0 24 24">
+                              <path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z" />
+                              <circle cx="12" cy="9" r="2.5" fill="#fff" />
+                            </svg>
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <div className="rf-3d-loading">
                         {photoBusy ? "Loading photo…" : photoError ? `Photo unavailable — ${photoError}` : " "}
@@ -1067,8 +1094,8 @@ export function RoofEstimatorDataForm() {
                   <span className="lg">
                     {view === "satellite"
                       ? liveMap
-                        ? "Google Maps satellite · drag to pan · scroll to zoom"
-                        : "Google Maps satellite"
+                        ? "Google Maps satellite · the pin marks the measured point · drag to pan · scroll to zoom"
+                        : "Google Maps satellite · the pin marks the measured point"
                       : `${AERIAL.ortho}${orthoShotDate ? ` · ${orthoShotDate}` : ""}`}
                   </span>
                 </div>
@@ -1365,6 +1392,24 @@ export function RoofEstimatorDataForm() {
         }
         .jf-blueprint .content .rf-stage .rf-home:hover {
           background: var(--paper-deep);
+        }
+        /* Centre-anchored pin over the STATIC satellite photo (the photo is
+           centred on the measured point). Tip of the pin sits on the exact
+           centre; Google-marker red on purpose, to match the live map's pin. */
+        .jf-blueprint .content .rf-stage .rf-pin-center {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -100%);
+          z-index: 4;
+          pointer-events: none;
+          color: #ea4335;
+          filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+        }
+        .jf-blueprint .content .rf-stage .rf-pin-center svg {
+          display: block;
+          width: 28px;
+          height: 28px;
         }
         .jf-blueprint .content .rf-stage .rf-home .ic {
           width: 19px;
