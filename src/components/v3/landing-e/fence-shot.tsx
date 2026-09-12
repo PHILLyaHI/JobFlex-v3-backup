@@ -21,6 +21,7 @@ import {
   planBoxStyle,
   usePhases,
 } from "./showcase-kit";
+import { MockCallouts, type CalloutSpec } from "./mock-callouts";
 
 /* ============================================================
    3 · FENCE — cursor, click, parcel, run, 3D, grade
@@ -37,6 +38,22 @@ import {
 const LOT = { left: 127, right: 292, top: 39, bottom: 235 };
 const TILT = 42;
 const WALL_H = 30;
+
+/* The callouts (landing-e pass C): run, fall and posts, each led from a
+   point on the fence line — markers placed on the boundary inside the
+   tilted plane, so their measured positions are the projected ones — to a
+   pocket of the stage. The top-left pocket sits under the View parcels
+   button (dy 44); the bottom-left one is the status chip's. */
+const FENCE_MARKS: Record<string, [number, number]> = {
+  run: [(LOT.left + LOT.right) / 2, LOT.bottom],
+  fall: [LOT.left, (LOT.top + LOT.bottom) / 2],
+  posts: [LOT.right, (LOT.top + LOT.bottom) / 2],
+};
+const FENCE_CALLOUTS: CalloutSpec[] = [
+  { key: "run", text: "120 lf", pocket: "br", elbow: "h" },
+  { key: "fall", text: "3 ft 2 in fall", pocket: "tl", dy: 44, elbow: "v" },
+  { key: "posts", text: "16 posts", pocket: "tr", elbow: "v" },
+];
 
 export function FenceShot({ active, instant = false }: { active: boolean; instant?: boolean }) {
   // A press beat of its own between the cursor arriving and the layer coming
@@ -83,10 +100,12 @@ export function FenceShot({ active, instant = false }: { active: boolean; instan
             className="absolute z-30 h-5 w-5 drop-shadow"
             aria-hidden
             style={{
-              left: seeking ? 78 : 320,
-              top: seeking ? 30 : 210,
+              // Rest at (320, 210); the seek to (78, 30) is a transform (pass C).
+              left: 320,
+              top: 210,
+              transform: seeking ? "translate(-242px, -180px)" : "translate(0, 0)",
               opacity: run ? 0 : 1,
-              transition: `left .8s ${EASE}, top .8s ${EASE}, opacity .4s ease`,
+              transition: `transform .8s ${EASE}, opacity .4s ease`,
             }}
           >
             <path d="M4 2l7 18 2.5-7L20 10 4 2z" fill="#fff" stroke={INK} strokeWidth="1.4" strokeLinejoin="round" />
@@ -162,6 +181,11 @@ export function FenceShot({ active, instant = false }: { active: boolean; instan
                 />
               </svg>
 
+              {/* callout anchors on the boundary, inside the plane */}
+              {Object.entries(FENCE_MARKS).map(([key, [x, y]]) => (
+                <span key={key} data-callout-anchor={key} className="absolute h-px w-px" style={{ left: pctX(x), top: pctY(y) }} aria-hidden />
+              ))}
+
               {/* front run: bays standing on the bottom boundary */}
               {run &&
                 Array.from({ length: bays }).map((_, i) => {
@@ -229,6 +253,9 @@ export function FenceShot({ active, instant = false }: { active: boolean; instan
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: SKY }} />
             {graded ? "Grade · panels stepped" : tilted ? "Fence placed · 6 ft" : run ? "Drawing the run" : "Parcel from Regrid"}
           </span>
+
+          {/* the callouts draw once the fence stands and the grade is in */}
+          <MockCallouts specs={FENCE_CALLOUTS} armed={graded} />
         </div>
 
         <Rail title="Takeoff" shown={graded}>

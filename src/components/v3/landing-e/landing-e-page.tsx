@@ -27,6 +27,7 @@ import { groupContentFor } from "./landing-groups";
 import { LandingPricing } from "./landing-pricing";
 import { CtaTracker } from "./cta-tracker";
 import { LazyBg } from "./lazy-bg";
+import { WarmLayout } from "./warm-layout";
 import { Hero } from "./hero";
 import { Intro } from "./intro";
 import { LOW_CTA, firstPersonCta } from "./cta-copy";
@@ -120,6 +121,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {} }: L
       <MobileCta registerHref={register} cta={top} />
       <ScrollFx />
       <LazyBg />
+      <WarmLayout />
       <CtaTracker industry={variant} />
       <LandingVariantEffects industry={variant} remember={explicitVariant} utm={utm} />
     </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { StampIn } from "./stamp-in";
 import { Reveal } from "./reveal";
 import { useInView } from "./use-in-view";
 
@@ -149,7 +150,7 @@ function ChangeOrderMock() {
               done ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
             }`}
           >
-            {done ? "SIGNED" : "DRAFT"}
+            {done ? <StampIn active>SIGNED</StampIn> : "DRAFT"}
           </span>
         </div>
 
@@ -158,25 +159,36 @@ function ChangeOrderMock() {
           <div className="text-[10px] font-bold uppercase tracking-[1.2px] text-slate-400">
             Scope
           </div>
+          {/* Padding is constant (pass C): only the dashed frame fades,
+              so the scope text never moves. */}
           <div
-            className={`mt-1 min-h-[46px] text-[15px] font-semibold leading-snug text-lp-ink transition-all duration-300 ${
-              done ? "border-transparent px-0" : "rounded-md border border-dashed border-slate-300 px-2.5 py-1.5"
+            className={`relative mt-1 rounded-md border border-dashed px-2.5 py-1.5 text-[15px] font-semibold leading-snug text-lp-ink transition-colors duration-300 ${
+              done ? "border-transparent" : "border-slate-300"
             }`}
           >
-            {CO_SCOPE.slice(0, typed)}
-            {!done && typed < CO_SCOPE.length && (
-              <span
-                className="ml-0.5 inline-block h-[15px] w-[2px] translate-y-[2px] bg-lp-blue"
-                style={{ animation: "caret 1s steps(1,end) infinite" }}
-              />
-            )}
+            {/* The full scope sizes the box from the first frame (pass C):
+                the typed text sits on top of it, so a line that wraps as it
+                is typed never grows the card. */}
+            <span className="invisible" aria-hidden>{CO_SCOPE}</span>
+            <span className="absolute inset-x-2.5 top-1.5">
+              {CO_SCOPE.slice(0, typed)}
+              {!done && typed < CO_SCOPE.length && (
+                <span
+                  className="ml-0.5 inline-block h-[15px] w-[2px] translate-y-[2px] bg-lp-blue"
+                  style={{ animation: "caret 1s steps(1,end) infinite" }}
+                />
+              )}
+            </span>
           </div>
         </div>
 
-        {/* The note only exists once the order is a statement */}
+        {/* The note's room is reserved from the start (pass C): it fades and
+            settles in with opacity and a transform, so the card below never
+            shifts — the layout-shift this section used to cost the page. */}
         <p
-          className={`overflow-hidden text-[13px] leading-relaxed text-slate-500 transition-all duration-500 ${
-            done ? "mt-2 max-h-24 opacity-100" : "mt-0 max-h-0 opacity-0"
+          aria-hidden={!done}
+          className={`mt-2 text-[13px] leading-relaxed text-slate-500 transition-[opacity,transform] duration-500 ${
+            done ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0"
           }`}
         >
           Requested during Tuesday walkthrough. Includes fixtures, wiring,
@@ -189,31 +201,37 @@ function ChangeOrderMock() {
             <div className="text-[10px] font-bold uppercase tracking-[1.2px] text-slate-400">
               Amount
             </div>
-            {priced ? (
-              <div
-                className="text-[22px] font-bold tracking-tight text-lp-ink"
-                style={{ animation: "toast-in .35s cubic-bezier(.2,.6,.2,1) backwards" }}
-              >
-                +${CO_AMOUNT}
-              </div>
-            ) : (
-              <div className="mt-1 h-[26px] w-24 rounded-md border border-dashed border-slate-300" />
-            )}
+            {/* One 33 px row either way (pass C): the placeholder and the
+                price are the same height, so the row never moves. */}
+            <div className="flex h-[33px] items-end">
+              {priced ? (
+                <div
+                  className="text-[22px] font-bold leading-none tracking-tight text-lp-ink"
+                  style={{ animation: "toast-in .35s cubic-bezier(.2,.6,.2,1) backwards" }}
+                >
+                  +${CO_AMOUNT}
+                </div>
+              ) : (
+                <div className="h-[26px] w-24 rounded-md border border-dashed border-slate-300" />
+              )}
+            </div>
           </div>
           <div className="text-right">
             <div className="text-[10px] font-bold uppercase tracking-[1.2px] text-slate-400">
               Client
             </div>
-            {done ? (
-              <div
-                className="font-serif text-[19px] italic text-slate-600"
-                style={{ animation: "toast-in .4s cubic-bezier(.2,.6,.2,1) backwards" }}
-              >
-                M. Nguyen
-              </div>
-            ) : (
-              <div className="mt-1 h-[26px] w-28 border-b border-dashed border-slate-300" />
-            )}
+            <div className="flex h-[33px] items-end justify-end">
+              {done ? (
+                <div
+                  className="font-serif text-[19px] italic leading-none text-slate-600"
+                  style={{ animation: "toast-in .4s cubic-bezier(.2,.6,.2,1) backwards" }}
+                >
+                  M. Nguyen
+                </div>
+              ) : (
+                <div className="h-[26px] w-28 border-b border-dashed border-slate-300" />
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import gsap from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { loadGsap, whenNear } from "./gsap-lazy";
 
 /**
  * Mobile montage: 3 side-by-side columns of cards, each an infinite
@@ -25,51 +24,55 @@ export function MontageColumns({ columns }: { columns: React.ReactNode[][] }) {
   useEffect(() => {
     const section = sectionRef.current;
     if (!section) return;
-
-    gsap.registerPlugin(ScrollTrigger);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     const tracks = Array.from(section.querySelectorAll<HTMLElement>(".carousel-track"));
-    const build = () =>
-      tracks.map((track, i) => {
-        // yPercent -50 → 0 travels exactly one copy of the content.
-        const distance = track.offsetHeight / 2 || 600;
-        const duration = (distance / PX_PER_SEC) * (COLUMN_VARIANCE[i] ?? 1);
-        gsap.set(track, { yPercent: -50 });
-        return gsap.to(track, { yPercent: 0, ease: "none", duration, repeat: -1 });
+    // The columns are built when the section comes near, with gsap from the
+    // first move (gsap-lazy.ts) — not all at once on the first scroll.
+    let alive = true;
+    let loops: { kill(): void }[] = [];
+    let st: { kill(): void } | null = null;
+    let ro: ResizeObserver | null = null;
+    void whenNear(section).then(loadGsap).then(({ gsap, ScrollTrigger }) => {
+      if (!alive) return;
+      const build = () =>
+        tracks.map((track, i) => {
+          // yPercent -50 → 0 travels exactly one copy of the content.
+          const distance = track.offsetHeight / 2 || 600;
+          const duration = (distance / PX_PER_SEC) * (COLUMN_VARIANCE[i] ?? 1);
+          gsap.set(track, { yPercent: -50 });
+          return gsap.to(track, { yPercent: 0, ease: "none", duration, repeat: -1 });
+        });
+      loops = build();
+
+      st = ScrollTrigger.create({
+        trigger: section,
+        start: "top bottom",
+        end: "bottom top",
+        onUpdate(self) {
+          const boost = Math.min(Math.abs(self.getVelocity()) / 300, 3);
+          loops.forEach((loop) => {
+            gsap
+              .timeline({ overwrite: true })
+              .to(loop, { timeScale: 1 + boost, duration: 0.2 })
+              .to(loop, { timeScale: 1, duration: 1, ease: "power2.out" });
+          });
+        },
       });
 
-    let loops = build();
-
-    const st = ScrollTrigger.create({
-      trigger: section,
-      start: "top bottom",
-      end: "bottom top",
-      onUpdate(self) {
-        const boost = Math.min(Math.abs(self.getVelocity()) / 300, 3);
-        loops.forEach((loop) => {
-          gsap
-            .timeline({ overwrite: true })
-            .to(loop, { timeScale: 1 + boost, duration: 0.2 })
-            .to(loop, { timeScale: 1, duration: 1, ease: "power2.out" });
-        });
-      },
+      // Images land after first paint and change the track height, which would
+      // otherwise leave the columns on the durations measured before they did.
+      ro = new ResizeObserver(() => {
+        loops.forEach((l) => l.kill());
+        loops = build();
+      });
+      tracks.forEach((t) => ro!.observe(t));
     });
-
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      loops.forEach((l) => l.pause());
-    }
-
-    // Images land after first paint and change the track height, which would
-    // otherwise leave the columns on the durations measured before they did.
-    const ro = new ResizeObserver(() => {
-      loops.forEach((l) => l.kill());
-      loops = build();
-    });
-    tracks.forEach((t) => ro.observe(t));
 
     return () => {
-      ro.disconnect();
-      st.kill();
+      alive = false;
+      ro?.disconnect();
+      st?.kill();
       loops.forEach((l) => l.kill());
     };
   }, []);

@@ -6,6 +6,8 @@ import { AppWindow } from "./app-window";
 import { InvoiceMobile } from "./invoice-mobile";
 import type { ProposalContent } from "./landing-groups";
 import { Reveal } from "./reveal";
+import { Counter } from "./counter";
+import { StampIn } from "./stamp-in";
 import { useInView } from "./use-in-view";
 
 /* The document as it shipped — the kitchen — is the default page's and the
@@ -55,7 +57,7 @@ function ProposalMobile({ p }: { p: ProposalContent }) {
           ))}
           <div className="flex items-center justify-between border-t border-slate-200 px-3 py-3">
             <span className="text-[12px] font-bold text-lp-ink">Project total</span>
-            <span className="text-[16px] font-bold tracking-tight text-lp-ink">{p.total}</span>
+            <span className="text-[16px] font-bold tracking-tight text-lp-ink"><Counter value={p.total} /></span>
           </div>
         </div>
 
@@ -211,7 +213,7 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
             }`}
           >
             <span className="text-[12px] font-bold text-lp-ink">Project total</span>
-            <span className="text-[15px] font-bold tracking-tight text-lp-ink">{p.total}</span>
+            <span className="text-[15px] font-bold tracking-tight text-lp-ink"><Counter value={p.total} /></span>
           </div>
         </div>
 
@@ -314,10 +316,16 @@ function ReceiptCluster() {
           <div className="flex justify-between font-bold text-lp-ink"><span>TOTAL</span><span>183.46</span></div>
         </div>
         {inView && (
+          /* The scan runs on a transform (pass C): a carrier 80 % of the
+             receipt tall slides down by its own height, the bar riding its
+             top edge — 8 % to 88 %, as before, without a `top` animation. */
           <span
-            className="pointer-events-none absolute inset-x-2 h-[3px] rounded-full bg-lp-lime shadow-[0_0_14px_2px_rgb(209_255_25/0.9)]"
+            className="pointer-events-none absolute inset-x-2 top-[8%] h-[80%]"
             style={{ animation: "scanline 2.6s cubic-bezier(.4,0,.4,1) .3s infinite" }}
-          />
+            aria-hidden
+          >
+            <span className="absolute inset-x-0 top-0 h-[3px] rounded-full bg-lp-lime shadow-[0_0_14px_2px_rgb(209_255_25/0.9)]" />
+          </span>
         )}
       </div>
       {/* extracted card */}
@@ -442,7 +450,7 @@ function SheetFrame() {
       <span className="lp-props-tick lp-props-tick--tr" />
       <span className="lp-props-tick lp-props-tick--bl" />
       <span className="lp-props-tick lp-props-tick--br" />
-      <span className="lp-props-stamp">Sheet 03 · Proposals &amp; Contracts</span>
+      <StampIn className="lp-props-stamp">Sheet 03 · Proposals &amp; Contracts</StampIn>
     </div>
   );
 }

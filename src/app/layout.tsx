@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { ToastHost } from "@/components/ui/Toast";
+import { ToastHostLazy } from "@/components/ui/toast-host-lazy";
 import { AttributionCapture } from "@/components/attribution-capture";
 import { PostHogCapture } from "@/components/providers/posthog-capture";
 import { MetaPixel } from "@/components/providers/meta-pixel";
@@ -59,7 +59,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <MetaPixel />
         </Suspense>
         <CookieBanner />
-        <ToastHost />
+        <ToastHostLazy />
       </body>
     </html>
   );

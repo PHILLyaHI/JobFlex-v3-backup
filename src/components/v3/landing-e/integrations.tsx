@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import gsap from "gsap";
+import { loadGsap } from "./gsap-lazy";
 import { IntegrationsMobile } from "./integrations-mobile";
 import { Reveal } from "./reveal";
 
@@ -107,15 +107,22 @@ export function Integrations() {
     if (!window.matchMedia("(pointer: fine)").matches) return;
 
     const tiles = Array.from(field.querySelectorAll<HTMLElement>(".float-tile"));
-    const setters = tiles.map((t) => ({
-      x: gsap.quickTo(t, "x", { duration: 0.5, ease: "power2.out" }),
-      y: gsap.quickTo(t, "y", { duration: 0.5, ease: "power2.out" }),
-    }));
+    // gsap arrives on the first move (gsap-lazy.ts); until then the tiles sit still.
+    let setters: { x: (v: number) => void; y: (v: number) => void }[] = [];
+    let alive = true;
+    void loadGsap().then(({ gsap }) => {
+      if (!alive) return;
+      setters = tiles.map((t) => ({
+        x: gsap.quickTo(t, "x", { duration: 0.5, ease: "power2.out" }),
+        y: gsap.quickTo(t, "y", { duration: 0.5, ease: "power2.out" }),
+      }));
+    });
 
     const RADIUS = 220;
     const PUSH = 22;
 
     const onMove = (e: PointerEvent) => {
+      if (!setters.length) return;
       tiles.forEach((t, i) => {
         const r = t.getBoundingClientRect();
         const cx = r.left + r.width / 2;
@@ -138,6 +145,7 @@ export function Integrations() {
     field.addEventListener("pointermove", onMove);
     field.addEventListener("pointerleave", onLeave);
     return () => {
+      alive = false;
       field.removeEventListener("pointermove", onMove);
       field.removeEventListener("pointerleave", onLeave);
     };

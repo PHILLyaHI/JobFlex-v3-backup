@@ -7,6 +7,7 @@ import { DEFAULT_LANDING, type LandingVariant, type LandingVariantKey, type UtmP
 import { Reveal } from "./reveal";
 import { GoogleSignupButton } from "./google-signup-button";
 import { CtaNote } from "./cta-note";
+import { HeroEntrance } from "./hero-entrance";
 
 /* The first screen, and the one screen a trade variant may replace. The
    headline, the line under it, the solid button's words and the product shot
@@ -51,21 +52,23 @@ export function Hero({
             <span aria-hidden>→</span>
           </a>
         </Reveal>
-        <Reveal delay={90}>
-          <h1 className="text-[clamp(38px,6.7vw,96px)] font-bold leading-[1.02] tracking-[-0.025em] text-lp-ink">
-            {variant.h1[0]}
-            <br />
-            {variant.h1[1]}
-          </h1>
-        </Reveal>
+        {/* The entrance (pass C): H1 lines out of a mask, sub +150 ms, buttons
+            +250 ms — hero-entrance.tsx. `.lp-enter` hides the three blocks
+            until the masks exist; the stylesheet lifts it under reduced
+            motion, and <noscript> lifts it with no JavaScript at all. */}
+        <noscript><style>{`.jf-lp .lp-enter{visibility:visible}`}</style></noscript>
+        <HeroEntrance>
+        <h1 className="lp-enter text-[clamp(38px,6.7vw,96px)] font-bold leading-[1.02] tracking-[-0.025em] text-lp-ink" data-entrance="h1">
+          {variant.h1[0]}
+          <br />
+          {variant.h1[1]}
+        </h1>
         {/* The line under the headline exists only on trade variants; the
             default hero never had one and renders nothing here. */}
         {variant.sub && (
-          <Reveal delay={130}>
-            <p className="mx-auto max-w-[38rem] text-[15px] leading-[1.5] text-white/70 sm:text-[17px]">{variant.sub}</p>
-          </Reveal>
+          <p className="lp-enter mx-auto max-w-[38rem] text-[15px] leading-[1.5] text-white/70 sm:text-[17px]" data-entrance="sub">{variant.sub}</p>
         )}
-        <Reveal delay={170} className="w-full sm:w-auto">
+        <div className="lp-enter w-full sm:w-auto" data-entrance="cta">
           <div className="mx-auto mt-4 flex w-full max-w-[22rem] flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:items-center sm:justify-center">
             <a href={registerHref} className="lp-btn-dark lp-cta lp-cta--solid" data-cta="hero">
               {cta ?? variant.primaryCta}
@@ -93,7 +96,8 @@ export function Hero({
             </GoogleSignupButton>
           </div>
           <CtaNote tone="dark" className="mt-3 text-center" />
-        </Reveal>
+        </div>
+        </HeroEntrance>
       </div>
 
       <div className="relative z-[1] mt-[8vmin] px-5 pb-[26vmin] sm:px-6">

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import type { StatsRow } from "./landing-groups";
 import { Reveal } from "./reveal";
+import { Counter } from "./counter";
 
 const ROWS: StatsRow[] = [
   {
@@ -61,7 +62,7 @@ export function StatsSection({ rows = ROWS }: { rows?: StatsRow[] }) {
               Companies using JobFlex made
             </p>
             <div className="mt-2 text-[clamp(44px,6vw,76px)] font-bold leading-none tracking-[-0.02em] sm:mt-3">
-              $40,000,000+
+              <Counter value="$40,000,000+" />
             </div>
           </div>
         </Reveal>

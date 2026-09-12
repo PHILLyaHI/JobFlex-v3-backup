@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import gsap from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { loadGsap, whenNear } from "./gsap-lazy";
 
 /* Mobile integrations: two counter-scrolling icon marquees + one headline */
 
@@ -152,40 +151,43 @@ export function IntegrationsMobile() {
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    gsap.registerPlugin(ScrollTrigger);
-
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const a = root.querySelector<HTMLElement>(".int-track-a");
     const b = root.querySelector<HTMLElement>(".int-track-b");
     if (!a || !b) return;
 
-    const loopA = gsap.to(a, { xPercent: -50, ease: "none", duration: 30, repeat: -1 });
-    gsap.set(b, { xPercent: -50 });
-    const loopB = gsap.to(b, { xPercent: 0, ease: "none", duration: 34, repeat: -1 });
-    const loops = [loopA, loopB];
+    // The marquees are built when the section comes near, with gsap from the
+    // first move (gsap-lazy.ts) — not all at once on the first scroll.
+    let alive = true;
+    const created: { kill(): void }[] = [];
+    void whenNear(root).then(loadGsap).then(({ gsap, ScrollTrigger }) => {
+      if (!alive) return;
+      const loopA = gsap.to(a, { xPercent: -50, ease: "none", duration: 30, repeat: -1 });
+      gsap.set(b, { xPercent: -50 });
+      const loopB = gsap.to(b, { xPercent: 0, ease: "none", duration: 34, repeat: -1 });
+      const loops = [loopA, loopB];
+      created.push(...loops);
 
-    // Scroll velocity accelerates both marquees, then they ease back
-    const st = ScrollTrigger.create({
-      trigger: root,
-      start: "top bottom",
-      end: "bottom top",
-      onUpdate(self) {
-        const boost = Math.min(Math.abs(self.getVelocity()) / 300, 3);
-        loops.forEach((loop) =>
-          gsap
-            .timeline({ overwrite: true })
-            .to(loop, { timeScale: 1 + boost, duration: 0.2 })
-            .to(loop, { timeScale: 1, duration: 1, ease: "power2.out" })
-        );
-      },
+      // Scroll velocity accelerates both marquees, then they ease back
+      created.push(ScrollTrigger.create({
+        trigger: root,
+        start: "top bottom",
+        end: "bottom top",
+        onUpdate(self) {
+          const boost = Math.min(Math.abs(self.getVelocity()) / 300, 3);
+          loops.forEach((loop) =>
+            gsap
+              .timeline({ overwrite: true })
+              .to(loop, { timeScale: 1 + boost, duration: 0.2 })
+              .to(loop, { timeScale: 1, duration: 1, ease: "power2.out" })
+          );
+        },
+      }));
     });
 
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      loops.forEach((l) => l.pause());
-    }
-
     return () => {
-      st.kill();
-      loops.forEach((l) => l.kill());
+      alive = false;
+      created.forEach((c) => c.kill());
     };
   }, []);
 

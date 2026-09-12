@@ -11,6 +11,7 @@
    now exported. */
 
 import { useEffect, useState } from "react";
+import { Counter } from "./counter";
 
 export const INK = "#0a0a0a";
 export const BLUE = "#1854A0";
@@ -144,21 +145,23 @@ export function Prompt({
     <div
       className="absolute inset-x-0 z-20 px-3 sm:px-5"
       style={{
-        top: lifted ? 8 : compact ? 74 : 148,
+        // The box sits at its rest position; the lift is a transform
+        // (pass C, 2026-09-11) — nothing here animates a layout property.
+        top: compact ? 74 : 148,
         // The prompt overlays the whole frame, so at rest it centres on the
-        // card the viewer actually sees. On lift it slides half the rail's
-        // width left, into the stage column where the work lands — except on a
-        // handheld, where the rail is stacked underneath and there is nothing
-        // to move out of.
+        // card the viewer actually sees. On lift it rises to 8 px and slides
+        // half the rail's width left, into the stage column where the work
+        // lands — except on a handheld, where the rail is stacked underneath
+        // and there is nothing to move out of.
         transform: lifted
-          ? `translateX(${compact ? 0 : -130}px) scale(1)`
-          : `translateX(0) scale(${compact ? 1 : 1.15})`,
+          ? `translate(${compact ? 0 : -130}px, ${8 - (compact ? 74 : 148)}px) scale(1)`
+          : `translate(0, 0) scale(${compact ? 1 : 1.15})`,
         transformOrigin: "center top",
-        transition: `top .8s ${EASE}, transform .8s ${EASE}`,
+        transition: `transform .8s ${EASE}`,
       }}
     >
       <div
-        className="mx-auto w-full max-w-[640px] rounded-[3px] border-2 bg-white"
+        className="relative mx-auto w-full max-w-[640px] rounded-[3px] border-2 bg-white"
         style={{
           borderColor: lifted ? HAIR : INK,
           boxShadow: lifted ? "none" : "0 18px 40px -18px rgba(10,10,10,.35)",
@@ -191,9 +194,19 @@ export function Prompt({
           )}
         </div>
         {attach && (
+          /* The attach row hangs under the field as its own bordered strip
+             (pass C): it folds away with opacity and a transform instead of
+             a max-height, so the lift never reflows. */
           <div
-            className="overflow-hidden"
-            style={{ maxHeight: lifted ? 0 : 44, opacity: lifted ? 0 : 1, transition: `max-height .5s ${EASE}, opacity .35s ease` }}
+            className="absolute -inset-x-[2px] top-full rounded-b-[3px] border-2 border-t-0 bg-white"
+            style={{
+              borderColor: INK,
+              opacity: lifted ? 0 : 1,
+              transform: lifted ? "translateY(-8px) scaleY(0.6)" : "translateY(0) scaleY(1)",
+              transformOrigin: "center top",
+              pointerEvents: "none",
+              transition: `opacity .35s ease, transform .5s ${EASE}`,
+            }}
           >
             <div className="flex items-center gap-2 border-t px-2.5 py-1.5 sm:px-4 sm:py-2" style={{ borderColor: HAIR }}>
               <span className="flex items-center gap-1.5 rounded-[2px] border border-black/15 px-1.5 py-[3px] text-[9px] font-semibold text-ink-muted sm:px-2 sm:py-1 sm:text-[10.5px]">
@@ -248,7 +261,8 @@ export function TotalPlate({ total, note }: { total: string; note: string }) {
   return (
     <div className="mt-4 rounded-[2px] bg-ink px-3 py-2.5">
       <div className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">{note}</div>
-      <div className="mt-0.5 font-mono text-[19px] font-black text-white">{total}</div>
+      {/* The total counts up once it is on screen (pass C, counter.tsx). */}
+      <div className="mt-0.5 font-mono text-[19px] font-black text-white"><Counter value={total} /></div>
     </div>
   );
 }

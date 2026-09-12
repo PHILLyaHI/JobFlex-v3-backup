@@ -27,6 +27,7 @@ import {
   usePhases,
   useTyped,
 } from "./showcase-kit";
+import { MockCallouts, type CalloutSpec } from "./mock-callouts";
 
 /* ============================================================
    2 · ROOF — address, aerial, trace, tilt, takeoff
@@ -104,8 +105,23 @@ const ROOF_DROPS = ["A", "B", "D", "E", "P", "O", "J"];
 const ROOF_DIMS: { label: string; x: number; y: number; tx: string }[] = [
   { label: "48'-0\"", x: 214, y: 203, tx: "translate(-50%, 0)" },
   { label: "43'-6\"", x: 72, y: 131, tx: "translate(-100%, -50%)" },
-  // In the empty pocket above the wing, not across its facets.
-  { label: "8/12 pitch", x: 358, y: 96, tx: "translate(-100%, -100%)" },
+];
+
+/* The callouts (landing-e pass C): area, pitch and squares, each led from a
+   point ON the model — a facet centre in the model's own (x, y, z) — to a
+   pocket of the stage. The points are projected with the same camera as the
+   drawing, so they ride the tilt; the figures are the takeoff's own (17.6
+   squares = 1,760 sq ft, 8/12), so the mock never contradicts itself. The
+   labels clear the lifted address bar at the top of the stage (dy 56). */
+const ROOF_MARKS: Record<string, P3> = {
+  area: [112, 124, 14],   // west facet, A–R1–P
+  pitch: [184, 78, 21],   // north facet, A–B–R2–R1
+  squares: [315, 135, 18], // wing, C–D–E–F
+};
+const ROOF_CALLOUTS: CalloutSpec[] = [
+  { key: "area", text: "1,760 sq ft", pocket: "tl", dy: 56, elbow: "v" },
+  { key: "pitch", text: "8/12 pitch", pocket: "tr", dy: 56, elbow: "v" },
+  { key: "squares", text: "17.6 sq", pocket: "br", elbow: "h" },
 ];
 
 /** 0 → flat bird's eye (the trace), 1 → tilted camera on the same model. */
@@ -213,6 +229,11 @@ export function RoofShot({ active, instant = false }: { active: boolean; instant
               </g>
             </svg>
 
+            {/* callout anchors: points on the model, projected like the drawing */}
+            {Object.entries(ROOF_MARKS).map(([key, v]) => (
+              <span key={key} data-callout-anchor={key} className="absolute h-px w-px" style={{ left: pctX(px(v)), top: pctY(py(v)) }} aria-hidden />
+            ))}
+
             {/* the numbers, each against the line it measures */}
             {ROOF_DIMS.map((d, i) => (
               <span
@@ -241,6 +262,9 @@ export function RoofShot({ active, instant = false }: { active: boolean; instant
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: SKY }} />
             {tilted ? "Wireframe · aerial geometry" : traced ? "Tracing facets" : "Orthophoto located"}
           </span>
+
+          {/* the callouts draw once the camera has settled and the takeoff is in */}
+          <MockCallouts specs={ROOF_CALLOUTS} armed={measured && t >= 1} />
         </div>
 
         <Rail title="Takeoff" shown={measured}>

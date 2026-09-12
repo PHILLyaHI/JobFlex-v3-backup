@@ -3,6 +3,7 @@ import { CtaNote } from "./cta-note";
 import { Logo } from "./logo";
 import { REGISTER } from "./routes";
 import { Reveal } from "./reveal";
+import { Counter } from "./counter";
 
 const COLUMNS: [string, string[]][] = [
   ["Product", ["CRM & leads", "AI estimator", "Proposals", "Scheduling", "Invoicing", "Client portal"]],
@@ -39,7 +40,7 @@ export function CtaFooter({
         <Reveal>
           <h2 className="lp-eyebrow text-lp-sky">Run a tighter shop</h2>
           <p className="mx-auto mt-8 max-w-[54rem] text-[clamp(30px,4vw,56px)] font-bold leading-[1.12] tracking-[-0.02em] text-slate-500">
-            Last week, <span className="text-white">4,812 estimates</span> went
+            Last week, <span className="text-white"><Counter value="4,812" /> estimates</span> went
             out the door through JobFlex.
           </p>
           <p className="mt-3 text-[clamp(30px,4vw,56px)] font-bold leading-[1.1] tracking-[-0.02em] text-white">

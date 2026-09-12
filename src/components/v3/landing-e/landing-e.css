@@ -675,10 +675,10 @@
 
 /* ── Keyframes used by the section mocks ─────────────────── */
 @keyframes lpScanline {
-  0% { top: 8%; opacity: 0; }
+  0% { transform: translateY(0); opacity: 0; }
   12% { opacity: 1; }
   88% { opacity: 1; }
-  100% { top: 88%; opacity: 0; }
+  100% { transform: translateY(100%); opacity: 0; }
 }
 @keyframes lpToastIn {
   0% { opacity: 0; transform: translateY(8px) scale(0.96); }
@@ -694,15 +694,17 @@
   100% { transform: scale(1); }
 }
 @keyframes lpSlideFill {
-  from { width: 0%; }
-  to { width: 100%; }
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
 }
 /* the donor referenced these by their bare names in inline styles */
+/* pass C (2026-09-11): the scan and the tab fill run on transforms — the
+   scan's carrier slides by its own height, the fill scales from the left. */
 @keyframes scanline {
-  0% { top: 8%; opacity: 0; }
+  0% { transform: translateY(0); opacity: 0; }
   12% { opacity: 1; }
   88% { opacity: 1; }
-  100% { top: 88%; opacity: 0; }
+  100% { transform: translateY(100%); opacity: 0; }
 }
 @keyframes toast-in {
   0% { opacity: 0; transform: translateY(8px) scale(0.96); }
@@ -718,8 +720,8 @@
   100% { transform: scale(1); }
 }
 @keyframes slide-fill {
-  from { width: 0%; }
-  to { width: 100%; }
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
 }
 
 /* Proposal plate: the "awaiting signature" dot, and the ACCEPTED stamp
@@ -1123,7 +1125,6 @@
 .jf-lp .lp-ph-col-fill {
   width: 100%; background: var(--bp-blue);
   border: 1.5px solid var(--bp-ink); border-bottom: none;
-  transition: height 0.7s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 .jf-lp .lp-ph-col-fill.is-quiet { background: var(--bp-paper-deep); }
 .jf-lp .lp-ph-col-m {
@@ -1139,24 +1140,23 @@
    detached slab. */
 .jf-lp .lp-est-rail {
   border-top: 2px solid transparent;
-  /* Stacked under the stage it must take no room until there is a takeoff to
-     show — an invisible rail was reserving ~230px of blank card. */
-  max-height: 0;
-  padding: 0 16px;
-  transition: max-height 0.7s var(--lp-ease), padding 0.4s ease, opacity 0.55s ease,
-    transform 0.7s var(--lp-ease), background 0.4s ease, border-color 0.4s ease;
+  /* pass C (2026-09-11): the rail keeps its room from the start and arrives
+     on opacity and a transform (set inline by the Rail component) — no
+     max-height, no padding tween, no reflow under the stage. On a handheld
+     that is a strip of the card's own ground until the takeoff lands. */
+  padding: 16px;
+  visibility: hidden;
+  transition: opacity 0.55s ease, transform 0.7s var(--lp-ease), border-color 0.4s ease, visibility 0s linear 0.55s;
 }
 .jf-lp .lp-est-rail.is-on {
   border-top-color: #0a0a0a;
-  max-height: 460px;
-  padding: 16px;
+  visibility: visible;
+  transition: opacity 0.55s ease, transform 0.7s var(--lp-ease), border-color 0.4s ease, visibility 0s;
 }
 @media (min-width: 640px) {
   .jf-lp .lp-est-rail {
     border-top: none;
     border-left: 2px solid transparent;
-    max-height: none;
-    padding: 16px;
   }
   .jf-lp .lp-est-rail.is-on { border-left-color: #0a0a0a; }
 }
@@ -1375,3 +1375,17 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
 @media (max-width: 640px) {
   .jf-lp .lp-btn-dark, .jf-lp .lp-cta { font-size: 15px; }
 }
+
+/* ── Hero entrance (landing-e pass C, 2026-09-11) ─────────────────
+   The three copy blocks are hidden until the masks exist; reduced motion
+   and no-JS (a <noscript> rule in hero.tsx) lift the class. */
+.jf-lp .lp-enter { visibility: hidden; }
+.jf-lp .lp-h1-line { will-change: transform; }
+@media (prefers-reduced-motion: reduce) {
+  .jf-lp .lp-enter { visibility: visible; }
+}
+
+/* ── Mock callouts (landing-e pass C) ───────────────────────────────
+   Hidden until their timeline has set its own start state; from then on
+   gsap owns visibility and opacity inline. */
+.jf-lp .lp-callouts-pending * { visibility: hidden; }

@@ -326,7 +326,7 @@ export function EstimatorsShowcase({
                       <span
                         key={`${slide}-${run}`}
                         onAnimationEnd={() => goTo(slide + 1)}
-                        className="block h-full rounded-full bg-white"
+                        className="block h-full origin-left rounded-full bg-white"
                         style={
                           reduced
                             ? { width: "100%" }
