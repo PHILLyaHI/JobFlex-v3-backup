@@ -41,6 +41,7 @@ import {
   ensureWithinLimit,
 } from "@/stores/usePlanLimitStore";
 import { attachPlacesSuggest, type PickedPlace } from "@/components/v3/blueprint-shell/places-suggest";
+import { AddressPinPreview } from "./address-pin-preview";
 
 const RoofModel3D = dynamic(
   () => import("@/components/estimator/roof/RoofModel3D").then((m) => m.RoofModel3D),
@@ -460,6 +461,12 @@ export function RoofEstimatorBlueprintForm({ aiEnabled }: { aiEnabled: boolean }
                 <input className="est-in" id="zip" placeholder="98011" value={zip} onChange={(e) => setZip(e.target.value)} />
               </label>
             </div>
+
+            {/* Pin-on-the-roof check before ordering. Only a picked suggestion
+                carries the rooftop point; free typing hides it. */}
+            {picked && !picked.typed && picked.lat != null && picked.lng != null && (
+              <AddressPinPreview lat={picked.lat} lng={picked.lng} label={picked.formatted} />
+            )}
 
             <div className="rf-actions">
               <button className="btn btn-primary btn--sm" type="button" id="freeBtn" disabled={busy} onClick={() => void runFree()}>

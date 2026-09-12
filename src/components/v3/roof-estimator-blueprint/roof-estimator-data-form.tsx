@@ -39,6 +39,7 @@ import {
   ensureWithinLimit,
 } from "@/stores/usePlanLimitStore";
 import { attachPlacesSuggest, type PickedPlace } from "@/components/v3/blueprint-shell/places-suggest";
+import { AddressPinPreview } from "./address-pin-preview";
 import { isMapsBrowserEnabled, loadMapsLibrary } from "@/lib/googleMaps";
 import { displayedPitchLabel, foreignIndices, instantTotalsOf, pickMainStructure, pitchFamilyShares } from "@/lib/roofDiagram/instantTotals";
 import { AERIAL } from "@/lib/vendorLabels";
@@ -691,6 +692,11 @@ export function RoofEstimatorDataForm() {
   const eaveHeights = structure?.eaveHeightFt
     ? Object.entries(structure.eaveHeightFt).map(([facade, ft]) => ({ facade, ft }))
     : [];
+  // The provider's own score for the eave figure (one score for the whole
+  // field, 0..1; "not scored" was dropped at parse). Identical classes on all
+  // four sides read as suspicious — this says how much the provider itself
+  // stands behind them.
+  const eaveConf = structure?.confidence?.eaveHeightFt ?? null;
   const hasDetails = eaveHeights.length > 0 || !!structure || (measurement?.chimneys.length ?? 0) > 0;
   // "EagleView data packs: area ✓ · pitch ✗ (not entitled) · …" — one line
   // under the hero figures naming what was bought and what the account was
@@ -771,6 +777,12 @@ export function RoofEstimatorDataForm() {
                 <input className="est-in" id="zip" placeholder="98011" value={zip} onChange={(e) => setZip(e.target.value)} />
               </label>
             </div>
+
+            {/* Pin-on-the-roof check before the BILLED lookup. Only a picked
+                suggestion carries the rooftop point; free typing hides it. */}
+            {picked && !picked.typed && picked.lat != null && picked.lng != null && (
+              <AddressPinPreview lat={picked.lat} lng={picked.lng} label={picked.formatted} />
+            )}
 
             <div className="rf-actions">
               <button className="btn btn-primary btn--sm" type="button" id="instantBtn" disabled={busy} onClick={() => void runInstant()}>
@@ -1074,7 +1086,10 @@ export function RoofEstimatorDataForm() {
                         <>
                           {/* EagleView's per-facade figure, in 10 ft classes (9903: 10 on every side;
                               12117: 20 on the house, 10 on the outbuildings) — a class, not a measurement. */}
-                          <div className="rf-details-sec">Eave height · {AERIAL.eave}</div>
+                          <div className="rf-details-sec">
+                            Eave height · {AERIAL.eave}
+                            {eaveConf != null && ` · ${Math.round(eaveConf * 100)}% confidence`}
+                          </div>
                           {eaveHeights.map((e) => (
                             <div className="rf-details-row" key={e.facade}>
                               <dt>{FACADE[e.facade] ?? e.facade}</dt>
