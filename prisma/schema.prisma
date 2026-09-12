@@ -1911,6 +1911,19 @@ model ParcelMiss {
 // result/{id} can be asked again later. Also the idempotency ledger: a repeat
 // measurement of the same address reuses a complete row or resumes a pending
 // one instead of ordering (and paying) again.
+/// The organization's own roof catalog for the package builder: its roof
+/// types and underlayments with prices, plus the builder's standing
+/// preferences (selections and unit prices for everything else). One JSON
+/// document per org, written whole by saveRoofCatalog. Like InstantOrder,
+/// bare organizationId — no relation — so the table can land on its own.
+model RoofCatalog {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  catalogJson    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
 model InstantOrder {
   id             String   @id @default(cuid())
   organizationId String

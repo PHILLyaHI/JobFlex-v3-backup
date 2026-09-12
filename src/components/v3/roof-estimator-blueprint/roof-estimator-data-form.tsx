@@ -624,7 +624,7 @@ export function RoofEstimatorDataForm() {
 
   // The package builder's output becomes the estimate: the same two tables the
   // AI fills, with the basis of every quantity carried on the line.
-  function applyPackage(pkg: RoofPackage, spec: RoofPackageSpec) {
+  function applyPackage(pkg: RoofPackage, spec: RoofPackageSpec, quiet = false) {
     const toLine = (l: RoofPackage["materials"][number]): EditableLine => ({
       id: nanoid(6),
       name: l.name,
@@ -633,28 +633,45 @@ export function RoofEstimatorDataForm() {
       unit: l.unit,
       basis: l.basis,
     });
-    setMaterials(pkg.materials.map(toLine));
-    setLabor(pkg.labor.map(toLine));
-    setAssumptions(pkg.assumptions);
-    setTitle(`${spec.systemName.trim() || "Roof"} · ${siteAddress || "site"}`);
-    toast.success("Estimate built", `${pkg.materials.length} material and ${pkg.labor.length} labor lines — adjust anything below, then convert.`);
+    const next = {
+      title: `${spec.systemName.trim() || "Roof"} · ${siteAddress || "site"}`,
+      materials: pkg.materials.map(toLine),
+      labor: pkg.labor.map(toLine),
+      assumptions: pkg.assumptions,
+    };
+    setMaterials(next.materials);
+    setLabor(next.labor);
+    setAssumptions(next.assumptions);
+    setTitle(next.title);
+    if (!quiet) toast.success("Estimate built", `${pkg.materials.length} material and ${pkg.labor.length} labor lines — adjust anything below, then convert.`);
+    return next;
+  }
+  // "Convert as is": the package straight to a proposal, no review stop.
+  function convertPackage(pkg: RoofPackage, spec: RoofPackageSpec) {
+    void convertWith(applyPackage(pkg, spec, true));
   }
 
-  async function convert() {
+  // Convert THESE lines — the tables' state, or a package just built, which
+  // React would not have committed to state yet ("convert as is").
+  async function convertWith(input: { title: string; materials: EditableLine[]; labor: EditableLine[]; assumptions: string[] }) {
     if (!measurement && !manual) return;
     if (isRecon) {
       toast.error("Estimated measurements can’t become a proposal", "Run Instant measure for this address first.");
+      return;
+    }
+    if (!input.materials.length && !input.labor.length) {
+      toast.error("Nothing to convert", "Build the estimate first.");
       return;
     }
     if (!(await ensureWithinLimit("proposalsCreated"))) return;
     setConvertBusy(true);
     try {
       const res = await convertRoofEstimateToProposal({
-        title: title || `Roof · ${siteAddress || "site"}`,
-        scope: assumptions.join("\n"),
-        materials: materials.map(stripId),
-        labor: labor.map(stripId),
-        assumptions,
+        title: input.title || `Roof · ${siteAddress || "site"}`,
+        scope: input.assumptions.join("\n"),
+        materials: input.materials.map(stripId),
+        labor: input.labor.map(stripId),
+        assumptions: input.assumptions,
       });
       toast.success("Proposal created");
       router.push(`/dashboard/proposals/${res.id}` as Parameters<typeof router.push>[0]);
@@ -663,6 +680,9 @@ export function RoofEstimatorDataForm() {
       if (reportPlanLimit(err)) return;
       toast.error("Couldn't convert", errMsg(err));
     }
+  }
+  function convert() {
+    return convertWith({ title, materials, labor, assumptions });
   }
 
   // ── Derived report figures: the MAIN structure, plus whatever the contractor ticked ──
@@ -1370,7 +1390,7 @@ export function RoofEstimatorDataForm() {
                 </div>
               </div>
               {buildMode === "package" && roofFacts && !isRecon && (
-                <RoofPackageBuilder facts={roofFacts} disabled={assessment?.estimable === false || convertBusy} onBuild={applyPackage} />
+                <RoofPackageBuilder facts={roofFacts} disabled={assessment?.estimable === false || convertBusy} converting={convertBusy} onBuild={applyPackage} onConvert={convertPackage} />
               )}
               <div className={"build-out" + (hasEstimate ? "" : " is-hidden")} id="buildOut">
                 {hasEstimate && (

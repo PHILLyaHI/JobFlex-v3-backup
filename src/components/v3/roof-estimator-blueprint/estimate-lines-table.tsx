@@ -135,9 +135,9 @@ export function EstimateLinesTable({
           min-width: 0;
           height: 32px;
           padding: 0 8px;
-          border: 1.5px solid transparent;
+          border: 1.5px solid var(--hair-soft);
           border-radius: var(--radius);
-          background: transparent;
+          background: #fff;
           font-family: var(--font);
           font-size: 13px;
           color: var(--ink);
@@ -148,8 +148,7 @@ export function EstimateLinesTable({
           max-width: 96px;
         }
         .jf-blueprint .content .bo-in:hover {
-          border-color: var(--hair-soft);
-          background: #fff;
+          border-color: var(--muted);
         }
         .jf-blueprint .content .bo-in:focus {
           outline: none;

@@ -29,7 +29,7 @@ import {
   PIPE_BOOT_SIZES,
   PLYWOOD_SHEET_EACH,
   PLYWOOD_SHEET_LABOR,
-  ROOF_SYSTEMS,
+  BUILTIN_LISTS,
   SEALANT_PER_SQ,
   STARTER_PER_FT,
   STEEP_PITCH,
@@ -37,14 +37,15 @@ import {
   STEP_FLASHING_LABOR_PER_FT,
   STEP_FLASHING_SIZES,
   TEAROFF_LABOR_PER_SQ_LAYER,
-  UNDERLAYMENTS,
   VALLEY_TYPES,
   VENT_TYPES,
   pitchLaborFactor,
   type Basis,
+  type CatalogLists,
   type IceWaterCoverage,
   type LineKind,
   type PkgUnit,
+  type RoofFamily,
 } from "./catalog";
 
 export interface RoofFacts {
@@ -92,6 +93,8 @@ export interface CustomLine {
 export interface RoofPackageSpec {
   systemId: string;
   systemName: string;
+  /** Carried on the spec so a catalog the contractor edited still prices right. */
+  systemFamily: RoofFamily;
   systemMatPerSq: number;
   systemLaborPerSq: number;
   capPerFt: number;
@@ -195,9 +198,9 @@ export function estimateEdges(facts: RoofFacts): { eaveFt: number; rakeFt: numbe
 }
 
 /** The spec the builder opens with for THIS roof: catalog defaults, facts filled in. */
-export function defaultSpec(facts: RoofFacts): RoofPackageSpec {
-  const sys = ROOF_SYSTEMS.find((s) => s.id === "architectural")!;
-  const und = UNDERLAYMENTS.find((u) => u.id === "synthetic")!;
+export function defaultSpec(facts: RoofFacts, lists: CatalogLists = BUILTIN_LISTS): RoofPackageSpec {
+  const sys = lists.systems.find((s) => s.id === "architectural") ?? lists.systems[0] ?? BUILTIN_LISTS.systems[1];
+  const und = lists.underlayments.find((u) => u.id === "synthetic") ?? lists.underlayments[0] ?? BUILTIN_LISTS.underlayments[0];
   const edges = estimateEdges(facts);
   const drip = DRIP_EDGE_PROFILES[0];
   const valley = VALLEY_TYPES.find((v) => v.id === "open_w24")!;
@@ -212,6 +215,7 @@ export function defaultSpec(facts: RoofFacts): RoofPackageSpec {
   return {
     systemId: sys.id,
     systemName: sys.label,
+    systemFamily: sys.family,
     systemMatPerSq: sys.matPerSq,
     systemLaborPerSq: sys.laborPerSq,
     capPerFt: sys.capPerFt,
@@ -326,7 +330,7 @@ export function buildRoofPackage(spec: RoofPackageSpec, facts: RoofFacts): RoofP
   const sq = Math.max(0, facts.squares);
   const sqWaste = r1(sq * (1 + spec.wastePct / 100));
   const sysName = spec.systemName.trim() || "Roofing";
-  const family = ROOF_SYSTEMS.find((s) => s.id === spec.systemId)?.family ?? "asphalt";
+  const family: RoofFamily = spec.systemFamily ?? "asphalt";
   const edgeB = spec.edgesBasis;
   const perimeter = spec.eaveFt + spec.rakeFt;
 

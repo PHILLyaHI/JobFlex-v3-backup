@@ -19,9 +19,20 @@ export interface CatalogOption {
 }
 
 // ── Roof systems ────────────────────────────────────────────────────────────
+/** Shingle / panel / tile family — drives cap, starter and low-slope rules. */
+export type RoofFamily = "asphalt" | "metal" | "tile" | "shake" | "slate" | "synthetic" | "low-slope";
+export const ROOF_FAMILIES: Array<{ id: RoofFamily; label: string }> = [
+  { id: "asphalt", label: "Asphalt shingle" },
+  { id: "metal", label: "Metal" },
+  { id: "tile", label: "Tile" },
+  { id: "shake", label: "Wood shake" },
+  { id: "slate", label: "Slate" },
+  { id: "synthetic", label: "Synthetic" },
+  { id: "low-slope", label: "Low slope / membrane" },
+];
+
 export interface RoofSystem extends CatalogOption {
-  /** Shingle / panel / tile family — drives cap, starter and low-slope rules. */
-  family: "asphalt" | "metal" | "tile" | "shake" | "slate" | "synthetic" | "low-slope";
+  family: RoofFamily;
   matPerSq: number;
   laborPerSq: number;
   /** Typical waste for this system; the builder's waste picker starts here. */
@@ -43,7 +54,6 @@ export const ROOF_SYSTEMS: RoofSystem[] = [
   { id: "synthetic_slate", label: "Synthetic slate / shake", family: "synthetic", matPerSq: 450, laborPerSq: 350, wastePct: 10, capPerFt: 4.5 },
   { id: "tpo", label: "TPO membrane (low slope)", family: "low-slope", matPerSq: 250, laborPerSq: 250, wastePct: 5, capPerFt: 0 },
   { id: "mod_bit", label: "Modified bitumen (low slope)", family: "low-slope", matPerSq: 220, laborPerSq: 240, wastePct: 5, capPerFt: 0 },
-  { id: "custom", label: "Custom…", family: "asphalt", matPerSq: 0, laborPerSq: 0, wastePct: 10, capPerFt: 0 },
 ];
 
 /**
@@ -72,7 +82,6 @@ export const UNDERLAYMENTS: Underlayment[] = [
   { id: "felt15", label: "#15 asphalt felt", perSq: 18 },
   { id: "felt30", label: "#30 asphalt felt", perSq: 26 },
   { id: "paper60", label: "60-minute paper (kraft, asphalt-saturated)", perSq: 30 },
-  { id: "custom", label: "Custom…", perSq: 0 },
 ];
 
 export type IceWaterCoverage = "none" | "eaves" | "eaves_valleys" | "full";
@@ -195,6 +204,13 @@ export const STEEP_SAFETY_LUMP = 250;
 
 /** The waste picker's options; the chosen roof system pre-selects one. */
 export const WASTE_OPTIONS = [5, 8, 10, 12, 15, 18, 20];
+
+/** The two lists the contractor edits and saves as the org's own catalog. */
+export interface CatalogLists {
+  systems: RoofSystem[];
+  underlayments: Underlayment[];
+}
+export const BUILTIN_LISTS: CatalogLists = { systems: ROOF_SYSTEMS, underlayments: UNDERLAYMENTS };
 
 /** The proposal's measurement vocabulary, as the units the builder emits. */
 export const PKG_UNITS: PkgUnit[] = ["square", "sq ft", "linear ft", "each", "hour", "lot"];
