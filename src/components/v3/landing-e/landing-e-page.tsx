@@ -51,12 +51,13 @@ const BuiltSection = dynamic(() => import("./built-section").then((m) => m.Built
 const ScrollFx = dynamic(() => import("./scroll-fx").then((m) => m.ScrollFx));
 import {
   isVariantReady,
-  signupHref,
   variantContent,
   type LandingVariantKey,
   type UtmParams,
 } from "./landing-variants";
-import { MobileCta } from "../landing-d/mobile-cta";
+import { signupHrefE } from "./signup-href";
+import { MobileCta } from "./mobile-cta";
+import { GoogleOneTap } from "@/components/auth/google-one-tap";
 import { Nav } from "./nav";
 import { REGISTER } from "./routes";
 import "./landing-e.css";
@@ -72,7 +73,8 @@ export interface LandingEProps {
 
 export async function LandingE({ variant, explicitVariant = false, utm = {} }: LandingEProps) {
   const v = variantContent(variant);
-  const register = signupHref(REGISTER, { industry: variant, utm });
+  // Every register link carries `v=e` (pass A): the register page reads it.
+  const register = signupHrefE(REGISTER, { industry: variant, utm });
   // The price anchor shows the Subscription page's own catalogue (CRO stage
   // 2); a catalogue read that fails leaves the section out rather than the
   // page down.
@@ -124,6 +126,9 @@ export async function LandingE({ variant, explicitVariant = false, utm = {} }: L
       <WarmLayout />
       <CtaTracker industry={variant} />
       <LandingVariantEffects industry={variant} remember={explicitVariant} utm={utm} />
+      {/* Google One Tap (pass A): only when NEXT_PUBLIC_GOOGLE_CLIENT_ID is set;
+          loads after the page is idle, so it never competes with the hero. */}
+      <GoogleOneTap />
     </div>
   );
 }

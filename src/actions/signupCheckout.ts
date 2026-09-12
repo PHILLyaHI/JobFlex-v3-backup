@@ -41,6 +41,7 @@ import { settleReferralsForSignupOrg } from "@/lib/referralRewards";
 import { after } from "next/server";
 import { captureSignupOutcome, trafficIdentitySchema } from "@/lib/traffic-capture-server";
 import { sendMetaEvent, type MetaSignupContext } from "@/lib/metaCapi";
+import { sendWelcomeFirstEstimate } from "@/lib/email/welcome";
 
 /** How long an unpaid intent is honoured. Long enough to pay, short enough
  *  that an abandoned card never becomes an account a week later. */
@@ -63,6 +64,10 @@ const pendingSchema = z.object({
    *  kept next to the promo/referral attribution so the signup can be read
    *  back to its campaign. Advisory only — never overrides tradeTypes. */
   landingIndustry: z.enum(TRADE_TYPES).optional(),
+  /** landing-e's test variant (pass A, 2026-09-11): recorded on the
+   *  organization, carried on the completion event, and the switch for the
+   *  welcome email and the first-run card. Absent for every other signup. */
+  signupVariant: z.enum(["e"]).optional(),
   /** The visit's utm_*, as the landing carried them (CRO stage 1, 2026-09-09). */
   utm: z
     .object({
@@ -165,6 +170,7 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
     tradeTypes: data.tradeTypes,
     otherTrade: data.otherTrade,
     landingIndustry: data.landingIndustry,
+    signupVariant: data.signupVariant,
     utm: data.utm,
     meta: await metaContextFor(data.meta),
     attribution: data.attribution ?? null,
@@ -414,6 +420,7 @@ export async function completePendingSignup(
           // Where the signup came from — the landing's trade hero and the
           // visit's utm_*, first write, never overwritten (CRO stage 1).
           landingIndustry: rec.landingIndustry ?? null,
+          signupVariant: rec.signupVariant ?? null,
           utmSource: rec.utm?.utm_source || null,
           utmMedium: rec.utm?.utm_medium || null,
           utmCampaign: rec.utm?.utm_campaign || null,
@@ -527,7 +534,19 @@ export async function completePendingSignup(
   // round-trip ago.
   const ticket = await mintSigninTicket(userId);
   if (sessionId && rec.analytics) {
-    after(() => captureSignupOutcome(rec.analytics, sessionId, analyticsOutcome, planSlug, analyticsLive, rec.landingIndustry ?? null, rec.utm ?? null));
+    after(() => captureSignupOutcome(rec.analytics, sessionId, analyticsOutcome, planSlug, analyticsLive, rec.landingIndustry ?? null, rec.utm ?? null, rec.signupVariant ?? null));
+  }
+  // The welcome email (landing-e pass A): variant e only. Sent after the
+  // response; a failure is logged, never shown — the account already exists.
+  if (rec.signupVariant === "e") {
+    const welcome = {
+      to: rec.email,
+      name: rec.name,
+      tradeTypes: rec.tradeTypes ?? [],
+      landingIndustry: rec.landingIndustry ?? null,
+      firstChargeAt: trialEnd ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+    };
+    after(() => sendWelcomeFirstEstimate(welcome).catch((e) => console.warn("[signup] welcome email failed:", e)));
   }
   // Meta CompleteRegistration — the server copy of the browser's event (same
   // event_id). Goes with or without consent; consent decides whether fbp/fbc,

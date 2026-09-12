@@ -51,6 +51,10 @@ export async function googleSignupReturnUrl(handle: string): Promise<string> {
     if (industry) q.set("industry", industry);
     const utm = parseUtmCookie(jar.get(UTM_COOKIE)?.value);
     for (const key of UTM_KEYS) if (utm[key]) q.set(key, utm[key] as string);
+    // landing-e's test variant (pass A): only landing-e writes this cookie.
+    const { VARIANT_COOKIE, parseSignupVariant } = await import("@/lib/signupVariant");
+    const variant = parseSignupVariant(jar.get(VARIANT_COOKIE)?.value);
+    if (variant) q.set("v", variant);
   } catch {
     /* no request cookies here — the register page reads the same cookies itself */
   }

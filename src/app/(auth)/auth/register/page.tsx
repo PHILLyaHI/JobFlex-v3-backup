@@ -27,6 +27,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { isPlaceholderOrgName, needsCompanySetup } from "@/lib/orgSetup";
 import { readGoogleSignup } from "@/lib/googleSignup";
+import { VARIANT_COOKIE, parseSignupVariant } from "@/lib/signupVariant";
 import { RegisterResponsive, type GooglePrefill, type SetupPrefill } from "./register-responsive";
 import {
   INDUSTRY_COOKIE,
@@ -75,6 +76,10 @@ export default async function RegisterPage({
      no query). Stamped on the organization at creation (CRO stage 1). */
   const utmFromQuery = pickUtm(sp);
   const utm = hasUtm(utmFromQuery) ? utmFromQuery : parseUtmCookie(jar.get(UTM_COOKIE)?.value);
+  /* THE TEST VARIANT (landing-e pass A, 2026-09-11): `?v=e` on the link, else
+     the cookie landing-e wrote. Only landing-e sets either; every other
+     arrival is null and the form is exactly what it was. */
+  const variant = parseSignupVariant(sp.v) ?? parseSignupVariant(jar.get(VARIANT_COOKIE)?.value);
 
   /* THE RETURN FROM GOOGLE, resolved HERE rather than in the browser. The
      client used to fetch the parked identity after mount, so the first frame
@@ -126,5 +131,5 @@ export default async function RegisterPage({
     // Session read hiccup: render the normal signup.
   }
   if (sendToApp) redirect("/dashboard");
-  return <RegisterResponsive setup={setup} google={google} industry={industry} utm={hasUtm(utm) ? utm : null} />;
+  return <RegisterResponsive setup={setup} google={google} industry={industry} utm={hasUtm(utm) ? utm : null} variant={variant} />;
 }

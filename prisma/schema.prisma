@@ -75,6 +75,9 @@ model Organization {
   // organization is created, first-write-wins, never overwritten. Advisory:
   // tradeTypesJson is what the owner chose; this is what the ad promised.
   landingIndustry       String?
+  // landing-e's test variant ("e"), null for every other signup (pass A,
+  // 2026-09-11). Read by the Overview's first-run card and Admin → Traffic.
+  signupVariant         String?
   utmSource             String?
   utmMedium             String?
   utmCampaign           String?

@@ -84,7 +84,12 @@ export interface TrafficReport {
   funnel: FunnelStage[];
   funnelOutcomes: { trials: number; purchases: number; other: number; trialAttempts: number; purchaseAttempts: number } | null;
   experiments: ExperimentResult[];
+  /** Landing variant d vs e (pass A): visitors whose first registration step
+   *  carried `variant` ("e") or not ("d"), and how many of them completed a
+   *  verified signup inside the conversion window. */
+  variants: VariantFunnel[];
 }
+export interface VariantFunnel { variant: "d" | "e"; started: number; completed: number }
 
 export const TRAFFIC_EVENTS = {
   step: "jf_registration_step_viewed",
@@ -107,7 +112,7 @@ export interface SignupAttribution {
   from: string;
   to: string;
   total: number;
-  dimensions: Record<"landingIndustry" | "utmSource" | "utmMedium" | "utmCampaign" | "utmContent", Array<{ name: string; signups: number }>>;
+  dimensions: Record<"landingIndustry" | "signupVariant" | "utmSource" | "utmMedium" | "utmCampaign" | "utmContent", Array<{ name: string; signups: number }>>;
 }
 
 export function pageLabel(page: string): string {

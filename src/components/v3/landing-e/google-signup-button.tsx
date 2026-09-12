@@ -13,8 +13,9 @@ import { signIn } from "next-auth/react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { writeLandingCookies } from "./landing-variant-effects";
-import { signupHref, type LandingVariantKey, type UtmParams } from "./landing-variants";
+import type { LandingVariantKey, UtmParams } from "./landing-variants";
 import { REGISTER } from "./routes";
+import { signupHrefE } from "./signup-href";
 
 /* CRO stage 1 (2026-09-09): the trade hero and the visit's utm_* ride along.
    They are written to the memory cookies synchronously before the redirect
@@ -45,7 +46,7 @@ export function GoogleSignupButton({
         if (busy) return;
         setBusy(true);
         writeLandingCookies(industry, utm);
-        void signIn("google", { callbackUrl: signupHref(REGISTER, { industry, utm }) });
+        void signIn("google", { callbackUrl: signupHrefE(REGISTER, { industry, utm }) });
       }}
     >
       {children}

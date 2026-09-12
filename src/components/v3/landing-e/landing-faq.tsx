@@ -31,7 +31,7 @@ function questions(variant: LandingVariantKey | undefined): Faq[] {
   return [
     {
       q: "Do I need a credit card to start?",
-      a: "No. The 14-day trial starts without one; you add a card only when you pick a plan.",
+      a: "Yes, at step 3 of signup, when you pick a plan. The 14 days are free and the first charge comes on day 15. Cancel in one click from Subscription before then and you pay nothing.",
     },
     {
       q: "How long does it take to learn?",

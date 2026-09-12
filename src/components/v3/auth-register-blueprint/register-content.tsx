@@ -42,6 +42,8 @@ import { checkEmailAvailable, completeCompanySetup } from "@/actions/auth";
 import type { GooglePrefill, SetupPrefill } from "@/app/(auth)/auth/register/register-responsive";
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
 import type { UtmParams } from "@/components/v3/landing-d/landing-variants";
+import { VARIANT_COOKIE, VARIANT_MAX_AGE_S, type SignupVariant } from "@/lib/signupVariant";
+import { GoogleOneTap } from "@/components/auth/google-one-tap";
 import { readConsent } from "@/lib/consent";
 import { metaTrack, newEventId, readMetaCookies } from "@/lib/metaPixel";
 import { RegisterSprite } from "./register-sprite";
@@ -104,8 +106,12 @@ export function RegisterContent({
   google: googlePrefill = null,
   industry = null,
   utm = null,
+  variant = null,
 }: {
   setup?: SetupPrefill | null;
+  /* landing-e's test variant (pass A, 2026-09-11): `?v=e` or the cookie the
+     landing wrote, resolved on the server. See `variantE` below. */
+  variant?: SignupVariant | null;
   /* The visit's utm_*, resolved on the server (query, else the landing's
      cookie). Rides into the signup intent and onto the organization. */
   utm?: UtmParams | null;
@@ -122,6 +128,13 @@ export function RegisterContent({
      it), the plan step follows in the app (/dashboard/upgrade), and there is
      no pending-signup intent to park: the account already exists. */
   const setupMode = setup !== null;
+  /* THE TEST VARIANT (landing-e pass A, 2026-09-11). When true: step 1 is
+     three fields (name, email, password — the business name moves to step 2
+     and the confirmation is gone), the progress shows all three steps from
+     the first screen, the card terms are said out loud under the button and
+     above the plans, every analytics event carries `variant: "e"`, and the
+     pending signup records it. When false nothing below changes. */
+  const variantE = variant === "e";
   const rootRef = React.useRef<HTMLDivElement>(null);
   const addrRef = React.useRef<HTMLInputElement>(null);
 
@@ -171,10 +184,20 @@ export function RegisterContent({
     // Parent route effects must record the entry pageview before this screen.
     const timer = window.setTimeout(() => {
       lastTrackedStep.current = key;
-      trackTraffic(TRAFFIC_EVENTS.step, { step, flow: trafficFlow });
+      trackTraffic(TRAFFIC_EVENTS.step, { step, flow: trafficFlow, ...(variantE ? { variant: "e" } : {}) });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [step, trafficFlow]);
+  }, [step, trafficFlow, variantE]);
+  /* The variant outlives this page load: the return from Google and One Tap
+     arrive without `?v=e`, and the page reads the cookie then. */
+  React.useEffect(() => {
+    if (!variantE) return;
+    try {
+      document.cookie = `${VARIANT_COOKIE}=e; path=/; max-age=${VARIANT_MAX_AGE_S}; samesite=lax`;
+    } catch {
+      /* cookies blocked */
+    }
+  }, [variantE]);
   /* True once the ticket minted by completePendingSignup has been redeemed:
      the browser holds a session, and step 4 may point at the dashboard. */
   const [signedIn, setSignedIn] = React.useState(false);
@@ -740,8 +763,8 @@ export function RegisterContent({
     const n = name.trim();
     const b = biz.trim();
     const em = email.trim();
-    if (!n || !b || !em) {
-      setErr1("Name, business name and email are required.");
+    if (!n || (!variantE && !b) || !em) {
+      setErr1(variantE ? "Name and email are required." : "Name, business name and email are required.");
       return;
     }
     if (em.indexOf("@") === -1) {
@@ -753,7 +776,7 @@ export function RegisterContent({
         setErr1("Password must be at least 8 characters.");
         return;
       }
-      if (password !== password2) {
+      if (!variantE && password !== password2) {
         setErr1("Passwords do not match.");
         return;
       }
@@ -772,7 +795,7 @@ export function RegisterContent({
     } finally {
       setChecking(false);
     }
-    setDoneNote(b + " is ready to send its first proposal.");
+    if (b) setDoneNote(b + " is ready to send its first proposal.");
     setStep(2);
   }
 
@@ -790,7 +813,7 @@ export function RegisterContent({
     if (creating) return;
     /* Drawn on this step for the setup and Google paths, so it is validated
        here rather than in onStep1, which those paths skip. */
-    if ((setupMode || google) && !biz.trim()) {
+    if ((setupMode || google || variantE) && !biz.trim()) {
       setErr2("Enter your business name.");
       return;
     }
@@ -834,6 +857,7 @@ export function RegisterContent({
         attribution: attribution ?? undefined,
         landingIndustry: industry ?? undefined,
         utm: utm ?? undefined,
+        signupVariant: variantE ? "e" : undefined,
         meta: {
           consent: readConsent()?.marketing === true,
           registrationEventId: metaIds.current.registration,
@@ -867,7 +891,7 @@ export function RegisterContent({
     window.setTimeout(() => setGoogleBusy(false), 1600);
     // A new address comes back here with ?gsu= (auth callback); an address
     // that already has an account signs in and lands on the dashboard.
-    void signIn("google", { callbackUrl: "/auth/register" });
+    void signIn("google", { callbackUrl: variantE ? "/auth/register?v=e" : "/auth/register" });
   }
 
   const brand = (
@@ -885,7 +909,7 @@ export function RegisterContent({
       <div className={stItem(0, step)} data-step="1">
         <span className="st-n">1</span>
         <span className="st-txt">
-          <span className="st-t">Your account</span>
+          <span className="st-t">{variantE ? "Account" : "Your account"}</span>
           <span className="st-h">Required</span>
         </span>
       </div>
@@ -893,20 +917,22 @@ export function RegisterContent({
       <div className={stItem(1, step)} data-step="2">
         <span className="st-n">2</span>
         <span className="st-txt">
-          <span className="st-t">Your company</span>
+          <span className="st-t">{variantE ? "Company" : "Your company"}</span>
           <span className="st-h">Required</span>
         </span>
       </div>
       {/* Shown only once it is reached (owner's call, 2026-08-28): the
           plan is the third step, but announcing it on the first screen
-          announces a price before anyone has seen the product. */}
-      {step >= 3 ? (
+          announces a price before anyone has seen the product. The test
+          variant (pass A) shows all three from the start — its note under
+          the button already says "Step 1 of 3". */}
+      {step >= 3 || variantE ? (
         <>
           <span className="st-line"></span>
           <div className={stItem(2, step)} data-step="3">
             <span className="st-n">3</span>
             <span className="st-txt">
-              <span className="st-t">Your plan</span>
+              <span className="st-t">{variantE ? "Plan" : "Your plan"}</span>
               <span className="st-h">14 days free</span>
             </span>
           </div>
@@ -942,7 +968,9 @@ export function RegisterContent({
             <h1 className="auth-h1">Register.</h1>
 
             <form id="step1Form" noValidate onSubmit={(e) => void onStep1(e)}>
-              <div className="grid2">
+              {/* The test variant asks for the business name on step 2, so
+                  the name stands alone here, full width. */}
+              <div className={variantE ? undefined : "grid2"}>
                 <label className="fld">
                   <span className="fld-lbl">Your name</span>
                   <input
@@ -954,17 +982,19 @@ export function RegisterContent({
                     onChange={(e) => setName(e.target.value)}
                   />
                 </label>
-                <label className="fld">
-                  <span className="fld-lbl">Business name</span>
-                  <input
-                    className="fld-in"
-                    id="biz"
-                    placeholder="Company name"
-                    autoComplete="organization"
-                    value={biz}
-                    onChange={(e) => setBiz(e.target.value)}
-                  />
-                </label>
+                {!variantE ? (
+                  <label className="fld">
+                    <span className="fld-lbl">Business name</span>
+                    <input
+                      className="fld-in"
+                      id="biz"
+                      placeholder="Company name"
+                      autoComplete="organization"
+                      value={biz}
+                      onChange={(e) => setBiz(e.target.value)}
+                    />
+                  </label>
+                ) : null}
               </div>
               <label className="fld">
                 <span className="fld-lbl">Email</span>
@@ -1019,7 +1049,9 @@ export function RegisterContent({
                 <span className="fld-note">At least 8 characters.</span>
               </label>
               {/* Confirm password (owner's call, 2026-08-18). Its own toggle
-                  state, so revealing one field does not reveal the other. */}
+                  state, so revealing one field does not reveal the other.
+                  Not on the test variant (pass A): three fields, no more. */}
+              {!variantE ? (
               <label className="fld">
                 <span className="fld-lbl">Confirm password</span>
                 <span className="pw-wrap">
@@ -1044,6 +1076,7 @@ export function RegisterContent({
                   </button>
                 </span>
               </label>
+              ) : null}
               </>
               ) : null}
 
@@ -1053,6 +1086,13 @@ export function RegisterContent({
                   <use href="#i-arrow-r" />
                 </svg>
               </button>
+              {/* The terms, said out loud (pass A): where the card comes in
+                  and when the first charge is, before anyone types. */}
+              {variantE ? (
+                <p className="step-note" id="stepNote">
+                  Step 1 of 3 · 14 days free · card at step 3, not charged until day 15
+                </p>
+              ) : null}
               <div className={err1 ? "err" : "err is-hidden"} id="err1">
                 {err1}
               </div>
@@ -1085,6 +1125,9 @@ export function RegisterContent({
                 Sign in
               </Link>
             </div>
+            {/* Google One Tap (pass A): the variant's step 1 only, and only
+                with NEXT_PUBLIC_GOOGLE_CLIENT_ID set. */}
+            {variantE && step === 1 && !google && !setupMode ? <GoogleOneTap /> : null}
           </div>
 
           {/* ───── ШАГ 2 ───── */}
@@ -1110,7 +1153,7 @@ export function RegisterContent({
                 void finish();
               }}
             >
-              {setupMode || google ? (
+              {setupMode || google || variantE ? (
                 <label className="fld">
                   <span className="fld-lbl">Business name</span>
                   <input
@@ -1307,6 +1350,12 @@ export function RegisterContent({
             <div className="pw-head">
               <h1 className="auth-h1">Pick a plan.</h1>
             </div>
+            {/* The card terms, once more, where the card is asked for (pass A). */}
+            {variantE ? (
+              <p className="pw-terms" id="pwTerms">
+                Your card won&apos;t be charged until day 15. Cancel anytime from Subscription.
+              </p>
+            ) : null}
 
             {plansErr ? (
               <div className="err" role="alert">

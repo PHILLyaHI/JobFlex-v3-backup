@@ -60,7 +60,7 @@ function exportReport(report: TrafficReport) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-const signupDimensions = { landingIndustry: "Landing trade", utmSource: "utm_source", utmMedium: "utm_medium", utmCampaign: "utm_campaign", utmContent: "utm_content" } as const;
+const signupDimensions = { landingIndustry: "Landing trade", signupVariant: "Landing variant", utmSource: "utm_source", utmMedium: "utm_medium", utmCampaign: "utm_campaign", utmContent: "utm_content" } as const;
 type SignupDimension = keyof typeof signupDimensions;
 
 export function AdminTrafficContent({ data, signups: initialSignups = null }: { data: TrafficReport; signups?: SignupAttribution | null }) {
@@ -195,6 +195,8 @@ export function AdminTrafficContent({ data, signups: initialSignups = null }: { 
         </div>
         <aside className={s.conversionPlate}><div className={s.eyebrow}>End-to-end conversion</div><strong>{!coverageIncomplete && funnelEnd ? rate(percent(funnelEnd.visitors, report.funnel[0]?.visitors || 0)) : "--"}</strong><span>{report.firstStepAt && funnelEnd ? `${n(funnelEnd.visitors)} verified signups observed` : "Awaiting step tracking"}</span><dl className={s.outcomes}>{([['Trial attempts', 'trialAttempts'], ['Purchase attempts', 'purchaseAttempts'], ['Trials started', 'trials'], ['Subscriptions purchased', 'purchases'], ['Other activations', 'other']] as const).map(([label, key]) => <div key={key}><dt>{label}</dt><dd>{report.firstStepAt ? n(report.funnelOutcomes?.[key]) : "--"}</dd></div>)}</dl><p>Attempt = button clicked. Verified = Stripe confirmed and account created.</p><p>{filters.billingMode === "live" ? "Test checkouts excluded." : filters.billingMode === "test" ? "Test checkout outcomes only." : "Live and test outcomes included."} Attempts cannot know the billing mode yet.</p><p>{filters.windowDays}-day window from the first eligible landing. Recent cohorts may still convert.</p></aside>
       </div>
+      {/* Landing variant d vs e (landing-e pass A): signup starts → verified signups, per arm. */}
+      {!!report.variants.length && <div className={s.tableScroll} style={{ marginTop: 18 }}><table className={s.table}><thead><tr><th>Landing variant</th><th>Signup starts</th><th>Verified signups</th><th>Start → complete</th></tr></thead><tbody>{report.variants.map(v => <tr key={v.variant}><td><b>{v.variant === "e" ? "e / landing-e" : "d / landing"}</b></td><td><b>{n(v.started)}</b></td><td>{n(v.completed)}</td><td>{coverageIncomplete ? "--" : rate(percent(v.completed, v.started))}</td></tr>)}</tbody></table></div>}
     </section>
 
     <div className={s.sectionLabel}><span>03 / Explore</span><span>Same date &amp; audience filters</span></div>
