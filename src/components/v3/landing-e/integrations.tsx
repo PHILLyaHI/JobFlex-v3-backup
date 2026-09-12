@@ -16,7 +16,7 @@ function Tiles({ side }: { side: "left" | "right" }) {
         {L ? (
           <span className="flex h-full w-full items-center justify-center lp-int-tile bg-indigo-500 text-[34px] font-bold italic text-white">S</span>
         ) : (
-          <svg viewBox="0 0 40 40" className="h-9 w-9 text-lp-ink" aria-hidden>
+          <svg viewBox="0 0 40 40" className="h-9 w-9 text-ink" aria-hidden>
             <rect x="6" y="6" width="28" height="28" rx="7" fill="currentColor" />
             <rect x="15" y="15" width="10" height="10" rx="3" fill="#fff" />
           </svg>
@@ -55,7 +55,7 @@ function Tiles({ side }: { side: "left" | "right" }) {
         {L ? (
           <span className="flex h-full w-full flex-col overflow-hidden lp-int-tile">
             <span className="bg-[#1a73e8] py-1 text-center text-[8px] font-bold uppercase text-white">Jul</span>
-            <span className="flex flex-1 items-center justify-center bg-white text-[22px] font-bold text-lp-ink">14</span>
+            <span className="flex flex-1 items-center justify-center bg-white text-[22px] font-bold text-ink">14</span>
           </span>
         ) : (
           <svg viewBox="0 0 40 40" className="h-8 w-8" aria-hidden>
@@ -84,9 +84,9 @@ function Tiles({ side }: { side: "left" | "right" }) {
       {/* mail brand / bank */}
       <span className={`${TILE} absolute h-14 w-14`} style={L ? { left: "62%", top: "72%" } : { right: "34%", top: "0%" }}>
         {L ? (
-          <span className="text-[24px] font-black tracking-tight text-lp-ink">R</span>
+          <span className="text-[24px] font-black tracking-tight text-ink">R</span>
         ) : (
-          <svg viewBox="0 0 40 40" className="h-8 w-8 text-slate-600" aria-hidden>
+          <svg viewBox="0 0 40 40" className="h-8 w-8 text-[#555555]" aria-hidden>
             <path d="M6 16L20 7l14 9" fill="none" stroke="currentColor" strokeWidth="2.5" />
             <path d="M9 18v12M16 18v12M24 18v12M31 18v12M5 32h30" stroke="currentColor" strokeWidth="2.5" />
           </svg>
@@ -159,11 +159,11 @@ export function Integrations() {
         <Reveal>
           <IntegrationsMobile />
           <div className="mx-auto hidden max-w-[36rem] flex-col items-center justify-center text-center lg:flex lg:min-h-[420px]">
-            <h2 className="lp-eyebrow text-slate-500">Integrations</h2>
-            <p className="mt-4 text-[clamp(30px,3vw,42px)] font-bold tracking-[-0.015em] text-lp-ink">
+            <h2 className="lp-eyebrow text-[#666666]">Integrations</h2>
+            <p className="mt-4 text-[clamp(30px,3vw,42px)] font-bold tracking-[-0.015em] text-ink">
               Works with your back office.
             </p>
-            <p className="mt-5 text-[19px] leading-[1.55] text-slate-600">
+            <p className="mt-5 text-[19px] leading-[1.55] text-[#555555]">
               Payments, texting, email, calendar and books — already connected.
             </p>
             {/* A link to the tiles, not a register button (pass B). */}

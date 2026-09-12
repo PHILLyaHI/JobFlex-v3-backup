@@ -56,18 +56,18 @@ export function SmartProposalShot({ active, scenario, instant = false }: { activ
           >
             <div className="mx-auto w-full max-w-[640px]">
               <div className="flex items-center gap-2">
-                <span className="text-[9px] font-black uppercase tracking-[0.18em] text-ink-faint">Written</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.18em] text-[#6a6a6a]">Written</span>
                 <span className="h-px flex-1" style={{ background: HAIR }} />
               </div>
               {writing &&
                 lines.map(([name, qty, price], i) => (
                   <Beat key={name} delay={120 + i * 160}>
                     <div className="flex items-baseline gap-3 border-b border-black/[0.07] py-2.5">
-                      <span className="w-4 shrink-0 font-mono text-[10px] text-ink-faint">{String(i + 1).padStart(2, "0")}</span>
+                      <span className="w-4 shrink-0 font-mono text-[10px] text-[#6a6a6a]">{String(i + 1).padStart(2, "0")}</span>
                       <span className="min-w-0 flex-1 truncate text-[12px] text-ink sm:text-[13.5px]">{name}</span>
                       {/* the quantity is the first thing to go when the column
                           is 350px wide — the line and its price are not */}
-                      <span className="hidden shrink-0 font-mono text-[10.5px] text-ink-faint sm:inline">{qty}</span>
+                      <span className="hidden shrink-0 font-mono text-[10.5px] text-[#6a6a6a] sm:inline">{qty}</span>
                       <span className="w-[62px] shrink-0 text-right font-mono text-[12px] font-bold text-ink sm:w-[68px] sm:text-[13px]">{price}</span>
                     </div>
                   </Beat>
@@ -76,7 +76,7 @@ export function SmartProposalShot({ active, scenario, instant = false }: { activ
                 <Beat delay={120 + lines.length * 160}>
                   <div className="flex items-center gap-2 py-2.5">
                     <span className="h-[3px] w-24 rounded-full" style={{ background: SKY, opacity: 0.5 }} />
-                    <span className="font-mono text-[10px] text-ink-faint">writing…</span>
+                    <span className="font-mono text-[10px] text-[#6a6a6a]">writing…</span>
                   </div>
                 </Beat>
               )}

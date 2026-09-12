@@ -8,7 +8,7 @@ export function Intro() {
       <div className="lp-bg lp-bg--truck" aria-hidden data-lazy />
       <div className="relative z-[1] mx-auto lp-wrap">
         <Reveal>
-          <p className="max-w-[52rem] text-[17px] font-semibold leading-[1.4] tracking-[-0.01em] text-lp-ink sm:text-[clamp(19px,1.6vw,22px)]">
+          <p className="max-w-[52rem] text-[17px] font-semibold leading-[1.4] tracking-[-0.01em] text-ink sm:text-[clamp(19px,1.6vw,22px)]">
             Quote, book, invoice, get paid — one app.
           </p>
         </Reveal>

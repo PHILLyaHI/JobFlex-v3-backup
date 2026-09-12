@@ -14,7 +14,7 @@ import { Reveal } from "./reveal";
 type Status = BuiltJob["status"];
 
 const STATUS_CHIP: Record<Status, string> = {
-  DRAFT: "border-dashed border-slate-400 text-slate-500",
+  DRAFT: "border-dashed border-slate-400 text-[#666666]",
   SCHEDULED: "border-[#1854A0] bg-[#1854A0]/[0.06] text-[#1854A0]",
   "IN PROGRESS": "border-[#4A9EFF] bg-[#4A9EFF]/10 text-[#1854A0]",
   PAID: "border-emerald-600 bg-emerald-600/[0.07] text-emerald-700",
@@ -45,17 +45,17 @@ export function BuiltSection({ jobs = JOBS, phoneJobs }: { jobs?: BuiltJob[]; ph
       <div className="relative z-[1] mx-auto lp-wrap">
         <Reveal>
           <div className="max-w-[46rem]">
-            <h2 className="lp-eyebrow text-slate-500">Built for the field</h2>
+            <h2 className="lp-eyebrow text-[#666666]">Built for the field</h2>
             <div className="lp-built-callout mt-5">
               {/* Say the problem, not the pitch (owner, 2026-08-25). */}
-              <p className="text-[17px] leading-[1.5] text-slate-600 lg:text-[21px]">
+              <p className="text-[17px] leading-[1.5] text-[#555555] lg:text-[21px]">
                 The job ends and the paperwork starts — the estimate, the invoice,
                 the three people still waiting on a text.
               </p>
-              <p className="mt-4 text-[clamp(32px,4.4vw,56px)] font-bold leading-[1.06] tracking-[-0.02em] text-lp-ink">
+              <p className="mt-4 text-[clamp(32px,4.4vw,56px)] font-bold leading-[1.06] tracking-[-0.02em] text-ink">
                 JobFlex does that half of the job.
               </p>
-              <p className="mt-[18px] text-[17px] leading-[1.5] text-slate-600 lg:text-[21px]">One price. Add the whole crew.</p>
+              <p className="mt-[18px] text-[17px] leading-[1.5] text-[#555555] lg:text-[21px]">One price. Add the whole crew.</p>
             </div>
           </div>
         </Reveal>
@@ -76,7 +76,7 @@ export function BuiltSection({ jobs = JOBS, phoneJobs }: { jobs?: BuiltJob[]; ph
               {FILTERS.map((f) => (
                 <span
                   key={f}
-                  className="flex items-center gap-1 rounded-[2px] border-[1.5px] border-black/15 bg-white px-2 py-[3px] font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500"
+                  className="flex items-center gap-1 rounded-[2px] border-[1.5px] border-black/15 bg-white px-2 py-[3px] font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-[#666666]"
                 >
                   {f}
                   <svg viewBox="0 0 10 10" className="h-2 w-2" aria-hidden>
@@ -84,13 +84,13 @@ export function BuiltSection({ jobs = JOBS, phoneJobs }: { jobs?: BuiltJob[]; ph
                   </svg>
                 </span>
               ))}
-              <span className="ml-auto font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500">
+              <span className="ml-auto font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-[#666666]">
                 Sort · Newest
               </span>
             </div>
 
             <div className="lp-bp-card">
-              <div className="grid grid-cols-[minmax(0,2.4fr)_92px_130px_120px] gap-3 border-b-[1.5px] border-lp-ink pb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+              <div className="grid grid-cols-[minmax(0,2.4fr)_92px_130px_120px] gap-3 border-b-[1.5px] border-lp-ink pb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[#666666]">
                 <span>Title</span>
                 <span className="text-right">Invoiced</span>
                 <span className="text-right">Collected</span>
@@ -104,11 +104,11 @@ export function BuiltSection({ jobs = JOBS, phoneJobs }: { jobs?: BuiltJob[]; ph
                   <div className="min-w-0">
                     <div className="flex min-w-0 items-center gap-2">
                       <Ic name="jobs" className="lp-bp-ic lp-bp-ic--sm" />
-                      <span className="truncate text-[14px] font-semibold text-lp-ink">{r.t}</span>
+                      <span className="truncate text-[14px] font-semibold text-ink">{r.t}</span>
                     </div>
-                    <div className="mt-[1px] truncate pl-[21px] text-[13px] text-slate-600">By {r.by}</div>
+                    <div className="mt-[1px] truncate pl-[21px] text-[13px] text-[#555555]">By {r.by}</div>
                   </div>
-                  <span className="text-right font-mono text-[13px] font-bold tabular-nums text-lp-ink">
+                  <span className="text-right font-mono text-[13px] font-bold tabular-nums text-ink">
                     {r.inv || "—"}
                   </span>
                   <span className="flex items-center justify-end gap-2">
@@ -120,10 +120,10 @@ export function BuiltSection({ jobs = JOBS, phoneJobs }: { jobs?: BuiltJob[]; ph
                             style={{ width: `${r.pct}%`, background: r.pct === 100 ? "#059669" : "#1854A0" }}
                           />
                         </span>
-                        <span className="font-mono text-[13px] font-bold tabular-nums text-slate-600">{r.pct}%</span>
+                        <span className="font-mono text-[13px] font-bold tabular-nums text-[#555555]">{r.pct}%</span>
                       </>
                     ) : (
-                      <span className="font-mono text-[13px] text-slate-500">—</span>
+                      <span className="font-mono text-[13px] text-[#666666]">—</span>
                     )}
                   </span>
                   <span className="text-right">

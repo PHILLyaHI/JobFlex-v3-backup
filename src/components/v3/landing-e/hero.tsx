@@ -46,7 +46,7 @@ export function Hero({
           <a
             href={registerHref}
             data-cta="pill"
-            className="inline-flex items-center gap-1 rounded-full bg-lp-gold px-4 py-[7px] text-[15px] font-semibold text-lp-ink transition-transform duration-200 hover:scale-[1.03] sm:text-[14px]"
+            className="inline-flex items-center gap-1 rounded-full bg-lp-gold px-4 py-[7px] text-[15px] font-semibold text-ink transition-transform duration-200 hover:scale-[1.03] sm:text-[14px]"
           >
             Just launched: JobFlex AI Estimator
             <span aria-hidden>→</span>
@@ -58,7 +58,7 @@ export function Hero({
             motion, and <noscript> lifts it with no JavaScript at all. */}
         <noscript><style>{`.jf-lp .lp-enter{visibility:visible}`}</style></noscript>
         <HeroEntrance>
-        <h1 className="lp-enter text-[clamp(38px,6.7vw,96px)] font-bold leading-[1.02] tracking-[-0.025em] text-lp-ink" data-entrance="h1">
+        <h1 className="lp-enter text-[clamp(38px,6.7vw,96px)] font-bold leading-[1.02] tracking-[-0.025em] text-ink" data-entrance="h1">
           {variant.h1[0]}
           <br />
           {variant.h1[1]}

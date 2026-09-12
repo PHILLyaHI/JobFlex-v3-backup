@@ -40,10 +40,10 @@ export function DashboardMobile() {
 
         {/* App nav */}
         <div className="flex items-center justify-between gap-2 px-4 pt-2">
-          <span className="text-[19px] font-extrabold tracking-tight text-[#0f1013]">
+          <span className="text-[19px] font-extrabold tracking-tight text-ink">
             jobflex
           </span>
-          <span className="relative pb-2.5 text-[12.5px] font-semibold text-[#0f1013]">
+          <span className="relative pb-2.5 text-[12.5px] font-semibold text-ink">
             Dashboard
             <span className="absolute inset-x-0 bottom-0 h-[3px] rounded-full bg-[#4a4a9c]" />
           </span>
@@ -52,7 +52,7 @@ export function DashboardMobile() {
         <div className="px-4 pb-9">
           {/* Greeting */}
           <div className="mt-6 flex items-baseline justify-between gap-2">
-            <span className="whitespace-nowrap text-[18px] font-extrabold leading-tight tracking-[-0.01em] text-[#0f1013]">
+            <span className="whitespace-nowrap text-[18px] font-extrabold leading-tight tracking-[-0.01em] text-ink">
               Good morning, Reyes &amp; Sons
             </span>
             <span className="shrink-0 text-[11.5px] font-medium text-[#9d9ea8]">Wed, Jul 16</span>
@@ -83,7 +83,7 @@ export function DashboardMobile() {
 
           {/* This week */}
           <div className="mt-7">
-            <span className="text-[21px] font-extrabold tracking-[-0.01em] text-[#0f1013]">
+            <span className="text-[21px] font-extrabold tracking-[-0.01em] text-ink">
               This week
             </span>
           </div>

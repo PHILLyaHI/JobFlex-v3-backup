@@ -59,8 +59,8 @@ export function LandingFaq({ variant, registerHref = "/auth/register", cta = "St
     <section id="faq" className="relative overflow-hidden bg-lp-paper px-5 py-[8vmin] sm:px-6">
       <div className="mx-auto lp-wrap">
         <Reveal>
-          <h2 className="lp-eyebrow text-slate-600">Questions</h2>
-          <p className="mt-6 max-w-[44rem] text-[clamp(26px,2.8vw,40px)] font-bold leading-[1.2] tracking-[-0.015em] text-lp-ink">
+          <h2 className="lp-eyebrow text-[#555555]">Questions</h2>
+          <p className="mt-6 max-w-[44rem] text-[clamp(26px,2.8vw,40px)] font-bold leading-[1.2] tracking-[-0.015em] text-ink">
             The six things every shop asks first.
           </p>
         </Reveal>
@@ -71,11 +71,11 @@ export function LandingFaq({ variant, registerHref = "/auth/register", cta = "St
                 key={item.q}
                 className="grid grid-cols-[44px_minmax(0,1fr)] gap-x-4 border-b border-black/10 py-5 md:grid-cols-[64px_minmax(0,22rem)_minmax(0,1fr)] md:gap-x-8"
               >
-                <span className="pt-[3px] font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-slate-600 lg:text-[12px]">
+                <span className="pt-[3px] font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[#555555] lg:text-[12px]">
                   {String(i + 1).padStart(2, "0")}
                 </span>
-                <dt className="text-[16px] font-bold leading-[1.35] tracking-[-0.01em] text-lp-ink sm:text-[17px]">{item.q}</dt>
-                <dd className="col-start-2 mt-2 text-[15px] leading-[1.6] text-slate-600 md:col-start-3 md:mt-0">
+                <dt className="text-[16px] font-bold leading-[1.35] tracking-[-0.01em] text-ink sm:text-[17px]">{item.q}</dt>
+                <dd className="col-start-2 mt-2 text-[15px] leading-[1.6] text-[#555555] md:col-start-3 md:mt-0">
                   {item.a}
                 </dd>
               </div>

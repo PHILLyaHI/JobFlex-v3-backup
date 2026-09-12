@@ -20,7 +20,7 @@ export function AppWindow({
         <span className="h-2 w-2 rounded-full bg-slate-300" />
         <span className="h-2 w-2 rounded-full bg-slate-300" />
         {title && (
-          <span className="ml-2 flex-1 truncate rounded-md bg-white px-2.5 py-[3px] text-center text-[10.5px] font-medium text-slate-400 ring-1 ring-slate-100">
+          <span className="ml-2 flex-1 truncate rounded-md bg-white px-2.5 py-[3px] text-center text-[10.5px] font-medium text-[#6a6a6a] ring-1 ring-slate-100">
             {title}
           </span>
         )}
@@ -32,7 +32,7 @@ export function AppWindow({
 
 export function CardLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-[11px] font-bold uppercase tracking-[1.2px] text-slate-400">
+    <div className="text-[11px] font-bold uppercase tracking-[1.2px] text-[#6a6a6a]">
       {children}
     </div>
   );

@@ -9,7 +9,7 @@ export function CtaNote({ tone = "light", className = "" }: { tone?: "light" | "
   return (
     <span
       className={`block font-mono text-[11px] font-bold uppercase tracking-[0.14em] lg:text-[12px] ${
-        tone === "dark" ? "text-white/60" : "text-slate-500"
+        tone === "dark" ? "text-white/60" : "text-[#666666]"
       } ${className}`}
     >
       14 days free · Cancel anytime

@@ -38,10 +38,10 @@ function ProposalMobile({ p }: { p: ProposalContent }) {
   return (
     <AppWindow title={`app.jobflex.com/proposals/${p.number}`}>
       <div className="px-4 py-4">
-        <div className="text-[10px] font-bold uppercase tracking-[1.4px] text-slate-400">
+        <div className="text-[10px] font-bold uppercase tracking-[1.4px] text-[#6a6a6a]">
           Proposal · #{p.number}
         </div>
-        <div className="mt-1.5 text-[17px] font-bold leading-snug tracking-tight text-lp-ink">
+        <div className="mt-1.5 text-[17px] font-bold leading-snug tracking-tight text-ink">
           {p.title}
         </div>
 
@@ -51,13 +51,13 @@ function ProposalMobile({ p }: { p: ProposalContent }) {
               key={l}
               className={`flex items-center justify-between px-3 py-2.5 text-[12px] ${i % 2 ? "bg-lp-paper" : "bg-white"}`}
             >
-              <span className="text-slate-600">{l}</span>
-              <span className="font-semibold text-lp-ink">{r}</span>
+              <span className="text-[#555555]">{l}</span>
+              <span className="font-semibold text-ink">{r}</span>
             </div>
           ))}
           <div className="flex items-center justify-between border-t border-slate-200 px-3 py-3">
-            <span className="text-[12px] font-bold text-lp-ink">Project total</span>
-            <span className="text-[16px] font-bold tracking-tight text-lp-ink"><Counter value={p.total} /></span>
+            <span className="text-[12px] font-bold text-ink">Project total</span>
+            <span className="text-[16px] font-bold tracking-tight text-ink"><Counter value={p.total} /></span>
           </div>
         </div>
 
@@ -125,13 +125,13 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
         {/* Editor chrome — one button, and it reports the whole flow */}
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5 text-[12px] sm:px-5">
           <div className="flex items-center gap-2.5">
-            <span className="font-semibold text-lp-ink">&lsaquo; Proposals</span>
-            <span className="hidden text-slate-400 sm:inline">
+            <span className="font-semibold text-ink">&lsaquo; Proposals</span>
+            <span className="hidden text-[#6a6a6a] sm:inline">
               {signed ? "Signed" : sent ? "Sent" : "Draft — saved"}
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <span className="hidden font-medium text-slate-500 sm:inline">Preview</span>
+            <span className="hidden font-medium text-[#666666] sm:inline">Preview</span>
             <span
               className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] font-semibold ${
                 signed
@@ -184,15 +184,15 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
       {/* Document body */}
       <div className="mx-auto max-w-[38rem] px-5 pb-6 pt-6 sm:px-8">
         <div className="flex items-center justify-between gap-3">
-          <div className="text-[10px] font-bold uppercase tracking-[1.4px] text-slate-400">
+          <div className="text-[10px] font-bold uppercase tracking-[1.4px] text-[#6a6a6a]">
             Proposal · #{p.number}
           </div>
-          <div className="text-[10px] font-medium text-slate-400">Valid 30 days</div>
+          <div className="text-[10px] font-medium text-[#6a6a6a]">Valid 30 days</div>
         </div>
-        <h3 className="mt-1.5 text-[clamp(18px,2vw,26px)] font-bold leading-[1.15] tracking-[-0.02em] text-lp-ink">
+        <h3 className="mt-1.5 text-[clamp(18px,2vw,26px)] font-bold leading-[1.15] tracking-[-0.02em] text-ink">
           {p.title}
         </h3>
-        <p className="mt-2.5 font-serif text-[12.5px] leading-[1.55] text-slate-600">{p.blurb}</p>
+        <p className="mt-2.5 font-serif text-[12.5px] leading-[1.55] text-[#555555]">{p.blurb}</p>
 
         {/* Line items */}
         <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
@@ -203,8 +203,8 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
                 i % 2 ? "bg-slate-50/60" : "bg-white"
               }`}
             >
-              <span className="min-w-0 truncate text-slate-600">{l}</span>
-              <span className="shrink-0 font-semibold text-lp-ink">{r}</span>
+              <span className="min-w-0 truncate text-[#555555]">{l}</span>
+              <span className="shrink-0 font-semibold text-ink">{r}</span>
             </div>
           ))}
           <div
@@ -212,8 +212,8 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
               signed ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-white"
             }`}
           >
-            <span className="text-[12px] font-bold text-lp-ink">Project total</span>
-            <span className="text-[15px] font-bold tracking-tight text-lp-ink"><Counter value={p.total} /></span>
+            <span className="text-[12px] font-bold text-ink">Project total</span>
+            <span className="text-[15px] font-bold tracking-tight text-ink"><Counter value={p.total} /></span>
           </div>
         </div>
 
@@ -221,10 +221,10 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
         <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
           <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 px-3 py-2">
             <div className="min-w-0">
-              <div className="truncate text-[11.5px] font-bold text-lp-ink">{p.option.name}</div>
-              <div className="truncate text-[10px] text-slate-400">{p.option.note}</div>
+              <div className="truncate text-[11.5px] font-bold text-ink">{p.option.name}</div>
+              <div className="truncate text-[10px] text-[#6a6a6a]">{p.option.note}</div>
             </div>
-            <span className="shrink-0 text-[12.5px] font-bold text-lp-ink">{p.option.price}</span>
+            <span className="shrink-0 text-[12.5px] font-bold text-ink">{p.option.price}</span>
           </div>
 
           {/* Signature block — the scrawl draws itself once the client signs,
@@ -239,7 +239,7 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
                 Accepted
               </div>
             )}
-            <div className="text-[9.5px] font-bold uppercase tracking-[1.2px] text-slate-400">
+            <div className="text-[9.5px] font-bold uppercase tracking-[1.2px] text-[#6a6a6a]">
               Client signature
             </div>
             <div className="relative h-7">
@@ -259,7 +259,7 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
                 />
               </svg>
             </div>
-            <div className="border-t border-slate-200 pt-1 text-[9.5px] text-slate-400">
+            <div className="border-t border-slate-200 pt-1 text-[9.5px] text-[#6a6a6a]">
               {signed ? `${p.client} · signed today` : "Awaiting the client"}
             </div>
           </div>
@@ -306,14 +306,14 @@ function ReceiptCluster() {
     <div ref={ref} className="relative mx-auto max-w-[34rem] py-6">
       {/* receipt */}
       <div className="lp-prop-card relative w-[58%] -rotate-3 rounded-lg bg-white p-4 shadow-lp-card">
-        <div className="text-center text-[10px] font-bold tracking-widest text-slate-500">
+        <div className="text-center text-[10px] font-bold tracking-widest text-[#666666]">
           BIG BOX SUPPLY #214
         </div>
-        <div className="mt-2 border-t border-dashed border-slate-200 pt-2 font-mono text-[10px] leading-[1.9] text-slate-500">
+        <div className="mt-2 border-t border-dashed border-slate-200 pt-2 font-mono text-[10px] leading-[1.9] text-[#666666]">
           <div className="flex justify-between"><span>2X4X8 KD STUD ×24</span><span>102.72</span></div>
           <div className="flex justify-between"><span>JNT COMPOUND 4.5G ×3</span><span>51.84</span></div>
           <div className="flex justify-between"><span>DW SCREW 1-5/8 5LB</span><span>28.90</span></div>
-          <div className="flex justify-between font-bold text-lp-ink"><span>TOTAL</span><span>183.46</span></div>
+          <div className="flex justify-between font-bold text-ink"><span>TOTAL</span><span>183.46</span></div>
         </div>
         {inView && (
           /* The scan runs on a transform (pass C): a carrier 80 % of the
@@ -337,11 +337,11 @@ function ReceiptCluster() {
         <div className="mt-2.5 space-y-1.5">
           {EXTRACTED.map(([label, price], i) => (
             <div key={label} className="flex items-center justify-between gap-2 text-[11px]">
-              <span className="text-slate-500">{label}</span>
+              <span className="text-[#666666]">{label}</span>
               {priced ? (
                 <span
                   key="price"
-                  className="font-bold text-lp-ink"
+                  className="font-bold text-ink"
                   style={{ animation: `toast-in .35s cubic-bezier(.2,.6,.2,1) ${i * 0.12}s backwards` }}
                 >
                   {price}
@@ -372,11 +372,11 @@ export function ProposalsSection({ proposal = KITCHEN, registerHref = "/auth/reg
         <Reveal className="lp-props-copy">
           {/* The eyebrow is desktop-only: on a phone it just crowded the
               headline it was labelling (owner, 2026-08-25). */}
-          <h2 className="lp-eyebrow hidden text-slate-600 sm:block">Proposals &amp; contracts</h2>
-          <p className="lp-props-title max-w-[56rem] sm:mt-5 text-[clamp(36px,4.4vw,64px)] font-bold leading-[1.02] tracking-[-0.02em] text-lp-ink">
+          <h2 className="lp-eyebrow hidden text-[#555555] sm:block">Proposals &amp; contracts</h2>
+          <p className="lp-props-title max-w-[56rem] sm:mt-5 text-[clamp(36px,4.4vw,64px)] font-bold leading-[1.02] tracking-[-0.02em] text-ink">
             Send proposals clients can sign.
           </p>
-          <p className="mt-5 text-[17px] font-medium leading-[1.5] text-slate-600 sm:mt-7 sm:text-[clamp(19px,1.7vw,24px)]">
+          <p className="mt-5 text-[17px] font-medium leading-[1.5] text-[#555555] sm:mt-7 sm:text-[clamp(19px,1.7vw,24px)]">
             A finished estimate becomes a signed contract in one click.
           </p>
         </Reveal>
@@ -396,10 +396,10 @@ export function ProposalsSection({ proposal = KITCHEN, registerHref = "/auth/reg
             <ReceiptCluster />
           </Reveal>
           <Reveal delay={100} className="lp-props-copy order-1 lg:order-2">
-            <h3 className="text-[clamp(26px,2.6vw,36px)] font-bold tracking-[-0.015em] text-lp-ink">
+            <h3 className="text-[clamp(26px,2.6vw,36px)] font-bold tracking-[-0.015em] text-ink">
               Save every receipt.
             </h3>
-            <p className="mt-4 max-w-[30rem] text-[17px] leading-[1.5] text-slate-600 sm:text-[19px]">
+            <p className="mt-4 max-w-[30rem] text-[17px] leading-[1.5] text-[#555555] sm:text-[19px]">
               Photograph it at the counter. The scanner reads every line and
               files the cost to the right job.
             </p>
@@ -409,10 +409,10 @@ export function ProposalsSection({ proposal = KITCHEN, registerHref = "/auth/reg
         {/* Sub-feature: invoicing */}
         <div className="mt-[26vmin] grid items-center gap-10 sm:mt-[9vmin] lg:grid-cols-2 lg:gap-16">
           <Reveal className="lp-props-copy lg:order-1">
-            <h3 className="text-[clamp(26px,2.6vw,36px)] font-bold tracking-[-0.015em] text-lp-ink">
+            <h3 className="text-[clamp(26px,2.6vw,36px)] font-bold tracking-[-0.015em] text-ink">
               Send invoices to clients.
             </h3>
-            <p className="mt-4 max-w-[30rem] text-[17px] leading-[1.5] text-slate-600 sm:text-[19px]">
+            <p className="mt-4 max-w-[30rem] text-[17px] leading-[1.5] text-[#555555] sm:text-[19px]">
               Send the invoice when the work is done. Your client pays by
               card through Stripe or Square.
             </p>
@@ -431,7 +431,7 @@ export function ProposalsSection({ proposal = KITCHEN, registerHref = "/auth/reg
             {cta}
             <span aria-hidden>→</span>
           </a>
-          <a href="#" className="inline-flex items-center gap-2 text-[16px] font-semibold text-lp-ink underline underline-offset-4 hover:text-lp-blue" data-cta="proposals-sample">
+          <a href="#" className="inline-flex items-center gap-2 text-[16px] font-semibold text-ink underline underline-offset-4 hover:text-lp-blue" data-cta="proposals-sample">
             See a sample proposal (PDF)
           </a>
         </Reveal>

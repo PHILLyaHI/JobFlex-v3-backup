@@ -28,7 +28,7 @@ function Photo({ src, label }: { src: string; label?: string }) {
         className="block w-full"
       />
       {label && (
-        <span className="absolute bottom-2 left-2 rounded bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-lp-ink">
+        <span className="absolute bottom-2 left-2 rounded bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-ink">
           {label}
         </span>
       )}
@@ -41,8 +41,8 @@ function DocRows({ rows }: { rows: [string, string][] }) {
     <div className="space-y-[7px]">
       {rows.map(([l, r]) => (
         <div key={l} className="flex items-center justify-between text-[10.5px]">
-          <span className="text-slate-500">{l}</span>
-          <span className="font-semibold text-lp-ink">{r}</span>
+          <span className="text-[#666666]">{l}</span>
+          <span className="font-semibold text-ink">{r}</span>
         </div>
       ))}
     </div>
@@ -56,8 +56,8 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
     mobile: true,
     node: (
       <div className="p-4">
-        <div className="text-[11px] font-bold text-lp-ink">Estimate #E-2214</div>
-        <div className="text-[9.5px] text-slate-400">Ortiz hall bath · Standard tier</div>
+        <div className="text-[11px] font-bold text-ink">Estimate #E-2214</div>
+        <div className="text-[9.5px] text-[#6a6a6a]">Ortiz hall bath · Standard tier</div>
         <div className="mt-3">
           <DocRows
             rows={[
@@ -70,8 +70,8 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
           />
         </div>
         <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5">
-          <span className="text-[10px] text-slate-400">Total</span>
-          <span className="text-[13px] font-bold text-lp-ink">$11,400</span>
+          <span className="text-[10px] text-[#6a6a6a]">Total</span>
+          <span className="text-[13px] font-bold text-ink">$11,400</span>
         </div>
       </div>
     ),
@@ -86,11 +86,11 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
     mobile: true,
     node: (
       <div className="bg-lp-gold p-5">
-        <div className="font-serif text-[17px] font-bold leading-snug text-lp-ink">
+        <div className="font-serif text-[17px] font-bold leading-snug text-ink">
           &ldquo;We quoted the Hendersons&rsquo; kitchen from the truck —
           before the other guy called back.&rdquo;
         </div>
-        <div className="mt-3 text-[10.5px] font-semibold text-lp-ink/60">
+        <div className="mt-3 text-[10.5px] font-semibold text-ink/60">
           Reyes &amp; Sons Remodeling
         </div>
       </div>
@@ -101,7 +101,7 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
     mobile: true,
     node: (
       <div className="p-4">
-        <div className="text-[11px] font-bold text-lp-ink">This week</div>
+        <div className="text-[11px] font-bold text-ink">This week</div>
         <div className="mt-2.5 space-y-[6px]">
           {[
             ["MON", "Demo — Kowalski basement", "bg-sky-100 text-sky-700"],
@@ -111,7 +111,7 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
             ["FRI", "Punch list + walkthrough", "bg-emerald-100 text-emerald-700"],
           ].map(([d, t, c]) => (
             <div key={d} className="flex items-center gap-2">
-              <span className="w-7 text-[9px] font-bold text-slate-400">{d}</span>
+              <span className="w-7 text-[9px] font-bold text-[#6a6a6a]">{d}</span>
               <span className={`flex-1 rounded px-2 py-[5px] text-[10px] font-medium ${c}`}>{t}</span>
             </div>
           ))}
@@ -128,8 +128,8 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
             on the page. */}
         <div className="bg-gradient-to-b from-[#e3edfb] to-[#c3d8f2] p-4">
           <div className="rounded-lg bg-white p-3.5 shadow-sm">
-            <div className="text-[11px] font-bold text-lp-ink">Review &amp; approve</div>
-            <div className="mt-1 text-[9.5px] text-slate-400">Deck rebuild — $16,900</div>
+            <div className="text-[11px] font-bold text-ink">Review &amp; approve</div>
+            <div className="mt-1 text-[9.5px] text-[#6a6a6a]">Deck rebuild — $16,900</div>
             <div className="mt-2.5 h-8 rounded border border-dashed border-slate-300 bg-slate-50" />
             <div className="mt-2 rounded bg-lp-base py-1.5 text-center text-[10px] font-semibold text-white">
               Approve &amp; sign
@@ -148,15 +148,15 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
     mobile: true,
     node: (
       <div className="p-4">
-        <div className="text-[11px] font-bold text-lp-ink">Messages · Nguyen</div>
+        <div className="text-[11px] font-bold text-ink">Messages · Nguyen</div>
         <div className="mt-2.5 space-y-[6px]">
-          <div className="max-w-[85%] rounded-lg rounded-bl-sm bg-slate-100 px-2.5 py-1.5 text-[10px] text-slate-700">
+          <div className="max-w-[85%] rounded-lg rounded-bl-sm bg-slate-100 px-2.5 py-1.5 text-[10px] text-[#2a2a2a]">
             Can the crew start Tuesday instead?
           </div>
           <div className="ml-auto max-w-[85%] rounded-lg rounded-br-sm bg-sky-500 px-2.5 py-1.5 text-[10px] text-white">
             Yes — moved. Calendar updated ✓
           </div>
-          <div className="max-w-[85%] rounded-lg rounded-bl-sm bg-slate-100 px-2.5 py-1.5 text-[10px] text-slate-700">
+          <div className="max-w-[85%] rounded-lg rounded-bl-sm bg-slate-100 px-2.5 py-1.5 text-[10px] text-[#2a2a2a]">
             Perfect, thank you!
           </div>
         </div>
@@ -170,14 +170,14 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
     node: (
       <div className="p-4">
         <div className="flex items-center justify-between">
-          <div className="text-[11px] font-bold text-lp-ink">Invoice #1042</div>
+          <div className="text-[11px] font-bold text-ink">Invoice #1042</div>
           <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-700">
             PAID
           </span>
         </div>
-        <div className="mt-1 text-[9.5px] text-slate-400">Progress draw 2 of 3</div>
-        <div className="mt-3 text-[22px] font-bold tracking-tight text-lp-ink">$6,400</div>
-        <div className="mt-2 text-[9.5px] text-slate-400">Paid by card · 2 hrs after sending</div>
+        <div className="mt-1 text-[9.5px] text-[#6a6a6a]">Progress draw 2 of 3</div>
+        <div className="mt-3 text-[22px] font-bold tracking-tight text-ink">$6,400</div>
+        <div className="mt-2 text-[9.5px] text-[#6a6a6a]">Paid by card · 2 hrs after sending</div>
       </div>
     ),
   },
@@ -204,8 +204,8 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
     mobile: true,
     node: (
       <div className="p-4">
-        <div className="text-[11px] font-bold text-lp-ink">Receipt scanned</div>
-        <div className="mt-1 text-[9.5px] text-slate-400">Big-box run · 8:12 AM</div>
+        <div className="text-[11px] font-bold text-ink">Receipt scanned</div>
+        <div className="mt-1 text-[9.5px] text-[#6a6a6a]">Big-box run · 8:12 AM</div>
         <div className="mt-3">
           <DocRows
             rows={[
@@ -215,7 +215,7 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
             ]}
           />
         </div>
-        <div className="mt-3 rounded bg-lp-lime/30 px-2 py-1.5 text-[10px] font-semibold text-lp-ink">
+        <div className="mt-3 rounded bg-lp-lime/30 px-2 py-1.5 text-[10px] font-semibold text-ink">
           +$183.46 → Kowalski basement
         </div>
       </div>
@@ -230,15 +230,15 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
     mobile: true,
     node: (
       <div className="p-4">
-        <div className="text-[11px] font-bold text-lp-ink">Change order #3</div>
-        <div className="mt-1 text-[9.5px] text-slate-400">Add recessed lighting ×6</div>
+        <div className="text-[11px] font-bold text-ink">Change order #3</div>
+        <div className="mt-1 text-[9.5px] text-[#6a6a6a]">Add recessed lighting ×6</div>
         <div className="mt-3 flex items-center justify-between">
-          <span className="text-[13px] font-bold text-lp-ink">+$1,240</span>
+          <span className="text-[13px] font-bold text-ink">+$1,240</span>
           <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[9px] font-bold text-sky-700">
             SIGNED
           </span>
         </div>
-        <div className="mt-2.5 font-serif text-[15px] italic text-slate-400">M. Nguyen</div>
+        <div className="mt-2.5 font-serif text-[15px] italic text-[#6a6a6a]">M. Nguyen</div>
       </div>
     ),
   },

@@ -15,9 +15,9 @@ function CashflowCards() {
       {/* line chart card — white, only the line and its grid (owner, 2026-09-10) */}
       <div className="lp-mock-hard w-[80%] rounded-xl bg-white p-4 sm:w-[78%] sm:p-5" data-guide="revenue-in">
         <div className="text-[13px] font-bold text-lp-blue">Revenue</div>
-        <div className="text-[26px] font-bold tracking-tight text-lp-ink">
+        <div className="text-[26px] font-bold tracking-tight text-ink">
           +24%{" "}
-          <span className="text-[13px] font-semibold text-slate-400">vs last quarter</span>
+          <span className="text-[13px] font-semibold text-[#6a6a6a]">vs last quarter</span>
         </div>
         <svg viewBox="0 0 300 90" className="mt-3 w-full" aria-hidden>
           {[0, 60, 120, 180, 240, 300].map((x) => (
@@ -59,8 +59,8 @@ function CashflowCards() {
             />
           </svg>
           <div>
-            <div className="text-[15px] font-bold text-lp-ink sm:text-[17px]">Paid</div>
-            <div className="text-[10px] leading-tight text-slate-400 sm:text-[11px]">
+            <div className="text-[15px] font-bold text-ink sm:text-[17px]">Paid</div>
+            <div className="text-[10px] leading-tight text-[#6a6a6a] sm:text-[11px]">
               82% collected
               <br />
               18% outstanding
@@ -74,7 +74,7 @@ function CashflowCards() {
         <span className="cursor-default text-[12px] text-emerald-600 sm:text-[14px]" aria-hidden>
           ▲
         </span>
-        <span className="text-[12px] font-bold text-lp-ink sm:text-[14px]">
+        <span className="text-[12px] font-bold text-ink sm:text-[14px]">
           +18% collected<span className="hidden sm:inline"> this week</span>
         </span>
       </div>
@@ -142,12 +142,12 @@ function ChangeOrderMock() {
     <div ref={ref} className="relative mx-auto max-w-[28rem] py-6 sm:py-8">
       <div className="lp-mock-hard rounded-xl bg-white p-5 sm:p-6" data-guide="co">
         <div className="flex items-center justify-between">
-          <span className="text-[13px] font-bold text-lp-ink">
+          <span className="text-[13px] font-bold text-ink">
             Change order #3
           </span>
           <span
             className={`rounded-full px-2.5 py-1 text-[10px] font-bold transition-colors duration-300 ${
-              done ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+              done ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-[#666666]"
             }`}
           >
             {done ? <StampIn active>SIGNED</StampIn> : "DRAFT"}
@@ -156,13 +156,13 @@ function ChangeOrderMock() {
 
         {/* Scope — a field while it fills, a heading once it is written */}
         <div className="mt-4">
-          <div className="text-[10px] font-bold uppercase tracking-[1.2px] text-slate-400">
+          <div className="text-[10px] font-bold uppercase tracking-[1.2px] text-[#6a6a6a]">
             Scope
           </div>
           {/* Padding is constant (pass C): only the dashed frame fades,
               so the scope text never moves. */}
           <div
-            className={`relative mt-1 rounded-md border border-dashed px-2.5 py-1.5 text-[15px] font-semibold leading-snug text-lp-ink transition-colors duration-300 ${
+            className={`relative mt-1 rounded-md border border-dashed px-2.5 py-1.5 text-[15px] font-semibold leading-snug text-ink transition-colors duration-300 ${
               done ? "border-transparent" : "border-slate-300"
             }`}
           >
@@ -187,7 +187,7 @@ function ChangeOrderMock() {
             shifts — the layout-shift this section used to cost the page. */}
         <p
           aria-hidden={!done}
-          className={`mt-2 text-[13px] leading-relaxed text-slate-500 transition-[opacity,transform] duration-500 ${
+          className={`mt-2 text-[13px] leading-relaxed text-[#666666] transition-[opacity,transform] duration-500 ${
             done ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0"
           }`}
         >
@@ -198,7 +198,7 @@ function ChangeOrderMock() {
         {/* Price + signature */}
         <div className="mt-4 flex items-end justify-between border-t border-slate-100 pt-4">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[1.2px] text-slate-400">
+            <div className="text-[10px] font-bold uppercase tracking-[1.2px] text-[#6a6a6a]">
               Amount
             </div>
             {/* One 33 px row either way (pass C): the placeholder and the
@@ -206,7 +206,7 @@ function ChangeOrderMock() {
             <div className="flex h-[33px] items-end">
               {priced ? (
                 <div
-                  className="text-[22px] font-bold leading-none tracking-tight text-lp-ink"
+                  className="text-[22px] font-bold leading-none tracking-tight text-ink"
                   style={{ animation: "toast-in .35s cubic-bezier(.2,.6,.2,1) backwards" }}
                 >
                   +${CO_AMOUNT}
@@ -217,13 +217,13 @@ function ChangeOrderMock() {
             </div>
           </div>
           <div className="text-right">
-            <div className="text-[10px] font-bold uppercase tracking-[1.2px] text-slate-400">
+            <div className="text-[10px] font-bold uppercase tracking-[1.2px] text-[#6a6a6a]">
               Client
             </div>
             <div className="flex h-[33px] items-end justify-end">
               {done ? (
                 <div
-                  className="font-serif text-[19px] italic leading-none text-slate-600"
+                  className="font-serif text-[19px] italic leading-none text-[#555555]"
                   style={{ animation: "toast-in .4s cubic-bezier(.2,.6,.2,1) backwards" }}
                 >
                   M. Nguyen
@@ -249,7 +249,7 @@ export function FlowFeatures() {
               cluster is the picture of this feature, so the phone gets the
               same one rather than a second design of it. */}
           <Reveal delay={100} className="order-1 lg:order-2">
-            <h3 className="text-[clamp(26px,2.6vw,36px)] font-bold tracking-[-0.015em] text-lp-ink">
+            <h3 className="text-[clamp(26px,2.6vw,36px)] font-bold tracking-[-0.015em] text-ink">
               See your cash flow at a glance.
             </h3>
           </Reveal>
@@ -261,7 +261,7 @@ export function FlowFeatures() {
         {/* Change orders */}
         <div className="mt-[16vmin] grid items-center gap-8 sm:mt-[7vmin] lg:grid-cols-2 lg:gap-16">
           <Reveal className="lg:order-1">
-            <h3 className="text-[clamp(26px,2.6vw,36px)] font-bold tracking-[-0.015em] text-lp-ink">
+            <h3 className="text-[clamp(26px,2.6vw,36px)] font-bold tracking-[-0.015em] text-ink">
               Change orders, in writing.
             </h3>
           </Reveal>

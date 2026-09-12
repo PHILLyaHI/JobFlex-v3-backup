@@ -69,8 +69,8 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
                       <path d="M12 4l4 4" stroke="currentColor" strokeWidth="1.4" />
                     </svg>
                   </div>
-                  <div className="mt-3 text-[19px] font-bold text-lp-ink">Review &amp; approve</div>
-                  <div className="mt-1 text-[14px] text-slate-500">
+                  <div className="mt-3 text-[19px] font-bold text-ink">Review &amp; approve</div>
+                  <div className="mt-1 text-[14px] text-[#666666]">
                     {portal.title}
                   </div>
                 </div>
@@ -82,7 +82,7 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
                       !upgraded ? "border-lp-blue bg-lp-blue/[0.04]" : "border-slate-200"
                     }`}
                   >
-                    <span className="flex items-center gap-2.5 text-[14px] font-medium text-lp-ink">
+                    <span className="flex items-center gap-2.5 text-[14px] font-medium text-ink">
                       <span
                         className={`flex h-4 w-4 items-center justify-center rounded-full border-2 transition-colors duration-300 ${
                           !upgraded ? "border-lp-blue" : "border-slate-300"
@@ -92,14 +92,14 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
                       </span>
                       {portal.baseOption}
                     </span>
-                    <span className="text-[14px] font-semibold text-slate-500">$0</span>
+                    <span className="text-[14px] font-semibold text-[#666666]">$0</span>
                   </div>
                   <div
                     className={`flex items-center justify-between rounded-lg border px-3 py-2.5 transition-colors duration-300 ${
                       upgraded ? "border-lp-blue bg-lp-blue/[0.04]" : "border-slate-200"
                     }`}
                   >
-                    <span className="flex items-center gap-2.5 text-[14px] font-medium text-lp-ink">
+                    <span className="flex items-center gap-2.5 text-[14px] font-medium text-ink">
                       <span
                         className={`flex h-4 w-4 items-center justify-center rounded-full border-2 transition-colors duration-300 ${
                           upgraded ? "border-lp-blue" : "border-slate-300"
@@ -109,16 +109,16 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
                       </span>
                       {portal.upgradeOption}
                     </span>
-                    <span className="text-[14px] font-semibold text-lp-ink">{portal.upgradePrice}</span>
+                    <span className="text-[14px] font-semibold text-ink">{portal.upgradePrice}</span>
                   </div>
                 </div>
 
                 {/* Total */}
                 <div className="mt-4 flex items-baseline justify-between border-t border-slate-100 pt-3.5">
-                  <span className="text-[14px] text-slate-500">Total</span>
+                  <span className="text-[14px] text-[#666666]">Total</span>
                   <span
                     key={String(upgraded)}
-                    className="text-[20px] font-bold tracking-tight text-lp-ink"
+                    className="text-[20px] font-bold tracking-tight text-ink"
                     style={{ animation: "toast-in .4s cubic-bezier(.2,.6,.2,1)" }}
                   >
                     {upgraded ? portal.totalUpgraded : portal.total}
@@ -127,14 +127,14 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
 
                 {/* Signature */}
                 <div className="relative mt-4 h-[74px] rounded-lg border border-dashed border-slate-300 bg-slate-50">
-                  <span className="absolute left-3 top-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                  <span className="absolute left-3 top-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[#666666]">
                     Sign here
                   </span>
                   <svg viewBox="0 0 260 60" className="absolute inset-0 h-full w-full" aria-hidden>
                     <path
                       d="M24 42c10-18 16-24 18-16 2 7-6 20 2 18 9-2 13-24 22-24s2 26 12 24 14-22 22-22 4 22 14 20c8-1.5 16-14 30-14 10 0 16 6 34 4 12-1.4 22-6 38-4"
                       fill="none"
-                      stroke="#112220"
+                      stroke="#0a0a0a"
                       strokeWidth="1.8"
                       strokeLinecap="round"
                       pathLength={1}
@@ -173,7 +173,7 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
                   className="lp-portal-mock absolute right-[14%] top-[12%] flex h-12 w-12 items-center justify-center rounded-2xl bg-white"
                   style={{ animation: "envelope-pop .5s cubic-bezier(.2,.6,.2,1)" }}
                 >
-                  <svg viewBox="0 0 24 24" className="h-6 w-6 text-lp-ink" aria-hidden>
+                  <svg viewBox="0 0 24 24" className="h-6 w-6 text-ink" aria-hidden>
                     <rect x="4" y="3" width="16" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
                     <path d="M8 8h8M8 12h8M8 16h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
                   </svg>

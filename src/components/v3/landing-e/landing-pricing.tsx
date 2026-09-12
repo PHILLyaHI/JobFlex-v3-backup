@@ -53,23 +53,23 @@ export function LandingPricing({
                   className={`lp-price-plate rounded-[2px] p-5 sm:p-6 ${p.highlight ? "is-hot" : ""}`}
                 >
                   <div className="flex items-baseline justify-between gap-3">
-                    <h3 className="text-[18px] font-bold tracking-[-0.01em] text-lp-ink">{p.name}</h3>
+                    <h3 className="text-[18px] font-bold tracking-[-0.01em] text-ink">{p.name}</h3>
                     {p.highlight && (
-                      <span className="rounded-[2px] border-[1.5px] border-lp-ink px-2 py-[3px] font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-lp-ink lg:text-[12px]">
+                      <span className="rounded-[2px] border-[1.5px] border-lp-ink px-2 py-[3px] font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-ink lg:text-[12px]">
                         Most popular
                       </span>
                     )}
                   </div>
                   <div className="mt-4 flex items-baseline gap-1.5">
-                    <span className="text-[clamp(34px,3.4vw,44px)] font-bold leading-none tracking-[-0.02em] text-lp-ink">
+                    <span className="text-[clamp(34px,3.4vw,44px)] font-bold leading-none tracking-[-0.02em] text-ink">
                       {formatPlanPrice(p.priceCents)}
                     </span>
-                    <span className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-slate-600 lg:text-[12px]">
+                    <span className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[#555555] lg:text-[12px]">
                       {priceCadence(true)}
                     </span>
                   </div>
                   {p.description && (
-                    <p className="mt-3 text-[15px] leading-[1.5] text-slate-600 sm:text-[14px]">{p.description}</p>
+                    <p className="mt-3 text-[15px] leading-[1.5] text-[#555555] sm:text-[14px]">{p.description}</p>
                   )}
                   <ul className="mt-5 border-t-[1.5px] border-lp-ink">
                     {rows.map((row) => {
@@ -78,7 +78,7 @@ export function LandingPricing({
                         <li
                           key={row}
                           className={`flex items-start gap-3 border-b border-black/10 py-2 text-[15px] leading-[1.4] sm:text-[14px] ${
-                            on ? "text-lp-ink" : "text-slate-600"
+                            on ? "text-ink" : "text-[#555555]"
                           }`}
                         >
                           <span className="w-4 shrink-0 font-mono text-[15px] font-bold sm:text-[14px]" aria-hidden>

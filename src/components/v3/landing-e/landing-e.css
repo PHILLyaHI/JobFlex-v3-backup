@@ -32,7 +32,7 @@
   /* our type tokens, not the donor's */
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   font-size: 15px;
-  color: #112220;
+  color: #0a0a0a;
   background: #fff;
   -webkit-font-smoothing: antialiased;
 }
@@ -148,11 +148,11 @@
   transition: background-color 0.2s, border-color 0.2s, transform 0.2s;
 }
 .jf-lp .lp-cta--solid { background: #15171a; color: #fff; padding: 0 22px; }
-.jf-lp .lp-cta--solid:hover { background: #112220; }
+.jf-lp .lp-cta--solid:hover { background: #0a0a0a; }
 .jf-lp .lp-cta--ghost {
   border: 1px solid #e2e8f0;
   background: #fff;
-  color: #112220;
+  color: #0a0a0a;
 }
 .jf-lp .lp-cta--ghost:hover { border-color: #cbd5e1; background: #f8fafc; }
 @media (max-width: 640px) {
@@ -251,7 +251,7 @@
 .jf-lp .lp-bp-sb-lbl {
   padding: 12px 12px 5px;
   font-size: 7.5px; font-weight: 800; letter-spacing: 0.2em;
-  text-transform: uppercase; color: #888;
+  text-transform: uppercase; color: #6a6a6a;
 }
 .jf-lp .lp-bp-sb-link {
   display: flex; align-items: center; gap: 9px;
@@ -290,7 +290,7 @@
 .jf-lp .lp-bp-sb-acct-name { font-size: 10px; font-weight: 700; line-height: 1; }
 .jf-lp .lp-bp-sb-acct-role {
   font-size: 7px; font-weight: 800; letter-spacing: 0.2em;
-  text-transform: uppercase; color: #888; line-height: 1;
+  text-transform: uppercase; color: #6a6a6a; line-height: 1;
 }
 .jf-lp .lp-bp-sb-acct-gear {
   display: grid; place-items: center; margin-left: auto; flex-shrink: 0;
@@ -310,7 +310,7 @@
 .jf-lp .lp-bp-search {
   flex: 0 1 320px; min-width: 0; height: 28px;
   border: 2px solid var(--bp-ink); border-radius: var(--bp-r-in);
-  padding: 0 10px; font-size: 10px; color: #888;
+  padding: 0 10px; font-size: 10px; color: #6a6a6a;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .jf-lp .lp-bp-btn {
@@ -378,7 +378,7 @@
 .jf-lp .lp-bp-axis {
   display: flex; justify-content: space-between; margin-top: 5px;
   font-size: 7.5px; font-weight: 700; letter-spacing: 0.12em;
-  text-transform: uppercase; color: #888;
+  text-transform: uppercase; color: #6a6a6a;
 }
 
 .jf-lp .lp-bp-act {
@@ -400,7 +400,7 @@
 .jf-lp .lp-bp-act-meta {
   display: block; margin-top: 2px;
   font-family: var(--font-mono);
-  font-size: 7px; font-weight: 600; letter-spacing: 0.08em; color: #888;
+  font-size: 7px; font-weight: 600; letter-spacing: 0.08em; color: #6a6a6a;
 }
 
 @media (max-width: 860px) {
@@ -458,7 +458,7 @@
 .jf-lp .lp-jb-day {
   display: flex; align-items: baseline; justify-content: center; gap: 6px;
   font-size: 10px; font-weight: 800;
-  letter-spacing: 0.14em; text-transform: uppercase; color: #888;
+  letter-spacing: 0.14em; text-transform: uppercase; color: #6a6a6a;
 }
 .jf-lp .lp-jb-day.is-today { color: #0a0a0a; }
 .jf-lp .lp-jb-day-n { font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
@@ -490,7 +490,7 @@
   display: block; margin-top: 2px;
   font-family: var(--font-mono);
   font-size: 9px; font-weight: 600;
-  letter-spacing: 0.04em; text-transform: uppercase; color: #888;
+  letter-spacing: 0.04em; text-transform: uppercase; color: #6a6a6a;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .jf-lp .lp-jb-lane { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(5, 1fr); }
@@ -586,7 +586,7 @@
   color: #fff;
   transition: background-color 0.2s;
 }
-.jf-lp .lp-btn-dark:hover { background: #112220; }
+.jf-lp .lp-btn-dark:hover { background: #0a0a0a; }
 
 .jf-lp .lp-btn-lime {
   display: inline-flex;
@@ -926,7 +926,7 @@
 .jf-lp .lp-bp-day:last-child { border-right: none; }
 .jf-lp .lp-bp-day-d {
   font-size: 7.5px; font-weight: 800; letter-spacing: 0.16em;
-  text-transform: uppercase; color: #888;
+  text-transform: uppercase; color: #6a6a6a;
 }
 .jf-lp .lp-bp-day-n { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .jf-lp .lp-bp-day-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--bp-blue); }
@@ -1073,7 +1073,7 @@
 }
 .jf-lp .lp-ph-chip.is-blue { border-color: var(--bp-blue); color: var(--bp-blue); }
 .jf-lp .lp-ph-chip.is-paid { border-color: #059669; color: #047857; }
-.jf-lp .lp-ph-chip.is-draft { border-style: dashed; color: #777; border-color: #999; }
+.jf-lp .lp-ph-chip.is-draft { border-style: dashed; color: #6a6a6a; border-color: #999; }
 
 /* Day strip, phone width */
 .jf-lp .lp-ph-days { display: grid; grid-template-columns: repeat(5, 1fr); }
@@ -1085,7 +1085,7 @@
 .jf-lp .lp-ph-day:last-child { border-right: none; }
 .jf-lp .lp-ph-day-d {
   font-size: 7.5px; font-weight: 800; letter-spacing: 0.14em;
-  text-transform: uppercase; color: #888;
+  text-transform: uppercase; color: #6a6a6a;
 }
 .jf-lp .lp-ph-day-n { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .jf-lp .lp-ph-day.is-today { background: var(--bp-blue); border-right-color: var(--bp-blue); }
@@ -1129,7 +1129,7 @@
 .jf-lp .lp-ph-col-fill.is-quiet { background: var(--bp-paper-deep); }
 .jf-lp .lp-ph-col-m {
   font-size: 7.5px; font-weight: 800; letter-spacing: 0.1em;
-  text-transform: uppercase; color: #888;
+  text-transform: uppercase; color: #6a6a6a;
 }
 .jf-lp .lp-ph-axis { border-top: 1.5px solid var(--bp-ink); margin: 0 11px 11px; }
 

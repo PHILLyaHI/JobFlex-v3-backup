@@ -39,7 +39,7 @@ export function InvoiceMobile() {
   return (
     <AppWindow title="app.jobflex.com/invoices/1042" rootRef={ref}>
       <div className="px-4 py-4">
-        <div className="text-[14px] font-bold text-lp-ink">Invoice #1042</div>
+        <div className="text-[14px] font-bold text-ink">Invoice #1042</div>
 
         <div className="mt-4 space-y-2">
           {[
@@ -47,15 +47,15 @@ export function InvoiceMobile() {
             ["Counter template + set", "$1,500"],
           ].map(([l, r]) => (
             <div key={l} className="flex justify-between text-[12.5px]">
-              <span className="text-slate-500">{l}</span>
-              <span className="font-semibold text-lp-ink">{r}</span>
+              <span className="text-[#666666]">{l}</span>
+              <span className="font-semibold text-ink">{r}</span>
             </div>
           ))}
         </div>
 
         <div className="mt-4 flex items-baseline justify-between border-t border-slate-100 pt-3.5">
-          <span className="text-[11px] font-medium text-slate-400">Total due</span>
-          <span className="text-[24px] font-bold tracking-tight text-lp-ink">$6,400</span>
+          <span className="text-[11px] font-medium text-[#6a6a6a]">Total due</span>
+          <span className="text-[24px] font-bold tracking-tight text-ink">$6,400</span>
         </div>
 
         {/* Send button → success state */}
@@ -89,13 +89,13 @@ export function InvoiceMobile() {
         </button>
 
         {/* Payment rails */}
-        <div className="mt-3.5 flex items-center justify-center gap-4 text-[11px] text-slate-400">
+        <div className="mt-3.5 flex items-center justify-center gap-4 text-[11px] text-[#6a6a6a]">
           <span>Online payments via</span>
           <span className="flex items-center gap-3">
             <span className="rounded-md bg-[#635bff] px-2 py-[3px] text-[11px] font-bold italic tracking-tight text-white">
               stripe
             </span>
-            <span className="flex items-center gap-1 font-bold text-lp-ink">
+            <span className="flex items-center gap-1 font-bold text-ink">
               <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden>
                 <rect x="1" y="1" width="14" height="14" rx="3.5" fill="currentColor" />
                 <rect x="5.5" y="5.5" width="5" height="5" rx="1" fill="#fff" />

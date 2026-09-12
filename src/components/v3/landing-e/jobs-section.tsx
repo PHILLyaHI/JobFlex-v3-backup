@@ -68,8 +68,8 @@ export function JobsSection({ crew = CREW, phoneLanes }: { crew?: CrewLane[]; ph
     <section className="relative overflow-hidden bg-white px-5 py-[8vmin] sm:px-6 lg:pb-[11rem]">
       <div className="mx-auto lp-wrap">
         <Reveal>
-          <h2 className="lp-eyebrow hidden text-slate-500 sm:block">Run your business</h2>
-          <p className="text-[30px] font-bold leading-[1.08] tracking-[-0.02em] text-lp-ink sm:mt-5 sm:text-[clamp(36px,4.4vw,64px)] sm:leading-[1.02]">
+          <h2 className="lp-eyebrow hidden text-[#666666] sm:block">Run your business</h2>
+          <p className="text-[30px] font-bold leading-[1.08] tracking-[-0.02em] text-ink sm:mt-5 sm:text-[clamp(36px,4.4vw,64px)] sm:leading-[1.02]">
             <span className="sm:hidden">Assign jobs to your team in the calendar.</span>
             <span className="hidden sm:inline">Schedule the whole crew.</span>
           </p>

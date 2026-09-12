@@ -171,7 +171,7 @@ export function Prompt({
         {/* Sized for the column it sits in (owner, 2026-08-25): at phone width
             the desktop field filled a third of the stage and still truncated. */}
         <div className="flex items-center gap-2 px-2.5 py-2 sm:gap-3 sm:px-4 sm:py-3.5">
-          <span className="shrink-0 font-mono text-[8.5px] font-bold uppercase tracking-[0.14em] text-ink-faint sm:text-[10px]">
+          <span className="shrink-0 font-mono text-[8.5px] font-bold uppercase tracking-[0.14em] text-[#6a6a6a] sm:text-[10px]">
             {label}
           </span>
           {/* The caret rides the end of the TEXT. Flexing the value pushed it to
@@ -186,7 +186,7 @@ export function Prompt({
                that loses its magnifier mid-animation reads as a glitch. */
             <svg
               viewBox="0 0 24 24"
-              className="h-[13px] w-[13px] shrink-0 text-ink-faint sm:h-[17px] sm:w-[17px]"
+              className="h-[13px] w-[13px] shrink-0 text-[#6a6a6a] sm:h-[17px] sm:w-[17px]"
               aria-hidden
             >
               <path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4.2-4.2" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -215,7 +215,7 @@ export function Prompt({
                 </svg>
                 Attach photo
               </span>
-              <span className="rounded-[2px] bg-lp-paper px-1.5 py-[3px] font-mono text-[8.5px] text-ink-faint sm:px-2 sm:py-1 sm:text-[10px]">kitchen-01.jpg</span>
+              <span className="rounded-[2px] bg-lp-paper px-1.5 py-[3px] font-mono text-[8.5px] text-[#6a6a6a] sm:px-2 sm:py-1 sm:text-[10px]">kitchen-01.jpg</span>
             </div>
           </div>
         )}
@@ -240,7 +240,7 @@ export function Rail({ title, shown, children }: { title: string; shown: boolean
         transform: shown ? "translateX(0)" : "translateX(18px)",
       }}
     >
-      <div className="text-[9px] font-black uppercase tracking-[0.18em] text-ink-faint">{title}</div>
+      <div className="text-[9px] font-black uppercase tracking-[0.18em] text-[#6a6a6a]">{title}</div>
       <div className="mt-3 space-y-2.5">{children}</div>
     </div>
   );

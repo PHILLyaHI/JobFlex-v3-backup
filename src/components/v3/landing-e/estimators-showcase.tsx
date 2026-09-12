@@ -190,14 +190,14 @@ function VideoShot({ active }: { active: boolean }) {
             }}
           >
             <div className="flex items-center gap-2">
-              <span className="text-[9px] font-black uppercase tracking-[0.18em] text-ink-faint">Priced from the clip</span>
+              <span className="text-[9px] font-black uppercase tracking-[0.18em] text-[#6a6a6a]">Priced from the clip</span>
               <span className="h-px flex-1" style={{ background: HAIR }} />
             </div>
             {priced &&
               V_LINES.map(([name, price], i) => (
                 <Beat key={name} delay={200 + i * 160}>
                   <div className="flex items-baseline gap-3 border-b border-black/[0.07] py-2">
-                    <span className="w-4 shrink-0 font-mono text-[10px] text-ink-faint">{String(i + 1).padStart(2, "0")}</span>
+                    <span className="w-4 shrink-0 font-mono text-[10px] text-[#6a6a6a]">{String(i + 1).padStart(2, "0")}</span>
                     <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">{name}</span>
                     <span className="w-[64px] shrink-0 text-right font-mono text-[12px] font-bold text-ink">{price}</span>
                   </div>
