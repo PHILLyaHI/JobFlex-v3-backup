@@ -247,6 +247,8 @@ function measurementCaption(t: string) {
   switch (t) {
     case "SQFT":
       return "Sq ft";
+    case "SQUARE":
+      return "Square";
     case "LINEAR_FT":
       return "Linear ft";
     case "CUBIC_FT":

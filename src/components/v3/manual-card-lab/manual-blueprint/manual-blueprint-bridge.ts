@@ -51,7 +51,8 @@ export type MeasurementType =
   | "CUBIC_FT"
   | "UNIT"
   | "HOUR"
-  | "LUMP_SUM";
+  | "LUMP_SUM"
+  | "SQUARE";
 
 const MEASUREMENT_OF: Record<Unit, MeasurementType> = {
   SQFT: "SQFT",
@@ -73,6 +74,7 @@ const UNIT_OF: Record<MeasurementType, Unit> = {
   UNIT: "UNIT",
   HOUR: "HOUR",
   LUMP_SUM: "FIXED",
+  SQUARE: "UNIT",
 };
 
 export function measurementOf(unit: Unit): MeasurementType {

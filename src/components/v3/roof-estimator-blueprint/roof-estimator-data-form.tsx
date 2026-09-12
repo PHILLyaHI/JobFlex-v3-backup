@@ -40,6 +40,9 @@ import {
 } from "@/stores/usePlanLimitStore";
 import { attachPlacesSuggest, type PickedPlace } from "@/components/v3/blueprint-shell/places-suggest";
 import { AddressPinPreview } from "./address-pin-preview";
+import { RoofPackageBuilder } from "./roof-package-builder";
+import { EstimateLinesTable, type EditableLine } from "./estimate-lines-table";
+import { ringPerimeterFt, type RoofFacts, type RoofPackage, type RoofPackageSpec } from "@/lib/roofPackage/takeoff";
 import { isMapsBrowserEnabled, loadMapsLibrary } from "@/lib/googleMaps";
 import { displayedPitchLabel, foreignIndices, instantTotalsOf, pickMainStructure, pitchFamilyShares } from "@/lib/roofDiagram/instantTotals";
 import { AERIAL } from "@/lib/vendorLabels";
@@ -261,8 +264,11 @@ export function RoofEstimatorDataForm() {
   const [waste, setWaste] = React.useState(12);
   const [genBusy, setGenBusy] = React.useState(false);
   const [title, setTitle] = React.useState("");
-  const [materials, setMaterials] = React.useState<EstimateLine[]>([]);
-  const [labor, setLabor] = React.useState<EstimateLine[]>([]);
+  const [materials, setMaterials] = React.useState<EditableLine[]>([]);
+  const [labor, setLabor] = React.useState<EditableLine[]>([]);
+  // How the estimate gets built: the roof package builder (default since
+  // 2026-09-12) or the one-shot AI draft. Both fill the same tables.
+  const [buildMode, setBuildMode] = React.useState<"package" | "ai">("package");
   const [assumptions, setAssumptions] = React.useState<string[]>([]);
   const [convertBusy, setConvertBusy] = React.useState(false);
   // Hand-entered takeoff (runManual). Cleared by resetResult, so it never
@@ -566,6 +572,18 @@ export function RoofEstimatorDataForm() {
           : pitchKind === "eagleview"
             ? `pitch ${pitchForEstimate} (${AERIAL.reported} figure)`
             : `pitch ${pitchForEstimate} entered by user — not measured`;
+      const factsNote = roofFacts
+        ? [
+            roofFacts.perimeterFt != null ? `building perimeter ${Math.round(roofFacts.perimeterFt)} ft (drip edge and starter run)` : null,
+            roofFacts.shape ? `roof shape ${roofFacts.shape}` : null,
+            roofFacts.facetCount != null ? `${roofFacts.facetCount} facets` : null,
+            roofFacts.chimney != null ? `chimney: ${roofFacts.chimney ? "yes — include chimney flashing" : "no"}` : null,
+            roofFacts.rooftopAcCount ? `${roofFacts.rooftopAcCount} rooftop unit(s) — curb flashing` : null,
+            eaveHeights.length ? `eave heights ${eaveHeights.map((e) => `${e.facade} ${e.ft} ft`).join(", ")} (10 ft classes)` : null,
+          ]
+            .filter(Boolean)
+            .join("; ")
+        : "";
       const extrasNote =
         !manual && extra.size
           ? ` Includes ${extra.size} other structure(s) on the parcel the contractor ticked in (${num(
@@ -585,7 +603,7 @@ export function RoofEstimatorDataForm() {
           ? `Contractor-entered takeoff: ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft), ${pitchNote}. No facet or linear-footage breakdown; allow for ridge, valley and flashing.`
           : `${AERIAL.vendor} (calibrated): ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft) for the main structure, ${pitchNote}, footprint ${
               structure?.footprintSqft != null ? num(structure.footprintSqft) + " sq ft" : "not purchased"
-            }.${extrasNote} No facet or linear-footage breakdown — the drawing tool is offline; allow for ridge/valley/flashing from the aerial photo.`,
+            }.${extrasNote}${factsNote ? ` Also known: ${factsNote}.` : ""} Ridge, hip, valley and wall lengths are NOT measured — estimate them from the shape, footprint and perimeter, itemize every flashing and vent with a count or length, and say in the assumptions which figures are estimates.`,
       });
       if (!res.ok) {
         if (reportPlanLimitResult(res)) return;
@@ -602,6 +620,24 @@ export function RoofEstimatorDataForm() {
     } finally {
       setGenBusy(false);
     }
+  }
+
+  // The package builder's output becomes the estimate: the same two tables the
+  // AI fills, with the basis of every quantity carried on the line.
+  function applyPackage(pkg: RoofPackage, spec: RoofPackageSpec) {
+    const toLine = (l: RoofPackage["materials"][number]): EditableLine => ({
+      id: nanoid(6),
+      name: l.name,
+      quantity: l.quantity,
+      unitPrice: l.unitPrice,
+      unit: l.unit,
+      basis: l.basis,
+    });
+    setMaterials(pkg.materials.map(toLine));
+    setLabor(pkg.labor.map(toLine));
+    setAssumptions(pkg.assumptions);
+    setTitle(`${spec.systemName.trim() || "Roof"} · ${siteAddress || "site"}`);
+    toast.success("Estimate built", `${pkg.materials.length} material and ${pkg.labor.length} labor lines — adjust anything below, then convert.`);
   }
 
   async function convert() {
@@ -705,6 +741,29 @@ export function RoofEstimatorDataForm() {
   const eaveHeights = structure?.eaveHeightFt
     ? Object.entries(structure.eaveHeightFt).map(([facade, ft]) => ({ facade, ft }))
     : [];
+  // What the package builder (and the AI draft) know about THIS roof. Pitch
+  // families come from the measured elevation data when there is one, else
+  // the single stated pitch; everything else is the main structure's own.
+  const roofFacts: RoofFacts | null =
+    totals?.squares != null
+      ? {
+          squares: totals.squares,
+          squaresBasis: manual ? "entered" : "measured",
+          pitchFamilies: (pitchMeasured
+            ? pitchFamilyShares(pitchRep!.families)
+            : pitchForEstimate
+              ? [{ pitch12: Number(pitchForEstimate.split("/")[0]), share: 1 }]
+              : []
+          ).filter((f) => Number.isFinite(f.pitch12)),
+          pitchBasis: pitchKind === "entered" ? "entered" : pitchKind ? "measured" : null,
+          perimeterFt: manual ? null : ringPerimeterFt(structure?.outline),
+          footprintSqft: manual ? null : structure?.footprintSqft ?? null,
+          chimney: manual ? null : structure?.chimney ?? null,
+          rooftopAcCount: manual ? null : structure?.rooftopAcCount ?? null,
+          shape: manual ? null : structure?.shape ?? null,
+          facetCount: manual ? null : structure?.facetCount ?? null,
+        }
+      : null;
   // The provider's own score for the eave figure (one score for the whole
   // field, 0..1; "not scored" was dropped at parse). Identical classes on all
   // four sides read as suspicious — this says how much the provider itself
@@ -1227,26 +1286,46 @@ export function RoofEstimatorDataForm() {
                     {isRecon
                       ? "These measurements are estimated from aerial imagery, so they can’t be priced. Run Instant measure for this address to build a quote."
                       : manual && totals?.squares != null
-                        ? `Priced from your own takeoff — ${totals.squares.toFixed(1)} squares at ${manual.pitchLabel}. Adjust waste and generate.`
+                        ? `Priced from your own takeoff — ${totals.squares.toFixed(1)} squares at ${manual.pitchLabel}.`
                         : totals?.squares != null
-                          ? `Measurements feed the takeoff — adjust waste and price it out against the measured ${totals.squares.toFixed(1)} squares.`
+                          ? `The measured ${totals.squares.toFixed(1)} squares feed the takeoff.`
                           : "Measurements feed the takeoff."}
-                    {!isRecon ? " Linear footage is not included while the drawing tool is offline." : ""}
+                    {!isRecon
+                      ? buildMode === "package"
+                        ? " Pick the roof package — system, underlayment, flashing, vents — and the measured figures do the takeoff. Edge lengths are estimated from the building outline; confirm them on the photo."
+                        : " The AI drafts a full package from the measured figures; every line stays editable below."
+                      : ""}
                   </div>
                 </div>
                 <div className="build-ctl">
-                  <label className="est-field est-field--sm">
-                    <span className="est-lbl">Waste factor</span>
-                    <span className="bp-sel">
-                      <select className="bp-sel-in est-in" id="waste" value={waste} onChange={(e) => setWaste(Number(e.target.value))}>
-                        {WASTES.map((w) => (
-                          <option key={w} value={w}>
-                            {w}%
-                          </option>
-                        ))}
-                      </select>
-                    </span>
-                  </label>
+                  <div className="vsw" role="radiogroup" aria-label="How to build the estimate">
+                    {(["package", "ai"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        role="radio"
+                        aria-checked={buildMode === m}
+                        className={"vsw-btn" + (buildMode === m ? " active" : "")}
+                        onClick={() => setBuildMode(m)}
+                      >
+                        {m === "package" ? "Roof package" : "AI estimate"}
+                      </button>
+                    ))}
+                  </div>
+                  {buildMode === "ai" && (
+                    <label className="est-field est-field--sm">
+                      <span className="est-lbl">Waste factor</span>
+                      <span className="bp-sel">
+                        <select className="bp-sel-in est-in" id="waste" value={waste} onChange={(e) => setWaste(Number(e.target.value))}>
+                          {WASTES.map((w) => (
+                            <option key={w} value={w}>
+                              {w}%
+                            </option>
+                          ))}
+                        </select>
+                      </span>
+                    </label>
+                  )}
                   {!manual && !pitchMeasured && !evPitch && totals?.squares != null && (
                     /* EagleView supplied no pitch (pack 002 not bought): the
                        contractor states one, and the estimate says so. */
@@ -1269,6 +1348,7 @@ export function RoofEstimatorDataForm() {
                       </span>
                     </label>
                   )}
+                  {buildMode === "ai" && (
                   <button
                     className="btn btn-primary btn--sm"
                     type="button"
@@ -1286,13 +1366,17 @@ export function RoofEstimatorDataForm() {
                     <svg className="ic"><use href="#i-bulb" /></svg>
                     {genBusy ? "Generating…" : "Generate estimate"}
                   </button>
+                  )}
                 </div>
               </div>
+              {buildMode === "package" && roofFacts && !isRecon && (
+                <RoofPackageBuilder facts={roofFacts} disabled={assessment?.estimable === false || convertBusy} onBuild={applyPackage} />
+              )}
               <div className={"build-out" + (hasEstimate ? "" : " is-hidden")} id="buildOut">
                 {hasEstimate && (
                   <>
-                    <EstimateTable title={`Materials · ${waste}% waste`} rows={materials} />
-                    <EstimateTable title="Labor" rows={labor} />
+                    <EstimateLinesTable title="Materials" rows={materials} onChange={setMaterials} disabled={convertBusy} addLabel="Add material" />
+                    <EstimateLinesTable title="Labor" rows={labor} onChange={setLabor} disabled={convertBusy} addLabel="Add labor" />
                     {assumptions.length > 0 && (
                       <div className="bo-assume">
                         <span className="kpi-lbl">Assumptions</span>
@@ -1439,42 +1523,6 @@ function HeroCell({ l, v, h, accent }: { l: string; v: string; h: string; accent
       <div className="kpi-lbl">{l}</div>
       <div className={"hero-v" + (accent ? " accent" : "")}>{v}</div>
       <div className="hero-h">{h}</div>
-    </div>
-  );
-}
-
-function EstimateTable({ title, rows }: { title: string; rows: EstimateLine[] }) {
-  const sum = rows.reduce((a, r) => a + r.quantity * r.unitPrice, 0);
-  return (
-    <div className="bo-sec">
-      <div className="bo-head">
-        <span className="kpi-lbl">{title}</span>
-        <span className="bo-sum">{money(sum)}</span>
-      </div>
-      <table className="bo-table">
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th className="num">Qty</th>
-            <th>Unit</th>
-            <th className="num">Unit</th>
-            <th className="num">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id}>
-              <td>{r.name}</td>
-              <td className="num">{num(r.quantity, Number.isInteger(r.quantity) ? 0 : 1)}</td>
-              <td>{r.unit}</td>
-              <td className="num">{money(r.unitPrice)}</td>
-              <td className="num">
-                <b>{money(r.quantity * r.unitPrice)}</b>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }

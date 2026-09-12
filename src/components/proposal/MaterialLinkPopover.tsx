@@ -10,6 +10,7 @@ import type { MaterialLine } from "./MaterialsSheet";
 
 const UNIT_LABEL: Record<string, string> = {
   SQFT: "sq ft",
+  SQUARE: "square",
   LINEAR_FT: "linear ft",
   CUBIC_FT: "cu ft",
   UNIT: "unit",

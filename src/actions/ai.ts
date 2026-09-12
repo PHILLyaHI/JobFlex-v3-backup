@@ -16,7 +16,7 @@ const aiDraftSchema = z.object({
       z.object({
         name: z.string(),
         description: z.string().optional(),
-        measurementType: z.enum(["SQFT", "LINEAR_FT", "CUBIC_FT", "UNIT", "HOUR", "LUMP_SUM"]),
+        measurementType: z.enum(["SQFT", "LINEAR_FT", "CUBIC_FT", "UNIT", "HOUR", "LUMP_SUM", "SQUARE"]),
         quantity: z.number(),
         unitPrice: z.number(),
         materialCost: z.number(),

@@ -109,7 +109,11 @@ await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
         {
           role: "system",
           content:
-            'You are a senior roofing estimator. Produce a roof replacement estimate as JSON matching: {title, scope, assumptions: string[], materials: [{name, quantity, unitPrice, unit}], labor: [{name, quantity, unitPrice, unit}], estimatedTimelineDays}. Use realistic US 2026 pricing, account for pitch (steeper = more labor) and waste factor (bumps material qty). When the roof pitch line lists more than one pitch family, the roof has more than one slope: state EVERY family in `assumptions` as its own line with its pitch and its share of the roof (e.g. "4/12 on 53% of the roof", "9/12 on 47% of the roof — steep-slope labor applied to this share"), and price labor per family by that share. Return JSON only.',
+            'You are a senior roofing estimator writing a contractor-grade takeoff. Produce a roof replacement estimate as JSON matching: {title, scope, assumptions: string[], materials: [{name, quantity, unitPrice, unit}], labor: [{name, quantity, unitPrice, unit}], estimatedTimelineDays}. ' +
+            'UNITS: `unit` must be exactly one of "square" (100 sq ft of roof), "sq ft", "linear ft", "each", "hour", "lot" — never anything else, never "unit". ' +
+            'MATERIALS must itemize the full package with real quantities: the roof covering by the square (name the product type), underlayment by the square, ice & water shield in sq ft (eaves and valleys unless told otherwise), drip edge in linear ft (the building perimeter), starter strip in linear ft, hip & ridge cap in linear ft, valley metal in linear ft with the valley count in the name, step flashing in pieces (each) with the wall count, apron/headwall and counter flashing in linear ft, pipe boots each by size, chimney flashing kit each when there is a chimney, curb flashing each per rooftop unit, ridge vent in linear ft and/or box, turbine or powered vents each, intake vents each, nails/fasteners and sealant by the square, and deck replacement sheets each when the age or condition warrants an allowance. ' +
+            'LABOR must itemize install by the square (one line per pitch family, steep-slope rate from 8/12), tear-off by the square with the layer count, disposal by the square, flashing and vent labor by linear ft or each, a steep-slope safety lot when any pitch is 8/12 or more, and cleanup as a lot. ' +
+            'Use realistic US 2026 pricing and the waste factor for coverings and underlayment. When the roof pitch line lists more than one pitch family, state EVERY family in `assumptions` with its pitch and share of the roof (e.g. "4/12 on 53% of the roof", "9/12 on 47% of the roof — steep-slope labor applied to this share") and price labor per family by that share. Lengths that are not measured (ridge, hip, valley, walls) are estimates from the shape and footprint — label them as estimates in `assumptions`. Return JSON only.',
         },
         {
           role: "user",
@@ -123,8 +127,8 @@ Waste factor: ${input.wastePct}%${input.measurementNotes ? `\n${input.measuremen
     const text = completion.choices[0]?.message?.content ?? "{}";
     const parsed = estimateSchema.parse(JSON.parse(text));
     return { ok: true, data: parsed };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? "Generation failed" };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : "Generation failed" };
   }
 }
 
@@ -230,19 +234,21 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
   return { id: proposal.id };
 }
 
+/**
+ * The estimate's free-text unit → the proposal's measurement type. Reads the
+ * WORD, not an exact spelling: the AI wrote "linear foot" and the old exact
+ * match sent every such line to the proposal as "Unit" (2026-09-12, every
+ * line of a converted estimate showed "Unit"). Roofing squares get their own
+ * type — SQUARE — so a shingle line stays "24.9 squares" on the proposal.
+ */
 function unitToType(unit: string | undefined): string {
-  switch (unit) {
-    case "sqft":
-      return "SQFT";
-    case "ln ft":
-    case "linear ft":
-      return "LINEAR_FT";
-    case "hour":
-      return "HOUR";
-    case "square":
-    case "lot":
-    case undefined:
-    default:
-      return "UNIT";
-  }
+  const u = (unit ?? "").trim().toLowerCase();
+  if (!u) return "UNIT";
+  if (/sq\.?\s*ft|sqft|square\s*f(ee|oo)?t|\bsf\b/.test(u)) return "SQFT";
+  if (/^sq(uare)?s?$/.test(u) || /\bsquares?\b/.test(u)) return "SQUARE";
+  if (/lin|\bln\b|\blf\b|\bft\b|f(ee|oo)t/.test(u)) return "LINEAR_FT";
+  if (/cu(bic)?\.?\s*(ft|yd)|\bcy\b/.test(u)) return "CUBIC_FT";
+  if (/hour|\bhrs?\b/.test(u)) return "HOUR";
+  if (/lot|lump|allowance|flat|fixed|\bjob\b/.test(u)) return "LUMP_SUM";
+  return "UNIT";
 }

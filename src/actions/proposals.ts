@@ -21,7 +21,7 @@ import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
 const lineItemSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
-  measurementType: z.enum(["SQFT", "LINEAR_FT", "CUBIC_FT", "UNIT", "HOUR", "LUMP_SUM"]),
+  measurementType: z.enum(["SQFT", "LINEAR_FT", "CUBIC_FT", "UNIT", "HOUR", "LUMP_SUM", "SQUARE"]),
   quantity: z.number().min(0),
   unitPrice: z.number().min(0),
   materialCost: z.number().min(0).default(0),

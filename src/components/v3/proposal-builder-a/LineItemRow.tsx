@@ -21,6 +21,7 @@ const MEASUREMENT_OPTIONS: {
   label: string;
 }[] = [
   { value: "SQFT", label: "Sq ft" },
+  { value: "SQUARE", label: "Square (100 sq ft)" },
   { value: "LINEAR_FT", label: "Linear ft" },
   { value: "CUBIC_FT", label: "Cubic ft" },
   { value: "UNIT", label: "Unit" },

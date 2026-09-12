@@ -101,7 +101,7 @@ export default async function ProposalEditorPage({ params }: { params: Promise<{
             name: l.name,
             description: l.description ?? undefined,
             measurementType:
-              l.measurementType as "SQFT" | "LINEAR_FT" | "CUBIC_FT" | "UNIT" | "HOUR" | "LUMP_SUM",
+              l.measurementType as "SQFT" | "LINEAR_FT" | "CUBIC_FT" | "UNIT" | "HOUR" | "LUMP_SUM" | "SQUARE",
             quantity: l.quantity,
             unitPrice: l.unitPrice,
             materialCost: l.materialCost,

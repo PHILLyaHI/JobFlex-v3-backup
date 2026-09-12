@@ -98,6 +98,7 @@ export const MeasurementType = {
   UNIT: "UNIT",
   HOUR: "HOUR",
   LUMP_SUM: "LUMP_SUM",
+  SQUARE: "SQUARE",
 } as const;
 export type MeasurementType = (typeof MeasurementType)[keyof typeof MeasurementType];
 
