@@ -10,10 +10,11 @@ import { requireOwner } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { parsePaymentSettings } from "@/lib/settings";
-import { encryptSecret } from "@/lib/crypto/secretBox";
+import { encryptSecret, isSecretBoxConfigured } from "@/lib/crypto/secretBox";
 import { ActivityKind, PaymentConnectionStatus } from "@/lib/prismaEnums";
 import {
   disconnectSquareFor,
+  disconnectStaxFor,
   disconnectStripeConnectFor,
   getConnection,
   setProviderOfferedFor,
@@ -24,34 +25,45 @@ import {
   stripeKeyPathReady,
   validateStripeKey,
 } from "@/lib/payments/stripeConnect";
+import {
+  registerSquareWebhook,
+  removeSquareWebhook,
+  revokeSquareToken,
+  validateSquareToken,
+} from "@/lib/payments/squareConnect";
+import {
+  newStaxWebhookSecret,
+  registerStaxWebhooks,
+  removeStaxWebhooks,
+  staxKeyFor,
+  staxWebhookIdsOf,
+  staxWebhookUrl,
+  validateStaxKey,
+} from "@/lib/payments/stax";
 
 const SETTINGS = "/dashboard/settings";
 
-const keySchema = z.string().trim().min(20).max(200);
+const keySchema = z.string().trim().min(20).max(400);
+const NO_BOX = "Key storage isn't set up on this platform yet (TOKEN_ENCRYPTION_KEY).";
 
-export type ConnectWithKeyResult =
-  | {
-      ok: true;
-      state: "connected" | "restricted";
-      accountId: string;
-      livemode: boolean;
-      webhook: boolean;
-      webhookError: string | null;
-    }
+/** What every paste-a-key action answers with: the form reads `ok`,
+ *  `message` and `webhook`; the rest is for the activity line. */
+export type KeyConnectResult =
+  | { ok: true; state: "connected" | "restricted"; label: string; webhook: boolean; webhookError: string | null }
   | { ok: false; message: string };
+
+export type ConnectWithKeyResult = KeyConnectResult;
 
 /** "Use API key": the contractor pastes their own Stripe secret / restricted
  *  key. Checked against Stripe, stored encrypted, and a webhook endpoint is
  *  registered on their account with it. Replaces an OAuth join if one
  *  exists. Answers with an envelope, not a throw — production redacts thrown
  *  messages, and Stripe's reason is the whole point. */
-export async function connectStripeWithKey(raw: unknown): Promise<ConnectWithKeyResult> {
+export async function connectStripeWithKey(raw: unknown): Promise<KeyConnectResult> {
   const ctx = await requireOwner();
   const parsed = keySchema.safeParse(raw);
   if (!parsed.success) return { ok: false, message: "Paste the whole key." };
-  if (!stripeKeyPathReady()) {
-    return { ok: false, message: "Key storage isn't set up on this platform yet (TOKEN_ENCRYPTION_KEY)." };
-  }
+  if (!stripeKeyPathReady()) return { ok: false, message: NO_BOX };
   const v = await validateStripeKey(parsed.data);
   if (!v.ok) return v;
   const a = v.account;
@@ -107,11 +119,167 @@ export async function connectStripeWithKey(raw: unknown): Promise<ConnectWithKey
   return {
     ok: true,
     state: a.chargesEnabled ? "connected" : "restricted",
-    accountId: a.accountId,
-    livemode: a.livemode,
+    label: `${a.accountId}${a.livemode ? "" : " (test mode)"}`,
     webhook: hook.ok,
     webhookError: hook.ok ? null : hook.message,
   };
+}
+
+/** "Use access token": the seller pastes a personal access token from their
+ *  own Square developer app. Checked against Square (production, then
+ *  sandbox), stored encrypted with the first usable location, and a webhook
+ *  subscription is registered on their app with it. Replaces an OAuth join. */
+export async function connectSquareWithToken(raw: unknown): Promise<KeyConnectResult> {
+  const ctx = await requireOwner();
+  const parsed = keySchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, message: "Paste the whole access token." };
+  if (!isSecretBoxConfigured()) return { ok: false, message: NO_BOX };
+  const v = await validateSquareToken(parsed.data);
+  if (!v.ok) return v;
+  const a = v.account;
+
+  const existing = await getConnection(ctx.organizationId, "SQUARE");
+  if (existing && existing.status !== PaymentConnectionStatus.REVOKED) {
+    if (existing.squareAuth === "token") {
+      if (existing.squareWebhookId) await removeSquareWebhook(existing, existing.squareWebhookId);
+    } else if (existing.squareMerchantId) {
+      await revokeSquareToken(existing.squareMerchantId);
+    }
+  }
+
+  const data = {
+    status: PaymentConnectionStatus.ACTIVE,
+    squareAuth: "token",
+    squareMerchantId: a.merchantId,
+    squareLocationId: a.location.id,
+    squareLocationName: a.location.name ?? a.businessName,
+    squareEnv: a.env,
+    squareAccessTokenEnc: encryptSecret(a.token),
+    squareRefreshTokenEnc: null,
+    squareTokenExpiresAt: null,
+    squareTokenLast4: a.last4,
+    squareWebhookId: null,
+    squareWebhookSignatureKeyEnc: null,
+    currency: a.currency,
+    country: a.country,
+    lastError: null,
+    connectedByUserId: ctx.user.id,
+    connectedAt: new Date(),
+  };
+  const row = await db.paymentConnection.upsert({
+    where: { organizationId_provider: { organizationId: ctx.organizationId, provider: "SQUARE" } },
+    create: { organizationId: ctx.organizationId, provider: "SQUARE", ...data },
+    update: data,
+  });
+
+  const hook = await registerSquareWebhook(a.token, a.env, `${await appBaseUrl()}/api/webhooks/square-key/${row.id}`);
+  if (hook.ok) {
+    await db.paymentConnection.update({
+      where: { id: row.id },
+      data: { squareWebhookId: hook.id, squareWebhookSignatureKeyEnc: encryptSecret(hook.signatureKey) },
+    });
+  } else {
+    console.warn("[square-token] webhook registration failed for", row.id, hook.message);
+  }
+
+  await setProviderOfferedFor(ctx.organizationId, "SQUARE", true);
+  await db.activityEvent.create({
+    data: {
+      organizationId: ctx.organizationId,
+      actorId: ctx.user.id,
+      kind: ActivityKind.PAYMENT_CONNECTED,
+      summary: `Square connected with an access token (${a.location.name ?? a.merchantId}${a.env === "sandbox" ? ", sandbox" : ""})`,
+    },
+  });
+  revalidatePath(SETTINGS);
+  return {
+    ok: true,
+    state: "connected",
+    label: `${a.location.name ?? a.merchantId}${a.env === "sandbox" ? " (sandbox)" : ""}`,
+    webhook: hook.ok,
+    webhookError: hook.ok ? null : hook.message,
+  };
+}
+
+/** "Use API key" for Stax: the contractor pastes their merchant API key.
+ *  Checked against Stax (GET /self), stored encrypted, and one webhook per
+ *  event registered with it — the target URL carries a random secret because
+ *  Stax signs nothing. Built without a Stax account to test against. */
+export async function connectStaxWithKey(raw: unknown): Promise<KeyConnectResult> {
+  const ctx = await requireOwner();
+  const parsed = keySchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, message: "Paste the whole key." };
+  if (!isSecretBoxConfigured()) return { ok: false, message: NO_BOX };
+  const v = await validateStaxKey(parsed.data);
+  if (!v.ok) return v;
+  const a = v.account;
+
+  const existing = await getConnection(ctx.organizationId, "STAX");
+  if (existing) {
+    const oldKey = staxKeyFor(existing);
+    const ids = staxWebhookIdsOf(existing);
+    if (oldKey && ids.length) await removeStaxWebhooks(oldKey, ids);
+  }
+
+  const secret = newStaxWebhookSecret();
+  const active = !a.status || a.status.toUpperCase() === "ACTIVE";
+  const data = {
+    status: active ? PaymentConnectionStatus.ACTIVE : PaymentConnectionStatus.RESTRICTED,
+    staxApiKeyEnc: encryptSecret(a.key),
+    staxKeyLast4: a.last4,
+    staxMerchantId: a.merchantId,
+    staxMerchantName: a.merchantName,
+    staxWebhookIds: null,
+    staxWebhookSecretEnc: encryptSecret(secret),
+    currency: a.currency,
+    lastError: active ? null : `Stax reports the merchant as ${a.status}`,
+    connectedByUserId: ctx.user.id,
+    connectedAt: new Date(),
+  };
+  const row = await db.paymentConnection.upsert({
+    where: { organizationId_provider: { organizationId: ctx.organizationId, provider: "STAX" } },
+    create: { organizationId: ctx.organizationId, provider: "STAX", ...data },
+    update: data,
+  });
+
+  const hooks = await registerStaxWebhooks(a.key, staxWebhookUrl(await appBaseUrl(), row.id, secret));
+  if (hooks.ids.length) {
+    await db.paymentConnection.update({ where: { id: row.id }, data: { staxWebhookIds: JSON.stringify(hooks.ids) } });
+  }
+  if (!hooks.ok) console.warn("[stax] webhook registration failed for", row.id, hooks.message);
+
+  await setProviderOfferedFor(ctx.organizationId, "STAX", true);
+  await db.activityEvent.create({
+    data: {
+      organizationId: ctx.organizationId,
+      actorId: ctx.user.id,
+      kind: ActivityKind.PAYMENT_CONNECTED,
+      summary: `Stax connected with an API key (${a.merchantName ?? a.merchantId})`,
+    },
+  });
+  revalidatePath(SETTINGS);
+  return {
+    ok: true,
+    state: active ? "connected" : "restricted",
+    label: a.merchantName ?? a.merchantId,
+    webhook: hooks.ok,
+    webhookError: hooks.ok ? null : hooks.message,
+  };
+}
+
+export async function disconnectStax() {
+  const ctx = await requireOwner();
+  const res = await disconnectStaxFor(ctx.organizationId);
+  await db.activityEvent.create({
+    data: {
+      organizationId: ctx.organizationId,
+      actorId: ctx.user.id,
+      kind: ActivityKind.PAYMENT_DISCONNECTED,
+      summary: "Stax disconnected",
+    },
+  });
+  revalidatePath(SETTINGS);
+  return res;
 }
 
 export async function disconnectStripeConnect() {
@@ -161,7 +329,7 @@ export async function setStripeAchEnabled(raw: unknown) {
 
 /** Offer/hide a connected provider at checkout without disconnecting it. */
 const offeredSchema = z.object({
-  provider: z.enum(["stripe", "square"]),
+  provider: z.enum(["stripe", "square", "stax"]),
   offered: z.boolean(),
 });
 export async function setProviderOffered(raw: unknown) {
