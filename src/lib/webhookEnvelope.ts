@@ -13,7 +13,7 @@ export type EnvelopeResult =
   | { outcome: "failed"; error: string };
 
 export async function runWebhookEnvelope(
-  meta: { provider: "STRIPE" | "SQUARE"; eventId: string; type: string },
+  meta: { provider: "STRIPE" | "SQUARE" | "STAX"; eventId: string; type: string },
   handler: () => Promise<void>,
 ): Promise<EnvelopeResult> {
   const where = { provider_eventId: { provider: meta.provider, eventId: meta.eventId } };

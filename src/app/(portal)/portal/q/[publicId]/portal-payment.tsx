@@ -18,7 +18,7 @@ import { toast } from "@/components/ui/Toast";
 import type { PortalPayModel, PortalStage } from "@/lib/payments/portalModel";
 import { startCheckout, usePayReturn } from "@/components/v3/mobile-proposal-client/use-pay-return";
 
-type Provider = "stripe" | "square";
+type Provider = "stripe" | "square" | "stax";
 
 function statusWord(s: PortalStage): string {
   if (s.status === "PAID") return s.paidOn ? `Paid · ${s.paidOn}` : "Paid";
@@ -64,7 +64,7 @@ export function PortalPayment({ model }: { model: PortalPayModel }) {
   function buttons(stage: PortalStage | null) {
     const target = stage ? { installmentId: stage.id } : ("remaining" as const);
     const idKey = stage ? stage.id : "remaining";
-    const below = stage?.belowMin ?? { stripe: false, square: false };
+    const below = stage?.belowMin ?? { stripe: false, square: false, stax: false };
     return (
       <div className="pv-btnrow pv-pay-btns">
         {model.providers.stripe.ok ? (
@@ -87,6 +87,17 @@ export function PortalPayment({ model }: { model: PortalPayModel }) {
             onClick={() => pay("square", target)}
           >
             {busy === `square:${idKey}` ? "Opening…" : "Pay with Square"}
+          </button>
+        ) : null}
+        {model.providers.stax.ok ? (
+          <button
+            className="pv-btn pv-btn--ghost pv-btn--pay"
+            type="button"
+            disabled={busy !== null || below.stax}
+            title={below.stax ? "Below the Stax minimum — pay the remaining balance instead" : undefined}
+            onClick={() => pay("stax", target)}
+          >
+            {busy === `stax:${idKey}` ? "Opening…" : "Pay with Stax"}
           </button>
         ) : null}
       </div>

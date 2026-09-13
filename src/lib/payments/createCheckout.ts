@@ -23,11 +23,12 @@ import { getConnections } from "./connections";
 import { resolvePayOptions, PAY_BLOCK_COPY } from "./payOptions";
 import { stripeForConnection, expireStripeSession } from "./stripeConnect";
 import { squareClientForConnection, deleteSquarePaymentLink } from "./squareConnect";
+import { createStaxInvoice, getStaxInvoice, staxKeyFor, STAX_BILL_URL } from "./stax";
 import { ensureSchedule } from "./settle";
 import { expireOpenCheckoutsForProposal } from "./checkouts";
 import { signCheckout } from "./checkoutSig";
 
-export type CheckoutProvider = "STRIPE" | "SQUARE";
+export type CheckoutProvider = "STRIPE" | "SQUARE" | "STAX";
 
 export type CheckoutResult =
   | { ok: true; url: string; reused: boolean }
@@ -64,14 +65,15 @@ export async function createCheckout(input: {
     settings: parsePaymentSettings(proposal.organization.paymentSettingsJson),
     stripeConn: conns.stripe,
     squareConn: conns.square,
+    staxConn: conns.stax,
     proposalCurrency: proposal.currency,
     stripeMode: mode,
   });
-  const opt = input.provider === "STRIPE" ? options.stripe : options.square;
+  const opt = input.provider === "STRIPE" ? options.stripe : input.provider === "SQUARE" ? options.square : options.stax;
   if (!opt.ok) {
     return { ok: false, status: 409, error: PAY_BLOCK_COPY[opt.reason ?? "not_connected"], reason: opt.reason };
   }
-  const conn = input.provider === "STRIPE" ? conns.stripe! : conns.square!;
+  const conn = (input.provider === "STRIPE" ? conns.stripe : input.provider === "SQUARE" ? conns.square : conns.stax)!;
 
   const installments = proposal.installments.length
     ? proposal.installments
@@ -101,7 +103,7 @@ export async function createCheckout(input: {
     return {
       ok: false,
       status: 400,
-      error: `The minimum ${input.provider === "SQUARE" ? "Square" : "card"} payment is $${(MIN_MINOR[input.provider] / 100).toFixed(2)} — pay the remaining balance instead.`,
+      error: `The minimum ${input.provider === "SQUARE" ? "Square" : input.provider === "STAX" ? "Stax" : "card"} payment is $${(MIN_MINOR[input.provider] / 100).toFixed(2)} — pay the remaining balance instead.`,
       reason: "below_min",
     };
   }
@@ -204,10 +206,33 @@ export async function createCheckout(input: {
       return { ok: true, url: session.url, reused: false };
     }
 
+    if (input.provider === "STAX") {
+      // ── Stax ──────────────────────────────────────────────────────────
+      // An invoice on the contractor's merchant account, paid on Stax's
+      // hosted bill page. No fee inside it — settle bills the cut.
+      const key = staxKeyFor(conn);
+      if (!key) throw new Error("Stax connection unavailable");
+      const inv = await createStaxInvoice(key, {
+        clientEmail: proposal.client?.email ?? null,
+        clientName: proposal.client?.name ?? null,
+        itemName,
+        memo: `Proposal ${proposal.publicId} · ${pay.label}`,
+        amountMinor: pay.amountMinor,
+      });
+      await db.installment.updateMany({
+        where: { id: { in: stageIds } },
+        data: { checkoutRef: inv.id },
+      });
+      return { ok: true, url: inv.payUrl, reused: false };
+    }
+
     // ── Square ────────────────────────────────────────────────────────
     const client = await squareClientForConnection(conn);
     if (!client || !conn.squareLocationId) throw new Error("Square connection unavailable");
     const currency = proposal.currency.toUpperCase();
+    // A token-joined app can't carry an app fee (that needs the platform
+    // app): none is sent, and settle bills the cut on the JobFlex invoice.
+    const appFee = conn.squareAuth !== "token" && feeMinor > 0;
     const res = await client.checkout.paymentLinks.create({
       idempotencyKey,
       order: {
@@ -223,7 +248,7 @@ export async function createCheckout(input: {
         metadata,
       },
       checkoutOptions: {
-        appFeeMoney: feeMinor > 0 ? { amount: BigInt(feeMinor), currency: currency as never } : undefined,
+        appFeeMoney: appFee ? { amount: BigInt(feeMinor), currency: currency as never } : undefined,
         redirectUrl: `${origin}/portal/q/${proposal.publicId}?paid=1&ref=`,
         allowTipping: false,
         askForShippingAddress: false,
@@ -261,6 +286,12 @@ async function openUrlFor(
       if (!bound) return null;
       const s = await bound.stripe.checkout.sessions.retrieve(ref, undefined, bound.reqOpts);
       return s.status === "open" && s.url ? s.url : null;
+    }
+    if (provider === "STAX") {
+      const key = staxKeyFor(conn);
+      if (!key) return null;
+      const inv = await getStaxInvoice(key, ref);
+      return inv.status === "PAID" || inv.deleted_at ? null : STAX_BILL_URL + inv.id;
     }
     const client = await squareClientForConnection(conn);
     if (!client) return null;

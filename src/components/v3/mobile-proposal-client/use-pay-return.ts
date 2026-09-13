@@ -74,7 +74,7 @@ export function usePayReturn(publicId: string): PayReturnState {
 
 /** POST to the pay route and hand the browser to the provider. */
 export async function startCheckout(
-  provider: "stripe" | "square",
+  provider: "stripe" | "square" | "stax",
   publicId: string,
   target: { installmentId: string } | "remaining",
 ): Promise<{ ok: true } | { ok: false; error: string }> {

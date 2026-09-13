@@ -118,6 +118,7 @@ export type PaymentStatus = (typeof PaymentStatus)[keyof typeof PaymentStatus];
 export const PaymentProvider = {
   STRIPE: "STRIPE",
   SQUARE: "SQUARE",
+  STAX: "STAX",
   PAYPAL: "PAYPAL",
   MANUAL: "MANUAL",
 } as const;

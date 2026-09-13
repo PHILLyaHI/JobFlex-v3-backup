@@ -17,7 +17,7 @@
 //     `payable`, plus "pay remaining" for everything at once.
 
 export type StageStatus = "UNPAID" | "PENDING" | "PAID" | "WAIVED";
-export type PayProvider = "STRIPE" | "SQUARE";
+export type PayProvider = "STRIPE" | "SQUARE" | "STAX";
 
 export interface StageInput {
   id: string;
@@ -73,7 +73,7 @@ export const IMPLICIT_STAGE_LABEL = "Full payment";
 export const BALANCE_STAGE_LABEL = "Balance";
 
 /** Provider minimum charge in minor units (USD). Stripe $0.50, Square $1.00. */
-export const MIN_MINOR: Record<PayProvider, number> = { STRIPE: 50, SQUARE: 100 };
+export const MIN_MINOR: Record<PayProvider, number> = { STRIPE: 50, SQUARE: 100, STAX: 100 };
 
 export function toMinor(dollars: number): number {
   return Math.round((Number.isFinite(dollars) ? dollars : 0) * 100);

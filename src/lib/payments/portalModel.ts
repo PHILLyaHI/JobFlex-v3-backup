@@ -28,7 +28,7 @@ export type PortalStage = {
   paidOn: string | null;
   /** The earliest open stage — the only one with buttons. */
   payable: boolean;
-  belowMin: { stripe: boolean; square: boolean };
+  belowMin: { stripe: boolean; square: boolean; stax: boolean };
   /** No DB row (implicit full-payment / balance line). */
   synthetic: boolean;
 };
@@ -51,6 +51,7 @@ export type PortalPayModel = {
   providers: {
     stripe: { ok: boolean; reason?: PayBlockReason; ach: boolean };
     square: { ok: boolean; reason?: PayBlockReason };
+    stax: { ok: boolean; reason?: PayBlockReason };
   };
   bankTransfer: { ok: boolean; instructions: string };
   anyHosted: boolean;
@@ -84,6 +85,7 @@ export async function buildPortalPayModel(
     settings,
     stripeConn: org.paymentConnections.find((c) => c.provider === "STRIPE") ?? null,
     squareConn: org.paymentConnections.find((c) => c.provider === "SQUARE") ?? null,
+    staxConn: org.paymentConnections.find((c) => c.provider === "STAX") ?? null,
     proposalCurrency: proposal.currency,
     stripeMode: mode,
   });
@@ -107,6 +109,7 @@ export async function buildPortalPayModel(
     belowMin: {
       stripe: isBelowMin(s.amountMinor, "STRIPE"),
       square: isBelowMin(s.amountMinor, "SQUARE"),
+      stax: isBelowMin(s.amountMinor, "STAX"),
     },
     synthetic: s.synthetic,
   }));
@@ -121,7 +124,7 @@ export async function buildPortalPayModel(
       status: "UNPAID",
       paidOn: null,
       payable: false,
-      belowMin: { stripe: false, square: false },
+      belowMin: { stripe: false, square: false, stax: false },
       synthetic: true,
     });
   }
@@ -140,7 +143,7 @@ export async function buildPortalPayModel(
     balanceMinor: schedule.balanceMinor,
     nextPayableId: proposal.status === "ACCEPTED" ? schedule.nextPayableId : null,
     showRemaining: proposal.status === "ACCEPTED" && schedule.remainingMinor > 0 && openCount > 1,
-    providers: { stripe: options.stripe, square: options.square },
+    providers: { stripe: options.stripe, square: options.square, stax: options.stax },
     bankTransfer: options.bankTransfer,
     anyHosted,
     anyWay: anyHosted || options.bankTransfer.ok,

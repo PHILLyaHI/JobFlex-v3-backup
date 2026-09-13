@@ -31,6 +31,7 @@ import { useRouter } from "next/navigation";
 import { updatePaymentSettings } from "@/actions/settings";
 import {
   disconnectSquare,
+  disconnectStax,
   disconnectStripeConnect,
   saveBankTransferSettings,
   setStripeAchEnabled,
@@ -42,6 +43,7 @@ import {
   CURRENCY_SELECT,
   DISCONNECT_ACTION,
   FEE_NOTE_KICKER,
+  KEY_FORMS,
   MANAGE_ACTION,
   PAYMENT_AUTOMATIONS,
   PAYMENT_AUTOMATIONS_CARD,
@@ -60,13 +62,15 @@ import {
   currencyOptionFor,
   platformFeeLine,
   squareConnLine,
+  staxConnLine,
   stripeConnLine,
   type IconName,
+  type KeyProvider,
   type PaneProps,
   type PaymentAutomationKey,
   type Processor,
 } from "../settings-data";
-import { StripeKeyForm } from "./stripe-key-form";
+import { ProviderKeyForm } from "./stripe-key-form";
 import type { PaymentConnectionStatusView } from "@/lib/payments/connections";
 
 function Ic({ name }: { name: IconName }) {
@@ -89,6 +93,7 @@ function ProcessorRow({
   connLine,
   connectHref,
   onUseKey = null,
+  useKeyLabel = STRIPE_KEY_ACTION.label,
   viaKey = false,
   busy,
   onManage,
@@ -99,9 +104,11 @@ function ProcessorRow({
   connLine: string;
   connectHref: string | null;
   onUseKey?: (() => void) | null;
+  useKeyLabel?: string;
   viaKey?: boolean;
   busy: boolean;
-  onManage: () => void;
+  /** Absent = no deep view under Integrations (Stax). */
+  onManage?: () => void;
   onDisconnect: () => void;
 }) {
   const connected = state === "connected";
@@ -138,7 +145,7 @@ function ProcessorRow({
         {state === "disconnected" && onUseKey ? (
           <button className={`btn btn-ghost btn-sm ${STRIPE_KEY_ACTION.state}`} type="button" onClick={onUseKey}>
             <Ic name={STRIPE_KEY_ACTION.icon ?? "i-card"} />
-            {STRIPE_KEY_ACTION.label}
+            {useKeyLabel}
           </button>
         ) : null}
         {hasRow && !connected ? (
@@ -154,20 +161,20 @@ function ProcessorRow({
             </a>
           )
         ) : null}
+        {hasRow && onManage ? (
+          <button className="btn btn-ghost btn-sm" type="button" onClick={onManage}>
+            {MANAGE_ACTION.label}
+          </button>
+        ) : null}
         {hasRow ? (
-          <>
-            <button className="btn btn-ghost btn-sm" type="button" onClick={onManage}>
-              {MANAGE_ACTION.label}
-            </button>
-            <button
-              className={`btn btn-ghost btn-sm ${DISCONNECT_ACTION.state}`}
-              type="button"
-              disabled={busy}
-              onClick={onDisconnect}
-            >
-              {DISCONNECT_ACTION.label}
-            </button>
-          </>
+          <button
+            className={`btn btn-ghost btn-sm ${DISCONNECT_ACTION.state}`}
+            type="button"
+            disabled={busy}
+            onClick={onDisconnect}
+          >
+            {DISCONNECT_ACTION.label}
+          </button>
         ) : null}
       </span>
     </div>
@@ -189,8 +196,9 @@ export function PaymentsPane({ data, navigate }: PaneProps) {
   const [bankText, setBankText] = useState(c.bankTransfer.instructions);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState("");
-  // "Use API key" opens the paste form under the Stripe row.
-  const [keyOpen, setKeyOpen] = useState(false);
+  // "Use API key" / "Use access token" opens the paste form under that row.
+  const [keyOpen, setKeyOpen] = useState<KeyProvider | null>(null);
+  const toggleKey = (p: KeyProvider) => () => setKeyOpen((v) => (v === p ? null : p));
 
   const saveDefaults = () =>
     updatePaymentSettings({
@@ -199,12 +207,13 @@ export function PaymentsPane({ data, navigate }: PaneProps) {
       receiptsOnPayment: automations.receiptsOnPayment,
     });
 
-  async function disconnect(which: "stripe" | "square") {
+  async function disconnect(which: KeyProvider) {
     setBusy(which);
     setErr("");
     try {
       if (which === "stripe") await disconnectStripeConnect();
-      else await disconnectSquare();
+      else if (which === "square") await disconnectSquare();
+      else await disconnectStax();
       router.refresh();
     } catch (e) {
       setErr(actionError(e));
@@ -213,7 +222,13 @@ export function PaymentsPane({ data, navigate }: PaneProps) {
     }
   }
 
-  const [stripeRow, squareRow, bankRow] = PROCESSORS;
+  const [stripeRow, squareRow, bankRow, staxRow] = PROCESSORS;
+  const staxHasRow = c.stax.state !== "disconnected" && c.stax.state !== "not_configured";
+  const feeOnInvoice = [
+    c.stripe.auth === "key" ? "Stripe" : null,
+    c.square.auth === "token" ? "Square" : null,
+    staxHasRow ? "Stax" : null,
+  ].filter((n): n is string => n !== null);
 
   return (
     <>
@@ -233,19 +248,20 @@ export function PaymentsPane({ data, navigate }: PaneProps) {
               state={c.stripe.state}
               connLine={stripeConnLine(c.stripe)}
               connectHref={c.stripe.oauthOffered ? c.connectHref.stripe : null}
-              onUseKey={c.stripe.keyOffered ? () => setKeyOpen((v) => !v) : null}
+              onUseKey={c.stripe.keyOffered ? toggleKey("stripe") : null}
               viaKey={c.stripe.auth === "key"}
               busy={busy !== null}
               onManage={() => navigate("integrations", "stripe")}
               onDisconnect={() => void disconnect("stripe")}
             />
-            {keyOpen && c.stripe.state !== "connected" ? (
+            {keyOpen === "stripe" && c.stripe.state !== "connected" ? (
               <div className="prow-sub">
-                <StripeKeyForm
+                <ProviderKeyForm
+                  provider="stripe"
                   feePct={p.platformFeePct}
-                  onCancel={() => setKeyOpen(false)}
+                  onCancel={() => setKeyOpen(null)}
                   onDone={(r) => {
-                    if (r.webhook) setKeyOpen(false); // else the form shows the webhook note
+                    if (r.webhook) setKeyOpen(null); // else the form shows the webhook note
                   }}
                 />
               </div>
@@ -276,11 +292,53 @@ export function PaymentsPane({ data, navigate }: PaneProps) {
               row={squareRow}
               state={c.square.state}
               connLine={squareConnLine(c.square)}
-              connectHref={c.connectHref.square}
+              connectHref={c.square.oauthOffered ? c.connectHref.square : null}
+              onUseKey={c.square.keyOffered ? toggleKey("square") : null}
+              useKeyLabel={KEY_FORMS.square.action.label}
+              viaKey={c.square.auth === "token"}
               busy={busy !== null}
               onManage={() => navigate("integrations", "square")}
               onDisconnect={() => void disconnect("square")}
             />
+            {keyOpen === "square" && c.square.state !== "connected" ? (
+              <div className="prow-sub">
+                <ProviderKeyForm
+                  provider="square"
+                  feePct={p.platformFeePct}
+                  onCancel={() => setKeyOpen(null)}
+                  onDone={(r) => {
+                    if (r.webhook) setKeyOpen(null);
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
+
+          {/* Stax — key only; no deep view under Integrations */}
+          <div className="prow-grp">
+            <ProcessorRow
+              row={staxRow}
+              state={c.stax.state}
+              connLine={staxConnLine(c.stax)}
+              connectHref={null}
+              onUseKey={c.stax.keyOffered ? toggleKey("stax") : null}
+              useKeyLabel={KEY_FORMS.stax.action.label}
+              viaKey
+              busy={busy !== null}
+              onDisconnect={() => void disconnect("stax")}
+            />
+            {keyOpen === "stax" && c.stax.state !== "connected" ? (
+              <div className="prow-sub">
+                <ProviderKeyForm
+                  provider="stax"
+                  feePct={p.platformFeePct}
+                  onCancel={() => setKeyOpen(null)}
+                  onDone={(r) => {
+                    if (r.webhook) setKeyOpen(null);
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
 
           {/* Bank transfer — manual path */}
@@ -314,7 +372,7 @@ export function PaymentsPane({ data, navigate }: PaneProps) {
             <span className="sc-note-k">{PAYOUT_NOTE_KICKER}</span>
             <span>{PAYOUT_NOTE}</span>
             <span className="sc-note-k">{FEE_NOTE_KICKER}</span>
-            <span>{platformFeeLine(p.platformFeePct, c.stripe.auth === "key")}</span>
+            <span>{platformFeeLine(p.platformFeePct, feeOnInvoice)}</span>
             {err ? (
               <>
                 <span className="sc-note-k prow-warn">Error</span>

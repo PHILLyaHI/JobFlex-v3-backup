@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { InstallmentStatus } from "@/lib/prismaEnums";
 import { expireStripeSession } from "./stripeConnect";
 import { deleteSquarePaymentLink } from "./squareConnect";
+import { deleteStaxInvoice, staxKeyFor } from "./stax";
 
 type PendingRow = {
   id: string;
@@ -38,6 +39,13 @@ async function expireOne(row: PendingRow): Promise<"released" | "paid" | "kept">
     if (conn) await deleteSquarePaymentLink(conn, row.checkoutRef);
     // A Square link that was already paid produced a payment.updated; the
     // stage is PAID by then and never reaches this function.
+    await release([row.id]);
+    return "released";
+  }
+  if (row.checkoutProvider === "STAX") {
+    const key = conn ? staxKeyFor(conn) : null;
+    const r = key ? await deleteStaxInvoice(key, row.checkoutRef) : "unavailable";
+    if (r === "paid") return "paid";
     await release([row.id]);
     return "released";
   }
@@ -77,7 +85,7 @@ export async function expireOpenCheckoutsForProposal(
 
 export async function expireOpenCheckoutsForOrg(
   organizationId: string,
-  provider?: "STRIPE" | "SQUARE",
+  provider?: "STRIPE" | "SQUARE" | "STAX",
 ): Promise<{ released: number; paid: number }> {
   const rows = await db.installment.findMany({
     where: {

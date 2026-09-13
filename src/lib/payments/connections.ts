@@ -1,7 +1,7 @@
 // PaymentConnection reads + lifecycle (connect rows are written by the OAuth
-// callbacks and by connectStripeWithKey; this module owns status, disconnect,
-// revoke). Lib-level so both the settings actions and the soft-delete flow
-// can call them.
+// callbacks and by the paste-a-key actions; this module owns status,
+// disconnect, revoke). Lib-level so both the settings actions and the
+// soft-delete flow can call them.
 import { db } from "@/lib/db";
 import { PaymentConnectionStatus } from "@/lib/prismaEnums";
 import { parsePaymentSettings } from "@/lib/settings";
@@ -10,21 +10,31 @@ import { isSquareEnabled, squareEnv } from "@/lib/sdk/square";
 import { isSecretBoxConfigured } from "@/lib/crypto/secretBox";
 import { platformFeeBps } from "./fees";
 import { connectClientIdFor, deauthorizeConnection } from "./stripeConnect";
-import { revokeSquareToken, SQUARE_SCOPES } from "./squareConnect";
+import { removeSquareWebhook, revokeSquareToken, SQUARE_SCOPES, SQUARE_TOKEN_PERMISSIONS } from "./squareConnect";
+import { removeStaxWebhooks, staxKeyFor, staxWebhookIdsOf } from "./stax";
 import { expireOpenCheckoutsForOrg } from "./checkouts";
 import { stripeKeyFor } from "@/lib/stripeMode";
 
-export type Provider = "STRIPE" | "SQUARE";
+export type Provider = "STRIPE" | "SQUARE" | "STAX";
 
-/** What a pasted key must be allowed to do — the Permissions card shows this
- *  in place of OAuth scopes. A full secret key (sk_) has all of it; a
- *  restricted key (rk_) is built with exactly these. */
+/** What a pasted Stripe key must be allowed to do — the Permissions card
+ *  shows this in place of OAuth scopes. A full secret key (sk_) has all of
+ *  it; a restricted key (rk_) is built with exactly these. */
 export const STRIPE_KEY_PERMISSIONS = [
   "Checkout Sessions · write",
   "PaymentIntents · read",
   "Charges · read",
   "Refunds · read",
   "Webhook Endpoints · write",
+] as const;
+
+/** What a Stax merchant API key is used for. */
+export const STAX_KEY_PERMISSIONS = [
+  "Merchant profile · read",
+  "Customers · write",
+  "Invoices · write",
+  "Transactions · read",
+  "Webhooks · write",
 ] as const;
 
 export async function getConnection(organizationId: string, provider: Provider) {
@@ -38,6 +48,7 @@ export async function getConnections(organizationId: string) {
   return {
     stripe: rows.find((r) => r.provider === "STRIPE") ?? null,
     square: rows.find((r) => r.provider === "SQUARE") ?? null,
+    stax: rows.find((r) => r.provider === "STAX") ?? null,
   };
 }
 
@@ -55,6 +66,7 @@ export type SquareConnState =
   | "restricted"
   | "revoked"
   | "token_expired";
+export type StaxConnState = "not_configured" | "disconnected" | "connected" | "restricted" | "revoked";
 
 export interface PaymentConnectionStatusView {
   platformFeeBps: number;
@@ -85,15 +97,38 @@ export interface PaymentConnectionStatusView {
   };
   square: {
     state: SquareConnState;
+    /** OAuth through the platform app, or a pasted personal access token. */
+    auth: "oauth" | "token" | null;
+    connectionId: string | null;
     merchantId: string | null;
     locationId: string | null;
     locationName: string | null;
     env: "sandbox" | "production";
     tokenExpiresAt: string | null;
+    tokenLast4: string | null;
     connectedAt: string | null;
     lastError: string | null;
     offered: boolean;
     scopes: string[];
+    /** Token join: our subscription was registered on the seller's app. */
+    webhookRegistered: boolean;
+    oauthOffered: boolean;
+    keyOffered: boolean;
+  };
+  stax: {
+    state: StaxConnState;
+    connectionId: string | null;
+    merchantId: string | null;
+    merchantName: string | null;
+    keyLast4: string | null;
+    currency: string | null;
+    connectedAt: string | null;
+    lastError: string | null;
+    offered: boolean;
+    scopes: string[];
+    webhookRegistered: boolean;
+    /** The only way in: a pasted merchant API key (needs the secret box). */
+    keyOffered: boolean;
   };
   bankTransfer: { enabled: boolean; instructions: string };
   connectHref: { stripe: string; square: string };
@@ -112,12 +147,13 @@ export async function getPaymentConnectionStatus(
     getStripeMode(),
   ]);
   const settings = parsePaymentSettings(org?.paymentSettingsJson);
+  const box = isSecretBoxConfigured();
 
-  // Two ways in: OAuth needs the platform key + Connect client id for the
-  // current mode; a pasted key needs only the secret box. A key join lives in
-  // the key's own mode, so the admin switch never mismatches it.
+  // Stripe — two ways in: OAuth needs the platform key + Connect client id
+  // for the current mode; a pasted key needs only the secret box. A key join
+  // lives in the key's own mode, so the admin switch never mismatches it.
   const oauthOffered = Boolean(stripeKeyFor(mode) && connectClientIdFor(mode));
-  const keyOffered = isSecretBoxConfigured();
+  const keyOffered = box;
   let stripeState: StripeConnState = oauthOffered || keyOffered ? "disconnected" : "not_configured";
   const s = conns.stripe;
   const viaKey = Boolean(s?.stripeKeyEnc);
@@ -130,16 +166,31 @@ export async function getPaymentConnectionStatus(
     else stripeState = "connected";
   }
 
-  const squareConfigured = isSquareEnabled() && isSecretBoxConfigured();
-  let squareState: SquareConnState = squareConfigured ? "disconnected" : "not_configured";
+  // Square — OAuth needs the platform app + the secret box; a pasted personal
+  // access token needs only the secret box and never expires.
+  const squareOauthOffered = isSquareEnabled() && box;
+  const squareKeyOffered = box;
+  let squareState: SquareConnState = squareOauthOffered || squareKeyOffered ? "disconnected" : "not_configured";
   const q = conns.square;
+  const squareViaToken = q?.squareAuth === "token";
   if (q) {
     if (q.status === PaymentConnectionStatus.REVOKED) squareState = "revoked";
-    else if (!isSecretBoxConfigured()) squareState = "not_configured";
+    else if (!box) squareState = "not_configured";
+    else if (!squareViaToken && !isSquareEnabled()) squareState = "not_configured";
     else if (q.squareTokenExpiresAt && q.squareTokenExpiresAt.getTime() < Date.now())
       squareState = "token_expired";
     else if (q.status === PaymentConnectionStatus.RESTRICTED) squareState = "restricted";
     else squareState = "connected";
+  }
+
+  // Stax — one way in: a pasted merchant API key.
+  let staxState: StaxConnState = box ? "disconnected" : "not_configured";
+  const x = conns.stax;
+  if (x) {
+    if (x.status === PaymentConnectionStatus.REVOKED) staxState = "revoked";
+    else if (!box || !x.staxApiKeyEnc) staxState = "not_configured";
+    else if (x.status === PaymentConnectionStatus.RESTRICTED) staxState = "restricted";
+    else staxState = "connected";
   }
 
   return {
@@ -167,15 +218,35 @@ export async function getPaymentConnectionStatus(
     },
     square: {
       state: squareState,
+      auth: q ? (squareViaToken ? "token" : "oauth") : null,
+      connectionId: q?.id ?? null,
       merchantId: q?.squareMerchantId ?? null,
       locationId: q?.squareLocationId ?? null,
       locationName: q?.squareLocationName ?? null,
       env: (q?.squareEnv as "sandbox" | "production" | undefined) ?? squareEnv(),
       tokenExpiresAt: q?.squareTokenExpiresAt?.toISOString() ?? null,
+      tokenLast4: q?.squareTokenLast4 ?? null,
       connectedAt: q?.connectedAt.toISOString() ?? null,
       lastError: q?.lastError ?? null,
       offered: settings.square,
-      scopes: q ? [...SQUARE_SCOPES] : [],
+      scopes: q ? (squareViaToken ? [...SQUARE_TOKEN_PERMISSIONS] : [...SQUARE_SCOPES]) : [],
+      webhookRegistered: Boolean(q?.squareWebhookId),
+      oauthOffered: squareOauthOffered,
+      keyOffered: squareKeyOffered,
+    },
+    stax: {
+      state: staxState,
+      connectionId: x?.id ?? null,
+      merchantId: x?.staxMerchantId ?? null,
+      merchantName: x?.staxMerchantName ?? null,
+      keyLast4: x?.staxKeyLast4 ?? null,
+      currency: x?.currency ?? null,
+      connectedAt: x?.connectedAt.toISOString() ?? null,
+      lastError: x?.lastError ?? null,
+      offered: settings.stax,
+      scopes: x ? [...STAX_KEY_PERMISSIONS] : [],
+      webhookRegistered: staxWebhookIdsOf({ staxWebhookIds: x?.staxWebhookIds ?? null }).length > 0,
+      keyOffered: box,
     },
     bankTransfer: {
       enabled: settings.bankTransfer,
@@ -207,7 +278,13 @@ export async function markConnectionRevoked(
   await expireOpenCheckoutsForOrg(organizationId, provider);
 }
 
-/** Offer / hide a provider at checkout (paymentSettingsJson.stripe / .square). */
+const SETTINGS_KEY: Record<Provider, "stripe" | "square" | "stax"> = {
+  STRIPE: "stripe",
+  SQUARE: "square",
+  STAX: "stax",
+};
+
+/** Offer / hide a provider at checkout (paymentSettingsJson.stripe / .square / .stax). */
 export async function setProviderOfferedFor(organizationId: string, provider: Provider, on: boolean) {
   const org = await db.organization.findUnique({
     where: { id: organizationId },
@@ -219,7 +296,7 @@ export async function setProviderOfferedFor(organizationId: string, provider: Pr
     data: {
       paymentSettingsJson: JSON.stringify({
         ...current,
-        [provider === "STRIPE" ? "stripe" : "square"]: on,
+        [SETTINGS_KEY[provider]]: on,
       }),
     },
   });
@@ -242,6 +319,8 @@ export async function disconnectStripeConnectFor(organizationId: string): Promis
   return { ok: true, deauthorized };
 }
 
+/** OAuth: revoke our tokens at Square. Token join: remove the webhook
+ *  subscription we registered on the seller's app; the token dies with the row. */
 export async function disconnectSquareFor(organizationId: string): Promise<{
   ok: true;
   revoked: boolean;
@@ -249,11 +328,28 @@ export async function disconnectSquareFor(organizationId: string): Promise<{
   const conn = await getConnection(organizationId, "SQUARE");
   if (!conn) return { ok: true, revoked: false };
   await expireOpenCheckoutsForOrg(organizationId, "SQUARE");
-  const revoked =
-    conn.status === PaymentConnectionStatus.REVOKED || !conn.squareMerchantId
-      ? false
-      : await revokeSquareToken(conn.squareMerchantId);
+  let revoked = false;
+  if (conn.status !== PaymentConnectionStatus.REVOKED) {
+    if (conn.squareAuth === "token") {
+      revoked = conn.squareWebhookId ? await removeSquareWebhook(conn, conn.squareWebhookId) : true;
+    } else if (conn.squareMerchantId) {
+      revoked = await revokeSquareToken(conn.squareMerchantId);
+    }
+  }
   await db.paymentConnection.delete({ where: { id: conn.id } });
   await setProviderOfferedFor(organizationId, "SQUARE", false);
+  return { ok: true, revoked };
+}
+
+/** Remove the webhooks we registered with the merchant's key, drop the row. */
+export async function disconnectStaxFor(organizationId: string): Promise<{ ok: true; revoked: boolean }> {
+  const conn = await getConnection(organizationId, "STAX");
+  if (!conn) return { ok: true, revoked: false };
+  await expireOpenCheckoutsForOrg(organizationId, "STAX");
+  const key = staxKeyFor(conn);
+  const ids = staxWebhookIdsOf(conn);
+  const revoked = key && ids.length ? await removeStaxWebhooks(key, ids) : true;
+  await db.paymentConnection.delete({ where: { id: conn.id } });
+  await setProviderOfferedFor(organizationId, "STAX", false);
   return { ok: true, revoked };
 }

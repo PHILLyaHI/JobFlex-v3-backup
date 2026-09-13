@@ -36,17 +36,17 @@ import {
   PROCESSOR_SCOPES_EMPTY,
   PROCESSOR_STATE_COPY,
   PROCESSOR_WEBHOOK_CARD,
+  KEY_FORMS,
+  KEY_WEBHOOK_REGISTERED,
   RECONNECT_ACTION,
   SCOPE_CHECK,
+  SQUARE_TOKEN_PERMISSIONS_CARD,
   STRIPE_ACH_TOGGLE,
-  STRIPE_KEY_ACTION,
-  STRIPE_KEY_FORM,
   STRIPE_KEY_PERMISSIONS_CARD,
-  STRIPE_WEBHOOK_REGISTERED,
   squareConnLine,
   stripeConnLine,
 } from "../settings-data";
-import { StripeKeyForm } from "./stripe-key-form";
+import { ProviderKeyForm } from "./stripe-key-form";
 import type { PaymentConnectionStatusView } from "@/lib/payments/connections";
 import { CopyBox, Toggle, actionError } from "../ui";
 
@@ -86,16 +86,20 @@ export function ProcessorSubpane({
   const [err, setErr] = useState("");
   const [ach, setAch] = useState(s.achEnabled);
   const [offered, setOffered] = useState(isStripe ? s.offered : q.offered);
-  // Stripe's two ways in: OAuth (when the platform offers it) and a pasted
-  // key. A row joined by key reconnects through the form, not the OAuth link.
+  // Two ways in: OAuth (when the platform offers it) and a pasted key /
+  // token. A row joined by key reconnects through the form, not the OAuth link.
   const [keyOpen, setKeyOpen] = useState(false);
-  const viaKey = isStripe && s.auth === "key";
-  const keyOffered = isStripe && s.keyOffered;
+  const viaKey = isStripe ? s.auth === "key" : q.auth === "token";
+  const keyOffered = isStripe ? s.keyOffered : q.keyOffered;
+  const webhookRegistered = isStripe ? s.webhookRegistered : q.webhookRegistered;
+  const keyCopy = KEY_FORMS[d.key];
   const connectHref: string | null = isStripe
     ? s.oauthOffered
       ? conns.connectHref.stripe
       : null
-    : conns.connectHref.square;
+    : q.oauthOffered
+      ? conns.connectHref.square
+      : null;
 
   async function disconnect() {
     setBusy(true);
@@ -194,7 +198,7 @@ export function ProcessorSubpane({
                   ) : null}
                   {keyOffered ? (
                     <>
-                      {connectHref ? <span className="skf-or">{STRIPE_KEY_FORM.or}</span> : null}
+                      {connectHref ? <span className="skf-or">{keyCopy.or}</span> : null}
                       <button
                         className={`btn ${connectHref ? "btn-ghost" : "btn-primary"}`}
                         type="button"
@@ -202,9 +206,9 @@ export function ProcessorSubpane({
                         onClick={() => setKeyOpen((v) => !v)}
                       >
                         <svg className="ic">
-                          <use href={`#${STRIPE_KEY_ACTION.icon ?? "i-card"}`} />
+                          <use href={`#${keyCopy.action.icon ?? "i-card"}`} />
                         </svg>
-                        {STRIPE_KEY_ACTION.label}
+                        {keyCopy.action.label}
                       </button>
                     </>
                   ) : null}
@@ -214,7 +218,8 @@ export function ProcessorSubpane({
           )}
           {keyOpen && !connected ? (
             <div style={{ marginTop: 14 }}>
-              <StripeKeyForm
+              <ProviderKeyForm
+                provider={d.key}
                 feePct={conns.platformFeePct}
                 onCancel={() => setKeyOpen(false)}
                 onDone={(r) => {
@@ -278,7 +283,9 @@ export function ProcessorSubpane({
 
       {/* ── Permissions ── */}
       <section className="sc">
-        <CardHeader card={viaKey ? STRIPE_KEY_PERMISSIONS_CARD : PROCESSOR_PERMISSIONS_CARD} />
+        <CardHeader
+          card={viaKey ? (isStripe ? STRIPE_KEY_PERMISSIONS_CARD : SQUARE_TOKEN_PERMISSIONS_CARD) : PROCESSOR_PERMISSIONS_CARD}
+        />
         <div className="sc-b">
           {(isStripe ? s.scopes : q.scopes).length === 0 ? (
             <div className="prow-d">{PROCESSOR_SCOPES_EMPTY}</div>
@@ -300,8 +307,8 @@ export function ProcessorSubpane({
         <CardHeader card={PROCESSOR_WEBHOOK_CARD} />
         <div className="sc-b">
           {viaKey ? (
-            <div className={s.webhookRegistered ? "prow-d" : "prow-d prow-warn"} style={{ marginBottom: 10 }}>
-              {s.webhookRegistered ? STRIPE_WEBHOOK_REGISTERED : STRIPE_KEY_FORM.webhookMissing}
+            <div className={webhookRegistered ? "prow-d" : "prow-d prow-warn"} style={{ marginBottom: 10 }}>
+              {webhookRegistered ? KEY_WEBHOOK_REGISTERED : keyCopy.webhookMissing}
             </div>
           ) : null}
           <div className="fld">

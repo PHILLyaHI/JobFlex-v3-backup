@@ -21,8 +21,8 @@ import { billPlatformFee } from "./feeBilling";
 type Tx = Prisma.TransactionClient;
 
 export interface SettleInput {
-  provider: "STRIPE" | "SQUARE" | "MANUAL";
-  /** Dedupe key: Stripe checkout session id / Square order id. Null for manual. */
+  provider: "STRIPE" | "SQUARE" | "STAX" | "MANUAL";
+  /** Dedupe key: Stripe checkout session id / Square order id / Stax invoice id. Null for manual. */
   externalId: string | null;
   /** Refund key: Stripe payment_intent / Square payment id. */
   externalPaymentId?: string | null;
@@ -362,7 +362,7 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
     await notifyPaymentIssue({
       organizationId: input.organizationId,
       title: "A payment arrived for a proposal that no longer exists",
-      detail: `${amountLabel(amount)} was paid through ${providerWord(input.provider, input.method)} for a proposal that has since been deleted. Refund it from your ${input.provider === "SQUARE" ? "Square" : "Stripe"} dashboard if it isn't owed.`,
+      detail: `${amountLabel(amount)} was paid through ${providerWord(input.provider, input.method)} for a proposal that has since been deleted. Refund it from your ${providerName(input.provider)} dashboard if it isn't owed.`,
       amount,
     }).catch(() => {});
     return { outcome: "orphan", paymentId: result.paymentId };
@@ -376,7 +376,7 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
         organizationId: result._orgId,
         proposalId: result._proposalId,
         title: `Overpayment of ${amountLabel(fromMinor(result.unappliedMinor))}`,
-        detail: `A client paid more than the proposal owes. The extra ${amountLabel(fromMinor(result.unappliedMinor))} is recorded but not applied to any stage — refund it from your ${input.provider === "SQUARE" ? "Square" : "Stripe"} dashboard.`,
+        detail: `A client paid more than the proposal owes. The extra ${amountLabel(fromMinor(result.unappliedMinor))} is recorded but not applied to any stage — refund it from your ${providerName(input.provider)} dashboard.`,
         amount: fromMinor(result.unappliedMinor),
       }).catch(() => {});
     }
@@ -414,7 +414,7 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
 }
 
 export interface RefundInput {
-  provider: "STRIPE" | "SQUARE";
+  provider: "STRIPE" | "SQUARE" | "STAX";
   /** payment_intent (Stripe) / payment id (Square). */
   externalPaymentId: string;
   refundedMinor: number;
@@ -516,9 +516,15 @@ function amountLabel(n: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 }
 
+/** The dashboard a refund happens in. */
+export function providerName(provider: string): string {
+  return provider === "SQUARE" ? "Square" : provider === "STAX" ? "Stax" : "Stripe";
+}
+
 export function providerWord(provider: string, method: string | null): string {
   if (provider === "STRIPE") return method === "us_bank_account" ? "Stripe (bank debit)" : "Stripe";
   if (provider === "SQUARE") return "Square";
+  if (provider === "STAX") return method === "us_bank_account" ? "Stax (bank)" : "Stax";
   if (method === "BANK_TRANSFER") return "bank transfer";
   if (method === "CASH") return "cash";
   if (method === "CHECK") return "check";
