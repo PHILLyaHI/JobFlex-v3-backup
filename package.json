@@ -3,7 +3,8 @@
   "version": "3.0.0",
   "private": true,
   "scripts": {
-    "dev": "node --max-old-space-size=8192 node_modules/next/dist/bin/next dev",
+    "dev": "prisma generate && node --max-old-space-size=8192 node_modules/next/dist/bin/next dev",
+    "dev:pg": "node scripts/dev-postgres.js",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
