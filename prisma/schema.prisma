@@ -1931,6 +1931,16 @@ model ParcelMiss {
 // result/{id} can be asked again later. Also the idempotency ledger: a repeat
 // measurement of the same address reuses a complete row or resumes a pending
 // one instead of ordering (and paying) again.
+/// Which measurement's satellite photo a proposal shows its client — the
+/// house on the portal page and the PDF (2026-09-13). Bare ids, no relations,
+/// so the table can land on its own; a missing table just means no photo.
+model ProposalSitePhoto {
+  id                String   @id @default(cuid())
+  proposalId        String   @unique
+  roofMeasurementId String
+  createdAt         DateTime @default(now())
+}
+
 /// The organization's own roof catalog for the package builder: its roof
 /// types and underlayments with prices, plus the builder's standing
 /// preferences (selections and unit prices for everything else). One JSON

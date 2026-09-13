@@ -42,18 +42,32 @@ export interface RoofSystem extends CatalogOption {
 }
 
 export const ROOF_SYSTEMS: RoofSystem[] = [
+  // Ordered by how often each is put on a US house — the common ones first.
+  // Every price is a 2026 ballpark the contractor edits (Manage roof types).
+  { id: "architectural", label: "Architectural shingle (laminated, 30-yr)", family: "asphalt", matPerSq: 125, laborPerSq: 200, wastePct: 12, capPerFt: 2.1 },
   { id: "three_tab", label: "3-tab asphalt shingle", family: "asphalt", matPerSq: 95, laborPerSq: 175, wastePct: 10, capPerFt: 1.9 },
-  { id: "architectural", label: "Architectural shingle (30-yr laminated)", family: "asphalt", matPerSq: 125, laborPerSq: 200, wastePct: 12, capPerFt: 2.1 },
+  { id: "impact_resistant", label: "Impact-resistant shingle (Class 4)", family: "asphalt", matPerSq: 175, laborPerSq: 210, wastePct: 12, capPerFt: 2.4 },
   { id: "designer", label: "Luxury / designer shingle (Presidential-style)", family: "asphalt", matPerSq: 265, laborPerSq: 260, wastePct: 12, capPerFt: 3.6 },
   { id: "standing_seam", label: "Standing-seam metal", family: "metal", matPerSq: 550, laborPerSq: 450, wastePct: 8, capPerFt: 12 },
-  { id: "metal_panel", label: "Exposed-fastener metal panel", family: "metal", matPerSq: 250, laborPerSq: 300, wastePct: 8, capPerFt: 9 },
-  { id: "clay_tile", label: "Clay tile", family: "tile", matPerSq: 700, laborPerSq: 600, wastePct: 12, capPerFt: 9.5 },
+  { id: "metal_panel", label: "Exposed-fastener metal panel (corrugated / R-panel)", family: "metal", matPerSq: 250, laborPerSq: 300, wastePct: 8, capPerFt: 9 },
+  { id: "stone_coated_steel", label: "Stone-coated steel (DECRA-style)", family: "metal", matPerSq: 450, laborPerSq: 400, wastePct: 10, capPerFt: 10 },
+  { id: "metal_shingle", label: "Metal shingle / shake (steel or aluminum)", family: "metal", matPerSq: 400, laborPerSq: 380, wastePct: 10, capPerFt: 9 },
   { id: "concrete_tile", label: "Concrete tile", family: "tile", matPerSq: 400, laborPerSq: 500, wastePct: 12, capPerFt: 8 },
-  { id: "cedar_shake", label: "Cedar shake", family: "shake", matPerSq: 500, laborPerSq: 450, wastePct: 15, capPerFt: 4.2 },
+  { id: "clay_tile", label: "Clay tile (S-tile / barrel)", family: "tile", matPerSq: 700, laborPerSq: 600, wastePct: 12, capPerFt: 9.5 },
+  { id: "cedar_shake", label: "Cedar shake (hand-split)", family: "shake", matPerSq: 500, laborPerSq: 450, wastePct: 15, capPerFt: 4.2 },
+  { id: "cedar_shingle", label: "Cedar shingle (sawn)", family: "shake", matPerSq: 450, laborPerSq: 430, wastePct: 15, capPerFt: 4 },
+  { id: "synthetic_slate", label: "Synthetic slate (composite)", family: "synthetic", matPerSq: 450, laborPerSq: 350, wastePct: 10, capPerFt: 4.5 },
+  { id: "synthetic_shake", label: "Synthetic shake (composite)", family: "synthetic", matPerSq: 420, laborPerSq: 350, wastePct: 10, capPerFt: 4.5 },
   { id: "slate", label: "Natural slate", family: "slate", matPerSq: 1100, laborPerSq: 900, wastePct: 12, capPerFt: 8.5 },
-  { id: "synthetic_slate", label: "Synthetic slate / shake", family: "synthetic", matPerSq: 450, laborPerSq: 350, wastePct: 10, capPerFt: 4.5 },
+  { id: "copper", label: "Copper standing seam", family: "metal", matPerSq: 1600, laborPerSq: 900, wastePct: 8, capPerFt: 30 },
   { id: "tpo", label: "TPO membrane (low slope)", family: "low-slope", matPerSq: 250, laborPerSq: 250, wastePct: 5, capPerFt: 0 },
+  { id: "epdm", label: "EPDM rubber (low slope)", family: "low-slope", matPerSq: 220, laborPerSq: 230, wastePct: 5, capPerFt: 0 },
+  { id: "pvc", label: "PVC membrane (low slope)", family: "low-slope", matPerSq: 300, laborPerSq: 270, wastePct: 5, capPerFt: 0 },
   { id: "mod_bit", label: "Modified bitumen (low slope)", family: "low-slope", matPerSq: 220, laborPerSq: 240, wastePct: 5, capPerFt: 0 },
+  { id: "bur", label: "Built-up tar & gravel (low slope)", family: "low-slope", matPerSq: 260, laborPerSq: 300, wastePct: 5, capPerFt: 0 },
+  { id: "rolled", label: "Rolled roofing (mineral surface)", family: "low-slope", matPerSq: 90, laborPerSq: 120, wastePct: 8, capPerFt: 0 },
+  { id: "solar_shingle", label: "Solar shingles (integrated)", family: "asphalt", matPerSq: 2200, laborPerSq: 900, wastePct: 5, capPerFt: 2.4 },
+  { id: "green_roof", label: "Green / living roof (low slope)", family: "low-slope", matPerSq: 1500, laborPerSq: 1200, wastePct: 5, capPerFt: 0 },
 ];
 
 /**
@@ -82,6 +96,8 @@ export const UNDERLAYMENTS: Underlayment[] = [
   { id: "felt15", label: "#15 asphalt felt", perSq: 18 },
   { id: "felt30", label: "#30 asphalt felt", perSq: 26 },
   { id: "paper60", label: "60-minute paper (kraft, asphalt-saturated)", perSq: 30 },
+  { id: "peel_stick", label: "Self-adhered (peel & stick), full deck", perSq: 110 },
+  { id: "none", label: "None (membrane / cover-board system)", perSq: 0 },
 ];
 
 export type IceWaterCoverage = "none" | "eaves" | "eaves_valleys" | "full";
@@ -201,6 +217,7 @@ export const NAILS_PER_SQ = 4.5;
 export const SEALANT_PER_SQ = 1.2;
 export const CLEANUP_LUMP = 250;
 export const STEEP_SAFETY_LUMP = 250;
+export const MATERIAL_DELIVERY_LUMP = 150;
 
 /** The waste picker's options; the chosen roof system pre-selects one. */
 export const WASTE_OPTIONS = [5, 8, 10, 12, 15, 18, 20];

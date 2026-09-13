@@ -97,6 +97,16 @@ export default async function PublicProposalPortal({
   // A soft-deleted org's proposals are gone from the outside world too.
   if (!proposal || proposal.organization.deletedAt) return notFound();
 
+  // The client's own house: the satellite photo of the measurement this
+  // proposal was priced from, when one is linked (roof estimator → convert).
+  // The link table may not be pushed yet — then there is simply no photo.
+  let sitePhoto = false;
+  try {
+    sitePhoto = !!(await db.proposalSitePhoto.findUnique({ where: { proposalId: proposal.id }, select: { id: true } }));
+  } catch {
+    sitePhoto = false;
+  }
+
   // Track view. EVERY open counts and stamps `viewedAt` — a declined or
   // accepted proposal being re-read is still a fact the office wants (owner,
   // 2026-09-02: the count sat frozen once a proposal settled). Only the STATUS
@@ -190,6 +200,14 @@ export default async function PublicProposalPortal({
               <div className="total"><span>Total</span><b>{money(proposal.total)}</b></div>
               <div><span>Valid until</span><b>{longDate(proposal.validUntil)}</b></div>
             </div>
+
+            {sitePhoto && (
+              <figure className="pv-site">
+                {/* eslint-disable-next-line @next/next/no-img-element -- streamed PNG from this app's own route; next/image adds nothing */}
+                <img src={`/api/public-quote/${publicId}/site-photo`} alt="Satellite view of your roof" loading="lazy" />
+                <figcaption>Your roof, as measured from the air</figcaption>
+              </figure>
+            )}
 
             <PortalActions
               publicId={publicId}

@@ -23,6 +23,7 @@ import {
   ICE_WATER_EAVE_BAND_FT,
   ICE_WATER_PER_SQFT,
   ICE_WATER_VALLEY_BAND_FT,
+  MATERIAL_DELIVERY_LUMP,
   NAILS_PER_SQ,
   NFA_RATIO_BALANCED,
   NFA_RATIO_PLAIN,
@@ -63,6 +64,23 @@ export interface RoofFacts {
   /** The aerial data's roof shape word (hip / gable / …), verbatim; null when absent. */
   shape: string | null;
   facetCount: number | null;
+  /**
+   * Lengths from a DELIVERED aerial measurement report (the full report, not
+   * the Instant packs): eave, rake, ridge, hip, valley and step-flash feet.
+   * Null when no report has been ordered for this address. When present the
+   * builder starts from these and marks them measured.
+   */
+  measured?: MeasuredFootage | null;
+}
+
+export interface MeasuredFootage {
+  reportId: number;
+  eaveFt: number;
+  rakeFt: number;
+  ridgeFt: number;
+  hipFt: number;
+  valleyFt: number;
+  stepFlashFt: number;
 }
 
 export interface PkgLine {
@@ -108,8 +126,11 @@ export interface RoofPackageSpec {
   rakeFt: number;
   ridgeFt: number;
   hipFt: number;
-  /** Whether the edge lengths are the builder's estimate or the contractor's entry. */
+  /** Whether the edge lengths are the builder's estimate, the report's measurement or the contractor's entry. */
   edgesBasis: Basis;
+  /** Where the valley and sidewall lengths came from — the report, or typed in. */
+  valleyBasis: Basis;
+  stepBasis: Basis;
   dripEdgeOn: boolean;
   dripProfileId: string;
   dripSizeId: string;
@@ -155,6 +176,8 @@ export interface RoofPackageSpec {
   cleanupLump: number;
   safetyLump: number;
   permitLump: number;
+  /** Material delivery / rooftop load, one lot; 0 hides the line. */
+  deliveryLump: number;
   custom: CustomLine[];
 }
 
@@ -201,7 +224,9 @@ export function estimateEdges(facts: RoofFacts): { eaveFt: number; rakeFt: numbe
 export function defaultSpec(facts: RoofFacts, lists: CatalogLists = BUILTIN_LISTS): RoofPackageSpec {
   const sys = lists.systems.find((s) => s.id === "architectural") ?? lists.systems[0] ?? BUILTIN_LISTS.systems[1];
   const und = lists.underlayments.find((u) => u.id === "synthetic") ?? lists.underlayments[0] ?? BUILTIN_LISTS.underlayments[0];
-  const edges = estimateEdges(facts);
+  // A delivered report's lengths win over the outline estimate.
+  const m = facts.measured ?? null;
+  const edges = m ? { eaveFt: r1(m.eaveFt), rakeFt: r1(m.rakeFt), ridgeFt: r1(m.ridgeFt), hipFt: r1(m.hipFt) } : estimateEdges(facts);
   const drip = DRIP_EDGE_PROFILES[0];
   const valley = VALLEY_TYPES.find((v) => v.id === "open_w24")!;
   const step = STEP_FLASHING_SIZES[0];
@@ -229,7 +254,9 @@ export function defaultSpec(facts: RoofFacts, lists: CatalogLists = BUILTIN_LIST
     rakeFt: edges?.rakeFt ?? 0,
     ridgeFt,
     hipFt: edges?.hipFt ?? 0,
-    edgesBasis: edges ? "estimated" : "entered",
+    edgesBasis: m ? "measured" : edges ? "estimated" : "entered",
+    valleyBasis: m && m.valleyFt > 0 ? "measured" : "entered",
+    stepBasis: m && m.stepFlashFt > 0 ? "measured" : "entered",
     dripEdgeOn: true,
     dripProfileId: drip.id,
     dripSizeId: DRIP_EDGE_SIZES[1].id,
@@ -237,12 +264,12 @@ export function defaultSpec(facts: RoofFacts, lists: CatalogLists = BUILTIN_LIST
     starterOn: true,
     starterPerFt: STARTER_PER_FT,
     valleyTypeId: valley.id,
-    valleyCount: 0,
-    valleyFtEach: 12,
+    valleyCount: m && m.valleyFt > 0 ? 1 : 0,
+    valleyFtEach: m && m.valleyFt > 0 ? r1(m.valleyFt) : 12,
     valleyMatPerFt: valley.matPerFt,
     valleyLaborPerFt: valley.laborPerFt,
-    stepWallCount: 0,
-    stepWallFtEach: 10,
+    stepWallCount: m && m.stepFlashFt > 0 ? 1 : 0,
+    stepWallFtEach: m && m.stepFlashFt > 0 ? r1(m.stepFlashFt) : 10,
     stepSizeId: step.id,
     stepPerPiece: step.perPiece,
     stepLaborPerFt: STEP_FLASHING_LABOR_PER_FT,
@@ -277,6 +304,7 @@ export function defaultSpec(facts: RoofFacts, lists: CatalogLists = BUILTIN_LIST
     cleanupLump: CLEANUP_LUMP,
     safetyLump: STEEP_SAFETY_LUMP,
     permitLump: 0,
+    deliveryLump: MATERIAL_DELIVERY_LUMP,
     custom: [],
   };
 }
@@ -363,13 +391,13 @@ export function buildRoofPackage(spec: RoofPackageSpec, facts: RoofFacts): RoofP
   const valleyFtTotal = spec.valleyCount * spec.valleyFtEach;
   const valleyType = VALLEY_TYPES.find((v) => v.id === spec.valleyTypeId);
   if (valleyFtTotal > 0 && spec.valleyMatPerFt > 0) {
-    materials.push({ name: `Valley metal · ${valleyType?.label ?? "custom"}`, quantity: r1(valleyFtTotal), unit: "linear ft", unitPrice: spec.valleyMatPerFt, kind: "material", basis: "entered" });
+    materials.push({ name: `Valley metal · ${valleyType?.label ?? "custom"}`, quantity: r1(valleyFtTotal), unit: "linear ft", unitPrice: spec.valleyMatPerFt, kind: "material", basis: spec.valleyBasis ?? "entered" });
   }
   const stepFt = spec.stepWallCount * spec.stepWallFtEach;
   if (stepFt > 0) {
     const size = STEP_FLASHING_SIZES.find((s) => s.id === spec.stepSizeId);
     const pieces = Math.ceil((stepFt * 12) / (size?.exposureIn ?? 5.625));
-    materials.push({ name: `Step flashing · ${size?.label ?? "custom"} · ${spec.stepWallCount} wall${spec.stepWallCount === 1 ? "" : "s"}`, quantity: pieces, unit: "each", unitPrice: spec.stepPerPiece, kind: "material", basis: "entered" });
+    materials.push({ name: `Step flashing · ${size?.label ?? "custom"} · ${spec.stepWallCount} wall${spec.stepWallCount === 1 ? "" : "s"}`, quantity: pieces, unit: "each", unitPrice: spec.stepPerPiece, kind: "material", basis: spec.stepBasis ?? "entered" });
   }
   if (spec.apronFt > 0) materials.push({ name: "Apron / headwall flashing", quantity: r1(spec.apronFt), unit: "linear ft", unitPrice: spec.apronPerFt, kind: "material", basis: "entered" });
   if (spec.counterFt > 0) materials.push({ name: "Counter flashing", quantity: r1(spec.counterFt), unit: "linear ft", unitPrice: spec.counterPerFt, kind: "material", basis: "entered" });
@@ -422,8 +450,8 @@ export function buildRoofPackage(spec: RoofPackageSpec, facts: RoofFacts): RoofP
   } else {
     assumptions.push("No tear-off — the new roof goes over the existing layer (check local code allows it).");
   }
-  if (valleyFtTotal > 0 && spec.valleyLaborPerFt > 0) labor.push({ name: `Valleys · ${valleyType?.label ?? "custom"}`, quantity: r1(valleyFtTotal), unit: "linear ft", unitPrice: spec.valleyLaborPerFt, kind: "labor", basis: "entered" });
-  if (stepFt > 0 && spec.stepLaborPerFt > 0) labor.push({ name: "Step flashing · sidewalls", quantity: r1(stepFt), unit: "linear ft", unitPrice: spec.stepLaborPerFt, kind: "labor", basis: "entered" });
+  if (valleyFtTotal > 0 && spec.valleyLaborPerFt > 0) labor.push({ name: `Valleys · ${valleyType?.label ?? "custom"}`, quantity: r1(valleyFtTotal), unit: "linear ft", unitPrice: spec.valleyLaborPerFt, kind: "labor", basis: spec.valleyBasis ?? "entered" });
+  if (stepFt > 0 && spec.stepLaborPerFt > 0) labor.push({ name: "Step flashing · sidewalls", quantity: r1(stepFt), unit: "linear ft", unitPrice: spec.stepLaborPerFt, kind: "labor", basis: spec.stepBasis ?? "entered" });
   if (spec.apronFt > 0 && spec.apronLaborPerFt > 0) labor.push({ name: "Apron / headwall flashing", quantity: r1(spec.apronFt), unit: "linear ft", unitPrice: spec.apronLaborPerFt, kind: "labor", basis: "entered" });
   if (spec.counterFt > 0 && spec.counterLaborPerFt > 0) labor.push({ name: "Counter flashing · cut & seal", quantity: r1(spec.counterFt), unit: "linear ft", unitPrice: spec.counterLaborPerFt, kind: "labor", basis: "entered" });
   const boots = PIPE_BOOT_SIZES.reduce((a, s) => a + (spec.pipeBoots[s.id] ?? 0), 0);
@@ -443,6 +471,7 @@ export function buildRoofPackage(spec: RoofPackageSpec, facts: RoofFacts): RoofP
   if (steep && spec.safetyLump > 0) labor.push({ name: "Steep-slope safety · harnesses, anchors & staging", quantity: 1, unit: "lot", unitPrice: spec.safetyLump, kind: "labor", basis: facts.pitchBasis ?? "entered" });
   if (spec.cleanupLump > 0) labor.push({ name: "Cleanup & magnetic nail sweep", quantity: 1, unit: "lot", unitPrice: spec.cleanupLump, kind: "labor", basis: "entered" });
   if (spec.permitLump > 0) labor.push({ name: "Permit & inspection", quantity: 1, unit: "lot", unitPrice: spec.permitLump, kind: "labor", basis: "entered" });
+  if ((spec.deliveryLump ?? 0) > 0) labor.push({ name: "Material delivery & rooftop load", quantity: 1, unit: "lot", unitPrice: spec.deliveryLump, kind: "labor", basis: "entered" });
   for (const c of spec.custom) {
     if (c.kind === "labor" && c.name.trim()) labor.push({ name: c.name.trim(), quantity: c.qty, unit: c.unit, unitPrice: c.unitPrice, kind: "labor", basis: "entered" });
   }
@@ -460,14 +489,17 @@ export function buildRoofPackage(spec: RoofPackageSpec, facts: RoofFacts): RoofP
     );
   }
   if (perimeter > 0 || capFt > 0) {
+    const edgeList = `${fmt(spec.eaveFt)} ft eave, ${fmt(spec.rakeFt)} ft rake, ${fmt(spec.ridgeFt)} ft ridge, ${fmt(spec.hipFt)} ft hip`;
     assumptions.push(
-      edgeB === "estimated"
-        ? `Edges: ${fmt(spec.eaveFt)} ft eave, ${fmt(spec.rakeFt)} ft rake, ${fmt(spec.ridgeFt)} ft ridge, ${fmt(spec.hipFt)} ft hip — estimated from the ${facts.perimeterFt != null ? "building outline" : "footprint"}${facts.shape ? ` and the ${facts.shape.toLowerCase()} shape` : ""}; confirm on the photo.`
-        : `Edges: ${fmt(spec.eaveFt)} ft eave, ${fmt(spec.rakeFt)} ft rake, ${fmt(spec.ridgeFt)} ft ridge, ${fmt(spec.hipFt)} ft hip — entered by the contractor.`,
+      edgeB === "measured"
+        ? `Edges: ${edgeList} — measured by the aerial measurement report${facts.measured ? ` #${facts.measured.reportId}` : ""}.`
+        : edgeB === "estimated"
+          ? `Edges: ${edgeList} — estimated from the ${facts.perimeterFt != null ? "building outline" : "footprint"}${facts.shape ? ` and the ${facts.shape.toLowerCase()} shape` : ""}; confirm on the photo.`
+          : `Edges: ${edgeList} — entered by the contractor.`,
     );
   }
-  if (spec.valleyCount > 0) assumptions.push(`${spec.valleyCount} valley${spec.valleyCount === 1 ? "" : "s"} at ${fmt(spec.valleyFtEach)} ft — entered.`);
-  if (spec.stepWallCount > 0) assumptions.push(`${spec.stepWallCount} sidewall${spec.stepWallCount === 1 ? "" : "s"} at ${fmt(spec.stepWallFtEach)} ft of step flashing — entered.`);
+  if (spec.valleyCount > 0) assumptions.push(`${spec.valleyCount} valley${spec.valleyCount === 1 ? "" : "s"} at ${fmt(spec.valleyFtEach)} ft — ${spec.valleyBasis === "measured" ? "measured by the aerial report" : "entered"}.`);
+  if (spec.stepWallCount > 0) assumptions.push(`${spec.stepWallCount} sidewall${spec.stepWallCount === 1 ? "" : "s"} at ${fmt(spec.stepWallFtEach)} ft of step flashing — ${spec.stepBasis === "measured" ? "measured by the aerial report" : "entered"}.`);
   const vent = checkVentilation(spec, facts);
   if (vent) {
     assumptions.push(

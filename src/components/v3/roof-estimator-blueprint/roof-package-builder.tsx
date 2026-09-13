@@ -73,7 +73,7 @@ export const PREF_KEYS = [
   "apronPerFt", "apronLaborPerFt", "counterPerFt", "counterLaborPerFt", "pipeBootPrices",
   "chimneySizeId", "chimneyEach", "chimneyLabor", "curbEach", "curbLabor", "ventBalanced",
   "tearOffPerSqLayer", "disposalPerSqLayer", "plywoodEach", "plywoodLabor",
-  "nailsPerSq", "sealantPerSq", "cleanupLump", "safetyLump", "permitLump",
+  "nailsPerSq", "sealantPerSq", "cleanupLump", "safetyLump", "permitLump", "deliveryLump",
 ] as const satisfies ReadonlyArray<keyof RoofPackageSpec>;
 
 export type Prefs = Partial<Pick<RoofPackageSpec, (typeof PREF_KEYS)[number]>> & {

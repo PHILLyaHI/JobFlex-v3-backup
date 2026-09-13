@@ -4,6 +4,7 @@ import { renderToStream } from "@react-pdf/renderer";
 import { db } from "@/lib/db";
 import { requireProposalStaff } from "@/lib/orgContext";
 import { ProposalPdfDocument, type ProposalPdfData } from "@/lib/pdf/ProposalPdf";
+import { satellitePhotoPng } from "@/lib/staticMapPhoto";
 
 export const runtime = "nodejs";
 
@@ -40,6 +41,26 @@ export async function GET(
     }
   } catch {
     /* beforePhotos may be malformed; skip the preview */
+  }
+  // No uploaded photo: the measurement's satellite photo, when the proposal
+  // was converted from a roof measurement (ProposalSitePhoto). Rendered from
+  // bytes we fetched ourselves, so the SSRF guard above does not apply.
+  if (!previewImageUrl) {
+    try {
+      const link = await db.proposalSitePhoto.findUnique({ where: { proposalId: proposal.id }, select: { roofMeasurementId: true } });
+      const row = link
+        ? await db.roofMeasurement.findUnique({
+            where: { id: link.roofMeasurementId },
+            select: { address: true, city: true, state: true, zip: true, lat: true, lng: true, instantJson: true },
+          })
+        : null;
+      if (row) {
+        const photo = await satellitePhotoPng(row);
+        if (photo.ok) previewImageUrl = "data:image/png;base64," + photo.bytes.toString("base64");
+      }
+    } catch {
+      /* link table not pushed yet, or the photo is unavailable — no preview */
+    }
   }
 
   const data: ProposalPdfData = {

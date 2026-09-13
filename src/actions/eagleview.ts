@@ -16,6 +16,7 @@ import {
   type EvOrderInput,
   type EvProduct,
   type EvDiagnostics,
+  type EvLineType,
 } from "@/lib/eagleview";
 
 // NOTE: EV_SAMPLES (sample report ids) lives in ./roofViz (a client-safe module)
@@ -191,4 +192,61 @@ export async function evReportStatus(
   } catch (err: any) {
     return { ok: false, error: err?.message ?? "Couldn't check status" };
   }
+}
+
+// ── The full report's LENGTHS for an address ────────────────────────────────
+// The Instant packs the roof page prices from carry no linear footage; the
+// full Measurement Orders report does (points/lines/faces → footageByType).
+// When the org has a DELIVERED report for the same address, the package
+// builder starts its edges, valleys and sidewalls from those measured feet
+// instead of the outline estimate. A report still in process is reported as
+// pending so the page can offer to check on it. Nothing is ordered here.
+const norm = (v: string | null | undefined) => (v ?? "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+
+export async function evReportFootages(input: {
+  address: string;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+}): Promise<
+  | { ok: true; state: "measured"; reportId: number; squares: number | null; footage: Record<EvLineType, number> }
+  | { ok: true; state: "pending"; reportId: number; status: string }
+  | { ok: true; state: "none" }
+  | { ok: false; error: string }
+> {
+  const { organizationId } = await requireEstimatorOrManager();
+  const want = norm(input.address);
+  if (!want) return { ok: true, state: "none" };
+  const rows = await db.eagleViewReport.findMany({
+    where: { organizationId },
+    orderBy: { updatedAt: "desc" },
+    select: { reportId: true, status: true, address: true, zip: true, lat: true, lng: true, squares: true, modelJson: true },
+    take: 200,
+  });
+  const near = (r: { lat: number | null; lng: number | null }) =>
+    input.lat != null && input.lng != null && r.lat != null && r.lng != null && Math.abs(r.lat - input.lat) < 0.0003 && Math.abs(r.lng - input.lng) < 0.0004;
+  const same = (r: { address: string | null; zip: string | null; lat: number | null; lng: number | null }) =>
+    (norm(r.address) === want && (!input.zip || !r.zip || norm(r.zip) === norm(input.zip))) || near(r);
+  const matches = rows.filter(same);
+  const delivered = matches.find((r) => !!r.modelJson);
+  if (delivered?.modelJson) {
+    try {
+      const model = JSON.parse(delivered.modelJson) as RoofModel;
+      const f = model.totals.footageByType;
+      return {
+        ok: true,
+        state: "measured",
+        reportId: delivered.reportId,
+        squares: delivered.squares ?? model.totals.squares ?? null,
+        footage: { EAVE: f.EAVE ?? 0, RIDGE: f.RIDGE ?? 0, VALLEY: f.VALLEY ?? 0, RAKE: f.RAKE ?? 0, HIP: f.HIP ?? 0, FLASHING: f.FLASHING ?? 0, STEPFLASH: f.STEPFLASH ?? 0, OTHER: f.OTHER ?? 0 },
+      };
+    } catch {
+      /* unreadable model — fall through to pending / none */
+    }
+  }
+  const pending = matches.find((r) => !r.modelJson);
+  if (pending) return { ok: true, state: "pending", reportId: pending.reportId, status: pending.status };
+  return { ok: true, state: "none" };
 }
