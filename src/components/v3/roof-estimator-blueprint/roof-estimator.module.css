@@ -118,10 +118,9 @@
    (`box-sizing`, heading/list margins, the button reset), so the mount needs
    none of this — it needs to be left alone.
    ============================================================ */
-/* `:where()` keeps these at the donor's (0,2,0): written bare, the two
-   `:not()`s lift the reset to (0,4,0) and it out-specifies every donor
-   content rule (.bp .content .rf-head is (0,3,0)) — paddings vanish. */
-.bp :global(.content :where(*:not(.rfx):not(.rfx *))) {
+/* Exclude independently styled mounts. `:where()` keeps reset specificity
+   at (0,2,0), below donor content rules such as .bp .content .rf-head. */
+.bp :global(.content :where(*:not(.rfx):not(.rfx *):not(.codex-roof-preview):not(.codex-roof-preview *))) {
   margin: 0; padding: 0; box-sizing: border-box;
   /* globals.css sets *{scrollbar-width:thin; …} — restore the donor env. */
   scrollbar-width: auto;
@@ -129,9 +128,9 @@
 }
 /* preflight sets svg{display:block;vertical-align:middle} — donor: browser
    defaults. */
-.bp :global(.content :where(svg:not(.rfx *))) { display: inline; vertical-align: baseline; }
-.bp :global(.content :where(button:not(.rfx *))) { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
-.bp :global(.content :where(a:not(.rfx *))) { text-decoration: none; color: inherit; }
+.bp :global(.content :where(svg:not(.rfx *):not(.codex-roof-preview *))) { display: inline; vertical-align: baseline; }
+.bp :global(.content :where(button:not(.rfx *):not(.codex-roof-preview *))) { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+.bp :global(.content :where(a:not(.rfx *):not(.codex-roof-preview *))) { text-decoration: none; color: inherit; }
 .bp :global(.content ul), .bp :global(.content ol) { list-style: none; }
 .bp :global(.content input), .bp :global(.content select) { font-family: inherit; }
 .bp :global(.content svg.ic) { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; shape-rendering: geometricPrecision; }

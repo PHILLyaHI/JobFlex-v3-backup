@@ -40,7 +40,7 @@ import {
 } from "@/stores/usePlanLimitStore";
 import { attachPlacesSuggest, type PickedPlace } from "@/components/v3/blueprint-shell/places-suggest";
 import { AddressPinPreview } from "./address-pin-preview";
-import { RoofPackageBuilder } from "./roof-package-builder";
+import { BuildEstimateCardSwitch } from "./build-estimate-card-switch";
 import { EstimateLinesTable, type EditableLine } from "./estimate-lines-table";
 import { ringPerimeterFt, type RoofFacts, type RoofPackage, type RoofPackageSpec } from "@/lib/roofPackage/takeoff";
 import { isMapsBrowserEnabled, loadMapsLibrary } from "@/lib/googleMaps";
@@ -730,7 +730,10 @@ export function RoofEstimatorDataForm() {
   // measures at 4,126 sq ft; the address, Google's rooftop point and the
   // parcel centroid all came back with the same shed. Both figures are
   // estimates, but a 2× gap is not an estimate, it is the wrong building, and
-  // a proposal priced from it would be off by an order of magnitude.
+  // a proposal priced from it would be off by an order of magnitude. The page
+  // says so — in the notice and on the card — and offers Google's figure;
+  // since 2026-09-12 it no longer freezes the builder (the contractor may
+  // know the building).
   const googleSqft = measurement?.provenance?.googleAreaSqft ?? null;
   const evUndercount =
     !manual && totals?.areaSqft != null && googleSqft != null && googleSqft >= 400 && totals.areaSqft < googleSqft * 0.5
@@ -1036,8 +1039,8 @@ export function RoofEstimatorDataForm() {
                       The aerial data answered with {evUndercount.structures} structure{evUndercount.structures === 1 ? "" : "s"} totalling{" "}
                       {num(evUndercount.evSqft)} sq ft, but Google’s imagery measures about {num(evUndercount.googleSqft)} sq ft of
                       roof at this pin. That is usually an outbuilding standing in for the house in the provider’s records, so
-                      pricing from that figure is blocked. You can price from Google’s figure instead — it becomes a hand-entered
-                      takeoff you can adjust.
+                      a price built from that figure would be far off. Price from Google’s figure instead — it becomes a
+                      hand-entered takeoff you can adjust — or carry on below if you know this is the right building.
                       <button
                         type="button"
                         className="btn btn-primary btn--sm"
@@ -1343,131 +1346,90 @@ export function RoofEstimatorDataForm() {
             </div>
             )}
 
-            <div className="card rf-card rf-build">
-              <div className="rf-head rf-head--bar">
-                <div>
-                  <div className="card-title">Build an estimate</div>
-                  <div className="card-sub">
-                    {isRecon
-                      ? "These measurements are estimated from aerial imagery, so they can’t be priced. Run Instant measure for this address to build a quote."
-                      : manual && totals?.squares != null
-                        ? `Priced from your own takeoff — ${totals.squares.toFixed(1)} squares at ${manual.pitchLabel}.`
-                        : totals?.squares != null
-                          ? `The measured ${totals.squares.toFixed(1)} squares feed the takeoff.`
-                          : "Measurements feed the takeoff."}
-                    {!isRecon
-                      ? buildMode === "package"
-                        ? " Pick what goes on the roof."
-                        : " The AI drafts a full package from the measured figures; every line stays editable below."
-                      : ""}
-                  </div>
-                </div>
-                <div className="build-ctl">
-                  <div className="vsw" role="radiogroup" aria-label="How to build the estimate">
-                    {(["package", "ai"] as const).map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        role="radio"
-                        aria-checked={buildMode === m}
-                        className={"vsw-btn" + (buildMode === m ? " active" : "")}
-                        onClick={() => setBuildMode(m)}
-                      >
-                        {m === "package" ? "Roof package" : "AI estimate"}
-                      </button>
-                    ))}
-                  </div>
-                  {buildMode === "ai" && (
-                    <label className="est-field est-field--sm">
-                      <span className="est-lbl">Waste factor</span>
-                      <span className="bp-sel">
-                        <select className="bp-sel-in est-in" id="waste" value={waste} onChange={(e) => setWaste(Number(e.target.value))}>
-                          {WASTES.map((w) => (
-                            <option key={w} value={w}>
-                              {w}%
-                            </option>
-                          ))}
-                        </select>
-                      </span>
-                    </label>
-                  )}
-                  {!manual && !pitchMeasured && !evPitch && totals?.squares != null && (
-                    /* EagleView supplied no pitch (pack 002 not bought): the
-                       contractor states one, and the estimate says so. */
-                    <label className="est-field est-field--sm">
-                      <span className="est-lbl">Pitch · enter</span>
-                      <span className="bp-sel">
-                        <select
-                          className="bp-sel-in est-in"
-                          id="pitchEntered"
-                          value={pitchEntered ?? ""}
-                          onChange={(e) => setPitchEntered(e.target.value || null)}
-                        >
-                          <option value="">Select pitch…</option>
-                          {PITCHES.map((p) => (
-                            <option key={p} value={p}>
-                              {p}
-                            </option>
-                          ))}
-                        </select>
-                      </span>
-                    </label>
-                  )}
-                  {buildMode === "ai" && (
-                  <button
-                    className="btn btn-primary btn--sm"
-                    type="button"
-                    id="buildBtn"
-                    disabled={isRecon || genBusy || totals?.squares == null || assessment?.estimable === false || evUndercount != null || !pitchForEstimate}
-                    title={
-                      evUndercount
-                        ? "The aerial figure covers a fraction of the roof Google sees here — price from Google's figure or enter the takeoff by hand."
-                        : assessment?.estimable === false
-                        ? "Part of this property is missing from the figures, so they are not reliable enough to price from."
-                        : !pitchForEstimate
-                          ? "Enter the pitch first — the aerial data has none for this roof."
-                          : undefined
+            <BuildEstimateCardSwitch
+              isRecon={isRecon}
+              squares={totals?.squares ?? null}
+              manual={manual ? { squares: manual.squares, pitchLabel: manual.pitchLabel } : null}
+              buildMode={buildMode}
+              onBuildMode={setBuildMode}
+              waste={waste}
+              onWaste={setWaste}
+              wasteOptions={WASTES}
+              pitchEntry={
+                /* EagleView supplied no pitch (pack 002 not bought): the
+                   contractor states one, and the estimate says so. */
+                !manual && !pitchMeasured && !evPitch && totals?.squares != null
+                  ? { value: pitchEntered, onChange: setPitchEntered, options: PITCHES }
+                  : null
+              }
+              generate={{
+                busy: genBusy,
+                disabled: isRecon || genBusy || totals?.squares == null || !pitchForEstimate,
+                reason: !pitchForEstimate ? "Enter the pitch first — the aerial data has none for this roof." : undefined,
+                onClick: () => void generate(),
+              }}
+              caution={
+                /* Doubtful figures warn on the card; they no longer freeze the
+                   builder, Generate or Convert (owner, 2026-09-12). The full
+                   account stays in the notice above. */
+                evUndercount
+                  ? {
+                      stamp: "Wrong building?",
+                      text: `The aerial data covers ${num(evUndercount.evSqft)} sq ft, but Google sees about ${num(evUndercount.googleSqft)} sq ft of roof at this pin — check before you price.`,
+                      action: {
+                        label: `Price from Google’s ${num(evUndercount.googleSqft)} sq ft`,
+                        onClick: () =>
+                          runManual({
+                            squares: evUndercount.googleSqft / 100,
+                            pitchLabel: totals?.pitchLabel ?? "6/12",
+                            address: siteAddress,
+                          }),
+                      },
                     }
-                    onClick={() => void generate()}
-                  >
-                    <svg className="ic"><use href="#i-bulb" /></svg>
-                    {genBusy ? "Generating…" : "Generate estimate"}
-                  </button>
+                  : assessment?.estimable === false
+                    ? {
+                        stamp: confidenceLabel(assessment.confidence),
+                        text: "Part of this property is missing from the figures — check them before you price.",
+                      }
+                    : null
+              }
+              facts={roofFacts}
+              builderDisabled={convertBusy}
+              converting={convertBusy}
+              onBuild={applyPackage}
+              onConvert={convertPackage}
+              hasEstimate={hasEstimate}
+              output={
+                <div className={"build-out" + (hasEstimate ? "" : " is-hidden")} id="buildOut">
+                  {hasEstimate && (
+                    <>
+                      <EstimateLinesTable title="Materials" rows={materials} onChange={setMaterials} disabled={convertBusy} addLabel="Add material" />
+                      <EstimateLinesTable title="Labor" rows={labor} onChange={setLabor} disabled={convertBusy} addLabel="Add labor" />
+                      {assumptions.length > 0 && (
+                        <div className="bo-assume">
+                          <span className="kpi-lbl">Assumptions</span>
+                          <ul>
+                            {assumptions.map((a, i) => (
+                              <li key={i}>{a}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <div className="bo-total">
+                        <span className="kpi-lbl">Estimate total</span>
+                        <span className="bo-total-v">{money(materialsTotal + laborTotal)}</span>
+                        <span className="bo-total-acts">
+                          <button className="btn btn-primary btn--sm" type="button" id="convertBtn" disabled={convertBusy || isRecon} onClick={() => void convert()}>
+                            <svg className="ic"><use href="#i-file" /></svg>
+                            {convertBusy ? "Creating…" : "Convert to proposal"}
+                          </button>
+                        </span>
+                      </div>
+                    </>
                   )}
                 </div>
-              </div>
-              {buildMode === "package" && roofFacts && !isRecon && (
-                <RoofPackageBuilder facts={roofFacts} disabled={assessment?.estimable === false || evUndercount != null || convertBusy} converting={convertBusy} onBuild={applyPackage} onConvert={convertPackage} />
-              )}
-              <div className={"build-out" + (hasEstimate ? "" : " is-hidden")} id="buildOut">
-                {hasEstimate && (
-                  <>
-                    <EstimateLinesTable title="Materials" rows={materials} onChange={setMaterials} disabled={convertBusy} addLabel="Add material" />
-                    <EstimateLinesTable title="Labor" rows={labor} onChange={setLabor} disabled={convertBusy} addLabel="Add labor" />
-                    {assumptions.length > 0 && (
-                      <div className="bo-assume">
-                        <span className="kpi-lbl">Assumptions</span>
-                        <ul>
-                          {assumptions.map((a, i) => (
-                            <li key={i}>{a}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    <div className="bo-total">
-                      <span className="kpi-lbl">Estimate total</span>
-                      <span className="bo-total-v">{money(materialsTotal + laborTotal)}</span>
-                      <span className="bo-total-acts">
-                        <button className="btn btn-primary btn--sm" type="button" id="convertBtn" disabled={convertBusy || isRecon} onClick={() => void convert()}>
-                          <svg className="ic"><use href="#i-file" /></svg>
-                          {convertBusy ? "Creating…" : "Convert to proposal"}
-                        </button>
-                      </span>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
+              }
+            />
           </>
         )}
       </section>

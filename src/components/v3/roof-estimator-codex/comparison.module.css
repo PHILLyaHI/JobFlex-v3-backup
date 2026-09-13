@@ -1,0 +1,82 @@
+.page {
+  --blueprint: var(--accent);
+  --blueprint-dark: var(--accent-ink);
+  --muted: var(--ink-muted);
+  --hair: var(--ink-line);
+  --hair-soft: var(--ink-line);
+  --font: var(--font-sans);
+  --danger: var(--rose);
+  --success: var(--emerald);
+  --warning: var(--amber);
+  height: var(--app-h, 100dvh);
+  overflow: auto;
+  padding: 28px clamp(16px, 5.5vw, 96px) 0;
+  color: var(--ink);
+  font-family: var(--font-sans), sans-serif;
+}
+.page::after { content: ""; display: block; height: 64px; }
+.page [hidden] { display: none !important; }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.header > div { min-width: 0; }
+.eyebrow { display: block; font: 500 10px/1.5 var(--font-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-muted); }
+.header h1 { font-size: 24px; font-weight: 900; text-transform: uppercase; letter-spacing: -.03em; line-height: 1.15; margin: 4px 0 0; }
+.back { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 12px; font-weight: 700; }
+.designs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 2px solid var(--ink); background: var(--paper-deep); }
+.designs button { display: flex; gap: 12px; align-items: center; min-height: 58px; padding: 8px 16px; text-align: left; font-size: 13px; font-weight: 750; border: 0; background: var(--paper-deep); color: var(--ink); }
+.designs button + button { border-left: 1px solid var(--ink-line); }
+.designs button[aria-pressed="true"] { background: var(--ink); color: var(--paper-deep); }
+.designs button:hover:not([aria-pressed="true"]) { background: var(--accent-soft); }
+.letter { font: 900 22px/1 var(--font-sans); }
+.takeoff { margin: 12px 0 24px; border-bottom: 1px solid var(--ink-line); }
+.takeoff summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; cursor: pointer; font-size: 12px; list-style: none; }
+.takeoff summary::-webkit-details-marker { display: none; }
+.takeoff summary > span { display: flex; align-items: center; gap: 8px; }
+.takeoff summary > span:last-child { font-family: var(--font-mono); }
+.edit { color: var(--accent); text-decoration: underline; margin-left: 8px; font: 700 12px var(--font-sans); }
+.controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 12px 0 20px; }
+.controls label { display: flex; min-width: 0; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 750; }
+.controls input, .controls select { width: 100%; min-height: 44px; border: 1px solid var(--ink); background: var(--paper-deep); padding: 8px; color: var(--ink); font-size: 16px; }
+.controls p { grid-column: 1 / -1; font-size: 12px; color: var(--ink-muted); margin: 0; }
+.page :where(button, a, summary, input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.output { border-top: 2px solid var(--ink); padding: 24px; min-width: 0; scroll-margin-top: 16px; }
+.output h2 { font-size: 20px; font-weight: 900; text-transform: uppercase; margin: 0 0 20px; }
+.output :global(.bo-sec) { margin-bottom: 24px; overflow-x: auto; }
+.output :global(.bo-head) { display: flex; justify-content: space-between; gap: 16px; font-weight: 800; padding: 12px 0; }
+.output :global(.bo-table) { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 12px; }
+.output :global(.bo-table th) { text-align: left; font-size: 10px; text-transform: uppercase; background: var(--paper); padding: 8px; }
+.output :global(.bo-table td) { border-top: 1px solid var(--ink-line); padding: 4px; }
+.output :global(.bo-table td:first-child) { min-width: 220px; }
+.output :global(.bo-in) { background: var(--paper-deep); border: 1px solid var(--ink-line); min-height: 44px; padding: 8px; color: var(--ink); font-size: 14px; width: 100%; }
+.output :global(.bo-in.num) { width: 82px; text-align: right; }
+.output :global(.bo-x-btn), .output :global(.bo-add button) { min-height: 44px; min-width: 44px; border: 1px solid var(--ink); background: var(--paper-deep); color: var(--ink); padding: 8px; font-size: 12px; font-weight: 700; }
+.output :global(.bo-add) { padding: 8px 0; }
+.output :global(.bo-basis) { font: 500 10px var(--font-mono); }
+.assumptions summary { min-height: 44px; padding: 12px 0; font-size: 12px; font-weight: 700; cursor: pointer; }
+.assumptions ul { list-style: disc; padding: 8px 0 16px 20px; font-size: 12px; line-height: 1.6; }
+.result { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 16px; border-top: 1px solid var(--ink-line); }
+.result > div { display: flex; flex-direction: column; }
+.result span { font-size: 11px; color: var(--ink-muted); }
+.result strong { font-size: 30px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.result button { min-height: 48px; padding: 12px 20px; border: 2px solid var(--ink); background: var(--accent); color: var(--paper-deep); font-size: 12px; font-weight: 800; }
+.result button:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 768px) {
+  .page { padding: 16px 12px 0; }
+  .page::after { height: 40px; }
+  .header { gap: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 19px; }
+  .eyebrow { font-size: 9px; }
+  .back { font-size: 11px; gap: 4px; }
+  .designs button { flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px 10px; font-size: 11px; line-height: 1.2; }
+  .letter { font-size: 20px; }
+  .takeoff { margin-bottom: 16px; }
+  .takeoff summary { font-size: 10px; gap: 8px; }
+  .takeoff summary > span { gap: 5px; }
+  .edit { margin-left: 3px; font-size: 11px; }
+  .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .controls label:last-of-type { grid-column: 1 / -1; }
+  .output { padding: 16px; }
+  .result { flex-direction: column; align-items: stretch; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page *, .page *::before, .page *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

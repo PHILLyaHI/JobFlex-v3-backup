@@ -1,0 +1,598 @@
+/* ============================================================
+   "Build an estimate" — VARIANT B: TITLE BLOCK + SCHEDULE
+   (build-estimate-card-b.tsx)
+
+   Read like a drawing sheet. The TITLE BLOCK (left, beige, sticky) is the
+   one figure that matters: the package total, its materials/labor split,
+   the two ways out, and the roof it prices. The SCHEDULE (right, white) is
+   the package: seven numbered rows, one line each, that row's money on the
+   right like an estimate's line items. Inside an open row the entries are a
+   ledger — a mono label column, fields inline with their units inside the
+   boxes — and the rates are one folded line at the bottom.
+
+   Scope: every rule lives under `.jf-blueprint .content .beb`; the root
+   carries data-build-card="b". Page tokens (--ink, --paper, --hair-soft,
+   --field-h, --radius, --topbar-h …) come from roof-estimator.module.css;
+   the card's own measures are custom properties declared on the root.
+   Plain .css on purpose — CSS Modules would hash the shared class names
+   (.btn, .bp-sel, .est-in, .chip) this card reuses.
+   ============================================================ */
+
+.jf-blueprint .content .beb {
+  --beb-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --beb-pad: 18px;
+  --beb-ticket-w: 292px;
+  --beb-n-w: 30px;      /* the row number column */
+  --beb-t-w: 172px;     /* the row title column */
+  --beb-m-w: 92px;      /* the row money column */
+  --beb-k-w: 132px;     /* the ledger label column inside an open row */
+  --beb-num-w: 112px;   /* a number box */
+  --beb-num-lg: 156px;  /* a number box with a long unit ($/sq·layer) */
+  --beb-sel-w: 216px;   /* a select */
+  --beb-sel-sm: 112px;  /* a short select (a size, a percent) */
+  --beb-sel-wide: 296px;/* a select with long names */
+  --beb-x-w: 32px;      /* a remove button */
+  --beb-stick: calc(var(--topbar-h) + 16px);
+  padding: 0;
+  overflow: visible;    /* the sticky title block needs an unclipped ancestor */
+}
+
+/* ── Buttons: one size in this card, the page's field height ── */
+.jf-blueprint .content .beb .btn {
+  height: var(--field-h);
+  padding: 0 14px;
+  gap: 8px;
+  border-width: 1.5px;
+  font-size: 11.5px;
+}
+.jf-blueprint .content .beb .btn .ic { width: 15px; height: 15px; }
+.jf-blueprint .content .beb .btn:disabled { opacity: 0.5; pointer-events: none; }
+
+/* ── Head: title + basis on the left, the mode switch on the right ── */
+.jf-blueprint .content .beb-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 15px var(--beb-pad) 13px;
+  border-bottom: 2px solid var(--ink);
+}
+.jf-blueprint .content .beb-head-l { flex: 1 1 320px; min-width: 0; }
+.jf-blueprint .content .beb-basis {
+  margin-top: 5px;
+  max-width: 64ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.jf-blueprint .content .beb-basis b { color: var(--ink); font-weight: 700; }
+.jf-blueprint .content .beb-head-r {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* ── Smart estimate band (buildMode "ai"): the picker, the action, one line ── */
+.jf-blueprint .content .beb-ai {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  padding: 14px var(--beb-pad) 16px;
+  background: var(--paper);
+}
+.jf-blueprint .content .beb-ai-hint {
+  flex: 1 1 260px;
+  min-width: 0;
+  max-width: 62ch;
+  align-self: center;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ── The sheet: title block | schedule ── */
+.jf-blueprint .content .beb-sheet {
+  display: grid;
+  grid-template-columns: var(--beb-ticket-w) minmax(0, 1fr);
+}
+.jf-blueprint .content .beb-tcol { background: var(--paper); }
+.jf-blueprint .content .beb-ticket {
+  position: sticky;
+  top: var(--beb-stick);
+  display: grid;
+  align-content: start;
+  gap: 0;
+  padding: 18px var(--beb-pad) 20px;
+}
+.jf-blueprint .content .beb-kick {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-blueprint .content .beb-total {
+  display: block;
+  margin-top: 6px;
+  font-size: 38px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+.jf-blueprint .content .beb-split {
+  display: grid;
+  gap: 5px;
+  margin-top: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.jf-blueprint .content .beb-split-r { display: flex; align-items: baseline; gap: 8px; }
+.jf-blueprint .content .beb-split-k {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-blueprint .content .beb-lead {
+  flex: 1;
+  border-bottom: 1.5px dashed var(--muted-faint);
+  transform: translateY(-3px);
+}
+.jf-blueprint .content .beb-lines {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.jf-blueprint .content .beb-acts { display: grid; gap: 8px; margin-top: 16px; }
+.jf-blueprint .content .beb-acts .btn { width: 100%; justify-content: center; }
+.jf-blueprint .content .beb-roof {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1.5px dashed var(--hair-soft);
+}
+.jf-blueprint .content .beb-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  text-transform: uppercase;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.jf-blueprint .content .beb-facts i {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--muted);
+  margin-left: 5px;
+}
+.jf-blueprint .content .beb-dot { margin: 0 7px; color: var(--muted-light); font-weight: 400; }
+.jf-blueprint .content .beb-facts .chip { margin-left: 6px; padding: 1px 5px; font-size: 9px; }
+
+/* ── Schedule rows ── */
+.jf-blueprint .content .beb-schedule { min-width: 0; border-left: 2px solid var(--hair-soft); }
+.jf-blueprint .content .beb-sec { border-bottom: 1.5px solid var(--hair-soft); }
+.jf-blueprint .content .beb-sec:last-of-type { border-bottom: 0; }
+.jf-blueprint .content .beb-sec-hd {
+  width: 100%;
+  display: grid;
+  grid-template-columns: var(--beb-n-w) var(--beb-t-w) minmax(0, 1fr) auto var(--beb-m-w) 16px;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 var(--beb-pad);
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms var(--beb-ease);
+}
+.jf-blueprint .content .beb-sec-hd:hover { background: var(--paper); }
+.jf-blueprint .content .beb-sec-hd:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+.jf-blueprint .content .beb-sec-n {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.jf-blueprint .content .beb-sec.is-open .beb-sec-n { color: var(--blueprint); }
+.jf-blueprint .content .beb-sec-t {
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jf-blueprint .content .beb-sec-v {
+  min-width: 0;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.jf-blueprint .content .beb-sec.is-open .beb-sec-v { color: var(--ink); }
+.jf-blueprint .content .beb-sec-hd .chip { justify-self: end; }
+.jf-blueprint .content .beb-sec-m {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: right;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.jf-blueprint .content .beb-sec-m.is-zero { color: var(--muted-faint); }
+.jf-blueprint .content .beb-chev {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  transition: transform 180ms var(--beb-ease);
+}
+.jf-blueprint .content .beb-sec.is-open .beb-chev { transform: rotate(180deg); color: var(--ink); }
+
+/* The open body aligns with the title column, past the row number. */
+.jf-blueprint .content .beb-sec-bd {
+  display: grid;
+  gap: 8px;
+  padding: 4px var(--beb-pad) 18px calc(var(--beb-pad) + var(--beb-n-w) + 12px);
+  animation: beb-open 180ms var(--beb-ease);
+}
+@keyframes beb-open {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── Ledger rows inside an open section ── */
+.jf-blueprint .content .beb-lr {
+  display: grid;
+  grid-template-columns: var(--beb-k-w) minmax(0, 1fr);
+  gap: 4px 12px;
+  align-items: start;
+}
+.jf-blueprint .content .beb-lr-k {
+  padding-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-blueprint .content .beb-lr-v {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  min-width: 0;
+}
+.jf-blueprint .content .beb-lr-note {
+  grid-column: 2;
+  max-width: 70ch;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.jf-blueprint .content .beb-lr--rates {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1.5px dashed var(--hair-soft);
+}
+.jf-blueprint .content .beb-lr-v > .beb-tbl { flex: 1 1 100%; }
+.jf-blueprint .content .beb-rates-sum {
+  flex: 1 1 240px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  line-height: 1.7;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.jf-blueprint .content .beb-times {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted-light);
+  margin: 0 -6px;
+}
+
+/* ── Fields: an inline caption, a box, the unit inside the box ── */
+.jf-blueprint .content .beb-f {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+}
+.jf-blueprint .content .beb-k {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.jf-blueprint .content .beb-in { position: relative; display: block; width: var(--beb-num-w); }
+.jf-blueprint .content .beb-in--lg { width: var(--beb-num-lg); }
+.jf-blueprint .content .beb-in .est-in { width: 100%; }
+.jf-blueprint .content .beb-in.has-unit .est-in { padding-right: 44px; }
+.jf-blueprint .content .beb-in--lg.has-unit .est-in { padding-right: 76px; }
+.jf-blueprint .content .beb-unit {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.jf-blueprint .content .beb-f .bp-sel { width: var(--beb-sel-w); }
+.jf-blueprint .content .beb-f--sm .bp-sel { width: var(--beb-sel-sm); }
+.jf-blueprint .content .beb-f--wide .bp-sel { width: var(--beb-sel-wide); }
+.jf-blueprint .content .beb-chk {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--field-h);
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.jf-blueprint .content .beb-chk input { width: 16px; height: 16px; margin: 0; accent-color: var(--ink); }
+.jf-blueprint .content .beb-link {
+  height: var(--field-h);
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--blueprint);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.jf-blueprint .content .beb-link:hover { color: var(--blueprint-dark); }
+.jf-blueprint .content .beb-link:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+.jf-blueprint .content .beb-link:disabled { opacity: 0.5; cursor: default; }
+.jf-blueprint .content .beb-x {
+  width: var(--beb-x-w);
+  height: var(--field-h);
+  border: 1.5px solid var(--hair-soft);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 120ms var(--beb-ease), border-color 120ms var(--beb-ease);
+}
+.jf-blueprint .content .beb-x:hover:not(:disabled) { color: var(--ink); border-color: var(--ink); }
+.jf-blueprint .content .beb-x:disabled { opacity: 0.4; cursor: default; }
+.jf-blueprint .content .beb-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+/* ── Ledger tables: the list editors, the vents, the custom lines ──
+   A mono header row carries the captions on the desk; each cell also holds
+   its own caption, shown only where the header row is gone (handheld). */
+.jf-blueprint .content .beb-tbl { display: grid; gap: 6px; }
+.jf-blueprint .content .beb-tr {
+  display: grid;
+  gap: 8px;
+  align-items: center;
+}
+.jf-blueprint .content .beb-tr--sys { grid-template-columns: minmax(180px, 2fr) 150px 104px 104px 88px 88px var(--beb-x-w); }
+.jf-blueprint .content .beb-tr--und { grid-template-columns: minmax(180px, 2fr) 120px var(--beb-x-w); }
+.jf-blueprint .content .beb-tr--vent { grid-template-columns: minmax(200px, 1fr) 112px 132px 132px var(--beb-x-w); }
+.jf-blueprint .content .beb-tr--cu { grid-template-columns: minmax(160px, 2fr) 96px 128px 112px 128px var(--beb-x-w); }
+.jf-blueprint .content .beb-th {
+  padding-bottom: 4px;
+  border-bottom: 1.5px solid var(--hair-soft);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-blueprint .content .beb-c { display: block; min-width: 0; }
+.jf-blueprint .content .beb-c-k { display: none; }
+.jf-blueprint .content .beb-c .beb-f { display: block; width: 100%; }
+.jf-blueprint .content .beb-c .beb-in,
+.jf-blueprint .content .beb-c .beb-f .bp-sel { width: 100%; }
+.jf-blueprint .content .beb-tname { font-size: 13px; line-height: 1.25; color: var(--ink); }
+.jf-blueprint .content .beb-tname em {
+  display: block;
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-blueprint .content .beb-tfoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding-top: 4px;
+}
+
+/* ── Foot: whose rates these are, and the closing total ── */
+.jf-blueprint .content .beb-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 12px var(--beb-pad);
+  border-top: 2px solid var(--ink);
+  background: var(--paper);
+}
+.jf-blueprint .content .beb-cat { display: flex; align-items: center; gap: 12px; }
+.jf-blueprint .content .beb-cat-txt {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-blueprint .content .beb-cat-txt em { font-style: normal; color: var(--warning); }
+.jf-blueprint .content .beb-foot-sum {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-left: auto;
+}
+.jf-blueprint .content .beb-foot-v {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-blueprint .content .beb-sec-bd { animation: none; }
+  .jf-blueprint .content .beb-chev,
+  .jf-blueprint .content .beb-sec-hd,
+  .jf-blueprint .content .beb-x { transition: none; }
+}
+
+/* ── Handheld (≤860px, zoom = 1): one column, the title block first,
+   44px targets, rows on two lines, tables fold to two columns. ── */
+@media (max-width: 860px) {
+  .jf-blueprint .content .beb {
+    --field-h: 44px;
+    --beb-pad: 14px;
+    --beb-x-w: 44px;
+    --beb-n-w: 26px;
+  }
+  .jf-blueprint .content .beb-head { flex-direction: column; align-items: stretch; }
+  .jf-blueprint .content .beb-head-l { flex: 0 0 auto; } /* the desk basis would become a HEIGHT here */
+  .jf-blueprint .content .beb-head-r { flex-wrap: wrap; align-items: stretch; }
+  .jf-blueprint .content .beb-head-r .vsw { flex: 1 1 100%; }
+  .jf-blueprint .content .beb-head-r .vsw-btn { flex: 1; height: 44px; }
+  .jf-blueprint .content .beb-head-r .beb-f { flex: 1 1 100%; }
+  .jf-blueprint .content .beb-head-r .beb-f .bp-sel { flex: none; width: 100%; }
+  .jf-blueprint .content .beb-ai { flex-direction: column; align-items: stretch; }
+  .jf-blueprint .content .beb-ai .beb-f .bp-sel { flex: none; width: 100%; }
+  .jf-blueprint .content .beb-ai .btn { justify-content: center; }
+  .jf-blueprint .content .beb-ai-hint { max-width: none; }
+
+  .jf-blueprint .content .beb-sheet { grid-template-columns: minmax(0, 1fr); }
+  .jf-blueprint .content .beb-tcol { border-bottom: 2px solid var(--hair-soft); }
+  .jf-blueprint .content .beb-ticket { position: static; padding: 16px var(--beb-pad) 18px; }
+  .jf-blueprint .content .beb-total { font-size: 34px; }
+  .jf-blueprint .content .beb-acts .btn { height: 44px; }
+  .jf-blueprint .content .beb-schedule { border-left: 0; }
+
+  .jf-blueprint .content .beb-sec-hd {
+    grid-template-columns: var(--beb-n-w) minmax(0, 1fr) auto var(--beb-m-w) 16px;
+    grid-template-areas:
+      "n t chip m chev"
+      "n v v v v";
+    row-gap: 3px;
+    column-gap: 10px;
+    min-height: 56px;
+    padding: 10px var(--beb-pad);
+  }
+  .jf-blueprint .content .beb-sec-n { grid-area: n; align-self: start; padding-top: 3px; }
+  .jf-blueprint .content .beb-sec-t { grid-area: t; }
+  .jf-blueprint .content .beb-sec-hd .chip { grid-area: chip; }
+  .jf-blueprint .content .beb-sec-m { grid-area: m; }
+  .jf-blueprint .content .beb-chev { grid-area: chev; }
+  .jf-blueprint .content .beb-sec-v { grid-area: v; white-space: normal; line-height: 1.4; }
+  .jf-blueprint .content .beb-sec-bd { padding: 2px var(--beb-pad) 16px; gap: 10px; }
+
+  .jf-blueprint .content .beb-lr { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .jf-blueprint .content .beb-lr-k { padding-top: 4px; }
+  .jf-blueprint .content .beb-lr-v { gap: 8px 12px; }
+  .jf-blueprint .content .beb-lr-note { grid-column: 1; }
+  .jf-blueprint .content .beb-times { display: none; }
+  /* A caption beside a half-width box squeezes the box to nothing on a phone:
+     the caption stacks above it here, the page's own .est-field shape. */
+  .jf-blueprint .content .beb-f {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    flex: 1 1 calc(50% - 6px);
+    min-width: 0;
+  }
+  .jf-blueprint .content .beb-f .beb-in,
+  .jf-blueprint .content .beb-f .beb-in--lg,
+  .jf-blueprint .content .beb-f .bp-sel,
+  .jf-blueprint .content .beb-f--sm .bp-sel,
+  .jf-blueprint .content .beb-f--wide .bp-sel { flex: none; width: 100%; min-width: 0; }
+  .jf-blueprint .content .beb-f--wide,
+  .jf-blueprint .content .beb-f--sel { flex-basis: 100%; }
+  .jf-blueprint .content .beb-chk { flex: 1 1 calc(50% - 6px); }
+  .jf-blueprint .content .beb-link { min-height: 44px; }
+
+  .jf-blueprint .content .beb-th { display: none; }
+  .jf-blueprint .content .beb-tr--sys,
+  .jf-blueprint .content .beb-tr--und,
+  .jf-blueprint .content .beb-tr--vent,
+  .jf-blueprint .content .beb-tr--cu {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    padding-bottom: 10px;
+    border-bottom: 1.5px dashed var(--hair-soft);
+  }
+  .jf-blueprint .content .beb-tr .beb-c--name { grid-column: 1 / -1; }
+  .jf-blueprint .content .beb-tr .beb-x { justify-self: end; align-self: end; }
+  .jf-blueprint .content .beb-c-k {
+    display: block;
+    margin-bottom: 4px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .jf-blueprint .content .beb-c .beb-f { flex: none; }
+
+  .jf-blueprint .content .beb-foot { flex-direction: column; align-items: stretch; }
+  .jf-blueprint .content .beb-cat { justify-content: space-between; }
+  .jf-blueprint .content .beb-foot-sum { margin-left: 0; justify-content: space-between; }
+  .jf-blueprint .content .beb-foot .btn { height: 44px; }
+}

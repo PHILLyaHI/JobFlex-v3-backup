@@ -61,11 +61,11 @@ import {
   type RoofPackageSpec,
 } from "@/lib/roofPackage/takeoff";
 
-const PREFS_KEY = "jf.roofPackage.prefs.v1";
-const LISTS_KEY = "jf.roofPackage.lists.v1";
+export const PREFS_KEY = "jf.roofPackage.prefs.v1";
+export const LISTS_KEY = "jf.roofPackage.lists.v1";
 
 /** The spec fields that are the contractor's standing preferences, not this roof's entries. */
-const PREF_KEYS = [
+export const PREF_KEYS = [
   "systemId", "systemName", "systemFamily", "systemMatPerSq", "systemLaborPerSq", "capPerFt", "wastePct",
   "underlaymentId", "underlaymentName", "underlaymentPerSq", "iceWater", "iceWaterPerSqft",
   "dripEdgeOn", "dripProfileId", "dripSizeId", "dripPerFt", "starterOn", "starterPerFt",
@@ -76,18 +76,18 @@ const PREF_KEYS = [
   "nailsPerSq", "sealantPerSq", "cleanupLump", "safetyLump", "permitLump",
 ] as const satisfies ReadonlyArray<keyof RoofPackageSpec>;
 
-type Prefs = Partial<Pick<RoofPackageSpec, (typeof PREF_KEYS)[number]>> & {
+export type Prefs = Partial<Pick<RoofPackageSpec, (typeof PREF_KEYS)[number]>> & {
   /** Vent unit prices by vent id — quantities are per roof. */
   ventPrices?: Record<string, { each: number; labor: number }>;
 };
 
-function prefsOf(spec: RoofPackageSpec): Prefs {
+export function prefsOf(spec: RoofPackageSpec): Prefs {
   const p: Prefs = {};
   for (const k of PREF_KEYS) (p as Record<string, unknown>)[k] = spec[k];
   p.ventPrices = Object.fromEntries(spec.vents.map((v) => [v.id, { each: v.each, labor: v.labor }]));
   return p;
 }
-function readLocal<T>(key: string): T | null {
+export function readLocal<T>(key: string): T | null {
   try {
     const raw = window.localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : null;
@@ -95,7 +95,7 @@ function readLocal<T>(key: string): T | null {
     return null;
   }
 }
-function writeLocal(key: string, value: unknown) {
+export function writeLocal(key: string, value: unknown) {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
@@ -103,7 +103,7 @@ function writeLocal(key: string, value: unknown) {
   }
 }
 /** Overlay saved preferences, field by field, only where the saved value has the field's type. */
-function applyPrefs(spec: RoofPackageSpec, p: Prefs | Record<string, unknown> | null | undefined): RoofPackageSpec {
+export function applyPrefs(spec: RoofPackageSpec, p: Prefs | Record<string, unknown> | null | undefined): RoofPackageSpec {
   if (!p) return spec;
   const out: RoofPackageSpec = { ...spec };
   const src = p as Record<string, unknown>;
@@ -123,7 +123,7 @@ function applyPrefs(spec: RoofPackageSpec, p: Prefs | Record<string, unknown> | 
   return out;
 }
 /** A saved list is only trusted when it still reads like one. */
-function saneLists(l: unknown): CatalogLists | null {
+export function saneLists(l: unknown): CatalogLists | null {
   const x = l as CatalogLists | null;
   if (!x || !Array.isArray(x.systems) || !Array.isArray(x.underlayments) || !x.systems.length || !x.underlayments.length) return null;
   const okSys = x.systems.every((s) => s && typeof s.id === "string" && typeof s.label === "string" && typeof s.matPerSq === "number" && typeof s.laborPerSq === "number");
@@ -131,7 +131,7 @@ function saneLists(l: unknown): CatalogLists | null {
   return okSys && okUnd ? x : null;
 }
 /** Keep the spec's picks pointing at rows that exist in the lists. */
-function reconcile(spec: RoofPackageSpec, lists: CatalogLists): RoofPackageSpec {
+export function reconcile(spec: RoofPackageSpec, lists: CatalogLists): RoofPackageSpec {
   let out = spec;
   if (!lists.systems.some((s) => s.id === spec.systemId)) {
     const s = lists.systems[0];
@@ -145,13 +145,13 @@ function reconcile(spec: RoofPackageSpec, lists: CatalogLists): RoofPackageSpec 
 }
 
 /** Facts that, when they change, mean a different roof is open. */
-const factsKey = (f: RoofFacts) =>
+export const factsKey = (f: RoofFacts) =>
   [f.squares, f.perimeterFt, f.footprintSqft, f.chimney, f.rooftopAcCount, f.shape, f.pitchFamilies.map((p) => `${p.pitch12}:${p.share}`).join(",")].join("|");
 
-const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
-const fmt = (n: number) => Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
+export const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
+export const fmt = (n: number) => Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
 /** A price in a summary line: $125, $4.50 — no trailing .00. */
-const rate = (n: number) => "$" + (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0$/, ""));
+export const rate = (n: number) => "$" + (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0$/, ""));
 
 // ── Field primitives (the page's est-field / est-in / bp-sel classes) ──────
 function Num({ label, value, onChange, unit, disabled, min = 0, wide }: { label: string; value: number; onChange: (n: number) => void; unit?: string; disabled?: boolean; min?: number; wide?: boolean }) {

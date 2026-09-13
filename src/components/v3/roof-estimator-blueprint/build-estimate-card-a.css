@@ -1,0 +1,793 @@
+/* VARIANT A of the "Build an estimate" card — the estimate sheet.
+   Plain CSS on purpose (CSS Modules hash the page's bare classes). Every rule
+   is scoped under the page root and the card's data attribute; the page's
+   tokens (--ink, --paper, --paper-deep, --blueprint, --muted, --hair-soft,
+   --radius, --field-h, --font, --font-mono) are used as they are, and the
+   card's own values are custom properties on its root.
+
+   Zoning, as the proposals cards: white head → paper band (the number) →
+   white ledger → white footnote → paper foot (the total, the way out). */
+
+.jf-blueprint .content .card[data-build-card="a"] {
+  --bea-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --bea-pad-x: 18px;
+  --bea-name-w: 150px;
+  --bea-amt-w: 96px;
+  --bea-line-h: 46px;
+  --bea-total-fs: 36px;
+  --bea-f-w: 160px;
+  --bea-f-w2: 332px;
+  --bea-x-w: 34px;
+  --bea-btn-h: var(--field-h);
+  --bea-btn-sm-h: 34px;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ── Head: the title, the roof's facts, the mode ─────────────────────── */
+.jf-blueprint .content [data-build-card="a"] .bea-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 24px;
+  flex-wrap: wrap;
+  padding: 14px var(--bea-pad-x) 12px;
+  border-bottom: 2px solid var(--ink);
+}
+.jf-blueprint .content [data-build-card="a"].bea--head-only .bea-head {
+  border-bottom: 0;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-head-l {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-title {
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+  line-height: 1.25;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-basis {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.6;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-basis b {
+  font-weight: 600;
+  color: var(--ink);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-basis i {
+  font-style: normal;
+  color: var(--muted);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-basis > span + span::before {
+  content: "·";
+  margin: 0 8px;
+  color: var(--muted-light);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-basis--prose {
+  display: block;
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.5;
+  max-width: 64ch;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-head-r {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-head-r .bea-f {
+  width: 150px;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-head-r .vsw {
+  height: var(--field-h);
+  align-self: flex-end;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-head-r .vsw-btn {
+  height: 100%;
+  padding: 0 14px;
+  font-size: 11.5px;
+}
+
+/* ── The number ─────────────────────────────────────────────────────── */
+.jf-blueprint .content [data-build-card="a"] .bea-sum {
+  display: grid;
+  gap: 7px;
+  padding: 16px var(--bea-pad-x) 15px;
+  background: var(--paper);
+  border-bottom: 2px solid var(--ink);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-total {
+  font-family: var(--font);
+  font-size: var(--bea-total-fs);
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-split {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Smart estimate: the one-shot draft ─────────────────────────────── */
+.jf-blueprint .content [data-build-card="a"] .bea-ai {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px 14px;
+  flex-wrap: wrap;
+  padding: 14px var(--bea-pad-x) 16px;
+  background: var(--paper);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-ai .bea-f {
+  width: 150px;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-ai-hint {
+  flex: 1 0 100%;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-ai-hint.is-why {
+  color: var(--ink);
+}
+
+/* ── The ledger: one line per part ──────────────────────────────────── */
+.jf-blueprint .content [data-build-card="a"] .bea-line {
+  border-bottom: 1.5px solid var(--hair-soft);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-line-hd {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: var(--bea-line-h);
+  padding: 0 var(--bea-pad-x);
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 120ms var(--bea-ease);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-line-hd:hover {
+  background: var(--paper);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-line-hd:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: -2px;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-line-name {
+  flex: 0 0 var(--bea-name-w);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-line-pick {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-line-pick.is-empty {
+  color: var(--muted);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-line-hd .chip {
+  flex-shrink: 0;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-line-amt {
+  flex: 0 0 var(--bea-amt-w);
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-line-amt.is-zero {
+  color: var(--muted-light);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-chev {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  transition: transform 180ms var(--bea-ease);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-line.is-open .bea-chev {
+  transform: rotate(180deg);
+  color: var(--ink);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-line-body {
+  display: grid;
+  gap: 14px;
+  padding: 14px var(--bea-pad-x) 18px;
+  background: var(--paper);
+  border-top: 1.5px solid var(--hair-soft);
+  animation: bea-open 200ms var(--bea-ease);
+}
+@keyframes bea-open {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── Inside a line: this roof's entries in clusters, then the rates ──── */
+.jf-blueprint .content [data-build-card="a"] .bea-groups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px 32px;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-g {
+  display: grid;
+  gap: 7px;
+  max-width: 100%;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-g--act {
+  align-self: flex-end;
+  margin-left: auto;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-g-lbl {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 12px;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-f {
+  display: block;
+  width: var(--bea-f-w);
+  max-width: 100%;
+  min-width: 0;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-f--wide {
+  width: var(--bea-f-w2);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-f .est-lbl {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-in {
+  position: relative;
+  display: block;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-in.has-unit .est-in {
+  padding-right: 58px;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-unit {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--field-h);
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--ink);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-rates {
+  display: grid;
+  gap: 7px;
+  padding-top: 12px;
+  border-top: 1.5px dashed var(--hair-soft);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 70ch;
+}
+
+/* ── Buttons: the page's .btn, at the field height ──────────────────── */
+.jf-blueprint .content [data-build-card="a"] .btn.bea-btn {
+  height: var(--bea-btn-h);
+  padding: 0 15px;
+  font-size: 11.5px;
+  gap: 8px;
+}
+.jf-blueprint .content [data-build-card="a"] .btn.bea-btn .ic {
+  width: 16px;
+  height: 16px;
+}
+.jf-blueprint .content [data-build-card="a"] .btn.bea-btn--sm {
+  height: var(--bea-btn-sm-h);
+  padding: 0 12px;
+  font-size: 10.5px;
+  gap: 6px;
+  border-width: 1.5px;
+}
+.jf-blueprint .content [data-build-card="a"] .btn.bea-btn--sm .ic {
+  width: 14px;
+  height: 14px;
+}
+.jf-blueprint .content [data-build-card="a"] .btn:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-link {
+  height: var(--bea-btn-sm-h);
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--blueprint);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-link:hover {
+  color: var(--blueprint-dark);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-link:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--bea-x-w);
+  height: var(--field-h);
+  border: 1.5px solid var(--hair-soft);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 120ms var(--bea-ease), border-color 120ms var(--bea-ease);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-x .ic {
+  width: 14px;
+  height: 14px;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-x:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-x:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-add {
+  display: flex;
+  gap: 10px 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ── Ledgers inside a line: the contractor's lists, vents, custom lines ─ */
+.jf-blueprint .content [data-build-card="a"] .bea-edit {
+  display: grid;
+  gap: 6px;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-edit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 2px;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-edit-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 2fr) 200px 116px 116px 96px 100px var(--bea-x-w);
+  gap: 8px;
+  align-items: center;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-edit--und .bea-edit-row {
+  grid-template-columns: minmax(200px, 2fr) 128px var(--bea-x-w);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-edit-head {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-bottom: 4px;
+  border-bottom: 1.5px solid var(--hair-soft);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-edit-row .bea-f,
+.jf-blueprint .content [data-build-card="a"] .bea-vent .bea-f,
+.jf-blueprint .content [data-build-card="a"] .bea-custom-row .bea-f {
+  width: auto;
+}
+/* The column head names the fields; their own labels show only when the
+   columns stack (handheld). */
+.jf-blueprint .content [data-build-card="a"] .bea-edit-row .est-lbl,
+.jf-blueprint .content [data-build-card="a"] .bea-vent .est-lbl,
+.jf-blueprint .content [data-build-card="a"] .bea-custom-row .est-lbl {
+  display: none;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-vents {
+  display: grid;
+  gap: 6px;
+  width: max-content;
+  max-width: 100%;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-vent {
+  display: grid;
+  grid-template-columns: 280px 112px 132px 132px var(--bea-x-w);
+  gap: 8px;
+  align-items: center;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-vent-name {
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.25;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-vent-name em {
+  display: block;
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-custom {
+  display: grid;
+  gap: 8px;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-custom-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) 96px 128px 128px 128px var(--bea-x-w);
+  gap: 8px;
+  align-items: center;
+}
+
+/* ── Footnote: whose rates, louder only when unsaved ────────────────── */
+.jf-blueprint .content [data-build-card="a"] .bea-src {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  flex-wrap: wrap;
+  min-height: 44px;
+  padding: 5px var(--bea-pad-x);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-src-txt {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-src-txt em {
+  font-style: normal;
+  color: var(--warning-dark);
+}
+
+/* ── The total, and the way out ─────────────────────────────────────── */
+.jf-blueprint .content [data-build-card="a"] .bea-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+  padding: 12px var(--bea-pad-x);
+  background: var(--paper);
+  border-top: 2px solid var(--ink);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-foot-l {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-foot-lbl {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.jf-blueprint .content [data-build-card="a"] .bea-foot-v {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.jf-blueprint .content [data-build-card="a"] .bea-acts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-blueprint .content [data-build-card="a"] .bea-line-body {
+    animation: none;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-chev,
+  .jf-blueprint .content [data-build-card="a"] .bea-line-hd,
+  .jf-blueprint .content [data-build-card="a"] .bea-x {
+    transition: none;
+  }
+}
+
+/* ── Handheld (≤860px: zoom is 1, the page's own breakpoint) ─────────── */
+@media (max-width: 860px) {
+  .jf-blueprint .content .card[data-build-card="a"] {
+    --bea-pad-x: 14px;
+    --field-h: 44px;
+    --bea-total-fs: 32px;
+    --bea-line-h: 56px;
+    --bea-f-w: calc(50% - 6px);
+    --bea-f-w2: 100%;
+    --bea-x-w: 44px;
+    --bea-btn-h: 48px;
+    --bea-btn-sm-h: 44px;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-head {
+    flex-direction: column;
+    align-items: stretch;
+    padding-top: 14px;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-head-r {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: 10px;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-head-r .bea-f {
+    width: 100%;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-head-r .vsw {
+    width: 100%;
+    height: 44px;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-head-r .vsw-btn {
+    flex: 1;
+    font-size: 12.5px;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-sum {
+    padding: 14px var(--bea-pad-x);
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-line-hd {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto 16px;
+    grid-template-areas:
+      "name chip amt chev"
+      "pick pick pick pick";
+    gap: 4px 10px;
+    padding: 10px var(--bea-pad-x);
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-line-name {
+    grid-area: name;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-line-amt {
+    grid-area: amt;
+    flex-basis: auto;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-chev {
+    grid-area: chev;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-line-pick {
+    grid-area: pick;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.35;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-line-hd .chip {
+    grid-area: chip;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-line-body {
+    padding: 12px var(--bea-pad-x) 16px;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-groups {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-g--act {
+    margin-left: 0;
+    align-self: stretch;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-g--act .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-check {
+    width: 100%;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-edit-head {
+    display: none;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-edit-row .est-lbl,
+  .jf-blueprint .content [data-build-card="a"] .bea-vent .est-lbl,
+  .jf-blueprint .content [data-build-card="a"] .bea-custom-row .est-lbl {
+    display: block;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-edit-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--bea-x-w);
+    grid-template-areas:
+      "name name x"
+      "fam fam ."
+      "mat lab ."
+      "waste cap .";
+    gap: 8px;
+    padding: 10px 0 12px;
+    border-bottom: 1.5px dashed var(--hair-soft);
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-edit-row > :nth-child(1) {
+    grid-area: name;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-edit-row > :nth-child(2) {
+    grid-area: fam;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-edit-row > :nth-child(3) {
+    grid-area: mat;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-edit-row > :nth-child(4) {
+    grid-area: lab;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-edit-row > :nth-child(5) {
+    grid-area: waste;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-edit-row > :nth-child(6) {
+    grid-area: cap;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-edit-row > .bea-x {
+    grid-area: x;
+    align-self: end;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-edit--und .bea-edit-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--bea-x-w);
+    grid-template-areas:
+      "name name x"
+      "fam fam .";
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-vents {
+    width: 100%;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-vent {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) var(--bea-x-w);
+    grid-template-areas:
+      "name name name x"
+      "qty each labor .";
+    padding: 8px 0 10px;
+    border-bottom: 1.5px dashed var(--hair-soft);
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-vent > :nth-child(1) {
+    grid-area: name;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-vent > :nth-child(2) {
+    grid-area: qty;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-vent > :nth-child(3) {
+    grid-area: each;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-vent > :nth-child(4) {
+    grid-area: labor;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-vent > .bea-x {
+    grid-area: x;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-custom-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) var(--bea-x-w);
+    grid-template-areas:
+      "name name name x"
+      "qty unit price ."
+      "kind kind kind .";
+    padding: 8px 0 10px;
+    border-bottom: 1.5px dashed var(--hair-soft);
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-custom-row > :nth-child(1) {
+    grid-area: name;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-custom-row > :nth-child(2) {
+    grid-area: qty;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-custom-row > :nth-child(3) {
+    grid-area: unit;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-custom-row > :nth-child(4) {
+    grid-area: price;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-custom-row > :nth-child(5) {
+    grid-area: kind;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-custom-row > .bea-x {
+    grid-area: x;
+    align-self: end;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-add .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-add .bea-f {
+    width: 100%;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-ai {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-ai .bea-f {
+    width: 100%;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-ai .btn,
+  .jf-blueprint .content [data-build-card="a"] .bea-acts .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-src {
+    padding: 8px var(--bea-pad-x);
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-foot {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 14px var(--bea-pad-x) 16px;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-foot-l {
+    justify-content: space-between;
+  }
+  .jf-blueprint .content [data-build-card="a"] .bea-acts {
+    flex-direction: column-reverse;
+  }
+}
