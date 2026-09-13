@@ -226,11 +226,12 @@ function Group({ label, children, note }: { label?: string; children: React.Reac
   );
 }
 
-/** The contractor's unit prices for a row — quieter, set once, kept. */
+/** The contractor's unit prices for a row — set once, kept. A rule and a
+ *  tag, not a box: a frame inside a row inside a card was one frame too many. */
 function Rates({ children }: { children: React.ReactNode }) {
   return (
     <div className="pk-rates">
-      <div className="pk-rates-lbl">Rates</div>
+      <div className="pk-rates-lbl">Rates · per unit, yours</div>
       <div className="pk-fields">{children}</div>
     </div>
   );
@@ -478,8 +479,11 @@ export function RoofPackageBuilder({
   const sumSystem = [spec.systemName, `${rate(spec.systemMatPerSq)} + ${rate(spec.systemLaborPerSq)} /sq`, `${spec.wastePct}% waste`, !lowSlope && spec.capPerFt > 0 ? `cap ${rate(spec.capPerFt)}/ft` : null].filter(Boolean).join(" · ");
   const iceLabel = ICE_WATER.find((i) => i.id === spec.iceWater)?.label ?? spec.iceWater;
   const sumUnder = [spec.underlaymentName, `${rate(spec.underlaymentPerSq)}/sq`, spec.iceWater === "none" ? "no ice & water" : `ice & water · ${iceLabel.toLowerCase()}`].join(" · ");
+  const noEdges = spec.eaveFt + spec.rakeFt + spec.ridgeFt + spec.hipFt <= 0;
   const sumEdges = [
-    `eave ${fmt(spec.eaveFt)} · rake ${fmt(spec.rakeFt)} · ridge ${fmt(spec.ridgeFt)}${spec.hipFt > 0 ? ` · hip ${fmt(spec.hipFt)}` : ""} ft`,
+    noEdges
+      ? "No lengths yet — enter eave, rake and ridge"
+      : `Eave ${fmt(spec.eaveFt)} · rake ${fmt(spec.rakeFt)} · ridge ${fmt(spec.ridgeFt)}${spec.hipFt > 0 ? ` · hip ${fmt(spec.hipFt)}` : ""} ft`,
     spec.dripEdgeOn ? "drip edge" : "no drip edge",
     !lowSlope && spec.systemFamily !== "metal" ? (spec.starterOn ? "starter" : "no starter") : null,
   ].filter(Boolean).join(" · ");
@@ -493,25 +497,27 @@ export function RoofPackageBuilder({
     spec.chimneyCount > 0 ? `${spec.chimneyCount} chimney${spec.chimneyCount === 1 ? "" : "s"}` : null,
     spec.curbCount > 0 ? `${spec.curbCount} curb${spec.curbCount === 1 ? "" : "s"}` : null,
   ].filter(Boolean);
-  const sumFlash = flashBits.length ? flashBits.join(" · ") : "none entered";
+  const sumFlash = flashBits.length ? flashBits.join(" · ") : "Nothing counted yet — valleys, walls, pipes, chimney";
   const ventsOn = VENT_TYPES.filter((t) => ventOf(t.id).qty > 0);
   const sumVents = [
-    ventsOn.length ? ventsOn.map((t) => `${t.label.split(" · ")[0].toLowerCase()} ${fmt(ventOf(t.id).qty)}${t.unit === "linear ft" ? " ft" : ""}`).join(" · ") : "no vents",
-    vent ? (vent.ok ? "balanced" : "short") : null,
+    ventsOn.length
+      ? ventsOn.map((t) => `${fmt(ventOf(t.id).qty)}${t.unit === "linear ft" ? " ft" : " ×"} ${t.label.split(" · ")[0].toLowerCase()}`).join(" · ")
+      : "No vents yet",
+    vent ? (vent.ok ? "balanced" : "short of the 1/300 rule") : null,
   ].filter(Boolean).join(" · ");
   const sumTear = [
-    spec.tearOffLayers === 0 ? "overlay, no tear-off" : `tear-off ${spec.tearOffLayers} layer${spec.tearOffLayers === 1 ? "" : "s"}`,
+    spec.tearOffLayers === 0 ? "Overlay, no tear-off" : `Tear-off ${spec.tearOffLayers} layer${spec.tearOffLayers === 1 ? "" : "s"}`,
     spec.plywoodSheets > 0 ? `${spec.plywoodSheets} deck sheet${spec.plywoodSheets === 1 ? "" : "s"}` : null,
     spec.cleanupLump > 0 ? `cleanup ${money(spec.cleanupLump)}` : null,
-    steepest >= 8 && spec.safetyLump > 0 ? `steep ${money(spec.safetyLump)}` : null,
+    steepest >= 8 && spec.safetyLump > 0 ? `steep safety ${money(spec.safetyLump)}` : null,
     spec.permitLump > 0 ? `permit ${money(spec.permitLump)}` : null,
   ].filter(Boolean).join(" · ");
-  const sumCustom = spec.custom.length ? `${spec.custom.length} line${spec.custom.length === 1 ? "" : "s"}` : "none";
+  const sumCustom = spec.custom.length ? `${spec.custom.length} line${spec.custom.length === 1 ? "" : "s"}` : "None";
 
   const ventsToAdd = VENT_TYPES.filter((t) => ventOf(t.id).qty <= 0);
   const edgeEstimated = spec.edgesBasis === "estimated";
 
-  const actions = (size: "lg" | "sm") => (
+  const actions = (size: "lg") => (
     <div className={"pk-acts pk-acts--" + size}>
       <button type="button" className="btn btn-ghost btn--sm" disabled={disabled} onClick={() => onBuild(pkg, spec)} title="Fill the estimate tables below to review and adjust before converting">
         <svg className="ic"><use href="#i-file" /></svg>
@@ -526,7 +532,9 @@ export function RoofPackageBuilder({
 
   return (
     <div className="pk">
-      {/* THE TICKET — the running total and the two ways out, first. */}
+      {/* THE TICKET — the running total and the two ways out, first; the
+          roof's facts and whose rates these are ride underneath in the same
+          band, so the reader meets one header, not three. */}
       <div className="pk-ticket">
         <div className="pk-ticket-sum">
           <span className="pk-ticket-lbl">Package</span>
@@ -537,8 +545,6 @@ export function RoofPackageBuilder({
         </div>
         {actions("lg")}
       </div>
-
-      {/* THE BASIS — this roof, in one mono line, plus whose rates these are. */}
       <div className="pk-basis">
         <span className="pk-facts">
           <b>{facts.squares.toFixed(1)} sq</b>
@@ -557,7 +563,7 @@ export function RoofPackageBuilder({
         </span>
         <span className="pk-catalog">
           <span className="pk-catalog-txt">
-            {source === "loading" ? "Loading rates…" : source === "org" ? "Rates: your company’s" : "Rates: built-in"}
+            {source === "loading" ? "Loading rates…" : source === "org" ? "Your company’s rates" : "Built-in rates"}
             {dirty && source !== "loading" ? <em> · unsaved</em> : null}
           </span>
           <button type="button" className={"btn btn--sm " + (dirty ? "btn-primary" : "btn-ghost")} disabled={disabled || saving || source === "loading"} onClick={() => void saveDefaults()}>
@@ -685,12 +691,12 @@ export function RoofPackageBuilder({
       {/* 4 · FLASHING */}
       <Row id="flash" title="Flashing" summary={sumFlash} open={!!open.flash} onToggle={() => toggle("flash")}>
         <Group label="Valleys">
-          <Num label="Count" value={spec.valleyCount} onChange={(v) => set("valleyCount", v)} disabled={disabled} />
+          <Num label="Count" unit="each" value={spec.valleyCount} onChange={(v) => set("valleyCount", v)} disabled={disabled} />
           <Num label="Length each" unit="ft" value={spec.valleyFtEach} onChange={(v) => set("valleyFtEach", v)} disabled={disabled} />
           <Sel label="Type" value={spec.valleyTypeId} options={VALLEY_TYPES} onChange={pickValley} disabled={disabled} wide />
         </Group>
         <Group label="Sidewalls · step flashing">
-          <Num label="Walls" value={spec.stepWallCount} onChange={(v) => set("stepWallCount", v)} disabled={disabled} />
+          <Num label="Walls" unit="each" value={spec.stepWallCount} onChange={(v) => set("stepWallCount", v)} disabled={disabled} />
           <Num label="Length each" unit="ft" value={spec.stepWallFtEach} onChange={(v) => set("stepWallFtEach", v)} disabled={disabled} />
           <Sel label="Step size" value={spec.stepSizeId} options={STEP_FLASHING_SIZES} onChange={pickStep} disabled={disabled} wide />
         </Group>
@@ -700,13 +706,13 @@ export function RoofPackageBuilder({
         </Group>
         <Group label="Pipe boots">
           {PIPE_BOOT_SIZES.map((s) => (
-            <Num key={s.id} label={s.label} value={spec.pipeBoots[s.id] ?? 0} onChange={(v) => set("pipeBoots", { ...spec.pipeBoots, [s.id]: v })} disabled={disabled} />
+            <Num key={s.id} label={s.label} unit="each" value={spec.pipeBoots[s.id] ?? 0} onChange={(v) => set("pipeBoots", { ...spec.pipeBoots, [s.id]: v })} disabled={disabled} />
           ))}
         </Group>
         <Group label="Chimneys & curbs">
-          <Num label="Chimneys" value={spec.chimneyCount} onChange={(v) => set("chimneyCount", v)} disabled={disabled} />
+          <Num label="Chimneys" unit="each" value={spec.chimneyCount} onChange={(v) => set("chimneyCount", v)} disabled={disabled} />
           <Sel label="Chimney size" value={spec.chimneySizeId} options={CHIMNEY_SIZES} onChange={pickChimney} disabled={disabled} wide />
-          <Num label="Curbs · AC / skylight" value={spec.curbCount} onChange={(v) => set("curbCount", v)} disabled={disabled} />
+          <Num label="Curbs" unit="each" value={spec.curbCount} onChange={(v) => set("curbCount", v)} disabled={disabled} />
         </Group>
         <Rates>
           <Num label="Valley metal" unit="$/ft" value={spec.valleyMatPerFt} onChange={(v) => set("valleyMatPerFt", v)} disabled={disabled} />
@@ -733,10 +739,10 @@ export function RoofPackageBuilder({
         open={!!open.vents}
         onToggle={() => toggle("vents")}
       >
-        <div className="pk-note pk-note--vent">
+        <div className="pk-note">
           {vent
-            ? `Attic ${fmt(facts.footprintSqft ?? 0)} sq ft needs ${fmt(vent.requiredSqIn)} sq in · package ${fmt(vent.exhaustSqIn)} exhaust${vent.poweredExhaust ? ` + ${vent.poweredExhaust} powered` : ""} · ${fmt(vent.intakeSqIn)} intake`
-            : "No footprint on this measurement — enter what the attic needs."}
+            ? `The ${fmt(facts.footprintSqft ?? 0)} sq ft attic needs ${fmt(vent.requiredSqIn)} sq in of net free area. This package: ${fmt(vent.exhaustSqIn)} exhaust${vent.poweredExhaust ? ` + ${vent.poweredExhaust} powered` : ""}, ${fmt(vent.intakeSqIn)} intake.`
+            : "This measurement has no footprint, so the attic check is off — add what the roof needs."}
         </div>
         {ventsOn.length > 0 && (
           <div className="pk-vents">
@@ -758,6 +764,7 @@ export function RoofPackageBuilder({
             })}
           </div>
         )}
+        <Check label="Balanced system · 1/300 rule" checked={spec.ventBalanced} onChange={(v) => set("ventBalanced", v)} disabled={disabled} />
         <div className="pk-add">
           {ventsToAdd.length > 0 && (
             <label className="est-field pk-f pk-f--wide pk-f--bare">
@@ -779,17 +786,18 @@ export function RoofPackageBuilder({
               </span>
             </label>
           )}
-          <Check label="Balanced system · 1/300" checked={spec.ventBalanced} onChange={(v) => set("ventBalanced", v)} disabled={disabled} />
         </div>
       </Row>
 
       {/* 6 · TEAR-OFF & EXTRAS */}
       <Row id="tear" title="Tear-off & extras" summary={sumTear} open={!!open.tear} onToggle={() => toggle("tear")}>
-        <Group>
+        <Group
+          note={steepest < 8 ? <div className="pk-note">Steep safety is charged from 8/12 up — this roof is {steepest > 0 ? `${Math.round(steepest)}/12` : "flatter"}, so it stays off.</div> : null}
+        >
           <Sel label="Tear-off" value={String(spec.tearOffLayers)} options={[{ id: "0", label: "None · overlay" }, { id: "1", label: "1 layer" }, { id: "2", label: "2 layers" }, { id: "3", label: "3 layers" }]} onChange={(v) => set("tearOffLayers", Number(v) as 0 | 1 | 2 | 3)} disabled={disabled} />
-          <Num label="Deck sheets to replace" value={spec.plywoodSheets} onChange={(v) => set("plywoodSheets", v)} disabled={disabled} />
+          <Num label="Deck sheets" unit="each" value={spec.plywoodSheets} onChange={(v) => set("plywoodSheets", v)} disabled={disabled} />
           <Num label="Cleanup" unit="$" value={spec.cleanupLump} onChange={(v) => set("cleanupLump", v)} disabled={disabled} />
-          <Num label={steepest >= 8 ? "Steep safety" : "Steep safety · off below 8/12"} unit="$" value={spec.safetyLump} onChange={(v) => set("safetyLump", v)} disabled={disabled} />
+          <Num label="Steep safety" unit="$" value={spec.safetyLump} onChange={(v) => set("safetyLump", v)} disabled={disabled} />
           <Num label="Permit" unit="$" value={spec.permitLump} onChange={(v) => set("permitLump", v)} disabled={disabled} />
         </Group>
         <Rates>
@@ -833,10 +841,14 @@ export function RoofPackageBuilder({
         </div>
       </Row>
 
-      {/* THE FOOT — the same total and actions where the reader ends up. */}
+      {/* THE FOOT — the total again where the reader ends up, and only the
+          primary action: the second pair of buttons read as a second toolbar. */}
       <div className="pk-foot">
         <span className="pk-foot-v">{money(total)}</span>
-        {actions("sm")}
+        <button type="button" className="btn btn-primary btn--sm" disabled={disabled || converting} onClick={() => onConvert(pkg, spec)}>
+          <svg className="ic"><use href="#i-target" /></svg>
+          {converting ? "Creating…" : "Convert to proposal"}
+        </button>
       </div>
 
       <style jsx global>{`
@@ -850,9 +862,8 @@ export function RoofPackageBuilder({
           align-items: center;
           justify-content: space-between;
           gap: 16px;
-          padding: 14px 16px;
+          padding: 14px 16px 8px;
           background: var(--paper-deep);
-          border-bottom: 1.5px solid var(--hair-soft);
         }
         .jf-blueprint .content .pk-ticket-sum {
           display: flex;
@@ -892,15 +903,16 @@ export function RoofPackageBuilder({
           flex-shrink: 0;
         }
 
-        /* ── basis line ── */
+        /* ── basis line: the ticket's second line, same band ── */
         .jf-blueprint .content .pk-basis {
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 10px 18px;
           flex-wrap: wrap;
-          padding: 9px 16px;
-          border-bottom: 1.5px solid var(--hair-soft);
+          padding: 0 16px 12px;
+          background: var(--paper-deep);
+          border-bottom: 2px solid var(--ink);
         }
         .jf-blueprint .content .pk-facts {
           display: flex;
@@ -984,9 +996,6 @@ export function RoofPackageBuilder({
           outline: 2px solid var(--blueprint);
           outline-offset: -2px;
         }
-        .jf-blueprint .content .pk-row.is-open .pk-hd {
-          background: var(--paper-deep);
-        }
         .jf-blueprint .content .pk-hd-title {
           flex-shrink: 0;
           width: 150px;
@@ -996,15 +1005,17 @@ export function RoofPackageBuilder({
           letter-spacing: 0.08em;
           text-transform: uppercase;
         }
+        /* The summary is a sentence, not an annotation: Inter, sentence case.
+           Mono caps everywhere made title, summary, label and status one
+           texture, and the eye had nothing to land on. */
         .jf-blueprint .content .pk-hd-sum {
           flex: 1 1 auto;
           min-width: 0;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-          font-family: var(--font-mono);
-          font-size: 11px;
-          letter-spacing: 0.02em;
+          font-family: var(--font);
+          font-size: 13px;
           color: var(--muted);
           font-variant-numeric: tabular-nums;
         }
@@ -1063,12 +1074,20 @@ export function RoofPackageBuilder({
           align-items: flex-end;
           gap: 10px 11px;
         }
+        /* One field width. Mixed widths made every row a different rhythm;
+           labels stay on one line so the field tops line up. */
         .jf-blueprint .content .pk-f {
-          width: 150px;
+          width: 168px;
           display: block;
         }
         .jf-blueprint .content .pk-f--wide {
-          width: 220px;
+          width: 240px;
+        }
+        .jf-blueprint .content .pk-f .est-lbl {
+          display: block;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .jf-blueprint .content .pk-f--bare {
           display: block;
@@ -1083,30 +1102,14 @@ export function RoofPackageBuilder({
         .jf-blueprint .content .pk-rates {
           display: grid;
           gap: 6px;
-          padding: 10px 12px 12px;
-          background: var(--paper-deep);
-          border: 1.5px solid var(--hair-soft);
-          border-radius: var(--radius);
-        }
-        .jf-blueprint .content .pk-rates .pk-f {
-          width: 132px;
-        }
-        .jf-blueprint .content .pk-rates .est-in {
-          background: #fff;
+          padding-top: 10px;
+          border-top: 1.5px dashed var(--hair-soft);
         }
         .jf-blueprint .content .pk-note {
           font-size: 12px;
           line-height: 1.5;
           color: var(--muted);
           max-width: 70ch;
-        }
-        .jf-blueprint .content .pk-note--vent {
-          font-family: var(--font-mono);
-          font-size: 10.5px;
-          letter-spacing: 0.04em;
-          text-transform: uppercase;
-          color: var(--ink);
-          font-variant-numeric: tabular-nums;
         }
         .jf-blueprint .content .pk-in {
           position: relative;
@@ -1197,13 +1200,16 @@ export function RoofPackageBuilder({
           padding-bottom: 4px;
           border-bottom: 1.5px solid var(--hair-soft);
         }
+        /* Left-packed: the inputs sit next to the name, not across a gulf. */
         .jf-blueprint .content .pk-vents {
           display: grid;
           gap: 6px;
+          width: max-content;
+          max-width: 100%;
         }
         .jf-blueprint .content .pk-vent-row {
           display: grid;
-          grid-template-columns: minmax(160px, 2fr) 92px 40px 124px 124px 32px;
+          grid-template-columns: 280px 96px 40px 132px 132px 32px;
           gap: 8px;
           align-items: center;
         }
@@ -1310,13 +1316,15 @@ export function RoofPackageBuilder({
             padding: 12px 12px 16px;
           }
           .jf-blueprint .content .pk-f,
-          .jf-blueprint .content .pk-f--wide,
-          .jf-blueprint .content .pk-rates .pk-f {
+          .jf-blueprint .content .pk-f--wide {
             width: calc(50% - 6px);
           }
           .jf-blueprint .content .pk-manage-row {
             grid-template-columns: minmax(0, 1fr) 110px 80px 80px 64px 64px 32px;
             gap: 6px;
+          }
+          .jf-blueprint .content .pk-vents {
+            width: 100%;
           }
           .jf-blueprint .content .pk-vent-row {
             grid-template-columns: minmax(0, 1fr) 64px 32px 88px 88px 32px;
