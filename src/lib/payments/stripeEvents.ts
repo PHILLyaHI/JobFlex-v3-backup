@@ -1,13 +1,20 @@
 // One Stripe event pipeline for both ways a contractor joins:
 //   /api/webhooks/stripe-connect    the platform's Connect endpoint (`event.account`)
 //   /api/webhooks/stripe-key/[id]   the endpoint registered on a key-joined account
-// The route verifies the signature and owns the dedupe envelope; this module
-// turns a verified event into settle / release / refund / status writes.
+// The route verifies Stripe's signature and owns the dedupe envelope; this
+// module turns a verified event into settle / release / refund / status
+// writes — for sessions the SERVER minted (checkoutSig.ts), for the org the
+// endpoint serves, with the fee computed here, never read from metadata.
+// A session minted before the signature shipped is ignored here and still
+// settles through the portal's active verification and the reconcile cron.
 import type Stripe from "stripe";
 import { db } from "@/lib/db";
 import { InstallmentStatus, PaymentConnectionStatus } from "@/lib/prismaEnums";
+import { platformFeeMinor } from "@/lib/paymentSchedule";
 import { settleInstallmentPayment, recordRefund } from "./settle";
 import { markConnectionRevoked } from "./connections";
+import { platformFeeBps } from "./fees";
+import { verifyCheckoutSig } from "./checkoutSig";
 import { notifyPaymentIssue } from "@/lib/notify";
 import { handleConnectAccountUpdate } from "@/lib/stripeSync";
 
@@ -27,17 +34,36 @@ export interface StripeEventContext {
   organizationId: string | null;
 }
 
-/** OAuth: the application fee Stripe took inside the charge. Key: the fee we
- *  computed at checkout, carried in metadata (nothing was taken). */
-export function feeMinorOf(pi: Stripe.PaymentIntent | null, session: Stripe.Checkout.Session): number {
+/** JobFlex's cut. OAuth: what Stripe took inside the charge. Otherwise — a
+ *  key-joined account, or a session that carried no application fee — the
+ *  server's own rate on the amount Stripe says was paid. Never a figure
+ *  from metadata: the account holder can write anything there. */
+export function feeMinorOf(pi: Stripe.PaymentIntent | null, amountMinor: number): number {
   const fromPi = pi?.application_fee_amount;
-  if (typeof fromPi === "number") return fromPi;
-  const fromMeta = Number(session.metadata?.platformFeeMinor ?? 0);
-  return Number.isFinite(fromMeta) && fromMeta > 0 ? Math.round(fromMeta) : 0;
+  if (typeof fromPi === "number" && fromPi > 0) return fromPi;
+  return platformFeeMinor(amountMinor, "STRIPE", platformFeeBps());
 }
 
-export function feeBillingOf(session: Stripe.Checkout.Session): "in_payment" | "invoice" {
-  return session.metadata?.feeBilling === "invoice" ? "invoice" : "in_payment";
+/** Taken inside the charge, or owed on the JobFlex invoice (feeBilling.ts). */
+export function feeBillingOf(pi: Stripe.PaymentIntent | null): "in_payment" | "invoice" {
+  return typeof pi?.application_fee_amount === "number" && pi.application_fee_amount > 0 ? "in_payment" : "invoice";
+}
+
+/** A session is ours when its metadata names the org this endpoint serves
+ *  AND carries the server's signature over proposal / stages / amount /
+ *  schedule version (checkoutSig.ts). The account holder can mint sessions
+ *  with any metadata; they cannot sign them. */
+function isOurSession(session: Stripe.Checkout.Session, expectedOrg: string | null, via: string): boolean {
+  const m = session.metadata ?? {};
+  if (!m.kind || expectedOrg === null || m.organizationId !== expectedOrg) return false;
+  const ok = verifyCheckoutSig(m.sig, {
+    proposalId: m.proposalId ?? "",
+    installmentIds: (m.installmentIds ?? "").split(",").filter(Boolean),
+    amountMinor: Number(m.amountMinor ?? -1),
+    scheduleVersion: Number(m.scheduleVersion ?? -1),
+  });
+  if (!ok) console.warn(`[stripe-${via}] session ${session.id} carries our metadata but no valid signature — ignored`);
+  return ok;
 }
 
 export async function dispatchStripeEvent(event: Stripe.Event, ctx: StripeEventContext): Promise<void> {
@@ -48,8 +74,7 @@ export async function dispatchStripeEvent(event: Stripe.Event, ctx: StripeEventC
       ? ((await db.paymentConnection.findFirst({ where: { stripeAccountId: account }, select: { organizationId: true } }))
           ?.organizationId ?? null)
       : null);
-  const ours = (session: Stripe.Checkout.Session) =>
-    Boolean(session.metadata?.kind) && expectedOrg !== null && session.metadata?.organizationId === expectedOrg;
+  const ours = (session: Stripe.Checkout.Session) => isOurSession(session, expectedOrg, ctx.via);
 
   switch (event.type) {
     case "checkout.session.completed":
@@ -176,8 +201,8 @@ async function settleFromSession(ctx: StripeEventContext, session: Stripe.Checko
     proposalId: m.proposalId ?? null,
     installmentIds: (m.installmentIds ?? "").split(",").filter(Boolean),
     amountMinor: session.amount_total ?? 0,
-    feeMinor: feeMinorOf(pi, session),
-    feeBilling: feeBillingOf(session),
+    feeMinor: feeMinorOf(pi, session.amount_total ?? 0),
+    feeBilling: feeBillingOf(pi),
     currency: (session.currency ?? "usd").toUpperCase(),
     livemode: Boolean(session.livemode),
     method,

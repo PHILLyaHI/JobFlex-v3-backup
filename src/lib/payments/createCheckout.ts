@@ -25,6 +25,7 @@ import { stripeForConnection, expireStripeSession } from "./stripeConnect";
 import { squareClientForConnection, deleteSquarePaymentLink } from "./squareConnect";
 import { ensureSchedule } from "./settle";
 import { expireOpenCheckoutsForProposal } from "./checkouts";
+import { signCheckout } from "./checkoutSig";
 
 export type CheckoutProvider = "STRIPE" | "SQUARE";
 
@@ -150,20 +151,23 @@ export async function createCheckout(input: {
     scheduleVersion: String(proposal.scheduleVersion),
     kind: pay.kind,
     amountMinor: String(pay.amountMinor),
+    // Proves to the webhooks that WE minted this session (checkoutSig.ts).
+    sig: signCheckout({
+      proposalId: proposal.id,
+      installmentIds: stageIds,
+      amountMinor: pay.amountMinor,
+      scheduleVersion: proposal.scheduleVersion,
+    }),
   };
   const itemName = `${proposal.title} — ${pay.label}`.slice(0, 120);
 
   try {
     if (input.provider === "STRIPE") {
       const bound = stripeForConnection(conn)!;
-      // A key-joined account can't split the charge: the fee rides in the
-      // metadata for the ledger and is billed on the JobFlex invoice after
-      // settle (feeBilling.ts). OAuth: Stripe takes it inside the charge.
-      const stripeMeta = {
-        ...metadata,
-        platformFeeMinor: String(feeMinor),
-        feeBilling: bound.viaKey ? "invoice" : "in_payment",
-      };
+      // A key-joined account can't split the charge: no application fee here;
+      // settle recomputes the cut from the paid amount and bills it on the
+      // JobFlex invoice (feeBilling.ts). OAuth: Stripe takes it inside the
+      // charge. Nothing about money rides in metadata — it is not trusted.
       const session = await bound.stripe.checkout.sessions.create(
         {
           mode: "payment",
@@ -180,10 +184,10 @@ export async function createCheckout(input: {
           payment_method_types: opt.ok && "ach" in opt && opt.ach ? ["card", "us_bank_account"] : ["card"],
           payment_intent_data: {
             application_fee_amount: bound.viaKey ? undefined : feeMinor,
-            metadata: stripeMeta,
+            metadata,
             description: itemName,
           },
-          metadata: stripeMeta,
+          metadata,
           client_reference_id: proposal.id,
           customer_email: proposal.client?.email ?? undefined,
           expires_at: Math.floor(Date.now() / 1000) + 60 * 60,
