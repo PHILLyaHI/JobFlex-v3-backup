@@ -1357,7 +1357,7 @@ export function RoofEstimatorDataForm() {
                           : "Measurements feed the takeoff."}
                     {!isRecon
                       ? buildMode === "package"
-                        ? " Pick the roof package — system, underlayment, flashing, vents — and the measured figures do the takeoff. Edge lengths are estimated from the building outline; confirm them on the photo."
+                        ? " Pick what goes on the roof."
                         : " The AI drafts a full package from the measured figures; every line stays editable below."
                       : ""}
                   </div>

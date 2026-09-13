@@ -7,15 +7,25 @@
 // beside it.
 //
 // THE CATALOG IS THE CONTRACTOR'S. Roof types and underlayments are editable
-// lists (Manage → rename, price, add, remove) and every other item has an
-// editable unit price. "Save as my defaults" writes the lists and the
-// standing prices to the org (actions/roofCatalog) so the whole crew prices
-// the same way; the browser keeps a copy so a device that cannot reach the
-// table — or an environment where it is not pushed yet — still works.
+// lists (Edit → rename, price, add, remove) and every other item has an
+// editable unit price. "Save as defaults" writes the lists and the standing
+// prices to the org (actions/roofCatalog) so the whole crew prices the same
+// way; the browser keeps a copy so a device that cannot reach the table — or
+// an environment where it is not pushed yet — still works.
 //
 // Two kinds of state live in the spec. PREFERENCES — selections and unit
 // prices — persist. PER-ROOF entries — counts and lengths — start from this
 // roof's facts and reset when another measurement opens.
+//
+// LAYOUT (redesigned 2026-09-12, owner's critique: "overload of information").
+// The builder reads like an estimate sheet: a ticket on top with the running
+// total and the two actions, one mono line of the roof's facts, then seven
+// ledger rows — one per part of the roof — each CLOSED by default and summed
+// up in a single line (what is picked, how much of it). Opening a row shows
+// this roof's entries first (counts, lengths, toggles) and the contractor's
+// RATES in a quieter strip under them, because the rates are set once and the
+// entries change on every roof. Nothing was removed: every field the old
+// wall-of-inputs had is still here, just behind the row that owns it.
 
 import * as React from "react";
 import { nanoid } from "nanoid";
@@ -140,9 +150,11 @@ const factsKey = (f: RoofFacts) =>
 
 const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 const fmt = (n: number) => Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
+/** A price in a summary line: $125, $4.50 — no trailing .00. */
+const rate = (n: number) => "$" + (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0$/, ""));
 
 // ── Field primitives (the page's est-field / est-in / bp-sel classes) ──────
-function Num({ label, value, onChange, unit, disabled, min = 0 }: { label: string; value: number; onChange: (n: number) => void; unit?: string; disabled?: boolean; min?: number }) {
+function Num({ label, value, onChange, unit, disabled, min = 0, wide }: { label: string; value: number; onChange: (n: number) => void; unit?: string; disabled?: boolean; min?: number; wide?: boolean }) {
   const [txt, setTxt] = React.useState(String(value));
   // The prop moved away from what is typed (a pick reset the price, another
   // roof opened): adopt it. Done during render, not in an effect.
@@ -152,7 +164,7 @@ function Num({ label, value, onChange, unit, disabled, min = 0 }: { label: strin
     if (Number(txt) !== value) setTxt(String(value));
   }
   return (
-    <label className={"est-field pk-f" + (label ? "" : " pk-f--bare")}>
+    <label className={"est-field pk-f" + (label ? "" : " pk-f--bare") + (wide ? " pk-f--wide" : "")}>
       {label && <span className="est-lbl">{label}</span>}
       <span className={"pk-in" + (unit ? " has-unit" : "")}>
         <input
@@ -177,9 +189,9 @@ function Num({ label, value, onChange, unit, disabled, min = 0 }: { label: strin
   );
 }
 
-function Sel<T extends string>({ label, value, options, onChange, disabled }: { label: string; value: T; options: ReadonlyArray<{ id: T; label: string }>; onChange: (v: T) => void; disabled?: boolean }) {
+function Sel<T extends string>({ label, value, options, onChange, disabled, wide }: { label: string; value: T; options: ReadonlyArray<{ id: T; label: string }>; onChange: (v: T) => void; disabled?: boolean; wide?: boolean }) {
   return (
-    <label className={"est-field pk-f" + (label ? "" : " pk-f--bare")}>
+    <label className={"est-field pk-f" + (label ? "" : " pk-f--bare") + (wide ? " pk-f--wide" : "")}>
       {label && <span className="est-lbl">{label}</span>}
       <span className="bp-sel">
         <select className="bp-sel-in est-in" value={value} disabled={disabled} aria-label={label || undefined} onChange={(e) => onChange(e.target.value as T)}>
@@ -203,16 +215,51 @@ function Check({ label, checked, onChange, disabled }: { label: string; checked:
   );
 }
 
-function Section({ title, hint, children, chip, action }: { title: string; hint?: string; children: React.ReactNode; chip?: React.ReactNode; action?: React.ReactNode }) {
+/** A named cluster of this roof's fields inside an open row. */
+function Group({ label, children, note }: { label?: string; children: React.ReactNode; note?: React.ReactNode }) {
   return (
-    <section className="pk-sec">
-      <div className="pk-sec-head">
-        <span className="pk-sec-title">{title}</span>
-        {chip}
-        {action && <span className="pk-sec-action">{action}</span>}
-        {hint && <span className="pk-sec-hint">{hint}</span>}
+    <div className="pk-g">
+      {label && <div className="pk-g-lbl">{label}</div>}
+      <div className="pk-fields">{children}</div>
+      {note}
+    </div>
+  );
+}
+
+/** The contractor's unit prices for a row — quieter, set once, kept. */
+function Rates({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="pk-rates">
+      <div className="pk-rates-lbl">Rates</div>
+      <div className="pk-fields">{children}</div>
+    </div>
+  );
+}
+
+const Chevron = () => (
+  <svg className="pk-chev" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+/** One ledger row: a header that reads the section in one line, a body on demand. */
+function Row({ id, title, summary, chip, open, onToggle, children, action }: { id: string; title: string; summary: string; chip?: React.ReactNode; open: boolean; onToggle: () => void; children: React.ReactNode; action?: React.ReactNode }) {
+  return (
+    <section className={"pk-row" + (open ? " is-open" : "")}>
+      <div className="pk-hd">
+        <button type="button" className="pk-hd-btn" aria-expanded={open} aria-controls={`pk-body-${id}`} onClick={onToggle}>
+          <span className="pk-hd-title">{title}</span>
+          <span className="pk-hd-sum">{summary}</span>
+          {chip}
+          <Chevron />
+        </button>
+        {open && action && <div className="pk-hd-act">{action}</div>}
       </div>
-      <div className="pk-grid">{children}</div>
+      {open && (
+        <div className="pk-body" id={`pk-body-${id}`}>
+          {children}
+        </div>
+      )}
     </section>
   );
 }
@@ -227,7 +274,7 @@ export function RoofPackageBuilder({
   facts: RoofFacts;
   /** The built package; the parent owns the estimate tables. */
   onBuild: (pkg: RoofPackage, spec: RoofPackageSpec) => void;
-  /** "Convert as is": the package straight to a proposal. */
+  /** "Convert to proposal": the package straight to a proposal. */
   onConvert: (pkg: RoofPackage, spec: RoofPackageSpec) => void;
   disabled?: boolean;
   converting?: boolean;
@@ -307,9 +354,9 @@ export function RoofPackageBuilder({
       if (res.ok) {
         setSource("org");
         setDirty(false);
-        toast.success("Roof catalog saved", "Your roof types, underlayments and prices now load for everyone in your company.");
+        toast.success("Defaults saved", "Your roof types, underlayments and rates now load for everyone in your company.");
       } else {
-        toast.error("Couldn't save the catalog", res.error);
+        toast.error("Couldn't save", res.error);
       }
     } finally {
       setSaving(false);
@@ -415,44 +462,112 @@ export function RoofPackageBuilder({
     toast.info("Built-in roof types restored — save to keep them.");
   };
 
-  const steepest = facts.pitchFamilies.reduce((m, f) => Math.max(m, f.pitch12), 0);
-  const edgeChip = <span className={"chip " + (spec.edgesBasis === "estimated" ? "wait" : "")}>{spec.edgesBasis === "estimated" ? "estimated from outline" : "entered"}</span>;
+  // ── Which rows are open. The first one opens by default; the rest read
+  //    from their summary line until the contractor needs them. ──
+  const [open, setOpen] = React.useState<Record<string, boolean>>({ system: true });
+  const toggle = (id: string) => setOpen((o) => ({ ...o, [id]: !o[id] }));
   const manageBtn = (which: "systems" | "underlayments", label: string) => (
-    <button type="button" className={"pk-link" + (manage === which ? " on" : "")} onClick={() => setManage(manage === which ? null : which)} disabled={disabled}>
+    <button type="button" className="pk-link" onClick={() => setManage(manage === which ? null : which)} disabled={disabled}>
       {manage === which ? "Done" : label}
     </button>
   );
 
+  // ── Summary lines: the row's content in one breath ──
+  const steepest = facts.pitchFamilies.reduce((m, f) => Math.max(m, f.pitch12), 0);
+  const lowSlope = spec.systemFamily === "low-slope";
+  const sumSystem = [spec.systemName, `${rate(spec.systemMatPerSq)} + ${rate(spec.systemLaborPerSq)} /sq`, `${spec.wastePct}% waste`, !lowSlope && spec.capPerFt > 0 ? `cap ${rate(spec.capPerFt)}/ft` : null].filter(Boolean).join(" · ");
+  const iceLabel = ICE_WATER.find((i) => i.id === spec.iceWater)?.label ?? spec.iceWater;
+  const sumUnder = [spec.underlaymentName, `${rate(spec.underlaymentPerSq)}/sq`, spec.iceWater === "none" ? "no ice & water" : `ice & water · ${iceLabel.toLowerCase()}`].join(" · ");
+  const sumEdges = [
+    `eave ${fmt(spec.eaveFt)} · rake ${fmt(spec.rakeFt)} · ridge ${fmt(spec.ridgeFt)}${spec.hipFt > 0 ? ` · hip ${fmt(spec.hipFt)}` : ""} ft`,
+    spec.dripEdgeOn ? "drip edge" : "no drip edge",
+    !lowSlope && spec.systemFamily !== "metal" ? (spec.starterOn ? "starter" : "no starter") : null,
+  ].filter(Boolean).join(" · ");
+  const pipeTotal = PIPE_BOOT_SIZES.reduce((a, s) => a + (spec.pipeBoots[s.id] ?? 0), 0);
+  const flashBits = [
+    spec.valleyCount > 0 ? `${spec.valleyCount} valley${spec.valleyCount === 1 ? "" : "s"}` : null,
+    spec.stepWallCount > 0 ? `${spec.stepWallCount} sidewall${spec.stepWallCount === 1 ? "" : "s"}` : null,
+    spec.apronFt > 0 ? `apron ${fmt(spec.apronFt)} ft` : null,
+    spec.counterFt > 0 ? `counter ${fmt(spec.counterFt)} ft` : null,
+    pipeTotal > 0 ? `${pipeTotal} pipe boot${pipeTotal === 1 ? "" : "s"}` : null,
+    spec.chimneyCount > 0 ? `${spec.chimneyCount} chimney${spec.chimneyCount === 1 ? "" : "s"}` : null,
+    spec.curbCount > 0 ? `${spec.curbCount} curb${spec.curbCount === 1 ? "" : "s"}` : null,
+  ].filter(Boolean);
+  const sumFlash = flashBits.length ? flashBits.join(" · ") : "none entered";
+  const ventsOn = VENT_TYPES.filter((t) => ventOf(t.id).qty > 0);
+  const sumVents = [
+    ventsOn.length ? ventsOn.map((t) => `${t.label.split(" · ")[0].toLowerCase()} ${fmt(ventOf(t.id).qty)}${t.unit === "linear ft" ? " ft" : ""}`).join(" · ") : "no vents",
+    vent ? (vent.ok ? "balanced" : "short") : null,
+  ].filter(Boolean).join(" · ");
+  const sumTear = [
+    spec.tearOffLayers === 0 ? "overlay, no tear-off" : `tear-off ${spec.tearOffLayers} layer${spec.tearOffLayers === 1 ? "" : "s"}`,
+    spec.plywoodSheets > 0 ? `${spec.plywoodSheets} deck sheet${spec.plywoodSheets === 1 ? "" : "s"}` : null,
+    spec.cleanupLump > 0 ? `cleanup ${money(spec.cleanupLump)}` : null,
+    steepest >= 8 && spec.safetyLump > 0 ? `steep ${money(spec.safetyLump)}` : null,
+    spec.permitLump > 0 ? `permit ${money(spec.permitLump)}` : null,
+  ].filter(Boolean).join(" · ");
+  const sumCustom = spec.custom.length ? `${spec.custom.length} line${spec.custom.length === 1 ? "" : "s"}` : "none";
+
+  const ventsToAdd = VENT_TYPES.filter((t) => ventOf(t.id).qty <= 0);
+  const edgeEstimated = spec.edgesBasis === "estimated";
+
+  const actions = (size: "lg" | "sm") => (
+    <div className={"pk-acts pk-acts--" + size}>
+      <button type="button" className="btn btn-ghost btn--sm" disabled={disabled} onClick={() => onBuild(pkg, spec)} title="Fill the estimate tables below to review and adjust before converting">
+        <svg className="ic"><use href="#i-file" /></svg>
+        Review lines
+      </button>
+      <button type="button" className="btn btn-primary btn--sm" disabled={disabled || converting} onClick={() => onConvert(pkg, spec)} title="Straight to a proposal with these lines — you can still edit them there">
+        <svg className="ic"><use href="#i-target" /></svg>
+        {converting ? "Creating…" : "Convert to proposal"}
+      </button>
+    </div>
+  );
+
   return (
     <div className="pk">
-      <div className="pk-facts">
-        <span><b>{facts.squares.toFixed(1)}</b> squares · {facts.squaresBasis}</span>
-        {facts.pitchFamilies.length > 0 && (
-          <span>pitch <b>{facts.pitchFamilies.map((f) => `${Math.round(f.pitch12)}/12${facts.pitchFamilies.length > 1 ? ` (${Math.round(f.share * 100)}%)` : ""}`).join(" + ")}</b>{steepest >= 8 ? " · steep" : ""}</span>
-        )}
-        {facts.perimeterFt != null && <span>outline <b>{fmt(facts.perimeterFt)} ft</b> around</span>}
-        {facts.footprintSqft != null && <span>footprint <b>{fmt(facts.footprintSqft)} sq ft</b></span>}
-        {facts.shape && <span>shape <b>{facts.shape.toLowerCase()}</b></span>}
-        {facts.chimney != null && <span>chimney <b>{facts.chimney ? "yes" : "no"}</b></span>}
-        {facts.rooftopAcCount != null && facts.rooftopAcCount > 0 && <span>rooftop units <b>{facts.rooftopAcCount}</b></span>}
+      {/* THE TICKET — the running total and the two ways out, first. */}
+      <div className="pk-ticket">
+        <div className="pk-ticket-sum">
+          <span className="pk-ticket-lbl">Package</span>
+          <span className="pk-ticket-v">{money(total)}</span>
+          <span className="pk-ticket-h">
+            {money(materialsTotal)} materials · {money(total - materialsTotal)} labor · {pkg.materials.length + pkg.labor.length} lines
+          </span>
+        </div>
+        {actions("lg")}
       </div>
 
-      {/* Whose catalog this is, and the one button that makes it the company's. */}
-      <div className="pk-catalog">
-        <span className="pk-catalog-txt">
-          {source === "loading"
-            ? "Loading your roof catalog…"
-            : source === "org"
-              ? "Your company's roof catalog — roof types, underlayments and prices, shared with your team."
-              : "Built-in roof types and prices. Edit them below, then save to make them your company's."}
-          {dirty && source !== "loading" ? <b> Unsaved changes.</b> : null}
+      {/* THE BASIS — this roof, in one mono line, plus whose rates these are. */}
+      <div className="pk-basis">
+        <span className="pk-facts">
+          <b>{facts.squares.toFixed(1)} sq</b>
+          <i>{facts.squaresBasis}</i>
+          {facts.pitchFamilies.length > 0 && (
+            <>
+              <b>{facts.pitchFamilies.map((f) => `${Math.round(f.pitch12)}/12${facts.pitchFamilies.length > 1 ? ` ${Math.round(f.share * 100)}%` : ""}`).join(" + ")}</b>
+              {steepest >= 8 && <i>steep</i>}
+            </>
+          )}
+          {facts.perimeterFt != null && <b>{fmt(facts.perimeterFt)} ft outline</b>}
+          {facts.footprintSqft != null && <b>{fmt(facts.footprintSqft)} sq ft footprint</b>}
+          {facts.shape && <b>{facts.shape.toLowerCase()}</b>}
+          {facts.chimney && <b>chimney</b>}
+          {facts.rooftopAcCount != null && facts.rooftopAcCount > 0 && <b>{facts.rooftopAcCount} rooftop unit{facts.rooftopAcCount === 1 ? "" : "s"}</b>}
         </span>
-        <button type="button" className={"btn btn--sm " + (dirty ? "btn-primary" : "btn-ghost")} disabled={disabled || saving || source === "loading"} onClick={() => void saveDefaults()}>
-          {saving ? "Saving…" : "Save as my defaults"}
-        </button>
+        <span className="pk-catalog">
+          <span className="pk-catalog-txt">
+            {source === "loading" ? "Loading rates…" : source === "org" ? "Rates: your company’s" : "Rates: built-in"}
+            {dirty && source !== "loading" ? <em> · unsaved</em> : null}
+          </span>
+          <button type="button" className={"btn btn--sm " + (dirty ? "btn-primary" : "btn-ghost")} disabled={disabled || saving || source === "loading"} onClick={() => void saveDefaults()}>
+            {saving ? "Saving…" : "Save as defaults"}
+          </button>
+        </span>
       </div>
 
-      <Section title="Roof system" hint="Material and install labor per square; the pitch multiplier applies per family." action={manageBtn("systems", "Manage roof types")}>
+      {/* 1 · ROOF SYSTEM */}
+      <Row id="system" title="Roof system" summary={sumSystem} open={!!open.system} onToggle={() => toggle("system")} action={manageBtn("systems", "Edit roof types")}>
         {manage === "systems" ? (
           <div className="pk-manage">
             <div className="pk-manage-row pk-manage-head">
@@ -469,23 +584,28 @@ export function RoofPackageBuilder({
                 <button type="button" className="pk-x" disabled={disabled || lists.systems.length <= 1} aria-label={`Remove ${s.label}`} title="Remove" onClick={() => removeSystem(s.id)}>×</button>
               </div>
             ))}
-            <div className="pk-custom-add">
-              <button type="button" className="btn btn-ghost btn--sm" disabled={disabled} onClick={addSystem}>+ Add roof type</button>
+            <div className="pk-add">
+              <button type="button" className="btn btn-ghost btn--sm" disabled={disabled} onClick={addSystem}>+ Roof type</button>
               <button type="button" className="pk-link" disabled={disabled} onClick={resetLists}>Restore built-in list</button>
             </div>
           </div>
         ) : (
           <>
-            <Sel label="System" value={spec.systemId} options={lists.systems} onChange={(id) => pickSystem(id)} disabled={disabled} />
-            <Num label="Material" unit="$/sq" value={spec.systemMatPerSq} onChange={(v) => set("systemMatPerSq", v)} disabled={disabled} />
-            <Num label="Install labor" unit="$/sq" value={spec.systemLaborPerSq} onChange={(v) => set("systemLaborPerSq", v)} disabled={disabled} />
-            <Sel label="Waste" value={String(spec.wastePct)} options={WASTE_OPTIONS.map((w) => ({ id: String(w), label: `${w}%` }))} onChange={(v) => set("wastePct", Number(v))} disabled={disabled} />
-            {spec.systemFamily !== "low-slope" && <Num label="Hip & ridge cap" unit="$/ft" value={spec.capPerFt} onChange={(v) => set("capPerFt", v)} disabled={disabled} />}
+            <Group>
+              <Sel label="System" value={spec.systemId} options={lists.systems} onChange={(id) => pickSystem(id)} disabled={disabled} wide />
+              <Sel label="Waste" value={String(spec.wastePct)} options={WASTE_OPTIONS.map((w) => ({ id: String(w), label: `${w}%` }))} onChange={(v) => set("wastePct", Number(v))} disabled={disabled} />
+            </Group>
+            <Rates>
+              <Num label="Material" unit="$/sq" value={spec.systemMatPerSq} onChange={(v) => set("systemMatPerSq", v)} disabled={disabled} />
+              <Num label="Install labor" unit="$/sq" value={spec.systemLaborPerSq} onChange={(v) => set("systemLaborPerSq", v)} disabled={disabled} />
+              {!lowSlope && <Num label="Hip & ridge cap" unit="$/ft" value={spec.capPerFt} onChange={(v) => set("capPerFt", v)} disabled={disabled} />}
+            </Rates>
           </>
         )}
-      </Section>
+      </Row>
 
-      <Section title="Underlayment" hint="Full-deck underlayment by the square; ice & water by the foot of eave and valley." action={manageBtn("underlayments", "Manage underlayments")}>
+      {/* 2 · UNDERLAYMENT */}
+      <Row id="under" title="Underlayment" summary={sumUnder} open={!!open.under} onToggle={() => toggle("under")} action={manageBtn("underlayments", "Edit underlayments")}>
         {manage === "underlayments" ? (
           <div className="pk-manage pk-manage--und">
             <div className="pk-manage-row pk-manage-head">
@@ -498,125 +618,196 @@ export function RoofPackageBuilder({
                 <button type="button" className="pk-x" disabled={disabled || lists.underlayments.length <= 1} aria-label={`Remove ${u.label}`} title="Remove" onClick={() => removeUnderlayment(u.id)}>×</button>
               </div>
             ))}
-            <div className="pk-custom-add">
-              <button type="button" className="btn btn-ghost btn--sm" disabled={disabled} onClick={addUnderlayment}>+ Add underlayment</button>
+            <div className="pk-add">
+              <button type="button" className="btn btn-ghost btn--sm" disabled={disabled} onClick={addUnderlayment}>+ Underlayment</button>
             </div>
           </div>
         ) : (
           <>
-            <Sel label="Underlayment" value={spec.underlaymentId} options={lists.underlayments} onChange={(id) => pickUnderlayment(id)} disabled={disabled} />
-            <Num label="Price" unit="$/sq" value={spec.underlaymentPerSq} onChange={(v) => set("underlaymentPerSq", v)} disabled={disabled} />
-            <Sel label="Ice & water shield" value={spec.iceWater} options={ICE_WATER} onChange={(v) => set("iceWater", v as IceWaterCoverage)} disabled={disabled} />
-            {spec.iceWater !== "none" && <Num label="Ice & water" unit="$/sq ft" value={spec.iceWaterPerSqft} onChange={(v) => set("iceWaterPerSqft", v)} disabled={disabled} />}
+            <Group>
+              <Sel label="Underlayment" value={spec.underlaymentId} options={lists.underlayments} onChange={(id) => pickUnderlayment(id)} disabled={disabled} wide />
+              <Sel label="Ice & water" value={spec.iceWater} options={ICE_WATER} onChange={(v) => set("iceWater", v as IceWaterCoverage)} disabled={disabled} wide />
+            </Group>
+            <Rates>
+              <Num label="Underlayment" unit="$/sq" value={spec.underlaymentPerSq} onChange={(v) => set("underlaymentPerSq", v)} disabled={disabled} />
+              {spec.iceWater !== "none" && <Num label="Ice & water" unit="$/sq ft" value={spec.iceWaterPerSqft} onChange={(v) => set("iceWaterPerSqft", v)} disabled={disabled} />}
+            </Rates>
           </>
         )}
-      </Section>
+      </Row>
 
-      <Section title="Edges · drip edge & starter" chip={edgeChip} hint="Eave + rake run the drip edge and starter; ridge + hip run the cap. Confirm the estimate on the photo.">
-        <Num label="Eave" unit="ft" value={spec.eaveFt} onChange={(v) => setEdge("eaveFt", v)} disabled={disabled} />
-        <Num label="Rake" unit="ft" value={spec.rakeFt} onChange={(v) => setEdge("rakeFt", v)} disabled={disabled} />
-        <Num label="Ridge" unit="ft" value={spec.ridgeFt} onChange={(v) => setEdge("ridgeFt", v)} disabled={disabled} />
-        <Num label="Hip" unit="ft" value={spec.hipFt} onChange={(v) => setEdge("hipFt", v)} disabled={disabled} />
-        {spec.edgesBasis === "entered" && estimateEdges(facts) && (
-          <button type="button" className="pk-link" onClick={resetEdges} disabled={disabled}>Back to the outline estimate</button>
-        )}
-        <div className="pk-break" />
-        <Check label="Drip edge" checked={spec.dripEdgeOn} onChange={(v) => set("dripEdgeOn", v)} disabled={disabled} />
-        {spec.dripEdgeOn && (
-          <>
-            <Sel label="Profile" value={spec.dripProfileId} options={DRIP_EDGE_PROFILES} onChange={pickDrip} disabled={disabled} />
-            <Sel label="Size" value={spec.dripSizeId} options={DRIP_EDGE_SIZES} onChange={(v) => set("dripSizeId", v)} disabled={disabled} />
-            <Num label="Drip edge" unit="$/ft" value={spec.dripPerFt} onChange={(v) => set("dripPerFt", v)} disabled={disabled} />
-          </>
-        )}
-        {spec.systemFamily !== "low-slope" && spec.systemFamily !== "metal" && (
-          <>
-            <Check label="Starter strip" checked={spec.starterOn} onChange={(v) => set("starterOn", v)} disabled={disabled} />
-            {spec.starterOn && <Num label="Starter" unit="$/ft" value={spec.starterPerFt} onChange={(v) => set("starterPerFt", v)} disabled={disabled} />}
-          </>
-        )}
-      </Section>
-
-      <Section title="Flashing" hint="Counts and lengths are yours to enter — the aerial data does not measure them. Chimney and rooftop units come pre-counted from it.">
-        <Sel label="Valleys" value={spec.valleyTypeId} options={VALLEY_TYPES} onChange={pickValley} disabled={disabled} />
-        <Num label="Valley count" value={spec.valleyCount} onChange={(v) => set("valleyCount", v)} disabled={disabled} />
-        <Num label="Length each" unit="ft" value={spec.valleyFtEach} onChange={(v) => set("valleyFtEach", v)} disabled={disabled} />
-        <Num label="Valley metal" unit="$/ft" value={spec.valleyMatPerFt} onChange={(v) => set("valleyMatPerFt", v)} disabled={disabled} />
-        <Num label="Valley labor" unit="$/ft" value={spec.valleyLaborPerFt} onChange={(v) => set("valleyLaborPerFt", v)} disabled={disabled} />
-        <div className="pk-break" />
-        <Num label="Sidewalls (step)" value={spec.stepWallCount} onChange={(v) => set("stepWallCount", v)} disabled={disabled} />
-        <Num label="Length each" unit="ft" value={spec.stepWallFtEach} onChange={(v) => set("stepWallFtEach", v)} disabled={disabled} />
-        <Sel label="Step size" value={spec.stepSizeId} options={STEP_FLASHING_SIZES} onChange={pickStep} disabled={disabled} />
-        <Num label="Step piece" unit="$/ea" value={spec.stepPerPiece} onChange={(v) => set("stepPerPiece", v)} disabled={disabled} />
-        <Num label="Step labor" unit="$/ft" value={spec.stepLaborPerFt} onChange={(v) => set("stepLaborPerFt", v)} disabled={disabled} />
-        <div className="pk-break" />
-        <Num label="Apron / headwall" unit="ft" value={spec.apronFt} onChange={(v) => set("apronFt", v)} disabled={disabled} />
-        <Num label="Apron" unit="$/ft" value={spec.apronPerFt} onChange={(v) => set("apronPerFt", v)} disabled={disabled} />
-        <Num label="Apron labor" unit="$/ft" value={spec.apronLaborPerFt} onChange={(v) => set("apronLaborPerFt", v)} disabled={disabled} />
-        <Num label="Counter flashing" unit="ft" value={spec.counterFt} onChange={(v) => set("counterFt", v)} disabled={disabled} />
-        <Num label="Counter" unit="$/ft" value={spec.counterPerFt} onChange={(v) => set("counterPerFt", v)} disabled={disabled} />
-        <Num label="Counter labor" unit="$/ft" value={spec.counterLaborPerFt} onChange={(v) => set("counterLaborPerFt", v)} disabled={disabled} />
-        <div className="pk-break" />
-        {PIPE_BOOT_SIZES.map((s) => (
-          <Num key={s.id} label={`Pipe boots · ${s.label}`} value={spec.pipeBoots[s.id] ?? 0} onChange={(v) => set("pipeBoots", { ...spec.pipeBoots, [s.id]: v })} disabled={disabled} />
-        ))}
-        <Num label="Chimneys" value={spec.chimneyCount} onChange={(v) => set("chimneyCount", v)} disabled={disabled} />
-        <Sel label="Chimney size" value={spec.chimneySizeId} options={CHIMNEY_SIZES} onChange={pickChimney} disabled={disabled} />
-        <Num label="Chimney kit" unit="$/ea" value={spec.chimneyEach} onChange={(v) => set("chimneyEach", v)} disabled={disabled} />
-        <Num label="Chimney labor" unit="$/ea" value={spec.chimneyLabor} onChange={(v) => set("chimneyLabor", v)} disabled={disabled} />
-        <Num label="Curbs (AC / skylight)" value={spec.curbCount} onChange={(v) => set("curbCount", v)} disabled={disabled} />
-        <Num label="Curb kit" unit="$/ea" value={spec.curbEach} onChange={(v) => set("curbEach", v)} disabled={disabled} />
-        <Num label="Curb labor" unit="$/ea" value={spec.curbLabor} onChange={(v) => set("curbLabor", v)} disabled={disabled} />
-      </Section>
-
-      <Section
-        title="Ventilation"
-        chip={vent ? <span className={"chip " + (vent.ok ? "ok" : "bad")}>{vent.ok ? "balanced" : "short"}</span> : undefined}
-        hint={
-          vent
-            ? `Attic ${fmt(facts.footprintSqft ?? 0)} sq ft needs ${fmt(vent.requiredSqIn)} sq in net free area (1/${vent.ratio}) — half intake, half exhaust. Package: ${fmt(vent.exhaustSqIn)} exhaust${vent.poweredExhaust ? ` + ${vent.poweredExhaust} powered` : ""}, ${fmt(vent.intakeSqIn)} intake.`
-            : "No footprint on this measurement, so the net-free-area check is off — enter what the attic needs."
-        }
+      {/* 3 · EDGES */}
+      <Row
+        id="edges"
+        title="Edges"
+        summary={sumEdges}
+        chip={<span className={"chip " + (edgeEstimated ? "wait" : "")}>{edgeEstimated ? "from outline" : "entered"}</span>}
+        open={!!open.edges}
+        onToggle={() => toggle("edges")}
       >
-        <div className="pk-vents">
-          <div className="pk-vent-row pk-vent-head">
-            <span>Vent</span><span>Qty</span><span>Unit</span><span>Material</span><span>Labor</span>
-          </div>
-          {VENT_TYPES.map((t) => {
-            const v = ventOf(t.id);
-            return (
-              <div className="pk-vent-row" key={t.id}>
-                <span className="pk-vent-name">{t.label}<em>{t.role}{t.nfaSqIn ? ` · ${t.nfaSqIn} sq in${t.unit === "linear ft" ? "/ft" : ""}` : " · powered"}</em></span>
-                <Num label="" value={v.qty} onChange={(n) => setVent(t.id, { qty: n })} disabled={disabled} />
-                <span className="pk-vent-unit">{t.unit === "each" ? "each" : "ft"}</span>
-                <Num label="" unit={t.unit === "each" ? "$/ea" : "$/ft"} value={v.each} onChange={(n) => setVent(t.id, { each: n })} disabled={disabled} />
-                <Num label="" unit={t.unit === "each" ? "$/ea" : "$/ft"} value={v.labor} onChange={(n) => setVent(t.id, { labor: n })} disabled={disabled} />
-              </div>
-            );
-          })}
+        <Group
+          label="Lengths"
+          note={
+            edgeEstimated ? (
+              <div className="pk-note">Estimated from the building outline — check them against the photo.</div>
+            ) : estimateEdges(facts) ? (
+              <button type="button" className="pk-link" onClick={resetEdges} disabled={disabled}>Back to the outline estimate</button>
+            ) : null
+          }
+        >
+          <Num label="Eave" unit="ft" value={spec.eaveFt} onChange={(v) => setEdge("eaveFt", v)} disabled={disabled} />
+          <Num label="Rake" unit="ft" value={spec.rakeFt} onChange={(v) => setEdge("rakeFt", v)} disabled={disabled} />
+          <Num label="Ridge" unit="ft" value={spec.ridgeFt} onChange={(v) => setEdge("ridgeFt", v)} disabled={disabled} />
+          <Num label="Hip" unit="ft" value={spec.hipFt} onChange={(v) => setEdge("hipFt", v)} disabled={disabled} />
+        </Group>
+        <Group label="Drip edge & starter">
+          <Check label="Drip edge" checked={spec.dripEdgeOn} onChange={(v) => set("dripEdgeOn", v)} disabled={disabled} />
+          {spec.dripEdgeOn && (
+            <>
+              <Sel label="Profile" value={spec.dripProfileId} options={DRIP_EDGE_PROFILES} onChange={pickDrip} disabled={disabled} wide />
+              <Sel label="Size" value={spec.dripSizeId} options={DRIP_EDGE_SIZES} onChange={(v) => set("dripSizeId", v)} disabled={disabled} />
+            </>
+          )}
+          {!lowSlope && spec.systemFamily !== "metal" && (
+            <Check label="Starter strip" checked={spec.starterOn} onChange={(v) => set("starterOn", v)} disabled={disabled} />
+          )}
+        </Group>
+        {(spec.dripEdgeOn || (spec.starterOn && !lowSlope && spec.systemFamily !== "metal")) && (
+          <Rates>
+            {spec.dripEdgeOn && <Num label="Drip edge" unit="$/ft" value={spec.dripPerFt} onChange={(v) => set("dripPerFt", v)} disabled={disabled} />}
+            {spec.starterOn && !lowSlope && spec.systemFamily !== "metal" && (
+              <Num label="Starter" unit="$/ft" value={spec.starterPerFt} onChange={(v) => set("starterPerFt", v)} disabled={disabled} />
+            )}
+          </Rates>
+        )}
+      </Row>
+
+      {/* 4 · FLASHING */}
+      <Row id="flash" title="Flashing" summary={sumFlash} open={!!open.flash} onToggle={() => toggle("flash")}>
+        <Group label="Valleys">
+          <Num label="Count" value={spec.valleyCount} onChange={(v) => set("valleyCount", v)} disabled={disabled} />
+          <Num label="Length each" unit="ft" value={spec.valleyFtEach} onChange={(v) => set("valleyFtEach", v)} disabled={disabled} />
+          <Sel label="Type" value={spec.valleyTypeId} options={VALLEY_TYPES} onChange={pickValley} disabled={disabled} wide />
+        </Group>
+        <Group label="Sidewalls · step flashing">
+          <Num label="Walls" value={spec.stepWallCount} onChange={(v) => set("stepWallCount", v)} disabled={disabled} />
+          <Num label="Length each" unit="ft" value={spec.stepWallFtEach} onChange={(v) => set("stepWallFtEach", v)} disabled={disabled} />
+          <Sel label="Step size" value={spec.stepSizeId} options={STEP_FLASHING_SIZES} onChange={pickStep} disabled={disabled} wide />
+        </Group>
+        <Group label="Apron & counter">
+          <Num label="Apron / headwall" unit="ft" value={spec.apronFt} onChange={(v) => set("apronFt", v)} disabled={disabled} />
+          <Num label="Counter flashing" unit="ft" value={spec.counterFt} onChange={(v) => set("counterFt", v)} disabled={disabled} />
+        </Group>
+        <Group label="Pipe boots">
+          {PIPE_BOOT_SIZES.map((s) => (
+            <Num key={s.id} label={s.label} value={spec.pipeBoots[s.id] ?? 0} onChange={(v) => set("pipeBoots", { ...spec.pipeBoots, [s.id]: v })} disabled={disabled} />
+          ))}
+        </Group>
+        <Group label="Chimneys & curbs">
+          <Num label="Chimneys" value={spec.chimneyCount} onChange={(v) => set("chimneyCount", v)} disabled={disabled} />
+          <Sel label="Chimney size" value={spec.chimneySizeId} options={CHIMNEY_SIZES} onChange={pickChimney} disabled={disabled} wide />
+          <Num label="Curbs · AC / skylight" value={spec.curbCount} onChange={(v) => set("curbCount", v)} disabled={disabled} />
+        </Group>
+        <Rates>
+          <Num label="Valley metal" unit="$/ft" value={spec.valleyMatPerFt} onChange={(v) => set("valleyMatPerFt", v)} disabled={disabled} />
+          <Num label="Valley labor" unit="$/ft" value={spec.valleyLaborPerFt} onChange={(v) => set("valleyLaborPerFt", v)} disabled={disabled} />
+          <Num label="Step piece" unit="$/ea" value={spec.stepPerPiece} onChange={(v) => set("stepPerPiece", v)} disabled={disabled} />
+          <Num label="Step labor" unit="$/ft" value={spec.stepLaborPerFt} onChange={(v) => set("stepLaborPerFt", v)} disabled={disabled} />
+          <Num label="Apron" unit="$/ft" value={spec.apronPerFt} onChange={(v) => set("apronPerFt", v)} disabled={disabled} />
+          <Num label="Apron labor" unit="$/ft" value={spec.apronLaborPerFt} onChange={(v) => set("apronLaborPerFt", v)} disabled={disabled} />
+          <Num label="Counter" unit="$/ft" value={spec.counterPerFt} onChange={(v) => set("counterPerFt", v)} disabled={disabled} />
+          <Num label="Counter labor" unit="$/ft" value={spec.counterLaborPerFt} onChange={(v) => set("counterLaborPerFt", v)} disabled={disabled} />
+          <Num label="Chimney kit" unit="$/ea" value={spec.chimneyEach} onChange={(v) => set("chimneyEach", v)} disabled={disabled} />
+          <Num label="Chimney labor" unit="$/ea" value={spec.chimneyLabor} onChange={(v) => set("chimneyLabor", v)} disabled={disabled} />
+          <Num label="Curb kit" unit="$/ea" value={spec.curbEach} onChange={(v) => set("curbEach", v)} disabled={disabled} />
+          <Num label="Curb labor" unit="$/ea" value={spec.curbLabor} onChange={(v) => set("curbLabor", v)} disabled={disabled} />
+        </Rates>
+      </Row>
+
+      {/* 5 · VENTS */}
+      <Row
+        id="vents"
+        title="Vents"
+        summary={sumVents}
+        chip={vent ? <span className={"chip " + (vent.ok ? "ok" : "bad")}>{vent.ok ? "balanced" : "short"}</span> : undefined}
+        open={!!open.vents}
+        onToggle={() => toggle("vents")}
+      >
+        <div className="pk-note pk-note--vent">
+          {vent
+            ? `Attic ${fmt(facts.footprintSqft ?? 0)} sq ft needs ${fmt(vent.requiredSqIn)} sq in · package ${fmt(vent.exhaustSqIn)} exhaust${vent.poweredExhaust ? ` + ${vent.poweredExhaust} powered` : ""} · ${fmt(vent.intakeSqIn)} intake`
+            : "No footprint on this measurement — enter what the attic needs."}
         </div>
-        <Check label="Balanced system with vapor retarder (1/300)" checked={spec.ventBalanced} onChange={(v) => set("ventBalanced", v)} disabled={disabled} />
-      </Section>
+        {ventsOn.length > 0 && (
+          <div className="pk-vents">
+            <div className="pk-vent-row pk-vent-head">
+              <span>Vent</span><span>Qty</span><span /><span>Material</span><span>Labor</span><span />
+            </div>
+            {ventsOn.map((t) => {
+              const v = ventOf(t.id);
+              return (
+                <div className="pk-vent-row" key={t.id}>
+                  <span className="pk-vent-name">{t.label}<em>{t.role}{t.nfaSqIn ? ` · ${t.nfaSqIn} sq in${t.unit === "linear ft" ? "/ft" : ""}` : " · powered"}</em></span>
+                  <Num label="" value={v.qty} onChange={(n) => setVent(t.id, { qty: n })} disabled={disabled} />
+                  <span className="pk-vent-unit">{t.unit === "each" ? "each" : "ft"}</span>
+                  <Num label="" unit={t.unit === "each" ? "$/ea" : "$/ft"} value={v.each} onChange={(n) => setVent(t.id, { each: n })} disabled={disabled} />
+                  <Num label="" unit={t.unit === "each" ? "$/ea" : "$/ft"} value={v.labor} onChange={(n) => setVent(t.id, { labor: n })} disabled={disabled} />
+                  <button type="button" className="pk-x" disabled={disabled} aria-label={`Remove ${t.label}`} title="Remove" onClick={() => setVent(t.id, { qty: 0 })}>×</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div className="pk-add">
+          {ventsToAdd.length > 0 && (
+            <label className="est-field pk-f pk-f--wide pk-f--bare">
+              <span className="bp-sel">
+                <select
+                  className="bp-sel-in est-in"
+                  value=""
+                  disabled={disabled}
+                  aria-label="Add a vent"
+                  onChange={(e) => {
+                    if (e.target.value) setVent(e.target.value, { qty: 1 });
+                  }}
+                >
+                  <option value="">+ Add vent…</option>
+                  {ventsToAdd.map((t) => (
+                    <option key={t.id} value={t.id}>{t.label}</option>
+                  ))}
+                </select>
+              </span>
+            </label>
+          )}
+          <Check label="Balanced system · 1/300" checked={spec.ventBalanced} onChange={(v) => set("ventBalanced", v)} disabled={disabled} />
+        </div>
+      </Row>
 
-      <Section title="Tear-off & extras">
-        <Sel label="Tear-off" value={String(spec.tearOffLayers)} options={[{ id: "0", label: "None · overlay" }, { id: "1", label: "1 layer" }, { id: "2", label: "2 layers" }, { id: "3", label: "3 layers" }]} onChange={(v) => set("tearOffLayers", Number(v) as 0 | 1 | 2 | 3)} disabled={disabled} />
-        <Num label="Tear-off labor" unit="$/sq/layer" value={spec.tearOffPerSqLayer} onChange={(v) => set("tearOffPerSqLayer", v)} disabled={disabled} />
-        <Num label="Disposal" unit="$/sq/layer" value={spec.disposalPerSqLayer} onChange={(v) => set("disposalPerSqLayer", v)} disabled={disabled} />
-        <Num label="Deck sheets to replace" value={spec.plywoodSheets} onChange={(v) => set("plywoodSheets", v)} disabled={disabled} />
-        <Num label="Sheet" unit="$/ea" value={spec.plywoodEach} onChange={(v) => set("plywoodEach", v)} disabled={disabled} />
-        <Num label="Sheet labor" unit="$/ea" value={spec.plywoodLabor} onChange={(v) => set("plywoodLabor", v)} disabled={disabled} />
-        <Num label="Nails & fasteners" unit="$/sq" value={spec.nailsPerSq} onChange={(v) => set("nailsPerSq", v)} disabled={disabled} />
-        <Num label="Sealant & collars" unit="$/sq" value={spec.sealantPerSq} onChange={(v) => set("sealantPerSq", v)} disabled={disabled} />
-        <Num label="Cleanup & sweep" unit="$" value={spec.cleanupLump} onChange={(v) => set("cleanupLump", v)} disabled={disabled} />
-        <Num label={`Steep safety${steepest >= 8 ? "" : " (off below 8/12)"}`} unit="$" value={spec.safetyLump} onChange={(v) => set("safetyLump", v)} disabled={disabled} />
-        <Num label="Permit" unit="$" value={spec.permitLump} onChange={(v) => set("permitLump", v)} disabled={disabled} />
-      </Section>
+      {/* 6 · TEAR-OFF & EXTRAS */}
+      <Row id="tear" title="Tear-off & extras" summary={sumTear} open={!!open.tear} onToggle={() => toggle("tear")}>
+        <Group>
+          <Sel label="Tear-off" value={String(spec.tearOffLayers)} options={[{ id: "0", label: "None · overlay" }, { id: "1", label: "1 layer" }, { id: "2", label: "2 layers" }, { id: "3", label: "3 layers" }]} onChange={(v) => set("tearOffLayers", Number(v) as 0 | 1 | 2 | 3)} disabled={disabled} />
+          <Num label="Deck sheets to replace" value={spec.plywoodSheets} onChange={(v) => set("plywoodSheets", v)} disabled={disabled} />
+          <Num label="Cleanup" unit="$" value={spec.cleanupLump} onChange={(v) => set("cleanupLump", v)} disabled={disabled} />
+          <Num label={steepest >= 8 ? "Steep safety" : "Steep safety · off below 8/12"} unit="$" value={spec.safetyLump} onChange={(v) => set("safetyLump", v)} disabled={disabled} />
+          <Num label="Permit" unit="$" value={spec.permitLump} onChange={(v) => set("permitLump", v)} disabled={disabled} />
+        </Group>
+        <Rates>
+          <Num label="Tear-off labor" unit="$/sq·layer" value={spec.tearOffPerSqLayer} onChange={(v) => set("tearOffPerSqLayer", v)} disabled={disabled} />
+          <Num label="Disposal" unit="$/sq·layer" value={spec.disposalPerSqLayer} onChange={(v) => set("disposalPerSqLayer", v)} disabled={disabled} />
+          <Num label="Deck sheet" unit="$/ea" value={spec.plywoodEach} onChange={(v) => set("plywoodEach", v)} disabled={disabled} />
+          <Num label="Sheet labor" unit="$/ea" value={spec.plywoodLabor} onChange={(v) => set("plywoodLabor", v)} disabled={disabled} />
+          <Num label="Nails & fasteners" unit="$/sq" value={spec.nailsPerSq} onChange={(v) => set("nailsPerSq", v)} disabled={disabled} />
+          <Num label="Sealant & collars" unit="$/sq" value={spec.sealantPerSq} onChange={(v) => set("sealantPerSq", v)} disabled={disabled} />
+        </Rates>
+      </Row>
 
-      <Section title="Custom lines" hint="Anything the catalog does not have — a skylight, gutters, a fascia repair.">
+      {/* 7 · CUSTOM LINES */}
+      <Row id="custom" title="Custom lines" summary={sumCustom} open={!!open.custom} onToggle={() => toggle("custom")}>
         <div className="pk-custom">
           {spec.custom.map((c) => (
             <div className="pk-custom-row" key={c.id}>
-              <input className="est-in" placeholder="Item" value={c.name} disabled={disabled} onChange={(e) => setCustom(c.id, { name: e.target.value })} aria-label="Custom item" />
+              <input className="est-in" placeholder="Item — a skylight, gutters, a fascia repair" value={c.name} disabled={disabled} onChange={(e) => setCustom(c.id, { name: e.target.value })} aria-label="Custom item" />
               <Num label="" value={c.qty} onChange={(n) => setCustom(c.id, { qty: n })} disabled={disabled} />
               <span className="bp-sel">
                 <select className="bp-sel-in est-in" value={c.unit} disabled={disabled} aria-label="Unit" onChange={(e) => setCustom(c.id, { unit: e.target.value as PkgUnit })}>
@@ -635,83 +826,42 @@ export function RoofPackageBuilder({
               <button type="button" className="pk-x" disabled={disabled} aria-label="Remove custom line" onClick={() => removeCustom(c.id)}>×</button>
             </div>
           ))}
-          <div className="pk-custom-add">
-            <button type="button" className="btn btn-ghost btn--sm" disabled={disabled} onClick={() => addCustom("material")}>+ Custom material</button>
-            <button type="button" className="btn btn-ghost btn--sm" disabled={disabled} onClick={() => addCustom("labor")}>+ Custom labor</button>
+          <div className="pk-add">
+            <button type="button" className="btn btn-ghost btn--sm" disabled={disabled} onClick={() => addCustom("material")}>+ Material</button>
+            <button type="button" className="btn btn-ghost btn--sm" disabled={disabled} onClick={() => addCustom("labor")}>+ Labor</button>
           </div>
         </div>
-      </Section>
+      </Row>
 
+      {/* THE FOOT — the same total and actions where the reader ends up. */}
       <div className="pk-foot">
-        <div className="pk-foot-sum">
-          <span className="kpi-lbl">Package</span>
-          <span className="pk-foot-v">{money(total)}</span>
-          <span className="pk-foot-h">{money(materialsTotal)} materials · {money(total - materialsTotal)} labor · {pkg.materials.length + pkg.labor.length} lines</span>
-        </div>
-        <div className="pk-foot-acts">
-          <button type="button" className="btn btn-ghost btn--sm" disabled={disabled} onClick={() => onBuild(pkg, spec)} title="Fill the estimate tables below to review and adjust before converting">
-            <svg className="ic"><use href="#i-file" /></svg>
-            Build & review
-          </button>
-          <button type="button" className="btn btn-primary btn--sm" disabled={disabled || converting} onClick={() => onConvert(pkg, spec)} title="Straight to a proposal with these lines — you can still edit them there">
-            <svg className="ic"><use href="#i-target" /></svg>
-            {converting ? "Creating…" : "Convert as is"}
-          </button>
-        </div>
+        <span className="pk-foot-v">{money(total)}</span>
+        {actions("sm")}
       </div>
 
       <style jsx global>{`
         .jf-blueprint .content .pk {
-          border-top: 1.5px solid var(--hair-soft);
+          border-top: 2px solid var(--ink);
         }
-        .jf-blueprint .content .pk-facts {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 6px 18px;
-          padding: 11px 16px;
-          background: var(--paper-deep);
-          border-bottom: 1.5px solid var(--hair-soft);
-          font-family: var(--font-mono);
-          font-size: 10.5px;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
-          color: var(--muted);
-        }
-        .jf-blueprint .content .pk-facts b {
-          color: var(--ink);
-          font-weight: 700;
-        }
-        .jf-blueprint .content .pk-catalog {
+
+        /* ── ticket ── */
+        .jf-blueprint .content .pk-ticket {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 12px;
-          padding: 10px 16px;
+          gap: 16px;
+          padding: 14px 16px;
+          background: var(--paper-deep);
           border-bottom: 1.5px solid var(--hair-soft);
         }
-        .jf-blueprint .content .pk-catalog-txt {
-          font-size: 12.5px;
-          line-height: 1.5;
-          color: var(--muted);
-        }
-        .jf-blueprint .content .pk-catalog-txt b {
-          color: var(--ink);
-        }
-        .jf-blueprint .content .pk-catalog .btn {
-          flex-shrink: 0;
-        }
-        .jf-blueprint .content .pk-sec {
-          padding: 14px 16px 16px;
-          border-bottom: 1.5px solid var(--hair-soft);
-        }
-        .jf-blueprint .content .pk-sec-head {
+        .jf-blueprint .content .pk-ticket-sum {
           display: flex;
+          align-items: baseline;
           flex-wrap: wrap;
-          align-items: center;
-          gap: 8px 12px;
-          margin-bottom: 10px;
+          gap: 4px 12px;
+          min-width: 0;
         }
-        .jf-blueprint .content .pk-sec-title {
+        .jf-blueprint .content .pk-ticket-lbl {
           font-family: var(--font-mono);
           font-size: 10.5px;
           font-weight: 700;
@@ -719,27 +869,244 @@ export function RoofPackageBuilder({
           text-transform: uppercase;
           color: var(--ink);
         }
-        .jf-blueprint .content .pk-sec-action {
-          margin-left: auto;
+        .jf-blueprint .content .pk-ticket-v {
+          font-size: 26px;
+          font-weight: 900;
+          letter-spacing: -0.005em;
+          color: var(--blueprint);
+          font-variant-numeric: tabular-nums;
+          line-height: 1;
         }
-        .jf-blueprint .content .pk-sec-hint {
-          flex-basis: 100%;
+        .jf-blueprint .content .pk-ticket-h {
+          font-family: var(--font-mono);
+          font-size: 10.5px;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--muted);
+          font-variant-numeric: tabular-nums;
+        }
+        .jf-blueprint .content .pk-acts {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          flex-shrink: 0;
+        }
+
+        /* ── basis line ── */
+        .jf-blueprint .content .pk-basis {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px 18px;
+          flex-wrap: wrap;
+          padding: 9px 16px;
+          border-bottom: 1.5px solid var(--hair-soft);
+        }
+        .jf-blueprint .content .pk-facts {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 4px 0;
+          min-width: 0;
+          font-family: var(--font-mono);
+          font-size: 10.5px;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--ink);
+          font-variant-numeric: tabular-nums;
+        }
+        .jf-blueprint .content .pk-facts b {
+          font-weight: 700;
+        }
+        .jf-blueprint .content .pk-facts b + b::before,
+        .jf-blueprint .content .pk-facts i + b::before {
+          content: "·";
+          margin: 0 8px;
+          color: var(--muted-light);
+          font-weight: 400;
+        }
+        .jf-blueprint .content .pk-facts i {
+          font-style: normal;
+          color: var(--muted);
+          margin-left: 6px;
+        }
+        .jf-blueprint .content .pk-catalog {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-left: auto;
+          flex-shrink: 0;
+        }
+        .jf-blueprint .content .pk-catalog-txt {
+          font-family: var(--font-mono);
+          font-size: 10.5px;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--muted);
+        }
+        .jf-blueprint .content .pk-catalog-txt em {
+          font-style: normal;
+          color: var(--warning);
+        }
+
+        /* ── ledger rows ── */
+        .jf-blueprint .content .pk-row {
+          border-bottom: 1.5px solid var(--hair-soft);
+        }
+        .jf-blueprint .content .pk-row:last-of-type {
+          border-bottom: 2px solid var(--ink);
+        }
+        .jf-blueprint .content .pk-hd {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding-right: 16px;
+        }
+        .jf-blueprint .content .pk-hd-btn {
+          flex: 1 1 auto;
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          height: 48px;
+          padding: 0 4px 0 16px;
+          border: 0;
+          background: none;
+          color: var(--ink);
+          text-align: left;
+          cursor: pointer;
+          transition: background 120ms var(--ease-out, ease-out);
+        }
+        .jf-blueprint .content .pk-hd-btn:hover {
+          background: var(--paper-deep);
+        }
+        .jf-blueprint .content .pk-hd-btn:focus-visible {
+          outline: 2px solid var(--blueprint);
+          outline-offset: -2px;
+        }
+        .jf-blueprint .content .pk-row.is-open .pk-hd {
+          background: var(--paper-deep);
+        }
+        .jf-blueprint .content .pk-hd-title {
+          flex-shrink: 0;
+          width: 150px;
+          font-family: var(--font);
+          font-size: 12.5px;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+        .jf-blueprint .content .pk-hd-sum {
+          flex: 1 1 auto;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-family: var(--font-mono);
+          font-size: 11px;
+          letter-spacing: 0.02em;
+          color: var(--muted);
+          font-variant-numeric: tabular-nums;
+        }
+        .jf-blueprint .content .pk-row.is-open .pk-hd-sum {
+          color: var(--ink);
+        }
+        .jf-blueprint .content .pk-hd .chip {
+          flex-shrink: 0;
+        }
+        .jf-blueprint .content .pk-chev {
+          flex-shrink: 0;
+          width: 16px;
+          height: 16px;
+          color: var(--muted);
+          transition: transform 180ms var(--ease-out, ease-out);
+        }
+        .jf-blueprint .content .pk-row.is-open .pk-chev {
+          transform: rotate(180deg);
+          color: var(--ink);
+        }
+        .jf-blueprint .content .pk-hd-act {
+          flex-shrink: 0;
+        }
+        .jf-blueprint .content .pk-body {
+          display: grid;
+          gap: 14px;
+          padding: 14px 16px 18px;
+          animation: pk-open 180ms var(--ease-out, ease-out);
+        }
+        @keyframes pk-open {
+          from { opacity: 0; transform: translateY(-4px); }
+          to { opacity: 1; transform: none; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .jf-blueprint .content .pk-body { animation: none; }
+          .jf-blueprint .content .pk-chev { transition: none; }
+        }
+
+        /* ── groups & fields ── */
+        .jf-blueprint .content .pk-g {
+          display: grid;
+          gap: 6px;
+        }
+        .jf-blueprint .content .pk-g-lbl,
+        .jf-blueprint .content .pk-rates-lbl {
+          font-family: var(--font-mono);
+          font-size: 9.5px;
+          font-weight: 600;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          color: var(--muted);
+        }
+        .jf-blueprint .content .pk-fields {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: flex-end;
+          gap: 10px 11px;
+        }
+        .jf-blueprint .content .pk-f {
+          width: 150px;
+          display: block;
+        }
+        .jf-blueprint .content .pk-f--wide {
+          width: 220px;
+        }
+        .jf-blueprint .content .pk-f--bare {
+          display: block;
+        }
+        /* Inside a ledger grid the column sets the width, not the field. */
+        .jf-blueprint .content .pk-vent-row .pk-f,
+        .jf-blueprint .content .pk-manage-row .pk-f,
+        .jf-blueprint .content .pk-custom-row .pk-f {
+          width: auto;
+          min-width: 0;
+        }
+        .jf-blueprint .content .pk-rates {
+          display: grid;
+          gap: 6px;
+          padding: 10px 12px 12px;
+          background: var(--paper-deep);
+          border: 1.5px solid var(--hair-soft);
+          border-radius: var(--radius);
+        }
+        .jf-blueprint .content .pk-rates .pk-f {
+          width: 132px;
+        }
+        .jf-blueprint .content .pk-rates .est-in {
+          background: #fff;
+        }
+        .jf-blueprint .content .pk-note {
           font-size: 12px;
           line-height: 1.5;
           color: var(--muted);
-          max-width: 78ch;
+          max-width: 70ch;
         }
-        .jf-blueprint .content .pk-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-          gap: 10px 11px;
-          align-items: end;
-        }
-        .jf-blueprint .content .pk-break {
-          grid-column: 1 / -1;
-          height: 1.5px;
-          background: var(--hair-soft);
-          margin: 4px 0;
+        .jf-blueprint .content .pk-note--vent {
+          font-family: var(--font-mono);
+          font-size: 10.5px;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          color: var(--ink);
+          font-variant-numeric: tabular-nums;
         }
         .jf-blueprint .content .pk-in {
           position: relative;
@@ -755,9 +1122,10 @@ export function RoofPackageBuilder({
           transform: translateY(-50%);
           font-family: var(--font-mono);
           font-size: 10px;
-          letter-spacing: 0.06em;
+          letter-spacing: 0.04em;
           color: var(--muted);
           pointer-events: none;
+          white-space: nowrap;
         }
         .jf-blueprint .content .pk-check {
           display: flex;
@@ -767,6 +1135,7 @@ export function RoofPackageBuilder({
           font-size: 13px;
           color: var(--ink);
           cursor: pointer;
+          white-space: nowrap;
         }
         .jf-blueprint .content .pk-check input {
           width: 16px;
@@ -787,16 +1156,24 @@ export function RoofPackageBuilder({
           text-underline-offset: 3px;
           cursor: pointer;
           text-align: left;
+          white-space: nowrap;
         }
-        .jf-blueprint .content .pk-link.on {
-          color: var(--ink);
+        .jf-blueprint .content .pk-link:hover {
+          color: var(--blueprint-dark, var(--ink));
         }
         .jf-blueprint .content .pk-link:disabled {
           opacity: 0.5;
           cursor: default;
         }
+        .jf-blueprint .content .pk-add {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+
+        /* ── list editors, vents, custom ── */
         .jf-blueprint .content .pk-manage {
-          grid-column: 1 / -1;
           display: grid;
           gap: 6px;
         }
@@ -809,39 +1186,26 @@ export function RoofPackageBuilder({
         .jf-blueprint .content .pk-manage--und .pk-manage-row {
           grid-template-columns: minmax(180px, 2fr) 120px 32px;
         }
-        .jf-blueprint .content .pk-manage-head {
-          font-family: var(--font-mono);
-          font-size: 9.5px;
-          font-weight: 600;
-          letter-spacing: 0.14em;
-          text-transform: uppercase;
-          color: var(--muted-light);
-          padding-bottom: 4px;
-          border-bottom: 1.5px solid var(--hair-soft);
-        }
-        .jf-blueprint .content .pk-f--bare {
-          display: block;
-        }
-        .jf-blueprint .content .pk-vents {
-          grid-column: 1 / -1;
-          display: grid;
-          gap: 6px;
-        }
-        .jf-blueprint .content .pk-vent-row {
-          display: grid;
-          grid-template-columns: minmax(180px, 2fr) 96px 48px 128px 128px;
-          gap: 8px;
-          align-items: center;
-        }
+        .jf-blueprint .content .pk-manage-head,
         .jf-blueprint .content .pk-vent-head {
           font-family: var(--font-mono);
           font-size: 9.5px;
           font-weight: 600;
           letter-spacing: 0.14em;
           text-transform: uppercase;
-          color: var(--muted-light);
+          color: var(--muted);
           padding-bottom: 4px;
           border-bottom: 1.5px solid var(--hair-soft);
+        }
+        .jf-blueprint .content .pk-vents {
+          display: grid;
+          gap: 6px;
+        }
+        .jf-blueprint .content .pk-vent-row {
+          display: grid;
+          grid-template-columns: minmax(160px, 2fr) 92px 40px 124px 124px 32px;
+          gap: 8px;
+          align-items: center;
         }
         .jf-blueprint .content .pk-vent-name {
           font-size: 13px;
@@ -863,20 +1227,13 @@ export function RoofPackageBuilder({
           color: var(--muted);
         }
         .jf-blueprint .content .pk-custom {
-          grid-column: 1 / -1;
           display: grid;
           gap: 8px;
         }
         .jf-blueprint .content .pk-custom-row {
           display: grid;
-          grid-template-columns: minmax(160px, 2fr) 96px 120px 120px 120px 32px;
+          grid-template-columns: minmax(160px, 2fr) 92px 120px 120px 120px 32px;
           gap: 8px;
-          align-items: center;
-        }
-        .jf-blueprint .content .pk-custom-add {
-          display: flex;
-          gap: 12px;
-          flex-wrap: wrap;
           align-items: center;
         }
         .jf-blueprint .content .pk-x {
@@ -897,65 +1254,77 @@ export function RoofPackageBuilder({
           opacity: 0.4;
           cursor: default;
         }
+
+        /* ── foot ── */
         .jf-blueprint .content .pk-foot {
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 14px;
-          padding: 14px 16px;
+          padding: 12px 16px;
           background: var(--paper-deep);
         }
-        .jf-blueprint .content .pk-foot-sum {
-          display: flex;
-          align-items: baseline;
-          flex-wrap: wrap;
-          gap: 4px 12px;
-        }
         .jf-blueprint .content .pk-foot-v {
-          font-size: 22px;
+          font-size: 18px;
           font-weight: 900;
-          color: var(--blueprint);
+          color: var(--ink);
           font-variant-numeric: tabular-nums;
         }
-        .jf-blueprint .content .pk-foot-h {
-          font-family: var(--font-mono);
-          font-size: 10.5px;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
-          color: var(--muted);
-        }
-        .jf-blueprint .content .pk-foot-acts {
-          display: flex;
-          gap: 8px;
-          flex-wrap: wrap;
-        }
+
         @media (max-width: 768px) {
-          .jf-blueprint .content .pk-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-          .jf-blueprint .content .pk-catalog {
+          .jf-blueprint .content .pk-ticket,
+          .jf-blueprint .content .pk-foot,
+          .jf-blueprint .content .pk-basis {
             flex-direction: column;
             align-items: stretch;
+          }
+          .jf-blueprint .content .pk-catalog {
+            margin-left: 0;
+            justify-content: space-between;
+          }
+          .jf-blueprint .content .pk-acts .btn {
+            flex: 1;
+            justify-content: center;
+          }
+          .jf-blueprint .content .pk-hd-btn {
+            flex-wrap: wrap;
+            height: auto;
+            min-height: 48px;
+            padding: 8px 4px 8px 12px;
+            gap: 4px 12px;
+          }
+          .jf-blueprint .content .pk-hd-title {
+            width: auto;
+            flex: 1 1 auto;
+          }
+          .jf-blueprint .content .pk-hd-sum {
+            flex-basis: 100%;
+            order: 3;
+            white-space: normal;
+          }
+          .jf-blueprint .content .pk-hd {
+            flex-wrap: wrap;
+            padding-right: 12px;
+          }
+          .jf-blueprint .content .pk-body {
+            padding: 12px 12px 16px;
+          }
+          .jf-blueprint .content .pk-f,
+          .jf-blueprint .content .pk-f--wide,
+          .jf-blueprint .content .pk-rates .pk-f {
+            width: calc(50% - 6px);
           }
           .jf-blueprint .content .pk-manage-row {
             grid-template-columns: minmax(0, 1fr) 110px 80px 80px 64px 64px 32px;
             gap: 6px;
           }
           .jf-blueprint .content .pk-vent-row {
-            grid-template-columns: minmax(0, 1fr) 72px 36px 96px 96px;
+            grid-template-columns: minmax(0, 1fr) 64px 32px 88px 88px 32px;
             gap: 6px;
           }
           .jf-blueprint .content .pk-custom-row {
-            grid-template-columns: minmax(0, 1fr) 72px 96px 96px 96px 32px;
+            grid-template-columns: minmax(0, 1fr) 64px 88px 88px 88px 32px;
             gap: 6px;
-          }
-          .jf-blueprint .content .pk-foot {
-            flex-direction: column;
-            align-items: stretch;
-          }
-          .jf-blueprint .content .pk-foot-acts .btn {
-            flex: 1;
-            justify-content: center;
           }
         }
       `}</style>
