@@ -5,9 +5,10 @@
 // Cards: Get paid (Stripe · Square · Bank transfer) · Defaults · Automations.
 //
 // REAL, all of it. Stripe and Square rows read the org's PaymentConnection
-// rows (getPaymentConnectionStatus); Connect is the OAuth hand-off, Disconnect
-// deauthorizes at the provider and drops the row, Manage jumps to the deep
-// view under Integrations. Bank transfer is the manual path: instructions the
+// rows (getPaymentConnectionStatus); Connect is the OAuth hand-off, "Use API
+// key" opens the paste form under the Stripe row (stripe-key-form.tsx),
+// Disconnect undoes the join at the provider and drops the row, Manage jumps
+// to the deep view under Integrations. Bank transfer is the manual path: instructions the
 // client sees on an accepted proposal. Defaults and the one automation write
 // `paymentSettingsJson` through updatePaymentSettings (merge, not replace).
 //
@@ -54,6 +55,7 @@ import {
   PROCESSOR_UNAVAILABLE_BADGE,
   RECONNECT_ACTION,
   STRIPE_ACH_TOGGLE,
+  STRIPE_KEY_ACTION,
   currencyCodeFor,
   currencyOptionFor,
   platformFeeLine,
@@ -64,6 +66,7 @@ import {
   type PaymentAutomationKey,
   type Processor,
 } from "../settings-data";
+import { StripeKeyForm } from "./stripe-key-form";
 import type { PaymentConnectionStatusView } from "@/lib/payments/connections";
 
 function Ic({ name }: { name: IconName }) {
@@ -76,12 +79,17 @@ function Ic({ name }: { name: IconName }) {
 
 type ProcState = PaymentConnectionStatusView["stripe"]["state"] | PaymentConnectionStatusView["square"]["state"];
 
-/** One OAuth processor row: icon · name + desc (+ connection line) · actions. */
+/** One processor row: icon · name + desc (+ connection line) · actions.
+ *  Stripe has two ways in — `connectHref` (OAuth, null when the platform
+ *  can't offer it) and `onUseKey` (paste a key, null when it can't). A row
+ *  joined by key reconnects through the key form, not the OAuth link. */
 function ProcessorRow({
   row,
   state,
   connLine,
   connectHref,
+  onUseKey = null,
+  viaKey = false,
   busy,
   onManage,
   onDisconnect,
@@ -89,7 +97,9 @@ function ProcessorRow({
   row: Processor;
   state: ProcState;
   connLine: string;
-  connectHref: string;
+  connectHref: string | null;
+  onUseKey?: (() => void) | null;
+  viaKey?: boolean;
   busy: boolean;
   onManage: () => void;
   onDisconnect: () => void;
@@ -97,6 +107,7 @@ function ProcessorRow({
   const connected = state === "connected";
   const unavailable = state === "not_configured";
   const hasRow = !unavailable && state !== "disconnected";
+  const reconnectByKey = viaKey || !connectHref;
   return (
     <div className={`prow${unavailable ? " prow--off" : ""}`}>
       <span className="prow-ic">
@@ -118,16 +129,30 @@ function ProcessorRow({
             {PROCESSOR_UNAVAILABLE_BADGE.label}
           </span>
         ) : null}
-        {state === "disconnected" ? (
+        {state === "disconnected" && connectHref ? (
           <a className={`btn btn-ghost btn-sm ${CONNECT_ACTION.state}`} href={connectHref}>
             <Ic name="i-plus" />
             {CONNECT_ACTION.label}
           </a>
         ) : null}
+        {state === "disconnected" && onUseKey ? (
+          <button className={`btn btn-ghost btn-sm ${STRIPE_KEY_ACTION.state}`} type="button" onClick={onUseKey}>
+            <Ic name={STRIPE_KEY_ACTION.icon ?? "i-card"} />
+            {STRIPE_KEY_ACTION.label}
+          </button>
+        ) : null}
         {hasRow && !connected ? (
-          <a className={`btn btn-ghost btn-sm ${RECONNECT_ACTION.state}`} href={connectHref}>
-            {RECONNECT_ACTION.label}
-          </a>
+          reconnectByKey ? (
+            onUseKey ? (
+              <button className={`btn btn-ghost btn-sm ${RECONNECT_ACTION.state}`} type="button" onClick={onUseKey}>
+                {RECONNECT_ACTION.label}
+              </button>
+            ) : null
+          ) : (
+            <a className={`btn btn-ghost btn-sm ${RECONNECT_ACTION.state}`} href={connectHref ?? "#"}>
+              {RECONNECT_ACTION.label}
+            </a>
+          )
         ) : null}
         {hasRow ? (
           <>
@@ -164,6 +189,8 @@ export function PaymentsPane({ data, navigate }: PaneProps) {
   const [bankText, setBankText] = useState(c.bankTransfer.instructions);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState("");
+  // "Use API key" opens the paste form under the Stripe row.
+  const [keyOpen, setKeyOpen] = useState(false);
 
   const saveDefaults = () =>
     updatePaymentSettings({
@@ -205,11 +232,24 @@ export function PaymentsPane({ data, navigate }: PaneProps) {
               row={stripeRow}
               state={c.stripe.state}
               connLine={stripeConnLine(c.stripe)}
-              connectHref={c.connectHref.stripe}
+              connectHref={c.stripe.oauthOffered ? c.connectHref.stripe : null}
+              onUseKey={c.stripe.keyOffered ? () => setKeyOpen((v) => !v) : null}
+              viaKey={c.stripe.auth === "key"}
               busy={busy !== null}
               onManage={() => navigate("integrations", "stripe")}
               onDisconnect={() => void disconnect("stripe")}
             />
+            {keyOpen && c.stripe.state !== "connected" ? (
+              <div className="prow-sub">
+                <StripeKeyForm
+                  feePct={p.platformFeePct}
+                  onCancel={() => setKeyOpen(false)}
+                  onDone={(r) => {
+                    if (r.webhook) setKeyOpen(false); // else the form shows the webhook note
+                  }}
+                />
+              </div>
+            ) : null}
             {c.stripe.state === "connected" ? (
               <div className="prow-sub">
                 <div className="trow">
@@ -274,7 +314,7 @@ export function PaymentsPane({ data, navigate }: PaneProps) {
             <span className="sc-note-k">{PAYOUT_NOTE_KICKER}</span>
             <span>{PAYOUT_NOTE}</span>
             <span className="sc-note-k">{FEE_NOTE_KICKER}</span>
-            <span>{platformFeeLine(p.platformFeePct)}</span>
+            <span>{platformFeeLine(p.platformFeePct, c.stripe.auth === "key")}</span>
             {err ? (
               <>
                 <span className="sc-note-k prow-warn">Error</span>

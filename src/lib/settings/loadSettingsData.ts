@@ -200,8 +200,12 @@ export async function loadSettingsData(ctx: SettingsOrgContext): Promise<Setting
       },
       stripe: {
         key: "stripe",
-        comingSoon: !isStripeConnectConfigured(),
-        webhookUrl: `${appUrl}/api/webhooks/stripe-connect`,
+        // Usable by OAuth (Connect configured) or by a pasted key (secret box).
+        comingSoon: !(isStripeConnectConfigured() || isSecretBoxConfigured()),
+        webhookUrl:
+          connections.stripe.auth === "key" && connections.stripe.connectionId
+            ? `${appUrl}/api/webhooks/stripe-key/${connections.stripe.connectionId}`
+            : `${appUrl}/api/webhooks/stripe-connect`,
         lastEventAt: fmtWhen(lastStripeEvt?.receivedAt),
       },
       square: {

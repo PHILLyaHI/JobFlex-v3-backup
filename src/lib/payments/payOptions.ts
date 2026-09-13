@@ -39,13 +39,18 @@ export function resolvePayOptions(input: {
   // ── Stripe ────────────────────────────────────────────────────────────
   let stripe: PayOptions["stripe"] = { ok: false, ach: false };
   const s = input.stripeConn;
+  // A key-joined account (stripeKeyEnc) charges with the contractor's own
+  // key: it needs only the secret box, and its live/test mode is the key's,
+  // not the admin switch's. An OAuth join needs the platform key + client id
+  // for the current mode and must have been joined in that mode.
+  const viaKey = Boolean(s?.stripeKeyEnc);
   if (!input.settings.stripe) stripe = { ok: false, reason: "disabled", ach: false };
   else if (!s) stripe = { ok: false, reason: "not_connected", ach: false };
-  else if (!stripeKeyFor(input.stripeMode) || !connectClientIdFor(input.stripeMode))
+  else if (viaKey ? !isSecretBoxConfigured() : !stripeKeyFor(input.stripeMode) || !connectClientIdFor(input.stripeMode))
     stripe = { ok: false, reason: "not_configured", ach: false };
   else if (s.status === PaymentConnectionStatus.REVOKED)
     stripe = { ok: false, reason: "revoked", ach: false };
-  else if (s.stripeLivemode !== (input.stripeMode === "live"))
+  else if (!viaKey && s.stripeLivemode !== (input.stripeMode === "live"))
     stripe = { ok: false, reason: "mode_mismatch", ach: false };
   else if (!s.stripeChargesEnabled || s.status === PaymentConnectionStatus.RESTRICTED)
     stripe = { ok: false, reason: "charges_disabled", ach: false };

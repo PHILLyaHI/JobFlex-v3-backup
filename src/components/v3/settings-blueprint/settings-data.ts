@@ -282,10 +282,44 @@ export function stripeConnLine(s: {
   accountId: string | null;
   livemode: boolean | null;
   chargesEnabled: boolean;
+  auth?: 'oauth' | 'key' | null;
+  keyLast4?: string | null;
 }): string {
-  const id = s.accountId ? s.accountId.slice(0, 12) + '…' : 'connected';
+  const id =
+    s.auth === 'key'
+      ? `API key ····${s.keyLast4 ?? ''}`
+      : s.accountId
+        ? s.accountId.slice(0, 12) + '…'
+        : 'connected';
   return `${id} · ${s.livemode === false ? 'Test mode' : 'Live'} · ${s.chargesEnabled ? 'charges enabled' : 'charges paused'}`;
 }
+
+/** "Use API key" — the second way into Stripe (2026-09-12): the contractor
+ *  pastes their own secret or restricted key instead of going through OAuth.
+ *  Same portal, same settle pipeline; the platform fee is billed on their
+ *  JobFlex invoice because Stripe can't split a charge without Connect. */
+export const STRIPE_KEY_ACTION: ActionSpec = { label: 'Use API key', icon: 'i-card', state: 'is-on' };
+export const STRIPE_KEY_FORM = {
+  title: 'Paste a Stripe API key',
+  desc: 'Stripe Dashboard → Developers → API keys → Secret key. A restricted key works too if it can write Checkout Sessions and Webhook Endpoints and read PaymentIntents, Charges and Refunds. Stored encrypted; never shown again.',
+  label: 'Secret key',
+  placeholder: 'sk_live_…',
+  show: 'Show key',
+  submit: 'Connect with this key',
+  busy: 'Checking with Stripe…',
+  cancel: 'Cancel',
+  or: 'or',
+  testNote: 'A test key (sk_test_…) connects in test mode — real cards will not work.',
+  feeNote: (pct: number) =>
+    `With a pasted key the ${pct}% platform fee can't come out of the payment — it's added to your JobFlex invoice instead.`,
+  webhookMissing:
+    'Connected, but the webhook could not be registered on your Stripe account — payments still confirm when the client returns to the proposal and on the reconcile check; refunds made in Stripe won’t sync. Disconnect and reconnect to retry.',
+} as const;
+export const STRIPE_WEBHOOK_REGISTERED = 'Registered on your Stripe account by JobFlex when you connected.' as const;
+export const STRIPE_KEY_PERMISSIONS_CARD: CardHead = {
+  title: 'Permissions',
+  sub: 'What the key must be allowed to do. A full secret key has all of it; build a restricted key with exactly these.',
+};
 export function squareConnLine(s: { merchantId: string | null; locationName: string | null; env: string }): string {
   return `${s.locationName ?? s.merchantId ?? 'connected'} · ${s.env === 'sandbox' ? 'Sandbox' : 'Production'}`;
 }
@@ -317,8 +351,9 @@ export const BANK_TRANSFER_LABELS = {
 export const PAYOUT_NOTE_KICKER = 'Payouts' as const;
 export const PAYOUT_NOTE = 'Land in your own Stripe or Square account on their normal schedule.' as const;
 export const FEE_NOTE_KICKER = 'Platform fee' as const;
-export function platformFeeLine(pct: number): string {
-  return `${pct}% of payments collected through Stripe or Square. Bank transfers carry no fee.`;
+export function platformFeeLine(pct: number, stripeViaKey = false): string {
+  const base = `${pct}% of payments collected through Stripe or Square. Bank transfers carry no fee.`;
+  return stripeViaKey ? `${base} Stripe is joined with your API key, so the fee is added to your JobFlex invoice.` : base;
 }
 
 /* ------------------------------------------------------------------ */
@@ -571,7 +606,7 @@ export const META_DISCONNECT_ACTION: ActionSpec = { label: 'Disconnect', state: 
 
 export const PROCESSOR_CONNECTION_CARD: CardHead = {
   title: 'Connection',
-  sub: 'Your own account, joined by OAuth. JobFlex never holds your keys.',
+  sub: 'Your own account — joined by OAuth, or with an API key you paste (kept encrypted, never shown again).',
 };
 export const PROCESSOR_BEHAVIOR_CARD: CardHead = {
   title: 'Behavior',
@@ -583,7 +618,7 @@ export const PROCESSOR_PERMISSIONS_CARD: CardHead = {
 };
 export const PROCESSOR_WEBHOOK_CARD: CardHead = {
   title: 'Webhook',
-  sub: 'Where the provider reports payments. Platform-level; nothing to configure.',
+  sub: 'Where the provider reports payments. Set up for you; nothing to configure.',
 };
 export const PROCESSOR_SCOPES_EMPTY = 'No scopes granted — not connected.' as const;
 export const PROCESSOR_LAST_EVENT_PREFIX = 'Last event received · ' as const;

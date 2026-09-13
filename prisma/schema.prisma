@@ -759,6 +759,11 @@ model Payment {
   refundedAmount    Float    @default(0)
   scheduleVersion   Int? // Proposal.scheduleVersion the checkout was minted under
   meta              String? // JSON: {orphan, unappliedMinor, duplicate, note}
+  // Key-joined Stripe: the fee can't ride inside the charge, so it is billed
+  // as an invoice item on the org's JobFlex subscription — the `ii_…` id once
+  // that happened. Null on a key-joined payment = accrued in the ledger only
+  // (no subscription customer to bill), for the operator to collect by hand.
+  feeInvoiceItemId  String?
   createdAt      DateTime  @default(now())
 
   organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -772,10 +777,13 @@ model Payment {
   @@index([provider, externalPaymentId])
 }
 
-// One row per org × provider for "get paid through JobFlex". Stripe = Connect
-// Standard account joined by OAuth (we only store the acct id — every API call
-// uses the platform key + Stripe-Account header). Square = OAuth tokens,
-// encrypted at rest (src/lib/crypto/secretBox.ts). Disconnect = delete row.
+// One row per org × provider for "get paid through JobFlex". Stripe = either a
+// Connect Standard account joined by OAuth (we store only the acct id — every
+// API call uses the platform key + Stripe-Account header) or, since
+// 2026-09-12, the contractor's OWN API key pasted in Settings (stripeKeyEnc,
+// encrypted at rest — every call uses that key, no header, no application
+// fee). Square = OAuth tokens, encrypted at rest (src/lib/crypto/secretBox.ts).
+// Disconnect = delete row.
 model PaymentConnection {
   id             String @id @default(cuid())
   organizationId String
@@ -787,6 +795,18 @@ model PaymentConnection {
   stripeChargesEnabled   Boolean @default(false)
   stripeDetailsSubmitted Boolean @default(false)
   stripeAchEnabled       Boolean @default(false)
+  // "Paste an API key" join: the contractor's secret (sk_) or restricted (rk_)
+  // key, AES-GCM at rest. Present = this row charges with the key itself;
+  // JobFlex's cut is billed separately (Payment.feeInvoiceItemId).
+  stripeKeyEnc           String?
+  stripeKeyKind          String? // sk | rk
+  stripeKeyLast4         String?
+  // Webhook endpoint registered ON THE CONTRACTOR'S account with that key,
+  // pointed at /api/webhooks/stripe-key/<this row's id>, and its signing
+  // secret (Stripe returns it once, at creation). Null = registration failed;
+  // the portal's active verification + the reconcile cron still settle.
+  stripeWebhookId        String?
+  stripeWebhookSecretEnc String?
 
   squareMerchantId      String?
   squareLocationId      String?

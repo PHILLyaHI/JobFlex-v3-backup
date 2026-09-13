@@ -1,6 +1,7 @@
 // PaymentConnection reads + lifecycle (connect rows are written by the OAuth
-// callbacks; this module owns status, disconnect, revoke). Lib-level so both
-// the settings actions and the soft-delete flow can call them.
+// callbacks and by connectStripeWithKey; this module owns status, disconnect,
+// revoke). Lib-level so both the settings actions and the soft-delete flow
+// can call them.
 import { db } from "@/lib/db";
 import { PaymentConnectionStatus } from "@/lib/prismaEnums";
 import { parsePaymentSettings } from "@/lib/settings";
@@ -14,6 +15,17 @@ import { expireOpenCheckoutsForOrg } from "./checkouts";
 import { stripeKeyFor } from "@/lib/stripeMode";
 
 export type Provider = "STRIPE" | "SQUARE";
+
+/** What a pasted key must be allowed to do — the Permissions card shows this
+ *  in place of OAuth scopes. A full secret key (sk_) has all of it; a
+ *  restricted key (rk_) is built with exactly these. */
+export const STRIPE_KEY_PERMISSIONS = [
+  "Checkout Sessions · write",
+  "PaymentIntents · read",
+  "Charges · read",
+  "Refunds · read",
+  "Webhook Endpoints · write",
+] as const;
 
 export async function getConnection(organizationId: string, provider: Provider) {
   return db.paymentConnection.findUnique({
@@ -50,6 +62,9 @@ export interface PaymentConnectionStatusView {
   stripeMode: "live" | "test";
   stripe: {
     state: StripeConnState;
+    /** How the account was joined: OAuth (Connect) or a pasted API key. */
+    auth: "oauth" | "key" | null;
+    connectionId: string | null;
     accountId: string | null;
     livemode: boolean | null;
     chargesEnabled: boolean;
@@ -58,7 +73,15 @@ export interface PaymentConnectionStatusView {
     connectedAt: string | null;
     lastError: string | null;
     offered: boolean;
+    /** OAuth: granted scopes. Key: what the key must be allowed to do. */
     scopes: string[];
+    keyLast4: string | null;
+    keyKind: "sk" | "rk" | null;
+    /** Key join: our endpoint was registered on the account. */
+    webhookRegistered: boolean;
+    /** Which ways in the platform offers right now. */
+    oauthOffered: boolean;
+    keyOffered: boolean;
   };
   square: {
     state: SquareConnState;
@@ -90,12 +113,18 @@ export async function getPaymentConnectionStatus(
   ]);
   const settings = parsePaymentSettings(org?.paymentSettingsJson);
 
-  const stripeConfigured = Boolean(stripeKeyFor(mode) && connectClientIdFor(mode));
-  let stripeState: StripeConnState = stripeConfigured ? "disconnected" : "not_configured";
+  // Two ways in: OAuth needs the platform key + Connect client id for the
+  // current mode; a pasted key needs only the secret box. A key join lives in
+  // the key's own mode, so the admin switch never mismatches it.
+  const oauthOffered = Boolean(stripeKeyFor(mode) && connectClientIdFor(mode));
+  const keyOffered = isSecretBoxConfigured();
+  let stripeState: StripeConnState = oauthOffered || keyOffered ? "disconnected" : "not_configured";
   const s = conns.stripe;
+  const viaKey = Boolean(s?.stripeKeyEnc);
   if (s) {
     if (s.status === PaymentConnectionStatus.REVOKED) stripeState = "revoked";
-    else if (s.stripeLivemode !== (mode === "live")) stripeState = "mode_mismatch";
+    else if (viaKey && !keyOffered) stripeState = "not_configured";
+    else if (!viaKey && s.stripeLivemode !== (mode === "live")) stripeState = "mode_mismatch";
     else if (!s.stripeChargesEnabled || s.status === PaymentConnectionStatus.RESTRICTED)
       stripeState = "restricted";
     else stripeState = "connected";
@@ -119,6 +148,8 @@ export async function getPaymentConnectionStatus(
     stripeMode: mode,
     stripe: {
       state: stripeState,
+      auth: s ? (viaKey ? "key" : "oauth") : null,
+      connectionId: s?.id ?? null,
       accountId: s?.stripeAccountId ?? null,
       livemode: s?.stripeLivemode ?? null,
       chargesEnabled: Boolean(s?.stripeChargesEnabled),
@@ -127,7 +158,12 @@ export async function getPaymentConnectionStatus(
       connectedAt: s?.connectedAt.toISOString() ?? null,
       lastError: s?.lastError ?? null,
       offered: settings.stripe,
-      scopes: s ? ["read_write"] : [],
+      scopes: s ? (viaKey ? [...STRIPE_KEY_PERMISSIONS] : ["read_write"]) : [],
+      keyLast4: s?.stripeKeyLast4 ?? null,
+      keyKind: s?.stripeKeyKind === "rk" ? "rk" : s?.stripeKeyKind === "sk" ? "sk" : null,
+      webhookRegistered: Boolean(s?.stripeWebhookId),
+      oauthOffered,
+      keyOffered,
     },
     square: {
       state: squareState,
@@ -171,7 +207,8 @@ export async function markConnectionRevoked(
   await expireOpenCheckoutsForOrg(organizationId, provider);
 }
 
-async function setOffered(organizationId: string, provider: Provider, on: boolean) {
+/** Offer / hide a provider at checkout (paymentSettingsJson.stripe / .square). */
+export async function setProviderOfferedFor(organizationId: string, provider: Provider, on: boolean) {
   const org = await db.organization.findUnique({
     where: { id: organizationId },
     select: { paymentSettingsJson: true },
@@ -188,7 +225,9 @@ async function setOffered(organizationId: string, provider: Provider, on: boolea
   });
 }
 
-/** Full disconnect: release open checkouts → deauthorize at Stripe → drop row. */
+/** Full disconnect: release open checkouts → undo the join at Stripe (OAuth:
+ *  deauthorize the app; key: remove our webhook endpoint) → drop the row,
+ *  and with it the encrypted key. */
 export async function disconnectStripeConnectFor(organizationId: string): Promise<{
   ok: true;
   deauthorized: boolean;
@@ -199,7 +238,7 @@ export async function disconnectStripeConnectFor(organizationId: string): Promis
   const deauthorized =
     conn.status === PaymentConnectionStatus.REVOKED ? false : await deauthorizeConnection(conn);
   await db.paymentConnection.delete({ where: { id: conn.id } });
-  await setOffered(organizationId, "STRIPE", false);
+  await setProviderOfferedFor(organizationId, "STRIPE", false);
   return { ok: true, deauthorized };
 }
 
@@ -215,6 +254,6 @@ export async function disconnectSquareFor(organizationId: string): Promise<{
       ? false
       : await revokeSquareToken(conn.squareMerchantId);
   await db.paymentConnection.delete({ where: { id: conn.id } });
-  await setOffered(organizationId, "SQUARE", false);
+  await setProviderOfferedFor(organizationId, "SQUARE", false);
   return { ok: true, revoked };
 }

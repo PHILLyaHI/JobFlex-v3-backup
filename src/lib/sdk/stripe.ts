@@ -50,6 +50,15 @@ export function stripeClientForMode(mode: StripeMode): Stripe | null {
 }
 
 /**
+ * A client on a CONTRACTOR'S OWN key — Settings → Payments → "Use API key"
+ * (lib/payments/stripeConnect.ts decrypts it). Cached like the platform
+ * clients, keyed by the key; the key never leaves the server.
+ */
+export function stripeClientForKey(key: string): Stripe {
+  return clientFor(key);
+}
+
+/**
  * The LIVE-key client (falling back to the test key only when no live key is
  * set). The webhook, reconciliation, payouts and the admin's subscriber reads
  * stay on this: they mirror the account of record, and must not silently start

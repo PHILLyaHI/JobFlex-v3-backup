@@ -633,6 +633,18 @@
 .bp :global(.content .prow-sub) { padding: 0 18px 16px 65px; }
 .bp :global(.content .prow-sub > .trow) { padding: 0; border-bottom: none; }
 .bp :global(.content .prow-sub .fin--area) { min-height: 76px; }
+/* "Use API key" (panes/stripe-key-form.tsx): the two ways in side by side
+   with an "or" between them, then the stacked paste form — the field, its
+   show-key check, two notes and the action row. */
+.bp :global(.content .skf-ways) { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; }
+.bp :global(.content .skf-or) { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .skf) { display: grid; gap: 10px; max-width: 560px; }
+.bp :global(.content .skf .fld) { margin: 0; }
+.bp :global(.content .skf-show) { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
+.bp :global(.content .skf-show input) { width: 14px; height: 14px; margin: 0; }
+.bp :global(.content .skf-row) { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 2px; }
+/* The ledger's .btn-sm fills its action column; here the two sit side by side. */
+.bp :global(.content .skf-row .btn-sm) { width: auto; }
 /* An unavailable processor: name drops to the annotation tone, the row
    keeps its place in the ledger. */
 .bp :global(.content .prow--off .prow-n) { color: var(--muted); }

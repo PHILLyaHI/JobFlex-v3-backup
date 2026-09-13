@@ -774,6 +774,50 @@ body:has(.jf-mobile-settings)::before { content: none; }
   border-top: 1px solid var(--hair-soft);
 }
 
+/* "Use API key" (settings-blueprint/panes/stripe-key-form.tsx, variant
+   "mobile"): the two ways in stacked with an "or", then the paste form —
+   full-width buttons, 44px targets. */
+.jf-mobile-settings .skf-ways { display: grid; gap: 10px; }
+.jf-mobile-settings .skf-or {
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-settings .skf { display: grid; gap: 10px; }
+.jf-mobile-settings .mst-cardB > .skf { margin-top: 12px; }
+.jf-mobile-settings .skf-show {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 13px;
+  color: var(--muted);
+}
+/* The hub strips native control chrome, so the show-key box is drawn: a
+   square ink frame, filled when checked. */
+.jf-mobile-settings .skf-show input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex: 0 0 18px;
+  border: 1.5px solid var(--ink);
+  border-radius: 3px;
+  background: #fff;
+  display: grid;
+  place-content: center;
+}
+.jf-mobile-settings .skf-show input:checked::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  background: var(--ink);
+}
+.jf-mobile-settings .skf-row { display: grid; gap: 8px; }
+
 /* ============================================================
    TOGGLE ROWS — label + description left, switch right
    ============================================================ */

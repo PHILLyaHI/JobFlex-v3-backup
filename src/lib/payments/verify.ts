@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { InstallmentStatus } from "@/lib/prismaEnums";
 import { getConnection } from "./connections";
 import { stripeForConnection } from "./stripeConnect";
+import { feeBillingOf, feeMinorOf } from "./stripeEvents";
 import { squareClientForConnection } from "./squareConnect";
 import { settleInstallmentPayment, type SettleResult } from "./settle";
 
@@ -37,7 +38,7 @@ export async function verifyCheckoutRef(proposalId: string, checkoutRef: string)
       session = await bound.stripe.checkout.sessions.retrieve(
         checkoutRef,
         { expand: ["payment_intent", "payment_intent.latest_charge"] },
-        { stripeAccount: bound.accountId },
+        bound.reqOpts,
       );
     } catch {
       return { state: "unavailable" };
@@ -53,7 +54,8 @@ export async function verifyCheckoutRef(proposalId: string, checkoutRef: string)
         proposalId,
         installmentIds: (session.metadata?.installmentIds ?? "").split(",").filter(Boolean),
         amountMinor: session.amount_total ?? 0,
-        feeMinor: pi?.application_fee_amount ?? 0,
+        feeMinor: feeMinorOf(pi, session),
+        feeBilling: feeBillingOf(session),
         currency: (session.currency ?? proposal.currency).toUpperCase(),
         livemode: Boolean(session.livemode),
         method: charge?.payment_method_details?.type ?? "card",

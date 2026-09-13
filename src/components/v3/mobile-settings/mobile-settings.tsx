@@ -157,6 +157,10 @@ import {
   SIGNATURE_SELECT,
   SIGN_OUT_LABEL,
   STRIPE_ACH_TOGGLE,
+  STRIPE_KEY_ACTION,
+  STRIPE_KEY_FORM,
+  STRIPE_KEY_PERMISSIONS_CARD,
+  STRIPE_WEBHOOK_REGISTERED,
   TEST_RESULT_COPY,
   currencyCodeFor,
   currencyOptionFor,
@@ -166,6 +170,7 @@ import {
   squareConnLine,
   stripeConnLine,
 } from "@/components/v3/settings-blueprint/settings-data";
+import { StripeKeyForm } from "@/components/v3/settings-blueprint/panes/stripe-key-form";
 import { MobileSettingsSprite } from "./sprite";
 import "./mobile-settings.css";
 
@@ -532,11 +537,16 @@ type ProcState =
   | PaymentConnectionStatusView["stripe"]["state"]
   | PaymentConnectionStatusView["square"]["state"];
 
+/** Stripe has two ways in — `connectHref` (OAuth, null when the platform
+ *  can't offer it) and `onUseKey` (paste a key, null when it can't). A row
+ *  joined by key reconnects through the key form, not the OAuth link. */
 function ProcessorRow({
   row,
   state,
   connLine,
   connectHref,
+  onUseKey = null,
+  viaKey = false,
   busy,
   onManage,
   onDisconnect,
@@ -544,7 +554,9 @@ function ProcessorRow({
   row: Processor;
   state: ProcState;
   connLine: string;
-  connectHref: string;
+  connectHref: string | null;
+  onUseKey?: (() => void) | null;
+  viaKey?: boolean;
   busy: boolean;
   onManage: () => void;
   onDisconnect: () => void;
@@ -552,6 +564,7 @@ function ProcessorRow({
   const connected = state === "connected";
   const unavailable = state === "not_configured";
   const hasRow = !unavailable && state !== "disconnected";
+  const reconnectByKey = viaKey || !connectHref;
   return (
     <div className={`mst-row${unavailable ? " is-off" : ""}`}>
       <div className="mst-rowTop">
@@ -571,16 +584,30 @@ function ProcessorRow({
       </div>
       {unavailable ? null : (
         <div className="mst-rowAct">
-          {state === "disconnected" ? (
+          {state === "disconnected" && connectHref ? (
             <a className={`mst-btn mst-btn--ghost ${CONNECT_ACTION.state}`} href={connectHref}>
               <Ic name="i-plus" />
               {CONNECT_ACTION.label}
             </a>
           ) : null}
+          {state === "disconnected" && onUseKey ? (
+            <button className={`mst-btn mst-btn--ghost ${STRIPE_KEY_ACTION.state}`} type="button" onClick={onUseKey}>
+              <Ic name={STRIPE_KEY_ACTION.icon ?? "i-card"} />
+              {STRIPE_KEY_ACTION.label}
+            </button>
+          ) : null}
           {hasRow && !connected ? (
-            <a className={`mst-btn mst-btn--ghost ${RECONNECT_ACTION.state}`} href={connectHref}>
-              {RECONNECT_ACTION.label}
-            </a>
+            reconnectByKey ? (
+              onUseKey ? (
+                <button className={`mst-btn mst-btn--ghost ${RECONNECT_ACTION.state}`} type="button" onClick={onUseKey}>
+                  {RECONNECT_ACTION.label}
+                </button>
+              ) : null
+            ) : (
+              <a className={`mst-btn mst-btn--ghost ${RECONNECT_ACTION.state}`} href={connectHref ?? "#"}>
+                {RECONNECT_ACTION.label}
+              </a>
+            )
           ) : null}
           {hasRow ? (
             <>
@@ -624,6 +651,8 @@ function PaymentsPane({
   const [bankText, setBankText] = useState(c.bankTransfer.instructions);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState("");
+  // "Use API key" opens the paste form under the Stripe row.
+  const [keyOpen, setKeyOpen] = useState(false);
 
   const saveDefaults = () =>
     updatePaymentSettings({
@@ -659,11 +688,25 @@ function PaymentsPane({
               row={stripeRow}
               state={c.stripe.state}
               connLine={stripeConnLine(c.stripe)}
-              connectHref={c.connectHref.stripe}
+              connectHref={c.stripe.oauthOffered ? c.connectHref.stripe : null}
+              onUseKey={c.stripe.keyOffered ? () => setKeyOpen((v) => !v) : null}
+              viaKey={c.stripe.auth === "key"}
               busy={busy !== null}
               onManage={() => navigate("integrations", "stripe")}
               onDisconnect={() => void disconnect("stripe")}
             />
+            {keyOpen && c.stripe.state !== "connected" ? (
+              <div className="mst-grpSub">
+                <StripeKeyForm
+                  variant="mobile"
+                  feePct={p.platformFeePct}
+                  onCancel={() => setKeyOpen(false)}
+                  onDone={(r) => {
+                    if (r.webhook) setKeyOpen(false); // else the form shows the webhook note
+                  }}
+                />
+              </div>
+            ) : null}
             {c.stripe.state === "connected" ? (
               <div className="mst-grpSub">
                 <div className="mst-trow">
@@ -732,7 +775,7 @@ function PaymentsPane({
             <span className="mst-noteK">{PAYOUT_NOTE_KICKER}</span>
             <span>{PAYOUT_NOTE}</span>
             <span className="mst-noteK">{FEE_NOTE_KICKER}</span>
-            <span>{platformFeeLine(p.platformFeePct)}</span>
+            <span>{platformFeeLine(p.platformFeePct, c.stripe.auth === "key")}</span>
             {err ? (
               <>
                 <span className="mst-noteK is-warn">Error</span>
@@ -860,7 +903,16 @@ function ProcessorSubpane({
   const [err, setErr] = useState("");
   const [ach, setAch] = useState(s.achEnabled);
   const [offered, setOffered] = useState(isStripe ? s.offered : q.offered);
-  const connectHref = isStripe ? conns.connectHref.stripe : conns.connectHref.square;
+  // Stripe's two ways in: OAuth (when the platform offers it) and a pasted
+  // key. A row joined by key reconnects through the form, not the OAuth link.
+  const [keyOpen, setKeyOpen] = useState(false);
+  const viaKey = isStripe && s.auth === "key";
+  const keyOffered = isStripe && s.keyOffered;
+  const connectHref: string | null = isStripe
+    ? s.oauthOffered
+      ? conns.connectHref.stripe
+      : null
+    : conns.connectHref.square;
 
   async function disconnect() {
     setBusy(true);
@@ -925,9 +977,21 @@ function ProcessorSubpane({
               </div>
               <div className="mst-rowAct">
                 {!connected ? (
-                  <a className={`mst-btn mst-btn--ghost ${RECONNECT_ACTION.state}`} href={connectHref}>
-                    {RECONNECT_ACTION.label}
-                  </a>
+                  viaKey || !connectHref ? (
+                    keyOffered ? (
+                      <button
+                        className={`mst-btn mst-btn--ghost ${RECONNECT_ACTION.state}`}
+                        type="button"
+                        onClick={() => setKeyOpen((v) => !v)}
+                      >
+                        {RECONNECT_ACTION.label}
+                      </button>
+                    ) : null
+                  ) : (
+                    <a className={`mst-btn mst-btn--ghost ${RECONNECT_ACTION.state}`} href={connectHref}>
+                      {RECONNECT_ACTION.label}
+                    </a>
+                  )
                 ) : null}
                 <button
                   className={`mst-btn mst-btn--ghost ${DISCONNECT_ACTION.state}`}
@@ -943,13 +1007,41 @@ function ProcessorSubpane({
             <>
               <div className="mst-rowD">{PROCESSOR_STATE_COPY[state]}</div>
               {state === "disconnected" ? (
-                <a className="mst-btn mst-btn--primary mst-btn--wide" href={connectHref}>
-                  {CONNECT_ACTION.icon ? <Ic name={CONNECT_ACTION.icon} /> : null}
-                  {`Connect ${isStripe ? "Stripe" : "Square"}`}
-                </a>
+                <div className="skf-ways">
+                  {connectHref ? (
+                    <a className="mst-btn mst-btn--primary mst-btn--wide" href={connectHref}>
+                      {CONNECT_ACTION.icon ? <Ic name={CONNECT_ACTION.icon} /> : null}
+                      {`Connect ${isStripe ? "Stripe" : "Square"}`}
+                    </a>
+                  ) : null}
+                  {keyOffered ? (
+                    <>
+                      {connectHref ? <span className="skf-or">{STRIPE_KEY_FORM.or}</span> : null}
+                      <button
+                        className={`mst-btn mst-btn--wide ${connectHref ? "mst-btn--ghost" : "mst-btn--primary"}`}
+                        type="button"
+                        aria-expanded={keyOpen}
+                        onClick={() => setKeyOpen((v) => !v)}
+                      >
+                        <Ic name={STRIPE_KEY_ACTION.icon ?? "i-card"} />
+                        {STRIPE_KEY_ACTION.label}
+                      </button>
+                    </>
+                  ) : null}
+                </div>
               ) : null}
             </>
           )}
+          {keyOpen && !connected ? (
+            <StripeKeyForm
+              variant="mobile"
+              feePct={conns.platformFeePct}
+              onCancel={() => setKeyOpen(false)}
+              onDone={(r) => {
+                if (r.webhook) setKeyOpen(false); // else the form shows the webhook note
+              }}
+            />
+          ) : null}
           {err ? <div className="mst-rowD is-warn">{err}</div> : null}
           {hasRow ? (
             <a
@@ -1008,7 +1100,7 @@ function ProcessorSubpane({
 
       {/* ── Permissions ── */}
       <section className="mst-card">
-        <CardHeader card={PROCESSOR_PERMISSIONS_CARD} />
+        <CardHeader card={viaKey ? STRIPE_KEY_PERMISSIONS_CARD : PROCESSOR_PERMISSIONS_CARD} />
         <div className="mst-cardB">
           {(isStripe ? s.scopes : q.scopes).length === 0 ? (
             <div className="mst-rowD">{PROCESSOR_SCOPES_EMPTY}</div>
@@ -1029,6 +1121,11 @@ function ProcessorSubpane({
       <section className="mst-card">
         <CardHeader card={PROCESSOR_WEBHOOK_CARD} />
         <div className="mst-cardB">
+          {viaKey ? (
+            <div className={s.webhookRegistered ? "mst-rowD" : "mst-rowD is-warn"}>
+              {s.webhookRegistered ? STRIPE_WEBHOOK_REGISTERED : STRIPE_KEY_FORM.webhookMissing}
+            </div>
+          ) : null}
           <div className="mst-fld">
             <span className="mst-fldL">Endpoint</span>
             <CopyBox value={d.webhookUrl} />

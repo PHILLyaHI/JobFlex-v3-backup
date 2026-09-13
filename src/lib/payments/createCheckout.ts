@@ -1,6 +1,9 @@
 // Mint a hosted checkout on the CONTRACTOR's account for one stage or the
 // remaining balance. Amount is always derived server-side from the current
 // schedule. Every guard the portal uses to show a button is re-checked here.
+// Stripe: the account is reached through the platform key + Stripe-Account
+// header (OAuth join) or the contractor's own key (pasted in Settings) —
+// stripeForConnection decides; this file only spreads `reqOpts`.
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { getStripeMode } from "@/lib/stripeMode";
@@ -153,6 +156,14 @@ export async function createCheckout(input: {
   try {
     if (input.provider === "STRIPE") {
       const bound = stripeForConnection(conn)!;
+      // A key-joined account can't split the charge: the fee rides in the
+      // metadata for the ledger and is billed on the JobFlex invoice after
+      // settle (feeBilling.ts). OAuth: Stripe takes it inside the charge.
+      const stripeMeta = {
+        ...metadata,
+        platformFeeMinor: String(feeMinor),
+        feeBilling: bound.viaKey ? "invoice" : "in_payment",
+      };
       const session = await bound.stripe.checkout.sessions.create(
         {
           mode: "payment",
@@ -168,18 +179,18 @@ export async function createCheckout(input: {
           ],
           payment_method_types: opt.ok && "ach" in opt && opt.ach ? ["card", "us_bank_account"] : ["card"],
           payment_intent_data: {
-            application_fee_amount: feeMinor,
-            metadata,
+            application_fee_amount: bound.viaKey ? undefined : feeMinor,
+            metadata: stripeMeta,
             description: itemName,
           },
-          metadata,
+          metadata: stripeMeta,
           client_reference_id: proposal.id,
           customer_email: proposal.client?.email ?? undefined,
           expires_at: Math.floor(Date.now() / 1000) + 60 * 60,
           success_url: `${origin}/portal/q/${proposal.publicId}?paid=1&ref={CHECKOUT_SESSION_ID}`,
           cancel_url: `${origin}/portal/q/${proposal.publicId}?canceled=1`,
         },
-        { stripeAccount: bound.accountId, idempotencyKey },
+        { ...bound.reqOpts, idempotencyKey },
       );
       if (!session.url) throw new Error("Stripe returned no checkout URL");
       await db.installment.updateMany({
@@ -244,7 +255,7 @@ async function openUrlFor(
     if (provider === "STRIPE") {
       const bound = stripeForConnection(conn);
       if (!bound) return null;
-      const s = await bound.stripe.checkout.sessions.retrieve(ref, undefined, { stripeAccount: bound.accountId });
+      const s = await bound.stripe.checkout.sessions.retrieve(ref, undefined, bound.reqOpts);
       return s.status === "open" && s.url ? s.url : null;
     }
     const client = await squareClientForConnection(conn);

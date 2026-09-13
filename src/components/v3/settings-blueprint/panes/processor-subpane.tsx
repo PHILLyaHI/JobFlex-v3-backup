@@ -5,7 +5,9 @@
 // The deep view of one payment connection, laid out like the Gmail subtab:
 // Connection · Behavior · Permissions · Webhook. Everything here is the org's
 // real PaymentConnection row (via getPaymentConnectionStatus) — the Payments
-// pane's short row links here with "Manage".
+// pane's short row links here with "Manage". Stripe offers two ways in:
+// Connect (OAuth) and "Use API key" (stripe-key-form.tsx); a key-joined row
+// shows the key's permissions and whether our webhook got registered.
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -37,9 +39,14 @@ import {
   RECONNECT_ACTION,
   SCOPE_CHECK,
   STRIPE_ACH_TOGGLE,
+  STRIPE_KEY_ACTION,
+  STRIPE_KEY_FORM,
+  STRIPE_KEY_PERMISSIONS_CARD,
+  STRIPE_WEBHOOK_REGISTERED,
   squareConnLine,
   stripeConnLine,
 } from "../settings-data";
+import { StripeKeyForm } from "./stripe-key-form";
 import type { PaymentConnectionStatusView } from "@/lib/payments/connections";
 import { CopyBox, Toggle, actionError } from "../ui";
 
@@ -79,7 +86,16 @@ export function ProcessorSubpane({
   const [err, setErr] = useState("");
   const [ach, setAch] = useState(s.achEnabled);
   const [offered, setOffered] = useState(isStripe ? s.offered : q.offered);
-  const connectHref = isStripe ? conns.connectHref.stripe : conns.connectHref.square;
+  // Stripe's two ways in: OAuth (when the platform offers it) and a pasted
+  // key. A row joined by key reconnects through the form, not the OAuth link.
+  const [keyOpen, setKeyOpen] = useState(false);
+  const viaKey = isStripe && s.auth === "key";
+  const keyOffered = isStripe && s.keyOffered;
+  const connectHref: string | null = isStripe
+    ? s.oauthOffered
+      ? conns.connectHref.stripe
+      : null
+    : conns.connectHref.square;
 
   async function disconnect() {
     setBusy(true);
@@ -135,9 +151,21 @@ export function ProcessorSubpane({
               </span>
               <span className="prow-act prow-act--pair">
                 {!connected ? (
-                  <a className={`btn btn-ghost btn-sm ${RECONNECT_ACTION.state}`} href={connectHref}>
-                    {RECONNECT_ACTION.label}
-                  </a>
+                  viaKey || !connectHref ? (
+                    keyOffered ? (
+                      <button
+                        className={`btn btn-ghost btn-sm ${RECONNECT_ACTION.state}`}
+                        type="button"
+                        onClick={() => setKeyOpen((v) => !v)}
+                      >
+                        {RECONNECT_ACTION.label}
+                      </button>
+                    ) : null
+                  ) : (
+                    <a className={`btn btn-ghost btn-sm ${RECONNECT_ACTION.state}`} href={connectHref}>
+                      {RECONNECT_ACTION.label}
+                    </a>
+                  )
                 ) : null}
                 <button
                   className={`btn btn-ghost btn-sm ${DISCONNECT_ACTION.state}`}
@@ -155,15 +183,46 @@ export function ProcessorSubpane({
                 {PROCESSOR_STATE_COPY[state]}
               </div>
               {state === "disconnected" ? (
-                <a className={`btn btn-primary`} href={connectHref}>
-                  <svg className="ic">
-                    <use href={`#${CONNECT_ACTION.icon}`} />
-                  </svg>
-                  {`Connect ${isStripe ? "Stripe" : "Square"}`}
-                </a>
+                <div className="skf-ways">
+                  {connectHref ? (
+                    <a className={`btn btn-primary`} href={connectHref}>
+                      <svg className="ic">
+                        <use href={`#${CONNECT_ACTION.icon}`} />
+                      </svg>
+                      {`Connect ${isStripe ? "Stripe" : "Square"}`}
+                    </a>
+                  ) : null}
+                  {keyOffered ? (
+                    <>
+                      {connectHref ? <span className="skf-or">{STRIPE_KEY_FORM.or}</span> : null}
+                      <button
+                        className={`btn ${connectHref ? "btn-ghost" : "btn-primary"}`}
+                        type="button"
+                        aria-expanded={keyOpen}
+                        onClick={() => setKeyOpen((v) => !v)}
+                      >
+                        <svg className="ic">
+                          <use href={`#${STRIPE_KEY_ACTION.icon ?? "i-card"}`} />
+                        </svg>
+                        {STRIPE_KEY_ACTION.label}
+                      </button>
+                    </>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           )}
+          {keyOpen && !connected ? (
+            <div style={{ marginTop: 14 }}>
+              <StripeKeyForm
+                feePct={conns.platformFeePct}
+                onCancel={() => setKeyOpen(false)}
+                onDone={(r) => {
+                  if (r.webhook) setKeyOpen(false); // else the form shows the webhook note
+                }}
+              />
+            </div>
+          ) : null}
           {err ? <div className="prow-d prow-warn" style={{ marginTop: 10 }}>{err}</div> : null}
           {hasRow ? (
             <div style={{ marginTop: 14 }}>
@@ -219,7 +278,7 @@ export function ProcessorSubpane({
 
       {/* ── Permissions ── */}
       <section className="sc">
-        <CardHeader card={PROCESSOR_PERMISSIONS_CARD} />
+        <CardHeader card={viaKey ? STRIPE_KEY_PERMISSIONS_CARD : PROCESSOR_PERMISSIONS_CARD} />
         <div className="sc-b">
           {(isStripe ? s.scopes : q.scopes).length === 0 ? (
             <div className="prow-d">{PROCESSOR_SCOPES_EMPTY}</div>
@@ -240,6 +299,11 @@ export function ProcessorSubpane({
       <section className="sc">
         <CardHeader card={PROCESSOR_WEBHOOK_CARD} />
         <div className="sc-b">
+          {viaKey ? (
+            <div className={s.webhookRegistered ? "prow-d" : "prow-d prow-warn"} style={{ marginBottom: 10 }}>
+              {s.webhookRegistered ? STRIPE_WEBHOOK_REGISTERED : STRIPE_KEY_FORM.webhookMissing}
+            </div>
+          ) : null}
           <div className="fld">
             <span>Endpoint</span>
             <CopyBox value={d.webhookUrl} />

@@ -16,6 +16,7 @@ import {
   toMinor,
 } from "@/lib/paymentSchedule";
 import { notifyPaymentIssue, notifyPaymentReceived } from "@/lib/notify";
+import { billPlatformFee } from "./feeBilling";
 
 type Tx = Prisma.TransactionClient;
 
@@ -30,6 +31,10 @@ export interface SettleInput {
   installmentIds: string[];
   amountMinor: number;
   feeMinor: number;
+  /** How JobFlex's cut is collected: inside the charge (Connect / Square app
+   *  fee) or, for a key-joined Stripe account, as an invoice item on the
+   *  org's JobFlex subscription after settle (feeBilling.ts). */
+  feeBilling?: "in_payment" | "invoice";
   currency: string;
   livemode: boolean;
   method: string | null;
@@ -382,6 +387,20 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
       } catch (err) {
         console.warn("[settle] follow-ups failed", err);
       }
+    }
+    if (input.feeBilling === "invoice" && input.feeMinor > 0) {
+      const pct = Math.round((input.feeMinor / Math.max(1, input.amountMinor)) * 10000) / 100;
+      const outcome = await billPlatformFee({
+        paymentId: result.paymentId,
+        organizationId: result._orgId,
+        feeMinor: input.feeMinor,
+        currency: input.currency,
+        description: `JobFlex platform fee (${pct}%) on ${amountLabel(amount)} received ${paidAt.toISOString().slice(0, 10)}`,
+      }).catch((err) => {
+        console.warn("[settle] fee billing failed", err);
+        return "failed" as const;
+      });
+      if (outcome === "failed") console.warn("[settle] platform fee not billed for payment", result.paymentId);
     }
     return {
       outcome: "settled",
