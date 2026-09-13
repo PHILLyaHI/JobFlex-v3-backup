@@ -73,7 +73,7 @@ import {
   writeLocal,
   type Prefs,
 } from "./roof-package-builder";
-import type { BuildEstimateCardProps } from "./build-estimate-card";
+import type { BuildEstimateCardProps, ReportProp } from "./build-estimate-card";
 import { BlueprintSelect, type SelectStyles } from "@/components/v3/advanced-ai-blueprint/blueprint-select";
 import "./build-estimate-card-c.css";
 
@@ -328,6 +328,7 @@ function PackageLedger({
   facts,
   onBuild,
   onConvert,
+  report,
   disabled,
   converting,
   lead,
@@ -335,6 +336,7 @@ function PackageLedger({
   facts: RoofFacts;
   onBuild: (pkg: RoofPackage, spec: RoofPackageSpec) => void;
   onConvert: (pkg: RoofPackage, spec: RoofPackageSpec) => void;
+  report?: ReportProp | null;
   disabled?: boolean;
   converting?: boolean;
   /** The pitch picker, when the aerial data carried no pitch: it leads the title block. */
@@ -399,6 +401,8 @@ function PackageLedger({
     setDirty(true);
   }, []);
   const setEdge = (k: "eaveFt" | "rakeFt" | "ridgeFt" | "hipFt", v: number) => setSpec((s) => ({ ...s, [k]: v, edgesBasis: "entered" }));
+  const setValleyField = (k: "valleyCount" | "valleyFtEach", v: number) => setSpec((s) => ({ ...s, [k]: v, valleyBasis: "entered" }));
+  const setStepField = (k: "stepWallCount" | "stepWallFtEach", v: number) => setSpec((s) => ({ ...s, [k]: v, stepBasis: "entered" }));
   const resetEdges = () => {
     const e = estimateEdges(facts);
     if (e) setSpec((s) => ({ ...s, ...e, edgesBasis: "estimated" }));
@@ -432,16 +436,42 @@ function PackageLedger({
   const materialsTotal = pkg.materials.reduce((a, l) => a + l.quantity * l.unitPrice, 0);
 
   // ── Picks copy the catalog row's prices into the spec ──
+  // The underlayment that goes with a roof family, when the current pick is
+  // the wrong kind for it: metal, tile and slate want a high-temp synthetic;
+  // a membrane system has no underlayment line at all; everything else that
+  // was left on "none" goes back to synthetic. A deliberate pick of a fitting
+  // underlayment is left alone.
+  const smartUnderlayment = (family: RoofFamily, currentId: string, from: CatalogLists): Underlayment | null => {
+    const has = (id: string) => from.underlayments.find((u) => u.id === id) ?? null;
+    if (family === "low-slope") return currentId === "none" ? null : has("none");
+    if (family === "metal" || family === "tile" || family === "slate") {
+      return ["synthetic", "felt15", "felt30", "paper60", "none"].includes(currentId) ? has("synthetic_premium") : null;
+    }
+    return currentId === "none" ? has("synthetic") : null;
+  };
   const pickSystem = (id: string, from: CatalogLists = lists) => {
     const s = from.systems.find((x) => x.id === id);
     if (!s) return;
     setSpec((prev) => {
-      const next = { ...prev, systemId: id, systemName: s.label, systemFamily: s.family, systemMatPerSq: s.matPerSq, systemLaborPerSq: s.laborPerSq, capPerFt: s.capPerFt, wastePct: s.wastePct };
+      const und = smartUnderlayment(s.family, prev.underlaymentId, from);
+      const next = {
+        ...prev,
+        systemId: id,
+        systemName: s.label,
+        systemFamily: s.family,
+        systemMatPerSq: s.matPerSq,
+        systemLaborPerSq: s.laborPerSq,
+        capPerFt: s.capPerFt,
+        wastePct: s.wastePct,
+        ...(und ? { underlaymentId: und.id, underlaymentName: und.label, underlaymentPerSq: und.perSq } : {}),
+      };
       writeLocal(PREFS_KEY, prefsOf(next));
       return next;
     });
     setDirty(true);
   };
+  /** The select's last option: a new row of the contractor's own, picked and opened for editing. */
+  const CUSTOM_SYSTEM = "__custom";
   const pickUnderlayment = (id: string, from: CatalogLists = lists) => {
     const u = from.underlayments.find((x) => x.id === id);
     if (!u) return;
@@ -501,8 +531,11 @@ function PackageLedger({
     if (id === spec.systemId) pickSystem(id, next);
   };
   const addSystem = () => {
-    const s: RoofSystem = { id: "s_" + nanoid(6), label: "New roof type", family: "asphalt", matPerSq: 0, laborPerSq: 0, wastePct: 10, capPerFt: 0 };
-    updateLists({ ...lists, systems: [...lists.systems, s] });
+    const s: RoofSystem = { id: "s_" + nanoid(6), label: "Custom roof type", family: "asphalt", matPerSq: 0, laborPerSq: 0, wastePct: 10, capPerFt: 0 };
+    const next = { ...lists, systems: [...lists.systems, s] };
+    updateLists(next);
+    pickSystem(s.id, next);
+    setManage("systems");
   };
   const removeSystem = (id: string) => {
     if (lists.systems.length <= 1) return;
@@ -576,6 +609,7 @@ function PackageLedger({
 
   const ventsToAdd = VENT_TYPES.filter((t) => ventOf(t.id).qty <= 0);
   const edgeEstimated = spec.edgesBasis === "estimated";
+  const edgeMeasured = spec.edgesBasis === "measured";
   const lineCount = pkg.materials.length + pkg.labor.length;
 
   const convertBtn = (
@@ -679,8 +713,8 @@ function PackageLedger({
               <Sel
                 label="System"
                 value={spec.systemId}
-                options={lists.systems}
-                onChange={(id) => pickSystem(id)}
+                options={[...lists.systems, { id: CUSTOM_SYSTEM, label: "＋ Custom roof type…" }]}
+                onChange={(id) => (id === CUSTOM_SYSTEM ? addSystem() : pickSystem(id))}
                 disabled={disabled}
                 wide
                 after={
@@ -762,7 +796,7 @@ function PackageLedger({
           id="edges"
           title="Edges"
           summary={sumEdges}
-          chip={<span className={"chip " + (edgeEstimated ? "wait" : "")}>{edgeEstimated ? "from outline" : "entered"}</span>}
+          chip={<span className={"chip " + (edgeMeasured ? "ok" : edgeEstimated ? "wait" : "")}>{edgeMeasured ? "measured · aerial report" : edgeEstimated ? "from outline" : "entered"}</span>}
           open={!!open.edges}
           onToggle={() => toggle("edges")}
           rates={
@@ -777,11 +811,32 @@ function PackageLedger({
           <Group
             label="Lengths"
             note={
-              edgeEstimated ? (
-                <div className="bec-note">Estimated from the building outline — check them against the photo.</div>
-              ) : estimateEdges(facts) ? (
-                <button type="button" className="bec-link" onClick={resetEdges} disabled={disabled}>Back to the outline estimate</button>
-              ) : null
+              <>
+                {edgeMeasured ? (
+                  <div className="bec-note">Measured by the full aerial report{report?.reportId ? ` #${report.reportId}` : ""} — ridge, hip, valley, eave and rake as flown.</div>
+                ) : edgeEstimated ? (
+                  <div className="bec-note">Estimated from the building outline — check them against the photo.</div>
+                ) : estimateEdges(facts) ? (
+                  <button type="button" className="bec-link" onClick={resetEdges} disabled={disabled}>Back to the outline estimate</button>
+                ) : null}
+                {report && report.state === "none" && !edgeMeasured && (
+                  <div className="bec-note">
+                    Want them measured?{" "}
+                    <button type="button" className="bec-link" onClick={report.onOrder} disabled={disabled || report.busy}>
+                      {report.busy ? "Pricing…" : "Order the full aerial measurement report"}
+                    </button>{" "}
+                    — billed, usually within 48 hours; the lengths then load here by themselves.
+                  </div>
+                )}
+                {report && report.state === "pending" && (
+                  <div className="bec-note">
+                    Full report #{report.reportId} ordered · {report.status ?? "in process"}.{" "}
+                    <button type="button" className="bec-link" onClick={report.onCheck} disabled={disabled || report.busy}>
+                      {report.busy ? "Checking…" : "Check if it has landed"}
+                    </button>
+                  </div>
+                )}
+              </>
             }
           >
             <Num label="Eave" unit="ft" value={spec.eaveFt} onChange={(v) => setEdge("eaveFt", v)} disabled={disabled} />
@@ -827,13 +882,13 @@ function PackageLedger({
           }
         >
           <Group label="Valleys">
-            <Num label="Count" unit="each" value={spec.valleyCount} onChange={(v) => set("valleyCount", v)} disabled={disabled} />
-            <Num label="Length each" unit="ft" value={spec.valleyFtEach} onChange={(v) => set("valleyFtEach", v)} disabled={disabled} />
+            <Num label="Count" unit="each" value={spec.valleyCount} onChange={(v) => setValleyField("valleyCount", v)} disabled={disabled} />
+            <Num label="Length each" unit="ft" value={spec.valleyFtEach} onChange={(v) => setValleyField("valleyFtEach", v)} disabled={disabled} />
             <Sel label="Type" value={spec.valleyTypeId} options={VALLEY_TYPES} onChange={pickValley} disabled={disabled} wide />
           </Group>
           <Group label="Sidewalls · step flashing">
-            <Num label="Walls" unit="each" value={spec.stepWallCount} onChange={(v) => set("stepWallCount", v)} disabled={disabled} />
-            <Num label="Length each" unit="ft" value={spec.stepWallFtEach} onChange={(v) => set("stepWallFtEach", v)} disabled={disabled} />
+            <Num label="Walls" unit="each" value={spec.stepWallCount} onChange={(v) => setStepField("stepWallCount", v)} disabled={disabled} />
+            <Num label="Length each" unit="ft" value={spec.stepWallFtEach} onChange={(v) => setStepField("stepWallFtEach", v)} disabled={disabled} />
             <Sel label="Step size" value={spec.stepSizeId} options={STEP_FLASHING_SIZES} onChange={pickStep} disabled={disabled} wide />
           </Group>
           <Group label="Apron & counter">
@@ -962,6 +1017,7 @@ function PackageLedger({
             <Num label="Cleanup" unit="$" value={spec.cleanupLump} onChange={(v) => set("cleanupLump", v)} disabled={disabled} />
             <Num label="Steep safety" unit="$" value={spec.safetyLump} onChange={(v) => set("safetyLump", v)} disabled={disabled} />
             <Num label="Permit" unit="$" value={spec.permitLump} onChange={(v) => set("permitLump", v)} disabled={disabled} />
+            <Num label="Delivery" unit="$" value={spec.deliveryLump ?? 0} onChange={(v) => set("deliveryLump", v)} disabled={disabled} />
           </Group>
         </Row>
 
@@ -1057,6 +1113,7 @@ export default function BuildEstimateCardC({
   converting,
   onBuild,
   onConvert,
+  report,
   output,
 }: BuildEstimateCardProps) {
   // EagleView supplied no pitch (pack 002 not bought): the contractor states
@@ -1111,7 +1168,7 @@ export default function BuildEstimateCardC({
 
       {buildMode === "package" ? (
         !isRecon && facts ? (
-          <PackageLedger facts={facts} disabled={builderDisabled} converting={converting} onBuild={onBuild} onConvert={onConvert} lead={pitchSel} />
+          <PackageLedger facts={facts} disabled={builderDisabled} converting={converting} onBuild={onBuild} onConvert={onConvert} lead={pitchSel} report={report} />
         ) : pitchSel ? (
           <div className="bec-console">{pitchSel}</div>
         ) : null

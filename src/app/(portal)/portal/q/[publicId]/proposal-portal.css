@@ -181,6 +181,10 @@ body:has(.jf-proposal-portal)::before { content: none; }
 .jf-proposal-portal .pv-intro { padding-top: 30px; }
 .jf-proposal-portal .pv-intro-card { border: var(--border); border-radius: var(--radius);
   background: #ffffff; padding: 28px 30px 26px; }
+/* The client's house — the measurement's satellite photo, framed like a drawing. */
+.jf-proposal-portal .pv-site { margin: 18px 0 0; border: var(--border); border-radius: var(--radius); overflow: hidden; background: #f2f0eb; }
+.jf-proposal-portal .pv-site img { display: block; width: 100%; aspect-ratio: 1 / 1; max-height: 420px; object-fit: cover; }
+.jf-proposal-portal .pv-site figcaption { padding: 8px 12px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted, #6b6b6b); border-top: var(--border); }
 .jf-proposal-portal .pv-kicker { font-family: var(--font-mono); font-size: 11px; font-weight: 600;
   letter-spacing: .22em; text-transform: uppercase; color: var(--blueprint);
   display: flex; align-items: center; gap: 9px; }

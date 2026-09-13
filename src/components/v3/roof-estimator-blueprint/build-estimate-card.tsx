@@ -17,6 +17,22 @@ import { RoofPackageBuilder } from "./roof-package-builder";
 
 export type BuildMode = "package" | "ai";
 
+/**
+ * The FULL aerial measurement report for this address — the one that carries
+ * ridge, hip, valley, eave and rake feet (the Instant packs do not). The card
+ * shows where it stands and offers the two actions; the data form does them.
+ */
+export interface ReportProp {
+  state: "loading" | "none" | "pending" | "measured";
+  reportId?: number | null;
+  status?: string | null;
+  busy: boolean;
+  /** Price, confirm, then place the billed order. */
+  onOrder: () => void;
+  /** Ask about a pending report and load its lengths if it has landed. */
+  onCheck: () => void;
+}
+
 export interface BuildEstimateCardProps {
   /** A free aerial estimate: its figures can't be priced — the card says so and shows no builder. */
   isRecon: boolean;
@@ -43,6 +59,8 @@ export interface BuildEstimateCardProps {
   caution?: { stamp: string; text: string; action?: { label: string; onClick: () => void } } | null;
   /** Package path: what the builder prices from. null = nothing to price yet. */
   facts: RoofFacts | null;
+  /** The full measurement report's state for this address; absent = not offered. */
+  report?: ReportProp | null;
   builderDisabled: boolean;
   converting: boolean;
   onBuild: (pkg: RoofPackage, spec: RoofPackageSpec) => void;

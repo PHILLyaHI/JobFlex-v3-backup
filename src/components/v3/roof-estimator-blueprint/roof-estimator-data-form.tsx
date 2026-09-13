@@ -42,7 +42,8 @@ import { attachPlacesSuggest, type PickedPlace } from "@/components/v3/blueprint
 import { AddressPinPreview } from "./address-pin-preview";
 import { BuildEstimateCardSwitch } from "./build-estimate-card-switch";
 import { EstimateLinesTable, type EditableLine } from "./estimate-lines-table";
-import { ringPerimeterFt, type RoofFacts, type RoofPackage, type RoofPackageSpec } from "@/lib/roofPackage/takeoff";
+import { estimateEdges, ringPerimeterFt, type MeasuredFootage, type RoofFacts, type RoofPackage, type RoofPackageSpec } from "@/lib/roofPackage/takeoff";
+import { evOrderRoof, evPriceRoof, evReportFootages, evReportStatus, evRoofModel } from "@/actions/eagleview";
 import { isMapsBrowserEnabled, loadMapsLibrary } from "@/lib/googleMaps";
 import { displayedPitchLabel, foreignIndices, instantTotalsOf, pickMainStructure, pitchFamilyShares } from "@/lib/roofDiagram/instantTotals";
 import { AERIAL } from "@/lib/vendorLabels";
@@ -269,6 +270,33 @@ export function RoofEstimatorDataForm() {
   // How the estimate gets built: the roof package builder (default since
   // 2026-09-12) or the one-shot AI draft. Both fill the same tables.
   const [buildMode, setBuildMode] = React.useState<"package" | "ai">("package");
+  // The FULL aerial report for this address — the one with ridge / hip /
+  // valley / eave / rake feet. Looked up whenever a measurement opens; its
+  // lengths feed the package builder and the AI draft as MEASURED figures.
+  type ReportState = { state: "loading" | "none" | "pending" | "measured"; reportId?: number | null; status?: string | null; footage?: MeasuredFootage | null };
+  const [report, setReport] = React.useState<ReportState>({ state: "none" });
+  const [reportBusy, setReportBusy] = React.useState(false);
+  React.useEffect(() => {
+    const m = measurement;
+    if (!m?.address || m.source === "recon") return;
+    let cancelled = false;
+    void evReportFootages({ address: m.address, city: m.city, state: m.state, zip: m.zip, lat: m.lat, lng: m.lng })
+      .then((r) => {
+        if (cancelled || !r.ok) return;
+        if (r.state === "measured") {
+          const f = r.footage;
+          setReport({ state: "measured", reportId: r.reportId, footage: { reportId: r.reportId, eaveFt: f.EAVE, rakeFt: f.RAKE, ridgeFt: f.RIDGE, hipFt: f.HIP, valleyFt: f.VALLEY, stepFlashFt: f.STEPFLASH } });
+        } else if (r.state === "pending") {
+          setReport({ state: "pending", reportId: r.reportId, status: r.status });
+        } else {
+          setReport({ state: "none" });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [measurement]);
   const [assumptions, setAssumptions] = React.useState<string[]>([]);
   const [convertBusy, setConvertBusy] = React.useState(false);
   // Hand-entered takeoff (runManual). Cleared by resetResult, so it never
@@ -443,6 +471,7 @@ export function RoofEstimatorDataForm() {
 
   function showMeasurement(m: RoofMeasurementDTO, wasUnsaved: boolean) {
     setMeasurement(m);
+    setReport({ state: "loading" });
     setExtra(new Set());
     setPitchEntered(null);
     setUnsaved(wasUnsaved);
@@ -580,6 +609,13 @@ export function RoofEstimatorDataForm() {
           : pitchKind === "eagleview"
             ? `pitch ${pitchForEstimate} (${AERIAL.reported} figure)`
             : `pitch ${pitchForEstimate} entered by user — not measured`;
+      const est = roofFacts && !roofFacts.measured ? estimateEdges(roofFacts) : null;
+      const mf = roofFacts?.measured ?? null;
+      const edgesNote = mf
+        ? `MEASURED lengths from the aerial report #${mf.reportId}: eave ${Math.round(mf.eaveFt)} ft, rake ${Math.round(mf.rakeFt)} ft, ridge ${Math.round(mf.ridgeFt)} ft, hip ${Math.round(mf.hipFt)} ft, valley ${Math.round(mf.valleyFt)} ft, step flashing ${Math.round(mf.stepFlashFt)} ft — use these for drip edge, starter, cap, ridge vent, valley metal and step flashing`
+        : est
+          ? `edge lengths ESTIMATED from the outline and shape: eave ${Math.round(est.eaveFt)} ft, rake ${Math.round(est.rakeFt)} ft, ridge ${Math.round(est.ridgeFt)} ft, hip ${Math.round(est.hipFt)} ft — use these unless the photo says otherwise`
+          : null;
       const factsNote = roofFacts
         ? [
             roofFacts.perimeterFt != null ? `building perimeter ${Math.round(roofFacts.perimeterFt)} ft (drip edge and starter run)` : null,
@@ -588,6 +624,7 @@ export function RoofEstimatorDataForm() {
             roofFacts.chimney != null ? `chimney: ${roofFacts.chimney ? "yes — include chimney flashing" : "no"}` : null,
             roofFacts.rooftopAcCount ? `${roofFacts.rooftopAcCount} rooftop unit(s) — curb flashing` : null,
             eaveHeights.length ? `eave heights ${eaveHeights.map((e) => `${e.facade} ${e.ft} ft`).join(", ")} (10 ft classes)` : null,
+            edgesNote,
           ]
             .filter(Boolean)
             .join("; ")
@@ -611,7 +648,7 @@ export function RoofEstimatorDataForm() {
           ? `Contractor-entered takeoff: ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft), ${pitchNote}. No facet or linear-footage breakdown; allow for ridge, valley and flashing.`
           : `${AERIAL.vendor} (calibrated): ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft) for the main structure, ${pitchNote}, footprint ${
               structure?.footprintSqft != null ? num(structure.footprintSqft) + " sq ft" : "not purchased"
-            }.${extrasNote}${factsNote ? ` Also known: ${factsNote}.` : ""} Ridge, hip, valley and wall lengths are NOT measured — estimate them from the shape, footprint and perimeter, itemize every flashing and vent with a count or length, and say in the assumptions which figures are estimates.`,
+            }.${extrasNote}${factsNote ? ` Also known: ${factsNote}.` : ""} ${mf ? "Valley and sidewall lengths are measured; wall counts are not — assume one run each unless the photo shows more." : "Ridge, hip, valley and wall lengths are NOT measured — use the estimates above, itemize every flashing and vent with a count or length, and say in the assumptions which figures are estimates."}`,
       });
       if (!res.ok) {
         if (reportPlanLimitResult(res)) return;
@@ -659,6 +696,68 @@ export function RoofEstimatorDataForm() {
     void convertWith(applyPackage(pkg, spec, true));
   }
 
+  // EagleView's price object has no fixed shape in the docs; read the usual
+  // fields and fall back to "see the confirmation".
+  function priceText(price: unknown): string | null {
+    if (typeof price === "number") return `$${price.toFixed(2)}`;
+    const o = (price ?? {}) as Record<string, unknown>;
+    const n = [o.totalCost, o.TotalCost, o.price, o.Price, o.amount].find((v) => typeof v === "number") as number | undefined;
+    return n != null ? `$${n.toFixed(2)}` : null;
+  }
+  function reportInput() {
+    const m = measurement;
+    return { address: m?.address ?? "", city: m?.city ?? "", state: m?.state ?? "", zip: m?.zip ?? "", lat: m?.lat ?? undefined, lng: m?.lng ?? undefined };
+  }
+  // Price, confirm, order. The order is BILLED and takes about 48 hours; the
+  // lookup effect above picks the lengths up whenever the measurement is
+  // opened again, and "Check" collects them on demand.
+  async function orderFullReport() {
+    const input = reportInput();
+    if (!input.address) {
+      toast.error("No address on this measurement");
+      return;
+    }
+    setReportBusy(true);
+    try {
+      const priced = await evPriceRoof(input);
+      const p = priced.ok ? priceText(priced.price) : null;
+      const ok = window.confirm(
+        `Order the full aerial measurement report for ${input.address}?${p ? ` Price: ${p}.` : ""} It is billed and usually arrives within 48 hours; its measured ridge, hip, valley, eave and rake lengths then load into the package by themselves.`,
+      );
+      if (!ok) return;
+      const res = await evOrderRoof(input);
+      if (!res.ok) throw new Error(res.error);
+      setReport({ state: "pending", reportId: res.reportId, status: "In Process" });
+      toast.success("Full report ordered", `#${res.reportId} — check back in a day or two.`);
+    } catch (err) {
+      toast.error("Couldn't order the report", errMsg(err));
+    } finally {
+      setReportBusy(false);
+    }
+  }
+  async function checkReport() {
+    if (report.state !== "pending" || !report.reportId) return;
+    const id = report.reportId;
+    setReportBusy(true);
+    try {
+      const st = await evReportStatus(id);
+      if (!st.ok) throw new Error(st.error);
+      if (!st.completed) {
+        toast.info(`Report #${id} · ${st.displayStatus}`);
+        return;
+      }
+      const model = await evRoofModel(id);
+      if (!model.ok) throw new Error(model.error);
+      const f = model.model.totals.footageByType;
+      setReport({ state: "measured", reportId: id, footage: { reportId: id, eaveFt: f.EAVE ?? 0, rakeFt: f.RAKE ?? 0, ridgeFt: f.RIDGE ?? 0, hipFt: f.HIP ?? 0, valleyFt: f.VALLEY ?? 0, stepFlashFt: f.STEPFLASH ?? 0 } });
+      toast.success("Measured lengths loaded", "Ridge, hip, valley, eave and rake now come from the aerial report.");
+    } catch (err) {
+      toast.error("Couldn't check the report", errMsg(err));
+    } finally {
+      setReportBusy(false);
+    }
+  }
+
   // Convert THESE lines — the tables' state, or a package just built, which
   // React would not have committed to state yet ("convert as is").
   async function convertWith(input: { title: string; materials: EditableLine[]; labor: EditableLine[]; assumptions: string[] }) {
@@ -680,6 +779,7 @@ export function RoofEstimatorDataForm() {
         materials: input.materials.map(stripId),
         labor: input.labor.map(stripId),
         assumptions: input.assumptions,
+        measurementId: savedId,
       });
       toast.success("Proposal created");
       router.push(`/dashboard/proposals/${res.id}` as Parameters<typeof router.push>[0]);
@@ -805,6 +905,7 @@ export function RoofEstimatorDataForm() {
           rooftopAcCount: manual ? null : structure?.rooftopAcCount ?? null,
           shape: manual ? null : structure?.shape ?? null,
           facetCount: manual ? null : structure?.facetCount ?? null,
+          measured: manual ? null : report.state === "measured" ? report.footage ?? null : null,
         }
       : null;
   // The provider's own score for the eave figure (one score for the whole
@@ -1394,6 +1495,11 @@ export function RoofEstimatorDataForm() {
                     : null
               }
               facts={roofFacts}
+              report={
+                measurement && !manual && !isRecon
+                  ? { state: report.state, reportId: report.reportId ?? null, status: report.status ?? null, busy: reportBusy, onOrder: () => void orderFullReport(), onCheck: () => void checkReport() }
+                  : null
+              }
               builderDisabled={convertBusy}
               converting={convertBusy}
               onBuild={applyPackage}

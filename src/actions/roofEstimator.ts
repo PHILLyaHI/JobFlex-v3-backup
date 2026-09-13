@@ -154,6 +154,9 @@ const convertSchema = z.object({
   assumptions: z.array(z.string()),
   // Pre-links the proposal to a client when converted from a client's page.
   clientId: z.string().optional().nullable(),
+  // The measurement this estimate was priced from: its satellite photo is
+  // what the client sees on the proposal (ProposalSitePhoto).
+  measurementId: z.string().optional().nullable(),
 });
 
 export async function convertRoofEstimateToProposal(raw: unknown) {
@@ -219,6 +222,20 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
       },
     },
   });
+
+  // The house photo for the client: link the measurement, never trusting the
+  // id from the browser past this org. A missing link table (not pushed yet)
+  // costs the photo, not the proposal.
+  if (data.measurementId) {
+    const m = await db.roofMeasurement.findFirst({ where: { id: data.measurementId, organizationId }, select: { id: true } });
+    if (m) {
+      try {
+        await db.proposalSitePhoto.create({ data: { proposalId: proposal.id, roofMeasurementId: m.id } });
+      } catch {
+        /* table not pushed yet */
+      }
+    }
+  }
 
   await db.activityEvent.create({
     data: {

@@ -7,8 +7,6 @@
 // строениям, Google-сегменты (чтение roofSegmentStats), парсель-вето.
 // modelJson остаётся полем схемы; новый код его НЕ пишет ("{}").
 
-import { promises as fs } from "node:fs";
-import { join } from "node:path";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import {
@@ -25,6 +23,7 @@ import {
   type EvOrderInput,
   type InstantRoofData,
 } from "@/lib/eagleview";
+import { satellitePhotoPng } from "@/lib/staticMapPhoto";
 import { orderPacksFor, packReport, packsFromContent, rowPacks, type OrderDeps, type PackReport } from "@/lib/eagleviewOrder";
 import { markPacks, readEntitlements } from "@/lib/eagleviewEntitlements";
 import { isSolarEnabled, getBuildingInsights, SOLAR_CALL_BUDGET_MS, SolarUnavailableError, type SolarFailureKind } from "@/lib/solar";
@@ -681,12 +680,9 @@ export async function getRoofMeasurement(id: string): Promise<RoofMeasurementDTO
  * there is nothing to fit to. scale=2 for crispness. Cached on disk by
  * address+zoom (.cache/staticmap) so reopening the page costs no API call.
  */
-const STATICMAP_DIR = join(process.cwd(), ".cache", "staticmap");
-const STATICMAP_PX = 640; // logical size; scale=2 doubles the pixels
 
 /** One fixed zoom for every address — the standard Google Maps address view
  *  (owner's call: no per-lot fitting at all; the pin centres the house). */
-const STATICMAP_ZOOM = 20;
 
 export async function getMeasurementPhoto(
   id: string,
@@ -697,72 +693,11 @@ export async function getMeasurementPhoto(
     select: { address: true, city: true, state: true, zip: true, lat: true, lng: true, instantJson: true },
   });
   if (!row) return { ok: false, error: "Measurement not found" };
-  if (!process.env.GOOGLE_MAPS_API_KEY) {
-    return { ok: false, error: "Google Maps is not configured (GOOGLE_MAPS_API_KEY)" };
-  }
-
-  let lat = row.lat;
-  let lng = row.lng;
-  if ((lat == null || lng == null) && row.instantJson) {
-    // Older rows sometimes carry no pin — the outlines' centre serves.
-    try {
-      const instant = JSON.parse(row.instantJson) as InstantRoofData;
-      const all = instant.structures.flatMap((st) => st.outline ?? []);
-      if (all.length) {
-        lat = all.reduce((s, p) => s + p.lat, 0) / all.length;
-        lng = all.reduce((s, p) => s + p.lng, 0) / all.length;
-      }
-    } catch {
-      /* photo can still come from the pin */
-    }
-  }
-  if (lat == null || lng == null) return { ok: false, error: "No coordinates on this measurement" };
-  const zoom = STATICMAP_ZOOM;
-
-  // ── disk cache, keyed by the address (per owner) + zoom ──
-  const keyBase = instantAddressKey({
-    address: row.address ?? "",
-    city: row.city ?? "",
-    state: row.state ?? "",
-    zip: row.zip ?? "",
-  }).replace(/[^A-Za-z0-9]+/g, "-");
-  const file = join(STATICMAP_DIR, `${keyBase}-z${zoom}.png`);
-  try {
-    const cached = await fs.readFile(file);
-    return { ok: true, dataUrl: "data:image/png;base64," + cached.toString("base64"), zoom };
-  } catch {
-    /* miss — fetch below */
-  }
-
-  const params = new URLSearchParams({
-    center: `${lat},${lng}`,
-    zoom: String(zoom),
-    size: `${STATICMAP_PX}x${STATICMAP_PX}`,
-    scale: "2",
-    maptype: "satellite",
-    key: process.env.GOOGLE_MAPS_API_KEY,
-  });
-  try {
-    const res = await withDeadline(
-      fetch(`https://maps.googleapis.com/maps/api/staticmap?${params}`, { cache: "no-store" }),
-      8_000,
-      "Static map",
-    );
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
-      return { ok: false, error: `Static Maps refused (${res.status})${detail ? `: ${detail.slice(0, 120)}` : ""}` };
-    }
-    const bytes = Buffer.from(await res.arrayBuffer());
-    try {
-      await fs.mkdir(STATICMAP_DIR, { recursive: true });
-      await fs.writeFile(file, bytes);
-    } catch {
-      /* cache is an optimisation; a failed write costs one repeat request */
-    }
-    return { ok: true, dataUrl: "data:image/png;base64," + bytes.toString("base64"), zoom };
-  } catch (err) {
-    return { ok: false, error: errorMessage(err, "Satellite photo unavailable") };
-  }
+  // The fetch + disk cache live in lib/staticMapPhoto, shared with the
+  // client's public proposal page (its site-photo route).
+  const photo = await satellitePhotoPng(row);
+  if (!photo.ok) return photo;
+  return { ok: true, dataUrl: "data:image/png;base64," + photo.bytes.toString("base64"), zoom: photo.zoom };
 }
 
 /** Орто EagleView (данные, без чертежа) — НЕ используется страницей: владелец
