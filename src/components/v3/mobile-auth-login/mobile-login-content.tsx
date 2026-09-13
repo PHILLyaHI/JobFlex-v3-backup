@@ -120,7 +120,7 @@ function authErrorMessage(code: string | null): string | null {
     case "OAuthCallback":
       return "Google sign-in didn't complete. Try again.";
     case "Configuration":
-      return "Sign-in isn't configured on this server yet.";
+      return "Sign-in didn't complete. Open www.jobflex.app and try again — starting from another address breaks the Google hand-off.";
     default:
       return "Sign in didn't work. Try again.";
   }
@@ -175,8 +175,10 @@ export function MobileLoginContent() {
       if (res.error) {
         const msg =
           res.error === "CredentialsSignin"
-            ? "Email or password is wrong."
-            : `Auth error: ${res.error}. Check server logs — often the database isn't connected yet.`;
+            ? res.code === "db"
+              ? "Couldn't reach the database just now. Try again."
+              : "Email or password is wrong."
+            : `Sign-in hit a temporary error (${res.error}). Try once more.`;
         setInlineError(msg);
         toast.error("Sign in failed", msg);
         return;

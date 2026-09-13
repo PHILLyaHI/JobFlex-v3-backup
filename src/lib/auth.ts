@@ -1,9 +1,15 @@
-import NextAuth, { type DefaultSession } from "next-auth";
+import NextAuth, { CredentialsSignin, type DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { clientIp, rateLimitShared, MINUTE } from "@/lib/rateLimit";
+
+/** The database did not answer during sign-in. Reaches the browser as
+ *  `error=CredentialsSignin&code=db` — a retry, not a wrong password. */
+class DbUnavailable extends CredentialsSignin {
+  code = "db";
+}
 
 declare module "next-auth" {
   interface Session {
@@ -57,10 +63,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           rateLimitShared(`login:email:${email}`, 8, 15 * MINUTE),
         ]);
         if (!byIp.ok || !byEmail.ok) return null;
-        const user = await db.user.findUnique({
-          where: { email },
-          select: { id: true, email: true, name: true, image: true, hashedPassword: true, activeOrgId: true },
-        });
+        let user: { id: string; email: string; name: string | null; image: string | null; hashedPassword: string | null } | null;
+        try {
+          user = await db.user.findUnique({
+            where: { email },
+            select: { id: true, email: true, name: true, image: true, hashedPassword: true, activeOrgId: true },
+          });
+        } catch (err) {
+          // A database that cannot be reached is not a wrong password and not
+          // a misconfiguration. Auth.js maps any plain throw here to
+          // `error=Configuration` — the page then said "check server logs,
+          // often the database isn't connected" for what was one dropped
+          // Neon connection (2026-09-12). A CredentialsSignin with its own
+          // code reaches the client as `code=db`, which the login pages name.
+          console.error("[auth] user lookup failed:", err instanceof Error ? err.message : err);
+          throw new DbUnavailable();
+        }
         if (!user?.hashedPassword) return null;
         const ok = await bcrypt.compare(password, user.hashedPassword);
         if (!ok) return null;

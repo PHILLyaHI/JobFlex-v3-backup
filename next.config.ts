@@ -101,6 +101,23 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "8mb",
     },
   },
+  // ONE HOST FOR SIGN-IN. Google sign-in started on jobflex-v3.vercel.app on
+  // 2026-09-12: the PKCE cookie was set on that host, Google sent the browser
+  // back to NEXTAUTH_URL's host (jobflex.app → www), the verifier there did not
+  // match and the login page said "Auth error: Configuration". The Vercel
+  // alias is not a place to be signed in from; send it to the real address
+  // before any cookie is set. Preview deployments have other hostnames and
+  // are untouched.
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "jobflex-v3.vercel.app" }],
+        destination: "https://www.jobflex.app/:path*",
+        permanent: true,
+      },
+    ];
+  },
   // Baseline HTTP security headers applied to every route. The CSP ships in
   // Report-Only mode first (see CSP_REPORT_ONLY above).
   async headers() {
