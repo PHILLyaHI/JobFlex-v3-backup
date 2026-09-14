@@ -28,7 +28,7 @@ export const ROOF_FAMILIES: Array<{ id: RoofFamily; label: string }> = [
   { id: "shake", label: "Wood shake" },
   { id: "slate", label: "Slate" },
   { id: "synthetic", label: "Synthetic" },
-  { id: "low-slope", label: "Low slope / membrane" },
+  { id: "low-slope", label: "Flat / low slope" },
 ];
 
 export interface RoofSystem extends CatalogOption {
@@ -60,14 +60,54 @@ export const ROOF_SYSTEMS: RoofSystem[] = [
   { id: "synthetic_shake", label: "Synthetic shake", family: "synthetic", matPerSq: 420, laborPerSq: 350, wastePct: 10, capPerFt: 4.5 },
   { id: "slate", label: "Natural slate", family: "slate", matPerSq: 1100, laborPerSq: 900, wastePct: 12, capPerFt: 8.5 },
   { id: "copper", label: "Copper standing seam", family: "metal", matPerSq: 1600, laborPerSq: 900, wastePct: 8, capPerFt: 30 },
-  { id: "tpo", label: "TPO membrane · low slope", family: "low-slope", matPerSq: 250, laborPerSq: 250, wastePct: 5, capPerFt: 0 },
-  { id: "epdm", label: "EPDM rubber · low slope", family: "low-slope", matPerSq: 220, laborPerSq: 230, wastePct: 5, capPerFt: 0 },
-  { id: "pvc", label: "PVC membrane · low slope", family: "low-slope", matPerSq: 300, laborPerSq: 270, wastePct: 5, capPerFt: 0 },
-  { id: "mod_bit", label: "Modified bitumen · low slope", family: "low-slope", matPerSq: 220, laborPerSq: 240, wastePct: 5, capPerFt: 0 },
-  { id: "bur", label: "Built-up tar & gravel · low slope", family: "low-slope", matPerSq: 260, laborPerSq: 300, wastePct: 5, capPerFt: 0 },
-  { id: "rolled", label: "Rolled roofing", family: "low-slope", matPerSq: 90, laborPerSq: 120, wastePct: 8, capPerFt: 0 },
+  { id: "standing_seam_low", label: "Standing seam · low slope 1:12", family: "metal", matPerSq: 620, laborPerSq: 520, wastePct: 8, capPerFt: 14 },
   { id: "solar_shingle", label: "Solar shingles", family: "asphalt", matPerSq: 2200, laborPerSq: 900, wastePct: 5, capPerFt: 2.4 },
-  { id: "green_roof", label: "Green / living roof", family: "low-slope", matPerSq: 1500, laborPerSq: 1200, wastePct: 5, capPerFt: 0 },
+
+  // ── Flat / low slope ──────────────────────────────────────────────────────
+  // Most-installed in the US first. PRICED AS THE MEMBRANE (or plies, or
+  // coating) plus its seam and detail stock, and the crew that lays it —
+  // NOTHING ELSE. Insulation, cover board, fasteners, adhesive, edge metal,
+  // coping, drains, curbs, walkway pads and the warranty are their own lines
+  // (lowSlope.ts), so a price here never double-counts one of them. The ids
+  // "tpo", "epdm", "pvc", "mod_bit", "bur", "rolled" and "green_roof" are the
+  // original rows' ids, kept so a company's saved catalog still resolves.
+  { id: "tpo", label: "TPO 60 mil · mech attached", family: "low-slope", matPerSq: 125, laborPerSq: 165, wastePct: 5, capPerFt: 0 },
+  { id: "tpo_60_adhered", label: "TPO 60 mil · fully adhered", family: "low-slope", matPerSq: 130, laborPerSq: 205, wastePct: 8, capPerFt: 0 },
+  { id: "epdm", label: "EPDM 60 mil · fully adhered", family: "low-slope", matPerSq: 140, laborPerSq: 210, wastePct: 8, capPerFt: 0 },
+  { id: "mod_bit", label: "Mod bit 2-ply · torch-down", family: "low-slope", matPerSq: 225, laborPerSq: 245, wastePct: 10, capPerFt: 0 },
+  { id: "tpo_45", label: "TPO 45 mil · mech attached", family: "low-slope", matPerSq: 105, laborPerSq: 155, wastePct: 5, capPerFt: 0 },
+  { id: "epdm_mech", label: "EPDM 60 mil · mech attached", family: "low-slope", matPerSq: 145, laborPerSq: 175, wastePct: 5, capPerFt: 0 },
+  { id: "pvc", label: "PVC 60 mil · mech attached", family: "low-slope", matPerSq: 165, laborPerSq: 170, wastePct: 5, capPerFt: 0 },
+  { id: "pvc_adhered", label: "PVC 60 mil · fully adhered", family: "low-slope", matPerSq: 175, laborPerSq: 210, wastePct: 8, capPerFt: 0 },
+  { id: "tpo_80", label: "TPO 80 mil · mech attached", family: "low-slope", matPerSq: 160, laborPerSq: 175, wastePct: 5, capPerFt: 0 },
+  { id: "mod_bit_sa", label: "Mod bit 2-ply · self-adhered", family: "low-slope", matPerSq: 275, laborPerSq: 215, wastePct: 10, capPerFt: 0 },
+  { id: "coat_silicone", label: "Silicone coating · 10-yr", family: "low-slope", matPerSq: 105, laborPerSq: 115, wastePct: 12, capPerFt: 0 },
+  { id: "tpo_induction", label: "TPO 60 mil · induction welded", family: "low-slope", matPerSq: 135, laborPerSq: 200, wastePct: 5, capPerFt: 0 },
+  { id: "bur", label: "Built-up 4-ply · gravel", family: "low-slope", matPerSq: 220, laborPerSq: 320, wastePct: 8, capPerFt: 0 },
+  { id: "bur_cap", label: "Built-up 3-ply · mod bit cap", family: "low-slope", matPerSq: 225, laborPerSq: 290, wastePct: 8, capPerFt: 0 },
+  { id: "epdm_45", label: "EPDM 45 mil · fully adhered", family: "low-slope", matPerSq: 115, laborPerSq: 195, wastePct: 8, capPerFt: 0 },
+  { id: "spf_silicone", label: "Spray foam 1.5 in · silicone", family: "low-slope", matPerSq: 215, laborPerSq: 205, wastePct: 10, capPerFt: 0 },
+  { id: "coat_silicone_20", label: "Silicone coating · 20-yr", family: "low-slope", matPerSq: 145, laborPerSq: 125, wastePct: 12, capPerFt: 0 },
+  { id: "coat_silicone_metal", label: "Silicone coating · metal roof", family: "low-slope", matPerSq: 145, laborPerSq: 135, wastePct: 10, capPerFt: 0 },
+  { id: "coat_acrylic", label: "Acrylic coating · restoration", family: "low-slope", matPerSq: 95, laborPerSq: 105, wastePct: 15, capPerFt: 0 },
+  { id: "rolled", label: "Rolled roofing · 90 lb", family: "low-slope", matPerSq: 90, laborPerSq: 135, wastePct: 10, capPerFt: 0 },
+  { id: "mod_bit_hot", label: "Mod bit 2-ply · hot-mopped", family: "low-slope", matPerSq: 210, laborPerSq: 260, wastePct: 10, capPerFt: 0 },
+  { id: "pvc_80", label: "PVC 80 mil · mech attached", family: "low-slope", matPerSq: 215, laborPerSq: 180, wastePct: 5, capPerFt: 0 },
+  { id: "tpo_fleece_adhered", label: "TPO fleece-back · adhered", family: "low-slope", matPerSq: 185, laborPerSq: 210, wastePct: 8, capPerFt: 0 },
+  { id: "bur_3ply_smooth", label: "Built-up 3-ply · smooth", family: "low-slope", matPerSq: 185, laborPerSq: 265, wastePct: 8, capPerFt: 0 },
+  { id: "epdm_90", label: "EPDM 90 mil · fully adhered", family: "low-slope", matPerSq: 195, laborPerSq: 225, wastePct: 8, capPerFt: 0 },
+  { id: "mod_bit_cold", label: "Mod bit 2-ply · cold-applied", family: "low-slope", matPerSq: 215, laborPerSq: 230, wastePct: 10, capPerFt: 0 },
+  { id: "epdm_ballast", label: "EPDM 60 mil · ballasted", family: "low-slope", matPerSq: 120, laborPerSq: 150, wastePct: 5, capPerFt: 0 },
+  { id: "pvc_fleece_adhered", label: "PVC fleece-back · adhered", family: "low-slope", matPerSq: 225, laborPerSq: 215, wastePct: 8, capPerFt: 0 },
+  { id: "kee", label: "KEE 50 mil · mech attached", family: "low-slope", matPerSq: 255, laborPerSq: 180, wastePct: 5, capPerFt: 0 },
+  { id: "coat_urethane", label: "Urethane coating · restoration", family: "low-slope", matPerSq: 195, laborPerSq: 125, wastePct: 12, capPerFt: 0 },
+  { id: "spf_acrylic", label: "Spray foam 1 in · acrylic", family: "low-slope", matPerSq: 165, laborPerSq: 175, wastePct: 10, capPerFt: 0 },
+  { id: "coat_emulsion", label: "Aluminum / emulsion coating", family: "low-slope", matPerSq: 55, laborPerSq: 70, wastePct: 15, capPerFt: 0 },
+  { id: "mod_bit_cap_recover", label: "Cap sheet overlay · repair", family: "low-slope", matPerSq: 120, laborPerSq: 145, wastePct: 10, capPerFt: 0 },
+  { id: "liquid_pu", label: "Liquid PU membrane · fleece", family: "low-slope", matPerSq: 500, laborPerSq: 420, wastePct: 10, capPerFt: 0 },
+  { id: "pmma", label: "PMMA liquid membrane", family: "low-slope", matPerSq: 1100, laborPerSq: 1000, wastePct: 10, capPerFt: 0 },
+  { id: "green_roof", label: "Vegetative roof · extensive", family: "low-slope", matPerSq: 1450, laborPerSq: 1150, wastePct: 5, capPerFt: 0 },
+  { id: "ballast_paver", label: "Paver deck · on pedestals", family: "low-slope", matPerSq: 1150, laborPerSq: 600, wastePct: 5, capPerFt: 0 },
 ];
 
 /**
@@ -75,7 +115,10 @@ export const ROOF_SYSTEMS: RoofSystem[] = [
  * low-slope treatment; 8/12 and up is walk-with-care, 10/12 and up is roped,
  * 12/12 and up is staged.
  */
-export function pitchLaborFactor(pitch12: number): number {
+export function pitchLaborFactor(pitch12: number, family?: RoofFamily): number {
+  // A membrane is chosen FOR a flat roof; the shallow-pitch surcharge exists
+  // to penalise shingles laid below 4/12 and must never stack on it.
+  if (family === "low-slope") return 1;
   if (pitch12 < 4) return 1.1;
   if (pitch12 <= 6) return 1;
   if (pitch12 <= 7) return 1.1;
@@ -104,7 +147,7 @@ export type IceWaterCoverage = "none" | "eaves" | "eaves_valleys" | "full";
 export const ICE_WATER: Array<CatalogOption & { id: IceWaterCoverage }> = [
   { id: "none", label: "None" },
   { id: "eaves", label: "Eaves only (two rows, 6 ft up)" },
-  { id: "eaves_valleys", label: "Eaves + valleys (+ 3 ft each side of valley)" },
+  { id: "eaves_valleys", label: "Eaves + valleys (36 in on each valley)" },
   { id: "full", label: "Full deck" },
 ];
 export const ICE_WATER_PER_SQFT = 0.6;
@@ -139,7 +182,9 @@ export const VALLEY_TYPES: ValleyType[] = [
   { id: "closed_cut", label: "Closed-cut (shingles, membrane under)", matPerFt: 0, laborPerFt: 2.5 },
   { id: "open_w24", label: "Open metal · W-valley 24 in", matPerFt: 3.5, laborPerFt: 3 },
   { id: "open_w20", label: "Open metal · W-valley 20 in", matPerFt: 3.1, laborPerFt: 3 },
-  { id: "open_copper", label: "Open metal · copper", matPerFt: 18, laborPerFt: 4 },
+  { id: "open_copper", label: "Open metal · copper", matPerFt: 28, laborPerFt: 6 },
+  { id: "raised_rib", label: "Raised-rib · tile / slate", matPerFt: 8, laborPerFt: 10 },
+  { id: "formed_pan", label: "Formed valley pan · metal", matPerFt: 15, laborPerFt: 10 },
   { id: "custom", label: "Custom…", matPerFt: 0, laborPerFt: 0 },
 ];
 
@@ -228,6 +273,72 @@ export interface CatalogLists {
   underlayments: Underlayment[];
 }
 export const BUILTIN_LISTS: CatalogLists = { systems: ROOF_SYSTEMS, underlayments: UNDERLAYMENTS };
+
+// ── Like-for-like ───────────────────────────────────────────────────────────
+// The aerial data names what is on the roof now ("Tile", "Asphalt shingle",
+// "Metal"…). A replacement starts from the same family — a tile roof is priced
+// as tile, not as the shingle default (owner, 2026-09-14) — and the contractor
+// changes the system if the client wants something else.
+
+/** The aerial data's material word → our family; null when it names nothing we price. */
+export function familyOfMaterial(word: string | null | undefined): RoofFamily | null {
+  const w = (word ?? "").trim().toLowerCase();
+  if (!w || w === "unknown" || w === "other" || w === "none") return null;
+  if (/tile|clay|concrete|terracotta|barrel/.test(w)) return "tile";
+  if (/metal|steel|standing|aluminum|aluminium|copper|tin\b/.test(w)) return "metal";
+  if (/slate/.test(w)) return "slate";
+  if (/shake|cedar|wood/.test(w)) return "shake";
+  if (/synthetic|composite|polymer/.test(w)) return "synthetic";
+  if (/membrane|flat|tpo|epdm|pvc|built|bur\b|gravel|tar\b|modified|mod.?bit|rolled|roll\b|rubber|\bcoating\b|silicone|acrylic|elastomeric|spray.?foam|\bspf\b|polyurethane/.test(w)) return "low-slope";
+  if (/asphalt|shingle|composition|fiberglass|fibreglass|architectural|laminat/.test(w)) return "asphalt";
+  return null;
+}
+
+/** The system to start from per family, most common first; a custom catalog
+ *  without these ids falls back to its first system of the family. */
+const LIKE_FOR_LIKE: Record<RoofFamily, string[]> = {
+  asphalt: ["architectural", "impact_resistant", "three_tab"],
+  metal: ["standing_seam", "metal_panel", "stone_coated_steel"],
+  tile: ["concrete_tile", "clay_tile"],
+  shake: ["cedar_shake", "cedar_shingle"],
+  slate: ["slate", "synthetic_slate"],
+  synthetic: ["synthetic_slate", "synthetic_shake"],
+  "low-slope": ["tpo", "mod_bit", "epdm"],
+};
+
+/** Every system id the built-in catalog had BEFORE 2026-09-14. A saved
+ *  company catalog holding none of the ids added since is from before the
+ *  flat-roof release and gets them appended once; after that, a built-in the
+ *  contractor deleted stays deleted. */
+export const PRE_FLAT_RELEASE_IDS = new Set([
+  "architectural", "three_tab", "impact_resistant", "designer", "standing_seam", "metal_panel", "stone_coated_steel",
+  "metal_shingle", "concrete_tile", "clay_tile", "cedar_shake", "cedar_shingle", "synthetic_slate", "synthetic_shake",
+  "slate", "copper", "tpo", "epdm", "pvc", "mod_bit", "bur", "rolled", "solar_shingle", "green_roof",
+]);
+
+/** The valley a roof family is built with: closed-cut on shingles, a formed
+ *  pan on metal, raised-rib metal under tile and slate, open metal on shake.
+ *  Low slope has no valleys at all. */
+export const VALLEY_FOR_FAMILY: Record<RoofFamily, string | null> = {
+  asphalt: "closed_cut",
+  synthetic: "closed_cut",
+  metal: "formed_pan",
+  tile: "raised_rib",
+  slate: "raised_rib",
+  shake: "open_w24",
+  "low-slope": null,
+};
+export function likeForLikeSystem(family: RoofFamily, lists: CatalogLists): RoofSystem | null {
+  for (const id of LIKE_FOR_LIKE[family]) {
+    const s = lists.systems.find((x) => x.id === id);
+    if (s) return s;
+  }
+  return lists.systems.find((s) => s.family === family) ?? null;
+}
+
+export function familyLabel(family: RoofFamily): string {
+  return ROOF_FAMILIES.find((f) => f.id === family)?.label ?? family;
+}
 
 /** The proposal's measurement vocabulary, as the units the builder emits. */
 export const PKG_UNITS: PkgUnit[] = ["square", "sq ft", "linear ft", "each", "hour", "lot"];

@@ -683,3 +683,10 @@
   .jf-blueprint .content .bec-foot-r { order: -1; margin-left: 0; display: grid; grid-template-columns: 1fr; gap: 10px; }
   .jf-blueprint .content .bec-cat { justify-content: space-between; }
 }
+
+/* Like-for-like: what is on the roof now, under the System pick. Muted when
+   the pick matches the existing material; the warning ink when the pick is a
+   material change, with the way back beside it. */
+.jf-blueprint .content .bec-lfl { margin-top: 6px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; line-height: 1.55; color: var(--muted); max-width: 44ch; }
+.jf-blueprint .content .bec-lfl.is-diff { color: var(--warning-dark); }
+.jf-blueprint .content .bec-lfl .bec-link { display: inline; height: auto; min-height: 0; margin-left: 6px; padding: 0; font: inherit; text-decoration: underline; text-underline-offset: 2px; color: var(--blueprint); }

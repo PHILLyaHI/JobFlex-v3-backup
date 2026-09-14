@@ -59,6 +59,13 @@ export interface BuildEstimateCardProps {
   caution?: { stamp: string; text: string; action?: { label: string; onClick: () => void } } | null;
   /** Package path: what the builder prices from. null = nothing to price yet. */
   facts: RoofFacts | null;
+  /**
+   * The page's residential/commercial answer setter. The builder's commercial
+   * switch goes through it, so the report notice, the Details row, the smart
+   * estimate and the package all read ONE answer. Absent for a hand-entered
+   * takeoff, where the switch stays local to the builder.
+   */
+  onBuildingUse?: (use: "residential" | "commercial") => void;
   /** The full measurement report's state for this address; absent = not offered. */
   report?: ReportProp | null;
   builderDisabled: boolean;
