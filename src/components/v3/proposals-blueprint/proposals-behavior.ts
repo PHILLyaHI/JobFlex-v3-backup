@@ -46,13 +46,14 @@ import {
   updateProposalStatus,
   uploadProposalPhoto,
 } from "@/actions/proposals";
-import { notifyPaymentReminder } from "@/actions/notify";
+import { notifyPaymentReminder, setProposalReminders } from "@/actions/notify";
 import { markInstallmentPaid, unmarkInstallmentPaid } from "@/actions/installments";
 // The handheld surface's route-local read of the SAME book this page renders
 // from (same query, same requireProposalStaff guard) — used to pick up a row
 // the server just created without leaving the page.
 import { loadProposalBook } from "@/app/(mobile)/mobile-proposals-v2/proposals-actions";
 import { MaterialsSheet } from "@/components/proposal/MaterialsSheet";
+import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { currentZoom, leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { MDL_EXIT_MS, closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { mountIsland, type Island } from "@/components/v3/blueprint-shell/react-island";
@@ -73,6 +74,7 @@ export type ProposalsContentOptions = {
 };
 
 type MaterialsSheetProps = Parameters<typeof MaterialsSheet>[0];
+type ChangeOrderSheetProps = Parameters<typeof ChangeOrderSheet>[0];
 
 /** Server actions reject with an Error whose message is written for the user
  *  ("Not found", "Plan limit reached", the send-transport failure). Surface
@@ -553,11 +555,14 @@ export function initProposalsContent(
       '<button class="btn btn-ghost btn--sm" type="button" data-act="materials"><svg class="ic"><use href="#i-box"/></svg>Materials · ' +
       (p.mat || 0) +
       "</button>" +
-      // "Change order" was here and did nothing but flash "Drafted": the change
-      // order data layer exists (actions/changeOrders.ts) but its only UI —
-      // ChangeOrderList / NewChangeOrderSheet — is not mounted on any reachable
-      // route, so there is nowhere honest to send this click. Removed rather
-      // than left as decoration. See the audit note in the page header.
+      // Real (2026-09-13): this proposal's automatic reminders — on / off /
+      // the company's mode (Settings → Payments). Cycles on click.
+      '<button class="btn btn-ghost btn--sm" type="button" data-act="reminders" title="Automatic payment reminders for this proposal">' +
+      (p.remindersOn === true ? "Auto-remind · on" : p.remindersOn === false ? "Auto-remind · off" : "Auto-remind · company") +
+      "</button>" +
+      // Real (2026-09-13): the change-order sheet — plywood found on tear-off
+      // day, priced and sent for the client's signature from this card.
+      '<button class="btn btn-ghost btn--sm" type="button" data-act="change-order"><svg class="ic"><use href="#i-plus"/></svg>Change order</button>' +
       // Real: the client-facing page for this proposal.
       '<a class="btn btn-ghost btn--sm" href="/portal/q/' +
       encodeURIComponent(p.publicId) +
@@ -1006,6 +1011,26 @@ export function initProposalsContent(
     matIsland = null;
   });
 
+  // The change-order sheet, the same island pattern. Props flow in; the sheet
+  // reports back only by closing and by router.refresh().
+  let coIsland: Island<ChangeOrderSheetProps> | null = null;
+  let coProps: ChangeOrderSheetProps = { open: false, onClose: closeChangeOrder };
+  function closeChangeOrder() {
+    coProps = { ...coProps, open: false };
+    coIsland?.update(coProps);
+  }
+  function openChangeOrder(p: ProposalRow) {
+    const host = $("#pCoHost");
+    if (!host) return;
+    coProps = { open: true, onClose: closeChangeOrder, proposalId: p.id };
+    if (!coIsland) coIsland = mountIsland(host, ChangeOrderSheet, coProps);
+    else coIsland.update(coProps);
+  }
+  disposers.push(() => {
+    coIsland?.destroy();
+    coIsland = null;
+  });
+
   // ================= PROPOSALS: EVENTS =================
   function flashBtn(btn: HTMLElement, label: string) {
     if (btn.dataset.busy) return;
@@ -1133,6 +1158,14 @@ export function initProposalsContent(
       const p = byId(card?.dataset.id ?? null);
       if (kind === "materials" && p) {
         openMaterials(p);
+        return;
+      }
+      if (kind === "change-order" && p) {
+        openChangeOrder(p);
+        return;
+      }
+      if (kind === "reminders" && p) {
+        void runReminders(p, act);
         return;
       }
       if (kind === "done" && p && card) {
@@ -1504,6 +1537,24 @@ export function initProposalsContent(
    * refusal here rather than a silent no-op; it also RETURNS a skip reason
    * instead of throwing, so a skipped send has to be reported too.
    */
+  /** Cycle the proposal's reminder override: company → on → off → company. */
+  async function runReminders(p: ProposalRow, btn: HTMLElement) {
+    if (pstate.writing) return;
+    pstate.writing = true;
+    (btn as HTMLButtonElement).disabled = true;
+    const next = p.remindersOn == null ? true : p.remindersOn ? false : null;
+    try {
+      await setProposalReminders(p.id, next);
+      p.remindersOn = next;
+      renderAccepted();
+    } catch (err) {
+      showAlert("Couldn't change reminders", actionError(err));
+    } finally {
+      pstate.writing = false;
+      (btn as HTMLButtonElement).disabled = false;
+    }
+  }
+
   async function runReminder(p: ProposalRow, installmentId: string, btn: HTMLElement) {
     if (pstate.writing) return;
     pstate.writing = true;

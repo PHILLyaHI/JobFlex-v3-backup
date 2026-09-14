@@ -10,6 +10,8 @@ import { requireManager } from "@/lib/orgContext";
 import { ActivityKind, InstallmentStatus, PaymentStatus, ProposalStatus } from "@/lib/prismaEnums";
 import { fromMinor, resolveSchedule, toMinor } from "@/lib/paymentSchedule";
 import { ensureSchedule, settleInstallmentPayment } from "@/lib/payments/settle";
+import { contractSchedule } from "@/lib/contractTotal";
+import { approvedChangeOrders } from "@/lib/changeOrders/extras";
 import { expireOpenCheckoutsForProposal } from "@/lib/payments/checkouts";
 
 const methodSchema = z.enum(["BANK_TRANSFER", "CASH", "CHECK", "OTHER"]);
@@ -35,7 +37,7 @@ export async function markInstallmentPaid(raw: unknown) {
   const data = markSchema.parse(raw);
   const stage = await db.installment.findFirst({
     where: { id: data.installmentId, proposal: { organizationId } },
-    include: { proposal: { select: { id: true, total: true, currency: true, clientId: true, installments: true } } },
+    include: { proposal: { select: { id: true, total: true, currency: true, clientId: true, installments: true, changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } } } } },
   });
   if (!stage) throw new Error("Not found");
   if (stage.status === InstallmentStatus.PAID) throw new Error("That stage is already paid");
@@ -46,7 +48,7 @@ export async function markInstallmentPaid(raw: unknown) {
     await expireOpenCheckoutsForProposal(stage.proposal.id);
   }
   const schedule = resolveSchedule({
-    total: stage.proposal.total,
+    ...contractSchedule(stage.proposal.total, stage.proposal.changeOrders),
     currency: stage.proposal.currency,
     installments: stage.proposal.installments,
   });
@@ -90,7 +92,7 @@ export async function recordRemainingPayment(raw: unknown) {
   const data = remainingSchema.parse(raw);
   const proposal = await db.proposal.findFirst({
     where: { id: data.proposalId, organizationId },
-    select: { id: true, total: true, currency: true, clientId: true, status: true },
+    select: { id: true, total: true, currency: true, clientId: true, status: true, changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } } },
   });
   if (!proposal) throw new Error("Not found");
   // A COMPLETED proposal may still owe money (completion is about the work,
@@ -98,7 +100,7 @@ export async function recordRemainingPayment(raw: unknown) {
   // guard.
   await expireOpenCheckoutsForProposal(proposal.id);
   const installments = await ensureSchedule(proposal.id);
-  const schedule = resolveSchedule({ total: proposal.total, currency: proposal.currency, installments });
+  const schedule = resolveSchedule({ ...contractSchedule(proposal.total, proposal.changeOrders), currency: proposal.currency, installments });
   if (schedule.remainingMinor <= 0) throw new Error("Nothing is owed on this proposal");
   const amountMinor = data.amount !== undefined ? toMinor(data.amount) : schedule.remainingMinor;
   const openIds = schedule.stages
@@ -155,7 +157,7 @@ export async function unmarkInstallmentPaid(raw: unknown) {
     });
     await tx.payment.update({ where: { id: stage.payment!.id }, data: { status: PaymentStatus.VOID } });
     const after = resolveSchedule({
-      total: stage.proposal.total,
+      ...contractSchedule(stage.proposal.total, await approvedChangeOrders(stage.proposal.id, tx)),
       currency: stage.proposal.currency,
       installments: await tx.installment.findMany({ where: { proposalId: stage.proposal.id } }),
     });
@@ -191,10 +193,10 @@ export async function getProposalSchedule(proposalId: string) {
   const { organizationId } = await requireManager();
   const p = await db.proposal.findFirst({
     where: { id: proposalId, organizationId },
-    select: { total: true, currency: true, installments: { orderBy: { position: "asc" } } },
+    select: { total: true, currency: true, installments: { orderBy: { position: "asc" } }, changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } } },
   });
   if (!p) throw new Error("Not found");
-  const s = resolveSchedule({ total: p.total, currency: p.currency, installments: p.installments });
+  const s = resolveSchedule({ ...contractSchedule(p.total, p.changeOrders), currency: p.currency, installments: p.installments });
   return {
     remaining: fromMinor(s.remainingMinor),
     paid: fromMinor(s.paidMinor),

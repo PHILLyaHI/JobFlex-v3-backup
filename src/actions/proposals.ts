@@ -4,6 +4,8 @@ import { z } from "zod";
 import { InstallmentStatus } from "@/lib/prismaEnums";
 import { diffUnpaid, resolveSchedule } from "@/lib/paymentSchedule";
 import { expireOpenCheckoutsForProposal } from "@/lib/payments/checkouts";
+import { contractSchedule } from "@/lib/contractTotal";
+import { approvedChangeOrders } from "@/lib/changeOrders/extras";
 import { randomUUID } from "node:crypto";
 // Proposal actions use requireProposalStaff: managers operate on any org
 // proposal; SALES / ESTIMATOR callers get `proposalScope` ({ ownerId }) which is
@@ -116,6 +118,7 @@ type StageRow = {
   status: string;
   paidAmount: number | null;
   checkoutOpenedAt: Date | null;
+  changeOrderId?: string | null;
 };
 type StageInput = z.infer<typeof installmentSchema>;
 
@@ -124,6 +127,9 @@ const PENDING_LOCK_MS = 60 * 60 * 1000;
 /** PAID / WAIVED stages, and PENDING ones with a checkout open less than an
  *  hour, may not be removed or re-priced. Labels may still change. */
 function isLockedStage(s: StageRow, now = Date.now()): boolean {
+  // A stage an approved change order created is the client's signed money,
+  // not the builder's to drop or re-price.
+  if (s.changeOrderId) return true;
   if (s.status === InstallmentStatus.PAID || s.status === InstallmentStatus.WAIVED) return true;
   return (
     s.status === InstallmentStatus.PENDING &&
@@ -135,6 +141,8 @@ function isLockedStage(s: StageRow, now = Date.now()): boolean {
 function assertLockedStagesUntouched(existing: StageRow[], incoming: StageInput[]) {
   for (const s of existing) {
     if (!isLockedStage(s)) continue;
+    // The builder never sees change-order stages; upsertInstallments keeps them.
+    if (s.changeOrderId) continue;
     const word = s.status === InstallmentStatus.PENDING ? "being paid right now" : "already paid";
     const next = incoming.find((i) => i.id === s.id);
     if (!next) throw new Error(`"${s.label}" is ${word} and can't be removed`);
@@ -172,8 +180,11 @@ async function upsertInstallments(
       },
     });
   }
+  // Approved change orders do not change during a save; they only move the
+  // contract value the resolver measures against (lib/contractTotal).
+  const cos = await approvedChangeOrders(proposalId);
   const before = resolveSchedule({
-    total: prev.total,
+    ...contractSchedule(prev.total, cos),
     currency: prev.currency,
     installments: prev.installments,
   });
@@ -201,13 +212,20 @@ async function upsertInstallments(
       keep.add(created.id);
     }
   }
+  // Change-order stages are kept as they are and re-indexed after the
+  // builder's rows, so a save from a stale tab cannot drop signed money.
+  const coRows = prev.installments.filter((s) => s.changeOrderId);
+  for (let i = 0; i < coRows.length; i += 1) {
+    keep.add(coRows[i].id);
+    await db.installment.update({ where: { id: coRows[i].id }, data: { position: incoming.length + i } });
+  }
   const dropIds = prev.installments
     .filter((s) => !keep.has(s.id) && !isLockedStage(s, now))
     .map((s) => s.id);
   if (dropIds.length) await db.installment.deleteMany({ where: { id: { in: dropIds } } });
 
   const fresh = await db.installment.findMany({ where: { proposalId }, orderBy: { position: "asc" } });
-  const after = resolveSchedule({ total: next.total, currency: next.currency, installments: fresh });
+  const after = resolveSchedule({ ...contractSchedule(next.total, cos), currency: next.currency, installments: fresh });
   if (diffUnpaid(before, after)) {
     await db.proposal.update({ where: { id: proposalId }, data: { scheduleVersion: { increment: 1 } } });
     // An in-flight checkout is only killed when the money it asks for is
@@ -593,12 +611,12 @@ export async function bulkUpdateProposalStatus(ids: string[], status: ProposalSt
     // Same rule as updateProposalStatus: only proposals with nothing owed.
     const rows = await db.proposal.findMany({
       where: { id: { in: ids }, organizationId, ...proposalScope },
-      select: { id: true, total: true, currency: true, installments: true },
+      select: { id: true, total: true, currency: true, installments: true, changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } } },
     });
     eligible = rows
       .filter(
         (p) =>
-          resolveSchedule({ total: p.total, currency: p.currency, installments: p.installments })
+          resolveSchedule({ ...contractSchedule(p.total, p.changeOrders), currency: p.currency, installments: p.installments })
             .remainingMinor <= 0,
       )
       .map((p) => p.id);

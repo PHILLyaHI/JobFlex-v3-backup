@@ -30,6 +30,13 @@ export interface PaymentSettings {
   bankTransfer: boolean;
   bankTransferInstructions: string;
   autoRemind: boolean;
+  /**
+   * Payment reminders (2026-09-13). "auto": the daily cron nudges the client
+   * for the next unpaid stage on a day 1 / 3 / 7 ladder, by email and text;
+   * "manual": only the Remind / Request payment buttons send; "off": neither
+   * sends. A proposal can override with Proposal.remindersOn.
+   */
+  reminderMode: "auto" | "manual" | "off";
   lateFees: boolean;
   receiptsOnPayment: boolean;
   currency: string;
@@ -45,6 +52,7 @@ export const PAYMENT_DEFAULTS: PaymentSettings = {
   bankTransfer: false,
   bankTransferInstructions: "",
   autoRemind: true,
+  reminderMode: "manual",
   lateFees: true,
   receiptsOnPayment: true,
   currency: "USD",

@@ -5,6 +5,7 @@
 // serialisable so the client components just render it.
 import type { PaymentConnection } from "@prisma/client";
 import { getStripeMode } from "@/lib/stripeMode";
+import { contractSchedule, type ContractCo } from "@/lib/contractTotal";
 import { parsePaymentSettings } from "@/lib/settings";
 import {
   fromMinor,
@@ -62,6 +63,8 @@ type ProposalLike = {
   status: string;
   total: number;
   currency: string;
+  /** Approved change orders — the contract value is total + these (lib/contractTotal). */
+  changeOrders: ContractCo[];
   installments: Array<
     StageInput & { paidAt?: Date | null; status?: string | null; paidAmount?: number | null }
   >;
@@ -88,12 +91,15 @@ export async function buildPortalPayModel(
     stripeMode: mode,
   });
   const schedule = resolveSchedule({
-    total: proposal.total,
+    ...contractSchedule(proposal.total, proposal.changeOrders),
     currency: proposal.currency,
     installments: proposal.installments,
   });
   const paidAtById = new Map(proposal.installments.map((i) => [i.id, i.paidAt ?? null]));
 
+  // COMPLETED still pays: finishing the work does not settle the money, and
+  // an approved change order can add to a finished job.
+  const payableStatus = proposal.status === "ACCEPTED" || proposal.status === "COMPLETED";
   const stages: PortalStage[] = schedule.stages.map((s, i) => ({
     id: s.id,
     no: String(i + 1).padStart(2, "0"),
@@ -103,7 +109,7 @@ export async function buildPortalPayModel(
     amountMinor: s.amountMinor,
     status: s.status,
     paidOn: s.status === "PAID" ? fmt.longDate(paidAtById.get(s.id) ?? null) || null : null,
-    payable: s.payable && proposal.status === "ACCEPTED",
+    payable: s.payable && payableStatus,
     belowMin: {
       stripe: isBelowMin(s.amountMinor, "STRIPE"),
       square: isBelowMin(s.amountMinor, "SQUARE"),
@@ -138,8 +144,8 @@ export async function buildPortalPayModel(
     remainingMinor: schedule.remainingMinor,
     balance: fmt.money(fromMinor(schedule.balanceMinor)),
     balanceMinor: schedule.balanceMinor,
-    nextPayableId: proposal.status === "ACCEPTED" ? schedule.nextPayableId : null,
-    showRemaining: proposal.status === "ACCEPTED" && schedule.remainingMinor > 0 && openCount > 1,
+    nextPayableId: payableStatus ? schedule.nextPayableId : null,
+    showRemaining: payableStatus && schedule.remainingMinor > 0 && openCount > 1,
     providers: { stripe: options.stripe, square: options.square },
     bankTransfer: options.bankTransfer,
     anyHosted,

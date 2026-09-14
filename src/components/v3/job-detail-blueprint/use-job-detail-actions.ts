@@ -34,7 +34,7 @@ import { useRouter } from "next/navigation";
 import { updateJob, createJobEvent, setJobProgress } from "@/actions/jobs";
 import { assignWorker, unassignAssignment } from "@/actions/workers";
 import { uploadJobPhoto } from "@/actions/jobMedia";
-import { sendChangeOrder, approveChangeOrderPublic } from "@/actions/changeOrders";
+import { sendChangeOrder, markChangeOrderApproved } from "@/actions/changeOrders";
 import { KEY_TO_STATUS, type JdBooking, type StatusKey } from "./job-detail-data";
 
 /** Photos travel to the action as a base64 data URL, so the encoded body is
@@ -188,10 +188,15 @@ export function useJobDetailActions(
     [run],
   );
 
+  // The client said yes in person: the office types their name, and the
+  // approval is recorded as in-person under the staff member who typed it —
+  // it is never logged as the client's own click.
   const approveChange = useCallback(
-    (id: string, publicToken: string) =>
+    (id: string) =>
       run({ kind: "change", id }, "Could not record that approval.", async () => {
-        await approveChangeOrderPublic(publicToken, null);
+        const name = typeof window !== "undefined" ? window.prompt("Client's full name, as they approved it in person:") : null;
+        if (!name || name.trim().length < 2) throw new Error("Type the client's full name to record their approval.");
+        await markChangeOrderApproved(id, name.trim());
       }),
     [run],
   );

@@ -208,6 +208,9 @@ export interface ProposalPdfData {
   validUntil?: Date | null;
   publicId: string;
   orgName: string;
+  /** Approved change orders, printed under the original total with the contract value. */
+  changeOrders?: Array<{ label: string; total: number }>;
+  contractTotal?: number;
   previewImageUrl?: string | null;
   clientName?: string | null;
   clientAddress?: string | null;
@@ -353,9 +356,21 @@ export function ProposalPdfDocument({ data }: { data: ProposalPdfData }) {
               <Text style={s.totalsValue}>{money(data.taxTotal, data.currency)}</Text>
             </View>
             <View style={s.grandTotalRow}>
-              <Text style={s.grandTotalLabel}>Total</Text>
+              <Text style={s.grandTotalLabel}>{data.changeOrders?.length ? "Original total" : "Total"}</Text>
               <Text style={s.grandTotalValue}>{money(data.total, data.currency)}</Text>
             </View>
+            {data.changeOrders?.map((c, i) => (
+              <View style={s.totalsRow} key={i}>
+                <Text style={s.totalsLabel}>{c.label}</Text>
+                <Text style={s.totalsValue}>{c.total >= 0 ? "+" : "−"}{money(Math.abs(c.total), data.currency)}</Text>
+              </View>
+            ))}
+            {data.changeOrders?.length && data.contractTotal != null ? (
+              <View style={s.grandTotalRow}>
+                <Text style={s.grandTotalLabel}>Contract total</Text>
+                <Text style={s.grandTotalValue}>{money(data.contractTotal, data.currency)}</Text>
+              </View>
+            ) : null}
           </View>
         </View>
 

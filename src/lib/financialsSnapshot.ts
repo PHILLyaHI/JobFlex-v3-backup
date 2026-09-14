@@ -122,7 +122,8 @@ export async function getFinancialsSnapshot(
     job: c.job?.title ?? c.proposal?.title ?? "—",
     status: c.status,
     when: plate(c.createdAt),
-    amount: c.amount,
+    // Tax-inclusive when itemized (2026-09-13); the legacy signed amount otherwise.
+    amount: c.total ?? c.amount,
   }));
 
   const invoices: Invoice[] = invoiceRows.map((i) => ({

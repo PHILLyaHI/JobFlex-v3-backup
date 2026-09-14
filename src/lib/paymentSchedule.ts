@@ -27,6 +27,8 @@ export interface StageInput {
   position: number;
   status?: string | null;
   paidAmount?: number | null;
+  /** The approved change order this stage collects, when it is one. */
+  changeOrderId?: string | null;
 }
 
 export interface ResolvedStage {
@@ -87,12 +89,22 @@ function normStatus(s: string | null | undefined): StageStatus {
 }
 
 export function resolveSchedule(input: {
+  /** The CONTRACT value the client owes: proposal total + approved change orders (lib/contractTotal). */
   total: number;
+  /**
+   * What percent stages are percentages OF — the ORIGINAL proposal total.
+   * Required on purpose (2026-09-13): a change order raises `total` without
+   * touching the 30% / 70% stages, which stay 30% / 70% of the original;
+   * the change order is its own fixed stage. Passing `total` here would
+   * silently grow every unpaid percent stage by its share of the change.
+   */
+  pctBase: number;
   currency?: string;
   installments: StageInput[];
 }): ResolvedSchedule {
   const currency = (input.currency ?? "USD").toUpperCase();
   const totalMinor = Math.max(0, toMinor(input.total));
+  const pctBaseMinor = Math.max(0, toMinor(input.pctBase));
   const sorted = [...input.installments].sort((a, b) => a.position - b.position);
 
   const implicit = sorted.length === 0;
@@ -136,8 +148,8 @@ export function resolveSchedule(input: {
   const pctStages = unpaid.filter((s) => s.isPercent);
   if (pctStages.length) {
     const sumPct = pctStages.reduce((n, s) => n + (s.pct ?? 0), 0);
-    const target = Math.round((totalMinor * sumPct) / 100);
-    const raws = pctStages.map((s) => (totalMinor * (s.pct ?? 0)) / 100);
+    const target = Math.round((pctBaseMinor * sumPct) / 100);
+    const raws = pctStages.map((s) => (pctBaseMinor * (s.pct ?? 0)) / 100);
     const floors = raws.map((r) => Math.floor(r));
     let leftover = target - floors.reduce((n, f) => n + f, 0);
     const order = raws

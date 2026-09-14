@@ -77,6 +77,8 @@ function viewFromParam(raw: string | null): View {
 
 const DAY_MS = 86400000;
 
+const moneyShort = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
+
 export function ProjectDetailContent({
   project,
   jobs,
@@ -396,6 +398,11 @@ function ListView({
                   ? " · " +
                     shortDate(j.startsAt) +
                     (j.endsAt ? " → " + shortDate(j.endsAt) : "")
+                  : ""}
+                {j.contract
+                  ? j.contract.changes !== 0
+                    ? ` · ${moneyShort(j.contract.original)} ${j.contract.changes > 0 ? "+" : "−"} ${moneyShort(Math.abs(j.contract.changes))} in changes → ${moneyShort(j.contract.current)}`
+                    : ` · ${moneyShort(j.contract.current)}`
                   : ""}
               </div>
             </div>

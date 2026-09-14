@@ -186,6 +186,8 @@ export type SubscriptionPlan = (typeof SubscriptionPlan)[keyof typeof Subscripti
 
 export const ActivityKind = {
   CREATED: "CREATED",
+  CO_APPROVED: "CO_APPROVED",
+  CO_DECLINED: "CO_DECLINED",
   UPDATED: "UPDATED",
   EDITED: "EDITED",
   SENT: "SENT",

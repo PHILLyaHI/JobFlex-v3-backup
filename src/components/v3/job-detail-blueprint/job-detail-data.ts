@@ -152,7 +152,7 @@ export type JdChange = {
   title: string;
   meta: string;
   amount: number;
-  state: "draft" | "sent" | "ok" | "no";
+  state: "draft" | "sent" | "ok" | "no" | "void";
   /** The client-facing approval token — /co/<token>. */
   publicToken: string;
 };

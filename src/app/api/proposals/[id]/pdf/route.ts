@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requireProposalStaff } from "@/lib/orgContext";
 import { ProposalPdfDocument, type ProposalPdfData } from "@/lib/pdf/ProposalPdf";
 import { satellitePhotoPng } from "@/lib/staticMapPhoto";
+import { contractTotal } from "@/lib/contractTotal";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,7 @@ export async function GET(
     include: {
       lineItems: { orderBy: { position: "asc" } },
       installments: { orderBy: { position: "asc" } },
+      changeOrders: { where: { status: "APPROVED" }, orderBy: { createdAt: "asc" }, select: { number: true, title: true, status: true, total: true, amount: true } },
       client: true,
       organization: { select: { name: true } },
     },
@@ -73,6 +75,10 @@ export async function GET(
     taxRate: proposal.taxRate,
     taxTotal: proposal.taxTotal,
     total: proposal.total,
+    // Approved change orders sit under the original total; the contract value
+    // is derived (lib/contractTotal), never written back onto the proposal.
+    changeOrders: proposal.changeOrders.map((c) => ({ label: `Change order${c.number ? ` #${c.number}` : ""} · ${c.title}`, total: c.total ?? c.amount })),
+    contractTotal: contractTotal(proposal.total, proposal.changeOrders),
     currency: proposal.currency,
     createdAt: proposal.createdAt,
     validUntil: proposal.validUntil,

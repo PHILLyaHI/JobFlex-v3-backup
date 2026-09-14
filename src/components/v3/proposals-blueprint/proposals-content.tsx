@@ -170,6 +170,8 @@ export function ProposalsContent({ rows }: { rows: ProposalRow[] }) {
       {/* React island host — MaterialsSheet mounts here. The behavior module
           never writes to this node again once React owns it. */}
       <div id="pMatHost" data-island="materials"></div>
+      {/* React island host — ChangeOrderSheet mounts here on "Change order". */}
+      <div id="pCoHost" data-island="change-order"></div>
 
       {/* DIALOGS — position:fixed overlays, so their place at the end of the
           fragment changes no layout. */}

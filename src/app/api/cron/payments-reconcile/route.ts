@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { contractSchedule } from "@/lib/contractTotal";
 import { isCronAuthorized } from "@/lib/cronAuth";
 import { InstallmentStatus, ProposalStatus } from "@/lib/prismaEnums";
 import { resolveSchedule } from "@/lib/paymentSchedule";
@@ -59,12 +60,12 @@ export async function GET(req: Request) {
   // Consistency: ACCEPTED with nothing owed → PAID.
   const accepted = await db.proposal.findMany({
     where: { status: ProposalStatus.ACCEPTED, installments: { some: { status: InstallmentStatus.PAID } } },
-    select: { id: true, total: true, currency: true, installments: true },
+    select: { id: true, total: true, currency: true, installments: true, changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } } },
     take: 500,
   });
   let flipped = 0;
   for (const p of accepted) {
-    const s = resolveSchedule({ total: p.total, currency: p.currency, installments: p.installments });
+    const s = resolveSchedule({ ...contractSchedule(p.total, p.changeOrders), currency: p.currency, installments: p.installments });
     if (s.remainingMinor <= 0 && s.totalMinor > 0) {
       await db.proposal.update({ where: { id: p.id }, data: { status: ProposalStatus.PAID, paidAt: new Date() } });
       flipped += 1;

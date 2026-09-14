@@ -30,6 +30,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { contractTotal } from "@/lib/contractTotal";
 import { money, longDate } from "@/lib/format";
 import { parseProposalSettings } from "@/lib/settings";
 import { buildPortalView } from "@/components/v3/mobile-proposal-client/portal-view";
@@ -73,6 +74,7 @@ export default async function PublicProposalPortal({
     include: {
       lineItems: { orderBy: { position: "asc" } },
       installments: { orderBy: { position: "asc" } },
+      changeOrders: { where: { status: { in: ["SENT", "APPROVED"] } }, orderBy: { createdAt: "asc" }, select: { id: true, number: true, title: true, status: true, total: true, amount: true, publicToken: true } },
       client: true,
       organization: {
         // paymentSettingsJson decides WHICH pay buttons this client is offered:
@@ -137,6 +139,10 @@ export default async function PublicProposalPortal({
   const org = proposal.organization;
   // What the client can pay, and how — resolved once, shared by both trees.
   const payModel = await buildPortalPayModel(publicId, proposal, org, { money, longDate });
+  // The contract as it stands: the proposal's own total plus every approved
+  // change order (a change order never edits the proposal's figures).
+  const contractValue = contractTotal(proposal.total, proposal.changeOrders);
+  const approvedChangesTotal = Math.round((contractValue - proposal.total) * 100) / 100;
   const orgTerms = parseProposalSettings(org.proposalSettingsJson).terms?.trim() || "";
   const monogram = (org.name?.trim()?.[0] ?? "J").toUpperCase();
   const clientName = proposal.client?.name?.trim() || "you";
@@ -263,8 +269,34 @@ export default async function PublicProposalPortal({
                 <span>{`Tax · ${(proposal.taxRate * 100).toFixed(1)}%`}</span>
                 <b>{money(proposal.taxTotal)}</b>
               </div>
-              <div className="pv-tot-due"><span>Total due</span><b>{money(proposal.total)}</b></div>
+              {approvedChangesTotal !== 0 && (
+                <div className="pv-tot-r">
+                  <span>Approved changes</span>
+                  <b>{approvedChangesTotal > 0 ? "+" : "−"}{money(Math.abs(approvedChangesTotal))}</b>
+                </div>
+              )}
+              <div className="pv-tot-due"><span>Total due</span><b>{money(contractValue)}</b></div>
             </div>
+            {proposal.changeOrders.length > 0 && (
+              <div className="pv-changes">
+                <div className="pv-changes-h">Changes to the contract</div>
+                {proposal.changeOrders.map((c) => {
+                  const amt = c.total ?? c.amount;
+                  const label = `Change order${c.number ? ` #${c.number}` : ""} · ${c.title}`;
+                  return c.status === "SENT" ? (
+                    <a key={c.id} className="pv-change pv-change--open" href={`/co/${c.publicToken}`}>
+                      <span>{label}</span>
+                      <b>{amt >= 0 ? "+" : "−"}{money(Math.abs(amt))} · needs your approval</b>
+                    </a>
+                  ) : (
+                    <div key={c.id} className="pv-change">
+                      <span>{label}</span>
+                      <b>{amt >= 0 ? "+" : "−"}{money(Math.abs(amt))} · approved</b>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </section>
 

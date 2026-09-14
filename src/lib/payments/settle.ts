@@ -7,6 +7,8 @@
 //   place is recorded as unapplied and the owner is told to refund.
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { contractSchedule } from "@/lib/contractTotal";
+import { approvedChangeOrders } from "@/lib/changeOrders/extras";
 import { ActivityKind, InstallmentStatus, PaymentStatus, ProposalStatus } from "@/lib/prismaEnums";
 import {
   applyPaymentToSchedule,
@@ -104,7 +106,7 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
     const proposal = input.proposalId
       ? await tx.proposal.findUnique({
           where: { id: input.proposalId },
-          include: { installments: { orderBy: { position: "asc" } } },
+          include: { installments: { orderBy: { position: "asc" } }, changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } } },
         })
       : null;
     if (!proposal) {
@@ -118,7 +120,7 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
       ? proposal.installments
       : await ensureSchedule(proposal.id, tx);
     const schedule = resolveSchedule({
-      total: proposal.total,
+      ...contractSchedule(proposal.total, proposal.changeOrders),
       currency: proposal.currency,
       installments,
     });
@@ -297,7 +299,7 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
 
     // 5) recompute → proposal PAID when nothing is owed
     const after = resolveSchedule({
-      total: proposal.total,
+      ...contractSchedule(proposal.total, proposal.changeOrders),
       currency: proposal.currency,
       installments: await tx.installment.findMany({ where: { proposalId: proposal.id }, orderBy: { position: "asc" } }),
     });
@@ -456,7 +458,7 @@ export async function recordRefund(input: RefundInput): Promise<"not_found" | "r
         });
       }
       const after = resolveSchedule({
-        total: payment.proposal.total,
+        ...contractSchedule(payment.proposal.total, await approvedChangeOrders(payment.proposal.id, tx)),
         currency: payment.proposal.currency,
         installments: await tx.installment.findMany({ where: { proposalId: payment.proposal.id } }),
       });

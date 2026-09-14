@@ -456,3 +456,12 @@ body:has(.jf-proposal-portal)::before { content: none; }
   .jf-proposal-portal .pv-pay-line { flex-wrap: wrap; row-gap: 6px; }
   .jf-proposal-portal .pv-pay-act { padding-left: 0; }
 }
+
+/* Changes to the contract — approved ones as a record, sent ones as the link to sign. */
+.jf-proposal-portal .pv-changes { margin-top: 14px; border: var(--border); border-radius: var(--radius); background: #fff; }
+.jf-proposal-portal .pv-changes-h { padding: 10px 14px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted, #6b6b6b); border-bottom: var(--border); }
+.jf-proposal-portal .pv-change { display: flex; justify-content: space-between; gap: 12px; padding: 10px 14px; font-size: 13px; color: inherit; text-decoration: none; border-bottom: var(--border); }
+.jf-proposal-portal .pv-change:last-child { border-bottom: 0; }
+.jf-proposal-portal .pv-change b { white-space: nowrap; }
+.jf-proposal-portal .pv-change--open { color: var(--blueprint); }
+.jf-proposal-portal .pv-change--open b { text-decoration: underline; text-underline-offset: 3px; }

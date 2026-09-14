@@ -62,6 +62,7 @@ export default async function MobileProposalClientPage({
     include: {
       lineItems: { orderBy: { position: "asc" } },
       installments: { orderBy: { position: "asc" } },
+      changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } },
       client: true,
       organization: {
         select: {

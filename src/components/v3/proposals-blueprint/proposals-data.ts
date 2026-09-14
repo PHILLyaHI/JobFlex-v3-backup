@@ -68,6 +68,8 @@ export type ProposalRow = {
    *  carry a balance (completion is about the work), so the tear-sheet reads
    *  this rather than assuming "paid in full". */
   owed: number;
+  /** Automatic payment reminders for this proposal: true / false, or null = the company's mode. */
+  remindersOn?: boolean | null;
   inst?: Installment[];
   materials: MaterialLine[];
   /** Proposal.beforePhotos / afterPhotos, already parsed. */

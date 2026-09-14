@@ -9,6 +9,7 @@
     { "path": "/api/cron/daily-cleanup", "schedule": "0 5 * * *" },
     { "path": "/api/cron/payments-reconcile", "schedule": "*/30 * * * *" },
     { "path": "/api/cron/square-refresh", "schedule": "0 4 * * *" },
-    { "path": "/api/cron/purge-deleted-orgs", "schedule": "15 5 * * *" }
+    { "path": "/api/cron/purge-deleted-orgs", "schedule": "15 5 * * *" },
+    { "path": "/api/cron/payment-reminders", "schedule": "0 15 * * *" }
   ]
 }

@@ -46,6 +46,9 @@ export interface PdJob {
   startsAt: Date | null;
   endsAt: Date | null;
   clientName: string | null;
+  /** The contract behind the job: the proposal's original total, the approved
+   *  change orders, and the current value. Null for a job with no proposal. */
+  contract?: { original: number; changes: number; current: number } | null;
 }
 
 export interface PdAvailJob {

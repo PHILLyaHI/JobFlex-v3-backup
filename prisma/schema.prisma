@@ -595,6 +595,9 @@ model Proposal {
   // Checkout sessions carry the version they were minted under, so a payment
   // landing on a stale version is reconciled instead of trusted blindly.
   scheduleVersion   Int       @default(1)
+  // Automatic payment reminders for THIS proposal: true / false override the
+  // company's reminder mode; null follows it (settings → payments).
+  remindersOn       Boolean?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -695,6 +698,13 @@ model Installment {
   checkoutRef      String?
   checkoutOrderId  String?
   checkoutOpenedAt DateTime?
+  // Set when an approved change order created this stage. Such a stage is
+  // locked: the proposal builder neither drops nor re-prices it.
+  changeOrderId    String?   @unique
+  // Payment reminders (2026-09-13): when the client was last nudged for this
+  // stage and how many rungs of the ladder have gone out (auto or manual).
+  remindedAt       DateTime?
+  reminderCount    Int       @default(0)
 
   proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
   payment  Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
@@ -1256,13 +1266,33 @@ model ChangeOrder {
   proposalId     String?
   title          String
   description    String?
-  amount         Float // signed: positive adds, negative reduces
-  status         String    @default("DRAFT") // DRAFT | SENT | APPROVED | DECLINED
+  amount         Float // signed pre-tax delta: positive adds, negative reduces (legacy readers)
+  status         String    @default("DRAFT") // DRAFT | SENT | APPROVED | DECLINED | VOID
   publicToken    String    @unique @default(cuid())
   sentAt         DateTime?
   approvedAt     DateTime?
   declinedAt     DateTime?
   approvedIp     String?
+  // ── Itemized change orders (2026-09-13). All nullable: a row from before
+  // this carries only `amount`, and an APPROVED row with `total` null was
+  // already folded into its proposal's total by the old approval code, so the
+  // contract-total derivation (lib/contractTotal) excludes it. ──
+  number         Int? // per proposal: "CO #2"
+  kind           String? // change-order type key: plywood_sheathing | custom | an org-authored key
+  linesJson      String? // [{ key, name, quantity, unit, unitPrice, kind: material|labor, meta }]
+  taxable        Boolean   @default(true)
+  taxRate        Float? // copied from the proposal at send — a later rate edit cannot move a sent order
+  taxTotal       Float?
+  total          Float? // amount + taxTotal, rounded to cents; the installment an approval creates
+  photosJson     String?   @default("[]") // [{ id, url, caption }] on Blob
+  reason         String? // why the client is paying more — shown on the client page
+  approvedName   String? // the client's typed full name (lightweight e-sign)
+  approvedVia    String? // client | in_person
+  approvedByUserId String? // the staff member who recorded an in-person approval
+  approvedUserAgent String?
+  declineReason  String?
+  createdByUserId String?
+  voidedAt       DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -1273,6 +1303,39 @@ model ChangeOrder {
   @@index([jobId, status])
   @@index([proposalId, status])
   @@index([organizationId, status])
+}
+
+/// An org-authored change-order type — a form definition the generic sheet
+/// renders (items with suggested prices, quantity helpers, photo/reason
+/// flags). Built-in types (plywood / sheathing, custom) live in code
+/// (src/lib/changeOrders/types.ts); rows here add more without a release.
+model ChangeOrderType {
+  id             String   @id @default(cuid())
+  organizationId String
+  key            String
+  label          String
+  definitionJson String
+  position       Int      @default(0)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, key])
+}
+
+/// The contractor's own price for a change-order item, per company: the
+/// suggested price is a default; an override here is what the sheet pre-fills
+/// next time, along with the last quantity entered.
+model ChangeOrderPricePref {
+  id             String   @id @default(cuid())
+  organizationId String
+  typeKey        String
+  itemKey        String
+  unitPrice      Float
+  lastQuantity   Float?
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, typeKey, itemKey])
 }
 
 model ReviewRequest {

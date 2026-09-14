@@ -65,6 +65,7 @@ import Link from "next/link";
 import s from "./job-detail.module.css";
 import { useJobDetailMotion } from "./job-detail-motion";
 import { useJobDetailActions, type PhotoKind } from "./use-job-detail-actions";
+import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { JD_ASSIGN, ST, STATUS_BUTTONS, fmt, type JobDetailRecord } from "./job-detail-data";
 
 /** Hashed module class, or the literal name when the module has none — which is
@@ -101,6 +102,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
   const [tab, setTab] = useState<TabKey>("overview");
   const [rosterOpen, setRosterOpen] = useState(false);
   const [photoKind, setPhotoKind] = useState<PhotoKind>("BEFORE");
+  const [coOpen, setCoOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const a = useJobDetailActions(
@@ -507,11 +509,17 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
           </section>
         )}
 
+        {record.canWrite && <ChangeOrderSheet open={coOpen} onClose={() => setCoOpen(false)} jobId={record.id} />}
         {tab === "changes" && (
           <section className={cx("card")}>
             <div className={cx("jd-h")}>
               <h2 className={cx("jd-t")}>Change orders</h2>
               <span className={cx("jd-s")}>client-signed extras</span>
+              {record.canWrite && (
+                <button className={cx("btn", "btn-primary")} type="button" onClick={() => setCoOpen(true)}>
+                  New change order
+                </button>
+              )}
             </div>
             {record.changes.length === 0 ? (
               <EmptyNote>
@@ -546,9 +554,11 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                         ? "Approved"
                         : c.state === "no"
                           ? "Declined"
-                          : c.state === "sent"
-                            ? "Pending"
-                            : "Draft"}
+                          : c.state === "void"
+                            ? "Withdrawn"
+                            : c.state === "sent"
+                              ? "Pending"
+                              : "Draft"}
                     </span>
                     {record.canWrite && c.state === "draft" && (
                       <button
@@ -565,12 +575,12 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                         className={cx("btn", "btn-primary")}
                         type="button"
                         disabled={working}
-                        onClick={() => a.approveChange(c.id, c.publicToken)}
+                        onClick={() => a.approveChange(c.id)}
                       >
                         {working ? "Saving…" : "Mark approved"}
                       </button>
                     )}
-                    {(!record.canWrite || c.state === "ok" || c.state === "no") && <span />}
+                    {(!record.canWrite || c.state === "ok" || c.state === "no" || c.state === "void") && <span />}
                   </div>
                 );
               })

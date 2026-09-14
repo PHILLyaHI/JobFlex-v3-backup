@@ -19,6 +19,7 @@ const paymentSchema = z.object({
   currency: z.string().trim().max(8),
   depositPct: z.number().min(0).max(100),
   receiptsOnPayment: z.boolean(),
+  reminderMode: z.enum(["auto", "manual", "off"]).optional(),
 });
 
 export async function updatePaymentSettings(raw: unknown) {

@@ -1,204 +1,391 @@
 "use server";
+// Change orders — the office side. Create (typed, itemized, with photos),
+// send (email + SMS through lib/changeOrders/send), withdraw, delete a draft,
+// record an in-person approval, and the reads the sheet and the lists need.
+//
+// The client's own approve / decline live in lib/changeOrders/respond and are
+// reached through the token routes under /api/public-co — never from here, so
+// nothing a browser can call takes an ip or a name for the client.
+//
+// Money: a change order never edits the proposal's totals. Its own subtotal /
+// tax / total are frozen at creation (the proposal's tax rate copied in), and
+// on approval it becomes its own installment (see respond.ts). Everything
+// that reads "what the client owes" derives it (lib/contractTotal).
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { appBaseUrl } from "@/lib/appUrl";
+import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
+import { safeFilename } from "@/lib/safeHref";
+import { createChangeOrderSchema } from "@/lib/changeOrders/schema";
+import {
+  BUILTIN_CHANGE_ORDER_TYPES,
+  CO_STATUS,
+  inferRoofFamily,
+  normalizeTaxRate,
+  totalsForLines,
+  type CoTypeDef,
+} from "@/lib/changeOrders/types";
+import { approveChangeOrder } from "@/lib/changeOrders/respond";
+import { sendChangeOrderToClient, type SendReport } from "@/lib/changeOrders/send";
+import { parseCoLines, parseCoPhotos } from "@/lib/changeOrders/parse";
+import { contractTotal } from "@/lib/contractTotal";
 
-// A change order amends a contract. It attaches to either a Job (legacy) or a
-// Proposal (the contract itself). Exactly one parent is provided.
-const coInput = z
-  .object({
-    jobId: z.string().optional(),
-    proposalId: z.string().optional(),
-    title: z.string().min(1),
-    description: z.string().nullable().optional(),
-    amount: z.number(),
-    send: z.boolean().default(false),
-  })
-  .refine((d) => Boolean(d.jobId) !== Boolean(d.proposalId), {
-    message: "Provide exactly one of jobId or proposalId.",
-  });
+const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 
-export async function createChangeOrder(raw: unknown) {
-  const { organizationId, user } = await requireManager();
-  const data = coInput.parse(raw);
-
-  // Ownership-gate whichever parent the change order hangs off.
-  if (data.jobId) {
-    const job = await db.job.findUnique({ where: { id: data.jobId } });
-    if (!job || job.organizationId !== organizationId) throw new Error("Not found");
-  } else if (data.proposalId) {
-    const proposal = await db.proposal.findUnique({ where: { id: data.proposalId } });
-    if (!proposal || proposal.organizationId !== organizationId) throw new Error("Not found");
+function revalidateForChangeOrder(jobId: string | null, proposalId: string | null) {
+  if (jobId) {
+    revalidatePath(`/dashboard/jobs/${jobId}`);
+    revalidatePath(`/mobile-job-detail-v1/${jobId}`);
   }
+  if (proposalId) revalidatePath(`/dashboard/proposals/${proposalId}`);
+  for (const p of ["/dashboard/proposals", "/dashboard/financials", "/dashboard/financials/change-orders", "/v3/proposals-c", "/mobile-proposals-v2", "/mobile-financials-v2", "/dashboard/projects"]) {
+    revalidatePath(p);
+  }
+}
+
+/** Built-in types plus the org's own rows (ChangeOrderType), in that order. */
+export async function listChangeOrderTypes(): Promise<CoTypeDef[]> {
+  const { organizationId } = await requireManager();
+  const out: CoTypeDef[] = [...BUILTIN_CHANGE_ORDER_TYPES];
+  try {
+    const rows = await db.changeOrderType.findMany({ where: { organizationId, active: true }, orderBy: { position: "asc" } });
+    for (const r of rows) {
+      try {
+        const def = JSON.parse(r.definitionJson) as Partial<CoTypeDef>;
+        if (!def || !Array.isArray(def.items)) continue;
+        out.push({
+          key: r.key,
+          label: r.label,
+          intro: def.intro ?? "",
+          unit: def.unit ?? "each",
+          items: def.items,
+          allowCustomItem: def.allowCustomItem ?? true,
+          areas: def.areas ?? false,
+          helpers: def.helpers ?? {},
+          photos: def.photos ?? true,
+          reason: def.reason ?? true,
+          reasonPlaceholder: def.reasonPlaceholder,
+          smartDefault: def.smartDefault,
+          pricingNote: def.pricingNote,
+        });
+      } catch {
+        /* a row that does not parse is skipped, not fatal */
+      }
+    }
+  } catch {
+    /* table not pushed in this environment — built-ins only */
+  }
+  return out;
+}
+
+export interface ChangeOrderContext {
+  jobId: string | null;
+  proposalId: string | null;
+  contextTitle: string;
+  /** Fraction (0.095). */
+  taxRate: number;
+  roofFamily: string | null;
+  clientEmail: boolean;
+  clientPhone: boolean;
+  /** The contract value before any new change: original + approved so far. */
+  contractBefore: number | null;
+  originalTotal: number | null;
+  /** `${typeKey}:${itemKey}` → the contractor's own price and last quantity. */
+  prefs: Record<string, { unitPrice: number; lastQuantity: number | null }>;
+  types: CoTypeDef[];
+  nextNumber: number;
+}
+
+/** Everything the sheet needs to open pre-filled, in one round trip. */
+export async function getChangeOrderContext(input: { jobId?: string; proposalId?: string }): Promise<ChangeOrderContext> {
+  const { organizationId } = await requireManager();
+  let jobId: string | null = null;
+  let proposalId: string | null = input.proposalId ?? null;
+  let contextTitle = "the job";
+  let client: { email: string | null; phone: string | null } | null = null;
+  if (input.jobId) {
+    const job = await db.job.findFirst({ where: { id: input.jobId, organizationId }, select: { id: true, title: true, proposalId: true, client: { select: { email: true, phone: true } } } });
+    if (!job) throw new Error("Not found");
+    jobId = job.id;
+    contextTitle = job.title;
+    client = job.client;
+    proposalId = proposalId ?? job.proposalId;
+  }
+  let taxRate = 0;
+  let roofFamily: string | null = null;
+  let contractBefore: number | null = null;
+  let originalTotal: number | null = null;
+  if (proposalId) {
+    const proposal = await db.proposal.findFirst({
+      where: { id: proposalId, organizationId },
+      select: {
+        title: true,
+        taxRate: true,
+        total: true,
+        client: { select: { email: true, phone: true } },
+        lineItems: { select: { name: true } },
+        changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } },
+      },
+    });
+    if (!proposal) throw new Error("Not found");
+    if (!input.jobId) contextTitle = proposal.title;
+    client = client ?? proposal.client;
+    taxRate = normalizeTaxRate(proposal.taxRate);
+    roofFamily = inferRoofFamily(proposal.lineItems.map((l) => l.name));
+    originalTotal = proposal.total;
+    contractBefore = contractTotal(proposal.total, proposal.changeOrders);
+  } else {
+    const org = await db.organization.findUnique({ where: { id: organizationId }, select: { defaultTaxRate: true } });
+    taxRate = normalizeTaxRate(org?.defaultTaxRate);
+  }
+  const prefs: ChangeOrderContext["prefs"] = {};
+  try {
+    const rows = await db.changeOrderPricePref.findMany({ where: { organizationId } });
+    for (const r of rows) prefs[`${r.typeKey}:${r.itemKey}`] = { unitPrice: r.unitPrice, lastQuantity: r.lastQuantity };
+  } catch {
+    /* table not pushed yet */
+  }
+  const agg = await db.changeOrder.aggregate({ where: proposalId ? { proposalId } : { jobId: jobId ?? "" }, _max: { number: true }, _count: { _all: true } });
+  return {
+    jobId,
+    proposalId,
+    contextTitle,
+    taxRate,
+    roofFamily,
+    clientEmail: Boolean(client?.email),
+    clientPhone: Boolean(client?.phone),
+    contractBefore,
+    originalTotal,
+    prefs,
+    types: await listChangeOrderTypes(),
+    nextNumber: Math.max(agg._max.number ?? 0, agg._count._all) + 1,
+  };
+}
+
+export async function createChangeOrder(raw: unknown): Promise<{ id: string; publicToken: string; number: number; total: number; sent?: SendReport }> {
+  const { organizationId, user } = await requireManager();
+  const data = createChangeOrderSchema.parse(raw);
+
+  // Parent: a job carries its proposal along, so the money can land on the
+  // schedule; a proposal on its own is the contract itself.
+  let jobId: string | null = null;
+  let proposalId: string | null = data.proposalId ?? null;
+  if (data.jobId) {
+    const job = await db.job.findFirst({ where: { id: data.jobId, organizationId }, select: { id: true, proposalId: true } });
+    if (!job) throw new Error("Not found");
+    jobId = job.id;
+    proposalId = proposalId ?? job.proposalId;
+  }
+  let taxRate = 0;
+  if (proposalId) {
+    const proposal = await db.proposal.findFirst({ where: { id: proposalId, organizationId }, select: { taxRate: true } });
+    if (!proposal) throw new Error("Not found");
+    taxRate = normalizeTaxRate(proposal.taxRate);
+  } else {
+    const org = await db.organization.findUnique({ where: { id: organizationId }, select: { defaultTaxRate: true } });
+    taxRate = normalizeTaxRate(org?.defaultTaxRate);
+  }
+  const totals = totalsForLines(data.lines, taxRate, data.taxable);
+  const agg = await db.changeOrder.aggregate({ where: proposalId ? { proposalId } : { jobId: jobId ?? "" }, _max: { number: true }, _count: { _all: true } });
+  const number = Math.max(agg._max.number ?? 0, agg._count._all) + 1;
 
   const co = await db.changeOrder.create({
     data: {
       organizationId,
-      // 122-bit CSPRNG token (the schema's cuid() default is time/counter
-      // structured and only ~41 bits random). Approving a change order moves
-      // the contract total, so the link must be unguessable.
+      // 122-bit CSPRNG token: approving moves the contract, so the link must be unguessable.
       publicToken: randomUUID(),
-      jobId: data.jobId ?? null,
-      proposalId: data.proposalId ?? null,
-      title: data.title,
-      description: data.description ?? null,
-      amount: data.amount,
-      status: data.send ? "SENT" : "DRAFT",
-      sentAt: data.send ? new Date() : null,
+      jobId,
+      proposalId,
+      number,
+      kind: data.kind,
+      title: data.title.trim(),
+      description: data.reason?.trim() || null,
+      reason: data.reason?.trim() || null,
+      linesJson: JSON.stringify(data.lines),
+      photosJson: JSON.stringify(data.photos),
+      amount: totals.subtotal,
+      taxable: data.taxable,
+      taxRate: totals.taxRate,
+      taxTotal: totals.taxTotal,
+      total: totals.total,
+      status: CO_STATUS.DRAFT,
+      createdByUserId: user.id,
     },
   });
 
-  if (data.send) {
-    await emailChangeOrder(co.id).catch((err) => console.warn("[createChangeOrder] email failed:", err));
+  // Remember the contractor's prices — per company, so the crew's phone
+  // pre-fills what the office set. Best-effort: the table may not exist yet.
+  for (const r of data.remember) {
+    try {
+      await db.changeOrderPricePref.upsert({
+        where: { organizationId_typeKey_itemKey: { organizationId, typeKey: data.kind, itemKey: r.itemKey } },
+        create: { organizationId, typeKey: data.kind, itemKey: r.itemKey, unitPrice: r.unitPrice, lastQuantity: r.lastQuantity ?? null },
+        update: { unitPrice: r.unitPrice, lastQuantity: r.lastQuantity ?? null },
+      });
+    } catch {
+      break;
+    }
   }
 
   await db.activityEvent.create({
-    data: {
-      organizationId,
-      actorId: user.id,
-      proposalId: data.proposalId ?? null,
-      kind: data.send ? "SENT" : "CREATED",
-      summary: `${data.send ? "Sent" : "Drafted"} change order "${co.title}"`,
-    },
+    data: { organizationId, actorId: user.id, proposalId, kind: "CREATED", summary: `Drafted change order #${number} "${co.title}"` },
   });
 
-  revalidateForChangeOrder(data.jobId ?? null, data.proposalId ?? null);
-  return { id: co.id, publicToken: co.publicToken };
+  let sent: SendReport | undefined;
+  if (data.send) sent = await sendById(co.id, organizationId, user.id);
+  revalidateForChangeOrder(jobId, proposalId);
+  return { id: co.id, publicToken: co.publicToken, number, total: totals.total, sent };
 }
 
-export async function sendChangeOrder(id: string) {
-  const { organizationId, user } = await requireManager();
-  const co = await db.changeOrder.findUnique({ where: { id } });
-  if (!co || co.organizationId !== organizationId) throw new Error("Not found");
-  if (co.status !== "DRAFT") throw new Error("Only draft change orders can be sent.");
-
-  await db.changeOrder.update({
-    where: { id },
-    data: { status: "SENT", sentAt: new Date() },
+async function sendById(id: string, organizationId: string, actorId: string): Promise<SendReport> {
+  const { count } = await db.changeOrder.updateMany({
+    where: { id, organizationId, status: CO_STATUS.DRAFT },
+    data: { status: CO_STATUS.SENT, sentAt: new Date() },
   });
-
-  await emailChangeOrder(id).catch((err) => console.warn("[sendChangeOrder] email failed:", err));
-
+  if (count !== 1) throw new Error("Only a draft can be sent.");
+  const report = await sendChangeOrderToClient(id);
+  const co = await db.changeOrder.findUnique({ where: { id }, select: { title: true, proposalId: true, jobId: true } });
   await db.activityEvent.create({
     data: {
       organizationId,
-      actorId: user.id,
-      proposalId: co.proposalId ?? null,
+      actorId,
+      proposalId: co?.proposalId ?? null,
       kind: "SENT",
-      summary: `Sent change order "${co.title}"`,
+      summary: `Sent change order "${co?.title ?? ""}" — email ${report.email}, text ${report.sms}`,
     },
   });
+  return report;
+}
 
+export async function sendChangeOrder(id: string): Promise<SendReport> {
+  const { organizationId, user } = await requireManager();
+  const co = await db.changeOrder.findFirst({ where: { id, organizationId }, select: { jobId: true, proposalId: true } });
+  if (!co) throw new Error("Not found");
+  const report = await sendById(id, organizationId, user.id);
   revalidateForChangeOrder(co.jobId, co.proposalId);
-  return { ok: true };
+  return report;
+}
+
+/** Withdraw a sent (or draft) change order: the token stops approving. */
+export async function voidChangeOrder(id: string) {
+  const { organizationId, user } = await requireManager();
+  const co = await db.changeOrder.findFirst({ where: { id, organizationId } });
+  if (!co) throw new Error("Not found");
+  const { count } = await db.changeOrder.updateMany({
+    where: { id, status: { in: [CO_STATUS.DRAFT, CO_STATUS.SENT] } },
+    data: { status: CO_STATUS.VOID, voidedAt: new Date() },
+  });
+  if (count !== 1) throw new Error("Only a draft or a sent change order can be withdrawn.");
+  await db.activityEvent.create({
+    data: { organizationId, actorId: user.id, proposalId: co.proposalId, kind: "UPDATED", summary: `Withdrew change order "${co.title}"` },
+  });
+  revalidateForChangeOrder(co.jobId, co.proposalId);
+  return { ok: true as const };
 }
 
 export async function deleteChangeOrder(id: string) {
   const { organizationId } = await requireManager();
-  const co = await db.changeOrder.findUnique({ where: { id } });
-  if (!co || co.organizationId !== organizationId) throw new Error("Not found");
-  if (co.status !== "DRAFT") throw new Error("Only drafts can be deleted.");
+  const co = await db.changeOrder.findFirst({ where: { id, organizationId } });
+  if (!co) throw new Error("Not found");
+  if (co.status !== CO_STATUS.DRAFT) throw new Error("Only drafts can be deleted.");
   await db.changeOrder.delete({ where: { id } });
   revalidateForChangeOrder(co.jobId, co.proposalId);
 }
 
-// Called from the public approval route (no auth; token-gated).
-export async function approveChangeOrderPublic(token: string, ip: string | null) {
-  const co = await db.changeOrder.findUnique({ where: { publicToken: token } });
+/** The client said yes in person: recorded as such, under the staff member who typed it. */
+export async function markChangeOrderApproved(id: string, clientName: string) {
+  const { organizationId, user } = await requireManager();
+  const co = await db.changeOrder.findFirst({ where: { id, organizationId }, select: { jobId: true, proposalId: true } });
   if (!co) throw new Error("Not found");
-  if (co.status === "APPROVED" || co.status === "DECLINED") return;
+  const name = clientName.trim();
+  if (name.length < 2) throw new Error("Type the client's full name to record their approval.");
+  const res = await approveChangeOrder({ coId: id, via: "in_person", name, ip: null, userAgent: null, byUserId: user.id });
+  if (!res.ok) throw new Error(res.error);
+  revalidateForChangeOrder(co.jobId, co.proposalId);
+  return res;
+}
 
-  await db.changeOrder.update({
-    where: { id: co.id },
-    data: { status: "APPROVED", approvedAt: new Date(), approvedIp: ip ?? undefined },
+/**
+ * A photo of the damage, from the phone's camera. Blob only: a data URL in
+ * photosJson would blow the row and the client page; without Blob the sheet
+ * says so and sends without photos.
+ */
+export async function uploadChangeOrderPhoto(dataUrl: string, filename: string): Promise<{ id: string; url: string }> {
+  const { organizationId } = await requireManager();
+  const match = dataUrl.match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=]+)$/i);
+  if (!match) throw new Error("Photo must be a JPEG, PNG or WebP image");
+  if (!isBlobEnabled()) throw new Error("Photo storage isn't configured (BLOB_READ_WRITE_TOKEN) — send without photos");
+  const buf = Buffer.from(match[2], "base64");
+  if (buf.byteLength > PHOTO_MAX_BYTES) throw new Error("Photo is too large (5 MB max)");
+  const res = await uploadBlob(`change-orders/${organizationId}/${Date.now()}-${safeFilename(filename, "photo")}`, buf, {
+    contentType: match[1].toLowerCase() === "image/jpg" ? "image/jpeg" : match[1].toLowerCase(),
   });
+  return { id: randomUUID(), url: res.url };
+}
 
-  // Proposal-scoped: the approved delta updates the contract value, so the
-  // proposal's total reflects the amended scope everywhere it's read.
-  if (co.proposalId) {
-    await db.proposal.update({
-      where: { id: co.proposalId },
-      data: { subtotal: { increment: co.amount }, total: { increment: co.amount } },
-    });
+export interface ChangeOrderRowDto {
+  id: string;
+  number: number | null;
+  title: string;
+  kind: string | null;
+  status: string;
+  /** Tax-inclusive when itemized; the legacy signed amount otherwise. */
+  total: number;
+  taxTotal: number;
+  reason: string | null;
+  lines: ReturnType<typeof parseCoLines>;
+  photos: ReturnType<typeof parseCoPhotos>;
+  publicToken: string;
+  sentAt: Date | null;
+  approvedAt: Date | null;
+  approvedName: string | null;
+  approvedVia: string | null;
+  declinedAt: Date | null;
+  declineReason: string | null;
+  createdAt: Date;
+}
+
+function toDto(c: {
+  id: string; number: number | null; title: string; kind: string | null; status: string; total: number | null; amount: number; taxTotal: number | null;
+  reason: string | null; description: string | null; linesJson: string | null; photosJson: string | null; publicToken: string;
+  sentAt: Date | null; approvedAt: Date | null; approvedName: string | null; approvedVia: string | null; declinedAt: Date | null; declineReason: string | null; createdAt: Date;
+}): ChangeOrderRowDto {
+  return {
+    id: c.id,
+    number: c.number,
+    title: c.title,
+    kind: c.kind,
+    status: c.status,
+    total: c.total ?? c.amount,
+    taxTotal: c.taxTotal ?? 0,
+    reason: c.reason ?? c.description,
+    lines: parseCoLines(c.linesJson),
+    photos: parseCoPhotos(c.photosJson),
+    publicToken: c.publicToken,
+    sentAt: c.sentAt,
+    approvedAt: c.approvedAt,
+    approvedName: c.approvedName,
+    approvedVia: c.approvedVia,
+    declinedAt: c.declinedAt,
+    declineReason: c.declineReason,
+    createdAt: c.createdAt,
+  };
+}
+
+/** The change orders of a proposal, or of a job and its proposal — one list. */
+export async function changeOrdersFor(input: { proposalId?: string; jobId?: string }): Promise<ChangeOrderRowDto[]> {
+  const { organizationId } = await requireManager();
+  let proposalId = input.proposalId ?? null;
+  const jobId = input.jobId ?? null;
+  if (jobId && !proposalId) {
+    const job = await db.job.findFirst({ where: { id: jobId, organizationId }, select: { proposalId: true } });
+    proposalId = job?.proposalId ?? null;
   }
-
-  await db.activityEvent.create({
-    data: {
-      organizationId: co.organizationId,
-      proposalId: co.proposalId ?? null,
-      kind: "ACCEPTED",
-      summary: `Client approved change order "${co.title}"`,
-    },
+  const rows = await db.changeOrder.findMany({
+    where: { organizationId, OR: [...(proposalId ? [{ proposalId }] : []), ...(jobId ? [{ jobId }] : [])] },
+    orderBy: [{ createdAt: "asc" }],
   });
-  revalidateForChangeOrder(co.jobId, co.proposalId);
-}
-
-export async function declineChangeOrderPublic(token: string) {
-  const co = await db.changeOrder.findUnique({ where: { publicToken: token } });
-  if (!co) throw new Error("Not found");
-  if (co.status === "APPROVED" || co.status === "DECLINED") return;
-  await db.changeOrder.update({
-    where: { id: co.id },
-    data: { status: "DECLINED", declinedAt: new Date() },
-  });
-  await db.activityEvent.create({
-    data: {
-      organizationId: co.organizationId,
-      proposalId: co.proposalId ?? null,
-      kind: "DECLINED",
-      summary: `Client declined change order "${co.title}"`,
-    },
-  });
-  revalidateForChangeOrder(co.jobId, co.proposalId);
-}
-
-// ── helpers ───────────────────────────────────────────
-
-function revalidateForChangeOrder(jobId: string | null, proposalId: string | null) {
-  if (jobId) revalidatePath(`/dashboard/jobs/${jobId}`);
-  if (proposalId) revalidatePath(`/dashboard/proposals/${proposalId}`);
-  revalidatePath("/dashboard/proposals");
-}
-
-// Resolve the client + contract context from whichever parent and email the
-// approval link. Best-effort: callers swallow errors so a send never blocks.
-async function emailChangeOrder(id: string) {
-  const co = await db.changeOrder.findUnique({
-    where: { id },
-    include: {
-      organization: { select: { name: true, logoUrl: true, phone: true } },
-      job: { include: { client: true, proposal: { select: { total: true } } } },
-      proposal: { select: { title: true, total: true, client: true } },
-    },
-  });
-  if (!co) return;
-  const client = co.proposal?.client ?? co.job?.client ?? null;
-  if (!client?.email) return;
-
-  const contextTitle = co.proposal?.title ?? co.job?.title ?? "your project";
-  const { sendEmail } = await import("@/lib/sdk/resend");
-  const { renderEmail } = await import("@/lib/email/renderEmail");
-  const { buildChangeOrder } = await import("@/lib/email/build/client");
-  const appUrl = await appBaseUrl();
-  // Prefer the CO's own proposal total; fall back to the parent job's linked
-  // proposal. If neither resolves (e.g. a job with no proposal at all), leave
-  // it unset — buildChangeOrder suppresses the "Agreed contract" row rather
-  // than printing a lying $0 (Task 5 fix round 1, Finding B).
-  const previousTotal = co.proposal?.total ?? co.job?.proposal?.total ?? null;
-  const { subject, html } = renderEmail(
-    buildChangeOrder({
-      org: { name: co.organization.name, logoUrl: co.organization.logoUrl, phone: co.organization.phone },
-      clientName: client.name,
-      contextTitle,
-      coTitle: co.title,
-      description: co.description,
-      amount: co.amount,
-      previousTotal,
-      href: `${appUrl}/co/${co.publicToken}`,
-    }),
-  );
-  await sendEmail({ to: client.email, subject, html });
+  const seen = new Set<string>();
+  return rows.filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true))).map(toDto);
 }

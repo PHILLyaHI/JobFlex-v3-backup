@@ -196,6 +196,7 @@ const CHANGE_STATE: Record<string, JdChange["state"]> = {
   SENT: "sent",
   APPROVED: "ok",
   DECLINED: "no",
+  VOID: "void",
 };
 
 /**
@@ -222,7 +223,7 @@ export async function loadJobDetail(
     where: { id },
     include: {
       client: true,
-      proposal: { select: { id: true, title: true, total: true } },
+      proposal: { select: { id: true, title: true, total: true, changeOrders: { orderBy: { createdAt: "asc" } } } },
       events: { orderBy: { startsAt: "asc" } },
       assignments: {
         include: {
@@ -277,12 +278,21 @@ export async function loadJobDetail(
     me: false,
   }));
 
-  const changes: JdChange[] = job.changeOrders.map((c, i) => ({
+  // A change order amends the proposal (the contract) or, legacy, the job
+  // itself; the job page shows both sets as one list, oldest first.
+  const seenCo = new Set<string>();
+  const allCos = [...job.changeOrders, ...(job.proposal?.changeOrders ?? [])]
+    .filter((c) => (seenCo.has(c.id) ? false : (seenCo.add(c.id), true)))
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  const changes: JdChange[] = allCos.map((c, i) => ({
     id: c.id,
-    ref: `CO-${i + 1}`,
+    ref: `CO-${c.number ?? i + 1}`,
     title: c.title,
-    meta: c.description?.trim() || `logged ${day(c.createdAt)}`,
-    amount: c.amount,
+    meta:
+      (c.reason ?? c.description)?.trim() ||
+      (c.status === "APPROVED" && c.approvedName ? `approved by ${c.approvedName}` : `logged ${day(c.createdAt)}`),
+    // Tax-inclusive when itemized; the legacy signed amount otherwise.
+    amount: c.total ?? c.amount,
     state: CHANGE_STATE[c.status] ?? "draft",
     publicToken: c.publicToken,
   }));

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { contractSchedule } from "@/lib/contractTotal";
+import { approvedChangeOrders } from "@/lib/changeOrders/extras";
 import { rateLimitShared, ipFromRequest, HOUR } from "@/lib/rateLimit";
 import { InstallmentStatus } from "@/lib/prismaEnums";
 import { resolveSchedule } from "@/lib/paymentSchedule";
@@ -45,8 +47,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ publicId
     where: { id: proposal.id },
     select: { status: true, installments: { orderBy: { position: "asc" } } },
   });
+  const cos = await approvedChangeOrders(proposal.id);
   const schedule = resolveSchedule({
-    total: proposal.total,
+    ...contractSchedule(proposal.total, cos),
     currency: proposal.currency,
     installments: fresh?.installments ?? [],
   });

@@ -19,7 +19,8 @@ export function PaymentForm({ initial }: { initial: PaymentSettings }) {
   const [square, setSquare] = React.useState(initial.square);
   const [paypal, setPaypal] = React.useState(initial.paypal);
   const [ach, setAch] = React.useState(initial.ach);
-  const [autoRemind, setAutoRemind] = React.useState(initial.autoRemind);
+  const [autoRemind] = React.useState(initial.autoRemind);
+  const [reminderMode, setReminderMode] = React.useState<PaymentSettings["reminderMode"]>(initial.reminderMode ?? "manual");
   const [lateFees, setLateFees] = React.useState(initial.lateFees);
   const [receiptsOnPayment, setReceiptsOnPayment] = React.useState(initial.receiptsOnPayment);
   const [currency, setCurrency] = React.useState(initial.currency);
@@ -37,6 +38,7 @@ export function PaymentForm({ initial }: { initial: PaymentSettings }) {
         paypal,
         ach,
         autoRemind,
+        reminderMode,
         lateFees,
         receiptsOnPayment,
         currency,
@@ -152,12 +154,18 @@ export function PaymentForm({ initial }: { initial: PaymentSettings }) {
             </div>
           </CardHeader>
           <div className="divide-y divide-[color:var(--ink-line)]">
-            <Toggle
-              checked={autoRemind}
-              onChange={setAutoRemind}
-              label="Auto-remind on overdue invoices"
-              description="Email + SMS at +3 days, +7 days, +14 days past due."
-            />
+            <div className="py-3">
+              <Select
+                label="Payment reminders"
+                hint="Auto: the next unpaid stage is nudged by email and text on days 1, 3 and 7 after it is due (or after acceptance), three times at most. Manual: only when you press Remind or Request payment. Any proposal can override this on its card."
+                value={reminderMode}
+                onChange={(e) => setReminderMode(e.target.value as PaymentSettings["reminderMode"])}
+              >
+                <option value="auto">Auto — email + text on a day 1 / 3 / 7 ladder</option>
+                <option value="manual">Manual — only when I press Remind</option>
+                <option value="off">Off — never remind</option>
+              </Select>
+            </div>
             <Toggle
               checked={lateFees}
               onChange={setLateFees}

@@ -24,6 +24,7 @@ import { resolvePayOptions, PAY_BLOCK_COPY } from "./payOptions";
 import { stripeForConnection, expireStripeSession } from "./stripeConnect";
 import { squareClientForConnection, deleteSquarePaymentLink } from "./squareConnect";
 import { ensureSchedule } from "./settle";
+import { contractSchedule } from "@/lib/contractTotal";
 import { expireOpenCheckoutsForProposal } from "./checkouts";
 import { signCheckout } from "./checkoutSig";
 
@@ -44,6 +45,7 @@ export async function createCheckout(input: {
     where: { publicId: input.publicId },
     include: {
       installments: { orderBy: { position: "asc" } },
+      changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } },
       client: { select: { id: true, email: true, name: true } },
       organization: { select: { id: true, name: true, deletedAt: true, paymentSettingsJson: true } },
     },
@@ -51,7 +53,9 @@ export async function createCheckout(input: {
   if (!proposal || proposal.organization.deletedAt) {
     return { ok: false, status: 404, error: "Not found" };
   }
-  if (proposal.status !== ProposalStatus.ACCEPTED) {
+  // COMPLETED still pays: the crew finishing the work does not settle the
+  // money, and an approved change order can add to a finished job.
+  if (proposal.status !== ProposalStatus.ACCEPTED && proposal.status !== ProposalStatus.COMPLETED) {
     if (proposal.status === ProposalStatus.PAID)
       return { ok: false, status: 409, error: "This proposal is already paid", reason: "paid" };
     if (proposal.status === ProposalStatus.DECLINED || proposal.status === ProposalStatus.ARCHIVED)
@@ -77,7 +81,7 @@ export async function createCheckout(input: {
     ? proposal.installments
     : await ensureSchedule(proposal.id);
   const schedule = resolveSchedule({
-    total: proposal.total,
+    ...contractSchedule(proposal.total, proposal.changeOrders),
     currency: proposal.currency,
     installments,
   });

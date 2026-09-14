@@ -25,6 +25,7 @@ import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { contractTotal } from "@/lib/contractTotal";
 // The page renders the VIEWPORT SWITCH rather than the desktop content
 // directly: above 768px it is ProjectDetailContent, unchanged, and at or below
 // it the handheld rebuild in src/components/v3/mobile-project-detail/. Exactly
@@ -62,7 +63,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     where: { id },
     include: {
       jobs: {
-        include: { client: { select: { name: true } } },
+        include: {
+          client: { select: { name: true } },
+          // The contract behind the job: original → approved changes → current.
+          proposal: { select: { total: true, changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } } } },
+        },
         orderBy: [{ startsAt: "asc" }, { createdAt: "asc" }],
       },
     },
@@ -123,6 +128,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         startsAt: j.startsAt,
         endsAt: j.endsAt,
         clientName: j.client?.name ?? null,
+        contract: j.proposal
+          ? {
+              original: j.proposal.total,
+              changes: Math.round((contractTotal(j.proposal.total, j.proposal.changeOrders) - j.proposal.total) * 100) / 100,
+              current: contractTotal(j.proposal.total, j.proposal.changeOrders),
+            }
+          : null,
       }))}
       availableProposals={availableProposals}
     />

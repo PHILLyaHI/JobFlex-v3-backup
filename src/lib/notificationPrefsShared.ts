@@ -42,7 +42,7 @@ export const PREF_EVENTS: readonly PrefEventMeta[] = [
   { key: "proposal-accepted", name: "Proposal accepted", sub: "Signed and ready to schedule", emailAvailable: true, seed: [true, true] },
   { key: "proposal-declined", name: "Proposal declined", sub: "With the reason the client gave", emailAvailable: true, seed: [true, true] },
   { key: "payment-received", name: "Payment received", sub: "A stage was paid — card, Square or recorded by hand", emailAvailable: true, seed: [true, true] },
-  { key: "change-order", name: "Change order answered", sub: "The client approved or declined it", emailAvailable: false, seed: [true, false] },
+  { key: "change-order", name: "Change order answered", sub: "The client approved or declined it", emailAvailable: true, seed: [true, true] },
   { key: "job-scheduled", name: "Job scheduled", sub: "A crew is booked for a date", emailAvailable: false, seed: [true, false] },
   { key: "job-completed", name: "Job completed", sub: "Crew marked the work done", emailAvailable: false, seed: [true, false] },
   { key: "worker-responded", name: "Worker responded", sub: "Accepted or declined an assignment", emailAvailable: true, seed: [true, true] },
@@ -119,6 +119,9 @@ export function prefKeyForEvent(e: EventLike): PrefKey | null {
   switch (e.kind) {
     case "VIEWED":
       return "proposal-viewed";
+    case "CO_APPROVED":
+    case "CO_DECLINED":
+      return "change-order";
     case "ACCEPTED":
     case "DECLINED": {
       if (meta.includes("assignmentId")) return "worker-responded";

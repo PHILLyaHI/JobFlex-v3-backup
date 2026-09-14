@@ -203,28 +203,63 @@ export interface ChangeOrderInput {
    */
   previousTotal?: number | null;
   href: string;
+  // ── Itemized change orders (2026-09-13). When `lines` is present the box
+  // reads original → approved changes → this change → new total, with tax,
+  // and `previousTotal` means the contract value BEFORE this change (the
+  // original plus every change already approved). Absent = the legacy
+  // single-amount layout above. ──
+  number?: number | null;
+  lines?: Array<{ name: string; quantity: number; unit: string; unitPrice: number; total: number }>;
+  originalTotal?: number | null;
+  approvedChangesTotal?: number | null;
+  taxTotal?: number | null;
+  /** Tax-inclusive amount of this change. */
+  total?: number | null;
+  photoCount?: number;
 }
 
 export function buildChangeOrder(i: ChangeOrderInput): EmailDoc {
-  const signed = `${i.amount >= 0 ? "+" : "−"}${formatUSD(Math.abs(i.amount))}`;
+  const itemized = Array.isArray(i.lines) && i.lines.length > 0 && i.total != null;
+  const delta = itemized ? i.total! : i.amount;
+  const signed = `${delta >= 0 ? "+" : "−"}${formatUSD(Math.abs(delta))}`;
   const hasPrevious = i.previousTotal != null;
   const box: BoxRow[] = [];
-  if (hasPrevious) {
-    box.push({ type: "item", name: "Agreed contract", amount: formatUSD(i.previousTotal!) });
+  if (itemized) {
+    if (i.originalTotal != null) box.push({ type: "item", name: "Original contract", amount: formatUSD(i.originalTotal) });
+    if (i.approvedChangesTotal != null && Math.abs(i.approvedChangesTotal) >= 0.005) {
+      box.push({ type: "item", name: "Approved changes so far", amount: `${i.approvedChangesTotal >= 0 ? "+" : "−"}${formatUSD(Math.abs(i.approvedChangesTotal))}` });
+    }
+    const shown = i.lines!.slice(0, 6);
+    for (const l of shown) {
+      const qty = Number.isInteger(l.quantity) ? String(l.quantity) : l.quantity.toFixed(1);
+      box.push({ type: "item", name: truncate(`${l.name} · ${qty} ${l.unit} × ${formatUSD(l.unitPrice)}`, ITEM_NAME_MAX), amount: formatUSD(l.total) });
+    }
+    if (i.lines!.length > shown.length) box.push({ type: "field", label: "And", value: `${i.lines!.length - shown.length} more line${i.lines!.length - shown.length === 1 ? "" : "s"}` });
+    if (i.taxTotal != null && i.taxTotal > 0) box.push({ type: "item", name: "Sales tax", amount: formatUSD(i.taxTotal) });
+    if (i.photoCount) box.push({ type: "field", label: "Photos", value: `${i.photoCount} of the damage, on the approval page` });
+    box.push({
+      type: "anchor",
+      label: hasPrevious ? "New total" : "This change",
+      value: hasPrevious ? formatUSD(i.previousTotal! + delta) : signed,
+    });
+  } else {
+    if (hasPrevious) {
+      box.push({ type: "item", name: "Agreed contract", amount: formatUSD(i.previousTotal!) });
+    }
+    box.push({ type: "item", name: truncate(i.coTitle, ITEM_NAME_MAX), amount: signed });
+    box.push({
+      type: "anchor",
+      label: hasPrevious ? "New total" : "Change amount",
+      value: hasPrevious ? formatUSD(i.previousTotal! + i.amount) : signed,
+    });
   }
-  box.push({ type: "item", name: truncate(i.coTitle, ITEM_NAME_MAX), amount: signed });
-  box.push({
-    type: "anchor",
-    label: hasPrevious ? "New total" : "Change amount",
-    value: hasPrevious ? formatUSD(i.previousTotal! + i.amount) : signed,
-  });
   box.push({ type: "cond", label: "Work paused until", chip: "Approved", tone: "bad" });
 
   return {
-    subject: `Change order for ${i.contextTitle}`,
+    subject: `Change order${i.number ? ` #${i.number}` : ""} for ${i.contextTitle}`,
     lockup: orgLockup(i.org),
     kicker: { text: "Change order" },
-    headline: "One change needs your ok",
+    headline: itemized ? `${truncate(i.coTitle, 60)} needs your ok` : "One change needs your ok",
     prose: [
       `Hi ${i.clientName.split(" ")[0]} — ${i.description?.trim() || `we have a change to the contract on "${i.contextTitle}".`}`,
     ],

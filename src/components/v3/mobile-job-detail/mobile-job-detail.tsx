@@ -60,6 +60,7 @@ import {
   useJobDetailActions,
   type PhotoKind,
 } from "@/components/v3/job-detail-blueprint/use-job-detail-actions";
+import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import "./mobile-job-detail.css";
 
 const prefersReducedMotion = () =>
@@ -109,6 +110,7 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
   // (where the block reveal already carries the entrance) and never on a
   // repaint such as approving a change order.
   const [switched, setSwitched] = useState(false);
+  const [coOpen, setCoOpen] = useState(false);
 
   const a = useJobDetailActions(
     record.id,
@@ -684,12 +686,18 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
               </section>
             )}
 
+            {record.canWrite && <ChangeOrderSheet open={coOpen} onClose={() => setCoOpen(false)} jobId={record.id} />}
             {tab === "changes" && (
               <section className="mjd-card">
                 <div className="mjd-h">
                   <h2 className="mjd-t">Change orders</h2>
                   <span className="mjd-s">client-signed extras</span>
                 </div>
+                {record.canWrite && (
+                  <button className="mjd-btn mjd-btn-primary" type="button" onClick={() => setCoOpen(true)}>
+                    New change order
+                  </button>
+                )}
                 {record.changes.length === 0 ? (
                   <EmptyNote>
                     No change orders on this job. They are raised from the proposal or the
@@ -725,9 +733,11 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                               ? "Approved"
                               : c.state === "no"
                                 ? "Declined"
-                                : c.state === "sent"
-                                  ? "Pending"
-                                  : "Draft"}
+                                : c.state === "void"
+                                  ? "Withdrawn"
+                                  : c.state === "sent"
+                                    ? "Pending"
+                                    : "Draft"}
                           </span>
                           {record.canWrite && c.state === "draft" && (
                             <button
@@ -744,7 +754,7 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                               className="mjd-btn mjd-btn-primary"
                               type="button"
                               disabled={working}
-                              onClick={() => a.approveChange(c.id, c.publicToken)}
+                              onClick={() => a.approveChange(c.id)}
                             >
                               {working ? "Saving…" : "Mark approved"}
                             </button>

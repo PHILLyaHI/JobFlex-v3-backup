@@ -7,6 +7,7 @@
 // user-invoked sender (notifyPaymentReminder) stays a guarded action in
 // src/actions/notify.ts.
 import { db } from "@/lib/db";
+import { contractSchedule } from "@/lib/contractTotal";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
 import { sendOrgEmail } from "@/lib/email/orgSend";
@@ -1104,6 +1105,7 @@ export async function notifyPaymentReceived({ paymentId }: { paymentId: string }
       proposal: {
         include: {
           installments: true,
+          changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } },
           organization: {
             select: {
               name: true,
@@ -1124,7 +1126,7 @@ export async function notifyPaymentReceived({ paymentId }: { paymentId: string }
   const org = proposal.organization;
   const appUrl = await appBaseUrl();
   const schedule = resolveSchedule({
-    total: proposal.total,
+    ...contractSchedule(proposal.total, proposal.changeOrders),
     currency: proposal.currency,
     installments: proposal.installments,
   });

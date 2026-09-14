@@ -9,6 +9,8 @@ const iconMap: Record<string, React.ReactNode> = {
   SENT: <Mail className="h-3.5 w-3.5" />,
   VIEWED: <Eye className="h-3.5 w-3.5" />,
   ACCEPTED: <Check className="h-3.5 w-3.5" />,
+  CO_APPROVED: <Check className="h-3.5 w-3.5" />,
+  CO_DECLINED: <CircleDashed className="h-3.5 w-3.5" />,
   CREATED: <FileText className="h-3.5 w-3.5" />,
   NOTE: <CircleDashed className="h-3.5 w-3.5" />,
 };

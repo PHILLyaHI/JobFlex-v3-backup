@@ -230,6 +230,50 @@ export function buildOwnerDeclined(i: OwnerDeclinedInput): EmailDoc {
   };
 }
 
+export interface OwnerChangeOrderAnsweredInput {
+  org: OrgBrand;
+  clientName: string;
+  /** The proposal or job the change order amends. */
+  contextTitle: string;
+  coTitle: string;
+  number: number | null;
+  /** Tax-inclusive amount of the change. */
+  total: number;
+  approved: boolean;
+  /** The client's typed name on approval, or their reason on decline. */
+  note: string | null;
+  /** The contract value after this answer. */
+  contractTotal: number | null;
+  href: string;
+}
+
+/** The client answered a change order. Approved: money is now owed (a new
+ *  stage on the schedule). Declined: the scope stays as sold. Link, not CTA. */
+export function buildOwnerChangeOrderAnswered(i: OwnerChangeOrderAnsweredInput): EmailDoc {
+  const label = `Change order${i.number ? ` #${i.number}` : ""}`;
+  const signed = `${i.total >= 0 ? "+" : "−"}${formatUSD(Math.abs(i.total))}`;
+  const box: BoxRow[] = [
+    { type: "field", label: "Job", value: truncate(i.contextTitle, TITLE_MAX) },
+    { type: "item", name: truncate(i.coTitle, TITLE_MAX), amount: signed },
+  ];
+  if (i.approved && i.contractTotal != null) box.push({ type: "anchor", label: "Contract now", value: formatUSD(i.contractTotal) });
+  if (!i.approved && i.note) box.push({ type: "field", label: "Reason", value: truncate(i.note, 200) });
+  return {
+    subject: `${i.approved ? "Approved" : "Declined"} — ${label}: ${truncate(i.coTitle, 50)}`,
+    lockup: orgLockup(i.org),
+    kicker: { text: i.approved ? "Change order approved" : "Change order declined", tone: i.approved ? "ok" : "bad" },
+    headline: i.approved ? `${i.clientName} approved ${label.toLowerCase()}` : `${i.clientName} declined ${label.toLowerCase()}`,
+    prose: [
+      i.approved
+        ? `Signed as "${i.note ?? i.clientName}". The amount is on the payment schedule as its own stage.`
+        : "The scope and price stay as sold. Talk to the client before doing the extra work.",
+    ],
+    box,
+    link: { label: "Open the job", href: i.href },
+    footer: orgFooter(i.org),
+  };
+}
+
 export interface OwnerRevertedInput {
   org: OrgBrand;
   clientName: string;
