@@ -7,7 +7,7 @@ export const coLineSchema = z.object({
   key: z.string().min(1).max(60),
   name: z.string().min(1).max(160),
   quantity: z.number().finite().min(0).max(1_000_000),
-  unit: z.enum(["sq ft", "linear ft", "each", "hour", "lot"]),
+  unit: z.enum(["sq ft", "linear ft", "square", "each", "hour", "lot"]),
   unitPrice: z.number().finite().min(-1_000_000).max(1_000_000),
   kind: z.enum(["material", "labor"]),
   meta: z.record(z.string(), z.union([z.string().max(120), z.number()])).optional(),

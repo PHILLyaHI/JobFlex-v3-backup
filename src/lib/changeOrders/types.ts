@@ -7,7 +7,33 @@
 // "linear ft", "each", "hour", "lot") so a converted installment and the
 // client's page read the same words.
 
-export type CoUnit = "sq ft" | "linear ft" | "each" | "hour" | "lot";
+export type CoUnit = "sq ft" | "linear ft" | "square" | "each" | "hour" | "lot";
+export const CO_UNITS: CoUnit[] = ["each", "sq ft", "linear ft", "square", "hour", "lot"];
+
+/** The proposal's stored measurement type → the change order's unit word. */
+export function unitFromMeasurementType(t: string | null | undefined): CoUnit {
+  switch ((t ?? "").toUpperCase()) {
+    case "SQFT":
+      return "sq ft";
+    case "LINEAR_FT":
+      return "linear ft";
+    case "SQUARE":
+      return "square";
+    case "HOUR":
+      return "hour";
+    case "LUMP_SUM":
+      return "lot";
+    default:
+      return "each";
+  }
+}
+
+/** A proposal is a roofing job when its lines say so — that is when the plywood type applies. */
+export function isRoofingProposal(input: { title?: string | null; lineNames: readonly string[] }): boolean {
+  if (inferRoofFamily(input.lineNames)) return true;
+  const text = `${input.title ?? ""} ${input.lineNames.join(" ")}`.toLowerCase();
+  return /\broof|shingle|underlayment|drip edge|ridge vent|tear-off|tear off/.test(text);
+}
 export type CoLineKind = "material" | "labor";
 
 export interface CoTypeItem {
@@ -81,8 +107,8 @@ export const PLYWOOD_TYPE: CoTypeDef = {
 
 export const CUSTOM_TYPE: CoTypeDef = {
   key: "custom",
-  label: "Custom change",
-  intro: "Any other addition or credit — describe it and price the lines.",
+  label: "Change order",
+  intro: "Add or credit anything — pick a line from the proposal to add more of it, or write your own, material or labor, in any measure.",
   unit: "each",
   items: [],
   allowCustomItem: true,

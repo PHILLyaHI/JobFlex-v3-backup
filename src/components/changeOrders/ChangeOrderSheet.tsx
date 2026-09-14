@@ -9,8 +9,12 @@
 //   4. one tap: Send. The running total, tax and the client's new contract
 //      total sit above the buttons the whole time.
 // Mounted as a plain React child on the job pages and as a React island on
-// the proposals page (the MaterialsSheet precedent).
+// the proposals page (the MaterialsSheet precedent). Either way it renders
+// through a PORTAL to <body>: the blueprint pages reset margin and padding on
+// everything under `.content`, which flattened the sheet's own layout when it
+// rendered in place (2026-09-13, live screenshot).
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { Camera, Check, Copy, Link2, Plus, Send, Trash2, Undo2 } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Input } from "@/components/ui/Input";
@@ -31,10 +35,10 @@ import {
   type ChangeOrderContext,
   type ChangeOrderRowDto,
 } from "@/actions/changeOrders";
-import { PLYWOOD_TYPE, linesForAreas, totalsForLines, type CoArea, type CoLine, type CoTypeDef, type CoUnit } from "@/lib/changeOrders/types";
+import { CO_UNITS, CUSTOM_TYPE, PLYWOOD_TYPE, linesForAreas, totalsForLines, type CoArea, type CoLine, type CoTypeDef, type CoUnit } from "@/lib/changeOrders/types";
 
 const CUSTOM_ITEM = "__custom";
-const UNITS: CoUnit[] = ["sq ft", "linear ft", "each", "hour", "lot"];
+const UNITS: CoUnit[] = CO_UNITS;
 
 type AreaMode = "sheets" | "lw" | "sqft";
 interface AreaRow extends CoArea {
@@ -123,16 +127,22 @@ export function ChangeOrderSheet({
         setLoadErr(null);
         setOrders(c.orders);
         setCreating(c.orders.length === 0);
-        const plywood = c.types.find((t) => t.key === PLYWOOD_TYPE.key) ?? c.types[0];
-        setType(plywood);
-        const fam = c.roofFamily;
-        const smart = plywood.smartDefault ? (fam ? plywood.smartDefault.byRoofFamily[fam] : undefined) ?? plywood.smartDefault.fallback : plywood.items[0]?.key ?? CUSTOM_ITEM;
-        setItemKey(smart);
-        const pref = c.prefs[`${plywood.key}:${smart}`];
-        const item = plywood.items.find((i) => i.key === smart);
-        setUnitPrice(String(pref?.unitPrice ?? item?.suggestedUnitPrice ?? ""));
-        setTitle(plywood.key === PLYWOOD_TYPE.key ? "Plywood replacement" : plywood.label);
-        setAreas([{ ...newArea(), sheets: pref?.lastQuantity ? String(Math.round(pref.lastQuantity / (plywood.helpers.sheetSqft ?? 32))) : "" }]);
+        const plywood = c.isRoofing ? c.types.find((t) => t.key === PLYWOOD_TYPE.key) ?? null : null;
+        const first = plywood ?? c.types.find((t) => t.key === CUSTOM_TYPE.key) ?? c.types[0] ?? CUSTOM_TYPE;
+        setType(first);
+        if (first.areas) {
+          const fam = c.roofFamily;
+          const smart = first.smartDefault ? (fam ? first.smartDefault.byRoofFamily[fam] : undefined) ?? first.smartDefault.fallback : first.items[0]?.key ?? CUSTOM_ITEM;
+          setItemKey(smart);
+          const pref = c.prefs[`${first.key}:${smart}`];
+          const item = first.items.find((i) => i.key === smart);
+          setUnitPrice(String(pref?.unitPrice ?? item?.suggestedUnitPrice ?? ""));
+          setTitle(first.key === PLYWOOD_TYPE.key ? "Plywood replacement" : first.label);
+          setAreas([{ ...newArea(), sheets: pref?.lastQuantity ? String(Math.round(pref.lastQuantity / (first.helpers.sheetSqft ?? 32))) : "" }]);
+        } else {
+          setTitle("");
+          setFree([{ id: uid(), name: "", quantity: "1", unit: "each", unitPrice: "", kind: "material" }]);
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) setLoadErr(err instanceof Error ? err.message : "Couldn't load");
@@ -264,6 +274,13 @@ export function ChangeOrderSheet({
   }
 
   const canSend = Boolean(ctx && (ctx.clientEmail || ctx.clientPhone));
+  // false on the server and during hydration, true once the client is up —
+  // createPortal needs a document, and the sheet is closed until then anyway.
+  const mounted = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 
   /** Reload the list after a row action, without reopening the form. */
   function reloadOrders() {
@@ -296,32 +313,40 @@ export function ChangeOrderSheet({
     VOID: { label: "Withdrawn", cls: "bg-zinc-100 text-zinc-500" },
   };
 
-  return (
+  if (!mounted) return null;
+  return createPortal(
     <Sheet
       open={open}
       onClose={() => {
         reset();
         onClose();
       }}
-      title="Change order"
-      description={ctx ? `${ctx.contextTitle} · #${ctx.nextNumber}` : undefined}
-      width="min(560px, 100vw)"
+      title={creating ? "New change order" : "Change orders"}
+      description={ctx ? (creating ? `${ctx.contextTitle} · #${ctx.nextNumber}` : ctx.contextTitle) : undefined}
+      width="min(600px, 100vw)"
       footer={
         !creating ? (
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-2 pr-[72px] sm:pr-0">
             <Button variant="ghost" onClick={onClose}>Close</Button>
           </div>
         ) : (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-baseline justify-between text-[12px] text-[color:var(--ink-muted)]">
-            <span>
-              {money(totals.subtotal)}
-              {totals.taxTotal > 0 ? ` + ${money(totals.taxTotal)} tax` : ""}
-              {newContract != null ? ` · contract becomes ${money(newContract)}` : ""}
-            </span>
-            <span className="font-display text-[20px] text-[color:var(--ink)] tabular">{money(totals.total)}</span>
+        <div className="flex flex-col gap-3 pr-[72px] sm:pr-0">
+          <div className="flex items-end justify-between gap-3">
+            <div className="text-[12px] text-[color:var(--ink-muted)] leading-snug">
+              <div>
+                {money(totals.subtotal)}
+                {totals.taxTotal > 0 ? ` + ${money(totals.taxTotal)} tax` : " · no tax"}
+              </div>
+              {newContract != null && <div>Contract becomes <b className="text-[color:var(--ink)]">{money(newContract)}</b></div>}
+            </div>
+            <div className="text-right">
+              <div className="quiet-caps">This change</div>
+              <div className={cn("font-display text-[24px] leading-none tabular", totals.total < 0 ? "text-rose-700" : "text-[color:var(--ink)]")}>
+                {totals.total < 0 ? "−" : "+"}{money(Math.abs(totals.total))}
+              </div>
+            </div>
           </div>
-          <div className="flex items-center justify-end gap-2">
+          <div className="grid grid-cols-[auto_1fr_1fr] sm:flex sm:justify-end gap-2">
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
             <Button variant="outline" loading={busy === "draft"} disabled={!ctx || busy != null} onClick={() => submit(false)}>
               Save draft
@@ -443,7 +468,7 @@ export function ChangeOrderSheet({
           )}
           {/* Type */}
           {ctx.types.length > 1 && (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
               {ctx.types.map((t) => (
                 <button
                   key={t.key}
@@ -461,7 +486,7 @@ export function ChangeOrderSheet({
           )}
           {type.intro && <p className="text-[12px] text-[color:var(--ink-muted)] -mt-2">{type.intro}</p>}
 
-          <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={type.key === "custom" ? "Fascia repair, west side" : undefined} />
+          <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={type.key === "custom" ? "e.g. Extra 20 ft of fence, west side" : undefined} />
 
           {type.areas ? (
             <>
@@ -531,17 +556,17 @@ export function ChangeOrderSheet({
                       </div>
                       <div className="flex items-center gap-2">
                         {a.mode === "sheets" && (
-                          <Input type="number" inputMode="numeric" value={a.sheets} onChange={(e) => setAreas((rows) => rows.map((r) => (r.id === a.id ? { ...r, sheets: e.target.value } : r)))} placeholder="3" suffix={<span className="text-[11px]">sheets 4×8</span>} />
+                          <Input type="number" inputMode="numeric" value={a.sheets} onChange={(e) => setAreas((rows) => rows.map((r) => (r.id === a.id ? { ...r, sheets: e.target.value } : r)))} placeholder="How many" suffix={<span className="text-[11px]">sheets 4×8</span>} />
                         )}
                         {a.mode === "lw" && (
                           <>
-                            <Input type="number" inputMode="decimal" value={a.length} onChange={(e) => setAreas((rows) => rows.map((r) => (r.id === a.id ? { ...r, length: e.target.value } : r)))} placeholder="12" suffix={<span className="text-[11px]">ft</span>} />
+                            <Input type="number" inputMode="decimal" value={a.length} onChange={(e) => setAreas((rows) => rows.map((r) => (r.id === a.id ? { ...r, length: e.target.value } : r)))} placeholder="Length" suffix={<span className="text-[11px]">ft</span>} />
                             <span className="text-[color:var(--ink-muted)]">×</span>
-                            <Input type="number" inputMode="decimal" value={a.width} onChange={(e) => setAreas((rows) => rows.map((r) => (r.id === a.id ? { ...r, width: e.target.value } : r)))} placeholder="8" suffix={<span className="text-[11px]">ft</span>} />
+                            <Input type="number" inputMode="decimal" value={a.width} onChange={(e) => setAreas((rows) => rows.map((r) => (r.id === a.id ? { ...r, width: e.target.value } : r)))} placeholder="Width" suffix={<span className="text-[11px]">ft</span>} />
                           </>
                         )}
                         {a.mode === "sqft" && (
-                          <Input type="number" inputMode="decimal" value={a.sqft} onChange={(e) => setAreas((rows) => rows.map((r) => (r.id === a.id ? { ...r, sqft: e.target.value } : r)))} placeholder="96" suffix={<span className="text-[11px]">sq ft</span>} />
+                          <Input type="number" inputMode="decimal" value={a.sqft} onChange={(e) => setAreas((rows) => rows.map((r) => (r.id === a.id ? { ...r, sqft: e.target.value } : r)))} placeholder="Area" suffix={<span className="text-[11px]">sq ft</span>} />
                         )}
                         <span className="text-[12px] tabular text-[color:var(--ink-soft)] shrink-0 w-[132px] text-right">
                           {areaSqft(a, sheetSqft)} {type.unit} · {money(Math.round(areaSqft(a, sheetSqft) * num(unitPrice) * 100) / 100)}
@@ -562,28 +587,81 @@ export function ChangeOrderSheet({
             </>
           ) : (
             <div>
+              {ctx.proposalLines.length > 0 && (
+                <div className="mb-3">
+                  <div className="quiet-caps mb-1.5">More of something already on the proposal</div>
+                  <select
+                    className="h-10 w-full rounded-[var(--r-md)] hairline bg-white/70 px-3 text-[14px]"
+                    value=""
+                    onChange={(e) => {
+                      const pl = ctx.proposalLines[Number(e.target.value)];
+                      if (!pl) return;
+                      setFree((rows) => {
+                        const blank = rows.length === 1 && !rows[0].name.trim() && !rows[0].unitPrice ? [] : rows;
+                        return [...blank, { id: uid(), name: pl.name, quantity: "1", unit: pl.unit, unitPrice: String(pl.unitPrice), kind: pl.kind }];
+                      });
+                      if (!title.trim()) setTitle(`More ${pl.name}`.slice(0, 120));
+                    }}
+                  >
+                    <option value="">Pick a line to add more of it…</option>
+                    {ctx.proposalLines.map((pl, i) => (
+                      <option key={i} value={i}>
+                        {pl.name} · {money(pl.unitPrice)}/{pl.unit} · {pl.kind}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-[color:var(--ink-muted)] mt-1.5">Same unit and price as the proposal — just enter how much more. Change the price if this work costs differently.</p>
+                </div>
+              )}
               <div className="quiet-caps mb-1.5">Lines</div>
               <div className="space-y-2">
-                {free.map((l) => (
-                  <div key={l.id} className="grid grid-cols-[1fr_72px_88px_84px_32px] gap-1.5 items-center">
-                    <Input value={l.name} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, name: e.target.value } : r)))} placeholder="Item" />
-                    <Input type="number" inputMode="decimal" value={l.quantity} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, quantity: e.target.value } : r)))} placeholder="1" />
-                    <select className="h-10 rounded-[var(--r-md)] hairline bg-white/70 px-2 text-[13px]" value={l.unit} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, unit: e.target.value as CoUnit } : r)))}>
-                      {UNITS.map((u) => (
-                        <option key={u} value={u}>{u}</option>
-                      ))}
-                    </select>
-                    <Input type="number" inputMode="decimal" value={l.unitPrice} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, unitPrice: e.target.value } : r)))} placeholder="$" />
-                    <button type="button" className="h-8 w-8 grid place-items-center text-[color:var(--ink-muted)] hover:text-rose-700" aria-label="Remove line" onClick={() => setFree((rows) => rows.filter((r) => r.id !== l.id))}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
+                {free.map((l) => {
+                  const lineTotal = Math.round(num(l.quantity) * num(l.unitPrice) * 100) / 100;
+                  return (
+                    <div key={l.id} className="hairline rounded-[var(--r-md)] p-2 bg-white/50 space-y-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <Input value={l.name} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, name: e.target.value } : r)))} placeholder={l.kind === "labor" ? "Extra labor — e.g. demo old fence" : "Item — e.g. 6 ft cedar panel"} />
+                        <div className="inline-flex rounded-[var(--r-sm)] hairline p-0.5 bg-white/60 shrink-0">
+                          {(["material", "labor"] as const).map((k) => (
+                            <button
+                              key={k}
+                              type="button"
+                              onClick={() => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, kind: k } : r)))}
+                              className={cn("h-8 px-2 rounded-[var(--r-sm)] text-[11px] font-semibold capitalize", l.kind === k ? "bg-[color:var(--ink)] text-white" : "text-[color:var(--ink-muted)]")}
+                            >
+                              {k}
+                            </button>
+                          ))}
+                        </div>
+                        <button type="button" className="h-8 w-8 grid place-items-center text-[color:var(--ink-muted)] hover:text-rose-700 shrink-0" aria-label="Remove line" onClick={() => setFree((rows) => rows.filter((r) => r.id !== l.id))}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-[80px_1fr_100px_1fr] gap-1.5 items-center">
+                        <Input type="number" inputMode="decimal" value={l.quantity} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, quantity: e.target.value } : r)))} placeholder="Qty" aria-label="Quantity" />
+                        <select className="h-10 rounded-[var(--r-md)] hairline bg-white/70 px-2 text-[13px]" value={l.unit} aria-label="Unit" onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, unit: e.target.value as CoUnit } : r)))}>
+                          {UNITS.map((u) => (
+                            <option key={u} value={u}>{u}</option>
+                          ))}
+                        </select>
+                        <Input type="number" inputMode="decimal" step="0.01" prefix={<span className="text-[11px]">$</span>} value={l.unitPrice} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, unitPrice: e.target.value } : r)))} placeholder="0.00" aria-label="Unit price" />
+                        <span className={cn("text-right tabular text-[13px]", lineTotal < 0 ? "text-rose-700" : "text-[color:var(--ink-soft)]")}>
+                          {lineTotal < 0 ? "−" : ""}{money(Math.abs(lineTotal))}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <Button variant="ghost" size="sm" icon={<Plus className="h-3.5 w-3.5" />} className="mt-2" onClick={() => setFree((rows) => [...rows, { id: uid(), name: "", quantity: "1", unit: type.unit, unitPrice: "", kind: "material" }])}>
-                Add line
-              </Button>
-              <p className="text-[11px] text-[color:var(--ink-muted)] mt-1.5">A negative price is a credit to the client.</p>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                <Button variant="ghost" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setFree((rows) => [...rows, { id: uid(), name: "", quantity: "1", unit: "each", unitPrice: "", kind: "material" }])}>
+                  Material
+                </Button>
+                <Button variant="ghost" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setFree((rows) => [...rows, { id: uid(), name: "", quantity: "1", unit: "hour", unitPrice: "", kind: "labor" }])}>
+                  Labor
+                </Button>
+              </div>
+              <p className="text-[11px] text-[color:var(--ink-muted)] mt-1.5">Measures: each, sq ft, linear ft, square (100 sq ft of roof), hour, lot. A negative price is a credit back to the client.</p>
             </div>
           )}
 
@@ -622,6 +700,7 @@ export function ChangeOrderSheet({
           {type.pricingNote && <p className="text-[11px] text-[color:var(--ink-muted)]">{type.pricingNote}</p>}
         </div>
       )}
-    </Sheet>
+    </Sheet>,
+    document.body,
   );
 }

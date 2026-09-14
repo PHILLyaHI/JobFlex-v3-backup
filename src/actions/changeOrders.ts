@@ -21,10 +21,14 @@ import { createChangeOrderSchema } from "@/lib/changeOrders/schema";
 import {
   BUILTIN_CHANGE_ORDER_TYPES,
   CO_STATUS,
+  PLYWOOD_TYPE,
   inferRoofFamily,
+  isRoofingProposal,
   normalizeTaxRate,
   totalsForLines,
+  unitFromMeasurementType,
   type CoTypeDef,
+  type CoUnit,
 } from "@/lib/changeOrders/types";
 import { approveChangeOrder } from "@/lib/changeOrders/respond";
 import { sendChangeOrderToClient, type SendReport } from "@/lib/changeOrders/send";
@@ -87,6 +91,10 @@ export interface ChangeOrderContext {
   /** Fraction (0.095). */
   taxRate: number;
   roofFamily: string | null;
+  /** Roofing proposals get the plywood type; everything else opens on the generic form. */
+  isRoofing: boolean;
+  /** The proposal's own lines, so a change can be "more of" one at the same unit and price. */
+  proposalLines: Array<{ name: string; unit: CoUnit; unitPrice: number; kind: "material" | "labor" }>;
   clientEmail: boolean;
   clientPhone: boolean;
   /** The contract value before any new change: original + approved so far. */
@@ -119,6 +127,8 @@ export async function getChangeOrderContext(input: { jobId?: string; proposalId?
   }
   let taxRate = 0;
   let roofFamily: string | null = null;
+  let isRoofing = false;
+  let proposalLines: ChangeOrderContext["proposalLines"] = [];
   let contractBefore: number | null = null;
   let originalTotal: number | null = null;
   if (proposalId) {
@@ -129,7 +139,7 @@ export async function getChangeOrderContext(input: { jobId?: string; proposalId?
         taxRate: true,
         total: true,
         client: { select: { email: true, phone: true } },
-        lineItems: { select: { name: true } },
+        lineItems: { orderBy: { position: "asc" }, select: { name: true, measurementType: true, unitPrice: true, materialCost: true, laborCost: true } },
         changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } },
       },
     });
@@ -137,7 +147,18 @@ export async function getChangeOrderContext(input: { jobId?: string; proposalId?
     if (!input.jobId) contextTitle = proposal.title;
     client = client ?? proposal.client;
     taxRate = normalizeTaxRate(proposal.taxRate);
-    roofFamily = inferRoofFamily(proposal.lineItems.map((l) => l.name));
+    const names = proposal.lineItems.map((l) => l.name);
+    roofFamily = inferRoofFamily(names);
+    isRoofing = isRoofingProposal({ title: proposal.title, lineNames: names });
+    proposalLines = proposal.lineItems
+      .filter((l) => l.name.trim())
+      .map((l) => ({
+        name: l.name.trim(),
+        unit: unitFromMeasurementType(l.measurementType),
+        unitPrice: l.unitPrice,
+        // A line priced as labor only is labor; anything else is material.
+        kind: l.laborCost > 0 && l.materialCost <= 0 ? ("labor" as const) : ("material" as const),
+      }));
     originalTotal = proposal.total;
     contractBefore = contractTotal(proposal.total, proposal.changeOrders);
   } else {
@@ -158,12 +179,15 @@ export async function getChangeOrderContext(input: { jobId?: string; proposalId?
     contextTitle,
     taxRate,
     roofFamily,
+    isRoofing,
+    proposalLines,
     clientEmail: Boolean(client?.email),
     clientPhone: Boolean(client?.phone),
     contractBefore,
     originalTotal,
     prefs,
-    types: await listChangeOrderTypes(),
+    // Plywood is a roofing type: on any other job the sheet opens on the generic form.
+    types: (await listChangeOrderTypes()).filter((t) => t.key !== PLYWOOD_TYPE.key || isRoofing),
     nextNumber: Math.max(agg._max.number ?? 0, agg._count._all) + 1,
     orders: await changeOrdersFor({ ...(jobId ? { jobId } : {}), ...(proposalId ? { proposalId } : {}) }),
     invoice: await invoiceOptionsFor(organizationId),
