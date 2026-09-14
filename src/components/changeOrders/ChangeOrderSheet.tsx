@@ -11,8 +11,7 @@
 // Mounted as a plain React child on the job pages and as a React island on
 // the proposals page (the MaterialsSheet precedent).
 import * as React from "react";
-import { useRouter } from "next/navigation";
-import { Camera, Plus, Trash2 } from "lucide-react";
+import { Camera, Check, Copy, Link2, Plus, Send, Trash2, Undo2 } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
@@ -20,7 +19,18 @@ import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
 import { money } from "@/lib/format";
 import { cn } from "@/lib/cn";
-import { createChangeOrder, getChangeOrderContext, uploadChangeOrderPhoto, type ChangeOrderContext } from "@/actions/changeOrders";
+import {
+  createChangeOrder,
+  deleteChangeOrder,
+  getChangeOrderContext,
+  markChangeOrderApproved,
+  sendChangeOrder,
+  sendChangeOrderInvoice,
+  uploadChangeOrderPhoto,
+  voidChangeOrder,
+  type ChangeOrderContext,
+  type ChangeOrderRowDto,
+} from "@/actions/changeOrders";
 import { PLYWOOD_TYPE, linesForAreas, totalsForLines, type CoArea, type CoLine, type CoTypeDef, type CoUnit } from "@/lib/changeOrders/types";
 
 const CUSTOM_ITEM = "__custom";
@@ -73,7 +83,10 @@ export function ChangeOrderSheet({
   /** After a save or send — the page reloads its list. */
   onDone?: () => void;
 }) {
-  const router = useRouter();
+  // No useRouter here on purpose: on the proposals page this sheet is a React
+  // ISLAND (react-island.ts) with no App Router context, and useRouter would
+  // throw before the first paint. Pages inside the app tree refresh through
+  // `onDone`; the island keeps its own list current.
   const [ctx, setCtx] = React.useState<ChangeOrderContext | null>(null);
   const [loadErr, setLoadErr] = React.useState<string | null>(null);
   const [type, setType] = React.useState<CoTypeDef>(PLYWOOD_TYPE);
@@ -89,6 +102,12 @@ export function ChangeOrderSheet({
   const [uploading, setUploading] = React.useState(false);
   const [busy, setBusy] = React.useState<"draft" | "send" | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
+  // Manager mode: the existing change orders, with their next action each.
+  // The form opens on "New change order", or at once when there are none.
+  const [orders, setOrders] = React.useState<ChangeOrderRowDto[]>([]);
+  const [creating, setCreating] = React.useState(true);
+  const [rowBusy, setRowBusy] = React.useState<string | null>(null);
+  const [invoiceFor, setInvoiceFor] = React.useState<string | null>(null);
 
   // Context on open: the parent, tax, the roof family, the company's prices.
   const [openedFor, setOpenedFor] = React.useState<string | null>(null);
@@ -102,6 +121,8 @@ export function ChangeOrderSheet({
         setCtx(c);
         setOpenedFor(key);
         setLoadErr(null);
+        setOrders(c.orders);
+        setCreating(c.orders.length === 0);
         const plywood = c.types.find((t) => t.key === PLYWOOD_TYPE.key) ?? c.types[0];
         setType(plywood);
         const fam = c.roofFamily;
@@ -233,9 +254,8 @@ export function ChangeOrderSheet({
         toast.success(`Change order #${res.number} saved as a draft`);
       }
       reset();
-      onClose();
+      reloadOrders();
       onDone?.();
-      router.refresh();
     } catch (err) {
       toast.error("Couldn't save", err instanceof Error ? err.message : undefined);
     } finally {
@@ -244,6 +264,37 @@ export function ChangeOrderSheet({
   }
 
   const canSend = Boolean(ctx && (ctx.clientEmail || ctx.clientPhone));
+
+  /** Reload the list after a row action, without reopening the form. */
+  function reloadOrders() {
+    setOpenedFor(null);
+    setCreating(false);
+  }
+  async function rowAction(id: string, label: string, fn: () => Promise<unknown>, after?: (r: unknown) => void) {
+    setRowBusy(id);
+    try {
+      const r = await fn();
+      after?.(r);
+      reloadOrders();
+      onDone?.();
+    } catch (err) {
+      toast.error(`Couldn't ${label}`, err instanceof Error ? err.message : undefined);
+    } finally {
+      setRowBusy(null);
+    }
+  }
+  function copyLink(o: ChangeOrderRowDto) {
+    const url = `${window.location.origin}/co/${o.publicToken}`;
+    void navigator.clipboard?.writeText(url);
+    toast.success("Approval link copied", url);
+  }
+  const STATUS: Record<string, { label: string; cls: string }> = {
+    DRAFT: { label: "Draft", cls: "bg-zinc-100 text-zinc-700" },
+    SENT: { label: "Awaiting approval", cls: "bg-amber-100 text-amber-800" },
+    APPROVED: { label: "Approved", cls: "bg-emerald-100 text-emerald-800" },
+    DECLINED: { label: "Declined", cls: "bg-rose-100 text-rose-800" },
+    VOID: { label: "Withdrawn", cls: "bg-zinc-100 text-zinc-500" },
+  };
 
   return (
     <Sheet
@@ -256,6 +307,11 @@ export function ChangeOrderSheet({
       description={ctx ? `${ctx.contextTitle} · #${ctx.nextNumber}` : undefined}
       width="min(560px, 100vw)"
       footer={
+        !creating ? (
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="ghost" onClick={onClose}>Close</Button>
+          </div>
+        ) : (
         <div className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between text-[12px] text-[color:var(--ink-muted)]">
             <span>
@@ -271,18 +327,120 @@ export function ChangeOrderSheet({
               Save draft
             </Button>
             <Button loading={busy === "send"} disabled={!ctx || busy != null || !canSend} onClick={() => submit(true)} title={canSend ? undefined : "The client has no email or phone"}>
-              Send to client
+              Send for approval
             </Button>
           </div>
         </div>
+        )
       }
     >
       {loadErr ? (
         <p className="text-[13px] text-rose-700">{loadErr}</p>
       ) : !ctx ? (
         <p className="text-[13px] text-[color:var(--ink-muted)]">Loading…</p>
+      ) : !creating ? (
+        <div className="space-y-3">
+          {orders.length === 0 && <p className="text-[13px] text-[color:var(--ink-muted)]">No change orders yet.</p>}
+          {orders.map((o) => {
+            const st = STATUS[o.status] ?? STATUS.DRAFT;
+            const working = rowBusy === o.id;
+            return (
+              <div key={o.id} className="hairline rounded-[var(--r-md)] p-3 bg-white/60 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[14px] font-medium truncate">#{o.number ?? "—"} · {o.title}</div>
+                    <div className="text-[11px] text-[color:var(--ink-muted)] mt-0.5">
+                      {o.lines.length ? `${o.lines.length} line${o.lines.length === 1 ? "" : "s"}` : "one amount"}
+                      {o.taxTotal > 0 ? ` · ${money(o.taxTotal)} tax` : ""}
+                      {o.approvedName ? ` · signed by ${o.approvedName}` : ""}
+                      {o.declineReason ? ` · "${o.declineReason}"` : ""}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="tabular text-[15px]">{o.total >= 0 ? "+" : "−"}{money(Math.abs(o.total))}</div>
+                    <span className={cn("inline-block mt-1 rounded-full px-2 py-0.5 text-[10px] font-semibold", st.cls)}>{st.label}</span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {o.status === "DRAFT" && (
+                    <>
+                      <Button size="sm" loading={working} disabled={!canSend} icon={<Send className="h-3.5 w-3.5" />} onClick={() => rowAction(o.id, "send", () => sendChangeOrder(o.id), () => toast.success("Sent for approval"))}>
+                        Send for approval
+                      </Button>
+                      <Button size="sm" variant="ghost" disabled={working} icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => rowAction(o.id, "delete", () => deleteChangeOrder(o.id))}>
+                        Delete
+                      </Button>
+                    </>
+                  )}
+                  {o.status === "SENT" && (
+                    <>
+                      <Button size="sm" variant="outline" disabled={working} icon={<Link2 className="h-3.5 w-3.5" />} onClick={() => copyLink(o)}>
+                        Copy link
+                      </Button>
+                      <Button size="sm" variant="outline" loading={working} icon={<Check className="h-3.5 w-3.5" />} onClick={() => {
+                        const name = window.prompt("Client's full name, as they approved it in person:");
+                        if (!name || name.trim().length < 2) return;
+                        void rowAction(o.id, "record the approval", () => markChangeOrderApproved(o.id, name.trim()), () => toast.success("Approved in person"));
+                      }}>
+                        Mark approved
+                      </Button>
+                      <Button size="sm" variant="ghost" disabled={working} icon={<Undo2 className="h-3.5 w-3.5" />} onClick={() => rowAction(o.id, "withdraw", () => voidChangeOrder(o.id))}>
+                        Withdraw
+                      </Button>
+                    </>
+                  )}
+                  {o.status === "APPROVED" && o.total > 0 && ctx.proposalId && (
+                    invoiceFor === o.id ? (
+                      <div className="w-full space-y-1.5">
+                        <div className="text-[11px] text-[color:var(--ink-muted)]">Send the invoice — how should the client pay?</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {ctx.invoice.card && (
+                            <Button size="sm" loading={working} onClick={() => rowAction(o.id, "send the invoice", () => sendChangeOrderInvoice(o.id, "card"), (r) => { const x = r as { email: string; sms: string }; toast.success("Invoice sent · card", `email ${x.email}, text ${x.sms}`); setInvoiceFor(null); })}>
+                              Card{ctx.invoice.cardVia.length ? ` · ${ctx.invoice.cardVia.join(" / ")}` : ""}
+                            </Button>
+                          )}
+                          {ctx.invoice.bank && (
+                            <Button size="sm" variant="outline" loading={working} onClick={() => rowAction(o.id, "send the invoice", () => sendChangeOrderInvoice(o.id, "bank"), (r) => { const x = r as { email: string; sms: string }; toast.success("Invoice sent · bank transfer", `email ${x.email}, text ${x.sms}`); setInvoiceFor(null); })}>
+                              Bank transfer
+                            </Button>
+                          )}
+                          {(ctx.invoice.card || ctx.invoice.bank) && (
+                            <Button size="sm" variant="ghost" loading={working} onClick={() => rowAction(o.id, "send the invoice", () => sendChangeOrderInvoice(o.id, "any"), (r) => { const x = r as { email: string; sms: string }; toast.success("Invoice sent", `email ${x.email}, text ${x.sms}`); setInvoiceFor(null); })}>
+                              Client&apos;s choice
+                            </Button>
+                          )}
+                          {!ctx.invoice.card && !ctx.invoice.bank && (
+                            <span className="text-[12px] text-rose-700">No way to pay is set up — connect a processor or add bank-transfer details in Settings → Payments.</span>
+                          )}
+                          <Button size="sm" variant="ghost" onClick={() => setInvoiceFor(null)}>Cancel</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <Button size="sm" disabled={working} icon={<Send className="h-3.5 w-3.5" />} onClick={() => setInvoiceFor(o.id)}>
+                          Send invoice
+                        </Button>
+                        <Button size="sm" variant="ghost" disabled={working} icon={<Copy className="h-3.5 w-3.5" />} onClick={() => copyLink(o)}>
+                          Copy link
+                        </Button>
+                      </>
+                    )
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          <Button icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setCreating(true)}>
+            New change order
+          </Button>
+        </div>
       ) : (
         <div className="space-y-5">
+          {orders.length > 0 && (
+            <button type="button" className="text-[12px] text-[color:var(--ink-muted)] underline underline-offset-2" onClick={() => setCreating(false)}>
+              ← Back to the {orders.length} existing change order{orders.length === 1 ? "" : "s"}
+            </button>
+          )}
           {/* Type */}
           {ctx.types.length > 1 && (
             <div className="flex flex-wrap gap-1.5">

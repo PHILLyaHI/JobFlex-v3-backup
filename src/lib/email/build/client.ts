@@ -269,6 +269,54 @@ export function buildChangeOrder(i: ChangeOrderInput): EmailDoc {
   };
 }
 
+export interface InvoiceInput {
+  org: OrgBrand;
+  clientName: string;
+  title: string;
+  /** The stage being invoiced — "Deposit", "Change order #2 · Plywood replacement", "Remaining balance". */
+  label: string;
+  amount: number;
+  dueDate: Date | null;
+  agreedTotal: number;
+  paidToDate: number;
+  /** The portal link, carrying the chosen rail (?pay=…&method=…). */
+  href: string;
+  /** card: the hosted pay page; bank: the office's transfer instructions; any: the client picks on the portal. */
+  method: "card" | "bank" | "any";
+  bankInstructions?: string | null;
+}
+
+/** An invoice for one stage, on the rail the office chose. Bank transfer
+ *  carries the instructions in the mail itself and links, not buttons. */
+export function buildInvoice(i: InvoiceInput): EmailDoc {
+  const box: BoxRow[] = [
+    { type: "item", name: "Agreed total", amount: formatUSD(i.agreedTotal) },
+    { type: "item", name: "Paid to date", amount: formatUSD(i.paidToDate) },
+    { type: "anchor", label: "Amount due", value: formatUSD(i.amount) },
+  ];
+  if (i.dueDate) box.push({ type: "cond", label: "Due", chip: shortDate(i.dueDate), tone: "warn" });
+  const first = i.clientName.split(" ")[0];
+  const prose =
+    i.method === "bank"
+      ? [
+          `Hi ${first} — here is the invoice for ${i.label.toLowerCase()} on ${i.title}. Please pay by bank transfer using the details below; reply to this email once it is sent.`,
+          ...(i.bankInstructions ? i.bankInstructions.split(/\n{2,}/).map((p) => p.replace(/\n/g, " · ").trim()).filter(Boolean) : []),
+        ]
+      : i.method === "card"
+        ? [`Hi ${first} — here is the invoice for ${i.label.toLowerCase()} on ${i.title}. Pay by card online in a minute using the button below.`]
+        : [`Hi ${first} — here is the invoice for ${i.label.toLowerCase()} on ${i.title}. Pay online, or see the other ways to pay on the page below.`];
+  return {
+    subject: `Invoice — ${i.label} for ${truncate(i.title, 40)}`,
+    lockup: orgLockup(i.org),
+    kicker: { text: "Invoice" },
+    headline: `${i.label}: ${formatUSD(i.amount)} due`,
+    prose,
+    box,
+    ...(i.method === "bank" ? { link: { label: "View the invoice online", href: i.href } } : { cta: { label: i.method === "card" ? "Pay by card" : "Pay online", href: i.href } }),
+    footer: orgFooter(i.org),
+  };
+}
+
 export interface PaymentReminderInput {
   org: OrgBrand;
   clientName: string;

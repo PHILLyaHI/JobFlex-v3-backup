@@ -705,6 +705,10 @@ model Installment {
   // stage and how many rungs of the ladder have gone out (auto or manual).
   remindedAt       DateTime?
   reminderCount    Int       @default(0)
+  // The last invoice sent for this stage and the rail the office chose for it
+  // (card | bank | any) — the portal link carries the choice.
+  invoiceMethod    String?
+  invoiceSentAt    DateTime?
 
   proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
   payment  Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)

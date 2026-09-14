@@ -465,3 +465,6 @@ body:has(.jf-proposal-portal)::before { content: none; }
 .jf-proposal-portal .pv-change b { white-space: nowrap; }
 .jf-proposal-portal .pv-change--open { color: var(--blueprint); }
 .jf-proposal-portal .pv-change--open b { text-decoration: underline; text-underline-offset: 3px; }
+
+/* The stage an invoice link points at. */
+.jf-proposal-portal .pv-pay-r.is-focus { outline: 2px solid var(--blueprint); outline-offset: 2px; }

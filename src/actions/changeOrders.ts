@@ -30,6 +30,7 @@ import { approveChangeOrder } from "@/lib/changeOrders/respond";
 import { sendChangeOrderToClient, type SendReport } from "@/lib/changeOrders/send";
 import { parseCoLines, parseCoPhotos } from "@/lib/changeOrders/parse";
 import { contractTotal } from "@/lib/contractTotal";
+import { invoiceOptionsFor, sendInvoice, type InvoiceMethod, type InvoiceOptions, type InvoiceReport } from "@/lib/payments/invoices";
 
 const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 
@@ -95,6 +96,10 @@ export interface ChangeOrderContext {
   prefs: Record<string, { unitPrice: number; lastQuantity: number | null }>;
   types: CoTypeDef[];
   nextNumber: number;
+  /** Every change order on this proposal / job, oldest first — the sheet manages them. */
+  orders: ChangeOrderRowDto[];
+  /** Which invoice rails the company can send on. */
+  invoice: InvoiceOptions;
 }
 
 /** Everything the sheet needs to open pre-filled, in one round trip. */
@@ -160,7 +165,27 @@ export async function getChangeOrderContext(input: { jobId?: string; proposalId?
     prefs,
     types: await listChangeOrderTypes(),
     nextNumber: Math.max(agg._max.number ?? 0, agg._count._all) + 1,
+    orders: await changeOrdersFor({ ...(jobId ? { jobId } : {}), ...(proposalId ? { proposalId } : {}) }),
+    invoice: await invoiceOptionsFor(organizationId),
   };
+}
+
+/**
+ * Invoice an APPROVED change order — its own stage on the schedule — on the
+ * rail the office picks: card (hosted checkout), bank (the org's transfer
+ * instructions), or the client's choice. A credit has no stage to invoice.
+ */
+export async function sendChangeOrderInvoice(id: string, method: InvoiceMethod): Promise<InvoiceReport> {
+  const { organizationId } = await requireManager();
+  const co = await db.changeOrder.findFirst({ where: { id, organizationId }, select: { status: true, proposalId: true, jobId: true } });
+  if (!co) throw new Error("Not found");
+  if (co.status !== CO_STATUS.APPROVED) throw new Error("Only an approved change order can be invoiced.");
+  if (!co.proposalId) throw new Error("This change order is not on a proposal, so it has no payment stage.");
+  const stage = await db.installment.findUnique({ where: { changeOrderId: id }, select: { id: true } });
+  if (!stage) throw new Error("This change order is a credit — nothing to invoice.");
+  const r = await sendInvoice({ proposalId: co.proposalId, installmentId: stage.id, method, organizationId });
+  revalidateForChangeOrder(co.jobId, co.proposalId);
+  return r;
 }
 
 export async function createChangeOrder(raw: unknown): Promise<{ id: string; publicToken: string; number: number; total: number; sent?: SendReport }> {

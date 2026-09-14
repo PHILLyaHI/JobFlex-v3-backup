@@ -690,6 +690,7 @@ export function initProposalsContent(
       encodeURIComponent(p.id) +
       '/pdf" target="_blank" rel="noopener noreferrer"><svg class="ic"><use href="#i-download"/></svg>Download PDF</a>' +
       "</div>" +
+      '<button class="btn btn-ghost btn--sm" type="button" data-act="change-order"><svg class="ic"><use href="#i-plus"/></svg>Change order</button>' +
       '<button class="btn btn-ghost btn--sm" type="button" data-act="unmark"><svg class="ic"><use href="#i-undo"/></svg>Reopen job</button>' +
       "</div>" +
       "</div>"
@@ -888,6 +889,7 @@ export function initProposalsContent(
         p.clientEmail ? esc(p.clientEmail) : "No email on the client",
         "sendto",
       ) +
+      menuItem("i-plus", "pmi--bp", "Change order", "Price extras, send for signature", "change-order") +
       menuItem("i-box", "pmi--warn", "Order materials", (p.mat || 0) + " items", "materials", {
         dis: p.mat === 0,
       }) +
@@ -1121,6 +1123,11 @@ export function initProposalsContent(
       }
       if (act === "materials") {
         openMaterials(p);
+        return;
+      }
+      if (act === "change-order") {
+        closeMenu();
+        openChangeOrder(p);
         return;
       }
       if (act === "del") {

@@ -61,6 +61,7 @@ import {
   type PhotoKind,
 } from "@/components/v3/job-detail-blueprint/use-job-detail-actions";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
+import { useRouter } from "next/navigation";
 import "./mobile-job-detail.css";
 
 const prefersReducedMotion = () =>
@@ -111,6 +112,7 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
   // repaint such as approving a change order.
   const [switched, setSwitched] = useState(false);
   const [coOpen, setCoOpen] = useState(false);
+  const router = useRouter();
 
   const a = useJobDetailActions(
     record.id,
@@ -686,7 +688,7 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
               </section>
             )}
 
-            {record.canWrite && <ChangeOrderSheet open={coOpen} onClose={() => setCoOpen(false)} jobId={record.id} />}
+            {record.canWrite && <ChangeOrderSheet open={coOpen} onClose={() => setCoOpen(false)} jobId={record.id} onDone={() => router.refresh()} />}
             {tab === "changes" && (
               <section className="mjd-card">
                 <div className="mjd-h">

@@ -13,7 +13,7 @@
 // Money is never computed here — the model arrives from the server already
 // resolved (paid stages frozen, unpaid recomputed, remaining = total − paid).
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { toast } from "@/components/ui/Toast";
 import type { PortalPayModel, PortalStage } from "@/lib/payments/portalModel";
 import { startCheckout, usePayReturn } from "@/components/v3/mobile-proposal-client/use-pay-return";
@@ -44,9 +44,27 @@ function PayReturnBanner({ publicId }: { publicId: string }) {
   );
 }
 
-export function PortalPayment({ model }: { model: PortalPayModel }) {
+export function PortalPayment({
+  model,
+  focus = null,
+  method = null,
+}: {
+  model: PortalPayModel;
+  /** The stage an invoice link points at — opened and scrolled to. */
+  focus?: string | null;
+  /** The rail the invoice chose: bank hides the hosted buttons, card hides the bank details. */
+  method?: "card" | "bank" | "any" | null;
+}) {
   const [busy, setBusy] = useState<string | null>(null);
-  const accepted = model.status === "ACCEPTED";
+  // COMPLETED still pays: finishing the work does not settle the money, and an
+  // approved change order can add to a finished job.
+  const accepted = model.status === "ACCEPTED" || model.status === "COMPLETED";
+  const showHosted = model.anyHosted && method !== "bank";
+  const showBank = model.bankTransfer.ok && method !== "card";
+  useEffect(() => {
+    if (!focus) return;
+    document.getElementById(`pv-stage-${focus}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focus]);
   const paidInFull = model.status === "PAID" || (model.remainingMinor <= 0 && model.paidMinor > 0);
 
   async function pay(provider: Provider, target: { installmentId: string } | "remaining") {
@@ -114,10 +132,12 @@ export function PortalPayment({ model }: { model: PortalPayModel }) {
       <div className="pv-pay">
         {model.stages.map((s) => {
           const active = accepted && s.payable && model.anyWay;
+          const focused = focus === s.id;
           return (
             <div
-              className={`pv-pay-r${s.status === "PAID" ? " is-paid" : ""}${s.status === "WAIVED" ? " is-waived" : ""}${active ? " is-next" : ""}`}
+              className={`pv-pay-r${s.status === "PAID" ? " is-paid" : ""}${s.status === "WAIVED" ? " is-waived" : ""}${active ? " is-next" : ""}${focused ? " is-focus" : ""}`}
               key={s.id}
+              id={`pv-stage-${s.id}`}
             >
               <div className="pv-pay-line">
                 <span className="pv-pay-no">{s.no}</span>
@@ -128,10 +148,10 @@ export function PortalPayment({ model }: { model: PortalPayModel }) {
               </div>
               {active ? (
                 <div className="pv-pay-act">
-                  {model.anyHosted ? buttons(s) : null}
-                  {model.bankTransfer.ok ? (
-                    <details className="pv-pay-bank">
-                      <summary>{model.anyHosted ? "Or pay by bank transfer" : "Pay by bank transfer"}</summary>
+                  {showHosted ? buttons(s) : null}
+                  {showBank ? (
+                    <details className="pv-pay-bank" open={method === "bank" || !showHosted}>
+                      <summary>{showHosted ? "Or pay by bank transfer" : "Pay by bank transfer"}</summary>
                       <pre className="pv-pay-bank-body">{model.bankTransfer.instructions}</pre>
                       <div className="pv-pay-bank-note">
                         {`Reference "${s.label}" — the team will mark it paid once it arrives.`}
@@ -145,7 +165,7 @@ export function PortalPayment({ model }: { model: PortalPayModel }) {
         })}
       </div>
 
-      {accepted && model.showRemaining && model.anyHosted ? (
+      {accepted && model.showRemaining && showHosted ? (
         <div className="pv-pay-all">
           <div className="pv-pay-all-l">{`Or settle everything now — ${model.remaining}`}</div>
           {buttons(null)}

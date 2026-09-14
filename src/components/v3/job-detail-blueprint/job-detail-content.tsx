@@ -66,6 +66,7 @@ import s from "./job-detail.module.css";
 import { useJobDetailMotion } from "./job-detail-motion";
 import { useJobDetailActions, type PhotoKind } from "./use-job-detail-actions";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
+import { useRouter } from "next/navigation";
 import { JD_ASSIGN, ST, STATUS_BUTTONS, fmt, type JobDetailRecord } from "./job-detail-data";
 
 /** Hashed module class, or the literal name when the module has none — which is
@@ -103,6 +104,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
   const [rosterOpen, setRosterOpen] = useState(false);
   const [photoKind, setPhotoKind] = useState<PhotoKind>("BEFORE");
   const [coOpen, setCoOpen] = useState(false);
+  const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const a = useJobDetailActions(
@@ -509,7 +511,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
           </section>
         )}
 
-        {record.canWrite && <ChangeOrderSheet open={coOpen} onClose={() => setCoOpen(false)} jobId={record.id} />}
+        {record.canWrite && <ChangeOrderSheet open={coOpen} onClose={() => setCoOpen(false)} jobId={record.id} onDone={() => router.refresh()} />}
         {tab === "changes" && (
           <section className={cx("card")}>
             <div className={cx("jd-h")}>

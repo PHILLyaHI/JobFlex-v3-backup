@@ -65,10 +65,18 @@ function measurementLabel(t: string | null | undefined) {
 
 export default async function PublicProposalPortal({
   params,
+  searchParams,
 }: {
   params: Promise<{ publicId: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { publicId } = await params;
+  // An invoice link carries the stage it is for and the rail the office chose
+  // (lib/payments/invoices): the payment block opens on that stage and shows
+  // only that way to pay.
+  const sp = (await searchParams) ?? {};
+  const focusStage = typeof sp.pay === "string" ? sp.pay : null;
+  const methodParam = typeof sp.method === "string" && ["card", "bank", "any"].includes(sp.method) ? (sp.method as "card" | "bank" | "any") : null;
   const proposal = await db.proposal.findUnique({
     where: { publicId },
     include: {
@@ -311,7 +319,7 @@ export default async function PublicProposalPortal({
         {/* PAYMENT SCHEDULE — the stages, their state, and the pay buttons
             on the next one. Always rendered: a proposal with no stages is one
             "Full payment" stage, and that is exactly what the client pays. */}
-        <PortalPayment model={payModel} />
+        <PortalPayment model={payModel} focus={focusStage} method={methodParam} />
 
         {/* TERMS & CONDITIONS — a disclosure, closed by default.
             Source is the ORG's terms (settings/proposals). The manual builder

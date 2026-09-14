@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireManager } from "@/lib/orgContext";
 import { sendPaymentReminder } from "@/lib/payments/reminders";
+import { sendInvoice, invoiceOptionsFor, type InvoiceMethod } from "@/lib/payments/invoices";
 // The customer/worker-facing senders live in src/lib/notify.ts (plain module,
 // not invokable as actions) and are called only from the guarded actions /
 // token-gated routes that own the resource. Only the payment reminder is
@@ -35,4 +36,15 @@ export async function setProposalReminders(proposalId: string, on: boolean | nul
   if (count !== 1) throw new Error("Not found");
   revalidatePath("/dashboard/proposals");
   return { ok: true as const, remindersOn: on };
+}
+
+/** Invoice one stage (or the remaining balance) on a chosen rail — card, bank transfer, or the client's choice. */
+export async function sendInstallmentInvoice(proposalId: string, installmentId: string | null, method: InvoiceMethod) {
+  const { organizationId } = await requireManager();
+  return sendInvoice({ proposalId, installmentId, method, organizationId });
+}
+
+export async function getInvoiceOptions() {
+  const { organizationId } = await requireManager();
+  return invoiceOptionsFor(organizationId);
 }
