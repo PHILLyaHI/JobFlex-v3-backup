@@ -50,6 +50,7 @@ import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import { createWorkerInvite, removeWorker, updateWorker } from "@/actions/workers";
+import { roleAccess } from "@/lib/roleAccess";
 import { loadRoster } from "./workers-roster";
 import {
   ALL,
@@ -1131,12 +1132,30 @@ export function MobileWorkers() {
                 </button>
               ))}
             </div>
+            {/* What the chosen role gets — the contractor sees what they are
+                handing out before they send (owner, 2026-09-14). One list of
+                facts, lib/roleAccess, shared with the desktop sheet. */}
+            {(() => {
+              const a = roleAccess(role);
+              return (
+                <div className={styles.roleWhat} aria-live="polite">
+                  <div className={styles.roleWhatH}>
+                    <span className={styles.roleWhatRole}>{a.title}</span>
+                    <span className={styles.roleWhatWho}>{a.who}</span>
+                  </div>
+                  <ul className={styles.roleWhatL}>
+                    {a.gets.map((g) => (
+                      <li key={g}>{g}</li>
+                    ))}
+                  </ul>
+                  <div className={styles.roleWhatNo}>{`Not included: ${a.not}`}</div>
+                </div>
+              );
+            })()}
           </div>
 
           <div className={styles.formNote}>
-            {editId
-              ? "Changes save straight to the roster."
-              : "We email them an invite link. They accept, set a password, and see only their own jobs."}
+            {editId ? "Changes save straight to the roster." : roleAccess(role).invite}
           </div>
           {/* The action's own refusal, on the sheet that caused it. */}
           {formErr ? <div className={styles.sheetErr} role="alert">{formErr}</div> : null}

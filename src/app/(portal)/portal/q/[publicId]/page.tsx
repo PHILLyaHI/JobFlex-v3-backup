@@ -191,6 +191,7 @@ export default async function PublicProposalPortal({
     pay: payModel,
     terms: orgTerms,
     rating,
+    sitePhoto,
   });
 
   return (

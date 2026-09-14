@@ -447,6 +447,13 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
   }, []);
 
   /* ---------- Motion: press stamp (delegated, covers late rows) ------- */
+  /** A tap on a proposal row or a contract's header opens the proposal; the
+   *  ⋯ button and every other control inside keep their own tap. */
+  const openFromTap = (e: React.MouseEvent, id: string) => {
+    if ((e.target as HTMLElement).closest("button, a, input, select, textarea, label")) return;
+    router.push(`/dashboard/proposals/${id}`);
+  };
+
   const onRootClick = useCallback((e: React.MouseEvent) => {
     if (prefersReducedMotion()) return;
     const sel = [
@@ -913,7 +920,9 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                 {sliceAll.map((p, i) => {
                   const st = statusPlate(p.status);
                   return (
-                    <div key={p.id} className={`${styles.prow} ${styles.rowIn}`} style={{ animationDelay: `${i * 45}ms` }}>
+                    <div key={p.id} className={`${styles.prow} ${styles.rowIn} ${styles.prowTap}`} style={{ animationDelay: `${i * 45}ms` }}
+                      role="link" tabIndex={0} aria-label={`Open ${p.title}`}
+                      onClick={(e) => openFromTap(e, p.id)} onKeyDown={(e) => { if (e.key === "Enter") router.push(`/dashboard/proposals/${p.id}`); }}>
                       <div>
                         <div className={styles.prowId}>{p.updated} · {p.owner}</div>
                         <div className={styles.prowTitle}>{p.title}</div>
@@ -952,7 +961,8 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                   const inst = p.inst ?? [];
                   return (
                     <div key={p.id} className={`${styles.pjob} ${styles.rowIn}`} style={{ animationDelay: `${i * 60}ms` }}>
-                      <div className={styles.pjobHead}>
+                      <div className={`${styles.pjobHead} ${styles.prowTap}`} role="link" tabIndex={0} aria-label={`Open ${p.title}`}
+                        onClick={(e) => openFromTap(e, p.id)} onKeyDown={(e) => { if (e.key === "Enter") router.push(`/dashboard/proposals/${p.id}`); }}>
                         <div className={styles.pjobTitle}>{p.title}</div>
                         <div className={styles.pjobSub}>
                           <span>{p.client}</span>{p.city ? <span>{p.city}</span> : null}

@@ -21,7 +21,7 @@ export const underlaymentSchema = z.object({
 
 export const roofCatalogSchema = z.object({
   version: z.literal(1),
-  systems: z.array(roofSystemSchema).min(1).max(60),
+  systems: z.array(roofSystemSchema).min(1).max(120),
   underlayments: z.array(underlaymentSchema).min(1).max(40),
   /** The builder's standing preferences — selections and unit prices — as it persists them. */
   prefs: z.record(z.string(), z.unknown()).default({}),

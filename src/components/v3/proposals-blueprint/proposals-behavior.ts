@@ -440,9 +440,13 @@ export function initProposalsContent(
       '<tr class="prow" data-id="' +
       esc(p.id) +
       '">' +
-      '<td><div class="pt-title">' +
+      // The title is a real link to the proposal (⌘-click opens a tab); a
+      // click anywhere else on the row follows it too — see openFromRow.
+      '<td><a class="pt-title pt-link" href="' +
+      proposalHref(p.id) +
+      '">' +
       esc(p.title) +
-      '</div><div class="pt-sub">' +
+      '</a><div class="pt-sub">' +
       esc(subLine(p)) +
       (p.co && p.co.count
         ? ' · <span class="pt-co' + (p.co.pending ? " pt-co--wait" : "") + '">' + p.co.count + " change order" + (p.co.count === 1 ? "" : "s") + (p.co.pending ? " · " + p.co.pending + " awaiting approval" : "") + "</span>"
@@ -583,9 +587,11 @@ export function initProposalsContent(
       esc(p.id) +
       '">' +
       '<div class="pjob-head">' +
-      '<div><div class="pjob-title">' +
+      '<div><a class="pjob-title pt-link" href="' +
+      proposalHref(p.id) +
+      '">' +
       esc(p.title) +
-      "</div>" +
+      "</a>" +
       '<div class="pjob-sub">' +
       esc(subLine(p)) +
       (p.accepted ? " · accepted " + esc(p.accepted) : "") +
@@ -704,9 +710,11 @@ export function initProposalsContent(
       esc(p.id) +
       '">' +
       '<div class="psheet-head">' +
-      '<div><div class="pjob-title">' +
+      '<div><a class="pjob-title pt-link" href="' +
+      proposalHref(p.id) +
+      '">' +
       esc(p.title) +
-      "</div>" +
+      "</a>" +
       '<div class="pjob-sub">' +
       esc(subLine(p)) +
       "</div></div>" +
@@ -938,6 +946,29 @@ export function initProposalsContent(
       "</button>"
     );
   }
+  /** Where a proposal opens: the editor, for any status (the menu's Edit proposal). */
+  function proposalHref(id: string) {
+    return "/dashboard/proposals/" + encodeURIComponent(id);
+  }
+  /**
+   * A click on a proposal row, or on the header of an accepted or completed
+   * card, opens the proposal (owner, 2026-09-14: "when I click the proposal
+   * line, open the proposal"). Buttons, links, inputs and a text selection
+   * keep their own behavior; ⌘ / Ctrl-click opens a new tab like the link.
+   */
+  function openFromRow(e: MouseEvent, target: HTMLElement): boolean {
+    const host = target.closest<HTMLElement>(".prow, .pjob-head, .psheet-head");
+    if (!host) return false;
+    if (target.closest("a, button, input, select, textarea, label, [data-act], [data-menu]")) return false;
+    if ((window.getSelection()?.toString() ?? "").length > 0) return false;
+    const id = host.closest<HTMLElement>("[data-id]")?.dataset.id;
+    if (!id || !byId(id)) return false;
+    const href = proposalHref(id);
+    if (e.metaKey || e.ctrlKey) window.open(href, "_blank", "noopener");
+    else window.location.assign(href);
+    return true;
+  }
+
   function openMenu(id: string, btn: HTMLElement) {
     const p = byId(id);
     if (!p || !pMenu) return;
@@ -950,7 +981,7 @@ export function initProposalsContent(
       esc(subLine(p)) +
       "</div></div>" +
       menuItem("i-pen", "pmi--bp", "Edit proposal", "Open editor", "edit", {
-        href: "/dashboard/proposals/" + encodeURIComponent(p.id),
+        href: proposalHref(p.id),
       }) +
       menuItem("i-ext", "pmi--sky", "View public page", "New tab", "view", {
         href: "/portal/q/" + encodeURIComponent(p.publicId),
@@ -1242,6 +1273,8 @@ export function initProposalsContent(
       }
       return;
     }
+
+    if (openFromRow(e as MouseEvent, target)) return;
 
     const act = target.closest<HTMLElement>("[data-act]");
     if (act) {

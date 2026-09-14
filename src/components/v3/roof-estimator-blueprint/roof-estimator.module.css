@@ -1961,3 +1961,12 @@
   margin-top: 4px;
 }
 
+
+/* The details card's plain-words lines: what a section means, and the one
+   sentence that sums it up before the rows. */
+.bp :global(.content .rf-details-note) { padding: 8px 0 2px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.bp :global(.content .rf-details-sum) { padding: 6px 0 4px; font-size: 13px; font-weight: 700; line-height: 1.4; color: var(--ink); }
+
+/* The residential / commercial question and its answer. */
+.bp :global(.content .rf-use-acts) { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.bp :global(.content .rf-dd-link) { margin-left: 10px; padding: 0; border: 0; background: none; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: none; color: var(--blueprint); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }

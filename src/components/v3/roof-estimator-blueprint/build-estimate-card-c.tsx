@@ -8,8 +8,11 @@
 //               the roof's facts are one mono annotation, stated once.
 //   TITLE BLOCK the answer — the total, its materials / labor split, and the
 //               two ways out (Review lines, Convert to proposal as a stamp).
-//   LEDGER      01–07, one row per part of the roof, each closed to a one-line
-//               summary of WHAT is picked (rates stay inside).
+//   LEDGER      01–08, one row per part of the roof, each closed to a one-line
+//               summary of WHAT is picked (rates stay inside). A flat roof
+//               swaps rows 02–06 for its own assembly (insulation, edges and
+//               walls, drains and curbs, rooftop and warranty, tear-off);
+//               07 is commercial pricing on either kind of roof.
 //   FOOT        the total again where the reader ends up, Convert, and the
 //               rates' source + save.
 // Nothing in between: no sentence subtitle, no second header band, no facts
@@ -34,7 +37,9 @@ import {
   CHIMNEY_SIZES,
   DRIP_EDGE_PROFILES,
   DRIP_EDGE_SIZES,
+  familyLabel,
   ICE_WATER,
+  likeForLikeSystem,
   PIPE_BOOT_SIZES,
   PKG_UNITS,
   ROOF_FAMILIES,
@@ -54,10 +59,44 @@ import {
   checkVentilation,
   defaultSpec,
   estimateEdges,
+  likeForLikeFamily,
+  withJobClass,
+  withMeasured,
+  withSystem,
   type RoofFacts,
   type RoofPackage,
   type RoofPackageSpec,
 } from "@/lib/roofPackage/takeoff";
+import { isFlatRoof } from "@/lib/roofPackage/flatRule";
+import {
+  COVER_BOARDS,
+  DRAIN_WORK,
+  EXISTING_LOW_SLOPE,
+  FLAT_RATE_DEFS,
+  INSULATION_OPTIONS,
+  SECONDARY_DRAINAGE,
+  WARRANTIES,
+  isSurfaceApplied,
+  lowSlopeRule,
+  rate as flatRate,
+  takesBoards,
+  type DrainWork,
+  type ExistingLowSlope,
+  type FlatRateKey,
+  type FlatSpec,
+  type SecondaryDrainage,
+} from "@/lib/roofPackage/lowSlope";
+import {
+  COMMERCIAL_RATE_DEFS,
+  SHIFTS,
+  WAGE_REGIMES,
+  cRate,
+  productivityFactor,
+  type CommercialRateKey,
+  type CommercialSpec,
+  type Shift,
+  type WageRegime,
+} from "@/lib/roofPackage/commercial";
 import {
   LISTS_KEY,
   PREFS_KEY,
@@ -71,6 +110,9 @@ import {
   saneLists,
   writeLocal,
   type Prefs,
+  applyPickedPrices,
+  familyFit,
+  pickSystemOn,
 } from "./roof-package-builder";
 import type { BuildEstimateCardProps, ReportProp } from "./build-estimate-card";
 import { BlueprintSelect, type SelectStyles } from "@/components/v3/advanced-ai-blueprint/blueprint-select";
@@ -295,8 +337,10 @@ function PackageLedger({
   disabled,
   converting,
   lead,
+  onBuildingUse,
 }: {
   facts: RoofFacts;
+  onBuildingUse?: (use: "residential" | "commercial") => void;
   onBuild: (pkg: RoofPackage, spec: RoofPackageSpec) => void;
   onConvert: (pkg: RoofPackage, spec: RoofPackageSpec) => void;
   report?: ReportProp | null;
@@ -316,15 +360,45 @@ function PackageLedger({
   );
   const [spec, setSpec] = React.useState<RoofPackageSpec>(() => {
     const l = (typeof window === "undefined" ? null : saneLists(readLocal<CatalogLists>(LISTS_KEY))) ?? BUILTIN_LISTS;
-    return reconcile(applyPrefs(defaultSpec(facts, l), typeof window === "undefined" ? null : readLocal<Prefs>(PREFS_KEY)), l);
+    const saved = typeof window === "undefined" ? null : readLocal<Prefs>(PREFS_KEY);
+    return familyFit(reconcile(applyPrefs(defaultSpec(facts, l, saved?.lowSlopeSystemId), saved), l), facts, l, saved);
   });
   // A different roof opened: the per-roof entries start over from its facts,
   // the preferences stay. Adjusted during render, not in an effect.
   const [seenKey, setSeenKey] = React.useState(key);
   if (key !== seenKey) {
     setSeenKey(key);
-    setSpec(reconcile(applyPrefs(defaultSpec(facts, lists), readLocal<Prefs>(PREFS_KEY)), lists));
+    const saved = readLocal<Prefs>(PREFS_KEY);
+    setSpec(familyFit(reconcile(applyPrefs(defaultSpec(facts, lists, saved?.lowSlopeSystemId), saved), lists), facts, lists, saved));
   }
+  // The contractor answered residential or commercial (the report panel asks
+  // when the roof reads commercial). Applied IN PLACE: the job-class defaults
+  // follow the answer, nothing else they entered is lost.
+  const use = facts.buildingUse ?? null;
+  const [seenUse, setSeenUse] = React.useState(use);
+  if (use !== seenUse) {
+    setSeenUse(use);
+    setSpec((s) => applyPickedPrices(withJobClass(s, facts, lists, use === "commercial"), readLocal<Prefs>(PREFS_KEY)));
+  }
+  // A full measurement report landed for this roof: its lengths replace the
+  // estimates in place — nothing the contractor entered is wiped.
+  const reportId = facts.measured?.reportId ?? null;
+  const [seenReport, setSeenReport] = React.useState(reportId);
+  if (reportId !== seenReport) {
+    setSeenReport(reportId);
+    if (reportId != null) {
+      setSpec((s) => {
+        const merged = withMeasured(s, facts, lists);
+        const flatNow = isFlatRoof(facts);
+        return flatNow !== (merged.systemFamily === "low-slope") ? familyFit(merged, facts, lists, readLocal<Prefs>(PREFS_KEY)) : merged;
+      });
+    }
+  }
+  // The latest facts, for the one effect that runs once (the org catalog load).
+  const factsRef = React.useRef(facts);
+  React.useEffect(() => {
+    factsRef.current = facts;
+  });
 
   // The org's saved catalog, when the table exists and a save has happened:
   // its lists and prices win over the browser's copy.
@@ -339,7 +413,7 @@ function PackageLedger({
         if (doc) {
           const l = saneLists({ systems: doc.systems, underlayments: doc.underlayments }) ?? BUILTIN_LISTS;
           setLists(l);
-          setSpec((s) => reconcile(applyPrefs(s, doc.prefs), l));
+          setSpec((s) => familyFit(reconcile(applyPrefs(s, doc.prefs), l), factsRef.current, l, doc.prefs as Prefs));
           writeLocal(LISTS_KEY, l);
           writeLocal(PREFS_KEY, doc.prefs);
           setSource("org");
@@ -372,7 +446,13 @@ function PackageLedger({
   };
   const updateLists = (next: CatalogLists) => {
     setLists(next);
-    setSpec((s) => reconcile(s, next));
+    setSpec((s) => {
+      const r = reconcile(s, next);
+      if (r.systemFamily === s.systemFamily) return r;
+      // The family ran out of rows: cross to the new family properly.
+      const target = next.systems.find((x) => x.id === r.systemId);
+      return target ? withSystem(s, target, facts, next) : r;
+    });
     writeLocal(LISTS_KEY, next);
     setDirty(true);
   };
@@ -399,42 +479,114 @@ function PackageLedger({
   const materialsTotal = pkg.materials.reduce((a, l) => a + l.quantity * l.unitPrice, 0);
 
   // ── Picks copy the catalog row's prices into the spec ──
-  // The underlayment that goes with a roof family, when the current pick is
-  // the wrong kind for it: metal, tile and slate want a high-temp synthetic;
-  // a membrane system has no underlayment line at all; everything else that
-  // was left on "none" goes back to synthetic. A deliberate pick of a fitting
-  // underlayment is left alone.
-  const smartUnderlayment = (family: RoofFamily, currentId: string, from: CatalogLists): Underlayment | null => {
-    const has = (id: string) => from.underlayments.find((u) => u.id === id) ?? null;
-    if (family === "low-slope") return currentId === "none" ? null : has("none");
-    if (family === "metal" || family === "tile" || family === "slate") {
-      return ["synthetic", "felt15", "felt30", "paper60", "none"].includes(currentId) ? has("synthetic_premium") : null;
-    }
-    return currentId === "none" ? has("synthetic") : null;
-  };
-  const pickSystem = (id: string, from: CatalogLists = lists) => {
+  // withSystem does the work (the underlayment and valley follow a steep
+  // family; a flat system follows its method; crossing between steep and flat
+  // rebuilds the roof-shaped part), and after a crossing the saved rates for
+  // the new side are laid back on.
+  const pickSystem = (id: string, from: CatalogLists = lists, opts: { auto?: boolean; force?: boolean } = {}) => {
     const s = from.systems.find((x) => x.id === id);
     if (!s) return;
+    if (id === spec.systemId && !opts.force) return;
     setSpec((prev) => {
-      const und = smartUnderlayment(s.family, prev.underlaymentId, from);
-      const next = {
-        ...prev,
-        systemId: id,
-        systemName: s.label,
-        systemFamily: s.family,
-        systemMatPerSq: s.matPerSq,
-        systemLaborPerSq: s.laborPerSq,
-        capPerFt: s.capPerFt,
-        wastePct: s.wastePct,
-        ...(und ? { underlaymentId: und.id, underlaymentName: und.label, underlaymentPerSq: und.perSq } : {}),
-      };
+      const next = pickSystemOn(prev, s, facts, from, { auto: opts.auto });
       writeLocal(PREFS_KEY, prefsOf(next));
       return next;
     });
     setDirty(true);
   };
+  /** A row-01 rate edit is a catalog edit: it lands on the system's row, so
+   *  Manage roof types, the next roof and "Save as defaults" all see it. */
+  const setSystemRate = (field: "matPerSq" | "laborPerSq" | "capPerFt", v: number) => {
+    // A system with no row (never after reconcile, but never assume) keeps
+    // the edit on this estimate only, rather than letting reconcile swap it.
+    if (lists.systems.some((x) => x.id === spec.systemId)) {
+      updateLists({ ...lists, systems: lists.systems.map((x) => (x.id === spec.systemId ? { ...x, [field]: v } : x)) });
+    }
+    const key = field === "matPerSq" ? "systemMatPerSq" : field === "laborPerSq" ? "systemLaborPerSq" : "capPerFt";
+    setSpec((prev) => ({ ...prev, [key]: v }));
+  };
+  /** Roof type first, then the system within it: the contractor's usual flat
+   *  system for "Flat / low slope", like-for-like for the family otherwise. */
+  const pickFamily = (fam: RoofFamily) => {
+    if (fam === spec.systemFamily) return;
+    const usual = fam === "low-slope" ? readLocal<Prefs>(PREFS_KEY)?.lowSlopeSystemId : null;
+    const s = (usual ? lists.systems.find((x) => x.id === usual && x.family === fam) : null) ?? likeForLikeSystem(fam, lists);
+    if (s) pickSystem(s.id);
+    else toast.info(`No ${familyLabel(fam).toLowerCase()} systems in your list`, "Add one with Add roof type.");
+  };
+  const setFlat = <K extends keyof FlatSpec>(k: K, v: FlatSpec[K]) => {
+    setSpec((prev) => {
+      const next = { ...prev, flat: { ...prev.flat, [k]: v } };
+      writeLocal(PREFS_KEY, prefsOf(next));
+      return next;
+    });
+    setDirty(true);
+  };
+  const setFlatRate = (k: FlatRateKey, v: number) => {
+    setSpec((prev) => {
+      const next = { ...prev, flat: { ...prev.flat, rates: { ...prev.flat.rates, [k]: v } } };
+      writeLocal(PREFS_KEY, prefsOf(next));
+      return next;
+    });
+    setDirty(true);
+  };
+  // Option picks copy the catalog price, then the price this contractor last
+  // set for that same option, if any.
+  const pickBoard = (kind: "insulation" | "cover", id: string) => {
+    const o = (kind === "insulation" ? INSULATION_OPTIONS : COVER_BOARDS).find((x) => x.id === id);
+    if (!o) return;
+    setSpec((prev) =>
+      applyPickedPrices(
+        {
+          ...prev,
+          flat:
+            kind === "insulation"
+              ? { ...prev.flat, insulationId: o.id, insulationMatPerSq: o.matPerSq, insulationLaborPerSq: o.laborPerSq, insulationThicknessIn: o.thicknessIn }
+              : { ...prev.flat, coverBoardId: o.id, coverBoardMatPerSq: o.matPerSq, coverBoardLaborPerSq: o.laborPerSq, coverBoardThicknessIn: o.thicknessIn },
+        },
+        readLocal<Prefs>(PREFS_KEY),
+      ),
+    );
+    setDirty(true);
+  };
+  const pickWarranty = (id: string) => {
+    const w = WARRANTIES.find((x) => x.id === id);
+    if (w) setSpec((prev) => applyPickedPrices({ ...prev, flat: { ...prev.flat, warrantyId: w.id, warrantyPerSq: w.perSq } }, readLocal<Prefs>(PREFS_KEY)));
+    setDirty(true);
+  };
+  const pickExisting = (id: string) => {
+    const e = EXISTING_LOW_SLOPE.find((x) => x.id === id);
+    if (e) setSpec((prev) => applyPickedPrices({ ...prev, flat: { ...prev.flat, existing: e.id }, tearOffPerSqLayer: e.tearOffPerSqLayer, disposalPerSqLayer: e.disposalPerSqLayer }, readLocal<Prefs>(PREFS_KEY)));
+    setDirty(true);
+  };
+  const setCommercial = <K extends keyof CommercialSpec>(k: K, v: CommercialSpec[K]) => {
+    setSpec((prev) => {
+      const next = { ...prev, commercial: { ...prev.commercial, [k]: v } };
+      if (k === "wage") writeLocal(PREFS_KEY, prefsOf(next));
+      return next;
+    });
+    setDirty(true);
+  };
+  const setCommercialRate = (k: CommercialRateKey, v: number) => {
+    setSpec((prev) => {
+      const next = { ...prev, commercial: { ...prev.commercial, rates: { ...prev.commercial.rates, [k]: v } } };
+      writeLocal(PREFS_KEY, prefsOf(next));
+      return next;
+    });
+    setDirty(true);
+  };
+  /** Commercial on or off from the builder. On a measured roof it is the
+   *  page's one answer (the seenUse block applies it here); on a hand-entered
+   *  takeoff it stays local. */
+  const toggleCommercial = (on: boolean) => {
+    if (onBuildingUse) onBuildingUse(on ? "commercial" : "residential");
+    else setSpec((prev) => applyPickedPrices(withJobClass(prev, facts, lists, on), readLocal<Prefs>(PREFS_KEY)));
+    setDirty(true);
+  };
   /** The select's last option: a new row of the contractor's own, picked and opened for editing. */
   const CUSTOM_SYSTEM = "__custom";
+  /** What a replacement is like-for-like with, when that is true (likeForLikeFamily). */
+  const existingFam = likeForLikeFamily(facts);
   const pickUnderlayment = (id: string, from: CatalogLists = lists) => {
     const u = from.underlayments.find((x) => x.id === id);
     if (!u) return;
@@ -491,10 +643,18 @@ function PackageLedger({
   const patchSystem = (id: string, patch: Partial<RoofSystem>) => {
     const next = { ...lists, systems: lists.systems.map((s) => (s.id === id ? { ...s, ...patch } : s)) };
     updateLists(next);
-    if (id === spec.systemId) pickSystem(id, next);
+    if (id !== spec.systemId) return;
+    const row = next.systems.find((s) => s.id === id)!;
+    if (row.family !== spec.systemFamily) {
+      pickSystem(id, next, { force: true });
+      return;
+    }
+    // Same system, same family: take the edited label and prices only — the
+    // flat-roof choices that follow a system's method stay as they are.
+    setSpec((prev) => ({ ...prev, systemName: row.label, systemMatPerSq: row.matPerSq, systemLaborPerSq: row.laborPerSq, wastePct: row.wastePct, capPerFt: prev.systemFamily === "low-slope" ? 0 : row.capPerFt }));
   };
   const addSystem = () => {
-    const s: RoofSystem = { id: "s_" + nanoid(6), label: "Custom roof type", family: "asphalt", matPerSq: 0, laborPerSq: 0, wastePct: 10, capPerFt: 0 };
+    const s: RoofSystem = { id: "s_" + nanoid(6), label: spec.systemFamily === "low-slope" ? "Custom flat system" : "Custom roof type", family: spec.systemFamily, matPerSq: 0, laborPerSq: 0, wastePct: spec.systemFamily === "low-slope" ? 8 : 10, capPerFt: 0 };
     const next = { ...lists, systems: [...lists.systems, s] };
     updateLists(next);
     pickSystem(s.id, next);
@@ -564,11 +724,92 @@ function PackageLedger({
     spec.plywoodSheets > 0 ? `${spec.plywoodSheets} deck sheet${spec.plywoodSheets === 1 ? "" : "s"}` : null,
     spec.cleanupLump > 0 ? `cleanup ${money(spec.cleanupLump)}` : null,
     steepest >= 8 && spec.safetyLump > 0 ? `steep safety ${money(spec.safetyLump)}` : null,
-    spec.permitLump > 0 ? `permit ${money(spec.permitLump)}` : null,
+    !spec.commercial.on && spec.permitLump > 0 ? `permit ${money(spec.permitLump)}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
   const sumCustom = spec.custom.length ? `${spec.custom.length} line${spec.custom.length === 1 ? "" : "s"}` : "None";
+
+  // ── The flat roof's rows ──
+  const F = spec.flat;
+  const rule = lowSlope ? lowSlopeRule(spec.systemId, spec.systemName) : null;
+  const boards = rule ? takesBoards(rule) : false;
+  const surface = rule ? isSurfaceApplied(rule) : false;
+  const perimeterFt = Math.max(0, spec.eaveFt + spec.rakeFt);
+  const splitOff = perimeterFt > 0 && Math.abs(F.parapetFt + F.edgeMetalFt - perimeterFt) > 0.1 * perimeterFt;
+  const insLabel = INSULATION_OPTIONS.find((o) => o.id === F.insulationId)?.label ?? "Insulation";
+  const coverLabel = COVER_BOARDS.find((o) => o.id === F.coverBoardId)?.label ?? "Cover board";
+  const plural = (n: number, one: string, many = one + "s") => `${fmt(n)} ${n === 1 ? one : many}`;
+  const sumBoards = surface
+    ? ["Wash, repair & fabric", F.primerOn ? "primer" : null, F.wetInsulationSqft > 0 ? `${fmt(F.wetInsulationSqft)} sq ft wet insulation` : null, F.coreCuts > 0 ? plural(F.coreCuts, "core cut") : null].filter(Boolean).join(" · ")
+    : !boards
+      ? "Straight on the deck — no insulation or cover board"
+      : [F.insulationId !== "none" ? insLabel : "No insulation", F.coverBoardId !== "none" ? coverLabel : null, F.taperedSqft > 0 ? `${fmt(F.taperedSqft)} sq ft tapered` : null].filter(Boolean).join(" · ");
+  const sumWalls =
+    F.parapetFt + F.edgeMetalFt + F.wallFt <= 0
+      ? "No perimeter yet — enter the parapet and open-edge lengths"
+      : [F.parapetFt > 0 ? `${fmt(F.parapetFt)} ft parapet` : null, F.edgeMetalFt > 0 ? `${fmt(F.edgeMetalFt)} ft open edge` : null, F.wallFt > 0 ? `${fmt(F.wallFt)} ft wall` : null].filter(Boolean).join(" · ");
+  const sumDrains =
+    [
+      !surface && F.drains > 0 ? `${plural(F.drains, "drain")}${F.secondary !== "none" ? " + overflow" : ""}` : null,
+      F.scuppers > 0 ? plural(F.scuppers, "scupper") : null,
+      F.gutterFt > 0 ? `${fmt(F.gutterFt)} ft gutter` : null,
+      F.pipeBoots > 0 ? plural(F.pipeBoots, "boot") : null,
+      F.pitchPockets > 0 ? plural(F.pitchPockets, "pitch pocket") : null,
+      !surface && F.rtuCount > 0 ? plural(F.rtuCount, "rooftop unit") : null,
+      !surface && F.curbs > 0 ? plural(F.curbs, "curb") : null,
+    ]
+      .filter(Boolean)
+      .join(" · ") || "Nothing counted yet — drains, boots, units, curbs";
+  const warrantyLabel = WARRANTIES.find((w) => w.id === F.warrantyId)?.label ?? "Workmanship only";
+  const sumRooftop = [
+    F.walkwayFt > 0 ? `${fmt(F.walkwayFt)} ft walkway` : null,
+    F.craneHours > 0 ? `crane ${fmt(F.craneHours)} h` : F.hoistOn ? "ladder hoist" : null,
+    !surface && F.coreCuts > 0 ? plural(F.coreCuts, "core cut") : null,
+    warrantyLabel,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const existingLabel = EXISTING_LOW_SLOPE.find((e) => e.id === F.existing)?.label ?? "Existing roof";
+  const sumFlatTear = [
+    surface ? "Over the existing roof, no tear-off" : spec.tearOffLayers === 0 ? "Recover, no tear-off" : `Tear-off ${existingLabel.toLowerCase()} · ${plural(spec.tearOffLayers, "layer")}`,
+    spec.plywoodSheets > 0 ? plural(spec.plywoodSheets, "deck sheet") : null,
+    spec.cleanupLump > 0 ? `cleanup ${money(spec.cleanupLump)}` : null,
+    !spec.commercial.on && spec.permitLump > 0 ? `permit ${money(spec.permitLump)}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const attachRates: FlatRateKey[] = !rule
+    ? []
+    : [
+        ...(rule.method === "mech" ? (["mechFasteners"] as const) : []),
+        ...(rule.method === "induction" ? (["inductionPlates"] as const) : []),
+        ...(rule.method === "adhered" ? ([rule.fleece ? "foamAdhesive" : "bondingAdhesive"] as const) : []),
+        ...(rule.method === "ballasted" ? (["ballastMat", "ballastLabor"] as const) : []),
+        ...(rule.method === "torch" ? (["primerTorch"] as const) : []),
+        ...(rule.method === "self_adhered" ? (["primerSa"] as const) : []),
+        ...(rule.method === "nailed" ? (["capNails"] as const) : []),
+        ...(rule.membrane === "tpo" || rule.membrane === "pvc" || rule.membrane === "kee" ? (["seamSingle"] as const) : []),
+        ...(rule.membrane === "epdm" ? (["seamEpdm"] as const) : []),
+      ];
+  const flatRates = (keys: ReadonlyArray<FlatRateKey | false | null>) =>
+    keys.filter((k): k is FlatRateKey => !!k).map((k) => (
+      <Rate key={k} label={FLAT_RATE_DEFS[k].label} unit={FLAT_RATE_DEFS[k].unit} value={flatRate(F, k)} onChange={(v) => setFlatRate(k, v)} disabled={disabled} />
+    ));
+
+  // ── Commercial ──
+  const C = spec.commercial;
+  const prod = productivityFactor(facts.squares);
+  const wageLabel = WAGE_REGIMES.find((w) => w.id === C.wage)?.label ?? "Open shop";
+  const shiftLabel = SHIFTS.find((x) => x.id === C.shift)?.label ?? "Day shift";
+  const sumCommercial = C.on
+    ? [`Commercial · ${wageLabel.toLowerCase()}`, shiftLabel.toLowerCase(), C.occupied ? "occupied" : null, C.stories > 2 ? `${C.stories} stories` : null, `GC ${cRate(C, "gcPct") + cRate(C, "insurancePct")}%`].filter(Boolean).join(" · ")
+    : "Residential pricing";
+  const commercialRates = (keys: CommercialRateKey[]) =>
+    keys.map((k) => (
+      <Rate key={k} label={COMMERCIAL_RATE_DEFS[k].label} unit={COMMERCIAL_RATE_DEFS[k].unit} value={cRate(C, k)} onChange={(v) => setCommercialRate(k, v)} disabled={disabled} />
+    ));
+  const roofIsFlat = isFlatRoof(facts);
 
   const ventsToAdd = VENT_TYPES.filter((t) => ventOf(t.id).qty <= 0);
   const edgeEstimated = spec.edgesBasis === "estimated";
@@ -595,7 +836,7 @@ function PackageLedger({
         {lead}
         <div className="bec-tk">
           <div className="bec-tk-c bec-tk-c--total">
-            <span className="bec-tk-l">Total</span>
+            <span className="bec-tk-l">{spec.commercial.on ? "Total · commercial" : "Total"}</span>
             <span className="bec-tk-v" key={total}>{money(total)}</span>
           </div>
           <div className="bec-tk-c">
@@ -634,9 +875,9 @@ function PackageLedger({
           rates={
             manage === "systems" ? undefined : (
               <>
-                <Rate label="Material" unit="$/sq" value={spec.systemMatPerSq} onChange={(v) => set("systemMatPerSq", v)} disabled={disabled} />
-                <Rate label="Install labor" unit="$/sq" value={spec.systemLaborPerSq} onChange={(v) => set("systemLaborPerSq", v)} disabled={disabled} />
-                {!lowSlope && <Rate label="Hip & ridge cap" unit="$/ft" value={spec.capPerFt} onChange={(v) => set("capPerFt", v)} disabled={disabled} />}
+                <Rate label="Material" unit="$/sq" value={spec.systemMatPerSq} onChange={(v) => setSystemRate("matPerSq", v)} disabled={disabled} />
+                <Rate label="Install labor" unit="$/sq" value={spec.systemLaborPerSq} onChange={(v) => setSystemRate("laborPerSq", v)} disabled={disabled} />
+                {!lowSlope && <Rate label="Hip & ridge cap" unit="$/ft" value={spec.capPerFt} onChange={(v) => setSystemRate("capPerFt", v)} disabled={disabled} />}
               </>
             )
           }
@@ -646,7 +887,7 @@ function PackageLedger({
               <div className="bec-tr bec-tr--sys bec-th" aria-hidden="true">
                 <span>Roof type</span><span>Family</span><span>Material</span><span>Labor</span><span>Waste</span><span>Cap</span><span />
               </div>
-              {lists.systems.map((s) => (
+              {lists.systems.filter((x) => x.family === spec.systemFamily).map((s) => (
                 <div className="bec-tr bec-tr--sys" key={s.id}>
                   <label className="est-field bec-f bec-tn">
                     <span className="est-lbl">Roof type</span>
@@ -657,7 +898,7 @@ function PackageLedger({
                   <Num label="Labor" aria="Labor $/sq" unit="$/sq" value={s.laborPerSq} onChange={(n) => patchSystem(s.id, { laborPerSq: n })} disabled={disabled} />
                   <Num label="Waste" aria="Waste %" unit="%" value={s.wastePct} onChange={(n) => patchSystem(s.id, { wastePct: n })} disabled={disabled} />
                   <Num label="Cap" aria="Cap $/ft" unit="$/ft" value={s.capPerFt} onChange={(n) => patchSystem(s.id, { capPerFt: n })} disabled={disabled} />
-                  <button type="button" className="bec-x" disabled={disabled || lists.systems.length <= 1} aria-label={`Remove ${s.label}`} title="Remove" onClick={() => removeSystem(s.id)}>
+                  <button type="button" className="bec-x" disabled={disabled || lists.systems.length <= 1 || s.id === spec.systemId} aria-label={`Remove ${s.label}`} title={s.id === spec.systemId ? "In use on this estimate — pick another system first" : "Remove"} onClick={() => removeSystem(s.id)}>
                     <IcX />
                   </button>
                 </div>
@@ -674,16 +915,65 @@ function PackageLedger({
           ) : (
             <Group>
               <Sel
+                label="Roof type"
+                value={spec.systemFamily}
+                options={ROOF_FAMILIES.filter((f) => f.id === spec.systemFamily || lists.systems.some((x) => x.family === f.id))}
+                onChange={(v) => pickFamily(v as RoofFamily)}
+                disabled={disabled || source === "loading"}
+                after={
+                  lowSlope ? (
+                    <div className="bec-lfl">
+                      {roofIsFlat
+                        ? `Flat roof${facts.existingMaterial ? ` · existing ${facts.existingMaterial.toLowerCase()}` : ""} · priced as a full assembly`
+                        : "Priced as a full flat-roof assembly"}
+                    </div>
+                  ) : roofIsFlat && spec.systemId !== "standing_seam_low" ? (
+                    <div className="bec-lfl is-diff">
+                      This roof reads flat — a steep system here prices a conversion.
+                      <button type="button" className="bec-link" disabled={disabled} onClick={() => pickFamily("low-slope")}>
+                        Price it flat
+                      </button>
+                    </div>
+                  ) : undefined
+                }
+              />
+              <Sel
                 label="System"
                 value={spec.systemId}
-                options={[...lists.systems, { id: CUSTOM_SYSTEM, label: "＋ Custom roof type…" }]}
+                options={[...lists.systems.filter((x) => x.family === spec.systemFamily || x.id === spec.systemId), { id: CUSTOM_SYSTEM, label: lowSlope ? "＋ Custom flat system…" : "＋ Custom roof type…" }]}
                 onChange={(id) => (id === CUSTOM_SYSTEM ? addSystem() : pickSystem(id))}
-                disabled={disabled}
+                disabled={disabled || source === "loading"}
                 wide
                 after={
-                  <button type="button" className="bec-link bec-link--under" disabled={disabled} onClick={() => setManage("systems")}>
-                    Add roof type
-                  </button>
+                  <>
+                    {existingFam && !lowSlope && (
+                      <div className={"bec-lfl" + (spec.systemFamily === existingFam ? "" : " is-diff")}>
+                        {spec.systemFamily === existingFam ? (
+                          `Existing roof: ${facts.existingMaterial} · priced like-for-like`
+                        ) : (
+                          <>
+                            {`Existing roof: ${facts.existingMaterial} — this prices a change to ${familyLabel(spec.systemFamily).toLowerCase()}.`}
+                            {likeForLikeSystem(existingFam, lists) && (
+                              <button
+                                type="button"
+                                className="bec-link"
+                                disabled={disabled}
+                                onClick={() => {
+                                  const s = likeForLikeSystem(existingFam, lists);
+                                  if (s) pickSystem(s.id, lists, { auto: true });
+                                }}
+                              >
+                                {`Back to ${familyLabel(existingFam).toLowerCase()}`}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                    <button type="button" className="bec-link bec-link--under" disabled={disabled} onClick={() => setManage("systems")}>
+                      Add roof type
+                    </button>
+                  </>
                 }
               />
               <Sel label="Waste" value={String(spec.wastePct)} options={WASTE_OPTIONS.map((w) => ({ id: String(w), label: `${w}%` }))} onChange={(v) => set("wastePct", Number(v))} disabled={disabled} />
@@ -691,6 +981,8 @@ function PackageLedger({
           )}
         </Row>
 
+        {!lowSlope ? (
+          <>
         {/* 02 · UNDERLAYMENT */}
         <Row
           n="02"
@@ -1006,13 +1298,298 @@ function PackageLedger({
             <Num label="Deck sheets" unit="each" value={spec.plywoodSheets} onChange={(v) => set("plywoodSheets", v)} disabled={disabled} />
             <Num label="Cleanup" unit="$" value={spec.cleanupLump} onChange={(v) => set("cleanupLump", v)} disabled={disabled} />
             <Num label="Steep safety" unit="$" value={spec.safetyLump} onChange={(v) => set("safetyLump", v)} disabled={disabled} />
-            <Num label="Permit" unit="$" value={spec.permitLump} onChange={(v) => set("permitLump", v)} disabled={disabled} />
+            {!spec.commercial.on && <Num label="Permit" unit="$" value={spec.permitLump} onChange={(v) => set("permitLump", v)} disabled={disabled} />}
             <Num label="Delivery" unit="$" value={spec.deliveryLump ?? 0} onChange={(v) => set("deliveryLump", v)} disabled={disabled} />
           </Group>
         </Row>
 
-        {/* 07 · CUSTOM LINES */}
-        <Row n="07" id="custom" title="Custom lines" summary={sumCustom} open={!!open.custom} onToggle={() => toggle("custom")}>
+          </>
+        ) : (
+          <>
+        {/* 02 · INSULATION & COVER BOARD — or the prep a coating needs */}
+        <Row
+          n="02"
+          id="boards"
+          title={surface ? "Surface prep" : "Insulation & cover board"}
+          summary={sumBoards}
+          open={!!open.boards}
+          onToggle={() => toggle("boards")}
+          rates={
+            surface ? (
+              <>{flatRates(["washMat", "washLabor", "repairMat", "repairLabor", F.primerOn && "primerCoatMat", F.primerOn && "primerCoatLabor", "wetIns", "coreEach"])}</>
+            ) : (
+              <>
+                {boards && F.insulationId !== "none" && (
+                  <>
+                    <Rate label="Insulation" unit="$/sq" value={F.insulationMatPerSq} onChange={(v) => setFlat("insulationMatPerSq", v)} disabled={disabled} />
+                    <Rate label="Insulation labor" unit="$/sq" value={F.insulationLaborPerSq} onChange={(v) => setFlat("insulationLaborPerSq", v)} disabled={disabled} />
+                  </>
+                )}
+                {boards && F.coverBoardId !== "none" && (
+                  <>
+                    <Rate label="Cover board" unit="$/sq" value={F.coverBoardMatPerSq} onChange={(v) => setFlat("coverBoardMatPerSq", v)} disabled={disabled} />
+                    <Rate label="Cover labor" unit="$/sq" value={F.coverBoardLaborPerSq} onChange={(v) => setFlat("coverBoardLaborPerSq", v)} disabled={disabled} />
+                  </>
+                )}
+                {flatRates([
+                  ...attachRates,
+                  ...(rule?.method === "overburden" ? (["waterproofMat", "waterproofLabor"] as const) : []),
+                  boards && (F.insulationId !== "none" || F.coverBoardId !== "none") && rule?.method !== "ballasted" && rule?.method !== "overburden" && rule?.method !== "induction" && "insFasteners",
+                  boards && F.taperedSqft > 0 && "taperedMat",
+                  boards && F.taperedSqft > 0 && "taperedLabor",
+                  F.wetInsulationSqft > 0 && "wetIns",
+                ])}
+              </>
+            )
+          }
+        >
+          {surface ? (
+            <Group note={<div className="bec-note">Goes over the existing roof — no tear-off, insulation or new edge metal. Core cuts confirm the roof underneath is dry; wet areas are cut out and replaced first.</div>}>
+              <Check label="Primer" checked={F.primerOn} onChange={(v) => setFlat("primerOn", v)} disabled={disabled} />
+              <Num label="Wet insulation" unit="sq ft" value={F.wetInsulationSqft} onChange={(v) => setFlat("wetInsulationSqft", v)} disabled={disabled} />
+              <Num label="Core cuts" unit="each" value={F.coreCuts} onChange={(v) => setFlat("coreCuts", v)} disabled={disabled} />
+            </Group>
+          ) : boards ? (
+            <>
+              <Group
+                note={
+                  spec.commercial.on && F.insulationId === "none" ? (
+                    <div className="bec-note">A tear-off to the deck on a commercial building usually has to meet the energy code — about R-25 to R-30 of insulation.</div>
+                  ) : null
+                }
+              >
+                <Sel label="Insulation" value={F.insulationId} options={INSULATION_OPTIONS} onChange={(v) => pickBoard("insulation", v)} disabled={disabled} wide />
+                <Sel label="Cover board" value={F.coverBoardId} options={COVER_BOARDS} onChange={(v) => pickBoard("cover", v)} disabled={disabled} wide />
+                <Num label="Tapered & crickets" unit="sq ft" value={F.taperedSqft} onChange={(v) => setFlat("taperedSqft", v)} disabled={disabled} />
+              </Group>
+              <Group label="Wet areas">
+                <Num label="Wet insulation" unit="sq ft" value={F.wetInsulationSqft} onChange={(v) => setFlat("wetInsulationSqft", v)} disabled={disabled} />
+              </Group>
+            </>
+          ) : (
+            <Group note={<div className="bec-note">{rule?.method === "nailed" ? "Rolled roofing is nailed to the deck" : "A liquid-applied membrane goes on the prepared deck"} — no insulation or cover board.</div>}>
+              <Num label="Wet insulation" unit="sq ft" value={F.wetInsulationSqft} onChange={(v) => setFlat("wetInsulationSqft", v)} disabled={disabled} />
+            </Group>
+          )}
+        </Row>
+
+        {/* 03 · EDGES & WALLS */}
+        <Row
+          n="03"
+          id="walls"
+          title="Edges & walls"
+          summary={sumWalls}
+          chip={splitOff ? <span className="chip bad">check split</span> : undefined}
+          open={!!open.walls}
+          onToggle={() => toggle("walls")}
+          rates={
+            surface ? (
+              <>{flatRates(["warningLine"])}</>
+            ) : (
+              <>{flatRates(["edgeMat", "edgeLabor", "copingMat", "copingLabor", "baseFlashMat", "baseFlashLabor", F.wallFt > 0 && "termBarMat", F.wallFt > 0 && "termBarLabor", F.wallFt > 0 && "counterMat", F.wallFt > 0 && "counterLabor", boards && F.nailersOn && "nailerMat", boards && F.nailersOn && "nailerLabor", "warningLine"])}</>
+            )
+          }
+        >
+          <Group
+            note={
+              <div className="bec-note">
+                {perimeterFt > 0 ? `Outline perimeter ${fmt(perimeterFt)} ft — parapet plus open edge should add up to it. ` : "No outline perimeter — enter the lengths from the photo. "}
+                {surface ? "A coating keeps the existing edge metal and coping; these lengths still size the fall protection." : "Coping caps the parapets; ES-1 edge metal finishes the open edges; wall flashing is wherever the roof meets a taller wall."}
+              </div>
+            }
+          >
+            <Num label="Perimeter" unit="ft" value={perimeterFt} onChange={(v) => setSpec((prev) => ({ ...prev, eaveFt: v, rakeFt: 0, edgesBasis: "entered" }))} disabled={disabled} />
+            <Num label="Parapet" unit="ft" value={F.parapetFt} onChange={(v) => setFlat("parapetFt", v)} disabled={disabled} />
+            <Num label="Parapet height" unit="in" value={F.parapetHeightIn} onChange={(v) => setFlat("parapetHeightIn", v)} disabled={disabled} />
+            <Num label="Open edge" unit="ft" value={F.edgeMetalFt} onChange={(v) => setFlat("edgeMetalFt", v)} disabled={disabled} />
+            {!surface && <Num label="Wall flashing" unit="ft" value={F.wallFt} onChange={(v) => setFlat("wallFt", v)} disabled={disabled} />}
+            {boards && !surface && <Check label="Wood nailers to insulation height" checked={F.nailersOn} onChange={(v) => setFlat("nailersOn", v)} disabled={disabled} />}
+          </Group>
+        </Row>
+
+        {/* 04 · DRAINS & PENETRATIONS */}
+        <Row
+          n="04"
+          id="drains"
+          title="Drains & penetrations"
+          summary={sumDrains}
+          open={!!open.drains}
+          onToggle={() => toggle("drains")}
+          rates={
+            <>
+              {flatRates([
+                !surface && F.drains > 0 && (F.drainWork === "new" ? "drainNewMat" : F.drainWork === "ring" ? "drainRingMat" : "drainInsertMat"),
+                !surface && F.drains > 0 && (F.drainWork === "new" ? "drainNewLabor" : F.drainWork === "ring" ? "drainRingLabor" : "drainInsertLabor"),
+                !surface && F.drains > 0 && F.secondary === "scupper" && "overflowScupperMat",
+                !surface && F.drains > 0 && F.secondary === "scupper" && "overflowScupperLabor",
+                !surface && F.drains > 0 && F.secondary === "drain" && "overflowDrainMat",
+                !surface && F.drains > 0 && F.secondary === "drain" && "overflowDrainLabor",
+                F.scuppers > 0 && "scupperMat",
+                F.scuppers > 0 && "scupperLabor",
+                F.gutterFt > 0 && "gutterMat",
+                F.gutterFt > 0 && "gutterLabor",
+                "bootMat",
+                "bootLabor",
+                F.pitchPockets > 0 && "pocketMat",
+                F.pitchPockets > 0 && "pocketLabor",
+                !surface && F.rtuCount > 0 && "rtuMat",
+                !surface && F.rtuCount > 0 && "rtuLabor",
+                F.rtuResetCount > 0 && "rtuReset",
+                !surface && F.curbs > 0 && "curbMat",
+                !surface && F.curbs > 0 && "curbLabor",
+              ])}
+            </>
+          }
+        >
+          {!surface && (
+            <Group label="Drains">
+              <Num label="Roof drains" unit="each" value={F.drains} onChange={(v) => setFlat("drains", Math.round(v))} disabled={disabled} />
+              <Sel label="Drain work" value={F.drainWork} options={DRAIN_WORK} onChange={(v) => setFlat("drainWork", v as DrainWork)} disabled={disabled} wide />
+              <Sel label="Overflow" value={F.secondary} options={SECONDARY_DRAINAGE} onChange={(v) => setFlat("secondary", v as SecondaryDrainage)} disabled={disabled} />
+            </Group>
+          )}
+          <Group label="Scuppers & gutters">
+            <Num label="Thru-wall scuppers" unit="each" value={F.scuppers} onChange={(v) => setFlat("scuppers", Math.round(v))} disabled={disabled} />
+            <Num label="Gutter" unit="ft" value={F.gutterFt} onChange={(v) => setFlat("gutterFt", v)} disabled={disabled} />
+          </Group>
+          <Group
+            label="Penetrations & curbs"
+            note={surface ? <div className="bec-note">A coating details drains and curbs with fabric and coating — no new drains or curb flashing are priced.</div> : null}
+          >
+            <Num label="Pipe boots" unit="each" value={F.pipeBoots} onChange={(v) => setFlat("pipeBoots", Math.round(v))} disabled={disabled} />
+            <Num label="Pitch pockets" unit="each" value={F.pitchPockets} onChange={(v) => setFlat("pitchPockets", Math.round(v))} disabled={disabled} />
+            {!surface && <Num label="Rooftop units" unit="each" value={F.rtuCount} onChange={(v) => setFlat("rtuCount", Math.round(v))} disabled={disabled} />}
+            <Num label="Units raised & reset" unit="each" value={F.rtuResetCount} onChange={(v) => setFlat("rtuResetCount", Math.round(v))} disabled={disabled} />
+            {!surface && <Num label="Skylights, hatches, curbs" unit="each" value={F.curbs} onChange={(v) => setFlat("curbs", Math.round(v))} disabled={disabled} />}
+          </Group>
+        </Row>
+
+        {/* 05 · ROOFTOP, ACCESS & WARRANTY */}
+        <Row
+          n="05"
+          id="rooftop"
+          title="Access & warranty"
+          summary={sumRooftop}
+          open={!!open.rooftop}
+          onToggle={() => toggle("rooftop")}
+          rates={
+            <>
+              {flatRates([
+                F.walkwayFt > 0 && "walkwayMat",
+                F.walkwayFt > 0 && "walkwayLabor",
+                F.craneHours > 0 && "craneRate",
+                F.craneHours > 0 && "craneMob",
+                F.craneHours <= 0 && F.hoistOn && "hoist",
+                !surface && F.coreCuts > 0 && "coreEach",
+                rule?.method === "torch" && "fireWatch",
+                rule?.method === "hot" && "kettle",
+                !surface && spec.tearOffLayers > 0 && "nightSeal",
+              ])}
+              {F.warrantyId !== "none" && (
+                <>
+                  <Rate label="Warranty fee" unit="$/sq" value={F.warrantyPerSq} onChange={(v) => setFlat("warrantyPerSq", v)} disabled={disabled} />
+                  {flatRates(["warrantyInspection"])}
+                </>
+              )}
+            </>
+          }
+        >
+          <Group label="Access">
+            <Num label="Walkway pads" unit="ft" value={F.walkwayFt} onChange={(v) => setFlat("walkwayFt", v)} disabled={disabled} />
+            <Num label="Crane" unit="hours" value={F.craneHours} onChange={(v) => setFlat("craneHours", v)} disabled={disabled} />
+            {F.craneHours <= 0 && <Check label="Ladder hoist / conveyor" checked={F.hoistOn} onChange={(v) => setFlat("hoistOn", v)} disabled={disabled} />}
+            {!surface && <Num label="Core cuts" unit="each" value={F.coreCuts} onChange={(v) => setFlat("coreCuts", Math.round(v))} disabled={disabled} />}
+          </Group>
+          <Group label="Warranty & pace">
+            <Sel label="Warranty" value={F.warrantyId} options={WARRANTIES} onChange={pickWarranty} disabled={disabled} wide />
+            <Num label="Squares per day" unit="sq" value={F.productionSqPerDay} onChange={(v) => setFlat("productionSqPerDay", Math.max(1, v))} disabled={disabled} />
+          </Group>
+        </Row>
+
+        {/* 06 · TEAR-OFF & EXTRAS */}
+        <Row
+          n="06"
+          id="flatTear"
+          title="Tear-off & extras"
+          summary={sumFlatTear}
+          open={!!open.flatTear}
+          onToggle={() => toggle("flatTear")}
+          rates={
+            <>
+              {!surface && spec.tearOffLayers > 0 && (
+                <>
+                  <Rate label="Tear-off labor" unit="$/sq·layer" value={spec.tearOffPerSqLayer} onChange={(v) => set("tearOffPerSqLayer", v)} disabled={disabled} />
+                  <Rate label="Disposal" unit="$/sq·layer" value={spec.disposalPerSqLayer} onChange={(v) => set("disposalPerSqLayer", v)} disabled={disabled} />
+                  {F.existing === "bur_gravel" && flatRates(["gravelVac"])}
+                </>
+              )}
+              <Rate label="Deck sheet" unit="$/ea" value={spec.plywoodEach} onChange={(v) => set("plywoodEach", v)} disabled={disabled} />
+              <Rate label="Sheet labor" unit="$/ea" value={spec.plywoodLabor} onChange={(v) => set("plywoodLabor", v)} disabled={disabled} />
+            </>
+          }
+        >
+          <Group note={spec.commercial.on ? <div className="bec-note">The permit is priced on the job value in 07 · Commercial job.</div> : null}>
+            {!surface && (
+              <>
+                <Sel label="Existing roof" value={F.existing} options={EXISTING_LOW_SLOPE} onChange={(v) => pickExisting(v as ExistingLowSlope)} disabled={disabled} wide />
+                <Sel
+                  label="Layers"
+                  value={String(spec.tearOffLayers)}
+                  options={[
+                    { id: "0", label: "Recover (none)" },
+                    { id: "1", label: "1 layer" },
+                    { id: "2", label: "2 layers" },
+                    { id: "3", label: "3 layers" },
+                  ]}
+                  onChange={(v) => set("tearOffLayers", Number(v) as 0 | 1 | 2 | 3)}
+                  disabled={disabled}
+                />
+              </>
+            )}
+            <Num label="Deck sheets" unit="each" value={spec.plywoodSheets} onChange={(v) => set("plywoodSheets", v)} disabled={disabled} />
+            <Num label="Cleanup" unit="$" value={spec.cleanupLump} onChange={(v) => set("cleanupLump", v)} disabled={disabled} />
+            {!spec.commercial.on && <Num label="Permit" unit="$" value={spec.permitLump} onChange={(v) => set("permitLump", v)} disabled={disabled} />}
+          </Group>
+        </Row>
+
+          </>
+        )}
+
+        {/* 07 · COMMERCIAL JOB — either kind of roof */}
+        <Row
+          n="07"
+          id="commercial"
+          title="Commercial job"
+          summary={sumCommercial}
+          chip={C.on ? <span className="chip ok">commercial</span> : undefined}
+          open={!!open.commercial}
+          onToggle={() => toggle("commercial")}
+          rates={C.on ? <>{commercialRates(["gcPct", "insurancePct", facts.squares < 30 ? "mobSmall" : "mob", "safetyPlan", "asbestos", "superRate", ...(C.occupied ? (["interior"] as const) : []), ...(C.shift === "night" ? (["lightTower"] as const) : []), ...(C.wage === "prevailing" ? (["payroll"] as const) : []), "permitBase", "permitPct", "permitMin"])}</> : undefined}
+        >
+          <Group
+            note={
+              <div className="bec-note">
+                {C.on
+                  ? `${prod < 1 ? `Field install labor ×${prod} at ${fmt(facts.squares)} squares — a big deck goes down faster per square. ` : ""}Adds mobilization, a safety plan${spec.tearOffLayers > 0 ? ", the asbestos survey before tear-off" : ""}${facts.squares >= 50 ? ", a superintendent" : ""}, a permit on the job value, and general conditions & insurance on everything except the at-cost fees.`
+                  : "Priced as residential. Turn this on for a store, warehouse, school or apartment building."}
+              </div>
+            }
+          >
+            <Check label="Price as a commercial job" checked={C.on} onChange={toggleCommercial} disabled={disabled} />
+            {C.on && (
+              <>
+                <Sel label="Labor" value={C.wage} options={WAGE_REGIMES} onChange={(v) => setCommercial("wage", v as WageRegime)} disabled={disabled} />
+                <Sel label="Schedule" value={C.shift} options={SHIFTS} onChange={(v) => setCommercial("shift", v as Shift)} disabled={disabled} wide />
+                <Num label="Stories" unit="floors" value={C.stories} onChange={(v) => setCommercial("stories", Math.max(1, Math.round(v)))} disabled={disabled} />
+                <Check label="Occupied during work" checked={C.occupied} onChange={(v) => setCommercial("occupied", v)} disabled={disabled} />
+                <Check label="Payment & performance bond" checked={C.bondOn} onChange={(v) => setCommercial("bondOn", v)} disabled={disabled} />
+              </>
+            )}
+          </Group>
+        </Row>
+
+        {/* 08 · CUSTOM LINES */}
+        <Row n="08" id="custom" title="Custom lines" summary={sumCustom} open={!!open.custom} onToggle={() => toggle("custom")}>
           {spec.custom.length > 0 && (
             <div className="bec-tbl">
               <div className="bec-tr bec-tr--custom bec-th" aria-hidden="true">
@@ -1103,6 +1680,7 @@ export default function BuildEstimateCardC({
   onConvert,
   report,
   output,
+  onBuildingUse,
 }: BuildEstimateCardProps) {
   // EagleView supplied no pitch (pack 002 not bought): the contractor states
   // one before anything is priced, in either mode.
@@ -1155,7 +1733,7 @@ export default function BuildEstimateCardC({
 
       {buildMode === "package" ? (
         !isRecon && facts ? (
-          <PackageLedger facts={facts} disabled={builderDisabled} converting={converting} onBuild={onBuild} onConvert={onConvert} lead={pitchSel} report={report} />
+          <PackageLedger facts={facts} disabled={builderDisabled} converting={converting} onBuild={onBuild} onConvert={onConvert} lead={pitchSel} report={report} onBuildingUse={onBuildingUse} />
         ) : pitchSel ? (
           <div className="bec-console">{pitchSel}</div>
         ) : null
@@ -1175,7 +1753,10 @@ export default function BuildEstimateCardC({
             />
           </div>
           <p className={"bec-hint" + (reason ? " is-reason" : "")}>
-            {reason ?? "Drafts the full package from the measured figures — every line stays editable below."}
+            {reason ??
+              (facts?.existingMaterial && likeForLikeFamily(facts)
+                ? `Existing roof: ${facts.existingMaterial}. Drafts a like-for-like package from the measured figures — every line stays editable below.`
+                : "Drafts the full package from the measured figures — every line stays editable below.")}
           </p>
           <button
             className="btn btn-primary bec-btn bec-btn--stamp"

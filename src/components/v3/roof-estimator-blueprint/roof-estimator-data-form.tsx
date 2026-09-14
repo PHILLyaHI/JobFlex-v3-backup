@@ -26,6 +26,7 @@ import type { EstimateLine } from "@/components/estimator/EstimatorBreakdown";
 import { assessRoof, confidenceLabel } from "@/lib/roofDiagram/confidence";
 import type { MeasurementSource, RoofMeasurementDTO, RoofMeasurementSummary } from "@/lib/roofDiagram/types";
 import {
+  collectPendingInstant,
   getMeasurementOrtho,
   getMeasurementPhoto,
   getRoofMeasurement,
@@ -43,11 +44,40 @@ import { AddressPinPreview } from "./address-pin-preview";
 import { PIN_PATH, blueprintPinIcon, type PointCtor } from "./pin";
 import { BuildEstimateCardSwitch } from "./build-estimate-card-switch";
 import { EstimateLinesTable, type EditableLine } from "./estimate-lines-table";
-import { estimateEdges, ringPerimeterFt, type MeasuredFootage, type RoofFacts, type RoofPackage, type RoofPackageSpec } from "@/lib/roofPackage/takeoff";
+import { estimateEdges, likeForLikeFamily, ringPerimeterFt, type MeasuredFootage, type RoofFacts, type RoofPackage, type RoofPackageSpec } from "@/lib/roofPackage/takeoff";
 import { evOrderRoof, evPriceRoof, evReportFootages, evReportStatus, evRoofModel } from "@/actions/eagleview";
 import { isMapsBrowserEnabled, loadMapsLibrary } from "@/lib/googleMaps";
 import { displayedPitchLabel, foreignIndices, instantTotalsOf, pickMainStructure, pitchFamilyShares } from "@/lib/roofDiagram/instantTotals";
 import { AERIAL } from "@/lib/vendorLabels";
+import { familyOfMaterial } from "@/lib/roofPackage/catalog";
+import { isFlatRoof } from "@/lib/roofPackage/flatRule";
+import { joinClauses, readBuilding } from "@/lib/roofPackage/commercial";
+
+/** How the contractor said each measured building is used, by measurement id.
+ *  Browser-local on purpose: it is a pricing choice for this contractor, it
+ *  needs no table, and a new browser simply asks again. */
+const USE_KEY = "jf.roof.buildingUse.v1";
+type BuildingUse = "residential" | "commercial";
+function readUseAnswer(measurementId: string | null | undefined): BuildingUse | null {
+  if (!measurementId || typeof window === "undefined") return null;
+  try {
+    const all = JSON.parse(window.localStorage.getItem(USE_KEY) ?? "{}") as Record<string, unknown>;
+    const v = all[measurementId];
+    return v === "residential" || v === "commercial" ? v : null;
+  } catch {
+    return null;
+  }
+}
+function writeUseAnswer(measurementId: string, use: BuildingUse | null) {
+  try {
+    const all = JSON.parse(window.localStorage.getItem(USE_KEY) ?? "{}") as Record<string, unknown>;
+    if (use) all[measurementId] = use;
+    else delete all[measurementId];
+    window.localStorage.setItem(USE_KEY, JSON.stringify(all));
+  } catch {
+    /* blocked storage — the answer lasts for this page only */
+  }
+}
 
 const STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA",
@@ -208,6 +238,63 @@ export function RoofEstimatorDataForm() {
    */
   const builtByOldPipeline = !!measurement?.calibration;
 
+  // ── Packs still coming from the aerial provider ──
+  // A save with the area alone (the grouped pack order was slower than the
+  // 30 s poll) shows zero facets and no pitch. Rather than wait for the next
+  // click, ask the server to collect the pending orders every few seconds for
+  // about two minutes and swap the fuller measurement in when it lands.
+  const packsIncomplete = React.useMemo(() => {
+    const ip = measurement?.provenance?.instantPacks;
+    if (!ip || measurement?.source === "recon" || !measurement?.instant) return false;
+    return ip.failed.length > 0 || ip.missing.length > 0;
+  }, [measurement]);
+  const [collecting, setCollecting] = React.useState<null | "checking" | "gave-up">(null);
+  const collectFor = measurement && packsIncomplete && measurement.id !== "unsaved" ? measurement.id : null;
+  // The chip belongs to the measurement being collected for — a swap to a
+  // complete one (or to none) drops it without a render-time state write.
+  const collectingShown = collectFor ? collecting : null;
+  React.useEffect(() => {
+    if (!collectFor) return;
+    let cancelled = false;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      if (cancelled) return;
+      attempts += 1;
+      let more = true;
+      try {
+        const res = await collectPendingInstant(collectFor);
+        if (cancelled) return;
+        if (res.ok && res.updated) {
+          setMeasurement(res.measurement);
+          toast.success("More aerial data arrived", "Pitch, facets and details filled in from the order that was still processing.");
+          more = res.pending > 0;
+        } else if (res.ok && res.pending === 0) {
+          // Nothing pending in the ledger — the packs are simply not there (refused, or failed for good).
+          more = false;
+        }
+      } catch {
+        /* a failed check is retried on the next tick */
+      }
+      if (cancelled) return;
+      if (!more) {
+        setCollecting(null);
+        return;
+      }
+      if (attempts >= 20) {
+        setCollecting("gave-up");
+        return;
+      }
+      setCollecting("checking");
+      timer = setTimeout(() => void tick(), 6_000);
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [collectFor]);
+
   // ── Recent measurements ──
   const [recent, setRecent] = React.useState<RoofMeasurementSummary[]>([]);
   const [recentBusy, setRecentBusy] = React.useState(true);
@@ -299,6 +386,10 @@ export function RoofEstimatorDataForm() {
     };
   }, [measurement]);
   const [assumptions, setAssumptions] = React.useState<string[]>([]);
+  // What the CLIENT reads as the proposal's scope of work: the work, in plain
+  // sentences. The assumptions are the contractor's notes (where a number came
+  // from, what to confirm) and never reach the client (owner, 2026-09-14).
+  const [scopeText, setScopeText] = React.useState("");
   const [convertBusy, setConvertBusy] = React.useState(false);
   // Hand-entered takeoff (runManual). Cleared by resetResult, so it never
   // coexists with a measurement.
@@ -329,6 +420,7 @@ export function RoofEstimatorDataForm() {
     setMaterials([]);
     setLabor([]);
     setAssumptions([]);
+    setScopeText("");
     setView("satellite");
     setSatPhoto(null);
     setSatErr(null);
@@ -599,19 +691,33 @@ export function RoofEstimatorDataForm() {
             : `pitch ${pitchForEstimate} entered by user — not measured`;
       const est = roofFacts && !roofFacts.measured ? estimateEdges(roofFacts) : null;
       const mf = roofFacts?.measured ?? null;
+      const flatRoof = !!roofFacts && isFlatRoof(roofFacts);
       const edgesNote = mf
-        ? `MEASURED lengths from the aerial report #${mf.reportId}: eave ${Math.round(mf.eaveFt)} ft, rake ${Math.round(mf.rakeFt)} ft, ridge ${Math.round(mf.ridgeFt)} ft, hip ${Math.round(mf.hipFt)} ft, valley ${Math.round(mf.valleyFt)} ft, step flashing ${Math.round(mf.stepFlashFt)} ft — use these for drip edge, starter, cap, ridge vent, valley metal and step flashing`
+        ? flatRoof
+          ? `MEASURED perimeter from the aerial report #${mf.reportId}: ${Math.round(mf.eaveFt + mf.rakeFt)} ft, and ${Math.round(mf.stepFlashFt)} ft where the roof meets a wall — use these for coping, edge metal, base flashing and termination bar`
+          : `MEASURED lengths from the aerial report #${mf.reportId}: eave ${Math.round(mf.eaveFt)} ft, rake ${Math.round(mf.rakeFt)} ft, ridge ${Math.round(mf.ridgeFt)} ft, hip ${Math.round(mf.hipFt)} ft, valley ${Math.round(mf.valleyFt)} ft, step flashing ${Math.round(mf.stepFlashFt)} ft — use these for drip edge, starter, cap, ridge vent, valley metal and step flashing`
         : est
-          ? `edge lengths ESTIMATED from the outline and shape: eave ${Math.round(est.eaveFt)} ft, rake ${Math.round(est.rakeFt)} ft, ridge ${Math.round(est.ridgeFt)} ft, hip ${Math.round(est.hipFt)} ft — use these unless the photo says otherwise`
+          ? roofFacts && isFlatRoof(roofFacts)
+            ? `flat roof perimeter ESTIMATED from the outline: ${Math.round(est.eaveFt)} ft — split it between parapet (coping) and open edge (edge metal) from the photo`
+            : `edge lengths ESTIMATED from the outline and shape: eave ${Math.round(est.eaveFt)} ft, rake ${Math.round(est.rakeFt)} ft, ridge ${Math.round(est.ridgeFt)} ft, hip ${Math.round(est.hipFt)} ft${est.valleyFt != null && est.valleyFt > 0 ? `, valley ${Math.round(est.valleyFt)} ft (from the facet count)` : ""} — use these unless the photo says otherwise`
           : null;
       const factsNote = roofFacts
         ? [
-            roofFacts.perimeterFt != null ? `building perimeter ${Math.round(roofFacts.perimeterFt)} ft (drip edge and starter run)` : null,
+            roofFacts.perimeterFt != null ? `building perimeter ${Math.round(roofFacts.perimeterFt)} ft (${isFlatRoof(roofFacts) ? "coping and edge metal" : "drip edge and starter run"})` : null,
             roofFacts.shape ? `roof shape ${roofFacts.shape}` : null,
             roofFacts.facetCount != null ? `${roofFacts.facetCount} facets` : null,
             roofFacts.chimney != null ? `chimney: ${roofFacts.chimney ? "yes — include chimney flashing" : "no"}` : null,
             roofFacts.rooftopAcCount ? `${roofFacts.rooftopAcCount} rooftop unit(s) — curb flashing` : null,
-            eaveHeights.length ? `eave heights ${eaveHeights.map((e) => `${e.facade} ${e.ft} ft`).join(", ")} (10 ft classes)` : null,
+            roofFacts.existingMaterial
+              ? likeForLikeFamily(roofFacts) === "metal" && isFlatRoof(roofFacts)
+                ? `existing roof: ${roofFacts.existingMaterial} on a low-slope building — price low-slope standing-seam metal (1:12) like-for-like, not a membrane`
+                : likeForLikeFamily(roofFacts)
+                  ? `existing roof: ${roofFacts.existingMaterial} — price a like-for-like replacement in the same material`
+                  : isFlatRoof(roofFacts) && familyOfMaterial(roofFacts.existingMaterial)
+                    ? `existing surface: ${roofFacts.existingMaterial} on a flat roof — replace it with a low-slope system`
+                    : null
+              : null,
+            eaveHeights.length ? `eave heights above ground ${eaveHeights.map((e) => `${e.facade} ${e.ft} ft`).join(", ")} (10 ft classes)` : null,
             edgesNote,
           ]
             .filter(Boolean)
@@ -632,11 +738,22 @@ export function RoofEstimatorDataForm() {
         pitchFamilies: families.length > 1 ? families : undefined,
         squares: Number(t.squares.toFixed(1)),
         wastePct: waste,
+        existingMaterial: roofFacts && roofFacts.existingMaterial && likeForLikeFamily(roofFacts) ? roofFacts.existingMaterial : undefined,
+        // A flat metal building is priced as low-slope standing seam, which the
+        // builder handles as metal — not as a membrane assembly.
+        roofKind: roofFacts && isFlatRoof(roofFacts) && likeForLikeFamily(roofFacts) !== "metal" ? "low-slope" : "steep",
+        buildingUse: manual ? null : buildingUse,
         measurementNotes: manual
           ? `Contractor-entered takeoff: ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft), ${pitchNote}. No facet or linear-footage breakdown; allow for ridge, valley and flashing.`
           : `${AERIAL.vendor} (calibrated): ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft) for the main structure, ${pitchNote}, footprint ${
               structure?.footprintSqft != null ? num(structure.footprintSqft) + " sq ft" : "not purchased"
-            }.${extrasNote}${factsNote ? ` Also known: ${factsNote}.` : ""} ${mf ? "Valley and sidewall lengths are measured; wall counts are not — assume one run each unless the photo shows more." : "Ridge, hip, valley and wall lengths are NOT measured — use the estimates above, itemize every flashing and vent with a count or length, and say in the assumptions which figures are estimates."}`,
+            }.${extrasNote}${factsNote ? ` Also known: ${factsNote}.` : ""} ${
+              flatRoof
+                ? "Flat roof: itemize the membrane assembly, perimeter metal, drains and penetrations with a count or length, and say in the assumptions which figures are estimates."
+                : mf
+                  ? "Valley and sidewall lengths are measured; wall counts are not — assume one run each unless the photo shows more."
+                  : "Ridge, hip, valley and wall lengths are NOT measured — use the estimates above, itemize every flashing and vent with a count or length, and say in the assumptions which figures are estimates."
+            }`,
       });
       if (!res.ok) {
         if (reportPlanLimitResult(res)) return;
@@ -645,6 +762,7 @@ export function RoofEstimatorDataForm() {
       if (res.disabled) toast.info("AI disabled · sample estimate loaded");
       setTitle(res.data.title);
       setAssumptions(res.data.assumptions);
+      setScopeText(res.data.scope ?? "");
       setMaterials(res.data.materials.map((m) => ({ id: nanoid(6), ...m })));
       setLabor(res.data.labor.map((m) => ({ id: nanoid(6), ...m })));
       toast.success("Estimate ready");
@@ -671,10 +789,12 @@ export function RoofEstimatorDataForm() {
       materials: pkg.materials.map(toLine),
       labor: pkg.labor.map(toLine),
       assumptions: pkg.assumptions,
+      scope: pkg.scope.join("\n"),
     };
     setMaterials(next.materials);
     setLabor(next.labor);
     setAssumptions(next.assumptions);
+    setScopeText(next.scope);
     setTitle(next.title);
     if (!quiet) toast.success("Estimate built", `${pkg.materials.length} material and ${pkg.labor.length} labor lines — adjust anything below, then convert.`);
     return next;
@@ -748,7 +868,7 @@ export function RoofEstimatorDataForm() {
 
   // Convert THESE lines — the tables' state, or a package just built, which
   // React would not have committed to state yet ("convert as is").
-  async function convertWith(input: { title: string; materials: EditableLine[]; labor: EditableLine[]; assumptions: string[] }) {
+  async function convertWith(input: { title: string; materials: EditableLine[]; labor: EditableLine[]; assumptions: string[]; scope: string }) {
     if (!measurement && !manual) return;
     if (isRecon) {
       toast.error("Estimated measurements can’t become a proposal", "Run Instant measure for this address first.");
@@ -763,7 +883,7 @@ export function RoofEstimatorDataForm() {
     try {
       const res = await convertRoofEstimateToProposal({
         title: input.title || `Roof · ${siteAddress || "site"}`,
-        scope: input.assumptions.join("\n"),
+        scope: input.scope,
         materials: input.materials.map(stripId),
         labor: input.labor.map(stripId),
         assumptions: input.assumptions,
@@ -778,7 +898,7 @@ export function RoofEstimatorDataForm() {
     }
   }
   function convert() {
-    return convertWith({ title, materials, labor, assumptions });
+    return convertWith({ title, materials, labor, assumptions, scope: scopeText });
   }
 
   // ── Derived report figures: the MAIN structure, plus whatever the contractor ticked ──
@@ -872,6 +992,16 @@ export function RoofEstimatorDataForm() {
   const eaveHeights = structure?.eaveHeightFt
     ? Object.entries(structure.eaveHeightFt).map(([facade, ft]) => ({ facade, ft }))
     : [];
+  // Residential or commercial, as the contractor answered for this measurement.
+  const useKey = manual ? null : measurement?.id && measurement.id !== "unsaved" ? measurement.id : null;
+  // The answer given on this page wins (it also covers blocked storage);
+  // otherwise the one saved for this measurement in this browser.
+  const [pageUse, setPageUse] = React.useState<{ id: string | null; use: BuildingUse | null } | null>(null);
+  const buildingUse: BuildingUse | null = pageUse && pageUse.id === useKey ? pageUse.use : readUseAnswer(useKey);
+  const answerUse = (use: BuildingUse | null) => {
+    if (useKey) writeUseAnswer(useKey, use);
+    setPageUse({ id: useKey, use });
+  };
   // What the package builder (and the AI draft) know about THIS roof. Pitch
   // families come from the measured elevation data when there is one, else
   // the single stated pitch; everything else is the main structure's own.
@@ -894,13 +1024,71 @@ export function RoofEstimatorDataForm() {
           shape: manual ? null : structure?.shape ?? null,
           facetCount: manual ? null : structure?.facetCount ?? null,
           measured: manual ? null : report.state === "measured" ? report.footage ?? null : null,
+          existingMaterial: manual ? null : structure?.material ?? null,
+          facetConfidence: manual ? null : structure?.confidence?.facetCount ?? null,
+          buildingUse: manual ? null : buildingUse,
         }
       : null;
+  // Does this roof read commercial? A weighted read of the roof, never a claim
+  // about the building — the aerial data has no occupancy field — and the
+  // contractor's answer is what prices anything (commercial.ts).
+  const buildingRead =
+    roofFacts && !manual
+      ? readBuilding({
+          facts: roofFacts,
+          mainSquares: structure?.squares ?? (structure?.areaSqft != null ? structure.areaSqft / 100 : null),
+          minEaveFt: eaveHeights.length ? Math.min(...eaveHeights.map((e) => e.ft)) : null,
+          confidence: structure?.confidence ?? null,
+          occlusion: structure?.occlusion ?? null,
+          hasStructure: !!structure,
+        })
+      : null;
+  const roofReadsFlat = !!roofFacts && isFlatRoof(roofFacts);
+  // Lineal feet for the hero. The Instant packs carry no lengths at all:
+  // these are MEASURED only when the full aerial report exists for the
+  // address (ridge, hip, valley, eave and rake as flown); otherwise eave,
+  // rake, ridge and hip are ESTIMATED from the outline and the roof shape,
+  // and valleys stay unknown until the report is ordered.
+  // The hero says the figure and its unit — nothing else. The first cut wrote
+  // the provenance under each number ("estimated from outline", "not in
+  // instant data"), and a contractor turning the screen to a client was
+  // handing them a disclaimer (owner, 2026-09-14). Where every quantity came
+  // from is still recorded where it is acted on: the Basis column on every
+  // estimate line and the package's own assumptions.
+  const edgeTiles = (() => {
+    const mf = report.state === "measured" ? report.footage ?? null : null;
+    if (mf) {
+      return {
+        edges: `${num(mf.eaveFt + mf.rakeFt)} ft`,
+        ridge: `${num(mf.ridgeFt + mf.hipFt)} ft`,
+        valley: `${num(mf.valleyFt)} ft`,
+      };
+    }
+    const est = roofFacts && !manual ? estimateEdges(roofFacts) : null;
+    if (est) {
+      return {
+        edges: `${num(est.eaveFt + est.rakeFt)} ft`,
+        ridge: `${num(est.ridgeFt + est.hipFt)} ft`,
+        valley: est.valleyFt != null ? `${num(est.valleyFt)} ft` : "—",
+      };
+    }
+    return { edges: "—", ridge: "—", valley: "—" };
+  })();
   // The provider's own score for the eave figure (one score for the whole
   // field, 0..1; "not scored" was dropped at parse). Identical classes on all
   // four sides read as suspicious — this says how much the provider itself
   // stands behind them.
   const eaveConf = structure?.confidence?.eaveHeightFt ?? null;
+  // One plain sentence when every side reads the same class.
+  const eaveSummary = (() => {
+    if (!eaveHeights.length) return null;
+    const fts = eaveHeights.map((e) => e.ft);
+    const lo = Math.min(...fts);
+    const hi = Math.max(...fts);
+    const story = (ft: number) => (ft <= 12 ? "single-story" : ft <= 22 ? "two-story" : "three-story or taller");
+    if (lo === hi) return `About ${num(lo)} ft on every side — a ${story(lo)} eave line.`;
+    return `From ${num(lo)} ft to ${num(hi)} ft — ${story(lo)} on the low side, ${story(hi)} on the high side.`;
+  })();
   const hasDetails = eaveHeights.length > 0 || !!structure || (measurement?.chimneys.length ?? 0) > 0;
   const reconDown = measurement?.provenance?.reconUnavailable ?? null;
   const partialCoverage = measurement?.provenance?.partialCoverage ?? null;
@@ -1053,6 +1241,41 @@ export function RoofEstimatorDataForm() {
                 </div>
               </div>
             )}
+            {collectingShown && !manual && (
+              <div className="rf-notice">
+                <div className={"call " + (collectingShown === "checking" ? "info" : "warn")}>
+                  <div>
+                    <span className="rf-stamp">{collectingShown === "checking" ? "STILL COLLECTING" : "NOT ALL IN YET"}</span>
+                    {collectingShown === "checking"
+                      ? "The aerial provider is still working on the rest of this order — pitch, facets, details and imagery load here by themselves as they land. No need to measure again; nothing extra is charged."
+                      : "The aerial provider is taking longer than usual with the rest of this order. Reopen this measurement from Recent measurements later and it collects the rest without a new charge."}
+                  </div>
+                </div>
+              </div>
+            )}
+            {buildingRead?.level && !buildingUse && (
+              <div className="rf-notice">
+                <div className="call info">
+                  <div>
+                    <span className="rf-stamp">{buildingRead.level === "confirm" ? "READS COMMERCIAL" : "COULD BE COMMERCIAL"}</span>
+                    {buildingRead.level === "confirm"
+                      ? `This roof reads like a commercial building: ${joinClauses(buildingRead.clauses)}. `
+                      : `This could be a commercial building — ${joinClauses(buildingRead.clauses.slice(0, 2))}. `}
+                    The aerial data doesn’t record how a building is used, so choose how to price it. Commercial adds
+                    mobilization, a safety plan, a permit on the job value and general conditions, and lowers field labor
+                    per square on a big deck.
+                    <span className="rf-use-acts">
+                      <button type="button" className="btn btn-primary btn--sm" onClick={() => answerUse("commercial")}>
+                        Price as commercial
+                      </button>
+                      <button type="button" className="btn btn-ghost btn--sm" onClick={() => answerUse("residential")}>
+                        Price as residential
+                      </button>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
             {(builtByOldPipeline || unsaved || reconDown || partialCoverage || evUndercount || pitchRep?.disagrees) && (
               <div className="rf-notice">
                 {evUndercount && (
@@ -1146,6 +1369,9 @@ export function RoofEstimatorDataForm() {
               <HeroCell l="Roofing squares" v={totals?.squares != null ? num(totals.squares, 1) : "—"} h="× 100 sq ft" accent />
               <HeroCell l="Predominant pitch" v={pitchLabelShown} h={pitchHint} />
               <HeroCell l="Roof facets" v={totals?.facetCount != null ? String(totals.facetCount) : "—"} h="planes" />
+              <HeroCell l="Eaves + rakes" v={edgeTiles.edges} h="linear ft" />
+              <HeroCell l="Ridge + hips" v={edgeTiles.ridge} h="linear ft" />
+              <HeroCell l="Valleys" v={edgeTiles.valley} h="linear ft" />
             </div>
             {measurement && (
             <div className="rf-grid">
@@ -1244,14 +1470,20 @@ export function RoofEstimatorDataForm() {
                       {eaveHeights.length > 0 && (
                         <>
                           {/* EagleView's per-facade figure, in 10 ft classes (9903: 10 on every side;
-                              12117: 20 on the house, 10 on the outbuildings) — a class, not a measurement. */}
-                          <div className="rf-details-sec">
-                            Eave height · {AERIAL.eave}
-                            {eaveConf != null && ` · ${Math.round(eaveConf * 100)}% confidence`}
+                              12117: 20 on the house, 10 on the outbuildings) — a class, not a measurement.
+                              Said in plain words: the owner read "East 10 ft" and did not know what it
+                              meant (2026-09-14). */}
+                          <div className="rf-details-sec">Eave height · per side of the house</div>
+                          <div className="rf-details-note">
+                            How high the roof edge sits above the ground on each side, read from aerial imagery in
+                            10 ft steps: 10 ft is a single story, 20 ft two stories. It sets ladder, lift and safety
+                            needs
+                            {eaveConf != null && ` · the provider scores this ${Math.round(eaveConf * 100)}% confident`}.
                           </div>
+                          {eaveSummary && <div className="rf-details-sum">{eaveSummary}</div>}
                           {eaveHeights.map((e) => (
                             <div className="rf-details-row" key={e.facade}>
-                              <dt>{FACADE[e.facade] ?? e.facade}</dt>
+                              <dt>{`${FACADE[e.facade] ?? e.facade} side`}</dt>
                               <dd>
                                 {num(e.ft)}
                                 <span>ft</span>
@@ -1263,10 +1495,22 @@ export function RoofEstimatorDataForm() {
                       {structure && (
                         <>
                           <div className="rf-details-sec">Property data</div>
+                          {roofReadsFlat && (
+                            <div className="rf-details-row">
+                              <dt>Roof</dt>
+                              <dd>Flat / low slope</dd>
+                            </div>
+                          )}
                           <div className="rf-details-row"><dt>Chimney</dt><dd>{yesNo(structure.chimney)}</dd></div>
                           <div className="rf-details-row"><dt>Solar panels</dt><dd>{yesNo(structure.solarPanels)}</dd></div>
                           <div className="rf-details-row"><dt>Rooftop AC</dt><dd>{structure.rooftopAcCount ?? "—"}</dd></div>
-                          <div className="rf-details-row"><dt>Material</dt><dd>{structure.material ?? "—"}</dd></div>
+                          <div className="rf-details-row">
+                            <dt>Material</dt>
+                            <dd>
+                              {structure.material ?? "—"}
+                              {roofFacts && likeForLikeFamily(roofFacts) && <span>new roof starts like-for-like</span>}
+                            </dd>
+                          </div>
                           <div className="rf-details-row"><dt>Condition</dt><dd>{structure.conditionRating ?? "—"}</dd></div>
                           <div className="rf-details-row">
                             <dt>Roof age</dt>
@@ -1279,6 +1523,21 @@ export function RoofEstimatorDataForm() {
                               ) : (
                                 "—"
                               )}
+                            </dd>
+                          </div>
+                        </>
+                      )}
+                      {buildingUse && (
+                        <>
+                          <div className="rf-details-sec">Pricing</div>
+                          <div className="rf-details-row">
+                            <dt>Building</dt>
+                            <dd>
+                              {buildingUse === "commercial" ? "Commercial" : "Residential"}
+                              <span>your choice</span>
+                              <button type="button" className="rf-dd-link" onClick={() => answerUse(buildingUse === "commercial" ? "residential" : "commercial")}>
+                                {buildingUse === "commercial" ? "price as residential" : "price as commercial"}
+                              </button>
                             </dd>
                           </div>
                         </>
@@ -1402,6 +1661,7 @@ export function RoofEstimatorDataForm() {
                     : null
               }
               facts={roofFacts}
+              onBuildingUse={manual ? undefined : answerUse}
               report={
                 measurement && !manual && !isRecon
                   ? { state: report.state, reportId: report.reportId ?? null, status: report.status ?? null, busy: reportBusy, onOrder: () => void orderFullReport(), onCheck: () => void checkReport() }

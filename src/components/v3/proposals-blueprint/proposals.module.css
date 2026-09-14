@@ -1638,3 +1638,13 @@
 .bp :global(.pt-bar i) { display: block; height: 100%; background: var(--blueprint); }
 .bp :global(.pt-paid--full .pt-bar i) { background: var(--success); }
 .bp :global(.pstatus--completed) { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
+
+/* A proposal row, and an accepted or completed card's header, open the
+   proposal. The title is the link; the rest of the row follows it. */
+.bp :global(.content .prow), .bp :global(.content .pjob-head), .bp :global(.content .psheet-head) { cursor: pointer; }
+.bp :global(.content a.pt-link) { display: block; color: var(--ink); text-decoration: none; }
+.bp :global(.content .prow:hover a.pt-link),
+.bp :global(.content .pjob-head:hover a.pt-link),
+.bp :global(.content .psheet-head:hover a.pt-link),
+.bp :global(.content a.pt-link:focus-visible) { color: var(--blueprint); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 2px; }
+.bp :global(.content a.pt-link:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
