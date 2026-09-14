@@ -138,8 +138,10 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
       total: p.total,
       updated: agoLabel(p.updatedAt),
       views: p.viewCount,
-      owed: schedule.remainingMinor / 100,
-      paidAmt: schedule.paidMinor / 100,
+      // PAID is the office's word that the money landed, even when it was never
+      // recorded stage by stage (the old "Mark completed" set PAID outright).
+      owed: p.status === "PAID" ? 0 : schedule.remainingMinor / 100,
+      paidAmt: p.status === "PAID" ? contractTotal(p.total, p.changeOrders) : schedule.paidMinor / 100,
       contract: contractTotal(p.total, p.changeOrders),
       co: {
         count: p.changeOrders.length,

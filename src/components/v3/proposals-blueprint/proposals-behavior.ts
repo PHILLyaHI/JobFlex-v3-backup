@@ -47,7 +47,7 @@ import {
   uploadProposalPhoto,
 } from "@/actions/proposals";
 import { notifyPaymentReminder, setProposalReminders, sendInstallmentInvoice, getInvoiceOptions } from "@/actions/notify";
-import { markInstallmentPaid, unmarkInstallmentPaid } from "@/actions/installments";
+import { markInstallmentPaid, unmarkInstallmentPaid, recordRemainingPayment } from "@/actions/installments";
 // The handheld surface's route-local read of the SAME book this page renders
 // from (same query, same requireProposalStaff guard) — used to pick up a row
 // the server just created without leaving the page.
@@ -193,11 +193,17 @@ export function initProposalsContent(
     if (inst.status === "PAID" && inst.paidAmt != null) return inst.paidAmt;
     return inst.pct ? Math.round(p.total * (inst.amount / 100)) : inst.amount;
   }
+  function payPct(p: ProposalRow): number {
+    const contract = p.contract ?? p.total;
+    const paid = p.paidAmt ?? 0;
+    if (p.owed <= 0 && contract > 0) return 100;
+    return contract > 0 ? Math.max(0, Math.min(100, Math.round((paid / contract) * 100))) : 0;
+  }
   /** Paid vs contract, as a bar and a sentence — the "is it paid?" measure. */
   function payBarHtml(p: ProposalRow): string {
     const contract = p.contract ?? p.total;
     const paid = p.paidAmt ?? 0;
-    const pct = contract > 0 ? Math.max(0, Math.min(100, Math.round((paid / contract) * 100))) : 0;
+    const pct = payPct(p);
     const full = contract > 0 && p.owed <= 0;
     return (
       '<div class="ppay' + (full ? " ppay--full" : "") + '">' +
@@ -280,7 +286,8 @@ export function initProposalsContent(
     return book().filter((p) => p.status === "ACCEPTED");
   }
   function listDone() {
-    return book().filter((p) => p.status === "PAID");
+    // Completed is a fact about the work (COMPLETED); PAID is the money. Both file here.
+    return book().filter((p) => p.status === "PAID" || p.status === "COMPLETED");
   }
   function rmOk() {
     return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -450,7 +457,10 @@ export function initProposalsContent(
       fmtMoney(p.contract ?? p.total) +
       "</span>" +
       (p.status === "ACCEPTED" || p.status === "COMPLETED" || p.status === "PAID"
-        ? '<div class="pt-paid' + (p.owed <= 0 ? " pt-paid--full" : "") + '">' + (p.owed <= 0 ? "paid in full" : "paid " + fmtMoney(p.paidAmt ?? 0) + " · " + fmtMoney(p.owed) + " due") + "</div>"
+        ? '<div class="pt-paid' + (p.owed <= 0 ? " pt-paid--full" : "") + '">' +
+          '<span class="pt-bar"><i style="width:' + payPct(p) + '%"></i></span>' +
+          (p.owed <= 0 ? "paid in full" : fmtMoney(p.paidAmt ?? 0) + " paid · " + fmtMoney(p.owed) + " due") +
+          "</div>"
         : "") +
       "</td>" +
       '<td><span class="pt-mono">' +
@@ -703,7 +713,9 @@ export function initProposalsContent(
       '<div><span class="psheet-banklbl">Banked</span><span class="pt-money banked big">' +
       fmtMoney(p.paidAmt ?? 0) +
       "</span>" +
-      (p.owed > 0 ? '<span class="pt-mono pjob-total-sub">of ' + fmtMoney(p.contract ?? p.total) + "</span>" : "") +
+      (p.owed > 0
+        ? '<span class="pt-mono pjob-total-sub">of ' + fmtMoney(p.contract ?? p.total) + " · " + fmtMoney(p.owed) + " still due</span>"
+        : '<span class="pt-mono pjob-total-sub">paid in full</span>') +
       "</div>" +
       "</div>" +
       payBarHtml(p) +
@@ -752,6 +764,9 @@ export function initProposalsContent(
       '<button class="btn btn-ghost btn--sm" type="button" data-act="change-order"><svg class="ic"><use href="#i-plus"/></svg>' +
       (p.co && p.co.count ? "Change orders · " + p.co.count : "Change order") +
       "</button>" +
+      (p.owed > 0
+        ? '<button class="btn btn-primary btn--sm" type="button" data-act="paidfull" title="Record the whole balance as paid by hand (bank, cash, check)"><svg class="ic"><use href="#i-check"/></svg>Mark paid in full</button>'
+        : "") +
       '<button class="btn btn-ghost btn--sm" type="button" data-act="unmark"><svg class="ic"><use href="#i-undo"/></svg>Reopen job</button>' +
       "</div>" +
       "</div>"
@@ -950,6 +965,9 @@ export function initProposalsContent(
         p.clientEmail ? esc(p.clientEmail) : "No email on the client",
         "sendto",
       ) +
+      menuItem("i-send", "pmi--bp", "Send invoice", p.owed > 0 ? fmtMoney(p.owed) + " due · card, bank or the client's choice" : "Nothing owed", "invoice", {
+        dis: !(p.owed > 0 && (p.status === "ACCEPTED" || p.status === "COMPLETED")),
+      }) +
       menuItem("i-plus", "pmi--bp", "Change order", "Price extras, send for signature", "change-order") +
       menuItem("i-box", "pmi--warn", "Order materials", (p.mat || 0) + " items", "materials", {
         dis: p.mat === 0,
@@ -1192,6 +1210,11 @@ export function initProposalsContent(
         openChangeOrder(p);
         return;
       }
+      if (act === "invoice") {
+        closeMenu();
+        promptInvoice(p, "");
+        return;
+      }
       if (act === "del") {
         promptDelete(p);
         return;
@@ -1238,7 +1261,13 @@ export function initProposalsContent(
         return;
       }
       if (kind === "done" && p && card) {
-        void runStatus(p, "PAID", card, "acc");
+        // COMPLETED is a fact about the work; the money stays owed on the sheet
+        // until it is paid — by the client, or by "Mark paid in full".
+        void runStatus(p, "COMPLETED", card, "acc");
+        return;
+      }
+      if (kind === "paidfull" && p && card) {
+        void runPaidInFull(p, card);
         return;
       }
       if (kind === "unaccept" && p && card) {
@@ -1536,7 +1565,7 @@ export function initProposalsContent(
    */
   async function runStatus(
     p: ProposalRow,
-    status: "PAID" | "DRAFT" | "ACCEPTED",
+    status: "PAID" | "DRAFT" | "ACCEPTED" | "COMPLETED",
     card: HTMLElement,
     acted: "acc" | "done",
   ) {
@@ -1596,6 +1625,26 @@ export function initProposalsContent(
    * payment (method OTHER); a different figure or a named method is a job
    * for the desktop editor's Record payment dialog.
    */
+  /** The office records the whole balance as paid by hand: every open stage settles, the proposal files PAID. */
+  async function runPaidInFull(p: ProposalRow, card: HTMLElement) {
+    if (pstate.writing) return;
+    if (!window.confirm(`Record ${fmtMoney(p.owed)} as paid by hand for "${p.title}"? Every open stage closes and the proposal files as paid.`)) return;
+    pstate.writing = true;
+    card.classList.add("is-busy");
+    try {
+      await recordRemainingPayment({ proposalId: p.id, method: "OTHER" });
+      proposalsData = cloneRows(await loadProposalBook());
+      renderDone();
+      renderAccepted();
+      renderAll();
+    } catch (err) {
+      showAlert("Couldn't record the payment", actionError(err));
+    } finally {
+      pstate.writing = false;
+      card.classList.remove("is-busy");
+    }
+  }
+
   async function runMarkPaid(p: ProposalRow, instId: string, method: string) {
     if (pstate.writing) return;
     pstate.writing = true;

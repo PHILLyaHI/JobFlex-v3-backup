@@ -1631,3 +1631,10 @@
 .bp :global(.content .pmdl .inv-opt:disabled) { opacity: 0.5; cursor: default; }
 .bp :global(.content .pmdl .inv-t) { font-size: 13.5px; font-weight: 800; color: var(--ink); }
 .bp :global(.content .pmdl .inv-sub) { font-size: 11.5px; color: var(--muted); }
+
+/* The list row's paid measure: a thin bar, then the words. */
+.bp :global(.pt-paid) { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.bp :global(.pt-bar) { display: inline-block; width: 54px; height: 6px; border: 1.5px solid var(--ink); border-radius: 2px; background: #fff; overflow: hidden; vertical-align: middle; }
+.bp :global(.pt-bar i) { display: block; height: 100%; background: var(--blueprint); }
+.bp :global(.pt-paid--full .pt-bar i) { background: var(--success); }
+.bp :global(.pstatus--completed) { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
