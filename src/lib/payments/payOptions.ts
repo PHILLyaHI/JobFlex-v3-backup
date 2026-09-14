@@ -22,6 +22,7 @@ export type PayBlockReason =
 export interface PayOptions {
   stripe: { ok: boolean; reason?: PayBlockReason; ach: boolean };
   square: { ok: boolean; reason?: PayBlockReason };
+  stax: { ok: boolean; reason?: PayBlockReason };
   bankTransfer: { ok: boolean; instructions: string };
   /** At least one hosted provider is usable. */
   anyHosted: boolean;
@@ -31,6 +32,7 @@ export function resolvePayOptions(input: {
   settings: PaymentSettings;
   stripeConn: PaymentConnection | null;
   squareConn: PaymentConnection | null;
+  staxConn?: PaymentConnection | null;
   proposalCurrency: string;
   stripeMode: StripeMode;
 }): PayOptions {
@@ -59,6 +61,8 @@ export function resolvePayOptions(input: {
   else stripe = { ok: true, ach: s.stripeAchEnabled };
 
   // ── Square ────────────────────────────────────────────────────────────
+  // OAuth and pasted-token rows both hold an access token + location; a
+  // pasted token has no expiry, so the expiry check is simply never true.
   let square: PayOptions["square"] = { ok: false };
   const q = input.squareConn;
   if (!input.settings.square) square = { ok: false, reason: "disabled" };
@@ -74,12 +78,23 @@ export function resolvePayOptions(input: {
     square = { ok: false, reason: "currency_mismatch" };
   else square = { ok: true };
 
+  // ── Stax ──────────────────────────────────────────────────────────────
+  let stax: PayOptions["stax"] = { ok: false };
+  const x = input.staxConn ?? null;
+  if (!input.settings.stax) stax = { ok: false, reason: "disabled" };
+  else if (!x) stax = { ok: false, reason: "not_connected" };
+  else if (!isSecretBoxConfigured() || !x.staxApiKeyEnc) stax = { ok: false, reason: "not_configured" };
+  else if (x.status === PaymentConnectionStatus.REVOKED) stax = { ok: false, reason: "revoked" };
+  else if (x.status === PaymentConnectionStatus.RESTRICTED) stax = { ok: false, reason: "charges_disabled" };
+  else if (x.currency && x.currency.toUpperCase() !== cur) stax = { ok: false, reason: "currency_mismatch" };
+  else stax = { ok: true };
+
   const bankTransfer = {
     ok: input.settings.bankTransfer && input.settings.bankTransferInstructions.trim().length > 0,
     instructions: input.settings.bankTransferInstructions.trim(),
   };
 
-  return { stripe, square, bankTransfer, anyHosted: stripe.ok || square.ok };
+  return { stripe, square, stax, bankTransfer, anyHosted: stripe.ok || square.ok || stax.ok };
 }
 
 export const PAY_BLOCK_COPY: Record<PayBlockReason, string> = {

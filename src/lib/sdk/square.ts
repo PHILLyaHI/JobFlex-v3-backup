@@ -38,12 +38,12 @@ export function squareConnectBase(): string {
 }
 
 /** SDK client bound to ONE seller's access token. Dynamic import — the
- *  `square` package is heavy and only the payment paths need it. */
-export async function squareClientForToken(accessToken: string) {
+ *  `square` package is heavy and only the payment paths need it. `env`
+ *  defaults to the platform's; a pasted token names its own. */
+export async function squareClientForToken(accessToken: string, env: SquareEnv = squareEnv()) {
   const { SquareClient, SquareEnvironment } = await import("square");
   return new SquareClient({
     token: accessToken,
-    environment:
-      squareEnv() === "production" ? SquareEnvironment.Production : SquareEnvironment.Sandbox,
+    environment: env === "production" ? SquareEnvironment.Production : SquareEnvironment.Sandbox,
   });
 }

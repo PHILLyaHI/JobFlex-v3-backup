@@ -825,6 +825,27 @@ model PaymentConnection {
   squareRefreshTokenEnc String?
   squareTokenExpiresAt  DateTime?
   squareEnv             String? // sandbox | production at connect time
+  // "Paste an access token" join (2026-09-13): the seller's own personal
+  // access token from their Square developer app — no refresh token, no
+  // expiry, and no app fee (that needs the platform app), so JobFlex's cut is
+  // billed on the JobFlex invoice. squareAuth = oauth | token.
+  squareAuth                   String?
+  squareTokenLast4             String?
+  // Webhook subscription registered on THEIR app with that token, pointed at
+  // /api/webhooks/square-key/<this row's id>, and its signature key.
+  squareWebhookId              String?
+  squareWebhookSignatureKeyEnc String?
+
+  // Stax (2026-09-13): the merchant API key pasted in Settings, encrypted at
+  // rest. Stax webhook payloads are unsigned, so the target URL carries a
+  // random secret and every event is re-read from Stax before it settles
+  // anything. staxWebhookIds = JSON array of the webhook ids we registered.
+  staxApiKeyEnc        String?
+  staxKeyLast4         String?
+  staxMerchantId       String?
+  staxMerchantName     String?
+  staxWebhookIds       String?
+  staxWebhookSecretEnc String?
 
   currency          String? // provider default currency; checked against Proposal.currency
   country           String? // Square app-fee same-country rule

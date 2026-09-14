@@ -1,11 +1,19 @@
-// Square as a platform: OAuth (raw REST — two JSON calls, no SDK quirks),
-// seller-token SDK client, token refresh, revoke, location pick, payment
-// links. Tokens live encrypted on PaymentConnection (secretBox).
+// Square for a seller's account, joined one of two ways:
+//   OAUTH — the platform app (raw REST — two JSON calls, no SDK quirks):
+//           seller tokens refreshed by cron, app fee inside each payment.
+//   TOKEN — the seller pasted a personal access token from their OWN Square
+//           developer app (2026-09-13): no refresh, no expiry, no app fee (that
+//           needs the platform app) — JobFlex's cut is billed on the JobFlex
+//           invoice (feeBilling.ts). A webhook subscription is registered on
+//           their app with the token.
+// Tokens live encrypted on PaymentConnection (secretBox).
+import crypto from "node:crypto";
 import {
   squareAppCredentials,
   squareClientForToken,
   squareConnectBase,
   squareEnv,
+  type SquareEnv,
 } from "@/lib/sdk/square";
 import { decryptSecret, encryptSecret } from "@/lib/crypto/secretBox";
 
@@ -18,12 +26,33 @@ export const SQUARE_SCOPES = [
   "ORDERS_READ",
 ] as const;
 
+/** What a pasted token is used for — the Permissions card shows this in
+ *  place of OAuth scopes. A personal access token has every permission of
+ *  the app it belongs to. */
+export const SQUARE_TOKEN_PERMISSIONS = [
+  "Merchant profile · read",
+  "Locations · read",
+  "Orders · write",
+  "Payments · read",
+  "Checkout links · write",
+  "Webhook subscriptions · write",
+] as const;
+
 export interface SquareConnectionLike {
   squareAccessTokenEnc: string | null;
   squareRefreshTokenEnc: string | null;
   squareTokenExpiresAt: Date | null;
   squareLocationId: string | null;
   squareMerchantId: string | null;
+  /** sandbox | production the row was joined in; the platform's when unset. */
+  squareEnv?: string | null;
+  /** oauth | token; null on rows from before the token path. */
+  squareAuth?: string | null;
+  squareWebhookId?: string | null;
+}
+
+export function squareEnvOf(conn: Pick<SquareConnectionLike, "squareEnv">): SquareEnv {
+  return conn.squareEnv === "production" ? "production" : conn.squareEnv === "sandbox" ? "sandbox" : squareEnv();
 }
 
 export function squareAuthorizeUrl(input: { state: string; redirectUri: string }): string {
@@ -124,7 +153,7 @@ export function encryptTokens(t: SquareTokens): {
 }
 
 /** Seller-bound SDK client, or null when the row cannot be used (no token,
- *  undecryptable, expired). */
+ *  undecryptable, expired). Bound to the environment the row was joined in. */
 export async function squareClientForConnection(conn: SquareConnectionLike) {
   if (!conn.squareAccessTokenEnc) return null;
   if (conn.squareTokenExpiresAt && conn.squareTokenExpiresAt.getTime() < Date.now()) return null;
@@ -134,7 +163,7 @@ export async function squareClientForConnection(conn: SquareConnectionLike) {
   } catch {
     return null;
   }
-  return squareClientForToken(token);
+  return squareClientForToken(token, squareEnvOf(conn));
 }
 
 export interface PickedLocation {
@@ -145,8 +174,8 @@ export interface PickedLocation {
 }
 
 /** First ACTIVE location that can take card payments. */
-export async function pickSquareLocation(accessToken: string): Promise<PickedLocation | null> {
-  const client = await squareClientForToken(accessToken);
+export async function pickSquareLocation(accessToken: string, env: SquareEnv = squareEnv()): Promise<PickedLocation | null> {
+  const client = await squareClientForToken(accessToken, env);
   const res = await client.locations.list();
   const locs = res.locations ?? [];
   const usable = locs.find(
@@ -184,4 +213,113 @@ export async function deleteSquarePaymentLink(
 
 export function squareEnvLabel(): "sandbox" | "production" {
   return squareEnv();
+}
+
+// ── The paste-a-token join ───────────────────────────────────────────────
+
+/** Square's own words. The SDK's SquareError carries statusCode + errors[]. */
+export function squareErrorMessage(err: unknown): string {
+  const e = err as { statusCode?: number; message?: string; errors?: Array<{ detail?: string; code?: string }> } | null;
+  const detail = e?.errors?.[0]?.detail ?? e?.errors?.[0]?.code ?? e?.message?.trim() ?? "unknown error";
+  if (e?.statusCode === 401) return `Square rejected the token — ${detail}`;
+  if (e?.statusCode === 403) return `The token is missing a permission JobFlex needs — ${detail}`;
+  return `Square error — ${detail}`;
+}
+
+export interface ValidatedSquareToken {
+  token: string;
+  last4: string;
+  env: SquareEnv;
+  merchantId: string;
+  businessName: string | null;
+  country: string | null;
+  currency: string | null;
+  location: PickedLocation;
+}
+
+/** Ask Square whose token this is. A token is bound to one environment and
+ *  does not say which, so production is tried first, then sandbox. */
+export async function validateSquareToken(
+  raw: string,
+): Promise<{ ok: true; account: ValidatedSquareToken } | { ok: false; message: string }> {
+  const token = raw.trim();
+  if (!/^[A-Za-z0-9_-]{20,}$/.test(token)) {
+    return { ok: false, message: "That doesn't look like a Square access token — copy the whole Production access token from your app's Credentials page." };
+  }
+  let lastMessage = "";
+  for (const env of ["production", "sandbox"] as const) {
+    try {
+      const client = await squareClientForToken(token, env);
+      const merchant = (await client.merchants.get({ merchantId: "me" })).merchant;
+      if (!merchant?.id) throw new Error("Square returned no merchant");
+      const location = await pickSquareLocation(token, env);
+      if (!location) {
+        return {
+          ok: false,
+          message: `The token works (${env}), but the account has no active location that can take card payments.`,
+        };
+      }
+      return {
+        ok: true,
+        account: {
+          token,
+          last4: token.slice(-4),
+          env,
+          merchantId: merchant.id,
+          businessName: merchant.businessName ?? null,
+          country: merchant.country ? String(merchant.country) : location.country,
+          currency: merchant.currency ? String(merchant.currency) : location.currency,
+          location,
+        },
+      };
+    } catch (err) {
+      lastMessage = squareErrorMessage(err);
+      const status = (err as { statusCode?: number })?.statusCode;
+      if (status !== 401) return { ok: false, message: lastMessage };
+    }
+  }
+  return { ok: false, message: `${lastMessage} (tried production and sandbox)` };
+}
+
+/** What the subscription on a token-joined app listens for — the payment and
+ *  refund events the platform webhook handles. */
+export const SQUARE_TOKEN_EVENTS = ["payment.created", "payment.updated", "refund.created", "refund.updated"] as const;
+
+/** Register our endpoint on the seller's own app. The signature key comes
+ *  back with the subscription. Fails soft — the portal's active verification
+ *  and the reconcile cron still settle; refunds made in Square then don't sync. */
+export async function registerSquareWebhook(
+  token: string,
+  env: SquareEnv,
+  url: string,
+): Promise<{ ok: true; id: string; signatureKey: string } | { ok: false; message: string }> {
+  try {
+    const client = await squareClientForToken(token, env);
+    const res = await client.webhooks.subscriptions.create({
+      idempotencyKey: crypto.randomUUID(),
+      subscription: {
+        name: "JobFlex — proposal payments",
+        eventTypes: [...SQUARE_TOKEN_EVENTS],
+        notificationUrl: url,
+        apiVersion: "2025-01-23",
+      },
+    });
+    const s = res.subscription;
+    if (!s?.id || !s.signatureKey) return { ok: false, message: "Square returned no subscription" };
+    return { ok: true, id: s.id, signatureKey: s.signatureKey };
+  } catch (err) {
+    return { ok: false, message: squareErrorMessage(err) };
+  }
+}
+
+export async function removeSquareWebhook(conn: SquareConnectionLike, id: string): Promise<boolean> {
+  const client = await squareClientForConnection(conn);
+  if (!client) return false;
+  try {
+    await client.webhooks.subscriptions.delete({ subscriptionId: id });
+    return true;
+  } catch (err) {
+    console.warn("[square-token] webhook removal failed", id, err instanceof Error ? err.message : err);
+    return false;
+  }
 }

@@ -28,7 +28,6 @@ import { getOrgPlanContext } from "@/lib/planCatalogServer";
 import { getOrgLimitUsage } from "@/lib/limitsEngine";
 import { GMAIL_SCOPES, isGmailOAuthConfigured } from "@/lib/sdk/gmail";
 import { isStripeConnectConfigured } from "@/lib/sdk/integrations";
-import { isSquareEnabled } from "@/lib/sdk/square";
 import { isSecretBoxConfigured } from "@/lib/crypto/secretBox";
 import { getPaymentConnectionStatus } from "@/lib/payments/connections";
 import { parseNotificationPrefs } from "@/lib/notificationPrefsShared";
@@ -210,8 +209,12 @@ export async function loadSettingsData(ctx: SettingsOrgContext): Promise<Setting
       },
       square: {
         key: "square",
-        comingSoon: !(isSquareEnabled() && isSecretBoxConfigured()),
-        webhookUrl: `${appUrl}/api/webhooks/square`,
+        // Usable by OAuth (platform app) or by a pasted access token (secret box).
+        comingSoon: !isSecretBoxConfigured(),
+        webhookUrl:
+          connections.square.auth === "token" && connections.square.connectionId
+            ? `${appUrl}/api/webhooks/square-key/${connections.square.connectionId}`
+            : `${appUrl}/api/webhooks/square`,
         lastEventAt: fmtWhen(lastSquareEvt?.receivedAt),
       },
       connections,

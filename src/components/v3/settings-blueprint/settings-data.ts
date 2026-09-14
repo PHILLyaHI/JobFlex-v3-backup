@@ -236,8 +236,11 @@ export const PROCESSORS_CARD: CardHead = {
   sub: 'Connect your own Stripe or Square — clients pay each stage of an accepted proposal straight to you.',
 };
 
-/** Which row this is. Stripe / Square are OAuth connections; bank is manual. */
-export type ProcessorKey = 'stripe' | 'square' | 'bank';
+/** Which row this is. Stripe / Square join by OAuth or a pasted key; Stax by
+ *  a pasted key only; bank is manual. */
+export type ProcessorKey = 'stripe' | 'square' | 'stax' | 'bank';
+/** The providers with a paste-a-key way in. */
+export type KeyProvider = 'stripe' | 'square' | 'stax';
 
 export interface Processor {
   readonly key: ProcessorKey;
@@ -264,6 +267,12 @@ export const PROCESSORS: readonly Processor[] = [
     icon: 'i-bank',
     name: 'Bank transfer',
     desc: 'Show your bank details on accepted proposals; you mark each stage paid when it lands.',
+  },
+  {
+    key: 'stax',
+    icon: 'i-card',
+    name: 'Stax',
+    desc: 'Stax Pay hosted invoice on your own Stax merchant account.',
   },
 ];
 
@@ -294,34 +303,104 @@ export function stripeConnLine(s: {
   return `${id} · ${s.livemode === false ? 'Test mode' : 'Live'} · ${s.chargesEnabled ? 'charges enabled' : 'charges paused'}`;
 }
 
-/** "Use API key" — the second way into Stripe (2026-09-12): the contractor
- *  pastes their own secret or restricted key instead of going through OAuth.
- *  Same portal, same settle pipeline; the platform fee is billed on their
- *  JobFlex invoice because Stripe can't split a charge without Connect. */
-export const STRIPE_KEY_ACTION: ActionSpec = { label: 'Use API key', icon: 'i-card', state: 'is-on' };
-export const STRIPE_KEY_FORM = {
-  title: 'Paste a Stripe API key',
-  desc: 'Stripe Dashboard → Developers → API keys → Secret key. A restricted key works too if it can write Checkout Sessions and Webhook Endpoints and read PaymentIntents, Charges and Refunds. Stored encrypted; never shown again.',
-  label: 'Secret key',
-  placeholder: 'sk_live_…',
-  show: 'Show key',
-  submit: 'Connect with this key',
-  busy: 'Checking with Stripe…',
-  cancel: 'Cancel',
-  or: 'or',
-  testNote: 'A test key (sk_test_…) connects in test mode — real cards will not work.',
-  feeNote: (pct: number) =>
-    `With a pasted key the ${pct}% platform fee can't come out of the payment — it's added to your JobFlex invoice instead.`,
-  webhookMissing:
-    'Connected, but the webhook could not be registered on your Stripe account — payments still confirm when the client returns to the proposal and on the reconcile check; refunds made in Stripe won’t sync. Disconnect and reconnect to retry.',
-} as const;
-export const STRIPE_WEBHOOK_REGISTERED = 'Registered on your Stripe account by JobFlex when you connected.' as const;
+/** The paste-a-key way in (2026-09-12/13): the contractor pastes their own
+ *  credential instead of going through OAuth — a Stripe secret / restricted
+ *  key, a Square personal access token, a Stax merchant API key. Same
+ *  portal, same settle pipeline; the platform fee is billed on their JobFlex
+ *  invoice because none of these can split a payment without a platform app. */
+export interface KeyFormCopy {
+  readonly title: string;
+  readonly desc: string;
+  readonly label: string;
+  readonly placeholder: string;
+  readonly show: string;
+  readonly submit: string;
+  readonly busy: string;
+  readonly cancel: string;
+  readonly or: string;
+  /** Sandbox / test-mode caveat. */
+  readonly note: string;
+  readonly feeNote: (pct: number) => string;
+  readonly webhookMissing: string;
+  readonly action: ActionSpec;
+}
+export const KEY_FORMS: Record<KeyProvider, KeyFormCopy> = {
+  stripe: {
+    title: 'Paste a Stripe API key',
+    desc: 'Stripe Dashboard → Developers → API keys → Secret key. A restricted key works too if it can write Checkout Sessions and Webhook Endpoints and read PaymentIntents, Charges and Refunds. Stored encrypted; never shown again.',
+    label: 'Secret key',
+    placeholder: 'sk_live_…',
+    show: 'Show key',
+    submit: 'Connect with this key',
+    busy: 'Checking with Stripe…',
+    cancel: 'Cancel',
+    or: 'or',
+    note: 'A test key (sk_test_…) connects in test mode — real cards will not work.',
+    feeNote: (pct) =>
+      `With a pasted key the ${pct}% platform fee can't come out of the payment — it's added to your JobFlex invoice instead.`,
+    webhookMissing:
+      'Connected, but the webhook could not be registered on your Stripe account — payments still confirm when the client returns to the proposal and on the reconcile check; refunds made in Stripe won’t sync. Disconnect and reconnect to retry.',
+    action: { label: 'Use API key', icon: 'i-card', state: 'is-on' },
+  },
+  square: {
+    title: 'Paste a Square access token',
+    desc: 'developer.squareup.com → your application (create one if you have none) → Credentials → Production access token. Stored encrypted; never shown again.',
+    label: 'Access token',
+    placeholder: 'EAAA…',
+    show: 'Show token',
+    submit: 'Connect with this token',
+    busy: 'Checking with Square…',
+    cancel: 'Cancel',
+    or: 'or',
+    note: 'A sandbox token connects your sandbox — real cards will not work.',
+    feeNote: (pct) =>
+      `With a pasted token the ${pct}% platform fee can't come out of the payment — it's added to your JobFlex invoice instead.`,
+    webhookMissing:
+      'Connected, but the webhook subscription could not be registered on your Square app — payments still confirm when the client returns to the proposal and on the reconcile check; refunds made in Square won’t sync. Disconnect and reconnect to retry.',
+    action: { label: 'Use access token', icon: 'i-card', state: 'is-on' },
+  },
+  stax: {
+    title: 'Paste a Stax API key',
+    desc: 'Stax Pay → Apps → API Keys → New Key. Stored encrypted; never shown again. Clients pay each stage on Stax’s hosted bill page.',
+    label: 'API key',
+    placeholder: 'eyJ…',
+    show: 'Show key',
+    submit: 'Connect with this key',
+    busy: 'Checking with Stax…',
+    cancel: 'Cancel',
+    or: 'or',
+    note: 'A sandbox merchant’s key connects your sandbox — real cards will not work.',
+    feeNote: (pct) =>
+      `Stax takes nothing for JobFlex inside the payment — the ${pct}% platform fee is added to your JobFlex invoice instead.`,
+    webhookMissing:
+      'Connected, but the webhooks could not be registered on your Stax account — payments confirm on the reconcile check; refunds made in Stax won’t sync. Disconnect and reconnect to retry.',
+    action: { label: 'Use API key', icon: 'i-card', state: 'is-on' },
+  },
+};
+export const STRIPE_KEY_FORM = KEY_FORMS.stripe;
+export const STRIPE_KEY_ACTION: ActionSpec = KEY_FORMS.stripe.action;
+export const KEY_WEBHOOK_REGISTERED = 'Registered on your account by JobFlex when you connected.' as const;
+export const STRIPE_WEBHOOK_REGISTERED = KEY_WEBHOOK_REGISTERED;
 export const STRIPE_KEY_PERMISSIONS_CARD: CardHead = {
   title: 'Permissions',
   sub: 'What the key must be allowed to do. A full secret key has all of it; build a restricted key with exactly these.',
 };
-export function squareConnLine(s: { merchantId: string | null; locationName: string | null; env: string }): string {
-  return `${s.locationName ?? s.merchantId ?? 'connected'} · ${s.env === 'sandbox' ? 'Sandbox' : 'Production'}`;
+export const SQUARE_TOKEN_PERMISSIONS_CARD: CardHead = {
+  title: 'Permissions',
+  sub: 'What the token is used for. A personal access token carries every permission of the app it belongs to.',
+};
+export function squareConnLine(s: {
+  merchantId: string | null;
+  locationName: string | null;
+  env: string;
+  auth?: 'oauth' | 'token' | null;
+  tokenLast4?: string | null;
+}): string {
+  const head = s.auth === 'token' ? `Access token ····${s.tokenLast4 ?? ''} · ` : '';
+  return `${head}${s.locationName ?? s.merchantId ?? 'connected'} · ${s.env === 'sandbox' ? 'Sandbox' : 'Production'}`;
+}
+export function staxConnLine(s: { merchantId: string | null; merchantName: string | null; keyLast4: string | null }): string {
+  return `API key ····${s.keyLast4 ?? ''} · ${s.merchantName ?? s.merchantId ?? 'connected'}`;
 }
 
 /** One line of copy per non-healthy state. */
@@ -351,9 +430,13 @@ export const BANK_TRANSFER_LABELS = {
 export const PAYOUT_NOTE_KICKER = 'Payouts' as const;
 export const PAYOUT_NOTE = 'Land in your own Stripe or Square account on their normal schedule.' as const;
 export const FEE_NOTE_KICKER = 'Platform fee' as const;
-export function platformFeeLine(pct: number, stripeViaKey = false): string {
-  const base = `${pct}% of payments collected through Stripe or Square. Bank transfers carry no fee.`;
-  return stripeViaKey ? `${base} Stripe is joined with your API key, so the fee is added to your JobFlex invoice.` : base;
+/** `onInvoice`: providers joined with a pasted key / token, whose fee is
+ *  billed on the JobFlex invoice instead of inside the payment. */
+export function platformFeeLine(pct: number, onInvoice: readonly string[] = []): string {
+  const base = `${pct}% of payments collected through Stripe, Square or Stax. Bank transfers carry no fee.`;
+  if (!onInvoice.length) return base;
+  const names = onInvoice.length === 1 ? onInvoice[0] : `${onInvoice.slice(0, -1).join(', ')} and ${onInvoice[onInvoice.length - 1]}`;
+  return `${base} ${names} ${onInvoice.length === 1 ? 'is' : 'are'} joined with your own key, so that fee is added to your JobFlex invoice.`;
 }
 
 /* ------------------------------------------------------------------ */

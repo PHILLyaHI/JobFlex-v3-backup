@@ -62,6 +62,7 @@ import {
 } from "@/actions/settings";
 import {
   disconnectSquare,
+  disconnectStax,
   disconnectStripeConnect,
   saveBankTransferSettings,
   setProviderOffered,
@@ -73,6 +74,7 @@ import type {
   Badge,
   CardHead,
   IconName,
+  KeyProvider,
   MatrixAction,
   PrefKey,
   ProcessorIntegrationData,
@@ -156,11 +158,12 @@ import {
   SECURITY_ITEMS,
   SIGNATURE_SELECT,
   SIGN_OUT_LABEL,
+  KEY_FORMS,
+  KEY_WEBHOOK_REGISTERED,
+  SQUARE_TOKEN_PERMISSIONS_CARD,
   STRIPE_ACH_TOGGLE,
   STRIPE_KEY_ACTION,
-  STRIPE_KEY_FORM,
   STRIPE_KEY_PERMISSIONS_CARD,
-  STRIPE_WEBHOOK_REGISTERED,
   TEST_RESULT_COPY,
   currencyCodeFor,
   currencyOptionFor,
@@ -168,9 +171,10 @@ import {
   signatureKeyFor,
   signatureOptionFor,
   squareConnLine,
+  staxConnLine,
   stripeConnLine,
 } from "@/components/v3/settings-blueprint/settings-data";
-import { StripeKeyForm } from "@/components/v3/settings-blueprint/panes/stripe-key-form";
+import { ProviderKeyForm } from "@/components/v3/settings-blueprint/panes/stripe-key-form";
 import { MobileSettingsSprite } from "./sprite";
 import "./mobile-settings.css";
 
@@ -546,6 +550,7 @@ function ProcessorRow({
   connLine,
   connectHref,
   onUseKey = null,
+  useKeyLabel = STRIPE_KEY_ACTION.label,
   viaKey = false,
   busy,
   onManage,
@@ -556,9 +561,11 @@ function ProcessorRow({
   connLine: string;
   connectHref: string | null;
   onUseKey?: (() => void) | null;
+  useKeyLabel?: string;
   viaKey?: boolean;
   busy: boolean;
-  onManage: () => void;
+  /** Absent = no deep view under Integrations (Stax). */
+  onManage?: () => void;
   onDisconnect: () => void;
 }) {
   const connected = state === "connected";
@@ -593,7 +600,7 @@ function ProcessorRow({
           {state === "disconnected" && onUseKey ? (
             <button className={`mst-btn mst-btn--ghost ${STRIPE_KEY_ACTION.state}`} type="button" onClick={onUseKey}>
               <Ic name={STRIPE_KEY_ACTION.icon ?? "i-card"} />
-              {STRIPE_KEY_ACTION.label}
+              {useKeyLabel}
             </button>
           ) : null}
           {hasRow && !connected ? (
@@ -609,20 +616,20 @@ function ProcessorRow({
               </a>
             )
           ) : null}
+          {hasRow && onManage ? (
+            <button className="mst-btn mst-btn--ghost" type="button" onClick={onManage}>
+              {MANAGE_ACTION.label}
+            </button>
+          ) : null}
           {hasRow ? (
-            <>
-              <button className="mst-btn mst-btn--ghost" type="button" onClick={onManage}>
-                {MANAGE_ACTION.label}
-              </button>
-              <button
-                className={`mst-btn mst-btn--ghost ${DISCONNECT_ACTION.state}`}
-                type="button"
-                disabled={busy}
-                onClick={onDisconnect}
-              >
-                {DISCONNECT_ACTION.label}
-              </button>
-            </>
+            <button
+              className={`mst-btn mst-btn--ghost ${DISCONNECT_ACTION.state}`}
+              type="button"
+              disabled={busy}
+              onClick={onDisconnect}
+            >
+              {DISCONNECT_ACTION.label}
+            </button>
           ) : null}
         </div>
       )}
@@ -651,8 +658,9 @@ function PaymentsPane({
   const [bankText, setBankText] = useState(c.bankTransfer.instructions);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState("");
-  // "Use API key" opens the paste form under the Stripe row.
-  const [keyOpen, setKeyOpen] = useState(false);
+  // "Use API key" / "Use access token" opens the paste form under that row.
+  const [keyOpen, setKeyOpen] = useState<KeyProvider | null>(null);
+  const toggleKey = (p: KeyProvider) => () => setKeyOpen((v) => (v === p ? null : p));
 
   const saveDefaults = () =>
     updatePaymentSettings({
@@ -661,12 +669,13 @@ function PaymentsPane({
       receiptsOnPayment: receipts,
     });
 
-  async function disconnect(which: "stripe" | "square") {
+  async function disconnect(which: KeyProvider) {
     setBusy(which);
     setErr("");
     try {
       if (which === "stripe") await disconnectStripeConnect();
-      else await disconnectSquare();
+      else if (which === "square") await disconnectSquare();
+      else await disconnectStax();
       router.refresh();
     } catch (e) {
       setErr(actionError(e));
@@ -675,7 +684,13 @@ function PaymentsPane({
     }
   }
 
-  const [stripeRow, squareRow, bankRow] = PROCESSORS;
+  const [stripeRow, squareRow, bankRow, staxRow] = PROCESSORS;
+  const staxHasRow = c.stax.state !== "disconnected" && c.stax.state !== "not_configured";
+  const feeOnInvoice = [
+    c.stripe.auth === "key" ? "Stripe" : null,
+    c.square.auth === "token" ? "Square" : null,
+    staxHasRow ? "Stax" : null,
+  ].filter((n): n is string => n !== null);
 
   return (
     <>
@@ -689,20 +704,21 @@ function PaymentsPane({
               state={c.stripe.state}
               connLine={stripeConnLine(c.stripe)}
               connectHref={c.stripe.oauthOffered ? c.connectHref.stripe : null}
-              onUseKey={c.stripe.keyOffered ? () => setKeyOpen((v) => !v) : null}
+              onUseKey={c.stripe.keyOffered ? toggleKey("stripe") : null}
               viaKey={c.stripe.auth === "key"}
               busy={busy !== null}
               onManage={() => navigate("integrations", "stripe")}
               onDisconnect={() => void disconnect("stripe")}
             />
-            {keyOpen && c.stripe.state !== "connected" ? (
+            {keyOpen === "stripe" && c.stripe.state !== "connected" ? (
               <div className="mst-grpSub">
-                <StripeKeyForm
+                <ProviderKeyForm
+                  provider="stripe"
                   variant="mobile"
                   feePct={p.platformFeePct}
-                  onCancel={() => setKeyOpen(false)}
+                  onCancel={() => setKeyOpen(null)}
                   onDone={(r) => {
-                    if (r.webhook) setKeyOpen(false); // else the form shows the webhook note
+                    if (r.webhook) setKeyOpen(null); // else the form shows the webhook note
                   }}
                 />
               </div>
@@ -732,11 +748,55 @@ function PaymentsPane({
               row={squareRow}
               state={c.square.state}
               connLine={squareConnLine(c.square)}
-              connectHref={c.connectHref.square}
+              connectHref={c.square.oauthOffered ? c.connectHref.square : null}
+              onUseKey={c.square.keyOffered ? toggleKey("square") : null}
+              useKeyLabel={KEY_FORMS.square.action.label}
+              viaKey={c.square.auth === "token"}
               busy={busy !== null}
               onManage={() => navigate("integrations", "square")}
               onDisconnect={() => void disconnect("square")}
             />
+            {keyOpen === "square" && c.square.state !== "connected" ? (
+              <div className="mst-grpSub">
+                <ProviderKeyForm
+                  provider="square"
+                  variant="mobile"
+                  feePct={p.platformFeePct}
+                  onCancel={() => setKeyOpen(null)}
+                  onDone={(r) => {
+                    if (r.webhook) setKeyOpen(null);
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
+
+          {/* Stax — key only; no deep view under Integrations */}
+          <div className="mst-grp">
+            <ProcessorRow
+              row={staxRow}
+              state={c.stax.state}
+              connLine={staxConnLine(c.stax)}
+              connectHref={null}
+              onUseKey={c.stax.keyOffered ? toggleKey("stax") : null}
+              useKeyLabel={KEY_FORMS.stax.action.label}
+              viaKey
+              busy={busy !== null}
+              onDisconnect={() => void disconnect("stax")}
+            />
+            {keyOpen === "stax" && c.stax.state !== "connected" ? (
+              <div className="mst-grpSub">
+                <ProviderKeyForm
+                  provider="stax"
+                  variant="mobile"
+                  feePct={p.platformFeePct}
+                  onCancel={() => setKeyOpen(null)}
+                  onDone={(r) => {
+                    if (r.webhook) setKeyOpen(null);
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
 
           <div className="mst-grp">
@@ -775,7 +835,7 @@ function PaymentsPane({
             <span className="mst-noteK">{PAYOUT_NOTE_KICKER}</span>
             <span>{PAYOUT_NOTE}</span>
             <span className="mst-noteK">{FEE_NOTE_KICKER}</span>
-            <span>{platformFeeLine(p.platformFeePct, c.stripe.auth === "key")}</span>
+            <span>{platformFeeLine(p.platformFeePct, feeOnInvoice)}</span>
             {err ? (
               <>
                 <span className="mst-noteK is-warn">Error</span>
@@ -903,16 +963,20 @@ function ProcessorSubpane({
   const [err, setErr] = useState("");
   const [ach, setAch] = useState(s.achEnabled);
   const [offered, setOffered] = useState(isStripe ? s.offered : q.offered);
-  // Stripe's two ways in: OAuth (when the platform offers it) and a pasted
-  // key. A row joined by key reconnects through the form, not the OAuth link.
+  // Two ways in: OAuth (when the platform offers it) and a pasted key /
+  // token. A row joined by key reconnects through the form, not the OAuth link.
   const [keyOpen, setKeyOpen] = useState(false);
-  const viaKey = isStripe && s.auth === "key";
-  const keyOffered = isStripe && s.keyOffered;
+  const viaKey = isStripe ? s.auth === "key" : q.auth === "token";
+  const keyOffered = isStripe ? s.keyOffered : q.keyOffered;
+  const webhookRegistered = isStripe ? s.webhookRegistered : q.webhookRegistered;
+  const keyCopy = KEY_FORMS[d.key];
   const connectHref: string | null = isStripe
     ? s.oauthOffered
       ? conns.connectHref.stripe
       : null
-    : conns.connectHref.square;
+    : q.oauthOffered
+      ? conns.connectHref.square
+      : null;
 
   async function disconnect() {
     setBusy(true);
@@ -1016,15 +1080,15 @@ function ProcessorSubpane({
                   ) : null}
                   {keyOffered ? (
                     <>
-                      {connectHref ? <span className="skf-or">{STRIPE_KEY_FORM.or}</span> : null}
+                      {connectHref ? <span className="skf-or">{keyCopy.or}</span> : null}
                       <button
                         className={`mst-btn mst-btn--wide ${connectHref ? "mst-btn--ghost" : "mst-btn--primary"}`}
                         type="button"
                         aria-expanded={keyOpen}
                         onClick={() => setKeyOpen((v) => !v)}
                       >
-                        <Ic name={STRIPE_KEY_ACTION.icon ?? "i-card"} />
-                        {STRIPE_KEY_ACTION.label}
+                        <Ic name={keyCopy.action.icon ?? "i-card"} />
+                        {keyCopy.action.label}
                       </button>
                     </>
                   ) : null}
@@ -1033,7 +1097,8 @@ function ProcessorSubpane({
             </>
           )}
           {keyOpen && !connected ? (
-            <StripeKeyForm
+            <ProviderKeyForm
+              provider={d.key}
               variant="mobile"
               feePct={conns.platformFeePct}
               onCancel={() => setKeyOpen(false)}
@@ -1100,7 +1165,9 @@ function ProcessorSubpane({
 
       {/* ── Permissions ── */}
       <section className="mst-card">
-        <CardHeader card={viaKey ? STRIPE_KEY_PERMISSIONS_CARD : PROCESSOR_PERMISSIONS_CARD} />
+        <CardHeader
+          card={viaKey ? (isStripe ? STRIPE_KEY_PERMISSIONS_CARD : SQUARE_TOKEN_PERMISSIONS_CARD) : PROCESSOR_PERMISSIONS_CARD}
+        />
         <div className="mst-cardB">
           {(isStripe ? s.scopes : q.scopes).length === 0 ? (
             <div className="mst-rowD">{PROCESSOR_SCOPES_EMPTY}</div>
@@ -1122,8 +1189,8 @@ function ProcessorSubpane({
         <CardHeader card={PROCESSOR_WEBHOOK_CARD} />
         <div className="mst-cardB">
           {viaKey ? (
-            <div className={s.webhookRegistered ? "mst-rowD" : "mst-rowD is-warn"}>
-              {s.webhookRegistered ? STRIPE_WEBHOOK_REGISTERED : STRIPE_KEY_FORM.webhookMissing}
+            <div className={webhookRegistered ? "mst-rowD" : "mst-rowD is-warn"}>
+              {webhookRegistered ? KEY_WEBHOOK_REGISTERED : keyCopy.webhookMissing}
             </div>
           ) : null}
           <div className="mst-fld">

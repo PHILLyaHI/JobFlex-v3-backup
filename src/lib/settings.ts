@@ -25,6 +25,7 @@ function safeParse(json: string | null | undefined): Record<string, unknown> {
 export interface PaymentSettings {
   stripe: boolean;
   square: boolean;
+  stax: boolean;
   paypal: boolean;
   ach: boolean;
   bankTransfer: boolean;
@@ -47,6 +48,7 @@ export interface PaymentSettings {
 export const PAYMENT_DEFAULTS: PaymentSettings = {
   stripe: true,
   square: true,
+  stax: true,
   paypal: false,
   ach: true,
   bankTransfer: false,

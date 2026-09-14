@@ -1070,6 +1070,7 @@ export async function notifyTradeFilled(jobId: string) {
 function providerLabel(provider: string, method: string | null): string {
   if (provider === "STRIPE") return method === "us_bank_account" ? "Stripe (bank debit)" : "Stripe";
   if (provider === "SQUARE") return "Square";
+  if (provider === "STAX") return method === "us_bank_account" ? "Stax (bank)" : "Stax";
   switch (method) {
     case "BANK_TRANSFER":
       return "Bank transfer";
@@ -1084,7 +1085,7 @@ function providerLabel(provider: string, method: string | null): string {
 
 function methodPhrase(provider: string, method: string | null): string {
   if (method === "us_bank_account") return "bank account";
-  if (provider === "STRIPE" || provider === "SQUARE") return "card";
+  if (provider === "STRIPE" || provider === "SQUARE" || provider === "STAX") return "card";
   if (method === "BANK_TRANSFER") return "bank transfer";
   if (method === "CASH") return "cash";
   if (method === "CHECK") return "check";

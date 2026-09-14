@@ -62,7 +62,7 @@ import "./mobile-proposal-client.css";
 /** `"open"` is the one local value the SERVER never sends: a revert has put the
  *  proposal back, and the page must show it open before the refresh lands. */
 type Settled = "accepted" | "paid" | "declined" | "open" | null;
-type Provider = "stripe" | "square";
+type Provider = "stripe" | "square" | "stax";
 
 /** The way back, held in memory only — a reload forgets it, which is the whole
  *  point: "revert" exists for the tap that was a slip, not for next week. */
@@ -137,6 +137,7 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
       ? [{ id: "stripe" as const, name: pay.providers.stripe.ach ? "Card or bank account" : "Card" }]
       : []),
     ...(pay.providers.square.ok ? [{ id: "square" as const, name: "Square" }] : []),
+    ...(pay.providers.stax.ok ? [{ id: "stax" as const, name: "Stax" }] : []),
   ];
   const nextStage = pay.stages.find((s) => s.id === pay.nextPayableId) ?? null;
   // Which target the sheet is paying: the next stage, or everything left.

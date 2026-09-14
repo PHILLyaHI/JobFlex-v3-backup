@@ -8,6 +8,9 @@ import { getConnection } from "./connections";
 import { stripeForConnection } from "./stripeConnect";
 import { feeBillingOf, feeMinorOf } from "./stripeEvents";
 import { squareClientForConnection } from "./squareConnect";
+import { squareFeeOf } from "./squareEvents";
+import { getStaxInvoice, staxKeyFor } from "./stax";
+import { settleStaxInvoice } from "./staxEvents";
 import { settleInstallmentPayment, type SettleResult } from "./settle";
 
 export type VerifyOutcome =
@@ -81,6 +84,8 @@ export async function verifyCheckoutRef(proposalId: string, checkoutRef: string)
         if (!t.paymentId) continue;
         const p = (await client.payments.get({ paymentId: t.paymentId })).payment;
         if (p?.status === "COMPLETED") {
+          const amountMinor = Number(p.amountMoney?.amount ?? 0);
+          const fee = squareFeeOf(amountMinor, Number(p.appFeeMoney?.amount ?? 0));
           const settle = await settleInstallmentPayment({
             provider: "SQUARE",
             externalId: orderId,
@@ -88,8 +93,9 @@ export async function verifyCheckoutRef(proposalId: string, checkoutRef: string)
             organizationId: proposal.organizationId,
             proposalId,
             installmentIds: (order?.metadata?.installmentIds ?? "").split(",").filter(Boolean),
-            amountMinor: Number(p.amountMoney?.amount ?? 0),
-            feeMinor: Number(p.appFeeMoney?.amount ?? 0),
+            amountMinor,
+            feeMinor: fee.feeMinor,
+            feeBilling: fee.feeBilling,
             currency: String(p.amountMoney?.currency ?? proposal.currency).toUpperCase(),
             livemode: conn?.squareEnv === "production",
             method: p.sourceType === "BANK_ACCOUNT" ? "us_bank_account" : "card",
@@ -100,6 +106,23 @@ export async function verifyCheckoutRef(proposalId: string, checkoutRef: string)
         }
       }
       if (order?.state === "CANCELED") return { state: "expired" };
+      return { state: "open" };
+    } catch {
+      return { state: "unavailable" };
+    }
+  }
+
+  if (provider === "STAX") {
+    const conn = await getConnection(proposal.organizationId, "STAX");
+    const key = conn ? staxKeyFor(conn) : null;
+    if (!key) return { state: "unavailable" };
+    try {
+      const inv = await getStaxInvoice(key, checkoutRef);
+      if (inv.status === "PAID") {
+        const r = await settleStaxInvoice(proposal.organizationId, inv);
+        return r.state === "paid" ? { state: "paid", settle: r.settle } : { state: "unavailable" };
+      }
+      if (inv.deleted_at) return { state: "expired" };
       return { state: "open" };
     } catch {
       return { state: "unavailable" };
