@@ -15,6 +15,7 @@
 
 import * as React from "react";
 import { isMapsBrowserEnabled, loadMapsLibrary } from "@/lib/googleMaps";
+import { blueprintPinIcon } from "./pin";
 
 // Same zoom as the report's live map — one house fills the frame.
 const PIN_ZOOM = 20;
@@ -68,7 +69,12 @@ export function AddressPinPreview({ lat, lng, label }: { lat: number; lng: numbe
             zoomControl: true,
             clickableIcons: false,
           }) as PinMap;
-          const marker = new maps.Marker({ map, position: center, title: label }) as PinMarker;
+          const marker = new maps.Marker({
+            map,
+            position: center,
+            title: label,
+            icon: blueprintPinIcon(maps.Point),
+          }) as PinMarker;
           builtRef.current = { host, map, marker };
         }
       } catch {

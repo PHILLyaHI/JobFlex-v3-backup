@@ -42,7 +42,6 @@ import {
   VALLEY_TYPES,
   VENT_TYPES,
   WASTE_OPTIONS,
-  type Basis,
   type CatalogLists,
   type IceWaterCoverage,
   type PkgUnit,
@@ -283,42 +282,6 @@ function Row({
       )}
     </section>
   );
-}
-
-const BASIS_WORD: Record<Basis, string> = { measured: "measured", estimated: "estimated", entered: "by hand" };
-
-/** The basis line: the roof's facts as one mono annotation, or — before a
- *  takeoff exists — just the squares and where they came from. */
-function Facts({ facts, squares, manual }: { facts: RoofFacts | null; squares: number | null; manual: BuildEstimateCardProps["manual"] }) {
-  const items: React.ReactNode[] = [];
-  if (facts) {
-    const steepest = facts.pitchFamilies.reduce((m, f) => Math.max(m, f.pitch12), 0);
-    items.push(<b key="sq">{facts.squares.toFixed(1)} sq</b>);
-    if (facts.pitchFamilies.length > 0) {
-      items.push(
-        <b key="pitch">{facts.pitchFamilies.map((f) => `${Math.round(f.pitch12)}/12${facts.pitchFamilies.length > 1 ? ` ${Math.round(f.share * 100)}%` : ""}`).join(" + ")}</b>,
-      );
-      if (steepest >= 8) items.push(<i key="steep">steep</i>);
-    }
-    items.push(<i key="basis">{BASIS_WORD[facts.squaresBasis]}</i>);
-    if (facts.perimeterFt != null) items.push(<b key="outline">{fmt(facts.perimeterFt)} ft outline</b>);
-    if (facts.footprintSqft != null) items.push(<b key="fp">{fmt(facts.footprintSqft)} sq ft footprint</b>);
-    if (facts.shape) items.push(<b key="shape">{facts.shape.toLowerCase()}</b>);
-    if (facts.chimney) items.push(<b key="chimney">chimney</b>);
-    if (facts.rooftopAcCount != null && facts.rooftopAcCount > 0) {
-      items.push(
-        <b key="ac">
-          {facts.rooftopAcCount} rooftop unit{facts.rooftopAcCount === 1 ? "" : "s"}
-        </b>,
-      );
-    }
-  } else if (squares != null) {
-    items.push(<b key="sq">{squares.toFixed(1)} sq</b>);
-    if (manual) items.push(<b key="pitch">{manual.pitchLabel}</b>);
-    items.push(<i key="basis">{manual ? "by hand" : "measured"}</i>);
-  }
-  if (!items.length) return null;
-  return <span className="bec-facts">{items}</span>;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -819,19 +782,22 @@ function PackageLedger({
                 ) : estimateEdges(facts) ? (
                   <button type="button" className="bec-link" onClick={resetEdges} disabled={disabled}>Back to the outline estimate</button>
                 ) : null}
+                {/* The measured-lengths offer as an action with its terms
+                    beside it, not a link buried in a sentence. */}
                 {report && report.state === "none" && !edgeMeasured && (
-                  <div className="bec-note">
-                    Want them measured?{" "}
-                    <button type="button" className="bec-link" onClick={report.onOrder} disabled={disabled || report.busy}>
-                      {report.busy ? "Pricing…" : "Order the full aerial measurement report"}
-                    </button>{" "}
-                    — billed, usually within 48 hours; the lengths then load here by themselves.
+                  <div className="bec-offer">
+                    <button type="button" className="btn btn-ghost bec-btn bec-btn--sm" onClick={report.onOrder} disabled={disabled || report.busy}>
+                      {report.busy ? "Pricing…" : "Order the full measurement report"}
+                    </button>
+                    <span className="bec-note">Billed · usually within 48 hours · the measured lengths load here by themselves.</span>
                   </div>
                 )}
                 {report && report.state === "pending" && (
-                  <div className="bec-note">
-                    Full report #{report.reportId} ordered · {report.status ?? "in process"}.{" "}
-                    <button type="button" className="bec-link" onClick={report.onCheck} disabled={disabled || report.busy}>
+                  <div className="bec-offer">
+                    <span className="bec-note">
+                      Full report #{report.reportId} ordered · {report.status ?? "in process"}.
+                    </span>
+                    <button type="button" className="btn btn-ghost bec-btn bec-btn--sm" onClick={report.onCheck} disabled={disabled || report.busy}>
                       {report.busy ? "Checking…" : "Check if it has landed"}
                     </button>
                   </div>
@@ -918,14 +884,38 @@ function PackageLedger({
           onToggle={() => toggle("vents")}
         >
           {vent ? (
-            <div className="bec-annot">
-              Attic <b>{fmt(facts.footprintSqft ?? 0)} sq ft</b> · needs <b>{fmt(vent.requiredSqIn)} sq in</b> net free area · exhaust <b>{fmt(vent.exhaustSqIn)}</b>
-              {vent.poweredExhaust ? (
-                <>
-                  {" "}+ <b>{vent.poweredExhaust} powered</b>
-                </>
-              ) : null}{" "}
-              · intake <b>{fmt(vent.intakeSqIn)}</b>
+            /* The attic check as four figures, label over value — read at a
+               glance, not decoded from one mono line. */
+            <div className="bec-figs" role="group" aria-label="Attic ventilation check">
+              <div className="bec-fig">
+                <span className="bec-fig-l">Attic</span>
+                <span className="bec-fig-v">
+                  {fmt(facts.footprintSqft ?? 0)}
+                  <small>sq ft</small>
+                </span>
+              </div>
+              <div className="bec-fig">
+                <span className="bec-fig-l">Needs</span>
+                <span className="bec-fig-v">
+                  {fmt(vent.requiredSqIn)}
+                  <small>sq in net free area</small>
+                </span>
+              </div>
+              <div className="bec-fig">
+                <span className="bec-fig-l">Exhaust</span>
+                <span className="bec-fig-v">
+                  {fmt(vent.exhaustSqIn)}
+                  <small>sq in</small>
+                  {vent.poweredExhaust ? <small>+ {vent.poweredExhaust} powered</small> : null}
+                </span>
+              </div>
+              <div className="bec-fig">
+                <span className="bec-fig-l">Intake</span>
+                <span className="bec-fig-v">
+                  {fmt(vent.intakeSqIn)}
+                  <small>sq in</small>
+                </span>
+              </div>
             </div>
           ) : (
             <div className="bec-note">No footprint on this measurement, so the attic check is off — add what the roof needs.</div>
@@ -1099,8 +1089,6 @@ function PackageLedger({
 // ═══════════════════════════════════════════════════════════════════════════
 export default function BuildEstimateCardC({
   isRecon,
-  squares,
-  manual,
   buildMode,
   onBuildMode,
   waste,
@@ -1140,7 +1128,6 @@ export default function BuildEstimateCardC({
       <div className="bec-head">
         <div className="bec-head-l">
           <div className="card-title">Build an estimate</div>
-          {!isRecon && <Facts facts={facts} squares={squares} manual={manual} />}
         </div>
         <div className="vsw" role="radiogroup" aria-label="How to build the estimate">
           {(["package", "ai"] as const).map((m) => (

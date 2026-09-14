@@ -53,29 +53,6 @@
   gap: 4px 16px;
   min-width: 0;
 }
-/* The roof's facts: one mono annotation beside the title, stated once. */
-.jf-blueprint .content .bec-facts {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.6;
-}
-.jf-blueprint .content .bec-facts b { font-weight: 700; color: var(--ink); }
-.jf-blueprint .content .bec-facts i { font-style: normal; color: var(--muted); }
-.jf-blueprint .content .bec-facts > * + *::before {
-  content: "·";
-  margin: 0 7px;
-  color: var(--muted-faint);
-  font-weight: 400;
-}
-
 /* ── TITLE BLOCK (package) / CONSOLE (smart) ─────────────── */
 .jf-blueprint .content .bec-console {
   display: flex;
@@ -325,18 +302,38 @@
   color: var(--muted);
   max-width: 66ch;
 }
-/* The attic check as drawing annotation: figures, not a paragraph. */
-.jf-blueprint .content .bec-annot {
+/* Vents: the attic check as four figures, label over value (the title
+   block's own vocabulary at a smaller size). */
+.jf-blueprint .content .bec-figs { display: flex; flex-wrap: wrap; gap: 10px 28px; padding: 2px 0 4px; }
+.jf-blueprint .content .bec-fig { display: grid; gap: 4px; }
+.jf-blueprint .content .bec-fig-l {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 9.5px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  line-height: 1.7;
   color: var(--muted);
+}
+.jf-blueprint .content .bec-fig-v {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
-.jf-blueprint .content .bec-annot b { color: var(--ink); font-weight: 700; }
+.jf-blueprint .content .bec-fig-v small {
+  margin-left: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+/* Edges: the measured-lengths offer — an action with its terms beside it. */
+.jf-blueprint .content .bec-offer { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+.jf-blueprint .content .bec-offer .bec-note { max-width: 52ch; }
+
 .jf-blueprint .content .bec-link {
   display: inline-flex;
   align-items: center;

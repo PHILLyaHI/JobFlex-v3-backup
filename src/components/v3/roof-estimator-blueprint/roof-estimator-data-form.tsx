@@ -40,6 +40,7 @@ import {
 } from "@/stores/usePlanLimitStore";
 import { attachPlacesSuggest, type PickedPlace } from "@/components/v3/blueprint-shell/places-suggest";
 import { AddressPinPreview } from "./address-pin-preview";
+import { PIN_PATH, blueprintPinIcon, type PointCtor } from "./pin";
 import { BuildEstimateCardSwitch } from "./build-estimate-card-switch";
 import { EstimateLinesTable, type EditableLine } from "./estimate-lines-table";
 import { estimateEdges, ringPerimeterFt, type MeasuredFootage, type RoofFacts, type RoofPackage, type RoofPackageSpec } from "@/lib/roofPackage/takeoff";
@@ -302,8 +303,6 @@ export function RoofEstimatorDataForm() {
   // Hand-entered takeoff (runManual). Cleared by resetResult, so it never
   // coexists with a measurement.
   const [manual, setManual] = React.useState<ManualTakeoff | null>(null);
-  const [manSquares, setManSquares] = React.useState("");
-  const [manPitch, setManPitch] = React.useState("6/12");
   // Other structures on the parcel the contractor has ticked INTO the figures
   // (indices into instant.structures). Empty by default: the page is about the
   // main structure; a barn joins the total only when someone says so.
@@ -421,8 +420,8 @@ export function RoofEstimatorDataForm() {
         // lead-map.tsx and the intake's pin preview read it. A failed marker
         // library costs only the pin, never the map.
         await loadMapsLibrary("marker").catch(() => null);
-        const Marker =
-          (window as unknown as { google?: { maps?: { Marker?: MarkerCtor } } }).google?.maps?.Marker ?? null;
+        const gmaps = (window as unknown as { google?: { maps?: { Marker?: MarkerCtor; Point?: PointCtor } } }).google?.maps;
+        const Marker = gmaps?.Marker ?? null;
         const host = mapHostRef.current;
         if (cancelled || !host) return;
         const center = { lat: mapLat, lng: mapLng };
@@ -446,7 +445,9 @@ export function RoofEstimatorDataForm() {
           });
           // The map's whole reason to exist on this panel is "which house was
           // measured" — mark the point the measurement read.
-          const marker = Marker ? new Marker({ map, position: center, title: "The point the measurement read" }) : null;
+          const marker = Marker
+            ? new Marker({ map, position: center, title: "The point the measurement read", icon: blueprintPinIcon(gmaps?.Point) })
+            : null;
           liveMapRef.current = { host, map, marker };
         }
         centeredOnRef.current = key;
@@ -545,26 +546,13 @@ export function RoofEstimatorDataForm() {
   }
 
   // Hand-entered takeoff: no lookup, nothing billed, nothing saved to history.
-  // The address is whatever is in the intake fields — typed or picked.
-  function runManual(preset?: ManualTakeoff) {
-    if (preset) {
-      // Pre-filled by the page itself (e.g. "price from Google's figure").
-      resetResult();
-      setReusedInstant(null);
-      setManual({ ...preset, squares: Math.round(preset.squares * 10) / 10 });
-      setPanel("report");
-      return;
-    }
-    const sq = Number(manSquares.replace(/,/g, ""));
-    if (!Number.isFinite(sq) || sq <= 0) {
-      toast.error("Enter the roof size in squares", "One square is 100 sq ft of roof surface.");
-      return;
-    }
+  // A hand-entered takeoff, pre-filled by the page itself (the "price from
+  // Google's figure" way out of a wrong-building answer). The intake's own
+  // squares + pitch form was retired on 2026-09-13 at the owner's request.
+  function runManual(preset: ManualTakeoff) {
     resetResult();
     setReusedInstant(null);
-    const street = (picked?.address ?? addrRef.current?.value ?? "").trim();
-    const address = [street, [city, stateCode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-    setManual({ squares: Math.round(sq * 10) / 10, pitchLabel: manPitch, address: address || null });
+    setManual({ ...preset, squares: Math.round(preset.squares * 10) / 10 });
     setPanel("report");
   }
 
@@ -914,29 +902,6 @@ export function RoofEstimatorDataForm() {
   // stands behind them.
   const eaveConf = structure?.confidence?.eaveHeightFt ?? null;
   const hasDetails = eaveHeights.length > 0 || !!structure || (measurement?.chimneys.length ?? 0) > 0;
-  // "EagleView data packs: area ✓ · pitch ✗ (not entitled) · …" — one line
-  // under the hero figures naming what was bought and what the account was
-  // refused, so a "—" in a cell is read as "not purchased", not "not measured".
-  const packsLine = React.useMemo(() => {
-    const ip = measurement?.provenance?.instantPacks;
-    if (!ip || (!ip.denied.length && !ip.missing.length && !ip.failed.length && !ip.unknown?.length)) return null;
-    const NAMES: Record<string, string> = {
-      property_data_id_001: "area",
-      property_data_id_002: "pitch",
-      property_data_id_003: "material & condition",
-      property_data_id_004: "roof age",
-      property_data_id_005: "shape & details",
-      property_data_id_007: "outline",
-      property_data_id_008: "imagery",
-    };
-    const parts = Object.keys(NAMES).map((pack) => {
-      const name = NAMES[pack];
-      if (ip.have.includes(pack)) return `${name} ✓`;
-      if (ip.unknown?.includes(pack)) return `${name} ?`;
-      return `${name} ✗`;
-    });
-    return `${AERIAL.coverage}: ` + parts.join(" · ");
-  }, [measurement]);
   const reconDown = measurement?.provenance?.reconUnavailable ?? null;
   const partialCoverage = measurement?.provenance?.partialCoverage ?? null;
   const photoShown = view === "satellite" ? satPhoto : orthoPhoto;
@@ -950,18 +915,14 @@ export function RoofEstimatorDataForm() {
           <div className="rf-head rf-head--bar">
             <div>
               <div className="card-title">Measure a roof</div>
-              <div className="card-sub">One address → measured figures from aerial data: area, pitch, structures and the aerial photo, ready to price.</div>
+              <div className="card-sub">
+                Type the address and pick it from the list. The roof’s area, pitch and structures come back from
+                aerial data with the photo, ready to price.
+              </div>
             </div>
-            <span className="chip ok">Instant · production</span>
           </div>
 
           <div className="rf-body">
-            <p className="rf-note">
-              <b>Instant measure</b> pulls real aerial property data in seconds — production account, billed
-              per lookup; an already-paid answer for the same address is reused automatically. The drawing tool
-              is offline while it is reworked: the page shows the measured <b>data</b> and the aerial photo.
-            </p>
-
             <div className="addr-grid">
               <label className="est-field addr-wide">
                 <span className="est-lbl">Address</span>
@@ -1002,50 +963,11 @@ export function RoofEstimatorDataForm() {
 
             <div className="rf-actions">
               <button className="btn btn-primary btn--sm" type="button" id="instantBtn" disabled={busy} onClick={() => void runInstant()}>
-                <svg className="ic"><use href="#i-target" /></svg>
-                {instantBusy ? "Measuring…" : "Instant measure"}
+                <svg className="ic"><use href="#i-roof" /></svg>
+                {instantBusy ? "Measuring…" : "Measure this roof"}
               </button>
-            </div>
-
-            {/* The no-EagleView path: the contractor's own squares + pitch price
-                and convert exactly like a measured roof. See ManualTakeoff. */}
-            <div className="rf-manual">
-              <div className="rf-manual-head">
-                <b>Already know the roof?</b> Enter the takeoff yourself — the roof size in squares and the
-                pitch are enough to price it and turn it into a proposal. Nothing is ordered or billed.
-              </div>
-              <div className="rf-manual-grid">
-                <label className="est-field est-field--sm">
-                  <span className="est-lbl">Roof size · squares</span>
-                  <input
-                    className="est-in"
-                    id="manSquares"
-                    inputMode="decimal"
-                    placeholder="24"
-                    value={manSquares}
-                    onChange={(e) => setManSquares(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") runManual();
-                    }}
-                  />
-                </label>
-                <label className="est-field est-field--sm">
-                  <span className="est-lbl">Pitch</span>
-                  <span className="bp-sel">
-                    <select className="bp-sel-in est-in" id="manPitch" value={manPitch} onChange={(e) => setManPitch(e.target.value)}>
-                      {PITCHES.map((p) => (
-                        <option key={p} value={p}>
-                          {p}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
-                </label>
-                <button className="btn btn-ghost btn--sm" type="button" id="manualBtn" disabled={busy} onClick={() => runManual()}>
-                  <svg className="ic"><use href="#i-file" /></svg>
-                  Price by hand
-                </button>
-              </div>
+              {/* What the click costs, said once, as a drawing annotation. */}
+              <span className="rf-actions-note">Billed per lookup · a paid answer for the same address is reused free</span>
             </div>
           </div>
         </div>
@@ -1131,7 +1053,7 @@ export function RoofEstimatorDataForm() {
                 </div>
               </div>
             )}
-            {(builtByOldPipeline || unsaved || reconDown || partialCoverage || evUndercount || pitchRep?.disagrees || (assessment && assessment.confidence !== "high")) && (
+            {(builtByOldPipeline || unsaved || reconDown || partialCoverage || evUndercount || pitchRep?.disagrees) && (
               <div className="rf-notice">
                 {evUndercount && (
                   <div className="call warn">
@@ -1189,15 +1111,6 @@ export function RoofEstimatorDataForm() {
                     </div>
                   </div>
                 )}
-                {assessment && assessment.confidence !== "high" && (
-                  <div className="call warn">
-                    <div>
-                      <span className="rf-stamp">{confidenceLabel(assessment.confidence)}</span>
-                      {assessment.reasons.join(" ")}
-                      {!assessment.estimable && <> These figures should not be used to price the job as they stand.</>}
-                    </div>
-                  </div>
-                )}
                 {partialCoverage && (
                   <div className="call warn">
                     <div>
@@ -1234,15 +1147,6 @@ export function RoofEstimatorDataForm() {
               <HeroCell l="Predominant pitch" v={pitchLabelShown} h={pitchHint} />
               <HeroCell l="Roof facets" v={totals?.facetCount != null ? String(totals.facetCount) : "—"} h="planes" />
             </div>
-            {/* Which EagleView packs this answer is made of. Shown only when the
-                measurement knows (rows since per-pack ordering, 2026-09-08) and
-                something is not there — a full seven-pack answer says nothing. */}
-            {packsLine && (
-              <div className="rf-notice">
-                <div className="rf-note rf-packs">{packsLine}</div>
-              </div>
-            )}
-
             {measurement && (
             <div className="rf-grid">
               <div className="card rf-card rf-viewer">
@@ -1305,8 +1209,8 @@ export function RoofEstimatorDataForm() {
                         {view === "satellite" && (
                           <div className="rf-pin-center" aria-hidden="true">
                             <svg viewBox="0 0 24 24">
-                              <path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z" />
-                              <circle cx="12" cy="9" r="2.5" fill="#fff" />
+                              <path d={PIN_PATH} fill="currentColor" stroke="#0a0a0a" strokeWidth="1.5" strokeLinejoin="round" />
+                              <circle cx="12" cy="9" r="2.6" fill="#fff" stroke="#0a0a0a" strokeWidth="1" />
                             </svg>
                           </div>
                         )}
@@ -1403,20 +1307,23 @@ export function RoofEstimatorDataForm() {
                     <div className="card-title">Structures</div>
                     <div className="card-sub">
                       {structure
-                        ? `Main structure: ${structure.areaSqft != null ? num(structure.areaSqft) + " sq ft" : "no area"}${structure.footprintSqft != null ? ` · footprint ${num(structure.footprintSqft)} sq ft` : ""}${mainPick.how === "nearest-pin" ? " · nearest the pin" : mainPick.how === "area+parcel" ? " · largest on the parcel" : ""}`
+                        ? `Main structure ${structure.areaSqft != null ? num(structure.areaSqft) + " sq ft" : "— no area"}${structure.footprintSqft != null ? ` · footprint ${num(structure.footprintSqft)} sq ft` : ""}`
                         : `${measurement.instant?.structures.length ?? 0} on the property`}
                     </div>
+                    {structure && (mainPick.how === "nearest-pin" || mainPick.how === "area+parcel") && (
+                      <div className="rf-pick">{mainPick.how === "nearest-pin" ? "Picked as nearest the pin" : "Picked as largest on the parcel"}</div>
+                    )}
                   </div>
                   {otherStructures.length > 0 && (
-                    /* The Details card's own <dl> rhythm and the page's
-                       checklist mark (.rf-attach): nothing new is styled. */
+                    /* The Details card's own <dl> rhythm; each other building
+                       is a drawn checkbox with a plain name, its figures right. */
                     <dl className="rf-details rf-others">
                       <div className="rf-details-sec">
                         Other structures on the parcel · {otherStructures.length} ·{" "}
                         {num(otherStructures.reduce((a, { s }) => a + (s.areaSqft ?? 0), 0))} sq ft
                       </div>
-                      <div className="rf-note">Off by default. Tick one to add it to the total and the estimate.</div>
-                      {otherStructures.map(({ s, i }) => (
+                      <div className="rf-note">Tick a building to add it to the total and the estimate.</div>
+                      {otherStructures.map(({ s, i }, k) => (
                         <div className="rf-details-row" key={i}>
                           <dt>
                             <label className={"rf-attach" + (extra.has(i) ? "" : " is-off")}>
@@ -1429,7 +1336,7 @@ export function RoofEstimatorDataForm() {
                                   setExtra(next);
                                 }}
                               />
-                              s{i}
+                              Building {k + 1}
                             </label>
                           </dt>
                           <dd>
@@ -1614,7 +1521,8 @@ export function RoofEstimatorDataForm() {
         }
         /* Centre-anchored pin over the STATIC satellite photo (the photo is
            centred on the measured point). Tip of the pin sits on the exact
-           centre; Google-marker red on purpose, to match the live map's pin. */
+           centre. Drawn in the house colours — blueprint fill, ink frame —
+           the same marker the live map and the intake preview use. */
         .jf-blueprint .content .rf-stage .rf-pin-center {
           position: absolute;
           left: 50%;
@@ -1622,13 +1530,13 @@ export function RoofEstimatorDataForm() {
           transform: translate(-50%, -100%);
           z-index: 4;
           pointer-events: none;
-          color: #ea4335;
-          filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+          color: var(--blueprint);
+          filter: drop-shadow(1px 2px 2px rgba(10, 10, 10, 0.45));
         }
         .jf-blueprint .content .rf-stage .rf-pin-center svg {
           display: block;
-          width: 28px;
-          height: 28px;
+          width: 30px;
+          height: 30px;
         }
         .jf-blueprint .content .rf-stage .rf-home .ic {
           width: 19px;

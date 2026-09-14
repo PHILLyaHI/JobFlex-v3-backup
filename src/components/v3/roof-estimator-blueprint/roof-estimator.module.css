@@ -1386,8 +1386,9 @@
 .bp :global(.content .rf-div)::before, .bp :global(.content .rf-div)::after { content: ''; flex: 1; height: 1.5px; background: var(--hair-soft); }
 .bp :global(.content .rf-div span) { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
 .bp :global(.content .rf-note) { max-width: 66ch; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
-.bp :global(.content .addr-grid) { display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; margin-top: 14px; }
-.bp :global(.content .addr-wide) { grid-column: span 2; }
+/* One address on one line: street wide, city, then the two short fields. */
+.bp :global(.content .addr-grid) { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 0.75fr) minmax(0, 0.75fr); gap: 11px; margin-top: 4px; }
+.bp :global(.content .addr-wide) { grid-column: auto; }
 .bp :global(.content .est-field) { display: block; }
 .bp :global(.content .est-lbl) { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
 .bp :global(.content .est-in) { width: 100%; height: var(--field-h); padding: 0 11px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font); font-size: 13px; color: var(--ink); }
@@ -1420,6 +1421,8 @@
 .bp :global(.content .rf-actions) { display: flex; align-items: center; gap: 11px; margin-top: 16px; padding-top: 15px; border-top: 1.5px solid var(--hair-soft); }
 .bp :global(.content .rf-actions .btn) { height: var(--field-h); padding: 0 15px; font-size: 12.5px; }
 .bp :global(.content .rf-actions .btn .ic) { width: 15px; height: 15px; }
+/* What the click costs, beside the button, in the annotation voice. */
+.bp :global(.content .rf-actions-note) { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.5; color: var(--muted); }
 .bp :global(.content .rf-price) { font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; color: var(--ink); }
 .bp :global(.content .rf-price b) { color: var(--blueprint); }
 
@@ -1858,19 +1861,24 @@
 
 /* Details card — a <dl> in the .lf-list rhythm: section kickers in mono caps,
    rows label / tabular value, 1.5px hairline dividers. */
-.bp :global(.content .rf-details) { margin: 0; padding: 4px 16px 12px; }
-.bp :global(.content .rf-details-sec) { padding: 12px 0 2px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
-.bp :global(.content .rf-details-row) { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1.5px solid var(--hair-soft); font-size: 13px; }
+/* Details / Structures ledgers: each section is a mono caption over a ruled
+   group — caption, rule, rows — with air between groups and none inside. */
+.bp :global(.content .rf-details) { margin: 0; padding: 0 18px 14px; }
+.bp :global(.content .rf-details-sec) { padding: 16px 0 5px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); border-bottom: 1.5px solid var(--ink); }
+.bp :global(.content .rf-details-row) { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1.5px solid var(--hair-soft); font-size: 13px; line-height: 1.3; }
 .bp :global(.content .rf-details-row:last-child) { border-bottom: none; }
 .bp :global(.content .rf-details-row dt) { color: var(--ink-soft); }
-.bp :global(.content .rf-details-row dd) { margin: 0; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; text-transform: capitalize; }
+.bp :global(.content .rf-details-row dd) { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; text-transform: capitalize; color: var(--ink); white-space: nowrap; }
+/* Which building the figures are about, under the Structures subtitle. */
+.bp :global(.content .rf-pick) { margin-top: 6px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .rf-others .rf-note) { padding: 8px 0 2px; }
 .bp :global(.content .rf-details-row dd span) { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: var(--muted); margin-left: 4px; text-transform: none; }
 .bp :global(.content .rf-details-how) { margin-left: 6px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 
 /* Attach-diagram checkbox beside Convert: a control-row box (--field-h) with a
    square ink checkbox — the checklist mark, not the OS widget. */
 .bp :global(.content .bo-total-acts) { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
-.bp :global(.content .rf-attach) { display: inline-flex; align-items: center; gap: 9px; min-height: var(--field-h); padding: 0 12px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); cursor: pointer; user-select: none; transition: border-color 0.12s, opacity 0.12s; }
+.bp :global(.content .rf-attach) { display: inline-flex; align-items: center; gap: 9px; min-height: 36px; padding: 0 12px 0 10px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-size: 12.5px; font-weight: 600; color: var(--ink); cursor: pointer; user-select: none; transition: border-color 0.12s, opacity 0.12s; }
 .bp :global(.content .rf-attach:hover) { border-color: var(--ink); }
 .bp :global(.content .rf-attach.is-off) { opacity: 0.6; }
 .bp :global(.content .rf-attach input) { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; margin: 0; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; cursor: pointer; }
@@ -1953,18 +1961,3 @@
   margin-top: 4px;
 }
 
-/* Hand-entered takeoff (2026-09-08) — the no-EagleView path on the intake
-   card. Same rhythm as .rf-actions above it: a ruled strip under the address
-   grid, fields at --field-h, the button matched to the fields' height. */
-.bp :global(.content .rf-manual) { margin-top: 16px; padding-top: 15px; border-top: 1.5px solid var(--hair-soft); }
-.bp :global(.content .rf-manual-head) { max-width: 66ch; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
-.bp :global(.content .rf-manual-head b) { color: var(--ink); }
-.bp :global(.content .rf-manual-grid) { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 11px; margin-top: 12px; }
-.bp :global(.content .rf-manual-grid .est-field--sm) { width: 150px; }
-.bp :global(.content .rf-manual-grid .btn) { height: var(--field-h); padding: 0 15px; font-size: 12.5px; }
-.bp :global(.content .rf-manual-grid .btn .ic) { width: 15px; height: 15px; }
-.bp :global(.content .rf-manual-grid .btn:disabled) { opacity: 0.5; pointer-events: none; }
-@media (max-width: 860px) {
-  .bp :global(.content .rf-manual-grid .est-field--sm) { flex: 1 1 120px; width: auto; }
-  .bp :global(.content .rf-manual-grid .btn) { flex: 1 1 100%; justify-content: center; }
-}
