@@ -17,14 +17,15 @@ import { Suspense, useState, useEffect } from "react";
 import { toast } from "@/components/ui/Toast";
 import type { PortalPayModel, PortalStage } from "@/lib/payments/portalModel";
 import { startCheckout, usePayReturn } from "@/components/v3/mobile-proposal-client/use-pay-return";
+import { useAcceptedLocally } from "./portal-accepted";
 
 type Provider = "stripe" | "square" | "stax";
 
-function statusWord(s: PortalStage): string {
+function statusWord(s: PortalStage, accepted: boolean): string {
   if (s.status === "PAID") return s.paidOn ? `Paid · ${s.paidOn}` : "Paid";
   if (s.status === "PENDING") return "Processing";
   if (s.status === "WAIVED") return "Closed";
-  return s.payable ? "Due now" : "Due";
+  return s.payable && accepted ? "Due now" : "Due";
 }
 
 function PayReturnBanner({ publicId }: { publicId: string }) {
@@ -57,8 +58,10 @@ export function PortalPayment({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   // COMPLETED still pays: finishing the work does not settle the money, and an
-  // approved change order can add to a finished job.
-  const accepted = model.status === "ACCEPTED" || model.status === "COMPLETED";
+  // approved change order can add to a finished job. The local flag is the
+  // Accept tap on this page, recorded by the server but not yet re-rendered.
+  const acceptedLocally = useAcceptedLocally(model.publicId);
+  const accepted = model.status === "ACCEPTED" || model.status === "COMPLETED" || acceptedLocally;
   const showHosted = model.anyHosted && method !== "bank";
   const showBank = model.bankTransfer.ok && method !== "card";
   useEffect(() => {
@@ -142,7 +145,7 @@ export function PortalPayment({
               <div className="pv-pay-line">
                 <span className="pv-pay-no">{s.no}</span>
                 <span className="pv-pay-n">{s.label}</span>
-                <span className={`pv-pay-st pv-pay-st--${s.status.toLowerCase()}`}>{statusWord(s)}</span>
+                <span className={`pv-pay-st pv-pay-st--${s.status.toLowerCase()}`}>{statusWord(s, accepted)}</span>
                 <span className="pv-pay-pct">{s.share}</span>
                 <span className="pv-pay-v">{s.amount}</span>
               </div>

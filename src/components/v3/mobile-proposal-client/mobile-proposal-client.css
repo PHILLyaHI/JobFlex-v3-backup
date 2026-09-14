@@ -1197,3 +1197,35 @@ body:has(.jf-mobile-proposal-client)::before { content: none; }
   border-radius: 10px; background: #fff; font-size: 13px; font-weight: 700; text-align: left; }
 .jf-mobile-proposal-client .mpc-seg-b.on { border-color: var(--blueprint); color: var(--blueprint);
   background: rgba(35,79,140,.06); }
+
+/* ── THE CLIENT'S HOUSE — the measurement's satellite photo, framed like a
+      drawing, under the two facts. Same photo as the desktop tree and the
+      PDF; it was simply never on the handheld page. ── */
+.jf-mobile-proposal-client .mpc-site {
+  margin: 18px 0 0;
+  border: 1.5px solid var(--hair);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--paper-deep);
+}
+.jf-mobile-proposal-client .mpc-site img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  max-height: 320px;
+  object-fit: cover;
+}
+.jf-mobile-proposal-client .mpc-site figcaption {
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-top: 1.5px solid var(--hair-soft);
+}
+/* Bank details inside the pay sheet, and the no-rail note under the plate. */
+.jf-mobile-proposal-client .mpc-sheet-bank { margin-top: 4px; }
+.jf-mobile-proposal-client .mpc-sheet-bank summary { min-height: 48px; display: flex; align-items: center; }
+.jf-mobile-proposal-client .mpc-pay-touch { margin-top: 14px; text-align: center; }

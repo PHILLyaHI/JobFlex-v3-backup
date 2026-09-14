@@ -40,7 +40,7 @@ export async function POST(
   }
 
   // Don't let a settled deal be flipped. Already-declined is idempotent.
-  if (proposal.status === "ACCEPTED" || proposal.status === "PAID") {
+  if (proposal.status === "ACCEPTED" || proposal.status === "PAID" || proposal.status === "COMPLETED") {
     return NextResponse.json(
       { error: "This proposal has already been accepted." },
       { status: 409 },

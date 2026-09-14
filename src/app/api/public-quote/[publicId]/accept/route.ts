@@ -22,7 +22,9 @@ export async function POST(
   // Don't let a settled deal be re-flipped. Already-accepted is idempotent (no
   // duplicate side effects); a PAID or DECLINED proposal can't regress to
   // ACCEPTED. Mirrors the guard in ../decline.
-  if (proposal.status === "ACCEPTED") {
+  // COMPLETED is accepted work that is done — the same idempotent answer,
+  // never a regression to ACCEPTED.
+  if (proposal.status === "ACCEPTED" || proposal.status === "COMPLETED") {
     return NextResponse.json({ ok: true, alreadyAccepted: true });
   }
   if (proposal.status === "PAID" || proposal.status === "DECLINED") {

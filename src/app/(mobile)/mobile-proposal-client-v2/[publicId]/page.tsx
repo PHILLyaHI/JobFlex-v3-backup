@@ -80,10 +80,18 @@ export default async function MobileProposalClientPage({
 
   if (!proposal || proposal.organization.deletedAt) return notFound();
   const pay = await buildPortalPayModel(publicId, proposal, proposal.organization, { money, longDate });
+  // The client's own house, when the proposal was priced from a measurement
+  // (roof estimator → convert). A link table not pushed yet means no photo.
+  let sitePhoto = false;
+  try {
+    sitePhoto = !!(await db.proposalSitePhoto.findUnique({ where: { proposalId: proposal.id }, select: { id: true } }));
+  } catch {
+    sitePhoto = false;
+  }
 
   return (
     <MobileProposalClient
-      view={buildPortalView(publicId, proposal, { money, longDate }, { pay, terms: "" })}
+      view={buildPortalView(publicId, proposal, { money, longDate }, { pay, terms: "", sitePhoto })}
     />
   );
 }

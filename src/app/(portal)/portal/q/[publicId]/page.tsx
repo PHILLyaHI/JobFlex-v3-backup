@@ -179,6 +179,7 @@ export default async function PublicProposalPortal({
   const view = buildPortalView(publicId, proposal, { money, longDate }, {
     pay: payModel,
     terms: orgTerms,
+    sitePhoto,
   });
 
   return (

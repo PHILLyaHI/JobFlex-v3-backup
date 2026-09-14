@@ -26,6 +26,7 @@ import type { EstimateLine } from "@/components/estimator/EstimatorBreakdown";
 import { assessRoof, confidenceLabel } from "@/lib/roofDiagram/confidence";
 import type { MeasurementSource, RoofMeasurementDTO, RoofMeasurementSummary } from "@/lib/roofDiagram/types";
 import {
+  collectPendingInstant,
   getMeasurementOrtho,
   getMeasurementPhoto,
   getRoofMeasurement,
@@ -207,6 +208,63 @@ export function RoofEstimatorDataForm() {
    * shows its own stored numbers, never rebuilt ones.
    */
   const builtByOldPipeline = !!measurement?.calibration;
+
+  // ── Packs still coming from the aerial provider ──
+  // A save with the area alone (the grouped pack order was slower than the
+  // 30 s poll) shows zero facets and no pitch. Rather than wait for the next
+  // click, ask the server to collect the pending orders every few seconds for
+  // about two minutes and swap the fuller measurement in when it lands.
+  const packsIncomplete = React.useMemo(() => {
+    const ip = measurement?.provenance?.instantPacks;
+    if (!ip || measurement?.source === "recon" || !measurement?.instant) return false;
+    return ip.failed.length > 0 || ip.missing.length > 0;
+  }, [measurement]);
+  const [collecting, setCollecting] = React.useState<null | "checking" | "gave-up">(null);
+  const collectFor = measurement && packsIncomplete && measurement.id !== "unsaved" ? measurement.id : null;
+  // The chip belongs to the measurement being collected for — a swap to a
+  // complete one (or to none) drops it without a render-time state write.
+  const collectingShown = collectFor ? collecting : null;
+  React.useEffect(() => {
+    if (!collectFor) return;
+    let cancelled = false;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      if (cancelled) return;
+      attempts += 1;
+      let more = true;
+      try {
+        const res = await collectPendingInstant(collectFor);
+        if (cancelled) return;
+        if (res.ok && res.updated) {
+          setMeasurement(res.measurement);
+          toast.success("More aerial data arrived", "Pitch, facets and details filled in from the order that was still processing.");
+          more = res.pending > 0;
+        } else if (res.ok && res.pending === 0) {
+          // Nothing pending in the ledger — the packs are simply not there (refused, or failed for good).
+          more = false;
+        }
+      } catch {
+        /* a failed check is retried on the next tick */
+      }
+      if (cancelled) return;
+      if (!more) {
+        setCollecting(null);
+        return;
+      }
+      if (attempts >= 20) {
+        setCollecting("gave-up");
+        return;
+      }
+      setCollecting("checking");
+      timer = setTimeout(() => void tick(), 6_000);
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [collectFor]);
 
   // ── Recent measurements ──
   const [recent, setRecent] = React.useState<RoofMeasurementSummary[]>([]);
@@ -896,6 +954,34 @@ export function RoofEstimatorDataForm() {
           measured: manual ? null : report.state === "measured" ? report.footage ?? null : null,
         }
       : null;
+  // Lineal feet for the hero. The Instant packs carry no lengths at all:
+  // these are MEASURED only when the full aerial report exists for the
+  // address (ridge, hip, valley, eave and rake as flown); otherwise eave,
+  // rake, ridge and hip are ESTIMATED from the outline and the roof shape,
+  // and valleys stay unknown until the report is ordered.
+  const edgeTiles = (() => {
+    const mf = report.state === "measured" ? report.footage ?? null : null;
+    if (mf) {
+      return {
+        edges: `${num(mf.eaveFt + mf.rakeFt)} ft`,
+        ridge: `${num(mf.ridgeFt + mf.hipFt)} ft`,
+        valley: `${num(mf.valleyFt)} ft`,
+        hint: `measured · full aerial report${report.reportId ? ` #${report.reportId}` : ""}`,
+        valleyHint: "measured · full aerial report",
+      };
+    }
+    const est = roofFacts && !manual ? estimateEdges(roofFacts) : null;
+    if (est) {
+      return {
+        edges: `≈ ${num(est.eaveFt + est.rakeFt)} ft`,
+        ridge: `≈ ${num(est.ridgeFt + est.hipFt)} ft`,
+        valley: "—",
+        hint: "estimated from outline · confirm on photo",
+        valleyHint: "not in instant data · full report measures it",
+      };
+    }
+    return { edges: "—", ridge: "—", valley: "—", hint: "needs an outline", valleyHint: "full report measures it" };
+  })();
   // The provider's own score for the eave figure (one score for the whole
   // field, 0..1; "not scored" was dropped at parse). Identical classes on all
   // four sides read as suspicious — this says how much the provider itself
@@ -1053,6 +1139,18 @@ export function RoofEstimatorDataForm() {
                 </div>
               </div>
             )}
+            {collectingShown && !manual && (
+              <div className="rf-notice">
+                <div className={"call " + (collectingShown === "checking" ? "info" : "warn")}>
+                  <div>
+                    <span className="rf-stamp">{collectingShown === "checking" ? "STILL COLLECTING" : "NOT ALL IN YET"}</span>
+                    {collectingShown === "checking"
+                      ? "The aerial provider is still working on the rest of this order — pitch, facets, details and imagery load here by themselves as they land. No need to measure again; nothing extra is charged."
+                      : "The aerial provider is taking longer than usual with the rest of this order. Reopen this measurement from Recent measurements later and it collects the rest without a new charge."}
+                  </div>
+                </div>
+              </div>
+            )}
             {(builtByOldPipeline || unsaved || reconDown || partialCoverage || evUndercount || pitchRep?.disagrees) && (
               <div className="rf-notice">
                 {evUndercount && (
@@ -1146,6 +1244,9 @@ export function RoofEstimatorDataForm() {
               <HeroCell l="Roofing squares" v={totals?.squares != null ? num(totals.squares, 1) : "—"} h="× 100 sq ft" accent />
               <HeroCell l="Predominant pitch" v={pitchLabelShown} h={pitchHint} />
               <HeroCell l="Roof facets" v={totals?.facetCount != null ? String(totals.facetCount) : "—"} h="planes" />
+              <HeroCell l="Eaves + rakes" v={edgeTiles.edges} h={edgeTiles.hint} />
+              <HeroCell l="Ridge + hips" v={edgeTiles.ridge} h={edgeTiles.hint} />
+              <HeroCell l="Valleys" v={edgeTiles.valley} h={edgeTiles.valleyHint} />
             </div>
             {measurement && (
             <div className="rf-grid">

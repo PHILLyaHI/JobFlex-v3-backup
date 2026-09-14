@@ -27,7 +27,10 @@ export type PortalStage = {
   amountMinor: number;
   status: "UNPAID" | "PENDING" | "PAID" | "WAIVED";
   paidOn: string | null;
-  /** The earliest open stage — the only one with buttons. */
+  /** The earliest open stage — the only one with buttons. Says nothing about
+   *  the proposal's status: the trees gate on acceptance themselves (they know
+   *  about an accept that is still in flight), and the checkout refuses an
+   *  unaccepted proposal on the server (lib/payments/createCheckout). */
   payable: boolean;
   belowMin: { stripe: boolean; square: boolean; stax: boolean };
   /** No DB row (implicit full-payment / balance line). */
@@ -99,9 +102,13 @@ export async function buildPortalPayModel(
   });
   const paidAtById = new Map(proposal.installments.map((i) => [i.id, i.paidAt ?? null]));
 
-  // COMPLETED still pays: finishing the work does not settle the money, and
-  // an approved change order can add to a finished job.
-  const payableStatus = proposal.status === "ACCEPTED" || proposal.status === "COMPLETED";
+  // Whether the client may ACT is not decided here. Both trees flip to
+  // "accepted" the instant the client taps Accept — before the accept POST
+  // (which waits on two emails) returns and before router.refresh() brings a
+  // re-rendered model — so a status gate in this model left the deposit with
+  // no pay button for the seconds that matter most (owner, on a phone,
+  // 2026-09-14). The trees gate on their own settled state; the checkout
+  // route refuses anything not ACCEPTED/COMPLETED regardless.
   const stages: PortalStage[] = schedule.stages.map((s, i) => ({
     id: s.id,
     no: String(i + 1).padStart(2, "0"),
@@ -111,7 +118,7 @@ export async function buildPortalPayModel(
     amountMinor: s.amountMinor,
     status: s.status,
     paidOn: s.status === "PAID" ? fmt.longDate(paidAtById.get(s.id) ?? null) || null : null,
-    payable: s.payable && payableStatus,
+    payable: s.payable,
     belowMin: {
       stripe: isBelowMin(s.amountMinor, "STRIPE"),
       square: isBelowMin(s.amountMinor, "SQUARE"),
@@ -147,8 +154,8 @@ export async function buildPortalPayModel(
     remainingMinor: schedule.remainingMinor,
     balance: fmt.money(fromMinor(schedule.balanceMinor)),
     balanceMinor: schedule.balanceMinor,
-    nextPayableId: payableStatus ? schedule.nextPayableId : null,
-    showRemaining: payableStatus && schedule.remainingMinor > 0 && openCount > 1,
+    nextPayableId: schedule.nextPayableId,
+    showRemaining: schedule.remainingMinor > 0 && openCount > 1,
     providers: { stripe: options.stripe, square: options.square, stax: options.stax },
     bankTransfer: options.bankTransfer,
     anyHosted,
