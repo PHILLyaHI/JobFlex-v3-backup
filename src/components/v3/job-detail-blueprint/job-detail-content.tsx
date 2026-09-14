@@ -519,7 +519,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
               <span className={cx("jd-s")}>client-signed extras</span>
               {record.canWrite && (
                 <button className={cx("btn", "btn-primary")} type="button" onClick={() => setCoOpen(true)}>
-                  New change order
+                  {record.changes.length ? `Change orders · ${record.changes.length}` : "New change order"}
                 </button>
               )}
             </div>

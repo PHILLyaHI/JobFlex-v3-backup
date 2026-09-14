@@ -697,7 +697,7 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                 </div>
                 {record.canWrite && (
                   <button className="mjd-btn mjd-btn-primary" type="button" onClick={() => setCoOpen(true)}>
-                    New change order
+                    {record.changes.length ? `Change orders · ${record.changes.length}` : "New change order"}
                   </button>
                 )}
                 {record.changes.length === 0 ? (

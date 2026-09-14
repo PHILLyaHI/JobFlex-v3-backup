@@ -287,6 +287,55 @@ export async function createChangeOrder(raw: unknown): Promise<{ id: string; pub
   return { id: co.id, publicToken: co.publicToken, number, total: totals.total, sent };
 }
 
+/** Edit a DRAFT in place — title, reason, lines, photos, type. Totals are recomputed the same way. */
+export async function updateChangeOrder(id: string, raw: unknown): Promise<{ id: string; total: number; sent?: SendReport }> {
+  const { organizationId, user } = await requireManager();
+  const data = createChangeOrderSchema.parse(raw);
+  const co = await db.changeOrder.findFirst({ where: { id, organizationId }, select: { id: true, status: true, jobId: true, proposalId: true } });
+  if (!co) throw new Error("Not found");
+  if (co.status !== CO_STATUS.DRAFT) throw new Error("Only a draft can be edited. Withdraw a sent change order and make a new one.");
+  let taxRate = 0;
+  if (co.proposalId) {
+    const proposal = await db.proposal.findFirst({ where: { id: co.proposalId, organizationId }, select: { taxRate: true } });
+    taxRate = normalizeTaxRate(proposal?.taxRate);
+  } else {
+    const org = await db.organization.findUnique({ where: { id: organizationId }, select: { defaultTaxRate: true } });
+    taxRate = normalizeTaxRate(org?.defaultTaxRate);
+  }
+  const totals = totalsForLines(data.lines, taxRate, data.taxable);
+  await db.changeOrder.update({
+    where: { id },
+    data: {
+      kind: data.kind,
+      title: data.title.trim(),
+      description: data.reason?.trim() || null,
+      reason: data.reason?.trim() || null,
+      linesJson: JSON.stringify(data.lines),
+      photosJson: JSON.stringify(data.photos),
+      amount: totals.subtotal,
+      taxable: data.taxable,
+      taxRate: totals.taxRate,
+      taxTotal: totals.taxTotal,
+      total: totals.total,
+    },
+  });
+  for (const r of data.remember) {
+    try {
+      await db.changeOrderPricePref.upsert({
+        where: { organizationId_typeKey_itemKey: { organizationId, typeKey: data.kind, itemKey: r.itemKey } },
+        create: { organizationId, typeKey: data.kind, itemKey: r.itemKey, unitPrice: r.unitPrice, lastQuantity: r.lastQuantity ?? null },
+        update: { unitPrice: r.unitPrice, lastQuantity: r.lastQuantity ?? null },
+      });
+    } catch {
+      break;
+    }
+  }
+  let sent: SendReport | undefined;
+  if (data.send) sent = await sendById(co.id, organizationId, user.id);
+  revalidateForChangeOrder(co.jobId, co.proposalId);
+  return { id: co.id, total: totals.total, sent };
+}
+
 async function sendById(id: string, organizationId: string, actorId: string): Promise<SendReport> {
   const { count } = await db.changeOrder.updateMany({
     where: { id, organizationId, status: CO_STATUS.DRAFT },

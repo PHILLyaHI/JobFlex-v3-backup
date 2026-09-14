@@ -46,7 +46,7 @@ import {
   updateProposalStatus,
   uploadProposalPhoto,
 } from "@/actions/proposals";
-import { notifyPaymentReminder, setProposalReminders } from "@/actions/notify";
+import { notifyPaymentReminder, setProposalReminders, sendInstallmentInvoice, getInvoiceOptions } from "@/actions/notify";
 import { markInstallmentPaid, unmarkInstallmentPaid } from "@/actions/installments";
 // The handheld surface's route-local read of the SAME book this page renders
 // from (same query, same requireProposalStaff guard) — used to pick up a row
@@ -193,6 +193,40 @@ export function initProposalsContent(
     if (inst.status === "PAID" && inst.paidAmt != null) return inst.paidAmt;
     return inst.pct ? Math.round(p.total * (inst.amount / 100)) : inst.amount;
   }
+  /** Paid vs contract, as a bar and a sentence — the "is it paid?" measure. */
+  function payBarHtml(p: ProposalRow): string {
+    const contract = p.contract ?? p.total;
+    const paid = p.paidAmt ?? 0;
+    const pct = contract > 0 ? Math.max(0, Math.min(100, Math.round((paid / contract) * 100))) : 0;
+    const full = contract > 0 && p.owed <= 0;
+    return (
+      '<div class="ppay' + (full ? " ppay--full" : "") + '">' +
+      '<div class="ppay-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><span style="width:' + pct + '%"></span></div>' +
+      '<div class="ppay-line">' +
+      '<span class="ppay-paid"><b>' + fmtMoney(paid) + '</b> paid · ' + pct + '%</span>' +
+      (full
+        ? '<span class="ppay-tag ppay-tag--ok"><svg class="ic"><use href="#i-check"/></svg>Paid in full</span>'
+        : '<span class="ppay-tag"><b>' + fmtMoney(p.owed) + '</b> balance</span>') +
+      "</div>" +
+      "</div>"
+    );
+  }
+  /** "2 change orders · +$1,080 approved · 1 awaiting approval" — or nothing. */
+  function coChipHtml(p: ProposalRow): string {
+    const co = p.co;
+    if (!co || !co.count) return "";
+    const bits: string[] = [];
+    if (co.approvedTotal) bits.push((co.approvedTotal > 0 ? "+" : "−") + fmtMoney(Math.abs(co.approvedTotal)) + " approved");
+    if (co.pending) bits.push(co.pending + " awaiting approval" + (co.pendingTotal ? " (" + (co.pendingTotal > 0 ? "+" : "−") + fmtMoney(Math.abs(co.pendingTotal)) + ")" : ""));
+    if (co.drafts) bits.push(co.drafts + " draft" + (co.drafts === 1 ? "" : "s"));
+    return (
+      '<button class="pco-chip' + (co.pending ? " pco-chip--wait" : "") + '" type="button" data-act="change-order" title="Open the change orders">' +
+      '<svg class="ic"><use href="#i-plus"/></svg>' +
+      co.count + " change order" + (co.count === 1 ? "" : "s") +
+      (bits.length ? " · " + bits.join(" · ") : "") +
+      "</button>"
+    );
+  }
   function instCellActions(p: ProposalRow, inst: Installment): string {
     if (inst.status === "PAID") {
       const via = inst.paidVia === "STRIPE" ? "Stripe" : inst.paidVia === "SQUARE" ? "Square" : "manual";
@@ -212,6 +246,9 @@ export function initProposalsContent(
       '<button class="btn btn-ghost btn--sm" type="button" data-act="markpaid" data-inst="' +
       esc(inst.id) +
       '"><svg class="ic"><use href="#i-check"/></svg>Mark paid</button>' +
+      '<button class="btn btn-ghost btn--sm" type="button" data-act="invoice" data-inst="' +
+      esc(inst.id) +
+      '"><svg class="ic"><use href="#i-send"/></svg>Send invoice</button>' +
       '<button class="btn btn-ghost btn--sm" type="button" data-act="remind" data-inst="' +
       esc(inst.id) +
       '"' +
@@ -400,6 +437,9 @@ export function initProposalsContent(
       esc(p.title) +
       '</div><div class="pt-sub">' +
       esc(subLine(p)) +
+      (p.co && p.co.count
+        ? ' · <span class="pt-co' + (p.co.pending ? " pt-co--wait" : "") + '">' + p.co.count + " change order" + (p.co.count === 1 ? "" : "s") + (p.co.pending ? " · " + p.co.pending + " awaiting approval" : "") + "</span>"
+        : "") +
       "</div></td>" +
       '<td><span class="pstatus ' +
       st.cls +
@@ -407,8 +447,12 @@ export function initProposalsContent(
       esc(st.label) +
       "</span></td>" +
       '<td class="num"><span class="pt-money">' +
-      fmtMoney(p.total) +
-      "</span></td>" +
+      fmtMoney(p.contract ?? p.total) +
+      "</span>" +
+      (p.status === "ACCEPTED" || p.status === "COMPLETED" || p.status === "PAID"
+        ? '<div class="pt-paid' + (p.owed <= 0 ? " pt-paid--full" : "") + '">' + (p.owed <= 0 ? "paid in full" : "paid " + fmtMoney(p.paidAmt ?? 0) + " · " + fmtMoney(p.owed) + " due") + "</div>"
+        : "") +
+      "</td>" +
       '<td><span class="pt-mono">' +
       esc(p.updated) +
       "</span></td>" +
@@ -537,20 +581,26 @@ export function initProposalsContent(
       (p.accepted ? " · accepted " + esc(p.accepted) : "") +
       "</div></div>" +
       '<div class="pjob-total"><span class="pt-mono">Contract value</span><span class="pt-money">' +
-      fmtMoney(p.total) +
-      "</span></div>" +
+      fmtMoney(p.contract ?? p.total) +
+      "</span>" +
+      (p.co && p.co.approvedTotal
+        ? '<span class="pt-mono pjob-total-sub">' + fmtMoney(p.total) + " + " + fmtMoney(p.co.approvedTotal) + " in changes</span>"
+        : "") +
       "</div>" +
+      "</div>" +
+      payBarHtml(p) +
+      (p.co && p.co.count ? '<div class="pjob-cos">' + coChipHtml(p) + "</div>" : "") +
       payBlock +
       '<div class="pjob-foot">' +
       '<div class="pjob-foot-l">' +
       // Real: the scheduling surface. An anchor, not a handler, so ⌘-click and
       // "open in new tab" behave — the same shape the Pressroom edition uses.
       '<a class="btn btn-ghost btn--sm" href="/dashboard/calendar"><svg class="ic"><use href="#i-cal"/></svg>Schedule</a>' +
-      // Real: mails the client a payment request for the outstanding balance
-      // (notifyPaymentReminder with no instalment = the whole total).
-      '<button class="btn btn--accent btn--sm" type="button" data-act="request"' +
-      (p.clientEmail ? "" : " disabled") +
-      '><svg class="ic"><use href="#i-msg"/></svg>Request payment</button>' +
+      // Real (2026-09-13): invoice the outstanding balance on a chosen rail —
+      // card, bank transfer, or the client's choice (the invoice dialog).
+      '<button class="btn btn--accent btn--sm" type="button" data-act="invoice"' +
+      (p.owed > 0 ? "" : " disabled") +
+      '><svg class="ic"><use href="#i-send"/></svg>Send invoice</button>' +
       // Real: opens the same materials sheet the row menu opens.
       '<button class="btn btn-ghost btn--sm" type="button" data-act="materials"><svg class="ic"><use href="#i-box"/></svg>Materials · ' +
       (p.mat || 0) +
@@ -562,7 +612,9 @@ export function initProposalsContent(
       "</button>" +
       // Real (2026-09-13): the change-order sheet — plywood found on tear-off
       // day, priced and sent for the client's signature from this card.
-      '<button class="btn btn-ghost btn--sm" type="button" data-act="change-order"><svg class="ic"><use href="#i-plus"/></svg>Change order</button>' +
+      '<button class="btn btn-ghost btn--sm" type="button" data-act="change-order"><svg class="ic"><use href="#i-plus"/></svg>' +
+      (p.co && p.co.count ? "Change orders · " + p.co.count : "Change order") +
+      "</button>" +
       // Real: the client-facing page for this proposal.
       '<a class="btn btn-ghost btn--sm" href="/portal/q/' +
       encodeURIComponent(p.publicId) +
@@ -649,9 +701,13 @@ export function initProposalsContent(
       esc(subLine(p)) +
       "</div></div>" +
       '<div><span class="psheet-banklbl">Banked</span><span class="pt-money banked big">' +
-      fmtMoney(p.total) +
-      "</span></div>" +
+      fmtMoney(p.paidAmt ?? 0) +
+      "</span>" +
+      (p.owed > 0 ? '<span class="pt-mono pjob-total-sub">of ' + fmtMoney(p.contract ?? p.total) + "</span>" : "") +
       "</div>" +
+      "</div>" +
+      payBarHtml(p) +
+      (p.co && p.co.count ? '<div class="pjob-cos">' + coChipHtml(p) + "</div>" : "") +
       '<div class="pcols pcols--sheet">' +
       '<div class="pcol"><div class="kpi-lbl">Deposit</div><div class="pcol-val">' +
       dep +
@@ -690,7 +746,12 @@ export function initProposalsContent(
       encodeURIComponent(p.id) +
       '/pdf" target="_blank" rel="noopener noreferrer"><svg class="ic"><use href="#i-download"/></svg>Download PDF</a>' +
       "</div>" +
-      '<button class="btn btn-ghost btn--sm" type="button" data-act="change-order"><svg class="ic"><use href="#i-plus"/></svg>Change order</button>' +
+      '<button class="btn btn-ghost btn--sm" type="button" data-act="invoice"' +
+      (p.owed > 0 ? "" : " disabled") +
+      '><svg class="ic"><use href="#i-send"/></svg>Send invoice</button>' +
+      '<button class="btn btn-ghost btn--sm" type="button" data-act="change-order"><svg class="ic"><use href="#i-plus"/></svg>' +
+      (p.co && p.co.count ? "Change orders · " + p.co.count : "Change order") +
+      "</button>" +
       '<button class="btn btn-ghost btn--sm" type="button" data-act="unmark"><svg class="ic"><use href="#i-undo"/></svg>Reopen job</button>' +
       "</div>" +
       "</div>"
@@ -1083,6 +1144,7 @@ export function initProposalsContent(
       const which = dismiss.dataset.mdl;
       if (which === "send") closeDlg("sendMdl");
       if (which === "del") closeDlg("delMdl");
+      if (which === "inv") closeDlg("invMdl");
       if (which === "alert") closeDlg("alertMdl");
       return;
     }
@@ -1207,8 +1269,8 @@ export function initProposalsContent(
         void runUnmark(p, act.dataset.inst ?? "", act);
         return;
       }
-      if (kind === "request" && p) {
-        void runReminder(p, "", act);
+      if (kind === "invoice" && p) {
+        promptInvoice(p, act.dataset.inst ?? "");
         return;
       }
     }
@@ -1279,6 +1341,82 @@ export function initProposalsContent(
   }
 
   let sendId: string | null = null;
+  // ── Send invoice: pick the rail, then it goes (lib/payments/invoices) ──
+  let invCtx: { proposalId: string; installmentId: string | null } | null = null;
+  let invOpts: { card: boolean; bank: boolean; cardVia: string[] } | null = null;
+  void getInvoiceOptions()
+    .then((o) => {
+      invOpts = o;
+      syncInvoiceOptions();
+    })
+    .catch(() => {});
+  function syncInvoiceOptions() {
+    const card = $<HTMLButtonElement>("#invCard");
+    const bank = $<HTMLButtonElement>("#invBank");
+    const any = $<HTMLButtonElement>("#invAny");
+    if (!invOpts) return;
+    if (card) {
+      card.disabled = !invOpts.card;
+      const sub = card.querySelector(".inv-sub");
+      if (sub) sub.textContent = invOpts.card ? "Hosted checkout · " + invOpts.cardVia.join(" / ") : "No card processor connected — Settings → Payments";
+    }
+    if (bank) {
+      bank.disabled = !invOpts.bank;
+      const sub = bank.querySelector(".inv-sub");
+      if (sub) sub.textContent = invOpts.bank ? "Your transfer details go in the email; the portal shows only those" : "Add bank-transfer instructions in Settings → Payments";
+    }
+    if (any) any.disabled = !(invOpts.card || invOpts.bank);
+  }
+  function promptInvoice(p: ProposalRow, installmentId: string) {
+    const inst = installmentId ? (p.inst || []).find((i) => i.id === installmentId) ?? null : null;
+    invCtx = { proposalId: p.id, installmentId: inst ? inst.id : null };
+    const title = $("#invTitle");
+    if (title) title.textContent = inst ? `Invoice · ${inst.label}` : "Invoice · remaining balance";
+    const note = $("#invNote");
+    if (note) {
+      const amount = inst ? instDollars(p, inst) : p.owed;
+      note.textContent =
+        `${fmtMoney(amount)} on "${p.title}" for ${p.client}. ` +
+        (p.clientEmail ? "The invoice goes to the email on the client record" : "This client has no email on file — a text goes out if there is a phone") +
+        ". Choose how they should pay:";
+    }
+    setDlgError("#invErr", null);
+    syncInvoiceOptions();
+    openDlg("invMdl");
+  }
+  for (const [id, method] of [["#invCard", "card"], ["#invBank", "bank"], ["#invAny", "any"]] as const) {
+    const btn = $<HTMLButtonElement>(id);
+    if (!btn) continue;
+    on(btn, "click", () => {
+      if (pstate.writing || !invCtx) return;
+      void sendInvoiceNow(method, btn);
+    });
+  }
+  async function sendInvoiceNow(method: "card" | "bank" | "any", btn: HTMLButtonElement) {
+    if (!invCtx) return;
+    pstate.writing = true;
+    btn.disabled = true;
+    setDlgError("#invErr", null);
+    try {
+      const r = await sendInstallmentInvoice(invCtx.proposalId, invCtx.installmentId, method);
+      if (!r.ok) {
+        setDlgError("#invErr", r.error ?? "Couldn't send the invoice.");
+        return;
+      }
+      closeDlg("invMdl");
+      showAlert(
+        "Invoice sent",
+        `${fmtMoney(r.amount)} — ${r.label}. Email ${r.email}, text ${r.sms}. The client pays from the link${method === "bank" ? " or by bank transfer using the details in the email" : ""}.`,
+      );
+    } catch (err) {
+      setDlgError("#invErr", actionError(err));
+    } finally {
+      pstate.writing = false;
+      btn.disabled = false;
+      syncInvoiceOptions();
+    }
+  }
+
   function promptSend(p: ProposalRow) {
     sendId = p.id;
     const title = $("#sendTitle");

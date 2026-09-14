@@ -15,7 +15,7 @@
 // rendered in place (2026-09-13, live screenshot).
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { Camera, Check, Copy, Link2, Plus, Send, Trash2, Undo2 } from "lucide-react";
+import { Camera, Check, ChevronDown, Copy, ExternalLink, Link2, Pencil, Plus, Send, Trash2, Undo2 } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
@@ -30,6 +30,7 @@ import {
   markChangeOrderApproved,
   sendChangeOrder,
   sendChangeOrderInvoice,
+  updateChangeOrder,
   uploadChangeOrderPhoto,
   voidChangeOrder,
   type ChangeOrderContext,
@@ -112,6 +113,9 @@ export function ChangeOrderSheet({
   const [creating, setCreating] = React.useState(true);
   const [rowBusy, setRowBusy] = React.useState<string | null>(null);
   const [invoiceFor, setInvoiceFor] = React.useState<string | null>(null);
+  // Rows open to show their lines, photos and history; a DRAFT can be edited in place.
+  const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
+  const [editingId, setEditingId] = React.useState<string | null>(null);
 
   // Context on open: the parent, tax, the roof family, the company's prices.
   const [openedFor, setOpenedFor] = React.useState<string | null>(null);
@@ -176,19 +180,22 @@ export function ChangeOrderSheet({
   const sheetSqft = type.helpers.sheetSqft ?? 32;
 
   const lines: CoLine[] = React.useMemo(() => {
-    if (type.areas) {
-      return linesForAreas({
-        itemLabel,
-        itemKey: itemKey === CUSTOM_ITEM ? "custom" : itemKey,
-        thickness: itemThickness,
-        unit: type.unit,
-        unitPrice: num(unitPrice),
-        areas: areas.map((a) => ({ id: a.id, label: a.label, quantity: areaSqft(a, sheetSqft) })),
-      });
-    }
-    return free
+    const areaLines = type.areas
+      ? linesForAreas({
+          itemLabel,
+          itemKey: itemKey === CUSTOM_ITEM ? "custom" : itemKey,
+          thickness: itemThickness,
+          unit: type.unit,
+          unitPrice: num(unitPrice),
+          areas: areas.map((a) => ({ id: a.id, label: a.label, quantity: areaSqft(a, sheetSqft) })),
+        })
+      : [];
+    // Extra lines ride on any type — on a plywood order, the labor or disposal
+    // that goes with it; on a generic one, everything.
+    const extra = free
       .filter((l) => l.name.trim() && num(l.quantity) > 0)
       .map((l) => ({ key: "custom", name: l.name.trim(), quantity: num(l.quantity), unit: l.unit, unitPrice: num(l.unitPrice), kind: l.kind }));
+    return [...areaLines, ...extra];
   }, [type, itemLabel, itemKey, itemThickness, unitPrice, areas, sheetSqft, free]);
 
   const totals = totalsForLines(lines, ctx?.taxRate ?? 0, true);
@@ -224,7 +231,42 @@ export function ChangeOrderSheet({
     setPhotos([]);
     setCustomName("");
     setCustomThickness("");
+    setEditingId(null);
     setOpenedFor(null);
+  }
+
+  /** Load a DRAFT back into the form. Area lines carry `meta.area`; anything else is an extra line. */
+  function startEdit(o: ChangeOrderRowDto) {
+    const t = ctx?.types.find((x) => x.key === o.kind) ?? (o.kind === PLYWOOD_TYPE.key ? PLYWOOD_TYPE : CUSTOM_TYPE);
+    setType(t);
+    setTitle(o.title);
+    setReason(o.reason ?? "");
+    setPhotos(o.photos.map((ph) => ({ id: ph.id, url: ph.url })));
+    const areaLines = t.areas ? o.lines.filter((l) => l.meta && "area" in l.meta) : [];
+    const extra = o.lines.filter((l) => !areaLines.includes(l));
+    if (t.areas) {
+      const first = areaLines[0];
+      const key = first?.key ?? t.items[0]?.key ?? CUSTOM_ITEM;
+      const known = t.items.some((i) => i.key === key);
+      setItemKey(known ? key : CUSTOM_ITEM);
+      if (!known && first) {
+        setCustomName(first.name.split(" · ")[0]);
+        setCustomThickness(String(first.meta?.thickness ?? ""));
+      }
+      setUnitPrice(String(first?.unitPrice ?? ""));
+      setAreas(areaLines.length ? areaLines.map((l) => ({ ...newArea(String(l.meta?.area ?? "")), mode: "sqft" as AreaMode, sqft: String(l.quantity) })) : [newArea()]);
+    }
+    setFree(extra.map((l) => ({ id: uid(), name: l.name, quantity: String(l.quantity), unit: l.unit, unitPrice: String(l.unitPrice), kind: l.kind })));
+    setEditingId(o.id);
+    setCreating(true);
+  }
+  function toggleRow(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   async function submit(send: boolean) {
@@ -244,7 +286,7 @@ export function ChangeOrderSheet({
     setBusy(send ? "send" : "draft");
     try {
       const rememberKey = itemKey === CUSTOM_ITEM ? "custom" : itemKey;
-      const res = await createChangeOrder({
+      const payload = {
         ...(jobId ? { jobId } : {}),
         ...(proposalId ? { proposalId } : {}),
         kind: type.key,
@@ -255,13 +297,15 @@ export function ChangeOrderSheet({
         taxable: true,
         send,
         remember: type.areas ? [{ itemKey: rememberKey, unitPrice: num(unitPrice), lastQuantity: totalSqft }] : [],
-      });
+      };
+      const res = editingId ? await updateChangeOrder(editingId, payload) : await createChangeOrder(payload);
+      const label = "number" in res ? `Change order #${res.number}` : "Change order";
       if (send) {
         const s = res.sent;
         const how = [s?.email === "sent" ? "email" : null, s?.sms === "sent" ? "text" : null].filter(Boolean).join(" + ");
-        toast.success(`Change order #${res.number} sent${how ? ` by ${how}` : ""}`, `${money(res.total)} — the client approves from the link.`);
+        toast.success(`${label} sent${how ? ` by ${how}` : ""}`, `${money(res.total)} — the client approves from the link.`);
       } else {
-        toast.success(`Change order #${res.number} saved as a draft`);
+        toast.success(editingId ? "Change order updated" : `${label} saved as a draft`);
       }
       reset();
       reloadOrders();
@@ -271,6 +315,91 @@ export function ChangeOrderSheet({
     } finally {
       setBusy(null);
     }
+  }
+
+  /** The free-line editor: a "more of…" picker off the proposal, then lines with material/labor, measure, price. */
+  function linesEditor(heading: string, hint: string | null) {
+    if (!ctx) return null;
+    return (
+      <div>
+              {ctx.proposalLines.length > 0 && (
+                <div className="mb-3">
+                  <div className="quiet-caps mb-1.5">More of something already on the proposal</div>
+                  <select
+                    className="h-10 w-full rounded-[var(--r-md)] hairline bg-white/70 px-3 text-[14px]"
+                    value=""
+                    onChange={(e) => {
+                      const pl = ctx.proposalLines[Number(e.target.value)];
+                      if (!pl) return;
+                      setFree((rows) => {
+                        const blank = rows.length === 1 && !rows[0].name.trim() && !rows[0].unitPrice ? [] : rows;
+                        return [...blank, { id: uid(), name: pl.name, quantity: "1", unit: pl.unit, unitPrice: String(pl.unitPrice), kind: pl.kind }];
+                      });
+                      if (!title.trim()) setTitle(`More ${pl.name}`.slice(0, 120));
+                    }}
+                  >
+                    <option value="">Pick a line to add more of it…</option>
+                    {ctx.proposalLines.map((pl, i) => (
+                      <option key={i} value={i}>
+                        {pl.name} · {money(pl.unitPrice)}/{pl.unit} · {pl.kind}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-[color:var(--ink-muted)] mt-1.5">Same unit and price as the proposal — just enter how much more. Change the price if this work costs differently.</p>
+                </div>
+              )}
+              <div className="quiet-caps mb-1.5">{heading}</div>
+              {hint && <p className="text-[11px] text-[color:var(--ink-muted)] -mt-1 mb-1.5">{hint}</p>}
+              <div className="space-y-2">
+                {free.map((l) => {
+                  const lineTotal = Math.round(num(l.quantity) * num(l.unitPrice) * 100) / 100;
+                  return (
+                    <div key={l.id} className="hairline rounded-[var(--r-md)] p-2 bg-white/50 space-y-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <Input value={l.name} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, name: e.target.value } : r)))} placeholder={l.kind === "labor" ? "Extra labor — e.g. demo old fence" : "Item — e.g. 6 ft cedar panel"} />
+                        <div className="inline-flex rounded-[var(--r-sm)] hairline p-0.5 bg-white/60 shrink-0">
+                          {(["material", "labor"] as const).map((k) => (
+                            <button
+                              key={k}
+                              type="button"
+                              onClick={() => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, kind: k } : r)))}
+                              className={cn("h-8 px-2 rounded-[var(--r-sm)] text-[11px] font-semibold capitalize", l.kind === k ? "bg-[color:var(--ink)] text-white" : "text-[color:var(--ink-muted)]")}
+                            >
+                              {k}
+                            </button>
+                          ))}
+                        </div>
+                        <button type="button" className="h-8 w-8 grid place-items-center text-[color:var(--ink-muted)] hover:text-rose-700 shrink-0" aria-label="Remove line" onClick={() => setFree((rows) => rows.filter((r) => r.id !== l.id))}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-[80px_1fr_100px_1fr] gap-1.5 items-center">
+                        <Input type="number" inputMode="decimal" value={l.quantity} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, quantity: e.target.value } : r)))} placeholder="Qty" aria-label="Quantity" />
+                        <select className="h-10 rounded-[var(--r-md)] hairline bg-white/70 px-2 text-[13px]" value={l.unit} aria-label="Unit" onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, unit: e.target.value as CoUnit } : r)))}>
+                          {UNITS.map((u) => (
+                            <option key={u} value={u}>{u}</option>
+                          ))}
+                        </select>
+                        <Input type="number" inputMode="decimal" step="0.01" prefix={<span className="text-[11px]">$</span>} value={l.unitPrice} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, unitPrice: e.target.value } : r)))} placeholder="0.00" aria-label="Unit price" />
+                        <span className={cn("text-right tabular text-[13px]", lineTotal < 0 ? "text-rose-700" : "text-[color:var(--ink-soft)]")}>
+                          {lineTotal < 0 ? "−" : ""}{money(Math.abs(lineTotal))}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                <Button variant="ghost" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setFree((rows) => [...rows, { id: uid(), name: "", quantity: "1", unit: "each", unitPrice: "", kind: "material" }])}>
+                  Material
+                </Button>
+                <Button variant="ghost" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setFree((rows) => [...rows, { id: uid(), name: "", quantity: "1", unit: "hour", unitPrice: "", kind: "labor" }])}>
+                  Labor
+                </Button>
+              </div>
+              <p className="text-[11px] text-[color:var(--ink-muted)] mt-1.5">Measures: each, sq ft, linear ft, square (100 sq ft of roof), hour, lot. A negative price is a credit back to the client.</p>
+      </div>
+    );
   }
 
   const canSend = Boolean(ctx && (ctx.clientEmail || ctx.clientPhone));
@@ -321,7 +450,7 @@ export function ChangeOrderSheet({
         reset();
         onClose();
       }}
-      title={creating ? "New change order" : "Change orders"}
+      title={creating ? (editingId ? "Edit change order" : "New change order") : "Change orders"}
       description={ctx ? (creating ? `${ctx.contextTitle} · #${ctx.nextNumber}` : ctx.contextTitle) : undefined}
       width="min(600px, 100vw)"
       footer={
@@ -349,10 +478,10 @@ export function ChangeOrderSheet({
           <div className="grid grid-cols-[auto_1fr_1fr] sm:flex sm:justify-end gap-2">
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
             <Button variant="outline" loading={busy === "draft"} disabled={!ctx || busy != null} onClick={() => submit(false)}>
-              Save draft
+              {editingId ? "Save changes" : "Save draft"}
             </Button>
             <Button loading={busy === "send"} disabled={!ctx || busy != null || !canSend} onClick={() => submit(true)} title={canSend ? undefined : "The client has no email or phone"}>
-              Send for approval
+              {editingId ? "Save & send" : "Send for approval"}
             </Button>
           </div>
         </div>
@@ -371,10 +500,13 @@ export function ChangeOrderSheet({
             const working = rowBusy === o.id;
             return (
               <div key={o.id} className="hairline rounded-[var(--r-md)] p-3 bg-white/60 space-y-2">
-                <div className="flex items-start justify-between gap-3">
+                <button type="button" className="w-full text-left flex items-start justify-between gap-3" onClick={() => toggleRow(o.id)} aria-expanded={expanded.has(o.id)}>
                   <div className="min-w-0">
-                    <div className="text-[14px] font-medium truncate">#{o.number ?? "—"} · {o.title}</div>
-                    <div className="text-[11px] text-[color:var(--ink-muted)] mt-0.5">
+                    <div className="text-[14px] font-medium truncate flex items-center gap-1.5">
+                      <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-[color:var(--ink-muted)] transition-transform", expanded.has(o.id) ? "" : "-rotate-90")} />
+                      <span className="truncate">#{o.number ?? "—"} · {o.title}</span>
+                    </div>
+                    <div className="text-[11px] text-[color:var(--ink-muted)] mt-0.5 pl-5">
                       {o.lines.length ? `${o.lines.length} line${o.lines.length === 1 ? "" : "s"}` : "one amount"}
                       {o.taxTotal > 0 ? ` · ${money(o.taxTotal)} tax` : ""}
                       {o.approvedName ? ` · signed by ${o.approvedName}` : ""}
@@ -385,10 +517,55 @@ export function ChangeOrderSheet({
                     <div className="tabular text-[15px]">{o.total >= 0 ? "+" : "−"}{money(Math.abs(o.total))}</div>
                     <span className={cn("inline-block mt-1 rounded-full px-2 py-0.5 text-[10px] font-semibold", st.cls)}>{st.label}</span>
                   </div>
-                </div>
+                </button>
+                {expanded.has(o.id) && (
+                  <div className="pl-5 space-y-2 text-[12px]">
+                    {o.lines.length > 0 && (
+                      <ul className="divide-y divide-[color:var(--ink-line)] hairline rounded-[var(--r-md)] overflow-hidden">
+                        {o.lines.map((l, i) => (
+                          <li key={i} className="flex items-baseline justify-between gap-3 px-2.5 py-1.5">
+                            <span className="min-w-0 truncate">
+                              {l.name}
+                              <span className="text-[color:var(--ink-muted)]"> · {Number.isInteger(l.quantity) ? l.quantity : l.quantity.toFixed(1)} {l.unit} × {money(l.unitPrice)}{l.kind === "labor" ? " · labor" : ""}</span>
+                            </span>
+                            <span className="tabular shrink-0">{money(Math.round(l.quantity * l.unitPrice * 100) / 100)}</span>
+                          </li>
+                        ))}
+                        {o.taxTotal > 0 && (
+                          <li className="flex items-baseline justify-between gap-3 px-2.5 py-1.5 text-[color:var(--ink-muted)]"><span>Sales tax</span><span className="tabular">{money(o.taxTotal)}</span></li>
+                        )}
+                      </ul>
+                    )}
+                    {o.reason && <p className="whitespace-pre-wrap text-[color:var(--ink-soft)]">{o.reason}</p>}
+                    {o.photos.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {o.photos.map((ph) => (
+                          <a key={ph.id} href={ph.url} target="_blank" rel="noopener noreferrer" className="h-14 w-14 rounded-[var(--r-sm)] overflow-hidden hairline">
+                            {/* eslint-disable-next-line @next/next/no-img-element -- Blob URL the contractor uploaded */}
+                            <img src={ph.url} alt="" className="h-full w-full object-cover" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    <div className="text-[11px] text-[color:var(--ink-muted)]">
+                      Created {new Date(o.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      {o.sentAt ? ` · sent ${new Date(o.sentAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}
+                      {o.approvedAt ? ` · approved ${new Date(o.approvedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}${o.approvedVia === "in_person" ? " in person" : ""}` : ""}
+                      {o.declinedAt ? ` · declined ${new Date(o.declinedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}
+                    </div>
+                    {o.status !== "DRAFT" && (
+                      <a href={`/co/${o.publicToken}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[12px] text-[color:var(--ink)] underline underline-offset-2">
+                        <ExternalLink className="h-3 w-3" /> Open the client&apos;s page
+                      </a>
+                    )}
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-1.5">
                   {o.status === "DRAFT" && (
                     <>
+                      <Button size="sm" variant="outline" disabled={working} icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => startEdit(o)}>
+                        Edit
+                      </Button>
                       <Button size="sm" loading={working} disabled={!canSend} icon={<Send className="h-3.5 w-3.5" />} onClick={() => rowAction(o.id, "send", () => sendChangeOrder(o.id), () => toast.success("Sent for approval"))}>
                         Send for approval
                       </Button>
@@ -462,7 +639,7 @@ export function ChangeOrderSheet({
       ) : (
         <div className="space-y-5">
           {orders.length > 0 && (
-            <button type="button" className="text-[12px] text-[color:var(--ink-muted)] underline underline-offset-2" onClick={() => setCreating(false)}>
+            <button type="button" className="text-[12px] text-[color:var(--ink-muted)] underline underline-offset-2" onClick={() => { reset(); setCreating(false); }}>
               ← Back to the {orders.length} existing change order{orders.length === 1 ? "" : "s"}
             </button>
           )}
@@ -584,85 +761,10 @@ export function ChangeOrderSheet({
                   </div>
                 )}
               </div>
+              {linesEditor("Other items on this change order", "Optional — extra labor, disposal, anything beyond the sheathing itself.")}
             </>
           ) : (
-            <div>
-              {ctx.proposalLines.length > 0 && (
-                <div className="mb-3">
-                  <div className="quiet-caps mb-1.5">More of something already on the proposal</div>
-                  <select
-                    className="h-10 w-full rounded-[var(--r-md)] hairline bg-white/70 px-3 text-[14px]"
-                    value=""
-                    onChange={(e) => {
-                      const pl = ctx.proposalLines[Number(e.target.value)];
-                      if (!pl) return;
-                      setFree((rows) => {
-                        const blank = rows.length === 1 && !rows[0].name.trim() && !rows[0].unitPrice ? [] : rows;
-                        return [...blank, { id: uid(), name: pl.name, quantity: "1", unit: pl.unit, unitPrice: String(pl.unitPrice), kind: pl.kind }];
-                      });
-                      if (!title.trim()) setTitle(`More ${pl.name}`.slice(0, 120));
-                    }}
-                  >
-                    <option value="">Pick a line to add more of it…</option>
-                    {ctx.proposalLines.map((pl, i) => (
-                      <option key={i} value={i}>
-                        {pl.name} · {money(pl.unitPrice)}/{pl.unit} · {pl.kind}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[11px] text-[color:var(--ink-muted)] mt-1.5">Same unit and price as the proposal — just enter how much more. Change the price if this work costs differently.</p>
-                </div>
-              )}
-              <div className="quiet-caps mb-1.5">Lines</div>
-              <div className="space-y-2">
-                {free.map((l) => {
-                  const lineTotal = Math.round(num(l.quantity) * num(l.unitPrice) * 100) / 100;
-                  return (
-                    <div key={l.id} className="hairline rounded-[var(--r-md)] p-2 bg-white/50 space-y-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <Input value={l.name} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, name: e.target.value } : r)))} placeholder={l.kind === "labor" ? "Extra labor — e.g. demo old fence" : "Item — e.g. 6 ft cedar panel"} />
-                        <div className="inline-flex rounded-[var(--r-sm)] hairline p-0.5 bg-white/60 shrink-0">
-                          {(["material", "labor"] as const).map((k) => (
-                            <button
-                              key={k}
-                              type="button"
-                              onClick={() => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, kind: k } : r)))}
-                              className={cn("h-8 px-2 rounded-[var(--r-sm)] text-[11px] font-semibold capitalize", l.kind === k ? "bg-[color:var(--ink)] text-white" : "text-[color:var(--ink-muted)]")}
-                            >
-                              {k}
-                            </button>
-                          ))}
-                        </div>
-                        <button type="button" className="h-8 w-8 grid place-items-center text-[color:var(--ink-muted)] hover:text-rose-700 shrink-0" aria-label="Remove line" onClick={() => setFree((rows) => rows.filter((r) => r.id !== l.id))}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-[80px_1fr_100px_1fr] gap-1.5 items-center">
-                        <Input type="number" inputMode="decimal" value={l.quantity} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, quantity: e.target.value } : r)))} placeholder="Qty" aria-label="Quantity" />
-                        <select className="h-10 rounded-[var(--r-md)] hairline bg-white/70 px-2 text-[13px]" value={l.unit} aria-label="Unit" onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, unit: e.target.value as CoUnit } : r)))}>
-                          {UNITS.map((u) => (
-                            <option key={u} value={u}>{u}</option>
-                          ))}
-                        </select>
-                        <Input type="number" inputMode="decimal" step="0.01" prefix={<span className="text-[11px]">$</span>} value={l.unitPrice} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, unitPrice: e.target.value } : r)))} placeholder="0.00" aria-label="Unit price" />
-                        <span className={cn("text-right tabular text-[13px]", lineTotal < 0 ? "text-rose-700" : "text-[color:var(--ink-soft)]")}>
-                          {lineTotal < 0 ? "−" : ""}{money(Math.abs(lineTotal))}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                <Button variant="ghost" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setFree((rows) => [...rows, { id: uid(), name: "", quantity: "1", unit: "each", unitPrice: "", kind: "material" }])}>
-                  Material
-                </Button>
-                <Button variant="ghost" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setFree((rows) => [...rows, { id: uid(), name: "", quantity: "1", unit: "hour", unitPrice: "", kind: "labor" }])}>
-                  Labor
-                </Button>
-              </div>
-              <p className="text-[11px] text-[color:var(--ink-muted)] mt-1.5">Measures: each, sq ft, linear ft, square (100 sq ft of roof), hour, lot. A negative price is a credit back to the client.</p>
-            </div>
+            linesEditor("Lines", null)
           )}
 
           {type.reason && (

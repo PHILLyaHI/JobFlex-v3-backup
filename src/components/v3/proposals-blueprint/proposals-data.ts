@@ -68,6 +68,12 @@ export type ProposalRow = {
    *  carry a balance (completion is about the work), so the tear-sheet reads
    *  this rather than assuming "paid in full". */
   owed: number;
+  /** Dollars paid to date on the schedule. */
+  paidAmt?: number;
+  /** The contract value: the proposal's total plus every approved change order. */
+  contract?: number;
+  /** Change orders on this proposal, by state — for the chips and the sheet button. */
+  co?: { count: number; drafts: number; pending: number; approvedTotal: number; pendingTotal: number };
   /** Automatic payment reminders for this proposal: true / false, or null = the company's mode. */
   remindersOn?: boolean | null;
   inst?: Installment[];

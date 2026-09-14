@@ -207,6 +207,42 @@ export function ProposalsContent({ rows }: { rows: ProposalRow[] }) {
         </div>
       </div>
 
+      {/* Send invoice — which rail the client pays on. Filled by the behavior module. */}
+      <div className="mdl pmdl" id="invMdl">
+        <div className="mdl-bg" data-mdl="inv"></div>
+        <div className="mdl-box">
+          <div className="mdl-head mdl-head--row">
+            <span id="invTitle">Send invoice</span>
+            <button className="mdl-x" type="button" data-mdl="inv" aria-label="Close dialog">
+              <svg className="ic">
+                <use href="#i-x" />
+              </svg>
+            </button>
+          </div>
+          <div className="mdl-body">
+            <div className="mf-note" id="invNote"></div>
+            <div className="inv-opts">
+              <button className="inv-opt" type="button" id="invCard">
+                <span className="inv-t">Card — pay online</span>
+                <span className="inv-sub">Hosted checkout</span>
+              </button>
+              <button className="inv-opt" type="button" id="invBank">
+                <span className="inv-t">Bank transfer</span>
+                <span className="inv-sub">Your transfer details go in the email</span>
+              </button>
+              <button className="inv-opt" type="button" id="invAny">
+                <span className="inv-t">Client&apos;s choice</span>
+                <span className="inv-sub">Every way you accept, on the portal</span>
+              </button>
+            </div>
+            <div className="mf-err is-hidden" id="invErr" role="alert"></div>
+          </div>
+          <div className="mdl-foot">
+            <button className="btn btn-ghost btn--sm" type="button" data-mdl="inv">Cancel</button>
+          </div>
+        </div>
+      </div>
+
       <div className="mdl pmdl" id="delMdl">
         <div className="mdl-bg" data-mdl="del"></div>
         <div className="mdl-box">

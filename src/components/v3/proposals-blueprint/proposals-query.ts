@@ -18,7 +18,7 @@
 
 import { requireProposalStaff } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { contractSchedule } from "@/lib/contractTotal";
+import { contractSchedule, contractTotal } from "@/lib/contractTotal";
 import { resolveSchedule } from "@/lib/paymentSchedule";
 import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
 import { describeAddress, zillowSearchUrl } from "@/lib/zillow";
@@ -72,7 +72,7 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
       },
       owner: { select: { name: true } },
       installments: { orderBy: { position: "asc" }, include: { payment: { select: { provider: true } } } },
-      changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } },
+      changeOrders: { where: { status: { in: ["DRAFT", "SENT", "APPROVED"] } }, select: { status: true, total: true, amount: true } },
       lineItems: {
         select: {
           id: true,
@@ -120,6 +120,7 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
       paidAmt: i.paidAmount,
       paidVia: i.payment?.provider ?? null,
     }));
+    const schedule = resolveSchedule({ ...contractSchedule(p.total, p.changeOrders), currency: p.currency, installments: p.installments });
     const addr = {
       address: p.client?.address,
       city: p.client?.city,
@@ -137,9 +138,16 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
       total: p.total,
       updated: agoLabel(p.updatedAt),
       views: p.viewCount,
-      owed:
-        resolveSchedule({ ...contractSchedule(p.total, p.changeOrders), currency: p.currency, installments: p.installments })
-          .remainingMinor / 100,
+      owed: schedule.remainingMinor / 100,
+      paidAmt: schedule.paidMinor / 100,
+      contract: contractTotal(p.total, p.changeOrders),
+      co: {
+        count: p.changeOrders.length,
+        drafts: p.changeOrders.filter((c) => c.status === "DRAFT").length,
+        pending: p.changeOrders.filter((c) => c.status === "SENT").length,
+        approvedTotal: Math.round(p.changeOrders.filter((c) => c.status === "APPROVED").reduce((a, c) => a + (c.total ?? c.amount), 0) * 100) / 100,
+        pendingTotal: Math.round(p.changeOrders.filter((c) => c.status === "SENT").reduce((a, c) => a + (c.total ?? c.amount), 0) * 100) / 100,
+      },
       remindersOn: p.remindersOn ?? null,
       // The donor prints a single given name in the Owner column.
       owner: p.owner?.name?.trim().split(/\s+/)[0] || "—",
