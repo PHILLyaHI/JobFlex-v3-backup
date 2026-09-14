@@ -58,7 +58,7 @@ import styles from "./mobile-reviews.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
-import { createReviewRequest } from "@/actions/reviewRequests";
+import { createReviewRequest, setReviewHidden } from "@/actions/reviewRequests";
 import type { ReviewsProps } from "@/app/dashboard/reviews/load-reviews";
 import {
   ALL,
@@ -169,7 +169,7 @@ type MenuRow = {
   danger?: boolean;
 };
 
-export function MobileReviews({ entries, jobs }: MobileReviewsProps) {
+export function MobileReviews({ entries, jobs, publicHref, publicRating }: MobileReviewsProps) {
   const router = useRouter();
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -431,6 +431,16 @@ export function MobileReviews({ entries, jobs }: MobileReviewsProps) {
     if (!r) return [];
     if (isCompleted(r)) {
       return [
+        // Hidden = off the public page and the proposal badge; still counted
+        // here and in lead routing. Presentation, not deletion.
+        { act: "hide", icon: r.hidden ? "i-check" : "i-x", tone: styles.rmiWarn,
+          title: r.hidden ? "Show on public page" : "Hide from public page",
+          sub: r.hidden
+            ? "Off the public page and the proposal badge right now"
+            : "Stays counted here and in lead routing" },
+        { act: "public", icon: "i-out", tone: styles.rmiSky, title: "Open public page",
+          sub: publicHref ? "What clients see from the proposal badge" : "No public page",
+          disabled: !publicHref },
         { act: "copy-comment", icon: "i-copy", title: "Copy the comment",
           sub: r.comment ? "Paste it into a listing or post" : "No comment left with this score",
           disabled: !r.comment },
@@ -447,13 +457,21 @@ export function MobileReviews({ entries, jobs }: MobileReviewsProps) {
         sub: r.jobId ? r.job : "This request is not linked to a job",
         disabled: !r.jobId },
     ];
-  }, [sheetRec]);
+  }, [sheetRec, publicHref]);
 
   const runMenu = (act: string) => {
     const r = sheetRec;
     setSheetId(null);
     if (!r) return;
-    if (act === "copy-comment" && r.comment) {
+    if (act === "hide") {
+      const next = !r.hidden;
+      setReviewHidden(r.id, next).then(
+        () => setData((prev) => prev.map((x) => (x.id === r.id ? { ...x, hidden: next } : x))),
+        (err) => window.alert(actionError(err)),
+      );
+    } else if (act === "public" && publicHref) {
+      window.open(publicHref, "_blank", "noopener,noreferrer");
+    } else if (act === "copy-comment" && r.comment) {
       copyText(r.comment);
     } else if (act === "copy-link") {
       const url = reviewLink(r);
@@ -495,12 +513,15 @@ export function MobileReviews({ entries, jobs }: MobileReviewsProps) {
         {
           id: res.id,
           jobId: job.id,
+          proposalId: null,
           status: "SENT",
           rating: null,
           client: job.client,
           job: job.title,
           when: "just now",
           comment: null,
+          photos: [],
+          hidden: false,
           token: res.publicToken,
         },
         ...prev,
@@ -593,6 +614,20 @@ export function MobileReviews({ entries, jobs }: MobileReviewsProps) {
                 <div className={styles.rmastSubV}>{rate}%</div>
               </div>
             </div>
+            {/* The public page — what a client sees from the proposal badge.
+                Its figure can differ from the numeral above: hidden reviews
+                count here, never there. */}
+            {publicHref ? (
+              <a className={styles.rmastLink} href={publicHref} target="_blank" rel="noopener noreferrer">
+                <Icon id="i-out" />
+                <span>Public page</span>
+                <b>
+                  {publicRating?.count
+                    ? `${publicRating.avg} · ${publicRating.count} public`
+                    : "nothing public yet"}
+                </b>
+              </a>
+            ) : null}
           </div>
 
           {/* SCORE SPREAD — the desktop's side card, unchanged in meaning:
@@ -705,10 +740,20 @@ export function MobileReviews({ entries, jobs }: MobileReviewsProps) {
                               <Meter score={r.rating} armed={armed} />
                             </span>
                             <span className={styles.fwhen}>{r.when}</span>
+                            {r.hidden ? <span className={styles.fhidden}>Hidden</span> : null}
                           </div>
                           {/* Two lines and an ellipsis. The full text is in the
                               sheet — a feed entry is a summary, not a document. */}
                           {r.comment ? <p className={styles.fquote}>{r.comment}</p> : null}
+                          {r.photos.length ? (
+                            <div className={styles.fphotos} aria-label={`${r.photos.length} photos`}>
+                              {r.photos.slice(0, 3).map((u) => (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img key={u} src={u} alt="" loading="lazy" />
+                              ))}
+                              {r.photos.length > 3 ? <span>+{r.photos.length - 3}</span> : null}
+                            </div>
+                          ) : null}
                         </article>
                       );
                     })}
@@ -831,6 +876,20 @@ export function MobileReviews({ entries, jobs }: MobileReviewsProps) {
                     : "No submission yet — the link is still open."}
                 </p>
               )}
+              {sheetRec.photos.length ? (
+                <div className={styles.rdetailPhotos}>
+                  {sheetRec.photos.map((u, i) => (
+                    <a key={u} href={u} target="_blank" rel="noopener noreferrer"
+                      aria-label={`Photo ${i + 1} of ${sheetRec.photos.length}`}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={u} alt="" loading="lazy" />
+                    </a>
+                  ))}
+                </div>
+              ) : null}
+              {sheetDone && sheetRec.hidden ? (
+                <p className={styles.rnote}>Hidden from the public page and the proposal badge.</p>
+              ) : null}
             </div>
           ) : null}
           {menuRows.map((r) => (

@@ -534,6 +534,16 @@ export async function updateProposalStatus(id: string, status: ProposalStatus): 
   if (status === "ACCEPTED" || status === "PAID") {
     await snapshotProposal(id, status === "ACCEPTED" ? "accepted" : "manual");
   }
+  // Work is done → the client gets their review link (once per proposal,
+  // whichever door completed it — see lib/reviews/requestForProposal.ts).
+  if (status === "COMPLETED" && p.status !== "COMPLETED") {
+    try {
+      const { ensureReviewRequestForProposal } = await import("@/lib/reviews/requestForProposal");
+      await ensureReviewRequestForProposal(id);
+    } catch (err) {
+      console.warn("[updateProposalStatus] review request failed:", err);
+    }
+  }
   // Schedule any follow-ups watching this status
   try {
     const { scheduleFollowUpsFor } = await import("@/lib/followUps/engine");

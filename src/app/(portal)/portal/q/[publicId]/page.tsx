@@ -33,8 +33,10 @@ import { db } from "@/lib/db";
 import { contractTotal } from "@/lib/contractTotal";
 import { money, longDate } from "@/lib/format";
 import { parseProposalSettings } from "@/lib/settings";
-import { buildPortalView } from "@/components/v3/mobile-proposal-client/portal-view";
+import { buildPortalView, type PortalRating } from "@/components/v3/mobile-proposal-client/portal-view";
 import { buildPortalPayModel } from "@/lib/payments/portalModel";
+import { formatAvg, orgPublicRating, publicReviewsPath } from "@/lib/reviews/publicSummary";
+import { StarsInline } from "@/components/reviews/StarsInline";
 import { PortalActions } from "./portal-actions";
 import { PortalPayment } from "./portal-payment";
 import { PortalReveal } from "./portal-reveal";
@@ -92,6 +94,7 @@ export default async function PublicProposalPortal({
         // to their customer.
         select: {
           name: true,
+          slug: true,
           logoUrl: true,
           phone: true,
           address: true,
@@ -147,6 +150,14 @@ export default async function PublicProposalPortal({
   const org = proposal.organization;
   // What the client can pay, and how — resolved once, shared by both trees.
   const payModel = await buildPortalPayModel(publicId, proposal, org, { money, longDate });
+  // The contractor's public standing (not-hidden reviews only), under their
+  // name in the header, linking to /r/<slug>. Absent when there is none —
+  // "no reviews" has no place on a sales document.
+  const pub = await orgPublicRating(proposal.organizationId);
+  const rating: PortalRating | null =
+    pub.count > 0 && pub.avg != null
+      ? { avg: formatAvg(pub.avg) as string, count: pub.count, href: publicReviewsPath(org.slug) }
+      : null;
   // The contract as it stands: the proposal's own total plus every approved
   // change order (a change order never edits the proposal's figures).
   const contractValue = contractTotal(proposal.total, proposal.changeOrders);
@@ -179,6 +190,7 @@ export default async function PublicProposalPortal({
   const view = buildPortalView(publicId, proposal, { money, longDate }, {
     pay: payModel,
     terms: orgTerms,
+    rating,
   });
 
   return (
@@ -193,6 +205,19 @@ export default async function PublicProposalPortal({
           <div className="pv-org">
             <b>{org.name}</b>
             <span>{`Proposal № ${refCode} · ${longDate(proposal.createdAt)}`}</span>
+            {rating ? (
+              <a
+                className="pv-rating"
+                href={rating.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Rated ${rating.avg} out of 5 from ${rating.count} client ${rating.count === 1 ? "review" : "reviews"} — see all reviews`}
+              >
+                <StarsInline value={Number(rating.avg)} size={13} />
+                <em>{rating.avg}</em>
+                <i>{`· ${rating.count} ${rating.count === 1 ? "review" : "reviews"}`}</i>
+              </a>
+            ) : null}
           </div>
           <a
             className="pv-pdf"

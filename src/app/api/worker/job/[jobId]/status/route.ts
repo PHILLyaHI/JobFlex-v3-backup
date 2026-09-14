@@ -55,6 +55,15 @@ export async function POST(
       data: { status: "COMPLETED" },
     });
   }
+  // And the client's review link goes out — this door used to skip it.
+  if (body.status === "COMPLETED") {
+    try {
+      const { createReviewRequestInternal } = await import("@/lib/reviewRequestInternal");
+      await createReviewRequestInternal(jobId);
+    } catch (err) {
+      console.warn("[worker job status] review request failed:", err);
+    }
+  }
   await touchWorkerActivity(worker.id);
   return NextResponse.json({ ok: true });
 }

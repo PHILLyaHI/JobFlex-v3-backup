@@ -27,7 +27,7 @@
 //    and crawled it back. The observer is gone; the callers that know a list is
 //    genuinely ARRIVING play blueprint-shell/list-motion's `staggerIn`.
 
-import { createReviewRequest } from "@/actions/reviewRequests";
+import { createReviewRequest, setReviewHidden } from "@/actions/reviewRequests";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { isPlanLimitError } from "@/lib/planLimits";
@@ -166,13 +166,14 @@ export function initReviewsContent(
     const rate = requested ? Math.round((done.length / requested) * 100) : 0;
     const el = $("#statGrid");
     if (!el) return;
+    const hiddenN = done.filter(function (r) { return r.hidden; }).length;
     el.innerHTML =
       '<div class="stat"><div class="kpi-lbl">Average rating</div>' +
         '<div class="stat-val">' + (avg ? avg.toFixed(2) : "—") + starsHtml(Math.round(avg)) + "</div>" +
         '<div class="stat-hint">' + done.length + " review" + (done.length === 1 ? "" : "s") + "</div></div>" +
       '<div class="stat"><div class="kpi-lbl">Total reviews</div>' +
         '<div class="stat-val">' + done.length + "</div>" +
-        '<div class="stat-hint">All time</div></div>' +
+        '<div class="stat-hint">' + (hiddenN ? (done.length - hiddenN) + " public · " + hiddenN + " hidden" : "All time") + "</div></div>" +
       '<div class="stat"><div class="kpi-lbl">Response rate</div>' +
         '<div class="stat-val accent">' + rate + "%</div>" +
         '<div class="stat-hint">' + done.length + " of " + requested + " requested</div></div>";
@@ -208,16 +209,38 @@ export function initReviewsContent(
       el.innerHTML = rows.map(function (r) {
         const tone = r.rating >= 5 ? "hi" : r.rating <= 2 ? "low" : "";
         // The job title links to the job it came off, exactly like the classic
-        // page did (old-design-pages/dashboard/reviews/page.tsx).
+        // page did (old-design-pages/dashboard/reviews/page.tsx). A request
+        // that came off a proposal with no job links to that proposal.
         const job = r.jobId
           ? '<a href="/dashboard/jobs/' + escapeAttr(r.jobId) + '">' + escapeText(r.job) + "</a>"
-          : escapeText(r.job);
-        return "<li>" +
+          : r.proposalId
+            ? '<a href="/dashboard/manual-blueprint?proposal=' + escapeAttr(r.proposalId) + '">' + escapeText(r.job) + "</a>"
+            : escapeText(r.job);
+        // The client's photos — three thumbnails, the rest counted. Each opens
+        // the full image; the public page shows the same set.
+        const shown = r.photos.slice(0, 3);
+        const photos = shown.length
+          ? '<div class="rv-photos">' +
+            shown.map(function (u, i) {
+              return '<a href="' + escapeAttr(u) + '" target="_blank" rel="noopener noreferrer" aria-label="Photo ' + (i + 1) + ' of ' + r.photos.length + '">' +
+                '<img src="' + escapeAttr(u) + '" alt="" loading="lazy"></a>';
+            }).join("") +
+            (r.photos.length > 3 ? '<span class="rv-photos-more">+' + (r.photos.length - 3) + "</span>" : "") +
+            "</div>"
+          : "";
+        // Hidden = off the public page and the portal badge, still counted
+        // here and in lead routing. The button flips it; the chip says so.
+        const hiddenChip = r.hidden ? '<span class="rv-hidden">Hidden from public</span>' : "";
+        const hideBtn =
+          '<button class="rv-act" type="button" data-act="hide" data-id="' + escapeAttr(r.id) + '" data-hidden="' + (r.hidden ? "1" : "0") + '">' +
+          (r.hidden ? "Show on public page" : "Hide from public page") + "</button>";
+        return '<li data-id="' + escapeAttr(r.id) + '"' + (r.hidden ? ' class="is-hidden-public"' : "") + ">" +
           '<span class="rv-score ' + tone + '">' + r.rating + "</span>" +
           '<div class="rv-main">' +
-            '<div class="rv-top">' + starsHtml(r.rating) + '<span class="rv-when">' + escapeText(r.when) + "</span></div>" +
+            '<div class="rv-top">' + starsHtml(r.rating) + '<span class="rv-when">' + escapeText(r.when) + "</span>" + hiddenChip + hideBtn + "</div>" +
             '<div class="rv-who">' + escapeText(r.client) + "<span> · " + job + "</span></div>" +
             (r.comment ? '<blockquote class="rv-quote">"' + escapeText(r.comment) + '"</blockquote>' : "") +
+            photos +
           "</div></li>";
       }).join("");
       if (arriving) staggerIn(Array.from(el.querySelectorAll<HTMLElement>("li")));
@@ -351,12 +374,15 @@ export function initReviewsContent(
         {
           id: res.id,
           jobId,
+          proposalId: null,
           status: "SENT",
           rating: null,
           client: job?.client ?? "Client",
           job: job?.title ?? "Job",
           when: "just now",
           comment: null,
+          photos: [],
+          hidden: false,
           token: res.publicToken,
         },
         ...reviewData,
@@ -421,6 +447,36 @@ export function initReviewsContent(
       clip.writeText(url).then(
         () => settle("Copied"),
         () => settle("Copy failed"),
+      );
+    });
+  }
+
+  // Hide / show on the public page. The row is patched in place — no
+  // re-render of the list, so nothing else on screen moves.
+  const rvList = $("#rvList");
+  if (rvList) {
+    on(rvList, "click", (ev) => {
+      const target = ev.target;
+      if (!(target instanceof Element)) return;
+      const btn = target.closest<HTMLButtonElement>('[data-act="hide"]');
+      if (!btn || btn.disabled) return;
+      const id = btn.dataset.id;
+      if (!id) return;
+      const next = btn.dataset.hidden !== "1";
+      btn.disabled = true;
+      btn.textContent = next ? "Hiding…" : "Showing…";
+      setReviewHidden(id, next).then(
+        () => {
+          const row = reviewData.find((r) => r.id === id);
+          if (row) row.hidden = next;
+          renderStats();
+          renderList(false);
+        },
+        (err) => {
+          btn.disabled = false;
+          btn.textContent = next ? "Hide from public page" : "Show on public page";
+          window.alert(actionError(err));
+        },
       );
     });
   }

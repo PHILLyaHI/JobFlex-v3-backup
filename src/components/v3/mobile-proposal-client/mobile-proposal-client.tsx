@@ -57,6 +57,7 @@ import { lockScroll } from "@/lib/scrollLock";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import type { PortalView } from "./portal-view";
 import { startCheckout, usePayReturn } from "./use-pay-return";
+import { StarsInline } from "@/components/reviews/StarsInline";
 import "./mobile-proposal-client.css";
 
 /** `"open"` is the one local value the SERVER never sends: a revert has put the
@@ -363,6 +364,19 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
           <span className="mpc-org">
             <b className="mpc-org-n">{view.orgName}</b>
             <span className="mpc-org-r">{`№ ${view.refCode} · ${view.createdOn}`}</span>
+            {view.rating ? (
+              <a
+                className="mpc-rating"
+                href={view.rating.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Rated ${view.rating.avg} out of 5 from ${view.rating.count} client ${view.rating.count === 1 ? "review" : "reviews"} — see all reviews`}
+              >
+                <StarsInline value={Number(view.rating.avg)} size={12} />
+                <em>{view.rating.avg}</em>
+                <i>{`· ${view.rating.count} ${view.rating.count === 1 ? "review" : "reviews"}`}</i>
+              </a>
+            ) : null}
           </span>
           <a
             className="mpc-pdf"

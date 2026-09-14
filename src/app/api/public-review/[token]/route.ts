@@ -13,7 +13,7 @@ export async function POST(
   try {
     const result = await submitReviewPublic(token, body);
     return NextResponse.json(result);
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message ?? "Failed" }, { status: 400 });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 400 });
   }
 }

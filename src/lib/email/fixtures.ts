@@ -6,6 +6,7 @@ import {
   buildChangeOrder,
   buildPaymentReminder,
   buildReviewRequest,
+  buildReviewReminder,
 } from "./build/client";
 import { buildOwnerAccepted, buildNewLead, buildLeadOffer, buildSupportTicket } from "./build/operator";
 import { buildJobAssignment, buildWorkerInvite, buildTeamInvite } from "./build/worker";
@@ -330,6 +331,17 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
     label: "10 · buildReviewRequest()",
     note: "No box at all — nothing worth anchoring (principle 12·a).",
     doc: buildReviewRequest({
+      org: BRAND,
+      clientName: "Jordan Rivera",
+      jobTitle: "Backyard cedar fence",
+      href: "https://example.com/review/demo",
+    }),
+  },
+  {
+    id: "b-review-reminder",
+    label: "10b · buildReviewReminder()",
+    note: "The one follow-up, a week on. Says so in `after` — a promise the cron keeps (remindedAt).",
+    doc: buildReviewReminder({
       org: BRAND,
       clientName: "Jordan Rivera",
       jobTitle: "Backyard cedar fence",

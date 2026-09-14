@@ -7,6 +7,7 @@ import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { parseTradeTypes } from "@/lib/tradeTypes";
 import { getRoutingMode } from "@/lib/leadCenter/routingMode";
+import { orgRatingsByIds } from "@/lib/reviews/publicSummary";
 import {
   AdminLeadCenterContent,
   type PlatformLeadDTO,
@@ -180,7 +181,7 @@ export default async function AdminLeadCenterPage() {
   // How each shop has behaved: offers seen, offers taken, leads currently held.
   // One grouped pass each — a row per shop per stat would not scale, and this
   // roster is read on every visit.
-  const [offerCounts, acceptCounts, matchedCounts] = await Promise.all([
+  const [offerCounts, acceptCounts, matchedCounts, ratings] = await Promise.all([
     db.leadOffer.groupBy({ by: ["organizationId"], _count: { _all: true } }),
     db.leadOffer.groupBy({ by: ["organizationId"], where: { status: "ACCEPTED" }, _count: { _all: true } }),
     db.platformLead.groupBy({
@@ -188,6 +189,9 @@ export default async function AdminLeadCenterPage() {
       where: { matchedOrgId: { not: null } },
       _count: { _all: true },
     }),
+    // The same rating routing scores on — hidden reviews included, so the
+    // admin sees what the algorithm sees, not what the shop chose to show.
+    orgRatingsByIds(orgs.map((o) => o.id), { includeHidden: true }),
   ]);
   const offersBy = new Map(offerCounts.map((r) => [r.organizationId, r._count._all]));
   const acceptsBy = new Map(acceptCounts.map((r) => [r.organizationId, r._count._all]));
@@ -208,6 +212,8 @@ export default async function AdminLeadCenterPage() {
     offersReceived: offersBy.get(o.id) ?? 0,
     offersAccepted: acceptsBy.get(o.id) ?? 0,
     leadsMatched: matchedBy.get(o.id) ?? 0,
+    ratingAvg: ratings.get(o.id)?.avg ?? null,
+    ratingCount: ratings.get(o.id)?.count ?? 0,
     joinedAt: o.createdAt.toISOString(),
   }));
 

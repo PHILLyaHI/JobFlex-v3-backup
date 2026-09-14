@@ -376,6 +376,23 @@ export function buildReviewRequest(i: ReviewRequestInput): EmailDoc {
   };
 }
 
+/** The one follow-up, a week later. Same link, softer ask, no box. */
+export function buildReviewReminder(i: ReviewRequestInput): EmailDoc {
+  return {
+    subject: `Still happy with the ${truncate(i.jobTitle, TITLE_MAX).toLowerCase()}? — ${i.org.name}`,
+    lockup: orgLockup(i.org),
+    kicker: { text: "Quick reminder" },
+    headline: "A minute for a review?",
+    prose: [
+      `Hi ${i.clientName.split(" ")[0]} — we sent a note last week and know how these get buried.`,
+      "Stars, a line or two, a photo if you like — it takes a minute and it means a lot to us.",
+    ],
+    cta: { label: "Leave a review", href: i.href },
+    after: ["This is the only reminder we'll send. If something isn't right, reply here and we'll sort it out."],
+    footer: orgFooter(i.org),
+  };
+}
+
 export interface PaymentReceiptInput {
   org: OrgBrand;
   clientName: string;

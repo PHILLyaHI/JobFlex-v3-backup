@@ -28,11 +28,17 @@ import { ReviewsSprite } from "./sprite";
 export function ReviewsContent({
   entries,
   jobs,
+  publicHref,
+  publicRating,
 }: {
   /** The org's real review requests, read in the page's server component. */
   entries: ReviewEntry[];
   /** Jobs with no review request yet — the request dialog's option list. */
   jobs: EligibleJob[];
+  /** /r/<slug> — the public reviews page clients see from the portal badge. */
+  publicHref?: string;
+  /** What that page shows right now (hidden reviews excluded). */
+  publicRating?: { avg: string | null; count: number };
 }) {
   // The seed reaches `init` through a ref, NOT through the callback's deps.
   // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
@@ -60,6 +66,27 @@ export function ReviewsContent({
           <h1 className="page-title">Reviews</h1>
         </div>
         <div className="page-actions">
+          {publicHref ? (
+            <a
+              className="btn btn-ghost"
+              href={publicHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={
+                publicRating && publicRating.count
+                  ? `${publicRating.avg} from ${publicRating.count} public review${publicRating.count === 1 ? "" : "s"}`
+                  : "Nothing public yet — reviews appear here once a client submits one"
+              }
+            >
+              <svg className="ic">
+                <use href="#i-link" />
+              </svg>
+              Public page
+              {publicRating && publicRating.count ? (
+                <span className="rv-pub-n">{`${publicRating.avg} · ${publicRating.count}`}</span>
+              ) : null}
+            </a>
+          ) : null}
           <button className="btn btn-primary" type="button" id="rvReqBtn">
             <svg className="ic">
               <use href="#i-plus" />

@@ -52,9 +52,20 @@ export type PortalInstallment = {
   amount: string;
 };
 
+/** The contractor's public standing, shown under their name in the header
+ *  and linking to /r/<slug>. Null when they have no public reviews yet — a
+ *  sales document never says "no reviews". */
+export type PortalRating = {
+  /** "4.8" — formatted on the server, one decimal. */
+  avg: string;
+  count: number;
+  href: string;
+};
+
 export type PortalView = {
   publicId: string;
   status: string;
+  rating: PortalRating | null;
   /** Raw dollars — the checkout payload needs cents, see the note above. */
   total: number;
   orgName: string;
@@ -124,7 +135,7 @@ export function buildPortalView(
   proposal: ProposalRow,
   fmt: Fmt,
   /** Built by the caller, which already has the row + org connections. */
-  extras: { pay: PortalPayModel; terms: string },
+  extras: { pay: PortalPayModel; terms: string; rating?: PortalRating | null },
 ): PortalView {
   const { money, longDate } = fmt;
   const org = proposal.organization;
@@ -133,6 +144,7 @@ export function buildPortalView(
   return {
     pay: extras.pay,
     terms: extras.terms,
+    rating: extras.rating ?? null,
     publicId,
     status: proposal.status,
     total: proposal.total,

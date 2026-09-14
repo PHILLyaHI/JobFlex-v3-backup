@@ -32,8 +32,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { money, longDate } from "@/lib/format";
-import { buildPortalView } from "@/components/v3/mobile-proposal-client/portal-view";
+import { buildPortalView, type PortalRating } from "@/components/v3/mobile-proposal-client/portal-view";
 import { buildPortalPayModel } from "@/lib/payments/portalModel";
+import { formatAvg, orgPublicRating, publicReviewsPath } from "@/lib/reviews/publicSummary";
 import { MobileProposalClient } from "@/components/v3/mobile-proposal-client/mobile-proposal-client";
 
 export const dynamic = "force-dynamic";
@@ -67,6 +68,7 @@ export default async function MobileProposalClientPage({
       organization: {
         select: {
           name: true,
+          slug: true,
           logoUrl: true,
           phone: true,
           address: true,
@@ -80,10 +82,16 @@ export default async function MobileProposalClientPage({
 
   if (!proposal || proposal.organization.deletedAt) return notFound();
   const pay = await buildPortalPayModel(publicId, proposal, proposal.organization, { money, longDate });
+  // Same badge the real portal shows: public (not-hidden) reviews, or nothing.
+  const pub = await orgPublicRating(proposal.organizationId);
+  const rating: PortalRating | null =
+    pub.count > 0 && pub.avg != null
+      ? { avg: formatAvg(pub.avg) as string, count: pub.count, href: publicReviewsPath(proposal.organization.slug) }
+      : null;
 
   return (
     <MobileProposalClient
-      view={buildPortalView(publicId, proposal, { money, longDate }, { pay, terms: "" })}
+      view={buildPortalView(publicId, proposal, { money, longDate }, { pay, terms: "", rating })}
     />
   );
 }

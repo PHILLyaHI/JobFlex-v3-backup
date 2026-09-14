@@ -468,3 +468,16 @@ body:has(.jf-proposal-portal)::before { content: none; }
 
 /* The stage an invoice link points at. */
 .jf-proposal-portal .pv-pay-r.is-focus { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+
+/* Client-facing rating badge (2026-09-13) — under the org name, links to the
+   contractor's public reviews page. Rendered only when there is something to
+   show; a sales document never prints "no reviews". Appended after the donor
+   block on purpose: same specificity as `.pv-org span`, later wins. */
+.jf-proposal-portal .pv-rating { display: inline-flex; align-items: center; gap: 6px; margin-top: 5px;
+  min-height: 24px; text-decoration: none; color: var(--ink); }
+.jf-proposal-portal .pv-org .pv-rating > span { display: inline-flex; margin: 0; }
+.jf-proposal-portal .pv-rating em { font-style: normal; font-size: 12.5px; font-weight: 900;
+  letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.jf-proposal-portal .pv-rating i { font-style: normal; font-family: var(--font-mono); font-size: 10.5px;
+  font-weight: 600; letter-spacing: .06em; color: var(--muted); border-bottom: 1px solid transparent; }
+.jf-proposal-portal .pv-rating:hover i { color: var(--ink); border-bottom-color: var(--ink); }

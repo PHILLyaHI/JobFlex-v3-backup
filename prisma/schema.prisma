@@ -615,6 +615,7 @@ model Proposal {
   aiDraft      AiDraft?          @relation(fields: [aiDraftId], references: [id])
   snapshots    PricingSnapshot[]
   appointments Appointment[]
+  reviewRequests ReviewRequest[]
 
   @@index([organizationId, status])
   @@index([publicId])
@@ -1366,22 +1367,36 @@ model ChangeOrderPricePref {
 model ReviewRequest {
   id             String    @id @default(cuid())
   organizationId String
-  jobId          String
+  // A request hangs off the JOB that was finished or the PROPOSAL that was
+  // marked complete — at least one of the two, often both (a job carries its
+  // proposal). Both optional since 2026-09-13: a proposal completed by hand
+  // with no job behind it still gets a review link.
+  jobId          String?
+  proposalId     String?
   clientId       String?
   publicToken    String    @unique @default(cuid())
-  status         String    @default("PENDING") // PENDING | SENT | COMPLETED
+  status         String    @default("PENDING") // PENDING (no client email) | SENT | COMPLETED
   rating         Int?
   comment        String?
+  // JSON string[] of photo URLs the client attached (blob URLs; max 6).
+  photosJson     String    @default("[]")
+  // Contractor hid this review from the public /r/[slug] page and the portal
+  // badge. It still counts in the dashboard average and in lead routing.
+  hiddenAt       DateTime?
+  // The one 7-day reminder was sent (or attempted) — never re-sent.
+  remindedAt     DateTime?
   sentAt         DateTime?
   completedAt    DateTime?
   createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job          Job?         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  proposal     Proposal?    @relation(fields: [proposalId], references: [id], onDelete: SetNull)
   client       Client?      @relation(fields: [clientId], references: [id])
 
   @@index([organizationId, status])
   @@index([jobId])
+  @@index([proposalId])
 }
 
 model ReferralCode {

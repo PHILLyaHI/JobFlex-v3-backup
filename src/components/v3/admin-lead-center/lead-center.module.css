@@ -357,3 +357,16 @@
   :global(.jf-blueprint .content .pmdl) .rankRow { grid-template-columns: 22px minmax(0, 1fr) 70px; }
   :global(.jf-blueprint .content .pmdl) .rankHide { display: none; }
 }
+
+/* Star rating beside a shop — the same number routing scores on (hidden
+   reviews included), read as "★ 4.8 (12)" instead of a 0–100 component. */
+:global(.jf-blueprint .content) .stars {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em;
+  color: var(--ink); white-space: nowrap;
+}
+:global(.jf-blueprint .content) .stars b { font-weight: 800; font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .stars i { font-style: normal; color: var(--muted); }
+:global(.jf-blueprint .content) .starsNone {
+  color: var(--muted-light); text-transform: uppercase; letter-spacing: 0.08em; font-size: 9.5px;
+}

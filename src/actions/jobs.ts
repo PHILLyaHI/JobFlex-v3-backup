@@ -209,6 +209,8 @@ export async function updateJob(id: string, raw: Partial<z.infer<typeof jobInput
       });
       revalidatePath("/dashboard/proposals");
     }
+    // The client's review link — through the proposal when there is one (one
+    // request per proposal, whichever door finished it), else per job.
     try {
       const { createReviewRequestInternal } = await import("@/lib/reviewRequestInternal");
       await createReviewRequestInternal(id);

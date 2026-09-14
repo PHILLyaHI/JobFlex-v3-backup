@@ -55,6 +55,7 @@ import {
   useReveal,
 } from "@/components/v3/admin-influencers/admin-ui";
 import ui from "@/components/v3/admin-influencers/admin-ui.module.css";
+import { StarsInline } from "@/components/reviews/StarsInline";
 import styles from "./lead-center.module.css";
 
 /* ============================================================
@@ -70,6 +71,10 @@ export interface RankEntry {
   distanceScore: number;
   ratingScore: number;
   respScore: number;
+  /** Raw review numbers (matching.ts, 2026-09-13). Absent on older snapshots —
+   *  the sheet falls back to the shop roster's live figure. */
+  ratingAvg?: number | null;
+  ratingCount?: number;
   fallback: boolean;
 }
 
@@ -135,7 +140,35 @@ export interface OrgPickDTO {
   offersReceived: number;
   offersAccepted: number;
   leadsMatched: number;
+  /** Client rating across ALL completed reviews (hidden ones included — what
+   *  routing scores on). Null / 0 when the shop has none. */
+  ratingAvg: number | null;
+  ratingCount: number;
   joinedAt: string;
+}
+
+/* ============================================================
+   STARS — a shop's client rating, read the way a person reads it
+   ============================================================ */
+
+function ratingLabel(avg: number | null, count: number): string {
+  if (!count || avg == null) return "no reviews";
+  return `${(Math.round(avg * 10) / 10).toFixed(1)} (${count})`;
+}
+
+function Stars({ avg, count, compact }: { avg: number | null; count: number; compact?: boolean }) {
+  if (!count || avg == null) return <span className={cx(styles.stars, styles.starsNone)}>no reviews</span>;
+  const a = (Math.round(avg * 10) / 10).toFixed(1);
+  return (
+    <span
+      className={styles.stars}
+      title={`${a} from ${count} client review${count === 1 ? "" : "s"} — hidden reviews count too`}
+    >
+      <StarsInline value={avg} size={11} />
+      <b>{a}</b>
+      {compact ? null : <i>({count})</i>}
+    </span>
+  );
 }
 
 export interface StatsDTO {
@@ -687,6 +720,7 @@ function ShopsCard({ orgs, onOpen }: { orgs: OrgPickDTO[]; onOpen: (id: string) 
       <span className={cx(styles.shopName, styles.nameLink, off && styles.shopOff)} title={o.name}>
         {o.name}
       </span>
+      <Stars avg={o.ratingAvg} count={o.ratingCount} compact />
       {off ? (
         <Chip tone="mute">{eligibility(o)}</Chip>
       ) : (
@@ -877,7 +911,7 @@ function MapCard({
  *  true, not decoration. */
 const FACTORS = [
   { label: "Distance", weight: 45, note: "≈50 mi falloff" },
-  { label: "Rating", weight: 35, note: "reviews, 4.0 prior" },
+  { label: "Rating", weight: 35, note: "client reviews, 4.0 prior · hidden ones count" },
   { label: "Response", weight: 20, note: "past accept speed" },
 ];
 
@@ -1035,6 +1069,15 @@ function DetailSheet({
   };
   const readyShops = orgs.filter(isMatchable).sort(ranked);
   const otherShops = orgs.filter((o) => !isMatchable(o)).sort(ranked);
+  // The ranking table reads stars off the snapshot when it carries them, else
+  // off the live roster (snapshots taken before 2026-09-13 have no numbers).
+  const orgById = new Map(orgs.map((o) => [o.id, o]));
+  const rankRating = (r: RankEntry) => {
+    const live = orgById.get(r.orgId);
+    const avg = r.ratingCount != null ? (r.ratingAvg ?? null) : (live?.ratingAvg ?? null);
+    const count = r.ratingCount ?? live?.ratingCount ?? 0;
+    return ratingLabel(avg, count);
+  };
 
   return (
     <Sheet
@@ -1178,7 +1221,12 @@ function DetailSheet({
                       <span className={cx(styles.rankN, styles.rankHide)}>
                         {r.distanceMi == null ? (r.fallback ? "zip" : "—") : `${r.distanceMi} mi`}
                       </span>
-                      <span className={cx(styles.rankN, styles.rankHide)}>{Math.round(r.ratingScore * 100)}</span>
+                      <span
+                        className={cx(styles.rankN, styles.rankHide)}
+                        title={`Rating component: ${Math.round(r.ratingScore * 100)} of 100 (4.0 prior, weight 5)`}
+                      >
+                        {rankRating(r)}
+                      </span>
                       <span className={cx(styles.rankN, styles.rankHide)}>{Math.round(r.respScore * 100)}</span>
                       <span className={cx(styles.rankN, styles.rankTot)}>{Math.round(r.score * 100)}</span>
                     </div>
@@ -1202,7 +1250,13 @@ function DetailSheet({
                   >
                     <Ic name={isMatchable(o) ? "check" : "ban"} />
                     <span>{o.name}</span>
-                    <i>{busy === o.id ? "routing…" : isMatchable(o) ? "" : eligibility(o)}</i>
+                    <i>
+                      {busy === o.id
+                        ? "routing…"
+                        : isMatchable(o)
+                          ? `★ ${ratingLabel(o.ratingAvg, o.ratingCount)}`
+                          : eligibility(o)}
+                    </i>
                   </button>
                 ))}
                 {readyShops.length === 0 && !showAllShops ? (
@@ -1396,6 +1450,9 @@ function ShopSheet({
 
           <div className={styles.dSec}>Track record</div>
           <div className={styles.fields}>
+            <Field label="Client rating">
+              <Stars avg={shop.ratingAvg} count={shop.ratingCount} />
+            </Field>
             <Field label="Offers seen">{shop.offersReceived}</Field>
             <Field label="Accepted">
               {shop.offersAccepted}

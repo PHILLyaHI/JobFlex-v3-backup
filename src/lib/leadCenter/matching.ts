@@ -18,6 +18,10 @@ export interface Candidate {
   distanceScore: number;
   ratingScore: number;
   respScore: number;
+  // The raw review numbers behind ratingScore, for the admin to read as stars
+  // (the smoothed 0–1 score alone reads as nothing). Hidden reviews included.
+  ratingAvg: number | null;
+  ratingCount: number;
   // true when distance came from the zip fallback (lead not geocoded) rather
   // than a real haversine measurement.
   fallback: boolean;
@@ -123,6 +127,7 @@ export async function buildRanking(lead: PlatformLeadLike): Promise<Candidate[]>
     const sum = rating?._sum.rating ?? 0;
     const smoothed = (sum + RATING_PRIOR_MEAN * RATING_PRIOR_WEIGHT) / (n + RATING_PRIOR_WEIGHT);
     const ratingScore = (smoothed - 1) / 4;
+    const ratingAvg = n > 0 ? Number((sum / n).toFixed(2)) : null;
 
     const resolved = resolvedByOrg.get(org.id) ?? [];
     let respScore = 0.5; // neutral prior — no offer history yet
@@ -147,6 +152,8 @@ export async function buildRanking(lead: PlatformLeadLike): Promise<Candidate[]>
         distanceScore: Number(dist.score.toFixed(4)),
         ratingScore: Number(ratingScore.toFixed(4)),
         respScore: Number(respScore.toFixed(4)),
+        ratingAvg,
+        ratingCount: n,
         fallback: dist.fallback,
       } satisfies Candidate,
       openOffers: openByOrg.get(org.id) ?? 0,
