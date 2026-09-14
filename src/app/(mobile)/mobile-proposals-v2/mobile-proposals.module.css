@@ -1017,3 +1017,8 @@
   justify-self: start;
   margin-top: 8px;
 }
+
+/* A proposal row or a contract header opens the proposal on tap. */
+.prowTap { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.prowTap:active { background: var(--paper-deep); }
+.prowTap:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
