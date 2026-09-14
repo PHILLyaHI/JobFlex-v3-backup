@@ -24,6 +24,7 @@ import {
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { isPlanLimitError } from "@/lib/planLimits";
+import { roleAccess } from "@/lib/roleAccess";
 import {
   WORKER_ROLES,
   WORKERS_SEED,
@@ -434,6 +435,22 @@ export function initWorkersContent(
     return host + "/w/" + token;
   }
 
+  /** What the chosen role will see and do — drawn under the picker so the
+   *  contractor knows what they are handing out before they send (owner,
+   *  2026-09-14). The facts come from lib/roleAccess, the one list. */
+  function whatHtml(role: string) {
+    const a = roleAccess(role);
+    return (
+      '<div class="mf-what-h"><span class="mf-what-role">' + escapeText(a.title) + '</span>' +
+        '<span class="mf-what-who">' + escapeText(a.who) + '</span></div>' +
+      '<ul class="mf-what-l">' + a.gets.map(function (g) { return '<li>' + escapeText(g) + '</li>'; }).join('') + '</ul>' +
+      '<div class="mf-what-no">Not included: ' + escapeText(a.not) + '</div>'
+    );
+  }
+  function noteFor(role: string, editing: boolean) {
+    return editing ? 'Changes save straight to the roster.' : roleAccess(role).invite;
+  }
+
   function openInvite(entry: WorkerEntry | null) {
     wk.editing = entry ? entry.id : null;
     wk.inviteRole = entry ? entry.role : 'INSTALLER';
@@ -458,13 +475,12 @@ export function initWorkersContent(
         WORKER_ROLES.map(function (r) {
           return '<button class="mf-role' + (wk.inviteRole === r.value ? ' on' : '') + '" type="button" data-role="' + r.value + '">' + r.label + '</button>';
         }).join('') +
-      '</div></div>' +
+      '</div>' +
+      '<div class="mf-what" id="mfWhat" aria-live="polite">' + whatHtml(wk.inviteRole) + '</div></div>' +
       (entry ? '<div class="mf link-box"><div class="kpi-lbl">Worker dashboard link</div>' +
         '<div class="link-row"><span class="link-url">' + escapeAttr(link) + '</span>' +
         '<button class="link-btn" type="button" data-act="copy-link" data-link="' + escapeAttr(link) + '" aria-label="Copy"><svg class="ic"><use href="#i-dup"/></svg></button></div></div>' : '') +
-      '<div class="mf-note" id="inviteNote">' + (entry
-        ? 'Changes save straight to the roster.'
-        : 'We email them an invite link. They accept, set a password, and see only their own jobs.') + '</div>' +
+      '<div class="mf-note" id="inviteNote">' + escapeText(noteFor(wk.inviteRole, !!entry)) + '</div>' +
       '<div class="mf-err is-hidden" id="inviteErr" role="alert"></div>' +
       '<div class="mdl-foot" style="margin:16px -17px -16px">' +
         '<button class="btn btn-ghost btn--sm" type="button" data-mdl="invite">Cancel</button>' +
@@ -608,6 +624,10 @@ export function initWorkersContent(
     if (roleBtn) {
       wk.inviteRole = roleBtn.dataset.role || '';
       $$("#mfRoles .mf-role").forEach(function (b) { b.classList.toggle('on', b === roleBtn); });
+      const what = $("#mfWhat");
+      if (what) what.innerHTML = whatHtml(wk.inviteRole);
+      const note = $("#inviteNote");
+      if (note) note.textContent = noteFor(wk.inviteRole, !!wk.editing);
       return;
     }
     // (The donor's `[data-flash-icon]` branch is gone with its only user: the

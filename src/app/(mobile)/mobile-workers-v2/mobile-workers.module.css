@@ -1052,3 +1052,33 @@
    strip it stands in — otherwise the last row of every list ends
    underneath it with no way to scroll clear. */
 .scroll { padding-bottom: 60px; }
+
+/* What the chosen role gets — under the 2×2 picker, redrawn on every tap. A
+   drawn card in the sheet's hairline with a blueprint left edge, the list
+   check-marked, the exclusions one mono line. */
+.roleWhat {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--hair-soft);
+  border-left: 4px solid var(--blueprint);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+.roleWhatH { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin-bottom: 8px; }
+.roleWhatRole { font-size: 14px; font-weight: 800; color: var(--ink); }
+.roleWhatWho {
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+}
+.roleWhatL { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.roleWhatL li { position: relative; padding-left: 18px; font-size: 13.5px; font-weight: 600; line-height: 1.45; color: var(--ink-soft); }
+.roleWhatL li::before { content: "✓"; position: absolute; left: 0; top: 0; font-weight: 800; color: var(--blueprint); }
+.roleWhatNo {
+  margin-top: 9px;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 500;
+  letter-spacing: 0.03em; line-height: 1.5;
+  color: var(--muted-light);
+}

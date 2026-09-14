@@ -1501,6 +1501,17 @@
 .bp :global(.content .mf-roles) { display: flex; flex-wrap: wrap; gap: 6px; }
 .bp :global(.content .mf-role) { height: 30px; padding: 0 11px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); font-size: 11.5px; font-weight: 700; color: var(--muted); }
 .bp :global(.content .mf-role.on) { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+/* What the chosen role gets — under the picker, redrawn on every tap. A drawn
+   card in the sheet's own hairline, the list check-marked in blueprint, the
+   exclusions one mono line so the card stays four or five lines tall. */
+.bp :global(.content .mf-what) { margin-top: 8px; padding: 10px 12px; border: 1.5px solid var(--hair-soft); border-left: 4px solid var(--blueprint); border-radius: var(--radius); background: var(--paper); }
+.bp :global(.content .mf-what-h) { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin-bottom: 6px; }
+.bp :global(.content .mf-what-role) { font-size: 12.5px; font-weight: 800; color: var(--ink); }
+.bp :global(.content .mf-what-who) { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .mf-what-l) { list-style: none; display: grid; gap: 3px; }
+.bp :global(.content .mf-what-l li) { position: relative; padding-left: 16px; font-size: 12px; font-weight: 600; line-height: 1.45; color: var(--ink-soft); }
+.bp :global(.content .mf-what-l li::before) { content: "✓"; position: absolute; left: 0; top: 0; font-weight: 800; color: var(--blueprint); }
+.bp :global(.content .mf-what-no) { margin-top: 7px; font-family: var(--font-mono); font-size: 10px; font-weight: 500; line-height: 1.5; letter-spacing: 0.04em; color: var(--muted-light); }
 .bp :global(.content .mf-row) { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 /* Email is the worker's login identity, so it is read-only on Edit — the field
    has to LOOK inert, not just refuse input. */
