@@ -660,7 +660,9 @@ function Tools({
           {money(baseLabor)} now.
         </span>
       </div>
-      <div className={styles.switchRow}>
+      {/* `.switchRowInset`: this copy of the table lives in the controls
+          column, not across the card — see manual-blueprint.module.css. */}
+      <div className={cx(styles.switchRow, styles.switchRowInset)}>
         <ToggleCell
           label="Labor-only proposal"
           on={laborOnly}
