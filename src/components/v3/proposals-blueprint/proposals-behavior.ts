@@ -199,23 +199,60 @@ export function initProposalsContent(
     if (p.owed <= 0 && contract > 0) return 100;
     return contract > 0 ? Math.max(0, Math.min(100, Math.round((paid / contract) * 100))) : 0;
   }
-  /** Paid vs contract, as a bar and a sentence — the "is it paid?" measure. */
+  /** Where one stage ends and the next begins, as percentages of the contract
+   *  — the ticks on the paid track. Cumulative, without the two ends, and
+   *  skipped within a point of either end so a tick never sits on the frame. */
+  function payTicks(p: ProposalRow): number[] {
+    const contract = p.contract ?? p.total;
+    const insts = p.inst || [];
+    if (contract <= 0 || insts.length < 2) return [];
+    const out: number[] = [];
+    let acc = 0;
+    for (let i = 0; i < insts.length - 1; i++) {
+      acc += instDollars(p, insts[i]);
+      const at = Math.round((acc / contract) * 10000) / 100;
+      if (at > 1 && at < 99) out.push(at);
+    }
+    return out;
+  }
+  /** The paid track — a dimension line across the payment strip: PAID on the
+   *  left, BALANCE (or the paid-in-full tag) on the right, and between them
+   *  the track, ticked at every stage boundary and filled to what has landed.
+   *  The fill is money, not stages, so it lands exactly on a tick when a stage
+   *  settles and never claims more than the ledger does. */
   function payBarHtml(p: ProposalRow): string {
     const contract = p.contract ?? p.total;
     const paid = p.paidAmt ?? 0;
     const pct = payPct(p);
     const full = contract > 0 && p.owed <= 0;
     return (
-      '<div class="ppay' + (full ? " ppay--full" : "") + '">' +
-      '<div class="ppay-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><span style="width:' + pct + '%"></span></div>' +
       '<div class="ppay-line">' +
-      '<span class="ppay-paid"><b>' + fmtMoney(paid) + '</b> paid · ' + pct + '%</span>' +
+      '<span class="ppay-paid">Paid <b>' + fmtMoney(paid) + "</b> · " + pct + "%</span>" +
+      '<div class="ppay-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' +
+      pct +
+      '" aria-valuetext="' +
+      esc(fmtMoney(paid) + " paid of " + fmtMoney(contract)) +
+      '"><span style="width:' +
+      pct +
+      '%"></span>' +
+      payTicks(p)
+        .map((t) => '<i class="ppay-tick" style="left:' + t + '%"></i>')
+        .join("") +
+      "</div>" +
       (full
         ? '<span class="ppay-tag ppay-tag--ok"><svg class="ic"><use href="#i-check"/></svg>Paid in full</span>'
-        : '<span class="ppay-tag"><b>' + fmtMoney(p.owed) + '</b> balance</span>') +
-      "</div>" +
+        : '<span class="ppay-tag">Balance <b>' + fmtMoney(p.owed) + "</b></span>") +
       "</div>"
     );
+  }
+  /** The payment strip: the one zone between a card's head and its foot. It
+   *  holds, top to bottom, the change-order chip, the stage columns (or the
+   *  6+ row table), and the paid track as their footing — so the ledger and
+   *  its measure read as one drawing instead of a bar floating on white. */
+  function payStripHtml(p: ProposalRow, blocks: string): string {
+    const contract = p.contract ?? p.total;
+    const full = contract > 0 && p.owed <= 0;
+    return '<div class="ppay' + (full ? " ppay--full" : "") + '">' + blocks + payBarHtml(p) + "</div>";
   }
   /** "2 change orders · +$1,080 approved · 1 awaiting approval" — or nothing. */
   function coChipHtml(p: ProposalRow): string {
@@ -604,9 +641,7 @@ export function initProposalsContent(
         : "") +
       "</div>" +
       "</div>" +
-      payBarHtml(p) +
-      (p.co && p.co.count ? '<div class="pjob-cos">' + coChipHtml(p) + "</div>" : "") +
-      payBlock +
+      payStripHtml(p, (p.co && p.co.count ? '<div class="pjob-cos">' + coChipHtml(p) + "</div>" : "") + payBlock) +
       '<div class="pjob-foot">' +
       '<div class="pjob-foot-l">' +
       // Real: the scheduling surface. An anchor, not a handler, so ⌘-click and
@@ -726,25 +761,27 @@ export function initProposalsContent(
         : '<span class="pt-mono pjob-total-sub">paid in full</span>') +
       "</div>" +
       "</div>" +
-      payBarHtml(p) +
-      (p.co && p.co.count ? '<div class="pjob-cos">' + coChipHtml(p) + "</div>" : "") +
-      '<div class="pcols pcols--sheet">' +
-      '<div class="pcol"><div class="kpi-lbl">Deposit</div><div class="pcol-val">' +
-      dep +
-      '</div><div class="pcol-sub">' +
-      (insts.length ? "Locked in" : "No payment schedule") +
-      "</div></div>" +
-      '<div class="pcol"><div class="kpi-lbl">Start</div><div class="pcol-val">' +
-      esc(p.accepted || "—") +
-      '</div><div class="pcol-sub">Work began</div></div>' +
-      '<div class="pcol"><div class="kpi-lbl">Completed</div><div class="pcol-val' +
-      (p.owed > 0 ? "" : " good") +
-      '">' +
-      esc(p.paid || "—") +
-      '</div><div class="pcol-sub">' +
-      (p.owed > 0 ? fmtMoney(p.owed) + " still owed" : "Paid in full") +
-      "</div></div>" +
-      "</div>" +
+      payStripHtml(
+        p,
+        (p.co && p.co.count ? '<div class="pjob-cos">' + coChipHtml(p) + "</div>" : "") +
+          '<div class="pcols pcols--sheet">' +
+          '<div class="pcol"><div class="kpi-lbl">Deposit</div><div class="pcol-val">' +
+          dep +
+          '</div><div class="pcol-sub">' +
+          (insts.length ? "Locked in" : "No payment schedule") +
+          "</div></div>" +
+          '<div class="pcol"><div class="kpi-lbl">Start</div><div class="pcol-val">' +
+          esc(p.accepted || "—") +
+          '</div><div class="pcol-sub">Work began</div></div>' +
+          '<div class="pcol"><div class="kpi-lbl">Completed</div><div class="pcol-val' +
+          (p.owed > 0 ? "" : " good") +
+          '">' +
+          esc(p.paid || "—") +
+          '</div><div class="pcol-sub">' +
+          (p.owed > 0 ? fmtMoney(p.owed) + " still owed" : "Paid in full") +
+          "</div></div>" +
+          "</div>",
+      ) +
       '<div class="psheet-body">' +
       '<div class="psheet-check">' +
       checks +
@@ -1064,6 +1101,50 @@ export function initProposalsContent(
     box.textContent = msg ?? "";
     box.classList.toggle("is-hidden", !msg);
   }
+  /**
+   * A card action carrying its own write. The clicked button's icon gives way
+   * to a drawn square (the stylesheet draws its outline around — nothing
+   * spins), its label turns present-participle, it goes inert, and its width
+   * is pinned FIRST so the shorter label cannot narrow the bar under the
+   * cursor. `busy = false` puts every one of those back.
+   */
+  function setActBusy(btn: HTMLElement | null, busy: boolean, busyLbl = "") {
+    if (!btn || busy === btn.classList.contains("is-busy")) return;
+    const b = btn as HTMLButtonElement;
+    const label = Array.from(b.childNodes).find(
+      (n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim() !== "",
+    );
+    if (busy) {
+      b.style.minWidth = b.offsetWidth + "px";
+      if (label) {
+        b.dataset.idleLbl = label.textContent ?? "";
+        label.textContent = busyLbl;
+      }
+      const NS = "http://www.w3.org/2000/svg";
+      const square = document.createElementNS(NS, "svg");
+      square.setAttribute("class", "ic ic--busy");
+      square.setAttribute("viewBox", "0 0 18 18");
+      square.setAttribute("aria-hidden", "true");
+      const outline = document.createElementNS(NS, "rect");
+      outline.setAttribute("x", "4");
+      outline.setAttribute("y", "4");
+      outline.setAttribute("width", "10");
+      outline.setAttribute("height", "10");
+      square.append(outline);
+      b.prepend(square);
+      b.classList.add("is-busy");
+      b.setAttribute("aria-busy", "true");
+      b.disabled = true;
+      return;
+    }
+    b.querySelector(".ic--busy")?.remove();
+    if (label && b.dataset.idleLbl != null) label.textContent = b.dataset.idleLbl;
+    delete b.dataset.idleLbl;
+    b.classList.remove("is-busy");
+    b.removeAttribute("aria-busy");
+    b.disabled = false;
+    b.style.minWidth = "";
+  }
   /** Busy state on a dialog's confirm button — same shape as Workers. */
   function setSaving(btn: HTMLElement | null, busy: boolean, busyLbl: string, idleLbl: string) {
     if (!btn) return;
@@ -1293,22 +1374,28 @@ export function initProposalsContent(
         void runReminders(p, act);
         return;
       }
+      // The four status writes hand the clicked button along: it is the one
+      // control that shows the write in flight (setActBusy), and each carries
+      // its own present participle so the label stays the verb being done.
       if (kind === "done" && p && card) {
         // COMPLETED is a fact about the work; the money stays owed on the sheet
         // until it is paid — by the client, or by "Mark paid in full".
-        void runStatus(p, "COMPLETED", card, "acc");
+        void runStatus(p, "COMPLETED", card, "acc", act, "Marking…");
         return;
       }
       if (kind === "paidfull" && p && card) {
-        void runPaidInFull(p, card);
+        void runPaidInFull(p, card, act);
         return;
       }
       if (kind === "unaccept" && p && card) {
-        void runStatus(p, "DRAFT", card, "acc");
+        void runStatus(p, "DRAFT", card, "acc", act, "Undoing…");
         return;
       }
       if (kind === "unmark" && p && card) {
-        void runStatus(p, "ACCEPTED", card, "done");
+        // "Undoing…", not "Reopening…": the busy label must never be wider
+        // than the idle one (the button's width is pinned to it), and both
+        // undo-arrow buttons — Un-accept and Reopen job — undo a status.
+        void runStatus(p, "ACCEPTED", card, "done", act, "Undoing…");
         return;
       }
       // Both of these mail the client through notifyPaymentReminder(): the
@@ -1601,15 +1688,22 @@ export function initProposalsContent(
     status: "PAID" | "DRAFT" | "ACCEPTED" | "COMPLETED",
     card: HTMLElement,
     acted: "acc" | "done",
+    btn: HTMLElement | null = null,
+    busyLbl = "Saving…",
   ) {
     if (pstate.writing) return;
     pstate.writing = true;
+    // The card dims and goes inert; the button that was pressed carries the
+    // write. On success the button stays as it is — the card is leaving with
+    // it, and a label flipping back mid-exit would read as a second event.
     card.classList.add("is-busy");
+    setActBusy(btn, true, busyLbl);
     try {
       const res = await updateProposalStatus(p.id, status);
       if (!res.ok) {
         pstate.writing = false;
         card.classList.remove("is-busy");
+        setActBusy(btn, false);
         if (res.reason === "provider_paid") {
           showAlert(
             "Paid through Stripe / Square",
@@ -1644,6 +1738,7 @@ export function initProposalsContent(
     } catch (err) {
       pstate.writing = false;
       card.classList.remove("is-busy");
+      setActBusy(btn, false);
       showAlert("Couldn't update", actionError(err));
     }
   }
@@ -1659,11 +1754,12 @@ export function initProposalsContent(
    * for the desktop editor's Record payment dialog.
    */
   /** The office records the whole balance as paid by hand: every open stage settles, the proposal files PAID. */
-  async function runPaidInFull(p: ProposalRow, card: HTMLElement) {
+  async function runPaidInFull(p: ProposalRow, card: HTMLElement, btn: HTMLElement | null = null) {
     if (pstate.writing) return;
     if (!window.confirm(`Record ${fmtMoney(p.owed)} as paid by hand for "${p.title}"? Every open stage closes and the proposal files as paid.`)) return;
     pstate.writing = true;
     card.classList.add("is-busy");
+    setActBusy(btn, true, "Recording…");
     try {
       await recordRemainingPayment({ proposalId: p.id, method: "OTHER" });
       proposalsData = cloneRows(await loadProposalBook());
@@ -1675,6 +1771,9 @@ export function initProposalsContent(
     } finally {
       pstate.writing = false;
       card.classList.remove("is-busy");
+      // A success re-rendered the sheet, so this only ever restores the
+      // button a failure left in place.
+      setActBusy(btn, false);
     }
   }
 
@@ -1691,9 +1790,9 @@ export function initProposalsContent(
          · the stage flips to "Paid · manual" HERE, before the request, so
            the tap has an answer on the same frame;
          · the card takes `.is-busy` for as long as the request is out —
-           dimmed, inert, and carrying the spinner the stylesheet draws on
-           that class — so "already done" is never confused with "still
-           going".
+           dimmed and inert — so "already done" is never confused with
+           "still going". (The stage's own button is gone with the re-render,
+           so this write has no control to carry it the way runStatus does.)
 
        The server's answer still wins: the refetch below replaces the whole
        row (and moves the card to Completed when that payment settles the
