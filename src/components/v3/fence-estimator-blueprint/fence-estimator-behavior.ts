@@ -20,21 +20,47 @@ import { attachPlacesSuggest, type PickedPlace } from "@/components/v3/blueprint
 import { mountIsland, type Island } from "@/components/v3/blueprint-shell/react-island";
 import {
   FenceDrawMap,
+  type DraftState,
   type FenceDrawMapApi,
   type FenceDrawMapProps,
   type TerrainSegView,
 } from "@/components/estimator/fence/FenceDrawMap";
 import {
+  mergeBuildings,
+  ringAreaSqFt,
+  wallMountsFor,
+  type DrawnHouse,
+} from "@/components/estimator/fence/fenceHouse";
+import type { BayClass } from "@/components/estimator/fence/fenceGeometry";
+import {
   sampleFencePath,
   terrainFromProfile,
   terrainAssumption,
+  MIN_PROFILED_SEG_FT,
   type FencePathSampling,
   type FenceTerrainReport,
+  type SegTerrain,
 } from "@/components/estimator/fence/fenceTerrain";
-import { fetchElevationProfile } from "@/actions/fenceTerrain";
+import {
+  boxContains,
+  boxOf,
+  buildLotTopo,
+  gridFromSamples,
+  lineGradeOnGrid,
+  padBox,
+  planBox,
+  planTopoGrid,
+  topoSamplePoints,
+  unionBox,
+  type LotTopo,
+  type TopoBox,
+  type TopoGridPlan,
+} from "@/components/estimator/fence/fenceTopo";
+import { fetchElevationProfile, type ElevationProfileResult, type ElevationSource } from "@/actions/fenceTerrain";
 import {
   buildingsToFootprints,
   latLngToLocalFeet,
+  localFeetToLatLng,
 } from "@/components/estimator/fence/mapProjection";
 import type {
   BuildingFootprint,
@@ -44,7 +70,7 @@ import type {
 } from "@/components/estimator/fence/fenceTypes";
 // Type-only: the component itself arrives through a dynamic import so Three.js
 // stays off the initial bundle of a page whose primary surface is a map.
-import type { FenceModel3D } from "@/components/estimator/fence/FenceModel3D";
+import type { FenceModel3D, FenceTerrain3D } from "@/components/estimator/fence/FenceModel3D";
 import {
   buildFenceLineItems,
   type FencePricingConfig,
@@ -274,15 +300,13 @@ export function initFenceEstimatorContent(
    *  segment's measured grade factor. Runs without measured ground bill flat —
    *  the honest fallback the assumptions then own up to. */
   function billFt() {
-    return fs.runs.reduce(function (a, r, i) { return a + (r.ft || 0) * segFactor(i); }, 0);
+    return fs.runs.reduce(function (a, r) { return a + (r.ft || 0) * segFactor(r); }, 0);
   }
   /** Billed footage of one slope class (racked / stepped), for the labor split. */
   function classFt(cls: string) {
-    const t = usableTerrain();
-    if (!t) return 0;
-    return fs.runs.reduce(function (a, r, i) {
-      const s = t.segs[i];
-      return a + (s && s.cls === cls ? (r.ft || 0) * segFactor(i) : 0);
+    return fs.runs.reduce(function (a, r) {
+      const s = terrainSegForRun(r);
+      return a + (s && s.cls === cls ? (r.ft || 0) * segFactor(r) : 0);
     }, 0);
   }
   function price() {
@@ -357,6 +381,7 @@ export function initFenceEstimatorContent(
   // reloading. ----
   function runRowHtml(r: FenceRun, i: number) {
     return '<li data-run="' + r.id + '"><span class="run-n">Run ' + (i + 1) + '</span>' +
+      '<span class="run-grade is-hidden" data-run-grade></span>' +
       '<input class="run-in" type="number" min="1" step="1" value="' + r.ft + '" data-run-ft>' +
       '<span class="run-u">ft</span>' +
       '<button class="row-x" type="button" data-del-run aria-label="Remove run">×</button></li>';
@@ -449,6 +474,7 @@ export function initFenceEstimatorContent(
     renderTicket();
     renderStrip();
     syncRunsEmpty();
+    paintRunGrades();
     // Material, height and openings are the 3D scene's inputs too. No-op until
     // the scene is mounted, and `modelGates()` keeps the array identity stable
     // so a keystroke in a run-length box does not rebuild it.
@@ -825,7 +851,7 @@ export function initFenceEstimatorContent(
       if (kind === 'align' && mapApi) {
         aligning = !aligning;
         mapApi.setAlign(aligning);
-        if (aligning) setArmed(null);
+        if (aligning) { setArmed(null); setHouseMode(false); }
         act.classList.toggle('on', aligning);
         syncHint();
         return;
@@ -839,6 +865,60 @@ export function initFenceEstimatorContent(
         pushMap();
         return;
       }
+      // Contours on the land — on by default, a MODE like Lot lines. Turning it
+      // off hides the lines, labels, legend and side grades; turning it back on
+      // reads the ground if it has not been read for this lot yet.
+      // House tool — a MODE: clicks trace a house outline; its corners drag.
+      if (kind === 'house') {
+        setHouseMode(!houseMode);
+        return;
+      }
+      if (kind === 'topo') {
+        topoOn = !topoOn;
+        act.classList.toggle('on', topoOn);
+        act.setAttribute('aria-pressed', String(topoOn));
+        if (topoOn) ensureTopo();
+        else paintTopo();
+        return;
+      }
+    }
+    const draftBtn = target.closest<HTMLElement>('[data-draft]');
+    if (draftBtn && mapApi) {
+      const what = draftBtn.dataset.draft;
+      if (what === 'undo') mapApi.undoDraft();
+      else if (what === 'finish') mapApi.finishDraft();
+      else if (what === 'cancel') mapApi.cancelDraft();
+      return;
+    }
+    const delHouse = target.closest<HTMLElement>('[data-del-house]');
+    if (delHouse) {
+      houses = houses.filter(function (h) { return h.id !== delHouse.dataset.delHouse; });
+      afterHousesChanged();
+      return;
+    }
+    if (target.closest('[data-house-detect]')) {
+      const b = detectedSubject();
+      if (b) {
+        houseSeq += 1;
+        houses = houses.concat([{
+          id: 'h' + houseSeq,
+          ring: b.ring
+            .filter(function (q, i, arr) {
+              return !(i === arr.length - 1 && arr.length > 3 && Math.hypot(q.x - arr[0].x, q.y - arr[0].y) < 0.01);
+            })
+            .map(function (q) { return { x: q.x, y: q.y }; }),
+          stories: b.heightFt >= 30 ? 3 : b.heightFt >= 20 ? 2 : 1,
+        }]);
+        afterHousesChanged();
+      }
+      return;
+    }
+    if (target.closest('[data-topo-retry]')) {
+      topoAsked = null;
+      const legend = $('#topoLegend');
+      if (legend) { legend.tabIndex = -1; legend.focus({ preventScroll: true }); }
+      ensureTopo();
+      return;
     }
     const delRun = target.closest<HTMLElement>('[data-del-run]');
     if (delRun) {
@@ -880,6 +960,9 @@ export function initFenceEstimatorContent(
       mapOwnsRuns = false;
       mapPoints = [];
       siteBuildings = [];
+      houses = [];
+      setHouseMode(false);
+      renderHousePanel();
       // Takes the 3D scene down with it — there is no longer a fence to show.
       syncStage();
       setArmed(null);
@@ -977,6 +1060,16 @@ export function initFenceEstimatorContent(
   on(document, 'change', function (e) {
     const t = e.target;
     if (!(t instanceof HTMLSelectElement)) return;
+    if (t.matches('[data-house-stories]')) {
+      const li = t.closest<HTMLElement>('[data-house]');
+      const id = li?.dataset.house;
+      const n = Number(t.value);
+      houses = houses.map(function (h) {
+        return h.id === id ? { id: h.id, ring: h.ring, stories: (n === 3 ? 3 : n === 2 ? 2 : 1) as 1 | 2 | 3 } : h;
+      });
+      afterHousesChanged(true);
+      return;
+    }
     if (t.matches('[data-op-type]')) {
       const li = t.closest<HTMLElement>('[data-op]');
       if (!li) return;
@@ -1082,6 +1175,8 @@ export function initFenceEstimatorContent(
   /** The raw per-sample elevations of the last good profile (ft) — the strip. */
   let terrainElev: number[] | null = null;
   let terrainStatus: 'idle' | 'busy' | 'ok' | 'failed' = 'idle';
+  /** Where the last good profile came from — named on the profile strip. */
+  let terrainSource: { source: ElevationSource; resM?: number } | null = null;
   /** Bumped on every trace commit; an answer for an older stamp is dropped. */
   let terrainStamp = 0;
   let terrainTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1118,6 +1213,7 @@ export function initFenceEstimatorContent(
         terrainReport = terrainFromProfile(sampling.segs, res.elevFt);
         terrainSampling = sampling;
         terrainElev = res.elevFt;
+        terrainSource = { source: res.source, resM: res.resM };
         terrainStatus = 'ok';
       } else {
         terrainReport = null;
@@ -1143,6 +1239,273 @@ export function initFenceEstimatorContent(
     renderFigures();
     renderProfile();
     pushMap();
+    renderModelNote();
+  }
+
+  // ================= TOPOGRAPHY (contours on the land) =================
+  // One elevation lattice per property — the lot's bounding box plus a margin,
+  // or the ground around the address when no lot came back — through the same
+  // elevation action as the fence profile (USGS lidar first). fenceTopo turns
+  // it into contour lines, labels and HIGH / LOW marks the map draws, the
+  // legend over the map, and a grade on every property side before a fence is
+  // down. The PRICE still reads only the traced line's own profile.
+  let topoOn = true;
+  const TOPO_FIT_PADDING = { top: 112, right: 48, bottom: 48, left: 48 };
+  let topoStatus: 'idle' | 'busy' | 'ok' | 'failed' = 'idle';
+  let topoError = '';
+  let topoGrid: {
+    origin: { lat: number; lng: number };
+    plan: TopoGridPlan;
+    grid: number[][];
+    source: ElevationSource;
+    resM?: number;
+    rev: number;
+  } | null = null;
+  /** The lattice last ASKED for (answered, in flight or failed) — what decides
+   *  whether a new lot or a longer trace needs another request. */
+  let topoAsked: { lat: number; lng: number; box: TopoBox } | null = null;
+  let topoStamp = 0;
+  let topoRev = 0;
+  let topoTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Memo of the drawn overlay: the map effect rebuilds only on a new object. */
+  let topoView: { key: string; lot: LotTopo } | null = null;
+  /** The origin the current `parcelLots` were loaded for. */
+  let parcelOrigin: { lat: number; lng: number } | null = null;
+  let ringsMemo: { lots: ParcelLot[]; origin: { lat: number; lng: number }; rings: PathPoint[][] } | null = null;
+
+  function sameOrigin(a: { lat: number; lng: number } | null, b: { lat: number; lng: number } | null) {
+    return !!a && !!b && a.lat === b.lat && a.lng === b.lng;
+  }
+
+  /** The lot's rings in local feet — only while they belong to this origin. */
+  function lotRingsFt(o: { lat: number; lng: number }): PathPoint[][] {
+    if (!parcelLots.length || !sameOrigin(parcelOrigin, o)) return [];
+    if (ringsMemo && ringsMemo.lots === parcelLots && sameOrigin(ringsMemo.origin, o)) return ringsMemo.rings;
+    const rings = parcelLots.map(function (l) {
+      return l.ringPts.map(function (p) { return latLngToLocalFeet(o, { lat: p[0], lng: p[1] }); });
+    });
+    ringsMemo = { lots: parcelLots, origin: o, rings: rings };
+    return rings;
+  }
+
+  /** What must be on the lattice: the lot and the traced fence. */
+  function topoCore(o: { lat: number; lng: number }): TopoBox | null {
+    const lot = boxOf(lotRingsFt(o).flat());
+    const trace = boxOf(mapPoints);
+    return unionBox(lot, trace);
+  }
+
+  function resetTopo() {
+    topoStamp += 1;
+    if (topoTimer) { clearTimeout(topoTimer); timers.delete(topoTimer); topoTimer = null; }
+    topoGrid = null;
+    topoAsked = null;
+    topoView = null;
+    topoStatus = 'idle';
+    topoError = '';
+  }
+
+  function scheduleTopo(delayMs: number) {
+    if (topoTimer) { clearTimeout(topoTimer); timers.delete(topoTimer); }
+    const id = setTimeout(function () {
+      timers.delete(id);
+      topoTimer = null;
+      ensureTopo();
+    }, delayMs);
+    timers.add(id);
+    topoTimer = id;
+  }
+
+  /** Ask for a lattice when the one already asked for does not cover the lot
+   *  and the fence. A failure is not retried on its own — the legend offers a
+   *  retry — so a lookup that is down is not hammered on every trace edit. */
+  function ensureTopo() {
+    const o = mapOrigin;
+    // Read even with the overlay switched off: the 3D view stands the fence on
+    // the same lattice. The toggle only hides lines, labels and legend.
+    if (!o) { paintTopo(); return; }
+    const core = topoCore(o);
+    if (topoAsked && sameOrigin(topoAsked, o) && (!core || boxContains(topoAsked.box, core))) {
+      paintTopo();
+      return;
+    }
+    void refreshTopo(o, core);
+  }
+
+  async function refreshTopo(o: { lat: number; lng: number }, core: TopoBox | null) {
+    topoStamp += 1;
+    const stamp = topoStamp;
+    // Context past the lot so its lines visibly continue, proportional to the
+    // lot, never less than 40 ft; with nothing known, 150 ft round the pin.
+    let box: TopoBox = { x0: -150, y0: -150, x1: 150, y1: 150 };
+    if (core) {
+      const span = Math.max(core.x1 - core.x0, core.y1 - core.y0);
+      box = padBox(core, Math.max(40, span * 0.2));
+      if (!lotRingsFt(o).length) box = unionBox(box, { x0: -150, y0: -150, x1: 150, y1: 150 }) as TopoBox;
+    }
+    const plan = planTopoGrid(box);
+    topoAsked = { lat: o.lat, lng: o.lng, box: planBox(plan) };
+    topoStatus = 'busy';
+    renderTopoLegend();
+    try {
+      // A plain fetch, NOT the server action: actions run one at a time, and
+      // this picture of the lot must never queue in front of the fence's own
+      // profile (the price) or Convert (see lib/elevationProfile).
+      const http = await fetch('/api/fence/elevation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ points: topoSamplePoints(plan, o) }),
+      });
+      const res = (await http.json().catch(function () {
+        return { ok: false, error: 'Ground lookup failed (' + http.status + ')' };
+      })) as ElevationProfileResult;
+      if (stamp !== topoStamp) return;
+      const grid = res.ok ? gridFromSamples(plan, res.elevFt) : null;
+      if (res.ok && grid) {
+        topoRev += 1;
+        topoGrid = { origin: o, plan: plan, grid: grid, source: res.source, resM: res.resM, rev: topoRev };
+        topoStatus = 'ok';
+        topoError = '';
+      } else {
+        topoStatus = 'failed';
+        topoError = res.ok ? 'The ground data came back incomplete' : res.error;
+      }
+    } catch (err) {
+      if (stamp !== topoStamp) return;
+      topoStatus = 'failed';
+      topoError = err instanceof Error ? err.message : 'Ground lookup failed';
+    }
+    paintTopo();
+  }
+
+  /** The lot's topography for THIS origin and lot, memoised by the lattice
+   *  revision and the ring geometry. */
+  function currentLotTopo(): LotTopo | null {
+    const o = mapOrigin;
+    const g = topoGrid;
+    if (!o || !g || !sameOrigin(g.origin, o)) return null;
+    const rings = lotRingsFt(o);
+    const key = g.rev + '|' + rings.map(function (r) {
+      return r.length + ':' + (r[0] ? r[0].x.toFixed(1) + ',' + r[0].y.toFixed(1) : '');
+    }).join(';');
+    if (topoView && topoView.key === key) return topoView.lot;
+    const lot = buildLotTopo({
+      grid: g.grid,
+      plan: g.plan,
+      origin: o,
+      rings: rings,
+      fine: g.source === 'usgs-3dep' && (g.resM ?? 99) <= 3,
+    });
+    topoView = { key: key, lot: lot };
+    return lot;
+  }
+
+  function parcelPalette(): FenceDrawMapProps['parcelPalette'] {
+    const out: Record<string, string> = {};
+    const pick: Array<[string, string]> = [['line', '--parcel-line'], ['casing', '--parcel-casing'], ['dot', '--parcel-dot']];
+    pick.forEach(function (p) { const v = token(p[1]); if (v) out[p[0]] = v; });
+    return out;
+  }
+
+  function topoPalette(): FenceDrawMapProps['topoPalette'] {
+    const out: Record<string, string> = {};
+    const pick: Array<[string, string]> = [
+      ['line', '--topo-line'], ['major', '--topo-major'], ['casing', '--topo-casing'],
+      ['ink', '--ink'], ['paper', '--topo-paper'], ['font', '--font-mono'],
+    ];
+    pick.forEach(function (p) { const v = token(p[1]); if (v) out[p[0]] = v; });
+    return out;
+  }
+
+  function paintTopo() {
+    renderTopoLegend();
+    paintSideGrades();
+    pushMap();
+    pushModel();
+    renderModelNote();
+  }
+
+  /** The key over the map: interval, fall, direction, grade and source — or
+   *  the honest state while it is reading, flat, or unavailable. */
+  function renderTopoLegend() {
+    const box = $('#topoLegend');
+    if (!box) return;
+    if (!mapOrigin || !mapIsland || !topoOn || topoStatus === 'idle') {
+      box.classList.add('is-hidden');
+      box.innerHTML = '';
+      return;
+    }
+    const hadFocus = box.contains(document.activeElement);
+    const retry = '<button class="tl-retry" type="button" data-topo-retry title="' + esc(topoError) + '">Retry</button>';
+    // A grid already drawn for this address is what the map shows, so it is
+    // what the legend describes — even while a wider one is being read or has
+    // just failed. Only with nothing drawn does the legend speak for the lookup.
+    const lot = topoGrid && sameOrigin(topoGrid.origin, mapOrigin) ? currentLotTopo() : null;
+    let html = '';
+    if (lot && topoGrid) {
+      const onLot = lotRingsFt(mapOrigin).length > 0;
+      const where = onLot ? 'across the lot' : 'around the address';
+      const fall = Math.round(lot.reliefFt * 10) / 10;
+      const fallTxt = (fall >= 10 ? Math.round(fall) : fall) + ' ft';
+      const iv = lot.intervalFt;
+      html = '<div class="tl-k"><span class="tl-sw" aria-hidden="true"></span>Topo' +
+        (iv ? ' · contours every ' + iv + ' ft' : '') + '</div>';
+      html += lot.overlay
+        ? '<div class="tl-l">' + fallTxt + ' of fall ' + where +
+          (lot.fallsToward ? ' · falls toward ' + lot.fallsToward : '') +
+          ' · avg grade ' + Math.round(lot.gradePct) + '%</div>'
+        : '<div class="tl-l">Level ' + (onLot ? 'lot' : 'ground') + ' · under 1 ft of fall</div>';
+      html += '<div class="tl-s">' + sourceLabel(topoGrid) + (onLot ? '' : ' · lot lines not found') +
+        (topoStatus === 'busy' ? ' · widening…' : '') + '</div>';
+      if (topoStatus === 'failed') html += retry;
+    } else if (topoStatus === 'busy') {
+      html = '<div class="tl-k">Topo</div><div class="tl-l">Reading the ground…</div>';
+    } else if (topoStatus === 'failed') {
+      html = '<div class="tl-k">Topo</div><div class="tl-l">Ground data unavailable</div>' + retry;
+    } else {
+      box.classList.add('is-hidden');
+      box.innerHTML = '';
+      return;
+    }
+    box.innerHTML = html;
+    box.classList.remove('is-hidden');
+    // Re-rendering replaces the button a keyboard user just pressed; keep
+    // their place instead of dropping focus to <body>.
+    if (hadFocus) {
+      const next = box.querySelector<HTMLElement>('[data-topo-retry]');
+      if (next) next.focus({ preventScroll: true });
+      else { box.tabIndex = -1; box.focus({ preventScroll: true }); }
+    }
+  }
+
+  /** A grade on every listed property side, from the lattice — the slope a
+   *  fence along that side will meet, before any fence is down. */
+  function paintSideGrades() {
+    const o = mapOrigin;
+    const g = topoGrid && o && sameOrigin(topoGrid.origin, o) ? topoGrid : null;
+    $$('#parcelSides [data-grade-side]').forEach(function (tag) {
+      const lot = parcelLots[Number(tag.dataset.gradeLot)];
+      const side = lot?.sides[Number(tag.dataset.gradeSide)];
+      const grade = g && o && side
+        ? lineGradeOnGrid(
+            g.grid,
+            g.plan,
+            latLngToLocalFeet(o, { lat: side.from[0], lng: side.from[1] }),
+            latLngToLocalFeet(o, { lat: side.to[0], lng: side.to[1] }),
+          )
+        : null;
+      if (!grade || !topoOn) {
+        tag.classList.add('is-hidden');
+        tag.textContent = '';
+        tag.removeAttribute('title');
+        return;
+      }
+      tag.textContent = Math.round(grade.pct) + '%';
+      tag.className = 'ps-grade is-' + grade.cls;
+      tag.title = (grade.riseFt >= 0 ? 'Rises ' : 'Falls ') + Math.abs(grade.riseFt).toFixed(1) +
+        ' ft end to end · ' + grade.thetaDeg.toFixed(0) + '° · steepest stretch ' + Math.round(grade.maxPct) + '% · ' +
+        (grade.cls === 'stepped' ? 'panels would step' : grade.cls === 'racked' ? 'panels would rack' : 'level for panels');
+    });
   }
 
   /** The report, but only while it still DESCRIBES the trace on screen: after
@@ -1150,22 +1513,79 @@ export function initFenceEstimatorContent(
    *  indices no longer line up, and pricing off them would be a lie. */
   function usableTerrain(): FenceTerrainReport | null {
     if (terrainStatus !== 'ok' || !terrainReport || !mapOwnsRuns) return null;
-    if (terrainReport.segs.length !== tracedSegments(mapPoints).length) return null;
+    // Compared against the segments the sampler actually profiles (it skips
+    // slivers under MIN_PROFILED_SEG_FT, which the ledger keeps), segment by
+    // segment — a vertex inserted mid-line shifts every index after it while
+    // leaving counts that could still happen to agree.
+    const profiled = tracedSegments(mapPoints).filter(function (s) { return s.ft >= MIN_PROFILED_SEG_FT; });
+    if (terrainReport.segs.length !== profiled.length) return null;
+    for (let i = 0; i < profiled.length; i++) {
+      if (terrainReport.segs[i].seg !== profiled[i].seg) return null;
+    }
     return terrainReport;
   }
 
-  /** Grade factor (along-ground / plan, ≥ 1) for the run at ledger index i. */
-  function segFactor(i: number): number {
+  /** The measured segment behind a ledger run — by the run's own identity
+   *  (`m<seg>`), not its row position: deleting a row used to hand every
+   *  later run the grade of the segment after its own. Hand-typed runs have
+   *  no segment and bill flat. */
+  function terrainSegForRun(r: FenceRun): SegTerrain | null {
     const t = usableTerrain();
-    const s = t?.segs[i];
+    const m = /^m(\d+)$/.exec(r.id);
+    if (!t || !m) return null;
+    const seg = Number(m[1]);
+    return t.segs.find(function (s) { return s.seg === seg; }) || null;
+  }
+
+  /** Grade factor (along-ground / plan, ≥ 1) for one ledger run. */
+  function segFactor(r: FenceRun): number {
+    const s = terrainSegForRun(r);
     if (!s || s.planFt <= 0) return 1;
     return s.gradeFt / s.planFt;
   }
+
+  /** Human name for an elevation source, for the strip and the legend. */
+  function sourceLabel(src: { source: ElevationSource; resM?: number } | null): string {
+    if (!src) return '';
+    if (src.source === 'google') return 'Google elevation';
+    const m = Math.max(1, Math.round(src.resM ?? 10));
+    return m <= 3 ? 'USGS lidar ' + m + ' m' : 'USGS ' + m + ' m';
+  }
+
+  /** The measured grade on each ledger row: muted on level ground, amber where
+   *  the panels rack, red where they step. Patched in place, never rebuilt. */
+  function paintRunGrades() {
+    $$('#runsList [data-run]').forEach(function (li) {
+      const tag = li.querySelector<HTMLElement>('[data-run-grade]');
+      if (!tag) return;
+      const r = fs.runs.find(function (x) { return x.id === li.dataset.run; });
+      const s = r ? terrainSegForRun(r) : null;
+      if (!s) {
+        tag.classList.add('is-hidden');
+        tag.textContent = '';
+        tag.removeAttribute('title');
+        return;
+      }
+      const pct = Math.round(Math.tan((s.thetaDeg * Math.PI) / 180) * 100);
+      tag.textContent = pct + '%';
+      tag.className = 'run-grade is-' + s.cls;
+      tag.title =
+        (s.riseFt >= 0 ? 'Rises ' : 'Falls ') + Math.abs(s.riseFt).toFixed(1) + ' ft over ' + Math.round(s.planFt) +
+        ' ft · ' + s.thetaDeg.toFixed(0) + '° · ' +
+        (s.cls === 'stepped' ? 'stepped, ' + (s.steps ?? 1) + ' steps' : s.cls === 'racked' ? 'racked' : 'level');
+    });
+  }
+
+  /** The last overlay handed to the map, kept so its IDENTITY changes only
+   *  when the measured report does — the map rebuilds its label layer on a new
+   *  array, and `pushMap` runs on every hover and arm. */
+  let terrainViewMemo: { report: FenceTerrainReport; out: TerrainSegView[] | null } | null = null;
 
   /** Non-level segments for the map overlay, in the surface's vocabulary. */
   function terrainOverlay(): TerrainSegView[] | null {
     const t = usableTerrain();
     if (!t) return null;
+    if (terrainViewMemo && terrainViewMemo.report === t) return terrainViewMemo.out;
     const out: TerrainSegView[] = [];
     t.segs.forEach(function (s) {
       if (s.cls === 'level') return;
@@ -1179,7 +1599,8 @@ export function initFenceEstimatorContent(
         stepDropFt: s.stepDropFt,
       });
     });
-    return out.length ? out : null;
+    terrainViewMemo = { report: t, out: out.length ? out : null };
+    return terrainViewMemo.out;
   }
 
   /** The elevation strip under the stage: the measured profile as one compact
@@ -1225,7 +1646,8 @@ export function initFenceEstimatorContent(
     });
     box.innerHTML =
       '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">' + svg + '</svg>' +
-      '<div class="tp-meta">Ground profile · ' + Math.round(relief) + ' ft relief · ' +
+      '<div class="tp-meta">Ground profile · ' + (terrainSource ? sourceLabel(terrainSource) + ' · ' : '') +
+      Math.round(relief) + ' ft relief · ' +
       Math.round(t.planFt) + ' ft plan → ' + Math.round(t.gradeFt) + ' ft along grade</div>';
     box.classList.remove('is-hidden');
   }
@@ -1296,6 +1718,201 @@ export function initFenceEstimatorContent(
     };
   }
 
+  // ================= HOUSES (House tool) =================
+  // Outlines the contractor traces over the photo. They stand up in 3D as the
+  // subject building (replacing any detected footprint they cover), fence dots
+  // snap to their corners and walls, and a run that ends on a wall is a WALL
+  // MOUNT — labelled on the map, built as a ledger board and brackets in 3D.
+  let houseMode = false;
+  let houses: DrawnHouse[] = [];
+  let houseSeq = 0;
+  let draftState: DraftState = { fence: false, houseCorners: 0 };
+
+  function setHouseMode(on: boolean) {
+    if (houseMode === on) return;
+    houseMode = on;
+    if (on) {
+      if (armed) setArmed(null);
+      if (aligning && mapApi) {
+        aligning = false;
+        mapApi.setAlign(false);
+        $$('[data-act="align"]').forEach(function (b) { b.classList.remove('on'); });
+      }
+    }
+    $$('[data-act="house"]').forEach(function (b) {
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    syncHint();
+    renderHousePanel();
+    pushMap();
+  }
+
+  function onHouseAdd(ring: PathPoint[]) {
+    houseSeq += 1;
+    houses = houses.concat([{ id: 'h' + houseSeq, ring: ring, stories: 1 }]);
+    afterHousesChanged();
+  }
+  function onHouseChange(id: string, ring: PathPoint[]) {
+    houses = houses.map(function (h) { return h.id === id ? { id: h.id, ring: ring, stories: h.stories } : h; });
+    afterHousesChanged(true);
+  }
+  /** `quiet`: an in-place edit (a dragged corner, a storey change) — the
+   *  panel rows are patched, not re-listed. */
+  function afterHousesChanged(quiet?: boolean) {
+    if (quiet) paintHouseRows();
+    else renderHousePanel();
+    pushMap();
+    pushModel();
+    renderModelNote();
+  }
+  function onDraftChange(state: DraftState) {
+    draftState = state;
+    renderDraftControls();
+  }
+
+  /** The largest detected footprint on the lot, if the page has one that no
+   *  traced house already covers — offered as a starting outline. */
+  function detectedSubject(): BuildingFootprint | null {
+    const merged = mergeBuildings(houses, siteBuildings);
+    let best: BuildingFootprint | null = null;
+    let bestA = 0;
+    for (const b of merged.slice(houses.length)) {
+      if (b.role !== 'subject') continue;
+      const a = ringAreaSqFt(b.ring);
+      if (a > bestA) { best = b; bestA = a; }
+    }
+    return best;
+  }
+
+  // Identity-stable views: the map and the scene rebuild on a NEW object, and
+  // `pushMap` runs on every hover and trace commit.
+  let parcelMemo: { lots: ParcelLot[]; hover: string; view: FenceDrawMapProps['parcel'] } | null = null;
+  function parcelView(): FenceDrawMapProps['parcel'] {
+    const hover = parcelHover ? parcelHover.lot + ':' + parcelHover.side : '';
+    if (parcelMemo && parcelMemo.lots === parcelLots && parcelMemo.hover === hover) return parcelMemo.view;
+    const view = parcelLots.length
+      ? {
+          ring: parcelLots[0].ring,
+          rings: parcelLots.map(function (l) { return l.ring; }),
+          highlight: hoveredSidePath(),
+        }
+      : null;
+    parcelMemo = { lots: parcelLots, hover: hover, view: view };
+    return view;
+  }
+  let buildingsMemo: { houses: DrawnHouse[]; site: BuildingFootprint[]; merged: BuildingFootprint[] } | null = null;
+  function modelBuildings(): BuildingFootprint[] {
+    if (buildingsMemo && buildingsMemo.houses === houses && buildingsMemo.site === siteBuildings) return buildingsMemo.merged;
+    buildingsMemo = { houses: houses, site: siteBuildings, merged: mergeBuildings(houses, siteBuildings) };
+    return buildingsMemo.merged;
+  }
+  let detectedMemo: { src: BuildingFootprint[]; origin: { lat: number; lng: number } | null; view: Array<Array<{ lat: number; lng: number }>> } | null = null;
+  function detectedView(): Array<Array<{ lat: number; lng: number }>> {
+    const src = modelBuildings();
+    if (detectedMemo && detectedMemo.src === src && sameOrigin(detectedMemo.origin, mapOrigin)) return detectedMemo.view;
+    const o = mapOrigin;
+    const view = o
+      ? src.slice(houses.length).map(function (b) { return b.ring.map(function (q) { return localFeetToLatLng(o, q); }); })
+      : [];
+    detectedMemo = { src: src, origin: o, view: view };
+    return view;
+  }
+  let houseViewMemo: { houses: DrawnHouse[]; origin: { lat: number; lng: number } | null; view: NonNullable<FenceDrawMapProps['houses']> } | null = null;
+  function houseView(): NonNullable<FenceDrawMapProps['houses']> {
+    if (houseViewMemo && houseViewMemo.houses === houses && sameOrigin(houseViewMemo.origin, mapOrigin)) return houseViewMemo.view;
+    const o = mapOrigin;
+    const view = o
+      ? houses.map(function (h, i) {
+          return { id: h.id, ring: h.ring.map(function (q) { return localFeetToLatLng(o, q); }), label: houses.length > 1 ? 'House ' + (i + 1) : 'House' };
+        })
+      : [];
+    houseViewMemo = { houses: houses, origin: o, view: view };
+    return view;
+  }
+  let mountsMemo: { pts: PathPoint[]; buildings: BuildingFootprint[]; ft: PathPoint[]; ll: Array<{ lat: number; lng: number }> } | null = null;
+  function wallMounts(): { ft: PathPoint[]; ll: Array<{ lat: number; lng: number }> } {
+    const bs = modelBuildings();
+    if (mountsMemo && mountsMemo.pts === mapPoints && mountsMemo.buildings === bs) return mountsMemo;
+    const ft = wallMountsFor(mapPoints, bs.map(function (b) { return b.ring; }));
+    const o = mapOrigin;
+    mountsMemo = { pts: mapPoints, buildings: bs, ft: ft, ll: o ? ft.map(function (q) { return localFeetToLatLng(o, q); }) : [] };
+    return mountsMemo;
+  }
+  function wallMountView() { return wallMounts().ll; }
+
+  function renderDraftControls() {
+    const box = $('#drawCtl');
+    if (!box) return;
+    const focused = (document.activeElement as HTMLElement | null)?.closest?.('[data-draft]') as HTMLElement | null;
+    const refocus = focused && box.contains(focused) ? focused.dataset.draft : null;
+    const house = draftState.houseCorners > 0;
+    if (!draftState.fence && !house) {
+      box.classList.add('is-hidden');
+      box.innerHTML = '';
+      return;
+    }
+    box.innerHTML = house
+      ? '<button class="tool" type="button" data-draft="undo"><svg class="ic"><use href="#i-undo"/></svg>Undo corner</button>' +
+        '<button class="tool tool-primary" type="button" data-draft="finish"' + (draftState.houseCorners < 3 ? ' disabled' : '') +
+        '><svg class="ic"><use href="#i-check"/></svg>Close outline</button>' +
+        '<button class="tool" type="button" data-draft="cancel"><svg class="ic"><use href="#i-x"/></svg>Cancel</button>'
+      : '<button class="tool" type="button" data-draft="undo"><svg class="ic"><use href="#i-undo"/></svg>Undo point</button>' +
+        '<button class="tool tool-primary" type="button" data-draft="finish"><svg class="ic"><use href="#i-check"/></svg>Finish run</button>';
+    box.classList.remove('is-hidden');
+    if (refocus) box.querySelector<HTMLElement>('[data-draft="' + refocus + '"]:not([disabled])')?.focus({ preventScroll: true });
+  }
+
+  function houseRowHtml(h: DrawnHouse, i: number): string {
+    const name = houses.length > 1 ? 'House ' + (i + 1) : 'House';
+    return '<li class="hs-row" data-house="' + h.id + '">' +
+      '<span class="hs-name">' + name + '</span>' +
+      '<span class="hs-ft">' + Math.round(ringAreaSqFt(h.ring)).toLocaleString('en-US') + ' sq ft</span>' +
+      '<span class="bp-sel hs-sel"><select class="bp-sel-in" data-house-stories aria-label="Stories">' +
+      [1, 2, 3].map(function (n) {
+        return '<option value="' + n + '"' + (h.stories === n ? ' selected' : '') + '>' + n + (n === 1 ? ' story' : ' stories') + '</option>';
+      }).join('') +
+      '</select></span>' +
+      '<button class="row-x" type="button" data-del-house="' + h.id + '" aria-label="Remove ' + name + '">×</button></li>';
+  }
+  function paintHouseRows() {
+    houses.forEach(function (h) {
+      const ft = $('#houseList [data-house="' + h.id + '"] .hs-ft');
+      if (ft) ft.textContent = Math.round(ringAreaSqFt(h.ring)).toLocaleString('en-US') + ' sq ft';
+    });
+    const mounts = $('#houseMounts');
+    if (mounts) mounts.textContent = mountsText();
+  }
+  function mountsText(): string {
+    const n = wallMounts().ft.length;
+    return n ? n + (n === 1 ? ' run ends on a wall — wall mount' : ' run ends on a wall — wall mounts') : '';
+  }
+  function renderHousePanel() {
+    const panel = $('#housePanel');
+    const list = $('#houseList');
+    if (!panel || !list) return;
+    const detected = detectedSubject();
+    if (!houseMode && !houses.length) {
+      panel.classList.add('is-hidden');
+      list.innerHTML = '';
+      return;
+    }
+    let html = houses.map(houseRowHtml).join('');
+    if (!houses.length) {
+      html = '<li class="hs-empty">Click each corner of the house on the map, then click the first corner again to close the outline.</li>';
+    }
+    list.innerHTML = html;
+    const tools = $('#houseTools');
+    if (tools) {
+      tools.innerHTML = detected
+        ? '<button class="tool" type="button" data-house-detect><svg class="ic"><use href="#i-building"/></svg>Use detected outline</button>'
+        : '';
+    }
+    const mounts = $('#houseMounts');
+    if (mounts) mounts.textContent = mountsText();
+    panel.classList.remove('is-hidden');
+  }
+
   function mapProps(): FenceDrawMapProps {
     return {
       lat: mapOrigin?.lat,
@@ -1319,15 +1936,23 @@ export function initFenceEstimatorContent(
       onApi: function (api) { mapApi = api; },
       accentColor: token('--blueprint'),
       doorColor: token('--muted'),
-      parcel: parcelLots.length
-        ? {
-            ring: parcelLots[0].ring,
-            rings: parcelLots.map(function (l) { return l.ring; }),
-            highlight: hoveredSidePath(),
-          }
-        : null,
+      parcel: parcelView(),
       parcelTiles: lotLines,
+      detectedBuildings: detectedView(),
+      houses: houseView(),
+      houseMode: houseMode,
+      onHouseAdd: onHouseAdd,
+      onHouseChange: onHouseChange,
+      wallMounts: wallMountView(),
+      onDraftChange: onDraftChange,
+      parcelPalette: parcelPalette(),
       terrain: terrainOverlay(),
+      topo: topoOn ? currentLotTopo()?.overlay ?? null : null,
+      topoPalette: topoPalette(),
+      // The topo legend is a plate over the map's top-left corner; the lot's
+      // auto-fit leaves room under it so the north line and its corners are
+      // not hidden behind the key.
+      fitPadding: TOPO_FIT_PADDING,
     };
   }
 
@@ -1335,6 +1960,7 @@ export function initFenceEstimatorContent(
 
   function setArmed(next: ArmedOpening | null) {
     armed = next;
+    if (next && houseMode) setHouseMode(false);
     syncHint();
     pushMap();
   }
@@ -1352,7 +1978,9 @@ export function initFenceEstimatorContent(
           ' — click a fence line to snap it on, or open ground to drop it free · Esc to cancel'
         : aligning
           ? 'Drag the whole outline to line it up with the lot — shape and size stay locked'
-          : hintIdle;
+          : houseMode
+            ? 'Trace the house: click each corner — click the first corner, double-click or press Enter to close · drag a corner to adjust · Esc cancels'
+            : hintIdle;
   }
   /** Say something sentence-length under the stage. A button label cannot carry
    *  "Regrid rejected the key — the token is likely expired", and swallowing it
@@ -1434,10 +2062,18 @@ export function initFenceEstimatorContent(
     reseatOpenings();
     renderFigures();
     pushMap();
+    // A run that now ends on (or left) a house wall changes the wall mounts.
+    if (houses.length || siteBuildings.length) paintHouseRows();
     // The ground under the new line: one debounced Elevation profile per
     // settled edit. Stale per-segment factors stop applying immediately
-    // (usableTerrain checks the segment count) and refresh when this lands.
+    // (usableTerrain checks the segments) and refresh when this lands.
     scheduleTerrain();
+    // A fence traced past the lattice's edge (no lot came back, or the fence
+    // leaves the lot) widens it — debounced harder than the profile.
+    if (topoAsked && mapOrigin && sameOrigin(topoAsked, mapOrigin)) {
+      const core = topoCore(mapOrigin);
+      if (core && !boxContains(topoAsked.box, core)) scheduleTopo(1500);
+    }
     // The 3D scene reads the same `mapPoints`, so it follows the trace — and
     // mounts here if the user is already sitting on the 3D panel.
     syncStage();
@@ -1595,7 +2231,10 @@ export function initFenceEstimatorContent(
       gates: modelGates(),
       // No segment-selection UI on this page, so nothing is ever highlighted.
       selectedSegment: null,
-      buildings: siteBuildings,
+      buildings: modelBuildings(),
+      terrain: modelTerrain(),
+      segClasses: modelClasses(),
+      wallMounts: wallMounts().ft,
       active: fs.mode === '3d',
       className: 'model-live-in',
     };
@@ -1604,6 +2243,77 @@ export function initFenceEstimatorContent(
   function pushModel() {
     if (!modelIsland) return;
     modelIsland.update(modelProps());
+  }
+
+  /** The lot's lattice for the scene — this address's, identity-stable. */
+  let terrain3dMemo: { rev: number; view: FenceTerrain3D } | null = null;
+  function modelTerrain(): FenceTerrain3D | null {
+    const g = topoGrid;
+    if (!g || !sameOrigin(g.origin, mapOrigin)) return null;
+    if (terrain3dMemo && terrain3dMemo.rev === g.rev) return terrain3dMemo.view;
+    terrain3dMemo = { rev: g.rev, view: { plan: g.plan, grid: g.grid } };
+    return terrain3dMemo.view;
+  }
+
+  /** Slope class per traced segment: the PRICED classes when the fence's own
+   *  profile is in, so the 3D steps exactly where the ticket charges steps;
+   *  until then (or if it failed) read off the lot lattice with the same
+   *  thresholds. */
+  let classesMemo: { key: unknown[]; view: Record<number, BayClass> | null } | null = null;
+  function modelClasses(): Record<number, BayClass> | null {
+    const report = usableTerrain();
+    const g = topoGrid && sameOrigin(topoGrid.origin, mapOrigin) ? topoGrid : null;
+    const key = [report, g ? g.rev : -1, mapPoints];
+    if (classesMemo && classesMemo.key.every(function (k, i) { return k === key[i]; })) return classesMemo.view;
+    let view: Record<number, BayClass> | null = null;
+    // A dragged dot keeps every segment index, so the old report still reads
+    // as "usable" until the new profile lands. The price can live with the old
+    // grade FACTOR for that moment; the 3D must not stand the moved segment up
+    // with its old CLASS — so the report counts only while its plan lengths
+    // still match the trace, and the lattice speaks for the ground meanwhile.
+    const fresh = !!report && report.segs.every(function (sg) {
+      const a = mapPoints[sg.seg];
+      const b = mapPoints[sg.seg + 1];
+      return !!a && !!b && Math.abs(Math.hypot(b.x - a.x, b.y - a.y) - sg.planFt) < 0.5;
+    });
+    if (report && fresh) {
+      view = {};
+      const out = view;
+      report.segs.forEach(function (sg) { out[sg.seg] = sg.cls; });
+    } else if (g) {
+      view = {};
+      for (let i = 0; i + 1 < mapPoints.length; i++) {
+        const a = mapPoints[i];
+        const b = mapPoints[i + 1];
+        if (b.gap) continue;
+        const lg = lineGradeOnGrid(g.grid, g.plan, a, b);
+        if (lg) view[i] = lg.cls;
+      }
+    }
+    classesMemo = { key: key, view: view };
+    return view;
+  }
+
+  /** The note in the 3D corner: what the ground in the scene is. */
+  function renderModelNote() {
+    const note = $('#modelNote');
+    if (!note) return;
+    if (!modelIsland) { note.classList.add('is-hidden'); return; }
+    const g = modelTerrain();
+    if (!g || !topoGrid) {
+      note.textContent = 'Terrain not shown — ground rendered flat';
+    } else {
+      const report = usableTerrain();
+      const steps = report ? report.segs.reduce(function (a, sg) { return a + (sg.cls === 'stepped' ? sg.steps ?? 0 : 0); }, 0) : 0;
+      const racked = report ? report.segs.filter(function (sg) { return sg.cls === 'racked'; }).length : 0;
+      const mounts = wallMounts().ft.length;
+      const bits = ['Real ground · ' + sourceLabel(topoGrid)];
+      if (steps) bits.push(steps + ' steps');
+      if (racked) bits.push(racked + (racked === 1 ? ' run racked' : ' runs racked'));
+      if (mounts) bits.push(mounts + (mounts === 1 ? ' wall mount' : ' wall mounts'));
+      note.textContent = bits.join(' · ');
+    }
+    note.classList.remove('is-hidden');
   }
 
   /** Mount the scene, once, the first time it is both wanted and possible. */
@@ -1624,9 +2334,9 @@ export function initFenceEstimatorContent(
       // The scene is opaque and covers the slot, so the placeholder underneath
       // it goes. `unmountModel` puts it back.
       slot.querySelector<HTMLElement>('.map-slot-in')?.classList.add('is-hidden');
-      // The scene renders the ground as a plane; measured slope is priced but
-      // not drawn, and the note keeps that from being a silent lie.
-      $('#modelNote')?.classList.remove('is-hidden');
+      // The note says what ground the scene stands on: the real lattice, or a
+      // flat plane when there is none — never a silent lie either way.
+      renderModelNote();
     } catch (err) {
       console.error('[fence-estimator] 3D preview failed to load:', err);
       sayHint('The 3D preview could not be loaded. The map, the ledger and the price are unaffected.');
@@ -1732,6 +2442,11 @@ export function initFenceEstimatorContent(
       // The local-feet frame is defined by this origin, so the surface rebuilds
       // its map on it (its own effect depends on lat/lng).
       mapOrigin = { lat: p.lat, lng: p.lng };
+      // Traced houses and detected buildings belong to the old address.
+      houses = [];
+      siteBuildings = [];
+      setHouseMode(false);
+      renderHousePanel();
       // First resolved address is what brings the surface into existence.
       mountMap();
       pushMap();
@@ -1740,6 +2455,12 @@ export function initFenceEstimatorContent(
       // time the contractor looks down from the address field. Cache-first on
       // the server, so a repeat search costs no quota.
       void loadParcelForOrigin();
+      // The land's contours belong to this address. The lattice is sized from
+      // the lot, so it waits for the parcel answer — with a fallback in case
+      // that lookup is slow — rather than spending two requests per address.
+      resetTopo();
+      renderTopoLegend();
+      scheduleTopo(2500);
       // A new origin re-frames the local-feet trace: whatever profile was
       // measured belongs to the old ground, so it re-measures here.
       if (mapPoints.length >= 2) scheduleTerrain();
@@ -1856,6 +2577,7 @@ export function initFenceEstimatorContent(
   function hideParcelPanel() {
     clearFenceDone();
     parcelLots = [];
+    parcelOrigin = null;
     parcelHover = null;
     parcelRoads = [];
     $('#parcelPanel')?.classList.add('is-hidden');
@@ -1909,11 +2631,19 @@ export function initFenceEstimatorContent(
       const osmPromise = fetchPropertyBoundary(o.lat, o.lng);
       osmPromise
         .then(function (res) {
-          const ringPts = parcelLots.length
+          // An answer for an address the contractor has already left is not
+          // this site's buildings: its rings are in the OLD origin's feet.
+          if (!sameOrigin(mapOrigin, o)) return;
+          const ringPts = parcelLots.length && sameOrigin(parcelOrigin, o)
             ? parcelLots[0].ring.map(function (ll) { return latLngToLocalFeet(o, ll); })
             : null;
           siteBuildings = buildingsToFootprints(res.buildings, o, ringPts);
+          // Footprints are snap targets and walls on the map, the "Use detected
+          // outline" offer, and buildings in 3D — all of them follow.
+          pushMap();
           pushModel();
+          renderHousePanel();
+          renderModelNote();
         })
         .catch(function () {});
 
@@ -1926,6 +2656,7 @@ export function initFenceEstimatorContent(
         };
         hideParcelPanel();
         pushMap();
+        if (sameOrigin(mapOrigin, o)) scheduleTopo(0);
         const near = body.nearest?.address
           ? ' Nearest lot on record: ' + body.nearest.address +
             (body.nearest.city ? ', ' + body.nearest.city : '') + '.'
@@ -1937,6 +2668,7 @@ export function initFenceEstimatorContent(
         const body = (await res.json().catch(function () { return {}; })) as { error?: string };
         hideParcelPanel();
         pushMap();
+        if (sameOrigin(mapOrigin, o)) scheduleTopo(0);
         sayHint(body.error || 'Parcel lookup failed — trace the fence manually.');
         return;
       }
@@ -1955,18 +2687,24 @@ export function initFenceEstimatorContent(
           .map(function (c) { return toLot(c, o, roads); })
           .filter(function (l): l is ParcelLot { return l !== null; });
       parcelLots = build([]);
+      parcelOrigin = o;
       parcelHover = null;
       if (!parcelLots.length) {
         hideParcelPanel();
         pushMap();
+        if (sameOrigin(mapOrigin, o)) scheduleTopo(0);
         sayHint('Parcel geometry was empty — trace the fence manually.');
         return;
       }
       pushMap();
+      // The lot is known: size the contour lattice to it now, without waiting
+      // for the street data below.
+      if (sameOrigin(mapOrigin, o)) scheduleTopo(0);
 
       const osm = await osmPromise.catch(function () { return null; });
       parcelRoads = osm ? osm.roads : [];
       parcelLots = build(parcelRoads);
+      parcelOrigin = o;
       renderParcelPanel();
       pushMap();
       if (parcelLots.length > 1) {
@@ -1983,6 +2721,7 @@ export function initFenceEstimatorContent(
       }
     } catch (err) {
       console.error('[fence-estimator] parcel lookup failed:', err);
+      if (sameOrigin(mapOrigin, o)) scheduleTopo(0);
       sayHint('Parcel lookup failed — trace the fence manually.');
     } finally {
       parcelBusy = false;
@@ -2052,6 +2791,7 @@ export function initFenceEstimatorContent(
           '<span class="ps-name">Side ' + n + '</span>' +
           (front ? '<span class="ps-tag">street</span>' : '') +
           '<span class="ps-ft">' + Math.round(s.feet) + ' ft</span>' +
+          '<span class="ps-grade is-hidden" data-grade-lot="' + li + '" data-grade-side="' + i + '"></span>' +
           trailing +
           '</label></li>';
       });
@@ -2076,6 +2816,7 @@ export function initFenceEstimatorContent(
     list.innerHTML = html;
     panel.classList.remove('is-hidden');
     staggerIn(Array.from(list.querySelectorAll<HTMLElement>('li')));
+    paintSideGrades();
     updateParcelSum();
   }
 
