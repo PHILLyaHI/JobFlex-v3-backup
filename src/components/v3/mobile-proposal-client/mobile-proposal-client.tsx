@@ -363,21 +363,8 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
             {view.monogram}
           </span>
           <span className="mpc-org">
-            <b className="mpc-org-n">{view.orgName}</b>
+            <b className="mpc-org-n" title={view.orgName}>{view.orgName}</b>
             <span className="mpc-org-r">{`№ ${view.refCode} · ${view.createdOn}`}</span>
-            {view.rating ? (
-              <a
-                className="mpc-rating"
-                href={view.rating.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Rated ${view.rating.avg} out of 5 from ${view.rating.count} client ${view.rating.count === 1 ? "review" : "reviews"} — see all reviews`}
-              >
-                <StarsInline value={Number(view.rating.avg)} size={12} />
-                <em>{view.rating.avg}</em>
-                <i>{`· ${view.rating.count} ${view.rating.count === 1 ? "review" : "reviews"}`}</i>
-              </a>
-            ) : null}
           </span>
           <a
             className="mpc-pdf"
@@ -389,6 +376,24 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
             <IcDownload />
             <i aria-hidden="true">PDF</i>
           </a>
+          {/* The contractor's standing as the header's own second line: a
+              full-width plate under the identity row (the header wraps), a
+              44px tap target, the count at the right edge as the door. Not
+              inside `.mpc-org` — there it hung under the reference line on
+              negative margins and overlapped it. */}
+          {view.rating ? (
+            <a
+              className="mpc-rating"
+              href={view.rating.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Rated ${view.rating.avg} out of 5 from ${view.rating.count} client ${view.rating.count === 1 ? "review" : "reviews"} — see all reviews`}
+            >
+              <StarsInline value={Number(view.rating.avg)} size={14} />
+              <em>{view.rating.avg}</em>
+              <i>{`${view.rating.count} ${view.rating.count === 1 ? "review" : "reviews"} →`}</i>
+            </a>
+          ) : null}
         </header>
 
         <section className="mpc-intro rv" ref={introRef}>

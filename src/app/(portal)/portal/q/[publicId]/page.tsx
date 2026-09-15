@@ -203,23 +203,29 @@ export default async function PublicProposalPortal({
         {/* (RU: "Header") */}
         <header className="pv-head rv">
           <span className="pv-mono">{monogram}</span>
+          {/* Identity only — the name and the reference. The row reads
+              mark · identity · stamps; a long name truncates (the full
+              string rides in `title`) so the stamps never leave the row. */}
           <div className="pv-org">
-            <b>{org.name}</b>
+            <b title={org.name || undefined}>{org.name}</b>
             <span>{`Proposal № ${refCode} · ${longDate(proposal.createdAt)}`}</span>
-            {rating ? (
-              <a
-                className="pv-rating"
-                href={rating.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Rated ${rating.avg} out of 5 from ${rating.count} client ${rating.count === 1 ? "review" : "reviews"} — see all reviews`}
-              >
-                <StarsInline value={Number(rating.avg)} size={13} />
-                <em>{rating.avg}</em>
-                <i>{`· ${rating.count} ${rating.count === 1 ? "review" : "reviews"}`}</i>
-              </a>
-            ) : null}
           </div>
+          {/* The contractor's standing as a plate beside the PDF stamp, on
+              the row's own centreline — not a third line under the name,
+              which made the identity block taller than the monogram. */}
+          {rating ? (
+            <a
+              className="pv-rating"
+              href={rating.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Rated ${rating.avg} out of 5 from ${rating.count} client ${rating.count === 1 ? "review" : "reviews"} — see all reviews`}
+            >
+              <StarsInline value={Number(rating.avg)} size={13} />
+              <em>{rating.avg}</em>
+              <i>{`· ${rating.count} ${rating.count === 1 ? "review" : "reviews"}`}</i>
+            </a>
+          ) : null}
           <a
             className="pv-pdf"
             href={`/api/public-quote/${publicId}/pdf`}

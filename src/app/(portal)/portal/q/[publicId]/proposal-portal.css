@@ -164,11 +164,19 @@ body:has(.jf-proposal-portal)::before { content: none; }
 .jf-proposal-portal .pv-mono { width: 42px; height: 42px; flex-shrink: 0; display: grid; place-items: center;
   background: var(--ink); color: var(--paper); border-radius: var(--radius);
   font-size: 17px; font-weight: 900; }
-.jf-proposal-portal .pv-org { min-width: 0; }
-.jf-proposal-portal .pv-org b { display: block; font-size: 15.5px; font-weight: 900; letter-spacing: -.01em; }
+/* `.pv-org` takes the row's slack (in the donor `.pv-pdf { margin-left: auto }`
+   did that alone) so the rating plate and the PDF stamp sit together at the
+   right edge. Both lines truncate rather than wrap: the header is two lines
+   tall whatever the contractor typed, and the full name rides in `title`.
+   `.pv-pdf` is `flex: 0 0 auto` for the same reason — with the default
+   shrink, a long name squeezed the stamp and wrapped "PDF" to a second line. */
+.jf-proposal-portal .pv-org { min-width: 0; flex: 1 1 auto; }
+.jf-proposal-portal .pv-org b { display: block; font-size: 15.5px; font-weight: 900; letter-spacing: -.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .jf-proposal-portal .pv-org span { display: block; margin-top: 2px; font-family: var(--font-mono);
-  font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--muted); }
-.jf-proposal-portal .pv-pdf { margin-left: auto; display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jf-proposal-portal .pv-pdf { margin-left: auto; flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px;
   padding: 9px 16px; border: var(--border); border-radius: var(--radius);
   background: var(--paper); box-shadow: none; cursor: pointer;
   font-family: var(--font); font-size: 11px; font-weight: 800; letter-spacing: .14em;
@@ -469,15 +477,25 @@ body:has(.jf-proposal-portal)::before { content: none; }
 /* The stage an invoice link points at. */
 .jf-proposal-portal .pv-pay-r.is-focus { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
-/* Client-facing rating badge (2026-09-13) — under the org name, links to the
-   contractor's public reviews page. Rendered only when there is something to
-   show; a sales document never prints "no reviews". Appended after the donor
-   block on purpose: same specificity as `.pv-org span`, later wins. */
-.jf-proposal-portal .pv-rating { display: inline-flex; align-items: center; gap: 6px; margin-top: 5px;
-  min-height: 24px; text-decoration: none; color: var(--ink); }
-.jf-proposal-portal .pv-org .pv-rating > span { display: inline-flex; margin: 0; }
+/* Client-facing rating plate (2026-09-13, re-composed 2026-09-14) — a header
+   stamp beside "Download PDF", linking to the contractor's public reviews
+   page. It sits IN the row, after `.pv-org`, not inside it: as a third line
+   under the name it made the identity block 64px against a 42px monogram and
+   pushed the name off the row's centreline. Rendered only when there is
+   something to show; a sales document never prints "no reviews".
+   The plate is the PDF stamp's height (36px) in the thinner 1.5px frame, so
+   the primary action stays the heavier of the two; hover lifts it the same
+   way, one step smaller (2px shadow against the stamp's 3px). The transition
+   is written like `.pv-pdf`'s on purpose — it fails, and would come alive,
+   exactly as the donor's does (see the `--ease-out` note at the top). */
+.jf-proposal-portal .pv-rating { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px;
+  height: 36px; padding: 0 11px; border: var(--border-thin); border-radius: var(--radius);
+  background: var(--paper); background-clip: padding-box; color: var(--ink); text-decoration: none;
+  transition: transform .12s var(--ease-out), box-shadow .12s var(--ease-out); }
+.jf-proposal-portal .pv-rating:hover { background: #fff; transform: translate(-1px,-1px); box-shadow: 2px 2px 0 var(--ink); }
+.jf-proposal-portal .pv-rating:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 .jf-proposal-portal .pv-rating em { font-style: normal; font-size: 12.5px; font-weight: 900;
   letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
 .jf-proposal-portal .pv-rating i { font-style: normal; font-family: var(--font-mono); font-size: 10.5px;
-  font-weight: 600; letter-spacing: .06em; color: var(--muted); border-bottom: 1px solid transparent; }
-.jf-proposal-portal .pv-rating:hover i { color: var(--ink); border-bottom-color: var(--ink); }
+  font-weight: 600; letter-spacing: .06em; color: var(--muted); white-space: nowrap; }
+.jf-proposal-portal .pv-rating:hover i { color: var(--ink); }

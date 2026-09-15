@@ -272,8 +272,9 @@ body:has(.jf-mobile-proposal-client)::before { content: none; }
    the box so it is not an unlabelled icon, and an aria-label besides. */
 .jf-mobile-proposal-client .mpc-head {
   display: flex;
+  flex-wrap: wrap; /* the rating plate, when there is one, is its own full-width line */
   align-items: center;
-  gap: 12px;
+  gap: 10px 12px;
   padding-bottom: 16px;
   border-bottom: var(--border);
 }
@@ -289,7 +290,13 @@ body:has(.jf-mobile-proposal-client)::before { content: none; }
   font-size: 17px;
   font-weight: 900;
 }
-.jf-mobile-proposal-client .mpc-org { min-width: 0; flex: 1 1 auto; }
+/* Zero basis, not `auto`: the header wraps (for the rating plate), and a
+   wrapping row breaks lines on each item's HYPOTHETICAL size — for an `auto`
+   basis that is the full width of the untruncated name, so a 60-character
+   org name pushed the PDF box onto a third line before the ellipsis ever
+   ran. At basis 0 the block never asks for more than the row has; it grows
+   into the slack and the name truncates inside it. */
+.jf-mobile-proposal-client .mpc-org { min-width: 0; flex: 1 1 0; }
 .jf-mobile-proposal-client .mpc-org-n {
   display: block;
   font-size: 15.5px;
@@ -1198,33 +1205,57 @@ body:has(.jf-mobile-proposal-client)::before { content: none; }
 .jf-mobile-proposal-client .mpc-seg-b.on { border-color: var(--blueprint); color: var(--blueprint);
   background: rgba(35,79,140,.06); }
 
-/* Client-facing rating badge (2026-09-13) — under the reference line, links
-   to the contractor's public reviews page. The anchor is a 44px tap target;
-   the negative margins keep the header's visual height where it was. */
+/* Client-facing rating plate (2026-09-13, re-composed 2026-09-14) — the
+   contractor's standing as the header's own second line: a full-width plate
+   under the identity row and above the 2px rule, linking to the public
+   reviews page. It used to hang under the reference line on negative
+   margins, which overlapped the reference text and made the identity block
+   60px against a 42px mark. Full-width because the row has no width to lend:
+   at 320px the name already has 178px beside the 44px PDF box, and a chip in
+   the row would have truncated real org names. 44px tall — a legal tap
+   target — framed like the PDF box (1.5px ink, the fleet's 3px standing
+   shadow, the same press), with the count pushed to the right edge behind an
+   arrow so a touch screen, which has no hover, still reads it as a door.
+   Rendered only when there is something to show. */
 .jf-mobile-proposal-client .mpc-rating {
-  display: inline-flex;
+  flex: 1 0 100%;
+  min-width: 0;
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   min-height: 44px;
-  margin: -8px 0 -12px;
-  text-decoration: none;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
   color: var(--ink);
+  text-decoration: none;
+  box-shadow: 3px 3px 0 var(--shadow);
+  transition: transform 0.14s var(--ease-out), box-shadow 0.14s var(--ease-out);
+}
+.jf-mobile-proposal-client .mpc-rating:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--shadow);
 }
 .jf-mobile-proposal-client .mpc-rating em {
   font-style: normal;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 900;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
 .jf-mobile-proposal-client .mpc-rating i {
+  margin-left: auto;
   font-style: normal;
   font-family: var(--font-mono);
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--muted);
-  border-bottom: 1px solid var(--ink);
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .jf-mobile-proposal-client .mpc-rating { transition: none !important; }
 }
 /* ── THE CLIENT'S HOUSE — the measurement's satellite photo, framed like a
       drawing, under the two facts. Same photo as the desktop tree and the
