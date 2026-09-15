@@ -17,14 +17,14 @@
 - `prisma/schema.prisma` is the schema of record. `src/app/globals.css` holds the design tokens.
 
 ## Design
-- Read **[DESIGN.md](DESIGN.md)** before any frontend work. It is the full spec — palette, type, borders, shadows, motion, product context, accessibility, and the anti-references. Do not duplicate its contents here.
+- Read the `jobflex-page-styler` skill before any frontend work: [references/design-system.md](.claude/skills/jobflex-page-styler/references/design-system.md) is the full spec — palette, type, borders, shadows, motion, product context, accessibility, and the anti-references — and [references/decisions.md](.claude/skills/jobflex-page-styler/references/decisions.md) holds the owner's earned rules and the live-page traps. There is no other design spec (the root DESIGN.md copy was removed 2026-09-14). Do not duplicate their contents here.
 - Tokens in `src/app/globals.css` are unlocked. Change palette, type, radii, and motion freely without approval.
 - Change values at the token layer, never hardcode literals in components. A theme swap should be one file.
 - Check for an existing token before adding a near-duplicate.
 - Ask before repurposing what a token *means* app-wide, or removing the token system.
 - Light mode only. Do not add `.dark` variants.
 - Do not use Radix patterns. Modals here are hand-rolled — see [InboxSheet.tsx](src/components/calendar/InboxSheet.tsx) for the in-house style.
-- DESIGN.md and the `jobflex-page-styler` skill references are hand-authored. Do not regenerate them with a doc tool.
+- The `jobflex-page-styler` skill references are hand-authored. Do not regenerate them with a doc tool.
 
 ## Mobile
 - Target viewport is handheld (≤768px). Design the layout for that first.
