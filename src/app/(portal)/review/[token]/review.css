@@ -1,0 +1,401 @@
+/* CLIENT REVIEW (/review/[token]) — plain stylesheet, NOT a CSS module, every
+   selector prefixed with the literal root `.jf-review` (the same arrangement
+   as /r/[slug]'s public-reviews.css, whose language this page shares: one 2px
+   ink frame on graph paper, near-square corners, mono annotations, an inverse
+   ink plate for the stamp). Handheld first; a desk gets the same column
+   centred at 640px. Tokens come from globals.css.
+
+   The root paints its own opaque paper + a 24px grid over the whole viewport,
+   so globals.css's 40px body grid never shows through and no `body:has()`
+   neutraliser is needed (the proposal portal needed one because it sits on
+   the body's own ground). Page vocabulary — the dashed photo frame, the
+   tear-sheet wash, star sizes — lives on the root below. */
+
+.jf-review {
+  --rv-frame: 2px solid var(--ink);
+  --rv-hair: 1.5px solid var(--ink-line);
+  --rv-faint: #b0aea8;                 /* donor --muted-faint: dashed photo frames */
+  --rv-wash: rgba(10, 10, 10, 0.03);   /* tear-sheet photo-box fill */
+  --rv-star: 40px;                     /* the drawn glyph */
+  --rv-tap: 52px;                      /* the radio's hit box (≥44) */
+  min-height: 100dvh;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--ink-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ink-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: auto;
+  padding: calc(20px + var(--safe-top, 0px)) 16px calc(32px + var(--safe-bottom, 0px));
+}
+.jf-review * { box-sizing: border-box; }
+.jf-review :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.jf-review .rv-card {
+  max-width: 640px;
+  margin: 0 auto;
+  background: var(--paper);
+  border: var(--rv-frame);
+  padding: 20px 18px 22px;
+}
+@media (min-width: 640px) {
+  .jf-review { padding: 40px 24px 48px; --rv-star: 44px; --rv-tap: 56px; }
+  .jf-review .rv-card { padding: 28px 28px 30px; }
+}
+
+/* ── The drawing-annotation layer: mono, caps, tracked ─────────────────── */
+.jf-review .rv-kicker,
+.jf-review .rv-lab,
+.jf-review .rv-cap,
+.jf-review .rv-foot {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  color: var(--ink-muted);
+}
+
+/* ── Head: kicker → H1 → one line naming the job ───────────────────────── */
+.jf-review .rv-head { padding-bottom: 18px; border-bottom: var(--rv-frame); }
+.jf-review .rv-kicker {
+  margin: 0;
+  letter-spacing: 0.16em;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.jf-review .rv-h1 {
+  margin: 10px 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(34px, 9.6vw, 44px);
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  overflow-wrap: break-word;
+}
+.jf-review .rv-lede {
+  margin: 12px 0 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+/* ── Sections: "01 · RATING" label rows with a mono counter on the right ── */
+.jf-review .rv-sec { margin-top: 20px; }
+.jf-review .rv-lab {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+}
+.jf-review .rv-lab > :first-child { min-width: 0; }
+.jf-review .rv-lab label { cursor: text; }
+.jf-review .rv-n { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.jf-review .rv-n.is-full { color: var(--rose); }
+
+/* ── The star picker: five drawn stars, ink outline, amber when chosen ──── */
+.jf-review .rv-stars {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+.jf-review .rv-star {
+  width: var(--rv-tap);
+  height: var(--rv-tap);
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.jf-review .rv-star svg {
+  width: var(--rv-star);
+  height: var(--rv-star);
+  display: block;
+  fill: transparent;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: miter;
+  transition: fill 0.12s var(--ease-out), transform 0.12s var(--ease-out);
+}
+.jf-review .rv-star.is-on svg { fill: var(--amber); }
+.jf-review .rv-star.is-pick svg { animation: rvStamp 0.28s var(--ease-soft); }
+@media (hover: hover) {
+  .jf-review .rv-star:hover svg { transform: translateY(-1px); }
+}
+.jf-review .rv-star:active svg { transform: scale(0.94); }
+.jf-review .rv-cap {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.jf-review .rv-cap.is-set { color: var(--ink); }
+
+/* ── Notes: a framed textarea, square, white like every field in the app ── */
+.jf-review .rv-ta {
+  display: block;
+  width: 100%;
+  min-height: 124px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  resize: vertical;
+  border: 1.5px solid var(--ink);
+  border-radius: 0;
+  background: var(--paper-deep);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px; /* under 16px iOS zooms the page on focus */
+  line-height: 1.5;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.jf-review .rv-ta::placeholder { color: var(--ink-faint); opacity: 1; }
+.jf-review .rv-ta:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── Photos: the Completed tear-sheet's photo box ───────────────────────── */
+.jf-review .rv-box {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px dashed var(--rv-faint);
+  border-radius: 4px;
+  background: var(--rv-wash);
+}
+.jf-review .rv-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.jf-review .rv-box .rv-grid { margin-bottom: 10px; }
+.jf-review .rv-ph {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+  overflow: hidden;
+}
+.jf-review .rv-ph img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.jf-review .rv-ph--pending {
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--rv-faint);
+  background: var(--paper);
+  color: var(--ink-muted);
+}
+/* Remove: a 44px hit box in the corner (the thumbnail clips anything that
+   hangs outside it, so the box is real, not a pseudo-element) drawing a
+   30px ink mark. */
+.jf-review .rv-x {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--paper);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.jf-review .rv-x-mark {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  background: var(--ink);
+}
+.jf-review .rv-x svg { width: 16px; height: 16px; }
+/* The picker opens from the ADD PHOTOS button; the input itself never paints. */
+.jf-review .rv-file { display: none; }
+
+/* ── Buttons: the stamp (border + hard offset shadow, lifts on hover) ───── */
+.jf-review .rv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 10px 16px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  background-clip: padding-box;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  text-align: center;
+  text-decoration: none;
+  box-shadow: 2px 2px 0 var(--ink);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s var(--ease-out), box-shadow 0.12s var(--ease-out), background 0.12s var(--ease-out);
+}
+.jf-review .rv-btn > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.jf-review .rv-btn svg { flex: 0 0 auto; width: 18px; height: 18px; stroke-width: 2; }
+@media (hover: hover) {
+  .jf-review .rv-btn:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+  .jf-review .rv-btn:hover:not(:disabled) svg { transform: scale(1.12); }
+}
+.jf-review .rv-btn:active:not(:disabled) { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--ink); }
+.jf-review .rv-btn:disabled { opacity: 0.55; cursor: default; }
+.jf-review .rv-btn svg { transition: transform 0.18s var(--ease-out); }
+.jf-review .rv-btn--add { min-height: 44px; background: var(--paper-deep); }
+.jf-review .rv-btn--submit { min-height: 52px; font-size: 12px; }
+.jf-review .rv-btn--ghost { box-shadow: none; }
+@media (hover: hover) {
+  .jf-review .rv-btn--ghost:hover { background: var(--paper-deep); }
+}
+.jf-review .rv-actions { margin-top: 20px; }
+@media (min-width: 640px) {
+  .jf-review .rv-btn--add,
+  .jf-review .rv-btn--submit,
+  .jf-review .rv-btn--ghost { width: auto; min-width: 240px; }
+}
+
+/* The in-button loading mark: a square that fills like a bar and resets.
+   The system draws no circles, so there is no spinner. */
+.jf-review .rv-sq {
+  position: relative;
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid currentColor;
+}
+.jf-review .rv-sq::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  background: currentColor;
+  transform-origin: left center;
+  animation: rvFill 0.9s var(--ease-draw) infinite;
+}
+.jf-review .rv-ph--pending .rv-sq { width: 18px; height: 18px; }
+
+/* ── The error line: the status-badge pattern in the danger tone ────────── */
+.jf-review .rv-err {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 16px 0 0;
+  padding: 9px 11px;
+  border: 1.5px solid var(--rose);
+  background: rgba(168, 50, 50, 0.08);
+  color: var(--rose);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.jf-review .rv-err::before { content: ""; flex: 0 0 auto; width: 8px; height: 8px; margin-top: 5px; background: currentColor; }
+
+/* ── Footer note ────────────────────────────────────────────────────────── */
+.jf-review .rv-foot {
+  margin: 20px 0 0;
+  padding-top: 14px;
+  border-top: var(--rv-hair);
+  letter-spacing: 0.06em;
+  text-transform: none;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* ── Done: the RECEIVED plate beside the recorded score ─────────────────── */
+.jf-review .rv-receipt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+  margin-top: 20px;
+}
+.jf-review .rv-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  line-height: 1;
+  text-transform: uppercase;
+  animation: rvLand 0.32s var(--ease-soft) 0.36s both;
+}
+.jf-review .rv-stamp svg { width: 14px; height: 14px; stroke-width: 2.5; }
+.jf-review .rv-score { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.jf-review .rv-score .rv-cap { margin: 0; text-align: left; }
+.jf-review .rv-done .rv-grid { margin-top: 18px; }
+.jf-review .rv-done .rv-lede { margin-top: 18px; }
+.jf-review .rv-done .rv-actions { margin-top: 18px; }
+
+/* ── Motion: the page-load cascade, the form's exit, the star's stamp ───── */
+@keyframes rvIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes rvOut { to { opacity: 0; transform: translateY(-6px); } }
+@keyframes rvStamp { 0% { transform: scale(0.92); } 55% { transform: scale(1.06); } 100% { transform: none; } }
+@keyframes rvLand { from { opacity: 0; transform: scale(1.18); } to { opacity: 1; transform: none; } }
+@keyframes rvFill { 0% { transform: scaleX(0); opacity: 1; } 62% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
+
+.jf-review .rv-seq > * { animation: rvIn 0.42s var(--ease-out) both; }
+.jf-review .rv-seq > :nth-child(2) { animation-delay: 60ms; }
+.jf-review .rv-seq > :nth-child(3) { animation-delay: 120ms; }
+.jf-review .rv-seq > :nth-child(4) { animation-delay: 180ms; }
+.jf-review .rv-seq > :nth-child(5) { animation-delay: 240ms; }
+.jf-review .rv-seq > :nth-child(6) { animation-delay: 300ms; }
+.jf-review .rv-seq > :nth-child(n + 7) { animation-delay: 360ms; }
+/* The error line mounts later, on the user's action: it shows at once, not
+   on the load cascade's schedule. */
+.jf-review .rv-seq > .rv-err { animation: rvIn 0.16s var(--ease-out) both; animation-delay: 0s; }
+.jf-review .rv-card.is-leaving .rv-seq > * { animation: rvOut 0.2s var(--ease-out) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-review .rv-seq > *,
+  .jf-review .rv-seq > .rv-err,
+  .jf-review .rv-card.is-leaving .rv-seq > *,
+  .jf-review .rv-stamp,
+  .jf-review .rv-star.is-pick svg,
+  .jf-review .rv-sq::after { animation: none; }
+  .jf-review .rv-sq::after { transform: none; }
+  .jf-review .rv-btn,
+  .jf-review .rv-btn svg,
+  .jf-review .rv-star svg { transition: none; }
+}
