@@ -69,6 +69,11 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "lh3.googleusercontent.com" },
     ],
   },
+  // A git worktree nested inside the checkout (.worktrees/<name>) has no
+  // node_modules of its own and Turbopack refuses symlinks that leave the
+  // project root, so such a worktree names the checkout as the root and
+  // resolves packages by walking up. Unset everywhere else (the default).
+  ...(process.env.JOBFLEX_TURBOPACK_ROOT ? { turbopack: { root: process.env.JOBFLEX_TURBOPACK_ROOT } } : {}),
   experimental: {
     // Turbopack's on-disk dev cache corrupted twice on 2026-09-03 ("Restore of
     // All for task … failed in another thread" panic, then a segfault on the
