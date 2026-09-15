@@ -1310,7 +1310,8 @@ function PackageLedger({
         <Row
           n="02"
           id="boards"
-          title={surface ? "Surface prep" : "Insulation & cover board"}
+          // Row names live in a fixed 158px column — longer names ran into the summary.
+          title={surface ? "Surface prep" : "Insulation"}
           summary={sumBoards}
           open={!!open.boards}
           onToggle={() => toggle("boards")}
@@ -1411,7 +1412,7 @@ function PackageLedger({
         <Row
           n="04"
           id="drains"
-          title="Drains & penetrations"
+          title="Drains & curbs"
           summary={sumDrains}
           open={!!open.drains}
           onToggle={() => toggle("drains")}
