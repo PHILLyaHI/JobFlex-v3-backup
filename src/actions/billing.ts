@@ -89,7 +89,11 @@ export interface UpcomingInvoice {
   discountCents: number;
   /** Customer balance (referral rewards) applied against this invoice. */
   creditCents: number;
-  /** Human lines: "Referral coupon −$2.50", "Referral credit −$39.50". */
+  /** Credit sitting on the customer balance BEFORE this invoice takes its
+   *  share — what is left afterwards is this minus `creditCents`. */
+  balanceCreditCents: number;
+  /** Coupon lines only: "Referral coupon −$2.50". The balance credit is
+   *  itemised by the page, which knows how many referrals funded it. */
   notes: string[];
 }
 
@@ -149,7 +153,6 @@ export async function listSubscriptionInvoices(): Promise<{
           const name = typeof disc === "object" && disc?.coupon?.name ? disc.coupon.name : "Discount";
           if (d.amount) notes.push(`${name} −$${(d.amount / 100).toFixed(2)}`);
         }
-        if (creditCents > 0) notes.push(`Referral credit −$${(creditCents / 100).toFixed(2)}`);
         const firstLine = pre.lines?.data?.[0];
         upcoming = {
           dueAt: pre.next_payment_attempt ?? firstLine?.period?.end ?? pre.period_end ?? null,
@@ -157,6 +160,8 @@ export async function listSubscriptionInvoices(): Promise<{
           subtotalCents: subtotal,
           discountCents,
           creditCents,
+          // Stripe balances are negative when they are credit.
+          balanceCreditCents: Math.max(creditCents, -(pre.starting_balance ?? 0)),
           notes,
         };
       } catch (err) {

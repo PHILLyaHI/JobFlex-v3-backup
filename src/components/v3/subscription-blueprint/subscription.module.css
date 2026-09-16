@@ -910,9 +910,6 @@
   border-radius: var(--radius); font-family: var(--font-mono); font-size: 17px;
   font-weight: 600; letter-spacing: .14em; }
 :global(.jf-blueprint) .ref-reward { margin-top: 14px; font-size: 13.5px; color: var(--ink); }
-:global(.jf-blueprint) .ref-url { margin-top: 8px; font-family: var(--font-mono); font-size: 12px;
-  font-weight: 600; color: var(--muted); }
-:global(.jf-blueprint) .ref-url b { color: var(--ink); font-weight: 600; }
 :global(.jf-blueprint) .kpi-grid--3 { grid-template-columns: repeat(3, 1fr); }
 :global(.jf-blueprint) .kpi-grid--3 .kpi:last-child { border-right: none; }
 
@@ -1061,6 +1058,13 @@
 }
 :global(.jf-blueprint) .bill-lines li::before {
   content: ""; width: 10px; height: 1.5px; background: currentColor; flex: 0 0 auto;
+}
+/* Referral lines (2026-09-14): the credit carries its amount flush right;
+   carry-over and pending referrals read as quiet notes, not money off. */
+:global(.jf-blueprint) .bill-lines li.bill-line-note { color: var(--muted); align-items: flex-start; }
+:global(.jf-blueprint) .bill-lines li.bill-line-note::before { margin-top: 0.62em; }
+:global(.jf-blueprint) .bill-line-amt {
+  margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 :global(.jf-blueprint) .inv-head { grid-template-columns: 1.4fr 1fr .8fr .9fr; padding-bottom: 8px; }
 :global(.jf-blueprint) .inv-row {

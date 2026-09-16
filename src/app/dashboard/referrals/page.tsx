@@ -5,7 +5,7 @@
 // ../layout.tsx, so this page renders only the donor's `.content` children.
 // The classic page was archived to old-design-pages/dashboard/referrals.
 //
-// This is NOT a fixture page: the code, the two share links, the three stat
+// This is NOT a fixture page: the code, the three stat
 // tiles and every conversion row are read from the database in
 // ./load-referrals and handed to BOTH editions through ./referrals-responsive
 // — the desktop sheet above 768px, the handheld build at or below — so both

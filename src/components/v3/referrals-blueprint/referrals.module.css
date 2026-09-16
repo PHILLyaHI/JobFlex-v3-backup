@@ -1324,18 +1324,6 @@
 .bp :global(.content .code-copy .ic) { width: 14px; height: 14px; }
 .bp :global(.content .hero-note) { margin-top: 14px; max-width: 62ch; font-size: 13px; line-height: 1.6; color: var(--muted); }
 .bp :global(.content .hero-links) { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 16px; }
-.bp :global(.content .link-chip) {
-  display: inline-flex; align-items: center; gap: 9px; min-width: 0;
-  height: 34px; padding: 0 6px 0 11px;
-  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
-  background: var(--paper-deep);
-}
-.bp :global(.content .chip-lbl) { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); flex: 0 0 auto; }
-.bp :global(.content .link-chip code) { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
-.bp :global(.content .chip-copy) { width: 24px; height: 24px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid transparent; border-radius: var(--radius); color: var(--muted); }
-.bp :global(.content .chip-copy:hover) { border-color: var(--ink); color: var(--ink); background: #fff; }
-.bp :global(.content .chip-copy.done) { border-color: var(--success); color: var(--success-dark); background: var(--success-soft); }
-.bp :global(.content .chip-copy .ic) { width: 12px; height: 12px; }
 .bp :global(.content .hero-links .btn) { height: 34px; }
 .bp :global(.content .hero-side) { border-left: 1.5px solid var(--hair-soft); background: rgba(24, 84, 160, 0.06); display: flex; align-items: center; justify-content: center; padding: 20px; }
 .bp :global(.content .reward) { text-align: center; }
@@ -1379,11 +1367,7 @@
   .bp :global(.content .hero) { grid-template-columns: minmax(0, 1fr); }
   .bp :global(.content .hero-side) { border-left: none; border-top: 1.5px solid var(--hair-soft); }
   .bp :global(.content .code-val) { font-size: 27px; }
-  .bp :global(.content .link-chip) { width: 100%; }
-  .bp :global(.content .link-chip code) { max-width: none; flex: 1; }
   .bp :global(.content .hero-links .btn) { width: 100%; justify-content: center; }
   .bp :global(.content .stat-grid) { grid-template-columns: 1fr; }
   .bp :global(.content .rf-head) { flex-direction: column; }
-  /* Touch target: copy button grows from 24px; inline-flex keeps the glyph centered. */
-  .bp :global(.content .chip-copy) { width: 44px; height: 44px; }
 }
