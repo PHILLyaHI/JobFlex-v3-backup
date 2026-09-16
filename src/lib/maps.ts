@@ -96,3 +96,52 @@ export async function geocode(address: string): Promise<{ lat: number; lng: numb
 }
 
 export { ExternalCallError as MapsCallError };
+
+/**
+ * A geocode that keeps the address components: the county (Google's
+ * `administrative_area_level_2`) is what the HVAC estimator's design-condition
+ * table is keyed on, and nothing else in the app had ever asked for it. Best
+ * effort like geocodeAddress: null when Maps is off, refused, or empty.
+ */
+export async function geocodePlace(address: string): Promise<{
+  lat: number;
+  lng: number;
+  county?: string;
+  state?: string;
+  city?: string;
+  zip?: string;
+  formatted?: string;
+} | null> {
+  const q = address.trim();
+  if (!q || !isMapsEnabled()) return null;
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(q)}&key=${process.env.GOOGLE_MAPS_API_KEY}`;
+  try {
+    const res = await externalFetch("maps", "geocode", url, {}, { timeoutMs: MAPS_TIMEOUT_MS });
+    const data = (await res.json()) as {
+      status?: string;
+      results?: Array<{
+        formatted_address?: string;
+        geometry?: { location?: { lat: number; lng: number } };
+        address_components?: Array<{ long_name: string; short_name: string; types: string[] }>;
+      }>;
+    };
+    const hit = data.results?.[0];
+    const loc = hit?.geometry?.location;
+    if (data.status !== "OK" || !loc) return null;
+    const comp = (type: string, short = false) => {
+      const c = hit?.address_components?.find((a) => a.types.includes(type));
+      return c ? (short ? c.short_name : c.long_name) : undefined;
+    };
+    return {
+      lat: loc.lat,
+      lng: loc.lng,
+      county: comp("administrative_area_level_2"),
+      state: comp("administrative_area_level_1", true),
+      city: comp("locality") ?? comp("postal_town") ?? comp("sublocality"),
+      zip: comp("postal_code"),
+      formatted: hit?.formatted_address?.replace(/,\s*USA$/, ""),
+    };
+  } catch {
+    return null;
+  }
+}

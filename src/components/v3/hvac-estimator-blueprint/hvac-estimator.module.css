@@ -1,0 +1,354 @@
+/* ============================================================
+   HVAC ESTIMATOR — BLUEPRINT
+   /dashboard/hvac-estimator
+
+   Same convention as advanced-ai.module.css: every class is this module's
+   own hashed name, scoped `:global(.jf-blueprint .content) .cls` (0,3,0) so
+   the always-on dashboard reset (`.bp :global(.content *)`, (0,2,0)) never
+   strips a control here. Tokens (--paper, --ink, --blueprint, --sky,
+   --font, --font-mono, --border, --radius, the status tones) come from the
+   always-on dashboard module's `.content` block; nothing is redeclared.
+
+   No donor exists for this page: the vocabulary is the roof/fence donors'
+   (card, rf-head/rf-body, est-in/est-lbl, hero cells, kpi-lbl, chip, call,
+   bo-table) at their literal values, so the page reads as one of the set.
+   Status colour is spent on statuses only: PASS / FIX / VERIFY chips and
+   the coverage ticks. Provenance badges are ink and blueprint.
+   ============================================================ */
+
+:global(.jf-blueprint .content) .page-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 20px; flex-wrap: wrap; padding-top: 6px; margin-bottom: 14px;
+}
+:global(.jf-blueprint .content) .kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 10px;
+}
+:global(.jf-blueprint .content) .kicker::before { content: ''; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
+:global(.jf-blueprint .content) .page-title { font-size: 46px; font-weight: 900; letter-spacing: -0.03em; text-transform: uppercase; line-height: 0.95; }
+:global(.jf-blueprint .content) .page-sub { margin-top: 10px; max-width: 64ch; font-size: 13px; line-height: 1.5; color: var(--muted); }
+:global(.jf-blueprint .content) .page-actions { display: flex; gap: 12px; flex-shrink: 0; padding-bottom: 4px; }
+
+/* Buttons — donor values. */
+:global(.jf-blueprint .content) .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  padding: 0 16px; height: 40px;
+  border: var(--border); border-radius: var(--radius);
+  background: #fff; color: var(--ink);
+  font-family: var(--font); font-size: 12px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  white-space: nowrap; cursor: pointer;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+:global(.jf-blueprint .content) .btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint .content) .btn:active { transform: translate(0, 0); box-shadow: none; }
+:global(.jf-blueprint .content) .btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+:global(.jf-blueprint .content) .btn-primary { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .btn-primary:hover { background: var(--blueprint-dark); }
+:global(.jf-blueprint .content) .btn-ghost { background: #fff; color: var(--ink); }
+:global(.jf-blueprint .content) .btn-ghost:hover { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .btn-sm { height: 38px; padding: 0 14px; font-size: 11.5px; }
+:global(.jf-blueprint .content) .btn[disabled] { opacity: 0.45; pointer-events: none; }
+:global(.jf-blueprint .content) .btn .ic { width: 15px; height: 15px; }
+:global(.jf-blueprint .content) .link {
+  padding: 0; border: 0; background: none; cursor: pointer;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em;
+  color: var(--blueprint); text-decoration: underline; text-underline-offset: 2px;
+}
+:global(.jf-blueprint .content) .ic { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; display: inline; vertical-align: middle; }
+
+/* Cards */
+:global(.jf-blueprint .content) .card {
+  background: #fff; border: var(--border); border-radius: var(--radius);
+  padding: 0; overflow: hidden; position: relative; margin-bottom: 16px;
+}
+:global(.jf-blueprint .content) .head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  padding: 15px 18px 13px; border-bottom: 1.5px solid var(--hair-soft);
+}
+:global(.jf-blueprint .content) .head-txt { min-width: 0; }
+:global(.jf-blueprint .content) .card-title { font-size: 15px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .card-sub { margin-top: 6px; max-width: 64ch; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+:global(.jf-blueprint .content) .card-sub b { color: var(--ink-soft); font-weight: 700; }
+:global(.jf-blueprint .content) .head-acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+:global(.jf-blueprint .content) .body { padding: 16px 18px 18px; }
+:global(.jf-blueprint .content) .step {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; margin-right: 10px; vertical-align: -5px;
+  border: 1.5px solid var(--ink); border-radius: 50%;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--ink);
+}
+:global(.jf-blueprint .content) .step.done { background: var(--ink); color: var(--paper); }
+
+/* Annotation voice */
+:global(.jf-blueprint .content) .kpi-lbl { font-size: 11px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content) .mono { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.5; color: var(--muted); }
+:global(.jf-blueprint .content) .note { max-width: 66ch; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+:global(.jf-blueprint .content) .note b { color: var(--ink); }
+
+/* Fields — donor est-in/est-lbl */
+:global(.jf-blueprint .content) .grid { display: grid; gap: 11px; margin-top: 4px; }
+:global(.jf-blueprint .content) .grid-addr { grid-template-columns: minmax(0, 2.4fr) minmax(0, 0.7fr) minmax(0, 1.3fr); }
+:global(.jf-blueprint .content) .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+:global(.jf-blueprint .content) .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+:global(.jf-blueprint .content) .field { display: block; min-width: 0; }
+:global(.jf-blueprint .content) .lbl {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 5px; min-height: 16px;
+}
+:global(.jf-blueprint .content) .in, :global(.jf-blueprint .content) .sel {
+  width: 100%; height: 38px; padding: 0 11px; box-sizing: border-box;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff;
+  font-family: var(--font); font-size: 13px; color: var(--ink);
+}
+:global(.jf-blueprint .content) .sel { appearance: none; -webkit-appearance: none; padding-right: 28px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink) 50%), linear-gradient(135deg, var(--ink) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 16px, calc(100% - 10px) 16px; background-size: 5px 5px; background-repeat: no-repeat; }
+:global(.jf-blueprint .content) .in:focus, :global(.jf-blueprint .content) .sel:focus { outline: none; border-color: var(--ink); }
+:global(.jf-blueprint .content) .in::placeholder { color: var(--muted-faint); }
+:global(.jf-blueprint .content) .in.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+:global(.jf-blueprint .content) .ta { width: 100%; min-height: 72px; padding: 9px 11px; box-sizing: border-box; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font); font-size: 13px; line-height: 1.45; color: var(--ink); resize: vertical; }
+:global(.jf-blueprint .content) .ta:focus { outline: none; border-color: var(--ink); }
+:global(.jf-blueprint .content) .acts { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; margin-top: 16px; padding-top: 15px; border-top: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .acts .btn { height: 38px; padding: 0 15px; font-size: 12.5px; }
+:global(.jf-blueprint .content) .acts-note { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.5; color: var(--muted); }
+
+/* Chips: provenance in ink/blueprint, status in status tones. */
+:global(.jf-blueprint .content) .chip {
+  display: inline-block; font-size: 9.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1.5px solid currentColor; border-radius: var(--radius); padding: 2px 6px; line-height: 1.3; white-space: nowrap;
+  color: var(--muted-light); background: #fff;
+}
+:global(.jf-blueprint .content) .chip-measured, :global(.jf-blueprint .content) .chip-plan { color: var(--blueprint); }
+:global(.jf-blueprint .content) .chip-read { color: var(--ink); }
+:global(.jf-blueprint .content) .chip-stated { color: #fff; background: var(--ink); border-color: var(--ink); }
+:global(.jf-blueprint .content) .chip-default { color: var(--muted-light); border-style: dashed; }
+:global(.jf-blueprint .content) .chip-pass { color: var(--success); }
+:global(.jf-blueprint .content) .chip-fix { color: var(--danger); }
+:global(.jf-blueprint .content) .chip-verify { color: var(--warning-dark); }
+
+/* Hero strip */
+:global(.jf-blueprint .content) .hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); border-bottom: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .hero-cell { padding: 15px 18px 17px; border-right: 1.5px solid var(--hair-soft); min-width: 0; }
+:global(.jf-blueprint .content) .hero-cell:last-child { border-right: none; }
+:global(.jf-blueprint .content) .hero-v { margin-top: 8px; font-size: 28px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.015em; white-space: nowrap; }
+:global(.jf-blueprint .content) .hero-v.accent { color: var(--blueprint); }
+:global(.jf-blueprint .content) .hero-v small { font-size: 13px; font-weight: 700; letter-spacing: 0; color: var(--muted); margin-left: 4px; }
+:global(.jf-blueprint .content) .hero-h { margin-top: 7px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Calls (notices) */
+:global(.jf-blueprint .content) .call { display: flex; gap: 9px; padding: 10px 11px; border: 1.5px solid var(--hair-soft); border-left-width: 3px; border-radius: var(--radius); font-size: 12.5px; line-height: 1.45; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .call + .call { margin-top: 8px; }
+:global(.jf-blueprint .content) .call.warn { border-left-color: var(--warning); background: var(--warning-soft); }
+:global(.jf-blueprint .content) .call.info { border-left-color: var(--sky); background: rgba(74, 158, 255, 0.07); }
+:global(.jf-blueprint .content) .call.bad { border-left-color: var(--danger); background: var(--danger-soft); }
+:global(.jf-blueprint .content) .stamp { display: inline-block; margin: 0 9px 0 0; padding: 2px 7px; background: var(--ink); color: var(--paper); font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; vertical-align: 1px; }
+
+/* Intake: three columns — walk, plates, confirm */
+:global(.jf-blueprint .content) .intake { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 0; }
+:global(.jf-blueprint .content) .intake > * { padding: 16px 18px 18px; min-width: 0; }
+:global(.jf-blueprint .content) .intake > * + * { border-left: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .sec-title { font-size: 12.5px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+:global(.jf-blueprint .content) .sec-sub { font-size: 12.5px; line-height: 1.5; color: var(--muted); margin-bottom: 12px; max-width: 60ch; }
+
+/* Drop zone */
+:global(.jf-blueprint .content) .drop {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center;
+  min-height: 132px; padding: 18px; cursor: pointer;
+  border: 2px dashed var(--hair-soft); border-radius: var(--radius); background: var(--paper);
+  transition: border-color 0.12s, background 0.12s;
+}
+:global(.jf-blueprint .content) .drop:hover, :global(.jf-blueprint .content) .drop.over { border-color: var(--ink); background: #fff; }
+:global(.jf-blueprint .content) .drop-t { font-size: 13.5px; font-weight: 800; letter-spacing: 0.04em; }
+:global(.jf-blueprint .content) .drop-s { font-size: 12px; color: var(--muted); max-width: 40ch; line-height: 1.45; }
+:global(.jf-blueprint .content) .drop input { display: none; }
+:global(.jf-blueprint .content) .drop .ic { width: 24px; height: 24px; }
+
+/* Clip row + frames */
+:global(.jf-blueprint .content) .clip { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; }
+:global(.jf-blueprint .content) .clip video { width: 96px; height: 54px; object-fit: cover; background: var(--ink); border-radius: var(--radius); flex-shrink: 0; }
+:global(.jf-blueprint .content) .clip-t { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content) .clip-m { margin-top: 3px; }
+:global(.jf-blueprint .content) .clip .link { margin-left: auto; }
+:global(.jf-blueprint .content) .frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 6px; margin-top: 10px; }
+:global(.jf-blueprint .content) .frame { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--ink); }
+:global(.jf-blueprint .content) .frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+:global(.jf-blueprint .content) .frame span { position: absolute; left: 4px; bottom: 3px; padding: 1px 4px; background: rgba(10,10,10,0.75); color: var(--paper); font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.06em; }
+
+/* Stage progress — the video estimator's bar, ported */
+:global(.jf-blueprint .content) .stage { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+:global(.jf-blueprint .content) .stage-bar { flex: 1; height: 6px; border: 1.5px solid var(--ink); background: #fff; overflow: hidden; }
+:global(.jf-blueprint .content) .stage-fill { height: 100%; background: var(--blueprint); transition: width 0.3s ease; }
+:global(.jf-blueprint .content) .stage-t { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
+
+/* Filming guide */
+:global(.jf-blueprint .content) .guide { margin-top: 14px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); }
+:global(.jf-blueprint .content) .guide > summary { display: flex; align-items: center; gap: 10px; padding: 11px 13px; cursor: pointer; list-style: none; font-size: 12.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .guide > summary::-webkit-details-marker { display: none; }
+:global(.jf-blueprint .content) .guide > summary .mono { margin-left: auto; text-transform: none; letter-spacing: 0.02em; }
+:global(.jf-blueprint .content) .guide[open] > summary { border-bottom: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .guide-body { padding: 12px 13px 14px; }
+:global(.jf-blueprint .content) .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 10px; }
+:global(.jf-blueprint .content) .shot { display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding: 10px 11px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; }
+:global(.jf-blueprint .content) .shot-n { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border: 1.5px solid var(--ink); border-radius: 50%; font-family: var(--font-mono); font-size: 11px; font-weight: 700; }
+:global(.jf-blueprint .content) .shot-t { font-size: 12.5px; font-weight: 800; letter-spacing: 0.02em; }
+:global(.jf-blueprint .content) .shot-d { margin-top: 3px; font-size: 12px; line-height: 1.45; color: var(--muted); }
+:global(.jf-blueprint .content) .shot-say { margin-top: 5px; font-family: var(--font-mono); font-size: 10.5px; color: var(--blueprint); line-height: 1.45; }
+:global(.jf-blueprint .content) .tips { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+:global(.jf-blueprint .content) .tip { font-size: 12px; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .tip::before { content: '—'; margin-right: 6px; color: var(--muted-light); }
+
+/* Coverage checklist */
+:global(.jf-blueprint .content) .cover { margin-top: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
+:global(.jf-blueprint .content) .cov { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-size: 12px; line-height: 1.4; }
+:global(.jf-blueprint .content) .cov-i { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--muted-light); border-radius: 50%; font-size: 10px; font-weight: 900; color: var(--muted-light); }
+:global(.jf-blueprint .content) .cov.got .cov-i { border-color: var(--success); background: var(--success); color: #fff; }
+:global(.jf-blueprint .content) .cov-t { font-weight: 700; }
+:global(.jf-blueprint .content) .cov-s { color: var(--muted); }
+
+/* Photo slots */
+:global(.jf-blueprint .content) .slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+:global(.jf-blueprint .content) .slot { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 9px; border: 1.5px dashed var(--hair-soft); border-radius: var(--radius); background: var(--paper); cursor: pointer; min-height: 120px; }
+:global(.jf-blueprint .content) .slot:hover { border-color: var(--ink); }
+:global(.jf-blueprint .content) .slot.has { border-style: solid; background: #fff; }
+:global(.jf-blueprint .content) .slot input { display: none; }
+:global(.jf-blueprint .content) .slot-t { font-size: 11.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .slot-s { font-size: 11px; color: var(--muted); line-height: 1.4; }
+:global(.jf-blueprint .content) .slot img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius); background: var(--ink); }
+:global(.jf-blueprint .content) .slot-r { font-family: var(--font-mono); font-size: 10.5px; line-height: 1.45; color: var(--ink); word-break: break-word; }
+:global(.jf-blueprint .content) .slot-r b { color: var(--blueprint); }
+:global(.jf-blueprint .content) .slot .chip { position: absolute; top: 7px; right: 7px; }
+
+/* Confirm form */
+:global(.jf-blueprint .content) .confirm { border-top: 1.5px solid var(--hair-soft); padding: 16px 18px 18px; }
+:global(.jf-blueprint .content) .fs { margin-top: 14px; }
+:global(.jf-blueprint .content) .fs:first-child { margin-top: 0; }
+:global(.jf-blueprint .content) .fs-t { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+:global(.jf-blueprint .content) .fs-t .mono { text-transform: none; letter-spacing: 0.03em; font-weight: 500; }
+:global(.jf-blueprint .content) .grid-f { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+:global(.jf-blueprint .content) .chk { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-size: 12.5px; cursor: pointer; }
+:global(.jf-blueprint .content) .chk input { width: 15px; height: 15px; accent-color: var(--blueprint); margin: 0; }
+
+/* Design card */
+:global(.jf-blueprint .content) .design { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+:global(.jf-blueprint .content) .design > * { padding: 16px 18px 18px; min-width: 0; }
+:global(.jf-blueprint .content) .design > * + * { border-left: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .unit { padding: 12px 13px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; }
+:global(.jf-blueprint .content) .unit-t { font-size: 15px; font-weight: 900; letter-spacing: 0.02em; }
+:global(.jf-blueprint .content) .unit-m { margin-top: 4px; }
+:global(.jf-blueprint .content) .unit ul { margin-top: 9px; padding-left: 0; list-style: none; display: grid; gap: 4px; }
+:global(.jf-blueprint .content) .unit li { font-size: 12.5px; line-height: 1.45; color: var(--ink-soft); padding-left: 12px; position: relative; }
+:global(.jf-blueprint .content) .unit li::before { content: ''; position: absolute; left: 0; top: 8px; width: 5px; height: 5px; background: var(--blueprint); }
+:global(.jf-blueprint .content) .runner { margin-top: 8px; font-size: 12px; color: var(--muted); line-height: 1.45; }
+:global(.jf-blueprint .content) .runner b { color: var(--ink); }
+:global(.jf-blueprint .content) .chart { margin-top: 12px; width: 100%; height: auto; display: block; border: 1.5px solid var(--hair-soft); background:
+  linear-gradient(var(--grid-light) 1px, transparent 1px), linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 20px 20px; }
+:global(.jf-blueprint .content) .chart text { font-family: var(--font-mono); font-size: 9.5px; fill: var(--muted); }
+:global(.jf-blueprint .content) .chart .cap { fill: none; stroke: var(--blueprint); stroke-width: 2; }
+:global(.jf-blueprint .content) .chart .ld { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 4 3; }
+:global(.jf-blueprint .content) .chart .ax { stroke: var(--hair-soft); stroke-width: 1; }
+:global(.jf-blueprint .content) .chart .mk { fill: var(--ink); }
+:global(.jf-blueprint .content) .chart .band { fill: var(--chart-fill); }
+:global(.jf-blueprint .content) .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; }
+:global(.jf-blueprint .content) .legend span { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content) .legend i { display: inline-block; width: 16px; height: 0; border-top: 2px solid var(--blueprint); }
+:global(.jf-blueprint .content) .legend i.d { border-top: 1.5px dashed var(--ink); }
+
+/* Fit bar (AC): 90–115 % band */
+:global(.jf-blueprint .content) .fit { margin-top: 12px; }
+:global(.jf-blueprint .content) .fit-bar { position: relative; height: 22px; border: 1.5px solid var(--ink); background: #fff; }
+:global(.jf-blueprint .content) .fit-band { position: absolute; top: 0; bottom: 0; background: var(--chart-fill); }
+:global(.jf-blueprint .content) .fit-mark { position: absolute; top: -4px; bottom: -4px; width: 3px; background: var(--blueprint); }
+:global(.jf-blueprint .content) .fit-ax { display: flex; justify-content: space-between; margin-top: 4px; }
+
+/* Checks & notes */
+:global(.jf-blueprint .content) .checks { display: grid; gap: 6px; }
+:global(.jf-blueprint .content) .check { display: grid; grid-template-columns: 62px 1fr; gap: 10px; align-items: start; padding: 8px 10px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; }
+:global(.jf-blueprint .content) .check-t { font-size: 12.5px; font-weight: 800; }
+:global(.jf-blueprint .content) .check-d { margin-top: 2px; font-size: 12px; line-height: 1.45; color: var(--muted); }
+:global(.jf-blueprint .content) .check-r { margin-top: 3px; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted-light); }
+:global(.jf-blueprint .content) .notes { display: grid; gap: 5px; padding-left: 0; list-style: none; }
+:global(.jf-blueprint .content) .notes li { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; line-height: 1.45; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .notes .chip { margin-top: 2px; }
+:global(.jf-blueprint .content) .comp { width: 100%; border-collapse: collapse; margin-top: 10px; }
+:global(.jf-blueprint .content) .comp th, :global(.jf-blueprint .content) .comp td { padding: 5px 8px; font-size: 11.5px; border-bottom: 1px solid var(--hair-soft); text-align: right; font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .comp th { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-light); font-weight: 600; }
+:global(.jf-blueprint .content) .comp th:first-child, :global(.jf-blueprint .content) .comp td:first-child { text-align: left; }
+:global(.jf-blueprint .content) .comp tr:last-child td { border-bottom: none; }
+
+/* Ledger tables — donor bo-table, editable */
+:global(.jf-blueprint .content) .bo-sec { border-top: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .bo-sec:first-child { border-top: none; }
+:global(.jf-blueprint .content) .bo-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 16px; background: var(--paper-deep); }
+:global(.jf-blueprint .content) .bo-sum { font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; }
+:global(.jf-blueprint .content) .tbl-wrap { overflow-x: auto; }
+:global(.jf-blueprint .content) .bo-table { width: 100%; min-width: 620px; border-collapse: collapse; }
+:global(.jf-blueprint .content) .bo-table th { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-light); text-align: left; padding: 9px 14px; border-bottom: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .bo-table td { padding: 7px 14px; border-bottom: 1.5px solid var(--hair-soft); font-size: 13px; vertical-align: middle; }
+:global(.jf-blueprint .content) .bo-table th.num, :global(.jf-blueprint .content) .bo-table td.num { text-align: right; }
+:global(.jf-blueprint .content) .bo-table tbody tr:last-child td { border-bottom: none; }
+:global(.jf-blueprint .content) .bo-table tbody tr:nth-child(even) { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .bo-in { width: 100%; height: 32px; padding: 0 8px; box-sizing: border-box; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font); font-size: 13px; color: var(--ink); }
+:global(.jf-blueprint .content) .bo-in.num { width: 92px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+:global(.jf-blueprint .content) .bo-in:focus { outline: none; border-color: var(--ink); }
+:global(.jf-blueprint .content) .bo-note { display: block; margin-top: 2px; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.02em; color: var(--muted-light); line-height: 1.4; }
+:global(.jf-blueprint .content) .bo-x { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid transparent; border-radius: var(--radius); color: var(--muted); background: none; cursor: pointer; }
+:global(.jf-blueprint .content) .bo-x:hover { border-color: var(--ink); color: var(--ink); }
+:global(.jf-blueprint .content) .bo-x .ic { width: 13px; height: 13px; }
+:global(.jf-blueprint .content) .bo-add { padding: 8px 14px; }
+:global(.jf-blueprint .content) .bo-total { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; border-top: 2px solid var(--ink); background: var(--paper-deep); }
+:global(.jf-blueprint .content) .bo-total-v { font-size: 24px; font-weight: 900; color: var(--blueprint); font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .assump { padding: 12px 16px 14px; border-top: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .assump ul { margin-top: 6px; padding-left: 16px; display: grid; gap: 3px; list-style: disc; }
+:global(.jf-blueprint .content) .assump li { font-size: 12px; line-height: 1.45; color: var(--muted); }
+
+/* Settings panels (rate card, catalog) */
+:global(.jf-blueprint .content) .panel { border-top: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .panel > summary { display: flex; align-items: center; gap: 10px; padding: 11px 16px; cursor: pointer; list-style: none; font-size: 12px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; background: var(--paper-deep); }
+:global(.jf-blueprint .content) .panel > summary::-webkit-details-marker { display: none; }
+:global(.jf-blueprint .content) .panel > summary .mono { margin-left: auto; text-transform: none; letter-spacing: 0.02em; font-weight: 500; }
+:global(.jf-blueprint .content) .panel-body { padding: 14px 16px 16px; }
+:global(.jf-blueprint .content) .grid-rc { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 9px; }
+
+/* Recent */
+:global(.jf-blueprint .content) .recent { display: grid; gap: 0; }
+:global(.jf-blueprint .content) .rrow { display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 18px; border: 0; border-bottom: 1.5px solid var(--hair-soft); background: none; text-align: left; cursor: pointer; font-family: var(--font); color: var(--ink); }
+:global(.jf-blueprint .content) .rrow:last-child { border-bottom: none; }
+:global(.jf-blueprint .content) .rrow:hover { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .rrow-main { min-width: 0; flex: 1; }
+:global(.jf-blueprint .content) .rrow-a { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content) .rrow-m { margin-top: 2px; }
+:global(.jf-blueprint .content) .rrow-v { font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+:global(.jf-blueprint .content) .empty { padding: 16px 18px; font-size: 12.5px; color: var(--muted); }
+
+/* Phone */
+@media (max-width: 1100px) {
+  :global(.jf-blueprint .content) .intake, :global(.jf-blueprint .content) .design { grid-template-columns: minmax(0, 1fr); }
+  :global(.jf-blueprint .content) .intake > * + *, :global(.jf-blueprint .content) .design > * + * { border-left: none; border-top: 1.5px solid var(--hair-soft); }
+}
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .page-title { font-size: 34px; }
+  :global(.jf-blueprint .content) .grid-addr, :global(.jf-blueprint .content) .grid-3, :global(.jf-blueprint .content) .grid-4 { grid-template-columns: 1fr 1fr; }
+  :global(.jf-blueprint .content) .grid-addr > :first-child { grid-column: span 2; }
+  :global(.jf-blueprint .content) .hero { grid-template-columns: 1fr 1fr; }
+  :global(.jf-blueprint .content) .hero-cell { border-right: none; border-bottom: 1.5px solid var(--hair-soft); }
+  :global(.jf-blueprint .content) .hero-cell:nth-child(odd) { border-right: 1.5px solid var(--hair-soft); }
+  :global(.jf-blueprint .content) .hero-v { font-size: 24px; }
+  :global(.jf-blueprint .content) .slots { grid-template-columns: 1fr; }
+  :global(.jf-blueprint .content) .acts { flex-direction: column; align-items: stretch; }
+  :global(.jf-blueprint .content) .acts .btn, :global(.jf-blueprint .content) .head-acts .btn { width: 100%; height: 44px; }
+  :global(.jf-blueprint .content) .btn, :global(.jf-blueprint .content) .btn-sm { min-height: 44px; }
+  :global(.jf-blueprint .content) .in, :global(.jf-blueprint .content) .sel, :global(.jf-blueprint .content) .chk { height: 44px; }
+  :global(.jf-blueprint .content) .head-acts { width: 100%; }
+  :global(.jf-blueprint .content) .check { grid-template-columns: 1fr; }
+  :global(.jf-blueprint .content) .shots { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  :global(.jf-blueprint .content) .grid-addr, :global(.jf-blueprint .content) .grid-3, :global(.jf-blueprint .content) .grid-4 { grid-template-columns: 1fr; }
+  :global(.jf-blueprint .content) .grid-addr > :first-child { grid-column: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint .content) .btn, :global(.jf-blueprint .content) .stage-fill { transition: none; }
+}

@@ -1,0 +1,318 @@
+// HVAC estimator — the building model and the engine's contracts.
+//
+// One object, two front doors. The retrofit intake (address facts, photos,
+// the video walk, typed answers) and, later, the blueprint intake both fill a
+// BuildingModel; everything downstream — the block load, Manual S selection,
+// the duct and electrical checks, the price — reads it and never asks where a
+// value came from. Where it came from is recorded beside it: every field can
+// carry a provenance entry (`measured`, `read`, `stated`, `default`, `plan`)
+// with a confidence, and the screens show that badge next to the number.
+//
+// Pure types, no imports: the engine, the actions, the page and the QA
+// scripts all share this file.
+
+export type Source =
+  /** An instrument, a scan, a plan dimension, a parcel or footprint record. */
+  | "measured"
+  /** Read off a photo, a nameplate, a public record. */
+  | "read"
+  /** The contractor or the customer said so. */
+  | "stated"
+  /** A table default (era, state, climate); `note` names the table. */
+  | "default"
+  /** Taken from construction documents. */
+  | "plan";
+
+export type Confidence = "high" | "medium" | "low";
+
+export interface Provenance {
+  source: Source;
+  confidence: Confidence;
+  /** Typed by the contractor: no reading overrides it. */
+  entered?: true;
+  /** The table, photo or sentence the value came from. */
+  note?: string;
+}
+
+/** Dotted field paths: "conditionedSqft", "existing.tons", "electrical.mainAmps". */
+export type ProvenanceMap = Record<string, Provenance>;
+
+export type WindowType = "single" | "double" | "double-lowe" | "triple";
+export type WallInsulation = "none" | "r11" | "r13" | "r19" | "r21";
+export type CeilingInsulation = "none" | "r11" | "r19" | "r30" | "r38" | "r49";
+export type Foundation = "slab" | "crawl-vented" | "crawl-sealed" | "basement-unconditioned" | "basement-conditioned";
+export type Tightness = "leaky" | "average" | "tight" | "very-tight";
+export type DuctLocation = "conditioned" | "attic" | "crawl" | "basement" | "none";
+export type DuctCondition = "good" | "fair" | "poor" | "unknown";
+export type RoofColor = "dark" | "medium" | "light";
+export type Shading = "none" | "some" | "heavy";
+export type Fuel = "gas" | "electric" | "propane" | "oil" | "none";
+export type ExistingKind =
+  | "split-ac-furnace"
+  | "split-heat-pump"
+  | "furnace-only"
+  | "package-unit"
+  | "ductless"
+  | "boiler"
+  | "none";
+
+/** One exterior wall of the footprint, for window orientation. */
+export interface FootprintEdge {
+  /** Compass bearing of the outward normal, degrees clockwise from north. */
+  bearingDeg: number;
+  lengthFt: number;
+}
+
+export interface ExistingSystem {
+  kind: ExistingKind;
+  brand?: string;
+  model?: string;
+  serial?: string;
+  /** Nominal cooling tons (a 036 is 3). */
+  tons?: number;
+  /** Furnace input, BTU/h. */
+  btuInput?: number;
+  fuel?: Fuel;
+  refrigerant?: "R-22" | "R-410A" | "R-454B" | "R-32" | "other";
+  seer?: number;
+  afue?: number;
+  yearMade?: number;
+}
+
+export interface Electrical {
+  mainAmps?: number;
+  freeSlots?: number;
+  /** Existing 240 V loads that stay, for the NEC 220.83 check. */
+  electricRange?: boolean;
+  electricDryer?: boolean;
+  electricWaterHeater?: boolean;
+  evCharger?: boolean;
+  /** Breaker feeding the existing outdoor unit, if known. */
+  existingHvacAmps?: number;
+}
+
+export interface Ducts {
+  location: DuctLocation;
+  condition: DuctCondition;
+  insulated?: boolean;
+  /** Total free area of the return grille(s), square inches. */
+  returnGrilleSqIn?: number;
+  /** Measured total external static pressure, inches of water column. */
+  measuredTespInWc?: number;
+  supplyRegisters?: number;
+}
+
+export interface Gas {
+  available: boolean;
+  /** Pipe size at the appliance branch, inches (0.5, 0.75, 1). */
+  pipeIn?: number;
+  /** Longest run from the meter, feet. */
+  longestRunFt?: number;
+}
+
+export interface Preferences {
+  allElectric?: boolean;
+  keepGas?: boolean;
+  budgetCeiling?: number;
+  noiseSensitive?: boolean;
+  brands?: string[];
+}
+
+export interface Room {
+  name: string;
+  areaSqft: number;
+  ceilingFt?: number;
+  /** Exterior wall length by orientation, feet. */
+  exteriorWalls?: FootprintEdge[];
+  windowSqft?: number;
+  source: Source;
+}
+
+export interface BuildingModel {
+  address: string;
+  state: string;
+  county?: string;
+  lat?: number;
+  lng?: number;
+  elevationFt?: number;
+
+  conditionedSqft: number;
+  storeys: number;
+  ceilingHeightFt: number;
+  yearBuilt?: number;
+  /** Exterior perimeter at the ground, feet (from the footprint). */
+  perimeterFt?: number;
+  footprintEdges?: FootprintEdge[];
+
+  /** Window area as a share of floor area (0.12 = 12%). */
+  windowToFloor: number;
+  windowType: WindowType;
+  wallInsulation: WallInsulation;
+  ceilingInsulation: CeilingInsulation;
+  foundation: Foundation;
+  tightness: Tightness;
+  roofColor: RoofColor;
+  shading: Shading;
+  occupants: number;
+
+  existing: ExistingSystem;
+  electrical: Electrical;
+  ducts: Ducts;
+  gas: Gas;
+  preferences: Preferences;
+  rooms?: Room[];
+
+  provenance: ProvenanceMap;
+}
+
+// ── design conditions ───────────────────────────────────────────────────────
+
+export type HumidityClass = "dry" | "moderate" | "humid";
+
+export interface DesignConditions {
+  state: string;
+  county: string;
+  /** 1% cooling design dry bulb, °F. */
+  coolingF: number;
+  /** 99% heating design dry bulb, °F. */
+  heatingF: number;
+  hddCddRatio: number;
+  humidity: HumidityClass;
+  /** Outdoor − indoor moisture at the cooling design, grains per lb. */
+  grainsDiff: number;
+  elevationFt: number;
+  source: string;
+  verifiedOn: string;
+}
+
+// ── engine results ──────────────────────────────────────────────────────────
+
+export interface LoadComponent {
+  name: string;
+  heatingBtuh: number;
+  coolingSensibleBtuh: number;
+  coolingLatentBtuh: number;
+}
+
+export interface LoadResult {
+  /** Rounded to 500 BTU/h. */
+  heatingBtuh: number;
+  coolingSensibleBtuh: number;
+  coolingLatentBtuh: number;
+  coolingTotalBtuh: number;
+  /** coolingTotal / 12,000. */
+  coolingTons: number;
+  sensibleHeatRatio: number;
+  /** Design supply airflow for cooling, CFM. */
+  coolingCfm: number;
+  /** Airflow per nominal ton the climate wants (350 humid … 450 dry). */
+  cfmPerTon: number;
+  components: LoadComponent[];
+  /** Every default the calculation leaned on, in plain words. */
+  assumptions: string[];
+  /** Indoor 75 °F cooling / 70 °F heating; the design ΔTs used. */
+  deltaTCooling: number;
+  deltaTHeating: number;
+  /** Duct loss share applied to heating / cooling (0.15 = 15%). */
+  ductLossHeating: number;
+  ductGainCooling: number;
+}
+
+export type EquipmentKind = "heat-pump" | "air-conditioner" | "furnace" | "air-handler" | "coil" | "ductless" | "package";
+export type Refrigerant = "R-410A" | "R-454B" | "R-32" | "R-22" | "other";
+export type Staging = "single" | "two-stage" | "variable";
+
+/** A catalog row: what the shop installs, or a licensed directory record. */
+export interface CatalogItem {
+  id: string;
+  kind: EquipmentKind;
+  brand: string;
+  model: string;
+  /** Matched-system reference (AHRI certified reference number) when known. */
+  ahriRef?: string;
+  refrigerant?: Refrigerant;
+  staging?: Staging;
+  /** Nominal cooling tons (heat pump, AC, package, ductless). */
+  tons?: number;
+  /** Rated cooling capacity, BTU/h (AHRI 95 °F). */
+  coolingBtuh?: number;
+  /** Heating capacity at 47 / 17 / 5 °F, BTU/h (heat pumps). */
+  heat47Btuh?: number;
+  heat17Btuh?: number;
+  heat5Btuh?: number;
+  /** Furnace input and AFUE. */
+  btuInput?: number;
+  afue?: number;
+  seer2?: number;
+  eer2?: number;
+  hspf2?: number;
+  coldClimate?: boolean;
+  /** Rated external static, in. w.c. (indoor units). */
+  ratedStaticInWc?: number;
+  /** Minimum circuit ampacity of the outdoor unit. */
+  mcaAmps?: number;
+  /** Shop cost. */
+  cost?: number;
+  source: "shop" | "ahri" | "neep" | "manufacturer";
+  verifiedOn?: string;
+}
+
+export type CheckStatus = "pass" | "fix" | "verify";
+
+export interface CheckResult {
+  id: string;
+  title: string;
+  status: CheckStatus;
+  /** One plain sentence the contractor can read to a customer. */
+  detail: string;
+  /** Rule or table the check applied, when one exists. */
+  rule?: string;
+}
+
+export interface CapacityPoint {
+  outdoorF: number;
+  capacityBtuh: number;
+  loadBtuh: number;
+}
+
+export interface SelectionCandidate {
+  item: CatalogItem;
+  /** 0–100, higher is a better fit; the engine's ranking, never a price. */
+  score: number;
+  coolingRatio?: number;
+  /** Heating capacity at the 99% design temperature, BTU/h (heat pumps). */
+  heatAtDesignBtuh?: number;
+  balancePointF?: number;
+  /** Electric backup needed at the design temperature, kW. */
+  backupKw?: number;
+  /** Furnace output at AFUE, BTU/h. */
+  furnaceOutputBtuh?: number;
+  outputRatio?: number;
+  curve?: CapacityPoint[];
+  reasons: string[];
+  disqualified?: string;
+}
+
+export interface SelectionResult {
+  chosen: SelectionCandidate | null;
+  runnerUp: SelectionCandidate | null;
+  candidates: SelectionCandidate[];
+  /** Nominal size the load calls for, before any catalog. */
+  targetTons: number;
+  /** 1 for one system; 2 or 3 when the load is more than the largest
+   *  residential unit and the house is split into zones, each with its own
+   *  system. `chosen` is then ONE of them, sized to load ÷ systems. */
+  systems: number;
+  /** The load each system carries when `systems` > 1. */
+  perSystem?: { coolingTotalBtuh: number; heatingBtuh: number };
+}
+
+export interface EngineResult {
+  conditions: DesignConditions;
+  load: LoadResult;
+  selection: SelectionResult;
+  checks: CheckResult[];
+  /** Everything a customer could ask about, with its date. */
+  notes: Array<{ kind: "code" | "incentive" | "assumption" | "contractor"; text: string }>;
+  engineVersion: string;
+}

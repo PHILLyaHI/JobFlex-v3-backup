@@ -76,6 +76,7 @@ export const ROLE_ROUTE_GATES: Record<string, RoleRouteGate> = {
       // /dashboard/advanced-ai/fence.
       "/dashboard/roof-estimator",
       "/dashboard/fence-estimator",
+      "/dashboard/hvac-estimator",
       "/dashboard/messages",
     ],
     home: "/dashboard/proposals",

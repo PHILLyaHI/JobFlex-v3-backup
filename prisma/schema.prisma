@@ -2126,3 +2126,55 @@ model SolarCache {
 
   @@index([lat, lng])
 }
+
+// ── HVAC estimator (2026-09-15) ───────────────────────────────────────────
+// Three tables, none related: the estimator reads them in try/catch and runs
+// on defaults until `prisma db push` has created them (same deploy rule as
+// RoofCatalog). Every column the engine reads is JSON-as-String, so the
+// building model, engine result and priced draft can grow without a schema
+// change.
+
+model HvacEstimate {
+  id             String   @id @default(cuid())
+  organizationId String
+  createdById    String
+  address        String
+  state          String?
+  county         String?
+  status         String   @default("draft") // draft | converted
+  siteFactsJson  String
+  modelJson      String
+  engineJson     String
+  draftJson      String
+  /// The permit-grade Manual J report (Cool Calc), once one is attached.
+  approvedReportUrl String?
+  proposalId     String?
+  subtotal       Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId, createdAt])
+}
+
+model HvacCatalogItem {
+  id             String   @id @default(cuid())
+  organizationId String
+  itemId         String   // stable key from the import (kind-brand-model)
+  kind           String
+  brand          String
+  model          String
+  itemJson       String   // the CatalogItem, whole
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, itemId])
+  @@index([organizationId, kind])
+}
+
+model HvacSettings {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  rateCardJson   String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
