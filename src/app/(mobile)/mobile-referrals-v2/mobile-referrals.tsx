@@ -14,7 +14,8 @@
 //  · the hero code card → the PROGRAM HEADER: mono code plate with a copy
 //    button and a real confirmation state, over a beige strip carrying the
 //    50%-per-paid-referral terms
-//  · the hero's two link chips (signup / homeowner) → the share sheet
+//  · the share sheet: the code and a ready invite message (the signup /
+//    homeowner links were retired 2026-09-14)
 //  · the 3-cell stat grid → the computed masthead: credit earned, plus exactly
 //    two annotations (credit on the way, code uses)
 //  · the 4-chip status rail → ONE filter dropdown, as a 3-column menu
@@ -31,8 +32,6 @@
 //    three letters beats scanning forty long strings on a phone. It filters the
 //    rows already on the sheet client-side, no new endpoint.
 //  · The ledger pages at 6. A handheld row is three lines tall.
-//  · The two URL chips cannot hold one line at 320px, so they became sheet rows
-//    where the full address has room and the copy target is 60px tall.
 //
 // DATA: REAL, and the same rows the desktop sheet shows. The page's server
 // loader (app/dashboard/referrals/load-referrals) reads the org's ReferralCode
@@ -126,16 +125,12 @@ type MenuRow = {
   sub: string;
 };
 
-/** `value` is what the tap copies (the full URL); `show` is the line under the
- *  title — the same address without its scheme, so it fits a 320px row. */
+/** `value` is what the tap sends or copies; `show` is the line under the
+ *  title, short enough for a 320px row. */
 type ShareRow = { key: string; icon: string; tone: string; title: string; value: string; show: string };
-
-const bare = (url: string) => url.replace(/^https?:\/\//, "");
 
 export function MobileReferrals({
   code,
-  signupUrl,
-  homeownerUrl,
   conversions,
   uses,
   creditedCents,
@@ -335,15 +330,34 @@ export function MobileReferrals({
   const credited = creditedCents;
   const onTheWay = useMemo(() => pendingCents(data), [data]);
 
-  /** The desktop hero's two link chips, plus the code itself. */
+  /** The code itself, and a ready-made invite that carries it. No links: the
+   *  referral links were retired (owner, 2026-09-14) — people sign up with
+   *  the code. */
   const shareRows = useMemo<ShareRow[]>(
     () => [
-      { key: "signup", icon: "i-userplus", tone: styles.rmiBp, title: "Contractor signup link", value: signupUrl, show: bare(signupUrl) },
-      { key: "homeowners", icon: "i-users", tone: styles.rmiSky, title: "Homeowner link", value: homeownerUrl, show: bare(homeownerUrl) },
       { key: "code", icon: "i-copy", tone: styles.rmiWarn, title: "Referral code", value: code, show: code },
+      {
+        key: "message",
+        icon: "i-send",
+        tone: styles.rmiBp,
+        title: "Invite message",
+        value: `Use my code ${code} when you sign up for JobFlex.`,
+        show: `Use my code ${code} when you sign up…`,
+      },
     ],
-    [code, signupUrl, homeownerUrl],
+    [code],
   );
+
+  /** The invite goes through the phone's own share sheet where there is one,
+   *  the clipboard everywhere else. */
+  const sendRow = (r: ShareRow) => {
+    if (r.key === "message" && typeof navigator !== "undefined" && navigator.share) {
+      navigator.share({ text: r.value }).then(() => setSharedKey(r.key), () => undefined);
+      return;
+    }
+    copyText(r.value);
+    setSharedKey(r.key);
+  };
 
   const activeOption = FILTERS.find((o) => o.k === filter) ?? FILTERS[0];
   const pages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
@@ -642,7 +656,7 @@ export function MobileReferrals({
         <button className={styles.sheetCancel} type="button" onClick={() => setSheetId(null)}>Cancel</button>
       </div>
 
-      {/* ============ SHARE SHEET — the desktop hero's link chips ============ */}
+      {/* ============ SHARE SHEET — the code and an invite message ============ */}
       <div className={`${styles.sheet} ${shareOpen ? styles.on : ""}`} role="dialog" aria-modal="true"
         aria-labelledby="mrShareTitle" aria-hidden={!shareOpen} {...shareDrag.sheetProps}>
         <div className={styles.sheetGrab} {...shareDrag.handleProps} />
@@ -658,7 +672,7 @@ export function MobileReferrals({
                 key={r.key}
                 className={styles.rmenuItem}
                 type="button"
-                onClick={() => { copyText(r.value); setSharedKey(r.key); }}
+                onClick={() => sendRow(r)}
               >
                 <span className={`${styles.rmiIc} ${done ? styles.rmiOk : r.tone}`}>
                   <Icon id={done ? "i-check" : r.icon} />
@@ -667,7 +681,7 @@ export function MobileReferrals({
                   <span className={styles.rmenuItemT}>{r.title}</span>
                   <span className={styles.rmenuItemS}>{r.show}</span>
                 </span>
-                <span className={styles.rmiFlag} role="status">{done ? "Copied" : ""}</span>
+                <span className={styles.rmiFlag} role="status">{done ? (r.key === "message" && typeof navigator !== "undefined" && "share" in navigator ? "Sent" : "Copied") : ""}</span>
               </button>
             );
           })}
