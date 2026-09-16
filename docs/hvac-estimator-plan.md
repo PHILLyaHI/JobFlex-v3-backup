@@ -1,3 +1,7 @@
+> **2026-09-16, review pass.** Two review lenses (a contractor/inspector on the ledgers and checks; a contractor on a phone on the flow) and their fixes: furnace-only return check sized from the load; package-unit houses get a package unit; a condensing furnace on any job carries PVC vent, neutralizer, CO alarm and vent labor; an A2L coil on a kept furnace adds the detection kit and a listing check; tankless water heaters are wall-hung, sealed and sized in GPM; the gas check names the appliance and counts the other load; a ductless zone carries no duct loss; the furnace companion respects the blower (`maxTons`); duct jobs price insulation and never a return on a guess; service surfaces the R-22 rule and R-22 pricing; a heat-pump conversion reuses the condenser circuit; NEC count skips strips on dual fuel; HSPF2 floor checked; CO alarm / combustion air / garage / orphaned-flue flags. Flow: file pickers (not camera-only), Save/Convert under the subtotal and sticky on a phone, "start over?" before wiping the intake, the guide opens once on a desk, AI-off callout first, the dead end explained where it happens, no sideways pan at 390px, state/county selects only after the lookup, yes/no facts as not-seen/yes/no selects, one heat-preference select, "More" groups, tappable coverage rows, toasts that name what was filled, phone tables stack, water heater/service skip the lookup. Good · Better · Best strip prices the job three ways (tiers on catalog rows; starter ladders carry them). OpenStreetMap's Nominatim is the third geocoder when the Census one is down.
+>
+> **2026-09-16, later: the job comes first.** A job picker opens the page — full system, outdoor unit, furnace, add cooling, heat-pump conversion (dual fuel or all-electric), ductless zone, water heater, ductwork, service/repair (`src/lib/hvac/jobs.ts`). The job decides which intake sections show, what the engine selects (kinds per job; a furnace by heating output; a ductless zone by its own area), which checks run, and which lines the ledger writes. Water heaters are sized from the household with gas / circuit / vent checks (`waterHeater.ts`). Labor is priced **by the task against a measure** (per unit set, per ln ft of line set, per register, per lb) — never by the hour; saved v1 rate cards (hours × crew rate) convert on read (`normalizeRateCard`). QA: `hvac-jobs.check.ts` (45 checks).
+>
 > **Status 2026-09-16 — Milestones 1–5 built** (`/dashboard/hvac-estimator`; engine `src/lib/hvac/*`; actions `src/actions/hvacEstimator.ts`; tables `HvacEstimate`, `HvacCatalogItem`, `HvacSettings`). Site facts come from the assessor's parcel record (ReportAll `bldg_sqft`, `year_built`, `story_height`, `county_name`, building polygons via `return_buildings`) with the Census Bureau geocoder and the FCC block API as keyless fallbacks for the point and county; video walk with the filming guide; nameplate photo reading; typed confirmations with source badges; block load at the county design day; Manual S selection (2–3 systems when needed); duct/NEC/gas/refrigerant checks; rate-card ledger; Cool Calc permit-grade report (project + system + report pull, `COOLCALC_*` env; or a pasted report link) noted on the proposal; AHRI/NEEP directory import read by column meaning; the twenty-jobs calibration loop (record the actual quote per estimate, fit shown on the page). QA: `scripts/qa/hvac-{engine,intake,ledger,site,parcel,coolcalc,directory}.check.ts` (227 checks). House facts, by source order (2026-09-16): ReportAll parcel record → the county's own open-data layer where one exists (`src/lib/hvac/assessors.ts`, verified live 2026-09-16: King, Skagit, Whatcom, Clark — year built, living area, storeys; Thurston — year built only; Snohomish — year built and storeys for houses sold in the last few years. Pierce is referrer-locked and Kitsap's building table is licensed non-commercial, so both stay out) → Regrid's assessor record (`REGRID_API_KEY`; `yearbuilt`, `numstories`, `recrdareno`) → building outline × storeys → the walk. Snohomish and King publish no year built / living area on any public map service (their assessor rolls are bulk downloads without them), so there the answer is Regrid or the walk. Still open: a live Cool Calc account to run the client against (verified only against the public docs and a fake server), AHRI subscription for the full directory, a Regrid key on the server, and the twenty real jobs themselves.
 
 # HVAC Estimator — Build Plan
@@ -327,6 +331,31 @@ Rough developer effort; each milestone ships and is usable on its own.
 - Call the output an engineered or stamped design; "Manual J-based" until an
   approved report is attached.
 - Start with blueprint parsing.
+
+## Status — US catalog (2026-09-16)
+
+`src/lib/hvac/data/usFamilies.ts` holds 106 equipment families (479 rows once
+expanded by `usCatalog.ts`): the current-production AC, heat-pump (incl. the
+cold-climate ENERGY STAR families), furnace, ductless, air-handler, coil and
+water-heater lines of Goodman, Carrier, Trane, Lennox, Rheem, York, Bosch,
+Mitsubishi, Daikin, Gree, MrCool, LG, A.O. Smith, Bradford White, Rinnai and
+Navien, as read from manufacturer / distributor pages that day (78 of 106
+verified on the page; the rest carry a note saying where the figure came
+from). Ratings are the families' headline "up to" figures; heat-pump
+capacities at 17 / 5 °F are the read share or the rule-of-thumb share, so
+the AHRI / NEEP import still replaces them for a matched system. Shop cost
+is empty on purpose: the rate card prices by tier until the shop fills the
+`cost` column. The Catalog panel has **Load the US catalog** (two SQL
+statements, ~0.4 s), **Download CSV** (the current catalog as the import
+sheet) and the CSV import with Replace. Companion picks (furnace, coil, air
+handler) now prefer the outdoor unit's brand, then its sales tier, so a Good
+condenser gets the 80% furnace and a Best one the modulating furnace from the
+same maker. QA: `scripts/qa/hvac-catalog.check.ts` (45 checks).
+
+Not in the catalog: multi-zone ductless outdoor units and package units
+(no ratings read), Fujitsu (Halcyon RLS3 retired, Orion figures not
+published yet), non-condensing tankless. Re-verify the families after the
+2026 model year turns over.
 
 ## Sources checked 2026-09-15
 

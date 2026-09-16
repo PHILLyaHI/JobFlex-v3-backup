@@ -218,7 +218,7 @@ export interface LoadResult {
   ductGainCooling: number;
 }
 
-export type EquipmentKind = "heat-pump" | "air-conditioner" | "furnace" | "air-handler" | "coil" | "ductless" | "package";
+export type EquipmentKind = "heat-pump" | "air-conditioner" | "furnace" | "air-handler" | "coil" | "ductless" | "package" | "water-heater";
 export type Refrigerant = "R-410A" | "R-454B" | "R-32" | "R-22" | "other";
 export type Staging = "single" | "two-stage" | "variable";
 
@@ -251,6 +251,17 @@ export interface CatalogItem {
   ratedStaticInWc?: number;
   /** Minimum circuit ampacity of the outdoor unit. */
   mcaAmps?: number;
+  /** Furnaces / air handlers: the largest coil the blower moves air for. */
+  maxTons?: number;
+  /** Water heaters: tank size, kind, fuel, efficiency and first-hour rating. */
+  gallons?: number;
+  whType?: "tank" | "heat-pump" | "tankless";
+  fuel?: "gas" | "electric" | "propane";
+  uef?: number;
+  firstHourGal?: number;
+  vent?: "atmospheric" | "power" | "direct" | "none";
+  /** Sales tier the shop sees on the pick list. */
+  tier?: "value" | "mid" | "premium";
   /** Shop cost. */
   cost?: number;
   source: "shop" | "ahri" | "neep" | "manufacturer";
@@ -308,6 +319,12 @@ export interface SelectionResult {
 }
 
 export interface EngineResult {
+  /** The job the engine ran for (src/lib/hvac/jobs.ts). */
+  job: string;
+  /** Water-heater jobs: the sized plan. */
+  waterHeater?: import("./waterHeater").WaterHeaterPlan;
+  /** Ductless jobs: the zone the load was run for. */
+  zone?: { sqft: number; heads: number };
   conditions: DesignConditions;
   load: LoadResult;
   selection: SelectionResult;

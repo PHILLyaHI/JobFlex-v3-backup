@@ -2166,6 +2166,8 @@ model HvacEstimate {
   actualJson     String?
   /// The engine's nominal size when saved (tons × systems), for calibration without parsing engineJson.
   sizedTons      Float?
+  /// What was priced (src/lib/hvac/jobs.ts): replace-system, water-heater, …
+  jobKind        String?
   proposalId     String?
   subtotal       Float    @default(0)
   createdAt      DateTime @default(now())

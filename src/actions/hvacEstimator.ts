@@ -28,7 +28,7 @@ import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { geocodePlace, isMapsEnabled } from "@/lib/maps";
-import { censusGeocode, countyAtPoint } from "@/lib/hvac/publicGeo";
+import { censusGeocode, countyAtPoint, nominatimGeocode } from "@/lib/hvac/publicGeo";
 import { coolCalcConfig, coolCalcCreateProject, coolCalcCreateSystem, isCoolCalcEnabled, splitAddress } from "@/lib/hvac/coolcalc";
 import { parseDirectoryCsv } from "@/lib/hvac/directory";
 import { calibrationStats, type CalibrationStats } from "@/lib/hvac/calibration";
@@ -44,7 +44,9 @@ import { stateFromAddress } from "@/lib/pricing/salesTax";
 import type { CatalogItem } from "@/lib/hvac/types";
 import { pickBuilding, ringGeometry, storeysFromHeight } from "@/lib/hvac/site";
 import type { SiteFacts, NameplateRead } from "@/lib/hvac/intake";
-import { DEFAULT_RATE_CARD, STARTER_CATALOG, parseCatalogCsv, type HvacRateCard } from "@/lib/hvac/ledger";
+import { DEFAULT_RATE_CARD, STARTER_CATALOG, normalizeRateCard, parseCatalogCsv, type HvacRateCard } from "@/lib/hvac/ledger";
+import { JOBS } from "@/lib/hvac/jobs";
+import { US_CATALOG, US_CATALOG_VERIFIED_ON } from "@/lib/hvac/data/usCatalog";
 
 type Fail = { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey };
 
@@ -102,10 +104,11 @@ export async function hvacSiteFacts(raw: unknown): Promise<{ ok: true; facts: Si
       if (!facts.state && g.state) facts.state = g.state.toUpperCase();
     }
     if (facts.lat === undefined || facts.lng === undefined || !facts.county) {
-      const c = await censusGeocode(facts.address);
+      const c = (await censusGeocode(facts.address)) ?? (await nominatimGeocode(facts.address));
       if (c) {
-        if (facts.lat === undefined || facts.lng === undefined) { facts.lat = c.lat; facts.lng = c.lng; facts.sources.point = "Census Bureau geocoder"; }
-        if (!facts.county && c.county) { facts.county = c.county; facts.sources.county = "Census Bureau geocoder"; }
+        const who = c.matched && /,/.test(c.matched) && !/^[0-9A-Z ,]+$/.test(c.matched) ? "OpenStreetMap geocoder" : "Census Bureau geocoder";
+        if (facts.lat === undefined || facts.lng === undefined) { facts.lat = c.lat; facts.lng = c.lng; facts.sources.point = who; }
+        if (!facts.county && c.county) { facts.county = c.county; facts.sources.county = who; }
         if (!facts.state && c.state) facts.state = c.state.toUpperCase();
       }
     }
@@ -308,6 +311,27 @@ export async function importHvacCatalogCsv(raw: unknown): Promise<{ ok: true; im
   }
 }
 
+/** Load the built-in US catalog (the popular families, expanded to their
+ *  size ladders) into the org's catalog — the starting pick list a shop
+ *  edits from. Rows keep source "manufacturer" and the verified-on date. */
+export async function loadUsCatalog(raw: unknown): Promise<{ ok: true; imported: number; verifiedOn: string } | { ok: false; error: string }> {
+  const { organizationId } = await requireEstimatorOrManager();
+  const parsed = z.object({ replace: z.boolean().default(false) }).safeParse(raw ?? {});
+  const replace = parsed.success ? parsed.data.replace : false;
+  if (!US_CATALOG.length) return { ok: false, error: "The built-in catalog is empty in this build." };
+  try {
+    // Two statements, not 475 upserts: drop the rows this load owns (or all of
+    // them on replace), then write the set in one insert.
+    await db.$transaction([
+      db.hvacCatalogItem.deleteMany({ where: replace ? { organizationId } : { organizationId, itemId: { in: US_CATALOG.map((i) => i.id) } } }),
+      db.hvacCatalogItem.createMany({ data: US_CATALOG.map((item) => ({ organizationId, itemId: item.id, kind: item.kind, brand: item.brand, model: item.model, itemJson: JSON.stringify(item) })) }),
+    ]);
+    return { ok: true, imported: US_CATALOG.length, verifiedOn: US_CATALOG_VERIFIED_ON };
+  } catch (err) {
+    return { ok: false, error: missingTable(err) ? "The catalog table isn't in this database yet — run `prisma db push`, then load again." : `Couldn't load — ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}` };
+  }
+}
+
 export async function clearHvacCatalog(): Promise<{ ok: true } | { ok: false; error: string }> {
   const { organizationId } = await requireEstimatorOrManager();
   try {
@@ -320,36 +344,16 @@ export async function clearHvacCatalog(): Promise<{ ok: true } | { ok: false; er
 
 // ── rate card ───────────────────────────────────────────────────────────────
 
-const money = z.number().min(0).max(1_000_000);
-const hours = z.number().min(0).max(200);
-const rateCardSchema = z.object({
-  laborRatePerHour: money,
-  helperRatePerHour: money,
-  equipmentMarkupPct: z.number().min(0).max(300),
-  materialsMarkupPct: z.number().min(0).max(300),
-  permitFee: money,
-  disposalFee: money,
-  craneFee: money,
-  hours: z.object({
-    removeSplit: hours, removePackage: hours, setOutdoor: hours, setAirHandler: hours, setFurnace: hours, setCoil: hours, setPackage: hours, lineset: hours, electrical: hours, electricalUpgradeRun: hours, gasPipe: hours, returnUpsize: hours, ductSeal: hours, thermostat: hours, startup: hours,
-  }),
-  materials: z.object({
-    pad: money, linesetPerFt: money, disconnect: money, whipKit: money, drainKit: money, condensatePump: money, thermostat: money, surgeProtector: money, gasFlexKit: money, breakerAndWirePerFt: money, breaker: money, returnGrilleUpsize: money, ductSealKit: money, backupHeatKitPerKw: money, refrigerantPerLb: money,
-  }),
-  equipmentDefaults: z.object({
-    airConditionerPerTon: money, heatPumpPerTon: money, coldClimateHeatPumpPerTon: money, packagePerTon: money, ductlessPerTon: money, coilPerTon: money, airHandlerPerTon: money, furnacePer10kBtu: money,
-  }),
-  linesetFtDefault: z.number().min(0).max(500),
-});
+/** Anything the browser sends is normalised into a v2 card (a v1 card's
+ *  hours × crew rate become per-task amounts); the check is that every figure
+ *  is a finite non-negative number, which normalizeRateCard guarantees. */
+const rateCardSchema = z.object({}).passthrough().transform((raw) => normalizeRateCard(raw));
 
 export async function getHvacRateCard(): Promise<{ card: HvacRateCard; own: boolean }> {
   const { organizationId } = await requireEstimatorOrManager();
   try {
     const row = await db.hvacSettings.findUnique({ where: { organizationId } });
-    if (row) {
-      const parsed = rateCardSchema.safeParse(JSON.parse(row.rateCardJson));
-      if (parsed.success) return { card: parsed.data, own: true };
-    }
+    if (row) return { card: normalizeRateCard(JSON.parse(row.rateCardJson)), own: true };
   } catch {
     /* table not pushed yet, or a row that no longer validates */
   }
@@ -358,11 +362,8 @@ export async function getHvacRateCard(): Promise<{ card: HvacRateCard; own: bool
 
 export async function saveHvacRateCard(raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
   const { organizationId } = await requireEstimatorOrManager();
-  const parsed = rateCardSchema.safeParse(raw);
-  if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    return { ok: false, error: `The rate card didn't validate${issue ? ` — ${issue.path.join(".")}: ${issue.message}` : ""}.` };
-  }
+  const parsed = rateCardSchema.safeParse(raw && typeof raw === "object" ? raw : {});
+  if (!parsed.success) return { ok: false, error: "The rate card didn't validate." };
   const rateCardJson = JSON.stringify(parsed.data);
   try {
     await db.hvacSettings.upsert({ where: { organizationId }, create: { organizationId, rateCardJson }, update: { rateCardJson } });
@@ -375,7 +376,18 @@ export async function saveHvacRateCard(raw: unknown): Promise<{ ok: true } | { o
 // ── the estimate ────────────────────────────────────────────────────────────
 
 const lineSchema = z.object({ name: z.string().max(200), quantity: z.number().min(0), unitPrice: z.number().min(0), unit: z.string().max(40).optional(), basis: z.string().max(20).optional(), note: z.string().max(400).optional() });
+const jobInputSchema = z.object({
+  zoneSqft: z.number().min(0).max(20000).optional(),
+  heads: z.number().int().min(1).max(8).optional(),
+  wh: z.object({ existingFuel: z.enum(["gas", "electric", "propane"]).optional(), fuel: z.enum(["gas", "electric", "propane"]).optional(), type: z.enum(["tank", "heat-pump", "tankless"]).optional(), gallons: z.number().min(0).max(200).optional(), vent: z.enum(["atmospheric", "power", "direct", "none"]).optional(), location: z.enum(["garage", "closet", "basement", "utility", "attic", "outdoor"]).optional() }).optional(),
+  supplyRegisters: z.number().int().min(0).max(60).optional(),
+  service: z.object({ refrigerantLb: z.number().min(0).max(50).optional(), parts: z.array(z.object({ name: z.string().max(120), cost: z.number().min(0).max(50000) })).max(20).optional(), task: z.string().max(200).optional() }).optional(),
+}).optional();
+const jobKindSchema = z.enum(JOBS.map((j) => j.id) as [string, ...string[]]).optional();
+
 const draftSchema = z.object({
+  job: jobKindSchema,
+  input: jobInputSchema,
   title: z.string().max(200),
   scope: z.string().max(6000),
   materials: z.array(lineSchema).max(80),
@@ -415,6 +427,7 @@ export interface HvacEstimateSummary {
   createdAt: string;
   title: string;
   sizedTons: number | null;
+  jobKind: string | null;
   actual: HvacActual | null;
   permit: "none" | "requested" | "attached";
   approvedReportUrl: string | null;
@@ -450,6 +463,7 @@ export async function saveHvacEstimate(raw: unknown): Promise<{ ok: true; id: st
     draftJson: JSON.stringify(d.draft),
     subtotal: Math.round(subtotal * 100) / 100,
     sizedTons,
+    jobKind: d.draft.job ?? null,
   };
   try {
     if (d.id) {
@@ -469,11 +483,11 @@ export async function saveHvacEstimate(raw: unknown): Promise<{ ok: true; id: st
 export async function listHvacEstimates(): Promise<HvacEstimateSummary[]> {
   const { organizationId } = await requireEstimatorOrManager();
   try {
-    const rows = await db.hvacEstimate.findMany({ where: { organizationId }, orderBy: { createdAt: "desc" }, take: 12, select: { id: true, address: true, status: true, subtotal: true, createdAt: true, draftJson: true, sizedTons: true, actualJson: true, permitJson: true, approvedReportUrl: true } });
+    const rows = await db.hvacEstimate.findMany({ where: { organizationId }, orderBy: { createdAt: "desc" }, take: 12, select: { id: true, address: true, status: true, subtotal: true, createdAt: true, draftJson: true, sizedTons: true, jobKind: true, actualJson: true, permitJson: true, approvedReportUrl: true } });
     return rows.map((r) => {
       const title = String(parseJson<{ title?: string }>(r.draftJson)?.title ?? "");
       const permit = parseJson<HvacPermit>(r.permitJson);
-      return { id: r.id, address: r.address, status: r.status, subtotal: r.subtotal, createdAt: r.createdAt.toISOString(), title, sizedTons: r.sizedTons, actual: parseJson<HvacActual>(r.actualJson), permit: r.approvedReportUrl ? "attached" : permit ? "requested" : "none", approvedReportUrl: r.approvedReportUrl };
+      return { id: r.id, address: r.address, status: r.status, subtotal: r.subtotal, createdAt: r.createdAt.toISOString(), title, sizedTons: r.sizedTons, jobKind: r.jobKind, actual: parseJson<HvacActual>(r.actualJson), permit: r.approvedReportUrl ? "attached" : permit ? "requested" : "none", approvedReportUrl: r.approvedReportUrl };
     });
   } catch {
     return [];

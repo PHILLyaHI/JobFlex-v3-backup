@@ -31,7 +31,7 @@ const r1 = runEngine(gas, { catalog: STARTER_CATALOG });
 const l1 = buildLedger(r1, gas, DEFAULT_RATE_CARD, STARTER_CATALOG);
 const l1b = buildLedger(r1, gas, DEFAULT_RATE_CARD, STARTER_CATALOG);
 ok("Deterministic: same inputs, same subtotal", l1.subtotal === l1b.subtotal && l1.materials.length === l1b.materials.length, `$${l1.subtotal}`);
-ok("Gas house: AC first, heat pump as the dual-fuel runner-up", r1.selection.chosen?.item.kind === "air-conditioner" && r1.selection.runnerUp?.item.kind === "heat-pump", `${r1.selection.chosen?.item.model} / ${r1.selection.runnerUp?.item.model}`);
+ok("Gas house: AC first; a heat pump still fits, marked as the dual-fuel offer", r1.selection.chosen?.item.kind === "air-conditioner" && r1.selection.candidates.some((c) => !c.disqualified && c.item.kind === "heat-pump" && c.reasons.some((x) => /dual fuel/i.test(x))), `${r1.selection.chosen?.item.model}`);
 ok("Gas house: condenser + furnace + coil", l1.materials.some((l) => l.id === "eq-main") && l1.materials.some((l) => l.id === "eq-furnace") && l1.materials.some((l) => l.id === "eq-coil"), l1.materials.map((l) => l.id).join(","));
 ok("Furnace covers the heating load", (() => { const f = l1.materials.find((l) => l.id === "eq-furnace"); return !!f && /\d+k BTU/.test(f.name); })(), l1.materials.find((l) => l.id === "eq-furnace")?.name);
 ok("Starter rows price from the rate-card default and say so", l1.materials[0].basis === "estimated" && /rate-card default/.test(l1.materials[0].note ?? ""));
@@ -39,8 +39,8 @@ ok("Line set defaults to the card's length, estimated", (() => { const s = l1.ma
 ok("Attic unit adds the condensate pump / pan", l1.materials.some((l) => l.id === "m-pump"));
 ok("Gas flex kit for an AC + furnace", l1.materials.some((l) => l.id === "m-gasflex"));
 ok("Labour: remove, outdoor, indoor (furnace), lineset, electrical, tstat, startup", ["l-remove", "l-outdoor", "l-indoor", "l-lineset", "l-elec", "l-tstat", "l-startup"].every((id) => l1.labor.some((l) => l.id === id)), l1.labor.map((l) => l.id).join(","));
-ok("Furnace set hours = furnace + coil", (() => { const s = l1.labor.find((l) => l.id === "l-indoor"); return !!s && s.quantity === DEFAULT_RATE_CARD.hours.setFurnace + DEFAULT_RATE_CARD.hours.setCoil; })());
-ok("Crew rate is tech + helper", l1.labor[0].unitPrice === 150);
+ok("Furnace + coil set is one each at the two tasks' amounts", (() => { const s = l1.labor.find((l) => l.id === "l-indoor"); return !!s && s.unit === "each" && s.quantity === 1 && s.unitPrice === DEFAULT_RATE_CARD.labor.setFurnace + DEFAULT_RATE_CARD.labor.setCoil; })());
+ok("No labor line is priced by the hour", l1.labor.every((l) => l.unit !== "hour"));
 ok("Permit and disposal at the card's fees", l1.labor.some((l) => l.id === "l-permit" && l.unitPrice === 250) && l1.labor.some((l) => l.id === "l-disposal" && l.unitPrice === 150));
 ok("No crane on a split system", !l1.labor.some((l) => l.id === "l-crane"));
 ok("Subtotal in a realistic band for an AC + furnace", l1.subtotal >= 7000 && l1.subtotal <= 18000, `$${l1.subtotal} · ${r1.selection.targetTons} t`);
@@ -55,7 +55,7 @@ const l2 = buildLedger(r2, elec, DEFAULT_RATE_CARD, STARTER_CATALOG);
 ok("All-electric picks a heat pump", r2.selection.chosen?.item.kind === "heat-pump", r2.selection.chosen?.item.kind);
 ok("Heat pump: air handler + backup strips, no furnace", l2.materials.some((l) => l.id === "eq-ah") && l2.materials.some((l) => l.id === "eq-strips") && !l2.materials.some((l) => l.id === "eq-furnace"));
 ok("100 A panel with everything electric fails the NEC count", r2.checks.find((c) => c.id === "service")?.status === "fix", r2.checks.find((c) => c.id === "service")?.detail);
-ok("Failed panel → circuit line + caveat + upgrade-run hours", l2.materials.some((l) => l.id === "m-breaker" && /separately/.test(l.name)) && l2.assumptions.some((a) => /service upgrade/.test(a)) && l2.labor.find((l) => l.id === "l-elec")?.quantity === DEFAULT_RATE_CARD.hours.electricalUpgradeRun);
+ok("Failed panel → circuit line + caveat + the new-circuit task", l2.materials.some((l) => l.id === "m-breaker" && /separately/.test(l.name)) && l2.assumptions.some((a) => /service upgrade/.test(a)) && l2.labor.find((l) => l.id === "l-elec")?.unitPrice === DEFAULT_RATE_CARD.labor.electricalCircuit);
 ok("No gas flex on an electric house", !l2.materials.some((l) => l.id === "m-gasflex"));
 
 // package unit

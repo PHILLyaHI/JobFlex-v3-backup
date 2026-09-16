@@ -8,7 +8,7 @@
 // disqualify; the customer's constraints filter; a score orders what is left.
 // No price enters here — the ranking is fit, and the ledger prices it.
 
-import type { BuildingModel, CapacityPoint, CatalogItem, DesignConditions, LoadResult, SelectionCandidate, SelectionResult } from "./types";
+import type { EquipmentKind, BuildingModel, CapacityPoint, CatalogItem, DesignConditions, LoadResult, SelectionCandidate, SelectionResult } from "./types";
 import { heatingLoadAt } from "./load";
 import { efficiencyFloor, refrigerantRule } from "./data/rules";
 
@@ -60,7 +60,7 @@ export function capacityCurve(item: CatalogItem, load: LoadResult, c: DesignCond
   return out;
 }
 
-export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignConditions, m: BuildingModel): SelectionCandidate {
+export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignConditions, m: BuildingModel, opts: { wantsHeatPump?: boolean } = {}): SelectionCandidate {
   const reasons: string[] = [];
   let score = 100;
   const out: SelectionCandidate = { item, score, reasons };
@@ -85,7 +85,9 @@ export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignCondi
   // dual-fuel upsell to offer, not the default.
   const noGas = m.gas.available === false || m.preferences.allElectric === true || m.existing.fuel === "electric";
   const hasFurnace = m.existing.kind === "split-ac-furnace" || m.existing.kind === "furnace-only";
-  const keepsGas = !noGas && (m.preferences.keepGas === true || m.existing.fuel === "gas" || m.existing.fuel === "propane" || (hasFurnace && m.gas.available === true));
+  // A heat-pump conversion is the contractor's call: the furnace may stay as
+  // dual-fuel backup, and that is not a mark against the heat pump.
+  const keepsGas = !noGas && !opts.wantsHeatPump && (m.preferences.keepGas === true || m.existing.fuel === "gas" || m.existing.fuel === "propane" || (hasFurnace && m.gas.available === true));
   if (item.kind === "air-conditioner" && noGas) return fail("An AC needs a furnace; this house has no gas.");
   if (item.kind === "heat-pump" && keepsGas) {
     // Decisive, not a nudge: a variable-speed heat pump that carries the
@@ -135,7 +137,7 @@ export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignCondi
       else if (share < 0.8) score -= 6;
     }
     if (c.heatingF <= 17 && !item.coldClimate) { score -= 10; reasons.push("A cold-climate rated unit holds more capacity at this design temperature."); }
-    if (m.preferences.keepGas) { score -= 4; reasons.push("Customer wants to keep gas; a dual-fuel pairing may suit better."); }
+    if (m.preferences.keepGas && !opts.wantsHeatPump) { score -= 4; reasons.push("Customer wants to keep gas; a dual-fuel pairing may suit better."); }
   }
 
   if (item.kind === "furnace") {
@@ -165,9 +167,34 @@ const isOutdoor = (x: SelectionCandidate) => !x.disqualified && (x.item.kind ===
 
 /** Residential ladders stop at 5 tons; a bigger load is two (or three)
  *  systems, each on its own zone, and the selection says so. */
-export function selectSystem(catalog: CatalogItem[], load: LoadResult, c: DesignConditions, m: BuildingModel): SelectionResult {
+export interface SelectOptions {
+  /** Catalog kinds the job may choose from; empty/undefined = any outdoor kind. */
+  kinds?: EquipmentKind[];
+  /** The contractor chose a heat pump: no keep-gas penalty. */
+  wantsHeatPump?: boolean;
+}
+
+export function selectSystem(catalog: CatalogItem[], load: LoadResult, c: DesignConditions, m: BuildingModel, opts: SelectOptions = {}): SelectionResult {
   const targetTons = Math.max(1.5, Math.round((load.coolingTotalBtuh / 12000) * 2) / 2);
-  const candidates = catalog.map((item) => evaluateItem(item, load, c, m)).sort((a, b) => b.score - a.score);
+  const allowed = opts.kinds?.length ? new Set(opts.kinds) : null;
+  const pool = allowed ? catalog.filter((i) => allowed.has(i.kind)) : catalog;
+  const model = m;
+  const scorer = { wantsHeatPump: opts.wantsHeatPump };
+  const candidates = pool.map((item) => evaluateItem(item, load, c, model, scorer)).sort((a, b) => b.score - a.score);
+  // Furnace-only jobs pick a furnace; everything else picks an outdoor unit.
+  if (allowed && allowed.has("furnace") && allowed.size === 1) {
+    const furnaces = candidates.filter((x) => !x.disqualified && x.item.kind === "furnace").sort((a, b) => (Math.abs((a.outputRatio ?? 9) - 1.15)) - (Math.abs((b.outputRatio ?? 9) - 1.15)));
+    if (!furnaces.length) {
+      // A small load and nothing small enough made: Manual S accepts the
+      // smallest available furnace over 140% — said so, not hidden.
+      const smallest = candidates.filter((x) => x.item.kind === "furnace" && (x.outputRatio ?? 0) >= 1 && /140%/.test(x.disqualified ?? "")).sort((a, b) => (a.outputRatio ?? 9) - (b.outputRatio ?? 9))[0];
+      if (smallest) {
+        const chosen: SelectionCandidate = { ...smallest, disqualified: undefined, score: 60, reasons: [`Output ${Math.round((smallest.outputRatio ?? 0) * 100)}% of the heating load — over Manual S's 140%, but the smallest furnace in the catalog; acceptable when nothing smaller is made. Confirm with the inspector.`] };
+        return { chosen, runnerUp: null, candidates, targetTons, systems: 1 };
+      }
+    }
+    return { chosen: furnaces[0] ?? null, runnerUp: furnaces[1] ?? null, candidates, targetTons, systems: 1 };
+  }
   const outdoor = candidates.filter(isOutdoor);
   if (outdoor.length || load.coolingTotalBtuh <= 40000) {
     return { chosen: outdoor[0] ?? null, runnerUp: outdoor[1] ?? null, candidates, targetTons, systems: 1 };
@@ -182,7 +209,7 @@ export function selectSystem(catalog: CatalogItem[], load: LoadResult, c: Design
       coolingTons: Math.round((load.coolingTons / n) * 10) / 10,
       coolingCfm: Math.round(load.coolingCfm / n),
     };
-    const split = catalog.map((item) => evaluateItem(item, part, c, m)).sort((a, b) => b.score - a.score);
+    const split = pool.map((item) => evaluateItem(item, part, c, model, scorer)).sort((a, b) => b.score - a.score);
     const fits = split.filter(isOutdoor);
     if (fits.length) {
       for (const f of fits.slice(0, 2)) f.reasons.unshift(`One of ${n} systems — the ${load.coolingTotalBtuh.toLocaleString("en-US")} BTU/h load is split into ${n} zones.`);

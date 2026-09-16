@@ -70,3 +70,27 @@ export async function countyAtPoint(lat: number, lng: number): Promise<{ county:
     return null;
   }
 }
+
+const STATE_BY_NAME: Record<string, string> = { alabama: "AL", alaska: "AK", arizona: "AZ", arkansas: "AR", california: "CA", colorado: "CO", connecticut: "CT", delaware: "DE", "district of columbia": "DC", florida: "FL", georgia: "GA", hawaii: "HI", idaho: "ID", illinois: "IL", indiana: "IN", iowa: "IA", kansas: "KS", kentucky: "KY", louisiana: "LA", maine: "ME", maryland: "MD", massachusetts: "MA", michigan: "MI", minnesota: "MN", mississippi: "MS", missouri: "MO", montana: "MT", nebraska: "NE", nevada: "NV", "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY", "north carolina": "NC", "north dakota": "ND", ohio: "OH", oklahoma: "OK", oregon: "OR", pennsylvania: "PA", "rhode island": "RI", "south carolina": "SC", "south dakota": "SD", tennessee: "TN", texas: "TX", utah: "UT", vermont: "VT", virginia: "VA", washington: "WA", "west virginia": "WV", wisconsin: "WI", wyoming: "WY" };
+
+/** OpenStreetMap's Nominatim, the third geocoder in line (Google when keyed,
+ *  the Census Bureau, then this): keyless, one request a second, answers the
+ *  point and the county. Used only when the Census geocoder is down, which
+ *  it was for a stretch on 2026-09-16. */
+export async function nominatimGeocode(address: string): Promise<PublicGeocode | null> {
+  const q = address.trim();
+  if (!q) return null;
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=jsonv2&addressdetails=1&countrycodes=us&limit=1`;
+  try {
+    const res = await externalFetch("nominatim", "geocode", url, { headers: { Accept: "application/json", "User-Agent": "JobFlex/1.0 (+https://jobflex.app)" } }, { timeoutMs: TIMEOUT_MS, attempts: 1 });
+    const data = (await res.json()) as Array<{ lat?: string; lon?: string; display_name?: string; address?: Record<string, string> }>;
+    const hit = data?.[0];
+    if (!hit?.lat || !hit.lon) return null;
+    const a = hit.address ?? {};
+    const iso = a["ISO3166-2-lvl4"];
+    const state = iso && /^US-[A-Z]{2}$/.test(iso) ? iso.slice(3) : a.state ? STATE_BY_NAME[a.state.toLowerCase()] : undefined;
+    return { lat: Number(hit.lat), lng: Number(hit.lon), county: a.county, state, city: a.city ?? a.town ?? a.village, zip: a.postcode, matched: hit.display_name };
+  } catch {
+    return null;
+  }
+}
