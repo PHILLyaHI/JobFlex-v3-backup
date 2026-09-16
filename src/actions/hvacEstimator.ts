@@ -35,6 +35,9 @@ import { calibrationStats, type CalibrationStats } from "@/lib/hvac/calibration"
 import { elevationForPoints } from "@/lib/elevationProfile";
 import { fetchPropertyBoundary } from "@/actions/fenceBoundary";
 import { lookupParcelByPoint } from "@/lib/parcelLookup";
+import { fetchRegridPoint, isRegridEnabled } from "@/lib/parcel";
+import { regridRecordOf } from "@/lib/hvac/regridRecord";
+import { assessorRecordAt } from "@/lib/hvac/assessors";
 import { runVisionJson } from "@/lib/sdk/openaiVision";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { stateFromAddress } from "@/lib/pricing/salesTax";
@@ -133,8 +136,41 @@ export async function hvacSiteFacts(raw: unknown): Promise<{ ok: true; facts: Si
     if (!facts.county && rec.countyName) { facts.county = rec.countyName; facts.sources.county = RECORD; }
     if (!facts.state && rec.stateAbbr) facts.state = rec.stateAbbr;
     if (rec.landUseClass && !/residential/i.test(rec.landUseClass)) warnings.push(`The assessor classes this lot as ${rec.landUseClass} — the residential defaults may not fit.`);
-    const missing = [!rec.bldgSqft && "living area", !rec.yearBuilt && "year built", !rec.storeys && "storeys"].filter(Boolean);
-    if (rec.enriched && missing.length) warnings.push(`The county record here doesn't carry the ${missing.join(", ")} — say ${missing.length === 1 ? "it" : "them"} on the walk or type ${missing.length === 1 ? "it" : "them"}.`);
+  }
+
+  // 2a · the county's own open-data layer, where one exists (free, keyless;
+  // src/lib/hvac/assessors.ts) — the assessor's figures at the source.
+  if (!facts.livingSqft || !facts.yearBuilt || !facts.storeys) {
+    const ca = await assessorRecordAt(facts.state, facts.county, facts.lat, facts.lng);
+    if (ca) {
+      if (!facts.livingSqft && ca.livingSqft) { facts.livingSqft = ca.livingSqft; facts.sources.living = ca.source; }
+      if (!facts.yearBuilt && ca.yearBuilt) { facts.yearBuilt = ca.yearBuilt; facts.sources.yearBuilt = ca.source; }
+      if (!facts.storeys && ca.storeys) { facts.storeys = ca.storeys; facts.sources.storeys = `${ca.source}: ${ca.storeys} storeys`; }
+      if (!facts.landUse && ca.landUse) facts.landUse = ca.landUse;
+    }
+  }
+
+  // 2b · Regrid's copy of the assessor's record fills what the first source
+  // lacks (Snohomish and King publish no year built or living area on any
+  // public service; Regrid licenses the assessor feed). One call per lookup,
+  // and the answer is written back onto the cached parcel row so the next
+  // lookup of this house costs nothing.
+  if ((!facts.livingSqft || !facts.yearBuilt || !facts.storeys) && isRegridEnabled()) {
+    const rg = await fetchRegridPoint(facts.lat, facts.lng).then((r) => regridRecordOf(r.data)).catch(() => null);
+    if (rg) {
+      const RG = "Regrid parcel record";
+      if (!facts.livingSqft && rg.livingSqft) { facts.livingSqft = rg.livingSqft; facts.sources.living = `${RG} (${rg.areaField === "recrdareno" ? "assessor's recorded area" : "total building area"})`; }
+      if (!facts.yearBuilt && rg.yearBuilt) { facts.yearBuilt = rg.yearBuilt; facts.sources.yearBuilt = RG; }
+      if (!facts.storeys && rg.storeys) { facts.storeys = rg.storeys; facts.sources.storeys = `${RG}: ${rg.storeys} storeys`; }
+      if (!facts.landUse && rg.useDesc) facts.landUse = rg.useDesc;
+      if (rec) {
+        db.parcelCache.update({ where: { robustId: rec.robustId }, data: { ...(rec.bldgSqft ? {} : { bldgSqft: rg.livingSqft ?? null }), ...(rec.yearBuilt ? {} : { yearBuilt: rg.yearBuilt ?? null }), ...(rec.storeys ? {} : { storeys: rg.storeys ?? null }) } }).catch(() => undefined);
+      }
+    }
+  }
+  if (rec) {
+    const missing = [!facts.livingSqft && "living area", !facts.yearBuilt && "year built", !facts.storeys && "storeys"].filter(Boolean);
+    if (rec.enriched && missing.length) warnings.push(`The county record here doesn't carry the ${missing.join(", ")} — ${isRegridEnabled() ? "" : "a Regrid key on the server would fill them for most counties; until then "}say ${missing.length === 1 ? "it" : "them"} on the walk or type ${missing.length === 1 ? "it" : "them"}.`);
   }
 
   // 3 · the footprint the pin is in — the assessor's polygons when the record
@@ -152,7 +188,7 @@ export async function hvacSiteFacts(raw: unknown): Promise<{ ok: true; facts: Si
         facts.footprintSqft = g.areaSqft;
         facts.perimeterFt = g.perimeterFt;
         facts.footprintEdges = g.edges;
-        facts.sources.footprint = site.fromRecord ? (pick.inside ? "assessor's building footprint" : "assessor's nearest building footprint") : pick.inside ? "building footprint at the pin" : "nearest building footprint — confirm it is the house";
+        facts.sources.footprint = site.fromRecord ? (pick.inside ? "building outline on the parcel record" : "nearest building outline on the parcel record") : pick.inside ? "building footprint at the pin" : "nearest building footprint — confirm it is the house";
         if (!pick.inside && !site.fromRecord) warnings.push("The pin is not inside a building footprint; the nearest one was used. Confirm the area.");
         const storeys = storeysFromHeight(pick.building.heightFt);
         if (storeys) {
