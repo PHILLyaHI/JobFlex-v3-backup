@@ -2000,6 +2000,18 @@ model ParcelCache {
   lat        Float
   lon        Float
   fetchedAt  DateTime @default(now())
+  // The assessor's record (2026-09-16): null on rows cached before the client
+  // read these fields; `enrichedAt` says whether a row was ever fetched with
+  // them, so a stale row can be refreshed once instead of guessed at.
+  bldgSqft      Float?
+  yearBuilt     Int?
+  storeys       Float?
+  buildingCount Int?
+  countyName    String?
+  stateAbbr     String?
+  landUseClass  String?
+  buildingsJson String?   // JSON array of WKT polygons
+  enrichedAt    DateTime?
 
   @@index([addressKey])
 }
@@ -2148,6 +2160,12 @@ model HvacEstimate {
   draftJson      String
   /// The permit-grade Manual J report (Cool Calc), once one is attached.
   approvedReportUrl String?
+  /// Cool Calc project/system ids and the report endpoint, JSON (2026-09-15).
+  permitJson     String?
+  /// What was actually quoted or installed, JSON {tons, price, model, notes} — the calibration loop.
+  actualJson     String?
+  /// The engine's nominal size when saved (tons × systems), for calibration without parsing engineJson.
+  sizedTons      Float?
   proposalId     String?
   subtotal       Float    @default(0)
   createdAt      DateTime @default(now())

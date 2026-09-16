@@ -40,9 +40,22 @@ export interface Parcel {
   wkt: string;
   lat: number;
   lon: number;
+  // The assessor's record, read since 2026-09-16 for the HVAC estimator: the
+  // house's living area, year built and storeys, the county, and the building
+  // footprint polygons (`return_buildings=true`). Null where a county does not
+  // publish them; the API answered them all along, the client never read them.
+  bldgSqft: number | null;
+  yearBuilt: number | null;
+  storeys: number | null;
+  buildingCount: number | null;
+  countyName: string | null;
+  stateAbbr: string | null;
+  landUseClass: string | null;
+  /** Building footprints as WKT polygons (lon lat), outer rings. */
+  buildingsWkt: string[];
 }
 
-interface RawResult {
+export interface RawResult {
   robust_id?: string;
   parcel_id?: string;
   owner?: string;
@@ -53,6 +66,17 @@ interface RawResult {
   geom_as_wkt?: string;
   latitude?: string | number;
   longitude?: string | number;
+  bldg_sqft?: string | number;
+  year_built?: string | number;
+  story_height?: string | number;
+  buildings?: string | number;
+  county_name?: string;
+  state_abbr?: string;
+  land_use_class?: string;
+  /** With return_buildings=true: the footprint polygons. The docs say "array
+   *  entries" and stop there, so WKT strings, {geom_as_wkt} objects and
+   *  GeoJSON geometries are all read. */
+  buildings_poly?: unknown;
 }
 
 interface RawResponse {
@@ -87,14 +111,52 @@ export function addressKeyOf(address: string | null | undefined): string | null 
 
 function num(v: string | number | undefined): number | null {
   if (v === undefined || v === null || v === "") return null;
-  const n = typeof v === "number" ? v : parseFloat(v);
+  // Assessor figures arrive as "2,140"; the comma is not a decimal point.
+  const n = typeof v === "number" ? v : parseFloat(v.replace(/,/g, ""));
   return Number.isFinite(n) ? n : null;
 }
 
-function normalize(r: RawResult): Parcel | null {
+/** A GeoJSON Polygon/MultiPolygon → WKT polygons (one per outer ring). */
+function geoJsonToWkt(g: unknown): string[] {
+  const obj = g as { type?: string; coordinates?: unknown; geometry?: unknown } | null;
+  if (!obj || typeof obj !== "object") return [];
+  if (obj.geometry) return geoJsonToWkt(obj.geometry);
+  const ring = (r: unknown) => (Array.isArray(r) ? (r as Array<[number, number]>).filter((c) => Array.isArray(c) && c.length >= 2).map(([x, y]) => `${x} ${y}`).join(",") : "");
+  if (obj.type === "Polygon" && Array.isArray(obj.coordinates)) {
+    const outer = ring((obj.coordinates as unknown[])[0]);
+    return outer ? [`POLYGON((${outer}))`] : [];
+  }
+  if (obj.type === "MultiPolygon" && Array.isArray(obj.coordinates)) {
+    return (obj.coordinates as unknown[]).map((poly) => ring((poly as unknown[])[0])).filter(Boolean).map((o) => `POLYGON((${o}))`);
+  }
+  return [];
+}
+
+/** Whatever shape `buildings_poly` comes in → WKT strings. */
+export function buildingsWktOf(raw: unknown): string[] {
+  if (!raw) return [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  const out: string[] = [];
+  for (const item of list) {
+    if (typeof item === "string") {
+      if (/^\s*(MULTI)?POLYGON/i.test(item)) out.push(item.trim());
+      else { try { out.push(...geoJsonToWkt(JSON.parse(item))); } catch { /* not a geometry */ } }
+    } else if (item && typeof item === "object") {
+      const o = item as { geom_as_wkt?: string; wkt?: string; geometry?: unknown; type?: string };
+      if (typeof o.geom_as_wkt === "string") out.push(o.geom_as_wkt);
+      else if (typeof o.wkt === "string") out.push(o.wkt);
+      else out.push(...geoJsonToWkt(o));
+    }
+  }
+  return out;
+}
+
+/** The API's row → our record. Exported for scripts/qa/hvac-parcel.check.ts. */
+export function parcelFromRaw(r: RawResult): Parcel | null {
   // robust_id is the cache key and wkt is the payload — a result missing either
   // is unusable and is dropped rather than half-cached.
   if (!r.robust_id || !r.geom_as_wkt) return null;
+  const year = num(r.year_built);
   return {
     robustId: r.robust_id,
     parcelId: r.parcel_id ?? null,
@@ -106,8 +168,18 @@ function normalize(r: RawResult): Parcel | null {
     wkt: r.geom_as_wkt,
     lat: num(r.latitude) ?? 0,
     lon: num(r.longitude) ?? 0,
+    bldgSqft: (() => { const n = num(r.bldg_sqft); return n && n > 0 ? n : null; })(),
+    yearBuilt: year && year > 1700 && year < 2100 ? Math.round(year) : null,
+    storeys: (() => { const n = num(r.story_height); return n && n > 0 && n < 10 ? n : null; })(),
+    buildingCount: (() => { const n = num(r.buildings); return n !== null && n >= 0 ? Math.round(n) : null; })(),
+    countyName: r.county_name?.trim() || null,
+    stateAbbr: r.state_abbr?.trim().toUpperCase() || null,
+    landUseClass: r.land_use_class?.trim() || null,
+    buildingsWkt: buildingsWktOf(r.buildings_poly),
   };
 }
+
+const normalize = parcelFromRaw;
 
 /**
  * Read the spend headers off ANY ReportAll response. The header is the ONLY
@@ -141,7 +213,8 @@ function readQuotaHeaders(res: Response): void {
 async function call(params: Record<string, string>): Promise<Parcel[]> {
   const key = process.env.REPORTALL_CLIENT_KEY;
   if (!key) throw new ReportAllError("REPORTALL_CLIENT_KEY is not set", 0);
-  const qs = new URLSearchParams({ client: key, v: "9", ...params });
+  // return_buildings: the footprint polygons ride on the same 1-quota answer.
+  const qs = new URLSearchParams({ client: key, v: "9", return_buildings: "true", ...params });
   let res: Response;
   try {
     res = await externalFetch("reportall", "parcels", `${BASE}?${qs}`, {}, {

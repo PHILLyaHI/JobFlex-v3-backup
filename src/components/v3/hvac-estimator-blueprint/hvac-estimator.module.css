@@ -352,3 +352,25 @@
 @media (prefers-reduced-motion: reduce) {
   :global(.jf-blueprint .content) .btn, :global(.jf-blueprint .content) .stage-fill { transition: none; }
 }
+
+/* Permit-grade report block (ledger card) */
+:global(.jf-blueprint .content) .permit { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 14px 16px 16px; border-top: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .permit-txt { min-width: 0; flex: 1 1 320px; }
+:global(.jf-blueprint .content) .permit-acts { display: flex; flex-direction: column; gap: 8px; align-items: stretch; flex: 0 1 380px; }
+:global(.jf-blueprint .content) .permit-link { display: flex; gap: 8px; }
+:global(.jf-blueprint .content) .permit-link .in { flex: 1; min-width: 0; height: 38px; }
+
+/* Recent rows with actuals */
+:global(.jf-blueprint .content) .rrow-wrap { border-bottom: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .rrow-wrap:last-child { border-bottom: none; }
+:global(.jf-blueprint .content) .rrow-wrap .rrow { border-bottom: none; cursor: default; }
+:global(.jf-blueprint .content) .rrow-open { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; font-family: var(--font); color: var(--ink); }
+:global(.jf-blueprint .content) .rrow-open:hover .rrow-a { color: var(--blueprint); }
+:global(.jf-blueprint .content) .actual { display: grid; grid-template-columns: 150px 150px minmax(0, 1fr) auto; gap: 10px; align-items: end; padding: 0 18px 14px; }
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .actual { grid-template-columns: 1fr 1fr; }
+  :global(.jf-blueprint .content) .actual > :nth-child(3) { grid-column: span 2; }
+  :global(.jf-blueprint .content) .actual .btn { grid-column: span 2; }
+  :global(.jf-blueprint .content) .permit-acts { flex-basis: 100%; }
+  :global(.jf-blueprint .content) .rrow { flex-wrap: wrap; }
+}

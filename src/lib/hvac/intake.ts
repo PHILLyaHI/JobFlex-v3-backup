@@ -21,6 +21,9 @@ export interface SiteFacts {
   lat?: number;
   lng?: number;
   elevationFt?: number;
+  /** The assessor's living area for the house, sq ft — the conditioned area
+   *  itself, ahead of footprint × storeys. */
+  livingSqft?: number;
   /** Ground-floor footprint of the house the pin is in, sq ft. */
   footprintSqft?: number;
   perimeterFt?: number;
@@ -31,7 +34,9 @@ export interface SiteFacts {
   /** Roof measurement on file for the address. */
   roof?: { areaSqft?: number; pitch?: string; material?: string | null; eaveHeightFt?: number };
   /** Where each of the above came from, for the badges. */
-  sources: Partial<Record<"footprint" | "storeys" | "yearBuilt" | "roof" | "county" | "elevation", string>>;
+  /** "Residential", "Commercial"… from the assessor, when known. */
+  landUse?: string;
+  sources: Partial<Record<"footprint" | "living" | "storeys" | "yearBuilt" | "roof" | "county" | "elevation" | "point", string>>;
 }
 
 // Strength of a fact: its source first, its confidence second. A record read
@@ -111,9 +116,11 @@ export function modelFromSite(site: SiteFacts): BuildingModel {
   m.provenance["existing.kind"] = defaultP("split AC and furnace assumed");
   m.provenance["gas.available"] = defaultP("gas assumed available — confirm at the meter");
 
-  if (site.storeys && site.storeys > 0) setFact(m, "storeys", Math.max(1, Math.round(site.storeys)), { source: "measured", confidence: "medium", note: site.sources.storeys ?? "building record" });
+  if (site.storeys && site.storeys > 0) setFact(m, "storeys", Math.max(1, Math.round(site.storeys)), { source: /parcel|assessor|record/i.test(site.sources.storeys ?? "") ? "read" : "measured", confidence: /parcel|assessor/i.test(site.sources.storeys ?? "") ? "high" : "medium", note: site.sources.storeys ?? "building record" });
   else m.provenance.storeys = defaultP("single storey assumed");
-  if (site.footprintSqft && site.footprintSqft > 0) {
+  if (site.livingSqft && site.livingSqft > 0) {
+    setFact(m, "conditionedSqft", Math.round(site.livingSqft), { source: "read", confidence: "high", note: site.sources.living ?? "county parcel record" });
+  } else if (site.footprintSqft && site.footprintSqft > 0) {
     const storeys = m.storeys;
     setFact(m, "conditionedSqft", Math.round(site.footprintSqft * storeys), { source: "measured", confidence: storeys > 1 ? "medium" : "high", note: `${site.sources.footprint ?? "building footprint"}${storeys > 1 ? ` × ${storeys} storeys` : ""}` });
   } else {

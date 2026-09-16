@@ -31,6 +31,7 @@ const r1 = runEngine(gas, { catalog: STARTER_CATALOG });
 const l1 = buildLedger(r1, gas, DEFAULT_RATE_CARD, STARTER_CATALOG);
 const l1b = buildLedger(r1, gas, DEFAULT_RATE_CARD, STARTER_CATALOG);
 ok("Deterministic: same inputs, same subtotal", l1.subtotal === l1b.subtotal && l1.materials.length === l1b.materials.length, `$${l1.subtotal}`);
+ok("Gas house: AC first, heat pump as the dual-fuel runner-up", r1.selection.chosen?.item.kind === "air-conditioner" && r1.selection.runnerUp?.item.kind === "heat-pump", `${r1.selection.chosen?.item.model} / ${r1.selection.runnerUp?.item.model}`);
 ok("Gas house: condenser + furnace + coil", l1.materials.some((l) => l.id === "eq-main") && l1.materials.some((l) => l.id === "eq-furnace") && l1.materials.some((l) => l.id === "eq-coil"), l1.materials.map((l) => l.id).join(","));
 ok("Furnace covers the heating load", (() => { const f = l1.materials.find((l) => l.id === "eq-furnace"); return !!f && /\d+k BTU/.test(f.name); })(), l1.materials.find((l) => l.id === "eq-furnace")?.name);
 ok("Starter rows price from the rate-card default and say so", l1.materials[0].basis === "estimated" && /rate-card default/.test(l1.materials[0].note ?? ""));

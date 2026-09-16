@@ -27,9 +27,14 @@ import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
-import { geocodePlace } from "@/lib/maps";
+import { geocodePlace, isMapsEnabled } from "@/lib/maps";
+import { censusGeocode, countyAtPoint } from "@/lib/hvac/publicGeo";
+import { coolCalcConfig, coolCalcCreateProject, coolCalcCreateSystem, isCoolCalcEnabled, splitAddress } from "@/lib/hvac/coolcalc";
+import { parseDirectoryCsv } from "@/lib/hvac/directory";
+import { calibrationStats, type CalibrationStats } from "@/lib/hvac/calibration";
 import { elevationForPoints } from "@/lib/elevationProfile";
 import { fetchPropertyBoundary } from "@/actions/fenceBoundary";
+import { lookupParcelByPoint } from "@/lib/parcelLookup";
 import { runVisionJson } from "@/lib/sdk/openaiVision";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { stateFromAddress } from "@/lib/pricing/salesTax";
@@ -39,6 +44,8 @@ import type { SiteFacts, NameplateRead } from "@/lib/hvac/intake";
 import { DEFAULT_RATE_CARD, STARTER_CATALOG, parseCatalogCsv, type HvacRateCard } from "@/lib/hvac/ledger";
 
 type Fail = { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey };
+
+const parseJson = <T,>(s: string | null | undefined): T | null => { if (!s) return null; try { return JSON.parse(s) as T; } catch { return null; } };
 
 const missingTable = (err: unknown) => /does not exist|no such table|relation .* Hvac/i.test(err instanceof Error ? err.message : String(err));
 
@@ -78,30 +85,61 @@ export async function hvacSiteFacts(raw: unknown): Promise<{ ok: true; facts: Si
   const warnings: string[] = [];
   const facts: SiteFacts = { address: input.address.trim(), state: (input.state ?? stateFromAddress(input.address) ?? "").toUpperCase(), county: input.county, lat: input.lat, lng: input.lng, sources: {} };
 
-  // 1 · county + point, from Google when the browser had no pin or no county.
-  if (!facts.county || facts.lat === undefined || facts.lng === undefined || !facts.state) {
-    const g = await geocodePlace(facts.address);
+  // 1 · county + point. Google first when the server has a key (rooftop
+  // precision), the Census Bureau geocoder otherwise or when Google refuses
+  // — it is free and keyless and answers the county in the same call. A pin
+  // without a county asks the FCC block API. The badge says which answered.
+  if (facts.county) facts.sources.county = "picked";
+  const needPoint = facts.lat === undefined || facts.lng === undefined;
+  if (needPoint || !facts.county || !facts.state) {
+    const g = isMapsEnabled() ? await geocodePlace(facts.address) : null;
     if (g) {
-      if (facts.lat === undefined || facts.lng === undefined) { facts.lat = g.lat; facts.lng = g.lng; }
+      if (needPoint) { facts.lat = g.lat; facts.lng = g.lng; }
       if (!facts.county && g.county) { facts.county = g.county; facts.sources.county = "Google geocoder"; }
       if (!facts.state && g.state) facts.state = g.state.toUpperCase();
-    } else if (!facts.county) {
-      warnings.push("County lookup is off on this server — pick the county so the design temperatures are the county's, not the state median.");
     }
-  } else if (facts.county) {
-    facts.sources.county = "picked";
+    if (facts.lat === undefined || facts.lng === undefined || !facts.county) {
+      const c = await censusGeocode(facts.address);
+      if (c) {
+        if (facts.lat === undefined || facts.lng === undefined) { facts.lat = c.lat; facts.lng = c.lng; facts.sources.point = "Census Bureau geocoder"; }
+        if (!facts.county && c.county) { facts.county = c.county; facts.sources.county = "Census Bureau geocoder"; }
+        if (!facts.state && c.state) facts.state = c.state.toUpperCase();
+      }
+    }
+    if (!facts.county && facts.lat !== undefined && facts.lng !== undefined) {
+      const f = await countyAtPoint(facts.lat, facts.lng);
+      if (f) { facts.county = f.county; facts.sources.county = "FCC census block"; if (!facts.state) facts.state = f.state; }
+    }
+    if (!facts.county) warnings.push("Couldn't resolve the county for this address — pick it so the design temperatures are the county's, not the state median.");
   }
   if (!facts.state) return { ok: false, error: "Couldn't tell the state from that address — add the state (e.g. TX)." };
 
   if (facts.lat === undefined || facts.lng === undefined) {
-    warnings.push("No map point for this address — footprint and elevation skipped. Pick the address from the suggestions to get them.");
+    warnings.push("No map point for this address — footprint and elevation skipped. Check the spelling, or pick it from the suggestions.");
     return { ok: true, facts, warnings };
   }
 
-  // 2 · the footprint the pin is in (parcel + buildings), and 3 · elevation —
-  // independent; a failure in one leaves the other alone.
+  // 2 · the assessor's record for the lot the pin is in: living area, year
+  // built, storeys, county and the building polygons. First, so the footprint
+  // lookup below reads the cache instead of spending a second quota.
+  const parcel = await lookupParcelByPoint(facts.lat, facts.lng, { withRecord: true }).catch(() => null);
+  const rec = parcel && parcel.ok ? parcel.parcel : null;
+  const RECORD = "county parcel record";
+  if (rec) {
+    if (rec.bldgSqft && rec.bldgSqft >= 300 && rec.bldgSqft <= 20_000) { facts.livingSqft = rec.bldgSqft; facts.sources.living = RECORD; }
+    if (rec.yearBuilt) { facts.yearBuilt = rec.yearBuilt; facts.sources.yearBuilt = RECORD; }
+    if (rec.storeys) { facts.storeys = rec.storeys; facts.sources.storeys = `${RECORD}: ${rec.storeys} storeys`; }
+    if (rec.landUseClass) facts.landUse = rec.landUseClass;
+    if (!facts.county && rec.countyName) { facts.county = rec.countyName; facts.sources.county = RECORD; }
+    if (!facts.state && rec.stateAbbr) facts.state = rec.stateAbbr;
+    if (rec.landUseClass && !/residential/i.test(rec.landUseClass)) warnings.push(`The assessor classes this lot as ${rec.landUseClass} — the residential defaults may not fit.`);
+  }
+
+  // 3 · the footprint the pin is in — the assessor's polygons when the record
+  // carries them, else the parcel/OSM lookup — and 4 · elevation. Independent;
+  // a failure in one leaves the other alone.
   const [site, elev] = await Promise.all([
-    fetchPropertyBoundary(facts.lat, facts.lng).catch(() => null),
+    rec && rec.buildings.length ? Promise.resolve({ ok: true as const, buildings: rec.buildings.map((ring) => ({ ring: ring.map(([la, ln]) => ({ lat: la, lng: ln })), heightFt: null })), error: undefined as string | undefined, fromRecord: true }) : fetchPropertyBoundary(facts.lat, facts.lng).then((s) => ({ ...s, fromRecord: false })).catch(() => null),
     elevationForPoints([{ lat: facts.lat, lng: facts.lng }, { lat: facts.lat + 0.00002, lng: facts.lng }], organizationId).catch(() => null),
   ]);
   if (site) {
@@ -112,18 +150,20 @@ export async function hvacSiteFacts(raw: unknown): Promise<{ ok: true; facts: Si
         facts.footprintSqft = g.areaSqft;
         facts.perimeterFt = g.perimeterFt;
         facts.footprintEdges = g.edges;
-        facts.sources.footprint = pick.inside ? "building footprint at the pin" : "nearest building footprint — confirm it is the house";
-        if (!pick.inside) warnings.push("The pin is not inside a building footprint; the nearest one was used. Confirm the area.");
+        facts.sources.footprint = site.fromRecord ? (pick.inside ? "assessor's building footprint" : "assessor's nearest building footprint") : pick.inside ? "building footprint at the pin" : "nearest building footprint — confirm it is the house";
+        if (!pick.inside && !site.fromRecord) warnings.push("The pin is not inside a building footprint; the nearest one was used. Confirm the area.");
         const storeys = storeysFromHeight(pick.building.heightFt);
         if (storeys) {
           facts.storeys = storeys;
           facts.sources.storeys = `building height ${Math.round(pick.building.heightFt ?? 0)} ft on the footprint record`;
         }
       }
-    } else {
-      warnings.push("No building footprint found here — enter the conditioned area.");
+    } else if (!facts.livingSqft) {
+      warnings.push("No building footprint or living area on record here — say the square footage on the walk or type it.");
     }
     if (!site.ok && site.error && !/REPORTALL_CLIENT_KEY/.test(site.error)) warnings.push(site.error);
+  } else if (!facts.livingSqft) {
+    warnings.push("No building footprint or living area on record here — say the square footage on the walk or type it.");
   }
   if (elev && elev.ok && elev.elevFt.length) {
     facts.elevationFt = Math.round(elev.elevFt[0]);
@@ -203,12 +243,18 @@ export async function listHvacCatalog(): Promise<{ items: CatalogItem[]; own: bo
   return { items: STARTER_CATALOG, own: false };
 }
 
-export async function importHvacCatalogCsv(raw: unknown): Promise<{ ok: true; imported: number; errors: string[] } | { ok: false; error: string }> {
+export async function importHvacCatalogCsv(raw: unknown): Promise<{ ok: true; imported: number; errors: string[]; note?: string } | { ok: false; error: string }> {
   const { organizationId } = await requireEstimatorOrManager();
   const parsed = z.object({ csv: z.string().max(2_000_000), replace: z.boolean().default(false) }).safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Invalid import payload" };
-  const { items, errors } = parseCatalogCsv(parsed.data.csv);
-  if (!items.length) return { ok: false, error: errors[0] ?? "No rows to import." };
+  // The shop template has a `kind` column; an AHRI or NEEP export does not,
+  // and is read by meaning instead.
+  const firstLine = parsed.data.csv.split(/\r?\n/)[0] ?? "";
+  const isShop = /(^|,)\s*"?kind"?\s*(,|$)/i.test(firstLine);
+  const dir = isShop ? null : parseDirectoryCsv(parsed.data.csv);
+  const { items, errors } = dir && dir.source ? { items: dir.items, errors: dir.errors } : parseCatalogCsv(parsed.data.csv);
+  const note = dir && dir.source ? `Read as a ${dir.source.toUpperCase()} export · columns used: ${Object.values(dir.recognised).join(", ")}` : undefined;
+  if (!items.length) return { ok: false, error: (dir && !dir.source ? dir.errors[0] : errors[0]) ?? "No rows to import." };
   try {
     if (parsed.data.replace) await db.hvacCatalogItem.deleteMany({ where: { organizationId } });
     for (const item of items) {
@@ -218,7 +264,7 @@ export async function importHvacCatalogCsv(raw: unknown): Promise<{ ok: true; im
         update: { kind: item.kind, brand: item.brand, model: item.model, itemJson: JSON.stringify(item) },
       });
     }
-    return { ok: true, imported: items.length, errors };
+    return { ok: true, imported: items.length, errors, note };
   } catch (err) {
     return { ok: false, error: missingTable(err) ? "The catalog table isn't in this database yet — run `prisma db push`, then import again." : `Couldn't import — ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}` };
   }
@@ -307,6 +353,22 @@ const saveSchema = z.object({
   draft: draftSchema,
 });
 
+export interface HvacActual {
+  tons?: number;
+  price?: number;
+  model?: string;
+  notes?: string;
+  recordedAt?: string;
+}
+export interface HvacPermit {
+  provider: "coolcalc";
+  projectId: string;
+  systemId: string;
+  projectUrl: string;
+  reportUrl: string;
+  requestedAt: string;
+  attachedAt?: string;
+}
 export interface HvacEstimateSummary {
   id: string;
   address: string;
@@ -314,6 +376,10 @@ export interface HvacEstimateSummary {
   subtotal: number;
   createdAt: string;
   title: string;
+  sizedTons: number | null;
+  actual: HvacActual | null;
+  permit: "none" | "requested" | "attached";
+  approvedReportUrl: string | null;
 }
 
 export async function saveHvacEstimate(raw: unknown): Promise<{ ok: true; id: string } | Fail> {
@@ -331,6 +397,9 @@ export async function saveHvacEstimate(raw: unknown): Promise<{ ok: true; id: st
   const d = parsed.data;
   const model = (d.model ?? {}) as { state?: string; county?: string };
   const subtotal = [...d.draft.materials, ...d.draft.labor].reduce((a, l) => a + l.quantity * l.unitPrice, 0);
+  const eng = (d.engine ?? {}) as { selection?: { systems?: number; targetTons?: number; chosen?: { item?: { tons?: number } } | null } };
+  const perSystem = eng.selection?.chosen?.item?.tons ?? eng.selection?.targetTons;
+  const sizedTons = perSystem ? Math.round(perSystem * (eng.selection?.systems ?? 1) * 10) / 10 : null;
   const data = {
     organizationId,
     createdById: userId,
@@ -342,6 +411,7 @@ export async function saveHvacEstimate(raw: unknown): Promise<{ ok: true; id: st
     engineJson: JSON.stringify(d.engine ?? {}),
     draftJson: JSON.stringify(d.draft),
     subtotal: Math.round(subtotal * 100) / 100,
+    sizedTons,
   };
   try {
     if (d.id) {
@@ -361,25 +431,118 @@ export async function saveHvacEstimate(raw: unknown): Promise<{ ok: true; id: st
 export async function listHvacEstimates(): Promise<HvacEstimateSummary[]> {
   const { organizationId } = await requireEstimatorOrManager();
   try {
-    const rows = await db.hvacEstimate.findMany({ where: { organizationId }, orderBy: { createdAt: "desc" }, take: 12, select: { id: true, address: true, status: true, subtotal: true, createdAt: true, draftJson: true } });
+    const rows = await db.hvacEstimate.findMany({ where: { organizationId }, orderBy: { createdAt: "desc" }, take: 12, select: { id: true, address: true, status: true, subtotal: true, createdAt: true, draftJson: true, sizedTons: true, actualJson: true, permitJson: true, approvedReportUrl: true } });
     return rows.map((r) => {
-      let title = "";
-      try { title = String((JSON.parse(r.draftJson) as { title?: string }).title ?? ""); } catch { /* keep empty */ }
-      return { id: r.id, address: r.address, status: r.status, subtotal: r.subtotal, createdAt: r.createdAt.toISOString(), title };
+      const title = String(parseJson<{ title?: string }>(r.draftJson)?.title ?? "");
+      const permit = parseJson<HvacPermit>(r.permitJson);
+      return { id: r.id, address: r.address, status: r.status, subtotal: r.subtotal, createdAt: r.createdAt.toISOString(), title, sizedTons: r.sizedTons, actual: parseJson<HvacActual>(r.actualJson), permit: r.approvedReportUrl ? "attached" : permit ? "requested" : "none", approvedReportUrl: r.approvedReportUrl };
     });
   } catch {
     return [];
   }
 }
 
-export async function getHvacEstimate(id: string): Promise<{ ok: true; row: { id: string; address: string; status: string; siteFacts: unknown; model: unknown; engine: unknown; draft: z.infer<typeof draftSchema>; proposalId: string | null } } | { ok: false; error: string }> {
+/** The calibration loop over every saved estimate with an actual. */
+export async function hvacCalibration(): Promise<CalibrationStats> {
+  const { organizationId } = await requireEstimatorOrManager();
+  try {
+    const rows = await db.hvacEstimate.findMany({ where: { organizationId, actualJson: { not: null } }, select: { sizedTons: true, subtotal: true, actualJson: true } });
+    return calibrationStats(rows.map((r) => { const a = parseJson<HvacActual>(r.actualJson); return { sizedTons: r.sizedTons, subtotal: r.subtotal, actualTons: a?.tons ?? null, actualPrice: a?.price ?? null }; }));
+  } catch {
+    return calibrationStats([]);
+  }
+}
+
+const actualSchema = z.object({ tons: z.number().min(0.5).max(40).optional(), price: z.number().min(0).max(10_000_000).optional(), model: z.string().max(120).optional(), notes: z.string().max(1000).optional() });
+
+/** Record what was actually quoted or installed for a saved estimate. */
+export async function recordHvacActual(raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = z.object({ estimateId: z.string(), actual: actualSchema }).safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "Invalid actuals" };
+  const { organizationId } = await requireEstimatorOrManager();
+  const a = parsed.data.actual;
+  if (a.tons === undefined && a.price === undefined) return { ok: false, error: "Enter the tons or the price." };
+  try {
+    const n = await db.hvacEstimate.updateMany({ where: { id: parsed.data.estimateId, organizationId }, data: { actualJson: JSON.stringify({ ...a, recordedAt: new Date().toISOString() }) } });
+    return n.count ? { ok: true } : { ok: false, error: "That estimate isn't here any more." };
+  } catch (err) {
+    return { ok: false, error: missingTable(err) ? "The HVAC tables aren't in this database yet." : `Couldn't record — ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}` };
+  }
+}
+
+// ── permit-grade report (Cool Calc) ─────────────────────────────────────────
+
+export async function hvacPermitStatus(): Promise<{ enabled: boolean }> {
+  await requireEstimatorOrManager();
+  return { enabled: isCoolCalcEnabled() };
+}
+
+/** Create the Cool Calc project and system for a saved estimate (once), so
+ *  the contractor finishes the envelope in Cool Calc and the report can be
+ *  pulled back. Idempotent: a second call answers the existing ids. */
+export async function requestHvacPermitReport(raw: unknown): Promise<{ ok: true; permit: HvacPermit; appUrl: string } | { ok: false; error: string }> {
+  const parsed = z.object({ estimateId: z.string() }).safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "Save the estimate first." };
+  const { organizationId } = await requireEstimatorOrManager();
+  await enforceRateLimit(`coolcalc:${organizationId}`, 20, HOUR, "Cool Calc requests");
+  const cfg = coolCalcConfig();
+  if (!cfg) return { ok: false, error: "Cool Calc isn't connected — set COOLCALC_CLIENT_ID, COOLCALC_API_KEY and COOLCALC_DEALER_ID on the server." };
+  let row: { id: string; address: string; draftJson: string; permitJson: string | null; engineJson: string } | null;
+  try {
+    row = await db.hvacEstimate.findFirst({ where: { id: parsed.data.estimateId, organizationId }, select: { id: true, address: true, draftJson: true, permitJson: true, engineJson: true } });
+  } catch {
+    return { ok: false, error: "The HVAC tables aren't in this database yet." };
+  }
+  if (!row) return { ok: false, error: "That estimate isn't here any more." };
+  const existing = parseJson<HvacPermit>(row.permitJson);
+  const { COOLCALC_APP_URL } = await import("@/lib/hvac/coolcalc");
+  if (existing?.projectId && existing.systemId) return { ok: true, permit: existing, appUrl: COOLCALC_APP_URL };
+  const title = String(parseJson<{ title?: string }>(row.draftJson)?.title ?? row.address);
+  const parts = splitAddress(row.address);
+  try {
+    const project = await coolCalcCreateProject(cfg, { project: `${title} · JobFlex ${row.id.slice(-6)}`, address: parts.address, city: parts.city, state: parts.state, zip: parts.zip });
+    const systems = Number(parseJson<{ selection?: { systems?: number } }>(row.engineJson)?.selection?.systems ?? 1);
+    const system = await coolCalcCreateSystem(cfg, project, systems > 1 ? `System 1 of ${systems}` : "System 1");
+    const permit: HvacPermit = { provider: "coolcalc", projectId: project.projectId, systemId: system.systemId, projectUrl: project.projectUrl, reportUrl: system.reportUrl, requestedAt: new Date().toISOString() };
+    await db.hvacEstimate.update({ where: { id: row.id }, data: { permitJson: JSON.stringify(permit) } });
+    return { ok: true, permit, appUrl: COOLCALC_APP_URL };
+  } catch (err) {
+    return { ok: false, error: `Cool Calc refused — ${(err instanceof Error ? err.message : String(err)).slice(0, 240)}` };
+  }
+}
+
+/** Attach the approved report: Cool Calc's own (served through
+ *  /api/hvac/permit-report/[id] with the server's credentials) or a link the
+ *  contractor pastes. */
+export async function attachHvacPermitReport(raw: unknown): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const parsed = z.object({ estimateId: z.string(), url: z.string().max(1000).optional() }).safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "Invalid request" };
+  const { organizationId } = await requireEstimatorOrManager();
+  let url = parsed.data.url?.trim() ?? "";
+  if (url && !/^https:\/\//i.test(url)) return { ok: false, error: "The report link must start with https://" };
+  try {
+    const row = await db.hvacEstimate.findFirst({ where: { id: parsed.data.estimateId, organizationId }, select: { id: true, permitJson: true } });
+    if (!row) return { ok: false, error: "That estimate isn't here any more." };
+    const permit = parseJson<HvacPermit>(row.permitJson);
+    if (!url) {
+      if (!permit) return { ok: false, error: "Request the Cool Calc report first, or paste a report link." };
+      url = `/api/hvac/permit-report/${row.id}`;
+    }
+    await db.hvacEstimate.update({ where: { id: row.id }, data: { approvedReportUrl: url, permitJson: permit ? JSON.stringify({ ...permit, attachedAt: new Date().toISOString() }) : row.permitJson } });
+    return { ok: true, url };
+  } catch (err) {
+    return { ok: false, error: missingTable(err) ? "The HVAC tables aren't in this database yet." : `Couldn't attach — ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}` };
+  }
+}
+
+export async function getHvacEstimate(id: string): Promise<{ ok: true; row: { id: string; address: string; status: string; siteFacts: unknown; model: unknown; engine: unknown; draft: z.infer<typeof draftSchema>; proposalId: string | null; approvedReportUrl: string | null; permit: HvacPermit | null; actual: HvacActual | null } } | { ok: false; error: string }> {
   const { organizationId } = await requireEstimatorOrManager();
   try {
     const r = await db.hvacEstimate.findFirst({ where: { id, organizationId } });
     if (!r) return { ok: false, error: "That estimate isn't here any more." };
     const draft = draftSchema.safeParse(JSON.parse(r.draftJson));
     if (!draft.success) return { ok: false, error: "That estimate's draft no longer validates." };
-    return { ok: true, row: { id: r.id, address: r.address, status: r.status, siteFacts: JSON.parse(r.siteFactsJson), model: JSON.parse(r.modelJson), engine: JSON.parse(r.engineJson), draft: draft.data, proposalId: r.proposalId } };
+    return { ok: true, row: { id: r.id, address: r.address, status: r.status, siteFacts: JSON.parse(r.siteFactsJson), model: JSON.parse(r.modelJson), engine: JSON.parse(r.engineJson), draft: draft.data, proposalId: r.proposalId, approvedReportUrl: r.approvedReportUrl, permit: parseJson<HvacPermit>(r.permitJson), actual: parseJson<HvacActual>(r.actualJson) } };
   } catch {
     return { ok: false, error: "The HVAC tables aren't in this database yet." };
   }
@@ -399,6 +562,8 @@ function unitToType(unit: string | undefined): string {
 
 const convertSchema = z.object({
   estimateId: z.string().optional().nullable(),
+  /** Set when the estimate carries an approved report; one sentence in the scope. */
+  permitNote: z.string().max(300).optional(),
   title: z.string().min(1).max(200),
   scope: z.string().max(6000).optional(),
   materials: z.array(lineSchema).max(80),
@@ -430,7 +595,7 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
       ownerId: user.id,
       clientId,
       title: data.title,
-      scopeOfWork: data.scope ?? "",
+      scopeOfWork: [data.scope ?? "", data.permitNote ?? ""].filter(Boolean).join("\n\n"),
       status: ProposalStatus.DRAFT,
       subtotal,
       total: subtotal,

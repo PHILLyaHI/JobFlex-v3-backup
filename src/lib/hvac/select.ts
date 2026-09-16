@@ -88,7 +88,10 @@ export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignCondi
   const keepsGas = !noGas && (m.preferences.keepGas === true || m.existing.fuel === "gas" || m.existing.fuel === "propane" || (hasFurnace && m.gas.available === true));
   if (item.kind === "air-conditioner" && noGas) return fail("An AC needs a furnace; this house has no gas.");
   if (item.kind === "heat-pump" && keepsGas) {
-    score -= 12;
+    // Decisive, not a nudge: a variable-speed heat pump that carries the
+    // design day picks up +14 elsewhere, and a gas house should still see
+    // the AC first and the heat pump as the runner-up (the dual-fuel offer).
+    score -= 20;
     reasons.push("The house keeps its gas furnace — offer this as dual fuel.");
   }
   if (item.kind === "heat-pump" && noGas) score += 4;

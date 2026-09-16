@@ -31,19 +31,26 @@ import { CATALOG_CSV_COLUMNS, DEFAULT_RATE_CARD, buildLedger, type HvacRateCard,
 import { applyNameplate, applyStated, applyStatedNested, applyTypedModelNumber, applyWalkthrough, modelFromSite, type NameplateRead, type SiteFacts } from "@/lib/hvac/intake";
 import { designConditionsFor } from "@/lib/hvac/designConditions";
 import {
+  attachHvacPermitReport,
   clearHvacCatalog,
   convertHvacEstimateToProposal,
   getHvacEstimate,
   getHvacRateCard,
+  hvacCalibration,
+  hvacPermitStatus,
   hvacSiteFacts,
   importHvacCatalogCsv,
   listHvacCatalog,
   listHvacEstimates,
   readHvacNameplate,
+  recordHvacActual,
+  requestHvacPermitReport,
   saveHvacEstimate,
   saveHvacRateCard,
   type HvacEstimateSummary,
+  type HvacPermit,
 } from "@/actions/hvacEstimator";
+import { calibrationLine, type CalibrationStats } from "@/lib/hvac/calibration";
 import { useHvacWalk } from "./use-hvac-walk";
 import { SHOTS, TIPS, coverageFor } from "./filming-guide";
 import { CapacityChart } from "./capacity-chart";
@@ -241,6 +248,16 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
   const [saving, setSaving] = React.useState(false);
   const [converting, setConverting] = React.useState(false);
   const [recent, setRecent] = React.useState<HvacEstimateSummary[]>([]);
+  const [calib, setCalib] = React.useState<CalibrationStats | null>(null);
+  const [actualFor, setActualFor] = React.useState<string | null>(null);
+  const [actualDraft, setActualDraft] = React.useState<{ tons: string; price: string; notes: string }>({ tons: "", price: "", notes: "" });
+  // permit-grade report
+  const [permitEnabled, setPermitEnabled] = React.useState(false);
+  const [permit, setPermit] = React.useState<HvacPermit | null>(null);
+  const [reportUrl, setReportUrl] = React.useState<string | null>(null);
+  const [permitBusy, setPermitBusy] = React.useState(false);
+  const [permitMsg, setPermitMsg] = React.useState("");
+  const [linkDraft, setLinkDraft] = React.useState("");
 
   React.useEffect(() => {
     let alive = true;
@@ -256,7 +273,13 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
       }
     }).catch(() => undefined);
     void listHvacEstimates().then((r) => { if (alive) setRecent(r); }).catch(() => undefined);
+    void hvacCalibration().then((c) => { if (alive) setCalib(c); }).catch(() => undefined);
+    void hvacPermitStatus().then((p) => { if (alive) setPermitEnabled(p.enabled); }).catch(() => undefined);
     return () => { alive = false; };
+  }, []);
+  const refreshRecent = React.useCallback(() => {
+    void listHvacEstimates().then(setRecent).catch(() => undefined);
+    void hvacCalibration().then(setCalib).catch(() => undefined);
   }, []);
 
   React.useEffect(() => {
@@ -322,13 +345,19 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
       if (!res.ok) { setSiteError(res.error); reportPlanLimitResult(res); return; }
       setRestored(null);
       setSavedId(null);
+      setPermit(null);
+      setReportUrl(null);
+      setPermitMsg("");
       setTitle(null);
       setTyped({});
       setAnalysis(null);
       setPlates({});
       setSite(res.facts);
       setStateCode(res.facts.state);
-      if (res.facts.county) setCounty(res.facts.county);
+      if (res.facts.county) {
+        const hit = designConditionsFor(res.facts.state, res.facts.county);
+        setCounty(hit.match === "county" || hit.match === "fuzzy" ? hit.conditions.county : res.facts.county);
+      }
       setSiteWarnings(res.warnings);
       setTimeout(() => scrollTo("hv-intake"), 60);
     } catch (err) {
@@ -374,7 +403,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
       const csv = await f.text();
       const res = await importHvacCatalogCsv({ csv, replace: replaceCat });
       if (!res.ok) { setCatMsg(res.error); return; }
-      setCatMsg(`${res.imported} rows imported${res.errors.length ? ` · ${res.errors.length} skipped: ${res.errors[0]}` : ""}.`);
+      setCatMsg(`${res.imported} rows imported${res.errors.length ? ` · ${res.errors.length} not: ${res.errors[0]}` : ""}.${res.note ? ` ${res.note}.` : ""}`);
       setCatalog(await listHvacCatalog());
     } catch (err) { setCatMsg(errMsg(err)); }
   };
@@ -412,7 +441,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
       if (!res.ok) { toast.error("Couldn't save", res.error); reportPlanLimitResult(res); return null; }
       setSavedId(res.id);
       toast.success("Estimate saved");
-      void listHvacEstimates().then(setRecent).catch(() => undefined);
+      refreshRecent();
       return res.id;
     } finally { setSaving(false); }
   };
@@ -423,7 +452,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     try {
       const id = savedId ?? (await save());
       const d = draft();
-      const res = await convertHvacEstimateToProposal({ estimateId: id, title: d.title, scope: d.scope, materials: d.materials, labor: d.labor });
+      const res = await convertHvacEstimateToProposal({ estimateId: id, title: d.title, scope: d.scope, materials: d.materials, labor: d.labor, permitNote: reportUrl ? `Manual J load calculation: ACCA-approved report attached (Cool Calc${permit ? ` project ${permit.projectId}` : ""}).` : undefined });
       router.push(`/dashboard/manual-blueprint?proposal=${res.id}`);
     } catch (err) {
       if (!reportPlanLimit(err)) toast.error("Couldn't convert", errMsg(err));
@@ -440,13 +469,58 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     setTyped({});
     setSite(facts);
     setStateCode(facts.state);
-    setCounty(m.county ?? facts.county ?? "");
+    {
+      const raw = m.county ?? facts.county ?? "";
+      const hit = raw ? designConditionsFor(facts.state, raw) : null;
+      setCounty(hit && (hit.match === "county" || hit.match === "fuzzy") ? hit.conditions.county : raw);
+    }
     setRestored(m);
     setSavedId(res.row.id);
+    setPermit(res.row.permit);
+    setReportUrl(res.row.approvedReportUrl);
+    setPermitMsg("");
     setTitle(res.row.draft.title);
     setSiteWarnings([]);
     if (addrRef.current) addrRef.current.value = facts.address;
     setTimeout(() => scrollTo("hv-design"), 60);
+  };
+
+  // ── permit-grade report ──────────────────────────────────────────────────
+  const requestPermit = async () => {
+    const id = savedId ?? (await save());
+    if (!id) return;
+    setPermitBusy(true);
+    setPermitMsg("");
+    try {
+      const res = await requestHvacPermitReport({ estimateId: id });
+      if (!res.ok) { setPermitMsg(res.error); return; }
+      setPermit(res.permit);
+      setPermitMsg(`Project ${res.permit.projectId} created in Cool Calc — finish the envelope there, then pull the report.`);
+      window.open(res.appUrl, "_blank", "noopener");
+    } finally { setPermitBusy(false); }
+  };
+  const attachPermit = async (url?: string) => {
+    const id = savedId ?? (await save());
+    if (!id) return;
+    setPermitBusy(true);
+    setPermitMsg("");
+    try {
+      const res = await attachHvacPermitReport({ estimateId: id, url });
+      if (!res.ok) { setPermitMsg(res.error); return; }
+      setReportUrl(res.url);
+      setLinkDraft("");
+      setPermitMsg("Report attached — the proposal will say so.");
+      refreshRecent();
+    } finally { setPermitBusy(false); }
+  };
+  const saveActual = async (id: string) => {
+    const tons = Number(actualDraft.tons);
+    const price = Number(actualDraft.price.replace(/[$,]/g, ""));
+    const res = await recordHvacActual({ estimateId: id, actual: { tons: actualDraft.tons.trim() && Number.isFinite(tons) ? tons : undefined, price: actualDraft.price.trim() && Number.isFinite(price) ? price : undefined, notes: actualDraft.notes.trim() || undefined } });
+    if (!res.ok) { toast.error("Couldn't record", res.error); return; }
+    setActualFor(null);
+    setActualDraft({ tons: "", price: "", notes: "" });
+    refreshRecent();
   };
 
   // ── render ────────────────────────────────────────────────────────────────
@@ -840,6 +914,30 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
             <ul>{ledger.assumptions.map((a) => <li key={a}>{a}</li>)}</ul>
           </div>
 
+          <div className={cx("permit")}>
+            <div className={cx("permit-txt")}>
+              <span className={cx("kpi-lbl")}>Permit-grade report</span>
+              <div className={cx("note")} style={{ marginTop: 6 }}>
+                {reportUrl
+                  ? <>ACCA-approved Manual J attached — <a className={cx("link")} href={reportUrl} target="_blank" rel="noreferrer">view the report</a>. The proposal carries one sentence saying so.</>
+                  : permit
+                    ? <>Cool Calc project <b>{permit.projectId}</b> created {dateShort(permit.requestedAt)}. Finish the envelope in Cool Calc, then pull the report here.</>
+                    : <>The load above is Manual J-based, estimating grade. For a permit that wants an ACCA-approved calc, {permitEnabled ? "request the Cool Calc report" : "paste the report link from the approved tool you use"}.</>}
+              </div>
+              {permitMsg && <div className={cx("mono")} style={{ marginTop: 6, textTransform: "none", letterSpacing: 0 }}>{permitMsg}</div>}
+            </div>
+            <div className={cx("permit-acts")}>
+              {!reportUrl && permitEnabled && !permit && <button type="button" className={cx("btn", "btn-primary", "btn-sm")} disabled={permitBusy} onClick={() => void requestPermit()}>{permitBusy ? "Requesting…" : "Request Cool Calc report"}</button>}
+              {!reportUrl && permit && <button type="button" className={cx("btn", "btn-primary", "btn-sm")} disabled={permitBusy} onClick={() => void attachPermit()}>{permitBusy ? "Attaching…" : "Pull the report"}</button>}
+              {!reportUrl && (
+                <span className={cx("permit-link")}>
+                  <input className={cx("in")} placeholder="https://… report link" value={linkDraft} onChange={(e) => setLinkDraft(e.target.value)} aria-label="Report link" />
+                  <button type="button" className={cx("btn", "btn-ghost", "btn-sm")} disabled={permitBusy || !/^https:\/\//i.test(linkDraft)} onClick={() => void attachPermit(linkDraft)}>Attach link</button>
+                </span>
+              )}
+            </div>
+          </div>
+
           <details className={cx("panel")} onToggle={(e) => { if ((e.target as HTMLDetailsElement).open && !cardDraft) setCardDraft(card.card); }}>
             <summary><svg className={cx("ic")}><use href="#i-gear" /></svg>Rate card<span className={cx("mono")}>{card.own ? "the shop's" : "defaults — edit once, it sticks"}</span></summary>
             <div className={cx("panel-body")}>
@@ -883,7 +981,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
           <details className={cx("panel")}>
             <summary><svg className={cx("ic")}><use href="#i-file" /></svg>Catalog<span className={cx("mono")}>{catalog?.own ? `${catalog.items.length} rows from the shop` : "starter ladder · import your CSV"}</span></summary>
             <div className={cx("panel-body")}>
-              <div className={cx("note")}>One row per unit the shop installs. Columns: <b>{CATALOG_CSV_COLUMNS.join(", ")}</b> — kind, brand and model are required; a <b>cost</b> lets the ledger price from your number instead of the rate-card default; heat-pump rows want heat47/17/5 for the capacity curve. <a className={cx("link")} href={templateHref} download="jobflex-hvac-catalog-template.csv">Download the template</a>.</div>
+              <div className={cx("note")}>One row per unit the shop installs. Columns: <b>{CATALOG_CSV_COLUMNS.join(", ")}</b> — kind, brand and model are required; a <b>cost</b> lets the ledger price from your number instead of the rate-card default; heat-pump rows want heat47/17/5 for the capacity curve. <a className={cx("link")} href={templateHref} download="jobflex-hvac-catalog-template.csv">Download the template</a>. An <b>AHRI</b> subscriber export or the <b>NEEP</b> cold-climate list (saved as CSV) imports as is — the columns are read by meaning and the import says which it used.</div>
               <div className={cx("acts")}>
                 <label className={cx("btn", "btn-primary")} htmlFor="hv-csv"><svg className={cx("ic")}><use href="#i-download" /></svg>Import CSV<input id="hv-csv" type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={(e) => void onCsv(e.target.files?.[0])} /></label>
                 <label className={cx("chk")} htmlFor="hv-replace" style={{ height: 38 }}><input id="hv-replace" type="checkbox" checked={replaceCat} onChange={(e) => setReplaceCat(e.target.checked)} /><span>Replace the current catalog</span></label>
@@ -900,16 +998,31 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
         <div className={cx("head")}>
           <div className={cx("head-txt")}>
             <div className={cx("card-title")}>Recent estimates</div>
-            <div className={cx("card-sub")}>Reopen one to change the design or convert it.</div>
+            <div className={cx("card-sub")}>Reopen one to change the design or convert it. Record what you actually quoted on a job and the fit shows here — {calib ? calibrationLine(calib) : "loading…"}</div>
           </div>
         </div>
         {recent.length ? (
           <div className={cx("recent")}>
             {recent.map((r) => (
-              <button key={r.id} type="button" className={cx("rrow")} onClick={() => void reopen(r.id)}>
-                <span className={cx("rrow-main")}><span className={cx("rrow-a")}>{r.title || r.address}</span><span className={cx("mono", "rrow-m")}>{r.address} · {dateShort(r.createdAt)} · {r.status}</span></span>
-                <span className={cx("rrow-v")}>{money(r.subtotal)}</span>
-              </button>
+              <div key={r.id} className={cx("rrow-wrap")}>
+                <div className={cx("rrow")}>
+                  <button type="button" className={cx("rrow-open")} onClick={() => void reopen(r.id)}>
+                    <span className={cx("rrow-a")}>{r.title || r.address}</span>
+                    <span className={cx("mono", "rrow-m")}>{r.address} · {dateShort(r.createdAt)} · {r.status}{r.sizedTons ? ` · sized ${r.sizedTons} t` : ""}{r.permit === "attached" ? " · report attached" : r.permit === "requested" ? " · Cool Calc requested" : ""}</span>
+                    {r.actual && <span className={cx("mono", "rrow-m")}>actual: {r.actual.tons ? `${r.actual.tons} t` : "—"} · {r.actual.price ? money(r.actual.price) : "—"}{r.actual.notes ? ` · ${r.actual.notes}` : ""}</span>}
+                  </button>
+                  <span className={cx("rrow-v")}>{money(r.subtotal)}</span>
+                  <button type="button" className={cx("link")} onClick={() => { setActualFor(actualFor === r.id ? null : r.id); setActualDraft({ tons: r.actual?.tons ? String(r.actual.tons) : "", price: r.actual?.price ? String(r.actual.price) : "", notes: r.actual?.notes ?? "" }); }}>{r.actual ? "Edit actual" : "Record actual"}</button>
+                </div>
+                {actualFor === r.id && (
+                  <div className={cx("actual")}>
+                    <label className={cx("field")} htmlFor={`act-t-${r.id}`}><span className={cx("lbl")}>Quoted / installed tons</span><input id={`act-t-${r.id}`} className={cx("in", "num")} inputMode="decimal" value={actualDraft.tons} onChange={(e) => setActualDraft({ ...actualDraft, tons: e.target.value })} /></label>
+                    <label className={cx("field")} htmlFor={`act-p-${r.id}`}><span className={cx("lbl")}>Quoted price $</span><input id={`act-p-${r.id}`} className={cx("in", "num")} inputMode="decimal" value={actualDraft.price} onChange={(e) => setActualDraft({ ...actualDraft, price: e.target.value })} /></label>
+                    <label className={cx("field")} htmlFor={`act-n-${r.id}`}><span className={cx("lbl")}>Notes</span><input id={`act-n-${r.id}`} className={cx("in")} value={actualDraft.notes} placeholder="what changed and why" onChange={(e) => setActualDraft({ ...actualDraft, notes: e.target.value })} /></label>
+                    <button type="button" className={cx("btn", "btn-primary", "btn-sm")} onClick={() => void saveActual(r.id)}>Save actual</button>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         ) : (
