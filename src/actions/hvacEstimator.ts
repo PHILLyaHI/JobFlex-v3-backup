@@ -133,6 +133,8 @@ export async function hvacSiteFacts(raw: unknown): Promise<{ ok: true; facts: Si
     if (!facts.county && rec.countyName) { facts.county = rec.countyName; facts.sources.county = RECORD; }
     if (!facts.state && rec.stateAbbr) facts.state = rec.stateAbbr;
     if (rec.landUseClass && !/residential/i.test(rec.landUseClass)) warnings.push(`The assessor classes this lot as ${rec.landUseClass} — the residential defaults may not fit.`);
+    const missing = [!rec.bldgSqft && "living area", !rec.yearBuilt && "year built", !rec.storeys && "storeys"].filter(Boolean);
+    if (rec.enriched && missing.length) warnings.push(`The county record here doesn't carry the ${missing.join(", ")} — say ${missing.length === 1 ? "it" : "them"} on the walk or type ${missing.length === 1 ? "it" : "them"}.`);
   }
 
   // 3 · the footprint the pin is in — the assessor's polygons when the record

@@ -220,6 +220,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
   const [picked, setPicked] = React.useState<PickedPlace | null>(null);
   const [stateCode, setStateCode] = React.useState("");
   const [county, setCounty] = React.useState("");
+  const [countyPicked, setCountyPicked] = React.useState(false);
   const [site, setSite] = React.useState<SiteFacts | null>(null);
   const [siteWarnings, setSiteWarnings] = React.useState<string[]>([]);
   const [siteBusy, setSiteBusy] = React.useState(false);
@@ -341,7 +342,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     setSiteBusy(true);
     setSiteError("");
     try {
-      const res = await hvacSiteFacts({ address: full, state: stateCode || undefined, county: county || undefined, lat: picked?.lat, lng: picked?.lng });
+      const res = await hvacSiteFacts({ address: full, state: stateCode || undefined, county: countyPicked && county ? county : undefined, lat: picked?.lat, lng: picked?.lng });
       if (!res.ok) { setSiteError(res.error); reportPlanLimitResult(res); return; }
       setRestored(null);
       setSavedId(null);
@@ -357,7 +358,8 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
       if (res.facts.county) {
         const hit = designConditionsFor(res.facts.state, res.facts.county);
         setCounty(hit.match === "county" || hit.match === "fuzzy" ? hit.conditions.county : res.facts.county);
-      }
+      } else setCounty("");
+      setCountyPicked(false);
       setSiteWarnings(res.warnings);
       setTimeout(() => scrollTo("hv-intake"), 60);
     } catch (err) {
@@ -548,14 +550,14 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
             </label>
             <label className={cx("field")} htmlFor="hv-state">
               <span className={cx("lbl")}>State</span>
-              <select id="hv-state" className={cx("sel")} value={stateCode} onChange={(e) => { setStateCode(e.target.value); setCounty(""); }}>
+              <select id="hv-state" className={cx("sel")} value={stateCode} onChange={(e) => { setStateCode(e.target.value); setCounty(""); setCountyPicked(false); }}>
                 <option value="">auto</option>
                 {STATES.map((st) => <option key={st} value={st}>{st}</option>)}
               </select>
             </label>
             <label className={cx("field")} htmlFor="hv-county">
               <span className={cx("lbl")}>County <span className={cx("mono")} style={{ textTransform: "none", letterSpacing: 0 }}>{site?.sources.county ?? "auto"}</span></span>
-              <select id="hv-county" className={cx("sel")} value={county} onChange={(e) => setCounty(e.target.value)} disabled={!stateCode}>
+              <select id="hv-county" className={cx("sel")} value={county} onChange={(e) => { setCounty(e.target.value); setCountyPicked(true); }} disabled={!stateCode}>
                 <option value="">{stateCode ? "auto from the address" : "pick the state first"}</option>
                 {counties.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -580,12 +582,12 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
               <div className={cx("hero-cell")}>
                 <div className={cx("kpi-lbl")}>Conditioned area</div>
                 <div className={cx("hero-v")}>{model.conditionedSqft ? num(model.conditionedSqft) : "—"}<small>sq ft</small></div>
-                <div className={cx("hero-h")}><Chip p={model.provenance.conditionedSqft} /> {model.provenance.conditionedSqft?.note}</div>
+                <div className={cx("hero-h")} title={model.provenance.conditionedSqft?.note}><Chip p={model.provenance.conditionedSqft} /> {model.provenance.conditionedSqft?.note}</div>
               </div>
               <div className={cx("hero-cell")}>
                 <div className={cx("kpi-lbl")}>Storeys · built</div>
                 <div className={cx("hero-v")}>{model.storeys}<small>·</small>{model.yearBuilt ?? "—"}</div>
-                <div className={cx("hero-h")}><Chip p={model.provenance.storeys} /> <Chip p={model.provenance.yearBuilt} /></div>
+                <div className={cx("hero-h")} title={`${model.provenance.storeys?.note ?? ""} · ${model.provenance.yearBuilt?.note ?? ""}`}><Chip p={model.provenance.storeys} /> <Chip p={model.provenance.yearBuilt} /></div>
               </div>
               <div className={cx("hero-cell")}>
                 <div className={cx("kpi-lbl")}>Elevation</div>

@@ -121,8 +121,12 @@ export function modelFromSite(site: SiteFacts): BuildingModel {
   if (site.livingSqft && site.livingSqft > 0) {
     setFact(m, "conditionedSqft", Math.round(site.livingSqft), { source: "read", confidence: "high", note: site.sources.living ?? "county parcel record" });
   } else if (site.footprintSqft && site.footprintSqft > 0) {
+    // A footprint is the ground-floor outline: garage and porches in, upper
+    // floors out. Medium confidence whatever the storey count, and the note
+    // says what to do about it.
     const storeys = m.storeys;
-    setFact(m, "conditionedSqft", Math.round(site.footprintSqft * storeys), { source: "measured", confidence: storeys > 1 ? "medium" : "high", note: `${site.sources.footprint ?? "building footprint"}${storeys > 1 ? ` × ${storeys} storeys` : ""}` });
+    const storeysKnown = m.provenance.storeys?.source !== "default";
+    setFact(m, "conditionedSqft", Math.round(site.footprintSqft * storeys), { source: "measured", confidence: "medium", note: `${site.sources.footprint ?? "building footprint"} × ${storeys} storey${storeys === 1 ? "" : "s"}${storeysKnown ? "" : " (assumed)"} — garage and porches included; say the living area and storeys on the walk, or type them` });
   } else {
     m.provenance.conditionedSqft = defaultP("no footprint on record — enter the conditioned area");
   }
