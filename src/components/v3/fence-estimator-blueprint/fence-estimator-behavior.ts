@@ -37,7 +37,6 @@ import {
   terrainFromProfile,
   terrainAssumption,
   MIN_PROFILED_SEG_FT,
-  type FencePathSampling,
   type FenceTerrainReport,
   type SegTerrain,
 } from "@/components/estimator/fence/fenceTerrain";
@@ -1171,12 +1170,7 @@ export function initFenceEstimatorContent(
   // Failure is a state, not a throw: the price falls back to plan footage and
   // the proposal's assumptions say so.
   let terrainReport: FenceTerrainReport | null = null;
-  let terrainSampling: FencePathSampling | null = null;
-  /** The raw per-sample elevations of the last good profile (ft) — the strip. */
-  let terrainElev: number[] | null = null;
   let terrainStatus: 'idle' | 'busy' | 'ok' | 'failed' = 'idle';
-  /** Where the last good profile came from — named on the profile strip. */
-  let terrainSource: { source: ElevationSource; resM?: number } | null = null;
   /** Bumped on every trace commit; an answer for an older stamp is dropped. */
   let terrainStamp = 0;
   let terrainTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1199,7 +1193,6 @@ export function initFenceEstimatorContent(
     const o = mapOrigin;
     if (!o || !tracedSegments(mapPoints).length) {
       terrainReport = null;
-      terrainSampling = null;
       terrainStatus = 'idle';
       paintTerrain();
       return;
@@ -1211,22 +1204,15 @@ export function initFenceEstimatorContent(
       if (stamp !== terrainStamp) return; // the line moved on — a newer request is queued
       if (res.ok) {
         terrainReport = terrainFromProfile(sampling.segs, res.elevFt);
-        terrainSampling = sampling;
-        terrainElev = res.elevFt;
-        terrainSource = { source: res.source, resM: res.resM };
         terrainStatus = 'ok';
       } else {
         terrainReport = null;
-        terrainSampling = null;
-        terrainElev = null;
         terrainStatus = 'failed';
         console.warn('[fence-estimator] elevation profile failed:', res.error);
       }
     } catch (err) {
       if (stamp !== terrainStamp) return;
       terrainReport = null;
-      terrainSampling = null;
-      terrainElev = null;
       terrainStatus = 'failed';
       console.warn('[fence-estimator] elevation profile failed:', err);
     }
@@ -1234,10 +1220,9 @@ export function initFenceEstimatorContent(
   }
 
   /** Everything the measured ground repaints: the figures (billed footage),
-   *  the profile strip, and the map's slope overlay. */
+   *  and the map's slope overlay. */
   function paintTerrain() {
     renderFigures();
-    renderProfile();
     pushMap();
     renderModelNote();
   }
@@ -1601,55 +1586,6 @@ export function initFenceEstimatorContent(
     });
     terrainViewMemo = { report: t, out: out.length ? out : null };
     return terrainViewMemo.out;
-  }
-
-  /** The elevation strip under the stage: the measured profile as one compact
-   *  sparkline, coloured by slope class, with the relief called out. Hidden
-   *  whenever there is nothing measured (or nothing worth saying). */
-  function renderProfile() {
-    const box = $('#terrainProfile');
-    if (!box) return;
-    const t = usableTerrain();
-    const sampling = terrainSampling;
-    if (!t || !sampling || t.segs.length !== sampling.segs.length) {
-      box.classList.add('is-hidden');
-      box.innerHTML = '';
-      return;
-    }
-    const elev = terrainElev;
-    const relief = t.maxElevFt - t.minElevFt;
-    if (!elev || relief < 1) {
-      box.classList.add('is-hidden');
-      box.innerHTML = '';
-      return;
-    }
-    // The measured ground itself, sample by sample: x = cumulative plan feet,
-    // y = elevation, one polyline per traced segment coloured by its class.
-    const W = 560, H = 44, PAD = 3;
-    const totalPlan = t.planFt || 1;
-    const zSpan = Math.max(1, relief);
-    const X = function (v: number) { return PAD + (v / totalPlan) * (W - PAD * 2); };
-    const Y = function (v: number) { return H - PAD - ((v - t.minElevFt) / zSpan) * (H - PAD * 2); };
-    const CLS_COLOR: Record<string, string> = { level: 'var(--blueprint)', racked: '#c47f17', stepped: '#b3261e' };
-    let svg = '';
-    let planSoFar = 0;
-    sampling.segs.forEach(function (s, si) {
-      const ds = s.planFt / (s.count - 1);
-      const cls = t.segs[si].cls;
-      const path: string[] = [];
-      for (let k = 0; k < s.count; k++) {
-        path.push(X(planSoFar + ds * k).toFixed(1) + ',' + Y(elev[s.start + k]).toFixed(1));
-      }
-      svg += '<polyline points="' + path.join(' ') + '" fill="none" stroke="' + CLS_COLOR[cls] +
-        '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
-      planSoFar += s.planFt;
-    });
-    box.innerHTML =
-      '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">' + svg + '</svg>' +
-      '<div class="tp-meta">Ground profile · ' + (terrainSource ? sourceLabel(terrainSource) + ' · ' : '') +
-      Math.round(relief) + ' ft relief · ' +
-      Math.round(t.planFt) + ' ft plan → ' + Math.round(t.gradeFt) + ' ft along grade</div>';
-    box.classList.remove('is-hidden');
   }
 
   const hintEl = $('.stage-hint');

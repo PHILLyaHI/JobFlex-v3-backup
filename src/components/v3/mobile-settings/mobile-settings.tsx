@@ -95,6 +95,7 @@ import {
   DASHBOARD_HREF,
   DEFAULT_RAIL,
   DEFAULT_SUBTAB,
+  isVisibleSubTab,
   DISCONNECT_ACTION,
   EMAIL_COLUMN_INDEX,
   EMAIL_UNAVAILABLE_TAG,
@@ -1219,7 +1220,7 @@ function IntegrationsPane({
 }) {
   const { gmail, meta, stripe, square, connections } = data.integrations;
 
-  const [sub, setSub] = useState<SubTabKey>(wanted ?? DEFAULT_SUBTAB);
+  const [sub, setSub] = useState<SubTabKey>(isVisibleSubTab(wanted) ? (wanted as SubTabKey) : DEFAULT_SUBTAB);
   // The page can steer the subtab (Payments → Manage, or ?sub= after OAuth):
   // derive from the prop when it changes, without an effect.
   const [seenWanted, setSeenWanted] = useState(wanted);

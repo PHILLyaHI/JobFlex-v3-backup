@@ -258,7 +258,6 @@ export function FenceEstimatorContent() {
               ground, coloured by slope class (blue level / amber racked / red
               stepped). Hidden while there is nothing measured, or under a foot
               of relief — a flat line saying "flat" is noise. */}
-          <div className="stage-profile is-hidden" id="terrainProfile"></div>
 
           {/* PARCEL SIDES. Filled by the behavior module when /api/parcels
               returns the property for the searched address: one checkbox row per

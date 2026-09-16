@@ -43,6 +43,7 @@ import type { Badge, CardHead, PaneProps, SubTabKey } from "../settings-data";
 import {
   CONNECTED_BADGE,
   DEFAULT_SUBTAB,
+  isVisibleSubTab,
   DISCONNECT_ACTION,
   GMAIL_BEHAVIOR_CARD,
   GMAIL_BEHAVIOR_TOGGLES,
@@ -127,7 +128,7 @@ function ToggleRowItem({
 export function IntegrationsPane({ data, sub: wanted }: PaneProps) {
   const { gmail, meta, stripe, square, connections } = data.integrations;
 
-  const [sub, setSub] = useState<SubTabKey>(wanted ?? DEFAULT_SUBTAB);
+  const [sub, setSub] = useState<SubTabKey>(isVisibleSubTab(wanted) ? (wanted as SubTabKey) : DEFAULT_SUBTAB);
   // The page can steer the subtab (Payments → Manage, or ?sub= after OAuth):
   // derive from the prop when it changes, without an effect.
   const [seenWanted, setSeenWanted] = useState(wanted);
