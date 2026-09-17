@@ -49,5 +49,9 @@ export default async function DashboardPage() {
     throw err;
   }
 
+  // The Lead Center nag is NOT mounted here: both Overview editions draw their
+  // own, in their own design system, from data.leadProfile (see
+  // dashboard-content.tsx and mobile-v2). What it takes to RAISE it is fixed in
+  // ./dashboard-data.ts instead, so one rule feeds both.
   return <DashboardContent data={data} />;
 }

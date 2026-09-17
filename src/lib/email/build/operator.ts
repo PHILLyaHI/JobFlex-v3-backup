@@ -165,6 +165,49 @@ export function buildLeadOffer(i: LeadOfferInput): EmailDoc {
   };
 }
 
+export interface LeadOfferReminderInput {
+  trade: string;
+  where: string;
+  /** When the reservation runs out — the countdown is measured to this. */
+  expiresAt: Date;
+  href: string;
+  ref?: string;
+}
+
+/**
+ * "Two hours left on that lead."
+ *
+ * Until 2026-09-17 an offer ran its whole 24 hours in silence and then simply
+ * expired: the shop was told once, at minute zero, and the next thing that
+ * happened was the lead going to somebody else. A shop that read the first mail
+ * on a roof had no second prompt before losing the job. This is that prompt,
+ * and it is the ONLY one — a third mail would be nagging.
+ *
+ * Platform lockup, like the offer it follows up.
+ */
+export function buildLeadOfferReminder(i: LeadOfferReminderInput): EmailDoc {
+  const msLeft = i.expiresAt.getTime() - Date.now();
+  const hoursLeft = Math.max(0, Math.round(msLeft / 3_600_000));
+  const box: BoxRow[] = [
+    { type: "field", label: "Trade", value: i.trade },
+    { type: "field", label: "Where", value: i.where },
+    { type: "anchor", label: "Time left", value: countdown(new Date(), hoursLeft) },
+    { type: "cond", label: "After that", chip: "offered to the next shop", tone: "bad" },
+  ];
+  return {
+    subject: `Still yours for ${hoursLeft === 1 ? "an hour" : `${hoursLeft} hours` } — ${i.trade} in ${i.where}`,
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Lead offer · reminder" },
+    headline: `Your ${i.trade} lead is about to be passed on`,
+    box,
+    after: [
+      "You were sent this lead yesterday and it is still unanswered. Accept it and the homeowner's details are yours; pass and it goes straight to the next shop — either answer is better for them than the clock running out.",
+    ],
+    cta: { label: "Accept this lead", href: i.href },
+    footer: { name: "JobFlex", ref: i.ref },
+  };
+}
+
 export interface SupportTicketInput {
   subject: string;
   body: string;

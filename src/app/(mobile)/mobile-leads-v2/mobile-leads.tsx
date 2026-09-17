@@ -79,11 +79,12 @@ import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { useAnchoredMenu } from "@/components/v3/mobile-shell/use-anchored-menu";
 import { lockScroll } from "@/lib/scrollLock";
 import { claimLead, deleteLead, importLeads, updateLeadStatus } from "@/actions/leads";
+import { LeadProfileNudge } from "@/components/dashboard/LeadProfileNudge";
 import { acceptLeadOffer, declineLeadOffer } from "@/actions/leadOffers";
 // The classic import bench's CSV parser, shared with the desktop sheet rather
 // than re-written: same quote handling, same header sniffing, same column
 // guesses, so a file that stages five rows there stages the same five here.
-import { parseCsvRows } from "@/components/v3/leads-blueprint/leads-data";
+import { parseCsvRows, ownLeads } from "@/components/v3/leads-blueprint/leads-data";
 import { loadMobileLeads } from "./leads-source";
 import {
   LEAD_STATUSES,
@@ -480,7 +481,12 @@ export function MobileLeads() {
      dropdown's per-status counts are taken from it, so each cell answers "how
      many would I get if I picked this" under the search already in play — a
      count taken from the whole dataset would lie the moment anything is typed. */
-  const pool = useMemo(() => data.filter((l) => matchesQuery(l, query)), [data, query]);
+  // The shop's own book — the platform hand-offs it has not answered yet live
+  // in Incoming and are counted there, not here. Shared with the desk sheet
+  // (leads-blueprint/leads-data → ownLeads), which is the whole point: the two
+  // editions used to disagree about how many leads this shop had.
+  const own = useMemo(() => ownLeads(data), [data]);
+  const pool = useMemo(() => own.filter((l) => matchesQuery(l, query)), [own, query]);
   const visible = useMemo(
     () => pool.filter((l) => status === "ALL" || l.status === status),
     [pool, status],
@@ -490,15 +496,15 @@ export function MobileLeads() {
     [pool],
   );
 
-  const inPlay = useMemo(() => data.filter(isInPlay), [data]);
+  const inPlay = useMemo(() => own.filter(isInPlay), [own]);
   const inbox = useMemo(() => data.filter(isIncoming), [data]);
-  const won = useMemo(() => data.filter((l) => l.status === "WON").length, [data]);
-  const lost = useMemo(() => data.filter((l) => l.status === "LOST").length, [data]);
-  const unassigned = useMemo(() => data.filter((l) => !l.assignee).length, [data]);
+  const won = useMemo(() => own.filter((l) => l.status === "WON").length, [own]);
+  const lost = useMemo(() => own.filter((l) => l.status === "LOST").length, [own]);
+  const unassigned = useMemo(() => own.filter((l) => !l.assignee).length, [own]);
   const winRate = won + lost === 0 ? 0 : Math.round((won / (won + lost)) * 100);
 
   const counts: Record<TabKey, number> = {
-    all: data.length,
+    all: own.length,
     pipeline: inPlay.length,
     incoming: inbox.length + offers.length,
   };
@@ -870,6 +876,12 @@ export function MobileLeads() {
               </button>
             </div>
           </div>
+
+          {/* Why the Incoming tab is empty, when it is empty for a reason the
+              shop can fix. Self-fetching, so it costs this page no wiring; it
+              renders nothing for a shop that is already routable, and nothing
+              for a week once dismissed. */}
+          <LeadProfileNudge className={styles.leadGap} />
 
           {/* The read has to land before anything below can be true, so the
               masthead, the tabs and the ledger wait on it rather than flashing

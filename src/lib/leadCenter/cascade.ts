@@ -19,6 +19,42 @@ import { notifyLeadOfferCreated } from "@/lib/notify";
 export const OFFER_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_ATTEMPTS = 3;
 const STUCK_MATCHING_MS = 10 * 60 * 1000;
+/** How long before an offer lapses the shop gets its one reminder. */
+export const OFFER_REMINDER_MS = 2 * 60 * 60 * 1000;
+
+/** Marker that an offer's reminder has gone, so a sweep every 15 minutes does
+ *  not send twelve of them across the last two hours. `SyncState` is the app's
+ *  key→string store (the same one the routing mode and the lead gate use), and
+ *  the marker is deleted when the offer resolves, so nothing accumulates. */
+const remindedKey = (offerId: string) => `offerReminded:${offerId}`;
+
+/**
+ * Park a lead in the manual queue, with the honest reason and — when the
+ * automatic pool is what ran out — a word to the homeowner.
+ *
+ * Both halves are fixes from the 2026-09-17 run. The reason was "EXHAUSTED"
+ * whenever ANY offer had been made, so a lead offered once and then out of
+ * candidates was filed under "three shops passed"; and nothing at all was sent
+ * to the homeowner, who had been promised a contractor within 24 hours and was
+ * never told the search had moved to a human.
+ */
+async function parkInManualQueue(
+  platformLeadId: string,
+  reason: string,
+  opts: { tellHomeowner: boolean },
+): Promise<void> {
+  await db.platformLead.update({
+    where: { id: platformLeadId },
+    data: { status: "MANUAL_QUEUE", queueReason: reason },
+  });
+  if (!opts.tellHomeowner) return;
+  try {
+    const { notifyHomeownerManualQueue } = await import("@/lib/notify");
+    await notifyHomeownerManualQueue(platformLeadId);
+  } catch (err) {
+    console.warn("[lead-center] manual-queue notify failed:", err);
+  }
+}
 
 export async function startCascade(platformLeadId: string): Promise<void> {
   const pl = await db.platformLead.findUnique({ where: { id: platformLeadId } });
@@ -45,10 +81,10 @@ export async function startCascade(platformLeadId: string): Promise<void> {
     data: { rankingJson: JSON.stringify(ranking) },
   });
   if (!ranking.length) {
-    await db.platformLead.update({
-      where: { id: platformLeadId },
-      data: { status: "MANUAL_QUEUE", queueReason: "NO_CANDIDATES" },
-    });
+    // Nobody qualified at all. The homeowner is NOT mailed here: this fires
+    // seconds after "we got your request", and two messages in a row saying
+    // opposite things is worse than the status page they already have a link to.
+    await parkInManualQueue(platformLeadId, "NO_CANDIDATES", { tellHomeowner: false });
     return;
   }
   await offerToNext(platformLeadId);
@@ -62,10 +98,8 @@ export async function advanceCascade(platformLeadId: string): Promise<void> {
   if (pl.status === "MATCHED" || pl.status === "MANUAL_QUEUE") return;
 
   if (pl.attemptCount >= MAX_ATTEMPTS) {
-    await db.platformLead.update({
-      where: { id: platformLeadId },
-      data: { status: "MANUAL_QUEUE", queueReason: "EXHAUSTED" },
-    });
+    // The real EXHAUSTED: three shops were asked and none took it.
+    await parkInManualQueue(platformLeadId, "EXHAUSTED", { tellHomeowner: true });
     return;
   }
   await offerToNext(platformLeadId);
@@ -137,13 +171,26 @@ async function offerToNext(platformLeadId: string): Promise<void> {
     return;
   }
 
-  await db.platformLead.update({
-    where: { id: platformLeadId },
-    data: {
-      status: "MANUAL_QUEUE",
-      queueReason: pl.offers.length > 0 ? "EXHAUSTED" : "NO_CANDIDATES",
-    },
-  });
+  // Nobody left on the list. Three reasons reach this line and they are NOT
+  // the same fact, so they no longer share one word:
+  //
+  //   NO_CANDIDATES      nobody ever qualified — the ranking was empty.
+  //   CANDIDATES_SPENT   some shops were asked; the rest of the ranking is
+  //                      gone (opted out, lost its geocode, dropped the trade)
+  //                      before the three attempts were used.
+  //   EXHAUSTED          all three attempts were spent — set in advanceCascade.
+  //
+  // Before this, anything with one prior offer was filed as EXHAUSTED, and the
+  // admin queue printed "3 offers, no takers" over a lead that had been offered
+  // exactly once. The admin's next move differs for each: find a shop, fix a
+  // shop's profile, or place it by hand.
+  const offered = pl.offers.length;
+  const reason =
+    offered === 0 ? "NO_CANDIDATES" : `CANDIDATES_SPENT: ${offered} offered, none left to ask`;
+  // A homeowner is told only when shops WERE asked and the automatic pool ran
+  // dry on them. NO_CANDIDATES at submission time is a different message and
+  // would arrive seconds after "we got your request".
+  await parkInManualQueue(platformLeadId, reason, { tellHomeowner: offered > 0 });
 }
 
 // Cron sweep: expire due offers and cascade each one, then re-drive leads
@@ -151,6 +198,7 @@ async function offerToNext(platformLeadId: string): Promise<void> {
 export async function runDueOfferSweep(): Promise<{
   expired: number;
   advanced: number;
+  reminded: number;
   redriven: number;
 }> {
   const now = new Date();
@@ -170,11 +218,48 @@ export async function runDueOfferSweep(): Promise<{
     });
     if (res.count === 0) continue;
     expired++;
+    // The reminder marker dies with the offer it was about.
+    await db.syncState.delete({ where: { key: remindedKey(o.id) } }).catch(() => {});
     try {
       await advanceCascade(o.platformLeadId);
       advanced++;
     } catch (err) {
       console.warn("[lead-center] cascade advance failed:", err);
+    }
+  }
+
+  // THE ONE REMINDER, two hours out. An offer used to run its full 24 hours
+  // with a single mail at minute zero and then simply vanish to the next shop.
+  //
+  // The window is "inside the last two hours and not yet reminded" rather than
+  // a narrow slice of the clock: a missed cron run must not cost the shop its
+  // warning. The marker is what keeps a 15-minute sweep from sending eight of
+  // them.
+  let reminded = 0;
+  const expiring = await db.leadOffer.findMany({
+    where: {
+      status: "OFFERED",
+      expiresAt: { gt: now, lte: new Date(now.getTime() + OFFER_REMINDER_MS) },
+    },
+    select: { id: true },
+    take: 100,
+  });
+  for (const o of expiring) {
+    // Claim the marker BEFORE sending: two overlapping sweeps then produce one
+    // reminder, not two, because the second `create` loses on the unique key.
+    try {
+      await db.syncState.create({
+        data: { key: remindedKey(o.id), cursor: now.toISOString() },
+      });
+    } catch {
+      continue; // already reminded (or the store is unavailable — skip quietly)
+    }
+    try {
+      const { notifyLeadOfferExpiring } = await import("@/lib/notify");
+      await notifyLeadOfferExpiring(o.id);
+      reminded++;
+    } catch (err) {
+      console.warn("[lead-center] expiry reminder failed:", err);
     }
   }
 
@@ -206,5 +291,5 @@ export async function runDueOfferSweep(): Promise<{
     );
   }
 
-  return { expired, advanced, redriven: stuck.length + orphaned.length };
+  return { expired, advanced, reminded, redriven: stuck.length + orphaned.length };
 }

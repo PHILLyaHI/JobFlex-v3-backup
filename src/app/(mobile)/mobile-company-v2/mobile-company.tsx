@@ -340,6 +340,10 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
   const [lead, setLead] = useState(() => ({ addr: seed.org.address, phone: seed.org.phone }));
   const [trades, setTrades] = useState<string[]>(() => [...seed.org.tradeTypes]);
   const [leadsOn, setLeadsOn] = useState(seed.org.leadOffersEnabled);
+  /* The matcher's third condition. Held in state, not derived, because
+     updateLeadProfile answers with the geocode result and the badge has to
+     stop saying "Matching on" the moment the address stops resolving. */
+  const [geocoded, setGeocoded] = useState(seed.org.geocoded);
 
   /* ---- landing builder ---- */
   const [publicOn, setPublicOn] = useState(seed.org.publicProfileEnabled);
@@ -386,6 +390,30 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
   const saveBrand = useAutosave();
   const saveLead = useAutosave();
   const saveLanding = useAutosave();
+
+  /** Every Lead matching write goes through here so the badge is corrected
+   *  from the server's answer rather than guessed at on the client. */
+  const pushLead = useCallback(
+    (
+      patch: {
+        address?: string | null;
+        phone?: string | null;
+        tradeTypes?: string[];
+        leadOffersEnabled?: boolean;
+      },
+      delay?: number,
+    ) =>
+      saveLead.run(async () => {
+        const res = await updateLeadProfile(patch);
+        setGeocoded(res.geocoded);
+        return res;
+      }, delay),
+    // `saveLead.run` is the stable half of the hook (useCallback with no deps);
+    // the object around it is rebuilt every render, so depending on the whole
+    // thing would rebuild this callback on every render for no reason.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [saveLead.run],
+  );
 
   /* ---------- viewport height ------------------------------------------
      Mandatory rule: viewport heights only via var(--app-h). A phone's URL bar
@@ -555,8 +583,17 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
   const safePage = Math.min(actPage, pages);
   const slice = visible.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  const leadReady = trades.length > 0 && leadsOn;
-  const leadLabel = leadReady ? "Matching on" : trades.length === 0 ? "Pick a trade" : "Paused";
+  // The same three conditions the matcher filters on (lib/leadCenter/matching)
+  // and the same four labels the desk badge shows — the geocode was missing
+  // from both until 2026-09-17, so a shop with no pin was told it was matching.
+  const leadReady = trades.length > 0 && leadsOn && geocoded;
+  const leadLabel = leadReady
+    ? "Matching on"
+    : !leadsOn
+      ? "Paused"
+      : trades.length === 0
+        ? "Pick a trade"
+        : "Matching off";
 
   const previewSub = identity.site || identity.phone || identity.email || "—";
   const previewName = identity.name || "Your company";
@@ -623,7 +660,7 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
   const toggleTrade = (t: string) => {
     const next = trades.includes(t) ? trades.filter((x) => x !== t) : [...trades, t];
     setTrades(next);
-    saveLead.run(() => updateLeadProfile({ tradeTypes: next }), 0);
+    pushLead({ tradeTypes: next }, 0);
   };
 
   const openWorkers = () => {
@@ -964,6 +1001,22 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
                   </span>
                 </div>
                 <div className={styles.cardBody}>
+                  {/* No pin, trades picked, toggle on: say what is missing and
+                      put the caret in the field that fixes it. A badge that
+                      only reads "Matching off" leaves the owner hunting. */}
+                  {leadsOn && trades.length > 0 && !geocoded ? (
+                    <button
+                      className={styles.leadHint}
+                      type="button"
+                      onClick={() => {
+                        const el = document.getElementById("mcoLeadAddr");
+                        el?.scrollIntoView({ block: "center", behavior: "smooth" });
+                        (el as HTMLInputElement | null)?.focus();
+                      }}
+                    >
+                      Homeowner leads can&apos;t reach you yet — add your business address
+                    </button>
+                  ) : null}
                   <div className={styles.fld}>
                     <label className={styles.fldLbl} htmlFor="mcoLeadAddr">
                       Business address
@@ -981,14 +1034,12 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
                         // Same column as the identity card's address — mirror it.
                         setIdentity((i) => ({ ...i, addr }));
                         // Desktop's saveLead() sends all four fields together.
-                        saveLead.run(() =>
-                          updateLeadProfile({
-                            address: orNull(addr.trim()),
-                            phone: orNull(lead.phone.trim()),
-                            tradeTypes: trades,
-                            leadOffersEnabled: leadsOn,
-                          }),
-                        );
+                        pushLead({
+                          address: orNull(addr.trim()),
+                          phone: orNull(lead.phone.trim()),
+                          tradeTypes: trades,
+                          leadOffersEnabled: leadsOn,
+                        });
                       }}
                     />
                   </div>
@@ -1007,14 +1058,12 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
                         setLead((l) => ({ ...l, phone }));
                         // Same column as the identity card's phone — mirror it.
                         setIdentity((i) => ({ ...i, phone }));
-                        saveLead.run(() =>
-                          updateLeadProfile({
-                            address: orNull(lead.addr.trim()),
-                            phone: orNull(phone.trim()),
-                            tradeTypes: trades,
-                            leadOffersEnabled: leadsOn,
-                          }),
-                        );
+                        pushLead({
+                          address: orNull(lead.addr.trim()),
+                          phone: orNull(phone.trim()),
+                          tradeTypes: trades,
+                          leadOffersEnabled: leadsOn,
+                        });
                       }}
                     />
                   </div>
@@ -1054,7 +1103,7 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
                     setLeadsOn(next);
                     // A toggle is a decision — single-field write, no debounce,
                     // exactly like the desktop's #leadToggle.
-                    saveLead.run(() => updateLeadProfile({ leadOffersEnabled: next }), 0);
+                    pushLead({ leadOffersEnabled: next }, 0);
                   }}
                 >
                   <span className={styles.tgTxt}>

@@ -29,6 +29,7 @@ import { CustomGateSwap } from "@/components/v3/upgrade-gate/custom-gate-swap";
 import { ChunkRecoveryBoundary } from "@/components/v3/shared/chunk-recovery-boundary";
 import { SupportWidget } from "@/components/v3/support-widget/support-widget";
 import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
+import { LeadOfferPopup } from "@/components/leads/LeadOfferPopup";
 import type { SeenKey } from "@/lib/badgeCounts";
 
 /** CLAUDE.md's handheld target: ≤768px. Matches the mobile modules' own scale. */
@@ -344,6 +345,22 @@ export function ResponsiveDashboardShell({
         {NO_MOBILE_NAV.has(pathname ?? "") && (
           <SupportWidget signedIn={Boolean(identity?.name)} />
         )}
+        {/* THE LEAD POP-UP, ON A PHONE.
+            This branch renders the mapped handheld surface INSTEAD of
+            `children`, and the layout passes <LeadOfferPopup /> inside
+            `children` — so on every handheld route of the dashboard, the
+            "a lead is reserved for your shop" interrupt was dropped on the
+            floor. Found in the 2026-09-17 Lead Center run: the offer card
+            showed in the Leads inbox at 390px, the pop-up appeared at 1440px,
+            and nothing at all announced a routed lead to someone holding a
+            phone — which is most of this fleet's audience.
+            Mounted here rather than in the layout because this is the one
+            branch that discards children; the page-owned branches below keep
+            them and already carry it. Same OWNER gate the layout applies (see
+            its canHandleLeads note), read off the published identity. Its own
+            stylesheet already had the ≤768px rules — it was only ever missing
+            a mount. */}
+        {identity?.role === "OWNER" && <LeadOfferPopup />}
       </NavRoleProvider>
     );
   }

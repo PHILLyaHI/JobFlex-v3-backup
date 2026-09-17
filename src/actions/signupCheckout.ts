@@ -490,6 +490,26 @@ export async function completePendingSignup(
       .catch((err) => console.warn("[signup] subscription record failed:", err));
   }
 
+  // LEAD CENTER ELIGIBILITY. The matcher hard-filters on a geocoded address
+  // (lib/leadCenter/matching), so the pin has to be placed by the action that
+  // CREATES the shop. This path never did it — only the legacy free-signup
+  // action geocoded — so every shop created through checkout was born
+  // invisible to routing while its own Company page read "Matching on".
+  //
+  // Same routine the Company profile save runs (lib/leadCenter/eligibility),
+  // with one difference: a shop that cannot be placed is created with lead
+  // offers OFF and the reason recorded, rather than left switched on and
+  // silently unreachable. Best-effort — the account is already committed.
+  try {
+    const { geocodeOrgAddress } = await import("@/lib/leadCenter/eligibility");
+    const geo = await geocodeOrgAddress(orgId, rec.companyAddress, { gateOnFailure: true });
+    if (!geo.ok) {
+      console.warn(`[signup] org ${orgId} not routable at creation: ${geo.reason}`);
+    }
+  } catch (err) {
+    console.warn("[signup] geocode step failed:", err);
+  }
+
   // The custom plan's page selection belongs to the workspace it was bought
   // for, so it is written the moment that workspace exists.
   // Paid selection wins; the intent's copy is only used on the (non-prod) skip

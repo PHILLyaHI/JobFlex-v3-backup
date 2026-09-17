@@ -1124,3 +1124,22 @@
    strip it stands in — otherwise the last row of every list ends
    underneath it with no way to scroll clear. */
 .scroll { padding-bottom: 60px; }
+
+/* The Matching-off explainer under the Lead matching head. A full-width
+   44px-tall target because it IS the way to the field that fixes it — the
+   badge above is a status, not a control. */
+.leadHint {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-bottom: 14px;
+  padding: 11px 13px;
+  border: 1.5px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 1.45;
+  font-weight: 600;
+  text-align: left;
+}

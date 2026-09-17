@@ -12,6 +12,7 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
 import { sendOrgEmail } from "@/lib/email/orgSend";
 import { sendSMS, isTwilioEnabled } from "@/lib/sdk/twilio";
+import { toE164 } from "@/lib/phone";
 import { renderTemplate, type TemplateVars } from "@/lib/email/render";
 import { renderEmail } from "@/lib/email/renderEmail";
 import {
@@ -24,6 +25,7 @@ import {
 import {
   buildCrewResponse,
   buildLeadOffer,
+  buildLeadOfferReminder,
   buildNewLead,
   buildOwnerAccepted,
   buildOwnerPaymentReceived,
@@ -319,14 +321,13 @@ export async function notifyLeadCreated(leadId: string) {
     );
   }
 
-  // Optional SMS if owner phone is set
-  if (lead.organization.phone && isTwilioEnabled()) {
-    await sendSMS(
-      lead.organization.phone,
-      `New JobFlex lead: ${lead.name} — ${lead.projectType ?? "inquiry"}`,
-    ).catch(() => null);
-  }
-  return { skipped: false as const };
+  // Optional SMS if org phone is set. Normalised and reported — see sendLeadSms.
+  const sms = await sendLeadSms(
+    lead.organization.phone,
+    `New JobFlex lead: ${lead.name} — ${lead.projectType ?? "inquiry"}`,
+    { what: "lead-created", orgId: lead.organizationId },
+  );
+  return { skipped: false as const, sms };
 }
 
 /**
@@ -438,7 +439,7 @@ export async function notifyAssignmentCreated(assignmentId: string) {
   if (a.worker.phone && isTwilioEnabled()) {
     await sendSMS(
       a.worker.phone,
-      `JobFlex: you were assigned to "${a.job.title}". Open your portal to confirm.`,
+    `JobFlex: you were assigned to "${a.job.title}". Open your portal to confirm.`,
     ).catch(() => null);
   }
 
@@ -515,6 +516,72 @@ export async function notifyAssignmentResponded(
 // ── Lead Center ──────────────────────────────────────────────────────────────
 // Platform-branded (no org exists on the lead yet, except once matched).
 
+/**
+ * One SMS on the Lead Center path — normalised, and never silent.
+ *
+ * TWO BUGS THIS REPLACES, both found in the 2026-09-17 test run:
+ *
+ *  1. The number went to `sendSMS` exactly as the shop or the homeowner typed
+ *     it. `sendSMS` accepts E.164 only and THROWS on anything else, so an
+ *     ordinary "(206) 555-0143" — which is what every one of these fields
+ *     actually holds — could never send. The project's own `toE164`
+ *     (lib/phone) was already doing this job for invoices, payment reminders
+ *     and change orders; the Lead Center path just never called it.
+ *  2. Every call site ended in `.catch(() => null)`. So the throw above, a dead
+ *     Twilio account, a suspended number — all of it landed in the same silence.
+ *     With the provider switched on in production, nothing anywhere would have
+ *     said that no lead SMS had ever been delivered.
+ *
+ * Now: the number is normalised, every outcome is logged with the org or lead
+ * it belongs to, and the result is returned for the caller to report. Still
+ * best-effort — an SMS must never fail the routing it accompanies — but
+ * best-effort out loud.
+ *
+ * NEVER logs the number or the body: these carry homeowner contact details, and
+ * lead SMS bodies elsewhere in the app carry live links (see lib/sdk/twilio).
+ */
+type SmsOutcome = "sent" | "disabled" | "invalid-number" | "failed";
+
+async function sendLeadSms(
+  raw: string | null | undefined,
+  body: string,
+  ctx: { what: string; orgId?: string | null; platformLeadId?: string | null },
+): Promise<SmsOutcome> {
+  const tag = [
+    ctx.what,
+    ctx.orgId ? `org=${ctx.orgId}` : null,
+    ctx.platformLeadId ? `lead=${ctx.platformLeadId}` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (!raw) return "invalid-number";
+  if (!isTwilioEnabled()) {
+    // Not a failure: the provider is off by configuration, which is the
+    // documented local/dev state. Said once, quietly, so a missing text during
+    // testing has an explanation in the log.
+    console.info(`[notify] ${tag}: SMS skipped — Twilio is not configured`);
+    return "disabled";
+  }
+
+  const to = toE164(raw);
+  if (!to) {
+    console.warn(
+      `[notify] ${tag}: SMS skipped — the phone on file is not a usable US/CA number ` +
+        `(${raw.replace(/\d/g, "•")}); email was still sent`,
+    );
+    return "invalid-number";
+  }
+
+  try {
+    await sendSMS(to, body);
+    return "sent";
+  } catch (err) {
+    console.error(`[notify] ${tag}: SMS failed`, err);
+    return "failed";
+  }
+}
+
 // Instant confirmation to the homeowner on submission. Email always; SMS when
 // they left a phone number.
 export async function notifyHomeownerRequestReceived(platformLeadId: string) {
@@ -530,13 +597,12 @@ export async function notifyHomeownerRequestReceived(platformLeadId: string) {
   );
   await sendEmail({ to: pl.email, subject, html });
 
-  if (pl.phone && isTwilioEnabled()) {
-    await sendSMS(
-      pl.phone,
-      `JobFlex: we got your ${pl.projectType ?? "project"} request. We're matching you with a local pro — you'll hear from one within 24 hours.`,
-    ).catch(() => null);
-  }
-  return { skipped: false as const, enabled: isEmailEnabled() };
+  const sms = await sendLeadSms(
+    pl.phone,
+    `JobFlex: we got your ${pl.projectType ?? "project"} request. We're matching you with a local pro — you'll hear from one within 24 hours.`,
+    { what: "homeowner-received", platformLeadId: pl.id },
+  );
+  return { skipped: false as const, enabled: isEmailEnabled(), sms };
 }
 
 // Pings the offered shop: email to its OWNER (see ownerEmailFor) + optional SMS
@@ -569,13 +635,57 @@ export async function notifyLeadOfferCreated(offerId: string) {
     { roles: ["OWNER"] },
   );
 
-  if (offer.organization.phone && isTwilioEnabled()) {
-    await sendSMS(
-      offer.organization.phone,
-      `JobFlex: new ${pl.detectedTrade ?? "project"} lead in ${where}, reserved for you for 24h. Accept it in your Leads inbox.`,
-    ).catch(() => null);
-  }
-  return { skipped: false as const, enabled: isEmailEnabled() };
+  const sms = await sendLeadSms(
+    offer.organization.phone,
+    `JobFlex: new ${pl.detectedTrade ?? "project"} lead in ${where}, reserved for you for 24h. Accept it in your Leads inbox.`,
+    { what: "offer-created", orgId: offer.organizationId, platformLeadId: pl.id },
+  );
+  return { skipped: false as const, enabled: isEmailEnabled(), sms };
+}
+
+/**
+ * The one reminder before an offer lapses — see buildLeadOfferReminder.
+ *
+ * Same recipients and same channels as the offer itself, so a shop that gets
+ * the first mail gets this one. Called from the cron sweep, which is the only
+ * thing that knows the clock is nearly out (lib/leadCenter/cascade).
+ */
+export async function notifyLeadOfferExpiring(offerId: string) {
+  const offer = await db.leadOffer.findUnique({
+    where: { id: offerId },
+    include: {
+      platformLead: true,
+      organization: { select: { name: true, billingEmail: true, phone: true } },
+    },
+  });
+  // Won, passed or already lapsed between the sweep's read and this call —
+  // a reminder about a lead the shop no longer holds would be worse than none.
+  if (!offer || offer.status !== "OFFERED") return { skipped: true as const };
+
+  const pl = offer.platformLead;
+  const appUrl = await appBaseUrl();
+  const where = [pl.city, pl.state].filter(Boolean).join(", ") || pl.zip || "your area";
+  const trade = pl.detectedTrade ?? pl.projectType ?? "project";
+
+  await sendToMembersByPref(
+    offer.organizationId,
+    "lead-assigned",
+    buildLeadOfferReminder({
+      trade,
+      where,
+      expiresAt: offer.expiresAt,
+      href: `${appUrl}/dashboard/leads`,
+    }),
+    { roles: ["OWNER"] },
+  );
+
+  const hoursLeft = Math.max(1, Math.round((offer.expiresAt.getTime() - Date.now()) / 3_600_000));
+  const sms = await sendLeadSms(
+    offer.organization.phone,
+    `JobFlex: your ${trade} lead in ${where} is still unanswered — about ${hoursLeft}h left before it goes to the next shop.`,
+    { what: "offer-expiring", orgId: offer.organizationId, platformLeadId: pl.id },
+  );
+  return { skipped: false as const, enabled: isEmailEnabled(), sms };
 }
 
 // "You're matched" to the homeowner once a contractor accepts (or an admin
@@ -619,13 +729,12 @@ export async function notifyHomeownerMatched(platformLeadId: string) {
     replyTo: replyToFor({ gmailSettingsJson: org.gmailSettingsJson, billingEmail: org.billingEmail }),
   });
 
-  if (pl.phone && isTwilioEnabled()) {
-    await sendSMS(
-      pl.phone,
-      `JobFlex: you're matched! ${org.name} will contact you about your ${pl.detectedTrade ?? "project"}${org.phone ? ` — or call them at ${org.phone}` : ""}.`,
-    ).catch(() => null);
-  }
-  return { skipped: false as const, enabled: isEmailEnabled() };
+  const sms = await sendLeadSms(
+    pl.phone,
+    `JobFlex: you're matched! ${org.name} will contact you about your ${pl.detectedTrade ?? "project"}${org.phone ? ` — or call them at ${org.phone}` : ""}.`,
+    { what: "homeowner-matched", orgId: pl.matchedOrgId, platformLeadId: pl.id },
+  );
+  return { skipped: false as const, enabled: isEmailEnabled(), sms };
 }
 
 /** The homeowner's status page URL, or null for legacy rows with no token. */
@@ -684,13 +793,12 @@ export async function notifyHomeownerRerouting(platformLeadId: string) {
   );
   await sendEmail({ to: pl.email, subject, html });
 
-  if (pl.phone && isTwilioEnabled()) {
-    await sendSMS(
-      pl.phone,
-      `JobFlex: got it — we're matching your ${pl.detectedTrade ?? "project"} request with another local pro. You'll hear back within 24 hours.`,
-    ).catch(() => null);
-  }
-  return { skipped: false as const, enabled: isEmailEnabled() };
+  const sms = await sendLeadSms(
+    pl.phone,
+    `JobFlex: got it — we're matching your ${pl.detectedTrade ?? "project"} request with another local pro. You'll hear back within 24 hours.`,
+    { what: "homeowner-rerouting", platformLeadId: pl.id },
+  );
+  return { skipped: false as const, enabled: isEmailEnabled(), sms };
 }
 
 /**

@@ -112,8 +112,24 @@ export async function acceptLeadOffer(offerId: string): Promise<{ ok: true; lead
 
     await tx.platformLead.update({
       where: { id: pl.id },
-      data: { status: "MATCHED", matchedOrgId: ctx.organizationId, matchedLeadId: lead.id, matchedAt: now },
+      data: {
+        status: "MATCHED",
+        matchedOrgId: ctx.organizationId,
+        matchedLeadId: lead.id,
+        matchedAt: now,
+        // The queue note described a state this lead has just left (see the
+        // same clear in lib/leadCenter/route.ts).
+        queueReason: null,
+      },
     });
+
+    // The raw submission now points at the lead it became — see route.ts.
+    if (pl.homeownerRequestId) {
+      await tx.homeownerRequest.updateMany({
+        where: { id: pl.homeownerRequestId },
+        data: { convertedLeadId: lead.id, organizationId: ctx.organizationId },
+      });
+    }
 
     // Defensive: normally there is exactly one open offer per platform lead.
     await tx.leadOffer.updateMany({

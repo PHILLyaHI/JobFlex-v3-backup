@@ -1300,3 +1300,8 @@
    strip it stands in — otherwise the last row of every list ends
    underneath it with no way to scroll clear. */
 .scroll { padding-bottom: 60px; }
+
+/* Spacing for the Lead Center profile nudge (components/dashboard/
+   LeadProfileNudge). The banner carries its own frame; this only gives it the
+   gap the page head and the tab rail expect between blocks. */
+.leadGap { margin-bottom: 16px; }

@@ -16,6 +16,9 @@ export function HomeownerForm() {
   const [step, setStep] = React.useState(0);
   const [submitting, setSubmitting] = React.useState(false);
   const [done, setDone] = React.useState(false);
+  /** The capability-token status page for the request just sent, or null when
+   *  the action answered without one (a legacy row shape). */
+  const [statusPath, setStatusPath] = React.useState<string | null>(null);
   const [values, setValues] = React.useState({
     name: "",
     email: "",
@@ -40,7 +43,12 @@ export function HomeownerForm() {
   async function onSubmit() {
     setSubmitting(true);
     try {
-      await submitHomeownerRequest({ ...values, referralCode: referralCode || undefined });
+      const res = await submitHomeownerRequest({ ...values, referralCode: referralCode || undefined });
+      // The status page the submission just minted a token for. The wizard at
+      // /homeowner-portal has always linked it from its Done screen; this form
+      // did not, so the only way back to a request sent here was the
+      // confirmation email — and if that never arrived, there was none at all.
+      setStatusPath(res?.statusPath ?? null);
       setDone(true);
     } catch (e) {
       console.error(e);
@@ -59,6 +67,20 @@ export function HomeownerForm() {
         <p className="mt-2 text-[14px] text-[color:var(--ink-muted)]">
           We&apos;ve got your request and a contractor will reach out within 24 hours.
         </p>
+        {statusPath ? (
+          <p className="mt-6 text-[14px]">
+            {/* The same link the confirmation email carries, and the same one
+                the portal wizard’s Done screen shows. A plain anchor, not next/link:
+                the href is a runtime token path and `typedRoutes` has no literal
+                to check it against. */}
+            <a
+              href={statusPath}
+              className="font-medium text-[color:var(--accent-ink)] underline underline-offset-[3px]"
+            >
+              Track your request →
+            </a>
+          </p>
+        ) : null}
       </div>
     );
   }

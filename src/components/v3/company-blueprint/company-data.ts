@@ -37,6 +37,11 @@ export type CompanyOrgState = {
   /** What the shop typed under the "Other" chip, or "" when it is not picked. */
   otherTrade: string;
   leadOffersEnabled: boolean;
+  /** Whether the org has a geocoded pin. The matcher hard-filters on it
+   *  (lib/leadCenter/matching), so the Lead matching badge is wrong without
+   *  it: until 2026-09-17 the badge read "Matching on" off trades + toggle
+   *  alone, and said so to every shop the router could not see. */
+  geocoded: boolean;
   publicProfileEnabled: boolean;
   landingHeroTitle: string;
   landingHeroSubtitle: string;

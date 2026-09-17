@@ -32,6 +32,7 @@ import {
   SRC,
   PAGE_SIZE,
   isPlatformIncoming,
+  ownLeads as ownLeadsOf,
   parseCsvRows,
   type Lead,
   type Offer,
@@ -382,11 +383,12 @@ export function initLeadsContent(
   /** Everything except the platform's untriaged hand-offs — those belong to
    *  the Incoming tab until the shop accepts or passes on them. Listing them
    *  in "All leads" too showed a lead nobody had agreed to take as though it
-   *  were already the shop's. */
+   *  were already the shop's.
+   *
+   *  The rule itself lives in leads-data (`ownLeadsOf`) because the handheld
+   *  build counts from it too — see the note there. */
   function ownLeads() {
-    return leadsData.filter(function (l) {
-      return !isPlatformIncoming(l);
-    });
+    return ownLeadsOf(leadsData);
   }
   function filteredExceptStatus() {
     const q = lstate.query.trim().toLowerCase();

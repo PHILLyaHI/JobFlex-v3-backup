@@ -272,7 +272,14 @@ function destinationNote(l: PlatformLeadDTO): string {
     // Manual mode parks every request here on purpose — saying "3 offers, no
     // takers" about a lead nobody was offered is the page lying to itself.
     if (l.queueReason === "MANUAL_MODE") return "waiting for you";
-    return "3 offers, no takers";
+    if (l.queueReason?.startsWith("TRADE_UNDETERMINED")) return "trade unclear — needs a person";
+    // The count is the ROW'S, not a constant. This line read "3 offers, no
+    // takers" for every queued lead, including one that had been offered
+    // exactly once and then run out of shops — the admin was being told two
+    // shops had passed who were never asked (2026-09-17).
+    const offers = Math.max(0, l.attemptCount);
+    if (offers === 0) return "nobody was offered this";
+    return `${offers} offer${offers === 1 ? "" : "s"}, no takers`;
   }
   return match;
 }
@@ -1301,6 +1308,18 @@ function whereItStands(l: PlatformLeadDTO): string {
       }
       if (l.queueReason === "MANUAL_MODE") {
         return "Held for you: routing is set to manual, so nothing was offered.";
+      }
+      if (l.queueReason?.startsWith("TRADE_UNDETERMINED")) {
+        return "The trade could not be read from the description — route it by hand.";
+      }
+      // Two different endings, told apart rather than blurred into one:
+      // the pool was used up, or the pool ran dry early. The dialog used to say
+      // "Three contractors passed" over an offer list showing one line.
+      if (l.queueReason?.startsWith("CANDIDATES_SPENT")) {
+        const n = Math.max(0, l.attemptCount);
+        return `${n === 1 ? "The one shop that qualified" : `All ${n} shops that qualified`} ${
+          n === 1 ? "did not take it" : "were asked and none took it"
+        }, and there are no others in range — route it by hand.`;
       }
       return "Three contractors passed or ran out of time — route it by hand.";
     default:

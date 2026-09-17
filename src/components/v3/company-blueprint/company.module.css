@@ -1430,6 +1430,10 @@
 .bp :global(.content .tgl.on)::after { transform: translateX(20px); background: var(--success-dark); }
 .bp :global(.content .lead-ok) { border-color: var(--success); color: var(--success-dark); background: var(--success-soft); }
 .bp :global(.content .lead-wait) { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
+/* The "add your address" way out of a Matching-off badge. Inherits the badge's
+   colour so it reads as one sentence, not a button bolted onto a chip. */
+.bp :global(.content .lead-fix) { font: inherit; color: inherit; background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.bp :global(.content .lead-fix:hover) { text-decoration-thickness: 2px; }
 
 /* team */
 .bp :global(.content .co-team) { text-align: center; padding: 44px 24px 46px; }

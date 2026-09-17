@@ -18,6 +18,7 @@ import { requireOrg, isSalesRole, NoOrgError, UnauthorizedError } from "@/lib/or
 import { db } from "@/lib/db";
 import { relative } from "@/lib/format";
 import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
+import { LeadProfileNudge } from "@/components/dashboard/LeadProfileNudge";
 import { LeadsContent } from "@/components/v3/leads-blueprint/leads-content";
 import type { Lead, Offer } from "@/components/v3/leads-blueprint/leads-data";
 
@@ -111,6 +112,8 @@ export default async function LeadsPage() {
           Desktop edition only — the handheld build is stamped by the
           responsive shell (HANDHELD_SEEN). */}
       <MarkNavSeen surface="leads" />
+      {/* Why the Incoming tab is empty, when it is empty for a fixable reason. */}
+      <LeadProfileNudge />
       <LeadsContent leads={leads} offers={offers} />
     </>
   );

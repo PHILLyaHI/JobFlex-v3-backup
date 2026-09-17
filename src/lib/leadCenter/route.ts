@@ -62,9 +62,24 @@ export async function routePlatformLeadToOrg(
         matchedOrgId: organizationId,
         matchedLeadId: lead.id,
         matchedAt: now,
+        // The queue note belongs to the time this lead was IN the queue. Left
+        // standing, a matched lead kept reading "EXHAUSTED" and the admin row
+        // showed a placed lead still explaining why nobody wanted it.
+        queueReason: null,
         ...(adminId ? { assignedByAdminId: adminId } : {}),
       },
     });
+
+    // Close the loop on the raw submission. `convertedLeadId` has been on
+    // HomeownerRequest since the Lead Center shipped and was never once
+    // written, so the immutable intake log could not be joined to the lead it
+    // became — the one question the column exists to answer.
+    if (pl.homeownerRequestId) {
+      await tx.homeownerRequest.updateMany({
+        where: { id: pl.homeownerRequestId },
+        data: { convertedLeadId: lead.id, organizationId },
+      });
+    }
     return lead.id;
   });
 

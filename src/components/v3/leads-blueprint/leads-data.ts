@@ -140,4 +140,20 @@ export function isPlatformIncoming(l: { source: string; status: string }): boole
   return l.source === 'LEAD_CENTER' && (l.status === 'NEW' || l.status === 'ROUTED');
 }
 
+/**
+ * The shop's OWN book: every lead except the platform hand-offs it has not
+ * answered yet. Those belong to the Incoming tab until they are accepted or
+ * passed on — counting them in the pipeline shows work nobody has agreed to
+ * take as though it were already the shop's.
+ *
+ * ONE function for both editions, on purpose. The desk sheet filtered them out
+ * and the handheld build did not, so the same shop, the same second, read
+ * "All leads 2" on a laptop and "All leads 3 · Pipeline 3" on a phone
+ * (2026-09-17). Counts that disagree across viewports are not a rounding
+ * difference — one of them is telling the owner they have a job they do not.
+ */
+export function ownLeads<T extends { source: string; status: string }>(rows: T[]): T[] {
+  return rows.filter((l) => !isPlatformIncoming(l));
+}
+
 export const PAGE_SIZE = 20;

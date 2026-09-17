@@ -378,11 +378,18 @@ export async function buildDashboardData(): Promise<DashboardData> {
       name: user.name || user.email || "Account",
       role: humanRole(role),
     },
-    // The Lead Center nag is shown only to a shop that has picked NO trades
-    // (owner, 2026-09-04) — a company/address gap alone no longer raises it.
-    // The other two flags still ride along so the sentence names everything
-    // that is missing once it does show.
-    leadProfile: needsTrades ? { needsCompany, needsAddress, needsTrades } : null,
+    // The Lead Center nag rises for the two gaps that actually stop a lead:
+    // no trades, or no geocoded pin. The pin was added back on 2026-09-17,
+    // after a test run found that the shop most in need of this sentence —
+    // one whose address never geocoded, which before the signup fix was every
+    // shop created through checkout — was the one shop it never reached. The
+    // 2026-09-04 rule it replaces (trades only) was written when a missing pin
+    // meant the owner had skipped a field; it now also means the geocode
+    // failed, which the owner cannot know any other way.
+    // `needsCompany` still only rides along in the sentence; it does not raise
+    // the banner on its own.
+    leadProfile:
+      needsTrades || needsAddress ? { needsCompany, needsAddress, needsTrades } : null,
     firstRun:
       firstRunOrg && estimatesSoFar === 0
         ? firstEstimateTarget(parseTradeTypes(firstRunOrg.tradeTypesJson), firstRunOrg.landingIndustry)

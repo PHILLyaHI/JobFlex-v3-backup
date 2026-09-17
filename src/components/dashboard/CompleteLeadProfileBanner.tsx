@@ -68,7 +68,9 @@ export function CompleteLeadProfileBanner({
           }
           setVisible(false);
         }}
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[color:var(--ink-faint)] transition-colors hover:text-[color:var(--ink)]"
+        // 44px: this banner now mounts on the handheld Overview and Leads too,
+        // where the dismiss is a thumb target, not a mouse one.
+        className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-[color:var(--ink-faint)] transition-colors hover:text-[color:var(--ink)]"
       >
         <X className="h-4 w-4" />
       </button>

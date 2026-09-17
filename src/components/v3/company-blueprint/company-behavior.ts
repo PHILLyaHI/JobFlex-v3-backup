@@ -144,6 +144,9 @@ export function initCompanyContent(
     logoUrl: org.logoUrl,
     trades: org.tradeTypes.slice(),
     leadsOn: org.leadOffersEnabled,
+    /** Live: saveLead reads the geocode result back off the server action, so
+     *  the badge stops lying the moment a good address lands. */
+    geocoded: org.geocoded,
     publicOn: org.publicProfileEnabled,
     actCat: "all",
     actQuery: "",
@@ -239,18 +242,39 @@ export function initCompanyContent(
     );
   }
 
-  function saveLead() {
-    autosave("saveLead", () =>
-      updateLeadProfile({
-        address: orNull(val('[data-l="addr"]')),
-        phone: orNull(val('[data-l="phone"]')),
-        tradeTypes: co.trades,
-        // Only meaningful while the "Other" chip is on; the server nulls it
-        // otherwise, so the two can never disagree.
-        otherTrade: co.trades.indexOf("Other") === -1 ? null : orNull(val('[data-l="otherTrade"]')),
-        leadOffersEnabled: co.leadsOn,
-      }),
+  /** EVERY Lead matching write goes through here.
+   *
+   *  The server is the only one who knows whether the address resolved, so the
+   *  badge is corrected from its answer rather than guessed at on the client.
+   *  One helper rather than a line in each caller: the toggle used its own
+   *  call, so flipping it re-geocoded on the server while the badge kept
+   *  reading "Matching off" until the page was reloaded. */
+  function pushLead(
+    patch: Parameters<typeof updateLeadProfile>[0],
+    delay?: number,
+  ) {
+    autosave(
+      "saveLead",
+      async () => {
+        const res = await updateLeadProfile(patch);
+        co.geocoded = res.geocoded;
+        renderLeadState();
+        return res;
+      },
+      delay,
     );
+  }
+
+  function saveLead() {
+    pushLead({
+      address: orNull(val('[data-l="addr"]')),
+      phone: orNull(val('[data-l="phone"]')),
+      tradeTypes: co.trades,
+      // Only meaningful while the "Other" chip is on; the server nulls it
+      // otherwise, so the two can never disagree.
+      otherTrade: co.trades.indexOf("Other") === -1 ? null : orNull(val('[data-l="otherTrade"]')),
+      leadOffersEnabled: co.leadsOn,
+    });
   }
 
   /** Show / hide the "name the trade" field with the Other chip. Focused when
@@ -371,13 +395,40 @@ export function initCompanyContent(
     renderLeadState();
   }
   /** The matching badge only — patched on its own when a chip or the toggle
-   *  changes, so the chip row keeps its focus. */
+   *  changes, so the chip row keeps its focus.
+   *
+   *  It reports the SAME three conditions the matcher filters on
+   *  (lib/leadCenter/matching): the toggle, at least one trade, and a geocoded
+   *  address. The geocode used to be missing from this list, so a shop with no
+   *  coordinates — which is every shop created through checkout before
+   *  2026-09-17 — was told "Matching on" while no lead could ever reach it. */
   function renderLeadState() {
     const badge = $("#leadState");
     if (!badge) return;
-    const ready = co.trades.length > 0 && co.leadsOn;
+    const ready = co.trades.length > 0 && co.leadsOn && co.geocoded;
     badge.className = "pstatus " + (ready ? "lead-ok" : "lead-wait");
-    badge.textContent = ready ? "Matching on" : co.trades.length === 0 ? "Pick a trade" : "Paused";
+    if (ready) {
+      badge.textContent = "Matching on";
+      return;
+    }
+    if (!co.leadsOn) {
+      badge.textContent = "Paused";
+      return;
+    }
+    if (co.trades.length === 0) {
+      badge.textContent = "Pick a trade";
+      return;
+    }
+    // No pin. The address field is on this very card, so the way out is to put
+    // the caret in it rather than send the owner somewhere else.
+    badge.textContent = "";
+    badge.appendChild(document.createTextNode("Matching off · "));
+    const link = document.createElement("button");
+    link.type = "button";
+    link.className = "lead-fix";
+    link.id = "leadFix";
+    link.textContent = "add your address";
+    badge.appendChild(link);
   }
   function renderActivity() {
     const cats = $("#actCats");
@@ -560,12 +611,20 @@ export function initCompanyContent(
       saveLead();
       return;
     }
+    if (t.closest("#leadFix")) {
+      // The badge's own way out: the field that fixes it is six inches below,
+      // so this puts the caret in it rather than navigating anywhere.
+      const addr = $<HTMLInputElement>('[data-l="addr"]');
+      addr?.scrollIntoView({ block: "center", behavior: "smooth" });
+      addr?.focus();
+      return;
+    }
     if (t.closest("#leadToggle")) {
       if (!canEdit) return;
       co.leadsOn = !co.leadsOn;
       $("#leadToggle")?.classList.toggle("on", co.leadsOn);
       renderLeadState();
-      autosave("saveLead", () => updateLeadProfile({ leadOffersEnabled: co.leadsOn }), 0);
+      pushLead({ leadOffersEnabled: co.leadsOn }, 0);
       return;
     }
     if (t.closest("#publicToggle")) {

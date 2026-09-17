@@ -4,7 +4,7 @@ import { z } from "zod";
 import { requireManager, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { TRADE_TYPES, parseTradeTypes } from "@/lib/tradeTypes";
-import { geocodeAddress } from "@/lib/maps";
+import { geocodeOrgAddress } from "@/lib/leadCenter/eligibility";
 import { loadTeamActivity } from "@/lib/teamActivity";
 import { toActivityEntries } from "@/components/v3/company-blueprint/company-data";
 
@@ -24,19 +24,15 @@ export async function updateBranding(raw: unknown) {
 
   // Keep the Lead Center pin in sync — branding is the other surface that can
   // edit the org address (see updateLeadProfile for the same policy).
-  let geoData: { lat: number | null; lng: number | null; geocodedAt: Date | null } | null = null;
-  if (data.address !== undefined) {
-    const current = await db.organization.findUnique({
-      where: { id: organizationId },
-      select: { address: true },
-    });
-    if ((data.address ?? "") !== (current?.address ?? "")) {
-      const geo = data.address ? await geocodeAddress({ address: data.address }) : null;
-      geoData = geo
-        ? { lat: geo.lat, lng: geo.lng, geocodedAt: new Date() }
-        : { lat: null, lng: null, geocodedAt: null };
-    }
-  }
+  const current =
+    data.address !== undefined
+      ? await db.organization.findUnique({
+          where: { id: organizationId },
+          select: { address: true, lat: true, lng: true },
+        })
+      : null;
+  const addressChanged =
+    data.address !== undefined && (data.address ?? "") !== (current?.address ?? "");
 
   await db.organization.update({
     where: { id: organizationId },
@@ -48,9 +44,13 @@ export async function updateBranding(raw: unknown) {
       ...(data.website !== undefined && { website: data.website }),
       ...(data.primaryColor !== undefined && { primaryColor: data.primaryColor }),
       ...(data.logoUrl !== undefined && { logoUrl: data.logoUrl }),
-      ...(geoData ?? {}),
     },
   });
+
+  if (addressChanged || (data.address !== undefined && (current?.lat == null || current?.lng == null))) {
+    await geocodeOrgAddress(organizationId, data.address ?? "", { gateOnFailure: false });
+  }
+
   revalidatePath("/dashboard/company");
   revalidatePath("/dashboard/settings/company");
 }
@@ -70,23 +70,16 @@ const leadProfileInput = z.object({
   leadOffersEnabled: z.boolean().optional(),
 });
 
-export async function updateLeadProfile(raw: unknown) {
+export async function updateLeadProfile(
+  raw: unknown,
+): Promise<{ geocoded: boolean; reason: string | null }> {
   const { organizationId } = await requireManager();
   const data = leadProfileInput.parse(raw);
 
-  let geoData: { lat: number | null; lng: number | null; geocodedAt: Date | null } | null = null;
-  if (data.address !== undefined) {
-    const current = await db.organization.findUnique({
-      where: { id: organizationId },
-      select: { address: true },
-    });
-    if ((data.address ?? "") !== (current?.address ?? "")) {
-      const geo = data.address ? await geocodeAddress({ address: data.address }) : null;
-      geoData = geo
-        ? { lat: geo.lat, lng: geo.lng, geocodedAt: new Date() }
-        : { lat: null, lng: null, geocodedAt: null };
-    }
-  }
+  const current = await db.organization.findUnique({
+    where: { id: organizationId },
+    select: { address: true, lat: true, lng: true },
+  });
 
   await db.organization.update({
     where: { id: organizationId },
@@ -100,11 +93,35 @@ export async function updateLeadProfile(raw: unknown) {
         !data.tradeTypes.includes("Other") && { otherTrade: null }),
       ...(data.otherTrade !== undefined && { otherTrade: data.otherTrade || null }),
       ...(data.leadOffersEnabled !== undefined && { leadOffersEnabled: data.leadOffersEnabled }),
-      ...(geoData ?? {}),
     },
   });
+
+  // The pin, through the one routine the signup and the backfill also use.
+  //
+  // It now runs when the address CHANGED *or* when a shop that has an address
+  // still has no pin. The second half is the fix for a trap this page set: the
+  // geocode was gated on the string changing, so an org created without
+  // coordinates could be re-saved from this very card forever and stay
+  // un-routable, because the address it was re-saving was already correct.
+  const addressNow = data.address !== undefined ? (data.address ?? "") : (current?.address ?? "");
+  const addressChanged =
+    data.address !== undefined && (data.address ?? "") !== (current?.address ?? "");
+  const missingPin = current?.lat == null || current?.lng == null;
+
+  let geocoded = !missingPin;
+  let reason: string | null = null;
+  if (addressChanged || missingPin) {
+    // gateOnFailure: false — the owner is looking at the Accept-platform-leads
+    // toggle they set themselves; the banner reports a miss instead.
+    const res = await geocodeOrgAddress(organizationId, addressNow, { gateOnFailure: false });
+    geocoded = res.ok;
+    reason = res.reason;
+  }
+
   revalidatePath("/dashboard/company");
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/leads");
+  return { geocoded, reason };
 }
 
 /**
@@ -115,6 +132,42 @@ export async function updateLeadProfile(raw: unknown) {
  * plus the ActivityEvent id per entry, which the handheld feed needs for React
  * keys and its row-actions sheet.
  */
+/**
+ * What is standing between this shop and a platform lead.
+ *
+ * The three conditions are `buildRanking`'s hard filter
+ * (lib/leadCenter/matching), asked for one org so a surface can say so out
+ * loud. Read-only and cheap by design: the Overview and Leads nudge mounts on
+ * both viewports call it (components/dashboard/LeadProfileNudge), so it stays
+ * one indexed row and no joins.
+ *
+ * `reason` is the recorded gate note when a geocode failed — see
+ * lib/leadCenter/eligibility. Null when nothing was ever recorded.
+ */
+export async function leadProfileGaps(): Promise<{
+  needsAddress: boolean;
+  needsTrades: boolean;
+  paused: boolean;
+  reason: string | null;
+}> {
+  const { organizationId } = await requireOrg();
+  const org = await db.organization.findUnique({
+    where: { id: organizationId },
+    select: { lat: true, lng: true, tradeTypesJson: true, leadOffersEnabled: true },
+  });
+  if (!org) return { needsAddress: false, needsTrades: false, paused: false, reason: null };
+
+  const needsAddress = org.lat == null || org.lng == null;
+  const needsTrades = parseTradeTypes(org.tradeTypesJson).length === 0;
+  const { readLeadGate } = await import("@/lib/leadCenter/eligibility");
+  return {
+    needsAddress,
+    needsTrades,
+    paused: !org.leadOffersEnabled,
+    reason: needsAddress ? await readLeadGate(organizationId) : null,
+  };
+}
+
 export async function getCompanySeed() {
   const { organizationId } = await requireOrg();
   const [org, activity] = await Promise.all([
@@ -135,6 +188,9 @@ export async function getCompanySeed() {
       logoUrl: org.logoUrl,
       tradeTypes: parseTradeTypes(org.tradeTypesJson) as string[],
       leadOffersEnabled: org.leadOffersEnabled,
+      // The matcher's third condition, so the handheld badge can report the
+      // same truth the desk one does (see company-blueprint renderLeadState).
+      geocoded: org.lat != null && org.lng != null,
       publicProfileEnabled: org.publicProfileEnabled,
       landingHeroTitle: org.landingHeroTitle ?? "",
       landingHeroSubtitle: org.landingHeroSubtitle ?? "",
