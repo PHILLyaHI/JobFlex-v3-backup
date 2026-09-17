@@ -458,6 +458,28 @@ sizing-on-the-permit. Each carries its citation and verified date. The state
 and county selects now reach the model, so correcting them changes the rules,
 not just the design day.
 
+**Intake, reorganised (2026-09-17, owner's ask).** The filming guide is folded
+by default and remembers the choice (`jf.hvac.guideOpen`), saving about 560 px
+on a desk and 1,260 px on a phone. The Confirm form is now two labelled
+groups: **The house as it is** (tinted, dark rule — the envelope, the existing
+system, the panel, the ducts and gas, the water heater that is there) and
+**What we're putting in** (blueprint rule — the zone and heads, the new water
+heater, the service visit, the heat preference, noise and line-set length).
+Inside the house group the secondary fieldsets fold, each summary carrying
+what it already holds ("AC + furnace · 3.5 t · R-410A", "200 A main · 4 free
+slots", "in the attic · fair · 700 sq in return · ¾ in gas"), so the page
+shows the figures without opening. A coverage button opens the fold its field
+lives in, focuses it and scrolls to it. The intake is 1,066 px on a desk and
+2,838 px on a phone, down from 1,340 and 4,408.
+
+**Every job looks the house up (2026-09-17, owner's report).** The water-heater
+and service jobs used to skip the parcel lookup for speed and say "no lookup
+needed", which read as "address not found". They now put the form up at once
+on the address and the state and run `hvacSiteFacts` behind it; when the
+record lands the site hero shows the area, year built and county, and a
+failed record becomes a warning rather than an error. The button reads "Look
+up the house" on every job.
+
 Not in the catalog: multi-zone ductless outdoor units
 (no ratings read), Fujitsu (Halcyon RLS3 retired, Orion figures not
 published yet), non-condensing tankless. Re-verify the families after the

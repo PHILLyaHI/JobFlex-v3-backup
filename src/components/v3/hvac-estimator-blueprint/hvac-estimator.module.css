@@ -222,8 +222,36 @@
 
 /* Confirm form */
 :global(.jf-blueprint .content) .confirm { border-top: 1.5px solid var(--hair-soft); padding: 16px 18px 18px; }
+/* The confirm form reads as two things: the house as it found it, and the
+   work going in. The house side is tinted so the contractor can see at a
+   glance which figures describe the customer's building. */
+:global(.jf-blueprint .content) .grp { margin-top: 16px; padding: 12px 14px 14px; border: 1.5px solid var(--hair-soft); border-left-width: 3px; }
+:global(.jf-blueprint .content) .grp-house { background: var(--paper-deep); border-left-color: var(--ink); }
+:global(.jf-blueprint .content) .grp-job { background: var(--paper); border-left-color: var(--blueprint); }
+:global(.jf-blueprint .content) .grp-t { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+:global(.jf-blueprint .content) .grp-k { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .grp-house .grp-k { color: var(--ink); }
+:global(.jf-blueprint .content) .grp-job .grp-k { color: var(--blueprint); }
+:global(.jf-blueprint .content) .grp-s { flex: 1 1 320px; min-width: 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
+:global(.jf-blueprint .content) .grp .fs:first-of-type { margin-top: 10px; }
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .grp { padding: 11px 12px 12px; }
+}
 :global(.jf-blueprint .content) .fs { margin-top: 14px; }
 :global(.jf-blueprint .content) .fs:first-child { margin-top: 0; }
+/* A house group the contractor only opens when it needs correcting: the
+   summary carries what is already in it. */
+:global(.jf-blueprint .content) .fold > summary { cursor: pointer; list-style: none; padding: 7px 9px; margin: 0 -9px; border-radius: 3px; }
+:global(.jf-blueprint .content) .fold > summary::-webkit-details-marker { display: none; }
+:global(.jf-blueprint .content) .fold > summary:hover { background: var(--paper); }
+:global(.jf-blueprint .content) .fold[open] > summary { margin-bottom: 2px; }
+:global(.jf-blueprint .content) .fold > summary::after { content: "show"; margin-left: auto; font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--blueprint); }
+:global(.jf-blueprint .content) .fold[open] > summary::after { content: "hide"; }
+:global(.jf-blueprint .content) .fold-s { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .fold > summary { flex-wrap: wrap; }
+  :global(.jf-blueprint .content) .fold-s { flex-basis: 100%; white-space: normal; }
+}
 :global(.jf-blueprint .content) .fs-t { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 :global(.jf-blueprint .content) .fs-t .mono { text-transform: none; letter-spacing: 0.03em; font-weight: 500; }
 :global(.jf-blueprint .content) .grid-f { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
