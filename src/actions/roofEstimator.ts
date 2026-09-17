@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
+import { getOpenAI, isOpenAIEnabled, resolveOpenAIModel } from "@/lib/sdk/openai";
 import { estimateSchema, type GeneratedEstimate } from "@/lib/estimatorSchema";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
@@ -106,9 +106,16 @@ await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
           ? "Pitch source: the reported figure from the aerial data."
           : "";
   try {
+    // The model this process can actually call, asked once per process and
+    // remembered (lib/sdk/openai). OPENAI_MODEL's import-time snapshot answers
+    // with whatever string the environment holds, and a string is not an
+    // entitlement: a model the key's project has no access to fails every call
+    // with 403 model_not_found. Resolved here instead, so one check covers the
+    // process and the fallback is a working model rather than a dead one.
+    const model = await resolveOpenAIModel();
     const client = getOpenAI();
     const completion = await client.chat.completions.create({
-      model: OPENAI_MODEL,
+      model,
       temperature: 0.4,
       response_format: { type: "json_object" },
       messages: [

@@ -5,7 +5,7 @@
 // verified the X-Twilio-Signature. The session-guarded action createLeadFromCall
 // stays in src/actions/aiPhoneCalls.ts.
 import { db } from "@/lib/db";
-import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
+import { getOpenAI, isOpenAIEnabled, resolveOpenAIModel } from "@/lib/sdk/openai";
 
 export async function startInboundCall(
   callSid: string,
@@ -69,9 +69,16 @@ async function summarizeAndMaybeCreateLead(callId: string) {
     return;
   }
 
+  // The model this process can actually call, asked once per process and
+  // remembered (lib/sdk/openai). OPENAI_MODEL's import-time snapshot answers
+  // with whatever string the environment holds, and a string is not an
+  // entitlement: a model the key's project has no access to fails every call
+  // with 403 model_not_found. Resolved here instead, so one check covers the
+  // process and the fallback is a working model rather than a dead one.
+  const model = await resolveOpenAIModel();
   const client = getOpenAI();
   const completion = await client.chat.completions.create({
-    model: OPENAI_MODEL,
+    model,
     temperature: 0.2,
     response_format: { type: "json_object" },
     messages: [

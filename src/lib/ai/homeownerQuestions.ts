@@ -13,7 +13,7 @@
 //
 // NEVER BLOCKS. No key, a refusal, a malformed answer — every path returns
 // null, and the caller falls back to the static question set it already ships.
-import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
+import { getOpenAI, isOpenAIEnabled, resolveOpenAIModel } from "@/lib/sdk/openai";
 
 /** The wizard's question shape (mirrors `Question` in the two wizard data
  *  files, which are client modules — this one may not import them). */
@@ -66,9 +66,16 @@ export async function suggestIntakeQuestions(
   if (brief.length < 12 || !isOpenAIEnabled()) return null;
 
   try {
+    // The model this process can actually call, asked once per process and
+    // remembered (lib/sdk/openai). OPENAI_MODEL's import-time snapshot answers
+    // with whatever string the environment holds, and a string is not an
+    // entitlement: a model the key's project has no access to fails every call
+    // with 403 model_not_found. Resolved here instead, so one check covers the
+    // process and the fallback is a working model rather than a dead one.
+    const model = await resolveOpenAIModel();
     const client = getOpenAI();
     const completion = await client.chat.completions.create({
-      model: OPENAI_MODEL,
+      model,
       temperature: 0.4,
       messages: [
         {

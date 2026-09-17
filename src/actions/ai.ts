@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
+import { getOpenAI, isOpenAIEnabled, resolveOpenAIModel } from "@/lib/sdk/openai";
 import { checkPlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
@@ -89,9 +89,16 @@ export async function generateAiProposal(prompt: string): Promise<
   }
 
   try {
+    // The model this process can actually call, asked once per process and
+    // remembered (lib/sdk/openai). OPENAI_MODEL's import-time snapshot answers
+    // with whatever string the environment holds, and a string is not an
+    // entitlement: a model the key's project has no access to fails every call
+    // with 403 model_not_found. Resolved here instead, so one check covers the
+    // process and the fallback is a working model rather than a dead one.
+    const model = await resolveOpenAIModel();
     const client = getOpenAI();
     const completion = await client.chat.completions.create({
-      model: OPENAI_MODEL,
+      model,
       temperature: 0.6,
       messages: [
         {
@@ -110,7 +117,7 @@ export async function generateAiProposal(prompt: string): Promise<
       data: {
         organizationId,
         prompt,
-        model: OPENAI_MODEL,
+        model,
         // AiDraft.result is a String column — store the draft as JSON text.
         result: JSON.stringify(parsed),
         tokensIn: completion.usage?.prompt_tokens,
