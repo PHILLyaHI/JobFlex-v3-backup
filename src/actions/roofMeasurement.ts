@@ -34,6 +34,7 @@ import { measureCoverage } from "@/lib/roofRecon/coverage";
 import { measurePitch } from "@/lib/roofRecon/measuredPitch";
 import { checkCompleteness } from "@/lib/roofRecon/completeness";
 import { lotMaskFromPair, ringWhollyOutsideLot, type LotMask } from "@/lib/roofDiagram/parcelMask";
+import { lotRingForPoint, ringWhollyOutsideLotRing } from "@/lib/lotRing";
 import type { ArbiterSegment } from "@/lib/roofRecon/googleArbiter";
 import { areaOf, type FootprintPoint } from "@/lib/roofRecon/footprint";
 import { foreignIndices, pickMainStructure, rowFigures } from "@/lib/roofDiagram/instantTotals";
@@ -546,16 +547,54 @@ export async function measureRoofInstant(
 
   const provenance: MeasurementProvenance = {};
 
-  // парсель-вето: строения целиком вне лота — BEFORE the main structure is
+  // ПАРСЕЛЬ-ВЕТО: строения целиком вне лота — BEFORE the main structure is
   // chosen, because the choice excludes vetoed structures.
+  //
+  // TWO WITNESSES, same safe direction (2026-09-17). EagleView's own masked /
+  // unmasked ortho pair is one; the recorded lot outline — ParcelCache, then
+  // ReportAll, then Regrid only if ReportAll has no parcel here — is the other.
+  // The pair is not always there (it needs two ortho images over the pin that
+  // differ only by the mask) and at 12117 202nd St SE it produced nothing,
+  // leaving nineteen outbuildings looking like part of the property. Either
+  // witness may veto, and each only ever vetoes a structure EVERY vertex of
+  // which falls outside the lot: keeping a neighbour's shed is a visible
+  // mistake, dropping a real roof is an expensive one.
   const lot = await lotMaskFor(instant, origin);
-  if (lot && origin) {
+  const lotRing = origin
+    ? await lotRingForPoint(origin.lat, origin.lng)
+    : { ring: [] as { lat: number; lng: number }[], source: "none" as const };
+  provenance.parcelSource = lotRing.source;
+  const haveOutline = lotRing.ring.length >= 3;
+  console.log(
+    `[roofMeasurement] lot boundary: ${lotRing.source}` +
+      (haveOutline ? ` (${lotRing.ring.length} points)` : " — no outline") +
+      `, imagery mask: ${lot ? "yes" : "no"}`,
+  );
+  if (origin && (lot || haveOutline)) {
     const foreign: string[] = [];
+    let byMask = 0;
+    let byOutline = 0;
     instant.structures.forEach((st, i) => {
       const ring = st.outline ?? [];
-      if (ring.length >= 3 && ringWhollyOutsideLot(lot, ring)) foreign.push("s" + i);
+      if (ring.length < 3) return;
+      const outsideMask = lot ? ringWhollyOutsideLot(lot, ring) : false;
+      const outsideOutline = haveOutline ? ringWhollyOutsideLotRing(lotRing.ring, ring) : false;
+      if (!outsideMask && !outsideOutline) return;
+      if (outsideMask) byMask += 1;
+      if (outsideOutline) byOutline += 1;
+      foreign.push("s" + i);
     });
-    if (foreign.length) (provenance as Record<string, unknown>).parcelVeto = { foreignStructures: foreign };
+    if (foreign.length) {
+      (provenance as Record<string, unknown>).parcelVeto = {
+        foreignStructures: foreign,
+        /* Which witness saw what, so a veto can be argued with. */
+        by: { imageryMask: byMask, lotOutline: byOutline, source: lotRing.source },
+      };
+      console.log(
+        `[roofMeasurement] parcel veto: ${foreign.length} of ${instant.structures.length} structures are off the lot ` +
+          `(imagery mask ${byMask}, lot outline ${byOutline} via ${lotRing.source})`,
+      );
+    }
   }
 
   // THE MAIN STRUCTURE (audit 2026-09-08). EagleView answers with every
@@ -567,7 +606,7 @@ export async function measureRoofInstant(
   const pick = pickMainStructure(instant.structures, {
     foreign: foreignIndices(veto?.foreignStructures),
     origin,
-    parcelKnown: lot != null,
+    parcelKnown: lot != null || haveOutline,
   });
   const mainSt = pick.index != null ? instant.structures[pick.index] : null;
   if (pick.index != null) {

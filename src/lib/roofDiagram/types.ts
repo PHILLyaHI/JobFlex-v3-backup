@@ -235,6 +235,15 @@ export interface MeasurementProvenance {
    */
   parcelBlocked?: { kind: string; message: string };
   /**
+   * Which service the lot boundary came from: the parcel cache, a fresh
+   * ReportAll lookup, Regrid (only ever consulted when ReportAll says the
+   * point has no parcel), or nobody. The roof used to take this outline from
+   * Regrid alone, where an expired token read exactly like "no parcel here";
+   * naming the source is how that failure becomes visible on a saved
+   * measurement rather than a shrug. See lib/lotRing.
+   */
+  parcelSource?: "cache" | "reportall" | "regrid" | "none";
+  /**
    * Why there is no reconstruction on this drawing.
    *
    * Absent means there IS one. Present means the plan is EagleView's outline

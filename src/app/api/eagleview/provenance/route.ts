@@ -21,7 +21,8 @@ export const dynamic = "force-dynamic";
 // structure's fields as stored, and the provenance witnesses — registration,
 // coverage, pitchMeasurement (source / reason / families / trustedShare /
 // instantPitch12), pitchSource, instantPacks, mainStructure, completeness
-// codes, reconUnavailable, googleAreaSqft, imageryDate. Plus the ledger rows
+// codes, reconUnavailable, googleAreaSqft, imageryDate, parcelSource (which
+// service drew the lot boundary) and parcelBlocked. Plus the ledger rows
 // for the address (request id, packs, status, raw-body size) and the
 // account's entitlement table. Nothing is ordered, nothing is written; the
 // keys never leave the server. Session-gated like every /api route.
@@ -111,6 +112,13 @@ export async function GET(req: NextRequest) {
         imageryDate: prov.imageryDate ?? null,
         imageryQuality: prov.imageryQuality ?? null,
         parcelVeto: prov.parcelVeto ?? null,
+        /* WHICH SERVICE DREW THE LOT. cache / reportall / regrid / none, as
+           recorded at measure time (lib/lotRing). null on a row measured
+           before the field existed — those took the outline from Regrid
+           alone, and an expired Regrid token was indistinguishable there from
+           a point with no parcel on file. */
+        parcelSource: prov.parcelSource ?? null,
+        parcelBlocked: prov.parcelBlocked ?? null,
       },
     };
   });

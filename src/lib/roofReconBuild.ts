@@ -19,7 +19,7 @@
 // at the queried pin (the Solar tile centre), x east, y north, z feet above
 // ground. Geo rings convert into it via latLngRingToFrame(origin, ring).
 import { geocode, MapsCallError } from "@/lib/maps";
-import { fetchParcelRing, type ParcelRingLookup } from "@/lib/parcel";
+import { lotRingForPoint, type LotRingResult } from "@/lib/lotRing";
 import {
   getBuildingInsights,
   getDataLayers,
@@ -128,6 +128,9 @@ export interface ReconBuild {
    * means detached structures may be missing from the measurement.
    */
   parcelBlocked?: { kind: string; message: string };
+  /** Which service the boundary came from — cache, ReportAll, Regrid, or
+   *  nobody. Recorded so a measurement can be read back to its source. */
+  parcelSource?: "cache" | "reportall" | "regrid" | "none";
   /** The pin the tile was fetched around — the origin of the model's frame. */
   origin: { lat: number; lng: number };
 }
@@ -199,8 +202,10 @@ export async function buildReconModel(input: ReconBuildInput): Promise<ReconBuil
   // tile's structures belong to this property, so a cached measurement would
   // have scoped a multi-building lot differently from the first one — the same
   // address, two different answers, with nothing to show why.
-  // fetchParcelRing never throws; it reports WHY the ring is missing.
-  const parcelP: Promise<ParcelRingLookup> = fetchParcelRing(lat, lng);
+  // lotRingForPoint never throws; it reports WHERE the ring came from and WHY
+  // it is missing. ParcelCache first, then ReportAll under its ALLTIME reserve,
+  // and Regrid only if ReportAll says this point has no parcel (lib/lotRing).
+  const parcelP: Promise<LotRingResult> = lotRingForPoint(lat, lng);
   const insightsP: Promise<Awaited<ReturnType<typeof getBuildingInsights>> | null> = cached
     ? Promise.resolve(cached.insights)
     : getBuildingInsights(lat, lng).catch(() => null); // priors and the cross-check are both optional
@@ -245,6 +250,10 @@ export async function buildReconModel(input: ReconBuildInput): Promise<ReconBuil
   const parcelLookup = await parcelP;
   const ring = parcelLookup.ring;
   const parcel = ring.length >= 3 ? latLngRingToFrame({ lat, lng }, ring) : undefined;
+  console.log(
+    `[roofReconBuild] lot boundary: ${parcelLookup.source}` +
+      (ring.length ? ` (${ring.length} points)` : " — no ring"),
+  );
   if (parcelLookup.blocked) {
     console.warn(
       `[roofReconBuild] no lot boundary (${parcelLookup.blocked.kind}): ${parcelLookup.blocked.message} — only the structure under the pin will be measured`,
@@ -289,6 +298,7 @@ export async function buildReconModel(input: ReconBuildInput): Promise<ReconBuil
     multiStructure: diagnostics.keptComponents > 1,
     excludedSqft: diagnostics.maskComponentsSqft.slice(diagnostics.keptComponents),
     ...(parcelLookup.blocked ? { parcelBlocked: parcelLookup.blocked } : {}),
+    parcelSource: parcelLookup.source,
     layers,
     origin: { lat, lng },
   };

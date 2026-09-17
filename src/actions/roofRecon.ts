@@ -11,7 +11,7 @@
 // measurement of record, so it should not occupy the EagleViewReport cache.
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { geocode } from "@/lib/maps";
-import { fetchParcelRing } from "@/lib/parcel";
+import { lotRingForPoint } from "@/lib/lotRing";
 import {
   isSolarEnabled,
   getBuildingInsights,
@@ -96,8 +96,10 @@ export async function reconRoofPreview(input: {
     // Parcel ring decides which of the tile's structures belong to this property.
     // Without it we measure only the building under the pin, which understates a
     // property that has a detached garage or wing. Soft-fails by design —
-    // fetchParcelRing now returns { ring, blocked? } instead of a bare array.
-    const { ring } = await fetchParcelRing(lat, lng);
+    // lotRingForPoint: ParcelCache → ReportAll → Regrid-if-not-found, and it
+    // says which one answered (lib/lotRing).
+    const { ring, source: parcelSource } = await lotRingForPoint(lat, lng);
+    console.log(`[roofRecon] lot boundary: ${parcelSource} (${ring.length} points)`);
     const parcel = ring.length >= 3 ? latLngRingToFrame({ lat, lng }, ring) : undefined;
 
     // Google's per-segment pitch, rounded, becomes the candidate set our own
