@@ -512,6 +512,47 @@ Not in the catalog: multi-zone ductless outdoor units
 published yet), non-condensing tankless. Re-verify the families after the
 2026 model year turns over.
 
+## Status — the Danville furnace that found nothing (2026-09-17)
+
+Owner ran a Furnace job at 24 Mira Loma Ln, Danville (Contra Costa) on
+jobflex.app and got NO FIT with every Carrier 58SB0 "not certified to
+14 ng/J". Cause: the shop's catalog on prod was loaded from the US list
+*before* the California ultra-low-NOx families and the package units were
+added (deploy 557d670). A load writes rows into `HvacCatalogItem`; a later
+deploy does not touch them, so the older rows sat there with no `noxNgJ`,
+which the district rule reads as the 40 ng/J class — and Contra Costa takes
+only 14. Locally the same house against the current list picks a Goodman
+GR9S96-040-U.
+
+Built so it cannot happen quietly again:
+
+- **The page knows the catalog is from an older build.** `usStale` compares
+  the shop's `us-…` rows with `US_CATALOG` (missing ids, or gas rows with no
+  NOx class). The Catalog panel's summary line reads "· update available" and
+  the panel carries an update notice with the counts.
+- **The no-fit call says what the wall is.** `noxWall`: every candidate is a
+  gas unit above 14 ng/J in a "required" county. The call then says so in
+  words, and carries an **Update the US catalog** button right there (same
+  `loadUsCatalog`, `replace: false`, the shop's own rows stay); with a shop's
+  own catalog it says to type the ULN model under Change the unit or put 14 in
+  the CSV. The package-house no-fit gets the same button when the catalog
+  predates the package rows.
+- **The NOx compliance check reads the unit and the county**
+  (`complianceChecks`): pass naming the unit and its class in a required
+  county; fix naming a 40 ng/J unit used anyway; verify for the other
+  California counties (their own districts) and when the county is not on
+  record.
+- **The NOx class can be typed and imported:** `noxNgJ` column on the catalog
+  CSV (download and import), and a "NOx class (gas heat)" select on the
+  typed-unit form (`buildTypedUnit`).
+
+QA: `hvac-catalog.check.ts` +4 (pass/fix/verify wording, and the
+older-catalog wall), `hvac-ledger.check.ts` +1 (CSV NOx column). Browser:
+`hvac-stale.js` (older catalog → no-fit words → one click → GR9S96-040-U) and
+`hvac-typed-nox.js` (typed 14 ng/J passes, typed 40 flagged by name). On prod
+the owner presses **Update the US catalog** once (from the no-fit call or the
+Catalog panel) — 629 rows.
+
 ## Sources checked 2026-09-15
 
 ACCA approved software list (acca.org/standards/approved-software); Cool Calc

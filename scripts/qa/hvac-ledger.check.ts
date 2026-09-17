@@ -98,5 +98,11 @@ const r6 = runEngine(gas, { catalog: parsed.items });
 const l6 = buildLedger(r6, gas, DEFAULT_RATE_CARD, parsed.items);
 ok("Imported catalog prices with its own furnace and coil", l6.materials.find((l) => l.id === "eq-furnace")?.name.includes("GM9S960803BN") === true && l6.materials.find((l) => l.id === "eq-coil")?.name.includes("CAPTA3626C3") === true, l6.materials.map((l) => l.name.slice(0, 30)).join(" | "));
 
+
+{
+  const csv = "kind,brand,model,btuInput,afue,noxNgJ\nfurnace,Acme,ULN-060,60000,96,14\nfurnace,Acme,STD-060,60000,96,";
+  const out = parseCatalogCsv(csv);
+  ok("CSV: the NOx class reads in (14 = ultra-low; blank = the 40 ng/J class)", out.items[0]?.noxNgJ === 14 && out.items[1]?.noxNgJ === undefined, JSON.stringify(out.items.map((i) => i.noxNgJ)));
+}
 console.log(`\n${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);

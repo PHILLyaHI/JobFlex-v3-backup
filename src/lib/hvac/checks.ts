@@ -3,7 +3,7 @@
 // sentence, so the ledger can price the fix and the proposal can name it.
 
 import type { BuildingModel, CatalogItem, CheckResult, DesignConditions, LoadResult, SelectionCandidate } from "./types";
-import { coastalSite, CODE_FLAGS, efficiencyFloor, refrigerantRule } from "./data/rules";
+import { coastalSite, CODE_FLAGS, efficiencyFloor, refrigerantRule, ultraLowNoxNeeded } from "./data/rules";
 import { ratedCoolingBtuh } from "./select";
 
 /** Return grille free area the airflow needs: 200 sq in per nominal ton. */
@@ -152,6 +152,27 @@ export function complianceChecks(m: BuildingModel, chosen: CatalogItem | null, o
   }
   for (const f of CODE_FLAGS) {
     if (f.applies({ state: m.state, county: m.county, coastal: coastalSite(m.state, m.county), ...opts })) out.push({ id: f.id, title: f.title, status: f.status, detail: f.text, rule: f.source });
+  }
+  // The NOx flag reads the county and the unit that was picked, not just the state.
+  const uln = out.find((c) => c.id === "ca-uln-furnace");
+  if (uln) {
+    const need = ultraLowNoxNeeded(m.state, m.county);
+    const gasUnit = chosen && (chosen.kind === "furnace" || (chosen.kind === "package" && chosen.heatKind === "gas")) ? chosen : null;
+    const name = gasUnit ? `${gasUnit.brand} ${gasUnit.model}` : "";
+    const cls = gasUnit ? gasUnit.noxNgJ ?? 40 : undefined;
+    const where = m.county ? `${m.county} County` : "This address";
+    if (need === "required") {
+      if (cls !== undefined && cls <= 14) { uln.status = "pass"; uln.detail = `${name} is certified to ${cls} ng/J — the ultra-low-NOx build ${where}'s air district takes. Keep the certification sheet with the permit.`; }
+      else if (cls !== undefined) { uln.status = "fix"; uln.detail = `${name} is the ${cls} ng/J class and ${where} sits in a district that takes only 14 ng/J — order the ultra-low-NOx build of it (Lennox NV/NE, Carrier 59SU5/59CU5, Goodman -U) or it will not pass.`; }
+      else uln.detail = `${where} sits in a district that takes only ultra-low-NOx gas heat: the furnace must be certified at 14 ng/J or less — order the ULN build (Lennox NV/NE, Carrier 59SU5/59CU5, Goodman -U).`;
+    } else if (m.county) {
+      // Every other California county: its own district, its own furnace rule.
+      uln.status = "verify";
+      uln.detail = `${where} is outside the three districts where the 14 ng/J rule is certain (South Coast, San Joaquin Valley, Bay Area) — other California districts carry their own furnace NOx rules, so confirm the local one before ordering.${cls !== undefined ? ` ${name} is the ${cls} ng/J class${cls <= 14 ? ", which passes anywhere." : "; a district with the ultra-low rule would need the ULN build."}` : ""}`;
+    } else {
+      uln.status = "verify";
+      uln.detail = `County not on record — set it: inside the South Coast, San Joaquin Valley and Bay Area districts only a 14 ng/J furnace installs${cls !== undefined ? ` (${name} is the ${cls} ng/J class)` : ""}.`;
+    }
   }
   return out;
 }

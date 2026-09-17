@@ -58,6 +58,8 @@ import { calibrationLine, type CalibrationStats } from "@/lib/hvac/calibration";
 import { useHvacWalk } from "./use-hvac-walk";
 import { SHOTS, TIPS, coverageFor } from "./filming-guide";
 import { serviceMenuFor } from "@/lib/hvac/serviceMenu";
+import { US_CATALOG } from "@/lib/hvac/data/usCatalog";
+import { ultraLowNoxNeeded } from "@/lib/hvac/data/rules";
 import { CapacityChart } from "./capacity-chart";
 import s from "./hvac-estimator.module.css";
 
@@ -509,6 +511,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
       ahriRef: (unitDraft.ahri ?? "").trim() || undefined,
       ratedStaticInWc: kind === "furnace" || kind === "air-handler" || kind === "coil" ? 0.5 : undefined,
       maxTons: kind === "furnace" || kind === "air-handler" ? n("maxTons") ?? (kbtu ? (kbtu <= 45 ? 3 : kbtu <= 70 ? 4 : 5) : tons) : undefined,
+      noxNgJ: kind === "furnace" || kind === "package" ? (unitDraft.nox === "14" ? 14 : 40) : undefined,
       gallons: kind === "water-heater" ? n("gallons") : undefined,
       whType: kind === "water-heater" ? ((unitDraft.whType || "tank") as CatalogItem["whType"]) : undefined,
       fuel: kind === "water-heater" ? ((unitDraft.fuel || "gas") as CatalogItem["fuel"]) : undefined,
@@ -549,6 +552,20 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     if (def.id !== "water-heater" || !engine?.waterHeater || !model || !catalog) return [];
     return waterHeaterOptions(catalogItems, engine.waterHeater).slice(0, 4).map((item) => ({ item, subtotal: buildLedger(engine, model, card.card, catalogItems, { job, input: jobInput, linesetFt, pick: item.id }).subtotal }));
   }, [def.id, engine, model, catalog, catalogItems, card, job, jobInput, linesetFt]);
+  // The shop's catalog came from an older build of the US list: rows it lacks,
+  // and whether the NOx class is on its gas rows at all.
+  const usStale = React.useMemo(() => {
+    if (!catalog?.own) return null;
+    const have = new Set(catalog.items.map((c) => c.id));
+    const fromUs = catalog.items.filter((c) => c.id.startsWith("us-"));
+    if (!fromUs.length) return null;
+    const missing = US_CATALOG.filter((c) => !have.has(c.id));
+    const noNox = fromUs.some((c) => (c.kind === "furnace" || (c.kind === "package" && c.heatKind === "gas")) && c.noxNgJ === undefined);
+    return missing.length || noNox ? { missing: missing.length, noNox, uln: missing.filter((c) => (c.noxNgJ ?? 40) <= 14).length } : null;
+  }, [catalog]);
+  // No fit because every gas unit on the list is the 40 ng/J class in a
+  // district that takes only 14: the catalog, not the house, is the wall.
+  const noxWall = !!engine && !!model && !engine.selection.chosen && ultraLowNoxNeeded(model.state, model.county) === "required" && engine.selection.candidates.length > 0 && engine.selection.candidates.every((x) => (x.item.kind === "furnace" || (x.item.kind === "package" && x.item.heatKind === "gas")) && (x.item.noxNgJ ?? 40) > 14);
   const whChosen = def.id === "water-heater" ? (whOptions.find((o) => o.item.id === pickId)?.item ?? catalogItems.find((c) => c.id === pickId && c.kind === "water-heater") ?? whOptions[0]?.item ?? null) : null;
 
   // The editable lines follow the ledger until the contractor edits them, and
@@ -1402,7 +1419,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                   {engine.selection.runnerUp && <div className={cx("runner")}><b>Runner-up:</b> {engine.selection.runnerUp.item.brand} {engine.selection.runnerUp.item.model} — {engine.selection.runnerUp.reasons[0]}</div>}
                 </div>
               ) : (
-                <div className={cx("call", "warn")}><span className={cx("stamp")}>no fit</span><span>{model?.existing.kind === "package-unit" && engine.selection.candidates.length === 0 ? "No package rows in the catalog — the estimate prices a package unit from the rate card. Add your package rows (kind: package) to pick a model." : <>No catalog unit lands within Manual S limits for a {num(engine.load.coolingTotalBtuh)} BTU/h load. Target {engine.selection.targetTons} t — import the shop catalog or check the disqualifiers: {engine.selection.candidates.filter((c) => c.disqualified).slice(0, 3).map((c) => `${c.item.model}: ${c.disqualified}`).join(" · ")}</>}</span></div>
+                <div className={cx("call", "warn")}><span className={cx("stamp")}>no fit</span><span>{noxWall ? <>Every gas unit on your list is the 40 ng/J class, and {model?.county ?? "this"} County sits in a district that takes only ultra-low-NOx (14 ng/J) gas heat. {usStale ? <>Your catalog came from an older build of the US list, before the California families (Lennox NV/NE, Carrier 59SU5/59CU5, Goodman -U) were on it. <span className={cx("call-act")}><button type="button" className={cx("btn", "btn-primary")} onClick={onLoadUs} disabled={/^Loading/.test(catMsg)}>{/^Loading/.test(catMsg) ? "Updating…" : "Update the US catalog"}</button><span className={cx("mono")}>your own rows and costs stay</span></span></> : <>Add the ultra-low-NOx model you buy under <b>Change the unit</b> (set its NOx class to 14), or put 14 in the noxNgJ column of your CSV row.</>} A 40 ng/J unit can still go on with <i>Use anyway</i> under Change the unit when the job sits outside the district.</> : model?.existing.kind === "package-unit" && engine.selection.candidates.length === 0 ? (usStale ? <>No package rows in the catalog yet — your catalog came from an older build of the US list, before the package families were on it. <span className={cx("call-act")}><button type="button" className={cx("btn", "btn-primary")} onClick={onLoadUs} disabled={/^Loading/.test(catMsg)}>{/^Loading/.test(catMsg) ? "Updating…" : "Update the US catalog"}</button><span className={cx("mono")}>your own rows and costs stay</span></span> Until then the estimate prices a package unit from the rate card.</> : "No package rows in the catalog — the estimate prices a package unit from the rate card. Add your package rows (kind: package) to pick a model.") : <>No catalog unit lands within Manual S limits for a {num(engine.load.coolingTotalBtuh)} BTU/h load. Target {engine.selection.targetTons} t — import the shop catalog or check the disqualifiers: {engine.selection.candidates.filter((c) => c.disqualified).slice(0, 3).map((c) => `${c.item.model}: ${c.disqualified}`).join(" · ")}</>}</span></div>
               )}
               {chosen?.curve && chosen.item.kind === "heat-pump" && (
                 <>
@@ -1477,6 +1494,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                   <label className={cx("field")} htmlFor="hv-u-h5"><span className={cx("lbl")}>Heat at 5 °F, thousands</span><input id="hv-u-h5" className={cx("in", "num")} inputMode="decimal" placeholder="27" value={unitDraft.h5 ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, h5: e.target.value }))} /></label>
                   <label className={cx("field")} htmlFor="hv-u-refr"><span className={cx("lbl")}>Refrigerant</span><select id="hv-u-refr" className={cx("sel")} value={unitDraft.refrigerant ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, refrigerant: e.target.value }))}><option value="">not seen</option><option value="R-454B">R-454B</option><option value="R-32">R-32</option><option value="R-410A">R-410A</option><option value="R-22">R-22</option></select></label>
                   <label className={cx("field")} htmlFor="hv-u-stg"><span className={cx("lbl")}>Staging</span><select id="hv-u-stg" className={cx("sel")} value={unitDraft.staging ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, staging: e.target.value }))}><option value="">not seen</option><option value="single">single stage</option><option value="two-stage">two stage</option><option value="variable">variable</option></select></label>
+                  <label className={cx("field")} htmlFor="hv-u-nox"><span className={cx("lbl")}>NOx class (gas heat)</span><select id="hv-u-nox" className={cx("sel")} value={unitDraft.nox ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, nox: e.target.value }))}><option value="">standard, 40 ng/J</option><option value="14">ultra-low, 14 ng/J (California districts)</option></select></label>
                   <label className={cx("field")} htmlFor="hv-u-cold"><span className={cx("lbl")}>Cold-climate rated</span><select id="hv-u-cold" className={cx("sel")} value={unitDraft.coldClimate ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, coldClimate: e.target.value }))}><option value="">no</option><option value="yes">yes</option></select></label>
                   <label className={cx("field")} htmlFor="hv-u-gal"><span className={cx("lbl")}>Gallons (water heater)</span><input id="hv-u-gal" className={cx("in", "num")} inputMode="decimal" placeholder="50" value={unitDraft.gallons ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, gallons: e.target.value }))} /></label>
                   <label className={cx("field")} htmlFor="hv-u-cost"><span className={cx("lbl")}>Your cost $</span><input id="hv-u-cost" className={cx("in", "num")} inputMode="decimal" placeholder="3200" value={unitDraft.cost ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, cost: e.target.value }))} /></label>
@@ -1592,8 +1610,9 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
           </details>
 
           <details className={cx("panel")}>
-            <summary><svg className={cx("ic")}><use href="#i-file" /></svg>Catalog<span className={cx("mono")}>{catalog?.own ? `${catalog.items.length} rows from the shop` : "starter ladder · import your CSV"}</span></summary>
+            <summary><svg className={cx("ic")}><use href="#i-file" /></svg>Catalog<span className={cx("mono")}>{catalog?.own ? `${catalog.items.length} rows from the shop${usStale ? " · update available" : ""}` : "starter ladder · import your CSV"}</span></summary>
             <div className={cx("panel-body")}>
+              {usStale && <div className={cx("call", "warn")} style={{ marginBottom: 10 }}><span className={cx("stamp")}>update</span><span>Your catalog came from an older build of the US list: it is missing {usStale.missing} row{usStale.missing === 1 ? "" : "s"}{usStale.uln ? `, ${usStale.uln} of them ultra-low-NOx gas heat for California` : ""}{usStale.noNox ? ", and its gas rows carry no NOx class, so California districts rule them all out" : ""}. Press <b>Load the US catalog</b> to bring it up to date — your own rows and costs on other ids stay.</span></div>}
               <div className={cx("note")}><b>Load the US catalog</b> puts the most-sold American families on the pick list — Goodman, Carrier, Trane, Lennox, Rheem, Mitsubishi and the water-heater makers — as Good · Better · Best ladders with their published ratings. Download the CSV, put your costs in the <b>cost</b> column, delete what you don’t sell, and import it back with “Replace”. A hyphenated size (GLXT7C-036) is the family plus the nominal size — swap in your distributor’s exact model there. Or bring your own: one row per unit the shop installs. Columns: <b>{CATALOG_CSV_COLUMNS.join(", ")}</b> — kind, brand and model are required; a <b>cost</b> lets the ledger price from your number instead of the rate-card default; heat-pump rows want heat47/17/5 for the capacity curve. <a className={cx("link")} href={templateHref} download="jobflex-hvac-catalog-template.csv">Download the template</a>. An <b>AHRI</b> subscriber export or the <b>NEEP</b> cold-climate list (saved as CSV) imports as is — the columns are read by meaning and the import says which it used.</div>
               <div className={cx("acts")}>
                 <button type="button" className={cx("btn", "btn-primary")} onClick={() => void onLoadUs()}><svg className={cx("ic")}><use href="#i-box" /></svg>Load the US catalog</button>

@@ -930,7 +930,7 @@ export const STARTER_CATALOG: CatalogItem[] = [
 // ── catalog CSV ─────────────────────────────────────────────────────────────
 
 /** Header the import understands; extra columns are ignored. */
-export const CATALOG_CSV_COLUMNS = ["kind", "brand", "model", "tons", "coolingBtuh", "heat47Btuh", "heat17Btuh", "heat5Btuh", "btuInput", "afue", "seer2", "eer2", "hspf2", "refrigerant", "staging", "coldClimate", "ahriRef", "mcaAmps", "ratedStaticInWc", "maxTons", "tier", "gallons", "whType", "fuel", "uef", "cost"] as const;
+export const CATALOG_CSV_COLUMNS = ["kind", "brand", "model", "tons", "coolingBtuh", "heat47Btuh", "heat17Btuh", "heat5Btuh", "btuInput", "afue", "seer2", "eer2", "hspf2", "refrigerant", "staging", "coldClimate", "ahriRef", "mcaAmps", "ratedStaticInWc", "maxTons", "tier", "gallons", "whType", "fuel", "uef", "noxNgJ", "cost"] as const;
 
 const KINDS = new Set<CatalogItem["kind"]>(["heat-pump", "air-conditioner", "furnace", "air-handler", "coil", "ductless", "package", "water-heater"]);
 
@@ -986,6 +986,8 @@ export function parseCatalogCsv(text: string): { items: CatalogItem[]; errors: s
       coldClimate: /^(y|yes|true|1)$/i.test(str(cells, "coldClimate") ?? ""),
       ahriRef: str(cells, "ahriRef"),
       mcaAmps: num(cells, "mcaAmps"),
+      // Gas rows: the NOx class the California districts read (14 = ultra-low).
+      noxNgJ: num(cells, "noxNgJ"),
       ratedStaticInWc: num(cells, "ratedStaticInWc"),
       maxTons: num(cells, "maxTons"),
       tier: (["value", "mid", "premium"] as const).find((t) => t === (str(cells, "tier") ?? "").toLowerCase()),
