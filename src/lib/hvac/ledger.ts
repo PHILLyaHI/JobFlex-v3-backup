@@ -10,6 +10,7 @@
 // a contractor edits once.
 
 import type { BuildingModel, CatalogItem, EngineResult , SelectionCandidate } from "./types";
+import { serviceTask, type ServiceTask } from "./serviceMenu";
 import { DEFAULT_JOB, jobDef, type JobInput, type JobKind } from "./jobs";
 import { waterHeaterPlan } from "./waterHeater";
 
@@ -62,6 +63,8 @@ export interface HvacRateCard {
     repairEach: number;
   };
   /** Stock prices, shop cost. */
+  /** The shop's own service tasks, saved from the page; they join the menu. */
+  serviceMenu?: ServiceTask[];
   materials: {
     pad: number;
     linesetPerFt: number;
@@ -232,6 +235,14 @@ export function normalizeRateCard(raw: unknown): HvacRateCard {
     materials: group("materials"),
     equipmentDefaults: group("equipmentDefaults"),
     linesetFtDefault: numOr(r.linesetFtDefault, DEFAULT_RATE_CARD.linesetFtDefault),
+    serviceMenu: Array.isArray(r.serviceMenu) ? (r.serviceMenu as unknown[]).flatMap((t) => {
+      const x = (t && typeof t === "object" ? t : {}) as Record<string, unknown>;
+      if (typeof x.id !== "string" || typeof x.title !== "string" || typeof x.laborUsd !== "number") return [];
+      const part = x.part && typeof x.part === "object" ? (x.part as Record<string, unknown>) : null;
+      const row: ServiceTask = { id: x.id.slice(0, 80), group: "custom", title: x.title.slice(0, 120), includes: typeof x.includes === "string" ? x.includes.slice(0, 240) : "", laborUsd: numOr(x.laborUsd, 0), custom: true };
+      if (part && typeof part.name === "string" && typeof part.costUsd === "number") row.part = { name: part.name.slice(0, 120), costUsd: numOr(part.costUsd, 0), brands: Array.isArray(part.brands) ? (part.brands as unknown[]).filter((b): b is string => typeof b === "string").slice(0, 6) : undefined };
+      return [row];
+    }).slice(0, 60) : undefined,
   };
   // v1: hours by task at tech + helper per hour.
   const hours = r.hours && typeof r.hours === "object" ? (r.hours as Record<string, unknown>) : null;
@@ -821,22 +832,43 @@ function serviceLedger(engine: EngineResult, m: BuildingModel, card: HvacRateCar
   const lab: LedgerLine[] = [];
   const s = opts.input?.service;
   const L = card.labor;
-  lab.push({ id: "l-diag", name: "Diagnostic visit", quantity: 1, unitPrice: L.diagnostic, unit: "each", basis: "estimated" });
-  if (s?.refrigerantLb && s.refrigerantLb > 0) {
-    mat.push({ id: "m-refr", name: m.existing.refrigerant ? `Refrigerant ${m.existing.refrigerant}` : "Refrigerant (identify on the nameplate)", quantity: s.refrigerantLb, unitPrice: markup(m.existing.refrigerant === "R-22" ? card.materials.refrigerantR22PerLb : card.materials.refrigerantPerLb, card.materialsMarkupPct), unit: "lb", basis: m.existing.refrigerant ? "entered" : "estimated", note: m.existing.refrigerant === "R-22" ? "Reclaimed R-22 at today's cost" : undefined });
-    lab.push({ id: "l-refr", name: "Leak check and recharge", quantity: s.refrigerantLb, unitPrice: L.refrigerantPerLb, unit: "lb", basis: "entered" });
+  const mk = (c: number) => markup(c, card.materialsMarkupPct);
+  const custom = card.serviceMenu ?? [];
+  // The tasks the visit does, in the menu's order; unknown ids are skipped.
+  const tasks = (s?.tasks ?? []).map((id) => serviceTask(id, custom)).filter((t): t is NonNullable<typeof t> => !!t);
+  // A tune-up carries the inspection; otherwise the visit starts with the diagnostic.
+  if (!tasks.some((t) => t.includesDiagnostic)) lab.push({ id: "l-diag", name: "Diagnostic visit", quantity: 1, unitPrice: L.diagnostic, unit: "each", basis: "estimated" });
+  for (const t of tasks) {
+    if (t.unit === "lb") continue; // refrigerant is priced by the pound below
+    lab.push({ id: `l-svc-${t.id}`, name: t.title, quantity: 1, unitPrice: t.laborUsd, unit: "each", basis: "estimated", note: `${t.includes}${t.custom ? " · your saved task" : " · typical shop labor — edit to your rate"}` });
+    if (t.part) mat.push({ id: `m-svc-${t.id}`, name: t.part.name, quantity: 1, unitPrice: mk(t.part.costUsd), unit: "each", basis: "estimated", note: `${t.custom ? "Your saved cost" : "Typical shop cost"} $${t.part.costUsd.toLocaleString("en-US")} + ${card.materialsMarkupPct}%${t.part.brands?.length ? ` · ${t.part.brands.join(", ")}` : ""}` });
+  }
+  const lbs = s?.refrigerantLb && s.refrigerantLb > 0 ? s.refrigerantLb : 0;
+  if (lbs) {
+    mat.push({ id: "m-refr", name: m.existing.refrigerant ? `Refrigerant ${m.existing.refrigerant}` : "Refrigerant (identify on the nameplate)", quantity: lbs, unitPrice: markup(m.existing.refrigerant === "R-22" ? card.materials.refrigerantR22PerLb : card.materials.refrigerantPerLb, card.materialsMarkupPct), unit: "lb", basis: m.existing.refrigerant ? "entered" : "estimated", note: m.existing.refrigerant === "R-22" ? "Reclaimed R-22 at today's cost" : undefined });
+    lab.push({ id: "l-refr", name: "Leak check and recharge", quantity: lbs, unitPrice: L.refrigerantPerLb, unit: "lb", basis: "entered" });
+  }
+  // Tasks typed for this estimate, and the older free-text task and parts.
+  for (const [i, c] of (s?.custom ?? []).entries()) {
+    lab.push({ id: `l-cust-${i}`, name: c.name, quantity: 1, unitPrice: c.laborUsd, unit: "each", basis: "entered" });
+    if (c.partName) mat.push({ id: `m-cust-${i}`, name: c.partName, quantity: 1, unitPrice: mk(c.partCost ?? 0), unit: "each", basis: c.partCost ? "entered" : "estimated", note: c.partCost ? `Your cost $${c.partCost.toLocaleString("en-US")} + ${card.materialsMarkupPct}%` : "No cost given — put the part cost on the line" });
   }
   for (const [i, p] of (s?.parts ?? []).entries()) {
     if (!p.name) continue;
-    mat.push({ id: `m-part-${i}`, name: p.name, quantity: 1, unitPrice: markup(p.cost, card.materialsMarkupPct), unit: "each", basis: "entered", note: `Shop cost $${p.cost.toLocaleString("en-US")} + ${card.materialsMarkupPct}%` });
+    mat.push({ id: `m-part-${i}`, name: p.name, quantity: 1, unitPrice: mk(p.cost), unit: "each", basis: "entered", note: `Shop cost $${p.cost.toLocaleString("en-US")} + ${card.materialsMarkupPct}%` });
   }
   if (s?.task) lab.push({ id: "l-repair", name: s.task, quantity: 1, unitPrice: L.repairEach, unit: "each", basis: "entered" });
-  const assumptions = [`Priced from the shop rate card by the task: parts +${card.materialsMarkupPct}%.`];
-  if (m.existing.refrigerant === "R-22") assumptions.push("R-22 system: recharge is priced per pound at today's R-22 cost; a replacement quote is the alternative.");
+  const assumptions = [`Priced from the service menu by the task: typical shop labor and part costs (parts +${card.materialsMarkupPct}%) — edit any line to your rate.`];
+  for (const t of tasks) if (t.note) assumptions.push(t.note);
+  if (m.existing.refrigerant === "R-22") assumptions.push("R-22 system: recharge is priced per pound at today's reclaimed R-22 cost; a replacement quote is the alternative.");
   const subtotal = r2([...mat, ...lab].reduce((a, l) => a + l.quantity * l.unitPrice, 0));
+  const lower = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
+  const done = [...tasks.filter((t) => t.unit !== "lb").map((t) => lower(t.title)), ...(lbs ? [`recharge ${lbs} lb`] : []), ...(s?.custom ?? []).map((c) => lower(c.name)), ...(s?.task ? [lower(s.task)] : [])];
+  const count = tasks.length + (s?.custom?.length ?? 0);
+  const headline = tasks.length ? tasks.slice(0, 2).map((t) => t.title).join(", ") + (count > 2 ? ` +${count - 2}` : "") : s?.custom?.[0]?.name ?? s?.task ?? "diagnostic";
   return {
-    title: `Service — ${m.address.split(",")[0]}`,
-    scope: `Service call on the ${existingWords(m)} at ${m.address}: diagnostic${s?.task ? `, ${s.task.charAt(0).toLowerCase()}${s.task.slice(1)}` : ""}${s?.refrigerantLb ? `, recharge ${s.refrigerantLb} lb` : ""}${(s?.parts ?? []).some((p) => p.name) ? `, parts: ${(s?.parts ?? []).map((p) => p.name).filter(Boolean).join(", ")}` : ""}.`,
+    title: `Service: ${headline} — ${m.address.split(",")[0]}`,
+    scope: `Service call on the ${existingWords(m)} at ${m.address}: ${tasks.some((t) => t.includesDiagnostic) ? "" : "diagnostic, "}${done.join(", ") || "diagnostic"}${(s?.parts ?? []).some((p) => p.name) ? `, parts: ${(s?.parts ?? []).map((p) => p.name).filter(Boolean).join(", ")}` : ""}.`,
     materials: mat, labor: lab, assumptions, subtotal,
   };
 }

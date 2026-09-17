@@ -379,6 +379,34 @@ export async function getHvacRateCard(): Promise<{ card: HvacRateCard; own: bool
   return { card: DEFAULT_RATE_CARD, own: false };
 }
 
+/** Save one of the shop's own service tasks onto its rate card, so it is on
+ *  the menu next time. Same title → the row is replaced. */
+export async function saveHvacServiceTask(raw: unknown): Promise<{ ok: true; card: HvacRateCard; id: string } | { ok: false; error: string }> {
+  const { organizationId } = await requireEstimatorOrManager();
+  const parsed = z.object({
+    title: z.string().min(2).max(120),
+    includes: z.string().max(240).optional(),
+    laborUsd: z.number().min(0).max(50_000),
+    partName: z.string().max(120).optional(),
+    partCost: z.number().min(0).max(50_000).optional(),
+    brands: z.array(z.string().max(40)).max(6).optional(),
+  }).safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "A task needs a name and a labor price." };
+  const d = parsed.data;
+  const id = `custom-${d.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`.slice(0, 80);
+  try {
+    const row = await db.hvacSettings.findUnique({ where: { organizationId } });
+    const card = normalizeRateCard(row ? JSON.parse(row.rateCardJson) : DEFAULT_RATE_CARD);
+    const task = { id, group: "custom" as const, title: d.title, includes: d.includes ?? "", laborUsd: d.laborUsd, part: d.partName ? { name: d.partName, costUsd: d.partCost ?? 0, brands: d.brands } : undefined, custom: true as const };
+    card.serviceMenu = [...(card.serviceMenu ?? []).filter((t) => t.id !== id), task];
+    const rateCardJson = JSON.stringify(card);
+    await db.hvacSettings.upsert({ where: { organizationId }, create: { organizationId, rateCardJson }, update: { rateCardJson } });
+    return { ok: true, card, id };
+  } catch (err) {
+    return { ok: false, error: missingTable(err) ? "The settings table isn't in this database yet — run `prisma db push`, then save again." : `Couldn't save — ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}` };
+  }
+}
+
 export async function saveHvacRateCard(raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
   const { organizationId } = await requireEstimatorOrManager();
   const parsed = rateCardSchema.safeParse(raw && typeof raw === "object" ? raw : {});
@@ -400,7 +428,13 @@ const jobInputSchema = z.object({
   heads: z.number().int().min(1).max(8).optional(),
   wh: z.object({ existingFuel: z.enum(["gas", "electric", "propane"]).optional(), fuel: z.enum(["gas", "electric", "propane"]).optional(), type: z.enum(["tank", "heat-pump", "tankless"]).optional(), gallons: z.number().min(0).max(200).optional(), vent: z.enum(["atmospheric", "power", "direct", "none"]).optional(), location: z.enum(["garage", "closet", "basement", "utility", "attic", "outdoor"]).optional() }).optional(),
   supplyRegisters: z.number().int().min(0).max(60).optional(),
-  service: z.object({ refrigerantLb: z.number().min(0).max(50).optional(), parts: z.array(z.object({ name: z.string().max(120), cost: z.number().min(0).max(50000) })).max(20).optional(), task: z.string().max(200).optional() }).optional(),
+  service: z.object({
+    tasks: z.array(z.string().max(80)).max(40).optional(),
+    refrigerantLb: z.number().min(0).max(50).optional(),
+    custom: z.array(z.object({ name: z.string().max(120), laborUsd: z.number().min(0).max(50_000), partName: z.string().max(120).optional(), partCost: z.number().min(0).max(50_000).optional() })).max(20).optional(),
+    parts: z.array(z.object({ name: z.string().max(120), cost: z.number().min(0).max(50000) })).max(20).optional(),
+    task: z.string().max(200).optional(),
+  }).optional(),
 }).optional();
 const jobKindSchema = z.enum(JOBS.map((j) => j.id) as [string, ...string[]]).optional();
 

@@ -491,6 +491,22 @@ is a rate-card default because the row has no cost. Changing the fuel or the
 type drops the pick, the ledger ignores a pick of another kind of appliance,
 and the swap list shows only this job's kind.
 
+**Service menu (2026-09-17, owner's ask).** The service job was a text box,
+a refrigerant count and three part slots. `src/lib/hvac/serviceMenu.ts` now
+carries 42 tasks in eight groups — tune-ups, refrigerant, electrical parts,
+gas furnace, coils/drains/airflow, refrigeration parts, thermostats, ductless,
+water heater — each with what it covers, typical 2026 shop labor, the part at a
+typical shop cost and the makers a supply house stocks (Mars, Genteq, Honeywell,
+Sporlan, Copeland, Ecobee…). `serviceMenuFor(model)` shows only what fits the
+system on record (no furnace group on a heat pump, no blower motors on a
+ductless), suggests the right tune-up, and opens with the words for an R-22 or
+a 15-year-old system. The page is a grid of tick tiles; a tune-up carries the
+diagnostic, a recharge takes the pounds, and "Not listed? Add it" takes a
+task with labor and part — "Add to this estimate" or "Save to my menu", which
+puts it on the rate card (`HvacRateCard.serviceMenu`, via
+`saveHvacServiceTask`) so it is there next time. The ledger prices every line
+as "typical — edit to your rate"; the older free-text estimates still price.
+
 Not in the catalog: multi-zone ductless outdoor units
 (no ratings read), Fujitsu (Halcyon RLS3 retired, Orion figures not
 published yet), non-condensing tankless. Re-verify the families after the

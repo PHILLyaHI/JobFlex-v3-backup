@@ -155,6 +155,8 @@ export interface JobInput {
   };
   /** Ductwork: what is on the system. */
   supplyRegisters?: number;
-  /** Service: what the visit is. */
-  service?: { refrigerantLb?: number; parts?: Array<{ name: string; cost: number }>; task?: string };
+  /** Service: what the visit does — menu task ids, refrigerant by the pound,
+   *  and tasks typed for this estimate. `task` / `parts` are the older free
+   *  text and still price. */
+  service?: { tasks?: string[]; refrigerantLb?: number; custom?: Array<{ name: string; laborUsd: number; partName?: string; partCost?: number }>; parts?: Array<{ name: string; cost: number }>; task?: string };
 }

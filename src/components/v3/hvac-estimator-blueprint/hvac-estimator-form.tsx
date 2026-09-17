@@ -46,6 +46,7 @@ import {
   loadUsCatalog,
   readHvacNameplate,
   saveHvacCatalogItem,
+  saveHvacServiceTask,
   recordHvacActual,
   requestHvacPermitReport,
   saveHvacEstimate,
@@ -56,6 +57,7 @@ import {
 import { calibrationLine, type CalibrationStats } from "@/lib/hvac/calibration";
 import { useHvacWalk } from "./use-hvac-walk";
 import { SHOTS, TIPS, coverageFor } from "./filming-guide";
+import { serviceMenuFor } from "@/lib/hvac/serviceMenu";
 import { CapacityChart } from "./capacity-chart";
 import s from "./hvac-estimator.module.css";
 
@@ -231,6 +233,40 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     if ("fuel" in patch || "type" in patch) { setPickId(null); setCustom(null); }
   };
   const setSvc = (patch: Partial<NonNullable<JobInput["service"]>>) => setJobInput((j) => ({ ...j, service: { ...(j.service ?? {}), ...patch } }));
+  const toggleTask = (id: string) => setJobInput((j) => {
+    const cur = j.service?.tasks ?? [];
+    const on = cur.includes(id);
+    const tasks = on ? cur.filter((x) => x !== id) : [...cur, id];
+    // Turning the recharge off clears its pounds.
+    return { ...j, service: { ...(j.service ?? {}), tasks, ...(id === "recharge" && on ? { refrigerantLb: undefined } : {}) } };
+  });
+  const [svcDraft, setSvcDraft] = React.useState<Record<string, string>>({});
+  const [svcMsg, setSvcMsg] = React.useState("");
+  const svcDraftTask = () => {
+    const name = (svcDraft.name ?? "").trim();
+    const labor = Number(svcDraft.labor);
+    if (!name || !Number.isFinite(labor) || labor < 0) return null;
+    const partCost = Number(svcDraft.partCost);
+    return { name, laborUsd: Math.round(labor), partName: (svcDraft.partName ?? "").trim() || undefined, partCost: Number.isFinite(partCost) && partCost > 0 ? Math.round(partCost) : undefined };
+  };
+  const addCustomTask = () => {
+    const t = svcDraftTask();
+    if (!t) { setSvcMsg("A name and a labor price, at least."); return; }
+    setSvc({ custom: [...(jobInput.service?.custom ?? []), t] });
+    setSvcDraft({});
+    setSvcMsg(`${t.name} is on this estimate.`);
+  };
+  const saveCustomTask = async () => {
+    const t = svcDraftTask();
+    if (!t) { setSvcMsg("A name and a labor price, at least."); return; }
+    setSvcMsg("Saving…");
+    const res = await saveHvacServiceTask({ title: t.name, laborUsd: t.laborUsd, partName: t.partName, partCost: t.partCost });
+    if (!res.ok) { setSvcMsg(res.error); return; }
+    setCard({ card: res.card, own: true });
+    setSvc({ tasks: [...(jobInput.service?.tasks ?? []).filter((x) => x !== res.id), res.id] });
+    setSvcDraft({});
+    setSvcMsg(`${t.name} is on your menu now, and on this estimate.`);
+  };
 
   // 1 · site
   const addrRef = React.useRef<HTMLInputElement | null>(null);
@@ -1165,21 +1201,56 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                 </div>
               </div>
             )}
-            {job === "service" && (
-              <div className={cx("fs")}>
-                <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>The visit</span></div>
-                <div className={cx("grid-f")}>
-                  <label className={cx("field")} htmlFor="hv-svc-task" style={{ gridColumn: "1 / -1" }}><span className={cx("lbl")}>Repair task</span><input id="hv-svc-task" className={cx("in")} placeholder="Replace the capacitor and contactor" defaultValue={jobInput.service?.task ?? ""} onBlur={(e) => setSvc({ task: e.target.value.trim() || undefined })} /></label>
-                  <label className={cx("field")} htmlFor="hv-svc-lb"><span className={cx("lbl")}>Refrigerant lb</span><input id="hv-svc-lb" className={cx("in", "num")} inputMode="decimal" placeholder="0" defaultValue={jobInput.service?.refrigerantLb ?? ""} onBlur={(e) => { const n = Number(e.target.value); setSvc({ refrigerantLb: e.target.value.trim() && Number.isFinite(n) && n > 0 ? n : undefined }); }} /></label>
-                  {[0, 1, 2].map((i) => (
-                    <React.Fragment key={i}>
-                      <label className={cx("field")} htmlFor={`hv-part-${i}`}><span className={cx("lbl")}>Part {i + 1}</span><input id={`hv-part-${i}`} className={cx("in")} placeholder={i === 0 ? "Run capacitor 45/5" : ""} defaultValue={jobInput.service?.parts?.[i]?.name ?? ""} onBlur={(e) => setSvc({ parts: [0, 1, 2].map((k) => (k === i ? { name: e.target.value.trim(), cost: jobInput.service?.parts?.[k]?.cost ?? 0 } : jobInput.service?.parts?.[k] ?? { name: "", cost: 0 })) })} /></label>
-                      <label className={cx("field")} htmlFor={`hv-part-cost-${i}`}><span className={cx("lbl")}>Part {i + 1} cost $</span><input id={`hv-part-cost-${i}`} className={cx("in", "num")} inputMode="decimal" defaultValue={jobInput.service?.parts?.[i]?.cost || ""} onBlur={(e) => { const n = Number(e.target.value.replace(/[$,]/g, "")); setSvc({ parts: [0, 1, 2].map((k) => (k === i ? { name: jobInput.service?.parts?.[k]?.name ?? "", cost: Number.isFinite(n) && n > 0 ? n : 0 } : jobInput.service?.parts?.[k] ?? { name: "", cost: 0 })) }); }} /></label>
-                    </React.Fragment>
+            {job === "service" && model && (() => {
+              const menu = serviceMenuFor(model, card.card.serviceMenu);
+              const sel = new Set(jobInput.service?.tasks ?? []);
+              const customOn = jobInput.service?.custom ?? [];
+              const rechargeOn = sel.has("recharge");
+              return (
+                <div className={cx("fs")}>
+                  <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>The visit</span><span className={cx("mono")}>{sel.size + customOn.length ? `${sel.size + customOn.length} task${sel.size + customOn.length === 1 ? "" : "s"} on the estimate` : "pick what the visit does — the diagnostic is on until a tune-up covers it"}</span></div>
+                  {menu.notes.map((n) => <div key={n} className={cx("call", "info")} style={{ marginBottom: 10 }}><span className={cx("stamp")}>say</span><span>{n}</span></div>)}
+                  {menu.groups.map((g) => (
+                    <div key={g.group} className={cx("svc-g")}>
+                      <div className={cx("svc-gt")}>{g.title}</div>
+                      <div className={cx("svc")}>
+                        {g.tasks.map((t) => {
+                          const on = sel.has(t.id);
+                          const rec = menu.recommended.includes(t.id);
+                          return (
+                            <button key={t.id} type="button" role="checkbox" aria-checked={on} className={cx("svc-t", on && "on", rec && !on && "rec")} onClick={() => toggleTask(t.id)}>
+                              <span className={cx("svc-n")}>{t.title}{rec && !on ? <span className={cx("svc-tag")}>suggested</span> : null}{t.custom ? <span className={cx("svc-tag")}>yours</span> : null}</span>
+                              <span className={cx("svc-i")}>{t.includes}</span>
+                              <span className={cx("mono", "svc-p")}>{t.unit === "lb" ? `$${card.card.labor.refrigerantPerLb}/lb labor + refrigerant` : `$${t.laborUsd.toLocaleString("en-US")} labor${t.part ? ` · part $${t.part.costUsd.toLocaleString("en-US")}` : ""}`}{t.part?.brands?.length ? ` · ${t.part.brands.join(" / ")}` : ""}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {g.group === "refrigerant" && rechargeOn && (
+                        <label className={cx("field")} htmlFor="hv-svc-lb" style={{ maxWidth: 220, marginTop: 8 }}><span className={cx("lbl")}>Refrigerant, lb</span><input id="hv-svc-lb" className={cx("in", "num")} inputMode="decimal" placeholder="3" defaultValue={jobInput.service?.refrigerantLb ?? ""} onBlur={(e) => { const n = Number(e.target.value); setSvc({ refrigerantLb: e.target.value.trim() && Number.isFinite(n) && n > 0 ? n : undefined }); }} /></label>
+                      )}
+                    </div>
                   ))}
+                  <div className={cx("svc-gt")} style={{ marginTop: 14 }}>Not listed? Add it</div>
+                  <div className={cx("grid", "grid-rc")}>
+                    <label className={cx("field")} htmlFor="hv-cust-name"><span className={cx("lbl")}>Task</span><input id="hv-cust-name" className={cx("in")} placeholder="Replace the zone damper actuator" value={svcDraft.name ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, name: e.target.value }))} /></label>
+                    <label className={cx("field")} htmlFor="hv-cust-labor"><span className={cx("lbl")}>Labor $</span><input id="hv-cust-labor" className={cx("in", "num")} inputMode="decimal" placeholder="180" value={svcDraft.labor ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, labor: e.target.value }))} /></label>
+                    <label className={cx("field")} htmlFor="hv-cust-part"><span className={cx("lbl")}>Part (optional)</span><input id="hv-cust-part" className={cx("in")} placeholder="Damper actuator" value={svcDraft.partName ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, partName: e.target.value }))} /></label>
+                    <label className={cx("field")} htmlFor="hv-cust-cost"><span className={cx("lbl")}>Part cost $</span><input id="hv-cust-cost" className={cx("in", "num")} inputMode="decimal" placeholder="85" value={svcDraft.partCost ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, partCost: e.target.value }))} /></label>
+                  </div>
+                  <div className={cx("acts")}>
+                    <button type="button" className={cx("btn", "btn-primary")} onClick={addCustomTask}>Add to this estimate</button>
+                    <button type="button" className={cx("btn", "btn-ghost")} onClick={() => void saveCustomTask()}>Save to my menu</button>
+                    <span className={cx("acts-note")}>{svcMsg}</span>
+                  </div>
+                  {customOn.length > 0 && (
+                    <ul className={cx("svc-list")}>
+                      {customOn.map((c, i) => <li key={`${c.name}-${i}`}><span>{c.name} — ${c.laborUsd.toLocaleString("en-US")} labor{c.partName ? ` · ${c.partName}${c.partCost ? ` $${c.partCost.toLocaleString("en-US")}` : ""}` : ""}</span><button type="button" className={cx("link")} onClick={() => setSvc({ custom: customOn.filter((_, k) => k !== i) })}>Remove</button></li>)}
+                    </ul>
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
 {(def.selection !== "none" || def.needs.ducts) && <div className={cx("fs")}>
               <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>How you want it done</span><span className={cx("mono")}>the calls that are yours, not the house&rsquo;s</span></div>
               <div className={cx("grid-f")}>

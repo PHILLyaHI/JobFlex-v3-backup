@@ -444,6 +444,29 @@
   :global(.jf-blueprint .content) .swap-row { grid-template-columns: minmax(0, 1fr); gap: 3px; }
   :global(.jf-blueprint .content) .swap-a { justify-self: start; }
 }
+/* The service menu: task tiles the contractor ticks, grouped by what they are. */
+:global(.jf-blueprint .content) .svc-g { margin-top: 12px; }
+:global(.jf-blueprint .content) .svc-gt { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+:global(.jf-blueprint .content) .svc { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 7px; }
+:global(.jf-blueprint .content) .svc-t { display: flex; flex-direction: column; gap: 3px; padding: 9px 11px; text-align: left; background: var(--paper); border: 1.5px solid var(--hair-soft); font: inherit; color: var(--ink); cursor: pointer; min-width: 0; }
+:global(.jf-blueprint .content) .svc-t:hover { border-color: var(--ink); }
+:global(.jf-blueprint .content) .svc-t:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+:global(.jf-blueprint .content) .svc-t.rec { border-color: var(--blueprint); }
+:global(.jf-blueprint .content) .svc-t.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+:global(.jf-blueprint .content) .svc-n { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 800; }
+:global(.jf-blueprint .content) .svc-n::before { content: ""; width: 12px; height: 12px; flex: none; border: 1.5px solid currentColor; border-radius: 2px; }
+:global(.jf-blueprint .content) .svc-t.on .svc-n::before { background: var(--paper); box-shadow: inset 0 0 0 2px var(--ink); }
+:global(.jf-blueprint .content) .svc-tag { font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--blueprint); }
+:global(.jf-blueprint .content) .svc-t.on .svc-tag { color: rgba(242, 240, 235, 0.8); }
+:global(.jf-blueprint .content) .svc-i { font-size: 11px; line-height: 1.4; color: var(--muted); }
+:global(.jf-blueprint .content) .svc-t.on .svc-i { color: rgba(242, 240, 235, 0.8); }
+:global(.jf-blueprint .content) .svc-p { font-size: 10px; letter-spacing: 0.03em; color: var(--blueprint); }
+:global(.jf-blueprint .content) .svc-t.on .svc-p { color: var(--paper); }
+:global(.jf-blueprint .content) .svc-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; font-size: 12px; }
+:global(.jf-blueprint .content) .svc-list li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--hair-soft); }
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .svc { grid-template-columns: minmax(0, 1fr); }
+}
 :global(.jf-blueprint .content) .kinds { display: grid; grid-template-columns: auto 1fr 1fr; align-items: stretch; border-bottom: 1.5px solid var(--hair-soft); }
 :global(.jf-blueprint .content) .kinds-lbl { display: flex; align-items: center; padding: 0 16px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); border-right: 1.5px solid var(--hair-soft); }
 :global(.jf-blueprint .content) .kind { display: flex; flex-direction: column; gap: 2px; padding: 10px 16px; text-align: left; background: transparent; border: none; border-right: 1.5px solid var(--hair-soft); font: inherit; color: var(--ink); cursor: pointer; }
