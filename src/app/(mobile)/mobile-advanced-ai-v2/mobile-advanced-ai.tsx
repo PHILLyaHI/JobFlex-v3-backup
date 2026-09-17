@@ -352,6 +352,8 @@ export function MobileSmartProposal() {
 
   /* ---------- estimate -------------------------------------------------- */
   const [lines, setLines] = useState<ConsoleLine[]>([]);
+  /** What the post-generation check changed (lib/estimate/validate-estimate). */
+  const [checkNotes, setCheckNotes] = useState<string[]>([]);
   const [title, setTitle] = useState("");
   const [scope, setScope] = useState("");
   const [assumptions, setAssumptions] = useState<string[]>([]);
@@ -694,6 +696,7 @@ export function MobileSmartProposal() {
     opts: { disabled: boolean; location: string; hints: string[] },
   ) => {
     setLines(linesFromEstimate(est));
+    setCheckNotes(est.notes ?? []);
     setTitle(est.title || estTitle);
     setScope(est.scope || brief.trim());
     setAssumptions(est.assumptions);
@@ -882,6 +885,11 @@ export function MobileSmartProposal() {
   };
 
   /* ---------- line editing ---------------------------------------------- */
+  /** One line, changed in place — the desktop console's `patch`. */
+  const patch = (id: string, next: Partial<ConsoleLine>) => {
+    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...next } : l)));
+  };
+
   const addLine = () => {
     const line: ConsoleLine = { ...blankLine(), name: "New line" };
     setLines((prev) => prev.concat(line));
@@ -1232,7 +1240,10 @@ export function MobileSmartProposal() {
      are columns of every row, never row types. The line total is
      qty × (material + labor). */
   const renderLines = () => {
-    const list = lines;
+    // A suggestion is work the description never asked for: shown apart,
+    // in no total until it is added (audit 2026-09-17).
+    const list = lines.filter((l) => l.flag !== "suggested");
+    const suggestions = lines.filter((l) => l.flag === "suggested");
     const total = totals.subtotal;
     return (
       <section className={styles.card} key="lines">
@@ -1276,6 +1287,8 @@ export function MobileSmartProposal() {
                     <span className={styles.lnameT}>
                       {l.name}
                       {l.badge ? <span className={styles.lbadge}>{l.badge}</span> : null}
+                      {l.flag === "auto" ? <span className={`${styles.lbadge} ${styles.lflag}`}>added</span> : null}
+                      {l.flag === "adjusted" ? <span className={`${styles.lbadge} ${styles.lflag}`}>adjusted</span> : null}
                     </span>
                     <span className={styles.lmeta}>
                       {l.qty} {l.unit} × {cash(l.materialPrice + l.laborPrice)}
@@ -1349,6 +1362,32 @@ export function MobileSmartProposal() {
               );
             })}
           </div>
+        )}
+        {/* Work the description never asked for: priced, shown, and in no
+            total until the contractor taps it in. */}
+        {suggestions.length > 0 && (
+          <div className={styles.suggBlock}>
+            <div className={styles.suggHead}>Not in your description</div>
+            {suggestions.map((sg) => (
+              <button
+                key={sg.id}
+                type="button"
+                className={styles.suggRow}
+                onClick={() => patch(sg.id, { flag: undefined, flagNote: undefined })}
+              >
+                <span className={styles.suggName}>{sg.name}</span>
+                <span className={styles.suggCash}>{cash(lineTotal(sg))}</span>
+                <span className={`${styles.lbadge} ${styles.lflag}`}>add</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {checkNotes.length > 0 && (
+          <ul className={styles.checkNotes}>
+            {checkNotes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
         )}
         {/* The empty state already carries the Add-line CTA — one per card. */}
         {list.length === 0 ? null : (

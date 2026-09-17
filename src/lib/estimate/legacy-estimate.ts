@@ -171,6 +171,11 @@ export type LegacyItem = {
   laborUnitPrice: number;
   notes?: string;
   searchQuery: string | null;
+  /** Set by the post-generation validation pass, never by the model
+   *  (lib/estimate/validate-estimate): a line the app added, a price it pulled
+   *  to the anchor, or work the brief never asked for. */
+  flag?: "auto" | "adjusted" | "suggested";
+  flagNote?: string;
 };
 
 const money = (n: number) => Math.round(n * 100) / 100;

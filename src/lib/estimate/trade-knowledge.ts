@@ -40,6 +40,16 @@ export type TradeProfile = {
   preamble: string;
   /** Phases a complete estimate covers, in order. Each becomes a line. */
   phases: string[];
+  /**
+   * Phases from the list above that are only in scope when the BRIEF asks for
+   * them by name. Rule 2 tells the model every phase is required, which is how
+   * a repipe brief that mentions the water heater's connections came back with
+   * a $2,300 water-heater replacement in three runs out of three (audit
+   * 2026-09-17). These are printed apart, and lib/estimate/validate-estimate
+   * sets any line answering one of them aside as a suggestion when the
+   * description never asked.
+   */
+  conditional?: string[];
   /** Unit-price anchors: material $/unit and labor $/unit, standard grade. */
   anchors: string[];
   keyQuestions: string[];
@@ -448,6 +458,7 @@ export const TRADES: TradeProfile[] = [
     preamble:
       "Plumbing proposal. Phases: permit (fixed), rough-in supply and drain per fixture (unit), fixtures supplied and set (unit), water heater (unit), repipe by linear ft of run or per fixture, drywall/access openings and patching (fixed or sqft), testing, inspection and cleanup (fixed).",
     phases: ["Permit and inspection", "Rough-in supply and drain", "Fixture supply and installation", "Water heater", "Access openings and patching", "Testing and cleanup"],
+    conditional: ["Water heater"],
     anchors: [
       "Rough-in per fixture: material $150-300/unit; labor $400-1,200/unit",
       "Toilet set: material $200-600/unit; labor $150-300/unit",

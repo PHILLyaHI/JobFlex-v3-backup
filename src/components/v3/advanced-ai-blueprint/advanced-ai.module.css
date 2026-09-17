@@ -245,6 +245,27 @@
   color: var(--blueprint); background: rgba(24,84,160,.06);
   font-family: var(--font-mono); font-size: 9px; font-weight: 600;
   letter-spacing: .12em; text-transform: uppercase; }
+/* What the post-generation check did to a line, and the work it set aside.
+   Same 9px mono chip as the refine badge; the soft state is the house's
+   dashed hairline, not a second colour (advanced-ai.module.css .sp-store--none). */
+:global(.jf-blueprint .content) .sp-row-n em.sp-flag { border-style: dashed; color: var(--muted);
+  border-color: var(--muted); background: transparent; }
+:global(.jf-blueprint .content) .sp-sugg { margin: 10px 14px 0; padding: 10px 0 2px;
+  border-top: 1.5px dashed rgba(10,10,10,.2); }
+:global(.jf-blueprint .content) .sp-sugg-h { font-family: var(--font-mono); font-size: 9px;
+  font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content) .sp-sugg-row { display: flex; align-items: center; gap: 10px;
+  min-height: 44px; cursor: pointer; }
+:global(.jf-blueprint .content) .sp-sugg-row input { width: 18px; height: 18px; accent-color: var(--blueprint); }
+:global(.jf-blueprint .content) .sp-sugg-n { flex: 1; font-size: 13px; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .sp-sugg-t { font-family: var(--font-mono); font-size: 13px;
+  font-variant-numeric: tabular-nums; color: var(--muted); }
+:global(.jf-blueprint .content) .sp-sugg-row em { font-style: normal; padding: 1px 7px;
+  border: 1.5px dashed var(--blueprint); border-radius: var(--radius); color: var(--blueprint);
+  font-family: var(--font-mono); font-size: 9px; font-weight: 600; letter-spacing: .12em;
+  text-transform: uppercase; }
+:global(.jf-blueprint .content) .sp-checks { margin: 8px 14px 14px; padding: 0 0 0 16px;
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.6; color: var(--muted); }
 :global(.jf-blueprint .content) .sp-in { width: 100%; box-sizing: border-box; height: 35px; padding: 0 9px;
   border: 1.5px solid var(--ink); border-radius: var(--radius);
   background: #ffffff; font-family: var(--font-mono); font-size: 14px;

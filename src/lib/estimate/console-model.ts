@@ -80,6 +80,15 @@ export type ConsoleLine = {
   notes?: string;
   /** "Updated" / "Added" after a refine, cleared by Undo. */
   badge?: string;
+  /**
+   * What the post-generation validation did to this line
+   * (lib/estimate/validate-estimate): "auto" = added from the trade's standard
+   * scope, "adjusted" = its price was pulled to the catalogue anchor,
+   * "suggested" = the description never asked for it. A SUGGESTED line is
+   * shown apart and counts in no total until the contractor adds it.
+   */
+  flag?: "auto" | "adjusted" | "suggested";
+  flagNote?: string;
 };
 
 /** Kept for callers that still name the two ledgers; nothing branches on it. */
@@ -281,6 +290,8 @@ export function linesFromEstimate(est: GeneratedEstimate): ConsoleLine[] {
       imageUrl: m?.imageUrl,
       dimensions: m?.dimensions,
       notes: m?.notes ?? l?.notes,
+      flag: m?.flag ?? l?.flag,
+      flagNote: m?.flagNote ?? l?.flagNote,
     };
   });
 }
@@ -306,7 +317,7 @@ export function estimateFromLines(
     const hasProduct = Boolean(l.store || l.productUrl || l.imageUrl || l.retailPrice != null);
     const hasMaterial = num(l.materialPrice) > 0 || hasProduct;
     const hasLabor = num(l.laborPrice) > 0;
-    const common = { id: l.id, name: l.name, quantity: l.qty, unit: l.unit || undefined };
+    const common = { id: l.id, name: l.name, quantity: l.qty, unit: l.unit || undefined, flag: l.flag, flagNote: l.flagNote };
     if (hasMaterial || !hasLabor) {
       materials.push({
         ...common,
@@ -381,12 +392,15 @@ export function lineTotal(l: ConsoleLine): number {
   return lineMaterial(l) + lineLabor(l);
 }
 
+/** A line the contractor has not accepted yet is in no total (audit 2026-09-17). */
+export const isBilled = (l: ConsoleLine): boolean => l.flag !== "suggested";
+
 export function sumMaterials(lines: ConsoleLine[]): number {
-  return lines.reduce((n, l) => n + lineMaterial(l), 0);
+  return lines.reduce((n, l) => n + (isBilled(l) ? lineMaterial(l) : 0), 0);
 }
 
 export function sumLabor(lines: ConsoleLine[]): number {
-  return lines.reduce((n, l) => n + lineLabor(l), 0);
+  return lines.reduce((n, l) => n + (isBilled(l) ? lineLabor(l) : 0), 0);
 }
 
 /** Order-level discount as the console holds it. Mirrors `EstimateDiscount`. */

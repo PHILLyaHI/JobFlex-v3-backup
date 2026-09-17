@@ -7,10 +7,12 @@
 // phases (prep, permits, cleanup) were an afterthought, and the prices had
 // nothing to anchor to. This call is what the previous JobFlex did well: the
 // master methodology + the trade's own preamble, phases, price anchors and
-// planning questions + hard rules about names, coverage and units, answered
-// at temperature 0 so the same brief prices the same way twice. The product
-// search runs AFTER, per line, purely to attach a shop-list link and listing
-// price; it never re-prices a line.
+// planning questions + hard rules about names, coverage and units. It is sent
+// at temperature 0 with a fixed seed, which is NOT the same as reproducible:
+// the 2026-09-17 audit measured the same brief coming back between 4% and 98%
+// apart across three runs, which is why lib/estimate/validate-estimate judges
+// the answer afterwards. The product search runs AFTER, per line, purely to
+// attach a shop-list link and listing price; it never re-prices a line.
 //
 // This module used to BE the estimate call. Since 2026-09-03 the call itself is
 // the previous JobFlex's quote-draft prompt, verbatim (./legacy/prompt.ts), and
@@ -80,8 +82,16 @@ export function buildEstimateSystemPrompt(trade: TradeProfile, input: EstimatePr
     trade.preamble,
     "",
     "PHASES A COMPLETE ESTIMATE FOR THIS TRADE COVERS. Every phase below is REQUIRED as its own line, in this order — including allowances, consumables, permit and cleanup — unless the brief explicitly excludes it (write the exclusion in `assumptions`). Add phases the brief calls for that are not listed:",
-    ...trade.phases.map((p, i) => `  ${i + 1}. ${p}`),
+    ...trade.phases.filter((p) => !(trade.conditional ?? []).includes(p)).map((p, i) => `  ${i + 1}. ${p}`),
     "",
+    ...((trade.conditional ?? []).length
+      ? [
+          // A phase that is its own job. Priced only when the brief asks for it
+          // by name — otherwise a repipe quietly grows a new water heater.
+          `ONLY IF THE BRIEF ASKS FOR IT BY NAME (leave it out entirely otherwise — do not add it "for completeness"): ${(trade.conditional ?? []).join("; ")}.`,
+          "",
+        ]
+      : []),
     ...(trade.checklist?.length
       ? [
           "LINES THIS TRADE'S JOB TYPES MUST CARRY — each its own line unless the brief marks that part not in scope (write the exclusion in `assumptions`):",

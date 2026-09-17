@@ -13,6 +13,8 @@ import { readPriceCache, writePriceCache } from "@/lib/priceCache";
 import { sellUnitPrice, resolveMarkupRates } from "@/lib/pricing/markup";
 import { PRICING_RULES, UNIT_RULES } from "@/lib/estimate/master-prompt";
 import { normalizeUnit, pairEstimateLines } from "@/lib/estimate/console-model";
+import { applyRepairs, repairInstruction, validateEstimate } from "@/lib/estimate/validate-estimate";
+import { detectTrade } from "@/lib/estimate/trade-knowledge";
 import { buildLegacyEstimatePrompt, legacyEstimateFromText, LEGACY_SYSTEM_MESSAGE } from "@/lib/estimate/legacy-estimate";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import {
@@ -187,6 +189,9 @@ async function mapLimit<T, R>(
   );
   return out;
 }
+/** How many times a rejected estimate is handed back to the model with its
+ *  violations before the deterministic repair takes over (audit 2026-09-17). */
+const MAX_ESTIMATE_REPAIRS = 2;
 const SERP_CONCURRENCY = 4;
 
 /**
@@ -636,21 +641,57 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
     console.info(
       `[advancedEstimator] Step 1 (estimate) · specialty=${legacy.specialty.id} hvac=${legacy.hvac} tier=${qualityTier} photos=${photos.length} prompt=${legacy.prompt.length}ch`
     );
-    const estimateCompletion = await client.chat.completions.create({
-      model: OPENAI_MODEL,
-      // temperature 0 + seed 42, as the old provider sent — the same brief
-      // prices the same way twice. Reasoning models reject a temperature.
-      ...(reasoningModel ? {} : { temperature: 0, seed: 42 }),
-      messages: [
-        { role: "system", content: LEGACY_SYSTEM_MESSAGE },
-        { role: "user", content: withPhotos(legacy.prompt, photos) },
-      ],
-      response_format: { type: "json_object" },
-    });
-    const estimateText = estimateCompletion.choices[0]?.message?.content ?? "{}";
-    const called = legacyEstimateFromText(estimateText, legacy.specialty);
+    // temperature 0 + seed 42, as the old provider sent. This is NOT
+    // determinism: the audit of 2026-09-17 ran ten briefs three times each and
+    // the same brief came back between 4% and 98% apart — a water-heater swap
+    // at $1,021 and at $3,000. That is why the answer is validated below
+    // rather than trusted. Reasoning models reject a temperature.
+    const askEstimate = async (extra: string) => {
+      const completion = await client.chat.completions.create({
+        model: OPENAI_MODEL,
+        ...(reasoningModel ? {} : { temperature: 0, seed: 42 }),
+        messages: [
+          { role: "system", content: LEGACY_SYSTEM_MESSAGE },
+          { role: "user", content: withPhotos(`${legacy.prompt}${extra}`, photos) },
+        ],
+        response_format: { type: "json_object" },
+      });
+      return legacyEstimateFromText(completion.choices[0]?.message?.content ?? "{}", legacy.specialty);
+    };
+
+    // ── Step 1b · Judge the answer, and make it fix what it got wrong ──────
+    // Up to two re-asks with the violations listed; whatever is still wrong
+    // after that is repaired here and said out loud on the estimate
+    // (lib/estimate/validate-estimate).
+    const trade = detectTrade(`${input.projectType ?? ""} ${input.description}`);
+    let called = await askEstimate("");
     if (called.warnings.length) console.warn(`[advancedEstimator] parser: ${called.warnings.join(" | ")}`);
     if (called.items.length === 0) throw new Error("The estimator returned no line items — try a more specific description.");
+    let report = validateEstimate({ items: called.items, description: input.description, location: input.location, assumptions: called.assumptions, trade });
+    for (let attempt = 1; attempt <= MAX_ESTIMATE_REPAIRS && report.blocking.length; attempt++) {
+      console.info(`[advancedEstimator] Step 1b · ${report.blocking.length} blocking violation(s), re-asking (${attempt}/${MAX_ESTIMATE_REPAIRS}): ${report.blocking.map((x) => x.code).join(", ")}`);
+      // A re-ask that fails (rate limit, spent account, a bad reply) must
+      // never cost the contractor the estimate already in hand.
+      let retry: Awaited<ReturnType<typeof askEstimate>>;
+      try {
+        retry = await askEstimate(repairInstruction(report));
+      } catch (err) {
+        console.warn(`[advancedEstimator] Step 1b · re-ask failed, keeping the first answer: ${err instanceof Error ? err.message : String(err)}`);
+        break;
+      }
+      if (!retry.items.length) break;
+      const retryReport = validateEstimate({ items: retry.items, description: input.description, location: input.location, assumptions: retry.assumptions, trade });
+      // Keep the better answer: fewer blocking violations wins, ties go to the newer.
+      if (retryReport.blocking.length <= report.blocking.length) {
+        called = retry;
+        report = retryReport;
+      }
+      if (!report.blocking.length) break;
+    }
+    const repaired = applyRepairs({ items: called.items, description: input.description, location: input.location, assumptions: called.assumptions, trade }, report);
+    const estimateNotes = repaired.notes;
+    if (estimateNotes.length) console.info(`[advancedEstimator] Step 1b · ${estimateNotes.join(" ")}`);
+    called = { ...called, items: repaired.items, assumptions: repaired.assumptions };
     // Guard the ledger's arithmetic: no negative or NaN quantities, no line
     // with nothing on it. A zero-priced line is kept (the contractor fills it)
     // but logged, so a silent regression in the prompt is visible.
@@ -671,7 +712,7 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
     // package costs. Bounded concurrency: an unbounded fan-out tripped
     // SerpAPI's per-second throttle mid-batch.
     const shopIdx = items
-      .map((it, i) => (it.materialUnitPrice > 0 && it.searchQuery?.trim() ? i : -1))
+      .map((it, i) => (it.materialUnitPrice > 0 && it.searchQuery?.trim() && it.flag !== "suggested" ? i : -1))
       .filter((i) => i >= 0);
     console.info(`[advancedEstimator] Step 2 (shop) · ${shopIdx.length} queries, ${SERP_CONCURRENCY} at a time`);
     const shopResults = await mapLimit(shopIdx, SERP_CONCURRENCY, (i) =>
@@ -698,6 +739,10 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
         quantity: it.quantity,
         unit: it.unit,
         unitPrice: it.materialUnitPrice,
+        // What the validation pass did to this line, for the row to show and
+        // for the totals to honour (a suggestion is not billed).
+        flag: it.flag,
+        flagNote: it.flagNote,
         dimensions: it.dimensions?.trim() || undefined,
         notes: it.notes?.trim() || undefined,
         // The listing's package price, for the shop list. The line's own
@@ -708,7 +753,7 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
         imageUrl: (opt && safeHttp(opt.thumbnail)) ?? undefined,
       });
       if (it.laborUnitPrice > 0) {
-        labor.push({ id, name: it.name.trim(), quantity: it.quantity, unit: it.unit, unitPrice: it.laborUnitPrice });
+        labor.push({ id, name: it.name.trim(), quantity: it.quantity, unit: it.unit, unitPrice: it.laborUnitPrice, flag: it.flag, flagNote: it.flagNote });
       }
     });
     const estimate: GeneratedEstimate = {
@@ -718,6 +763,7 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
       estimatedTimelineDays: called.estimatedTimelineDays,
       materials,
       labor,
+      notes: estimateNotes.length ? estimateNotes : undefined,
     };
     console.info(
       `[advancedEstimator] Step 3 complete · ${materials.length} lines (${chosen.filter(Boolean).length} matched to live products), ${labor.length} carry labor`

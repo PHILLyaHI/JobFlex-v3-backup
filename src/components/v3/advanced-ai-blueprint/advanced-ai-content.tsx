@@ -209,6 +209,9 @@ export function AdvancedAiContent() {
   const [title, setTitle] = useState("");
   const [scope, setScope] = useState("");
   const [assumptions, setAssumptions] = useState<string[]>([]);
+  /** What the post-generation validation changed, in the contractor's words
+   *  (lib/estimate/validate-estimate). Contractor-facing only. */
+  const [checkNotes, setCheckNotes] = useState<string[]>([]);
   const [baseline, setBaseline] = useState<string[]>([]);
   const [timelineDays, setTimelineDays] = useState<number | null>(null);
   const [discount, setDiscount] = useState<DiscountState>(NO_DISCOUNT);
@@ -469,6 +472,7 @@ export function AdvancedAiContent() {
 
       const est = res.data;
       setLines(linesFromEstimate(est));
+      setCheckNotes(est.notes ?? []);
       setTitle(est.title);
       setScope(est.scope || description);
       setAssumptions(est.assumptions);
@@ -507,6 +511,7 @@ export function AdvancedAiContent() {
     setPanel("intake");
     setLines([]);
     setAssumptions([]);
+    setCheckNotes([]);
     setBaseline([]);
     setTitle("");
     setScope("");
@@ -814,6 +819,11 @@ export function AdvancedAiContent() {
           />
         </HoverTitle>
         {r.badge && <em>{r.badge}</em>}
+        {/* What the post-generation check did to this line: a line the app
+            added from the trade's standard scope, or a price it pulled to the
+            catalogue anchor. Same 9px mono chip as the refine badge. */}
+        {r.flag === "auto" && <em className={cx("sp-flag")} title={r.flagNote}>added</em>}
+        {r.flag === "adjusted" && <em className={cx("sp-flag")} title={r.flagNote}>adjusted</em>}
       </span>
 
       {numField(r, "q", "qty", MAX_QTY, "quantity", "sp-in--qty")}
@@ -864,7 +874,7 @@ export function AdvancedAiContent() {
         <span>Total</span>
         <span className={cx("sp-th-x")} aria-hidden="true" />
       </div>
-      <div>{lines.map(row)}</div>
+      <div>{lines.filter((l) => l.flag !== "suggested").map(row)}</div>
       {lines.length === 0 && <div className={cx("sp-empty")}>Nothing here yet.</div>}
       <button className={cx("sp-add")} type="button" disabled={uiLocked} onClick={addLine}>
         <svg className={cx("ic")}>
@@ -872,6 +882,36 @@ export function AdvancedAiContent() {
         </svg>
         Add line item
       </button>
+      {/* Work the description never asked for. Priced, shown, and in no
+          total until it is ticked (audit 2026-09-17). */}
+      {lines.some((l) => l.flag === "suggested") && (
+        <div className={cx("sp-sugg")}>
+          <div className={cx("sp-sugg-h")}>Not in your description</div>
+          {lines
+            .filter((l) => l.flag === "suggested")
+            .map((s) => (
+              <label className={cx("sp-sugg-row")} key={s.id}>
+                <input
+                  type="checkbox"
+                  checked={false}
+                  disabled={uiLocked}
+                  aria-label={`Add ${s.name} to the estimate`}
+                  onChange={() => patch(s.id, { flag: undefined, flagNote: undefined })}
+                />
+                <span className={cx("sp-sugg-n")}>{s.name}</span>
+                <span className={cx("sp-sugg-t")}>{money(lineTotal(s))}</span>
+                <em>add</em>
+              </label>
+            ))}
+        </div>
+      )}
+      {checkNotes.length > 0 && (
+        <ul className={cx("sp-checks")}>
+          {checkNotes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 

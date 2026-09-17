@@ -731,6 +731,30 @@
   color: var(--blueprint);
   white-space: nowrap;
 }
+/* The soft state of a chip: dashed hairline, muted ink - never a second hue. */
+.lflag {
+  border-style: dashed;
+  border-color: var(--muted);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+}
+/* Work the description never asked for, and what the check changed. */
+.suggBlock { margin: 10px 0 0; padding-top: 10px; border-top: 1.5px dashed rgba(10, 10, 10, 0.2); }
+.suggHead {
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--muted);
+}
+.suggRow {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  min-height: 44px; padding: 0; border: 0; background: none; text-align: left;
+}
+.suggName { flex: 1; font-size: 13px; color: var(--ink-soft); }
+.suggCash { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.checkNotes {
+  margin: 8px 0 0; padding-left: 16px;
+  font-size: 11px; line-height: 1.6; color: var(--muted);
+}
 .lrowActs { grid-column: 2; grid-row: 1; align-self: start; display: flex; gap: 6px; }
 /* The ⋮ control. The owner asked for a SMALLER frame, but a 44px tap target
    is a hard rule — so the drawn box shrinks to 30px and `::before` restores

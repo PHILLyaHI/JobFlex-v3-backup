@@ -48,6 +48,14 @@ export const lineSchema = z.object({
   imageUrl: httpUrl,
   dimensions: trimmedOpt,
   notes: trimmedOpt,
+  // What the post-generation validation did to this line (audit 2026-09-17,
+  // lib/estimate/validate-estimate): "auto" = the app added it from the
+  // trade's standard scope, "adjusted" = its price was pulled to the
+  // catalogue anchor, "suggested" = the description never asked for this
+  // work, so it is offered as an option and stays OUT of every total until
+  // the contractor adds it. `flagNote` is the short reason, shown on the row.
+  flag: z.enum(["auto", "adjusted", "suggested"]).optional(),
+  flagNote: trimmedOpt,
 });
 
 // One order-level discount, mirroring the Prisma Discount row on Proposal
@@ -70,6 +78,10 @@ export const estimateSchema = z.object({
   // Set by the refine when the contractor asks for a discount ("10% off",
   // "knock $500 off") — kept order-level instead of mangled into line prices.
   discount: discountSchema.nullish(),
+  // What the validation pass changed, in the contractor's words ("2 lines
+  // added from standard scope"). Shown under the estimate, never on the
+  // proposal the client reads.
+  notes: z.array(z.string()).optional(),
 });
 
 export type GeneratedEstimate = z.infer<typeof estimateSchema>;
