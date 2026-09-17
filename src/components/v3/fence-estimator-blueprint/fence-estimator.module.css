@@ -72,6 +72,24 @@
   --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, 'Courier New', monospace;
 
+  /* Topography on the satellite map. Pale cream, never signal yellow (DESIGN.md
+     refuses hi-vis safety yellow), so contours separate from everything else
+     drawn there: the blue property line, the blue fence and the amber / red
+     slope recolouring. Index lines differ by weight, not hue; a dark casing
+     under the lot's own lines keeps them legible over grass, roof and asphalt. */
+  --topo-line: #fff7df;
+  --topo-major: #f3e7c2;
+  --topo-casing: #0a0a0a;
+  --topo-paper: rgba(242, 240, 235, 0.94);
+  /* Property line on the satellite map — FenceScan's survey style, by the
+     owner's call: a dashed emerald core on a heavy dark casing, corner dots. */
+  --parcel-line: #4ade80;
+  --parcel-casing: #06120a;
+  --parcel-dot: #0d1b12;
+  /* Slope classes — the same amber / red the map's slope overlay draws. */
+  --slope-racked: #c47f17;
+  --slope-stepped: #b3261e;
+
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --sidebar-w: 264px;
   --topbar-h: 62px;
@@ -1377,14 +1395,57 @@
 
 /* ground profile strip — the measured elevation along the traced line,
    filled by the behavior module once the terrain profile lands */
-.bp :global(.content .stage-profile) { padding: 8px 14px 10px; border-top: 1.5px solid var(--hair-soft); }
-.bp :global(.content .stage-profile.is-hidden) { display: none; }
-.bp :global(.content .stage-profile svg) { display: block; width: 100%; height: 44px; }
-.bp :global(.content .stage-profile .tp-meta) { margin-top: 6px; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 
 /* the 3D scene draws the ground flat — the note says so while it is mounted */
 .bp :global(.content .model-note) { position: absolute; left: 12px; bottom: 12px; z-index: 3; padding: 5px 9px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .bp :global(.content .model-note.is-hidden) { display: none; }
+
+/* Finish / Undo strip while tracing — directly under the map (never over it);
+   on a phone it is the only way to end a run or an outline. */
+.bp :global(.content .draw-ctl) { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border-top: 2px solid var(--ink); background: var(--paper-deep); }
+.bp :global(.content .draw-ctl.is-hidden) { display: none; }
+.bp :global(.content .draw-ctl .tool) { box-shadow: 2px 2px 0 var(--ink); border-color: var(--ink); color: var(--ink); }
+.bp :global(.content .draw-ctl .tool-primary) { background: var(--blueprint); border-color: var(--blueprint-dark); color: #fff; }
+.bp :global(.content .draw-ctl .tool:disabled) { opacity: 0.45; box-shadow: none; }
+@media (max-width: 860px), (pointer: coarse) {
+  .bp :global(.content .draw-ctl .tool) { min-height: 44px; padding: 0 14px; }
+}
+
+/* Buildings panel — the parcel panel's frame, one row per traced house. */
+.bp :global(.content .house-panel) { padding: 12px 14px 14px; border-top: 1.5px solid var(--hair-soft); }
+.bp :global(.content .house-panel.is-hidden) { display: none; }
+.bp :global(.content .house-tools) { display: flex; gap: 6px; }
+.bp :global(.content .house-list) { display: grid; gap: 6px; list-style: none; margin: 10px 0 0; padding: 0; }
+.bp :global(.content .hs-row) { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 10px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; }
+.bp :global(.content .hs-name) { font-size: 12px; font-weight: 800; color: var(--ink); white-space: nowrap; }
+.bp :global(.content .hs-ft) { margin-left: auto; font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bp :global(.content .hs-sel) { flex: 0 0 auto; }
+.bp :global(.content .hs-sel .bp-sel-in) { height: 30px; font-size: 11.5px; }
+.bp :global(.content .hs-empty) { padding: 10px 12px; border: 1.5px dashed var(--muted-faint); border-radius: var(--radius); font-size: 12px; color: var(--muted); }
+@media (max-width: 860px), (pointer: coarse) {
+  .bp :global(.content .hs-sel .bp-sel-in) { height: 44px; }
+  .bp :global(.content .hs-row .row-x) { min-width: 44px; min-height: 44px; }
+}
+
+/* Topo legend — an annotation plate over the map's top-left corner. */
+.bp :global(.content .topo-legend) { position: absolute; left: 12px; top: 12px; z-index: 4; max-width: min(360px, calc(100% - 64px)); padding: 7px 10px 8px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--topo-paper); box-shadow: 3px 3px 0 var(--ink); font-family: var(--font-mono); color: var(--ink); pointer-events: none; }
+.bp :global(.content .topo-legend.is-hidden) { display: none; }
+.bp :global(.content .topo-legend .tl-k) { display: flex; align-items: center; gap: 7px; font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.bp :global(.content .topo-legend .tl-sw) { width: 18px; height: 5px; flex: 0 0 auto; border: 1.5px solid var(--topo-casing); border-radius: 1px; background: var(--topo-major); }
+.bp :global(.content .topo-legend .tl-l) { margin-top: 3px; font-size: 10.5px; font-weight: 600; line-height: 1.35; }
+.bp :global(.content .topo-legend .tl-s) { margin-top: 2px; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .topo-legend .tl-retry) { pointer-events: auto; margin-top: 5px; min-height: 28px; padding: 0 10px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); }
+.bp :global(.content .topo-legend .tl-retry:hover) { background: var(--paper-deep); }
+@media (max-width: 860px), (pointer: coarse) {
+  .bp :global(.content .topo-legend .tl-retry) { min-height: 44px; padding: 0 14px; }
+}
+
+/* Measured grade on a ledger run and on a property side. Level reads muted;
+   racked and stepped carry the same amber / red as the map's slope overlay. */
+.bp :global(.content .run-grade), .bp :global(.content .ps-grade) { flex: 0 0 auto; padding: 1px 5px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bp :global(.content .run-grade.is-hidden), .bp :global(.content .ps-grade.is-hidden) { display: none; }
+.bp :global(.content .run-grade.is-racked), .bp :global(.content .ps-grade.is-racked) { border-color: var(--slope-racked); color: var(--slope-racked); }
+.bp :global(.content .run-grade.is-stepped), .bp :global(.content .ps-grade.is-stepped) { border-color: var(--slope-stepped); color: var(--slope-stepped); }
 
 /* stat strip: the along-grade footage under the plan Total, when they differ */
 .bp :global(.content .stat-sub) { margin-top: 3px; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -1400,7 +1461,9 @@
 .bp :global(.content .parcel-meta) { margin-top: 3px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
 /* Multi-lot picker — one line above the sides list, so the question ("which
    lot?") is answered before the answer ("which sides?") is read. */
-.bp :global(.content .parcel-sides) { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 12px; list-style: none; margin: 0; padding: 0; }
+/* 240px floor: a side row carries its length AND its measured grade, and two
+   200px columns on a phone clipped the grade tag. */
+.bp :global(.content .parcel-sides) { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px 12px; list-style: none; margin: 0; padding: 0; }
 .bp :global(.content .ps-label) { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; cursor: pointer; transition: border-color 0.12s, background 0.12s; }
 .bp :global(.content .ps-row:hover .ps-label) { border-color: var(--blueprint); background: var(--accent-soft); }
 .bp :global(.content .ps-label input) { width: 15px; height: 15px; flex: 0 0 auto; accent-color: var(--blueprint); cursor: pointer; }
@@ -1408,7 +1471,7 @@
 /* A side that carries a street name needs the room for it — the grid's own
    column is sized for "Side 3 · 120 ft · N". */
 .bp :global(.content .ps-row:has(.ps-street)) { grid-column: span 2; }
-.bp :global(.content .ps-ft) { margin-left: auto; font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--ink); }
+.bp :global(.content .ps-ft) { margin-left: auto; font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--ink); white-space: nowrap; }
 .bp :global(.content .ps-dir) { width: 22px; text-align: right; font-family: var(--font-mono); font-size: 10px; color: var(--muted-light); }
 /* The street's name, on the sides that face one. */
 .bp :global(.content .ps-street) { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 10px; color: var(--muted); }

@@ -11,13 +11,13 @@ import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
 // reports is clean.
 const CSP_REPORT_ONLY = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://checkout.stripe.com https://www.paypal.com https://www.sandbox.paypal.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://maps.googleapis.com https://us-assets.i.posthog.com https://us.i.posthog.com",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://checkout.stripe.com https://www.paypal.com https://www.sandbox.paypal.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://maps.googleapis.com https://us-assets.i.posthog.com https://us.i.posthog.com https://connect.facebook.net https://accounts.google.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",
   "media-src 'self' blob: https://*.public.blob.vercel-storage.com",
-  "connect-src 'self' https://api.stripe.com https://checkout.stripe.com https://us.i.posthog.com https://us-assets.i.posthog.com https://maps.googleapis.com https://places.googleapis.com https://www.paypal.com https://www.sandbox.paypal.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://*.public.blob.vercel-storage.com https://vercel.live wss://ws-us3.pusher.com",
-  "frame-src https://js.stripe.com https://hooks.stripe.com https://checkout.stripe.com https://www.paypal.com https://www.sandbox.paypal.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://www.google.com https://vercel.live",
+  "connect-src 'self' https://api.stripe.com https://checkout.stripe.com https://us.i.posthog.com https://us-assets.i.posthog.com https://maps.googleapis.com https://places.googleapis.com https://www.paypal.com https://www.sandbox.paypal.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://*.public.blob.vercel-storage.com https://vercel.live wss://ws-us3.pusher.com https://www.facebook.com https://connect.facebook.net https://accounts.google.com",
+  "frame-src https://js.stripe.com https://hooks.stripe.com https://checkout.stripe.com https://www.paypal.com https://www.sandbox.paypal.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://www.google.com https://accounts.google.com https://vercel.live",
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",
@@ -69,6 +69,11 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "lh3.googleusercontent.com" },
     ],
   },
+  // A git worktree nested inside the checkout (.worktrees/<name>) has no
+  // node_modules of its own and Turbopack refuses symlinks that leave the
+  // project root, so such a worktree names the checkout as the root and
+  // resolves packages by walking up. Unset everywhere else (the default).
+  ...(process.env.JOBFLEX_TURBOPACK_ROOT ? { turbopack: { root: process.env.JOBFLEX_TURBOPACK_ROOT } } : {}),
   experimental: {
     // Turbopack's on-disk dev cache corrupted twice on 2026-09-03 ("Restore of
     // All for task … failed in another thread" panic, then a segfault on the

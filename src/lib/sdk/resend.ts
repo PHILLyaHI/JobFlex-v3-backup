@@ -53,6 +53,21 @@ export async function sendEmail(opts: {
     ? `[→ ${Array.isArray(opts.to) ? opts.to.join(", ") : opts.to}] ${opts.subject}`
     : opts.subject;
 
+  // DEV OUTBOX (2026-09-11). In development only, EMAIL_DEV_OUTBOX=<dir>
+  // writes every email as an .html file in that folder INSTEAD of sending
+  // it — the words and links can be checked without an inbox and without
+  // mail leaving the machine. Never read in production.
+  const outbox = process.env.NODE_ENV !== "production" ? process.env.EMAIL_DEV_OUTBOX?.trim() : "";
+  if (outbox) {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    await mkdir(outbox, { recursive: true });
+    const name = `${new Date().toISOString().replace(/[:.]/g, "-")}-${subject.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 60)}.html`;
+    const label = Array.isArray(to) ? to.join(", ") : to;
+    await writeFile(join(outbox, name), `<!-- to: ${label} | subject: ${subject} -->\n${opts.html}`, "utf8");
+    return { id: "dev-outbox:" + name, skipped: true as const };
+  }
+
   if (isResendEnabled()) {
     // Retry transient provider failures (network, 429, 5xx) up to 3 attempts with
     // backoff; a permanent error (bad address / invalid key) is re-thrown at once.

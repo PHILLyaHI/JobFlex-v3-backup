@@ -165,7 +165,21 @@ export function buildTrafficQueries(f: TrafficFilters): Record<string, string> {
     GROUP BY x.visitor, x.experiment, x.assigned_variant, x.variants
   ) SELECT experiment, assigned_variant, countIf(variants = 1), countIf(variants = 1 AND attempted), countIf(variants = 1 AND completed), countIf(variants > 1)
     FROM outcomes GROUP BY experiment, assigned_variant ORDER BY experiment, assigned_variant LIMIT 100`;
-  return { overview, lifetime, trend, pages, breakdowns, funnel, experiments };
+  // Landing variant d vs e (landing-e pass A): a signup start is a visitor's
+  // first registration step in the range; its `variant` property ("e" from
+  // landing-e's register, nothing from landing-d's) names the arm. Completion
+  // is the verified server event inside the window after that start. Since
+  // 2026-09-16 every start is "e" (landing-e is the only landing); the split
+  // stays for the history before that date.
+  const variants = `${audienceBase}, starts AS (
+    SELECT visitor, if(argMin(variant, timestamp) = 'e', 'e', 'd') AS arm, min(timestamp) AS started_at
+    FROM enriched WHERE ${selected} AND event = ${q(E.step)} GROUP BY visitor
+  )
+    SELECT s.arm, uniqExact(s.visitor) AS started,
+      uniqExactIf(s.visitor, b.event = ${q(E.completed)} AND b.verified = 'true' AND b.timestamp >= s.started_at AND b.timestamp <= s.started_at + INTERVAL ${f.windowDays} DAY) AS completed
+    FROM starts s LEFT JOIN base b ON s.visitor = b.visitor
+    GROUP BY s.arm ORDER BY s.arm LIMIT 2`;
+  return { overview, lifetime, trend, pages, breakdowns, funnel, experiments, variants };
 }
 
 export const STAGE_VISITOR_LIMIT = 200;

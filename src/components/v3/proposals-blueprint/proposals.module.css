@@ -1250,7 +1250,8 @@
 .bp :global(.pcol-val) { font-size: 19px; font-weight: 900; font-variant-numeric: tabular-nums; letter-spacing: -0.005em; margin-top: 3px; }
 .bp :global(.pcol-sub) { font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-top: 5px; }
 .bp :global(.pcol-val.good) { color: var(--success-dark); }
-.bp :global(.pcols--sheet) { border-bottom: 2px solid var(--hair-soft); }
+/* (.pcols--sheet keeps the sheet's columns on the accepted card's classes; its
+   rule under the columns now comes from the payment strip, `.ppay .pcols`.) */
 
 .bp :global(.pmenu) {
   position: fixed; z-index: 60;
@@ -1512,30 +1513,48 @@
 .bp :global(.content .pmdl .btn.is-busy) { opacity: 0.72; cursor: progress; }
 .bp :global(.content .pmdl .btn.is-busy:hover) { transform: none; box-shadow: none; }
 .bp :global(.content .pt-open.is-busy) { opacity: 0.45; pointer-events: none; }
-.bp :global(.content .pjob.is-busy), .bp :global(.content .psheet.is-busy) { opacity: 0.72; pointer-events: none; position: relative; }
-/* THE WRITE IS VISIBLE. Dimming alone said "wait" without saying anything
-   was happening, and a server action that re-reads the whole book takes long
-   enough on a cold server to read as a frozen page. A SQUARE spinner — this
-   system draws no circles — sits in the card's top-right corner for exactly
-   as long as the request is out. */
-.bp :global(.content .pjob.is-busy)::after,
-.bp :global(.content .psheet.is-busy)::after {
-  content: "";
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--ink);
-  border-right-color: transparent;
-  border-bottom-color: transparent;
-  animation: pBusySpin 0.7s linear infinite;
+.bp :global(.content .pjob.is-busy), .bp :global(.content .psheet.is-busy) { opacity: 0.72; pointer-events: none; }
+/* THE WRITE IS VISIBLE — ON THE CONTROL THAT STARTED IT. Dimming alone said
+   "wait" without saying what was happening, and a spinner in the card's
+   corner said it somewhere else, and spun. The button that was pressed now
+   carries the write (setActBusy in the behavior module): its icon gives way
+   to a drawn square whose outline draws itself around and lifts — a pen, not
+   a wheel; this system draws no circles and nothing rotates — its label turns
+   present-participle, it goes inert, and its hover lift and stamp shadow rest
+   for as long as the request is out. The script pins the button's width
+   first, so the shorter label cannot narrow the bar under the cursor. Under
+   prefers-reduced-motion the module's global kill leaves the square standing
+   still, fully drawn. */
+.bp :global(.content .btn.is-busy) { cursor: progress; }
+.bp :global(.content .btn.is-busy > .ic:not(.ic--busy)) { display: none; }
+.bp :global(.content .btn.is-busy .ic--busy rect) {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-dasharray: 40;
+  stroke-dashoffset: 0;
+  animation: pBusyDraw 1.6s var(--ease) infinite;
 }
-@keyframes pBusySpin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .bp :global(.content .pjob.is-busy)::after,
-  .bp :global(.content .psheet.is-busy)::after { animation: none; }
+/* Draw the outline (640ms, the chart's own draw curve), hold it drawn for as
+   long again, then lift the pen and start over. */
+@keyframes pBusyDraw {
+  0% { stroke-dashoffset: 40; opacity: 1; }
+  40% { stroke-dashoffset: 0; opacity: 1; }
+  82% { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
 }
+/* Nothing lifts, presses or darkens under a busy button — the quiet bar
+   actions, the stamp, and the sheet's 36px actions alike. */
+.bp :global(.content .btn.btn--sm.is-busy),
+.bp :global(.content .btn.btn--sm.is-busy:hover),
+.bp :global(.content .btn.btn--sm.is-busy:active),
+.bp :global(.content .pjob-foot .pjob-foot-r .btn-primary.btn--sm.is-busy),
+.bp :global(.content .pjob-foot .pjob-foot-r .btn-primary.btn--sm.is-busy:hover),
+.bp :global(.content .pjob-foot .pjob-foot-r .btn-primary.btn--sm.is-busy:active),
+.bp :global(.content .psheet-send .btn.btn--sm.is-busy:hover) { transform: none; box-shadow: none; }
+.bp :global(.content .btn-primary.is-busy:hover) { background: var(--blueprint); }
+.bp :global(.content .pjob-foot .btn:not(.btn-primary).is-busy:hover) { border-color: transparent; background: transparent; color: var(--ink-soft); }
+.bp :global(.content .btn.is-busy:hover .ic) { transform: none; }
 
 /* A record on its way out — leaveRow fades and slides that one node while the
    rows below close the gap. The wash says WHICH row is going while it does. */
@@ -1603,16 +1622,46 @@
   color: var(--ok, #2f6b3a);
 }
 
-/* ── Paid vs contract: the bar under a card's head, the "is it paid?" measure (2026-09-13). ── */
-.bp :global(.ppay) { padding: 10px 18px 12px; border-bottom: 2px solid var(--hair-soft); }
-.bp :global(.ppay-bar) { height: 8px; border: 1.5px solid var(--ink); border-radius: 2px; background: #fff; overflow: hidden; }
-.bp :global(.ppay-bar span) { display: block; height: 100%; background: var(--blueprint); transition: width 0.3s; }
-.bp :global(.ppay--full .ppay-bar span) { background: var(--success); }
-.bp :global(.ppay-line) { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.bp :global(.ppay-line b) { color: var(--ink); font-weight: 800; }
+/* ── The payment strip (2026-09-14). One zone between a card's head and its
+   foot: the change-order chip, the stage columns (or the 6+ row table), and
+   under them the paid track as their footing. The track is a dimension line
+   — PAID on the left, BALANCE (or the paid-in-full tag) on the right, the
+   line between them ticked at every stage boundary and filled to what has
+   landed. The strip draws no bottom rule of its own: the foot's ink rule
+   closes the accepted card, and the completed sheet adds one soft rule before
+   its white body — so no hairline is doubled where the zones meet. ── */
+.bp :global(.ppay) { background: var(--paper-deep); }
+.bp :global(.psheet .ppay) { border-bottom: 2px solid var(--hair-soft); }
+.bp :global(.ppay .pcols), .bp :global(.ppay .psched) { border-bottom: 2px solid var(--hair-soft); }
+.bp :global(.ppay-line) {
+  display: flex; align-items: center; gap: 14px;
+  padding: 11px 18px 12px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.bp :global(.ppay-line b) { color: var(--ink); font-weight: 600; }
+.bp :global(.ppay-paid), .bp :global(.ppay-tag) { flex: none; white-space: nowrap; }
+.bp :global(.ppay-bar) {
+  position: relative; flex: 1 1 72px; min-width: 72px;
+  height: 8px;
+  border: 1.5px solid var(--ink); border-radius: 2px;
+  background: #fff;
+  overflow: hidden;
+}
+.bp :global(.ppay-bar > span) { display: block; height: 100%; background: var(--blueprint); }
+.bp :global(.ppay-tick) { position: absolute; top: 0; bottom: 0; width: 1.5px; margin-left: -0.75px; background: var(--ink); }
+.bp :global(.ppay--full .ppay-bar > span) { background: var(--success); }
 .bp :global(.ppay-tag) { display: inline-flex; align-items: center; gap: 5px; }
 .bp :global(.ppay-tag--ok) { color: var(--success-dark); }
 .bp :global(.ppay-tag--ok .ic) { width: 12px; height: 12px; }
+@media (max-width: 860px) {
+  /* Narrow (the module's own ≤860px layer): the two facts share the first line,
+     the track runs full width under them. */
+  .bp :global(.ppay-line) { flex-wrap: wrap; justify-content: space-between; row-gap: 7px; }
+  .bp :global(.ppay-bar) { order: 3; flex-basis: 100%; }
+}
 .bp :global(.pjob-total-sub) { display: block; margin-top: 3px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 /* The change-order chip on a card; the same words in a list row. */
 .bp :global(.pjob-cos) { padding: 8px 18px 0; }
@@ -1638,3 +1687,13 @@
 .bp :global(.pt-bar i) { display: block; height: 100%; background: var(--blueprint); }
 .bp :global(.pt-paid--full .pt-bar i) { background: var(--success); }
 .bp :global(.pstatus--completed) { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
+
+/* A proposal row, and an accepted or completed card's header, open the
+   proposal. The title is the link; the rest of the row follows it. */
+.bp :global(.content .prow), .bp :global(.content .pjob-head), .bp :global(.content .psheet-head) { cursor: pointer; }
+.bp :global(.content a.pt-link) { display: block; color: var(--ink); text-decoration: none; }
+.bp :global(.content .prow:hover a.pt-link),
+.bp :global(.content .pjob-head:hover a.pt-link),
+.bp :global(.content .psheet-head:hover a.pt-link),
+.bp :global(.content a.pt-link:focus-visible) { color: var(--blueprint); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 2px; }
+.bp :global(.content a.pt-link:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }

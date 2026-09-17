@@ -283,6 +283,116 @@ async function obtainInstant(input: EvOrderInput, organizationId: string, forceN
   return { instant, packs: report };
 }
 
+/**
+ * Collect the packs EagleView had not finished when the measurement was
+ * saved. The first click orders the area alone and then the rest (pitch,
+ * details, outline, imagery) as one grouped order polled for 30 s; when
+ * EagleView is slower than that, the row is saved with the area only — zero
+ * facets, no pitch — and the paid order sits pending in the ledger until the
+ * next click (owner saw exactly this, 2026-09-14). The page now calls this
+ * every few seconds after such a save: each pending order is asked about
+ * briefly, what has landed is merged into the saved row (columns, packs
+ * report and all), and the page swaps the measurement in. Nothing is ordered.
+ */
+export async function collectPendingInstant(measurementId: string): Promise<
+  | { ok: true; pending: number; updated: false }
+  | { ok: true; pending: number; updated: true; measurement: RoofMeasurementDTO }
+  | { ok: false; error: string }
+> {
+  let organizationId: string;
+  try {
+    organizationId = (await requireEstimatorOrManager()).organizationId;
+  } catch (err) {
+    return { ok: false, error: errorMessage(err, "Not authorised") };
+  }
+  const row = await db.roofMeasurement.findFirst({ where: { id: measurementId, organizationId } });
+  if (!row) return { ok: false, error: "Measurement not found" };
+  const input: EvOrderInput = {
+    address: row.address ?? "",
+    city: row.city ?? "",
+    state: row.state ?? "",
+    zip: row.zip ?? "",
+    lat: row.lat ?? undefined,
+    lng: row.lng ?? undefined,
+  };
+  const addressKey = instantAddressKey(input);
+  if (addressKey === "|||") return { ok: true, pending: 0, updated: false };
+  const pendingRows = await db.instantOrder.findMany({ where: { organizationId, addressKey, status: "pending" }, orderBy: { createdAt: "asc" } });
+  if (!pendingRows.length) return { ok: true, pending: 0, updated: false };
+
+  const collected: InstantRoofData[] = [];
+  let stillPending = 0;
+  // Each pending order gets one short ask; the whole call stays under ~20 s
+  // so the page's own retry cadence (every 6 s) does the waiting, not one
+  // long-running action.
+  const deadline = Date.now() + 20_000;
+  for (const pend of pendingRows) {
+    if (Date.now() > deadline) {
+      stillPending += 1;
+      continue;
+    }
+    try {
+      let rawBody: string | null = null;
+      const got = await pollInstantResult(pend.requestId, input, instantCompleteAddress(input), 8_000, {
+        onRaw: (body) => {
+          rawBody = body;
+        },
+      });
+      if (got) {
+        await db.instantOrder
+          .update({ where: { id: pend.id }, data: { status: "complete", instantJson: JSON.stringify(got), ...(rawBody ? { instantRawJson: rawBody } : {}) } })
+          .catch(() => {});
+        collected.push(got);
+      } else {
+        stillPending += 1;
+      }
+    } catch (err) {
+      if (isTerminalPdFailure(err)) {
+        await db.instantOrder.update({ where: { id: pend.id }, data: { status: "failed", error: errorMessage(err, String(err)) } }).catch(() => {});
+      } else {
+        stillPending += 1;
+      }
+    }
+  }
+  if (!collected.length) return { ok: true, pending: stillPending, updated: false };
+
+  // Merge what landed into the saved answer — the stored answer is the base,
+  // every null field takes the first later part's value (mergeInstantResults).
+  let stored: InstantRoofData | null = null;
+  try {
+    stored = row.instantJson ? (JSON.parse(row.instantJson) as InstantRoofData) : null;
+  } catch {
+    stored = null;
+  }
+  const merged = mergeInstantResults(stored ? [stored, ...collected] : collected);
+  let storedProv: StoredProvenance = { calibration: null, provenance: {} as MeasurementProvenance };
+  try {
+    const parsed = row.provenanceJson ? (JSON.parse(row.provenanceJson) as Partial<StoredProvenance>) : null;
+    if (parsed && typeof parsed === "object") storedProv = { calibration: parsed.calibration ?? null, provenance: (parsed.provenance ?? {}) as MeasurementProvenance };
+  } catch {
+    /* unreadable provenance — rebuilt below with what is known */
+  }
+  const owned = await completeOrdersFor(organizationId, addressKey);
+  storedProv.provenance.instantPacks = packReport(owned.have, await deniedNow(), []);
+  const fig = rowFigures({
+    instant: merged,
+    provenance: storedProv.provenance as unknown as Record<string, unknown>,
+    columns: { areaSqft: row.areaSqft, squares: row.squares, lat: row.lat, lng: row.lng },
+  });
+  const updated = await db.roofMeasurement.update({
+    where: { id: row.id },
+    data: {
+      areaSqft: fig.areaSqft,
+      squares: fig.squares,
+      predominantPitch: fig.predominantPitch,
+      facetCount: fig.facetCount,
+      instantJson: JSON.stringify(merged),
+      provenanceJson: JSON.stringify(storedProv),
+    },
+  });
+  return { ok: true, pending: stillPending, updated: true, measurement: toDTO(updated) };
+}
+
 // ── actions ──────────────────────────────────────────────────────────────────
 
 /**

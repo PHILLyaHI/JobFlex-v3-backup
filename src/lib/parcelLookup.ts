@@ -129,7 +129,21 @@ function pointInRing(lat: number, lon: number, ring: RingPoint[]): boolean {
  *  (a lot split by a road, a condo stack, a lot overlapped by right-of-way)
  *  returns one of these per parcel so the caller can offer a choice instead of
  *  guessing which one the contractor meant. */
-export type ParcelChoice = {
+export type ParcelRecord = {
+  bldgSqft: number | null;
+  yearBuilt: number | null;
+  storeys: number | null;
+  buildingCount: number | null;
+  countyName: string | null;
+  stateAbbr: string | null;
+  landUseClass: string | null;
+  /** Building footprints, lat-first rings, from the assessor's polygons. */
+  buildings: RingPoint[][];
+  /** False on a row cached before the record fields were read. */
+  enriched: boolean;
+};
+
+export type ParcelChoice = ParcelRecord & {
   robustId: string;
   parcelId: string | null;
   owner: string | null;
@@ -142,7 +156,7 @@ export type ParcelChoice = {
   rings: RingPoint[][];
 };
 
-export type ParcelHit = {
+export type ParcelHit = ParcelRecord & {
   /**
    * Outer rings, lat-first; holes are not returned. The SUBJECT parcel's rings
    * come first, followed by those of any sibling parcel the same point hit (a
@@ -180,9 +194,25 @@ function choiceOf(
     acreage: number | null;
     lat: number;
     lon: number;
+    bldgSqft?: number | null;
+    yearBuilt?: number | null;
+    storeys?: number | null;
+    buildingCount?: number | null;
+    countyName?: string | null;
+    stateAbbr?: string | null;
+    landUseClass?: string | null;
+    /** Network path: WKT strings. */
+    buildingsWkt?: string[];
+    /** Cache path: the JSON array of WKT strings. */
+    buildingsJson?: string | null;
+    enrichedAt?: Date | null;
   },
   rings: RingPoint[][],
 ): ParcelChoice {
+  let wkts: string[] = p.buildingsWkt ?? [];
+  if (!wkts.length && p.buildingsJson) {
+    try { const arr = JSON.parse(p.buildingsJson) as unknown; if (Array.isArray(arr)) wkts = arr.filter((x): x is string => typeof x === "string"); } catch { /* unreadable */ }
+  }
   return {
     robustId: p.robustId,
     parcelId: p.parcelId,
@@ -194,6 +224,15 @@ function choiceOf(
     lat: p.lat,
     lon: p.lon,
     rings,
+    bldgSqft: p.bldgSqft ?? null,
+    yearBuilt: p.yearBuilt ?? null,
+    storeys: p.storeys ?? null,
+    buildingCount: p.buildingCount ?? null,
+    countyName: p.countyName ?? null,
+    stateAbbr: p.stateAbbr ?? null,
+    landUseClass: p.landUseClass ?? null,
+    buildings: wkts.flatMap((w) => { try { return parseWkt(w); } catch { return []; } }),
+    enriched: p.buildingsWkt !== undefined || p.enrichedAt != null,
   };
 }
 
@@ -211,12 +250,25 @@ export type ParcelLookup =
       nearest?: NearestHint | null;
     };
 
-/** Write a fetched parcel into the cache. Existing rows are left alone: the
- *  geometry does not change, and an update would only churn the row. */
+/** Write a fetched parcel into the cache. The geometry of an existing row is
+ *  left alone (it does not change); the assessor's record fields are written
+ *  every time, so a row cached before they were read gets them on its next
+ *  fetch. */
 export async function saveParcel(p: Parcel): Promise<void> {
+  const record = {
+    bldgSqft: p.bldgSqft,
+    yearBuilt: p.yearBuilt,
+    storeys: p.storeys,
+    buildingCount: p.buildingCount,
+    countyName: p.countyName,
+    stateAbbr: p.stateAbbr,
+    landUseClass: p.landUseClass,
+    buildingsJson: p.buildingsWkt.length ? JSON.stringify(p.buildingsWkt) : null,
+    enrichedAt: new Date(),
+  };
   await db.parcelCache.upsert({
     where: { robustId: p.robustId },
-    update: {},
+    update: record,
     create: {
       robustId: p.robustId,
       parcelId: p.parcelId,
@@ -229,6 +281,7 @@ export async function saveParcel(p: Parcel): Promise<void> {
       wkt: p.wkt,
       lat: p.lat,
       lon: p.lon,
+      ...record,
     },
   });
 }
@@ -410,7 +463,13 @@ export async function lookupSiblingParcels(
 export async function lookupParcelByPoint(
   lat: number,
   lon: number,
-  opts: { withNearest?: boolean } = {},
+  opts: {
+    withNearest?: boolean;
+    /** The HVAC estimator wants the assessor's record (living area, year
+     *  built, storeys, footprints). A cached row from before those fields were
+     *  read is refreshed once — one quota — instead of answered without them. */
+    withRecord?: boolean;
+  } = {},
 ): Promise<ParcelLookup> {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
     return { ok: false, reason: "error", error: "lat/lon must be numbers" };
@@ -441,7 +500,7 @@ export async function lookupParcelByPoint(
       const rings = parseWkt(row.wkt);
       if (rings.some((ring) => pointInRing(lat, lon, ring))) hits.push(choiceOf(row, rings));
     }
-    if (hits.length) {
+    if (hits.length && !(opts.withRecord && !hits[0].enriched)) {
       const subject = hits[0];
       return {
         ok: true,

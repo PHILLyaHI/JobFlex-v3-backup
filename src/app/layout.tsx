@@ -2,9 +2,11 @@ import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { ToastHost } from "@/components/ui/Toast";
+import { ToastHostLazy } from "@/components/ui/toast-host-lazy";
 import { AttributionCapture } from "@/components/attribution-capture";
 import { PostHogCapture } from "@/components/providers/posthog-capture";
+import { MetaPixel } from "@/components/providers/meta-pixel";
+import { CookieBanner } from "@/components/consent/cookie-banner";
 
 /* Variable fonts — blueprint system needs Inter up to 900 (H1 caps, KPI
    numerals) and JetBrains Mono 500–600 for the drafting-annotation layer. */
@@ -50,7 +52,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Suspense fallback={null}>
           <PostHogCapture />
         </Suspense>
-        <ToastHost />
+        {/* Meta Pixel: loads only after marketing consent and only with
+            NEXT_PUBLIC_META_PIXEL_ID; PageView on the landing and register
+            pages with an eventID the Conversions API deduplicates against. */}
+        <Suspense fallback={null}>
+          <MetaPixel />
+        </Suspense>
+        <CookieBanner />
+        <ToastHostLazy />
       </body>
     </html>
   );

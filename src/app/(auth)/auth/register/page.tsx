@@ -30,9 +30,13 @@ import { readGoogleSignup } from "@/lib/googleSignup";
 import { RegisterResponsive, type GooglePrefill, type SetupPrefill } from "./register-responsive";
 import {
   INDUSTRY_COOKIE,
+  UTM_COOKIE,
+  hasUtm,
+  parseUtmCookie,
+  pickUtm,
   resolveLandingVariant,
   variantTrade,
-} from "@/components/v3/landing-d/landing-variants";
+} from "@/components/v3/landing-e/landing-variants";
 
 // Title is the donor's <head> verbatim. The mockup ships no <meta
 // name="description">; the line below is this repo's own convention.
@@ -59,13 +63,18 @@ export default async function RegisterPage({
      no parameter still has the landing's 30-day memory cookie. Resolved here
      so step 2's chips are right on the first paint. Advisory only: it
      pre-selects a chip the visitor can un-pick. */
+  const jar = await cookies();
   const industryParam = sp.industry ?? sp.trade;
   const industry = variantTrade(
     industryParam !== undefined
       ? resolveLandingVariant(industryParam)
-      : resolveLandingVariant((await cookies()).get(INDUSTRY_COOKIE)?.value),
+      : resolveLandingVariant(jar.get(INDUSTRY_COOKIE)?.value),
   );
-
+  /* THE CAMPAIGN THE VISITOR CAME IN ON: utm_* from the register link, else
+     the landing's memory cookie (the Google return and the gold pill carry
+     no query). Stamped on the organization at creation (CRO stage 1). */
+  const utmFromQuery = pickUtm(sp);
+  const utm = hasUtm(utmFromQuery) ? utmFromQuery : parseUtmCookie(jar.get(UTM_COOKIE)?.value);
   /* THE RETURN FROM GOOGLE, resolved HERE rather than in the browser. The
      client used to fetch the parked identity after mount, so the first frame
      was step 1 and the jump to step 2 happened a beat later — it read as
@@ -116,5 +125,5 @@ export default async function RegisterPage({
     // Session read hiccup: render the normal signup.
   }
   if (sendToApp) redirect("/dashboard");
-  return <RegisterResponsive setup={setup} google={google} industry={industry} />;
+  return <RegisterResponsive setup={setup} google={google} industry={industry} utm={hasUtm(utm) ? utm : null} />;
 }

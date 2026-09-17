@@ -476,6 +476,63 @@
 /* ============================================================
    PAGE HEAD
    ============================================================ */
+/* FIRST RUN (landing-e pass A, 2026-09-11): one card, one button, gone after
+   the first estimate. Ink-ruled like the banner, blueprint blue on the kicker
+   and the button only; the button is a full-width 44px plate. */
+.firstRun {
+  border: 2px solid var(--ink);
+  border-left-width: 6px;
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 14px 14px 14px;
+}
+.firstRunKicker {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--blueprint);
+  margin-bottom: 5px;
+}
+.firstRunTitle {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.firstRunTxt {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+.firstRunBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1.5px solid var(--blueprint);
+  border-radius: var(--radius);
+  background: var(--blueprint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--paper);
+  transition: transform 0.12s var(--ease-out), box-shadow 0.12s var(--ease-out);
+}
+.firstRunBtn .ic {
+  width: 13px;
+  height: 13px;
+}
+.firstRunBtn:active {
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
 .pageHead {
   padding-top: 2px;
 }

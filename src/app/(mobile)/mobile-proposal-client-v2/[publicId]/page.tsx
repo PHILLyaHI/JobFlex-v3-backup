@@ -89,9 +89,18 @@ export default async function MobileProposalClientPage({
       ? { avg: formatAvg(pub.avg) as string, count: pub.count, href: publicReviewsPath(proposal.organization.slug) }
       : null;
 
+  // The client's own house, when the proposal was priced from a measurement
+  // (roof estimator → convert). A link table not pushed yet means no photo.
+  let sitePhoto = false;
+  try {
+    sitePhoto = !!(await db.proposalSitePhoto.findUnique({ where: { proposalId: proposal.id }, select: { id: true } }));
+  } catch {
+    sitePhoto = false;
+  }
+
   return (
     <MobileProposalClient
-      view={buildPortalView(publicId, proposal, { money, longDate }, { pay, terms: "", rating })}
+      view={buildPortalView(publicId, proposal, { money, longDate }, { pay, terms: "", rating, sitePhoto })}
     />
   );
 }

@@ -65,6 +65,7 @@ import {
   factsKey,
   fmt,
   money,
+  pickSystemOn,
   prefsOf,
   readLocal,
   reconcile,
@@ -382,7 +383,7 @@ function PackageSheet({
     const s = from.systems.find((x) => x.id === id);
     if (!s) return;
     setSpec((prev) => {
-      const next = { ...prev, systemId: id, systemName: s.label, systemFamily: s.family, systemMatPerSq: s.matPerSq, systemLaborPerSq: s.laborPerSq, capPerFt: s.capPerFt, wastePct: s.wastePct };
+      const next = pickSystemOn(prev, s, facts, from);
       writeLocal(PREFS_KEY, prefsOf(next));
       return next;
     });

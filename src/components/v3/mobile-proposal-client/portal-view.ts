@@ -90,6 +90,9 @@ export type PortalView = {
   pay: PortalPayModel;
   /** Org standard terms, shown as a disclosure. Empty when none are set. */
   terms: string;
+  /** The client's own house — the satellite photo of the measurement this
+   *  proposal was priced from — or null when no measurement is linked. */
+  sitePhotoHref: string | null;
 };
 
 /** The shape buildPortalView needs — structural, so this module never has to
@@ -135,7 +138,7 @@ export function buildPortalView(
   proposal: ProposalRow,
   fmt: Fmt,
   /** Built by the caller, which already has the row + org connections. */
-  extras: { pay: PortalPayModel; terms: string; rating?: PortalRating | null },
+  extras: { pay: PortalPayModel; terms: string; rating?: PortalRating | null; sitePhoto?: boolean },
 ): PortalView {
   const { money, longDate } = fmt;
   const org = proposal.organization;
@@ -145,6 +148,7 @@ export function buildPortalView(
     pay: extras.pay,
     terms: extras.terms,
     rating: extras.rating ?? null,
+    sitePhotoHref: extras.sitePhoto ? `/api/public-quote/${publicId}/site-photo` : null,
     publicId,
     status: proposal.status,
     total: proposal.total,

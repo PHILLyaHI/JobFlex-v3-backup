@@ -87,7 +87,8 @@ function PayReturnBanner({ publicId }: { publicId: string }) {
 
 function settledFrom(status: string): Settled {
   if (status === "PAID") return "paid";
-  if (status === "ACCEPTED") return "accepted";
+  // COMPLETED is an accepted job whose work is done — settled, still payable.
+  if (status === "ACCEPTED" || status === "COMPLETED") return "accepted";
   if (status === "DECLINED") return "declined";
   return null;
 }
@@ -362,21 +363,8 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
             {view.monogram}
           </span>
           <span className="mpc-org">
-            <b className="mpc-org-n">{view.orgName}</b>
+            <b className="mpc-org-n" title={view.orgName}>{view.orgName}</b>
             <span className="mpc-org-r">{`№ ${view.refCode} · ${view.createdOn}`}</span>
-            {view.rating ? (
-              <a
-                className="mpc-rating"
-                href={view.rating.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Rated ${view.rating.avg} out of 5 from ${view.rating.count} client ${view.rating.count === 1 ? "review" : "reviews"} — see all reviews`}
-              >
-                <StarsInline value={Number(view.rating.avg)} size={12} />
-                <em>{view.rating.avg}</em>
-                <i>{`· ${view.rating.count} ${view.rating.count === 1 ? "review" : "reviews"}`}</i>
-              </a>
-            ) : null}
           </span>
           <a
             className="mpc-pdf"
@@ -388,6 +376,24 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
             <IcDownload />
             <i aria-hidden="true">PDF</i>
           </a>
+          {/* The contractor's standing as the header's own second line: a
+              full-width plate under the identity row (the header wraps), a
+              44px tap target, the count at the right edge as the door. Not
+              inside `.mpc-org` — there it hung under the reference line on
+              negative margins and overlapped it. */}
+          {view.rating ? (
+            <a
+              className="mpc-rating"
+              href={view.rating.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Rated ${view.rating.avg} out of 5 from ${view.rating.count} client ${view.rating.count === 1 ? "review" : "reviews"} — see all reviews`}
+            >
+              <StarsInline value={Number(view.rating.avg)} size={14} />
+              <em>{view.rating.avg}</em>
+              <i>{`${view.rating.count} ${view.rating.count === 1 ? "review" : "reviews"} →`}</i>
+            </a>
+          ) : null}
         </header>
 
         <section className="mpc-intro rv" ref={introRef}>
@@ -404,6 +410,17 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
                 <b>{view.validUntil}</b>
               </div>
             </div>
+
+            {/* THE CLIENT'S OWN HOUSE — the satellite photo of the measurement
+                this proposal was priced from, exactly as the desktop tree and
+                the PDF show it. It was missing here (owner, 2026-09-14). */}
+            {view.sitePhotoHref ? (
+              <figure className="mpc-site">
+                {/* eslint-disable-next-line @next/next/no-img-element -- streamed PNG from this app's own route; next/image adds nothing */}
+                <img src={view.sitePhotoHref} alt="Satellite view of your roof" loading="lazy" />
+                <figcaption>Your roof, as measured from the air</figcaption>
+              </figure>
+            ) : null}
 
             <div
               className="mpc-state"
@@ -435,7 +452,7 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
             <Suspense fallback={null}>
               <PayReturnBanner publicId={view.publicId} />
             </Suspense>
-            {settled === "accepted" && payOptions.length > 0 && nextStage ? (
+            {settled === "accepted" && pay.anyWay && nextStage ? (
               <button
                 className="mpc-btn mpc-btn--frame mpc-paynow"
                 type="button"
@@ -449,6 +466,9 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
               >
                 {`Pay ${nextStage.label.toLowerCase()} · ${nextStage.amount}`}
               </button>
+            ) : null}
+            {settled === "accepted" && !pay.anyWay ? (
+              <div className="mpc-pay-sum mpc-pay-touch">The team will be in touch about payment.</div>
             ) : null}
             <div
               className="mpc-state mpc-state--declined"
@@ -532,7 +552,7 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
                     ? "Processing"
                     : s.status === "WAIVED"
                       ? "Closed"
-                      : s.payable
+                      : s.payable && settled === "accepted"
                         ? "Due now"
                         : "Due";
               return (
@@ -552,7 +572,7 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
                         <button
                           className="mpc-btn mpc-btn--primary"
                           type="button"
-                          disabled={busy !== null || (s.belowMin.stripe && s.belowMin.square)}
+                          disabled={busy !== null || (s.belowMin.stripe && s.belowMin.square && s.belowMin.stax)}
                           onClick={() => {
                             setPayTarget("next");
                             setPayOpen(true);
@@ -584,6 +604,9 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
           ) : null}
           {pay.remainingMinor <= 0 && pay.paidMinor > 0 ? (
             <div className="mpc-pay-sum mpc-pay-sum--done">Paid in full</div>
+          ) : null}
+          {settled === "accepted" && !pay.anyWay ? (
+            <div className="mpc-pay-sum">The team will be in touch about payment.</div>
           ) : null}
         </section>
 
@@ -704,10 +727,24 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
               <IcNext />
             </button>
           ))}
-          <p className="mpc-sheet-note">
-            You will be handed to the provider to finish the payment, then
-            returned to this page.
-          </p>
+          {/* Bank transfer is a way to pay too — the whole hub in one sheet,
+              so a contractor who takes only bank transfers still has a
+              working "Pay deposit" button. */}
+          {pay.bankTransfer.ok ? (
+            <details className="mpc-pay-bank mpc-sheet-bank" open={payOptions.length === 0}>
+              <summary>{payOptions.length ? `${String(payOptions.length + 1).padStart(2, "0")} · Bank transfer` : "Bank transfer"}</summary>
+              <pre className="mpc-pay-bank-body">{pay.bankTransfer.instructions}</pre>
+              <div className="mpc-pay-bank-note">
+                {`Reference "${nextStage && payTarget === "next" ? nextStage.label : "Balance"}" — the team will mark it paid once it arrives.`}
+              </div>
+            </details>
+          ) : null}
+          {payOptions.length ? (
+            <p className="mpc-sheet-note">
+              You will be handed to the provider to finish the payment, then
+              returned to this page.
+            </p>
+          ) : null}
         </div>
         <button className="mpc-cancel" type="button" onClick={closeSheets}>
           Cancel

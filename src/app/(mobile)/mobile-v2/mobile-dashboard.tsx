@@ -935,6 +935,27 @@ function DashboardView({ data }: { data: DashboardData }) {
             </div>
           ) : null}
 
+          {/* FIRST RUN (landing-e pass A, 2026-09-11) — a variant-e shop with
+              no estimate yet: one card, one 44px button by trade. The server
+              stops sending it after the first proposal / estimate / measurement. */}
+          {data.firstRun ? (
+            <div className={styles.firstRun} id="firstRun" data-trade={data.firstRun.trade}>
+              <div className={styles.firstRunKicker}>First estimate</div>
+              <div className={styles.firstRunTitle}>Make your first estimate</div>
+              <div className={styles.firstRunTxt}>
+                {data.firstRun.trade === "roofing"
+                  ? "Type an address and the roof is measured from the aerial — squares, pitch, a priced proposal in about two minutes."
+                  : data.firstRun.trade === "fencing"
+                    ? "Draw the fence line on the map — footage, posts, gates and a priced proposal in about two minutes."
+                    : "Type the job the way you'd say it to a customer — the estimate writes itself in about two minutes."}
+              </div>
+              <Link className={styles.firstRunBtn} href={data.firstRun.href as Route} data-cta="first-run">
+                {data.firstRun.label}
+                <Icon id="i-arrow" />
+              </Link>
+            </div>
+          ) : null}
+
           {/* PAGE HEAD */}
           <div className={styles.pageHead}>
             <div className={styles.kicker}>{data.greeting}</div>

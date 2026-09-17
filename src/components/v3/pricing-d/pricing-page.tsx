@@ -13,13 +13,13 @@
 
 import Link from "next/link";
 import { Check } from "lucide-react";
-import { Nav } from "@/components/v3/landing-d/nav";
-import { CtaFooter } from "@/components/v3/landing-d/cta-footer";
-import { Reveal } from "@/components/v3/landing-d/reveal";
-import { REGISTER } from "@/components/v3/landing-d/routes";
+import { Nav } from "@/components/v3/landing-e/nav";
+import { CtaFooter } from "@/components/v3/landing-e/cta-footer";
+import { Reveal } from "@/components/v3/landing-e/reveal";
+import { REGISTER } from "@/components/v3/landing-e/routes";
 import type { PlanDTO } from "@/lib/planCatalog";
 import { CUSTOM_BASE_CENTS, CUSTOM_PAGE_CENTS, CUSTOM_PAGES } from "@/lib/customPlan";
-import "@/components/v3/landing-d/landing-d.css";
+import "@/components/v3/landing-e/landing-e.css";
 import "./pricing.css";
 
 /** Whole dollars — every catalog price is a round number, and a trailing ".00"

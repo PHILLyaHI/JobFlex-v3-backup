@@ -36,7 +36,9 @@ import {
   CHIMNEY_SIZES,
   DRIP_EDGE_PROFILES,
   DRIP_EDGE_SIZES,
+  familyOfMaterial,
   ICE_WATER,
+  likeForLikeSystem,
   PIPE_BOOT_SIZES,
   PKG_UNITS,
   ROOF_FAMILIES,
@@ -56,10 +58,16 @@ import {
   checkVentilation,
   defaultSpec,
   estimateEdges,
+  openingSystem,
+  withSystem,
   type RoofFacts,
   type RoofPackage,
   type RoofPackageSpec,
 } from "@/lib/roofPackage/takeoff";
+import { isFlatRoof } from "@/lib/roofPackage/flatRule";
+import { PRE_FLAT_RELEASE_IDS } from "@/lib/roofPackage/catalog";
+import { lowSlopeSystemForMaterial } from "@/lib/roofPackage/lowSlope";
+import { SHIFTS, WAGE_REGIMES } from "@/lib/roofPackage/commercial";
 
 export const PREFS_KEY = "jf.roofPackage.prefs.v1";
 export const LISTS_KEY = "jf.roofPackage.lists.v1";
@@ -79,12 +87,101 @@ export const PREF_KEYS = [
 export type Prefs = Partial<Pick<RoofPackageSpec, (typeof PREF_KEYS)[number]>> & {
   /** Vent unit prices by vent id — quantities are per roof. */
   ventPrices?: Record<string, { each: number; labor: number }>;
+  /** The flat system this contractor usually installs, for a roof the data only calls "flat". */
+  lowSlopeSystemId?: string;
+  /** Underlayment and valley picks per roof family: a tile roof's high-temp underlayment never lands on the next shingle house. */
+  families?: Record<string, { underlaymentId?: string; underlaymentName?: string; underlaymentPerSq?: number; valleyTypeId?: string; valleyMatPerFt?: number; valleyLaborPerFt?: number }>;
+  /** Flat-roof standing preferences: rates, habits and the prices of each option they picked — never a roof's counts. */
+  flat?: {
+    rates?: Record<string, number>;
+    drainWork?: string;
+    boardPrices?: Record<string, { mat: number; labor: number }>;
+    warrantyPrices?: Record<string, number>;
+    tearOffPrices?: Record<string, { tearOff: number; disposal: number }>;
+  };
+  /** Commercial rates and the shop's wage regime — never whether a job is commercial. */
+  commercial?: { rates?: Record<string, number>; wage?: string };
 };
 
-export function prefsOf(spec: RoofPackageSpec): Prefs {
-  const p: Prefs = {};
-  for (const k of PREF_KEYS) (p as Record<string, unknown>)[k] = spec[k];
-  p.ventPrices = Object.fromEntries(spec.vents.map((v) => [v.id, { each: v.each, labor: v.labor }]));
+/** The system fields: a pick, not a price. */
+const SYSTEM_KEYS: ReadonlyArray<(typeof PREF_KEYS)[number]> = [
+  "systemId", "systemName", "systemFamily", "systemMatPerSq", "systemLaborPerSq", "capPerFt", "wastePct",
+];
+/** Picks that belong to a roof FAMILY, saved per family (Prefs.families). */
+const FAMILY_KEYS: ReadonlyArray<(typeof PREF_KEYS)[number]> = [
+  "underlaymentId", "underlaymentName", "underlaymentPerSq", "valleyTypeId", "valleyMatPerFt", "valleyLaborPerFt",
+];
+/**
+ * What only means something on a STEEP roof. A flat job never saves these and
+ * never takes them: before 2026-09-14 one TPO estimate rewrote the standing
+ * shingle defaults (ice & water off, no vents, no nails) for every house after.
+ */
+const STEEP_ONLY: ReadonlyArray<(typeof PREF_KEYS)[number]> = [
+  ...SYSTEM_KEYS,
+  ...FAMILY_KEYS,
+  "iceWater", "iceWaterPerSqft",
+  "dripEdgeOn", "dripProfileId", "dripSizeId", "dripPerFt", "starterOn", "starterPerFt",
+  "stepSizeId", "stepPerPiece", "stepLaborPerFt",
+  "apronPerFt", "apronLaborPerFt", "counterPerFt", "counterLaborPerFt", "pipeBootPrices",
+  "chimneySizeId", "chimneyEach", "chimneyLabor", "curbEach", "curbLabor", "ventBalanced",
+  "tearOffPerSqLayer", "disposalPerSqLayer", "nailsPerSq", "sealantPerSq", "safetyLump", "deliveryLump",
+];
+
+/**
+ * The standing preferences this spec implies, MERGED over what is already
+ * saved (the browser's copy unless `base` is given; pass null for none). The
+ * merge is what lets a flat job save its flat rates without erasing the
+ * shingle defaults it has no opinion about, and every card that writes
+ * `prefsOf(next)` gets that for free.
+ *
+ * Reviewed 2026-09-14: the system is saved as the contractor's USUAL one only
+ * when they picked it — never when the roof picked it like-for-like. A
+ * system's PRICE is never saved here: it lives on its catalog row, which the
+ * row-01 rates and Manage roof types both edit, so there is one truth.
+ */
+export function prefsOf(spec: RoofPackageSpec, base?: Prefs | null): Prefs {
+  const saved = base === undefined ? (typeof window === "undefined" ? null : readLocal<Prefs>(PREFS_KEY)) : base;
+  const p: Prefs = saved && typeof saved === "object" ? { ...saved } : {};
+  const low = spec.systemFamily === "low-slope";
+  // A steep system left on a spec that was flattened for a flat roof (a
+  // preview card that swaps systems without withSystem) carries no shingle
+  // opinion worth keeping: saving it would switch off ice & water, vents and
+  // nails for every house after.
+  const flattened = !low && spec.underlaymentId === "none" && spec.iceWater === "none" && spec.nailsPerSq === 0 && spec.sealantPerSq === 0;
+  const rec = p as Record<string, unknown>;
+  for (const k of PREF_KEYS) {
+    if ((low || flattened) && STEEP_ONLY.includes(k)) continue;
+    if (SYSTEM_KEYS.includes(k) && spec.systemAuto) continue;
+    if (FAMILY_KEYS.includes(k)) continue;
+    rec[k] = spec[k];
+  }
+  if (low) {
+    if (!spec.systemAuto) p.lowSlopeSystemId = spec.systemId;
+    if (spec.flat) {
+      const prev = p.flat ?? {};
+      p.flat = {
+        rates: { ...spec.flat.rates },
+        drainWork: spec.flat.drainWork,
+        boardPrices: {
+          ...(prev.boardPrices ?? {}),
+          ...(spec.flat.insulationId !== "none" ? { [`ins:${spec.flat.insulationId}`]: { mat: spec.flat.insulationMatPerSq, labor: spec.flat.insulationLaborPerSq } } : {}),
+          ...(spec.flat.coverBoardId !== "none" ? { [`cover:${spec.flat.coverBoardId}`]: { mat: spec.flat.coverBoardMatPerSq, labor: spec.flat.coverBoardLaborPerSq } } : {}),
+        },
+        warrantyPrices: { ...(prev.warrantyPrices ?? {}), ...(spec.flat.warrantyId !== "none" ? { [spec.flat.warrantyId]: spec.flat.warrantyPerSq } : {}) },
+        tearOffPrices: { ...(prev.tearOffPrices ?? {}), [spec.flat.existing]: { tearOff: spec.tearOffPerSqLayer, disposal: spec.disposalPerSqLayer } },
+      };
+    }
+  } else if (!flattened) {
+    p.ventPrices = { ...(p.ventPrices ?? {}), ...Object.fromEntries(spec.vents.map((v) => [v.id, { each: v.each, labor: v.labor }])) };
+    p.families = {
+      ...(p.families ?? {}),
+      [spec.systemFamily]: {
+        underlaymentId: spec.underlaymentId, underlaymentName: spec.underlaymentName, underlaymentPerSq: spec.underlaymentPerSq,
+        valleyTypeId: spec.valleyTypeId, valleyMatPerFt: spec.valleyMatPerFt, valleyLaborPerFt: spec.valleyLaborPerFt,
+      },
+    };
+  }
+  if (spec.commercial) p.commercial = { rates: { ...spec.commercial.rates }, wage: spec.commercial.wage };
   return p;
 }
 export function readLocal<T>(key: string): T | null {
@@ -102,40 +199,159 @@ export function writeLocal(key: string, value: unknown) {
     /* private window, blocked storage — the builder still works, it just forgets */
   }
 }
-/** Overlay saved preferences, field by field, only where the saved value has the field's type. */
-export function applyPrefs(spec: RoofPackageSpec, p: Prefs | Record<string, unknown> | null | undefined): RoofPackageSpec {
+
+const numOk = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
+
+/**
+ * The prices this contractor last set for the flat-roof options picked on the
+ * spec now: the insulation, cover board, warranty and existing-roof tear-off.
+ * Called after every pick and every re-seed, so a price edit follows the
+ * option, not the roof. (System prices live on the catalog row — reconcile.)
+ */
+export function applyPickedPrices(spec: RoofPackageSpec, p: Prefs | Record<string, unknown> | null | undefined): RoofPackageSpec {
   if (!p) return spec;
-  const out: RoofPackageSpec = { ...spec };
+  const src = p as Prefs;
+  let out = spec;
+  if (out.systemFamily === "low-slope" && src.flat) {
+    const f = { ...out.flat };
+    const ins = src.flat.boardPrices?.[`ins:${f.insulationId}`];
+    if (f.insulationId !== "none" && ins && numOk(ins.mat) && numOk(ins.labor)) Object.assign(f, { insulationMatPerSq: ins.mat, insulationLaborPerSq: ins.labor });
+    const cov = src.flat.boardPrices?.[`cover:${f.coverBoardId}`];
+    if (f.coverBoardId !== "none" && cov && numOk(cov.mat) && numOk(cov.labor)) Object.assign(f, { coverBoardMatPerSq: cov.mat, coverBoardLaborPerSq: cov.labor });
+    const wp = src.flat.warrantyPrices?.[f.warrantyId];
+    if (f.warrantyId !== "none" && numOk(wp)) f.warrantyPerSq = wp;
+    out = { ...out, flat: f };
+    const tp = src.flat.tearOffPrices?.[f.existing];
+    if (tp && numOk(tp.tearOff) && numOk(tp.disposal)) out = { ...out, tearOffPerSqLayer: tp.tearOff, disposalPerSqLayer: tp.disposal };
+  }
+  return out;
+}
+
+/**
+ * Overlay saved preferences, field by field, only where the saved value has
+ * the field's type. A flat spec takes no steep-only field; `keepSystem`
+ * leaves the system pick alone (used after the system was chosen on purpose).
+ */
+export function applyPrefs(spec: RoofPackageSpec, p: Prefs | Record<string, unknown> | null | undefined, opts: { keepSystem?: boolean } = {}): RoofPackageSpec {
+  if (!p) return spec;
+  let out: RoofPackageSpec = { ...spec };
   const src = p as Record<string, unknown>;
+  const low = spec.systemFamily === "low-slope";
+  const legacyFamily = src.systemFamily;
+  const takeSystem = !low && !opts.keepSystem && typeof src.systemId === "string" && typeof src.systemFamily === "string" && src.systemFamily !== "low-slope";
+  const targetFamily = takeSystem ? legacyFamily : spec.systemFamily;
   for (const k of PREF_KEYS) {
+    if (low && STEEP_ONLY.includes(k)) continue;
+    if (SYSTEM_KEYS.includes(k) && !takeSystem) continue;
+    if (FAMILY_KEYS.includes(k) && legacyFamily !== targetFamily) continue;
     const v = src[k];
     if (v === undefined || v === null) continue;
     if (typeof v !== typeof spec[k]) continue;
     (out as unknown as Record<string, unknown>)[k] = v;
   }
-  const vp = src.ventPrices as Prefs["ventPrices"];
+  if (takeSystem) out.systemAuto = false;
+  // The family's own underlayment and valley, over any legacy top-level pick.
+  const fam = (src.families as Prefs["families"])?.[out.systemFamily];
+  if (!low && fam && typeof fam === "object") {
+    if (typeof fam.underlaymentId === "string" && typeof fam.underlaymentName === "string" && numOk(fam.underlaymentPerSq)) {
+      out = { ...out, underlaymentId: fam.underlaymentId, underlaymentName: fam.underlaymentName, underlaymentPerSq: fam.underlaymentPerSq };
+    }
+    if (typeof fam.valleyTypeId === "string" && numOk(fam.valleyMatPerFt) && numOk(fam.valleyLaborPerFt)) {
+      out = { ...out, valleyTypeId: fam.valleyTypeId, valleyMatPerFt: fam.valleyMatPerFt, valleyLaborPerFt: fam.valleyLaborPerFt };
+    }
+  }
+  const nums = (r: unknown) =>
+    r && typeof r === "object" ? Object.fromEntries(Object.entries(r as Record<string, unknown>).filter(([, v]) => numOk(v))) : {};
+  const fp = src.flat as Prefs["flat"];
+  if (fp && typeof fp === "object" && out.flat) {
+    out.flat = {
+      ...out.flat,
+      rates: { ...out.flat.rates, ...nums(fp.rates) },
+      ...(fp.drainWork === "insert" || fp.drainWork === "new" || fp.drainWork === "ring" ? { drainWork: fp.drainWork } : {}),
+    };
+  }
+  const cp = src.commercial as Prefs["commercial"];
+  if (cp && typeof cp === "object" && out.commercial) {
+    out.commercial = {
+      ...out.commercial,
+      rates: { ...out.commercial.rates, ...nums(cp.rates) },
+      ...(WAGE_REGIMES.some((w) => w.id === cp.wage) ? { wage: cp.wage as RoofPackageSpec["commercial"]["wage"] } : {}),
+    };
+  }
+  const vp = low ? null : (src.ventPrices as Prefs["ventPrices"]);
   if (vp && typeof vp === "object") {
     out.vents = out.vents.map((v) => {
       const s = vp[v.id];
       return s && typeof s.each === "number" && typeof s.labor === "number" ? { ...v, each: s.each, labor: s.labor } : v;
     });
   }
-  return out;
+  return applyPickedPrices(out, p);
 }
-/** A saved list is only trusted when it still reads like one. */
+/**
+ * The flat rows as they were priced before 2026-09-14 — ALL-IN figures, from
+ * before insulation, cover board, fasteners, edge metal and the rest became
+ * lines of their own. A saved catalog still carrying one of these at exactly
+ * this price was never re-priced by the contractor, so it is swapped for
+ * today's membrane-only row; leaving it would count the assembly twice.
+ */
+const OLD_ALL_IN_FLAT: Record<string, { mat: number; labor: number }> = {
+  tpo: { mat: 250, labor: 250 },
+  epdm: { mat: 220, labor: 230 },
+  pvc: { mat: 300, labor: 270 },
+  mod_bit: { mat: 220, labor: 240 },
+  bur: { mat: 260, labor: 300 },
+  rolled: { mat: 90, labor: 120 },
+  green_roof: { mat: 1500, labor: 1200 },
+};
+
+/** A saved list is only trusted when it still reads like one — and it is brought up to date on the way in. */
 export function saneLists(l: unknown): CatalogLists | null {
   const x = l as CatalogLists | null;
   if (!x || !Array.isArray(x.systems) || !Array.isArray(x.underlayments) || !x.systems.length || !x.underlayments.length) return null;
   const okSys = x.systems.every((s) => s && typeof s.id === "string" && typeof s.label === "string" && typeof s.matPerSq === "number" && typeof s.laborPerSq === "number");
   const okUnd = x.underlayments.every((u) => u && typeof u.id === "string" && typeof u.label === "string" && typeof u.perSq === "number");
-  return okSys && okUnd ? x : null;
+  return okSys && okUnd ? upgradeLists(x) : null;
+}
+
+/** Swap untouched all-in flat rows for today's rows, and add the built-in
+ *  systems a saved catalog does not have yet (the flat list grew from 7 to
+ *  37). The contractor's own rows and re-priced rows are never touched. */
+export function upgradeLists(x: CatalogLists): CatalogLists {
+  const builtin = new Map(BUILTIN_LISTS.systems.map((s) => [s.id, s]));
+  let changed = false;
+  const systems = x.systems.map((s) => {
+    const old = OLD_ALL_IN_FLAT[s.id];
+    const now = builtin.get(s.id);
+    if (old && now && s.matPerSq === old.mat && s.laborPerSq === old.labor) {
+      changed = true;
+      return now;
+    }
+    return s;
+  });
+  // Only a catalog saved before the flat-roof release (it holds none of the
+  // systems added since) gets them, once. After that, a built-in the
+  // contractor deleted stays deleted.
+  const have = new Set(systems.map((s) => s.id));
+  const preRelease = !systems.some((s) => !PRE_FLAT_RELEASE_IDS.has(s.id) && builtin.has(s.id));
+  const missing = preRelease ? BUILTIN_LISTS.systems.filter((s) => !have.has(s.id) && !PRE_FLAT_RELEASE_IDS.has(s.id)) : [];
+  if (missing.length) changed = true;
+  return changed ? { ...x, systems: [...systems, ...missing] } : x;
 }
 /** Keep the spec's picks pointing at rows that exist in the lists. */
 export function reconcile(spec: RoofPackageSpec, lists: CatalogLists): RoofPackageSpec {
   let out = spec;
   if (!lists.systems.some((s) => s.id === spec.systemId)) {
-    const s = lists.systems[0];
+    // Same family first: a removed TPO row falls back to another flat system,
+    // never to a shingle on a flattened spec. (Card C crosses families itself,
+    // through withSystem, when a family has no rows left.)
+    const s = lists.systems.find((x) => x.family === spec.systemFamily) ?? lists.systems[0];
     out = { ...out, systemId: s.id, systemName: s.label, systemFamily: s.family, systemMatPerSq: s.matPerSq, systemLaborPerSq: s.laborPerSq, capPerFt: s.capPerFt, wastePct: s.wastePct };
+  }
+  // The row is there: its label and prices are the truth (the contractor edits
+  // them in row 01 or Manage roof types). Waste stays the job's own pick.
+  const row = lists.systems.find((s) => s.id === out.systemId);
+  if (row && (row.label !== out.systemName || row.matPerSq !== out.systemMatPerSq || row.laborPerSq !== out.systemLaborPerSq || (out.systemFamily !== "low-slope" && row.capPerFt !== out.capPerFt))) {
+    out = { ...out, systemName: row.label, systemMatPerSq: row.matPerSq, systemLaborPerSq: row.laborPerSq, capPerFt: out.systemFamily === "low-slope" ? 0 : row.capPerFt };
   }
   if (!lists.underlayments.some((u) => u.id === spec.underlaymentId)) {
     const u = lists.underlayments[0];
@@ -144,9 +360,70 @@ export function reconcile(spec: RoofPackageSpec, lists: CatalogLists): RoofPacka
   return out;
 }
 
-/** Facts that, when they change, mean a different roof is open. */
+/** Facts that, when they change, mean a different roof is open. The
+ *  contractor's commercial answer is NOT one of them — answering must not
+ *  wipe their entries (withJobClass applies it in place). */
 export const factsKey = (f: RoofFacts) =>
-  [f.squares, f.perimeterFt, f.footprintSqft, f.chimney, f.rooftopAcCount, f.shape, f.pitchFamilies.map((p) => `${p.pitch12}:${p.share}`).join(",")].join("|");
+  [
+    f.squares, f.perimeterFt, f.footprintSqft, f.chimney, f.rooftopAcCount, f.shape, f.existingMaterial ?? "",
+    f.facetCount ?? "", f.facetConfidence ?? "",
+    f.pitchFamilies.map((p) => `${p.pitch12}:${p.share}`).join(","),
+  ].join("|");
+
+/**
+ * Make the spec fit THIS roof after the saved preferences were laid over it.
+ * A flat roof opens on a flat system (their usual one when the data only says
+ * "flat"); a steep roof never opens on a flat system just because the last
+ * job was one; like-for-like wins within steep roofs (a tile roof starts as
+ * tile even when their usual pick is shingle, and a pick already in the family
+ * is kept). After a flat/steep crossing the saved preferences for the new side
+ * are laid back on, so their rates survive.
+ */
+export function familyFit(spec: RoofPackageSpec, facts: RoofFacts, lists: CatalogLists, prefs?: Prefs | null): RoofPackageSpec {
+  const flat = isFlatRoof(facts);
+  const lowSpec = spec.systemFamily === "low-slope";
+  const materialFam = familyOfMaterial(facts.existingMaterial);
+  const auto = (next: RoofPackageSpec) => applyPickedPrices({ ...next, systemAuto: true }, prefs);
+  const cross = (s: RoofSystem) => {
+    const next = withSystem(spec, s, facts, lists);
+    return auto(prefs ? applyPrefs(next, prefs, { keepSystem: true }) : next);
+  };
+  if (flat && !lowSpec) {
+    const s = openingSystem(facts, lists, prefs?.lowSlopeSystemId);
+    if (s.family === "low-slope") return cross(s);
+    return s.id !== spec.systemId ? auto(applyPrefs(withSystem(spec, s, facts, lists), prefs, { keepSystem: true })) : spec;
+  }
+  if (!flat && lowSpec && materialFam !== "low-slope") {
+    const s = openingSystem(facts, lists);
+    return s.family !== "low-slope" ? cross(s) : spec;
+  }
+  if (lowSpec) {
+    const named = materialFam === "low-slope" ? lowSlopeSystemForMaterial(facts.existingMaterial) : null;
+    const want = named ?? prefs?.lowSlopeSystemId ?? null;
+    const s = want ? lists.systems.find((x) => x.id === want && x.family === "low-slope") : null;
+    return s && s.id !== spec.systemId ? auto(withSystem(spec, s, facts, lists)) : spec;
+  }
+  if (materialFam && materialFam !== "low-slope" && spec.systemFamily !== materialFam) {
+    const s = likeForLikeSystem(materialFam, lists);
+    if (s) return auto(applyPrefs(withSystem(spec, s, facts, lists), prefs, { keepSystem: true }));
+  }
+  return spec;
+}
+/**
+ * Put a system the contractor picked on the spec, the way every card should:
+ * through withSystem (steep and flat share almost nothing), with the saved
+ * picks for the new side laid back on, marked as their own choice.
+ */
+export function pickSystemOn(prev: RoofPackageSpec, s: RoofSystem, facts: RoofFacts, lists: CatalogLists, opts: { auto?: boolean } = {}): RoofPackageSpec {
+  const saved = typeof window === "undefined" ? null : readLocal<Prefs>(PREFS_KEY);
+  return { ...applyPrefs(withSystem(prev, s, facts, lists), saved, { keepSystem: true }), systemAuto: !!opts.auto };
+}
+
+/** The earlier name, kept for the cards that import it. */
+export const likeForLike = (spec: RoofPackageSpec, facts: RoofFacts, lists: CatalogLists) => familyFit(spec, facts, lists, null);
+
+/** The shift options, re-exported for the cards. */
+export { SHIFTS, WAGE_REGIMES };
 
 export const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 export const fmt = (n: number) => Number(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
@@ -289,14 +566,16 @@ export function RoofPackageBuilder({
   );
   const [spec, setSpec] = React.useState<RoofPackageSpec>(() => {
     const l = (typeof window === "undefined" ? null : saneLists(readLocal<CatalogLists>(LISTS_KEY))) ?? BUILTIN_LISTS;
-    return reconcile(applyPrefs(defaultSpec(facts, l), typeof window === "undefined" ? null : readLocal<Prefs>(PREFS_KEY)), l);
+    const saved = typeof window === "undefined" ? null : readLocal<Prefs>(PREFS_KEY);
+    return familyFit(reconcile(applyPrefs(defaultSpec(facts, l, saved?.lowSlopeSystemId), saved), l), facts, l, saved);
   });
   // A different roof opened: the per-roof entries start over from its facts,
   // the preferences stay. Adjusted during render, not in an effect.
   const [seenKey, setSeenKey] = React.useState(key);
   if (key !== seenKey) {
     setSeenKey(key);
-    setSpec(reconcile(applyPrefs(defaultSpec(facts, lists), readLocal<Prefs>(PREFS_KEY)), lists));
+    const saved = readLocal<Prefs>(PREFS_KEY);
+    setSpec(familyFit(reconcile(applyPrefs(defaultSpec(facts, lists, saved?.lowSlopeSystemId), saved), lists), facts, lists, saved));
   }
 
   // The org's saved catalog, when the table exists and a save has happened:
@@ -374,7 +653,7 @@ export function RoofPackageBuilder({
     const s = from.systems.find((x) => x.id === id);
     if (!s) return;
     setSpec((prev) => {
-      const next = { ...prev, systemId: id, systemName: s.label, systemFamily: s.family, systemMatPerSq: s.matPerSq, systemLaborPerSq: s.laborPerSq, capPerFt: s.capPerFt, wastePct: s.wastePct };
+      const next = pickSystemOn(prev, s, facts, from);
       writeLocal(PREFS_KEY, prefsOf(next));
       return next;
     });

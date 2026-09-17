@@ -42,6 +42,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/Toast";
+import { markAcceptedLocally } from "./portal-accepted";
 
 /** `"open"` is the one local value the SERVER never sends: a revert has put the
  *  proposal back, and the page must show it open before the refresh lands. */
@@ -53,7 +54,9 @@ type Revert = { token: string; kind: "accept" | "decline" };
 
 function settledFrom(status: string): Settled {
   if (status === "PAID") return "paid";
-  if (status === "ACCEPTED") return "accepted";
+  // COMPLETED is an accepted job whose work is done — still settled, still
+  // payable below; never Accept/Decline again.
+  if (status === "ACCEPTED" || status === "COMPLETED") return "accepted";
   if (status === "DECLINED") return "declined";
   return null;
 }
@@ -94,6 +97,9 @@ export function PortalActions({ publicId, status }: { publicId: string; status: 
       if (!res.ok) throw new Error("Couldn't record acceptance");
       const data = (await res.json().catch(() => ({}))) as { revertToken?: string };
       if (data.revertToken) setRevert({ token: data.revertToken, kind: "accept" });
+      // The payment block (a sibling island) may now offer the deposit — the
+      // server has recorded the acceptance, so a checkout will be honoured.
+      markAcceptedLocally(publicId, true);
       router.refresh();
     } catch (err) {
       setLocal(previous);
@@ -149,6 +155,7 @@ export function PortalActions({ publicId, status }: { publicId: string; status: 
       setLocal("open");
       setDeclineOpen(false);
       setNote("");
+      markAcceptedLocally(publicId, false);
       router.refresh();
     } catch (err) {
       toast.error("Couldn't revert", err instanceof Error ? err.message : undefined);

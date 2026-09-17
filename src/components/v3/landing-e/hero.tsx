@@ -1,0 +1,123 @@
+import { preload } from "react-dom";
+import { PhoneOverview } from "./blueprint-phone";
+import { REGISTER } from "./routes";
+import { DashboardMock } from "./dashboard-mock";
+import { HeroVisual } from "./hero-visual";
+import { DEFAULT_LANDING, type LandingVariant, type LandingVariantKey, type UtmParams } from "./landing-variants";
+import { Reveal } from "./reveal";
+import { GoogleSignupButton } from "./google-signup-button";
+import { CtaNote } from "./cta-note";
+import { HeroEntrance } from "./hero-entrance";
+
+/* The first screen, and the one screen a trade variant may replace. The
+   headline, the line under it, the solid button's words and the product shot
+   come from the variant (landing-variants.ts); DEFAULT_LANDING IS the
+   original copy, so a page with no `?industry=` renders exactly what it did
+   before variants existed. Reveal and parallax wrappers are shared. */
+export function Hero({
+  variant = DEFAULT_LANDING,
+  variantKey,
+  utm,
+  registerHref = REGISTER,
+  cta,
+}: {
+  variant?: LandingVariant;
+  /** The variant's key, for the Google button's cookie and callback. */
+  variantKey?: LandingVariantKey;
+  utm?: UtmParams;
+  registerHref?: string;
+  /** landing-e: the first-person CTA replaces the variant's own words. */
+  cta?: string;
+}) {
+  const shot = variant.visual !== "dashboard";
+  // The hero plate is the LCP element: preload the one this viewport's CSS
+  // will ask for (landing-e.css switches at 860 px). One <link rel="preload">
+  // per breakpoint in <head>, with imagesrcset/imagesizes and a media query.
+  preload("/landing-d/bg-hero-ridge-800.webp", { as: "image", imageSrcSet: "/landing-d/bg-hero-ridge-800.webp 800w", imageSizes: "100vw", media: "(max-width: 860px)" });
+  preload("/landing-d/bg-hero-ridge-1600.webp", { as: "image", imageSrcSet: "/landing-d/bg-hero-ridge-1600.webp 1600w", imageSizes: "100vw", media: "(min-width: 861px)" });
+  return (
+    <section id="hero" className="lp-hero">
+      <div className="lp-bg lp-bg--ridge" aria-hidden />
+      <div className="relative z-[1] mx-auto flex max-w-[86rem] flex-col items-center gap-3 px-5 pt-[12vmin] text-center sm:pt-[14vmin]">
+        <Reveal>
+          {/* The gold pill is the same on every variant — one launch line, one
+              link — and is deliberately NOT part of LandingVariant (owner,
+              2026-09-07). */}
+          <a
+            href={registerHref}
+            data-cta="pill"
+            // A fifth smaller on a phone (owner, 2026-09-14): 12 px / 13 px sides /
+            // 5.5 px top and bottom, against 15 / 16 / 7; from 640 px as before.
+            className="inline-flex items-center gap-1 rounded-full bg-lp-gold px-[13px] py-[5.5px] text-[12px] font-semibold text-ink transition-transform duration-200 hover:scale-[1.03] sm:px-4 sm:py-[7px] sm:text-[14px]"
+          >
+            Just launched: JobFlex AI Estimator
+            <span aria-hidden>→</span>
+          </a>
+        </Reveal>
+        {/* The entrance (pass C): H1 lines out of a mask, sub +150 ms, buttons
+            +250 ms — hero-entrance.tsx. `.lp-enter` hides the three blocks
+            until the masks exist; the stylesheet lifts it under reduced
+            motion, and <noscript> lifts it with no JavaScript at all. */}
+        <noscript><style>{`.jf-lp .lp-enter{visibility:visible}`}</style></noscript>
+        <HeroEntrance>
+        <h1 className="lp-enter text-[clamp(38px,6.7vw,96px)] font-bold leading-[1.02] tracking-[-0.025em] text-ink" data-entrance="h1">
+          {variant.h1[0]}
+          <br />
+          {variant.h1[1]}
+        </h1>
+        {/* The line under the headline exists only on trade variants; the
+            default hero never had one and renders nothing here. */}
+        {variant.sub && (
+          <p className="lp-enter mx-auto max-w-[38rem] text-[15px] leading-[1.5] text-white/70 sm:text-[17px] lg:max-w-[46rem]" data-entrance="sub">{variant.sub}</p>
+        )}
+        <div className="lp-enter w-full sm:w-auto" data-entrance="cta">
+          <div className="mx-auto mt-4 flex w-full max-w-[22rem] flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:items-center sm:justify-center">
+            <a href={registerHref} className="lp-btn-dark lp-cta lp-cta--solid" data-cta="hero">
+              {cta ?? variant.primaryCta}
+            </a>
+            <GoogleSignupButton className="lp-cta lp-cta--ghost" industry={variantKey} utm={utm}>
+              <svg viewBox="0 0 48 48" className="h-[18px] w-[18px]" aria-hidden>
+                <path
+                  fill="#FFC107"
+                  d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.5 6.1 29.5 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.7-.4-3.9z"
+                />
+                <path
+                  fill="#FF3D00"
+                  d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.5 6.1 29.5 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"
+                />
+                <path
+                  fill="#4CAF50"
+                  d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.7-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"
+                />
+                <path
+                  fill="#1976D2"
+                  d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.5l6.2 5.2C41.4 34.9 44 30 44 24c0-1.3-.1-2.7-.4-3.9z"
+                />
+              </svg>
+              Sign up with Google
+            </GoogleSignupButton>
+          </div>
+          <CtaNote tone="dark" className="mt-3 text-center" />
+        </div>
+        </HeroEntrance>
+      </div>
+
+      <div className="relative z-[1] mt-[8vmin] px-5 pb-[26vmin] sm:px-6">
+        {/* Two builds of the same screen, not one build clipped: the desktop
+            plate's 208px sidebar and four-across KPI row cannot survive a
+            phone column (owner, 2026-08-25). The phone build also skips
+            lp-wrap, whose gutter would double the section's own px-5.
+            An estimator shot is one build for both: its takeoff rail stacks
+            under the stage below 640px by its own media query. */}
+        <Reveal delay={150} className="sm:hidden">
+          {shot ? <HeroVisual variant={variant} /> : <PhoneOverview />}
+        </Reveal>
+        <div className="mx-auto hidden lp-wrap sm:block">
+          <Reveal delay={150}>
+            <div data-parallax="18">{shot ? <HeroVisual variant={variant} /> : <DashboardMock />}</div>
+          </Reveal>
+        </div>
+      </div>
+    </section>
+  );
+}

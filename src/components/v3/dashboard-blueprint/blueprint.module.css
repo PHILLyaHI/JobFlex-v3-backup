@@ -483,6 +483,27 @@
   overflow: hidden;
   transition: height 0.3s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.2s ease, padding 0.3s cubic-bezier(0.22, 0.61, 0.36, 1), margin-bottom 0.3s cubic-bezier(0.22, 0.61, 0.36, 1), border-width 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
+/* FIRST RUN (landing-e pass A, 2026-09-11): one card, one button, gone after
+   the first estimate. Ink-ruled like the sheet's other plates, the blueprint
+   blue on the kicker and the button only. */
+.bp :global(.first-run) {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  border: 2px solid var(--ink);
+  border-left-width: 6px;
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 16px 18px;
+}
+.bp :global(.first-run-body) { min-width: 0; flex: 1 1 320px; }
+.bp :global(.first-run-kicker) {
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--blueprint);
+  margin-bottom: 4px;
+}
+.bp :global(.first-run-title) { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); }
+.bp :global(.first-run-txt) { margin-top: 4px; font-size: 13.5px; font-weight: 500; line-height: 1.45; color: var(--ink-soft); }
+.bp :global(.first-run .btn) { flex: 0 0 auto; }
 .bp :global(svg.ic.banner-pin) { width: 26px; height: 26px; color: var(--warning); }
 .bp :global(.banner-body) { min-width: 0; }
 .bp :global(.banner-kicker) {

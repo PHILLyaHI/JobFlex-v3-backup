@@ -39,7 +39,7 @@ export async function runTrafficQuery(sql: string, name: string): Promise<Rows> 
 export function emptyTrafficReport(filters: TrafficFilters): TrafficReport {
   return { filters, fetchedAt: new Date().toISOString(), status: "ok", errors: [], totals: null, previous: null,
     lifetime: null, today: null, firstTrackedAt: null, firstStepAt: null, points: [], pages: [], sources: [],
-    referrers: [], campaigns: [], devices: [], browsers: [], countries: [], terms: [], hosts: [], funnel: [], funnelOutcomes: null, experiments: [] };
+    referrers: [], campaigns: [], devices: [], browsers: [], countries: [], terms: [], hosts: [], funnel: [], funnelOutcomes: null, experiments: [], variants: [] };
 }
 
 async function loadReport(filters: TrafficFilters): Promise<TrafficReport> {
@@ -87,6 +87,7 @@ async function loadReport(filters: TrafficFilters): Promise<TrafficReport> {
     const row = results.funnel[0].slice(stages.length);
     report.funnelOutcomes = { trials: numeric(row[0]), purchases: numeric(row[1]), other: numeric(row[2]), trialAttempts: numeric(row[3]), purchaseAttempts: numeric(row[4]) };
   }
+  report.variants = (results.variants || []).map(r => ({ variant: String(r[0]) === "e" ? "e" as const : "d" as const, started: numeric(r[1]), completed: numeric(r[2]) }));
   report.experiments = (results.experiments || []).map(r => ({ experiment: String(r[0]), variant: String(r[1]), visitors: numeric(r[2]), attempts: numeric(r[3]), completed: numeric(r[4]), mixedVisitors: numeric(r[5]) }));
   if (!report.totals) { report.status = "error"; report.message = report.errors[0] || "Traffic is unavailable."; }
   return report;
