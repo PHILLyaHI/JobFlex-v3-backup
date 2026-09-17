@@ -13,7 +13,7 @@
 //     trade we route. routeDecision() below turns that into MANUAL_QUEUE too.
 // The old behaviour — a silent {Other, 0.3} fallback for every failure mode —
 // made "the AI was down" indistinguishable from "the request is junk".
-import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
+import { getOpenAI, isOpenAIEnabled, resolveOpenAIModel } from "@/lib/sdk/openai";
 import { TRADE_TYPES, isTradeType, type TradeType } from "@/lib/tradeTypes";
 
 export interface DetectedTrade {
@@ -42,10 +42,21 @@ export async function detectTrade(text: string): Promise<DetectedTrade | null> {
   if (!input) return { trade: "Other", confidence: 0, reason: "Empty description" };
   if (!isOpenAIEnabled()) return null;
 
+  // THE MODEL THIS PROCESS CAN ACTUALLY CALL — asked once, then remembered
+  // (lib/sdk/openai). Not the import-time snapshot, and not the plain getter
+  // either: both answer with whatever string is in the environment, and a
+  // string is not an entitlement. `OPENAI_MODEL=gpt-4o-mini` on a project with
+  // no access to it comes back 403 model_not_found on every single request.
+  // For this call that is the worst possible failure, because the detected
+  // trade is the ONLY routing source (see the header): every homeowner request
+  // parks as AI_UNAVAILABLE and the Lead Center stops moving entirely.
+  // Hoisted out of the try so the catch below can name the model that failed.
+  const model = await resolveOpenAIModel();
+
   try {
     const client = getOpenAI();
     const completion = await client.chat.completions.create({
-      model: OPENAI_MODEL,
+      model,
       temperature: 0.1,
       messages: [
         {
@@ -71,7 +82,15 @@ export async function detectTrade(text: string): Promise<DetectedTrade | null> {
         ? parsed.reason.trim().slice(0, 200)
         : "No reasoning returned";
     return { trade, confidence: trade === "Other" ? Math.min(confidence, 0.5) : confidence, reason };
-  } catch {
+  } catch (err) {
+    // Null is the contract (the caller parks the lead), but it must not be a
+    // silent one. This catch swallowed everything, so "the project has no
+    // access to that model", "out of credits" and "the JSON came back
+    // malformed" all produced the same MANUAL_QUEUE row reading
+    // "AI_UNAVAILABLE" — three different problems with three different fixes,
+    // and nothing anywhere telling them apart. The model is named because
+    // getting it wrong is the failure this line exists to catch.
+    console.error(`[detect-trade] classification failed (model=${model}):`, err);
     return null;
   }
 }
