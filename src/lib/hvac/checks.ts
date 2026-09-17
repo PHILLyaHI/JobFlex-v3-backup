@@ -3,7 +3,7 @@
 // sentence, so the ledger can price the fix and the proposal can name it.
 
 import type { BuildingModel, CatalogItem, CheckResult, DesignConditions, LoadResult, SelectionCandidate } from "./types";
-import { CODE_FLAGS, efficiencyFloor, refrigerantRule } from "./data/rules";
+import { coastalSite, CODE_FLAGS, efficiencyFloor, refrigerantRule } from "./data/rules";
 import { ratedCoolingBtuh } from "./select";
 
 /** Return grille free area the airflow needs: 200 sq in per nominal ton. */
@@ -135,31 +135,33 @@ export function fuelChecks(m: BuildingModel, o: { gasFurnace: boolean; gasWaterH
   return out;
 }
 
-export function complianceChecks(m: BuildingModel, chosen: CatalogItem | null, opts: { touchesRefrigerant: boolean; touchesDucts: boolean; newConstruction: boolean; removesEquipment?: boolean; kind?: string }): CheckResult[] {
+export function complianceChecks(m: BuildingModel, chosen: CatalogItem | null, opts: { touchesRefrigerant: boolean; touchesDucts: boolean; newConstruction: boolean; removesEquipment?: boolean; kind?: string; newFurnace?: boolean }): CheckResult[] {
   const out: CheckResult[] = [];
   if (chosen) {
     const rr = refrigerantRule(m.state, chosen.refrigerant);
     out.push({ id: "refrigerant", title: `Refrigerant · ${chosen.refrigerant ?? "unknown"}`, status: rr.status, detail: rr.text, rule: rr.source });
-    if (chosen.kind === "heat-pump" || chosen.kind === "air-conditioner" || chosen.kind === "ductless") {
-      const floor = efficiencyFloor(m.state, chosen.kind === "air-conditioner" ? "air-conditioner" : "heat-pump", ratedCoolingBtuh(chosen));
-      const okSeer = !chosen.seer2 || chosen.seer2 >= floor.seer2;
+    if (chosen.kind === "heat-pump" || chosen.kind === "air-conditioner" || chosen.kind === "ductless" || chosen.kind === "package") {
+      const floor = efficiencyFloor(m.state, chosen.kind === "heat-pump" || (chosen.kind === "package" && chosen.heatKind === "heat-pump") ? "heat-pump" : "air-conditioner", ratedCoolingBtuh(chosen), chosen.kind === "package");
+      const eerFloor = floor.eer2IfHighSeer && (chosen.seer2 ?? 0) >= 15.2 ? floor.eer2IfHighSeer : floor.eer2;
+      const okEer = !eerFloor || !chosen.eer2 || chosen.eer2 >= eerFloor;
+      const okSeer = (!chosen.seer2 || chosen.seer2 >= floor.seer2) && okEer;
       const okHspf = !floor.hspf2 || !chosen.hspf2 || chosen.hspf2 >= floor.hspf2;
       const ok = okSeer && okHspf;
       out.push({ id: "efficiency", title: "Efficiency floor", status: ok ? (chosen.seer2 ? "pass" : "verify") : "fix", detail: `${floor.text}${chosen.seer2 ? ` This unit: ${chosen.seer2} SEER2${chosen.hspf2 ? `, ${chosen.hspf2} HSPF2` : ""}.` : " SEER2 not on the catalog row."}${!okHspf ? " Below the HSPF2 floor." : ""}`, rule: floor.source });
     }
   }
   for (const f of CODE_FLAGS) {
-    if (f.applies({ state: m.state, ...opts })) out.push({ id: f.id, title: f.title, status: f.status, detail: f.text, rule: f.source });
+    if (f.applies({ state: m.state, county: m.county, coastal: coastalSite(m.state, m.county), ...opts })) out.push({ id: f.id, title: f.title, status: f.status, detail: f.text, rule: f.source });
   }
   return out;
 }
 
-export function allChecks(load: LoadResult, c: DesignConditions, m: BuildingModel, chosen: SelectionCandidate | null, opts: { dualFuel?: boolean; removesEquipment?: boolean; reusesCircuit?: boolean; touchesRefrigerant?: boolean; kind?: string } = {}): CheckResult[] {
+export function allChecks(load: LoadResult, c: DesignConditions, m: BuildingModel, chosen: SelectionCandidate | null, opts: { dualFuel?: boolean; removesEquipment?: boolean; reusesCircuit?: boolean; touchesRefrigerant?: boolean; kind?: string; newFurnace?: boolean } = {}): CheckResult[] {
   const item = chosen?.item ?? null;
   const touchesRefrigerant = opts.touchesRefrigerant ?? (!item || item.kind !== "furnace");
   const touchesDucts = m.ducts.condition === "poor" || m.ducts.location === "none";
   const gas = gasCheck(m, item);
-  return [...ductChecks(load, m, chosen), electricalCheck(m, chosen, { dualFuel: opts.dualFuel, reusesCircuit: opts.reusesCircuit }), ...(gas ? [gas] : []), ...complianceChecks(m, item, { touchesRefrigerant, touchesDucts, newConstruction: false, removesEquipment: opts.removesEquipment, kind: opts.kind ?? item?.kind })];
+  return [...ductChecks(load, m, chosen), electricalCheck(m, chosen, { dualFuel: opts.dualFuel, reusesCircuit: opts.reusesCircuit }), ...(gas ? [gas] : []), ...complianceChecks(m, item, { touchesRefrigerant, touchesDucts, newConstruction: false, removesEquipment: opts.removesEquipment, kind: opts.kind ?? item?.kind, newFurnace: opts.newFurnace })];
 }
 
 /** Which of the load's inputs came from a table rather than the house. */

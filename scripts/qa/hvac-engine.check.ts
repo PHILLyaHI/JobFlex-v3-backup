@@ -102,7 +102,8 @@ const hp = (tons: number, over: Partial<CatalogItem> = {}): CatalogItem => ({ id
   const low = evaluateItem(hp(3.5, { seer2: 13 }), load, dallas, house());
   ok("13 SEER2 fails the Southeast 14.3 floor", !!low.disqualified);
   ok("North region AC floor is 13.4 SEER2", efficiencyFloor("OH", "air-conditioner", 36000).seer2 === 13.4);
-  ok("Southwest carries an EER2 floor", efficiencyFloor("AZ", "air-conditioner", 36000).eer2 === 12.2);
+  ok("Southwest carries an EER2 floor, with the lower one for a high-SEER2 unit", efficiencyFloor("AZ", "air-conditioner", 36000).eer2 === 11.7 && efficiencyFloor("AZ", "air-conditioner", 48000).eer2 === 11.2 && efficiencyFloor("AZ", "air-conditioner", 36000).eer2IfHighSeer === 9.8);
+  ok("A single-package unit answers to the national floor, not the regional one", efficiencyFloor("AZ", "air-conditioner", 36000, true).seer2 === 13.4 && efficiencyFloor("AZ", "air-conditioner", 36000, true).eer2 === 11 && efficiencyFloor("CA", "heat-pump", 36000, true).hspf2 === 6.7, efficiencyFloor("CA", "air-conditioner", 36000, true).text);
   const sel = selectSystem([hp(2), hp(3), hp(3.5), hp(4), hp(5)], load, dallas, house());
   ok("selection picks an in-window unit and a runner-up", !!sel.chosen && !!sel.runnerUp && !sel.chosen.disqualified, sel.chosen?.item.model);
   ok("target tons rounds to the half ton", sel.targetTons % 0.5 === 0);
@@ -161,7 +162,7 @@ const hp = (tons: number, over: Partial<CatalogItem> = {}): CatalogItem => ({ id
   const g2 = gasCheck(house({ gas: { available: true, pipeIn: 0.5, longestRunFt: 60 } }), { id: "f", kind: "furnace", brand: "A", model: "F80", btuInput: 80000, afue: 0.96, source: "shop" });
   ok("½-inch pipe over 60 ft cannot carry it", g2?.status === "fix", g2?.detail);
   const ca = complianceChecks(house({ state: "CA" }), chosen.item, { touchesRefrigerant: true, touchesDucts: false, newConstruction: false });
-  ok("California adds HERS and the approved Manual J flags", ca.some((x) => x.id === "ca-hers") && ca.some((x) => x.id === "ca-manual-j"));
+  ok("California adds the 2025-code flags: ECC verification of charge and ducts, the CF forms, the refrigerant cap", ca.some((x) => x.id === "ca-t24-charge") && ca.some((x) => x.id === "ca-t24-duct") && ca.some((x) => x.id === "ca-cf-forms") && ca.some((x) => x.id === "ca-carb-gwp"), ca.map((x) => x.id).join(","));
   ok("refrigerant check rides every selection", ca.some((x) => x.id === "refrigerant"));
 }
 

@@ -330,6 +330,9 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
   const model = React.useMemo<BuildingModel | null>(() => {
     if (!site) return null;
     const m = restored ? (structuredClone(restored) as BuildingModel) : modelFromSite(site);
+    // The state and county selects correct what the lookup guessed, and the
+    // state decides which code rules the job answers to — not just the design day.
+    if (stateCode && stateCode !== m.state) { m.state = stateCode; m.county = county || ""; }
     if (county && county !== m.county) m.county = county;
     if (analysis) applyWalkthrough(m, analysis);
     for (const k of ["outdoor", "indoor", "panel"] as SlotKey[]) {
@@ -351,7 +354,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
       else applyStated(m, path as keyof BuildingModel, v as never);
     }
     return m;
-  }, [site, restored, county, analysis, plates, typed]);
+  }, [site, restored, stateCode, county, analysis, plates, typed]);
 
   const conditions = React.useMemo(() => (model ? designConditionsFor(model.state, model.county, model.elevationFt ?? 0) : null), [model]);
   const ready = !!model && (!def.needs.load || (def.needs.zone ? (jobInput.zoneSqft ?? 0) > 0 : model.conditionedSqft > 0));

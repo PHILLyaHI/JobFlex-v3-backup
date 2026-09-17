@@ -427,7 +427,38 @@ with no gas now picks an air handler with a heat kit sized to the load
 ("Electric furnace replacement"), with no gas, vent, neutralizer or CO-alarm
 lines.
 
-Not in the catalog: multi-zone ductless outdoor units and package units
+**Package units and the state layer (2026-09-17, owner's ask).** The catalog
+gained 18 package families (114 rows: gas/electric, package heat pump and
+straight cool from Goodman, Carrier, Trane, Rheem, York and Lennox, all in
+their current R-454B / R-32 model numbers — the old GPG / 48VL / 4YCC / RQPM
+numbers are dead) and 8 California ultra-low-NOx furnace families (Lennox
+NV/NE, Carrier 59SU5 / 59CU5, Goodman -U). 629 rows in all.
+
+A row now carries where it may be sold (`states` / `notStates` /
+`availabilityNote`) and what its gas section is certified to (`noxNgJ`).
+`ultraLowNoxNeeded(state, county)` reads the county, not the state line: in
+the 21 counties of the South Coast, San Joaquin Valley and Bay Area districts
+a 40 ng/J furnace is ruled out with the reason and the ultra-low build is
+offered instead; elsewhere in California it stays on the list with a note.
+`coastalSite(state, county)` does the same for salt air, so Dallas is not told
+about coastal coils. Single-package units answer to the national floor
+(13.4 SEER2 / 11.0 EER2, 6.7 HSPF2, enforced by date of manufacture), not the
+regional split-system rule — that was ruling every package out in California.
+The Southwest EER2 floor was corrected to 11.7 / 11.2 with the 9.8 fallback
+for a unit certified at 15.2 SEER2 or better.
+
+CODE_FLAGS gained the state rules that survived an adversarial check (87 of
+108 claims kept): California's ultra-low NOx, ECC verification of charge and
+duct leakage, the electric-resistance-primary limit, the CARB 750 GWP cap and
+the CF1R/CF2R/CF3R paperwork; Washington's Manual J+S sizing, supplementary
+heat lockout, ENERGY STAR thermostat and the 750 GWP cap; Oregon's minor-label
+limit and R-8 duct rule; Florida's install-enforced Southeast minimum, wind
+tie-down and condensate float switch; the Texas TDLR licence; New York's
+sizing-on-the-permit. Each carries its citation and verified date. The state
+and county selects now reach the model, so correcting them changes the rules,
+not just the design day.
+
+Not in the catalog: multi-zone ductless outdoor units
 (no ratings read), Fujitsu (Halcyon RLS3 retired, Orion figures not
 published yet), non-condensing tankless. Re-verify the families after the
 2026 model year turns over.

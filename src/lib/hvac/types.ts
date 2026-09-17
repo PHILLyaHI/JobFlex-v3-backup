@@ -260,6 +260,10 @@ export interface CatalogItem {
   uef?: number;
   firstHourGal?: number;
   vent?: "atmospheric" | "power" | "direct" | "none";
+  /** Package units: what makes the heat. */
+  heatKind?: "gas" | "electric" | "heat-pump";
+  /** Gas NOx certification, ng/J; 14 or less is "ultra-low". */
+  noxNgJ?: number;
   /** Sales tier the shop sees on the pick list. */
   tier?: "value" | "mid" | "premium";
   /** Typed in by the contractor for one estimate, not a catalog row. */

@@ -10,7 +10,7 @@
 
 import type { EquipmentKind, BuildingModel, CapacityPoint, CatalogItem, DesignConditions, LoadResult, SelectionCandidate, SelectionResult } from "./types";
 import { heatingLoadAt } from "./load";
-import { efficiencyFloor, refrigerantRule } from "./data/rules";
+import { efficiencyFloor, refrigerantRule, ultraLowNoxNeeded } from "./data/rules";
 
 const BTU_PER_KW = 3412;
 
@@ -94,6 +94,13 @@ export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignCondi
   // An AC needs an indoor blower to pair with: a new gas furnace on a full
   // replacement, or the furnace / air handler that stays on an add or a swap
   // (an electric furnace carries a coil just as well).
+  // Gas heat in California: the South Coast, San Joaquin Valley and Bay Area
+  // districts take only 14 ng/J, and the rule binds the installer.
+  if ((item.kind === "furnace" || (item.kind === "package" && item.heatKind === "gas")) && (item.noxNgJ ?? 40) > 14) {
+    const uln = ultraLowNoxNeeded(m.state, m.county);
+    if (uln === "required") return fail(`Not certified to 14 ng/J, and ${m.county} County sits in a district that takes only ultra-low-NOx gas heat — order the ULN build of this model.`);
+    if (uln === "confirm") { score -= 4; reasons.push("California: confirm the air district — the South Coast, San Joaquin Valley and Bay Area districts take only 14 ng/J gas heat, and this unit is the 40 ng/J build."); }
+  }
   // Where the row may be sold and installed: a state rule the catalog carries.
   const st = (m.state || "").toUpperCase();
   if (st && item.notStates?.map((x) => x.toUpperCase()).includes(st)) return fail(`Not sold or not permitted in ${st}${item.availabilityNote ? ` — ${item.availabilityNote}` : ""}.`);
@@ -112,9 +119,11 @@ export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignCondi
   if (cools) {
     const cap = ratedCoolingBtuh(item);
     if (cap <= 0) return fail("No cooling capacity on the catalog row.");
-    const floor = efficiencyFloor(m.state, item.kind === "heat-pump" ? "heat-pump" : "air-conditioner", cap);
+    const floor = efficiencyFloor(m.state, item.kind === "heat-pump" || (item.kind === "package" && item.heatKind === "heat-pump") ? "heat-pump" : "air-conditioner", cap, item.kind === "package");
     if (item.seer2 && item.seer2 < floor.seer2) return fail(`${item.seer2} SEER2 is below the ${floor.seer2} SEER2 regional minimum.`);
-    if (floor.eer2 && item.eer2 && item.eer2 < floor.eer2) return fail(`${item.eer2} EER2 is below the ${floor.eer2} EER2 Southwest minimum.`);
+    // The Southwest EER2 floor drops for a unit already certified high on SEER2.
+    const eerFloor = floor.eer2IfHighSeer && (item.seer2 ?? 0) >= 15.2 ? floor.eer2IfHighSeer : floor.eer2;
+    if (eerFloor && item.eer2 && item.eer2 < eerFloor) return fail(`${item.eer2} EER2 is below the ${eerFloor} EER2 minimum for this region.`);
     if (!item.seer2) { score -= 5; reasons.push("SEER2 not on the catalog row — confirm it meets the regional minimum."); }
     const ratio = load.coolingTotalBtuh > 0 ? cap / load.coolingTotalBtuh : 0;
     out.coolingRatio = Math.round(ratio * 100) / 100;

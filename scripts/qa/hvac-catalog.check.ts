@@ -10,6 +10,7 @@ import { modelFromSite } from "../../src/lib/hvac/intake";
 import { waterHeaterPlan } from "../../src/lib/hvac/waterHeater";
 import { expandFamily, US_CATALOG, US_CATALOG_VERIFIED_ON, US_FAMILIES } from "../../src/lib/hvac/data/usCatalog";
 import type { BuildingModel, CatalogItem } from "../../src/lib/hvac/types";
+import { coastalSite, efficiencyFloor, ultraLowNoxNeeded } from "../../src/lib/hvac/data/rules";
 
 let failures = 0;
 let passes = 0;
@@ -114,6 +115,33 @@ const tl = pickWaterHeater(US_CATALOG, waterHeaterPlan(gas, { fuel: "gas", type:
 ok("Water heater: a gas tankless", !!tl && tl.whType === "tankless" && (tl.btuInput ?? 0) >= 150_000, `${tl?.brand} ${tl?.model} · ${tl?.btuInput} BTU/h`);
 const l6 = buildLedger(runEngine(gas, { catalog: US_CATALOG, job: "water-heater", input: { wh: { fuel: "gas", type: "tank" } } }), gas, DEFAULT_RATE_CARD, US_CATALOG, { job: "water-heater", input: { wh: { fuel: "gas", type: "tank" } } });
 ok("Water heater ledger names the catalog tank", /Rheem|A\.O\. Smith|Bradford White/.test(l6.materials[0]?.name ?? ""), l6.materials[0]?.name);
+
+
+// ── Package units, and what a state lets a contractor buy ──────────────────
+{
+  const pkgs = by("package");
+  ok("Package units: every heat kind, from the big brands", pkgs.length >= 60 && ["gas", "heat-pump", "electric"].every((k) => pkgs.some((c) => c.heatKind === k)) && ["Goodman", "Carrier", "Trane", "Rheem", "York"].every((b) => pkgs.some((c) => c.brand === b)), `${pkgs.length} rows · ${Array.from(new Set(pkgs.map((c) => c.brand))).join(", ")}`);
+  ok("A gas package carries its gas input and AFUE; a heat-pump package its HSPF2", pkgs.filter((c) => c.heatKind === "gas").every((c) => c.afue) && pkgs.some((c) => c.heatKind === "gas" && c.btuInput) && pkgs.filter((c) => c.heatKind === "heat-pump").every((c) => c.hspf2));
+  ok("A single-package unit answers to the national floor, so a 13.4 SEER2 package is legal in California", (() => { const f = efficiencyFloor("CA", "air-conditioner", 36000, true); return f.seer2 === 13.4 && f.eer2 === 11; })(), efficiencyFloor("CA", "air-conditioner", 36000, true).text);
+  const gasPkg = pkgs.filter((c) => c.heatKind === "gas");
+  ok("Gas packages carry a NOx class, and the ultra-low ones exist for California", gasPkg.every((c) => c.noxNgJ) && gasPkg.some((c) => (c.noxNgJ ?? 40) <= 14), `${gasPkg.filter((c) => (c.noxNgJ ?? 40) <= 14).length} ultra-low of ${gasPkg.length}`);
+  const ulnFurnaces = by("furnace").filter((c) => (c.noxNgJ ?? 40) <= 14);
+  ok("California ultra-low-NOx furnaces are on the list, from three makers", ulnFurnaces.length >= 20 && ["Lennox", "Carrier", "Goodman"].every((b) => ulnFurnaces.some((c) => c.brand === b)), `${ulnFurnaces.length} rows · ${Array.from(new Set(ulnFurnaces.map((c) => c.brand))).join(", ")}`);
+  ok("The district rule reads the county, not the state line", ultraLowNoxNeeded("CA", "Los Angeles") === "required" && ultraLowNoxNeeded("CA", "Fresno") === "required" && ultraLowNoxNeeded("CA", "Alameda") === "required" && ultraLowNoxNeeded("CA", "Shasta") === "confirm" && ultraLowNoxNeeded("TX", "Collin") === "no");
+  ok("Salt air is a coastal-county rule, not a state one", coastalSite("FL", "Broward") && coastalSite("CA", "Orange") && coastalSite("TX", "Galveston") && !coastalSite("TX", "Collin") && !coastalSite("CA", "Fresno"));
+  const la = house({ state: "CA", county: "Los Angeles", address: "Los Angeles, CA" });
+  const rLa = runEngine(la, { catalog: US_CATALOG, job: "replace-furnace" });
+  ok("A furnace in Los Angeles County: only an ultra-low-NOx unit is offered, the rest say why", (rLa.selection.chosen?.item.noxNgJ ?? 40) <= 14 && rLa.selection.candidates.some((c) => /takes only ultra-low-NOx/.test(c.disqualified ?? "")), `${rLa.selection.chosen?.item.brand} ${rLa.selection.chosen?.item.model}`);
+  ok("The same furnace job outside those districts keeps the standard build on the list, with a note", (() => { const r = runEngine(house({ state: "CA", county: "Shasta", address: "Redding, CA" }), { catalog: US_CATALOG, job: "replace-furnace" }); return r.selection.candidates.some((c) => !c.disqualified && (c.item.noxNgJ ?? 40) > 14 && c.reasons.some((x) => /confirm the air district/.test(x))); })());
+  for (const [st, county, want] of [["CA", "Los Angeles", "CF1R, CF2R and CF3R"], ["WA", "King", "Manual J load and Manual S selection"], ["OR", "Multnomah", "Minor label does not cover this"], ["FL", "Broward", "Wind tie-down and product approval"], ["TX", "Collin", "TDLR licence and permit"], ["NY", "Kings", "Sizing on the permit"]] as const) {
+    const r = runEngine(house({ state: st, county, address: `Test, ${st}` }), { catalog: US_CATALOG, job: "replace-system" });
+    ok(`${st}: the state's own rule is on the card ("${want}")`, r.checks.some((c) => c.title === want), r.checks.map((c) => c.title).join(" | ").slice(0, 150));
+  }
+  ok("A Texas job is not told about salt air in Dallas", !runEngine(house({ state: "TX", county: "Collin", address: "Frisco, TX" }), { catalog: US_CATALOG, job: "replace-system" }).checks.some((c) => c.title === "Salt air"));
+  const pkgHouse = house({ existing: { kind: "package-unit", tons: 3.5, fuel: "gas", refrigerant: "R-410A" } });
+  const rPkg = runEngine(pkgHouse, { catalog: US_CATALOG, job: "replace-system" });
+  ok("A package house is quoted a real package unit", rPkg.selection.chosen?.item.kind === "package", `${rPkg.selection.chosen?.item.brand} ${rPkg.selection.chosen?.item.model}`);
+}
 
 console.log(`\n${passes} passed, ${failures} failed`);
 if (failures) process.exit(1);

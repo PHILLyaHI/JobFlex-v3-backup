@@ -55,6 +55,10 @@ export interface UsFamily {
   vent?: CatalogItem["vent"];
   /** Package units: what makes the heat ("gas" | "electric" | "heat-pump"). */
   heatKind?: "gas" | "electric" | "heat-pump";
+  /** NOx certification of the gas section, ng/J. 14 = ultra-low (the number
+   *  California's three big air districts require); left out = the national
+   *  40 ng/J class, which those districts do not accept. */
+  noxNgJ?: number;
   /** Sold or permitted only in these states; left out = everywhere. */
   states?: string[];
   /** Not sold or not permitted in these states. */
@@ -123,7 +127,12 @@ export function expandFamily(f: UsFamily): CatalogItem[] {
       item.ratedStaticInWc = 0.5;
       if (f.kind === "air-handler") item.maxTons = f.maxTonsBySize?.[size] ?? size;
     }
-    if (f.kind === "package" && f.btuInputBySize?.[size]) item.btuInput = f.btuInputBySize[size];
+    if (f.kind === "package") {
+      item.heatKind = f.heatKind;
+      if (f.btuInputBySize?.[size]) item.btuInput = f.btuInputBySize[size];
+    }
+    // What a gas appliance is certified to: the California districts read this.
+    if (f.kind === "furnace" || (f.kind === "package" && f.heatKind === "gas")) item.noxNgJ = f.noxNgJ ?? 40;
     if (f.kind === "furnace") {
       item.btuInput = size * 1000;
       item.ratedStaticInWc = 0.5;

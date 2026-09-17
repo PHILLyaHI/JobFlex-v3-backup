@@ -354,7 +354,11 @@ ok("A v2 card round-trips", JSON.stringify(normalizeRateCard(DEFAULT_RATE_CARD))
   const pkg = house({ existing: { kind: "package-unit", tons: 3.5, fuel: "gas", refrigerant: "R-410A" }, ducts: { location: "attic", condition: "fair", insulated: true, returnGrilleSqIn: 700 } });
   const rPkg = runEngine(pkg, { catalog: US_CATALOG, job: "replace-system" });
   const lPkg = buildLedger(rPkg, pkg, DEFAULT_RATE_CARD, US_CATALOG, { job: "replace-system", input: {} });
-  ok("Package house with no package rows: a package unit priced from the rate card, gas connected, no attic pan, no line set, title says package", /gas\/electric package unit/.test(lPkg.materials[0].name) && lPkg.materials[0].unitPrice === Math.round(rPkg.selection.targetTons * DEFAULT_RATE_CARD.equipmentDefaults.packagePerTon * (1 + DEFAULT_RATE_CARD.equipmentMarkupPct / 100) * 100) / 100 && lPkg.materials.some((l) => l.id === "m-gasflex") && lPkg.labor.some((l) => l.id === "l-gas") && !lPkg.materials.some((l) => l.id === "m-pump" || l.id === "m-lineset") && /^Package unit replacement/.test(lPkg.title) && !/line set/.test(lPkg.scope), `${lPkg.materials[0].name} $${lPkg.materials[0].unitPrice} · ${lPkg.title}`);
+  ok("Package house: a real package unit from the catalog, gas connected, no attic pan, no line set, title says package", rPkg.selection.chosen?.item.kind === "package" && rPkg.selection.chosen.item.heatKind === "gas" && lPkg.materials[0].name.startsWith(`${rPkg.selection.chosen.item.brand} `) && lPkg.materials.some((l) => l.id === "m-gasflex") && lPkg.labor.some((l) => l.id === "l-gas") && lPkg.labor.some((l) => l.id === "l-crane") && !lPkg.materials.some((l) => l.id === "m-pump" || l.id === "m-lineset") && /^Package unit replacement/.test(lPkg.title) && !/line set/.test(lPkg.scope), `${lPkg.materials[0].name} · ${lPkg.title}`);
+  const noPkgRows = US_CATALOG.filter((c) => c.kind !== "package");
+  const rNoPkg = runEngine(pkg, { catalog: noPkgRows, job: "replace-system" });
+  const lNoPkg = buildLedger(rNoPkg, pkg, DEFAULT_RATE_CARD, noPkgRows, { job: "replace-system", input: {} });
+  ok("A catalog with no package rows still prices the package house from the rate card and says so", !rNoPkg.selection.chosen && /gas\/electric package unit \(no catalog row/.test(lNoPkg.materials[0].name) && lNoPkg.materials[0].unitPrice === Math.round(rNoPkg.selection.targetTons * DEFAULT_RATE_CARD.equipmentDefaults.packagePerTon * (1 + DEFAULT_RATE_CARD.equipmentMarkupPct / 100) * 100) / 100, `${lNoPkg.materials[0].name} $${lNoPkg.materials[0].unitPrice}`);
   const hp454 = US_CATALOG.find((c) => c.kind === "heat-pump" && c.brand === "Bosch" && c.refrigerant === "R-454B" && c.tons === 4);
   const elec = house({ gas: { available: false }, existing: { kind: "split-heat-pump", tons: 4, fuel: "electric", refrigerant: "R-410A" }, conditionedSqft: 2600 });
   const rB = runEngine(elec, { catalog: US_CATALOG, job: "replace-system", pick: hp454?.id });
@@ -383,7 +387,7 @@ ok("A v2 card round-trips", JSON.stringify(normalizeRateCard(DEFAULT_RATE_CARD))
   const noCost: CatalogItem = { ...typedUnit, cost: undefined };
   const lNoCost = buildLedger(runEngine(g, { catalog: US_CATALOG, job: "replace-system", outdoorKind: "air-conditioner", custom: noCost, pick: noCost.id }), g, DEFAULT_RATE_CARD, [...US_CATALOG, noCost], { job: "replace-system", input: {} });
   ok("A typed unit with no cost is priced from the rate card and says so", /Typed in — no cost given/.test(lNoCost.materials[0].note ?? ""), lNoCost.materials[0].note);
-  const noFit = runEngine(house({ existing: { kind: "package-unit", tons: 3.5, fuel: "gas" } }), { catalog: US_CATALOG, job: "replace-system" });
+  const noFit = runEngine(house({ existing: { kind: "package-unit", tons: 3.5, fuel: "gas" } }), { catalog: US_CATALOG.filter((c) => c.kind !== "package"), job: "replace-system" });
   ok("A house the catalog cannot serve has no chosen unit, so the panel offers the typed route", !noFit.selection.chosen);
   // Water heater: the contractor's tank beats the plan's pick, and a small one is called out
   const wh = { wh: { fuel: "gas" as const, type: "tank" as const } };
