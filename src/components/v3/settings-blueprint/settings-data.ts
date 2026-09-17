@@ -560,14 +560,21 @@ export function comingSoonNote(name: string): string {
   return `${name} isn't switched on for everyone yet. We're finishing the setup — you'll be able to connect it here as soon as it goes live.`;
 }
 
+/* HIDDEN FOR NOW (owner, 2026-09-15): Gmail and Meta business are off the
+   subtab bar on both viewports until they are ready to be offered. Their
+   cards, state and server wiring are untouched — put the two entries back
+   here and the tabs return. `isVisibleSubTab` keeps a ?tab=gmail deep link
+   from reaching a hidden pane. */
 export const INTEGRATION_SUBTABS: readonly SubTab[] = [
-  { key: 'gmail', label: 'Gmail' },
-  { key: 'meta', label: 'Meta business' },
   { key: 'stripe', label: 'Stripe' },
   { key: 'square', label: 'Square' },
 ];
 
-export const DEFAULT_SUBTAB: SubTabKey = 'gmail';
+export const DEFAULT_SUBTAB: SubTabKey = 'stripe';
+
+export function isVisibleSubTab(key: SubTabKey | undefined): boolean {
+  return !!key && INTEGRATION_SUBTABS.some((t) => t.key === key);
+}
 
 /* ------------------------------------------------------------------ */
 /* Integrations — Gmail                                                */

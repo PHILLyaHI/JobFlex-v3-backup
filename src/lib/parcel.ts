@@ -23,6 +23,8 @@ export interface RegridGeometry {
 }
 export interface RegridFeature {
   geometry?: RegridGeometry;
+  /** Regrid's schema fields ride under properties.fields (yearbuilt, numstories,
+   *  recrdareno, …); read by src/lib/hvac/regridRecord.ts. */
   properties?: Record<string, unknown>;
 }
 export interface RegridResponse {

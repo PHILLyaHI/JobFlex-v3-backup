@@ -13,6 +13,7 @@ import {
   handleTransferEvent,
 } from "@/lib/stripeSync";
 import { processReferralEffectsForInvoice } from "@/lib/referralRewards";
+import { metaOnCheckoutCompleted, metaOnInvoicePaid } from "@/lib/metaSignupEvents";
 
 export const runtime = "nodejs";
 
@@ -52,6 +53,8 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
           typeof session.subscription === "string" ? session.subscription : session.subscription.id,
         );
         await syncSubscriptionFromStripe(sub);
+        // Meta StartTrial when the checkout came back trialing (lib/metaSignupEvents).
+        await metaOnCheckoutCompleted(session, sub).catch((err) => console.warn("[meta:capi] StartTrial failed", err));
       } else {
         await handleProposalPayment(session); // existing one-time proposal payment flow
       }
@@ -72,6 +75,8 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
       // Member-referral side: convert PENDING referrals on the referred org's
       // first real payment + apply owed 50%-of-a-month referrer credits.
       await processReferralEffectsForInvoice(invoice);
+      // Meta Purchase on the first paid invoice, once per organization.
+      await metaOnInvoicePaid(invoice).catch((err) => console.warn("[meta:capi] Purchase failed", err));
       break;
     }
     case "invoice.payment_failed": {

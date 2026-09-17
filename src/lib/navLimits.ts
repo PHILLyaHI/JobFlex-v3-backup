@@ -37,6 +37,7 @@ const NAV_LIMIT_KEYS: Record<string, LimitKey[]> = {
   "/dashboard/advanced-ai": ["estimatorUses"],
   "/dashboard/roof-estimator": ["estimatorUses"],
   "/dashboard/fence-estimator": ["estimatorUses"],
+  "/dashboard/hvac-estimator": ["estimatorUses"],
   "/dashboard/video-estimator": ["estimatorUses"],
   // Classic-shell paths, kept for the old sidebar.
   "/dashboard/advanced-ai/roof": ["estimatorUses"],

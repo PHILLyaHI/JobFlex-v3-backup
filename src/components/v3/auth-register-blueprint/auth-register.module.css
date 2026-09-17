@@ -755,6 +755,17 @@
   margin-top: 4px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
   letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-light, #8a8a8a);
 }
+/* THE TERMS SAID OUT LOUD (landing-e pass A, 2026-09-11). Under step 1's
+   button and above step 3's plates, only on the test variant: where the card
+   comes in and when the first charge is. Mono caps under the button, the
+   same set as the field notes; a plain sentence above the plates. */
+.bp :global(.step-note) {
+  margin-top: 12px; font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  line-height: 1.6; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+}
+.bp :global(.pw-terms) {
+  margin: 0 0 16px; font-size: 13.5px; line-height: 1.5; color: var(--ink-soft, var(--muted));
+}
 
 .bp :global(.pw-skip) {
   position: absolute; right: 0; bottom: -4px;
@@ -1182,7 +1193,7 @@
      every vertical pan that started on a card (owner's report). */
   .bp :global(.plan-sheet-in) { height: auto; min-height: 100%; padding: 16px 0 140px; }
   .bp :global(.plan-sheet .brand), .bp :global(.plan-sheet .stepper), .bp :global(.pw-head),
-  .bp :global(#stepPlan > .err), .bp :global(.pw-promo-ok), .bp :global(#stepPlan > .err), .bp :global(.pw-note) {
+  .bp :global(#stepPlan > .err), .bp :global(.pw-promo-ok), .bp :global(#stepPlan > .err), .bp :global(.pw-note), .bp :global(.pw-terms) {
     margin-left: 18px; margin-right: 18px;
   }
   .bp :global(.pw-head) { flex-direction: column; align-items: flex-start; gap: 12px; }

@@ -18,6 +18,7 @@ import { requireOrg, isSalesRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { money, relative } from "@/lib/format";
 import { parseTradeTypes } from "@/lib/tradeTypes";
+import { firstEstimateTarget } from "@/lib/firstEstimate";
 import {
   BOARD_STATUSES,
   activityIcon,
@@ -162,6 +163,8 @@ export async function buildDashboardData(): Promise<DashboardData> {
   const ACTIVE_PIPELINE = { notIn: ["DECLINED", "ARCHIVED", "EXPIRED"] };
 
   const [
+    firstRunOrg,
+    estimatesSoFar,
     leadProfileOrg,
     paymentsLast90,
     pipelineAgg,
@@ -172,6 +175,19 @@ export async function buildDashboardData(): Promise<DashboardData> {
     weekRows,
     leadRows,
   ] = await Promise.all([
+    // The first-run card (landing-e pass A; every shop since 2026-09-16): a
+    // shop that has not made an estimate yet. The three counts are the three
+    // things an "estimate" can be here — a proposal, an AI estimate, a roof
+    // measurement.
+    db.organization.findUnique({
+      where: { id: organizationId },
+      select: { landingIndustry: true, tradeTypesJson: true },
+    }),
+    Promise.all([
+      db.proposal.count({ where: { organizationId } }),
+      db.aiEstimate.count({ where: { organizationId } }),
+      db.roofMeasurement.count({ where: { organizationId } }),
+    ]).then((c) => c[0] + c[1] + c[2]),
     // Owners/admins see the Lead Center nudge until the org is matchable
     // (geocoded address + at least one trade). Everyone else never sees it.
     role === "OWNER" || role === "ADMIN"
@@ -367,6 +383,10 @@ export async function buildDashboardData(): Promise<DashboardData> {
     // The other two flags still ride along so the sentence names everything
     // that is missing once it does show.
     leadProfile: needsTrades ? { needsCompany, needsAddress, needsTrades } : null,
+    firstRun:
+      firstRunOrg && estimatesSoFar === 0
+        ? firstEstimateTarget(parseTradeTypes(firstRunOrg.tradeTypesJson), firstRunOrg.landingIndustry)
+        : null,
     kpis: {
       revenue: money(revenue30),
       pipeline: money(pipelineTotal),

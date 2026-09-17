@@ -25,13 +25,16 @@ import { POST_SPACING_FT } from "./fenceGeometry";
 
 /** Sample the ground about every 10 ft — one Elevation API location each. */
 export const SAMPLE_FT = 10;
-/** Hard cap on one profile; past it the spacing widens instead of failing. */
+/** Hard cap on one profile; past it the spacing widens instead of failing.
+ *  (A trace of more than MAX_PROFILE_SAMPLES / 2 segments still needs two
+ *  samples per segment — the server action allows for that.) */
 export const MAX_PROFILE_SAMPLES = 750;
+/** Segments shorter than this carry no slope story and are not profiled. The
+ *  page's "is this report still the trace" check must use the same figure. */
+export const MIN_PROFILED_SEG_FT = 0.5;
 export const LEVEL_MAX_DEG = 5;
 export const RACKED_MAX_DEG = 25;
 
-/** Ignore segments shorter than this — a half-foot sliver has no slope story. */
-const MIN_SEG_FT = 0.5;
 
 export type SlopeClass = "level" | "racked" | "stepped";
 
@@ -62,11 +65,15 @@ export function sampleFencePath(points: PathPoint[], origin: LatLng): FencePathS
     const b = points[i + 1];
     if (b.gap) continue;
     const planFt = Math.hypot(b.x - a.x, b.y - a.y);
-    if (planFt < MIN_SEG_FT) continue;
+    if (planFt < MIN_PROFILED_SEG_FT) continue;
     raw.push({ seg: i, a, b, planFt });
   }
   const totalFt = raw.reduce((s, r) => s + r.planFt, 0);
-  const budget = Math.max(2, MAX_PROFILE_SAMPLES - raw.length); // endpoints cost one extra per segment
+  // A segment of n samples at `spacing` costs at most planFt/spacing + 2 (both
+  // endpoints, and the ceil), so the interior budget is the cap less two per
+  // segment. The old "less one" let a many-cornered parcel trace overshoot the
+  // cap (120 × 100 ft segments → 840 samples) and the whole profile failed.
+  const budget = Math.max(1, MAX_PROFILE_SAMPLES - 2 * raw.length);
   const spacing = Math.max(SAMPLE_FT, totalFt / budget);
 
   const samples: LatLng[] = [];

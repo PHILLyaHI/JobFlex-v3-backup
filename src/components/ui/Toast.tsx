@@ -2,41 +2,15 @@
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, AlertCircle, Info } from "lucide-react";
-import { create } from "zustand";
 import { cn } from "@/lib/cn";
+import { useToastStore } from "./toast-store";
 
-type ToastKind = "success" | "error" | "info";
-interface ToastItem {
-  id: string;
-  title: string;
-  description?: string;
-  kind: ToastKind;
-}
-
-interface ToastStore {
-  items: ToastItem[];
-  push: (t: Omit<ToastItem, "id">) => void;
-  dismiss: (id: string) => void;
-}
-
-export const useToastStore = create<ToastStore>((set) => ({
-  items: [],
-  push: (t) => {
-    const id = Math.random().toString(36).slice(2);
-    set((s) => ({ items: [...s.items, { ...t, id }] }));
-    setTimeout(() => set((s) => ({ items: s.items.filter((i) => i.id !== id) })), 4200);
-  },
-  dismiss: (id) => set((s) => ({ items: s.items.filter((i) => i.id !== id) })),
-}));
-
-export const toast = {
-  success: (title: string, description?: string) =>
-    useToastStore.getState().push({ kind: "success", title, description }),
-  error: (title: string, description?: string) =>
-    useToastStore.getState().push({ kind: "error", title, description }),
-  info: (title: string, description?: string) =>
-    useToastStore.getState().push({ kind: "info", title, description }),
-};
+/* The store and the `toast` helpers live in toast-store.ts (no animation
+   library there); this file is the host only, and the root layout mounts it
+   through toast-host-lazy.tsx so framer-motion loads with the first toast,
+   not with every page (landing-e pass C, 2026-09-11). The re-export keeps
+   the 105 call sites as they are. */
+export { toast, useToastStore } from "./toast-store";
 
 const iconMap = {
   success: <CheckCircle2 className="h-4 w-4 text-emerald-700" />,

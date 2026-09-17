@@ -83,6 +83,7 @@ import {
 } from "@/lib/planCatalog";
 import type { SubscriptionInvoice } from "@/actions/billing";
 import type { SubscriptionViewProps } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
+import { nextChargeLines, usd } from "@/app/(dashboard)/dashboard/subscription/next-charge-lines";
 import { MobileUpgradeContent } from "@/components/v3/mobile-upgrade/mobile-upgrade";
 import type { UpgradePlan } from "@/components/v3/upgrade-blueprint/upgrade-content";
 import "./mobile-subscription.css";
@@ -166,6 +167,7 @@ export function MobileSubscription({
   trialEndsAt,
   usage,
   invoices,
+  nextCharge,
   referral,
   customPages,
   checkoutReady,
@@ -176,7 +178,7 @@ export function MobileSubscription({
   const contentRef = useRef<HTMLDivElement>(null);
   const plansRef = useRef<HTMLDivElement>(null);
 
-  const [copied, setCopied] = useState<"code" | "url" | null>(null);
+  const [copied, setCopied] = useState<"code" | null>(null);
   const copyTimer = useRef(0);
   const [bannerOpen, setBannerOpen] = useState(true);
 
@@ -214,11 +216,11 @@ export function MobileSubscription({
     [plans],
   );
 
-  const shareHost = referral.shareUrl.replace(/^https?:\/\//, "");
+  const nextChargeItems = useMemo(() => (nextCharge ? nextChargeLines(nextCharge) : []), [nextCharge]);
 
   /* ---------- Interactions -------------------------------------------- */
 
-  const flash = useCallback((what: "code" | "url") => {
+  const flash = useCallback((what: "code") => {
     setCopied(what);
     window.clearTimeout(copyTimer.current);
     copyTimer.current = window.setTimeout(() => setCopied(null), 1600);
@@ -489,6 +491,38 @@ export function MobileSubscription({
               <Icon id="i-file" className="jfms-ic jfms-cardHeadIc" />
             </div>
             <div className="jfms-cardBody">
+              {/* THE NEXT BILL (owner, 2026-09-14): date, amount, and what the
+                  people who used the referral code take off it. */}
+              {nextCharge ? (
+                <div className="jfms-next">
+                  <div className="jfms-nextTop">
+                    <div className="jfms-nextL">
+                      <span className="jfms-nextK">
+                        {nextCharge.estimated ? "Next bill · estimate" : "Next bill"}
+                      </span>
+                      <span className="jfms-nextD">
+                        {nextCharge.dueAt ? longDate(nextCharge.dueAt) : "Date pending"}
+                      </span>
+                    </div>
+                    <div className="jfms-nextR">
+                      {nextCharge.amountDueCents < nextCharge.subtotalCents ? (
+                        <s className="jfms-nextWas">{usd(nextCharge.subtotalCents)}</s>
+                      ) : null}
+                      <span className="jfms-nextAmt">{usd(nextCharge.amountDueCents)}</span>
+                    </div>
+                  </div>
+                  {nextChargeItems.length ? (
+                    <ul className="jfms-nextLines">
+                      {nextChargeItems.map((l) => (
+                        <li key={l.label} className={l.tone === "note" ? "jfms-nextNote" : ""}>
+                          <span>{l.label}</span>
+                          {l.amount ? <b>{l.amount}</b> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
               <InvoiceRows data={invoices} />
             </div>
           </section>
@@ -526,22 +560,6 @@ export function MobileSubscription({
                 </button>
               </div>
               <p className="jfms-refReward">{referral.rewardSummary}</p>
-              <button
-                type="button"
-                className="jfms-refUrl"
-                onClick={() => {
-                  copyText(referral.shareUrl);
-                  flash("url");
-                }}
-              >
-                <span className="jfms-refUrlTxt">{shareHost}</span>
-                <span
-                  className={`jfms-flag ${copied === "url" ? "jfms-isOn" : ""}`}
-                  role="status"
-                >
-                  {copied === "url" ? "Copied" : ""}
-                </span>
-              </button>
             </div>
             <div className="jfms-kpiGrid">
               <div className="jfms-kpi">

@@ -150,6 +150,27 @@ function Diagram({ kind }: { kind: EngineDiagram }) {
           <text x="82" y="64" textAnchor="middle">{'128\'-0"'}</text>
         </>
       )}
+      {/* HVAC — a house section: the outdoor unit on its pad at left, the
+          line set into the air handler, a supply trunk with three registers,
+          and the design-temperature annotation. Same language as the plates
+          above; no donor card exists for this engine either. */}
+      {kind === "hvac" && (
+        <>
+          <path className="ln" d="M14 56 H150" />
+          <rect className="ln" x="14" y="38" width="20" height="18" />
+          <path className="ln" d="M18 42 H30 M18 46 H30 M18 50 H30" />
+          <path className="ln" d="M56 56 V22 L100 10 L144 22 V56" />
+          <rect className="bp" x="66" y="36" width="14" height="20" />
+          <path className="bp" d="M34 47 H66" strokeDasharray="4 3" />
+          <path className="bp" d="M80 40 H134" />
+          <rect className="bp" x="92" y="40" width="7" height="4" />
+          <rect className="bp" x="110" y="40" width="7" height="4" />
+          <rect className="bp" x="127" y="40" width="7" height="4" />
+          <text x="86" y="32" textAnchor="middle">3.0 T</text>
+          <path className="dim" d="M14 66 H150 M14 63 V69 M150 63 V69" />
+          <text x="82" y="64" textAnchor="middle">99°F / 28°F</text>
+        </>
+      )}
     </svg>
   );
 }

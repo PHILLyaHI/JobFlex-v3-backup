@@ -41,6 +41,10 @@ import { toast } from "@/components/ui/Toast";
 import { checkEmailAvailable, completeCompanySetup } from "@/actions/auth";
 import type { GooglePrefill, SetupPrefill } from "@/app/(auth)/auth/register/register-responsive";
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
+import type { UtmParams } from "@/components/v3/landing-e/landing-variants";
+import { GoogleOneTap } from "@/components/auth/google-one-tap";
+import { readConsent } from "@/lib/consent";
+import { metaTrack, newEventId, readMetaCookies } from "@/lib/metaPixel";
 import { RegisterSprite } from "./register-sprite";
 import { ReferralBanner, type RegisterAttribution } from "./referral-banner";
 import {
@@ -100,8 +104,12 @@ export function RegisterContent({
   setup = null,
   google: googlePrefill = null,
   industry = null,
+  utm = null,
 }: {
   setup?: SetupPrefill | null;
+  /* The visit's utm_*, resolved on the server (query, else the landing's
+     cookie). Rides into the signup intent and onto the organization. */
+  utm?: UtmParams | null;
   /* Resolved from `?gsu=` on the server, so step 2 is what the first frame
      paints. Null on every other arrival. */
   google?: GooglePrefill | null;
@@ -115,6 +123,13 @@ export function RegisterContent({
      it), the plan step follows in the app (/dashboard/upgrade), and there is
      no pending-signup intent to park: the account already exists. */
   const setupMode = setup !== null;
+  /* THE FORM (landing-e pass A, 2026-09-11; the only form since 2026-09-16):
+     step 1 is three fields — name, email, password; the business name is on
+     step 2 and there is no confirmation field — the progress shows all three
+     steps from the first screen, the card terms are said out loud under the
+     button and above the plans, every analytics event carries
+     `variant: "e"` and the pending signup records it (the admin's d-vs-e
+     history reads on). */
   const rootRef = React.useRef<HTMLDivElement>(null);
   const addrRef = React.useRef<HTMLInputElement>(null);
 
@@ -164,7 +179,7 @@ export function RegisterContent({
     // Parent route effects must record the entry pageview before this screen.
     const timer = window.setTimeout(() => {
       lastTrackedStep.current = key;
-      trackTraffic(TRAFFIC_EVENTS.step, { step, flow: trafficFlow });
+      trackTraffic(TRAFFIC_EVENTS.step, { step, flow: trafficFlow, variant: "e" });
     }, 0);
     return () => window.clearTimeout(timer);
   }, [step, trafficFlow]);
@@ -294,6 +309,37 @@ export function RegisterContent({
   /** The pending signup this plan step belongs to. Parked by step 2, or carried
    *  back from Stripe on the return URL. */
   const [token, setToken] = React.useState<string | null>(ret?.token ?? null);
+
+  /* META EVENT IDS (2026-09-09). One id for the browser's CompleteRegistration
+     and the server's Conversions API copy, one for InitiateCheckout. The
+     registration id is minted here and kept in sessionStorage under the
+     intent token, so the return from Stripe (a fresh page) fires the browser
+     event with the same id the server used. The pixel itself only runs after
+     marketing consent; metaTrack is a no-op otherwise. */
+  const metaIds = React.useRef<{ registration: string; checkout: string }>({ registration: newEventId(), checkout: newEventId() });
+  React.useEffect(() => {
+    if (!ret?.token) return;
+    try {
+      const saved = sessionStorage.getItem("jf_meta_reg:" + ret.token);
+      if (saved) metaIds.current.registration = saved;
+    } catch {
+      /* storage blocked — a fresh id, the server's copy is not deduplicated */
+    }
+  }, [ret?.token]);
+  const initiateSent = React.useRef(false);
+  React.useEffect(() => {
+    if (step === 3 && !initiateSent.current && !ret?.sessionId) {
+      initiateSent.current = true;
+      metaTrack("InitiateCheckout", { content_category: industry ?? "default" }, metaIds.current.checkout);
+    }
+  }, [step, industry, ret?.sessionId]);
+  const registrationSent = React.useRef(false);
+  React.useEffect(() => {
+    if (step === 4 && !registrationSent.current) {
+      registrationSent.current = true;
+      metaTrack("CompleteRegistration", { content_name: industry ?? "default", status: "true" }, metaIds.current.registration);
+    }
+  }, [step, industry]);
   const trialDays =
     planSlug === CUSTOM_PLAN_SLUG
       ? customTrialDays
@@ -373,9 +419,7 @@ export function RegisterContent({
   const [biz, setBiz] = React.useState(setup?.businessName ?? "");
   const [email, setEmail] = React.useState(setup?.email ?? googlePrefill?.email ?? "");
   const [password, setPassword] = React.useState("");
-  const [password2, setPassword2] = React.useState("");
   const [showPw, setShowPw] = React.useState(false);
-  const [showPw2, setShowPw2] = React.useState(false);
   // Step 1 is now gated on a server answer (is this email free?), so it has a
   // pending state the Continue button reads.
   const [checking, setChecking] = React.useState(false);
@@ -700,10 +744,9 @@ export function RegisterContent({
     e.preventDefault();
     if (checking) return;
     const n = name.trim();
-    const b = biz.trim();
     const em = email.trim();
-    if (!n || !b || !em) {
-      setErr1("Name, business name and email are required.");
+    if (!n || !em) {
+      setErr1("Name and email are required.");
       return;
     }
     if (em.indexOf("@") === -1) {
@@ -713,10 +756,6 @@ export function RegisterContent({
     if (!google) {
       if (password.length < 8) {
         setErr1("Password must be at least 8 characters.");
-        return;
-      }
-      if (password !== password2) {
-        setErr1("Passwords do not match.");
         return;
       }
     }
@@ -734,7 +773,6 @@ export function RegisterContent({
     } finally {
       setChecking(false);
     }
-    setDoneNote(b + " is ready to send its first proposal.");
     setStep(2);
   }
 
@@ -750,9 +788,8 @@ export function RegisterContent({
      "Skip — set this up later" exit is gone with it. */
   async function finish() {
     if (creating) return;
-    /* Drawn on this step for the setup and Google paths, so it is validated
-       here rather than in onStep1, which those paths skip. */
-    if ((setupMode || google) && !biz.trim()) {
+    /* The business name is asked for on this step, so it is validated here. */
+    if (!biz.trim()) {
       setErr2("Enter your business name.");
       return;
     }
@@ -795,7 +832,21 @@ export function RegisterContent({
           trades.includes("Other") && otherTrade.trim() ? otherTrade.trim() : undefined,
         attribution: attribution ?? undefined,
         landingIndustry: industry ?? undefined,
+        utm: utm ?? undefined,
+        signupVariant: "e",
+        meta: {
+          consent: readConsent()?.marketing === true,
+          registrationEventId: metaIds.current.registration,
+          checkoutEventId: metaIds.current.checkout,
+          ...readMetaCookies(),
+          sourceUrl: typeof window !== "undefined" ? window.location.origin + window.location.pathname : undefined,
+        },
       });
+      try {
+        sessionStorage.setItem("jf_meta_reg:" + res.token, metaIds.current.registration);
+      } catch {
+        /* storage blocked */
+      }
       setToken(res.token);
       setStep(3);
     } catch (err: unknown) {
@@ -834,7 +885,7 @@ export function RegisterContent({
       <div className={stItem(0, step)} data-step="1">
         <span className="st-n">1</span>
         <span className="st-txt">
-          <span className="st-t">Your account</span>
+          <span className="st-t">Account</span>
           <span className="st-h">Required</span>
         </span>
       </div>
@@ -842,25 +893,20 @@ export function RegisterContent({
       <div className={stItem(1, step)} data-step="2">
         <span className="st-n">2</span>
         <span className="st-txt">
-          <span className="st-t">Your company</span>
+          <span className="st-t">Company</span>
           <span className="st-h">Required</span>
         </span>
       </div>
-      {/* Shown only once it is reached (owner's call, 2026-08-28): the
-          plan is the third step, but announcing it on the first screen
-          announces a price before anyone has seen the product. */}
-      {step >= 3 ? (
-        <>
-          <span className="st-line"></span>
-          <div className={stItem(2, step)} data-step="3">
-            <span className="st-n">3</span>
-            <span className="st-txt">
-              <span className="st-t">Your plan</span>
-              <span className="st-h">14 days free</span>
-            </span>
-          </div>
-        </>
-      ) : null}
+      {/* All three steps from the first screen (pass A): the note under the
+          step-1 button already says "Step 1 of 3" and names the card. */}
+      <span className="st-line"></span>
+      <div className={stItem(2, step)} data-step="3">
+        <span className="st-n">3</span>
+        <span className="st-txt">
+          <span className="st-t">Plan</span>
+          <span className="st-h">14 days free</span>
+        </span>
+      </div>
     </div>
   );
 
@@ -891,7 +937,9 @@ export function RegisterContent({
             <h1 className="auth-h1">Register.</h1>
 
             <form id="step1Form" noValidate onSubmit={(e) => void onStep1(e)}>
-              <div className="grid2">
+              {/* The business name is asked for on step 2, so the name
+                  stands alone here, full width. */}
+              <div>
                 <label className="fld">
                   <span className="fld-lbl">Your name</span>
                   <input
@@ -901,17 +949,6 @@ export function RegisterContent({
                     autoComplete="name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                  />
-                </label>
-                <label className="fld">
-                  <span className="fld-lbl">Business name</span>
-                  <input
-                    className="fld-in"
-                    id="biz"
-                    placeholder="Company name"
-                    autoComplete="organization"
-                    value={biz}
-                    onChange={(e) => setBiz(e.target.value)}
                   />
                 </label>
               </div>
@@ -967,32 +1004,7 @@ export function RegisterContent({
                 </span>
                 <span className="fld-note">At least 8 characters.</span>
               </label>
-              {/* Confirm password (owner's call, 2026-08-18). Its own toggle
-                  state, so revealing one field does not reveal the other. */}
-              <label className="fld">
-                <span className="fld-lbl">Confirm password</span>
-                <span className="pw-wrap">
-                  <input
-                    className="fld-in"
-                    type={showPw2 ? "text" : "password"}
-                    id="password2"
-                    placeholder="••••••••"
-                    autoComplete="new-password"
-                    value={password2}
-                    onChange={(e) => setPassword2(e.target.value)}
-                  />
-                  <button
-                    className="pw-toggle"
-                    type="button"
-                    aria-label="Show confirmation password"
-                    onClick={() => setShowPw2((v) => !v)}
-                  >
-                    <svg className="ic">
-                      <use href={showPw2 ? "#i-eye-off" : "#i-eye"} />
-                    </svg>
-                  </button>
-                </span>
-              </label>
+              {/* No confirmation field (pass A): three fields, no more. */}
               </>
               ) : null}
 
@@ -1002,6 +1014,11 @@ export function RegisterContent({
                   <use href="#i-arrow-r" />
                 </svg>
               </button>
+              {/* The terms, said out loud (pass A): where the card comes in
+                  and when the first charge is, before anyone types. */}
+              <p className="step-note" id="stepNote">
+                Step 1 of 3 · 14 days free · card at step 3, not charged until day 15
+              </p>
               <div className={err1 ? "err" : "err is-hidden"} id="err1">
                 {err1}
               </div>
@@ -1034,6 +1051,9 @@ export function RegisterContent({
                 Sign in
               </Link>
             </div>
+            {/* Google One Tap (pass A): step 1 only, and only with
+                NEXT_PUBLIC_GOOGLE_CLIENT_ID set. */}
+            {step === 1 && !google && !setupMode ? <GoogleOneTap /> : null}
           </div>
 
           {/* ───── ШАГ 2 ───── */}
@@ -1059,19 +1079,17 @@ export function RegisterContent({
                 void finish();
               }}
             >
-              {setupMode || google ? (
-                <label className="fld">
-                  <span className="fld-lbl">Business name</span>
-                  <input
-                    className="fld-in"
-                    id="biz2"
-                    placeholder="Company name"
-                    autoComplete="organization"
-                    value={biz}
-                    onChange={(e) => setBiz(e.target.value)}
-                  />
-                </label>
-              ) : null}
+              <label className="fld">
+                <span className="fld-lbl">Business name</span>
+                <input
+                  className="fld-in"
+                  id="biz2"
+                  placeholder="Company name"
+                  autoComplete="organization"
+                  value={biz}
+                  onChange={(e) => setBiz(e.target.value)}
+                />
+              </label>
               <div className="grid2">
                 <label className="fld">
                   <span className="fld-lbl">Company address</span>
@@ -1256,6 +1274,10 @@ export function RegisterContent({
             <div className="pw-head">
               <h1 className="auth-h1">Pick a plan.</h1>
             </div>
+            {/* The card terms, once more, where the card is asked for (pass A). */}
+            <p className="pw-terms" id="pwTerms">
+              Your card won&apos;t be charged until day 15. Cancel anytime from Subscription.
+            </p>
 
             {plansErr ? (
               <div className="err" role="alert">

@@ -56,6 +56,7 @@ import { SubscriptionSprite } from "./subscription-sprite";
 // Type-only: erased at compile, so the loader's server imports never reach
 // this client bundle.
 import type { SubscriptionViewProps } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
+import { nextChargeLines, usd } from "@/app/(dashboard)/dashboard/subscription/next-charge-lines";
 import { expandPlanFeatures } from "@/lib/planCatalog";
 import styles from "./subscription.module.css";
 
@@ -176,6 +177,8 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
     ? props.status.charAt(0).toUpperCase() + props.status.slice(1).toLowerCase()
     : "—";
   const isTrial = props.status === "TRIALING";
+  const nextCharge = props.nextCharge;
+  const nextChargeItems = useMemo(() => (nextCharge ? nextChargeLines(nextCharge) : []), [nextCharge]);
 
   const copyCode = useCallback(() => {
     const code = props.referral.code;
@@ -340,28 +343,27 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
               amount first, every coupon and referral credit itemised under
               it (owner, 2026-09-02; redrawn 2026-09-04 after the critique:
               the old row crammed three lines into a ledger cell). */}
-          {props.invoices.upcoming ? (
+          {nextCharge ? (
             <div className={cx("bill-next")}>
               <div className={cx("bill-next-l")}>
-                <span className={cx("bill-next-k")}>Next bill</span>
+                <span className={cx("bill-next-k")}>{nextCharge.estimated ? "Next bill · estimate" : "Next bill"}</span>
                 <span className={cx("bill-next-d")}>
-                  {props.invoices.upcoming.dueAt ? fmtDate(props.invoices.upcoming.dueAt) : "Date pending"}
+                  {nextCharge.dueAt ? longDate(nextCharge.dueAt) : "Date pending"}
                 </span>
               </div>
               <div className={cx("bill-next-r")}>
-                {props.invoices.upcoming.discountCents + props.invoices.upcoming.creditCents > 0 ? (
-                  <s className={cx("bill-next-was")}>
-                    {"$" + (props.invoices.upcoming.subtotalCents / 100).toFixed(2)}
-                  </s>
+                {nextCharge.amountDueCents < nextCharge.subtotalCents ? (
+                  <s className={cx("bill-next-was")}>{usd(nextCharge.subtotalCents)}</s>
                 ) : null}
-                <span className={cx("bill-next-amt")}>
-                  {"$" + (props.invoices.upcoming.amountDueCents / 100).toFixed(2)}
-                </span>
+                <span className={cx("bill-next-amt")}>{usd(nextCharge.amountDueCents)}</span>
               </div>
-              {props.invoices.upcoming.notes.length ? (
+              {nextChargeItems.length ? (
                 <ul className={cx("bill-lines")}>
-                  {props.invoices.upcoming.notes.map((n) => (
-                    <li key={n}>{n}</li>
+                  {nextChargeItems.map((l) => (
+                    <li key={l.label} className={cx(l.tone === "note" && "bill-line-note")}>
+                      <span>{l.label}</span>
+                      {l.amount ? <b className={cx("bill-line-amt")}>{l.amount}</b> : null}
+                    </li>
                   ))}
                 </ul>
               ) : null}
@@ -437,9 +439,6 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
               </button>
             </div>
             <div className={cx("ref-reward")}>{props.referral.rewardSummary}</div>
-            <div className={cx("ref-url")}>
-              {props.referral.shareUrl.replace(/^https?:[/][/]/, "")}
-            </div>
           </div>
           <div className={cx("kpi-grid", "kpi-grid--3")}>
             <div className={cx("kpi")}>

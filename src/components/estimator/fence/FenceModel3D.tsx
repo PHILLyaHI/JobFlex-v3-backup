@@ -10,13 +10,22 @@
 // only swap the shared material; only a change in instance COUNT rebuilds.
 // Gates, chain-link infill, and the selected-run highlight are small groups
 // rebuilt on demand (few objects). `capture()` returns a PNG data URL.
+//
+// Ground: with `terrain` (the lot's elevation lattice, local feet) the flat
+// plane gives way to a mesh of the real land in the SAME material, and the
+// fence stands on it — racked bays follow the grade, stepped bays sit level
+// and step at the posts (fenceGeometry decides, from the priced slope class),
+// gates hang level, houses sit on their lowest corner, and a run that ends on a
+// house wall gets a wall mount instead of a post. Without `terrain` the scene
+// is the original flat one.
 import * as React from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { cn } from "@/lib/cn";
-import { computeFenceLayout, type FenceLayout, type GateUnit } from "./fenceGeometry";
+import { computeFenceLayout, type BayClass, type FenceLayout, type GateUnit } from "./fenceGeometry";
+import { contourChains, elevationAt, pickTopoInterval, type TopoGridPlan } from "./fenceTopo";
 import { makeFenceTextures, makeChainLinkAlpha, type FenceMaterialTextures } from "./fenceTexture";
 import { isBuiltinMaterial, type PathPoint, type GateSpec, type BuildingFootprint } from "./fenceTypes";
 
@@ -41,6 +50,14 @@ export interface FenceModel3DHandle {
   capture: () => string | null;
 }
 
+/** The lot's elevation lattice in the fence's local-feet frame (fenceTopo). */
+export interface FenceTerrain3D {
+  plan: TopoGridPlan;
+  grid: number[][];
+}
+
+const NO_MOUNTS: PathPoint[] = [];
+
 interface ViewSpec {
   points: PathPoint[];
   height: number;
@@ -49,6 +66,9 @@ interface ViewSpec {
   gates: GateSpec[];
   selectedSegment: number | null;
   buildings: BuildingFootprint[]; // real nearby footprints (local feet)
+  terrain: FenceTerrain3D | null;
+  segClasses: Record<number, BayClass> | null; // priced slope class per segment index
+  wallMounts: PathPoint[]; // run ends that sit on a house wall
 }
 
 function webglSupported(): boolean {
@@ -71,11 +91,27 @@ export const FenceModel3D = React.forwardRef<
     gates: GateSpec[];
     selectedSegment: number | null;
     buildings: BuildingFootprint[];
+    terrain?: FenceTerrain3D | null;
+    segClasses?: Record<number, BayClass> | null;
+    wallMounts?: PathPoint[];
     active?: boolean;
     className?: string;
   }
 >(function FenceModel3D(
-  { points, height, material, materialColor, gates, selectedSegment, buildings, active = true, className },
+  {
+    points,
+    height,
+    material,
+    materialColor,
+    gates,
+    selectedSegment,
+    buildings,
+    terrain = null,
+    segClasses = null,
+    wallMounts = NO_MOUNTS,
+    active = true,
+    className,
+  },
   ref,
 ) {
   const mountRef = React.useRef<HTMLDivElement>(null);
@@ -101,8 +137,8 @@ export const FenceModel3D = React.forwardRef<
 
   const applyRef = React.useRef<(s: ViewSpec) => void>(() => {});
   React.useEffect(() => {
-    applyRef.current({ points, height, material, materialColor, gates, selectedSegment, buildings });
-  }, [points, height, material, materialColor, gates, selectedSegment, buildings]);
+    applyRef.current({ points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts });
+  }, [points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts]);
 
   // When the studio hides this panel (Draw view), release pointer-lock/keys so a
   // fly session can't keep driving an invisible scene; on re-show, re-frame if the
@@ -199,11 +235,124 @@ export const FenceModel3D = React.forwardRef<
     }
 
     const groundGeo = new THREE.PlaneGeometry(span * 8, span * 8);
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x9fa886, roughness: 1, metalness: 0 });
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x9fa886,
+      roughness: 1,
+      metalness: 0,
+      // Pushes the land back in depth a touch so the draped contour lines never
+      // stitch through it at a distance. No visible effect on the flat plane.
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+    });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
+
+    // ── Terrain: the lattice as land, in the ground's own material ──
+    // Heights are true scale (no exaggeration: a contractor reads this) and
+    // relative to the fence's lowest point, so the fence sits near y = 0 and
+    // the camera framing of the flat scene still fits. Past the lattice the
+    // land keeps its edge heights out to the horizon apron.
+    let terrainRef: FenceTerrain3D | null = null;
+    let zRef = 0;
+    const rawGround = (x: number, y: number): number => {
+      const t = terrainRef;
+      if (!t) return 0;
+      const p = t.plan;
+      const cxp = Math.min(p.x0 + (p.cols - 1) * p.dx, Math.max(p.x0, x));
+      const cyp = Math.min(p.y0 + (p.rows - 1) * p.dy, Math.max(p.y0, y));
+      return elevationAt(t.grid, p, { x: cxp, y: cyp }) ?? 0;
+    };
+    const groundAt = (x: number, y: number) => (terrainRef ? rawGround(x, y) - zRef : 0);
+    let terrainMesh: THREE.Mesh | null = null;
+    let terrainBuiltFor: { t: FenceTerrain3D; cx: number; cy: number; zRef: number; span: number } | null = null;
+    const contourMat = new THREE.LineBasicMaterial({ color: 0x6b7556, transparent: true, opacity: 0.55 });
+    const disposeTerrain = () => {
+      if (terrainMesh) {
+        scene.remove(terrainMesh);
+        terrainMesh.traverse((o) => {
+          if (o instanceof THREE.LineSegments || o instanceof THREE.Mesh) o.geometry.dispose();
+        });
+        terrainMesh = null;
+      }
+    };
+    const rebuildTerrain = (cx: number, cy: number, sp: number) => {
+      const t = terrainRef;
+      if (!t) {
+        disposeTerrain();
+        terrainBuiltFor = null;
+        ground.visible = true;
+        return;
+      }
+      const b = terrainBuiltFor;
+      if (b && b.t === t && b.cx === cx && b.cy === cy && b.zRef === zRef && b.span >= sp) return;
+      disposeTerrain();
+      const p = t.plan;
+      const far = Math.max(sp, 60) * 5;
+      const axis = (lo: number, step: number, n: number, c: number) => {
+        const inner: number[] = [];
+        for (let i = 0; i <= (n - 1) * 2; i++) inner.push(lo + (i * step) / 2);
+        const hi = lo + (n - 1) * step;
+        const out = [c - far, c - far * 0.45, c - far * 0.18].filter((v) => v < lo - step);
+        out.push(...inner);
+        out.push(...[c + far * 0.18, c + far * 0.45, c + far].filter((v) => v > hi + step));
+        return out;
+      };
+      const xs = axis(p.x0, p.dx, p.cols, cx);
+      const ys = axis(p.y0, p.dy, p.rows, cy);
+      const nx = xs.length;
+      const ny = ys.length;
+      const pos = new Float32Array(nx * ny * 3);
+      for (let j = 0; j < ny; j++) {
+        for (let i = 0; i < nx; i++) {
+          const k = (j * nx + i) * 3;
+          pos[k] = xs[i] - cx;
+          pos[k + 1] = groundAt(xs[i], ys[j]) - 0.02; // a hair under posts and pickets
+          pos[k + 2] = -(ys[j] - cy);
+        }
+      }
+      const idx: number[] = [];
+      for (let j = 0; j + 1 < ny; j++) {
+        for (let i = 0; i + 1 < nx; i++) {
+          const a = j * nx + i;
+          idx.push(a, a + 1, a + nx, a + 1, a + 1 + nx, a + nx);
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      geo.setIndex(idx);
+      geo.computeVertexNormals();
+      terrainMesh = new THREE.Mesh(geo, groundMat);
+      terrainMesh.receiveShadow = true;
+      // Contour lines draped on the land in a darker tone of the ground itself,
+      // so the slope reads at a glance without changing the scene's palette.
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (const row of t.grid) for (const v of row) { if (v < lo) lo = v; if (v > hi) hi = v; }
+      const interval = pickTopoInterval(hi - lo, false);
+      if (interval > 0) {
+        const verts: number[] = [];
+        for (let level = Math.ceil(lo / interval) * interval; level < hi; level += interval) {
+          for (const chain of contourChains(t.grid, p, level + 1e-6)) {
+            for (let i = 1; i < chain.length; i++) {
+              const a = chain[i - 1];
+              const c = chain[i];
+              verts.push(a.x - cx, groundAt(a.x, a.y) + 0.15, -(a.y - cy), c.x - cx, groundAt(c.x, c.y) + 0.15, -(c.y - cy));
+            }
+          }
+        }
+        if (verts.length) {
+          const lg = new THREE.BufferGeometry();
+          lg.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+          terrainMesh.add(new THREE.LineSegments(lg, contourMat));
+        }
+      }
+      scene.add(terrainMesh);
+      ground.visible = false;
+      terrainBuiltFor = { t, cx, cy, zRef, span: sp };
+    };
 
     // ── Fence assets ──
     const postGeo = new THREE.BoxGeometry(POST_SIZE, 1, POST_SIZE);
@@ -252,7 +401,8 @@ export const FenceModel3D = React.forwardRef<
     scene.add(fenceGroup);
     const chainGroup = new THREE.Group();
     const gateGroup = new THREE.Group();
-    fenceGroup.add(chainGroup, gateGroup);
+    const mountGroup = new THREE.Group();
+    fenceGroup.add(chainGroup, gateGroup, mountGroup);
     const dummy = new THREE.Object3D();
 
     const highlightGeo = new THREE.BoxGeometry(1, 0.14, 0.14);
@@ -293,7 +443,7 @@ export const FenceModel3D = React.forwardRef<
       const mat = getMaterial(m, color);
       postMesh = new THREE.InstancedMesh(postGeo, mat, Math.max(1, l.postCount));
       picketMesh = new THREE.InstancedMesh(picketGeo, mat, Math.max(1, l.picketCount));
-      railMesh = new THREE.InstancedMesh(railGeo, mat, Math.max(1, l.railCount));
+      railMesh = new THREE.InstancedMesh(railGeo, mat, Math.max(1, l.bayCount * 2));
       for (const mm of [postMesh, picketMesh, railMesh]) {
         mm.castShadow = true;
         mm.receiveShadow = true;
@@ -307,12 +457,18 @@ export const FenceModel3D = React.forwardRef<
       const tx = (x: number) => x - cx;
       const tz = (y: number) => -(y - cy);
 
-      const postH = fenceH + POST_CAP;
       postMesh.count = l.postCount;
       for (let i = 0; i < l.postCount; i++) {
-        dummy.position.set(tx(l.posts[i * 3]), postH / 2, tz(l.posts[i * 3 + 1]));
+        // From the ground under the post to POST_CAP above the highest panel it
+        // carries — at a step that is the taller post.
+        const base = l.postBase[i];
+        const top = l.postPanel[i] + fenceH + POST_CAP;
+        const h = Math.max(0.5, top - base);
+        const mounted = l.postMount[i] === 1;
+        dummy.position.set(tx(l.posts[i * 3]), base + h / 2, tz(l.posts[i * 3 + 1]));
         dummy.rotation.set(0, l.posts[i * 3 + 2], 0);
-        dummy.scale.set(1, postH, 1);
+        // A wall mount has no post in the ground (see rebuildMounts).
+        dummy.scale.set(mounted ? 0.0001 : 1, mounted ? 0.0001 : h, mounted ? 0.0001 : 1);
         dummy.updateMatrix();
         postMesh.setMatrixAt(i, dummy.matrix);
       }
@@ -321,7 +477,7 @@ export const FenceModel3D = React.forwardRef<
 
       picketMesh.count = l.picketCount;
       for (let i = 0; i < l.picketCount; i++) {
-        dummy.position.set(tx(l.pickets[i * 3]), fenceH / 2, tz(l.pickets[i * 3 + 1]));
+        dummy.position.set(tx(l.pickets[i * 3]), l.picketBase[i] + fenceH / 2, tz(l.pickets[i * 3 + 1]));
         dummy.rotation.set(0, l.pickets[i * 3 + 2], 0);
         dummy.scale.set(1, fenceH, 1);
         dummy.updateMatrix();
@@ -330,17 +486,33 @@ export const FenceModel3D = React.forwardRef<
       picketMesh.instanceMatrix.needsUpdate = true;
       picketMesh.computeBoundingSphere();
 
-      railMesh.count = l.railCount;
-      for (let i = 0; i < l.railCount; i++) {
-        const len = l.rails[i * 5 + 3];
-        const top = l.rails[i * 5 + 4] > 0.5;
-        const railY = top ? Math.max(RAIL_BOTTOM + 0.4, fenceH - RAIL_TOP_DROP) : RAIL_BOTTOM;
-        dummy.position.set(tx(l.rails[i * 5]), railY, tz(l.rails[i * 5 + 1]));
-        dummy.rotation.set(0, l.rails[i * 5 + 2], 0);
-        dummy.scale.set(len, 1, 1);
-        dummy.updateMatrix();
-        railMesh.setMatrixAt(i, dummy.matrix);
+      // Rails per BAY, pitched with the bay's base line: parallel to the grade
+      // on a racked bay, level on a stepped one.
+      railMesh.count = l.bayCount * 2;
+      const topOff = Math.max(RAIL_BOTTOM + 0.4, fenceH - RAIL_TOP_DROP);
+      dummy.rotation.order = "YZX";
+      for (let i = 0; i < l.bayCount; i++) {
+        const o = i * 7;
+        const x0 = l.bays[o];
+        const y0 = l.bays[o + 1];
+        const z0 = l.bays[o + 2];
+        const x1 = l.bays[o + 3];
+        const y1 = l.bays[o + 4];
+        const z1 = l.bays[o + 5];
+        const plan = Math.hypot(x1 - x0, y1 - y0);
+        const dz = z1 - z0;
+        const yaw = Math.atan2(y1 - y0, x1 - x0);
+        const pitch = Math.atan2(dz, plan);
+        const len = Math.hypot(plan, dz);
+        for (const [k, off] of [[0, RAIL_BOTTOM], [1, topOff]] as const) {
+          dummy.position.set(tx((x0 + x1) / 2), (z0 + z1) / 2 + off, tz((y0 + y1) / 2));
+          dummy.rotation.set(0, yaw, pitch);
+          dummy.scale.set(len, 1, 1);
+          dummy.updateMatrix();
+          railMesh.setMatrixAt(i * 2 + k, dummy.matrix);
+        }
       }
+      dummy.rotation.order = "XYZ";
       railMesh.instanceMatrix.needsUpdate = true;
       railMesh.computeBoundingSphere();
     };
@@ -394,29 +566,51 @@ export const FenceModel3D = React.forwardRef<
       z: number,
       rotY: number,
     ) => {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), wallMat);
-      body.position.set(x, wallH / 2, z);
+      // Founded at its lowest corner, full height over the middle of its
+      // ground — the same rule as a real footprint (rebuildBuildings).
+      let gLo = Infinity;
+      let gHi = -Infinity;
+      const cr = Math.cos(rotY);
+      const sr = Math.sin(rotY);
+      for (const [lx, lz] of [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]]) {
+        const gv = sceneGround(x + lx * cr + lz * sr, z - lx * sr + lz * cr);
+        if (gv < gLo) gLo = gv;
+        if (gv > gHi) gHi = gv;
+      }
+      const h = wallH + (gHi - gLo) / 2;
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+      body.position.set(x, gLo + h / 2, z);
       body.rotation.y = rotY;
       body.castShadow = true;
       body.receiveShadow = true;
       const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(w, d) / 2, roofH, 4), roofMat);
-      roof.position.set(x, wallH + roofH / 2, z);
+      roof.position.set(x, gLo + h + roofH / 2, z);
       roof.rotation.y = Math.PI / 4 + rotY;
       roof.castShadow = true;
       sceneryGroup.add(body, roof);
     };
     const addTree = (x: number, z: number, s: number) => {
+      const gy = sceneGround(x, z);
       const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28 * s, 0.4 * s, 3.2 * s, 6), trunkMat);
-      trunk.position.set(x, 1.6 * s, z);
+      trunk.position.set(x, gy + 1.6 * s, z);
       trunk.castShadow = true;
       const canopy = new THREE.Mesh(new THREE.IcosahedronGeometry(1.8 * s, 0), foliageMat);
-      canopy.position.set(x, 4.0 * s, z);
+      canopy.position.set(x, gy + 4.0 * s, z);
       canopy.castShadow = true;
       sceneryGroup.add(trunk, canopy);
     };
 
     let scenerySpan = -1;
     let sceneryHadReal = false;
+    let sceneryTerrain: FenceTerrain3D | null = null;
+    let sceneryZRef = 0;
+    let sceneryCx = 0;
+    let sceneryCy = 0;
+    // Scenery is authored around the scene origin; the land under a scene
+    // point is the ground at that plan point.
+    let sceneCx = 0;
+    let sceneCy = 0;
+    const sceneGround = (x: number, z: number) => groundAt(x + sceneCx, sceneCy - z);
     // `hasReal`: real building footprints are loaded, so the invented house +
     // neighbour boxes are suppressed (trees stay — they're soft dressing, not
     // spatial claims).
@@ -468,10 +662,24 @@ export const FenceModel3D = React.forwardRef<
       }
       scenerySpan = span;
       sceneryHadReal = hasReal;
+      sceneryTerrain = terrainRef;
+      sceneryZRef = zRef;
+      sceneryCx = sceneCx;
+      sceneryCy = sceneCy;
     };
     const buildSceneryIfNeeded = (l: FenceLayout, hasReal: boolean) => {
       const span = Math.max(6, l.bounds.maxX - l.bounds.minX, l.bounds.maxY - l.bounds.minY);
-      if (scenerySpan < 0 || Math.abs(span - scenerySpan) > scenerySpan * 0.15 || hasReal !== sceneryHadReal) {
+      sceneCx = (l.bounds.minX + l.bounds.maxX) / 2;
+      sceneCy = (l.bounds.minY + l.bounds.maxY) / 2;
+      if (
+        scenerySpan < 0 ||
+        Math.abs(span - scenerySpan) > scenerySpan * 0.15 ||
+        hasReal !== sceneryHadReal ||
+        sceneryTerrain !== terrainRef ||
+        // On land, a moved datum or centre re-seats every tree and stand-in
+        // house — kept, they would sink or float after a trace edit.
+        (terrainRef !== null && (sceneryZRef !== zRef || sceneryCx !== sceneCx || sceneryCy !== sceneCy))
+      ) {
         buildScenery(l, hasReal);
       }
     };
@@ -486,10 +694,28 @@ export const FenceModel3D = React.forwardRef<
     let builtBuildings: BuildingFootprint[] | null = null;
     let builtBCx = 0;
     let builtBCy = 0;
+    let builtBTerrain: FenceTerrain3D | null = null;
+    let builtBZRef = 0;
     const rebuildBuildings = (bs: BuildingFootprint[], cx: number, cy: number) => {
       clearGroup(buildingsGroup, false);
       for (const b of bs) {
         if (b.ring.length < 3) continue;
+        // On a slope the house is founded at its LOWEST corner and carries its
+        // full height above the MIDDLE of the ground it covers: the downhill
+        // side shows foundation wall (a daylight basement), the uphill side is
+        // cut into the hill. Topping it over the highest corner turned a house
+        // on a steep lot into a tower.
+        let gLo = Infinity;
+        let gHi = -Infinity;
+        for (const p of b.ring) {
+          const gv = groundAt(p.x, p.y);
+          if (gv < gLo) gLo = gv;
+          if (gv > gHi) gHi = gv;
+        }
+        if (!Number.isFinite(gLo)) {
+          gLo = 0;
+          gHi = 0;
+        }
         const shape = new THREE.Shape();
         b.ring.forEach((p, i) => {
           // rotateX(-π/2) maps shape (x, y) → scene (x, −z), so shape-y = y − cy
@@ -498,22 +724,25 @@ export const FenceModel3D = React.forwardRef<
           else shape.lineTo(p.x - cx, p.y - cy);
         });
         shape.closePath();
-        const wallH = Math.max(6, b.heightFt - ROOF_CAP_FT);
+        const wallH = Math.max(6, b.heightFt - ROOF_CAP_FT) + (gHi - gLo) / 2;
         const wallGeo = new THREE.ExtrudeGeometry(shape, { depth: wallH, bevelEnabled: false });
         wallGeo.rotateX(-Math.PI / 2);
         const wall = new THREE.Mesh(wallGeo, b.role === "subject" ? houseWallMat : neighborWallMat);
+        wall.position.y = gLo;
         wall.castShadow = true;
         wall.receiveShadow = true;
         const capGeo = new THREE.ExtrudeGeometry(shape, { depth: ROOF_CAP_FT, bevelEnabled: false });
         capGeo.rotateX(-Math.PI / 2);
         const cap = new THREE.Mesh(capGeo, houseRoofMat);
-        cap.position.y = wallH;
+        cap.position.y = gLo + wallH;
         cap.castShadow = true;
         buildingsGroup.add(wall, cap);
       }
       builtBuildings = bs;
       builtBCx = cx;
       builtBCy = cy;
+      builtBTerrain = terrainRef;
+      builtBZRef = zRef;
     };
 
     const addBox = (
@@ -627,8 +856,11 @@ export const FenceModel3D = React.forwardRef<
       for (const sEdge of [-half, half]) {
         const px = gu.x + cos * sEdge;
         const py = gu.y + sin * sEdge;
-        const geo = new THREE.BoxGeometry(GATE_POST_SIZE, postH, GATE_POST_SIZE);
-        const mesh = addBox(gateGroup, geo, gatePostMat, tx(px), postH / 2, tz(py));
+        // Gate posts stand on the ground at each edge and reach the level leaf.
+        const gy = groundAt(px, py);
+        const h = Math.max(0.5, gu.base + postH - gy);
+        const geo = new THREE.BoxGeometry(GATE_POST_SIZE, h, GATE_POST_SIZE);
+        const mesh = addBox(gateGroup, geo, gatePostMat, tx(px), gy + h / 2, tz(py));
         mesh.rotation.y = gu.yaw;
       }
 
@@ -636,41 +868,79 @@ export const FenceModel3D = React.forwardRef<
         gu.kind === "door"
           ? buildDoorLeaf(gu.widthFt, fenceH, gu.variant, leafMat)
           : buildGateLeaf(gu.widthFt, fenceH, gu.variant, leafMat);
-      leaf.position.set(tx(gu.x), fenceH / 2, tz(gu.y));
+      leaf.position.set(tx(gu.x), gu.base + fenceH / 2, tz(gu.y));
       leaf.rotation.y = gu.yaw;
       gateGroup.add(leaf);
     };
 
     const rebuildChain = (l: FenceLayout, fenceH: number, m: string, cx: number, cy: number) => {
       clearGroup(chainGroup, true);
-      if (m !== "chain-link") return;
+      if (m !== "chain-link" || l.bayCount === 0) return;
       const tx = (x: number) => x - cx;
       const tz = (y: number) => -(y - cy);
-      for (let i = 0; i < l.segCount; i++) {
-        const mx = l.segments[i * 4];
-        const my = l.segments[i * 4 + 1];
-        const yaw = l.segments[i * 4 + 2];
-        const len = l.segments[i * 4 + 3];
-        const alpha = chainAlphaBase.clone();
-        alpha.needsUpdate = true;
-        alpha.wrapS = THREE.RepeatWrapping;
-        alpha.wrapT = THREE.RepeatWrapping;
-        alpha.repeat.set(Math.max(1, len / DIAMOND_FT), Math.max(1, fenceH / DIAMOND_FT));
-        const mat = new THREE.MeshStandardMaterial({
-          color: 0xb8bcc0,
-          metalness: 0.55,
-          roughness: 0.5,
-          alphaMap: alpha,
-          transparent: true,
-          alphaTest: 0.5,
-          side: THREE.DoubleSide,
-          envMapIntensity: 0.6,
-        });
-        const geo = new THREE.PlaneGeometry(len, fenceH);
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(tx(mx), fenceH / 2, tz(my));
-        mesh.rotation.y = yaw;
-        chainGroup.add(mesh);
+      // One mesh for the whole fence: a quad per bay from its base line up by
+      // the fence height — a parallelogram on a racked bay, a rectangle on a
+      // stepped one. The diamond tiling lives in the UVs (units of DIAMOND_FT),
+      // so every bay shares one material and one alpha map.
+      const pos = new Float32Array(l.bayCount * 4 * 3);
+      const uv = new Float32Array(l.bayCount * 4 * 2);
+      const idx: number[] = [];
+      for (let i = 0; i < l.bayCount; i++) {
+        const o = i * 7;
+        const x0 = tx(l.bays[o]);
+        const zz0 = tz(l.bays[o + 1]);
+        const b0 = l.bays[o + 2];
+        const x1 = tx(l.bays[o + 3]);
+        const zz1 = tz(l.bays[o + 4]);
+        const b1 = l.bays[o + 5];
+        const len = Math.hypot(x1 - x0, zz1 - zz0) / DIAMOND_FT;
+        const hh = fenceH / DIAMOND_FT;
+        const v = i * 4;
+        pos.set([x0, b0, zz0, x1, b1, zz1, x1, b1 + fenceH, zz1, x0, b0 + fenceH, zz0], v * 3);
+        uv.set([0, 0, len, 0, len, hh, 0, hh], v * 2);
+        idx.push(v, v + 1, v + 2, v, v + 2, v + 3);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+      geo.setIndex(idx);
+      geo.computeVertexNormals();
+      const alpha = chainAlphaBase.clone();
+      alpha.needsUpdate = true;
+      alpha.wrapS = THREE.RepeatWrapping;
+      alpha.wrapT = THREE.RepeatWrapping;
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0xb8bcc0,
+        metalness: 0.55,
+        roughness: 0.5,
+        alphaMap: alpha,
+        transparent: true,
+        alphaTest: 0.5,
+        side: THREE.DoubleSide,
+        envMapIntensity: 0.6,
+      });
+      chainGroup.add(new THREE.Mesh(geo, mat));
+    };
+
+    // A run that ends ON a house wall is fixed to the wall, not set in the
+    // ground: a ledger board flush to the wall carrying the rails on two
+    // brackets. Positions come from the layout's end posts flagged `postMount`.
+    const rebuildMounts = (l: FenceLayout, fenceH: number, m: string, color: string, cx: number, cy: number) => {
+      clearGroup(mountGroup, false);
+      const boardMat = getMaterial(m, color);
+      const topOff = Math.max(RAIL_BOTTOM + 0.4, fenceH - RAIL_TOP_DROP);
+      for (let i = 0; i < l.postCount; i++) {
+        if (l.postMount[i] !== 1) continue;
+        const x = l.posts[i * 3] - cx;
+        const z = -(l.posts[i * 3 + 1] - cy);
+        const yaw = l.posts[i * 3 + 2];
+        const base = l.postPanel[i];
+        const board = addBox(mountGroup, new THREE.BoxGeometry(0.62, fenceH + 0.2, 0.12), boardMat, x, base + (fenceH + 0.2) / 2, z);
+        board.rotation.y = yaw + Math.PI / 2; // flat against a wall the fence meets square
+        for (const off of [RAIL_BOTTOM, topOff]) {
+          const br = addBox(mountGroup, new THREE.BoxGeometry(0.42, 0.14, 0.34), gatePostMat, x, base + off, z);
+          br.rotation.y = yaw;
+        }
       }
     };
 
@@ -695,7 +965,7 @@ export const FenceModel3D = React.forwardRef<
         return;
       }
       highlight.visible = true;
-      highlight.position.set((a.x + dx / 2) - cx, fenceH + POST_CAP + 0.2, -((a.y + dy / 2) - cy));
+      highlight.position.set((a.x + dx / 2) - cx, groundAt(a.x + dx / 2, a.y + dy / 2) + fenceH + POST_CAP + 0.2, -((a.y + dy / 2) - cy));
       highlight.rotation.set(0, Math.atan2(dy, dx), 0);
       highlight.scale.set(len, 1, 1);
     };
@@ -729,9 +999,18 @@ export const FenceModel3D = React.forwardRef<
       const sp = layoutSpan(l);
       applyWorldScale(sp);
       lastFramedSpan = sp;
-      camera.position.set(sp * 0.95, sp * 0.8, sp * 0.95);
+      const { cx, cy } = center(l);
+      const gy = groundAt(cx, cy);
+      // On a hillside the default 3/4 spot can be INSIDE the hill: lift the
+      // camera clear of the land under it (and of the land between).
+      let clear = gy + sp * 0.8;
+      for (let k = 1; k <= 4; k++) {
+        const f = k / 4;
+        clear = Math.max(clear, groundAt(cx + sp * 0.95 * f, cy - sp * 0.95 * f) + sp * 0.35 + 4);
+      }
+      camera.position.set(sp * 0.95, clear, sp * 0.95);
       camera.updateProjectionMatrix();
-      orbit.target.set(0, 2, 0);
+      orbit.target.set(0, gy + 2, 0);
       orbit.update();
     };
 
@@ -808,22 +1087,48 @@ export const FenceModel3D = React.forwardRef<
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
 
+    let prevTerrain: FenceTerrain3D | null = null;
+    let prevClasses: Record<number, BayClass> | null = null;
+    let prevMounts: PathPoint[] | null = null;
     const applySpec = (next: ViewSpec) => {
       const geoChanged =
         next.points !== prevPts ||
         next.gates !== prevGates ||
         next.height !== prevH ||
-        next.material !== prevMat;
+        next.material !== prevMat ||
+        next.terrain !== prevTerrain ||
+        next.segClasses !== prevClasses ||
+        next.wallMounts !== prevMounts;
 
       if (geoChanged) {
-        const l = computeFenceLayout(next.points, next.gates);
+        // Where the ground under the scene centre sat BEFORE this change — the
+        // camera rides any shift of it (a moved low point, land arriving
+        // after the first framing) instead of ending up under the hill.
+        const before = built && framed ? center(built) : null;
+        const groundBefore = before ? groundAt(before.cx, before.cy) : 0;
+        // The land first: the datum is the fence's lowest ground, so the fence
+        // stays near y = 0 wherever the lot sits above sea level.
+        terrainRef = next.terrain && next.points.length >= 2 ? next.terrain : null;
+        if (terrainRef) {
+          let lo = Infinity;
+          for (const pt of next.points) lo = Math.min(lo, rawGround(pt.x, pt.y));
+          zRef = Number.isFinite(lo) ? lo : 0;
+        } else {
+          zRef = 0;
+        }
+        const classes = next.segClasses;
+        const l = computeFenceLayout(next.points, next.gates, {
+          groundAt: terrainRef ? groundAt : undefined,
+          segClass: classes ? (i: number) => classes[i] : undefined,
+          wallMounts: next.wallMounts,
+        });
         const { cx, cy } = center(l);
         const countsChanged =
           !built ||
           !postMesh ||
           built.postCount !== l.postCount ||
           built.picketCount !== l.picketCount ||
-          built.railCount !== l.railCount;
+          built.bayCount !== l.bayCount;
         if (countsChanged) {
           disposeInstances();
           buildInstances(l, next.material, next.materialColor);
@@ -838,12 +1143,17 @@ export const FenceModel3D = React.forwardRef<
         applyVisibility(next.material);
         rebuildGates(l, next.height, cx, cy);
         rebuildChain(l, next.height, next.material, cx, cy);
+        rebuildMounts(l, next.height, next.material, next.materialColor, cx, cy);
+        rebuildTerrain(cx, cy, Math.max(worldSpan, layoutSpan(l)));
         buildSceneryIfNeeded(l, next.buildings.length > 0);
         built = l;
         prevPts = next.points;
         prevGates = next.gates;
         prevH = next.height;
         prevMat = next.material;
+        prevTerrain = next.terrain;
+        prevClasses = next.segClasses;
+        prevMounts = next.wallMounts;
         if (!framed) {
           frameCamera(l);
           framed = true;
@@ -851,6 +1161,14 @@ export const FenceModel3D = React.forwardRef<
           // Keep the view envelope (shadows/ground/zoom) in step as the fence grows.
           const sp = layoutSpan(l);
           if (sp > worldSpan * 1.05 || sp < worldSpan * 0.6) applyWorldScale(sp);
+          if (before) {
+            const shift = groundAt(cx, cy) - groundBefore;
+            if (Math.abs(shift) > 1e-3) {
+              camera.position.y += shift;
+              orbit.target.y += shift;
+              orbit.update();
+            }
+          }
         }
       }
 
@@ -859,7 +1177,13 @@ export const FenceModel3D = React.forwardRef<
         const { cx, cy } = center(built);
         // Real buildings follow the same recentre as the fence: rebuild when the
         // footprint set changes OR the scene centre moved (fence redrawn).
-        if (next.buildings !== builtBuildings || cx !== builtBCx || cy !== builtBCy) {
+        if (
+          next.buildings !== builtBuildings ||
+          cx !== builtBCx ||
+          cy !== builtBCy ||
+          terrainRef !== builtBTerrain ||
+          zRef !== builtBZRef
+        ) {
           rebuildBuildings(next.buildings, cx, cy);
           // Scenery decides fake-vs-real by footprint presence even when fence
           // geometry didn't change (e.g. buildings arrive after Load Property Lines).
@@ -869,7 +1193,7 @@ export const FenceModel3D = React.forwardRef<
       }
     };
 
-    applySpec({ points, height, material, materialColor, gates, selectedSegment, buildings });
+    applySpec({ points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts });
     applyRef.current = applySpec;
 
     activateRef.current = () => {
@@ -900,9 +1224,34 @@ export const FenceModel3D = React.forwardRef<
         let dy = 0;
         if (keys.has("KeyE") || keys.has("Space")) dy += v;
         if (keys.has("KeyQ") || keys.has("ShiftLeft")) dy -= v;
-        camera.position.y = Math.max(camera.position.y + dy, span * 0.02);
+        const bc = built ? center(built) : { cx: 0, cy: 0 };
+        const floor = groundAt(camera.position.x + bc.cx, bc.cy - camera.position.z) + 1.2;
+        camera.position.y = Math.max(camera.position.y + dy, terrainRef ? floor : Math.max(floor, span * 0.02));
       } else if (modeRef.current === "orbit") {
         orbit.update();
+        // Orbiting never dives under the land.
+        if (terrainRef && built) {
+          const bc = center(built);
+          const floor = groundAt(camera.position.x + bc.cx, bc.cy - camera.position.z) + 2;
+          if (camera.position.y < floor) {
+            // Swing up onto the floor at the SAME distance from the target and
+            // re-aim — raising y alone lengthened the orbit every damped frame
+            // and rendered off-target.
+            const t = orbit.target;
+            const dx = camera.position.x - t.x;
+            const dz = camera.position.z - t.z;
+            const dist = Math.hypot(dx, camera.position.y - t.y, dz);
+            const up = floor - t.y;
+            const flat = Math.hypot(dx, dz);
+            if (up < dist && flat > 1e-6) {
+              const k = Math.sqrt(dist * dist - up * up) / flat;
+              camera.position.x = t.x + dx * k;
+              camera.position.z = t.z + dz * k;
+            }
+            camera.position.y = floor;
+            camera.lookAt(t);
+          }
+        }
       }
       renderer.render(scene, camera);
     };
@@ -932,7 +1281,10 @@ export const FenceModel3D = React.forwardRef<
       plc.dispose();
       disposeInstances();
       clearGroup(gateGroup, false);
+      clearGroup(mountGroup, false);
       clearGroup(chainGroup, true);
+      disposeTerrain();
+      contourMat.dispose();
       clearGroup(sceneryGroup, false);
       clearGroup(buildingsGroup, false);
       for (const m of sceneryMats) m.dispose();

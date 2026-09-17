@@ -2,15 +2,14 @@
 //
 // /dashboard/referrals (desktop sheet + handheld build behind the viewport
 // switch) and the /mobile-referrals-v2 preview route call this, so the code,
-// the two share links, the stat tiles and every conversion row are the same
-// database rows on every screen. The query is the archived classic page's —
-// same `getOrCreateMyReferralCode()` call, same counts, same PAID-reward
-// aggregate, same `appBaseUrl()` links.
+// the stat tiles and every conversion row are the same database rows on every
+// screen. The query is the archived classic page's — same
+// `getOrCreateMyReferralCode()` call, same counts, same PAID-reward aggregate.
+// The ?ref= share links were retired from the page (owner, 2026-09-14).
 
 import { redirect } from "next/navigation";
 import { NoOrgError, UnauthorizedError, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { appBaseUrl } from "@/lib/appUrl";
 import { relative } from "@/lib/format";
 import { getOrCreateMyReferralCode } from "@/actions/referrals";
 import { REFERRAL_REWARD_PCT } from "@/lib/referralRewards";
@@ -80,12 +79,8 @@ export async function loadReferralsProps(nextPath: string): Promise<ReferralsPro
     when: relative(c.createdAt),
   }));
 
-  const appUrl = await appBaseUrl();
-
   return {
     code: code.code,
-    signupUrl: `${appUrl}/auth/register?ref=${code.code}`,
-    homeownerUrl: `${appUrl}/homeowners?ref=${code.code}`,
     conversions,
     // CONVERTED = the referred org has paid and the 50%-off-a-month credit is
     // owed; PAID = that credit already landed on this org's Stripe balance.

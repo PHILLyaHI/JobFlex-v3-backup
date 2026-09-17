@@ -28,10 +28,8 @@ export type ReferralsContentOptions = {
   onTheWayCount: number;
   /** Sum of `rewardCents` across PAID conversions. */
   creditedCents: number;
-  /** `ReferralCode.code`, for the share sheet's message. */
+  /** `ReferralCode.code` — what Share sends, and what it copies on fallback. */
   code: string;
-  /** Contractor signup link — what Share sends and what it copies on fallback. */
-  signupUrl: string;
 };
 
 /** Emails are typed by whoever signed up, and they land in an innerHTML string
@@ -251,10 +249,7 @@ export function initReferralsContent(
       try {
         await navigator.share({
           title: "Try JobFlex",
-          text:
-            "Use my code " + options.code +
-            " to sign up on JobFlex — each contractor who upgrades to a paid plan knocks 50% off a month of your subscription.",
-          url: options.signupUrl,
+          text: "Use my code " + options.code + " when you sign up for JobFlex.",
         });
       } catch {
         return; // cancelled, or the sheet refused — say nothing
@@ -267,13 +262,13 @@ export function initReferralsContent(
     btn.dataset.busy = "1";
     let ok = false;
     try {
-      await navigator.clipboard.writeText(options.signupUrl);
+      await navigator.clipboard.writeText(options.code);
       ok = true;
     } catch {
-      selectFallback("signupUrl");
+      selectFallback("codeVal");
     }
     btn.innerHTML = ok
-      ? '<svg class="ic"><use href="#i-check"/></svg>Link copied'
+      ? '<svg class="ic"><use href="#i-check"/></svg>Code copied'
       : '<svg class="ic"><use href="#i-x"/></svg>Press ⌘C';
     later(function () { btn.innerHTML = old; delete btn.dataset.busy; }, 1600);
   }
@@ -399,7 +394,7 @@ export function initReferralsContent(
     }
     // Shell controls (.icon-btn, .sb-foot-*) press from the shell module.
     pressify(
-      ".btn, .card-foot-btn, .ptab, .pchip, .pager-btn, .pmenu-item, .photo-box, .pt-open, .rf-chip, .code-copy, .chip-copy, .code-val",
+      ".btn, .card-foot-btn, .ptab, .pchip, .pager-btn, .pmenu-item, .photo-box, .pt-open, .rf-chip, .code-copy, .code-val",
       "pressed",
     );
     pressify(".week-strip .day", "day-pressed");

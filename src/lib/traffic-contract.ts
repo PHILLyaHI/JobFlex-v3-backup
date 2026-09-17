@@ -84,7 +84,12 @@ export interface TrafficReport {
   funnel: FunnelStage[];
   funnelOutcomes: { trials: number; purchases: number; other: number; trialAttempts: number; purchaseAttempts: number } | null;
   experiments: ExperimentResult[];
+  /** Landing variant d vs e (pass A): visitors whose first registration step
+   *  carried `variant` ("e") or not ("d"), and how many of them completed a
+   *  verified signup inside the conversion window. */
+  variants: VariantFunnel[];
 }
+export interface VariantFunnel { variant: "d" | "e"; started: number; completed: number }
 
 export const TRAFFIC_EVENTS = {
   step: "jf_registration_step_viewed",
@@ -94,9 +99,21 @@ export const TRAFFIC_EVENTS = {
   error: "jf_registration_error",
   exposure: "jf_experiment_exposed",
   // One per landing load: which trade hero was shown ("default" when none)
-  // plus the visit's utm_*. Fired by landing-d's LandingVariantEffects.
+  // plus the visit's utm_*. Fired by the landing's LandingVariantEffects.
   landingView: "landing_view",
+  // One per click on a landing CTA: placement (hero | google | pill | sticky |
+  // footer | nav | intro | integrations), the button's words, the trade hero
+  // shown, the target path. Fired by the landing's CtaTracker (2026-09-09).
+  ctaClick: "cta_click",
 } as const;
+
+/** Signups read from the database by what the landing recorded on them. */
+export interface SignupAttribution {
+  from: string;
+  to: string;
+  total: number;
+  dimensions: Record<"landingIndustry" | "signupVariant" | "utmSource" | "utmMedium" | "utmCampaign" | "utmContent", Array<{ name: string; signups: number }>>;
+}
 
 export function pageLabel(page: string): string {
   const labels: Record<string, string> = {

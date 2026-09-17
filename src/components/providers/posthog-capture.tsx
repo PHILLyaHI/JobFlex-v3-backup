@@ -1,13 +1,56 @@
 "use client";
 import * as React from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import posthog from "posthog-js";
+import type { PostHog } from "posthog-js";
 import { trafficReady } from "@/lib/traffic-client";
+import { onConsent, readConsent } from "@/lib/consent";
 import { TRAFFIC_EXPERIMENTS } from "@/lib/traffic-experiments";
 
 const KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
 const HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
 const internal = (path: string) => path === "/admin" || path.startsWith("/admin/");
+
+// THE LIBRARY LOADS AFTER THE PAGE, NOT WITH IT (landing-e pass C,
+// 2026-09-11). posthog-js is 259 KB raw and used to sit in the first-screen
+// JavaScript of every page. It is now fetched with a dynamic import once the
+// page has loaded and the browser is idle (or at the visitor's first move,
+// or after 3 s — whichever comes first), then initialised exactly as
+// before. Nothing is lost: $pageview is sent the moment it is ready, and
+// every trackTraffic() call made before then is queued (lib/traffic-client)
+// and flushed on `trafficReady(instance)`.
+let loading: Promise<PostHog | null> | null = null;
+function loadPostHog(): Promise<PostHog | null> {
+  if (!KEY) return Promise.resolve(null);
+  if (loading) return loading;
+  loading = new Promise<void>((resolve) => {
+    let done = false;
+    const go = () => { if (done) return; done = true; resolve(); };
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
+    if (document.readyState === "complete") { if (w.requestIdleCallback) w.requestIdleCallback(go, { timeout: 3000 }); else setTimeout(go, 1500); }
+    else window.addEventListener("load", () => { if (w.requestIdleCallback) w.requestIdleCallback(go, { timeout: 3000 }); else setTimeout(go, 1500); }, { once: true });
+    for (const ev of ["scroll", "pointerdown", "touchstart", "keydown"]) window.addEventListener(ev, go, { passive: true, once: true });
+    setTimeout(go, 3000);
+  }).then(() => import("posthog-js")).then((m) => {
+    const posthog = m.default;
+    if (!posthog.__loaded) {
+      posthog.init(KEY, {
+        api_host: HOST, capture_pageview: false, person_profiles: "identified_only",
+        capture_pageleave: true, autocapture: false,
+        advanced_disable_feature_flags: TRAFFIC_EXPERIMENTS.length === 0,
+        // Off at init; the route effect below starts it on public paths only.
+        disable_session_recording: true,
+        session_recording: { maskAllInputs: true, maskTextSelector: "[data-ph-mask]" },
+        before_send: (event) => {
+          if (!event || internal(window.location.pathname)) return null;
+          scrubUrls(event.properties);
+          return event;
+        },
+      });
+    }
+    return posthog;
+  });
+  return loading;
+}
 
 // SESSION REPLAY IS FOR VISITORS, NOT FOR THE SIGNED-IN APP (owner, 2026-09-05).
 // Recording runs on the public surfaces — landing pages, pricing, register and
@@ -18,6 +61,32 @@ const internal = (path: string) => path === "/admin" || path.startsWith("/admin/
 const PRIVATE_PREFIXES = ["/dashboard", "/admin", "/w/", "/mobile-", "/v3", "/studio", "/dev", "/influencer", "/api"];
 const recordable = (path: string) =>
   !PRIVATE_PREFIXES.some((p) => path === p.replace(/\/$/, "") || path.startsWith(p));
+
+// RECORDING STARTS AT THE FIRST INTERACTION, NOT AT PAINT (CRO stage 1,
+// 2026-09-09). The recorder is a 64 KB script that used to load with the
+// landing's first screen; a visitor who only reads the hero and leaves now
+// costs nothing. The first scroll, tap, click or key on a public route starts
+// it, and it then stays on for the rest of the visit as before.
+const INTERACTION_EVENTS = ["scroll", "pointerdown", "keydown", "touchstart"] as const;
+let interacted = false;
+let armed = false;
+let ph: PostHog | null = null;
+function onFirstInteraction() {
+  interacted = true;
+  disarmRecording();
+  if (ph && recordable(window.location.pathname)) ph.startSessionRecording();
+}
+function armRecording() {
+  if (interacted) { ph?.startSessionRecording(); return; }
+  if (armed) return;
+  armed = true;
+  for (const ev of INTERACTION_EVENTS) window.addEventListener(ev, onFirstInteraction, { passive: true });
+}
+function disarmRecording() {
+  if (!armed) return;
+  armed = false;
+  for (const ev of INTERACTION_EVENTS) window.removeEventListener(ev, onFirstInteraction);
+}
 
 // Preserve attribution, never signup tickets, OAuth handles or Stripe return tokens.
 function safeUrl(value: string): string {
@@ -43,29 +112,43 @@ export function PostHogCapture() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const lastUrl = React.useRef("");
+  const [loaded, setLoaded] = React.useState(false);
 
+  // Bring the library in on the page's own time, then let the effects below run.
   React.useEffect(() => {
-    if (!KEY || posthog.__loaded) return;
-    posthog.init(KEY, {
-      api_host: HOST, capture_pageview: false, person_profiles: "identified_only",
-      capture_pageleave: true, autocapture: false,
-      advanced_disable_feature_flags: TRAFFIC_EXPERIMENTS.length === 0,
-      // Off at init; the route effect below starts it on public paths only.
-      disable_session_recording: true,
-      session_recording: { maskAllInputs: true, maskTextSelector: "[data-ph-mask]" },
-      before_send: (event) => {
-        if (!event || internal(window.location.pathname)) return null;
-        scrubUrls(event.properties);
-        return event;
-      },
+    if (!KEY) return;
+    let alive = true;
+    void loadPostHog().then((instance) => {
+      if (!alive || !instance) return;
+      ph = instance;
+      setLoaded(true);
     });
+    return () => { alive = false; };
   }, []);
 
+  // The cookie banner's analytics choice (lib/consent): "essential only"
+  // opts the browser out of capture and replay; a later "accept" opts back
+  // in. No decision yet keeps the pre-banner behaviour (first-party capture).
   React.useEffect(() => {
-    if (!KEY || !pathname || !posthog.__loaded) return;
-    if (internal(pathname)) { lastUrl.current = ""; posthog.stopSessionRecording(); return; }
-    if (recordable(pathname)) posthog.startSessionRecording();
-    else posthog.stopSessionRecording();
+    if (!KEY || !loaded || !ph) return;
+    const posthog = ph;
+    const apply = (analytics: boolean) => {
+      if (!posthog.__loaded) return;
+      if (analytics) posthog.opt_in_capturing();
+      else { posthog.stopSessionRecording(); posthog.opt_out_capturing(); }
+    };
+    const c = readConsent();
+    if (c) apply(c.analytics);
+    return onConsent((next) => apply(next.analytics));
+  }, [loaded]);
+
+  React.useEffect(() => {
+    if (!KEY || !pathname || !loaded || !ph) return;
+    const posthog = ph;
+    if (internal(pathname)) { lastUrl.current = ""; disarmRecording(); posthog.stopSessionRecording(); return; }
+    if (readConsent()?.analytics === false) { disarmRecording(); posthog.stopSessionRecording(); return; }
+    if (recordable(pathname)) armRecording();
+    else { disarmRecording(); posthog.stopSessionRecording(); }
     posthog.register({ jf_hostname: window.location.hostname,
       jf_environment: ["localhost", "127.0.0.1"].includes(window.location.hostname) ? "development" : "production" });
     const url = safeUrl(window.location.origin + pathname + (searchParams?.size ? `?${searchParams}` : ""));
@@ -73,7 +156,7 @@ export function PostHogCapture() {
       lastUrl.current = url;
       posthog.capture("$pageview", { $current_url: url, $pathname: pathname });
     }
-    trafficReady();
-  }, [pathname, searchParams]);
+    trafficReady(posthog);
+  }, [pathname, searchParams, loaded]);
   return null;
 }

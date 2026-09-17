@@ -12,6 +12,7 @@ import { buildOwnerAccepted, buildNewLead, buildLeadOffer, buildSupportTicket } 
 import { buildJobAssignment, buildWorkerInvite, buildTeamInvite } from "./build/worker";
 import {
   buildPasswordReset,
+  buildWelcomeFirstEstimate,
   buildRequestReceived,
   buildHomeownerMatched,
   buildShopClientReroute,
@@ -476,6 +477,18 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
     doc: buildPasswordReset({
       name: "Jordan Rivera",
       href: "https://example.com/auth/reset?token=demo",
+    }),
+  },
+  {
+    id: "b-welcome-first-estimate",
+    label: "18b · buildWelcomeFirstEstimate()",
+    note: "landing-e pass A: the variant-e welcome. Platform lockup, one button by trade, the trial's terms in the box, the first-charge date in the line under the button.",
+    doc: buildWelcomeFirstEstimate({
+      name: "Jordan Rivera",
+      href: "https://example.com/dashboard/advanced-ai/roof",
+      ctaLabel: "Measure my first roof",
+      trade: "roofing",
+      firstChargeDate: "Sep 25, 2026",
     }),
   },
   {

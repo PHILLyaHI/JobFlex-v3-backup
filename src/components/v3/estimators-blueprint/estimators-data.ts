@@ -12,7 +12,7 @@
 // stays on the record as `no`; only the queued stubs print it, which is also
 // what the source does (`<i>05</i>Deck`).
 
-export type EngineDiagram = "roof" | "fence" | "sheet" | "prose" | "video";
+export type EngineDiagram = "roof" | "fence" | "sheet" | "prose" | "video" | "hvac";
 
 type EngineBase = {
   id: string;
@@ -97,6 +97,19 @@ export const ENGINES: Engine[] = [
     status: "active",
     href: "/dashboard/video-estimator",
     spec: { input: "walkthrough clip", output: "cost sheet" },
+  },
+  {
+    // Added 2026-09-15. Catalogue 09 for the same reason Video is 08: the
+    // printed numbers belong to the queued stubs. Sits after Video, where the
+    // sidebar's Automation section puts it.
+    id: "hvac",
+    no: "09",
+    title: "HVAC",
+    method: "measure the house",
+    diagram: "hvac",
+    status: "active",
+    href: "/dashboard/hvac-estimator",
+    spec: { input: "video walk · nameplates", output: "load · unit · cost sheet" },
   },
   {
     id: "deck",

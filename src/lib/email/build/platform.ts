@@ -45,6 +45,47 @@ export function buildPasswordReset(i: PasswordResetInput): EmailDoc {
   };
 }
 
+export interface WelcomeFirstEstimateInput {
+  name: string;
+  /** Absolute link to the trade's estimator (lib/firstEstimate). */
+  href: string;
+  /** The button's words, e.g. "Measure my first roof". */
+  ctaLabel: string;
+  /** What the estimator does, in one line, for the prose. */
+  trade: "roofing" | "fencing" | "general";
+  /** "Sep 25, 2026" — the day the card is first charged. */
+  firstChargeDate: string;
+}
+
+/** landing-e pass A (2026-09-11): the welcome for the test variant. One
+ *  button — the trade's first estimate — and the trial's terms in the box:
+ *  14 days free, the date of the first charge, cancel from Subscription. */
+export function buildWelcomeFirstEstimate(i: WelcomeFirstEstimateInput): EmailDoc {
+  const first = i.name.trim().split(/\s+/)[0] || "there";
+  const job =
+    i.trade === "roofing"
+      ? "Type an address, and the roof is measured from the aerial: squares, pitch, waste, a priced proposal — two minutes, no ladder."
+      : i.trade === "fencing"
+        ? "Draw the fence line on the map, pick the style and height, and the footage, posts, gates and price are on a proposal — two minutes, no tape."
+        : "Type the job the way you'd say it to a customer, and the estimate writes itself: line items, quantities, a priced proposal — two minutes.";
+  const box: BoxRow[] = [
+    { type: "field", label: "Trial", value: "14 days free" },
+    { type: "field", label: "First charge", value: i.firstChargeDate },
+    { type: "cond", label: "Cancel", chip: "Anytime, from Subscription", tone: "ok" },
+  ];
+  return {
+    subject: "Your first estimate in 2 minutes",
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Welcome" },
+    headline: "Your first estimate in 2 minutes",
+    prose: [`Hi ${first} — your shop is set up. The fastest first win is an estimate, so start there.`, job],
+    box,
+    cta: { label: i.ctaLabel, href: i.href },
+    after: [`Your card won't be charged until ${i.firstChargeDate}. Cancel before then from Subscription and you pay nothing.`],
+    footer: PLATFORM_FOOTER,
+  };
+}
+
 export interface RequestReceivedInput {
   name: string;
   projectType: string | null;

@@ -69,6 +69,23 @@ model Organization {
   signupPromoCode       String?
   signupPromoCodeId     String?
   attributionCapturedAt DateTime?
+  // Where the signup CAME FROM (CRO stage 1, 2026-09-09): the trade hero the
+  // visitor landed on (`?industry=` on the landing, a TRADE_TYPES value) and
+  // the visit's utm_* — copied from the pending signup record when the
+  // organization is created, first-write-wins, never overwritten. Advisory:
+  // tradeTypesJson is what the owner chose; this is what the ad promised.
+  landingIndustry       String?
+  // landing-e's test variant ("e"), null for every other signup (pass A,
+  // 2026-09-11). Read by the Overview's first-run card and Admin → Traffic.
+  signupVariant         String?
+  utmSource             String?
+  utmMedium             String?
+  utmCampaign           String?
+  utmContent            String?
+  // What the signup remembered for Meta's Conversions API (lib/metaCapi
+  // MetaSignupContext): consent, fbp/fbc, IP and UA (only with consent), the
+  // browser's event ids, and when StartTrial / Purchase went. JSON.
+  metaSignupJson        String?
   // Soft delete (Settings → Danger zone). A deleted org is invisible to
   // requireOrg() and every public surface at once; the purge cron hard-deletes
   // (cascade) 30 days later. deletedById = the owner who confirmed.
@@ -2015,6 +2032,18 @@ model ParcelCache {
   lat        Float
   lon        Float
   fetchedAt  DateTime @default(now())
+  // The assessor's record (2026-09-16): null on rows cached before the client
+  // read these fields; `enrichedAt` says whether a row was ever fetched with
+  // them, so a stale row can be refreshed once instead of guessed at.
+  bldgSqft      Float?
+  yearBuilt     Int?
+  storeys       Float?
+  buildingCount Int?
+  countyName    String?
+  stateAbbr     String?
+  landUseClass  String?
+  buildingsJson String?   // JSON array of WKT polygons
+  enrichedAt    DateTime?
 
   @@index([addressKey])
 }
@@ -2140,4 +2169,64 @@ model SolarCache {
   updatedAt   DateTime @updatedAt
 
   @@index([lat, lng])
+}
+
+// ── HVAC estimator (2026-09-15) ───────────────────────────────────────────
+// Three tables, none related: the estimator reads them in try/catch and runs
+// on defaults until `prisma db push` has created them (same deploy rule as
+// RoofCatalog). Every column the engine reads is JSON-as-String, so the
+// building model, engine result and priced draft can grow without a schema
+// change.
+
+model HvacEstimate {
+  id             String   @id @default(cuid())
+  organizationId String
+  createdById    String
+  address        String
+  state          String?
+  county         String?
+  status         String   @default("draft") // draft | converted
+  siteFactsJson  String
+  modelJson      String
+  engineJson     String
+  draftJson      String
+  /// The permit-grade Manual J report (Cool Calc), once one is attached.
+  approvedReportUrl String?
+  /// Cool Calc project/system ids and the report endpoint, JSON (2026-09-15).
+  permitJson     String?
+  /// What was actually quoted or installed, JSON {tons, price, model, notes} — the calibration loop.
+  actualJson     String?
+  /// The engine's nominal size when saved (tons × systems), for calibration without parsing engineJson.
+  sizedTons      Float?
+  /// What was priced (src/lib/hvac/jobs.ts): replace-system, water-heater, …
+  jobKind        String?
+  proposalId     String?
+  subtotal       Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId, createdAt])
+}
+
+model HvacCatalogItem {
+  id             String   @id @default(cuid())
+  organizationId String
+  itemId         String   // stable key from the import (kind-brand-model)
+  kind           String
+  brand          String
+  model          String
+  itemJson       String   // the CatalogItem, whole
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, itemId])
+  @@index([organizationId, kind])
+}
+
+model HvacSettings {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  rateCardJson   String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }

@@ -220,13 +220,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           (profile as { email_verified?: boolean } | undefined)?.email_verified === true;
         if (!verified) return false;
         try {
-          const { stashGoogleSignup } = await import("@/lib/googleSignup");
+          const { stashGoogleSignup, googleSignupReturnUrl } = await import("@/lib/googleSignup");
           const handle = await stashGoogleSignup({
             email,
             name: user.name ?? null,
             image: user.image ?? null,
           });
-          return `/auth/register?gsu=${encodeURIComponent(handle)}`;
+          return await googleSignupReturnUrl(handle);
         } catch (e) {
           console.error("[auth] could not park the Google identity for signup:", e);
           return false;

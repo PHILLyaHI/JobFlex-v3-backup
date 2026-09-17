@@ -1,10 +1,12 @@
 import { LEGAL_CONTACT_EMAIL, LEGAL_EFFECTIVE_DATE } from "@/lib/legal";
 
 // The real policy, written against the app's ACTUAL cookie/tracking inventory
-// (2026-09-03 audit): first-party PostHog analytics, promo attribution cookie,
-// auth cookies, payment processors, measurement providers. It promises nothing
-// the app does not do — no consent banner, no opt-out toggles, no session
-// recording — so keep it in step with reality when the stack changes.
+// (2026-09-03 audit, updated 2026-09-09): first-party PostHog analytics with
+// session replay on public pages, the promo and landing attribution cookies,
+// auth cookies, the cookie banner with its analytics and marketing choices,
+// the Meta Pixel and Conversions API behind the marketing choice, payment
+// processors, measurement providers. It promises nothing the app does not do
+// — keep it in step with reality when the stack changes.
 export const metadata = { title: "JobFlex · Privacy policy" };
 
 export default function PrivacyPage() {
@@ -50,7 +52,17 @@ export default function PrivacyPage() {
         <li>
           <strong>Usage and device data.</strong> We use PostHog, a first-party analytics service (hosted
           in PostHog&rsquo;s US Cloud), to count visitors and page views: IP address, browser and device
-          type, and pages visited. We do not use session recording.
+          type, and pages visited. On our public pages (marketing pages, sign-up, sign-in, the homeowner
+          portal) PostHog also records session replays with every input masked; the signed-in app is never
+          recorded. You can turn analytics off in the cookie banner.
+        </li>
+        <li>
+          <strong>Advertising measurement.</strong> If you accept marketing cookies in the cookie banner, the
+          Meta Pixel runs on our marketing and sign-up pages and sets the <code>_fbp</code> and{" "}
+          <code>_fbc</code> cookies so Meta can tell which of our ads led to a sign-up. When you sign up we
+          also send Meta a server-side conversion record (Conversions API) with a hashed email and, with
+          your marketing consent, the pixel cookies, your IP address and browser type. Without that consent
+          no pixel loads, no Meta cookie is set, and the server record carries the hashed email only.
         </li>
         <li>
           <strong>Promo attribution.</strong> If you arrive through a promo or referral link, we store the
@@ -61,12 +73,45 @@ export default function PrivacyPage() {
 
       <h2>Cookies and browser storage</h2>
       <p>
-        We set cookies needed to sign you in and keep your session secure (authentication and CSRF
-        cookies, 7 days or less), a timezone preference for the calendar, the 30-day promo attribution
-        cookie described above, and a PostHog analytics cookie. We also use browser storage for
-        conveniences like draft proposals, view settings, and dismissed banners — this stays on your
-        device. We do not use third-party advertising cookies.
+        Essential cookies are always set. Analytics and marketing cookies depend on where you are:
       </p>
+      <ul className="list-disc pl-6 space-y-1 my-3 leading-[1.65] text-[color:var(--ink-soft)]">
+        <li>
+          <strong>United States and Canada.</strong> Analytics and marketing cookies are on by default and a
+          notice at the bottom of the page tells you so. You can turn either off at any time from
+          &ldquo;Cookie settings&rdquo; in the footer, and &ldquo;Do not sell or share my personal
+          information&rdquo; in the footer turns marketing cookies off in one click (your opt-out under the
+          California Consumer Privacy Act and similar state laws).
+        </li>
+        <li>
+          <strong>Everywhere else.</strong> Analytics and marketing cookies are set only after you accept them
+          in the cookie banner; until then only essential cookies run. You can change your choice any time
+          from &ldquo;Cookie settings&rdquo; in the footer.
+        </li>
+      </ul>
+      <p>
+        Your region comes from our hosting provider&rsquo;s country lookup on the request; when it is
+        unknown we use the opt-in model. We also use browser storage for conveniences like draft proposals,
+        view settings, and dismissed banners — this stays on your device.
+      </p>
+      <table className="my-4 w-full text-[14px] leading-[1.5]">
+        <thead>
+          <tr className="text-left text-[12px] uppercase tracking-[0.08em] text-[color:var(--ink-muted)]">
+            <th className="py-1.5 pr-3 font-semibold">Cookie</th>
+            <th className="py-1.5 pr-3 font-semibold">Category</th>
+            <th className="py-1.5 pr-3 font-semibold">Purpose</th>
+            <th className="py-1.5 font-semibold">Duration</th>
+          </tr>
+        </thead>
+        <tbody className="text-[color:var(--ink-soft)]">
+          <tr><td className="py-1.5 pr-3"><code>authjs.*</code></td><td className="py-1.5 pr-3">Essential</td><td className="py-1.5 pr-3">Sign-in session and CSRF protection</td><td className="py-1.5">7 days or less</td></tr>
+          <tr><td className="py-1.5 pr-3"><code>jf_consent</code></td><td className="py-1.5 pr-3">Essential</td><td className="py-1.5 pr-3">Your cookie choices</td><td className="py-1.5">180 days</td></tr>
+          <tr><td className="py-1.5 pr-3"><code>jf_attr</code></td><td className="py-1.5 pr-3">Essential</td><td className="py-1.5 pr-3">Promo or referral code to apply at sign-up</td><td className="py-1.5">30 days</td></tr>
+          <tr><td className="py-1.5 pr-3"><code>jf_industry</code>, <code>jf_utm</code></td><td className="py-1.5 pr-3">Essential</td><td className="py-1.5 pr-3">The trade page and campaign you arrived from, so sign-up pre-fills your trade</td><td className="py-1.5">30 days</td></tr>
+          <tr><td className="py-1.5 pr-3"><code>ph_*</code></td><td className="py-1.5 pr-3">Analytics</td><td className="py-1.5 pr-3">PostHog visitor and page-view counting, session replay on public pages</td><td className="py-1.5">1 year</td></tr>
+          <tr><td className="py-1.5 pr-3"><code>_fbp</code>, <code>_fbc</code></td><td className="py-1.5 pr-3">Marketing</td><td className="py-1.5 pr-3">Meta Pixel — advertising measurement (which ad led to a sign-up)</td><td className="py-1.5">90 days</td></tr>
+        </tbody>
+      </table>
 
       <h2>How we use information</h2>
       <p>
@@ -75,15 +120,18 @@ export default function PrivacyPage() {
         protect the service against fraud and abuse.
       </p>
       <p>
-        <strong>We do not sell or share personal information</strong> as those terms are defined by the
-        California Consumer Privacy Act. We disclose information only to the service providers below,
-        acting on our instructions.
+        <strong>Selling and sharing.</strong> Except for advertising measurement through the Meta Pixel,
+        which the California Consumer Privacy Act may treat as &ldquo;sharing&rdquo; for cross-context
+        behavioral advertising, we do not sell or share personal information. You can opt out of that
+        sharing at any time with &ldquo;Do not sell or share my personal information&rdquo; in the page
+        footer. We disclose information only to the service providers below, acting on our instructions.
       </p>
 
       <h2>Service providers</h2>
       <ul className="list-disc pl-6 space-y-1 my-3 leading-[1.65] text-[color:var(--ink-soft)]">
         <li>Stripe, PayPal, Square — payment processing</li>
-        <li>PostHog (US Cloud) — first-party analytics</li>
+        <li>PostHog (US Cloud) — first-party analytics and session replay on public pages</li>
+        <li>Meta Platforms — advertising measurement (Meta Pixel and Conversions API), only with your marketing consent; server records carry a hashed email</li>
         <li>Google Maps Platform — geocoding, mapping, imagery, ground elevation</li>
         <li>EagleView — aerial property measurements</li>
         <li>Vercel — hosting and file storage</li>

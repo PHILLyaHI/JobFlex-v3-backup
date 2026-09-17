@@ -17,6 +17,8 @@ import { Move, Spline, Trash2, Undo2, DoorOpen, DoorClosed, ChevronDown } from "
 import { cn } from "@/lib/cn";
 import { loadMapsLibrary, isMapsBrowserEnabled } from "@/lib/googleMaps";
 import { latLngToLocalFeet, localFeetToLatLng, type LatLng } from "./mapProjection";
+import type { TopoOverlay } from "./fenceTopo";
+import { ringAreaSqFt, ringEdges, snapToTargets, type Seg } from "./fenceHouse";
 import {
   GATE_VARIANTS,
   DOOR_VARIANTS,
@@ -35,12 +37,21 @@ import type { ArmedOpening } from "@/stores/useFenceStudioStore";
 // studio's literals — the blueprint Fence studio passes --blueprint / --muted.
 const DEFAULT_ACCENT = "#1f7a52"; // Pressed Sage (locked accent) for the drawn line
 const DEFAULT_DOOR_INK = "#5a6473"; // cool-ink-muted — doors read neutral vs the sage gate
-// Surveyed property line — blueprint blue everywhere, on purpose. A parcel
-// boundary is REFERENCE geometry, not the thing being sold, so it reads in the
-// system's one blue while the traced fence keeps the host's own accent. It used
-// to be near-black, which on satellite imagery was indistinguishable from a roof
-// edge or a kerb.
-const PARCEL_BLUE = "#1854a0";
+// Surveyed property line — FenceScan's survey style, by the owner's call
+// (2026-09-15): a dashed emerald core on a heavy dark casing, a faint emerald
+// tint over the lot and a dot on every corner. The casing is what keeps the
+// line legible on bright driveways AND dark tree cover (the old thin blue line
+// "could barely be seen"), and emerald never collides with the fence's blue,
+// the contours' cream or the slope overlay's amber and red.
+export interface ParcelPalette {
+  /** Dashed core of the property line, and the corner dots' ring. */
+  line: string;
+  /** Wide dark casing under the dashes. */
+  casing: string;
+  /** Corner dot fill. */
+  dot: string;
+}
+const DEFAULT_PARCEL: ParcelPalette = { line: "#4ade80", casing: "#06120a", dot: "#0d1b12" };
 // A real residential lot that is inside the Regrid free-trial coverage, so the map
 // is never blank and the sample "Load Property Lines" works out of the box.
 const DEFAULT_CENTER: LatLng = { lat: 32.834967, lng: -96.563861 };
@@ -99,7 +110,23 @@ export type FenceDrawMapApi = {
   refreshCursor: () => void;
   hideGhost: () => void;
   zoomBy: (delta: number) => void;
+  /** Finish what is being traced: stop the fence run, or close the house outline. */
+  finishDraft: () => void;
+  /** Take back the last dot of the fence run or the last house corner. */
+  undoDraft: () => void;
+  /** Drop an unfinished house outline / stop the fence run. */
+  cancelDraft: () => void;
+  /** House tool on/off (the `houseMode` prop drives it). */
+  setHouseMode: (on: boolean) => void;
 };
+
+/** What is being traced right now, for a host that renders its own controls. */
+export interface DraftState {
+  /** A fence run is following the cursor. */
+  fence: boolean;
+  /** Corners placed on an unfinished house outline (0 = none). */
+  houseCorners: number;
+}
 
 export type FenceDrawMapProps = {
   lat?: number;
@@ -143,6 +170,8 @@ export type FenceDrawMapProps = {
   parcel?: { ring: LatLng[]; rings?: LatLng[][]; highlight?: LatLng[] | null } | null;
   /** Raster parcel-boundary tiles (proxied ReportAll layer, zoom 14–21). */
   parcelTiles?: boolean;
+  /** Host colours for the property line (Maps needs literal colour strings). */
+  parcelPalette?: Partial<ParcelPalette>;
   /**
    * Measured slope per NON-LEVEL traced segment (fenceTerrain classes). Each
    * entry recolours its segment on the map — amber for racked, red for
@@ -150,6 +179,57 @@ export type FenceDrawMapProps = {
    * rise. Level segments stay the accent colour and are not listed here.
    */
   terrain?: TerrainSegView[] | null;
+  /**
+   * Lot topography (fenceTopo): contour lines drawn on the land — the lot's
+   * own lines strong with a dark casing so they read on grass, roof and
+   * asphalt alike, the neighbours' faint — elevation labels along the lines
+   * ("+4 ft" above the lot's low point), and HIGH / LOW marks. Display only:
+   * nothing here is clickable, so tracing and placement clicks pass through.
+   */
+  topo?: TopoOverlay | null;
+  /** Host colours for the topo layer (Maps needs literal colour strings). */
+  topoPalette?: Partial<TopoPalette>;
+  /** Padding for the one-time fit to a new lot, px — a host that lays a plate
+   *  over a corner of the map passes more room on that side. Default 48. */
+  fitPadding?: number | { top: number; right: number; bottom: number; left: number };
+  /** Footprints found for the site (OSM / Regrid): drawn faint, and snap targets. */
+  detectedBuildings?: LatLng[][];
+  /** House outlines the user traced. Editable while `houseMode` is on. */
+  houses?: Array<{ id: string; ring: LatLng[]; label: string }>;
+  /** House tool: clicks trace a house outline instead of a fence run. */
+  houseMode?: boolean;
+  /** A traced outline was closed (local feet). */
+  onHouseAdd?: (ring: PathPoint[]) => void;
+  /** A traced outline's corner was dragged (local feet). */
+  onHouseChange?: (id: string, ring: PathPoint[]) => void;
+  /** Run ends fixed to a house wall — labelled on the map. */
+  wallMounts?: LatLng[];
+  /** What is being traced, whenever it changes. */
+  onDraftChange?: (state: DraftState) => void;
+};
+
+export interface TopoPalette {
+  /** Minor contour. */
+  line: string;
+  /** Index contour, every fifth interval. */
+  major: string;
+  /** The dark stroke under a lot line that separates it from the photo. */
+  casing: string;
+  /** Label text. */
+  ink: string;
+  /** Label ground. */
+  paper: string;
+  /** Label face — the annotation (mono) face. */
+  font: string;
+}
+
+const DEFAULT_TOPO: TopoPalette = {
+  line: "#fff7df",
+  major: "#f3e7c2",
+  casing: "#0a0a0a",
+  ink: "#0a0a0a",
+  paper: "rgba(242, 240, 235, 0.94)",
+  font: "'JetBrains Mono', ui-monospace, monospace",
 };
 
 /** One non-level segment's slope facts, for the overlay and its click card. */
@@ -165,6 +245,122 @@ export interface TerrainSegView {
 
 const RACKED_COLOR = "#c47f17"; // amber — panels rack to follow the grade
 const STEPPED_COLOR = "#b3261e"; // red — panels must stair-step
+
+// Stacking, bottom to top, in one place so a new layer cannot land between two
+// others by accident. Contours lie ON the lot's tint but UNDER its blue
+// property line; the fence sits over the land and the line it follows; slope
+// recolouring sits over the fence it describes.
+const Z = {
+  parcelTint: 1,
+  topoCasing: 2,
+  topo: 3,
+  parcelGlow: 4,
+  parcelCasing: 5,
+  parcelLine: 6,
+  house: 7,
+  fence: 8,
+  highlight: 9,
+  terrain: 9,
+  preview: 10,
+  ghost: 11,
+} as const;
+
+/** One text label pinned to the ground. */
+interface MapLabel {
+  at: LatLng;
+  text: string;
+  /** Screen rotation, degrees clockwise. */
+  angleDeg?: number;
+  style: Partial<CSSStyleDeclaration>;
+  /** Higher wins a collision. */
+  priority: number;
+  /** Hidden below this map zoom. */
+  minZoom: number;
+  /** Sit just above the point — or just below when that spot is taken —
+   *  instead of on it, so a chip does not hide its line and a mark does not
+   *  hide the corner it names. Contour labels belong ON their line. */
+  lift?: boolean;
+}
+
+/**
+ * A DOM label layer on the map (an OverlayView in the marker pane — above the
+ * lines, pointer-events off, so clicks still reach the map and the fence).
+ * Every redraw (pan, zoom) re-projects the labels and hides any that would
+ * overlap a higher-priority one at THIS zoom, so zooming out thins the labels
+ * instead of piling them up. Returns the teardown.
+ */
+function mountLabelLayer(maps: GMaps, map: GMaps, items: MapLabel[], zIndex: number): () => void {
+  const g = (window as unknown as { google?: GMaps }).google;
+  const LatLngCtor = g?.maps?.LatLng;
+  if (!LatLngCtor || !items.length) return () => {};
+  const nodes = [...items]
+    .sort((a, b) => b.priority - a.priority)
+    .map((it) => ({ it, el: null as HTMLDivElement | null, ll: new LatLngCtor(it.at.lat, it.at.lng), w: 0, h: 0 }));
+  const layer = new maps.OverlayView();
+  let host: HTMLDivElement | null = null;
+  layer.onAdd = () => {
+    host = document.createElement("div");
+    host.style.cssText = `position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;z-index:${zIndex}`;
+    for (const n of nodes) {
+      const el = document.createElement("div");
+      el.textContent = n.it.text;
+      Object.assign(
+        el.style,
+        { position: "absolute", left: "0", top: "0", whiteSpace: "nowrap", transformOrigin: "0 0", pointerEvents: "none" },
+        n.it.style,
+      );
+      host.appendChild(el);
+      n.el = el;
+    }
+    layer.getPanes()?.markerLayer?.appendChild(host);
+  };
+  layer.draw = () => {
+    const proj = layer.getProjection();
+    if (!proj || !host) return;
+    const zoom = Number(map.getZoom()) || 0;
+    const taken: Array<[number, number, number, number]> = [];
+    for (const n of nodes) {
+      const el = n.el;
+      if (!el) continue;
+      const px = proj.fromLatLngToDivPixel(n.ll);
+      if (!px || zoom < n.it.minZoom) {
+        el.style.display = "none";
+        continue;
+      }
+      el.style.display = "";
+      if (!n.w) {
+        n.w = el.offsetWidth;
+        n.h = el.offsetHeight;
+      }
+      const deg = n.it.angleDeg ?? 0;
+      const a = (deg * Math.PI) / 180;
+      const bw = Math.abs(n.w * Math.cos(a)) + Math.abs(n.h * Math.sin(a));
+      const bh = Math.abs(n.w * Math.sin(a)) + Math.abs(n.h * Math.cos(a));
+      const off = bh / 2 + 10;
+      const tries = n.it.lift ? [-off, off] : [0];
+      let placedAt: number | null = null;
+      for (const dy of tries) {
+        const cy = px.y + dy;
+        const box: [number, number, number, number] = [px.x - bw / 2 - 3, cy - bh / 2 - 3, px.x + bw / 2 + 3, cy + bh / 2 + 3];
+        if (taken.some((t) => box[0] < t[2] && box[2] > t[0] && box[1] < t[3] && box[3] > t[1])) continue;
+        taken.push(box);
+        placedAt = cy;
+        break;
+      }
+      if (placedAt === null) {
+        el.style.display = "none";
+        continue;
+      }
+      el.style.transform = `translate(${px.x}px, ${placedAt}px) rotate(${deg}deg) translate(-50%, -50%)`;
+    }
+  };
+  layer.onRemove = () => {
+    host?.remove();
+    host = null;
+  };
+  layer.setMap(map);
+  return () => layer.setMap(null);
+}
 
 export function FenceDrawMap({
   lat,
@@ -187,6 +383,17 @@ export function FenceDrawMap({
   parcel = null,
   parcelTiles = false,
   terrain = null,
+  topo = null,
+  topoPalette,
+  fitPadding = 48,
+  parcelPalette,
+  detectedBuildings,
+  houses,
+  houseMode = false,
+  onHouseAdd,
+  onHouseChange,
+  wallMounts,
+  onDraftChange,
 }: FenceDrawMapProps) {
   const mountRef = React.useRef<HTMLDivElement>(null);
   const measureRef = React.useRef<HTMLDivElement>(null);
@@ -225,6 +432,28 @@ export function FenceDrawMap({
   const chromeRef = React.useRef(chrome);
   const accentRef = React.useRef(accentColor);
   const doorRef = React.useRef(doorColor);
+  const topoPaletteRef = React.useRef(topoPalette);
+  const fitPaddingRef = React.useRef(fitPadding);
+  const parcelPaletteRef = React.useRef(parcelPalette);
+  const onHouseAddRef = React.useRef(onHouseAdd);
+  const onHouseChangeRef = React.useRef(onHouseChange);
+  const onDraftChangeRef = React.useRef(onDraftChange);
+  const houseModeRef = React.useRef(houseMode);
+  /** The draw surface's pointer handlers, for overlays that sit on top of it. */
+  const drawHandlersRef = React.useRef<{
+    click: (e: GMaps) => void;
+    move: (e: GMaps) => void;
+    dblclick: () => void;
+    rightclick: () => void;
+  } | null>(null);
+  // Snap targets from the site (lot lines, traced houses, detected buildings),
+  // read by the draw handlers at event time — the build effect never re-runs
+  // for them.
+  const siteRef = React.useRef<{ parcel: FenceDrawMapProps["parcel"]; houses: FenceDrawMapProps["houses"]; detected: LatLng[][] | undefined }>({
+    parcel,
+    houses,
+    detected: detectedBuildings,
+  });
   React.useEffect(() => {
     onDropRef.current = onDropOpening;
     onUpdateGateRef.current = onUpdateGate;
@@ -233,9 +462,17 @@ export function FenceDrawMap({
     chromeRef.current = chrome;
     accentRef.current = accentColor;
     doorRef.current = doorColor;
+    topoPaletteRef.current = topoPalette;
+    fitPaddingRef.current = fitPadding;
+    parcelPaletteRef.current = parcelPalette;
+    onHouseAddRef.current = onHouseAdd;
+    onHouseChangeRef.current = onHouseChange;
+    onDraftChangeRef.current = onDraftChange;
+    siteRef.current = { parcel, houses, detected: detectedBuildings };
   });
 
   const apiRef = React.useRef<FenceDrawMapApi | null>(null);
+  const fittedRingRef = React.useRef<string | null>(null);
 
   // The live map + maps library, exposed to the parcel-overlay and tile-layer
   // effects below. `mapEpoch` bumps when a (re)built map lands so those effects
@@ -276,6 +513,11 @@ export function FenceDrawMap({
     apiRef.current?.syncOpenings();
   }, [gates, points]);
 
+  React.useEffect(() => {
+    houseModeRef.current = houseMode;
+    apiRef.current?.setHouseMode(houseMode);
+  }, [houseMode, mapEpoch]);
+
   const enabled = isMapsBrowserEnabled();
   const hasFence = points.length >= 2;
 
@@ -310,6 +552,9 @@ export function FenceDrawMap({
           // would otherwise sit under them in the same corner.
           zoomControl: chromeRef.current,
           keyboardShortcuts: false,
+          // A double-click FINISHES a run or an outline here (FenceScan's
+          // gesture); Google's own double-click zoom would fight it.
+          disableDoubleClickZoom: true,
           draggableCursor: "crosshair", // signal "you can draw here"
         });
         // The fence is a list of RUNS — each an independent editable polyline, so
@@ -333,7 +578,7 @@ export function FenceDrawMap({
             },
           ],
           path: [],
-          zIndex: 4,
+          zIndex: Z.preview,
         });
 
         const ll2ft = (ll: GMaps) => latLngToLocalFeet(origin, { lat: ll.lat(), lng: ll.lng() });
@@ -412,25 +657,159 @@ export function FenceDrawMap({
           return n > 2 && distFt(pa.getAt(0), pa.getAt(n - 1)) < 0.5;
         };
 
+        // ── Site snapping ──
+        // After the fence's own dots: property-line and house CORNERS within
+        // the magnet radius, then anywhere ALONG a house wall, a lot line or
+        // another run within a tighter one. Targets are rebuilt only when the
+        // site props change identity.
+        const EDGE_PX = 9;
+        let siteKey: unknown[] = [];
+        let siteCorners: PathPoint[] = [];
+        let siteEdges: Seg[] = [];
+        const siteTargets = () => {
+          const cur = siteRef.current;
+          const key = [cur.parcel, cur.houses, cur.detected];
+          if (key.some((k, i) => k !== siteKey[i])) {
+            siteKey = key;
+            const rings: PathPoint[][] = [];
+            const lots = cur.parcel?.rings ?? (cur.parcel?.ring ? [cur.parcel.ring] : []);
+            for (const r of lots) rings.push(r.map((q) => latLngToLocalFeet(origin, q)));
+            for (const h of cur.houses ?? []) rings.push(h.ring.map((q) => latLngToLocalFeet(origin, q)));
+            for (const b of cur.detected ?? []) rings.push(b.map((q) => latLngToLocalFeet(origin, q)));
+            const usable = rings.filter((r) => r.length >= 3);
+            siteCorners = usable.flat();
+            siteEdges = usable.flatMap((r) => ringEdges(r));
+          }
+          return { corners: siteCorners, edges: siteEdges };
+        };
+        /** Segments of the traced fence a new dot may land on — every run's
+         *  segments except the one the cursor is extending from. */
+        const runEdges = (): Seg[] => {
+          const out: Seg[] = [];
+          runs.forEach((r, ri) => {
+            const pa = r.line.getPath();
+            const n = pa.getLength();
+            for (let j = 1; j < n; j++) {
+              if (drawing && ri === activeIdx && j === n - 1) continue;
+              out.push([ll2ft(pa.getAt(j - 1)), ll2ft(pa.getAt(j))]);
+            }
+          });
+          return out;
+        };
+        type SiteSnap = { kind: "corner" | "edge"; ll: GMaps };
+        const snapSite = (ll: GMaps, withRuns: boolean): SiteSnap | null => {
+          const t = siteTargets();
+          const px = ftPerPx();
+          const edges = withRuns ? t.edges.concat(runEdges()) : t.edges;
+          const hit = snapToTargets(ll2ft(ll), t.corners, edges, MAGNET_PX * px, EDGE_PX * px);
+          return hit ? { kind: hit.kind, ll: ft2ll(hit.pt) } : null;
+        };
+        // The lock ring: where a click will actually land.
+        const snapRing = new Marker({
+          map,
+          clickable: false,
+          visible: false,
+          zIndex: 28,
+          icon: { path: 0, scale: 8, fillColor: "#ffffff", fillOpacity: 0.25, strokeColor: ACCENT, strokeWeight: 2.5 },
+        });
+        const showRing = (ll: GMaps | null) => {
+          if (ll) {
+            snapRing.setPosition(ll);
+            snapRing.setVisible(true);
+          } else snapRing.setVisible(false);
+        };
+
+        // ── House outline being traced (House tool) ──
+        const houseDraft: GMaps[] = [];
+        const houseLine = new maps.Polyline({
+          map,
+          clickable: false,
+          strokeOpacity: 0,
+          icons: [
+            {
+              icon: { path: "M 0,-1 0,1", strokeColor: "#ffffff", strokeOpacity: 0.95, strokeWeight: 2.5, scale: 3 },
+              offset: "0",
+              repeat: "11px",
+            },
+          ],
+          path: [],
+          zIndex: Z.preview,
+        });
+        const houseDots: GMaps[] = [];
+        const paintHouseDraft = (cursor: GMaps | null) => {
+          const path = cursor ? [...houseDraft, cursor] : [...houseDraft];
+          houseLine.setPath(path);
+          while (houseDots.length > houseDraft.length) houseDots.pop()?.setMap(null);
+          houseDraft.forEach((ll, i) => {
+            const closable = i === 0 && houseDraft.length >= 3;
+            const icon = {
+              path: 0,
+              scale: closable ? 7 : 4,
+              fillColor: closable ? ACCENT : "#ffffff",
+              fillOpacity: 1,
+              strokeColor: "#0a0a0a",
+              strokeWeight: 1.5,
+            };
+            if (!houseDots[i]) houseDots[i] = new Marker({ map, clickable: false, zIndex: 27, position: ll, icon });
+            else {
+              houseDots[i].setPosition(ll);
+              houseDots[i].setIcon(icon);
+            }
+          });
+        };
+        let lastDraft = "false:0";
+        const notifyDraft = () => {
+          const key = `${drawing}:${houseDraft.length}`;
+          if (key === lastDraft) return;
+          lastDraft = key;
+          onDraftChangeRef.current?.({ fence: drawing, houseCorners: houseDraft.length });
+        };
+        const closeHouse = () => {
+          if (houseDraft.length >= 3) onHouseAddRef.current?.(houseDraft.map((ll) => ll2ft(ll)));
+          houseDraft.length = 0;
+          paintHouseDraft(null);
+          notifyDraft();
+        };
+        const cancelHouse = () => {
+          houseDraft.length = 0;
+          paintHouseDraft(null);
+          notifyDraft();
+        };
+
         // Dragged vertex magnets onto any nearby vertex (its own run or another —
         // that's the "drag a dot onto another to join" affordance).
-        const onVertexDragged = (run: Run, index: number) => {
-          if (!snapping) {
+        const onVertexDragged = (run: Run, index: number, prev?: GMaps) => {
+          // Align moves the whole outline: every vertex fires `set_at`, and
+          // snapping any of them would bend the shape the mode promises to keep.
+          if (!snapping && !aligningRef.current) {
             const pa = run.line.getPath();
             const m = ll2ft(pa.getAt(index));
+            const was = prev ? ll2ft(prev) : null;
+            // A dot dragged OFF a target (a corner the fence was laid on, a dot
+            // it was joined to) must not be pulled straight back onto it.
+            const startedOn = (q: PathPoint) => !!was && Math.hypot(was.x - q.x, was.y - q.y) <= snapFt();
             outer: for (const r of runs) {
               const p2 = r.line.getPath();
               const n = p2.getLength();
               for (let j = 0; j < n; j++) {
                 if (r === run && j === index) continue;
                 const f = ll2ft(p2.getAt(j));
-                if (Math.hypot(m.x - f.x, m.y - f.y) <= snapFt()) {
+                if (Math.hypot(m.x - f.x, m.y - f.y) <= snapFt() && !startedOn(f)) {
                   snapping = true;
                   pa.setAt(index, p2.getAt(j));
                   snapping = false;
-                  break outer;
+                  commit();
+                  return;
                 }
               }
+            }
+            // No dot in reach: a lot or house corner, or a house wall / lot line.
+            const t = siteTargets();
+            const hit = snapToTargets(m, t.corners, t.edges, snapFt(), snapFt());
+            if (hit && hit.d > 1e-3 && !startedOn(hit.pt)) {
+              snapping = true;
+              pa.setAt(index, ft2ll(hit.pt));
+              snapping = false;
             }
           }
           commit();
@@ -445,6 +824,7 @@ export function FenceDrawMap({
           if (ri === activeIdx) {
             drawing = false;
             activeIdx = runs.length - 1;
+            notifyDraft();
           } else if (ri < activeIdx) {
             activeIdx--;
           }
@@ -459,11 +839,12 @@ export function FenceDrawMap({
             strokeColor: ACCENT,
             strokeWeight: 3,
             strokeOpacity: 1,
+            zIndex: Z.fence,
           });
           const run: Run = { line, listeners: [] };
           const pa = line.getPath();
           run.listeners.push(
-            pa.addListener("set_at", (i: number) => onVertexDragged(run, i)),
+            pa.addListener("set_at", (i: number, prev: GMaps) => onVertexDragged(run, i, prev)),
             pa.addListener("insert_at", commit),
             pa.addListener("remove_at", commit),
             line.addListener("dragend", commit),
@@ -472,6 +853,8 @@ export function FenceDrawMap({
             line.addListener("mousemove", (e: GMaps) => onMove(e)),
             line.addListener("click", (e: GMaps) => onVertexClick(run, e)),
             line.addListener("rightclick", (e: GMaps) => onVertexRightclick(run, e)),
+            // A double-click that lands on a line still finishes the run / outline.
+            line.addListener("dblclick", () => onDoubleClick()),
           );
           runs.push(run);
           return run;
@@ -483,6 +866,7 @@ export function FenceDrawMap({
           activeIdx = runs.length - 1;
           drawing = true;
           commit();
+          notifyDraft();
         };
 
         // Seed runs from the store's points (split on `gap`). Used at mount and by
@@ -505,6 +889,7 @@ export function FenceDrawMap({
           drawing = false;
           previewLine.setPath([]);
           syncing = false;
+          notifyDraft();
         };
 
         // ── Opening markers (centre dot + gate edge handles) ──
@@ -603,7 +988,7 @@ export function FenceDrawMap({
           strokeColor: ACCENT,
           strokeOpacity: 0.45,
           strokeWeight: 7,
-          zIndex: 5,
+          zIndex: Z.ghost,
         });
         let ghostShown = false;
         const hideGhost = () => {
@@ -796,10 +1181,40 @@ export function FenceDrawMap({
             return;
           }
           const busy = !!armedRef.current || aligningRef.current;
+          if (houseModeRef.current && !busy) {
+            previewLine.setPath([]);
+            hideGhost();
+            const first = houseDraft[0];
+            const closing = !!first && houseDraft.length >= 3 && distFt(first, at) <= magnetFt();
+            const sn = closing ? null : snapSite(at, false);
+            const cur = closing ? first : sn ? sn.ll : at;
+            showRing(closing || sn ? cur : null);
+            paintHouseDraft(houseDraft.length ? cur : null);
+            if (measureEl) {
+              const rect = mountRef.current?.getBoundingClientRect();
+              const dom = e.domEvent as MouseEvent | undefined;
+              if (rect && dom) {
+                const dx = (dom.clientX - rect.left) / hostZoom + 14;
+                const dy = (dom.clientY - rect.top) / hostZoom + 14;
+                measureEl.style.transform = `translate(${dx}px, ${dy}px)`;
+              }
+              measureEl.style.display = "block";
+              const last = houseDraft[houseDraft.length - 1];
+              measureEl.textContent = closing
+                ? "Click to close the outline"
+                : last
+                  ? `${Math.round(distFt(last, cur))} ft wall · click the next corner`
+                  : "Click a corner of the house";
+            }
+            return;
+          }
           // Endpoint magnet: within the pixel radius the cursor locks to the
-          // nearest dot (and unlocks the moment it leaves the radius).
+          // nearest dot (and unlocks the moment it leaves the radius); failing
+          // that, a lot or house corner, or a point along a wall or a line.
           const mag = busy ? null : magnetVertex(at, magnetFt());
-          const cursorLL = mag ? mag.ll : at;
+          const site = busy || mag ? null : snapSite(at, true);
+          const cursorLL = mag ? mag.ll : site ? site.ll : at;
+          showRing(mag || site ? cursorLL : null);
           const act = drawing && !busy ? runs[activeIdx] : null;
           const ap = act?.line.getPath();
           const an = ap ? ap.getLength() : 0;
@@ -843,6 +1258,8 @@ export function FenceDrawMap({
                   : mag.run === activeIdx && mag.vi === an - 1
                     ? " · click to stop"
                     : " · click to connect";
+            } else if (site) {
+              hint = site.kind === "corner" ? " · on the corner" : " · on the line";
             }
             measureEl.textContent = `+${Math.round(seg)} ft · ${Math.round(totalLenFt())} ft total${hint}`;
             return;
@@ -858,17 +1275,34 @@ export function FenceDrawMap({
         const hideMeasure = () => {
           if (measureEl) measureEl.style.display = "none";
           previewLine.setPath([]);
+          showRing(null);
+          if (houseModeRef.current) paintHouseDraft(null);
           hideGhost();
         };
 
         const stopTrace = () => {
           drawing = false;
           previewLine.setPath([]);
+          notifyDraft();
         };
 
         // Click on an existing dot (fires on the run's polyline, not the map).
         const onVertexClick = (run: Run, e: GMaps) => {
-          if (e.vertex == null || aligningRef.current || armedRef.current) return;
+          if (houseModeRef.current) {
+            // The house tool owns clicks — a click that lands on a fence dot
+            // still places a house corner there.
+            const at = trueLL(e);
+            if (at) houseClick(at);
+            return;
+          }
+          if (e.vertex == null) {
+            // The line itself, not a dot: the same as a click on the ground
+            // there — starts a branch from the middle of a run, drops an
+            // armed opening, or adds a dot to the run being traced.
+            onMapClick(e);
+            return;
+          }
+          if (aligningRef.current || armedRef.current) return;
           const ri = runs.indexOf(run);
           const pa = run.line.getPath();
           const n = pa.getLength();
@@ -877,6 +1311,7 @@ export function FenceDrawMap({
             if (!isClosedPath(pa) && e.vertex === n - 1) {
               activeIdx = ri;
               drawing = true;
+              notifyDraft();
             } else if (!isClosedPath(pa) && e.vertex === 0 && n > 1) {
               // The head end: continue via a new run joined exactly at that dot.
               startRun(pa.getAt(0));
@@ -904,7 +1339,28 @@ export function FenceDrawMap({
           stopTrace();
         };
 
+        /** A click while the House tool is on: a corner, or the close. */
+        const houseClick = (at: GMaps) => {
+          const first = houseDraft[0];
+          if (first && houseDraft.length >= 3 && distFt(first, at) <= magnetFt()) {
+            closeHouse();
+            return;
+          }
+          const sn = snapSite(at, false);
+          const ll = sn ? sn.ll : at;
+          const last = houseDraft[houseDraft.length - 1];
+          if (last && distFt(last, ll) < 3 * ftPerPx()) return; // double-click's second click
+          houseDraft.push(ll);
+          paintHouseDraft(null);
+          notifyDraft();
+        };
+
         const onVertexRightclick = (run: Run, e: GMaps) => {
+          if (houseModeRef.current) {
+            if (houseDraft.length >= 3) closeHouse();
+            else cancelHouse();
+            return;
+          }
           if (e.vertex != null) {
             const pa = run.line.getPath();
             pa.removeAt(e.vertex);
@@ -914,10 +1370,9 @@ export function FenceDrawMap({
           stopTrace();
         };
 
-        const listeners = [
-          map.addListener("mousemove", onMove),
-          map.addListener("mouseout", hideMeasure),
-          map.addListener("click", (e: GMaps) => {
+        /** A click on open ground — or on a run's LINE away from its dots,
+         *  which Google delivers to the polyline instead of the map. */
+        const onMapClick = (e: GMaps) => {
             if (aligningRef.current) return;
             const at = trueLL(e);
             const a = armedRef.current;
@@ -935,7 +1390,13 @@ export function FenceDrawMap({
               return;
             }
             if (!at) return;
+            if (houseModeRef.current) {
+              houseClick(at);
+              return;
+            }
             const mag = magnetVertex(at, magnetFt());
+            const site = mag ? null : snapSite(at, true);
+            const place = site ? site.ll : at;
             if (drawing) {
               const act = runs[activeIdx];
               if (!act) return stopTrace();
@@ -952,7 +1413,11 @@ export function FenceDrawMap({
                 }
                 return stopTrace();
               }
-              ap.push(at);
+              // The second click of a double-click lands where the first did —
+              // one dot, then the dblclick finishes the run.
+              const last = ap.getLength() ? ap.getAt(ap.getLength() - 1) : null;
+              if (last && distFt(last, place) < 3 * ftPerPx()) return;
+              ap.push(place);
               commit();
               return;
             }
@@ -963,21 +1428,80 @@ export function FenceDrawMap({
               if (!isClosedPath(mp) && mag.vi === mp.getLength() - 1) {
                 activeIdx = mag.run;
                 drawing = true;
+                notifyDraft();
                 return;
               }
               startRun(mp.getAt(mag.vi));
               return;
             }
-            startRun(at);
-          }),
-          map.addListener("rightclick", () => {
-            // Right-click away from a vertex: just stop the run from following the cursor.
-            stopTrace();
-          }),
+            startRun(place);
+          };
+
+        function onDoubleClick() {
+          if (houseModeRef.current) {
+            if (houseDraft.length >= 3) closeHouse();
+            return;
+          }
+          stopTrace();
+        }
+        function onRightClick() {
+          if (houseModeRef.current) {
+            // Close an outline that can close; otherwise drop it.
+            if (houseDraft.length >= 3) closeHouse();
+            else cancelHouse();
+            return;
+          }
+          // Right-click away from a vertex: just stop the run from following the cursor.
+          stopTrace();
+        }
+
+        const listeners = [
+          map.addListener("mousemove", onMove),
+          map.addListener("mouseout", hideMeasure),
+          map.addListener("click", (e: GMaps) => onMapClick(e)),
+          map.addListener("dblclick", () => onDoubleClick()),
+          map.addListener("rightclick", () => onRightClick()),
         ];
+        // Traced houses are clickable while the House tool edits them; their
+        // events are the draw surface's too (see the buildings effect).
+        drawHandlersRef.current = { click: onMapClick, move: onMove, dblclick: onDoubleClick, rightclick: onRightClick };
 
         const onKey = (ev: KeyboardEvent) => {
-          if (ev.key === "Escape" && armedRef.current) onDisarmRef.current();
+          if (ev.key === "Escape" && armedRef.current) {
+            onDisarmRef.current();
+            return;
+          }
+          // Drafting keys belong to the surface: not while it is hidden (the 3D
+          // panel), and not while focus sits on a field or a button — Enter on a
+          // focused "Cancel" is that button's, not "close the outline".
+          const mount = mountRef.current;
+          if (!mount || mount.offsetParent === null) return;
+          const el = document.activeElement as HTMLElement | null;
+          const onControl =
+            !!el && el !== document.body && !mount.contains(el) &&
+            (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(el.tagName));
+          if (onControl) return;
+          if (ev.key === "Escape") {
+            if (houseDraft.length) cancelHouse();
+            else stopTrace();
+            return;
+          }
+          if (ev.key === "Enter") {
+            if (houseDraft.length >= 3) closeHouse();
+            else if (drawing) stopTrace();
+            return;
+          }
+          if (ev.key === "Backspace" || ev.key === "Delete") {
+            if (houseDraft.length) {
+              ev.preventDefault();
+              houseDraft.pop();
+              paintHouseDraft(null);
+              notifyDraft();
+            } else if (drawing) {
+              ev.preventDefault();
+              apiRef.current?.undo();
+            }
+          }
         };
         window.addEventListener("keydown", onKey);
 
@@ -1005,6 +1529,7 @@ export function FenceDrawMap({
               pa.removeAt(n - 1);
               if (n - 1 === 0) destroyRun(act);
               commit();
+              if (!drawing) notifyDraft();
             }
           },
           setFromPoints: () => {
@@ -1027,6 +1552,29 @@ export function FenceDrawMap({
             const z = map.getZoom();
             if (typeof z === "number") map.setZoom(z + delta);
           },
+          finishDraft: () => {
+            if (houseDraft.length >= 3) closeHouse();
+            else stopTrace();
+          },
+          undoDraft: () => {
+            if (houseDraft.length) {
+              houseDraft.pop();
+              paintHouseDraft(null);
+              notifyDraft();
+            } else if (drawing) apiRef.current?.undo();
+          },
+          cancelDraft: () => {
+            if (houseDraft.length) cancelHouse();
+            else stopTrace();
+          },
+          setHouseMode: (on: boolean) => {
+            houseModeRef.current = on;
+            if (!on && houseDraft.length) cancelHouse();
+            if (on) stopTrace();
+            showRing(null);
+            previewLine.setPath([]);
+            map.setOptions({ draggableCursor: aligningRef.current ? "move" : "crosshair" });
+          },
         };
 
         seedRuns();
@@ -1034,10 +1582,13 @@ export function FenceDrawMap({
         onApiRef.current?.(apiRef.current);
         gmapRef.current = map;
         mapsLibRef.current = maps;
+        fittedRingRef.current = null; // a new map has not been fitted to anything
         setMapEpoch((e) => e + 1);
 
         cleanup = () => {
           onApiRef.current?.(null);
+          onDraftChangeRef.current?.({ fence: false, houseCorners: 0 });
+          drawHandlersRef.current = null;
           gmapRef.current = null;
           mapsLibRef.current = null;
           cancelAnimationFrame(raf);
@@ -1051,6 +1602,9 @@ export function FenceDrawMap({
           previewLine.setMap(null);
           ghostCenter.setMap(null);
           ghostSpan.setMap(null);
+          snapRing.setMap(null);
+          houseLine.setMap(null);
+          houseDots.forEach((d) => d.setMap(null));
         };
       } catch (err) {
         console.error("[FenceDrawMap] failed to build the map:", err);
@@ -1070,7 +1624,6 @@ export function FenceDrawMap({
   // stroke over the hovered side. Display-only objects, torn down whole on
   // every change — a parcel has a few dozen vertices, so rebuild is cheap and
   // there is no incremental state to get wrong.
-  const fittedRingRef = React.useRef<LatLng[] | LatLng[][] | null>(null);
   React.useEffect(() => {
     const map = gmapRef.current;
     const maps = mapsLibRef.current;
@@ -1082,36 +1635,77 @@ export function FenceDrawMap({
     if (!all.length) return;
 
     const ACCENT = accentRef.current ?? DEFAULT_ACCENT;
-    // Two strokes per ring, not one: a wide white HALO under a 3 px blue line.
-    // A single 2 px blue stroke vanished against satellite imagery — a kerb, a
-    // driveway edge or tree shadow are the same darkness, and the owner's
-    // testers reported they "could barely see" the property line. The halo
-    // separates the line from whatever the photo puts behind it, the way a
-    // survey overlay is inked, so the boundary reads on grass, asphalt and
-    // roof alike without the fence's own accent having to change.
-    const polygons: GMaps[] = all.flatMap((r) => [
-      new maps.Polygon({
-        map,
-        paths: r,
-        clickable: false,
-        fillColor: ACCENT,
-        fillOpacity: 0.16,
-        strokeColor: "#ffffff",
-        strokeOpacity: 0.92,
-        strokeWeight: 7,
-        zIndex: 1,
-      }),
-      new maps.Polygon({
-        map,
-        paths: r,
-        clickable: false,
-        fillOpacity: 0,
-        strokeColor: PARCEL_BLUE,
-        strokeOpacity: 1,
-        strokeWeight: 3,
-        zIndex: 2,
-      }),
-    ]);
+    const pal: ParcelPalette = { ...DEFAULT_PARCEL, ...(parcelPaletteRef.current ?? {}) };
+    const g0 = (window as unknown as { google?: GMaps }).google;
+    // Maps cannot dash a polygon edge, so the line is a closed POLYLINE whose
+    // stroke is a repeated symbol: a 14 px dash every 22 px, FenceScan's
+    // "14 8" pattern. The glow under it stands in for FenceScan's drop-shadow.
+    const dashes = (color: string, weight: number, opacity: number) => [
+      {
+        icon: { path: "M 0,-1 0,1", strokeColor: color, strokeOpacity: opacity, strokeWeight: weight, scale: 7 },
+        offset: "0",
+        repeat: "22px",
+      },
+    ];
+    const polygons: GMaps[] = all.flatMap((r) => {
+      const closed = [...r, r[0]];
+      return [
+        new maps.Polygon({
+          map,
+          paths: r,
+          clickable: false,
+          fillColor: pal.line,
+          fillOpacity: 0.07,
+          strokeOpacity: 0,
+          zIndex: Z.parcelTint,
+        }),
+        new maps.Polyline({
+          map,
+          path: closed,
+          clickable: false,
+          strokeColor: pal.line,
+          strokeOpacity: 0.2,
+          strokeWeight: 11,
+          zIndex: Z.parcelGlow,
+        }),
+        new maps.Polyline({
+          map,
+          path: closed,
+          clickable: false,
+          strokeOpacity: 0,
+          icons: dashes(pal.casing, 8, 0.85),
+          zIndex: Z.parcelCasing,
+        }),
+        new maps.Polyline({
+          map,
+          path: closed,
+          clickable: false,
+          strokeOpacity: 0,
+          icons: dashes(pal.line, 3.5, 1),
+          zIndex: Z.parcelLine,
+        }),
+        // Corner dots pin the vertices a run snaps to.
+        ...(g0?.maps?.SymbolPath
+          ? r.map(
+              (p) =>
+                new g0.maps.Marker({
+                  map,
+                  position: p,
+                  clickable: false,
+                  zIndex: 1,
+                  icon: {
+                    path: g0.maps.SymbolPath.CIRCLE,
+                    scale: 4,
+                    fillColor: pal.dot,
+                    fillOpacity: 1,
+                    strokeColor: pal.line,
+                    strokeWeight: 2.2,
+                  },
+                }),
+            )
+          : []),
+      ];
+    });
 
     let highlightLine: GMaps | null = null;
     const hi = parcel?.highlight;
@@ -1123,7 +1717,7 @@ export function FenceDrawMap({
         strokeColor: ACCENT,
         strokeOpacity: 1,
         strokeWeight: 6,
-        zIndex: 3,
+        zIndex: Z.highlight,
       });
     }
 
@@ -1131,12 +1725,14 @@ export function FenceDrawMap({
     // large parcel is not half off-screen at the address zoom. LatLngBounds is
     // a core class — read off the global namespace the loader has populated.
     const g = (window as unknown as { google?: GMaps }).google;
-    const fitKey = parcel?.rings ?? parcel?.ring ?? null;
+    // Keyed by the GEOMETRY: a host that rebuilds the prop object on every
+    // update (hover, trace commit) must not yank the camera back to the lot.
+    const fitKey = all.map((r) => `${r.length}:${r[0].lat.toFixed(6)},${r[0].lng.toFixed(6)}`).join("|");
     if (fittedRingRef.current !== fitKey && g?.maps?.LatLngBounds) {
       fittedRingRef.current = fitKey;
       const b = new g.maps.LatLngBounds();
       for (const r of all) for (const p of r) b.extend(p);
-      map.fitBounds(b, 48);
+      map.fitBounds(b, fitPaddingRef.current);
     }
 
     return () => {
@@ -1170,53 +1766,319 @@ export function FenceDrawMap({
     };
   }, [parcelTiles, mapEpoch]);
 
+  // ── Buildings: detected footprints (faint) and traced houses ───────────────
+  // A traced house is inked like a drawing — white wall line on a dark casing
+  // over a dark tint — and while the House tool is on its corners drag.
+  // Detected footprints are context: a thin line so the contractor can see
+  // what the 3D will stand up, and what the snapping will catch.
+  React.useEffect(() => {
+    const map = gmapRef.current;
+    const maps = mapsLibRef.current;
+    if (!map || !maps) return;
+    const objs: GMaps[] = [];
+    const listeners: GMaps[] = [];
+    const origin: LatLng = typeof lat === "number" && typeof lng === "number" ? { lat, lng } : DEFAULT_CENTER;
+    for (const ring of detectedBuildings ?? []) {
+      if (ring.length < 3) continue;
+      objs.push(
+        new maps.Polygon({
+          map,
+          paths: ring,
+          clickable: false,
+          fillColor: "#0a0a0a",
+          fillOpacity: 0.12,
+          strokeColor: "#ffffff",
+          strokeOpacity: 0.55,
+          strokeWeight: 1.2,
+          zIndex: Z.house,
+        }),
+      );
+    }
+    for (const h of houses ?? []) {
+      if (h.ring.length < 3) continue;
+      objs.push(
+        new maps.Polyline({
+          map,
+          path: [...h.ring, h.ring[0]],
+          clickable: false,
+          strokeColor: "#0a0a0a",
+          strokeOpacity: 0.6,
+          strokeWeight: 6,
+          zIndex: Z.house,
+        }),
+      );
+      const poly = new maps.Polygon({
+        map,
+        paths: h.ring,
+        clickable: houseMode,
+        editable: houseMode,
+        fillColor: "#0a0a0a",
+        fillOpacity: 0.3,
+        strokeColor: "#ffffff",
+        strokeOpacity: 0.95,
+        strokeWeight: 2.5,
+        zIndex: Z.house,
+      });
+      objs.push(poly);
+      if (houseMode) {
+        // Clickable (to edit) means the polygon takes the pointer: pass clicks,
+        // moves and finishing gestures on, so a garage traced against this
+        // house's wall snaps and draws like anywhere else. A drag on a corner
+        // handle is Google's own and is not a click on the surface.
+        listeners.push(
+          poly.addListener("click", (e: GMaps) => {
+            if (e?.vertex == null) drawHandlersRef.current?.click(e);
+          }),
+          poly.addListener("mousemove", (e: GMaps) => drawHandlersRef.current?.move(e)),
+          poly.addListener("dblclick", () => drawHandlersRef.current?.dblclick()),
+          poly.addListener("rightclick", (e: GMaps) => {
+            if (e?.vertex == null) drawHandlersRef.current?.rightclick();
+          }),
+        );
+        const path = poly.getPath();
+        const changed = () =>
+          onHouseChangeRef.current?.(
+            h.id,
+            path.getArray().map((ll: GMaps) => latLngToLocalFeet(origin, { lat: ll.lat(), lng: ll.lng() })),
+          );
+        listeners.push(path.addListener("set_at", changed), path.addListener("insert_at", changed), path.addListener("remove_at", changed));
+      }
+    }
+    return () => {
+      listeners.forEach((l) => l?.remove?.());
+      objs.forEach((o) => o.setMap(null));
+    };
+  }, [houses, detectedBuildings, houseMode, lat, lng, mapEpoch]);
+
+  // ── Topography ─────────────────────────────────────────────────────────────
+  // Contours on the land. Built whole from the host's overlay, which the host
+  // memoises — the object only changes when the ground, the lot or the toggle
+  // does, not on every trace commit.
+  React.useEffect(() => {
+    const map = gmapRef.current;
+    const maps = mapsLibRef.current;
+    if (!map || !maps || !topo) return;
+    const pal: TopoPalette = { ...DEFAULT_TOPO, ...(topoPaletteRef.current ?? {}) };
+    const polys: GMaps[] = [];
+    for (const line of topo.lines) {
+      const color = line.major ? pal.major : pal.line;
+      for (const path of line.inside) {
+        polys.push(
+          new maps.Polyline({
+            map,
+            path,
+            clickable: false,
+            strokeColor: pal.casing,
+            strokeOpacity: 0.5,
+            strokeWeight: line.major ? 5 : 3.5,
+            zIndex: Z.topoCasing,
+          }),
+          new maps.Polyline({
+            map,
+            path,
+            clickable: false,
+            strokeColor: color,
+            strokeOpacity: 0.95,
+            strokeWeight: line.major ? 2.5 : 1.5,
+            zIndex: Z.topo,
+          }),
+        );
+      }
+      for (const path of line.outside) {
+        polys.push(
+          new maps.Polyline({
+            map,
+            path,
+            clickable: false,
+            strokeColor: color,
+            strokeOpacity: 0.4,
+            strokeWeight: line.major ? 1.8 : 1.1,
+            zIndex: Z.topo,
+          }),
+        );
+      }
+    }
+    return () => {
+      polys.forEach((p) => p.setMap(null));
+    };
+  }, [topo, mapEpoch]);
+
   // ── Terrain overlay ────────────────────────────────────────────────────────
-  // Non-level segments recoloured over the trace (amber racked / red stepped);
-  // a click on the coloured line answers with the slope. Display objects torn
-  // down whole on every change, same reasoning as the parcel overlay. While an
-  // opening is armed the overlay goes non-clickable so the placement click
-  // still reaches the map underneath.
+  // Non-level segments recoloured over the trace (amber racked / red stepped).
+  // Display only: the grade, rise and class are ON the map in the segment's
+  // chip (see Map labels) and in the ledger row, so a click on a sloped line
+  // belongs to drawing — branching a new run off it, placing an opening —
+  // instead of opening a card over the spot being traced.
   React.useEffect(() => {
     const map = gmapRef.current;
     const maps = mapsLibRef.current;
     if (!map || !maps || !terrain?.length) return;
     const origin: LatLng = typeof lat === "number" && typeof lng === "number" ? { lat, lng } : DEFAULT_CENTER;
-    const info = new maps.InfoWindow({ disableAutoPan: true });
     const lines: GMaps[] = [];
     for (const t of terrain) {
       const a = points[t.seg];
       const b = points[t.seg + 1];
       if (!a || !b || b.gap) continue;
-      const line = new maps.Polyline({
-        map,
-        path: [localFeetToLatLng(origin, a), localFeetToLatLng(origin, b)],
-        clickable: !armed,
-        strokeColor: t.cls === "stepped" ? STEPPED_COLOR : RACKED_COLOR,
-        strokeOpacity: 0.95,
-        strokeWeight: 5,
-        zIndex: 3,
-      });
-      line.addListener("click", (e: { latLng?: GMaps }) => {
-        const rise = Math.abs(t.riseFt);
-        const how =
-          t.cls === "stepped"
-            ? `stepped — ${t.steps ?? 1} step${(t.steps ?? 1) === 1 ? "" : "s"} of ~${(t.stepDropFt ?? rise).toFixed(1)} ft`
-            : "racked — panels follow the grade";
-        info.setContent(
-          `<div style="font:600 12px/1.5 system-ui;color:#1c1c1c">` +
-            `${t.thetaDeg.toFixed(0)}° slope · rise ${rise.toFixed(1)} ft · ` +
-            `${Math.round(t.gradeFt)} ft along grade<br>${how}</div>`,
-        );
-        if (e.latLng) info.setPosition(e.latLng);
-        info.open({ map });
-      });
-      lines.push(line);
+      lines.push(
+        new maps.Polyline({
+          map,
+          path: [localFeetToLatLng(origin, a), localFeetToLatLng(origin, b)],
+          clickable: false,
+          strokeColor: t.cls === "stepped" ? STEPPED_COLOR : RACKED_COLOR,
+          strokeOpacity: 0.95,
+          strokeWeight: 5,
+          zIndex: Z.terrain,
+        }),
+      );
     }
     return () => {
-      info.close();
       lines.forEach((l) => l.setMap(null));
     };
-  }, [terrain, points, armed, lat, lng, mapEpoch]);
+  }, [terrain, points, lat, lng, mapEpoch]);
+
+  // ── Map labels ─────────────────────────────────────────────────────────────
+  // Every text label on the ground in ONE layer, so a collision is settled
+  // across all of them: the slope chips on the fence outrank the HIGH / LOW
+  // marks, which outrank index-contour labels, which outrank the rest. Two
+  // layers could not see each other, and a chip landed on the "+20 FT" mark.
+  React.useEffect(() => {
+    const map = gmapRef.current;
+    const maps = mapsLibRef.current;
+    if (!map || !maps) return;
+    const pal: TopoPalette = { ...DEFAULT_TOPO, ...(topoPaletteRef.current ?? {}) };
+    const origin: LatLng = typeof lat === "number" && typeof lng === "number" ? { lat, lng } : DEFAULT_CENTER;
+    const items: MapLabel[] = [];
+    // Every traced segment carries its length on the map; a racked or stepped
+    // one also carries its grade, so the slope stays ON the map and not only
+    // behind a click.
+    const slopeBySeg = new Map((terrain ?? []).map((t) => [t.seg, t]));
+    for (let i = 0; i + 1 < points.length; i++) {
+      const a = points[i];
+      const b = points[i + 1];
+      if (b.gap) continue;
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len < 4) continue;
+      const t = slopeBySeg.get(i);
+      const at = localFeetToLatLng(origin, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+      if (t) {
+        const color = t.cls === "stepped" ? STEPPED_COLOR : RACKED_COLOR;
+        const pct = Math.round(Math.tan((t.thetaDeg * Math.PI) / 180) * 100);
+        const how = t.cls === "stepped" ? `${t.steps ?? 1} STEPS` : "RACKED";
+        items.push({
+          at,
+          text: `${Math.round(len)} FT · ${pct}% · ${how}`,
+          priority: 5,
+          minZoom: 16,
+          lift: true,
+          style: {
+            font: `700 10.5px/16px ${pal.font}`,
+            color,
+            background: "#ffffff",
+            border: `2px solid ${color}`,
+            borderRadius: "2px",
+            padding: "0 6px",
+            letterSpacing: "0.04em",
+          },
+        });
+      } else {
+        items.push({
+          at,
+          text: `${Math.round(len)} FT`,
+          priority: 4,
+          minZoom: 17,
+          lift: true,
+          style: {
+            font: `700 10px/15px ${pal.font}`,
+            color: pal.ink,
+            background: "#ffffff",
+            border: `1.5px solid ${pal.ink}`,
+            borderRadius: "2px",
+            padding: "0 5px",
+            letterSpacing: "0.04em",
+          },
+        });
+      }
+    }
+    for (const m of wallMounts ?? []) {
+      items.push({
+        at: m,
+        text: "WALL MOUNT",
+        priority: 4.5,
+        minZoom: 17,
+        lift: true,
+        style: {
+          font: `800 9.5px/14px ${pal.font}`,
+          color: "#ffffff",
+          background: pal.ink,
+          padding: "1px 5px",
+          borderRadius: "2px",
+          letterSpacing: "0.08em",
+        },
+      });
+    }
+    for (const h of houses ?? []) {
+      if (h.ring.length < 3) continue;
+      const ft = h.ring.map((q) => latLngToLocalFeet(origin, q));
+      let cx = 0;
+      let cy = 0;
+      for (const q of ft) {
+        cx += q.x / ft.length;
+        cy += q.y / ft.length;
+      }
+      items.push({
+        at: localFeetToLatLng(origin, { x: cx, y: cy }),
+        text: `${h.label.toUpperCase()} · ${Math.round(ringAreaSqFt(ft)).toLocaleString("en-US")} SQ FT`,
+        priority: 3,
+        minZoom: 17,
+        style: {
+          font: `800 9.5px/14px ${pal.font}`,
+          color: pal.ink,
+          background: pal.paper,
+          border: `1.5px solid ${pal.ink}`,
+          padding: "0 5px",
+          borderRadius: "2px",
+          letterSpacing: "0.08em",
+        },
+      });
+    }
+    for (const m of topo?.marks ?? []) {
+      items.push({
+        at: m.at,
+        text: (m.kind === "high" ? "▲ " : "▼ ") + m.text.toUpperCase(),
+        priority: 3,
+        minZoom: 15,
+        lift: true,
+        style: {
+          font: `700 10px/15px ${pal.font}`,
+          color: "#ffffff",
+          background: pal.ink,
+          padding: "1px 6px",
+          borderRadius: "2px",
+          letterSpacing: "0.06em",
+          boxShadow: `2px 2px 0 ${pal.paper}`,
+        },
+      });
+    }
+    for (const l of topo?.labels ?? []) {
+      items.push({
+        at: l.at,
+        text: l.text,
+        angleDeg: l.angleDeg,
+        priority: l.major ? 2 : 1,
+        minZoom: 17,
+        style: {
+          font: `${l.major ? 800 : 600} 10px/14px ${pal.font}`,
+          color: pal.ink,
+          background: pal.paper,
+          border: l.major ? `1.5px solid ${pal.ink}` : "1px solid rgba(10, 10, 10, 0.45)",
+          borderRadius: "2px",
+          padding: "0 4px",
+          letterSpacing: "0.02em",
+        },
+      });
+    }
+    return mountLabelLayer(maps, map, items, 1);
+  }, [topo, terrain, points, houses, wallMounts, lat, lng, mapEpoch]);
 
   if (!enabled) {
     // A chrome-less host renders its own empty state (the blueprint studio keeps

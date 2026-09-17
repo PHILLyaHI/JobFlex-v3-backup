@@ -159,6 +159,22 @@ export function FenceEstimatorContent() {
                 </svg>
                 Lot lines
               </button>
+              {/* Contours on the land (USGS lidar where it exists) — ON by
+                  default: the ground is part of the site, not an extra. */}
+              {/* House tool — trace the house outline; it stands up in 3D and a
+                  run that ends on its wall becomes a wall mount. */}
+              <button className="tool" type="button" data-act="house" aria-pressed="false">
+                <svg className="ic">
+                  <use href="#i-roof" />
+                </svg>
+                House
+              </button>
+              <button className="tool on" type="button" data-act="topo" aria-pressed="true">
+                <svg className="ic">
+                  <use href="#i-topo" />
+                </svg>
+                Topo
+              </button>
             </div>
             <div className="tool-group">
               <div className="tool-menu">
@@ -196,6 +212,11 @@ export function FenceEstimatorContent() {
               key to mount with. */}
           <div className="stage-canvas" id="stageCanvas">
             <div className="map-slot" id="mapSlot">
+              {/* TOPO LEGEND. Filled by the behavior module once the lot's
+                  elevation lattice lands: contour interval, fall across the
+                  lot, the direction it falls, a grade figure and the data
+                  source. Lives inside the map slot so the 3D view hides it. */}
+              <div className="topo-legend is-hidden" id="topoLegend" aria-live="polite"></div>
               <div className="map-slot-in">
                 <svg className="ic">
                   <use href="#i-pin" />
@@ -224,15 +245,19 @@ export function FenceEstimatorContent() {
             </div>
           </div>
 
-          <div className="stage-hint">Click to trace — dots magnet when close (close / connect) · right-click to stop ·
-            after stopping, click open ground to start a separate fence · right-click a dot to remove</div>
+          {/* Finish / Undo while tracing — the only way to end a run or an
+              outline on a phone, where there is no right-click or Enter. A
+              strip UNDER the map, never over it: on a phone-sized map an
+              overlay sat exactly where the corners being tapped were. */}
+          <div className="draw-ctl is-hidden" id="drawCtl"></div>
+          <div className="stage-hint">Click to trace — dots snap to corners, lot lines and house walls · double-click, Enter or
+            right-click to finish · Backspace removes the last dot · click open ground to start a separate fence</div>
 
           {/* GROUND PROFILE. Filled by the behavior module once the Elevation
               profile of the traced line lands: a sparkline of the measured
               ground, coloured by slope class (blue level / amber racked / red
               stepped). Hidden while there is nothing measured, or under a foot
               of relief — a flat line saying "flat" is noise. */}
-          <div className="stage-profile is-hidden" id="terrainProfile"></div>
 
           {/* PARCEL SIDES. Filled by the behavior module when /api/parcels
               returns the property for the searched address: one checkbox row per
@@ -245,6 +270,21 @@ export function FenceEstimatorContent() {
               together) lists every lot's sides here, under its own heading —
               there is no "which one" to pick, because the fence goes round the
               land, not round a deed. */}
+          {/* BUILDINGS. The houses traced with the House tool: size, stories
+              (their height in 3D) and remove, plus "Use detected outline" when
+              the footprint lookup found the house. Hidden until the tool is
+              opened or a house exists. */}
+          <div className="house-panel is-hidden" id="housePanel">
+            <div className="parcel-head">
+              <div>
+                <div className="kpi-lbl">Buildings</div>
+                <div className="parcel-meta" id="houseMounts"></div>
+              </div>
+              <div className="house-tools" id="houseTools"></div>
+            </div>
+            <ul className="house-list" id="houseList"></ul>
+          </div>
+
           <div className="parcel-panel is-hidden" id="parcelPanel">
             <div className="parcel-head">
               <div>
