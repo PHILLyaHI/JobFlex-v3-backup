@@ -116,6 +116,12 @@ import { BlueprintSelect } from "@/components/v3/advanced-ai-blueprint/blueprint
 import { HoverTitle } from "@/components/v3/advanced-ai-blueprint/hover-title";
 import s from "./lines-v2.module.css";
 
+/** "Materials +10% · Labor −5%" — the foot's note on what the sliders hold. */
+function adjustNote(a?: { materialPct: number; laborPct: number }): string {
+  const part = (name: string, pct: number) => (pct ? `${name} ${pct > 0 ? "+" : "−"}${Math.abs(pct)}%` : "");
+  return [part("Materials", num(a?.materialPct ?? 0)), part("Labor", num(a?.laborPct ?? 0))].filter(Boolean).join(" · ");
+}
+
 /** Local class joiner. Deliberately NOT `@/lib/cn` — twMerge has Tailwind
  *  opinions and no business near a hashed CSS-module name. */
 function cx(...parts: (string | false | null | undefined)[]): string {
@@ -133,6 +139,42 @@ function num(n: number): number {
    ============================================================ */
 
 type Figures = { material: number; labor: number; total: number };
+
+/** Card 04's two sliders as multipliers. Neutral = 1 / 1. */
+type Adjust = { m: number; l: number };
+const NEUTRAL: Adjust = { m: 1, l: 1 };
+
+function adjustOf(a?: { materialPct: number; laborPct: number }): Adjust {
+  const m = 1 + num(a?.materialPct ?? 0) / 100;
+  const l = 1 + num(a?.laborPct ?? 0) / 100;
+  return m === 1 && l === 1 ? NEUTRAL : { m, l };
+}
+
+/**
+ * The line as the sliders will BAKE it on save: each $/unit scaled by its
+ * slider and rounded to the cent the field holds. Every figure the row and
+ * the foot print comes from this, so with a slider off neutral the table
+ * shows the adjusted prices — the ones the client is charged — rather than
+ * the raw costs behind them (owner, 2026-09-17: the sliders must spread
+ * through the line items, not just the totals). At neutral it is the line.
+ */
+function adjusted(line: Line, adj: Adjust): Line {
+  if (adj === NEUTRAL) return line;
+  return {
+    ...line,
+    materialCost: round2(num(line.materialCost) * adj.m),
+    laborCost: round2(num(line.laborCost) * adj.l),
+  };
+}
+
+/** A figure typed against the adjusted row, read back to the raw cost it stands for. */
+function unadjust(patch: Pick<Line, "materialCost" | "laborCost">, adj: Adjust): Pick<Line, "materialCost" | "laborCost"> {
+  if (adj === NEUTRAL) return patch;
+  return {
+    materialCost: round2(num(patch.materialCost) / adj.m),
+    laborCost: round2(num(patch.laborCost) / adj.l),
+  };
+}
 
 /**
  * The line-level amounts the MATERIAL / LABOR / TOTAL columns print.
@@ -577,16 +619,21 @@ function SplitBand({
    ============================================================ */
 
 function LineBlock({
-  line,
+  line: raw,
+  adj,
   first,
   onPatch,
   onRemove,
 }: {
   line: Line;
+  adj: Adjust;
   first: boolean;
   onPatch: (patch: Partial<Line>) => void;
   onRemove: () => void;
 }) {
+  // Everything the row PRINTS is the adjusted line; everything it STORES is
+  // the raw one. The two agree at neutral.
+  const line = adjusted(raw, adj);
   const named = isNamed(line);
   const fixed = isFixedUnit(line.unit);
   const cost = unitCost(line);
@@ -606,8 +653,8 @@ function LineBlock({
     // The hourly special case used to live here; `applyUnitPrice` now seeds a
     // costless line from the unit itself (material for anything measured, labor
     // for hours, an even split only for a lump sum), so every unit goes through
-    // the same path.
-    onPatch(applyUnitPrice(line, n));
+    // the same path. Typed against the adjusted row, stored raw.
+    onPatch(unadjust(applyUnitPrice(line, n), adj));
   }
 
   /**
@@ -617,7 +664,9 @@ function LineBlock({
    * that does not throw the number away.
    */
   function commitExtended(field: "materialCost" | "laborCost", v: number) {
-    onPatch({ [field]: q > 0 ? round2(v / q) : round2(v) } as Partial<Line>);
+    const perUnit = q > 0 ? round2(v / q) : round2(v);
+    const factor = field === "materialCost" ? adj.m : adj.l;
+    onPatch({ [field]: round2(perUnit / factor) } as Partial<Line>);
   }
 
   return (
@@ -731,7 +780,7 @@ function LineBlock({
 
       {/* BAND 2 — the split, full width beneath the entry row. */}
       <div className={s.cSplit}>
-        <SplitBand line={line} onPatch={onPatch} />
+        <SplitBand line={line} onPatch={(patch) => onPatch(unadjust({ materialCost: num(patch.materialCost ?? line.materialCost), laborCost: num(patch.laborCost ?? line.laborCost) }, adj))} />
       </div>
     </div>
   );
@@ -772,8 +821,10 @@ export function LinesV2(props: LinesV2Props) {
     taxState,
     onTaxPct,
     hideTax = false,
+    adjust,
   } = props;
   const taxId = useId();
+  const adj = adjustOf(adjust);
 
   /**
    * The three running column totals, over NAMED lines only — an untitled row is
@@ -787,13 +838,13 @@ export function LinesV2(props: LinesV2Props) {
     let total = 0;
     for (const l of lines) {
       if (!isNamed(l)) continue;
-      const f = figures(l);
+      const f = figures(adjusted(l, adj));
       material += f.material;
       labor += f.labor;
       total += f.total;
     }
     return { material: round2(material), labor: round2(labor), total: round2(total) };
-  }, [lines]);
+  }, [lines, adj]);
 
   return (
     <div className={s.block}>
@@ -854,6 +905,7 @@ export function LinesV2(props: LinesV2Props) {
         <LineBlock
           key={l.id}
           line={l}
+          adj={adj}
           first={i === 0}
           onPatch={(patch) => onPatch(l.id, patch)}
           onRemove={() => onRemove(l.id)}
@@ -877,6 +929,12 @@ export function LinesV2(props: LinesV2Props) {
         <span className={s.footNote}>
           {namedCount} counted
           {unnamedCount > 0 ? ` · ${unnamedCount} unnamed, excluded` : ""}
+          {adj !== NEUTRAL ? (
+            <>
+              {" · "}
+              <b>{adjustNote(adjust)}</b> — every line shows the adjusted price; saved as the line costs
+            </>
+          ) : null}
         </span>
 
         <span className={cx(s.footPart, s.footMat)}>

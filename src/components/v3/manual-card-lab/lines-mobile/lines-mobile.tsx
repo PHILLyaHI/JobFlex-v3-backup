@@ -65,6 +65,31 @@ function num(n: number): number {
  *  the house rule that makes a printed sheet multiply out in front of a
  *  homeowner — and `material` is its own product, so `labor` can be taken as
  *  the remainder and the two halves always add back to the total exactly. */
+type Adjust = { m: number; l: number };
+const NEUTRAL: Adjust = { m: 1, l: 1 };
+function adjustOf(a?: { materialPct: number; laborPct: number }): Adjust {
+  const m = 1 + num(a?.materialPct ?? 0) / 100;
+  const l = 1 + num(a?.laborPct ?? 0) / 100;
+  return m === 1 && l === 1 ? NEUTRAL : { m, l };
+}
+/** The line as card 04's sliders will bake it on save — what the row prints. */
+function adjusted(line: Line, adj: Adjust): Line {
+  if (adj === NEUTRAL) return line;
+  return { ...line, materialCost: round2(num(line.materialCost) * adj.m), laborCost: round2(num(line.laborCost) * adj.l) };
+}
+/** A figure typed against the adjusted row, read back to the raw cost it stands for. */
+function unadjust(patch: Partial<Line>, adj: Adjust): Partial<Line> {
+  if (adj === NEUTRAL) return patch;
+  const out: Partial<Line> = { ...patch };
+  if (patch.materialCost !== undefined) out.materialCost = round2(num(patch.materialCost) / adj.m);
+  if (patch.laborCost !== undefined) out.laborCost = round2(num(patch.laborCost) / adj.l);
+  return out;
+}
+function adjustNote(a?: { materialPct: number; laborPct: number }): string {
+  const part = (name: string, pct: number) => (pct ? `${name} ${pct > 0 ? "+" : "−"}${Math.abs(pct)}%` : "");
+  return [part("Materials", num(a?.materialPct ?? 0)), part("Labor", num(a?.laborPct ?? 0))].filter(Boolean).join(" · ");
+}
+
 function figures(line: Line): { material: number; labor: number; total: number } {
   const q = num(line.quantity);
   const total = round2(q * unitCost(line));
@@ -142,20 +167,26 @@ function NumIn({
    ============================================================ */
 
 function LineBlock({
-  line,
+  line: raw,
+  adj,
   index,
   open,
   onToggle,
-  onPatch,
+  onPatch: onPatchRaw,
   onRemove,
 }: {
   line: Line;
+  adj: Adjust;
   index: number;
   open: boolean;
   onToggle: () => void;
   onPatch: (patch: Partial<Line>) => void;
   onRemove: () => void;
 }) {
+  // The row prints the adjusted line and stores the raw one; at neutral they
+  // are the same line and the same patch.
+  const line = adjusted(raw, adj);
+  const onPatch = (patch: Partial<Line>) => onPatchRaw(unadjust(patch, adj));
   const fig = figures(line);
   const named = isNamed(line);
   const fixed = isFixedUnit(line.unit);
@@ -313,8 +344,10 @@ export function LinesMobile({
   taxState,
   onTaxPct,
   hideTax = false,
+  adjust,
 }: Props) {
   const taxId = useId();
+  const adj = adjustOf(adjust);
 
   /** The three sums, over NAMED lines only — an untitled row is not work yet
    *  and contributes to nothing. Because every row's labor figure is a
@@ -325,13 +358,13 @@ export function LinesMobile({
     let total = 0;
     for (const l of lines) {
       if (!isNamed(l)) continue;
-      const f = figures(l);
+      const f = figures(adjusted(l, adj));
       material += f.material;
       labor += f.labor;
       total += f.total;
     }
     return { material: round2(material), labor: round2(labor), total: round2(total) };
-  }, [lines]);
+  }, [lines, adj]);
 
   return (
     <div className={s.block}>
@@ -339,6 +372,7 @@ export function LinesMobile({
         <LineBlock
           key={l.id}
           line={l}
+          adj={adj}
           index={i}
           open={openIds.includes(l.id)}
           onToggle={() => onToggle(l.id)}
@@ -381,6 +415,7 @@ export function LinesMobile({
         <span className={s.footNote}>
           {namedCount} counted
           {unnamedCount > 0 ? ` · ${unnamedCount} unnamed, excluded` : ""}
+          {adj !== NEUTRAL ? ` · ${adjustNote(adjust)} — adjusted prices shown; saved as the line costs` : ""}
         </span>
       </div>
 

@@ -233,6 +233,11 @@ export type PrintedLine = {
   unitPrice: number;
   /** quantity x unitPrice, adjusted so the column sums to the subtotal exactly. */
   amount: number;
+  /** The client-facing split of `amount` — material and labor each carrying
+   *  their markup, overhead and profit, labor as the remainder so the two add
+   *  up to the amount to the cent. What "Labor + material breakdown" prints. */
+  materialAmount: number;
+  laborAmount: number;
   /** Raw internal split, for the "cost breakdown" annotation. */
   materialCost: number;
   laborCost: number;

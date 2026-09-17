@@ -71,3 +71,58 @@ export function resolveMarkupRates(
     laborMarkupPct: proposal?.laborMarkupPct ?? organization?.laborMarkupPct ?? 0,
   };
 }
+
+/** Two-decimal round that does not drift on .005 the way toFixed does. */
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Overhead and profit as ONE multiplier on every sell price. Overhead is a
+ * share of the subtotal, profit a share of subtotal + overhead; the two
+ * amounts are rounded to cents the way a ledger prints them, so the factor
+ * reproduces the ledger's chain exactly and the printed column sums to the
+ * ledger's pre-tax figure. The client is quoted a price, never shown a margin:
+ * the manual builder's sheet, the saved line items, the portal and the PDF all
+ * carry this inside the unit price (owner, 2026-09-17: what the client sees
+ * must be the same number everywhere).
+ */
+export function overheadProfitLoad(subtotal: number, overheadPct: number, profitPct: number): number {
+  const sub = Number.isFinite(subtotal) ? subtotal : 0;
+  if (sub <= 0) return 1;
+  const oh = Number.isFinite(overheadPct) ? overheadPct : 0;
+  const pr = Number.isFinite(profitPct) ? profitPct : 0;
+  const overhead = round2(sub * (oh / 100));
+  const withOverhead = round2(sub + overhead);
+  const profit = round2(withOverhead * (pr / 100));
+  return round2(withOverhead + profit) / sub;
+}
+
+export interface ClientPricing {
+  materialMarkupPct?: number | null;
+  laborMarkupPct?: number | null;
+  overheadPct?: number | null;
+  profitPct?: number | null;
+}
+
+/**
+ * The lines as they are stored and shown to the client: `unitPrice` is the
+ * sell price per unit with markup, overhead and profit inside it, quoted in
+ * cents; `total` is quantity × that price, so the client's own arithmetic
+ * checks out row by row and the column adds up to the subtotal. The same
+ * chain the manual builder's sheet prints, so the builder, the portal and the
+ * PDF quote one number. At 0% everywhere a line keeps its raw unit price.
+ */
+export function priceLinesForClient<T extends { quantity: number; unitPrice: number; materialCost?: number | null; laborCost?: number | null }>(
+  lines: T[],
+  pricing: ClientPricing,
+): (T & { unitPrice: number; total: number })[] {
+  const rates = { materialMarkupPct: pricing.materialMarkupPct ?? 0, laborMarkupPct: pricing.laborMarkupPct ?? 0 };
+  const marked = lines.map((l) => round2(sellUnitPrice(l, rates)));
+  const subtotalCosts = round2(lines.reduce((a, l, i) => a + round2(l.quantity * marked[i]), 0));
+  const load = overheadProfitLoad(subtotalCosts, pricing.overheadPct ?? 0, pricing.profitPct ?? 0);
+  return lines.map((l, i) => {
+    const unitPrice = round2(marked[i] * load);
+    return { ...l, unitPrice, total: round2(l.quantity * unitPrice) };
+  });
+}

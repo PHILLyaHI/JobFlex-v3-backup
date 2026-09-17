@@ -49,6 +49,7 @@
 // contributing to a total nobody can trace.
 
 import type { Draft, Line, PrintedLine, Totals, Unit } from "./manual-focus-types";
+import { overheadProfitLoad } from "@/lib/pricing/markup";
 
 /* ============================================================
    NUMERIC HYGIENE
@@ -179,6 +180,11 @@ export function isNamed(line: Line): boolean {
 function printedLines(named: Line[], rates: Rates, load: number): PrintedLine[] {
   return named.map((l) => {
     const unitPrice = round2(sellUnit(l, rates) * load);
+    const amount = round2(safe(l.quantity) * unitPrice);
+    // The material share of the printed amount, carrying its own markup and
+    // the same load; labor is the remainder so the pair adds to the amount.
+    const materialSell = safe(l.materialCost) * (1 + safe(rates.materialMarkupPct) / 100) * load;
+    const materialAmount = Math.min(amount, round2(safe(l.quantity) * materialSell));
     return {
       id: l.id,
       name: l.name.trim(),
@@ -186,7 +192,9 @@ function printedLines(named: Line[], rates: Rates, load: number): PrintedLine[] 
       unit: l.unit,
       quantity: safe(l.quantity),
       unitPrice,
-      amount: round2(safe(l.quantity) * unitPrice),
+      amount,
+      materialAmount,
+      laborAmount: round2(amount - materialAmount),
       materialCost: safe(l.materialCost),
       laborCost: safe(l.laborCost),
     };
@@ -235,7 +243,9 @@ export function computeTotals(draft: Draft): Totals {
 
   // Overhead and profit ride inside the printed unit prices. At the 0% / 0%
   // defaults this factor is exactly 1 and the printed prices equal the ledger's.
-  const load = subtotalCosts > 0 ? chainPreTax / subtotalCosts : 1;
+  // The SAME helper prices the saved line items (actions/proposals), so the
+  // sheet, the portal and the PDF carry one number.
+  const load = overheadProfitLoad(subtotalCosts, safe(draft.overheadPct), safe(draft.profitPct));
 
   // THE PRINTED COLUMN IS BUILT FIRST, and the pre-tax figure is its sum. That
   // is what makes the client's copy self-consistent: every printed line

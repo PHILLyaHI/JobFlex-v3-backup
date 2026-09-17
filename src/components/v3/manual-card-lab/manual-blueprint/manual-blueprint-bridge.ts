@@ -371,6 +371,10 @@ export type ProposalRowForDraft = {
  */
 export function draftFromProposal(row: ProposalRowForDraft, defaults: ManualDefaults): Draft {
   const materialMarkupPct = row.materialMarkupPct ?? 0;
+  // A stored unitPrice carries the markup AND the overhead/profit load
+  // (actions/proposals prices every line the way the sheet prints it), so an
+  // unsplit line reads its raw cost back through both.
+  const load = (1 + (row.overheadPct ?? 0) / 100) * (1 + (row.profitPct ?? 0) / 100);
   const address = row.address ?? "";
   const stored = row.discounts[0] ?? null;
   const discount =
@@ -395,7 +399,7 @@ export function draftFromProposal(row: ProposalRowForDraft, defaults: ManualDefa
             const raw = (l.materialCost ?? 0) + (l.laborCost ?? 0);
             const unsplit =
               raw <= 0 && l.unitPrice > 0
-                ? round2(l.unitPrice / (1 + materialMarkupPct / 100))
+                ? round2(l.unitPrice / (1 + materialMarkupPct / 100) / load)
                 : 0;
             return {
               id: newId("ln"),

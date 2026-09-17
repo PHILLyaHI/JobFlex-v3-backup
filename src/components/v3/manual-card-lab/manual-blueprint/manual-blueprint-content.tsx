@@ -719,6 +719,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
             onAdd={addLine}
             onRemove={removeLine}
             baseTotal={totals.baseTotal}
+            adjust={{ materialPct: draft.materialMarkupPct, laborPct: draft.laborMarkupPct }}
             namedCount={totals.printed.length}
             unnamedCount={totals.unnamedCount}
             taxPct={draft.taxPct}
@@ -788,7 +789,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
         </Card>
 
         {/* 06 ------------------------------------------------------- */}
-        <Card num="06" title="What prints" id="q-06">
+        <Card num="06" title="Show to client" id="q-06">
           <PrintOptions options={draft.options} onPatch={patchOptions} />
         </Card>
 

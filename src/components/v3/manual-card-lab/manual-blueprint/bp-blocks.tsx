@@ -1,10 +1,15 @@
 "use client";
 
 // MANUAL PROPOSAL — document options and attachments.
-// All four document options live together in "What prints". They patch the
-// same stored proposal options used by the totals, client copy and PDF.
-// The labels read positively even for the negative `hideBreakdown` flag.
-// Desktop uses a ruled row; handheld stacks the same switches.
+// Card 06 is "Show to client" (owner, 2026-09-17): ONE choice about the price
+// — every line as one total, or each line with its labor and material shown —
+// and two switches for the scope and the signature lines. The old "Labor-only
+// proposal" switch is gone from this builder: it quoted labor alone (the
+// client buys the materials) and was read as "show one total per line", so a
+// $6,000 job went out at $3,456. What the client sees is a presentation
+// choice here; it never changes the price. The options patch the same stored
+// proposal options used by the totals, client copy and PDF. The labels read
+// positively even for the negative `hideBreakdown` flag.
 //
 // Files are staged from a real <input type="file">: the name and size are read
 // off the File object and nothing is uploaded, because there is no endpoint.
@@ -13,12 +18,14 @@
 import type { ProposalOptions, StagedFile } from "../manual-focus/manual-focus-types";
 import { fileSize, newId } from "../manual-focus/manual-focus-math";
 import styles from "./manual-blueprint.module.css";
-import { Btn, Ic, IconBtn, ToggleCell, cx } from "./bp-ui";
+import { Btn, Ic, IconBtn, Segmented, ToggleCell, cx } from "./bp-ui";
 import { useRef } from "react";
 
 /* ============================================================
-   06 — WHAT PRINTS
+   06 — SHOW TO CLIENT
    ============================================================ */
+
+export type PriceView = "totals" | "split";
 
 export function PrintOptions({
   options,
@@ -27,23 +34,25 @@ export function PrintOptions({
   options: ProposalOptions;
   onPatch: (patch: Partial<ProposalOptions>) => void;
 }) {
+  const view: PriceView = options.hideBreakdown ? "totals" : "split";
   return (
     <div className={cx(styles.toggles, styles.printOptions)}>
+      {/* The one real choice: how each line's price reads. Both print the
+          same total — this never changes what the client pays. */}
+      <Segmented<PriceView>
+        label="Price per line"
+        value={view}
+        options={[
+          { value: "totals", label: "Totals only" },
+          { value: "split", label: "Labor + material breakdown" },
+        ]}
+        onChange={(v) => onPatch({ hideBreakdown: v === "totals", laborOnly: false })}
+      />
       <div className={styles.switchRow}>
-        <ToggleCell
-          label="Labor-only proposal"
-          on={options.laborOnly}
-          onChange={(on) => onPatch({ laborOnly: on })}
-        />
         <ToggleCell
           label="Scope of work"
           on={options.showScope}
           onChange={(on) => onPatch({ showScope: on })}
-        />
-        <ToggleCell
-          label="Cost breakdown per line"
-          on={!options.hideBreakdown}
-          onChange={(on) => onPatch({ hideBreakdown: !on })}
         />
         <ToggleCell
           label="Signature lines"
