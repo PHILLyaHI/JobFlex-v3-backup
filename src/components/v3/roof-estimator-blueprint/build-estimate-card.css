@@ -1,6 +1,6 @@
 /* ============================================================
-   BUILD AN ESTIMATE — VARIANT C (2026-09-12 three-way comparison)
-   /dashboard/roof-estimator?builder=c
+   BUILD AN ESTIMATE — MAIN ROOF ESTIMATOR
+   /dashboard/roof-estimator
 
    Plain CSS on purpose: CSS Modules hash class names, and this card leans
    on the page's published primitives (.card, .btn, .chip, .bp-sel, .est-in,
@@ -20,10 +20,9 @@
    ============================================================ */
 
 .jf-blueprint .content .bec {
-  --field-h: 44px;
   --bec-x: 18px;                 /* horizontal inset of every band */
   --bec-f-w: 160px;              /* one field width */
-  --bec-f-wide: 300px;           /* the long selects — a roof type reads whole */
+  --bec-f-wide: 236px;           /* the long selects */
   --bec-rates-w: 340px;          /* the rates margin column */
   --bec-rate-in: 118px;          /* a rate input inside that column */
   --bec-name-w: 158px;           /* the row-name column */
@@ -54,37 +53,6 @@
   gap: 4px 16px;
   min-width: 0;
 }
-.jf-blueprint .content .bec-caution {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0 16px;
-  padding: 8px var(--bec-x);
-  border-bottom: 1.5px solid var(--hair-soft);
-  color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-.jf-blueprint .content .bec-caution p { flex: 1 1 420px; min-width: 0; overflow-wrap: anywhere; }
-.jf-blueprint .content .bec-caution strong { color: var(--ink); font-weight: 700; }
-.jf-blueprint .content .bec-caution-action {
-  min-height: var(--field-h);
-  max-width: 100%;
-  padding: 4px 0;
-  border: 0;
-  background: none;
-  color: var(--blueprint);
-  font-size: inherit;
-  font-weight: 600;
-  line-height: inherit;
-  text-align: left;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  overflow-wrap: anywhere;
-  cursor: pointer;
-}
-.jf-blueprint .content .bec-caution-action:hover { color: var(--blueprint-dark); }
-.jf-blueprint .content .bec-caution-action:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 /* ── TITLE BLOCK (package) / CONSOLE (smart) ─────────────── */
 .jf-blueprint .content .bec-console {
   display: flex;
@@ -156,7 +124,7 @@
 .jf-blueprint .content .bec .btn.bec-btn--stamp { box-shadow: 2px 2px 0 var(--ink); }
 .jf-blueprint .content .bec .btn.bec-btn--stamp:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .jf-blueprint .content .bec .btn.bec-btn--stamp:active { transform: none; box-shadow: 2px 2px 0 var(--ink); }
-.jf-blueprint .content .bec .btn.bec-btn--sm { height: var(--field-h); padding: 0 10px; font-size: 10.5px; }
+.jf-blueprint .content .bec .btn.bec-btn--sm { height: 32px; padding: 0 10px; font-size: 10.5px; }
 .jf-blueprint .content .bec .btn.bec-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .jf-blueprint .content .bec .btn.bec-btn:disabled:hover { transform: none; box-shadow: none; }
 .jf-blueprint .content .bec .btn.bec-btn--stamp:disabled,
@@ -173,7 +141,6 @@
 .jf-blueprint .content .bec-console--smart { justify-content: flex-start; align-items: flex-end; }
 .jf-blueprint .content .bec-f--pitch,
 .jf-blueprint .content .bec-f--waste { width: 132px; }
-.jf-blueprint .content .bec-pitch-help { padding-top: 6px; }
 .jf-blueprint .content .bec-hint {
   display: flex;
   align-items: center;
@@ -312,7 +279,7 @@
   gap: 10px 12px;
 }
 .jf-blueprint .content .bec-f { display: block; width: var(--bec-f-w); }
-.jf-blueprint .content .bec-f--wide { width: min(var(--bec-f-wide), 100%); }
+.jf-blueprint .content .bec-f--wide { width: var(--bec-f-wide); }
 .jf-blueprint .content .bec-f--bare { width: auto; }
 .jf-blueprint .content .bec-f .est-lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .jf-blueprint .content .bec-in { position: relative; display: block; }
@@ -468,11 +435,7 @@
   padding-bottom: 4px;
   border-bottom: 1.5px solid var(--hair-soft);
 }
-.jf-blueprint .content .bec-tr--vent { grid-template-columns: minmax(130px, 1fr) minmax(100px, .45fr) minmax(100px, .5fr) minmax(100px, .5fr) minmax(80px, .35fr) 44px; padding: 8px 0; border-bottom: 1.5px solid var(--hair-soft); }
-.jf-blueprint .content .bec-tr--vent .bec-vname { font-weight: 600; }
-.jf-blueprint .content .bec-vent-total { text-align: right; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.jf-blueprint .content .bec-vent-total > span { display: none; }
-.jf-blueprint .content .bec-tr--vent .bec-x { width: 44px; }
+.jf-blueprint .content .bec-tr--vent { grid-template-columns: minmax(220px, 1fr) 110px 124px 124px 36px; max-width: 720px; }
 .jf-blueprint .content .bec-tr--sys { grid-template-columns: minmax(200px, 2fr) 170px 118px 118px 96px 104px 36px; }
 .jf-blueprint .content .bec-tr--und { grid-template-columns: minmax(200px, 2fr) 128px 36px; max-width: 480px; }
 .jf-blueprint .content .bec-tr--custom { grid-template-columns: minmax(200px, 2fr) 100px 128px 128px 128px 36px; }
@@ -547,24 +510,6 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.jf-blueprint .content .bec-save-error { padding: 12px var(--bec-x); font-size: 13px; color: var(--danger); background: var(--danger-soft); overflow-wrap: anywhere; }
-
-/* Edge measurements and their options share one reading axis. */
-.jf-blueprint .content .bec-edge-lengths { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.jf-blueprint .content .bec-edge-lengths .bec-f,
-.jf-blueprint .content .bec-edge-option .bec-f { width: 100%; min-width: 0; }
-.jf-blueprint .content .bec-edge-options { border-top: 1.5px solid var(--hair-soft); }
-.jf-blueprint .content .bec-edge-option { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(180px, 1.4fr) minmax(120px, 1fr) minmax(110px, .8fr); align-items: end; gap: 12px; padding: 12px 0; border-bottom: 1.5px solid var(--hair-soft); }
-.jf-blueprint .content .bec-edge-option .bec-check { align-self: end; min-height: var(--field-h); }
-.jf-blueprint .content .bec-edge-option--starter .bec-f { grid-column: 4; }
-.jf-blueprint .content .bec-details > summary { display: flex; align-items: center; min-height: 44px; gap: 8px; width: fit-content; font-size: 12px; font-weight: 600; color: var(--blueprint); cursor: pointer; list-style: none; }
-.jf-blueprint .content .bec-details > summary::before { content: "+"; font-family: var(--font-mono); }
-.jf-blueprint .content .bec-details[open] > summary::before { content: "−"; }
-.jf-blueprint .content .bec-details > summary:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
-.jf-blueprint .content .bec-details-body { display: grid; gap: 8px; }
-.jf-blueprint .content .bec-row--vents .bec-figs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 8px 0 16px; border-bottom: 1.5px solid var(--hair-soft); }
-.jf-blueprint .content .bec-row--vents .bec-fig-v { line-height: 1.4; }
-.jf-blueprint .content .bec-row--vents .bec-add { justify-content: space-between; }
 
 /* ── THE DROPDOWN ─────────────────────────────────────────────
    advanced-ai-blueprint/blueprint-select, drawn here. The trigger sits in a
@@ -584,13 +529,10 @@
   border: 1.5px solid var(--hair-soft);
   border-radius: var(--radius);
   background: #fff;
-  /* The reading face, not the mono plate: a roof type is a name to read,
-     and the mono's width is what cut "Architectural shingle (l…" (owner,
-     2026-09-14). */
-  font-family: var(--font);
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   color: var(--ink);
   text-align: left;
   cursor: pointer;
@@ -621,12 +563,9 @@
   margin: 0;
   padding: 3px;
   list-style: none;
-  max-height: 320px;
+  max-height: 262px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  /* Wider than its button when the labels need it, never off the screen. */
-  min-width: min(360px, calc(100vw - 24px));
-  max-width: calc(100vw - 24px);
   border: 2px solid var(--ink);
   border-radius: var(--radius);
   background: #fff;
@@ -638,14 +577,12 @@
   to { opacity: 1; transform: none; }
 }
 .jf-blueprint .content .bec-sel-opt {
-  padding: 8px 10px;
+  padding: 7px 10px;
   border-radius: var(--radius);
-  font-family: var(--font);
-  font-size: 13.5px;
-  font-weight: 500;
-  letter-spacing: 0;
-  white-space: normal;
-  line-height: 1.3;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--ink);
   cursor: pointer;
   white-space: nowrap;
@@ -666,8 +603,8 @@
   .jf-blueprint .content .bec-sel-list { animation: none; }
 }
 
-/* ── HANDHELD ── */
-@media (max-width: 768px) {
+/* ── HANDHELD (≤860px: the page's own breakpoint; zoom is 1 here) ── */
+@media (max-width: 860px) {
   .jf-blueprint .content .bec {
     --field-h: 44px;             /* every control on this card: 44px targets */
     --bec-x: 14px;
@@ -734,30 +671,7 @@
   .jf-blueprint .content .bec-tr .bec-tn + * { order: 2; }
   .jf-blueprint .content .bec-tr .bec-f:not(.bec-tn) { flex: 1 1 calc(50% - 4px); order: 2; }
 
-  .jf-blueprint .content .bec-edge-lengths { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .jf-blueprint .content .bec-edge-option { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .jf-blueprint .content .bec-edge-option .bec-check { grid-column: 1 / -1; }
-  .jf-blueprint .content .bec-edge-option--starter .bec-f { grid-column: auto; }
-  .jf-blueprint .content .bec-row--vents .bec-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-  .jf-blueprint .content .bec-tr.bec-tr--vent:not(.bec-th) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: end; gap: 10px 12px; padding: 12px 0; }
-  .jf-blueprint .content .bec-tr--vent .bec-tn { grid-column: 1 / -1; grid-row: 1; padding-right: 56px; min-height: 44px; display: flex; flex-direction: column; justify-content: center; }
-  .jf-blueprint .content .bec-tr--vent .bec-x { grid-column: 2; grid-row: 1; justify-self: end; align-self: center; }
-  .jf-blueprint .content .bec-tr--vent .bec-f { order: 0; }
-  .jf-blueprint .content .bec-tr--vent .bec-f:nth-child(2) { grid-column: 1; grid-row: 2; }
-  .jf-blueprint .content .bec-tr--vent .bec-f:nth-child(3) { grid-column: 1; grid-row: 3; }
-  .jf-blueprint .content .bec-tr--vent .bec-f:nth-child(4) { grid-column: 2; grid-row: 3; }
-  .jf-blueprint .content .bec-vent-total { grid-column: 2; grid-row: 2; align-self: center; font-size: 16px; }
-  .jf-blueprint .content .bec-vent-total > span { display: block; padding-bottom: 6px; color: var(--muted); font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-transform: uppercase; }
-  .jf-blueprint .content .bec-link--under { min-height: 44px; }
-
   .jf-blueprint .content .bec-foot { display: grid; grid-template-columns: 1fr; gap: 12px; }
   .jf-blueprint .content .bec-foot-r { order: -1; margin-left: 0; display: grid; grid-template-columns: 1fr; gap: 10px; }
   .jf-blueprint .content .bec-cat { justify-content: space-between; }
 }
-
-/* Like-for-like: what is on the roof now, under the System pick. Muted when
-   the pick matches the existing material; the warning ink when the pick is a
-   material change, with the way back beside it. */
-.jf-blueprint .content .bec-lfl { margin-top: 6px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; line-height: 1.55; color: var(--muted); max-width: 44ch; }
-.jf-blueprint .content .bec-lfl.is-diff { color: var(--warning-dark); }
-.jf-blueprint .content .bec-lfl .bec-link { display: inline; height: auto; min-height: 0; margin-left: 6px; padding: 0; font: inherit; text-decoration: underline; text-underline-offset: 2px; color: var(--blueprint); }

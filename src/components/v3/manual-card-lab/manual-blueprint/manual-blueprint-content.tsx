@@ -84,7 +84,6 @@ import {
   computeTotals,
   money,
   newId,
-  spreadLabor,
 } from "../manual-focus/manual-focus-math";
 import styles from "./manual-blueprint.module.css";
 import { Btn, Card, Field, Group, Pair, TextArea, TextField, cx } from "./bp-ui";
@@ -764,10 +763,6 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
             taxState={draft.taxState}
             onPatch={patch}
             onTaxPct={(n) => patch({ taxPct: n, taxAuto: false, taxState: "" })}
-            laborOnly={draft.options.laborOnly}
-            showScope={draft.options.showScope}
-            onOptions={patchOptions}
-            onSpreadLabor={(n) => edit((d) => ({ ...d, lines: spreadLabor(d.lines, n) }))}
             totals={totals}
           />
         </Card>

@@ -1,0 +1,79 @@
+.jf-blueprint .content .bo-edit {
+  --bo-control-h: 44px;
+  --bo-cell-gap: 8px;
+  min-width: 0;
+}
+.jf-blueprint .content .bo-edit .bo-table { table-layout: fixed; }
+.jf-blueprint .content .bo-edit .bo-table th,
+.jf-blueprint .content .bo-edit .bo-table td { padding: 6px var(--bo-cell-gap); }
+.jf-blueprint .content .bo-edit .bo-table th { color: var(--muted); }
+.jf-blueprint .content .bo-edit .bo-qty { width: 84px; }
+.jf-blueprint .content .bo-edit .bo-unit { width: 112px; }
+.jf-blueprint .content .bo-edit .bo-price { width: 104px; }
+.jf-blueprint .content .bo-edit .bo-line-total { width: 108px; font-variant-numeric: tabular-nums; }
+.jf-blueprint .content .bo-edit .bo-x-th,
+.jf-blueprint .content .bo-edit .bo-x { width: 60px; }
+.jf-blueprint .content .bo-edit .bo-in {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: var(--bo-control-h);
+  padding: 0 8px;
+  border: 1.5px solid var(--hair-soft);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--ink);
+}
+.jf-blueprint .content .bo-edit .bo-name .bo-in { font-weight: 600; }
+.jf-blueprint .content .bo-edit .bo-in.num { text-align: right; font-variant-numeric: tabular-nums; }
+.jf-blueprint .content .bo-edit .bo-in:hover { border-color: var(--muted); }
+.jf-blueprint .content .bo-edit .bo-in:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 1px; }
+.jf-blueprint .content .bo-edit .bo-in:disabled { opacity: .6; }
+.jf-blueprint .content .bo-edit .bo-sel { display: block; min-width: 0; }
+.jf-blueprint .content .bo-edit .bo-sel .bo-in { height: var(--bo-control-h); padding-right: 24px; }
+.jf-blueprint .content .bo-edit .bo-x-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--bo-control-h);
+  height: var(--bo-control-h);
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  cursor: pointer;
+}
+.jf-blueprint .content .bo-edit .bo-x-btn:hover:not(:disabled) { border-color: var(--hair-soft); color: var(--danger); }
+.jf-blueprint .content .bo-edit .bo-x-btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 1px; }
+.jf-blueprint .content .bo-edit .bo-add { padding: 8px; border-top: 1.5px solid var(--hair-soft); }
+.jf-blueprint .content .bo-edit .bo-add .btn { min-height: var(--bo-control-h); }
+.jf-blueprint .content .bo-edit .bo-empty { padding: 16px; font-size: 13px; color: var(--muted); }
+.jf-blueprint .content .bo-edit .bo-sources { padding: 0 16px; }
+.jf-blueprint .content .bo-edit .bo-sources > summary { display: flex; align-items: center; gap: 8px; min-height: var(--bo-control-h); color: var(--blueprint); font-size: 12px; font-weight: 600; cursor: pointer; list-style: none; }
+.jf-blueprint .content .bo-edit .bo-sources > summary::before { content: "+"; font-family: var(--font-mono); }
+.jf-blueprint .content .bo-edit .bo-sources[open] > summary::before { content: "−"; }
+.jf-blueprint .content .bo-edit .bo-sources > summary:focus-visible { outline: 2px solid var(--blueprint); }
+.jf-blueprint .content .bo-edit .bo-sources dl { display: grid; gap: 8px; padding: 0 0 16px; }
+.jf-blueprint .content .bo-edit .bo-sources dl > div { display: flex; justify-content: space-between; gap: 16px; font-size: 12px; color: var(--muted); }
+.jf-blueprint .content .bo-edit .bo-sources dt { min-width: 0; overflow-wrap: anywhere; }
+.jf-blueprint .content .bo-edit .bo-sources dd { flex: 0 0 auto; text-transform: capitalize; }
+
+@media (max-width: 768px) {
+  .jf-blueprint .content .bo-edit .bo-table,
+  .jf-blueprint .content .bo-edit .bo-table tbody { display: block; width: 100%; }
+  .jf-blueprint .content .bo-edit .bo-table thead { display: none; }
+  .jf-blueprint .content .bo-edit .bo-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; position: relative; padding: 12px 14px; border-bottom: 1.5px solid var(--hair-soft); }
+  .jf-blueprint .content .bo-edit .bo-table tr:last-child { border-bottom: none; }
+  .jf-blueprint .content .bo-edit .bo-table td { display: block; width: auto; min-width: 0; padding: 0; border: 0; text-align: left; }
+  .jf-blueprint .content .bo-edit .bo-table td::before { content: attr(data-label); display: block; margin-bottom: 6px; color: var(--muted); font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-transform: uppercase; }
+  .jf-blueprint .content .bo-edit .bo-table .bo-name { grid-column: 1 / -1; padding-right: 44px; }
+  .jf-blueprint .content .bo-edit .bo-table .bo-name::before,
+  .jf-blueprint .content .bo-edit .bo-table .bo-x::before { display: none; }
+  .jf-blueprint .content .bo-edit .bo-table .bo-x { position: absolute; top: 12px; right: 8px; }
+  .jf-blueprint .content .bo-edit .bo-in.num { text-align: left; }
+  .jf-blueprint .content .bo-edit .bo-table .bo-line-total { text-align: right; }
+  .jf-blueprint .content .bo-edit .bo-line-total b { display: flex; align-items: center; justify-content: flex-end; min-height: var(--bo-control-h); font-size: 17px; }
+}

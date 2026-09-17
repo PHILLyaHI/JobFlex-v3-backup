@@ -906,10 +906,33 @@ interface PdResult {
   imagery?: Record<string, { image_token?: string; metadata?: Record<string, unknown> }>;
 }
 
-// {value, unit, confidence} → number
-const pdNum = (v: unknown): number | null => {
-  const n = Number((v as PdValue | undefined)?.value);
+// Unknown is not zero: Number(null), Number("") and Number(false) all produce
+// 0, which then prevents a later pack from filling the missing field.
+const pdNumber = (raw: unknown): number | null => {
+  if (typeof raw !== "number" && typeof raw !== "string") return null;
+  if (typeof raw === "string" && !raw.trim()) return null;
+  const n = Number(raw);
   return Number.isFinite(n) ? n : null;
+};
+// {value, unit, confidence} → number
+const pdNum = (v: unknown): number | null => pdNumber((v as PdValue | undefined)?.value);
+
+/** Area in square feet. Unitless legacy fields retain their named unit;
+ * an explicit, unfamiliar unit stays unknown rather than being mislabeled. */
+const pdAreaSqft = (v: unknown, defaultUnit: "sqft" | "squares" = "sqft"): number | null => {
+  const n = pdNum(v);
+  if (n == null || n < 0) return null;
+  const rawUnit = (v as PdValue | undefined)?.unit;
+  if (rawUnit != null && typeof rawUnit !== "string") return null;
+  const unit = typeof rawUnit === "string" && rawUnit.trim()
+    ? rawUnit.toLowerCase().replace(/²/g, "2").replace(/[\s._^\-]/g, "")
+    : defaultUnit;
+  if (["sqft", "ft2", "sqfeet", "sqfoot", "squarefeet", "squarefoot"].includes(unit)) return n;
+  if (["sqm", "m2", "sqmeters", "sqmetres", "squaremeter", "squaremeters", "squaremetre", "squaremetres"].includes(unit)) {
+    return n / (0.3048 * 0.3048);
+  }
+  if (["square", "squares", "roofingsquare", "roofingsquares"].includes(unit)) return n * 100;
+  return null;
 };
 // classifier → string, with the API's "null"/"unknown" spellings folded to null
 const pdStr = (v: unknown): string | null => {
@@ -932,18 +955,19 @@ const pdBool = (v: unknown): boolean | null => {
  * outside 0..1 is discarded the same way.
  */
 const pdConf = (v: unknown): number | null => {
-  const n = Number((v as PdValue | undefined)?.confidence);
-  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : null;
+  const n = pdNumber((v as PdValue | undefined)?.confidence);
+  return n != null && n >= 0 && n <= 1 ? n : null;
 };
 // The API splits pitch across the pair — { value: 10, unit: "over 12" } —
 // and some responses inline it ("10 over 12"). Normalize both to "10/12".
 const pdPitch = (v: unknown): string | null => {
   const o = v as PdValue | null;
-  if (o?.value == null) return null;
+  if (typeof o?.value !== "number" && typeof o?.value !== "string") return null;
+  if (typeof o.value === "string" && !o.value.trim()) return null;
   const m = `${o.value} ${o.unit ?? ""}`.match(/(\d+(?:\.\d+)?)\s*over\s*(\d+)/i);
   if (m) return `${m[1]}/${m[2]}`;
-  const n = Number(o.value);
-  return Number.isFinite(n) ? `${n}/12` : String(o.value);
+  const n = pdNumber(o.value);
+  return n != null ? `${n}/12` : String(o.value);
 };
 // GeoJSON-style [[lon,lat],…] outer ring → lat/lng ring
 const pdRing = (geom: unknown): Array<{ lat: number; lng: number }> | null => {
@@ -996,7 +1020,7 @@ function materialRingsOf(v: unknown): InstantStructure["materialRings"] {
     if (!ring) continue;
     out.push({
       material: typeof e.value === "string" ? e.value : null,
-      areaSqft: pdNum(e.area),
+      areaSqft: pdAreaSqft(e.area),
       ring,
     });
   }
@@ -1090,16 +1114,18 @@ export function parseInstantResult(raw: PdResult, requestId: string, input: EvOr
         // Number(null) is 0 — a facade the API left null must be dropped, not
         // reported as a zero-foot eave.
         const entries = Object.entries(eaveRaw as Record<string, unknown>)
-          .filter(([, v]) => v != null && Number.isFinite(Number(v)))
-          .map(([k, v]) => [k, Number(v)] as const);
+          .map(([k, v]) => [k, pdNumber(v)] as const)
+          .filter((entry): entry is readonly [string, number] => entry[1] != null);
         if (entries.length) eave = Object.fromEntries(entries);
       }
+      const areaSqft = pdAreaSqft(roof.structure_roof_area);
+      const squaresAreaSqft = pdAreaSqft(roof.structure_roof_area_squares, "squares");
       return {
-        areaSqft: pdNum(roof.structure_roof_area),
-        squares: pdNum(roof.structure_roof_area_squares),
+        areaSqft: areaSqft ?? squaresAreaSqft,
+        squares: squaresAreaSqft != null ? squaresAreaSqft / 100 : areaSqft != null ? areaSqft / 100 : null,
         pitch: pdPitch(roof.structure_roof_predominant_pitch),
         eaveHeightFt: eave,
-        footprintSqft: pdNum(s.structure_footprint_sqft),
+        footprintSqft: pdAreaSqft(s.structure_footprint_sqft),
         outline: pdRing(s.structure_geometry),
         facetCount: pdNum(roof.structure_roof_facet_count),
         shape: pdStr(roof.structure_roof_shape),
@@ -1152,12 +1178,39 @@ export function parseInstantResult(raw: PdResult, requestId: string, input: EvOr
  *  re-exported here for the server callers that always imported it from here. */
 export { instantTotalsOf };
 
+/** An exact outline identity, independent of the ring's start and winding.
+ * No rounding or proximity matching: nearby buildings must not be merged. */
+function instantOutlineKey(ring: InstantStructure["outline"]): string | null {
+  if (!ring || ring.length < 3) return null;
+  if (ring.some((p) => !Number.isFinite(p.lat) || !Number.isFinite(p.lng))) return null;
+  const points = ring.map((p) => `${p.lat},${p.lng}`);
+  if (points[0] === points[points.length - 1]) points.pop();
+  if (points.length < 3) return null;
+  const rotations = (ps: string[]) => ps.map((_, i) => [...ps.slice(i), ...ps.slice(0, i)].join(";"));
+  return [...rotations(points), ...rotations(points.slice().reverse())].sort()[0];
+}
+
+/** Reorder only when every building has one unique, exact counterpart.
+ * Packs without outlines still have no trustworthy identity beyond their
+ * existing position; partial or approximate matches cannot establish one. */
+function alignInstantStructures(reference: readonly InstantStructure[], incoming: readonly InstantStructure[]): readonly InstantStructure[] {
+  if (reference.length !== incoming.length || !reference.length) return incoming;
+  const referenceKeys = reference.map((s) => instantOutlineKey(s.outline));
+  const incomingKeys = incoming.map((s) => instantOutlineKey(s.outline));
+  if (referenceKeys.some((k) => k == null) || incomingKeys.some((k) => k == null)) return incoming;
+  if (new Set(referenceKeys).size !== reference.length || new Set(incomingKeys).size !== incoming.length) return incoming;
+  const byOutline = new Map(incomingKeys.map((key, i) => [key, incoming[i]]));
+  if (referenceKeys.some((key) => !byOutline.has(key))) return incoming;
+  return referenceKeys.map((key) => byOutline.get(key)!);
+}
+
 /**
  * One answer out of several pack orders for the same address (2026-09-08,
  * partial entitlement). The first part is the base — the caller puts the
- * roof-area order (pack 001) there. Structures are matched by index: the
- * address is one, so EagleView lists the same buildings in the same order;
- * every field the base has null takes the first later part's non-null value.
+ * roof-area order (pack 001) there. Exact, unique outlines align structures
+ * when available; without them the existing positional match is retained.
+ * Every unknown field takes the first later part's non-null value; confidence
+ * is merged by field as each pack scores different measurements.
  * Imagery is concatenated and de-duplicated by token. Totals are re-derived
  * from the merged structures, never copied from a part.
  */
@@ -1165,18 +1218,23 @@ export function mergeInstantResults(parts: readonly InstantRoofData[]): InstantR
   const [base, ...rest] = parts;
   if (!base) throw new Error("mergeInstantResults: nothing to merge");
   if (!rest.length) return base;
-  const count = Math.max(...parts.map((p) => p.structures.length));
-  const structures: InstantStructure[] = [];
-  for (let i = 0; i < count; i++) {
-    const owners = parts.map((p) => p.structures[i]).filter((s): s is InstantStructure => Boolean(s));
-    if (!owners.length) continue;
-    const out = { ...owners[0] } as Record<string, unknown>;
-    for (const o of owners.slice(1)) {
-      for (const [k, v] of Object.entries(o)) {
+  const structures = base.structures.map((s) => ({ ...s }));
+  for (const part of rest) {
+    const aligned = alignInstantStructures(structures, part.structures);
+    aligned.forEach((incoming, i) => {
+      if (!structures[i]) {
+        structures.push({ ...incoming });
+        return;
+      }
+      const out = structures[i] as unknown as Record<string, unknown>;
+      for (const [k, v] of Object.entries(incoming)) {
+        if (k === "confidence" && v != null) {
+          out.confidence = { ...incoming.confidence, ...structures[i].confidence };
+          continue;
+        }
         if (out[k] == null && v != null) out[k] = v;
       }
-    }
-    structures.push(out as unknown as InstantStructure);
+    });
   }
   const seen = new Set<string>();
   const imagery = parts.flatMap((p) => p.imagery).filter((im) => (seen.has(im.token) ? false : (seen.add(im.token), true)));

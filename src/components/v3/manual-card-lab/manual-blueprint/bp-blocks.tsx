@@ -1,36 +1,10 @@
 "use client";
 
-// QUIET — cards 06, 07 and 09: the three short cards.
-//
-// They are short on purpose. Variant A's stated risk is ten equal grey slabs,
-// and the answer is not decoration — it is letting a card that contains four
-// switches be four switches tall. Rhythm comes from honest height.
-//
-// The "what prints" toggles read POSITIVE even where the stored flag is
-// negative (`hideBreakdown`), because a switch labelled "Hide costs" in the ON
-// position is a double negative the user has to decode every time they look at
-// it. Quote style is the odd one out and gets a two-word segmented control
-// rather than a switch, since "full" and "summary" are two named things and
-// neither is the absence of the other.
-//
-// ── WHY THE THREE SWITCHES ARE A ROW AND NOT A LADDER ────────
-// They were four stacked full-width rows, which made a card of four unrelated
-// sentences you had to read top to bottom to find the one you wanted. The three
-// switches are not a sequence — they are three independent yes/no facts about
-// the same sheet — so they are now three cells of one row, divided by rules,
-// scannable in a single horizontal sweep.
-//
-// Quote style stays on its own row above them, because it is the only control
-// here that is not a yes/no: it picks between two named documents, and folding
-// it into the grid would claim a symmetry that does not exist.
-//
-// 2026-09-05 (owner): quote style (labor-only) and scope of work moved to
-// card 04, beside the cost sliders they belong with. Two switches remain.
-//
-// The labels lost their verbs with the layout. "Print the scope of work" in a
-// third of the measure wraps to three lines and repeats a word the card title
-// ("What prints") has already said; "Scope of work" says the same thing in one
-// line, and the switch supplies the verb.
+// MANUAL PROPOSAL — document options and attachments.
+// All four document options live together in "What prints". They patch the
+// same stored proposal options used by the totals, client copy and PDF.
+// The labels read positively even for the negative `hideBreakdown` flag.
+// Desktop uses a ruled row; handheld stacks the same switches.
 //
 // Files are staged from a real <input type="file">: the name and size are read
 // off the File object and nothing is uploaded, because there is no endpoint.
@@ -54,8 +28,18 @@ export function PrintOptions({
   onPatch: (patch: Partial<ProposalOptions>) => void;
 }) {
   return (
-    <div className={styles.toggles}>
+    <div className={cx(styles.toggles, styles.printOptions)}>
       <div className={styles.switchRow}>
+        <ToggleCell
+          label="Labor-only proposal"
+          on={options.laborOnly}
+          onChange={(on) => onPatch({ laborOnly: on })}
+        />
+        <ToggleCell
+          label="Scope of work"
+          on={options.showScope}
+          onChange={(on) => onPatch({ showScope: on })}
+        />
         <ToggleCell
           label="Cost breakdown per line"
           on={!options.hideBreakdown}

@@ -1387,7 +1387,8 @@
 .bp :global(.content .rf-div span) { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
 .bp :global(.content .rf-note) { max-width: 66ch; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
 /* One address on one line: street wide, city, then the two short fields. */
-.bp :global(.content .addr-grid) { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 0.75fr) minmax(0, 0.75fr); gap: 11px; margin-top: 4px; }
+.bp :global(.content .addr-grid) { display: grid; grid-template-columns: minmax(0, 2.4fr) minmax(0, 1.3fr) minmax(0, 0.6fr) minmax(0, 0.7fr); gap: 12px; margin-top: 4px; }
+.bp :global(.content .addr-grid .est-field) { min-width: 0; width: 100%; }
 .bp :global(.content .addr-wide) { grid-column: auto; }
 .bp :global(.content .est-field) { display: block; }
 .bp :global(.content .est-lbl) { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
@@ -1418,11 +1419,14 @@
 .bp :global(.content .rfx .bp-sel-in:hover),
 .bp :global(.content .rfx .bp-sel-in:focus) { border-color: var(--ink); }
 
-.bp :global(.content .rf-actions) { display: flex; align-items: center; gap: 11px; margin-top: 16px; padding-top: 15px; border-top: 1.5px solid var(--hair-soft); }
+.bp :global(.content .rf-actions) { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 16px; padding-top: 15px; border-top: 1.5px solid var(--hair-soft); }
 .bp :global(.content .rf-actions .btn) { height: var(--field-h); padding: 0 15px; font-size: 12.5px; }
 .bp :global(.content .rf-actions .btn .ic) { width: 15px; height: 15px; }
 /* What the click costs, beside the button, in the annotation voice. */
-.bp :global(.content .rf-actions-note) { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.5; color: var(--muted); }
+.bp :global(.content .rf-actions-note) { font-family: var(--font); font-size: 11px; font-weight: 400; line-height: 1.5; color: var(--muted); }
+.bp :global(.content .rf-address-status) { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--blueprint); }
+.bp :global(.content .rf-address-status:not(:empty)) { padding-top: 12px; }
+.bp :global(.content .rf-status-dot) { width: 8px; height: 8px; background: currentColor; animation: roofWaitPulse 1.2s ease-in-out infinite alternate; }
 .bp :global(.content .rf-price) { font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; color: var(--ink); }
 .bp :global(.content .rf-price b) { color: var(--blueprint); }
 
@@ -1433,6 +1437,12 @@
 .bp :global(.content .ms-stage) { margin-top: 10px; font-size: 18px; font-weight: 900; letter-spacing: -0.005em; }
 .bp :global(.content .ms-track) { margin-top: 15px; height: 10px; border: 1.5px solid var(--ink); background: #fff; overflow: hidden; }
 .bp :global(.content .ms-fill) { display: block; height: 100%; width: 0; background: var(--blueprint); transition: width 520ms var(--ease-out); }
+.bp :global(.content .ms-fill--waiting) { width: 36%; animation: roofWait 1.8s ease-in-out infinite alternate; }
+@keyframes roofWait { from { transform: translateX(0); } to { transform: translateX(178%); } }
+@keyframes roofWaitPulse { from { opacity: .35; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.content .ms-fill--waiting), .bp :global(.content .rf-status-dot) { animation: none; }
+}
 .bp :global(.content .ms-hint) { margin-top: 12px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 
 /* hero figures */
@@ -1868,7 +1878,7 @@
 .bp :global(.content .rf-details-row) { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1.5px solid var(--hair-soft); font-size: 13px; line-height: 1.3; }
 .bp :global(.content .rf-details-row:last-child) { border-bottom: none; }
 .bp :global(.content .rf-details-row dt) { color: var(--ink-soft); }
-.bp :global(.content .rf-details-row dd) { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; text-transform: capitalize; color: var(--ink); white-space: nowrap; }
+.bp :global(.content .rf-details-row dd) { margin: 0; min-width: 0; overflow-wrap: anywhere; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; text-transform: capitalize; color: var(--ink); }
 /* Which building the figures are about, under the Structures subtitle. */
 .bp :global(.content .rf-pick) { margin-top: 6px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
 .bp :global(.content .rf-others .rf-note) { padding: 8px 0 2px; }
@@ -1970,3 +1980,16 @@
 /* The residential / commercial question and its answer. */
 .bp :global(.content .rf-use-acts) { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .bp :global(.content .rf-dd-link) { margin-left: 10px; padding: 0; border: 0; background: none; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: none; color: var(--blueprint); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+
+.bp :global(.content .rf-detail-section) { padding: 18px 0; border-bottom: 1px solid var(--hair-soft); }
+.bp :global(.content .rf-detail-section:last-child) { border-bottom: 0; padding-bottom: 0; }
+.bp :global(.content .rf-detail-heading) { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin: 0; font-size: 13px; font-weight: 800; }
+.bp :global(.content .rf-detail-heading h3) { margin: 0; font: inherit; }
+.bp :global(.content .rf-detail-confidence) { color: var(--muted); font-size: 11px; font-weight: 500; }
+.bp :global(.content .rf-eave-grid) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin-top: 12px; border: 1px solid var(--hair-soft); background: var(--hair-soft); }
+.bp :global(.content .rf-eave-grid > div) { padding: 12px; background: var(--paper-deep); }
+.bp :global(.content .rf-eave-grid dt) { color: var(--muted); font-size: 11px; }
+.bp :global(.content .rf-eave-grid dd) { margin: 4px 0 0; font-size: 22px; line-height: 1.2; font-weight: 800; font-variant-numeric: tabular-nums; }
+.bp :global(.content .rf-eave-grid dd span) { font-size: 12px; font-weight: 500; }
+.bp :global(.content .rf-detail-use) { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
+.bp :global(.content .rf-detail-use button) { min-height: 44px; }

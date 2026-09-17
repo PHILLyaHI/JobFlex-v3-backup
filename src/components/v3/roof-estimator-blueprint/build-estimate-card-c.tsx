@@ -188,7 +188,7 @@ function Num({
           inputMode="decimal"
           value={txt}
           disabled={disabled}
-          aria-label={label ? undefined : aria}
+          aria-label={aria || undefined}
           onChange={(e) => {
             const v = e.target.value;
             setTxt(v);
@@ -196,7 +196,7 @@ function Num({
             if (v.trim() !== "" && Number.isFinite(n) && n >= min && n <= MAX_ENTRY) onChange(n);
           }}
           onBlur={() => {
-            if (txt.trim() === "" || !Number.isFinite(Number(txt)) || Number(txt) > MAX_ENTRY) setTxt(String(value));
+            setTxt(String(value));
           }}
         />
         {unit && <span className="bec-unit">{unit}</span>}
@@ -303,7 +303,7 @@ function Row({
 }) {
   const bodyId = `bec-body-${id}`;
   return (
-    <section className={"bec-row" + (open ? " is-open" : "")}>
+    <section className={`bec-row bec-row--${id}` + (open ? " is-open" : "")}>
       <button type="button" className="bec-row-btn" aria-expanded={open} aria-controls={open ? bodyId : undefined} onClick={onToggle}>
         <span className="bec-row-n">{n}</span>
         <span className="bec-row-t">{title}</span>
@@ -334,9 +334,10 @@ function PackageLedger({
   onBuild,
   onConvert,
   report,
-  disabled,
+  disabled: incomingDisabled,
   converting,
   lead,
+  needsPitch = false,
   onBuildingUse,
 }: {
   facts: RoofFacts;
@@ -348,6 +349,7 @@ function PackageLedger({
   converting?: boolean;
   /** The pitch picker, when the aerial data carried no pitch: it leads the title block. */
   lead?: React.ReactNode;
+  needsPitch?: boolean;
 }) {
   // ── State, effects, handlers and derived values: verbatim from
   //    roof-package-builder.tsx (the functionality). ──
@@ -405,6 +407,10 @@ function PackageLedger({
   const [source, setSource] = React.useState<"loading" | "org" | "browser">("loading");
   const [saving, setSaving] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
+  // Wait for the company defaults before accepting edits; a late response
+  // must never overwrite a rate the contractor has just entered.
+  const disabled = incomingDisabled || source === "loading" || saving;
   React.useEffect(() => {
     let cancelled = false;
     getRoofCatalog()
@@ -458,16 +464,26 @@ function PackageLedger({
   };
 
   async function saveDefaults() {
+    if (saving || source === "loading") return;
     setSaving(true);
+    setSaveError(null);
+    const prefs = prefsOf(spec);
     try {
-      const res = await saveRoofCatalog({ version: 1, systems: lists.systems, underlayments: lists.underlayments, prefs: prefsOf(spec) });
+      const res = await saveRoofCatalog({ version: 1, systems: lists.systems, underlayments: lists.underlayments, prefs });
       if (res.ok) {
+        writeLocal(LISTS_KEY, lists);
+        writeLocal(PREFS_KEY, prefs);
         setSource("org");
         setDirty(false);
         toast.success("Defaults saved", "Your roof types, underlayments and rates now load for everyone in your company.");
       } else {
+        setSaveError(res.error);
         toast.error("Couldn't save", res.error);
       }
+    } catch {
+      const message = "Company defaults could not be saved. Check your connection and try again.";
+      setSaveError(message);
+      toast.error("Couldn't save", message);
     } finally {
       setSaving(false);
     }
@@ -625,8 +641,11 @@ function PackageLedger({
   const setVent = (id: string, patch: Partial<{ qty: number; each: number; labor: number }>) => {
     setSpec((s) => {
       const t = VENT_TYPES.find((x) => x.id === id)!;
+      const saved = readLocal<Prefs>(PREFS_KEY)?.ventPrices?.[id];
+      const each = saved && Number.isFinite(saved.each) && saved.each >= 0 ? saved.each : t.each;
+      const labor = saved && Number.isFinite(saved.labor) && saved.labor >= 0 ? saved.labor : t.labor;
       const has = s.vents.some((v) => v.id === id);
-      const vents = has ? s.vents.map((v) => (v.id === id ? { ...v, ...patch } : v)) : [...s.vents, { id, qty: 0, each: t.each, labor: t.labor, ...patch }];
+      const vents = has ? s.vents.map((v) => (v.id === id ? { ...v, ...patch } : v)) : [...s.vents, { id, qty: 0, each, labor, ...patch }];
       const next = { ...s, vents };
       writeLocal(PREFS_KEY, prefsOf(next));
       return next;
@@ -820,9 +839,9 @@ function PackageLedger({
     <button
       type="button"
       className="btn btn-primary bec-btn bec-btn--stamp"
-      disabled={disabled || converting}
+      disabled={disabled || converting || needsPitch}
       onClick={() => onConvert(pkg, spec)}
-      title="Straight to a proposal with these lines — you can still edit them there"
+      title={needsPitch ? "Enter pitch to price." : "Straight to a proposal with these lines — you can still edit them there"}
     >
       <svg className="ic"><use href="#i-file" /></svg>
       {converting ? "Creating…" : "Convert to proposal"}
@@ -837,24 +856,24 @@ function PackageLedger({
         <div className="bec-tk">
           <div className="bec-tk-c bec-tk-c--total">
             <span className="bec-tk-l">{spec.commercial.on ? "Total · commercial" : "Total"}</span>
-            <span className="bec-tk-v" key={total}>{money(total)}</span>
+            <span className="bec-tk-v" key={total}>{needsPitch ? "—" : money(total)}</span>
           </div>
           <div className="bec-tk-c">
             <span className="bec-tk-l">Materials</span>
-            <span className="bec-tk-v">{money(materialsTotal)}</span>
+            <span className="bec-tk-v">{needsPitch ? "—" : money(materialsTotal)}</span>
           </div>
           <div className="bec-tk-c">
             <span className="bec-tk-l">Labor</span>
-            <span className="bec-tk-v">{money(total - materialsTotal)}</span>
+            <span className="bec-tk-v">{needsPitch ? "—" : money(total - materialsTotal)}</span>
           </div>
         </div>
         <div className="bec-acts">
           <button
             type="button"
             className="btn btn-ghost bec-btn"
-            disabled={disabled}
+            disabled={disabled || needsPitch}
             onClick={() => onBuild(pkg, spec)}
-            title="Fill the estimate tables below to review and adjust before converting"
+            title={needsPitch ? "Enter pitch to price." : "Fill the estimate tables below to review and adjust before converting"}
           >
             <svg className="ic"><use href="#i-board" /></svg>
             Review {lineCount} lines
@@ -919,7 +938,7 @@ function PackageLedger({
                 value={spec.systemFamily}
                 options={ROOF_FAMILIES.filter((f) => f.id === spec.systemFamily || lists.systems.some((x) => x.family === f.id))}
                 onChange={(v) => pickFamily(v as RoofFamily)}
-                disabled={disabled || source === "loading"}
+                disabled={disabled}
                 after={
                   lowSlope ? (
                     <div className="bec-lfl">
@@ -942,7 +961,7 @@ function PackageLedger({
                 value={spec.systemId}
                 options={[...lists.systems.filter((x) => x.family === spec.systemFamily || x.id === spec.systemId), { id: CUSTOM_SYSTEM, label: lowSlope ? "＋ Custom flat system…" : "＋ Custom roof type…" }]}
                 onChange={(id) => (id === CUSTOM_SYSTEM ? addSystem() : pickSystem(id))}
-                disabled={disabled || source === "loading"}
+                disabled={disabled}
                 wide
                 after={
                   <>
@@ -1051,67 +1070,62 @@ function PackageLedger({
           id="edges"
           title="Edges"
           summary={sumEdges}
-          chip={<span className={"chip " + (edgeMeasured ? "ok" : edgeEstimated ? "wait" : "")}>{edgeMeasured ? "measured · aerial report" : edgeEstimated ? "from outline" : "entered"}</span>}
+          chip={<span className={"chip " + (edgeMeasured ? "ok" : edgeEstimated ? "wait" : "")}>{edgeMeasured ? "measured" : edgeEstimated ? "estimated" : "entered"}</span>}
           open={!!open.edges}
           onToggle={() => toggle("edges")}
-          rates={
-            spec.dripEdgeOn || (spec.starterOn && !noStarter) ? (
-              <>
-                {spec.dripEdgeOn && <Rate label="Drip edge" unit="$/ft" value={spec.dripPerFt} onChange={(v) => set("dripPerFt", v)} disabled={disabled} />}
-                {spec.starterOn && !noStarter && <Rate label="Starter" unit="$/ft" value={spec.starterPerFt} onChange={(v) => set("starterPerFt", v)} disabled={disabled} />}
-              </>
-            ) : undefined
-          }
         >
-          <Group
-            label="Lengths"
-            note={
-              <>
-                {edgeMeasured ? (
-                  <div className="bec-note">Measured by the full aerial report{report?.reportId ? ` #${report.reportId}` : ""} — ridge, hip, valley, eave and rake as flown.</div>
-                ) : edgeEstimated ? (
-                  <div className="bec-note">Estimated from the building outline — check them against the photo.</div>
-                ) : estimateEdges(facts) ? (
-                  <button type="button" className="bec-link" onClick={resetEdges} disabled={disabled}>Back to the outline estimate</button>
-                ) : null}
-                {/* The measured-lengths offer as an action with its terms
-                    beside it, not a link buried in a sentence. */}
-                {report && report.state === "none" && !edgeMeasured && (
-                  <div className="bec-offer">
-                    <button type="button" className="btn btn-ghost bec-btn bec-btn--sm" onClick={report.onOrder} disabled={disabled || report.busy}>
-                      {report.busy ? "Pricing…" : "Order the full measurement report"}
-                    </button>
-                    <span className="bec-note">Billed · usually within 48 hours · the measured lengths load here by themselves.</span>
-                  </div>
-                )}
-                {report && report.state === "pending" && (
-                  <div className="bec-offer">
-                    <span className="bec-note">
-                      Full report #{report.reportId} ordered · {report.status ?? "in process"}.
-                    </span>
-                    <button type="button" className="btn btn-ghost bec-btn bec-btn--sm" onClick={report.onCheck} disabled={disabled || report.busy}>
-                      {report.busy ? "Checking…" : "Check if it has landed"}
-                    </button>
-                  </div>
-                )}
-              </>
-            }
-          >
+          <div className="bec-edge-lengths">
             <Num label="Eave" unit="ft" value={spec.eaveFt} onChange={(v) => setEdge("eaveFt", v)} disabled={disabled} />
             <Num label="Rake" unit="ft" value={spec.rakeFt} onChange={(v) => setEdge("rakeFt", v)} disabled={disabled} />
             <Num label="Ridge" unit="ft" value={spec.ridgeFt} onChange={(v) => setEdge("ridgeFt", v)} disabled={disabled} />
             <Num label="Hip" unit="ft" value={spec.hipFt} onChange={(v) => setEdge("hipFt", v)} disabled={disabled} />
-          </Group>
-          <Group label="Drip edge & starter">
-            <Check label="Drip edge" checked={spec.dripEdgeOn} onChange={(v) => set("dripEdgeOn", v)} disabled={disabled} />
-            {spec.dripEdgeOn && (
-              <>
-                <Sel label="Profile" value={spec.dripProfileId} options={DRIP_EDGE_PROFILES} onChange={pickDrip} disabled={disabled} wide />
-                <Sel label="Size" value={spec.dripSizeId} options={DRIP_EDGE_SIZES} onChange={(v) => set("dripSizeId", v)} disabled={disabled} />
-              </>
+          </div>
+          <div className="bec-edge-options">
+            <div className="bec-edge-option">
+              <Check label="Drip edge" checked={spec.dripEdgeOn} onChange={(v) => set("dripEdgeOn", v)} disabled={disabled} />
+              {spec.dripEdgeOn && (
+                <>
+                  <Sel label="Profile" value={spec.dripProfileId} options={DRIP_EDGE_PROFILES} onChange={pickDrip} disabled={disabled} />
+                  <Sel label="Size" value={spec.dripSizeId} options={DRIP_EDGE_SIZES} onChange={(v) => set("dripSizeId", v)} disabled={disabled} />
+                  <Num label="Rate" aria="Drip edge rate" unit="$/ft" value={spec.dripPerFt} onChange={(v) => set("dripPerFt", v)} disabled={disabled} />
+                </>
+              )}
+            </div>
+            {!noStarter && (
+              <div className="bec-edge-option bec-edge-option--starter">
+                <Check label="Starter strip" checked={spec.starterOn} onChange={(v) => set("starterOn", v)} disabled={disabled} />
+                {spec.starterOn && <Num label="Rate" aria="Starter rate" unit="$/ft" value={spec.starterPerFt} onChange={(v) => set("starterPerFt", v)} disabled={disabled} />}
+              </div>
             )}
-            {!noStarter && <Check label="Starter strip" checked={spec.starterOn} onChange={(v) => set("starterOn", v)} disabled={disabled} />}
-          </Group>
+          </div>
+          <details className="bec-details">
+            <summary>Measurement source & report</summary>
+            <div className="bec-details-body">
+              {edgeMeasured ? (
+                <p className="bec-note">Lengths from aerial report{report?.reportId ? ` #${report.reportId}` : ""}.</p>
+              ) : edgeEstimated ? (
+                <p className="bec-note">Estimated from the building outline. Check lengths against the roof.</p>
+              ) : estimateEdges(facts) ? (
+                <button type="button" className="bec-link" onClick={resetEdges} disabled={disabled}>Reset to outline estimate</button>
+              ) : <p className="bec-note">Lengths entered for this roof.</p>}
+              {report && report.state === "none" && !edgeMeasured && (
+                <div className="bec-offer">
+                  <button type="button" className="btn btn-ghost bec-btn bec-btn--sm" onClick={report.onOrder} disabled={disabled || report.busy}>
+                    {report.busy ? "Pricing…" : "Order measurement report"}
+                  </button>
+                  <span className="bec-note">Paid report · usually within 48 hours · lengths update automatically.</span>
+                </div>
+              )}
+              {report && report.state === "pending" && (
+                <div className="bec-offer">
+                  <span className="bec-note">Report #{report.reportId} · {report.status ?? "in process"}</span>
+                  <button type="button" className="btn btn-ghost bec-btn bec-btn--sm" onClick={report.onCheck} disabled={disabled || report.busy}>
+                    {report.busy ? "Checking…" : "Check report status"}
+                  </button>
+                </div>
+              )}
+            </div>
+          </details>
         </Row>
 
         {/* 04 · FLASHING */}
@@ -1215,7 +1229,7 @@ function PackageLedger({
           {ventsOn.length > 0 && (
             <div className="bec-tbl">
               <div className="bec-tr bec-tr--vent bec-th" aria-hidden="true">
-                <span>Vent</span><span>Qty</span><span>Material</span><span>Labor</span><span />
+                <span>Vent</span><span>Qty</span><span>Material rate</span><span>Labor rate</span><span>Total</span><span />
               </div>
               {ventsOn.map((t) => {
                 const v = ventOf(t.id);
@@ -1229,6 +1243,7 @@ function PackageLedger({
                     <Num label="Qty" aria={`${t.label} quantity`} unit={each ? "each" : "ft"} value={v.qty} onChange={(n) => setVent(t.id, { qty: n })} disabled={disabled} />
                     <Num label="Material" aria={`${t.label} material`} unit={each ? "$/ea" : "$/ft"} value={v.each} onChange={(n) => setVent(t.id, { each: n })} disabled={disabled} />
                     <Num label="Labor" aria={`${t.label} labor`} unit={each ? "$/ea" : "$/ft"} value={v.labor} onChange={(n) => setVent(t.id, { labor: n })} disabled={disabled} />
+                    <span className="bec-vent-total"><span>Total</span>{money(v.qty * (v.each + v.labor))}</span>
                     <button type="button" className="bec-x" disabled={disabled} aria-label={`Remove ${t.label}`} title="Remove" onClick={() => setVent(t.id, { qty: 0 })}>
                       <IcX />
                     </button>
@@ -1641,23 +1656,24 @@ function PackageLedger({
       <div className="bec-foot">
         <div className="bec-cat">
           <span className="bec-cat-t">
-            {source === "loading" ? "Loading rates…" : source === "org" ? "Your company’s rates" : "Built-in rates"}
+            {source === "loading" ? "Loading company defaults…" : source === "org" ? "Company defaults" : "Browser defaults"}
             {dirty && source !== "loading" ? <em> · unsaved</em> : null}
           </span>
           <button
             type="button"
             className={"btn btn-ghost bec-btn bec-btn--sm" + (dirty ? " is-dirty" : "")}
-            disabled={disabled || saving || source === "loading"}
+            disabled={disabled}
             onClick={() => void saveDefaults()}
           >
             {saving ? "Saving…" : "Save as defaults"}
           </button>
         </div>
         <div className="bec-foot-r">
-          <span className="bec-foot-v">{money(total)}</span>
+          <span className="bec-foot-v">{needsPitch ? "—" : money(total)}</span>
           {convertBtn}
         </div>
       </div>
+      {saveError && <p className="bec-save-error" role="alert">{saveError}</p>}
     </>
   );
 }
@@ -1672,6 +1688,7 @@ export default function BuildEstimateCardC({
   waste,
   onWaste,
   wasteOptions,
+  caution,
   pitchEntry,
   generate,
   facts,
@@ -1683,6 +1700,7 @@ export default function BuildEstimateCardC({
   output,
   onBuildingUse,
 }: BuildEstimateCardProps) {
+  const needsPitch = !!pitchEntry && !pitchEntry.value;
   // EagleView supplied no pitch (pack 002 not bought): the contractor states
   // one before anything is priced, in either mode.
   const pitchSel = pitchEntry ? (
@@ -1697,6 +1715,7 @@ export default function BuildEstimateCardC({
         ariaLabel="Pitch"
         styles={SEL_STYLES}
       />
+      {needsPitch && <p className="bec-note bec-pitch-help">Enter pitch to price.</p>}
     </div>
   ) : null;
 
@@ -1724,8 +1743,16 @@ export default function BuildEstimateCardC({
         </div>
       </div>
 
-      {/* Doubtful figures (`caution`) are NOT restated here: the page's own
-          notice above the card carries the full account and the way out. */}
+      {caution && (
+        <div className="bec-caution" role="note">
+          <p><strong>{caution.stamp}.</strong> {caution.text}</p>
+          {caution.action && (
+            <button type="button" className="bec-caution-action" onClick={caution.action.onClick}>
+              {caution.action.label}
+            </button>
+          )}
+        </div>
+      )}
       {isRecon && (
         <div className="bec-empty">
           These figures are estimated from aerial imagery, so they can’t be priced. Run <b>Instant measure</b> for this address to build a quote.
@@ -1734,7 +1761,7 @@ export default function BuildEstimateCardC({
 
       {buildMode === "package" ? (
         !isRecon && facts ? (
-          <PackageLedger facts={facts} disabled={builderDisabled} converting={converting} onBuild={onBuild} onConvert={onConvert} lead={pitchSel} report={report} onBuildingUse={onBuildingUse} />
+          <PackageLedger facts={facts} disabled={builderDisabled} converting={converting} onBuild={onBuild} onConvert={onConvert} lead={pitchSel} needsPitch={needsPitch} report={report} onBuildingUse={onBuildingUse} />
         ) : pitchSel ? (
           <div className="bec-console">{pitchSel}</div>
         ) : null

@@ -316,6 +316,9 @@
    ledger rather than a header on the schedule. The distances are
    now the other way round, which is the whole fix. */
 :global(.jf-blueprint) .payment {
+  container-type: inline-size;
+  min-width: 0;
+  width: 100%;
   margin-top: 8px;
   font-family: var(--font);
   color: var(--ink);
@@ -373,6 +376,10 @@
   margin: 0 calc(-1 * var(--mb-pad, 24px));
   padding: 8px var(--mb-pad, 24px);
   border-top: 1.5px solid var(--mb-rule, rgba(10, 10, 10, 0.08));
+}
+
+:global(.jf-blueprint) .instRow > * {
+  min-width: 0;
 }
 
 :global(.jf-blueprint) .instFirst {
@@ -540,6 +547,7 @@
    are the same species of number and printing one of them in a
    second typeface made the card look like two documents. */
 :global(.jf-blueprint) .instValue {
+  overflow-wrap: anywhere;
   text-align: right;
   font-size: 14px;
   font-weight: 700;
@@ -564,6 +572,8 @@
 }
 
 :global(.jf-blueprint) .addWrap button {
+  max-width: 100%;
+  white-space: normal;
   color: var(--ink-soft);
   font-weight: 600;
 }
@@ -582,6 +592,7 @@
 
 :global(.jf-blueprint) .meterTop {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
@@ -596,6 +607,8 @@
 }
 
 :global(.jf-blueprint) .meterFig {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 13px;
   font-weight: 700;
   line-height: 1.3;
@@ -621,6 +634,7 @@
 }
 
 :global(.jf-blueprint) .meterNote {
+  overflow-wrap: anywhere;
   margin-top: 8px;
   font-size: 12px;
   font-weight: 500;
@@ -781,7 +795,8 @@
   }
 }
 
-/* HANDHELD: THE ROW FOLDS, IT DOES NOT SHRINK.
+/* Fold by the payment card's available width, including narrow desktop
+   columns. The page viewport does not describe how much room this row has.
    124 + 34 + 168 + three 10px gaps is 356px of fixed track against
    ~300px of card at 390. The stage NAME was the flexible column,
    so it took the whole shortfall and the one thing that says which
@@ -789,7 +804,7 @@
    full measure and the three numeric cells sit under it — and the
    money column still lands hard right, on the same axis as the
    figure in every other card. */
-@media (max-width: 640px) {
+@container (max-width: 640px) {
   /* THE RULE BETWEEN STAGES CAME UP from the 8%-ink hairline to the
      field-edge tone (--muted-light, ~3.6:1). Folded, a stage is two
      rows tall and its name field is the FIRST thing in it — with a
@@ -798,7 +813,8 @@
      stage (owner, 2026-09-02). Each stage also gets 14px of air top
      and bottom instead of 8, so the fold has a shape of its own. */
   :global(.jf-blueprint) .instRow {
-    grid-template-columns: 108px 34px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 108px) 44px minmax(0, 1fr);
+    column-gap: 8px;
     row-gap: 10px;
     padding: 14px var(--mb-pad, 14px);
     border-top: 1.5px solid var(--muted-light, #888);
@@ -813,6 +829,16 @@
     grid-column: 1 / -1;
   }
 
+  :global(.jf-blueprint) .del {
+    width: 44px;
+    height: 44px;
+    opacity: 1;
+  }
+
+  :global(.jf-blueprint) .del::before {
+    inset: 0;
+  }
+
   /* The stage's dollars are the answer of the fold; a step up from
      the desk's 14px so they lead the numeric row at a glance. */
   :global(.jf-blueprint) .instValue {
@@ -823,12 +849,6 @@
     margin-top: 24px;
   }
 
-  /* "$20,424.45 of $20,424.45" does not fit beside its label at 375;
-     let the figure take the next line rather than squeeze the seam
-     out of it. */
-  :global(.jf-blueprint) .meterTop {
-    flex-wrap: wrap;
-  }
 }
 
 /* Two plates side by side stop being two objects and start being

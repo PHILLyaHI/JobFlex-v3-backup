@@ -88,7 +88,7 @@ const WASTES = [8, 10, 12, 15];
 const FACADE: Record<string, string> = { N: "North", E: "East", S: "South", W: "West" };
 // Donor: the measuring screen's stage captions, re-worded for the data path
 // (Instant request → totals → save; no facet tracing happens any more).
-const MS_STAGES = ["Requesting data…", "Locating the structure…", "Reading the measurements…", "Saving…", "Report ready"];
+const MS_STAGES = ["Requesting roof data…", "Collecting aerial measurements…", "Still waiting for the aerial provider…", "Report ready"];
 const RECENT_LIMIT = 12;
 
 // `instant-outline` is a FAILED measurement wearing the totals of a successful
@@ -104,7 +104,6 @@ const SOURCE_CHIP: Record<MeasurementSource, { label: string; tone: "ok" | "wait
 const num = (n: number, d = 0) =>
   Number(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const dateShort = (iso: string) =>
   new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -326,6 +325,7 @@ export function RoofEstimatorDataForm() {
   const [city, setCity] = React.useState("");
   const [stateCode, setStateCode] = React.useState("");
   const [zip, setZip] = React.useState("");
+  const [addressLoading, setAddressLoading] = React.useState(false);
 
   // Google Places on the donor's plain <input>, the same module the Fence
   // studio uses. Uncontrolled on purpose: the module writes the field itself.
@@ -334,12 +334,20 @@ export function RoofEstimatorDataForm() {
     const input = addrRef.current;
     if (!input) return;
     return attachPlacesSuggest(input, {
+      autoComplete: "new-password",
+      onResolving: setAddressLoading,
       onPick(p) {
         setPicked(p);
-        if (p.typed) return;
-        if (p.city) setCity(p.city);
-        if (p.state) setStateCode(p.state);
-        if (p.zip) setZip(p.zip);
+        if (p.typed) {
+          setCity("");
+          setStateCode("");
+          setZip("");
+          return;
+        }
+        input.value = p.address;
+        setCity(p.city);
+        setStateCode(p.state);
+        setZip(p.zip);
       },
       // The field still works typed out in full; say so, with Google's reason,
       // rather than leave a list that never opens.
@@ -428,17 +436,13 @@ export function RoofEstimatorDataForm() {
     setOrthoErr(null);
   }
 
-  // The donor's measuring screen stepped through MS_STAGES on a timer. Here the
-  // stages pace a REAL await: the bar advances while the action runs and jumps
-  // to "Report ready" when it resolves.
+  // The action includes provider work and persistence. Until it resolves we
+  // know only that it is waiting, not that it has reached a saving stage.
   function runStages(): () => void {
     setMsStage(0);
-    let i = 0;
-    const t = setInterval(() => {
-      i = Math.min(i + 1, MS_STAGES.length - 2);
-      setMsStage(i);
-    }, 900);
-    return () => clearInterval(t);
+    const requesting = setTimeout(() => setMsStage(1), 1500);
+    const waiting = setTimeout(() => setMsStage(2), 20000);
+    return () => { clearTimeout(requesting); clearTimeout(waiting); };
   }
 
   function orderInput() {
@@ -577,8 +581,13 @@ export function RoofEstimatorDataForm() {
   // the stored EagleView answer (no new bill); `forceNewOrder` is the explicit
   // "re-measure at a new cost" gesture and is never set by a plain click.
   async function runInstant(forceNewOrder = false) {
+    if (addressLoading) return;
     if (!picked?.address) {
       addrRef.current?.focus();
+      return;
+    }
+    if (zip && !/^\d{5}(?:-\d{4})?$/.test(zip.trim())) {
+      toast.error("Check the ZIP code", "Enter all 5 digits, or a ZIP+4 code.");
       return;
     }
     if (forceNewOrder && !window.confirm(`Order a NEW ${AERIAL.vendor.toLowerCase()} lookup for this address? This is billed, even though a paid answer already exists.`)) {
@@ -588,7 +597,7 @@ export function RoofEstimatorDataForm() {
     setInstantBusy(true);
     setReusedInstant(null);
     setMsReport("Instant measure");
-    setMsHint(`${AERIAL.property} (billed per lookup) — the measured totals, structures and imagery, saved to the history.`);
+    setMsHint("Area, pitch and imagery will appear as the provider returns them. This can take a minute.");
     setPanel("measuring");
     const stop = runStages();
     try {
@@ -613,7 +622,6 @@ export function RoofEstimatorDataForm() {
       if (!res.ok) throw new Error(res.error);
       stop();
       setMsStage(MS_STAGES.length - 1);
-      await sleep(420);
       showMeasurement(res.measurement, !!res.unsaved);
       setReusedInstant(res.reusedInstant?.how ?? null);
       // The row's own columns: the main structure's figures, not the parcel's.
@@ -776,6 +784,10 @@ export function RoofEstimatorDataForm() {
   // The package builder's output becomes the estimate: the same two tables the
   // AI fills, with the basis of every quantity carried on the line.
   function applyPackage(pkg: RoofPackage, spec: RoofPackageSpec, quiet = false) {
+    if (!pitchForEstimate) {
+      toast.error("Enter the roof pitch first");
+      return null;
+    }
     const toLine = (l: RoofPackage["materials"][number]): EditableLine => ({
       id: nanoid(6),
       name: l.name,
@@ -801,7 +813,8 @@ export function RoofEstimatorDataForm() {
   }
   // "Convert as is": the package straight to a proposal, no review stop.
   function convertPackage(pkg: RoofPackage, spec: RoofPackageSpec) {
-    void convertWith(applyPackage(pkg, spec, true));
+    const estimate = applyPackage(pkg, spec, true);
+    if (estimate) void convertWith(estimate);
   }
 
   // EagleView's price object has no fixed shape in the docs; read the usual
@@ -932,16 +945,8 @@ export function RoofEstimatorDataForm() {
       ? manualTotals(manual)
       : null;
   const siteAddress = measurement?.address ?? manual?.address ?? null;
-  // EagleView answered about a FRACTION of the roof Google's imagery sees at
-  // the same pin. 6232 97th Dr NE, Lake Stevens (2026-09-08): EagleView gave
-  // one 122 sq ft structure — a shed — for an address whose house Google
-  // measures at 4,126 sq ft; the address, Google's rooftop point and the
-  // parcel centroid all came back with the same shed. Both figures are
-  // estimates, but a 2× gap is not an estimate, it is the wrong building, and
-  // a proposal priced from it would be off by an order of magnitude. The page
-  // says so — in the notice and on the card — and offers Google's figure;
-  // since 2026-09-12 it no longer freezes the builder (the contractor may
-  // know the building).
+  // A large difference needs an area check. A ratio alone cannot establish
+  // which provider selected the intended structure, so retain both sources.
   const googleSqft = measurement?.provenance?.googleAreaSqft ?? null;
   const evUndercount =
     !manual && totals?.areaSqft != null && googleSqft != null && googleSqft >= 400 && totals.areaSqft < googleSqft * 0.5
@@ -966,7 +971,7 @@ export function RoofEstimatorDataForm() {
   const evPitch = manual ? null : structure?.pitch ?? null;
   // Where the pitch the page shows (and prices) comes from — never a default.
   const pitchKind: "measured" | "eagleview" | "entered" | null = manual
-    ? "entered"
+    ? (manual.pitchLabel || pitchEntered ? "entered" : null)
     : pitchMeasured
       ? "measured"
       : evPitch
@@ -975,7 +980,7 @@ export function RoofEstimatorDataForm() {
           ? "entered"
           : null;
   const pitchLabelShown = manual
-    ? totals?.pitchLabel ?? "—"
+    ? manual.pitchLabel || pitchEntered || "—"
     : displayedPitchLabel(pitchRep, evPitch) ?? pitchEntered ?? "—";
   const pitchHint =
     pitchKind === "measured"
@@ -988,7 +993,7 @@ export function RoofEstimatorDataForm() {
             ? "drawing pipeline (legacy) · no source"
             : "pitch not available — enter pitch to price";
   // The pitch the estimate will be priced on, or null: no pitch, no estimate.
-  const pitchForEstimate = pitchKind === "measured" ? `${Math.round(pitchRep!.families[0].pitch12)}/12` : pitchKind === "eagleview" ? evPitch : pitchKind === "entered" ? (manual ? manual.pitchLabel : pitchEntered) : null;
+  const pitchForEstimate = pitchKind === "measured" ? `${Math.round(pitchRep!.families[0].pitch12)}/12` : pitchKind === "eagleview" ? evPitch : pitchKind === "entered" ? (manual ? manual.pitchLabel || pitchEntered : pitchEntered) : null;
   const eaveHeights = structure?.eaveHeightFt
     ? Object.entries(structure.eaveHeightFt).map(([facade, ft]) => ({ facade, ft }))
     : [];
@@ -1079,16 +1084,16 @@ export function RoofEstimatorDataForm() {
   // four sides read as suspicious — this says how much the provider itself
   // stands behind them.
   const eaveConf = structure?.confidence?.eaveHeightFt ?? null;
-  // One plain sentence when every side reads the same class.
-  const eaveSummary = (() => {
-    if (!eaveHeights.length) return null;
-    const fts = eaveHeights.map((e) => e.ft);
-    const lo = Math.min(...fts);
-    const hi = Math.max(...fts);
-    const story = (ft: number) => (ft <= 12 ? "single-story" : ft <= 22 ? "two-story" : "three-story or taller");
-    if (lo === hi) return `About ${num(lo)} ft on every side — a ${story(lo)} eave line.`;
-    return `From ${num(lo)} ft to ${num(hi)} ft — ${story(lo)} on the low side, ${story(hi)} on the high side.`;
-  })();
+  const propertyDetails = [
+    { label: "Roof", value: roofReadsFlat ? "Flat / low slope" : null },
+    { label: "Material", value: structure?.material },
+    { label: "Condition", value: structure?.conditionRating },
+    { label: "Roof age", value: structure?.roofAgeYears != null ? num(structure.roofAgeYears) + " yrs" : null },
+    { label: "Chimney", value: structure?.chimney != null ? yesNo(structure.chimney) : null },
+    { label: "Solar panels", value: structure?.solarPanels != null ? yesNo(structure.solarPanels) : null },
+    { label: "Rooftop AC", value: structure?.rooftopAcCount },
+  ].filter((detail) => detail.value != null && detail.value !== "");
+
   const hasDetails = eaveHeights.length > 0 || !!structure || (measurement?.chimneys.length ?? 0) > 0;
   const reconDown = measurement?.provenance?.reconUnavailable ?? null;
   const partialCoverage = measurement?.provenance?.partialCoverage ?? null;
@@ -1104,8 +1109,7 @@ export function RoofEstimatorDataForm() {
             <div>
               <div className="card-title">Measure a roof</div>
               <div className="card-sub">
-                Type the address and pick it from the list. The roof’s area, pitch and structures come back from
-                aerial data with the photo, ready to price.
+                Choose an address to measure its roof.
               </div>
             </div>
           </div>
@@ -1114,7 +1118,7 @@ export function RoofEstimatorDataForm() {
             <div className="addr-grid">
               <label className="est-field addr-wide">
                 <span className="est-lbl">Address</span>
-                <input ref={addrRef} className="est-in" id="addr" placeholder="4812 Maple Ave" autoComplete="off" />
+                <input ref={addrRef} className="est-in" id="addr" name="roof-location-query" type="search" placeholder="4812 Maple Ave" autoComplete="new-password" aria-describedby="rf-address-status" />
               </label>
               <label className="est-field">
                 <span className="est-lbl">City</span>
@@ -1139,8 +1143,11 @@ export function RoofEstimatorDataForm() {
               </label>
               <label className="est-field est-field--sm">
                 <span className="est-lbl">ZIP</span>
-                <input className="est-in" id="zip" placeholder="98011" value={zip} onChange={(e) => setZip(e.target.value)} />
+                <input className="est-in" id="zip" placeholder="98011" inputMode="numeric" autoComplete="off" value={zip} onChange={(e) => setZip(e.target.value)} />
               </label>
+            </div>
+            <div id="rf-address-status" className="rf-address-status" role="status" aria-live="polite">
+              {addressLoading && <><span className="rf-status-dot" />Loading address details and roof pin…</>}
             </div>
 
             {/* Pin-on-the-roof check before the BILLED lookup. Only a picked
@@ -1150,7 +1157,7 @@ export function RoofEstimatorDataForm() {
             )}
 
             <div className="rf-actions">
-              <button className="btn btn-primary btn--sm" type="button" id="instantBtn" disabled={busy} onClick={() => void runInstant()}>
+              <button className="btn btn-primary btn--sm" type="button" id="instantBtn" disabled={busy || addressLoading} onClick={() => void runInstant()}>
                 <svg className="ic"><use href="#i-roof" /></svg>
                 {instantBusy ? "Measuring…" : "Measure this roof"}
               </button>
@@ -1214,9 +1221,9 @@ export function RoofEstimatorDataForm() {
         <div className="card rf-card measuring">
           <div className="ms-body">
             <div className="ms-num">{msReport}</div>
-            <div className="ms-stage">{MS_STAGES[msStage]}</div>
-            <div className="ms-track">
-              <span className="ms-fill" style={{ width: `${Math.min(100, 8 + msStage * 24)}%` }} />
+            <div className="ms-stage" role="status" aria-live="polite">{MS_STAGES[msStage]}</div>
+            <div className="ms-track" aria-hidden="true">
+              <span className="ms-fill ms-fill--waiting" />
             </div>
             <div className="ms-hint">
               {msHint ?? "Measuring the structure, pitch by pitch."}
@@ -1233,10 +1240,8 @@ export function RoofEstimatorDataForm() {
               <div className="rf-notice">
                 <div className="call info">
                   <div>
-                    <span className="rf-stamp">ENTERED BY HAND</span>
-                    These figures are yours, not measured — {num(manual.squares, 1)} squares at {manual.pitchLabel}
-                    {manual.address ? ` for ${manual.address}` : ""}. The estimate and the proposal carry them as
-                    stated; nothing was ordered from the aerial data provider and nothing is saved to Recent measurements.
+                    <span className="rf-stamp">GOOGLE AREA</span>
+                    {num(manual.squares, 1)} squares from Google imagery. Confirm the area and enter the roof pitch below.
                   </div>
                 </div>
               </div>
@@ -1276,33 +1281,8 @@ export function RoofEstimatorDataForm() {
                 </div>
               </div>
             )}
-            {(builtByOldPipeline || unsaved || reconDown || partialCoverage || evUndercount || pitchRep?.disagrees) && (
+            {(builtByOldPipeline || unsaved || reconDown || partialCoverage || pitchRep?.disagrees) && (
               <div className="rf-notice">
-                {evUndercount && (
-                  <div className="call warn">
-                    <div>
-                      <span className="rf-stamp">WRONG BUILDING?</span>
-                      The aerial data answered with {evUndercount.structures} structure{evUndercount.structures === 1 ? "" : "s"} totalling{" "}
-                      {num(evUndercount.evSqft)} sq ft, but Google’s imagery measures about {num(evUndercount.googleSqft)} sq ft of
-                      roof at this pin. That is usually an outbuilding standing in for the house in the provider’s records, so
-                      a price built from that figure would be far off. Price from Google’s figure instead — it becomes a
-                      hand-entered takeoff you can adjust — or carry on below if you know this is the right building.
-                      <button
-                        type="button"
-                        className="btn btn-primary btn--sm"
-                        onClick={() =>
-                          runManual({
-                            squares: evUndercount.googleSqft / 100,
-                            pitchLabel: totals?.pitchLabel ?? "6/12",
-                            address: siteAddress,
-                          })
-                        }
-                      >
-                        Price from Google’s {num(evUndercount.googleSqft)} sq ft instead
-                      </button>
-                    </div>
-                  </div>
-                )}
                 {builtByOldPipeline && (
                   <div className="call warn">
                     <div>
@@ -1464,101 +1444,58 @@ export function RoofEstimatorDataForm() {
                   <div className="card rf-card">
                     <div className="rf-head">
                       <div className="card-title">Details</div>
-                      <div className="card-sub">{AERIAL.property}</div>
                     </div>
-                    <dl className="rf-details" id="rfDetails">
+                    <div className="rf-details" id="rfDetails">
                       {eaveHeights.length > 0 && (
-                        <>
-                          {/* EagleView's per-facade figure, in 10 ft classes (9903: 10 on every side;
-                              12117: 20 on the house, 10 on the outbuildings) — a class, not a measurement.
-                              Said in plain words: the owner read "East 10 ft" and did not know what it
-                              meant (2026-09-14). */}
-                          <div className="rf-details-sec">Eave height · per side of the house</div>
-                          <div className="rf-details-note">
-                            How high the roof edge sits above the ground on each side, read from aerial imagery in
-                            10 ft steps: 10 ft is a single story, 20 ft two stories. It sets ladder, lift and safety
-                            needs
-                            {eaveConf != null && ` · the provider scores this ${Math.round(eaveConf * 100)}% confident`}.
+                        <section className="rf-detail-section" aria-label="Eave height">
+                          <div className="rf-detail-heading">
+                            <h3>Eave height</h3>
+                            <span className="rf-detail-confidence">{eaveConf != null ? Math.round(eaveConf * 100) + "% confidence" : "Confidence unavailable"}</span>
                           </div>
-                          {eaveSummary && <div className="rf-details-sum">{eaveSummary}</div>}
-                          {eaveHeights.map((e) => (
-                            <div className="rf-details-row" key={e.facade}>
-                              <dt>{`${FACADE[e.facade] ?? e.facade} side`}</dt>
-                              <dd>
-                                {num(e.ft)}
-                                <span>ft</span>
-                              </dd>
-                            </div>
-                          ))}
-                        </>
+                          <p className="rf-details-note">Ground to roof edge · reported in 10 ft steps.</p>
+                          <dl className="rf-eave-grid">
+                            {eaveHeights.map((e) => (
+                              <div key={e.facade}>
+                                <dt>{FACADE[e.facade] ?? e.facade}</dt>
+                                <dd>{num(e.ft)} <span>ft</span></dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </section>
                       )}
-                      {structure && (
-                        <>
-                          <div className="rf-details-sec">Property data</div>
-                          {roofReadsFlat && (
-                            <div className="rf-details-row">
-                              <dt>Roof</dt>
-                              <dd>Flat / low slope</dd>
-                            </div>
-                          )}
-                          <div className="rf-details-row"><dt>Chimney</dt><dd>{yesNo(structure.chimney)}</dd></div>
-                          <div className="rf-details-row"><dt>Solar panels</dt><dd>{yesNo(structure.solarPanels)}</dd></div>
-                          <div className="rf-details-row"><dt>Rooftop AC</dt><dd>{structure.rooftopAcCount ?? "—"}</dd></div>
-                          <div className="rf-details-row">
-                            <dt>Material</dt>
-                            <dd>
-                              {structure.material ?? "—"}
-                              {roofFacts && likeForLikeFamily(roofFacts) && <span>new roof starts like-for-like</span>}
-                            </dd>
-                          </div>
-                          <div className="rf-details-row"><dt>Condition</dt><dd>{structure.conditionRating ?? "—"}</dd></div>
-                          <div className="rf-details-row">
-                            <dt>Roof age</dt>
-                            <dd>
-                              {structure.roofAgeYears != null ? (
-                                <>
-                                  {num(structure.roofAgeYears)}
-                                  <span>yrs</span>
-                                </>
-                              ) : (
-                                "—"
-                              )}
-                            </dd>
-                          </div>
-                        </>
+                      {propertyDetails.length > 0 && (
+                        <section className="rf-detail-section" aria-label="Roof details">
+                          <h3 className="rf-detail-heading">Roof details</h3>
+                          <dl>
+                            {propertyDetails.map((detail) => (
+                              <div className="rf-details-row" key={detail.label}>
+                                <dt>{detail.label}</dt><dd>{detail.value}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </section>
                       )}
+                      {!eaveHeights.length && !propertyDetails.length && <p className="rf-details-note">Property details unavailable for this roof.</p>}
                       {buildingUse && (
-                        <>
-                          <div className="rf-details-sec">Pricing</div>
-                          <div className="rf-details-row">
-                            <dt>Building</dt>
-                            <dd>
-                              {buildingUse === "commercial" ? "Commercial" : "Residential"}
-                              <span>your choice</span>
-                              <button type="button" className="rf-dd-link" onClick={() => answerUse(buildingUse === "commercial" ? "residential" : "commercial")}>
-                                {buildingUse === "commercial" ? "price as residential" : "price as commercial"}
-                              </button>
-                            </dd>
-                          </div>
-                        </>
+                        <div className="rf-detail-section rf-detail-use">
+                          <span>{buildingUse === "commercial" ? "Commercial" : "Residential"} pricing</span>
+                          <button type="button" className="rf-dd-link" onClick={() => answerUse(buildingUse === "commercial" ? "residential" : "commercial")}>Change</button>
+                        </div>
                       )}
                       {measurement.chimneys.length > 0 && (
-                        <>
-                          <div className="rf-details-sec">Penetrations detected</div>
-                          {measurement.chimneys.map((c, i) => (
-                            <div className="rf-details-row" key={i}>
-                              <dt>
-                                {c.kind.charAt(0).toUpperCase() + c.kind.slice(1)} <span className="rf-details-how">{c.method}</span>
-                              </dt>
-                              <dd>
-                                {Math.round(c.confidence * 100)}
-                                <span>% conf.</span>
-                              </dd>
-                            </div>
-                          ))}
-                        </>
+                        <section className="rf-detail-section" aria-label="Detected penetrations">
+                          <h3 className="rf-detail-heading">Detected penetrations</h3>
+                          <dl>
+                            {measurement.chimneys.map((c, i) => (
+                              <div className="rf-details-row" key={i}>
+                                <dt>{c.kind.charAt(0).toUpperCase() + c.kind.slice(1)}</dt>
+                                <dd>{Math.round(c.confidence * 100)}<span>% confidence</span></dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </section>
                       )}
-                    </dl>
+                    </div>
                   </div>
                 )}
                 <div className="card rf-card">
@@ -1625,7 +1562,7 @@ export function RoofEstimatorDataForm() {
               pitchEntry={
                 /* EagleView supplied no pitch (pack 002 not bought): the
                    contractor states one, and the estimate says so. */
-                !manual && !pitchMeasured && !evPitch && totals?.squares != null
+                !(manual?.pitchLabel) && !pitchMeasured && !evPitch && totals?.squares != null
                   ? { value: pitchEntered, onChange: setPitchEntered, options: PITCHES }
                   : null
               }
@@ -1641,14 +1578,14 @@ export function RoofEstimatorDataForm() {
                    account stays in the notice above. */
                 evUndercount
                   ? {
-                      stamp: "Wrong building?",
-                      text: `The aerial data covers ${num(evUndercount.evSqft)} sq ft, but Google sees about ${num(evUndercount.googleSqft)} sq ft of roof at this pin — check before you price.`,
+                      stamp: "Check roof area",
+                      text: `Aerial report: ${num(evUndercount.evSqft)} sq ft · Google: ${num(evUndercount.googleSqft)} sq ft. Confirm the roof before pricing.`,
                       action: {
-                        label: `Price from Google’s ${num(evUndercount.googleSqft)} sq ft`,
+                        label: "Use Google area & enter pitch",
                         onClick: () =>
                           runManual({
                             squares: evUndercount.googleSqft / 100,
-                            pitchLabel: totals?.pitchLabel ?? "6/12",
+                            pitchLabel: "",
                             address: siteAddress,
                           }),
                       },

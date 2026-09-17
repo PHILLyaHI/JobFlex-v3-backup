@@ -362,11 +362,13 @@
 }
 
 :global(.jf-blueprint) .card {
+  --mb-card-pad-bottom: var(--mb-pad);
+  min-width: 0;
   background: var(--mb-card);
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: var(--mb-lift);
-  padding: var(--mb-pad);
+  padding: var(--mb-pad) var(--mb-pad) var(--mb-card-pad-bottom);
   scroll-margin-top: calc(var(--topbar-h) + 20px);
 }
 
@@ -375,8 +377,9 @@
    beat rests on the documented tear-sheet WEIGHT — a 4px offset
    against everything else's 3px — plus the extra foot padding. */
 :global(.jf-blueprint) .cardSheet {
+  --mb-card-pad-bottom: 32px;
   box-shadow: var(--mb-lift-sheet);
-  padding: var(--mb-pad) var(--mb-pad) 32px;
+  padding: var(--mb-pad) var(--mb-pad) var(--mb-card-pad-bottom);
 }
 
 /* Number + title on ONE line. No badge slot, no description, no
@@ -418,6 +421,7 @@
 }
 
 :global(.jf-blueprint) .body {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -1190,14 +1194,8 @@
    out to the card's own border; the outer cells take that padding
    back so the LABELS stay on the card's content edges and only the
    rules move. */
-/* ONE COLUMN PER SWITCH, NOT THREE. The grid was `repeat(3, …)` from
-   the days when every copy of this row held three switches. Since
-   2026-09-05 card 06 and the pricing card hold TWO (labor-only and
-   scope moved under the sliders), and two cells in a three-column
-   grid drew the divider at a third of the measure and left the last
-   third as an empty, ruled cell — the "toggle column" that read as
-   an offset. The columns now come from the cells: three on card 11,
-   two elsewhere, always equal. */
+/* One equal-width column per switch: four document options on card 06,
+   three PDF options on card 11. No empty tracks after the last cell. */
 :global(.jf-blueprint) .switchRow {
   display: grid;
   grid-auto-flow: column;
@@ -1206,6 +1204,12 @@
   margin-right: calc(-1 * var(--mb-pad));
   border-top: 2px solid var(--ink);
   border-bottom: 2px solid var(--ink);
+}
+
+/* The document options start a ruled table below the heading. The top
+   rule joins every vertical divider to the card's side borders. */
+:global(.jf-blueprint) .printOptions > .switchRow:first-child {
+  border-top: 2px solid var(--ink);
 }
 
 /* WHEN THE TABLE IS THE LAST THING IN THE CARD (card 06 — "What
@@ -1221,12 +1225,12 @@
    by the two PDF buttons, so it is not `:last-child` there and
    keeps the foot rule it still needs. */
 :global(.jf-blueprint) .toggles:last-child > .switchRow:last-child {
-  margin-bottom: calc(-1 * var(--mb-pad));
+  margin-bottom: calc(-1 * var(--mb-card-pad-bottom));
   border-bottom: none;
 }
 
 :global(.jf-blueprint) .toggles:last-child > .switchRow:last-child > .toggleCell {
-  padding-bottom: var(--mb-pad);
+  padding-bottom: var(--mb-card-pad-bottom);
 }
 
 /* Declares its own box: `.bp button` strips border, background and
@@ -1238,6 +1242,7 @@
   align-items: flex-start;
   gap: 12px;
   min-height: 44px;
+  min-width: 0;
   padding: 18px 18px 16px;
   font-family: var(--font);
   text-align: left;
@@ -1263,38 +1268,13 @@
   padding-right: var(--mb-pad);
 }
 
-/* ── THE SAME TABLE, DRAWN INSIDE A COLUMN ───────────────────
-   The pricing card's copy (bp-markup.tsx, Tools) does not span the
-   card: it closes the controls column of a two-column body, beside
-   the Estimate ledger. The bleed above was written for a row whose
-   measure IS the card, and in a column it did half a job — the left
-   margin still reached the frame, while the right one ran the rules
-   24px past the column's edge into the gutter and stopped there, in
-   mid-air, short of the ledger. A table in a column keeps to the
-   column: its rules run exactly the measure every other rule in that
-   column runs (the adjust hairline, the tools' ink rule), the first
-   plate sits on the edge the inputs above it sit on, and the last
-   label ends where the column ends. A modifier rather than a
-   structural selector, because the handheld ladder needs the same
-   hook to give the bleed back (see the ≤768px block). */
-:global(.jf-blueprint) .switchRow.switchRowInset {
-  margin-left: 0;
-  margin-right: 0;
-}
-
-:global(.jf-blueprint) .switchRowInset > .toggleCell:first-child {
-  padding-left: 0;
-}
-
-:global(.jf-blueprint) .switchRowInset > .toggleCell:last-child {
-  padding-right: 0;
-}
-
 /* One step down from `.toggleText` (15px): a label with a third of
    the measure wraps, and 14px keeps a two-line wrap tight. Same
    ink and same weight though — the three switch labels are peers
    of the quote-style label, not a subordinate caption layer. */
 :global(.jf-blueprint) .cellText {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.35;
@@ -2946,11 +2926,13 @@
      costs nothing a phone is short of. Sides read the token, so the
      bleed rules in lines-mobile keep landing on the walls. */
   :global(.jf-blueprint) .card {
-    padding: 22px var(--mb-pad) 24px;
+    --mb-card-pad-bottom: 24px;
+    padding: 22px var(--mb-pad) var(--mb-card-pad-bottom);
   }
 
   :global(.jf-blueprint) .cardSheet {
-    padding: 22px var(--mb-pad) 32px;
+    --mb-card-pad-bottom: 32px;
+    padding: 22px var(--mb-pad) var(--mb-card-pad-bottom);
   }
 
   /* The masthead's annotations are a right-aligned column on the
@@ -3039,15 +3021,6 @@
   :global(.jf-blueprint) .switchRow {
     grid-auto-flow: row;
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  /* A one-column card makes the pricing card's copy a full-width
-     ladder like the other two again: the bleed the desk modifier
-     removed comes back, and the rungs' own padding (below) puts the
-     labels on the content edge. */
-  :global(.jf-blueprint) .switchRow.switchRowInset {
-    margin-left: calc(-1 * var(--mb-pad));
-    margin-right: calc(-1 * var(--mb-pad));
   }
 
   :global(.jf-blueprint) .switchRow > .toggleCell,

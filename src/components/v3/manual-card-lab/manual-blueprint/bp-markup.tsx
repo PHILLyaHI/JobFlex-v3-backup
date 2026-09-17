@@ -8,10 +8,8 @@
 // × 1.10); the ledger, tax and grand total follow live. They are a UI tool
 // until save, when the page bakes them into every line and returns them to 0
 // (see `bakeAdjustments`). Fine control: drag, arrows ±1 (shift ±5), or click
-// the number to type an exact percent. Under them: "labor for the whole job",
-// which spreads one figure across the lines by material cost
-// (`spreadLabor`), and the two proposal switches — labor-only and scope of
-// work — that used to live on card 06. Overhead and profit are unchanged.
+// the number to type an exact percent. The proposal switches live in card 06,
+// "What prints". Overhead and profit are unchanged.
 //
 // A reference layout the owner supplied, translated into the house system
 // rather than copied. Two columns: four rate CONTROLS on the left, one read-only
@@ -76,8 +74,7 @@ import {
 } from "../manual-focus/manual-focus-math";
 import { stateDisplayName } from "../manual-focus/manual-focus-data";
 import type { Totals } from "../manual-focus/manual-focus-types";
-import { NumField, ToggleCell, cx } from "./bp-ui";
-import styles from "./manual-blueprint.module.css";
+import { NumField, cx } from "./bp-ui";
 import s from "./bp-markup.module.css";
 
 /** "+10.0%" / "−20.0%" / "0.0%" — the adjustment register is signed. */
@@ -157,13 +154,6 @@ export type MarkupBlockProps = {
     discountIsPercent?: boolean;
   }) => void;
   onTaxPct: (next: number) => void;
-
-  /** The two proposal switches that sit beside the sliders. */
-  laborOnly: boolean;
-  showScope: boolean;
-  onOptions: (patch: { laborOnly?: boolean; showScope?: boolean }) => void;
-  /** Spread one labor figure for the whole job across the lines. */
-  onSpreadLabor: (totalLabor: number) => void;
 
   totals: MarkupFigures;
 };
@@ -615,70 +605,6 @@ function Adjustments({
 }
 
 /* ============================================================
-   THE TOOLS UNDER THE SLIDERS (owner, 2026-09-05)
-   One typed figure — labor for the whole job — that the page
-   spreads across the lines by material cost, and the two proposal
-   switches: labor-only (the client buys their own materials; the
-   priced column carries labor alone) and scope of work.
-   ============================================================ */
-
-function Tools({
-  baseLabor,
-  laborOnly,
-  showScope,
-  onOptions,
-  onSpreadLabor,
-}: Pick<MarkupBlockProps, "laborOnly" | "showScope" | "onOptions" | "onSpreadLabor"> & {
-  baseLabor: number;
-}) {
-  const id = useId();
-  // The field holds what is TYPED; the hint under it says what the lines hold
-  // now. The two agree only after "Spread".
-  const [total, setTotal] = useState<number>(round2(baseLabor));
-
-  return (
-    <div className={s.tools}>
-      <div>
-        <div className={s.adjTop}>
-          <label className={s.adjName} htmlFor={id}>
-            Labor for the whole job
-          </label>
-        </div>
-        <div className={s.toolRow}>
-          <span className={s.adjField}>
-            <NumField id={id} value={total} onChange={setTotal} ariaLabel="Labor for the whole job, dollars" />
-            <span className={s.unitStatic} aria-hidden="true">
-              $
-            </span>
-          </span>
-          <button type="button" className={s.toolBtn} onClick={() => onSpreadLabor(total)}>
-            Spread
-          </button>
-        </div>
-        <span className={s.toolHint}>
-          Split across the lines in proportion to each line&apos;s material cost. Lines hold{" "}
-          {money(baseLabor)} now.
-        </span>
-      </div>
-      {/* `.switchRowInset`: this copy of the table lives in the controls
-          column, not across the card — see manual-blueprint.module.css. */}
-      <div className={cx(styles.switchRow, styles.switchRowInset)}>
-        <ToggleCell
-          label="Labor-only proposal"
-          on={laborOnly}
-          onChange={(on) => onOptions({ laborOnly: on })}
-        />
-        <ToggleCell
-          label="Scope of work"
-          on={showScope}
-          onChange={(on) => onOptions({ showScope: on })}
-        />
-      </div>
-    </div>
-  );
-}
-
-/* ============================================================
    MARGIN BADGE
    The one legitimate STATUS reading on the card: a margin is good,
    thin or dangerous in a way a markup percentage never is.
@@ -730,10 +656,6 @@ export function MarkupBlock({
   taxState,
   onPatch,
   onTaxPct,
-  laborOnly,
-  showScope,
-  onOptions,
-  onSpreadLabor,
   totals,
 }: MarkupBlockProps) {
   const headId = useId();
@@ -793,14 +715,6 @@ export function MarkupBlock({
             onPatch={onPatch}
             onTaxPct={onTaxPct}
             totals={totals}
-          />
-
-          <Tools
-            baseLabor={totals.baseLabor}
-            laborOnly={laborOnly}
-            showScope={showScope}
-            onOptions={onOptions}
-            onSpreadLabor={onSpreadLabor}
           />
         </div>
 

@@ -69,6 +69,10 @@ export type PlacesSuggestOptions = {
    * street address is noise — the caller only needs "Bothell, WA".
    */
   cityOnly?: boolean;
+  /** Suppress the browser's competing saved-address popup for custom search fields. */
+  autoComplete?: string;
+  /** A prediction is selected immediately; its coordinates/components may arrive later. */
+  onResolving?: (resolving: boolean) => void;
   /** Called on every pick, and (with `typed: true`) on free typing. */
   onPick: (place: PickedPlace) => void;
   /**
@@ -142,15 +146,14 @@ export function attachPlacesSuggest(
   let token: G = null;
   let reqId = 0;
   let debounce: ReturnType<typeof setTimeout> | null = null;
-  // Set right before a pick rewrites the field, so the input handler does not
-  // immediately re-query the address we just chose and reopen the list.
-  let justChose = false;
+  // Invalidate a pending resolution when the user edits, leaves or picks again.
+  let choiceId = 0;
   // One refusal is one message: every further keystroke would otherwise repeat it.
   let reported = false;
 
   input.setAttribute("role", "combobox");
   input.setAttribute("aria-expanded", "false");
-  input.setAttribute("autocomplete", "off");
+  input.setAttribute("autocomplete", opts.autoComplete ?? "off");
 
   function place() {
     const r = input.getBoundingClientRect();
@@ -227,6 +230,7 @@ export function attachPlacesSuggest(
       // "Generate estimate"); reopening over whatever came next would be wrong.
       if (focused) show();
     } catch (err) {
+      if (mine !== reqId) return;
       console.error("[places-suggest] suggestion fetch failed:", err);
       list = [];
       hide();
@@ -238,38 +242,52 @@ export function attachPlacesSuggest(
   }
 
   async function choose(item: Item) {
+    const mine = ++choiceId;
+    ++reqId;
+    if (debounce) clearTimeout(debounce);
     hide();
     list = [];
+    input.value = item.main;
+    input.setAttribute("aria-busy", "true");
+    opts.onPick({ address: item.main, city: "", state: "", zip: "", formatted: item.main, typed: true });
+    opts.onResolving?.(true);
     try {
       const p = item.pp.toPlace();
       await p.fetchFields({ fields: ["formattedAddress", "location", "addressComponents"] });
+      if (mine !== choiceId) return;
       const loc = p.location;
       const lat = loc ? (typeof loc.lat === "function" ? loc.lat() : loc.lat) : undefined;
       const lng = loc ? (typeof loc.lng === "function" ? loc.lng() : loc.lng) : undefined;
       const { city, state, zip } = readComponents(p.addressComponents ?? []);
       const formatted = String(p.formattedAddress ?? item.main).replace(/,\s*USA$/, "");
       const street = formatted.split(",")[0] || formatted;
-      justChose = true;
       input.value = opts.cityOnly ? city || street : formatted;
       opts.onPick({ address: street, city, state, zip, lat, lng, formatted });
       // fetchFields closes the billing session — the next query needs a new token.
       token = null;
     } catch (err) {
+      if (mine !== choiceId) return;
       console.error("[places-suggest] failed to resolve the picked place:", err);
+      opts.onError?.("Couldn't load this address. Select it again or complete the fields manually.");
+    } finally {
+      if (mine === choiceId) {
+        input.removeAttribute("aria-busy");
+        opts.onResolving?.(false);
+      }
     }
   }
 
   const onInput = () => {
+    ++choiceId;
+    ++reqId;
+    input.removeAttribute("aria-busy");
+    opts.onResolving?.(false);
     const v = input.value;
     // Report the raw text too, so a caller that only needs "whatever is typed"
     // (a free-text city, an address the user never picks from the list) stays in
     // step without waiting for a selection.
     opts.onPick({ address: v, city: "", state: "", zip: "", formatted: v, typed: true });
 
-    if (justChose) {
-      justChose = false;
-      return;
-    }
     if (debounce) clearTimeout(debounce);
     const q = v.trim();
     if (q.length < 3) {
@@ -341,6 +359,10 @@ export function attachPlacesSuggest(
   window.addEventListener("resize", onReflow);
 
   return () => {
+    ++choiceId;
+    ++reqId;
+    input.removeAttribute("aria-busy");
+    opts.onResolving?.(false);
     if (debounce) clearTimeout(debounce);
     input.removeEventListener("input", onInput);
     input.removeEventListener("focus", onFocus);
