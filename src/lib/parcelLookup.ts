@@ -47,8 +47,10 @@ import { haversineFt, parseWkt, type RingPoint } from "@/lib/parcels";
  */
 export const QUOTA_FLOOR = 100;
 
-/** Where the remaining count survives a cold start (SyncState is key→string). */
-const QUOTA_KEY = "reportall:quota-remaining";
+/** Where the remaining count survives a cold start (SyncState is key→string).
+ *  Exported because the admin overview reads this row to draw the allowance;
+ *  one name for it means the tile cannot drift from the writer. */
+export const QUOTA_KEY = "reportall:quota-remaining";
 
 /** Last known remaining, preferring the live value over the persisted one. */
 export async function remainingQuota(): Promise<number | null> {

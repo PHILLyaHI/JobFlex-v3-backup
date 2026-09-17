@@ -60,6 +60,17 @@ export function AdminOverviewContent({ data }: { data: AdminOverviewData }) {
       : "",
   ].filter(Boolean);
 
+  /* The allowance, as three sentences the tile can say: how urgent it is, and
+     where the number came from. "Never read" is not an error — it is what a
+     deployment that has never looked a parcel up looks like. */
+  const { remaining: parcelLeft, updatedAt: parcelAt, stale: parcelStale } = data.parcelQuota;
+  const quotaTone =
+    parcelLeft == null ? s.kpiUnknown : parcelLeft < 150 ? s.kpiBad : parcelLeft < 300 ? s.kpiWarn : "";
+  const quotaSrc =
+    parcelAt == null
+      ? "Never read"
+      : `Updated ${ago(parcelAt, data.generatedAt)}${parcelStale ? " · stale" : ""}`;
+
   return (
     <>
       <div className="page-head">
@@ -78,7 +89,7 @@ export function AdminOverviewContent({ data }: { data: AdminOverviewData }) {
         </div>
       </div>
 
-      <div className={`kpi-grid ${s.kpi6}`}>
+      <div className={`kpi-grid ${s.kpi7}`}>
         <div className={`kpi ${s.kpiCell}`}>
           <div className="kpi-lbl">Organizations</div>
           <div className="kpi-val">{data.organizations}</div>
@@ -109,6 +120,19 @@ export function AdminOverviewContent({ data }: { data: AdminOverviewData }) {
         <div className={`kpi ${s.kpiCell}`}>
           <div className="kpi-lbl">Support · Unread</div>
           <div className={data.supportUnread > 0 ? "kpi-val accent" : "kpi-val"}>{data.supportUnread}</div>
+        </div>
+        {/* THE PARCEL ALLOWANCE. It is ALLTIME: what is spent is gone, so the
+            tile is a fuel gauge, not a monthly figure. Amber and red are the
+            two points at which somebody has to act — top the account up, or
+            stop the estimators walking lots — and below 100 the lookup refuses
+            to spend at all (lib/parcelLookup, QUOTA_FLOOR). */}
+        <div className={`kpi ${s.kpiCell}`}>
+          <div className="kpi-lbl">Parcel lookups left</div>
+          <div className={`kpi-val ${s.kpiAllowance} ${quotaTone}`}>
+            {data.parcelQuota.remaining ?? "—"}
+            <span className={s.kpiOf}>/ {data.parcelQuota.total}</span>
+          </div>
+          <div className={s.kpiSrc}>{quotaSrc}</div>
         </div>
       </div>
 

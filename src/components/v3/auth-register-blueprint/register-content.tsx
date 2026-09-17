@@ -93,6 +93,17 @@ function stItem(index: 0 | 1 | 2, step: Step): string {
   return "st-item" + (step === 3 ? " on" : step > 3 ? " done" : "");
 }
 
+/* THE CUSTOM PLAN IS NOT OFFERED AT SIGNUP (owner, 2026-09-17). The plan step
+   shows the catalogue only — Starter, Professional, Enterprise — so a visitor
+   who has not used the product yet is not asked to assemble one. Custom stays
+   where it makes sense: /dashboard/subscription, where a shop that knows which
+   pages it works in can build the plan and switch to it. Nothing server-side
+   changed; completePendingSignup still accepts the custom slug, so flipping
+   this back to true restores the card and its page picker as they were.
+   Typed `boolean` on purpose: a bare `false` would make every branch below a
+   constant condition. */
+const OFFER_CUSTOM_AT_SIGNUP: boolean = false;
+
 // Donor `#tradeNote`, verbatim.
 function tradeNote(n: number): string {
   return n === 0
@@ -1408,7 +1419,9 @@ export function RegisterContent({
                 );
               })}
               {/* THE CUSTOM PLAN — the same card shape, priced by what is
-                  ticked rather than by a tier somebody else drew. */}
+                  ticked rather than by a tier somebody else drew. Drawn only
+                  when OFFER_CUSTOM_AT_SIGNUP says so; see the flag. */}
+              {OFFER_CUSTOM_AT_SIGNUP ? (
               <div
                 role="button"
                 tabIndex={0}
@@ -1502,6 +1515,7 @@ export function RegisterContent({
                       : "Checkout is not configured"}
                 </button>
               </div>
+              ) : null}
 
               {plans.length === 0 && !plansErr ? (
                 <div className="fld-note">Loading plans…</div>
@@ -1566,7 +1580,7 @@ export function RegisterContent({
             {/* THE PAGE PICKER. Hand-rolled (no Radix here, same as every other
                 dialog in this fleet): a scrim, one panel, Escape closes it. The
                 price in its foot is the same function the server charges by. */}
-            {pickerOpen && isClient ? createPortal(
+            {OFFER_CUSTOM_AT_SIGNUP && pickerOpen && isClient ? createPortal(
               <div className={styles.bp + " pwp-host"}>
               <div
                 className={"pwp" + (pickerOn ? " is-on" : "")}

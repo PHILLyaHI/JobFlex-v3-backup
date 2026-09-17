@@ -18,9 +18,24 @@
    ============================================================ */
 
 /* ── KPI strip variants ─────────────────────────────────────── */
-/* Six tiles on the overview. The donor grid is hard-wired to four. */
-:global(.jf-blueprint .content) .kpi6 { grid-template-columns: repeat(6, 1fr); }
-:global(.jf-blueprint .content) .kpi6 .kpiCell:nth-child(-n + 6) { border-bottom: none; }
+/* Seven tiles on the overview. The donor grid is hard-wired to four. */
+:global(.jf-blueprint .content) .kpi7 { grid-template-columns: repeat(7, 1fr); }
+:global(.jf-blueprint .content) .kpi7 .kpiCell:nth-child(-n + 7) { border-bottom: none; }
+
+/* The allowance tile. The denominator is context, not a second number, so it
+   rides at label weight beside the numeral it qualifies — and on the same
+   line: "250 /" above a lone "1000" reads as two figures, not one ratio. */
+:global(.jf-blueprint .content) .kpiAllowance { white-space: nowrap; }
+:global(.jf-blueprint .content) .kpiOf {
+  margin-left: 6px;
+  font-family: var(--font-mono);
+  font-size: 13px; font-weight: 600;
+  color: var(--muted-light);
+}
+/* Same three tones the influencers strip uses, same tokens. */
+:global(.jf-blueprint .content) .kpiWarn { color: var(--warning); }
+:global(.jf-blueprint .content) .kpiBad { color: var(--danger); }
+:global(.jf-blueprint .content) .kpiUnknown { color: var(--muted-light); }
 
 /* Small mono annotation inside a KPI tile — source of the number, not a
    label restating it ("STRIPE · LIVE", "LOCAL MIRROR"). */
@@ -384,18 +399,21 @@
 
 /* ── Mid-size: effective-width layers the donor uses ───────── */
 @media (max-width: 1280px) {
-  :global(.jf-blueprint .content) .kpi6 { grid-template-columns: repeat(3, 1fr); }
-  :global(.jf-blueprint .content) .kpi6 .kpiCell { border-bottom: 1.5px solid var(--ink); border-right: 1.5px solid var(--ink); }
-  :global(.jf-blueprint .content) .kpi6 .kpiCell:nth-child(3n) { border-right: none; }
-  :global(.jf-blueprint .content) .kpi6 .kpiCell:nth-child(n + 4) { border-bottom: none; }
+  :global(.jf-blueprint .content) .kpi7 { grid-template-columns: repeat(3, 1fr); }
+  :global(.jf-blueprint .content) .kpi7 .kpiCell { border-bottom: 1.5px solid var(--ink); border-right: 1.5px solid var(--ink); }
+  :global(.jf-blueprint .content) .kpi7 .kpiCell:nth-child(3n) { border-right: none; }
+  /* Seven into three leaves the last tile alone on its row: no bottom edge
+     under the final row, and no right edge hanging off a tile with nothing
+     beside it. */
+  :global(.jf-blueprint .content) .kpi7 .kpiCell:nth-child(n + 7) { border-bottom: none; border-right: none; }
 }
 
 /* ── Mobile layer — LAST in the cascade ─────────────────────── */
 @media (max-width: 860px) {
-  :global(.jf-blueprint .content) .kpi6 { grid-template-columns: repeat(2, 1fr); }
-  :global(.jf-blueprint .content) .kpi6 .kpiCell { border-bottom: 1.5px solid var(--ink); border-right: 1.5px solid var(--ink); }
-  :global(.jf-blueprint .content) .kpi6 .kpiCell:nth-child(2n) { border-right: none; }
-  :global(.jf-blueprint .content) .kpi6 .kpiCell:nth-child(n + 5) { border-bottom: none; }
+  :global(.jf-blueprint .content) .kpi7 { grid-template-columns: repeat(2, 1fr); }
+  :global(.jf-blueprint .content) .kpi7 .kpiCell { border-bottom: 1.5px solid var(--ink); border-right: 1.5px solid var(--ink); }
+  :global(.jf-blueprint .content) .kpi7 .kpiCell:nth-child(2n) { border-right: none; }
+  :global(.jf-blueprint .content) .kpi7 .kpiCell:nth-child(n + 7) { border-bottom: none; border-right: none; }
 
   :global(.jf-blueprint .content) .mix { grid-template-columns: repeat(2, 1fr); }
 

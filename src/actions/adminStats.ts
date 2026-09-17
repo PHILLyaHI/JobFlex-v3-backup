@@ -10,6 +10,8 @@
 
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { QUOTA_KEY as PARCEL_QUOTA_KEY } from "@/lib/parcelLookup";
+import { QUOTA_ALLTIME as PARCEL_QUOTA_TOTAL } from "@/lib/reportall";
 import { getSubscribersData } from "@/actions/subscribers";
 import type {
   ChangeKind,
@@ -66,6 +68,20 @@ export interface AdminOverviewData {
    *  page is an organization, never a person. */
   orgsThisMonth: number;
   supportUnread: number;
+  /** THE PARCEL ALLOWANCE. ReportAll sells a fixed number of point lookups for
+   *  the life of the account — ALLTIME, not monthly — and the only statement of
+   *  what is left is the header every parcel call answers with, which
+   *  lib/reportall writes to SyncState. Read from that row here: asking
+   *  ReportAll would cost one of the lookups the tile is counting.
+   *  `remaining` is null when no call has ever answered on this deployment;
+   *  `stale` says the last answer is older than PARCEL_QUOTA_STALE_DAYS, so the
+   *  figure is a memory rather than a reading. */
+  parcelQuota: {
+    remaining: number | null;
+    total: number;
+    updatedAt: string | null;
+    stale: boolean;
+  };
   /** 12 weeks of organization signups, oldest first; the last bucket is this week. */
   weeks: WeekBucket[];
   recentOrgs: { id: string; name: string; members: number; createdAt: string }[];
@@ -95,6 +111,10 @@ export interface AdminOverviewData {
    *  the client render matches the server render byte for byte. */
   generatedAt: string;
 }
+
+/** After this long without a parcel call, the stored allowance is a memory,
+ *  not a reading — the tile says so rather than presenting it as current. */
+const PARCEL_QUOTA_STALE_DAYS = 7;
 
 /** Sunday-anchored 12-week buckets, the overview's signups sparkline. */
 function weekBuckets(createdAts: Date[]): WeekBucket[] {
@@ -207,6 +227,19 @@ export async function getAdminOverview(): Promise<AdminOverviewData> {
     };
   }
 
+  /* One indexed row, read rather than requested — see AdminOverviewData. A
+     failure here must not take the overview down: the tile then reads "—". */
+  const quotaRow = await db.syncState.findUnique({ where: { key: PARCEL_QUOTA_KEY } }).catch(() => null);
+  const quotaLeft = Number(quotaRow?.cursor);
+  const parcelQuota = {
+    remaining: Number.isFinite(quotaLeft) ? quotaLeft : null,
+    total: PARCEL_QUOTA_TOTAL,
+    updatedAt: quotaRow?.updatedAt.toISOString() ?? null,
+    stale: quotaRow
+      ? Date.now() - quotaRow.updatedAt.getTime() > PARCEL_QUOTA_STALE_DAYS * 24 * 60 * 60 * 1000
+      : false,
+  };
+
   return {
     organizations,
     users,
@@ -228,6 +261,7 @@ export async function getAdminOverview(): Promise<AdminOverviewData> {
     billingTruncated: billing.truncated,
     orgsThisMonth,
     supportUnread,
+    parcelQuota,
     weeks: weekBuckets(recentCreatedAts.map((o) => o.createdAt)),
     recentOrgs: recentOrgs.map((o) => ({
       id: o.id,
