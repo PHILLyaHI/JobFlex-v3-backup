@@ -388,6 +388,7 @@ const jobKindSchema = z.enum(JOBS.map((j) => j.id) as [string, ...string[]]).opt
 const draftSchema = z.object({
   job: jobKindSchema,
   input: jobInputSchema,
+  outdoorKind: z.enum(["air-conditioner", "heat-pump"]).optional(),
   title: z.string().max(200),
   scope: z.string().max(6000),
   materials: z.array(lineSchema).max(80),

@@ -22,6 +22,10 @@ export interface RunEngineOptions {
   /** What the contractor is pricing (default: the full system). */
   job?: JobKind;
   input?: JobInput;
+  /** Full system / outdoor unit: what goes outside when the job allows both —
+   *  an AC (like for like, with the furnace) or a heat pump. Left out, the
+   *  engine picks: an AC on a gas house, a heat pump otherwise. */
+  outdoorKind?: "air-conditioner" | "heat-pump";
 }
 
 const FIELD_WORDS: Record<string, string> = {
@@ -52,14 +56,23 @@ export function runEngine(model: BuildingModel, opts: RunEngineOptions): EngineR
   const load = computeBlockLoad(loadModel, conditions);
   // A package-unit house gets a package unit on a full replacement; with no
   // package rows in the catalog the ledger prices one from the rate card.
-  const kinds = job.id === "replace-system" && model.existing.kind === "package-unit" ? (["package"] as const).slice() : job.kinds;
-  const dualFuel = job.id === "heat-pump-conversion" && keepsGas(model);
+  const outdoorKind = opts.outdoorKind && job.kinds.includes(opts.outdoorKind) ? opts.outdoorKind : undefined;
+  const kinds = job.id === "replace-system" && model.existing.kind === "package-unit" ? (["package"] as const).slice() : outdoorKind ? [outdoorKind] : job.kinds;
+  const wantsHeatPump = job.id === "heat-pump-conversion" || outdoorKind === "heat-pump";
   const selection = job.selection === "none"
     ? { chosen: null, runnerUp: null, candidates: [], targetTons: Math.max(1.5, Math.round((load.coolingTotalBtuh / 12000) * 2) / 2), systems: 1 }
-    : selectSystem(opts.catalog, load, conditions, model, { kinds, wantsHeatPump: job.id === "heat-pump-conversion" });
+    : selectSystem(opts.catalog, load, conditions, model, { kinds, wantsHeatPump });
   const waterHeater = job.id === "water-heater" ? waterHeaterPlan(model, opts.input?.wh) : undefined;
   const wanted = new Set<string>(job.checks);
   const chosenItem = selection.chosen?.item;
+  // A heat pump where the furnace stays (a conversion, or an outdoor swap on
+  // an AC + furnace house) runs dual fuel: no strips, a dual-fuel thermostat.
+  const dualFuel = (job.id === "heat-pump-conversion" || (job.id === "replace-outdoor" && chosenItem?.kind === "heat-pump")) && keepsGas(model);
+  if (dualFuel) {
+    // The furnace, not electric strips, carries the heat below the balance point.
+    const reword = (r: string) => r.replace(/[\d.]+ kW of backup carries the rest below ([^ ]+) °F\./, "the furnace carries the rest below $1 °F (dual fuel).");
+    for (const c of selection.candidates) c.reasons = c.reasons.map(reword);
+  }
   const gasFurnace = job.id === "replace-furnace" || (job.id === "replace-system" && chosenItem?.kind === "air-conditioner" && keepsGas(model));
   const a2lOnExisting = !!chosenItem && (chosenItem.refrigerant === "R-454B" || chosenItem.refrigerant === "R-32") && (job.id === "add-ac" || dualFuel || (job.id === "replace-outdoor" && model.existing.refrigerant !== chosenItem.refrigerant));
   const checks = waterHeater
@@ -96,5 +109,5 @@ export function runEngine(model: BuildingModel, opts: RunEngineOptions): EngineR
     notes.push({ kind: "contractor", text: `No catalog unit fits the ${load.coolingTotalBtuh.toLocaleString("en-US")} BTU/h cooling load within Manual S limits; a ${selection.targetTons}-ton system is the target.` });
   }
 
-  return { job: job.id, waterHeater, zone: zoneSqft ? { sqft: zoneSqft, heads: Math.max(1, Math.round(opts.input?.heads ?? 1)) } : undefined, conditions, load, selection, checks, notes, engineVersion: ENGINE_VERSION };
+  return { job: job.id, dualFuel: dualFuel || undefined, waterHeater, zone: zoneSqft ? { sqft: zoneSqft, heads: Math.max(1, Math.round(opts.input?.heads ?? 1)) } : undefined, conditions, load, selection, checks, notes, engineVersion: ENGINE_VERSION };
 }

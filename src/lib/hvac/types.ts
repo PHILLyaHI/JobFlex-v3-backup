@@ -325,6 +325,8 @@ export interface EngineResult {
   waterHeater?: import("./waterHeater").WaterHeaterPlan;
   /** Ductless jobs: the zone the load was run for. */
   zone?: { sqft: number; heads: number };
+  /** A heat pump on a gas house: the furnace stays as backup below the balance point. */
+  dualFuel?: boolean;
   conditions: DesignConditions;
   load: LoadResult;
   selection: SelectionResult;

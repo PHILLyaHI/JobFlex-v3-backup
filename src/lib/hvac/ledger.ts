@@ -385,8 +385,10 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
   const task = (id: string, name: string, qty: number, unit: string, price: number, note?: string, basis: LineBasis = "estimated") => lab.push({ id, name, quantity: qty, unitPrice: price, unit, basis, note });
   const stock = (id: string, name: string, qty: number, unit: string, cost: number, note?: string, basis: LineBasis = "estimated") => mat.push({ id, name, quantity: qty, unitPrice: mk(cost), unit, basis, note });
   const gasHouse = keepsGas(m);
-  const dualFuel = job === "heat-pump-conversion" && gasHouse;
+  const dualFuel = engine.dualFuel ?? (job === "heat-pump-conversion" && gasHouse);
   const allElectricHp = job === "heat-pump-conversion" && !gasHouse;
+  // An outdoor swap that puts a heat pump where an AC was.
+  const hpSwap = job === "replace-outdoor" && chosen?.item.kind === "heat-pump" && m.existing.kind !== "split-heat-pump";
   const linesetFt = opts.linesetFt ?? card.linesetFtDefault;
   const linesetBasis: LineBasis = opts.linesetFt ? "entered" : "estimated";
   const linesetNote = opts.linesetFt ? "Length entered" : `Default ${card.linesetFtDefault} ft — measure the run`;
@@ -456,7 +458,7 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
   }
   if (indoorNew || job === "add-ac" || job === "ductless") stock("m-drain", "Condensate drain kit, trap and safety switch", job === "ductless" ? heads : n, "each", card.materials.drainKit);
   if ((indoorNew || job === "add-ac") && m.ducts.location === "attic") stock("m-pump", "Secondary drain pan / condensate pump (attic unit)", 1, "each", card.materials.condensatePump, "Attic air handler");
-  if (job !== "replace-outdoor" && job !== "ductless") stock("m-tstat", chosen?.item.staging === "variable" || dualFuel ? (dualFuel ? "Dual-fuel thermostat" : "Communicating thermostat") : "Programmable thermostat", n, "each", card.materials.thermostat * (chosen?.item.staging === "variable" || dualFuel ? 1.6 : 1));
+  if ((job !== "replace-outdoor" && job !== "ductless") || dualFuel) stock("m-tstat", chosen?.item.staging === "variable" || dualFuel ? (dualFuel ? "Dual-fuel thermostat" : "Communicating thermostat") : "Programmable thermostat", n, "each", card.materials.thermostat * (chosen?.item.staging === "variable" || dualFuel ? 1.6 : 1));
   if (job === "replace-system" && chosen?.item.kind === "air-conditioner" && gasHouse) stock("m-gasflex", "Gas flex connector, shutoff and drip leg", n, "each", card.materials.gasFlexKit);
   const newFurnace = job === "replace-furnace" || mat.some((l) => l.id === "eq-furnace");
   const furnaceRow = chosen?.item.kind === "furnace" ? chosen.item : catalog.find((c) => c.kind === "furnace" && mat.some((l) => l.id === "eq-furnace" && l.name.startsWith(`${c.brand} ${c.model}`)));
@@ -472,7 +474,7 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
   // A new circuit when there is none to reuse: adding cooling, a ductless
   // zone, a conversion on a furnace-only house, or a panel that fails; a
   // heat pump replacing a condenser reuses that circuit when it is big enough.
-  const hpNeedsCircuit = job === "heat-pump-conversion" && (m.existing.kind === "furnace-only" || m.existing.kind === "none" || ((m.electrical.existingHvacAmps ?? 99) < (chosen?.item.mcaAmps ?? 0)));
+  const hpNeedsCircuit = (job === "heat-pump-conversion" || hpSwap) && (m.existing.kind === "furnace-only" || m.existing.kind === "none" || ((m.electrical.existingHvacAmps ?? 99) < (chosen?.item.mcaAmps ?? 0)));
   const newCircuit = job === "add-ac" || job === "ductless" || hpNeedsCircuit || serviceFix;
   if (newCircuit) stock("m-breaker", serviceFix && job !== "add-ac" ? "Breaker + branch circuit for the new unit (service upgrade quoted separately)" : "Breaker + branch circuit for the outdoor unit", 40, "ln ft", card.materials.breakerAndWirePerFt, "40 ft run assumed — measure panel to pad");
   if (check("return") === "fix") stock("m-return", "Return grille and duct upsize", 1, "each", card.materials.returnGrilleUpsize, engine.checks.find((c) => c.id === "return")?.detail);
@@ -516,7 +518,7 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
   assumptions.push(`Priced from the shop rate card by the task: equipment +${card.equipmentMarkupPct}%, materials +${card.materialsMarkupPct}%.`);
   if (serviceFix) assumptions.push("The panel is short for this unit by the NEC 220.83 count — the service upgrade is not in these lines.");
   if (job === "replace-outdoor" && !refrigerantChanges(m, chosen?.item)) assumptions.push("The indoor coil stays: same refrigerant class. If the coil turns out mismatched or leaking, add the coil line.");
-  if (job === "heat-pump-conversion" && !hpNeedsCircuit) assumptions.push("The existing condenser circuit is reused — confirm its ampacity covers the heat pump's MCA.");
+  if ((job === "heat-pump-conversion" || hpSwap) && !hpNeedsCircuit) assumptions.push("The existing condenser circuit is reused — confirm its ampacity covers the heat pump's MCA.");
   if (newFurnace && furnaceRow && furnaceRow.maxTons === undefined && (job === "replace-system" || job === "replace-furnace")) assumptions.push(`The furnace cabinet is chosen by airflow, not BTU: its blower must move ${engine.load.coolingCfm.toLocaleString("en-US")} CFM at 0.5 in. w.c. for the ${tons}-ton coil — check the blower table.`);
   if (dualFuel) assumptions.push("Dual fuel: the existing furnace stays as backup and the dual-fuel thermostat switches to gas below the balance point.");
 
@@ -529,7 +531,7 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
     : `Design load ${l.coolingTotalBtuh.toLocaleString("en-US")} BTU/h cooling and ${l.heatingBtuh.toLocaleString("en-US")} BTU/h heating at ${c.coolingF} °F / ${c.heatingF} °F design conditions for ${c.county ? `${c.county} County, ` : ""}${c.state}, ${m.conditionedSqft.toLocaleString("en-US")} sq ft conditioned.`;
   const what: Record<JobKind, string> = {
     "replace-system": `Replace the existing ${existingWords(m)} at ${m.address} with ${n > 1 ? `${n} systems, each a ${tons}-ton ${chosen ? kindPhrase(chosen.item) : "system"} (${sys}), one per zone` : `a ${tons}-ton ${chosen ? kindPhrase(chosen.item) : "system"} (${sys})`}.`,
-    "replace-outdoor": `Replace the outdoor unit of the existing ${existingWords(m)} at ${m.address} with a ${tons}-ton ${chosen?.item.kind === "heat-pump" ? "heat pump" : "condenser"} (${sys})${refrigerantChanges(m, chosen?.item) ? ", with a matched coil and new line set for the new refrigerant" : ", on the existing coil and line set"}.`,
+    "replace-outdoor": `Replace the outdoor unit of the existing ${existingWords(m)} at ${m.address} with a ${tons}-ton ${chosen?.item.kind === "heat-pump" ? "heat pump" : "condenser"} (${sys})${hpSwap ? (dualFuel ? " in place of the AC — dual fuel, the existing furnace stays as backup" : " in place of the AC, on the existing air handler") : ""}${refrigerantChanges(m, chosen?.item) ? ", with a matched coil and new line set for the new refrigerant" : ", on the existing coil and line set"}.`,
     "replace-furnace": `Replace the furnace at ${m.address} with ${sys}${m.existing.kind === "split-ac-furnace" ? ", re-setting the existing coil" : ""}.`,
     "add-ac": `Add central cooling to the furnace at ${m.address}: a ${tons}-ton condenser (${sys}) with a matched coil, line set, new circuit and drain.`,
     "heat-pump-conversion": `Convert ${m.address} to a ${tons}-ton heat pump (${sys})${dualFuel ? " as dual fuel with the existing furnace" : " with an air handler and backup heat, all-electric"}.`,
@@ -547,7 +549,7 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
   };
   const titles: Record<JobKind, string> = {
     "replace-system": `${n > 1 ? `${n} × ` : ""}${chosen ? kindTitle(chosen.item) : "HVAC"} replacement`,
-    "replace-outdoor": `${chosen?.item.kind === "heat-pump" ? "Heat pump" : "Condenser"} replacement`,
+    "replace-outdoor": hpSwap ? (dualFuel ? "Dual-fuel heat pump (outdoor swap)" : "Heat pump in place of the AC") : `${chosen?.item.kind === "heat-pump" ? "Heat pump" : "Condenser"} replacement`,
     "replace-furnace": "Furnace replacement",
     "add-ac": "Add central AC",
     "heat-pump-conversion": dualFuel ? "Dual-fuel heat pump" : "Heat pump conversion",

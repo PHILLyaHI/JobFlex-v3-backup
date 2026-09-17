@@ -352,6 +352,17 @@ handler) now prefer the outdoor unit's brand, then its sales tier, so a Good
 condenser gets the 80% furnace and a Best one the modulating furnace from the
 same maker. QA: `scripts/qa/hvac-catalog.check.ts` (45 checks).
 
+**What goes outside (2026-09-16, after the owner's first run on jobflex.app).**
+On the Outdoor unit and Full system jobs a strip above Good / Better / Best
+offers both kinds priced as the whole job at their Better tier — "Air
+conditioner · like for like" and "Heat pump · dual fuel, the furnace stays
+as backup" (or "+ air handler, all-electric" on a full system). It sets
+`runEngine({ outdoorKind })`; the engine returns `dualFuel`, the ledger reads
+it (dual-fuel thermostat, no strips, circuit-reuse rule, title "Dual-fuel heat
+pump (outdoor swap)"), and the draft keeps the choice. The editable lines' reset
+key now includes line names: a catalog swap that kept the size and the price
+used to leave "Starter" names in the estimate.
+
 Not in the catalog: multi-zone ductless outdoor units and package units
 (no ratings read), Fujitsu (Halcyon RLS3 retired, Orion figures not
 published yet), non-condensing tankless. Re-verify the families after the

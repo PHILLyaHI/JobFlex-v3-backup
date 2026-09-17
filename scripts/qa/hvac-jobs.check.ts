@@ -80,7 +80,7 @@ ok("Add cooling: new circuit priced as one each", addAc.l.labor.find((r) => r.id
 
 // heat pump conversion — dual fuel on a gas house
 const hp = run("heat-pump-conversion");
-ok("Heat pump conversion on a gas house: a heat pump, no keep-gas penalty", hp.e.selection.chosen?.item.kind === "heat-pump" && !(hp.e.selection.chosen?.reasons.some((r) => /dual fuel/i.test(r)) ?? false), hp.e.selection.chosen?.reasons.join(" | "));
+ok("Heat pump conversion on a gas house: a heat pump, no keep-gas penalty", hp.e.selection.chosen?.item.kind === "heat-pump" && !(hp.e.selection.chosen?.reasons.some((r) => /keeps gas|keep gas|dual-fuel (pairing|offer)/i.test(r)) ?? false), hp.e.selection.chosen?.reasons.join(" | "));
 ok("Dual fuel: coil on the existing furnace + dual-fuel thermostat, no air handler or strips", has(hp.l.materials, "eq-main", "eq-coil", "m-tstat") && lacks(hp.l.materials, "eq-ah", "eq-strips") && hp.l.materials.find((r) => r.id === "m-tstat")?.name === "Dual-fuel thermostat" && /Dual-fuel heat pump/.test(hp.l.title), hp.l.title);
 const hpElec = run("heat-pump-conversion", house({ preferences: { allElectric: true } }));
 ok("All-electric conversion: air handler + strips, old furnace removed", has(hpElec.l.materials, "eq-ah", "eq-strips") && lacks(hpElec.l.materials, "eq-coil") && has(hpElec.l.labor, "l-remove-furnace"), ids(hpElec.l.labor).join(","));
@@ -153,6 +153,34 @@ const c1 = normalizeRateCard(v1);
 ok("v1 card → v2: hours × crew rate become per-task amounts", c1.version === 2 && c1.labor.removeSplit === 450 && c1.labor.setFurnace === 750 && c1.labor.electricalConnect === 300 && c1.labor.linesetPerFt === Math.round((3 * 150) / 25) && c1.equipmentMarkupPct === 30 && c1.materials.pad === 90 && c1.equipmentDefaults.heatPumpPerTon === 1300 && c1.materials.expansionTank === DEFAULT_RATE_CARD.materials.expansionTank, JSON.stringify({ r: c1.labor.removeSplit, f: c1.labor.setFurnace, e: c1.labor.electricalConnect, l: c1.labor.linesetPerFt }));
 ok("Garbage in → defaults out", normalizeRateCard(null).labor.startup === DEFAULT_RATE_CARD.labor.startup && normalizeRateCard({ labor: { startup: -5, setOutdoor: "x" } }).labor.startup === DEFAULT_RATE_CARD.labor.startup);
 ok("A v2 card round-trips", JSON.stringify(normalizeRateCard(DEFAULT_RATE_CARD)) === JSON.stringify(DEFAULT_RATE_CARD));
+
+
+// ── What goes outside: AC or heat pump on the jobs that allow both ──────────
+{
+  const g = house();
+  const swapAc = runEngine(g, { catalog: STARTER_CATALOG, job: "replace-outdoor" });
+  ok("Outdoor unit on an AC + furnace house: an AC by default, no dual fuel", swapAc.selection.chosen?.item.kind === "air-conditioner" && !swapAc.dualFuel, `${swapAc.selection.chosen?.item.model}`);
+  const swapHp = runEngine(g, { catalog: STARTER_CATALOG, job: "replace-outdoor", outdoorKind: "heat-pump" });
+  ok("Outdoor unit, heat pump chosen: a heat pump, run as dual fuel with the furnace that stays", swapHp.selection.chosen?.item.kind === "heat-pump" && swapHp.dualFuel === true, `${swapHp.selection.chosen?.item.model}`);
+  ok("Dual-fuel swap: no backup-strip load in the electrical check", !swapHp.checks.some((c) => /strip/i.test(c.detail)), swapHp.checks.find((c) => c.id === "service")?.detail);
+  ok("Dual-fuel swap: the reason says the furnace, not kW of strips, carries the cold end", !!swapHp.selection.chosen && !swapHp.selection.chosen.reasons.some((r) => /kW of backup/.test(r)) && swapHp.selection.chosen.reasons.some((r) => /furnace carries the rest/.test(r)), swapHp.selection.chosen?.reasons.find((r) => /carries the rest/.test(r)));
+  const lHp = buildLedger(swapHp, g, DEFAULT_RATE_CARD, STARTER_CATALOG, { job: "replace-outdoor", input: {} });
+  const ids = lHp.materials.map((l) => l.id);
+  ok("Dual-fuel swap ledger: heat pump + matched coil on the furnace + dual-fuel thermostat, no air handler, no strips", ids.includes("eq-main") && ids.includes("eq-coil") && !ids.includes("eq-ah") && !ids.includes("eq-strips") && /dual-fuel thermostat/i.test(lHp.materials.find((l) => l.id === "m-tstat")?.name ?? ""), ids.join(","));
+  ok("Dual-fuel swap: title and scope say so", /Dual-fuel heat pump/.test(lHp.title) && /dual fuel, the existing furnace stays as backup/.test(lHp.scope), lHp.title);
+  ok("Dual-fuel swap: the condenser circuit is reused and the assumption says to confirm its ampacity", lHp.assumptions.some((a) => /circuit is reused/.test(a)) && !ids.includes("m-breaker"));
+  const lAc = buildLedger(swapAc, g, DEFAULT_RATE_CARD, STARTER_CATALOG, { job: "replace-outdoor", input: {} });
+  ok("AC swap ledger: no thermostat line (the existing one stays)", !lAc.materials.some((l) => l.id === "m-tstat"), lAc.title);
+  const fullHp = runEngine(g, { catalog: STARTER_CATALOG, job: "replace-system", outdoorKind: "heat-pump" });
+  const lFull = buildLedger(fullHp, g, DEFAULT_RATE_CARD, STARTER_CATALOG, { job: "replace-system", input: {} });
+  ok("Full system, heat pump chosen on a gas house: heat pump + air handler + strips, all-electric, not dual fuel", fullHp.selection.chosen?.item.kind === "heat-pump" && !fullHp.dualFuel && lFull.materials.some((l) => l.id === "eq-ah") && lFull.materials.some((l) => l.id === "eq-strips") && !lFull.materials.some((l) => l.id === "eq-furnace"), lFull.materials.map((l) => l.id).slice(0, 6).join(","));
+  const furn = runEngine(g, { catalog: STARTER_CATALOG, job: "replace-furnace", outdoorKind: "heat-pump" });
+  ok("The choice is ignored on a job that does not allow it (furnace)", furn.selection.chosen?.item.kind === "furnace");
+  const elec = house({ gas: { available: false }, existing: { kind: "split-ac-furnace", tons: 3, fuel: "electric", refrigerant: "R-410A" } });
+  const swapElec = runEngine(elec, { catalog: STARTER_CATALOG, job: "replace-outdoor", outdoorKind: "heat-pump" });
+  const lElec = buildLedger(swapElec, elec, DEFAULT_RATE_CARD, STARTER_CATALOG, { job: "replace-outdoor", input: {} });
+  ok("Outdoor swap to a heat pump on an all-electric house: not dual fuel, the air handler stays", swapElec.selection.chosen?.item.kind === "heat-pump" && !swapElec.dualFuel && !lElec.materials.some((l) => l.id === "eq-ah") && /Heat pump in place of the AC/.test(lElec.title), lElec.title);
+}
 
 console.log(`\n${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);

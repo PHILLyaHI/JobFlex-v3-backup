@@ -255,6 +255,8 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
   }, []);
   /** A unit the contractor picked over the engine's first choice (catalog id). */
   const [pickId, setPickId] = React.useState<string | null>(null);
+  // Full system / outdoor unit: AC or heat pump outside. null = the engine's pick.
+  const [outdoorKind, setOutdoorKind] = React.useState<"air-conditioner" | "heat-pump" | null>(null);
 
   // shop data
   const [catalog, setCatalog] = React.useState<{ items: CatalogItem[]; own: boolean } | null>(null);
@@ -346,7 +348,25 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
 
   const conditions = React.useMemo(() => (model ? designConditionsFor(model.state, model.county, model.elevationFt ?? 0) : null), [model]);
   const ready = !!model && (!def.needs.load || (def.needs.zone ? (jobInput.zoneSqft ?? 0) > 0 : model.conditionedSqft > 0));
-  const engineRaw = React.useMemo<EngineResult | null>(() => (model && catalog && ready ? runEngine(model, { catalog: catalog.items, job, input: jobInput }) : null), [model, catalog, ready, job, jobInput]);
+  const engineRaw = React.useMemo<EngineResult | null>(() => (model && catalog && ready ? runEngine(model, { catalog: catalog.items, job, input: jobInput, outdoorKind: outdoorKind ?? undefined }) : null), [model, catalog, ready, job, jobInput, outdoorKind]);
+  // AC or heat pump outside, each priced as the whole job at its Better tier,
+  // when the job allows both and the catalog fits both.
+  const kindQuotes = React.useMemo(() => {
+    if (!model || !catalog || !ready || !(def.id === "replace-outdoor" || def.id === "replace-system") || model.existing.kind === "package-unit") return [];
+    return (["air-conditioner", "heat-pump"] as const).flatMap((kind) => {
+      const r = runEngine(model, { catalog: catalog.items, job, input: jobInput, outdoorKind: kind });
+      if (!r.selection.chosen) return [];
+      const fits = r.selection.candidates.filter((c) => !c.disqualified && c.item.kind === kind);
+      const base = fits.filter((c) => c.item.tier === "mid").sort((a, b) => b.score - a.score)[0] ?? r.selection.chosen;
+      const l = buildLedger({ ...r, selection: { ...r.selection, chosen: base } }, model, card.card, catalog.items, { job, input: jobInput, linesetFt });
+      const furnace = l.materials.some((x) => x.id === "eq-furnace");
+      const airHandler = l.materials.some((x) => x.id === "eq-ah");
+      const sub = kind === "air-conditioner"
+        ? (def.id === "replace-outdoor" ? "like for like — the indoor unit stays" : furnace ? "AC + gas furnace" : "AC + air handler, electric heat")
+        : r.dualFuel ? "dual fuel — the furnace stays as backup" : airHandler ? "heat pump + air handler, all-electric" : "on the existing air handler";
+      return [{ kind, subtotal: l.subtotal, sub, unit: base.item }];
+    });
+  }, [model, catalog, ready, def.id, job, jobInput, card, linesetFt]);
   // The engine's first choice unless the contractor picked another fitting unit.
   const engine = React.useMemo<EngineResult | null>(() => {
     if (!engineRaw || !engineRaw.selection.chosen) return engineRaw;
@@ -365,7 +385,9 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
 
   // The editable lines follow the ledger until the contractor edits them, and
   // reset when the design behind them changes. Derived state, adopted in render.
-  const ledgerKey = ledger ? `${ledger.subtotal}|${ledger.materials.map((l) => l.id + l.quantity).join(",")}|${ledger.labor.map((l) => l.id + l.quantity).join(",")}` : "";
+  // The names are part of the key: a catalog swap that keeps the size and
+  // the price still renames the unit, and the lines must follow.
+  const ledgerKey = ledger ? `${ledger.subtotal}|${ledger.materials.map((l) => l.id + l.name + l.quantity).join(",")}|${ledger.labor.map((l) => l.id + l.name + l.quantity).join(",")}` : "";
   if (ledger && lines?.key !== ledgerKey) setLines({ key: ledgerKey, materials: ledger.materials, labor: ledger.labor });
 
   const onTyped = React.useCallback((path: string, v: unknown) => setTyped((t) => ({ ...t, [path]: v })), []);
@@ -511,6 +533,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
   const draft = () => ({
     job,
     input: jobInput,
+    outdoorKind: outdoorKind ?? undefined,
     title: title ?? ledger?.title ?? "HVAC replacement",
     scope: ledger?.scope ?? "",
     materials: lines?.materials ?? [],
@@ -562,6 +585,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     const savedJob = (res.row.draft as { job?: string; input?: JobInput }).job;
     setJob(JOBS.some((j) => j.id === savedJob) ? (savedJob as JobKind) : DEFAULT_JOB);
     setJobInput((res.row.draft as { input?: JobInput }).input ?? {});
+    setOutdoorKind((res.row.draft as { outdoorKind?: "air-conditioner" | "heat-pump" }).outdoorKind ?? null);
     setSavedId(res.row.id);
     setPermit(res.row.permit);
     setReportUrl(res.row.approvedReportUrl);
@@ -630,7 +654,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
         <div className={cx("body")}>
           <div className={cx("jobs")} role="radiogroup" aria-label="Job">
             {JOBS.map((j) => (
-              <button key={j.id} type="button" role="radio" aria-checked={job === j.id} className={cx("job", job === j.id && "on")} onClick={() => { setJob(j.id); setTitle(null); setPickId(null); if (!site) setTimeout(() => addrRef.current?.focus(), 30); else if (siteLocal && j.needs.load) { setSite(null); setSiteLocal(false); setTimeout(() => { addrRef.current?.focus(); scrollTo("hv-site"); }, 30); } }}>
+              <button key={j.id} type="button" role="radio" aria-checked={job === j.id} className={cx("job", job === j.id && "on")} onClick={() => { setJob(j.id); setTitle(null); setPickId(null); setOutdoorKind(null); if (!site) setTimeout(() => addrRef.current?.focus(), 30); else if (siteLocal && j.needs.load) { setSite(null); setSiteLocal(false); setTimeout(() => { addrRef.current?.focus(); scrollTo("hv-site"); }, 30); } }}>
                 <span className={cx("job-t")}>{j.title}</span>
                 <span className={cx("job-s")}>{j.sub}</span>
               </button>
@@ -1037,6 +1061,20 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
               <div className={cx("hero-h")}>{engine.load.cfmPerTon} CFM/ton · ducts {Math.round(engine.load.ductGainCooling * 100)}% gain</div>
             </div>
           </div>}
+          {kindQuotes.length === 2 && (
+            <div className={cx("kinds")} role="radiogroup" aria-label={def.id === "replace-outdoor" ? "What goes outside" : "System type"}>
+              <span className={cx("kinds-lbl")}>{def.id === "replace-outdoor" ? "What goes outside" : "System"}</span>
+              {kindQuotes.map((q) => {
+                const on = engineRaw?.selection.chosen?.item.kind === q.kind;
+                return (
+                  <button key={q.kind} type="button" role="radio" aria-checked={on} className={cx("kind", on && "on")} onClick={() => { setOutdoorKind(q.kind); setPickId(null); }}>
+                    <span className={cx("kind-t")}>{q.kind === "air-conditioner" ? "Air conditioner" : "Heat pump"}<span className={cx("kind-v")}>{money(q.subtotal)}</span></span>
+                    <span className={cx("kind-s")}>{q.sub}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {tiers.length > 1 && (
             <div className={cx("tiers")} role="radiogroup" aria-label="Good, better, best">
               {tiers.map((t) => {

@@ -399,6 +399,23 @@
 }
 
 /* Good · Better · Best — one job priced three ways */
+/* What goes outside: AC or heat pump, each priced as the whole job. */
+:global(.jf-blueprint .content) .kinds { display: grid; grid-template-columns: auto 1fr 1fr; align-items: stretch; border-bottom: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .kinds-lbl { display: flex; align-items: center; padding: 0 16px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); border-right: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .kind { display: flex; flex-direction: column; gap: 2px; padding: 10px 16px; text-align: left; background: transparent; border: none; border-right: 1.5px solid var(--hair-soft); font: inherit; color: var(--ink); cursor: pointer; }
+:global(.jf-blueprint .content) .kind:last-child { border-right: none; }
+:global(.jf-blueprint .content) .kind:hover { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .kind.on { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .kind:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+:global(.jf-blueprint .content) .kind-t { display: flex; justify-content: space-between; gap: 12px; font-weight: 700; font-size: 14px; }
+:global(.jf-blueprint .content) .kind-v { font-family: var(--mono); font-weight: 700; }
+:global(.jf-blueprint .content) .kind-s { font-family: var(--mono); font-size: 11px; opacity: 0.8; }
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .kinds { grid-template-columns: 1fr; }
+  :global(.jf-blueprint .content) .kinds-lbl { padding: 8px 16px 0; border-right: none; }
+  :global(.jf-blueprint .content) .kind { border-right: none; border-bottom: 1.5px solid var(--hair-soft); }
+  :global(.jf-blueprint .content) .kind:last-child { border-bottom: none; }
+}
 :global(.jf-blueprint .content) .tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1.5px solid var(--hair-soft); }
 :global(.jf-blueprint .content) .tier {
   display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left; min-width: 0;
