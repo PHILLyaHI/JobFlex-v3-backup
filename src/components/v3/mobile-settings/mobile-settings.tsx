@@ -96,6 +96,7 @@ import {
   DEFAULT_RAIL,
   DEFAULT_SUBTAB,
   isVisibleSubTab,
+  integrationSubTabs,
   DISCONNECT_ACTION,
   EMAIL_COLUMN_INDEX,
   EMAIL_UNAVAILABLE_TAG,
@@ -109,7 +110,6 @@ import {
   GMAIL_FROM_LABELS,
   GMAIL_PERMISSIONS_CARD,
   GMAIL_SCOPES_EMPTY,
-  INTEGRATION_SUBTABS,
   MANAGE_ACTION,
   META_CONNECTED_DESC,
   META_CONNECTION_CARD,
@@ -1220,7 +1220,9 @@ function IntegrationsPane({
 }) {
   const { gmail, meta, stripe, square, connections } = data.integrations;
 
-  const [sub, setSub] = useState<SubTabKey>(isVisibleSubTab(wanted) ? (wanted as SubTabKey) : DEFAULT_SUBTAB);
+  // Gmail joins the bar only for viewers it is switched on for (or once connected).
+  const tabs = integrationSubTabs({ gmail: !gmail.comingSoon || gmail.connected });
+  const [sub, setSub] = useState<SubTabKey>(isVisibleSubTab(wanted, tabs) ? (wanted as SubTabKey) : DEFAULT_SUBTAB);
   // The page can steer the subtab (Payments → Manage, or ?sub= after OAuth):
   // derive from the prop when it changes, without an effect.
   const [seenWanted, setSeenWanted] = useState(wanted);
@@ -1280,7 +1282,7 @@ function IntegrationsPane({
     <>
       <div className="mst-subrail">
         <div className="mst-subrailIn">
-          {INTEGRATION_SUBTABS.map((t) => (
+          {tabs.map((t) => (
             <button
               key={t.key}
               className={t.key === sub ? "mst-subtab is-on" : "mst-subtab"}

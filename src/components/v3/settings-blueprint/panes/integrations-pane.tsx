@@ -44,6 +44,7 @@ import {
   CONNECTED_BADGE,
   DEFAULT_SUBTAB,
   isVisibleSubTab,
+  integrationSubTabs,
   DISCONNECT_ACTION,
   GMAIL_BEHAVIOR_CARD,
   GMAIL_BEHAVIOR_TOGGLES,
@@ -55,7 +56,6 @@ import {
   GMAIL_SCOPES_EMPTY,
   COMING_SOON_BADGE,
   COMING_SOON_TAB,
-  INTEGRATION_SUBTABS,
   comingSoonNote,
   META_CONNECTED_DESC,
   META_CONNECTION_CARD,
@@ -128,7 +128,9 @@ function ToggleRowItem({
 export function IntegrationsPane({ data, sub: wanted }: PaneProps) {
   const { gmail, meta, stripe, square, connections } = data.integrations;
 
-  const [sub, setSub] = useState<SubTabKey>(isVisibleSubTab(wanted) ? (wanted as SubTabKey) : DEFAULT_SUBTAB);
+  // Gmail joins the bar only for viewers it is switched on for (or once connected).
+  const tabs = integrationSubTabs({ gmail: !gmail.comingSoon || gmail.connected });
+  const [sub, setSub] = useState<SubTabKey>(isVisibleSubTab(wanted, tabs) ? (wanted as SubTabKey) : DEFAULT_SUBTAB);
   // The page can steer the subtab (Payments → Manage, or ?sub= after OAuth):
   // derive from the prop when it changes, without an effect.
   const [seenWanted, setSeenWanted] = useState(wanted);
@@ -219,7 +221,7 @@ export function IntegrationsPane({ data, sub: wanted }: PaneProps) {
           A tab whose integration the platform has not switched on yet carries
           a "Soon" tag, so the state is visible before the tab is opened. */}
       <div className="sub">
-        {INTEGRATION_SUBTABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             className={t.key === sub ? "sub-b on" : "sub-b"}
