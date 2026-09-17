@@ -5,7 +5,13 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
+import {
+  friendlyAIError,
+  getOpenAI,
+  isOpenAIEnabled,
+  isTransientAIError,
+  resolveOpenAIModel,
+} from "@/lib/sdk/openai";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
@@ -53,6 +59,9 @@ function projectLine(projectType: string | null | undefined): string {
   const t = (projectType ?? "").trim();
   return t ? `Project type: ${t}` : "Project type: infer it from the description";
 }
+
+/** How long to wait before the single retry of a busy model call. */
+const RETRY_DELAY_MS = 3_000;
 
 const STUB: GeneratedEstimate = {
   title: "Sample Roof Replacement Estimate · AI Disabled",
@@ -522,7 +531,7 @@ export async function analyzeEstimatePrompt(input: {
   try {
     const client = getOpenAI();
     const completion = await client.chat.completions.create({
-      model: OPENAI_MODEL,
+      model: await resolveOpenAIModel(),
       temperature: 0.3,
       messages: [
         {
@@ -625,7 +634,10 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
     // prompt. gpt-4o-class models answer it with 4-6 lines, so they also get
     // the trade profile + hard rules in the old "extra admin" slot, which
     // brings them to the old output's 12-13 lines (harness, 2026-09-03).
-    const reasoningModel = /^(gpt-5|o[1-9])/.test(OPENAI_MODEL);
+    // The model this process can actually call — the env name when the key's
+    // project is entitled to it, the default when it is not (lib/sdk/openai).
+    const model = await resolveOpenAIModel();
+    const reasoningModel = /^(gpt-5|o[1-9])/.test(model);
     const legacy = buildLegacyEstimatePrompt(
       {
         description: input.description,
@@ -647,16 +659,41 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
     // at $1,021 and at $3,000. That is why the answer is validated below
     // rather than trusted. Reasoning models reject a temperature.
     const askEstimate = async (extra: string) => {
-      const completion = await client.chat.completions.create({
-        model: OPENAI_MODEL,
-        ...(reasoningModel ? {} : { temperature: 0, seed: 42 }),
-        messages: [
-          { role: "system", content: LEGACY_SYSTEM_MESSAGE },
-          { role: "user", content: withPhotos(`${legacy.prompt}${extra}`, photos) },
-        ],
-        response_format: { type: "json_object" },
-      });
+      const completion = await client.chat.completions.create(
+        {
+          model,
+          ...(reasoningModel ? {} : { temperature: 0, seed: 42 }),
+          messages: [
+            { role: "system", content: LEGACY_SYSTEM_MESSAGE },
+            { role: "user", content: withPhotos(`${legacy.prompt}${extra}`, photos) },
+          ],
+          response_format: { type: "json_object" },
+        },
+        // The SDK retries twice on its own, which turned one busy minute into
+        // six requests and a minute of a contractor watching a spinner. The
+        // retry policy for this call is the one below, and it is visible.
+        { maxRetries: 0 },
+      );
       return legacyEstimateFromText(completion.choices[0]?.message?.content ?? "{}", legacy.specialty);
+    };
+
+    /* THE FIRST ASK, ONCE MORE IF THE SERVICE WAS BUSY (owner, 2026-09-18).
+       429 and 5xx are the two answers that mean "not now" rather than "no", and
+       a single three-second wait clears most of them. One retry, not a loop: a
+       contractor waiting on an estimate would rather be told than watched. A
+       live key is never quietly answered with the demo stub — that stub exists
+       for a workspace with no key at all, and dressing a failure as an estimate
+       would put invented prices in front of a customer. */
+    const askEstimateOnce = async (extra: string) => {
+      try {
+        return await askEstimate(extra);
+      } catch (err) {
+        if (!isTransientAIError(err)) throw err;
+        const status = (err as { status?: number })?.status;
+        console.warn(`[advancedEstimator] Step 1 · ${status} from the model — one retry in ${RETRY_DELAY_MS} ms`);
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+        return askEstimate(extra);
+      }
     };
 
     // ── Step 1b · Judge the answer, and make it fix what it got wrong ──────
@@ -664,7 +701,7 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
     // after that is repaired here and said out loud on the estimate
     // (lib/estimate/validate-estimate).
     const trade = detectTrade(`${input.projectType ?? ""} ${input.description}`);
-    let called = await askEstimate("");
+    let called = await askEstimateOnce("");
     if (called.warnings.length) console.warn(`[advancedEstimator] parser: ${called.warnings.join(" | ")}`);
     if (called.items.length === 0) throw new Error("The estimator returned no line items — try a more specific description.");
     let report = validateEstimate({ items: called.items, description: input.description, location: input.location, assumptions: called.assumptions, trade });
@@ -802,8 +839,13 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
 
     return { ok: true, data: estimate };
   } catch (err: any) {
-    console.error(`[advancedEstimator] generation failed: ${err?.message ?? err}`);
-    return { ok: false, error: err?.message ?? "AI generation failed" };
+    // A message this code wrote itself (no line items, a length cap) is for the
+    // contractor; anything the provider raised is for the log only.
+    if (typeof err?.status !== "number" && err?.message) {
+      console.error(`[advancedEstimator] generation failed: ${err.message}`);
+      return { ok: false, error: err.message };
+    }
+    return { ok: false, error: friendlyAIError(err, "estimate generation") };
   }
 }
 
@@ -893,7 +935,7 @@ export async function refineAdvancedEstimate(raw: unknown): Promise<
       `[advancedEstimator] refine · "${instructions.slice(0, 80)}" · ${input.current.materials.length} materials`
     );
     const completion = await client.chat.completions.create({
-      model: OPENAI_MODEL,
+      model: await resolveOpenAIModel(),
       temperature: 0.3,
       messages: [
         {
@@ -1027,7 +1069,7 @@ ${JSON.stringify(input.current)}`,
             .default([]),
         });
         const matchCompletion = await client.chat.completions.create({
-          model: OPENAI_MODEL,
+          model: await resolveOpenAIModel(),
           temperature: 0.3,
           messages: [
             {
@@ -1149,15 +1191,17 @@ ${JSON.stringify(research)}`,
     );
     return { ok: true, data: parsed, warnings, reshopFailed };
   } catch (err: any) {
-    // Log the raw failure, but never leak Zod/OpenAI internals into the toast.
-    console.error(`[advancedEstimator] refine failed: ${err?.message ?? err}`);
-    const friendly =
-      err instanceof z.ZodError || err instanceof SyntaxError
-        ? "The AI returned an edit we couldn't apply. Try rephrasing, or make one change at a time."
-        : typeof err?.status === "number"
-          ? "The AI service had a problem. Try again in a moment."
-          : "Couldn't apply changes. Try again.";
-    return { ok: false, error: friendly };
+    // Never leak Zod/OpenAI internals into the toast: the parse failures have
+    // their own line, everything the provider raised goes through the one
+    // helper that writes the log line and returns a sentence (lib/sdk/openai).
+    if (err instanceof z.ZodError || err instanceof SyntaxError) {
+      console.error(`[advancedEstimator] refine failed: ${err?.message ?? err}`);
+      return {
+        ok: false,
+        error: "The AI returned an edit we couldn't apply. Try rephrasing, or make one change at a time.",
+      };
+    }
+    return { ok: false, error: friendlyAIError(err, "estimate refine") };
   }
 }
 

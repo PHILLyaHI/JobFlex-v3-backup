@@ -1,7 +1,20 @@
 import OpenAI from "openai";
 import { IntegrationDisabledError } from "./base";
 
+/** What every call runs on when OPENAI_MODEL says nothing — and what an
+ *  unavailable OPENAI_MODEL falls back to.
+ *
+ *  It was gpt-4o-mini until 2026-09-18, which no longer matched the account:
+ *  the project this deployment's key belongs to is not entitled to that model
+ *  and answers every request with 403 model_not_found. A default the account
+ *  cannot use is not a default, it is an outage waiting for someone to unset
+ *  one environment variable. */
+const DEFAULT_MODEL = "gpt-4o";
+
 let client: OpenAI | null = null;
+/** Set only when the availability check below has ruled the env model out. */
+let modelOverride: string | null = null;
+let modelCheck: Promise<string> | null = null;
 
 export function isOpenAIEnabled() {
   return Boolean(process.env.OPENAI_API_KEY);
@@ -21,12 +34,97 @@ export function getOpenAI() {
  *  module first evaluates — under a tsx harness whose .env loader runs after
  *  imports hoist, that silently pins the default model even though
  *  OPENAI_MODEL is set. Vision paths (chimneyVision, outlineVision) must use
- *  this getter so harness and server agree on the model. */
+ *  this getter so harness and server agree on the model.
+ *
+ *  Once resolveOpenAIModel() has found the env model unusable, this returns
+ *  what the calls are actually running on instead. */
 export function getOpenAIModel(): string {
-  return process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+  return modelOverride ?? process.env.OPENAI_MODEL ?? DEFAULT_MODEL;
+}
+
+/**
+ * THE MODEL THIS PROCESS CAN ACTUALLY USE — checked once, then remembered.
+ *
+ * An entitlement is not something the environment can promise. OPENAI_MODEL is
+ * a string somebody typed; whether the key's project may call it is the API's
+ * answer, and until 2026-09-18 nobody asked: a model the project had no access
+ * to failed every estimate with a raw 403 and the contractor read it as "the
+ * AI is broken". One `models.retrieve` at startup costs no tokens and turns
+ * that into one log line and a working default.
+ *
+ * Only model_not_found demotes the model. An auth failure, a network blip or a
+ * rate limit says nothing about entitlement, and pretending otherwise would
+ * swap a diagnosable outage for a silent model change.
+ */
+export async function resolveOpenAIModel(): Promise<string> {
+  if (modelCheck) return modelCheck;
+  modelCheck = (async () => {
+    const wanted = process.env.OPENAI_MODEL ?? DEFAULT_MODEL;
+    if (!isOpenAIEnabled() || wanted === DEFAULT_MODEL) return wanted;
+    try {
+      await getOpenAI().models.retrieve(wanted);
+      console.info(`[openai] model "${wanted}" is available to this project`);
+      return wanted;
+    } catch (err) {
+      const status = (err as { status?: number })?.status;
+      const code = (err as { code?: string })?.code;
+      const isMissingModel = code === "model_not_found" || status === 404 || status === 403;
+      if (!isMissingModel) {
+        console.warn(
+          `[openai] could not verify model "${wanted}" (${status ?? "no status"}): ${
+            err instanceof Error ? err.message : String(err)
+          } — keeping it`,
+        );
+        return wanted;
+      }
+      console.error(
+        `[openai] model "${wanted}" is not available to this project (${status ?? "?"} ${code ?? "model_not_found"}) — ` +
+          `falling back to "${DEFAULT_MODEL}". Set OPENAI_MODEL to a model the key's project is entitled to.`,
+      );
+      modelOverride = DEFAULT_MODEL;
+      return DEFAULT_MODEL;
+    }
+  })();
+  return modelCheck;
 }
 
 /** Import-time snapshot, kept for existing call sites that run only on the
  *  server (where the env is loaded before any import). New code — and anything
- *  a tsx harness can reach — should call getOpenAIModel() instead. */
+ *  a tsx harness can reach — should call getOpenAIModel() instead, which also
+ *  reflects the availability check above. */
 export const OPENAI_MODEL = getOpenAIModel();
+
+/**
+ * WHAT THE CONTRACTOR IS TOLD WHEN A MODEL CALL FAILS.
+ *
+ * One helper for every user-facing AI path, because the provider's own text is
+ * not a message to a customer: a rate-limit error names the model, the billing
+ * organization and the per-minute limit, and it used to reach the estimate
+ * screen verbatim. Those details belong in the server log, next to the request
+ * id that lets somebody look the call up — and nowhere else.
+ *
+ * The status is the whole classification: anything the shop can fix by waiting
+ * reads as busy, anything only an owner can fix reads as not configured.
+ */
+export function friendlyAIError(err: unknown, scope: string): string {
+  const status = (err as { status?: number })?.status;
+  const requestId = (err as { requestID?: string | null })?.requestID;
+  const raw = err instanceof Error ? err.message : String(err);
+  console.error(
+    `[openai] ${scope} failed${status ? ` (${status})` : ""}${requestId ? ` request=${requestId}` : ""}: ${raw}`,
+  );
+  if (status === 429 || (typeof status === "number" && status >= 500)) {
+    return "The AI service is busy. Try again in a moment.";
+  }
+  if (status === 401 || status === 403) {
+    return "AI is not configured for this workspace.";
+  }
+  return "Couldn't finish that. Try again.";
+}
+
+/** True for the statuses worth one more attempt: the service is busy or it
+ *  broke on its own side. Everything else is an answer, not a hiccup. */
+export function isTransientAIError(err: unknown): boolean {
+  const status = (err as { status?: number })?.status;
+  return status === 429 || (typeof status === "number" && status >= 500);
+}
