@@ -262,6 +262,14 @@ export interface CatalogItem {
   vent?: "atmospheric" | "power" | "direct" | "none";
   /** Sales tier the shop sees on the pick list. */
   tier?: "value" | "mid" | "premium";
+  /** Typed in by the contractor for one estimate, not a catalog row. */
+  typed?: true;
+  /** Sold or permitted only in these states (two-letter); empty = everywhere. */
+  states?: string[];
+  /** Not sold or not permitted in these states, with the reason on the row. */
+  notStates?: string[];
+  /** Why the row is limited, in the contractor's words ("SCAQMD ultra-low NOx"). */
+  availabilityNote?: string;
   /** Shop cost. */
   cost?: number;
   source: "shop" | "ahri" | "neep" | "manufacturer";
@@ -302,6 +310,8 @@ export interface SelectionCandidate {
   curve?: CapacityPoint[];
   reasons: string[];
   disqualified?: string;
+  /** The engine ruled this unit out and the contractor chose it anyway: why it was ruled out. */
+  overridden?: string;
 }
 
 export interface SelectionResult {

@@ -210,7 +210,7 @@ export function incentivesFor(state: string): IncentiveRow[] {
 export interface CodeFlag {
   id: string;
   title: string;
-  applies: (job: { state: string; touchesRefrigerant: boolean; touchesDucts: boolean; newConstruction: boolean }) => boolean;
+  applies: (job: { state: string; touchesRefrigerant: boolean; touchesDucts: boolean; newConstruction: boolean; removesEquipment?: boolean; kind?: string }) => boolean;
   status: CheckStatus;
   text: string;
   source: string;
@@ -252,15 +252,23 @@ export const CODE_FLAGS: CodeFlag[] = [
   {
     id: "federal-floor",
     title: "Federal efficiency floor",
-    applies: () => true,
+    applies: (j) => ["air-conditioner", "heat-pump", "ductless", "package"].includes(j.kind ?? ""),
     status: "pass",
     text: "New equipment must meet the DOE regional SEER2 / EER2 / HSPF2 minimum; the selection rule reads the floor from the table.",
     source: "DOE standards effective 2023-01-01",
   },
   {
+    id: "furnace-floor",
+    title: "Furnace efficiency floor",
+    applies: (j) => j.kind === "furnace",
+    status: "pass",
+    text: "Gas furnaces: 80% AFUE today; non-weatherized gas furnaces made from 2028-12-18 must reach 95% AFUE (condensing), so an 80% unit installed later will be a repair-only class.",
+    source: "DOE 10 CFR 430.32(e), final rule 2023-12",
+  },
+  {
     id: "epa-608",
     title: "EPA 608 recovery",
-    applies: (j) => j.touchesRefrigerant && !j.newConstruction,
+    applies: (j) => j.touchesRefrigerant && !j.newConstruction && j.removesEquipment !== false,
     status: "pass",
     text: "Refrigerant must be recovered by a certified technician before the old equipment is removed; the recovery is its own line.",
     source: "40 CFR Part 82 Subpart F",

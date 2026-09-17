@@ -37,7 +37,10 @@ export function heatPumpCapacityAt(item: CatalogItem, outdoorF: number): number 
   if (outdoorF >= 47) return base;
   if (outdoorF >= 17) return p17 + ((base - p17) * (outdoorF - 17)) / 30;
   if (outdoorF >= 5) return p5 + ((p17 - p5) * (outdoorF - 5)) / 12;
-  const slope = (p17 - p5) / 12;
+  // Below the coldest published point the curve keeps falling: the read slope,
+  // or at least ~1.3% of rated per °F (a cold-climate unit that holds 100% to
+  // 5 °F is near 76% by −13 °F).
+  const slope = Math.max((p17 - p5) / 12, base * 0.013);
   return Math.max(base * 0.3, p5 - slope * (5 - outdoorF));
 }
 
@@ -60,7 +63,7 @@ export function capacityCurve(item: CatalogItem, load: LoadResult, c: DesignCond
   return out;
 }
 
-export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignConditions, m: BuildingModel, opts: { wantsHeatPump?: boolean } = {}): SelectionCandidate {
+export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignConditions, m: BuildingModel, opts: { wantsHeatPump?: boolean; keepsIndoor?: boolean } = {}): SelectionCandidate {
   const reasons: string[] = [];
   let score = 100;
   const out: SelectionCandidate = { item, score, reasons };
@@ -88,7 +91,14 @@ export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignCondi
   // A heat-pump conversion is the contractor's call: the furnace may stay as
   // dual-fuel backup, and that is not a mark against the heat pump.
   const keepsGas = !noGas && !opts.wantsHeatPump && (m.preferences.keepGas === true || m.existing.fuel === "gas" || m.existing.fuel === "propane" || (hasFurnace && m.gas.available === true));
-  if (item.kind === "air-conditioner" && noGas) return fail("An AC needs a furnace; this house has no gas.");
+  // An AC needs an indoor blower to pair with: a new gas furnace on a full
+  // replacement, or the furnace / air handler that stays on an add or a swap
+  // (an electric furnace carries a coil just as well).
+  // Where the row may be sold and installed: a state rule the catalog carries.
+  const st = (m.state || "").toUpperCase();
+  if (st && item.notStates?.map((x) => x.toUpperCase()).includes(st)) return fail(`Not sold or not permitted in ${st}${item.availabilityNote ? ` — ${item.availabilityNote}` : ""}.`);
+  if (st && item.states?.length && !item.states.map((x) => x.toUpperCase()).includes(st)) return fail(`Sold in ${item.states.join(", ")} only${item.availabilityNote ? ` — ${item.availabilityNote}` : ""}.`);
+  if (item.kind === "air-conditioner" && noGas && !opts.keepsIndoor) return fail("An AC needs a furnace; this house has no gas.");
   if (item.kind === "heat-pump" && keepsGas) {
     // Decisive, not a nudge: a variable-speed heat pump that carries the
     // design day picks up +14 elsewhere, and a gas house should still see
@@ -142,7 +152,10 @@ export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignCondi
 
   if (item.kind === "furnace") {
     if (m.preferences.allElectric) return fail("Customer wants all-electric.");
-    if (!m.gas.available && item.btuInput && (m.existing.fuel === "gas" || m.existing.fuel === undefined)) {
+    if (m.gas.available === false) {
+      reasons.push("No gas at the property: a gas furnace needs a gas service — or price an electric furnace or a heat pump.");
+      score -= 30;
+    } else if (!m.gas.available && item.btuInput && (m.existing.fuel === "gas" || m.existing.fuel === undefined)) {
       reasons.push("Gas availability at the property is unconfirmed.");
       score -= 10;
     }
@@ -172,15 +185,34 @@ export interface SelectOptions {
   kinds?: EquipmentKind[];
   /** The contractor chose a heat pump: no keep-gas penalty. */
   wantsHeatPump?: boolean;
+  /** The indoor unit stays (add cooling, outdoor swap): an AC pairs with it whatever the fuel. */
+  keepsIndoor?: boolean;
+  /** Smallest nominal size worth targeting (0.5 t for a ductless zone; 1.5 t central). */
+  minTons?: number;
+  /** Furnace jobs: the coil the new furnace is set under — its blower must carry these tons. */
+  coilTons?: number;
 }
 
 export function selectSystem(catalog: CatalogItem[], load: LoadResult, c: DesignConditions, m: BuildingModel, opts: SelectOptions = {}): SelectionResult {
-  const targetTons = Math.max(1.5, Math.round((load.coolingTotalBtuh / 12000) * 2) / 2);
+  // Central gear comes in half tons from 1.5; wall heads in quarter tons from 0.5.
+  const minTons = opts.minTons ?? 1.5;
+  const step = minTons < 1.5 ? 4 : 2;
+  const targetTons = Math.max(minTons, Math.round((load.coolingTotalBtuh / 12000) * step) / step);
   const allowed = opts.kinds?.length ? new Set(opts.kinds) : null;
   const pool = allowed ? catalog.filter((i) => allowed.has(i.kind)) : catalog;
   const model = m;
-  const scorer = { wantsHeatPump: opts.wantsHeatPump };
+  const scorer = { wantsHeatPump: opts.wantsHeatPump, keepsIndoor: opts.keepsIndoor };
   const candidates = pool.map((item) => evaluateItem(item, load, c, model, scorer)).sort((a, b) => b.score - a.score);
+  // An electric furnace is an air handler with a heat kit: the cabinet is
+  // picked for the coil it carries, and the kit covers the heating load.
+  if (allowed && allowed.has("air-handler") && allowed.size === 1) {
+    const need = opts.coilTons ?? targetTons;
+    const fits = candidates.filter((x) => !x.disqualified && x.item.kind === "air-handler" && (x.item.maxTons ?? x.item.tons ?? 99) >= need).sort((a, b) => (a.item.tons ?? 99) - (b.item.tons ?? 99));
+    const pool2 = fits.length ? fits : candidates.filter((x) => x.item.kind === "air-handler").sort((a, b) => (b.item.tons ?? 0) - (a.item.tons ?? 0));
+    const kw = Math.round((load.heatingBtuh / 3412) * 10) / 10;
+    const withReason = pool2.map((x) => ({ ...x, disqualified: undefined, reasons: [...x.reasons.filter((r) => !/SEER2|cold-climate/i.test(r)), `Electric furnace: this cabinet carries the ${need}-ton coil, with a ${Math.max(5, Math.ceil(kw / 5) * 5)} kW heat kit for the ${Math.round(load.heatingBtuh / 1000)}k BTU/h heating load.`] }));
+    return { chosen: withReason[0] ?? null, runnerUp: withReason[1] ?? null, candidates, targetTons, systems: 1 };
+  }
   // Furnace-only jobs pick a furnace; everything else picks an outdoor unit.
   if (allowed && allowed.has("furnace") && allowed.size === 1) {
     const furnaces = candidates.filter((x) => !x.disqualified && x.item.kind === "furnace").sort((a, b) => (Math.abs((a.outputRatio ?? 9) - 1.15)) - (Math.abs((b.outputRatio ?? 9) - 1.15)));
@@ -193,7 +225,11 @@ export function selectSystem(catalog: CatalogItem[], load: LoadResult, c: Design
         return { chosen, runnerUp: null, candidates, targetTons, systems: 1 };
       }
     }
-    return { chosen: furnaces[0] ?? null, runnerUp: furnaces[1] ?? null, candidates, targetTons, systems: 1 };
+    // The blower must move the coil's air: among the fits, prefer cabinets
+    // rated for the coil (maxTons); if none is, the engine flags it.
+    const carries = opts.coilTons ? furnaces.filter((x) => (x.item.maxTons ?? 99) >= (opts.coilTons ?? 0)) : furnaces;
+    const ranked = carries.length ? carries : furnaces;
+    return { chosen: ranked[0] ?? null, runnerUp: ranked[1] ?? null, candidates, targetTons, systems: 1 };
   }
   const outdoor = candidates.filter(isOutdoor);
   if (outdoor.length || load.coolingTotalBtuh <= 40000) {

@@ -73,7 +73,7 @@ function windowShares(m: BuildingModel): Array<{ label: string; share: number; g
   return [...byLabel.entries()].map(([label, v]) => ({ label, ...v }));
 }
 
-export function computeBlockLoad(m: BuildingModel, c: DesignConditions): LoadResult {
+export function computeBlockLoad(m: BuildingModel, c: DesignConditions, opts: { zone?: boolean } = {}): LoadResult {
   const assumptions: string[] = [];
   const area = Math.max(200, m.conditionedSqft);
   const storeys = Math.max(1, Math.round(m.storeys || 1));
@@ -109,7 +109,9 @@ export function computeBlockLoad(m: BuildingModel, c: DesignConditions): LoadRes
 
   const occupants = m.occupants > 0 ? m.occupants : 3;
   if (!(m.occupants > 0)) assumptions.push("Occupants assumed 3.");
-  const appliances = APPLIANCE_SENSIBLE + (area > 2500 ? 600 : 0);
+  // One room or an addition carries no kitchen allowance unless it is the kitchen.
+  const appliances = opts.zone ? 0 : APPLIANCE_SENSIBLE + (area > 2500 ? 600 : 0);
+  if (opts.zone) assumptions.push("Zone load: no kitchen appliance allowance — add 1,200 BTU/h if the zone includes the kitchen.");
   const shade = SHADING_FACTOR[m.shading];
   const roofAdd = ROOF_COLOR_ADD[m.roofColor];
 
@@ -154,7 +156,11 @@ export function computeBlockLoad(m: BuildingModel, c: DesignConditions): LoadRes
   const coolingTotalBtuh = coolingSensibleBtuh + coolingLatentBtuh;
   const coolingTons = round(coolingTotalBtuh / 12000, 2);
   const sensibleHeatRatio = coolingTotalBtuh > 0 ? round(coolingSensibleBtuh / coolingTotalBtuh, 2) : 1;
-  const coolingCfm = Math.round(sens / (1.1 * SUPPLY_DT_F) / 10) * 10;
+  // Design airflow is the climate's CFM per ton on the load's tons — the number
+  // the return check and the hero use; the sensible/ΔT form is kept for the
+  // supply-temperature note only.
+  const coolingCfm = Math.round(((coolingTotalBtuh / 12000) * CFM_PER_TON[c.humidity]) / 10) * 10;
+  void SUPPLY_DT_F;
   assumptions.push(`Indoor design ${INDOOR_COOLING_F} °F cooling / ${INDOOR_HEATING_F} °F heating; outdoor ${c.coolingF} °F / ${c.heatingF} °F for ${c.county}, ${c.state} (${c.source}).`);
   assumptions.push(`Moisture at the cooling design taken as "${c.humidity}" climate (${c.grainsDiff} grains).`);
   if (m.ducts.location !== "conditioned" && m.ducts.location !== "none") {

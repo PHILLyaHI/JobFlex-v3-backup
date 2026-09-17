@@ -363,6 +363,70 @@ pump (outdoor swap)"), and the draft keeps the choice. The editable lines' reset
 key now includes line names: a catalog swap that kept the size and the price
 used to leave "Starter" names in the estimate.
 
+**All-jobs sweep (2026-09-16, owner's ask "check all hvac sections").**
+One checker per job (engine + ledger + the page on the local stand) and a
+skeptic per finding. Confirmed and fixed: an AC pairs with the furnace or
+air handler that stays whatever the fuel (add cooling on an electric
+furnace, an outdoor swap on an all-electric house); the kept furnace's
+blower is checked against the coil (fix when its input says it cannot carry
+the tons, verify when the plate is unknown; the same for a kept air handler
+and for a new furnace under an existing coil); "Already has cooling" on an
+add; duct-insulation and no-ducts checks on an add; checks and tier prices
+follow the picked unit (`runEngine({ pick })`, `tiersFor(…, rerun)`); a
+heat pump on an all-electric house gets a heat-pump thermostat; a
+same-refrigerant swap prices a heat-pump-rated coil and says so; a like-for-
+like heat pump on a dual-fuel house buys no thermostat; a heat-pump house
+defaults to a heat pump; the strip only offers a kind the engine can take;
+the all-electric conversion runs a 240 V circuit for the air handler and
+strip kit, caps the gas drop and checks the orphaned water-heater vent;
+cold-climate rows derate below 5 °F; a furnace under a coil is picked for
+the coil's tons; a no-gas house prices no gas lines and says a service is
+needed; furnaces are priced on output so Good is not dearer than Better; the
+B-vent kit has its own price; furnaces get their own floor flag and no
+drain parts unless something condenses; a swap reuses the breaker (no
+free-slot warning); the A2L check names the air handler when that is what
+stays; ductless: one head is the catalog pair, several heads are a
+multi-zone outdoor unit from the rate card plus heads, the zone target
+starts at 0.5 t, the zone is loaded with its own people and no kitchen
+allowance, the hero shows the zone, mini-split words on the lines, no EPA
+608 line, an efficiency floor check; ductwork: replaced runs come insulated,
+no ducts is a new duct system (trunk lot + runs + permit), a static fix
+prices the return, one design airflow (tons × CFM/ton), WA/OR/CA duct
+flags on the job; service: any priced line can be converted, the
+refrigerant check is a service rule (R-22 reclaimed, R-410A free, A2L
+tools, "not identified" when blank), scope keeps the task's case, no load
+notes or permit card; water heater: never a smaller unit than the plan (the
+note names the catalog's largest), electric→gas adds the gas branch and a
+full vent, gas→electric caps the drop, a heat-pump tank is electric and
+unvented, a like-for-like electric swap reuses its circuit, the scope keeps
+the maker's name; full system: each furnace on a zoned house is sized to its own
+zone, the gas branch is checked against the furnace the ledger will set (and
+the upsizing priced), a blower-driven oversized furnace carries a Manual S
+note and a verify check, a package house with no package rows is priced from
+the rate card's package default with the gas connection, the curb and no line
+set, and a coil or air handler is never paired across refrigerants (a
+cross-brand match is worded as one). QA: hvac-jobs.check.ts 119 checks; the
+suite is 413.
+
+**Changing the unit (2026-09-17, owner's ask).** The design card carries a
+"Change the unit" panel: every catalog unit that fits (best first, with how it
+lands against the load), every unit the engine ruled out with its reason and a
+"Use anyway", and a form for a unit the catalog does not have. `runEngine`
+takes `pick` (any candidate, ruled out included — it returns
+`SelectionCandidate.overridden` and the engine adds a fix check naming the
+rule) and `custom` (a typed row that joins the catalog for the run, marked
+`CatalogItem.typed`, priced from its cost, with a verify check to confirm it
+against the submittal). `saveHvacCatalogItem` turns a typed unit into a
+permanent row. The water-heater job picks through `LedgerOptions.pick` and
+says so when the picked tank is under the sized gallons. Both the pick and the
+typed unit ride in the draft. Catalog rows can also carry `states` /
+`notStates` / `availabilityNote`, and `evaluateItem` rules out a unit that is
+not sold or not permitted in the house's state — the panel then shows it with
+its reason and the contractor can still override. The Furnace job on a house
+with no gas now picks an air handler with a heat kit sized to the load
+("Electric furnace replacement"), with no gas, vent, neutralizer or CO-alarm
+lines.
+
 Not in the catalog: multi-zone ductless outdoor units and package units
 (no ratings read), Fujitsu (Halcyon RLS3 retired, Orion figures not
 published yet), non-condensing tankless. Re-verify the families after the

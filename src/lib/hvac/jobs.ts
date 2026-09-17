@@ -73,7 +73,7 @@ export const JOBS: JobDef[] = [
     needs: { load: true, existing: true, electrical: true, ducts: true, gas: false, zone: false, waterHeater: false },
     selection: "cooling-add",
     kinds: ["air-conditioner"],
-    checks: ["return", "static", "duct-cond", "service", "refrigerant", "efficiency", "code"],
+    checks: ["return", "static", "duct-cond", "duct-ins", "ducts-none", "service", "refrigerant", "efficiency", "code"],
     shots: [2, 3, 4, 6],
   },
   {
@@ -113,7 +113,7 @@ export const JOBS: JobDef[] = [
     needs: { load: true, existing: false, electrical: false, ducts: true, gas: false, zone: false, waterHeater: false },
     selection: "none",
     kinds: [],
-    checks: ["return", "static", "duct-cond", "duct-ins", "ducts-none"],
+    checks: ["return", "static", "duct-cond", "duct-ins", "ducts-none", "code"],
     shots: [4, 6],
   },
   {
@@ -129,6 +129,10 @@ export const JOBS: JobDef[] = [
 ];
 
 export const DEFAULT_JOB: JobKind = "replace-system";
+
+/** What goes outside on a job that allows both. */
+export const OUTDOOR_KINDS = ["air-conditioner", "heat-pump"] as const;
+export type OutdoorKind = (typeof OUTDOOR_KINDS)[number];
 
 export function jobDef(id: JobKind | string | undefined | null): JobDef {
   return JOBS.find((j) => j.id === id) ?? JOBS[0];

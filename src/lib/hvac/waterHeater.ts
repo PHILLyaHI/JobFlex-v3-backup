@@ -32,8 +32,10 @@ export function tankGallonsFor(occupants: number, fuel: "gas" | "electric" | "pr
 }
 
 export function waterHeaterPlan(m: BuildingModel, input: JobInput["wh"] | undefined): WaterHeaterPlan {
-  const fuel = input?.fuel ?? (m.gas.available === false ? "electric" : m.existing.fuel === "propane" ? "propane" : "gas");
   const type = input?.type ?? "tank";
+  // A heat-pump tank is an electric appliance: no gas, no vent, sized from
+  // the electric table.
+  const fuel = type === "heat-pump" ? "electric" : input?.fuel ?? (m.gas.available === false ? "electric" : m.existing.fuel === "propane" ? "propane" : "gas");
   const gallons = input?.gallons ?? tankGallonsFor(m.occupants, fuel, type);
   const notes: string[] = [];
   const plan: WaterHeaterPlan = { fuel, type, gallons, vent: input?.vent ?? (fuel === "electric" ? "none" : type === "tankless" ? "direct" : "atmospheric"), location: input?.location ?? "garage", sizedFrom: input?.gallons ? "size entered" : type === "tankless" ? (fuel === "electric" ? "27 kW ≈ 3 GPM at a 60 °F rise" : "199k BTU/h ≈ 5 GPM at a 70 °F rise") : `${m.occupants} occupants → ${gallons} gal (first-hour table)`, notes };
@@ -60,7 +62,7 @@ export function waterHeaterPlan(m: BuildingModel, input: JobInput["wh"] | undefi
 
 /** The checks a water heater swap gets: gas pipe with the tank's input, the
  *  circuit for an electric or heat-pump tank, and the venting. */
-export function waterHeaterChecks(m: BuildingModel, plan: WaterHeaterPlan): CheckResult[] {
+export function waterHeaterChecks(m: BuildingModel, plan: WaterHeaterPlan, wasElectric = false): CheckResult[] {
   const out: CheckResult[] = [];
   if (plan.btuInput && (plan.fuel === "gas" || plan.fuel === "propane")) {
     // The furnace on the same line is the other load, when the house has one.
@@ -68,7 +70,9 @@ export function waterHeaterChecks(m: BuildingModel, plan: WaterHeaterPlan): Chec
     const g = gasCheck(m, { id: "wh", kind: "furnace", brand: "", model: "water heater", btuInput: plan.btuInput, source: "shop" }, { appliance: "the water heater", otherLoadBtuh: other });
     if (g) out.push({ ...g, title: "Gas pipe to the water heater" });
   }
-  if (plan.circuitAmps) {
+  if (plan.circuitAmps && wasElectric && plan.type !== "tankless") {
+    out.push({ id: "service", title: "Circuit for the tank", status: "pass", detail: `The existing 240 V / ${plan.circuitAmps} A circuit is reused — confirm the breaker size and the 10 AWG at the tank.`, rule: "NEC 422" });
+  } else if (plan.circuitAmps) {
     const main = m.electrical.mainAmps;
     const slots = m.electrical.freeSlots;
     if (main === undefined) out.push({ id: "service", title: "Circuit for the tank", status: "verify", detail: `Needs a dedicated 240 V / ${plan.circuitAmps} A circuit — panel size not on record yet.`, rule: "NEC 422" });

@@ -24,11 +24,11 @@ import { attachPlacesSuggest, type PickedPlace } from "@/components/v3/blueprint
 import { ensureWithinLimit, reportPlanLimit, reportPlanLimitResult } from "@/stores/usePlanLimitStore";
 import { VIDEO_ACCEPT, fmtClock, stripFrames } from "@/components/v3/video-estimator-blueprint/video-ingest";
 import type { WalkthroughAnalysis } from "@/lib/estimate/video-schema";
-import type { BuildingModel, CatalogItem, EngineResult, Provenance, SelectionCandidate } from "@/lib/hvac/types";
+import type { BuildingModel, CatalogItem, EngineResult, Provenance } from "@/lib/hvac/types";
 import { runEngine } from "@/lib/hvac/engine";
 import { countiesFor } from "@/lib/hvac/designConditions";
 import { CATALOG_CSV_COLUMNS, DEFAULT_RATE_CARD, buildLedger, normalizeRateCard, tiersFor, type HvacRateCard, type LedgerLine } from "@/lib/hvac/ledger";
-import { DEFAULT_JOB, JOBS, jobDef, type JobInput, type JobKind } from "@/lib/hvac/jobs";
+import { DEFAULT_JOB, JOBS, jobDef, type JobInput, type JobKind , type OutdoorKind } from "@/lib/hvac/jobs";
 import { applyNameplate, applyStated, applyStatedNested, applyTypedModelNumber, applyWalkthrough, modelFromSite, type NameplateRead, type SiteFacts } from "@/lib/hvac/intake";
 import { designConditionsFor } from "@/lib/hvac/designConditions";
 import {
@@ -45,6 +45,7 @@ import {
   listHvacEstimates,
   loadUsCatalog,
   readHvacNameplate,
+  saveHvacCatalogItem,
   recordHvacActual,
   requestHvacPermitReport,
   saveHvacEstimate,
@@ -256,7 +257,13 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
   /** A unit the contractor picked over the engine's first choice (catalog id). */
   const [pickId, setPickId] = React.useState<string | null>(null);
   // Full system / outdoor unit: AC or heat pump outside. null = the engine's pick.
-  const [outdoorKind, setOutdoorKind] = React.useState<"air-conditioner" | "heat-pump" | null>(null);
+  const [outdoorKind, setOutdoorKind] = React.useState<OutdoorKind | null>(null);
+  /** A unit the contractor typed because the catalog has nothing like it. */
+  const [custom, setCustom] = React.useState<CatalogItem | null>(null);
+  const [swapOpen, setSwapOpen] = React.useState(false);
+  const [swapQ, setSwapQ] = React.useState("");
+  const [swapMsg, setSwapMsg] = React.useState("");
+  const [unitDraft, setUnitDraft] = React.useState<Record<string, string>>({});
 
   // shop data
   const [catalog, setCatalog] = React.useState<{ items: CatalogItem[]; own: boolean } | null>(null);
@@ -348,40 +355,149 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
 
   const conditions = React.useMemo(() => (model ? designConditionsFor(model.state, model.county, model.elevationFt ?? 0) : null), [model]);
   const ready = !!model && (!def.needs.load || (def.needs.zone ? (jobInput.zoneSqft ?? 0) > 0 : model.conditionedSqft > 0));
-  const engineRaw = React.useMemo<EngineResult | null>(() => (model && catalog && ready ? runEngine(model, { catalog: catalog.items, job, input: jobInput, outdoorKind: outdoorKind ?? undefined }) : null), [model, catalog, ready, job, jobInput, outdoorKind]);
+  // Everything downstream reads one list: the shop's rows plus the unit the
+  // contractor typed for this estimate.
+  const catalogItems = React.useMemo(() => (custom ? [...(catalog?.items ?? []).filter((c) => c.id !== custom.id), custom] : catalog?.items ?? []), [catalog, custom]);
+  const engineRaw = React.useMemo<EngineResult | null>(() => (model && catalog && ready ? runEngine(model, { catalog: catalogItems, job, input: jobInput, outdoorKind: outdoorKind ?? undefined }) : null), [model, catalog, catalogItems, ready, job, jobInput, outdoorKind]);
   // AC or heat pump outside, each priced as the whole job at its Better tier,
   // when the job allows both and the catalog fits both.
   const kindQuotes = React.useMemo(() => {
     if (!model || !catalog || !ready || !(def.id === "replace-outdoor" || def.id === "replace-system") || model.existing.kind === "package-unit") return [];
     return (["air-conditioner", "heat-pump"] as const).flatMap((kind) => {
-      const r = runEngine(model, { catalog: catalog.items, job, input: jobInput, outdoorKind: kind });
-      if (!r.selection.chosen) return [];
-      const fits = r.selection.candidates.filter((c) => !c.disqualified && c.item.kind === kind);
-      const base = fits.filter((c) => c.item.tier === "mid").sort((a, b) => b.score - a.score)[0] ?? r.selection.chosen;
-      const l = buildLedger({ ...r, selection: { ...r.selection, chosen: base } }, model, card.card, catalog.items, { job, input: jobInput, linesetFt });
+      const r0 = runEngine(model, { catalog: catalogItems, job, input: jobInput, outdoorKind: kind });
+      // The engine fell back to the other kind: this one is not on offer.
+      if (!r0.selection.chosen || r0.selection.chosen.item.kind !== kind) return [];
+      const fits = r0.selection.candidates.filter((c) => !c.disqualified && c.item.kind === kind);
+      const base = fits.filter((c) => c.item.tier === "mid").sort((a, b) => b.score - a.score)[0] ?? r0.selection.chosen;
+      const r = base.item.id === r0.selection.chosen.item.id ? r0 : runEngine(model, { catalog: catalogItems, job, input: jobInput, outdoorKind: kind, pick: base.item.id });
+      const l = buildLedger(r, model, card.card, catalogItems, { job, input: jobInput, linesetFt });
       const furnace = l.materials.some((x) => x.id === "eq-furnace");
       const airHandler = l.materials.some((x) => x.id === "eq-ah");
+      const hpHouse = model.existing.kind === "split-heat-pump";
       const sub = kind === "air-conditioner"
-        ? (def.id === "replace-outdoor" ? "like for like — the indoor unit stays" : furnace ? "AC + gas furnace" : "AC + air handler, electric heat")
+        ? (def.id === "replace-outdoor" ? (hpHouse ? "in place of the heat pump — heating falls to the backup heat" : "like for like — the indoor unit stays") : furnace ? "AC + gas furnace" : "AC + air handler, electric heat")
+        : def.id === "replace-outdoor" && hpHouse ? (r.dualFuel ? "like for like — dual fuel, the furnace stays as backup" : "like for like — the air handler stays")
         : r.dualFuel ? "dual fuel — the furnace stays as backup" : airHandler ? "heat pump + air handler, all-electric" : "on the existing air handler";
       return [{ kind, subtotal: l.subtotal, sub, unit: base.item }];
     });
-  }, [model, catalog, ready, def.id, job, jobInput, card, linesetFt]);
-  // The engine's first choice unless the contractor picked another fitting unit.
+  }, [model, catalog, catalogItems, ready, def.id, job, jobInput, card, linesetFt]);
+  // The unit on the estimate: the contractor's pick (a unit the engine ruled
+  // out included), else the Better tier as the base quote when the catalog has
+  // tiers, else the engine's own first choice. The run is repeated for that
+  // unit so the checks and the notes describe what is being sold.
   const engine = React.useMemo<EngineResult | null>(() => {
-    if (!engineRaw || !engineRaw.selection.chosen) return engineRaw;
-    const fits = (c: SelectionCandidate) => !c.disqualified && c.item.kind === engineRaw.selection.chosen?.item.kind;
-    // The contractor's pick; else the Better tier as the base quote when the
-    // catalog has tiers (the engine's own first choice is the best fit, which
-    // on a tiered catalog is usually the premium unit).
-    const pick = pickId
-      ? engineRaw.selection.candidates.find((c) => c.item.id === pickId && fits(c))
-      : engineRaw.selection.candidates.filter((c) => fits(c) && c.item.tier === "mid").sort((a, b) => b.score - a.score)[0];
-    return pick && pick.item.id !== engineRaw.selection.chosen.item.id ? { ...engineRaw, selection: { ...engineRaw.selection, chosen: pick } } : engineRaw;
-  }, [engineRaw, pickId]);
-  const ledger = React.useMemo(() => (engine && model && catalog ? buildLedger(engine, model, card.card, catalog.items, { job, input: jobInput, linesetFt }) : null), [engine, model, catalog, card, job, jobInput, linesetFt]);
+    if (!engineRaw || !model) return engineRaw;
+    const rerun = (id: string) => runEngine(model, { catalog: catalogItems, job, input: jobInput, outdoorKind: outdoorKind ?? undefined, custom: custom ?? undefined, pick: id });
+    if (pickId) {
+      if (engineRaw.selection.chosen?.item.id === pickId) return engineRaw;
+      return engineRaw.selection.candidates.some((c) => c.item.id === pickId) ? rerun(pickId) : engineRaw;
+    }
+    const chosen = engineRaw.selection.chosen;
+    if (!chosen) return engineRaw;
+    const mid = engineRaw.selection.candidates.filter((c) => !c.disqualified && c.item.kind === chosen.item.kind && c.item.tier === "mid").sort((a, b) => b.score - a.score)[0];
+    return mid && mid.item.id !== chosen.item.id ? rerun(mid.item.id) : engineRaw;
+  }, [engineRaw, pickId, model, catalogItems, custom, job, jobInput, outdoorKind]);
+  const ledger = React.useMemo(() => (engine && model && catalog ? buildLedger(engine, model, card.card, catalogItems, { job, input: jobInput, linesetFt, pick: pickId ?? undefined }) : null), [engine, model, catalog, catalogItems, card, job, jobInput, linesetFt, pickId]);
   // Good · Better · Best: the best fitting unit of each tier, priced as a whole job.
-  const tiers = React.useMemo(() => (engineRaw && model && catalog ? tiersFor(engineRaw, model, card.card, catalog.items, { job, input: jobInput, linesetFt }) : []), [engineRaw, model, catalog, card, job, jobInput, linesetFt]);
+  const tiers = React.useMemo(() => (engineRaw && model && catalog ? tiersFor(engineRaw, model, card.card, catalogItems, { job, input: jobInput, linesetFt }, (id) => runEngine(model, { catalog: catalogItems, job, input: jobInput, outdoorKind: outdoorKind ?? undefined, custom: custom ?? undefined, pick: id })) : []), [engineRaw, model, catalog, catalogItems, custom, card, job, jobInput, linesetFt, outdoorKind]);
+
+  // Every unit the contractor could put on this estimate: what the engine
+  // ranked for a sized job, the catalog's tanks for a water-heater job. Rows
+  // the engine ruled out stay on the list with their reason.
+  const swapRows = React.useMemo(() => {
+    const q = swapQ.trim().toLowerCase();
+    const hit = (i: CatalogItem) => !q || `${i.brand} ${i.model}`.toLowerCase().includes(q);
+    if (def.id === "water-heater") {
+      const plan = engine?.waterHeater;
+      const rows = catalogItems.filter((c) => c.kind === "water-heater" && hit(c));
+      return rows.map((item) => {
+        const wrongKind = plan ? (item.fuel ?? "gas") !== plan.fuel || (item.whType ?? "tank") !== plan.type : false;
+        const small = plan && plan.type !== "tankless" ? (item.gallons ?? 0) < plan.gallons : plan?.btuInput ? (item.btuInput ?? 0) < plan.btuInput : false;
+        const out = wrongKind ? `${/^[aeiou]/i.test(item.fuel ?? "gas") ? "An" : "A"} ${item.fuel ?? "gas"} ${item.whType ?? "tank"}; this job is set up as a ${plan?.fuel} ${plan?.type}.` : small ? `Smaller than the ${plan && plan.type !== "tankless" ? `${plan.gallons} gal` : `${Math.round((plan?.btuInput ?? 0) / 1000)}k BTU/h`} the household sizes to.` : undefined;
+        const why = [item.gallons ? `${item.gallons} gal` : "", item.btuInput ? `${Math.round(item.btuInput / 1000)}k BTU/h` : "", item.uef ? `${item.uef} UEF` : "", item.vent && item.vent !== "none" ? `${item.vent} vent` : ""].filter(Boolean).join(" · ");
+        return { item, out, why, score: (item.gallons ?? item.btuInput ?? 0), miss: 0 };
+      }).sort((a, b) => (a.out ? 1 : 0) - (b.out ? 1 : 0) || a.score - b.score);
+    }
+    const kind = engine?.selection.chosen?.item.kind;
+    return (engine?.selection.candidates ?? [])
+      .filter((c) => (!kind || c.item.kind === kind) && hit(c.item))
+      .map((c) => ({
+        item: c.item,
+        out: c.disqualified,
+        why: c.coolingRatio !== undefined ? `Cooling ${Math.round(c.coolingRatio * 100)}% of the load` : c.outputRatio !== undefined ? `Output ${Math.round(c.outputRatio * 100)}% of the load` : c.reasons[0] ?? "",
+        score: c.score,
+        // Ruled-out rows are ordered by how near they came, so the 4½-ton that
+        // just missed is at the top and the 1½-ton is not.
+        miss: Math.abs((c.coolingRatio ?? c.outputRatio ?? 0) - 1),
+      }))
+      .sort((a, b) => (a.out ? 1 : 0) - (b.out ? 1 : 0) || (a.out ? a.miss - b.miss : b.score - a.score));
+  }, [engine, catalogItems, def.id, swapQ]);
+  const swapFits = swapRows.filter((r) => !r.out);
+  const swapOut = swapRows.filter((r) => r.out);
+  const swapShown = [...swapFits.slice(0, 10), ...swapOut.slice(0, 6)];
+  const chosenId = def.id === "water-heater" ? pickId : engine?.selection.chosen?.item.id ?? null;
+  // "no cost" is worth saying only when the shop has priced some of its rows.
+  const someCost = swapRows.some((r) => r.item.cost);
+
+  /** The unit the contractor typed, as a catalog row. */
+  const buildTypedUnit = (): CatalogItem | null => {
+    const brand = (unitDraft.brand ?? "").trim();
+    const modelNo = (unitDraft.model ?? "").trim();
+    if (!brand || !modelNo) return null;
+    const kind = (unitDraft.kind || engine?.selection.chosen?.item.kind || (def.id === "water-heater" ? "water-heater" : def.kinds[0]) || "air-conditioner") as CatalogItem["kind"];
+    const n = (k: string) => { const v = Number(unitDraft[k]); return Number.isFinite(v) && v > 0 ? v : undefined; };
+    const tons = n("tons");
+    const kbtu = n("kbtu");
+    const afue = n("afue");
+    const cold = unitDraft.coldClimate === "yes";
+    const item: CatalogItem = {
+      id: `custom-${kind}-${brand}-${modelNo}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/, ""),
+      kind, brand, model: modelNo, typed: true, source: "shop",
+      tons: kind === "furnace" || kind === "water-heater" ? undefined : tons,
+      coolingBtuh: tons && !["furnace", "water-heater", "air-handler", "coil"].includes(kind) ? Math.round(tons * 12000) : undefined,
+      btuInput: kbtu ? Math.round(kbtu * 1000) : undefined,
+      afue: afue ? (afue > 1 ? afue / 100 : afue) : undefined,
+      seer2: n("seer2"), hspf2: n("hspf2"), eer2: n("eer2"),
+      refrigerant: (unitDraft.refrigerant || undefined) as CatalogItem["refrigerant"],
+      staging: (unitDraft.staging || undefined) as CatalogItem["staging"],
+      mcaAmps: n("mca"),
+      cost: n("cost"),
+      ahriRef: (unitDraft.ahri ?? "").trim() || undefined,
+      ratedStaticInWc: kind === "furnace" || kind === "air-handler" || kind === "coil" ? 0.5 : undefined,
+      maxTons: kind === "furnace" || kind === "air-handler" ? n("maxTons") ?? (kbtu ? (kbtu <= 45 ? 3 : kbtu <= 70 ? 4 : 5) : tons) : undefined,
+      gallons: kind === "water-heater" ? n("gallons") : undefined,
+      whType: kind === "water-heater" ? ((unitDraft.whType || "tank") as CatalogItem["whType"]) : undefined,
+      fuel: kind === "water-heater" ? ((unitDraft.fuel || "gas") as CatalogItem["fuel"]) : undefined,
+      uef: kind === "water-heater" ? n("uef") : undefined,
+      vent: kind === "water-heater" ? ((unitDraft.vent || undefined) as CatalogItem["vent"]) : undefined,
+    };
+    if ((kind === "heat-pump" || kind === "ductless") && tons) {
+      const rated = Math.round(tons * 12000);
+      item.coldClimate = cold || undefined;
+      item.heat47Btuh = n("h47") ? Math.round((n("h47") ?? 0) * 1000) : rated;
+      item.heat17Btuh = n("h17") ? Math.round((n("h17") ?? 0) * 1000) : Math.round(rated * (cold ? 0.85 : 0.62));
+      item.heat5Btuh = n("h5") ? Math.round((n("h5") ?? 0) * 1000) : Math.round(rated * (cold ? 0.7 : 0.48));
+    }
+    return item;
+  };
+  const useTypedUnit = () => {
+    const item = buildTypedUnit();
+    if (!item) { setSwapMsg("Brand and model, at least — the rest can follow from the submittal."); return; }
+    setCustom(item);
+    setPickId(item.id);
+    setSwapMsg(`${item.brand} ${item.model} is on the estimate. It is typed in, not a catalog row, so the checks say to confirm it against the submittal${item.cost ? "" : " and the price is a rate-card default until you add the cost"}.`);
+  };
+  const saveTypedUnit = async () => {
+    const item = buildTypedUnit();
+    if (!item) { setSwapMsg("Brand and model, at least — the rest can follow from the submittal."); return; }
+    setSwapMsg("Saving…");
+    const res = await saveHvacCatalogItem({ ...item, typed: undefined });
+    if (!res.ok) { setSwapMsg(res.error); return; }
+    setCatalog(await listHvacCatalog());
+    setCustom(null);
+    setPickId(res.item.id);
+    setSwapMsg(`${res.item.brand} ${res.item.model} is in your catalog now, and on this estimate.`);
+  };
 
   // The editable lines follow the ledger until the contractor edits them, and
   // reset when the design behind them changes. Derived state, adopted in render.
@@ -404,7 +520,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
       const st = (stateCode || (full.match(/\b([A-Z]{2})\b(?=\s*\d{5}|\s*$)/) ?? [])[1] || "").toUpperCase();
       if (!st) { setSiteError("Add the state to the address (e.g. WA)."); return; }
       setSiteError("");
-      setRestored(null); setPickId(null); setSavedId(null); setPermit(null); setReportUrl(null); setPermitMsg(""); setTitle(null);
+      setRestored(null); setPickId(null); setOutdoorKind(null); setCustom(null); setSwapMsg(""); setSavedId(null); setPermit(null); setReportUrl(null); setPermitMsg(""); setTitle(null);
       setSite({ address: full, state: st, county: countyPicked && county ? county : undefined, sources: {} });
       setSiteLocal(true);
       setStateCode(st);
@@ -421,7 +537,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
       const res = await hvacSiteFacts({ address: full, state: stateCode || undefined, county: countyPicked && county ? county : undefined, lat: picked?.lat, lng: picked?.lng });
       if (!res.ok) { setSiteError(res.error); reportPlanLimitResult(res); return; }
       setRestored(null);
-      setPickId(null);
+      setPickId(null); setOutdoorKind(null); setCustom(null); setSwapMsg("");
       setSavedId(null);
       setPermit(null);
       setReportUrl(null);
@@ -533,7 +649,9 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
   const draft = () => ({
     job,
     input: jobInput,
-    outdoorKind: outdoorKind ?? undefined,
+    outdoorKind: kindQuotes.length === 2 ? outdoorKind ?? undefined : undefined,
+    pick: engine?.selection.chosen?.item.id,
+    custom: custom ?? undefined,
     title: title ?? ledger?.title ?? "HVAC replacement",
     scope: ledger?.scope ?? "",
     materials: lines?.materials ?? [],
@@ -585,7 +703,10 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     const savedJob = (res.row.draft as { job?: string; input?: JobInput }).job;
     setJob(JOBS.some((j) => j.id === savedJob) ? (savedJob as JobKind) : DEFAULT_JOB);
     setJobInput((res.row.draft as { input?: JobInput }).input ?? {});
-    setOutdoorKind((res.row.draft as { outdoorKind?: "air-conditioner" | "heat-pump" }).outdoorKind ?? null);
+    setOutdoorKind((res.row.draft as { outdoorKind?: OutdoorKind }).outdoorKind ?? null);
+    const d = res.row.draft as { pick?: string; custom?: CatalogItem };
+    setCustom(d.custom ?? null);
+    setPickId(d.pick ?? null);
     setSavedId(res.row.id);
     setPermit(res.row.permit);
     setReportUrl(res.row.approvedReportUrl);
@@ -654,7 +775,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
         <div className={cx("body")}>
           <div className={cx("jobs")} role="radiogroup" aria-label="Job">
             {JOBS.map((j) => (
-              <button key={j.id} type="button" role="radio" aria-checked={job === j.id} className={cx("job", job === j.id && "on")} onClick={() => { setJob(j.id); setTitle(null); setPickId(null); setOutdoorKind(null); if (!site) setTimeout(() => addrRef.current?.focus(), 30); else if (siteLocal && j.needs.load) { setSite(null); setSiteLocal(false); setTimeout(() => { addrRef.current?.focus(); scrollTo("hv-site"); }, 30); } }}>
+              <button key={j.id} type="button" role="radio" aria-checked={job === j.id} className={cx("job", job === j.id && "on")} onClick={() => { setJob(j.id); setTitle(null); setPickId(null); setOutdoorKind(null); setCustom(null); setSwapMsg(""); if (!site) setTimeout(() => addrRef.current?.focus(), 30); else if (siteLocal && j.needs.load) { setSite(null); setSiteLocal(false); setTimeout(() => { addrRef.current?.focus(); scrollTo("hv-site"); }, 30); } }}>
                 <span className={cx("job-t")}>{j.title}</span>
                 <span className={cx("job-s")}>{j.sub}</span>
               </button>
@@ -893,7 +1014,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                 <div className={cx("grid-f")}>
                   <label className={cx("field")} htmlFor="hv-wh-old"><span className={cx("lbl")}>Existing tank</span><select id="hv-wh-old" className={cx("sel")} value={jobInput.wh?.existingFuel ?? ""} onChange={(e) => setWh({ existingFuel: (e.target.value || undefined) as NonNullable<JobInput["wh"]>["existingFuel"] })}><option value="">as the house ({model.gas.available === false ? "electric" : "gas"})</option><option value="gas">Gas</option><option value="propane">Propane</option><option value="electric">Electric</option></select></label>
                   <label className={cx("field")} htmlFor="hv-wh-fuel"><span className={cx("lbl")}>New fuel</span><select id="hv-wh-fuel" className={cx("sel")} value={jobInput.wh?.fuel ?? ""} onChange={(e) => setWh({ fuel: (e.target.value || undefined) as NonNullable<JobInput["wh"]>["fuel"] })}><option value="">as the house ({model.gas.available === false ? "electric" : "gas"})</option><option value="gas">Natural gas</option><option value="propane">Propane</option><option value="electric">Electric</option></select></label>
-                  <label className={cx("field")} htmlFor="hv-wh-type"><span className={cx("lbl")}>Type</span><select id="hv-wh-type" className={cx("sel")} value={jobInput.wh?.type ?? "tank"} onChange={(e) => setWh({ type: e.target.value as NonNullable<JobInput["wh"]>["type"] })}><option value="tank">Tank</option><option value="heat-pump">Heat-pump tank</option><option value="tankless">Tankless</option></select></label>
+                  <label className={cx("field")} htmlFor="hv-wh-type"><span className={cx("lbl")}>Type</span><select id="hv-wh-type" className={cx("sel")} value={jobInput.wh?.type ?? "tank"} onChange={(e) => { const type = e.target.value as NonNullable<JobInput["wh"]>["type"]; setWh(type === "heat-pump" ? { type, fuel: "electric" } : { type }); }}><option value="tank">Tank</option><option value="heat-pump">Heat-pump tank</option><option value="tankless">Tankless</option></select></label>
                   <label className={cx("field")} htmlFor="hv-wh-gal"><span className={cx("lbl")}>Gallons</span><input id="hv-wh-gal" className={cx("in", "num")} inputMode="decimal" placeholder="auto" defaultValue={jobInput.wh?.gallons ?? ""} onBlur={(e) => { const n = Number(e.target.value); setWh({ gallons: e.target.value.trim() && Number.isFinite(n) && n > 0 ? n : undefined }); }} /></label>
                   <label className={cx("field")} htmlFor="hv-wh-vent"><span className={cx("lbl")}>Venting</span><select id="hv-wh-vent" className={cx("sel")} value={jobInput.wh?.vent ?? ""} onChange={(e) => setWh({ vent: (e.target.value || undefined) as NonNullable<JobInput["wh"]>["vent"] })}><option value="">as existing</option><option value="atmospheric">Atmospheric (B-vent)</option><option value="power">Power vent</option><option value="direct">Direct vent</option><option value="none">None (electric)</option></select></label>
                   <label className={cx("field")} htmlFor="hv-wh-loc"><span className={cx("lbl")}>Location</span><select id="hv-wh-loc" className={cx("sel")} value={jobInput.wh?.location ?? "garage"} onChange={(e) => setWh({ location: e.target.value as NonNullable<JobInput["wh"]>["location"] })}><option value="garage">Garage</option><option value="closet">Closet</option><option value="basement">Basement</option><option value="utility">Utility room</option><option value="attic">Attic</option><option value="outdoor">Outdoor</option></select></label>
@@ -1055,11 +1176,19 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
               <div className={cx("hero-v")}>{def.selection === "furnace" ? (chosen?.item.btuInput ? `${Math.round(chosen.item.btuInput / 1000)}k` : "—") : engine.selection.systems > 1 ? `${engine.selection.systems} × ${chosen?.item.tons ?? "?"}` : chosen?.item.tons ?? engine.selection.targetTons}<small>{def.selection === "furnace" ? "BTU in" : "ton"}</small></div>
               <div className={cx("hero-h")}>{def.selection === "furnace" ? `output ${chosen?.furnaceOutputBtuh ? num(chosen.furnaceOutputBtuh) : "—"} BTU/h` : engine.selection.systems > 1 ? "two zones, one system each" : `target ${engine.selection.targetTons} t`}</div>
             </div>
-            <div className={cx("hero-cell")}>
-              <div className={cx("kpi-lbl")}>Airflow</div>
-              <div className={cx("hero-v")}>{num(engine.load.coolingCfm)}<small>CFM</small></div>
-              <div className={cx("hero-h")}>{engine.load.cfmPerTon} CFM/ton · ducts {Math.round(engine.load.ductGainCooling * 100)}% gain</div>
-            </div>
+            {engine.zone ? (
+              <div className={cx("hero-cell")}>
+                <div className={cx("kpi-lbl")}>Zone</div>
+                <div className={cx("hero-v")}>{num(engine.zone.sqft)}<small>sq ft</small></div>
+                <div className={cx("hero-h")}>{engine.zone.heads} head{engine.zone.heads === 1 ? "" : "s"} · no ducts</div>
+              </div>
+            ) : (
+              <div className={cx("hero-cell")}>
+                <div className={cx("kpi-lbl")}>Airflow</div>
+                <div className={cx("hero-v")}>{num(engine.load.coolingCfm)}<small>CFM</small></div>
+                <div className={cx("hero-h")}>{engine.load.cfmPerTon} CFM/ton · ducts {Math.round(engine.load.ductGainCooling * 100)}% gain</div>
+              </div>
+            )}
           </div>}
           {kindQuotes.length === 2 && (
             <div className={cx("kinds")} role="radiogroup" aria-label={def.id === "replace-outdoor" ? "What goes outside" : "System type"}>
@@ -1068,7 +1197,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                 const on = engineRaw?.selection.chosen?.item.kind === q.kind;
                 return (
                   <button key={q.kind} type="button" role="radio" aria-checked={on} className={cx("kind", on && "on")} onClick={() => { setOutdoorKind(q.kind); setPickId(null); }}>
-                    <span className={cx("kind-t")}>{q.kind === "air-conditioner" ? "Air conditioner" : "Heat pump"}<span className={cx("kind-v")}>{money(q.subtotal)}</span></span>
+                    <span className={cx("kind-t")}>{q.kind === "air-conditioner" ? "Air conditioner" : "Heat pump"}<span className={cx("kind-v")}>{money(on && ledger ? ledger.subtotal : q.subtotal)}</span></span>
                     <span className={cx("kind-s")}>{q.sub}</span>
                   </button>
                 );
@@ -1098,17 +1227,19 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                 <div className={cx("unit")}>
                   <div className={cx("unit-t")}>{engine.selection.systems > 1 ? `${engine.selection.systems} × ` : ""}{chosen.item.brand} {chosen.item.model}</div>
                   <div className={cx("mono", "unit-m")}>{chosen.item.kind.replace(/-/g, " ")}{chosen.item.tons ? ` · ${chosen.item.tons} t` : ""}{chosen.item.seer2 ? ` · ${chosen.item.seer2} SEER2` : ""}{chosen.item.hspf2 ? ` · ${chosen.item.hspf2} HSPF2` : ""}{chosen.item.refrigerant ? ` · ${chosen.item.refrigerant}` : ""}{chosen.item.staging ? ` · ${chosen.item.staging}` : ""}{chosen.item.coldClimate ? " · cold climate" : ""}</div>
+                  {chosen.overridden && <div className={cx("call", "warn")} style={{ margin: "8px 0" }}><span className={cx("stamp")}>your pick</span><span>The engine ruled this unit out: {chosen.overridden} It is on the estimate because you chose it.</span></div>}
+                  {chosen.item.typed && <div className={cx("call")} style={{ margin: "8px 0" }}><span className={cx("stamp")}>typed in</span><span>Typed in for this estimate, not a catalog row. Save it to the catalog below and it is there next time.</span></div>}
                   <ul>{chosen.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
                   {!catalog?.own && <div className={cx("runner")}>Starter ladder — no shop costs on these rows. Import the shop catalog below and the same engine picks from it.</div>}
                   {engine.selection.runnerUp && <div className={cx("runner")}><b>Runner-up:</b> {engine.selection.runnerUp.item.brand} {engine.selection.runnerUp.item.model} — {engine.selection.runnerUp.reasons[0]}</div>}
                 </div>
               ) : (
-                <div className={cx("call", "warn")}><span className={cx("stamp")}>no fit</span><span>No catalog unit lands within Manual S limits for a {num(engine.load.coolingTotalBtuh)} BTU/h load. Target {engine.selection.targetTons} t — import the shop catalog or check the disqualifiers: {engine.selection.candidates.filter((c) => c.disqualified).slice(0, 3).map((c) => `${c.item.model}: ${c.disqualified}`).join(" · ")}</span></div>
+                <div className={cx("call", "warn")}><span className={cx("stamp")}>no fit</span><span>{model?.existing.kind === "package-unit" && engine.selection.candidates.length === 0 ? "No package rows in the catalog — the estimate prices a package unit from the rate card. Add your package rows (kind: package) to pick a model." : <>No catalog unit lands within Manual S limits for a {num(engine.load.coolingTotalBtuh)} BTU/h load. Target {engine.selection.targetTons} t — import the shop catalog or check the disqualifiers: {engine.selection.candidates.filter((c) => c.disqualified).slice(0, 3).map((c) => `${c.item.model}: ${c.disqualified}`).join(" · ")}</>}</span></div>
               )}
               {chosen?.curve && chosen.item.kind === "heat-pump" && (
                 <>
                   <CapacityChart curve={chosen.curve} designF={engine.conditions.heatingF} balanceF={chosen.balancePointF} cx={cx} />
-                  <div className={cx("legend")}><span><i />capacity</span><span><i className={cx("d")} />heating load</span>{chosen.backupKw ? <span>backup {chosen.backupKw} kW at design</span> : <span>no backup at design</span>}</div>
+                  <div className={cx("legend")}><span><i />capacity</span><span><i className={cx("d")} />heating load</span>{chosen.backupKw ? (engine.dualFuel ? <span>furnace carries {num(Math.max(0, engine.load.heatingBtuh - (chosen.heatAtDesignBtuh ?? 0)))} BTU/h at design</span> : <span>backup {chosen.backupKw} kW at design</span>) : <span>no backup at design</span>}</div>
                 </>
               )}
               {chosen && chosen.item.kind !== "heat-pump" && chosen.coolingRatio !== undefined && (
@@ -1144,6 +1275,53 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
               </ul>
             </div>
           </div>
+          {(def.selection !== "none" || def.id === "water-heater") && swapRows.length > 0 && (
+            <details className={cx("panel")} open={swapOpen} onToggle={(e) => setSwapOpen(e.currentTarget.open)}>
+              <summary><svg className={cx("ic")}><use href="#i-box" /></svg>Change the unit<span className={cx("mono")}>{swapFits.length} fit{swapOut.length ? ` · ${swapOut.length} ruled out` : ""} · or type your own</span></summary>
+              <div className={cx("panel-body")}>
+                <div className={cx("note")}>The engine ranks what the catalog has and puts the best fit on the estimate. Pick another and the whole estimate re-prices. A unit the engine ruled out can still go on the job — the reason follows it onto the estimate as a check, so the customer and the permit desk see it. Nothing like it in the catalog? Type the unit at the bottom.</div>
+                <input id="hv-swap-q" className={cx("in")} placeholder="Filter by brand or model" value={swapQ} onChange={(e) => setSwapQ(e.target.value)} style={{ maxWidth: 320 }} />
+                <div className={cx("swap")}>
+                  {swapShown.map((r) => {
+                    const on = chosenId === r.item.id;
+                    return (
+                      <button key={r.item.id} type="button" className={cx("swap-row", on && "on", r.out && "out")} onClick={() => { setPickId(r.item.id); setSwapMsg(on ? "" : `${r.item.brand} ${r.item.model} is on the estimate.${r.out ? " The engine ruled it out — the reason is on the checks." : ""}`); }}>
+                        <span className={cx("swap-t")}>{r.item.brand} {r.item.model}{r.item.typed ? " · typed in" : ""}{!r.item.cost && someCost ? " · no cost" : ""}</span>
+                        <span className={cx("mono", "swap-m")}>{[r.item.tons ? `${r.item.tons} t` : "", r.item.btuInput && r.item.kind !== "water-heater" ? `${Math.round(r.item.btuInput / 1000)}k BTU` : "", r.item.seer2 ? `${r.item.seer2} SEER2` : "", r.item.hspf2 ? `${r.item.hspf2} HSPF2` : "", r.item.afue ? `${Math.round(r.item.afue * 100)}% AFUE` : "", r.item.staging ?? "", r.item.refrigerant ?? "", r.item.coldClimate ? "cold climate" : "", r.item.tier ?? ""].filter(Boolean).join(" · ")}</span>
+                        <span className={cx("swap-w")}>{r.out ?? r.why}</span>
+                        <span className={cx("swap-a")}>{on ? "on the estimate" : r.out ? "Use anyway" : "Use this"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {swapRows.length > swapShown.length && <div className={cx("note")}>Showing {swapShown.length} of {swapRows.length} — type a brand or a model to narrow it.</div>}
+                <div className={cx("kpi-lbl")} style={{ margin: "16px 0 8px" }}>Not in the catalog — type the unit</div>
+                <div className={cx("grid", "grid-rc")}>
+                  <label className={cx("field")} htmlFor="hv-u-brand"><span className={cx("lbl")}>Brand</span><input id="hv-u-brand" className={cx("in")} placeholder="Trane" value={unitDraft.brand ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, brand: e.target.value }))} /></label>
+                  <label className={cx("field")} htmlFor="hv-u-model"><span className={cx("lbl")}>Model</span><input id="hv-u-model" className={cx("in")} placeholder="4TWR7048N1000A" value={unitDraft.model ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, model: e.target.value }))} /></label>
+                  <label className={cx("field")} htmlFor="hv-u-kind"><span className={cx("lbl")}>What it is</span><select id="hv-u-kind" className={cx("sel")} value={unitDraft.kind ?? (engine?.selection.chosen?.item.kind ?? (def.id === "water-heater" ? "water-heater" : def.kinds[0] ?? "air-conditioner"))} onChange={(e) => setUnitDraft((u) => ({ ...u, kind: e.target.value }))}><option value="air-conditioner">Condenser (AC)</option><option value="heat-pump">Heat pump</option><option value="furnace">Furnace</option><option value="air-handler">Air handler</option><option value="coil">Coil</option><option value="ductless">Ductless</option><option value="package">Package unit</option><option value="water-heater">Water heater</option></select></label>
+                  <label className={cx("field")} htmlFor="hv-u-tons"><span className={cx("lbl")}>Tons</span><input id="hv-u-tons" className={cx("in", "num")} inputMode="decimal" placeholder="4" value={unitDraft.tons ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, tons: e.target.value }))} /></label>
+                  <label className={cx("field")} htmlFor="hv-u-kbtu"><span className={cx("lbl")}>BTU input, thousands</span><input id="hv-u-kbtu" className={cx("in", "num")} inputMode="decimal" placeholder="80" value={unitDraft.kbtu ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, kbtu: e.target.value }))} /></label>
+                  <label className={cx("field")} htmlFor="hv-u-seer2"><span className={cx("lbl")}>SEER2</span><input id="hv-u-seer2" className={cx("in", "num")} inputMode="decimal" placeholder="17.2" value={unitDraft.seer2 ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, seer2: e.target.value }))} /></label>
+                  <label className={cx("field")} htmlFor="hv-u-hspf2"><span className={cx("lbl")}>HSPF2</span><input id="hv-u-hspf2" className={cx("in", "num")} inputMode="decimal" placeholder="8.5" value={unitDraft.hspf2 ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, hspf2: e.target.value }))} /></label>
+                  <label className={cx("field")} htmlFor="hv-u-afue"><span className={cx("lbl")}>AFUE %</span><input id="hv-u-afue" className={cx("in", "num")} inputMode="decimal" placeholder="96" value={unitDraft.afue ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, afue: e.target.value }))} /></label>
+                  <label className={cx("field")} htmlFor="hv-u-h17"><span className={cx("lbl")}>Heat at 17 °F, thousands</span><input id="hv-u-h17" className={cx("in", "num")} inputMode="decimal" placeholder="34" value={unitDraft.h17 ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, h17: e.target.value }))} /></label>
+                  <label className={cx("field")} htmlFor="hv-u-h5"><span className={cx("lbl")}>Heat at 5 °F, thousands</span><input id="hv-u-h5" className={cx("in", "num")} inputMode="decimal" placeholder="27" value={unitDraft.h5 ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, h5: e.target.value }))} /></label>
+                  <label className={cx("field")} htmlFor="hv-u-refr"><span className={cx("lbl")}>Refrigerant</span><select id="hv-u-refr" className={cx("sel")} value={unitDraft.refrigerant ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, refrigerant: e.target.value }))}><option value="">not seen</option><option value="R-454B">R-454B</option><option value="R-32">R-32</option><option value="R-410A">R-410A</option><option value="R-22">R-22</option></select></label>
+                  <label className={cx("field")} htmlFor="hv-u-stg"><span className={cx("lbl")}>Staging</span><select id="hv-u-stg" className={cx("sel")} value={unitDraft.staging ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, staging: e.target.value }))}><option value="">not seen</option><option value="single">single stage</option><option value="two-stage">two stage</option><option value="variable">variable</option></select></label>
+                  <label className={cx("field")} htmlFor="hv-u-cold"><span className={cx("lbl")}>Cold-climate rated</span><select id="hv-u-cold" className={cx("sel")} value={unitDraft.coldClimate ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, coldClimate: e.target.value }))}><option value="">no</option><option value="yes">yes</option></select></label>
+                  <label className={cx("field")} htmlFor="hv-u-gal"><span className={cx("lbl")}>Gallons (water heater)</span><input id="hv-u-gal" className={cx("in", "num")} inputMode="decimal" placeholder="50" value={unitDraft.gallons ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, gallons: e.target.value }))} /></label>
+                  <label className={cx("field")} htmlFor="hv-u-cost"><span className={cx("lbl")}>Your cost $</span><input id="hv-u-cost" className={cx("in", "num")} inputMode="decimal" placeholder="3200" value={unitDraft.cost ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, cost: e.target.value }))} /></label>
+                </div>
+                <div className={cx("acts")}>
+                  <button type="button" className={cx("btn", "btn-primary")} onClick={useTypedUnit}>Use this unit</button>
+                  <button type="button" className={cx("btn", "btn-ghost")} onClick={() => void saveTypedUnit()}>Save it to my catalog</button>
+                  {(custom || pickId) && <button type="button" className={cx("btn", "btn-ghost")} onClick={() => { setCustom(null); setPickId(null); setSwapMsg("Back to the engine's pick."); }}>Back to the engine&rsquo;s pick</button>}
+                  <span className={cx("acts-note")}>{swapMsg}</span>
+                </div>
+              </div>
+            </details>
+          )}
         </section>
       )}
 
@@ -1157,7 +1335,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
             </div>
             <div className={cx("head-acts")}>
               <button type="button" className={cx("btn", "btn-ghost", "btn-sm")} disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : savedId ? "Saved · save again" : "Save estimate"}</button>
-              <button type="button" className={cx("btn", "btn-primary", "btn-sm")} disabled={converting || !lines.materials.length} onClick={() => void convert()}><svg className={cx("ic")}><use href="#i-doc" /></svg>{converting ? "Converting…" : "Convert to proposal"}</button>
+              <button type="button" className={cx("btn", "btn-primary", "btn-sm")} disabled={converting || !(lines.materials.length || lines.labor.length)} onClick={() => void convert()}><svg className={cx("ic")}><use href="#i-doc" /></svg>{converting ? "Converting…" : "Convert to proposal"}</button>
             </div>
           </div>
           <div className={cx("body")} style={{ paddingBottom: 12 }}>
@@ -1173,7 +1351,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
             <span><span className={cx("kpi-lbl")}>Subtotal</span><span className={cx("bo-total-v")} style={{ marginLeft: 12 }}>{money(subtotal)}</span></span>
             <span className={cx("head-acts")}>
               <button type="button" className={cx("btn", "btn-ghost", "btn-sm")} disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : savedId ? "Saved · save again" : "Save"}</button>
-              <button type="button" className={cx("btn", "btn-primary", "btn-sm")} disabled={converting || !lines.materials.length} onClick={() => void convert()}>{converting ? "Converting…" : "Convert to proposal"}</button>
+              <button type="button" className={cx("btn", "btn-primary", "btn-sm")} disabled={converting || !(lines.materials.length || lines.labor.length)} onClick={() => void convert()}>{converting ? "Converting…" : "Convert to proposal"}</button>
             </span>
           </div>
           <div className={cx("assump")}>
@@ -1181,7 +1359,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
             <ul>{ledger.assumptions.map((a) => <li key={a}>{a}</li>)}</ul>
           </div>
 
-          <div className={cx("permit")}>
+          <div className={cx("permit")} style={def.needs.load ? undefined : { display: "none" }}>
             <div className={cx("permit-txt")}>
               <span className={cx("kpi-lbl")}>Permit-grade report</span>
               <div className={cx("note")} style={{ marginTop: 6 }}>

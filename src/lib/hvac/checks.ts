@@ -39,9 +39,9 @@ export function ductChecks(load: LoadResult, m: BuildingModel, chosen: Selection
     const tesp = m.ducts.measuredTespInWc;
     if (tesp <= rated) out.push({ id: "static", title: "Static pressure", status: "pass", detail: `Measured ${tesp.toFixed(2)} in. w.c. is within the ${rated.toFixed(2)} in. w.c. the equipment is rated for.`, rule: "TESP vs rated static" });
     else if (tesp <= rated * 1.3) out.push({ id: "static", title: "Static pressure", status: "verify", detail: `Measured ${tesp.toFixed(2)} in. w.c. is above the ${rated.toFixed(2)} rating: check the filter and the return before the new blower is asked to push it.`, rule: "TESP vs rated static" });
-    else out.push({ id: "static", title: "Static pressure", status: "fix", detail: `Measured ${tesp.toFixed(2)} in. w.c. is far above the ${rated.toFixed(2)} rating: the ducts will not carry the new system's airflow without a return and trunk fix.`, rule: "TESP vs rated static" });
+    else out.push({ id: "static", title: "Static pressure", status: "fix", detail: `Measured ${tesp.toFixed(2)} in. w.c. is far above the ${rated.toFixed(2)} rating: the ducts will not carry the ${chosen ? "new system's" : "system's"} airflow without a return and trunk fix.`, rule: "TESP vs rated static" });
   } else {
-    out.push({ id: "static", title: "Static pressure", status: "verify", detail: "Measure total external static on the existing system before install; the new blower needs the ducts to pass its airflow.", rule: "TESP vs rated static" });
+    out.push({ id: "static", title: "Static pressure", status: "verify", detail: chosen ? "Measure total external static on the existing system before install; the new blower needs the ducts to pass its airflow." : "Measure total external static on the system; the blower is rated for 0.50 in. w.c. and the ducts must let it breathe.", rule: "TESP vs rated static" });
   }
   // Condition and insulation.
   if (m.ducts.condition === "poor") out.push({ id: "duct-cond", title: "Duct condition", status: "fix", detail: "Ducts read poor: seal or replace, then test leakage.", rule: "duct leakage" });
@@ -58,7 +58,7 @@ export function ductChecks(load: LoadResult, m: BuildingModel, chosen: Selection
  * General loads at 100% of the first 8 kVA and 40% of the rest, the new
  * heating or cooling load at 100%, against the service rating.
  */
-export function electricalCheck(m: BuildingModel, chosen: SelectionCandidate | null, opts: { dualFuel?: boolean } = {}): CheckResult {
+export function electricalCheck(m: BuildingModel, chosen: SelectionCandidate | null, opts: { dualFuel?: boolean; reusesCircuit?: boolean } = {}): CheckResult {
   const e = m.electrical;
   if (typeof e.mainAmps !== "number" || e.mainAmps <= 0) {
     return { id: "service", title: "Electrical service", status: "verify", detail: "Photograph the panel: main breaker size and free slots decide whether the new system needs a circuit, a subpanel or a service upgrade.", rule: "NEC 220.83" };
@@ -83,7 +83,7 @@ export function electricalCheck(m: BuildingModel, chosen: SelectionCandidate | n
   if (share > 1) return { id: "service", title: "Electrical service", status: "fix", detail: `${base}: the new system needs a service upgrade or load management. Price it as an optional line with a warning.`, rule: "NEC 220.83(B)" };
   if (share > 0.9) return { id: "service", title: "Electrical service", status: "verify", detail: `${base}: tight. A licensed electrician's load calculation should confirm before the panel is touched.`, rule: "NEC 220.83(B)" };
   const slots = typeof e.freeSlots === "number" ? e.freeSlots : null;
-  if (slots !== null && slots < 2 && !(e.existingHvacAmps && e.existingHvacAmps > 0)) {
+  if (!opts.reusesCircuit && slots !== null && slots < 2 && !(e.existingHvacAmps && e.existingHvacAmps > 0)) {
     return { id: "service", title: "Electrical service", status: "verify", detail: `${base}: capacity is fine, but only ${slots} free slot(s) — plan a tandem breaker or a small subpanel.`, rule: "NEC 220.83(B)" };
   }
   return { id: "service", title: "Electrical service", status: "pass", detail: `${base}: fits.`, rule: "NEC 220.83(B)" };
@@ -121,24 +121,27 @@ export function gasCheck(m: BuildingModel, chosen: CatalogItem | null, opts: { a
 }
 
 /** Fuel-burning appliance items an inspector asks about on a permit. */
-export function fuelChecks(m: BuildingModel, o: { gasFurnace: boolean; gasWaterHeater: boolean; whVent?: string; whLocation?: string; furnaceReplaced: boolean; a2lCoilOnExistingFurnace: boolean; furnaceMaxTonsUnknown?: { tons: number; cfm: number } }): CheckResult[] {
+export function fuelChecks(m: BuildingModel, o: { gasFurnace: boolean; gasWaterHeater: boolean; whVent?: string; whLocation?: string; furnaceReplaced: boolean; a2lCoilOnExistingFurnace: boolean; furnaceMaxTonsUnknown?: { tons: number; cfm: number }; furnaceBlowerShort?: { tons: number; cfm: number; btuInput: number; blowerTons: number }; indoorWord?: "furnace" | "air handler" }): CheckResult[] {
+  const w = o.indoorWord ?? "furnace";
+  const W = w === "furnace" ? "Furnace" : "Air-handler";
   const out: CheckResult[] = [];
   if (o.gasFurnace || o.gasWaterHeater) out.push({ id: "code", title: "CO alarm", status: "verify", detail: "A permit for fuel-fired appliance work in an existing home requires a carbon-monoxide alarm outside each sleeping area — confirm one is there or add it (priced as a line).", rule: "IRC R315.2.2" });
   if ((o.gasWaterHeater && o.whVent === "atmospheric" && (o.whLocation === "closet" || o.whLocation === "utility")) || (o.gasFurnace && m.tightness === "very-tight")) out.push({ id: "code", title: "Combustion air", status: "verify", detail: "An atmospheric appliance in a closet or a very tight house needs combustion-air openings (two, 1 sq in per 1,000 BTU/h each) or a sealed-combustion unit.", rule: "NFPA 54 §9.3" });
   if (o.gasWaterHeater && o.whLocation === "garage") out.push({ id: "code", title: "Garage water heater", status: "verify", detail: "In a garage the burner sits 18 in above the floor and the tank is protected from vehicle impact — a FVIR tank on a stand, or a bollard.", rule: "IRC G2408.2 / M1307.3" });
   if (o.furnaceReplaced && m.gas.available !== false) out.push({ id: "code", title: "Water-heater vent", status: "verify", detail: "If the old furnace shared a chimney with the water heater, the water heater is now alone on a flue sized for both — it needs a liner or its own vent (an orphaned water heater).", rule: "NFPA 54 §12 / IRC G2427" });
-  if (o.a2lCoilOnExistingFurnace) out.push({ id: "code", title: "A2L coil on the existing furnace", status: "verify", detail: "An R-454B / R-32 coil on a furnace not listed for A2L needs the maker's refrigerant-detection sensor and mitigation board (priced as a line); confirm the furnace is on the coil maker's approved list.", rule: "UL 60335-2-40 / EPA AIM" });
-  if (o.furnaceMaxTonsUnknown) out.push({ id: "code", title: "Furnace blower airflow", status: "verify", detail: `The furnace cabinet is picked by airflow, not BTU: its blower must move ${o.furnaceMaxTonsUnknown.cfm.toLocaleString("en-US")} CFM at 0.5 in. w.c. for the ${o.furnaceMaxTonsUnknown.tons}-ton coil — check the blower table.`, rule: "Manual S / maker's blower table" });
+  if (o.a2lCoilOnExistingFurnace) out.push({ id: "code", title: `A2L coil on the existing ${w}`, status: "verify", detail: `An R-454B / R-32 coil on a ${w} not listed for A2L needs the maker's refrigerant-detection sensor and mitigation board (priced as a line); confirm the ${w} is on the coil maker's approved list.`, rule: "UL 60335-2-40 / EPA AIM" });
+  if (o.furnaceBlowerShort) out.push({ id: "code", title: `${W} blower airflow`, status: "fix", detail: `The ${o.furnaceBlowerShort.tons}-ton coil needs about ${o.furnaceBlowerShort.cfm.toLocaleString("en-US")} CFM at 0.5 in. w.c.; a ${Math.round(o.furnaceBlowerShort.btuInput / 1000)}k BTU furnace blower carries about ${o.furnaceBlowerShort.blowerTons} t. Confirm the blower's CFM from its data plate, replace the furnace, or size the coil down.`, rule: "Manual S · the furnace's blower table" });
+  else if (o.furnaceMaxTonsUnknown) out.push({ id: "code", title: `${W} blower airflow`, status: "verify", detail: `The ${w} is picked by airflow, not BTU: its blower must move ${o.furnaceMaxTonsUnknown.cfm.toLocaleString("en-US")} CFM at 0.5 in. w.c. for the ${o.furnaceMaxTonsUnknown.tons}-ton coil — check the blower table.`, rule: "Manual S / maker's blower table" });
   return out;
 }
 
-export function complianceChecks(m: BuildingModel, chosen: CatalogItem | null, opts: { touchesRefrigerant: boolean; touchesDucts: boolean; newConstruction: boolean }): CheckResult[] {
+export function complianceChecks(m: BuildingModel, chosen: CatalogItem | null, opts: { touchesRefrigerant: boolean; touchesDucts: boolean; newConstruction: boolean; removesEquipment?: boolean; kind?: string }): CheckResult[] {
   const out: CheckResult[] = [];
   if (chosen) {
     const rr = refrigerantRule(m.state, chosen.refrigerant);
     out.push({ id: "refrigerant", title: `Refrigerant · ${chosen.refrigerant ?? "unknown"}`, status: rr.status, detail: rr.text, rule: rr.source });
-    if (chosen.kind === "heat-pump" || chosen.kind === "air-conditioner") {
-      const floor = efficiencyFloor(m.state, chosen.kind, ratedCoolingBtuh(chosen));
+    if (chosen.kind === "heat-pump" || chosen.kind === "air-conditioner" || chosen.kind === "ductless") {
+      const floor = efficiencyFloor(m.state, chosen.kind === "air-conditioner" ? "air-conditioner" : "heat-pump", ratedCoolingBtuh(chosen));
       const okSeer = !chosen.seer2 || chosen.seer2 >= floor.seer2;
       const okHspf = !floor.hspf2 || !chosen.hspf2 || chosen.hspf2 >= floor.hspf2;
       const ok = okSeer && okHspf;
@@ -151,12 +154,12 @@ export function complianceChecks(m: BuildingModel, chosen: CatalogItem | null, o
   return out;
 }
 
-export function allChecks(load: LoadResult, c: DesignConditions, m: BuildingModel, chosen: SelectionCandidate | null, opts: { dualFuel?: boolean } = {}): CheckResult[] {
+export function allChecks(load: LoadResult, c: DesignConditions, m: BuildingModel, chosen: SelectionCandidate | null, opts: { dualFuel?: boolean; removesEquipment?: boolean; reusesCircuit?: boolean; touchesRefrigerant?: boolean; kind?: string } = {}): CheckResult[] {
   const item = chosen?.item ?? null;
-  const touchesRefrigerant = !item || item.kind !== "furnace";
+  const touchesRefrigerant = opts.touchesRefrigerant ?? (!item || item.kind !== "furnace");
   const touchesDucts = m.ducts.condition === "poor" || m.ducts.location === "none";
   const gas = gasCheck(m, item);
-  return [...ductChecks(load, m, chosen), electricalCheck(m, chosen, opts), ...(gas ? [gas] : []), ...complianceChecks(m, item, { touchesRefrigerant, touchesDucts, newConstruction: false })];
+  return [...ductChecks(load, m, chosen), electricalCheck(m, chosen, { dualFuel: opts.dualFuel, reusesCircuit: opts.reusesCircuit }), ...(gas ? [gas] : []), ...complianceChecks(m, item, { touchesRefrigerant, touchesDucts, newConstruction: false, removesEquipment: opts.removesEquipment, kind: opts.kind ?? item?.kind })];
 }
 
 /** Which of the load's inputs came from a table rather than the house. */

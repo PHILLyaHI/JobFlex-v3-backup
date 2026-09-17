@@ -45,7 +45,7 @@ import type { CatalogItem } from "@/lib/hvac/types";
 import { pickBuilding, ringGeometry, storeysFromHeight } from "@/lib/hvac/site";
 import type { SiteFacts, NameplateRead } from "@/lib/hvac/intake";
 import { DEFAULT_RATE_CARD, STARTER_CATALOG, normalizeRateCard, parseCatalogCsv, type HvacRateCard } from "@/lib/hvac/ledger";
-import { JOBS } from "@/lib/hvac/jobs";
+import { JOBS, OUTDOOR_KINDS } from "@/lib/hvac/jobs";
 import { US_CATALOG, US_CATALOG_VERIFIED_ON } from "@/lib/hvac/data/usCatalog";
 
 type Fail = { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey };
@@ -332,6 +332,25 @@ export async function loadUsCatalog(raw: unknown): Promise<{ ok: true; imported:
   }
 }
 
+/** Add one unit to the shop's catalog — the row a contractor typed on an
+ *  estimate because the catalog had nothing like it. */
+export async function saveHvacCatalogItem(raw: unknown): Promise<{ ok: true; item: CatalogItem } | { ok: false; error: string }> {
+  const { organizationId } = await requireEstimatorOrManager();
+  const parsed = customItemSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "That unit is missing something the catalog needs — brand, model and kind at least." };
+  const item: CatalogItem = { ...parsed.data, typed: undefined, source: "shop" };
+  try {
+    await db.hvacCatalogItem.upsert({
+      where: { organizationId_itemId: { organizationId, itemId: item.id } },
+      create: { organizationId, itemId: item.id, kind: item.kind, brand: item.brand, model: item.model, itemJson: JSON.stringify(item) },
+      update: { kind: item.kind, brand: item.brand, model: item.model, itemJson: JSON.stringify(item) },
+    });
+    return { ok: true, item };
+  } catch (err) {
+    return { ok: false, error: missingTable(err) ? "The catalog table isn't in this database yet — run `prisma db push`, then save again." : `Couldn't save — ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}` };
+  }
+}
+
 export async function clearHvacCatalog(): Promise<{ ok: true } | { ok: false; error: string }> {
   const { organizationId } = await requireEstimatorOrManager();
   try {
@@ -385,10 +404,47 @@ const jobInputSchema = z.object({
 }).optional();
 const jobKindSchema = z.enum(JOBS.map((j) => j.id) as [string, ...string[]]).optional();
 
+/** A unit the contractor typed in for one estimate (or saves to the catalog). */
+const customItemSchema = z.object({
+  id: z.string().min(1).max(120),
+  kind: z.enum(["heat-pump", "air-conditioner", "furnace", "air-handler", "coil", "ductless", "package", "water-heater"]),
+  brand: z.string().min(1).max(60),
+  model: z.string().min(1).max(80),
+  tons: z.number().min(0.4).max(25).optional(),
+  coolingBtuh: z.number().min(0).max(400_000).optional(),
+  heat47Btuh: z.number().min(0).max(400_000).optional(),
+  heat17Btuh: z.number().min(0).max(400_000).optional(),
+  heat5Btuh: z.number().min(0).max(400_000).optional(),
+  btuInput: z.number().min(0).max(500_000).optional(),
+  afue: z.number().min(0.5).max(1).optional(),
+  seer2: z.number().min(5).max(45).optional(),
+  eer2: z.number().min(5).max(30).optional(),
+  hspf2: z.number().min(4).max(20).optional(),
+  coldClimate: z.boolean().optional(),
+  refrigerant: z.enum(["R-410A", "R-454B", "R-32", "R-22", "other"]).optional(),
+  staging: z.enum(["single", "two-stage", "variable"]).optional(),
+  ratedStaticInWc: z.number().min(0).max(2).optional(),
+  mcaAmps: z.number().min(0).max(200).optional(),
+  maxTons: z.number().min(0.5).max(25).optional(),
+  gallons: z.number().min(10).max(200).optional(),
+  whType: z.enum(["tank", "heat-pump", "tankless"]).optional(),
+  fuel: z.enum(["gas", "electric", "propane"]).optional(),
+  uef: z.number().min(0).max(6).optional(),
+  vent: z.enum(["atmospheric", "power", "direct", "none"]).optional(),
+  ahriRef: z.string().max(60).optional(),
+  cost: z.number().min(0).max(200_000).optional(),
+  tier: z.enum(["value", "mid", "premium"]).optional(),
+  typed: z.literal(true).optional(),
+  source: z.enum(["shop", "ahri", "neep", "manufacturer"]),
+});
+
 const draftSchema = z.object({
   job: jobKindSchema,
   input: jobInputSchema,
-  outdoorKind: z.enum(["air-conditioner", "heat-pump"]).optional(),
+  outdoorKind: z.enum(OUTDOOR_KINDS).optional(),
+  /** The unit the contractor chose by hand, and one they typed in. */
+  pick: z.string().max(120).optional(),
+  custom: customItemSchema.optional(),
   title: z.string().max(200),
   scope: z.string().max(6000),
   materials: z.array(lineSchema).max(80),

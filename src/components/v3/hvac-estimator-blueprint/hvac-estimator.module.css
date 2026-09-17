@@ -400,6 +400,22 @@
 
 /* Good · Better · Best — one job priced three ways */
 /* What goes outside: AC or heat pump, each priced as the whole job. */
+/* Change the unit: what fits, what the engine ruled out, and why. */
+:global(.jf-blueprint .content) .swap { display: grid; gap: 6px; margin-top: 12px; }
+:global(.jf-blueprint .content) .swap-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.5fr) minmax(0, 2fr) auto; align-items: center; gap: 12px; width: 100%; padding: 9px 12px; text-align: left; background: var(--paper); border: 1.5px solid var(--hair-soft); font: inherit; color: var(--ink); cursor: pointer; }
+:global(.jf-blueprint .content) .swap-row:hover { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .swap-row:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+:global(.jf-blueprint .content) .swap-row.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+:global(.jf-blueprint .content) .swap-row.out { border-left: 3px solid var(--warning-dark); }
+:global(.jf-blueprint .content) .swap-row.out.on { border-left-color: var(--warning-dark); }
+:global(.jf-blueprint .content) .swap-t { font-weight: 700; font-size: 13px; }
+:global(.jf-blueprint .content) .swap-m { font-size: 10.5px; opacity: 0.75; }
+:global(.jf-blueprint .content) .swap-w { font-size: 11.5px; line-height: 1.4; opacity: 0.85; }
+:global(.jf-blueprint .content) .swap-a { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .swap-row { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  :global(.jf-blueprint .content) .swap-a { justify-self: start; }
+}
 :global(.jf-blueprint .content) .kinds { display: grid; grid-template-columns: auto 1fr 1fr; align-items: stretch; border-bottom: 1.5px solid var(--hair-soft); }
 :global(.jf-blueprint .content) .kinds-lbl { display: flex; align-items: center; padding: 0 16px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); border-right: 1.5px solid var(--hair-soft); }
 :global(.jf-blueprint .content) .kind { display: flex; flex-direction: column; gap: 2px; padding: 10px 16px; text-align: left; background: transparent; border: none; border-right: 1.5px solid var(--hair-soft); font: inherit; color: var(--ink); cursor: pointer; }

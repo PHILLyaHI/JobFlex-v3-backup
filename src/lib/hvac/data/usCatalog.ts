@@ -53,6 +53,14 @@ export interface UsFamily {
   firstHourBySize?: Record<number, number>;
   btuInputBySize?: Record<number, number>;
   vent?: CatalogItem["vent"];
+  /** Package units: what makes the heat ("gas" | "electric" | "heat-pump"). */
+  heatKind?: "gas" | "electric" | "heat-pump";
+  /** Sold or permitted only in these states; left out = everywhere. */
+  states?: string[];
+  /** Not sold or not permitted in these states. */
+  notStates?: string[];
+  /** Why the row is limited, in the contractor's words. */
+  availabilityNote?: string;
   sourceUrl: string;
   /** True only when the figures were read on the source page. */
   verified: boolean;
@@ -93,6 +101,9 @@ export function expandFamily(f: UsFamily): CatalogItem[] {
       afue: f.afue === undefined ? undefined : f.afue > 1 ? f.afue / 100 : f.afue,
       source: "manufacturer",
       verifiedOn: f.verified ? US_CATALOG_VERIFIED_ON : undefined,
+      states: f.states,
+      notStates: f.notStates,
+      availabilityNote: f.availabilityNote,
     };
     if (COOLING_KINDS.has(f.kind)) {
       item.tons = size;
@@ -112,6 +123,7 @@ export function expandFamily(f: UsFamily): CatalogItem[] {
       item.ratedStaticInWc = 0.5;
       if (f.kind === "air-handler") item.maxTons = f.maxTonsBySize?.[size] ?? size;
     }
+    if (f.kind === "package" && f.btuInputBySize?.[size]) item.btuInput = f.btuInputBySize[size];
     if (f.kind === "furnace") {
       item.btuInput = size * 1000;
       item.ratedStaticInWc = 0.5;
