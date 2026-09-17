@@ -34,6 +34,7 @@
 // already on Custom; and the one-shot refresh on the ?session_id return leg so
 // the sidebar's locks and quota pills redraw.
 
+import { PlanActivated } from "@/components/billing/PlanActivated";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -880,6 +881,8 @@ export function MobileUpgradeContent({
               <span>Payments here are Stripe TEST charges. Card 4242 4242 4242 4242 works.</span>
             </div>
           ) : null}
+          {/* The plan-activation shot, the handheld twin of the desktop one. */}
+          <PlanActivated plan={doneName} active={!!doneMsg} />
           {doneMsg ? (
             <div className="mu-done" role="status">
               <span className="mu-done-k">Done</span>

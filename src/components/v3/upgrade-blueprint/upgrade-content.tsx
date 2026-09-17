@@ -22,6 +22,7 @@
 //     charged once now ($10 each), the subscription price steps up, and the
 //     next cycle bills the new total — no second charge for the base.
 
+import { PlanActivated } from "@/components/billing/PlanActivated";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -310,6 +311,9 @@ export function UpgradeContent({
           Done — you&apos;re on <b>{doneName}</b> now.
         </div>
       ) : null}
+      {/* The one moment the plan actually turns on: a stamp and a short rain
+          of grid glyphs, 1.5 s, blocking nothing. */}
+      <PlanActivated plan={doneName} active={!!doneMsg} />
       {cancelled && !embedded ? (
         <div className="jf-up-err" role="alert">
           Checkout was cancelled — nothing changed.
