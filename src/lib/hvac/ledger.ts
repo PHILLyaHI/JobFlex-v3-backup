@@ -664,6 +664,19 @@ export function pickWaterHeater(catalog: CatalogItem[], plan: { fuel: string; ty
   return pool.filter((c) => (c.gallons ?? 0) >= plan.gallons).sort((a, b) => (a.gallons ?? 0) - (b.gallons ?? 0))[0];
 }
 
+/** One tank per maker that fits the plan — the smallest at or above the sized
+ *  gallons (or the tankless input), vent-compatible — with the engine's own
+ *  pick first. This is the strip the contractor chooses a brand from. */
+export function waterHeaterOptions(catalog: CatalogItem[], plan: { fuel: string; type: string; gallons: number; vent?: string; btuInput?: number }): CatalogItem[] {
+  const rows = catalog.filter((c) => c.kind === "water-heater" && (c.fuel ?? "gas") === plan.fuel && (c.whType ?? "tank") === plan.type && (plan.type === "tankless" ? (c.btuInput ?? 0) >= (plan.btuInput ?? 0) : (c.gallons ?? 0) >= plan.gallons) && (!c.vent || !plan.vent || c.vent === plan.vent || plan.vent === "none" || plan.type === "tankless"));
+  const best = new Map<string, CatalogItem>();
+  for (const r of rows.sort((a, b) => (plan.type === "tankless" ? (a.btuInput ?? 0) - (b.btuInput ?? 0) : (a.gallons ?? 0) - (b.gallons ?? 0)) || (b.uef ?? 0) - (a.uef ?? 0))) {
+    if (!best.has(r.brand)) best.set(r.brand, r);
+  }
+  const first = pickWaterHeater(catalog, plan);
+  return Array.from(best.values()).sort((a, b) => (a.id === first?.id ? -1 : b.id === first?.id ? 1 : a.brand.localeCompare(b.brand)));
+}
+
 /** The largest tank the catalog has for this fuel and type, for the note when none is big enough. */
 function largestWaterHeater(catalog: CatalogItem[], plan: { fuel: string; type: string }): CatalogItem | undefined {
   return catalog.filter((c) => c.kind === "water-heater" && (c.fuel ?? "gas") === plan.fuel && (c.whType ?? "tank") === plan.type).sort((a, b) => (b.gallons ?? b.btuInput ?? 0) - (a.gallons ?? a.btuInput ?? 0))[0];
@@ -679,7 +692,10 @@ function waterHeaterLedger(engine: EngineResult, m: BuildingModel, card: HvacRat
   const generic = plan.type === "tankless" ? `${plan.fuel === "electric" ? "Electric" : "Gas"} tankless water heater` : plan.type === "heat-pump" ? `${plan.gallons} gal heat-pump water heater` : `${plan.gallons} gal ${plan.fuel === "electric" ? "electric" : plan.fuel === "propane" ? "propane" : "gas"} tank water heater${plan.vent === "power" ? ", power vent" : plan.vent === "direct" ? ", direct vent" : ""}`;
   // The contractor's pick beats the plan's own; if it is short of the sized
   // gallons or the input, the estimate says so instead of quietly shrinking.
-  const picked = opts.pick ? catalog.find((c) => c.id === opts.pick && c.kind === "water-heater") : undefined;
+  // A pick that is a different kind of appliance (a gas tank on a heat-pump
+  // job) is not honoured: the job's setup decides the kind, the pick the maker.
+  const pickedRaw = opts.pick ? catalog.find((c) => c.id === opts.pick && c.kind === "water-heater") : undefined;
+  const picked = pickedRaw && (pickedRaw.fuel ?? "gas") === plan.fuel && (pickedRaw.whType ?? "tank") === plan.type ? pickedRaw : undefined;
   const row = picked ?? pickWaterHeater(catalog, plan);
   const genericLower = generic.replace(/^\d+ gal /, "").toLowerCase();
   const eqName = row ? `${row.brand} ${row.model} — ${row.gallons ? `${row.gallons} gal ` : ""}${genericLower}${row.uef ? ` · ${row.uef} UEF` : ""}` : generic;
@@ -692,7 +708,6 @@ function waterHeaterLedger(engine: EngineResult, m: BuildingModel, card: HvacRat
   if (picked) {
     if (plan.type !== "tankless" && (picked.gallons ?? 0) < plan.gallons) extraAssumptions.push(`You picked a ${picked.gallons} gal tank where the household sizes to ${plan.gallons} gal — the first-hour rating will be short; say so to the customer or pick the larger tank.`);
     if (plan.type === "tankless" && plan.btuInput && (picked.btuInput ?? 0) < plan.btuInput) extraAssumptions.push(`You picked a ${Math.round((picked.btuInput ?? 0) / 1000)}k BTU/h tankless where the plan calls for ${Math.round(plan.btuInput / 1000)}k — the flow at a 70 °F rise will be lower than sized.`);
-    if ((picked.fuel ?? "gas") !== plan.fuel || (picked.whType ?? "tank") !== plan.type) extraAssumptions.push(`The picked unit is a ${picked.fuel ?? "gas"} ${picked.whType ?? "tank"} and the job was set up as a ${plan.fuel} ${plan.type} — the gas, vent and circuit lines follow the job's setup, not the unit.`);
   }
   if (row) {
     const p = equipmentPrice(row, card);

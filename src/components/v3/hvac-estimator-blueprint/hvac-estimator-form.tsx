@@ -27,7 +27,7 @@ import type { WalkthroughAnalysis } from "@/lib/estimate/video-schema";
 import type { BuildingModel, CatalogItem, EngineResult, Provenance } from "@/lib/hvac/types";
 import { runEngine } from "@/lib/hvac/engine";
 import { countiesFor } from "@/lib/hvac/designConditions";
-import { CATALOG_CSV_COLUMNS, DEFAULT_RATE_CARD, buildLedger, normalizeRateCard, tiersFor, type HvacRateCard, type LedgerLine } from "@/lib/hvac/ledger";
+import { CATALOG_CSV_COLUMNS, DEFAULT_RATE_CARD, buildLedger, normalizeRateCard, tiersFor, waterHeaterOptions, type HvacRateCard, type LedgerLine } from "@/lib/hvac/ledger";
 import { DEFAULT_JOB, JOBS, jobDef, type JobInput, type JobKind , type OutdoorKind } from "@/lib/hvac/jobs";
 import { applyNameplate, applyStated, applyStatedNested, applyTypedModelNumber, applyWalkthrough, modelFromSite, type NameplateRead, type SiteFacts } from "@/lib/hvac/intake";
 import { designConditionsFor } from "@/lib/hvac/designConditions";
@@ -225,7 +225,11 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
   const [job, setJob] = React.useState<JobKind>(DEFAULT_JOB);
   const [jobInput, setJobInput] = React.useState<JobInput>({});
   const def = jobDef(job);
-  const setWh = (patch: Partial<NonNullable<JobInput["wh"]>>) => setJobInput((j) => ({ ...j, wh: { ...(j.wh ?? {}), ...patch } }));
+  const setWh = (patch: Partial<NonNullable<JobInput["wh"]>>) => {
+    setJobInput((j) => ({ ...j, wh: { ...(j.wh ?? {}), ...patch } }));
+    // A new fuel or type is a different appliance: the maker is picked again.
+    if ("fuel" in patch || "type" in patch) { setPickId(null); setCustom(null); }
+  };
   const setSvc = (patch: Partial<NonNullable<JobInput["service"]>>) => setJobInput((j) => ({ ...j, service: { ...(j.service ?? {}), ...patch } }));
 
   // 1 · site
@@ -412,11 +416,12 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     const hit = (i: CatalogItem) => !q || `${i.brand} ${i.model}`.toLowerCase().includes(q);
     if (def.id === "water-heater") {
       const plan = engine?.waterHeater;
-      const rows = catalogItems.filter((c) => c.kind === "water-heater" && hit(c));
+      // Only this job's kind of appliance is on the list: a gas tank is not an
+      // option on a heat-pump job — the Type select is.
+      const rows = catalogItems.filter((c) => c.kind === "water-heater" && hit(c) && (!plan || ((c.fuel ?? "gas") === plan.fuel && (c.whType ?? "tank") === plan.type)));
       return rows.map((item) => {
-        const wrongKind = plan ? (item.fuel ?? "gas") !== plan.fuel || (item.whType ?? "tank") !== plan.type : false;
         const small = plan && plan.type !== "tankless" ? (item.gallons ?? 0) < plan.gallons : plan?.btuInput ? (item.btuInput ?? 0) < plan.btuInput : false;
-        const out = wrongKind ? `${/^[aeiou]/i.test(item.fuel ?? "gas") ? "An" : "A"} ${item.fuel ?? "gas"} ${item.whType ?? "tank"}; this job is set up as a ${plan?.fuel} ${plan?.type}.` : small ? `Smaller than the ${plan && plan.type !== "tankless" ? `${plan.gallons} gal` : `${Math.round((plan?.btuInput ?? 0) / 1000)}k BTU/h`} the household sizes to.` : undefined;
+        const out = small ? `Smaller than the ${plan && plan.type !== "tankless" ? `${plan.gallons} gal` : `${Math.round((plan?.btuInput ?? 0) / 1000)}k BTU/h`} the household sizes to.` : undefined;
         const why = [item.gallons ? `${item.gallons} gal` : "", item.btuInput ? `${Math.round(item.btuInput / 1000)}k BTU/h` : "", item.uef ? `${item.uef} UEF` : "", item.vent && item.vent !== "none" ? `${item.vent} vent` : ""].filter(Boolean).join(" · ");
         return { item, out, why, score: (item.gallons ?? item.btuInput ?? 0), miss: 0 };
       }).sort((a, b) => (a.out ? 1 : 0) - (b.out ? 1 : 0) || a.score - b.score);
@@ -501,6 +506,14 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     setPickId(res.item.id);
     setSwapMsg(`${res.item.brand} ${res.item.model} is in your catalog now, and on this estimate.`);
   };
+
+  // Water heater: one tank per maker that fits the sized plan, each priced as
+  // the whole job; the first is the engine's own pick unless one is chosen.
+  const whOptions = React.useMemo(() => {
+    if (def.id !== "water-heater" || !engine?.waterHeater || !model || !catalog) return [];
+    return waterHeaterOptions(catalogItems, engine.waterHeater).slice(0, 4).map((item) => ({ item, subtotal: buildLedger(engine, model, card.card, catalogItems, { job, input: jobInput, linesetFt, pick: item.id }).subtotal }));
+  }, [def.id, engine, model, catalog, catalogItems, card, job, jobInput, linesetFt]);
+  const whChosen = def.id === "water-heater" ? (whOptions.find((o) => o.item.id === pickId)?.item ?? catalogItems.find((c) => c.id === pickId && c.kind === "water-heater") ?? whOptions[0]?.item ?? null) : null;
 
   // The editable lines follow the ledger until the contractor edits them, and
   // reset when the design behind them changes. Derived state, adopted in render.
@@ -1260,6 +1273,21 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
               })}
             </div>
           )}
+          {whOptions.length > 0 && (
+            <div className={cx("tiers", "tiers-wh")} role="radiogroup" aria-label="Which tank">
+              {whOptions.map((o, i) => {
+                const on = (whChosen?.id ?? "") === o.item.id;
+                return (
+                  <button key={o.item.id} type="button" role="radio" aria-checked={on} className={cx("tier", on && "on")} onClick={() => { setPickId(o.item.id); setSwapMsg(""); }}>
+                    <span className={cx("tier-k")}>{i === 0 && !pickId ? "Engine's pick" : o.item.brand}</span>
+                    <span className={cx("tier-t")}>{o.item.brand} {o.item.model}</span>
+                    <span className={cx("tier-m")}>{[o.item.gallons ? `${o.item.gallons} gal` : o.item.btuInput ? `${Math.round(o.item.btuInput / 1000)}k BTU/h` : "", o.item.uef ? `${o.item.uef} UEF` : "", o.item.vent && o.item.vent !== "none" ? `${o.item.vent} vent` : "", o.item.typed ? "typed in" : ""].filter(Boolean).join(" · ")}</span>
+                    <span className={cx("tier-v")}>{money(o.subtotal)}{!o.item.cost && <small className={cx("tier-m")}> · rate-card price, no cost on the row</small>}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {tiers.length > 1 && (
             <div className={cx("tiers")} role="radiogroup" aria-label="Good, better, best">
               {tiers.map((t) => {
@@ -1278,7 +1306,20 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
           <div className={cx("design")}>
             <div>
               {def.selection === "none" ? (
-                <ul className={cx("notes")}>{engine.notes.filter((n) => n.kind === "contractor").map((n) => <li key={n.text}><span className={cx("chip", "chip-read")}>job</span><span>{n.text}</span></li>)}</ul>
+                <>
+                  {def.id === "water-heater" && engine.waterHeater && (
+                    <div className={cx("unit")}>
+                      <div className={cx("unit-t")}>{whChosen ? `${whChosen.brand} ${whChosen.model}` : `${engine.waterHeater.gallons ? `${engine.waterHeater.gallons} gal ` : ""}${engine.waterHeater.fuel} ${engine.waterHeater.type === "heat-pump" ? "heat-pump tank" : engine.waterHeater.type} — no catalog row fits`}</div>
+                      <div className={cx("mono", "unit-m")}>{whChosen ? [whChosen.gallons ? `${whChosen.gallons} gal` : "", whChosen.btuInput ? `${Math.round(whChosen.btuInput / 1000)}k BTU/h` : "", whChosen.uef ? `${whChosen.uef} UEF` : "", whChosen.vent && whChosen.vent !== "none" ? `${whChosen.vent} vent` : "", whChosen.typed ? "typed in" : whChosen.source === "shop" ? "your catalog" : "US catalog"].filter(Boolean).join(" · ") : "priced from the rate card until a row fits — pick or type one below"}</div>
+                      <ul>
+                        <li>{engine.waterHeater.sizedFrom}{whChosen && engine.waterHeater.type !== "tankless" && whChosen.gallons && whChosen.gallons > engine.waterHeater.gallons ? ` — the catalog's next size up is ${whChosen.gallons} gal` : ""}.</li>
+                        {whOptions.length > 1 && <li>{whOptions.length} makers fit this tank: {whOptions.map((o) => o.item.brand).join(", ")}. Tap one above to price it.</li>}
+                        {whChosen && whChosen.typed && <li>Typed in for this estimate — confirm it against the submittal.</li>}
+                      </ul>
+                    </div>
+                  )}
+                  <ul className={cx("notes")}>{engine.notes.filter((n) => n.kind === "contractor").map((n) => <li key={n.text}><span className={cx("chip", "chip-read")}>job</span><span>{n.text}</span></li>)}</ul>
+                </>
               ) : chosen ? (
                 <div className={cx("unit")}>
                   <div className={cx("unit-t")}>{engine.selection.systems > 1 ? `${engine.selection.systems} × ` : ""}{chosen.item.brand} {chosen.item.model}</div>

@@ -480,6 +480,17 @@ record lands the site hero shows the area, year built and county, and a
 failed record becomes a warning rather than an error. The button reads "Look
 up the house" on every job.
 
+**Water heater, by brand (2026-09-17, owner's report).** The water-heater job
+picked a tank in the ledger but never showed it on the card, and the makers
+sat folded in "Change the unit". The card now names the picked tank (maker,
+model, gallons, UEF, vent, where it came from) and a strip above it offers one
+tank per maker that fits the sized plan (`waterHeaterOptions` in ledger.ts:
+smallest at or above the gallons or the tankless input, vent-compatible, the
+engine's pick first), each priced as the whole job; a tile says when its price
+is a rate-card default because the row has no cost. Changing the fuel or the
+type drops the pick, the ledger ignores a pick of another kind of appliance,
+and the swap list shows only this job's kind.
+
 Not in the catalog: multi-zone ductless outdoor units
 (no ratings read), Fujitsu (Halcyon RLS3 retired, Orion figures not
 published yet), non-condensing tankless. Re-verify the families after the

@@ -6,7 +6,7 @@
 // crew rate) converts to per-task amounts; the water heater sizes from the
 // household and answers the gas / circuit / vent checks.
 import { runEngine } from "../../src/lib/hvac/engine";
-import { buildLedger, DEFAULT_RATE_CARD, tiersFor, normalizeRateCard, STARTER_CATALOG } from "../../src/lib/hvac/ledger";
+import { buildLedger, DEFAULT_RATE_CARD, tiersFor, normalizeRateCard, STARTER_CATALOG, waterHeaterOptions } from "../../src/lib/hvac/ledger";
 import { modelFromSite } from "../../src/lib/hvac/intake";
 import { JOBS, jobDef, type JobKind } from "../../src/lib/hvac/jobs";
 import { tankGallonsFor, waterHeaterPlan } from "../../src/lib/hvac/waterHeater";
@@ -395,6 +395,26 @@ ok("A v2 card round-trips", JSON.stringify(normalizeRateCard(DEFAULT_RATE_CARD))
   const small = US_CATALOG.find((c) => c.kind === "water-heater" && c.whType === "tank" && c.fuel === "gas" && c.gallons === 40);
   const lWh = buildLedger(rWh, house({ occupants: 5 }), DEFAULT_RATE_CARD, US_CATALOG, { job: "water-heater", input: wh, pick: small?.id });
   ok("Water heater: the picked tank is the one priced, and a tank under the sized gallons is called out", lWh.materials[0].name.startsWith(`${small?.brand} ${small?.model}`) && lWh.assumptions.some((a) => /You picked a 40 gal tank where the household sizes to 75 gal/.test(a)), `${lWh.materials[0].name} · ${lWh.assumptions.find((a) => /You picked/.test(a))?.slice(0, 70)}`);
+}
+
+
+// ── Water heater: one tank per maker that fits, the engine's pick first ────
+{
+  const g = house();
+  const r = runEngine(g, { catalog: US_CATALOG, job: "water-heater", input: { wh: { fuel: "gas", type: "tank" } } });
+  const opts = waterHeaterOptions(US_CATALOG, r.waterHeater!);
+  ok("Gas 50 gal tank: three makers offered, one row each, all at or above 50 gal and atmospheric", opts.length === 3 && new Set(opts.map((o) => o.brand)).size === 3 && opts.every((o) => (o.gallons ?? 0) >= 50 && (o.vent ?? "atmospheric") === "atmospheric"), opts.map((o) => `${o.brand} ${o.model} ${o.gallons} gal`).join(" | "));
+  ok("The engine's own pick leads the strip", opts[0]?.id === buildLedger(r, g, DEFAULT_RATE_CARD, US_CATALOG, { job: "water-heater", input: { wh: { fuel: "gas", type: "tank" } } }).materials[0].id.replace(/^eq-main$/, opts[0]?.id ?? ""), opts[0]?.model);
+  const hp = runEngine(g, { catalog: US_CATALOG, job: "water-heater", input: { wh: { type: "heat-pump" } } });
+  const hpOpts = waterHeaterOptions(US_CATALOG, hp.waterHeater!);
+  ok("Heat-pump tank: the three makers' heat-pump tanks, sized up from the electric table", hpOpts.length === 3 && hpOpts.every((o) => o.whType === "heat-pump" && (o.gallons ?? 0) >= (hp.waterHeater?.gallons ?? 0)), hpOpts.map((o) => `${o.brand} ${o.gallons} gal`).join(" | "));
+  const tl = runEngine(g, { catalog: US_CATALOG, job: "water-heater", input: { wh: { fuel: "gas", type: "tankless" } } });
+  const tlOpts = waterHeaterOptions(US_CATALOG, tl.waterHeater!);
+  ok("Gas tankless: one per maker, none under the 199k plan", tlOpts.length >= 2 && tlOpts.every((o) => (o.btuInput ?? 0) >= 199_000), tlOpts.map((o) => `${o.brand} ${o.model} ${o.btuInput}`).join(" | "));
+  const picked = buildLedger(r, g, DEFAULT_RATE_CARD, US_CATALOG, { job: "water-heater", input: { wh: { fuel: "gas", type: "tank" } }, pick: opts[1]?.id });
+  ok("Picking the second maker puts that tank on the estimate", picked.materials[0].name.startsWith(`${opts[1]?.brand} ${opts[1]?.model}`), picked.materials[0].name);
+  const gasRowOnHp = buildLedger(hp, g, DEFAULT_RATE_CARD, US_CATALOG, { job: "water-heater", input: { wh: { type: "heat-pump" } }, pick: opts[0]?.id });
+  ok("A gas tank picked before the job became a heat-pump job is not honoured: a heat-pump tank is priced", /heat-pump water heater/.test(gasRowOnHp.materials[0].name) && !gasRowOnHp.materials[0].name.startsWith(`${opts[0]?.brand} ${opts[0]?.model}`), gasRowOnHp.materials[0].name);
 }
 
 console.log(`\n${passes} passed, ${failures} failed`);
