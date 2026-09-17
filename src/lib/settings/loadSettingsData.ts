@@ -39,6 +39,18 @@ import {
 } from "@/lib/settings";
 import type { Badge, SettingsData } from "@/components/v3/settings-blueprint/settings-data";
 
+/** Emails allowed to use the Gmail connector while the Google app is still in
+ *  Testing — GMAIL_OAUTH_TEST_USERS, comma-separated, case-insensitive. */
+function isGmailTestUser(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const list = (process.env.GMAIL_OAUTH_TEST_USERS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return list.includes(email.trim().toLowerCase());
+}
+
+
 /** Exactly what `requireOrg()` hands back — the page resolves it, not this. */
 export type SettingsOrgContext = Awaited<ReturnType<typeof requireOrg>>;
 
@@ -169,7 +181,10 @@ export async function loadSettingsData(ctx: SettingsOrgContext): Promise<Setting
         // Google keeps an app in "Testing" until it passes verification, and
         // only listed test users may consent — so the tab says "Coming soon"
         // until the operator flips GMAIL_OAUTH_PUBLIC after verification.
-        comingSoon: !(isGmailOAuthConfigured() && process.env.GMAIL_OAUTH_PUBLIC === "true"),
+        // While it is in Testing, GMAIL_OAUTH_TEST_USERS (comma-separated
+        // emails, the same list as the console's Audience → Test users) lets
+        // those accounts see and use the connector ahead of everyone else.
+        comingSoon: !(isGmailOAuthConfigured() && (process.env.GMAIL_OAUTH_PUBLIC === "true" || isGmailTestUser(me?.email ?? user.email))),
         connected: gmailConnected,
         connectedEmail: gmail.connectedEmail,
         // From address is PRE-FILLED with the company (owner's call,
