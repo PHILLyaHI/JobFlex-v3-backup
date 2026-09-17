@@ -162,7 +162,7 @@ const PLATES: Array<{ height: number; src: string; label: string }> = [
   { height: 129, src: "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=400&q=62&auto=format&fit=crop", label: "Basement" },
 ];
 
-/* The shared house mark (/jobflex-mark.png), clipped the way landing-d does it
+/* The shared house mark (/jobflex-mark.png), clipped the way landing-e does it
    — the "JF" plate was the donor's placeholder, not the brand. Sized and inset
    by mobile-homeowner.css (.brand-mark / .brand-mark-img). */
 function BrandMark() {

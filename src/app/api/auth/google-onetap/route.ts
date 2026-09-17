@@ -7,8 +7,8 @@
 //   · an address JobFlex knows → a one-time sign-in ticket, redeemed by the
 //     `signup-ticket` provider in the browser (same as the pay-first signup);
 //   · a new address → the identity is parked (lib/googleSignup) and the
-//     visitor is sent to /auth/register?gsu=… at step 2, with the trade, the
-//     campaign and the variant the landing's cookies remember.
+//     visitor is sent to /auth/register?gsu=… at step 2, with the trade and
+//     the campaign the landing's cookies remember.
 // No account is ever created here (owner's rule, 2026-09-03).
 import { NextResponse } from "next/server";
 import { OAuth2Client } from "google-auth-library";

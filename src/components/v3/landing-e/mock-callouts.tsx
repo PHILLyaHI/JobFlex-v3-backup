@@ -24,6 +24,16 @@ export type CalloutSpec = {
   /** Nudges the label from its pocket (px, positive = right / down). */
   dx?: number;
   dy?: number;
+  /** "marker": the label is placed on the mock's own [data-callout-pocket]
+   *  point instead of a stage corner — `align` says which edge of the label
+   *  sits on that point (hero roof, 2026-09-14: labels beside the drawing,
+   *  in the drawing's units, so they hold their distance at every width). */
+  place?: "pocket" | "marker";
+  align?: "l" | "r" | "t" | "b";
+  /** "straight": one line from the anchor to the label's nearest edge, no
+   *  elbow — an orthogonal leg next to a rectilinear roof runs parallel to
+   *  an eave; a diagonal never does (owner's rule: ≥ 10° off any line). */
+  leader?: "elbow" | "straight";
 };
 
 type Geo = { ax: number; ay: number; lx: number; ly: number; lw: number; lh: number; d: string };
@@ -55,12 +65,33 @@ export function MockCallouts({ specs, armed }: { specs: CalloutSpec[]; armed: bo
       const ay = mr.top + mr.height / 2 - sr.top;
       const lw = label.offsetWidth;
       const lh = label.offsetHeight;
-      const lx = (s.pocket.endsWith("l") ? PAD : sr.width - PAD - lw) + (s.dx ?? 0);
-      const ly = (s.pocket.startsWith("t") ? PAD : sr.height - PAD - lh) + (s.dy ?? 0);
+      let lx = (s.pocket.endsWith("l") ? PAD : sr.width - PAD - lw) + (s.dx ?? 0);
+      let ly = (s.pocket.startsWith("t") ? PAD : sr.height - PAD - lh) + (s.dy ?? 0);
       // the leader ends on the label's near edge, at mid-height
-      const ex = s.pocket.endsWith("l") ? lx + lw : lx;
-      const ey = ly + lh / 2;
-      const d = (s.elbow ?? "v") === "v" ? `M${ax} ${ay} V${ey} H${ex}` : `M${ax} ${ay} H${ex} V${ey}`;
+      let ex = s.pocket.endsWith("l") ? lx + lw : lx;
+      let ey = ly + lh / 2;
+      if (s.place === "marker") {
+        const pocketMark = stage.querySelector<HTMLElement>(`[data-callout-pocket="${s.key}"]`);
+        if (pocketMark) {
+          const pr = pocketMark.getBoundingClientRect();
+          const px = pr.left + pr.width / 2 - sr.left;
+          const py = pr.top + pr.height / 2 - sr.top;
+          const align = s.align ?? "l";
+          lx = align === "r" ? px - lw : align === "l" ? px : px - lw / 2;
+          ly = align === "b" ? py - lh : align === "t" ? py : py - lh / 2;
+          ex = px;
+          ey = py;
+        }
+      } else if (s.leader === "straight") {
+        // the edge midpoint nearest the anchor
+        const mids = [{ x: lx, y: ly + lh / 2 }, { x: lx + lw, y: ly + lh / 2 }, { x: lx + lw / 2, y: ly }, { x: lx + lw / 2, y: ly + lh }];
+        const m = mids.reduce((a, b) => (Math.hypot(b.x - ax, b.y - ay) < Math.hypot(a.x - ax, a.y - ay) ? b : a));
+        ex = m.x;
+        ey = m.y;
+      }
+      const d = s.leader === "straight" || s.place === "marker"
+        ? `M${ax} ${ay} L${ex} ${ey}`
+        : (s.elbow ?? "v") === "v" ? `M${ax} ${ay} V${ey} H${ex}` : `M${ax} ${ay} H${ex} V${ey}`;
       next[s.key] = { ax, ay, lx, ly, lw, lh, d };
     }
     return next;

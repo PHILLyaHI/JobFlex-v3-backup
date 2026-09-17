@@ -1,4 +1,4 @@
-// DEV GALLERY — every trade hero of landing-d on one page.
+// DEV GALLERY — every trade hero of the landing (landing-e) on one page.
 //
 // Dev-only, like /dev/emails: a production build 404s it. No auth on purpose
 // (dev.db has no seeded account for a gated gallery to be reachable). The
@@ -11,31 +11,21 @@
 // applies. The default hero is first, as the reference.
 
 import { notFound } from "next/navigation";
-import { Hero as HeroD } from "@/components/v3/landing-d/hero";
-import { Hero as HeroE } from "@/components/v3/landing-e/hero";
+import { Hero } from "@/components/v3/landing-e/hero";
 import {
   DEFAULT_LANDING,
   LANDING_VARIANTS,
   VARIANT_KEYS,
   VARIANT_TRADE,
   signupHref,
-} from "@/components/v3/landing-d/landing-variants";
-import { REGISTER } from "@/components/v3/landing-d/routes";
-import "@/components/v3/landing-d/landing-d.css";
+} from "@/components/v3/landing-e/landing-variants";
+import { REGISTER } from "@/components/v3/landing-e/routes";
 import "@/components/v3/landing-e/landing-e.css";
 
 export const dynamic = "force-dynamic";
 
-export default async function LandingVariantsGallery({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function LandingVariantsGallery() {
   if (process.env.NODE_ENV === "production") notFound();
-  // ?v=e shows the landing-e heroes (the test copy); d is the default.
-  const sp = await searchParams;
-  const v = sp.v === "e" ? "e" : "d";
-  const Hero = v === "e" ? HeroE : HeroD;
 
   const ready = VARIANT_KEYS.filter((k) => LANDING_VARIANTS[k] !== null);
   const todo = VARIANT_KEYS.filter((k) => LANDING_VARIANTS[k] === null);
@@ -43,13 +33,9 @@ export default async function LandingVariantsGallery({
   return (
     <main style={{ background: "#ebe8e1", minHeight: "100vh", padding: "32px 0 64px" }}>
       <div style={{ padding: "0 24px 24px", fontFamily: "ui-monospace, monospace", fontSize: 13, color: "#444" }}>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: "#0a0a0a", margin: 0 }}>landing-{v} · trade heroes</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 800, color: "#0a0a0a", margin: 0 }}>landing · trade heroes</h1>
         <p style={{ margin: "6px 0 0" }}>
-          {ready.length} written · {todo.length} TODO · open any as <code>{v === "e" ? "/landing-e/" : "/"}?industry=&lt;key&gt;</code>
-          {" · "}
-          <a href="/dev/landing-variants" style={{ fontWeight: v === "d" ? 800 : 400, color: "#0a0a0a" }}>d</a>
-          {" | "}
-          <a href="/dev/landing-variants?v=e" style={{ fontWeight: v === "e" ? 800 : 400, color: "#0a0a0a" }}>e</a>
+          {ready.length} written · {todo.length} TODO · open any as <code>/?industry=&lt;key&gt;</code>
         </p>
       </div>
 

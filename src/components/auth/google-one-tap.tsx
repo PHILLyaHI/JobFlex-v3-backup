@@ -7,15 +7,15 @@ import { signIn } from "next-auth/react";
    corner of the page: one tap, and the visitor is either signed in (an
    address JobFlex knows) or on step 2 of the signup with the trade
    pre-selected (a new address — parked exactly like the Google button's
-   return, lib/googleSignup). Mounted on landing-e and on the register page
-   when the variant is e; renders nothing unless NEXT_PUBLIC_GOOGLE_CLIENT_ID
-   is set, so every other page and environment is unchanged.
+   return, lib/googleSignup). Mounted on the landing and on the register
+   page's step 1; renders nothing unless NEXT_PUBLIC_GOOGLE_CLIENT_ID is
+   set, so every other page and environment is unchanged.
 
    The script (accounts.google.com/gsi/client) is fetched after `load` and an
    idle slot, never before the hero has painted. The credential is verified
    on the server (/api/auth/google-onetap); the browser never decides who it
-   is. The trade, the campaign and the variant travel by the landing's
-   cookies, which the landing writes after paint — before this can fire. */
+   is. The trade and the campaign travel by the landing's cookies, which
+   the landing writes after paint — before this can fire. */
 
 type GoogleId = {
   initialize(o: Record<string, unknown>): void;

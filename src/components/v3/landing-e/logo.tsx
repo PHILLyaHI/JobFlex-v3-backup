@@ -3,7 +3,7 @@ import Image from "next/image";
 /* The house mark, shared with the blueprint shell rather than redrawn here.
    /jobflex-mark.png is mostly transparent margin, so the box clips the asset
    and the image is pulled up by the asset's own top inset — the same geometry
-   dashboard-blueprint/blueprint.module.css uses, kept in landing-d.css as
+   dashboard-blueprint/blueprint.module.css uses, kept in landing-e.css as
    .lp-mark-box / .lp-mark-img so the two cannot drift apart visually. */
 export function LogoMark({
   className = "",

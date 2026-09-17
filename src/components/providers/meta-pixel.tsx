@@ -6,10 +6,10 @@ import { onConsent, readConsent } from "@/lib/consent";
 import { isMetaPixelConfigured, loadMetaPixel, metaTrack, newEventId, unloadMetaPixel } from "@/lib/metaPixel";
 
 /* Loads the Meta Pixel after marketing consent and sends PageView on the
-   pages that matter for ads — the landing (/ and /landing-d, any
+   pages that matter for ads — the landing (/, any
    ?industry=) and the register page — each with a fresh eventID. Renders
    nothing; with no NEXT_PUBLIC_META_PIXEL_ID the component does nothing. */
-const PAGEVIEW_PATHS = new Set(["/", "/landing-d", "/landing-e", "/auth/register"]);
+const PAGEVIEW_PATHS = new Set(["/", "/auth/register"]);
 
 export function MetaPixel() {
   const pathname = usePathname();

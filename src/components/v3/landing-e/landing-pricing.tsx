@@ -7,7 +7,7 @@ import { REGISTER } from "./routes";
    getPlanCatalog on the server) — nothing here names a plan or a price.
    THE INK SHEET (owner, 2026-09-10): lp-base under the showcase's drafting
    grid, white copy, paper plates with a 1 px ink line and a hard offset
-   shadow (landing-d.css, .lp-price). Mono-caps column heads, hairline rows,
+   shadow (landing-e.css, .lp-price). Mono-caps column heads, hairline rows,
    one lime CTA. A $0 tier, when one exists in
    the catalogue, is what a skipped checkout leaves behind and is not sold.
    Type floors (2026-09-10): mono caps 11 px, text 14 px, 15 px on a phone;

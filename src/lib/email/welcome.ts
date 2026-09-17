@@ -1,4 +1,4 @@
-// THE WELCOME EMAIL (landing-e pass A, 2026-09-11) — variant e signups only.
+// THE WELCOME EMAIL (landing-e pass A, 2026-09-11) — every signup since 2026-09-16.
 // Built from the organization's trade, rendered by the one email renderer,
 // sent through the one transport. Called inside `after()` from
 // completePendingSignup; it must never throw into the signup.

@@ -1381,6 +1381,22 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
    and no-JS (a <noscript> rule in hero.tsx) lift the class. */
 .jf-lp .lp-enter { visibility: hidden; }
 .jf-lp .lp-h1-line { will-change: transform; }
+/* ROOM FOR THE DESCENDERS (owner's report, 2026-09-14: the "j" of "From just
+   the address." was cut along the bottom). SplitText's `mask: "lines"` wraps
+   each line in a box with `overflow: clip` exactly one line box tall, and the
+   headline is set at leading 1.02 — tighter than the font's own glyph box, so
+   everything below the line box (j, y, p, g) was clipped away. The mask keeps
+   a fifth of an em of clearance BELOW the line and gives it straight back as
+   negative margin, so the clip box grows while the headline keeps the exact
+   position and height it had. Bottom only, on purpose: the ascenders were
+   never short of room, and a top inset would collapse against the inset above
+   it and push the whole hero down. The lines still start out of sight: they
+   are pushed 130% of their height down (hero-entrance.tsx), further than the
+   mask now reaches. */
+.jf-lp .lp-h1-line-mask {
+  padding-bottom: 0.2em;
+  margin-bottom: -0.2em;
+}
 @media (prefers-reduced-motion: reduce) {
   .jf-lp .lp-enter { visibility: visible; }
 }
@@ -1389,3 +1405,73 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
    Hidden until their timeline has set its own start state; from then on
    gsap owns visibility and opacity inline. */
 .jf-lp .lp-callouts-pending * { visibility: hidden; }
+
+/* ── Hero roof mock (owner, 2026-09-14) ────────────────────────────
+   The hero's plate is drawn smaller than the showcase's, so the drawing has
+   a margin on every side for its figures (roof-shot.tsx, HERO_POCKETS):
+   9 % in from the stage and centred from 640 px; on a phone the stage is
+   taller (320 px) and the roof sits lower, leaving a row above it for two
+   labels and a row under it for the third. The showcase's own stage keeps
+   its values above. */
+.jf-lp .lp-hero-stage { --plan-inset: 9%; --plan-y: 50%; }
+@media (max-width: 639px) {
+  .jf-lp .lp-hero-stage { height: 320px; --plan-inset: 6%; --plan-y: 56%; }
+}
+
+/* ── The takeoff rail on a phone (owner, 2026-09-14) ───────────────
+   Under the hero's stage the rail used to arrive as a whole on opacity:
+   a strip of nothing, then everything. Now it is revealed top to bottom in
+   400 ms — a clip-path inset that opens downward, on paper from the first
+   frame — and its rows follow one after another (transform + opacity, 50 ms
+   apart). The inline opacity / transform the Rail sets are overridden here
+   for the hero only; the showcase's rails keep their slide. */
+@media (max-width: 639px) {
+  .jf-lp .lp-hero .lp-est-rail {
+    visibility: visible;
+    opacity: 1 !important;
+    transform: none !important;
+    background: var(--paper, #f2f0eb) !important;
+    clip-path: inset(0 0 100% 0);
+    transition: clip-path 0.4s var(--lp-ease), border-color 0.4s ease;
+  }
+  .jf-lp .lp-hero .lp-est-rail.is-on { clip-path: inset(0 0 0 0); }
+  .jf-lp .lp-hero .lp-est-rail .lp-rail-row,
+  .jf-lp .lp-hero .lp-est-rail .lp-rail-rows > * {
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.3s ease, transform 0.3s var(--lp-ease);
+  }
+  .jf-lp .lp-hero .lp-est-rail.is-on .lp-rail-row,
+  .jf-lp .lp-hero .lp-est-rail.is-on .lp-rail-rows > * { opacity: 1; transform: none; }
+  .jf-lp .lp-hero .lp-est-rail.is-on .lp-rail-row { transition-delay: 0.05s; }
+  .jf-lp .lp-hero .lp-est-rail.is-on .lp-rail-rows > :nth-child(1) { transition-delay: 0.1s; }
+  .jf-lp .lp-hero .lp-est-rail.is-on .lp-rail-rows > :nth-child(2) { transition-delay: 0.15s; }
+  .jf-lp .lp-hero .lp-est-rail.is-on .lp-rail-rows > :nth-child(3) { transition-delay: 0.2s; }
+  .jf-lp .lp-hero .lp-est-rail.is-on .lp-rail-rows > :nth-child(4) { transition-delay: 0.25s; }
+  .jf-lp .lp-hero .lp-est-rail.is-on .lp-rail-rows > :nth-child(5) { transition-delay: 0.3s; }
+  .jf-lp .lp-hero .lp-est-rail.is-on .lp-rail-rows > :nth-child(6) { transition-delay: 0.35s; }
+  .jf-lp .lp-hero .lp-est-rail.is-on .lp-rail-rows > :nth-child(7) { transition-delay: 0.4s; }
+  .jf-lp .lp-hero .lp-est-rail.is-on .lp-rail-rows > :nth-child(8) { transition-delay: 0.45s; }
+  @media (prefers-reduced-motion: reduce) {
+    .jf-lp .lp-hero .lp-est-rail,
+    .jf-lp .lp-hero .lp-est-rail .lp-rail-row,
+    .jf-lp .lp-hero .lp-est-rail .lp-rail-rows > * { transition: none; }
+  }
+}
+
+/* ── Proposals sheet stamp on a phone (owner, 2026-09-14) ─────────
+   Its own row under the sample link, right-aligned; the frame's corner
+   stamp is hidden there so the two never both show. */
+.jf-lp .lp-props-stamp--flow { position: static; right: auto; bottom: auto; }
+@media (max-width: 639px) {
+  .jf-lp .lp-props-frame .lp-props-stamp { display: none; }
+}
+
+/* ── The Jobs phone mock's lockup (owner, 2026-09-14): 1.4× ───────
+   Only the mock in Built for the field; the hero's phone shot keeps its own. */
+@media (max-width: 639px) {
+  .jf-lp #field .lp-ph-brand { gap: 10px; }
+  .jf-lp #field .lp-ph-brand .lp-mark-box--xs { --lp-mark-size: 64px; }
+  .jf-lp #field .lp-ph-name { font-size: 18px; }
+  .jf-lp #field .lp-ph-sub { font-size: 10px; }
+}

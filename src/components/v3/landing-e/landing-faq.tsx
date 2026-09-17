@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import type { LandingVariantKey } from "./landing-variants";
 import { Reveal } from "./reveal";
 
@@ -55,6 +58,18 @@ function questions(variant: LandingVariantKey | undefined): Faq[] {
 
 export function LandingFaq({ variant, registerHref = "/auth/register", cta = "Start my free trial" }: { variant?: LandingVariantKey; registerHref?: string; cta?: string }) {
   const items = questions(variant);
+  /* On a phone the questions fold (owner, 2026-09-14): all closed on load,
+     each opens on its own and stays open while another is opened, a mono
+     + / − at the right. From 768 px the sheet is the spec sheet it was —
+     every answer open, the toggle inert and its mark hidden. */
+  const [open, setOpen] = useState<Set<number>>(() => new Set());
+  const toggle = (i: number) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
   return (
     <section id="faq" className="relative overflow-hidden bg-lp-paper px-5 py-[8vmin] sm:px-6">
       <div className="mx-auto lp-wrap">
@@ -66,20 +81,36 @@ export function LandingFaq({ variant, registerHref = "/auth/register", cta = "St
         </Reveal>
         <Reveal delay={120} className="mt-10">
           <dl className="border-t-[1.5px] border-lp-ink">
-            {items.map((item, i) => (
-              <div
-                key={item.q}
-                className="grid grid-cols-[44px_minmax(0,1fr)] gap-x-4 border-b border-black/10 py-5 md:grid-cols-[64px_minmax(0,22rem)_minmax(0,1fr)] md:gap-x-8"
-              >
-                <span className="pt-[3px] font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[#555555] lg:text-[12px]">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <dt className="text-[16px] font-bold leading-[1.35] tracking-[-0.01em] text-ink sm:text-[17px]">{item.q}</dt>
-                <dd className="col-start-2 mt-2 text-[15px] leading-[1.6] text-[#555555] md:col-start-3 md:mt-0">
-                  {item.a}
-                </dd>
-              </div>
-            ))}
+            {items.map((item, i) => {
+              const isOpen = open.has(i);
+              return (
+                <div
+                  key={item.q}
+                  className="grid grid-cols-[44px_minmax(0,1fr)] gap-x-4 border-b border-black/10 py-5 md:grid-cols-[64px_minmax(0,22rem)_minmax(0,1fr)] md:gap-x-8"
+                >
+                  <span className="pt-[3px] font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[#555555] lg:text-[12px]">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <dt className="text-[16px] font-bold leading-[1.35] tracking-[-0.01em] text-ink sm:text-[17px]">
+                    <button
+                      type="button"
+                      className="flex w-full items-start justify-between gap-4 text-left md:pointer-events-none"
+                      aria-expanded={isOpen}
+                      aria-controls={`faq-a-${i}`}
+                      onClick={() => toggle(i)}
+                    >
+                      <span>{item.q}</span>
+                      <span className="mt-[1px] shrink-0 font-mono text-[16px] font-bold leading-none text-[#555555] md:hidden" aria-hidden>
+                        {isOpen ? "\u2212" : "+"}
+                      </span>
+                    </button>
+                  </dt>
+                  <dd id={`faq-a-${i}`} className={`col-start-2 mt-2 text-[15px] leading-[1.6] text-[#555555] md:col-start-3 md:mt-0 ${isOpen ? "block" : "hidden md:block"}`}>
+                    {item.a}
+                  </dd>
+                </div>
+              );
+            })}
           </dl>
         </Reveal>
         {/* The section's CTA (pass B). */}

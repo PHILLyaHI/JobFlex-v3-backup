@@ -175,12 +175,13 @@ export async function buildDashboardData(): Promise<DashboardData> {
     weekRows,
     leadRows,
   ] = await Promise.all([
-    // The first-run card (landing-e pass A): a variant-e shop that has not
-    // made an estimate yet. The three counts are the three things an
-    // "estimate" can be here — a proposal, an AI estimate, a roof measurement.
+    // The first-run card (landing-e pass A; every shop since 2026-09-16): a
+    // shop that has not made an estimate yet. The three counts are the three
+    // things an "estimate" can be here — a proposal, an AI estimate, a roof
+    // measurement.
     db.organization.findUnique({
       where: { id: organizationId },
-      select: { signupVariant: true, landingIndustry: true, tradeTypesJson: true },
+      select: { landingIndustry: true, tradeTypesJson: true },
     }),
     Promise.all([
       db.proposal.count({ where: { organizationId } }),
@@ -383,7 +384,7 @@ export async function buildDashboardData(): Promise<DashboardData> {
     // that is missing once it does show.
     leadProfile: needsTrades ? { needsCompany, needsAddress, needsTrades } : null,
     firstRun:
-      firstRunOrg?.signupVariant === "e" && estimatesSoFar === 0
+      firstRunOrg && estimatesSoFar === 0
         ? firstEstimateTarget(parseTradeTypes(firstRunOrg.tradeTypesJson), firstRunOrg.landingIndustry)
         : null,
     kpis: {

@@ -249,7 +249,7 @@ export function FlowFeatures() {
               cluster is the picture of this feature, so the phone gets the
               same one rather than a second design of it. */}
           <Reveal delay={100} className="order-1 lg:order-2">
-            <h3 className="text-[clamp(26px,2.6vw,36px)] font-bold tracking-[-0.015em] text-ink">
+            <h3 className="text-[clamp(26px,2.6vw,36px)] font-bold tracking-[-0.015em] text-ink" data-guide-avoid>
               See your cash flow at a glance.
             </h3>
           </Reveal>
@@ -261,7 +261,7 @@ export function FlowFeatures() {
         {/* Change orders */}
         <div className="mt-[16vmin] grid items-center gap-8 sm:mt-[7vmin] lg:grid-cols-2 lg:gap-16">
           <Reveal className="lg:order-1">
-            <h3 className="text-[clamp(26px,2.6vw,36px)] font-bold tracking-[-0.015em] text-ink">
+            <h3 className="text-[clamp(26px,2.6vw,36px)] font-bold tracking-[-0.015em] text-ink" data-guide-avoid>
               Change orders, in writing.
             </h3>
           </Reveal>

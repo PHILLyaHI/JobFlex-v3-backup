@@ -43,7 +43,7 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
 
   return (
     // THE BLUEPRINT SHEET (owner, 2026-09-10): flat blueprint blue under the
-    // white drafting grid (landing-d.css, .lp-portal); the card inside carries
+    // white drafting grid (landing-e.css, .lp-portal); the card inside carries
     // a 1 px white line and a hard offset shadow of solid ink. No gradient
     // anywhere — the band that used to run one is now the sheet itself.
     <section id="portal" className="lp-portal relative overflow-hidden px-5 py-[8vmin] max-sm:pb-[12vmin] max-sm:pt-[11vmin] sm:px-6">

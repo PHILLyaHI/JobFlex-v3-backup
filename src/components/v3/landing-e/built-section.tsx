@@ -37,7 +37,7 @@ const FILTERS = ["All jobs", "All crews", "All clients", "All tags"];
 /* The copy block (owner, 2026-09-10): two styles only — the problem and the
    price line in regular slate-600, the answer at display size in ink — on a
    2 px ink callout line that runs from the first sentence to the last; the
-   eyebrow stands above the line (landing-d.css, .lp-built-callout). */
+   eyebrow stands above the line (landing-e.css, .lp-built-callout). */
 export function BuiltSection({ jobs = JOBS, phoneJobs }: { jobs?: BuiltJob[]; phoneJobs?: PhoneJob[] }) {
   return (
     <section id="field" className="relative overflow-hidden bg-white px-5 py-[8vmin] max-sm:pb-[18vmin] sm:px-6">
@@ -48,7 +48,9 @@ export function BuiltSection({ jobs = JOBS, phoneJobs }: { jobs?: BuiltJob[]; ph
             <h2 className="lp-eyebrow text-[#666666]">Built for the field</h2>
             <div className="lp-built-callout mt-5">
               {/* Say the problem, not the pitch (owner, 2026-08-25). */}
-              <p className="text-[17px] leading-[1.5] text-[#555555] lg:text-[21px]">
+              {/* Not on a phone (owner, 2026-09-14): the headline and the
+                  price line carry it there; the ink line follows what is left. */}
+              <p className="text-[17px] leading-[1.5] text-[#555555] max-sm:hidden lg:text-[21px]">
                 The job ends and the paperwork starts — the estimate, the invoice,
                 the three people still waiting on a text.
               </p>

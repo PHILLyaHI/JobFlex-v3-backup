@@ -168,7 +168,9 @@ export function buildTrafficQueries(f: TrafficFilters): Record<string, string> {
   // Landing variant d vs e (landing-e pass A): a signup start is a visitor's
   // first registration step in the range; its `variant` property ("e" from
   // landing-e's register, nothing from landing-d's) names the arm. Completion
-  // is the verified server event inside the window after that start.
+  // is the verified server event inside the window after that start. Since
+  // 2026-09-16 every start is "e" (landing-e is the only landing); the split
+  // stays for the history before that date.
   const variants = `${audienceBase}, starts AS (
     SELECT visitor, if(argMin(variant, timestamp) = 'e', 'e', 'd') AS arm, min(timestamp) AS started_at
     FROM enriched WHERE ${selected} AND event = ${q(E.step)} GROUP BY visitor

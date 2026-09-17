@@ -228,6 +228,14 @@ const SLIDE_LABEL: Record<ShowcaseSlideKey, string> = {
   fence: "Fence estimator",
   video: "Video estimator",
 };
+/** The tab's one-word label under 640 px (owner, 2026-09-14): four tabs in
+ *  one row on a phone, no scrolling, no clipping. */
+const SLIDE_SHORT: Record<ShowcaseSlideKey, string> = {
+  smart: "Smart",
+  roof: "Roof",
+  fence: "Fence",
+  video: "Video",
+};
 /** The four, in the order they always ran. */
 const DEFAULT_SLIDES: ShowcaseSlideKey[] = ["smart", "roof", "fence", "video"];
 
@@ -248,7 +256,7 @@ export function EstimatorsShowcase({
 }) {
   const { ref, inView } = useInView<HTMLDivElement>(0.15);
   const own = ownSlide && ownSlide !== "smart" ? ownSlide : undefined;
-  const SLIDES = (own ? ["smart" as const, own, ...DEFAULT_SLIDES.filter((k) => k !== "smart" && k !== own)] : DEFAULT_SLIDES).map((key) => ({ key, label: SLIDE_LABEL[key] }));
+  const SLIDES = (own ? ["smart" as const, own, ...DEFAULT_SLIDES.filter((k) => k !== "smart" && k !== own)] : DEFAULT_SLIDES).map((key) => ({ key, label: SLIDE_LABEL[key], short: SLIDE_SHORT[key] }));
   const [slide, setSlide] = useState(0);
   const [run, setRun] = useState(0);
   const [reduced, setReduced] = useState(false);
@@ -277,7 +285,7 @@ export function EstimatorsShowcase({
           sequences with the takeoff rail stacked under the stage. */}
       {/* Flat ink ground with the blueprint drafting grid (owner, 2026-09-10):
           no plate, no overlay, no gradient — the grid is two CSS layers of
-          1 px white lines (landing-d.css, .lp-est). */}
+          1 px white lines (landing-e.css, .lp-est). */}
       <section id="showcase" className="lp-est relative overflow-hidden bg-lp-base px-5 py-[11vmin] sm:py-[9vmin] sm:px-6">
         <div
           ref={ref}
@@ -300,8 +308,12 @@ export function EstimatorsShowcase({
           </Reveal>
 
           <Reveal delay={80}>
+            {/* Four across on a phone (owner, 2026-09-14): one-word labels at
+                12 px, 8 px padding, the timer bar the full width of the tab —
+                all four fit at 360 px with nothing to scroll or cut. From 640 px
+                the strip wraps with the full labels as before. */}
             <div
-              className="grid grid-cols-2 items-stretch gap-1.5 sm:flex sm:flex-wrap sm:gap-2"
+              className="grid grid-cols-4 items-stretch gap-1.5 sm:flex sm:flex-wrap sm:gap-2"
               role="tablist"
               aria-label="Estimators"
             >
@@ -316,12 +328,15 @@ export function EstimatorsShowcase({
                   // 2026-09-10): ground 0.02 -> 0.04, text ~0.60 -> 0.80, track
                   // 0.15 -> 0.30. The active tab is unchanged. From 1024px the
                   // label is 2px larger and the track and padding follow.
-                  className={`relative overflow-hidden rounded-[2px] px-3 pb-3 pt-2.5 text-left transition-colors duration-200 sm:flex-1 sm:px-4 sm:pb-3.5 sm:pt-3 lg:px-5 lg:pb-4 lg:pt-3.5 ${
+                  className={`relative overflow-hidden rounded-[2px] p-2 text-left transition-colors duration-200 sm:flex-1 sm:px-4 sm:pb-3.5 sm:pt-3 lg:px-5 lg:pb-4 lg:pt-3.5 ${
                     i === slide ? "bg-white/[0.08] text-white" : "bg-white/[0.04] text-white/80 hover:bg-white/[0.06] hover:text-white/95"
                   }`}
                 >
-                  <span className="block text-[15px] font-semibold sm:text-[13.5px] lg:text-[15.5px]">{sl.label}</span>
-                  <span className="mt-2 block h-[3px] overflow-hidden rounded-full bg-white/30 sm:mt-2.5 lg:mt-3 lg:h-[4px]">
+                  <span className="block text-[12px] font-semibold sm:text-[13.5px] lg:text-[15.5px]">
+                    <span className="sm:hidden">{sl.short}</span>
+                    <span className="hidden sm:inline">{sl.label}</span>
+                  </span>
+                  <span className="-mx-2 mt-2 block h-[3px] overflow-hidden rounded-full bg-white/30 sm:mx-0 sm:mt-2.5 lg:mt-3 lg:h-[4px]">
                     {i === slide && (
                       <span
                         key={`${slide}-${run}`}

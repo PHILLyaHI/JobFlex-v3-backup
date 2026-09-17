@@ -1,7 +1,7 @@
 /* landing-e CTA copy (pass B, 2026-09-10). First person with the trade's
    outcome for the top of the page — nav, hero, sticky bar, showcase; one
    line for everything from Proposals down. The shared variant data
-   (landing-d) is untouched: this is landing-e's own table. */
+   (landing-variants.ts) is untouched: this is the CTA table. */
 
 import type { LandingVariantKey } from "./landing-variants";
 

@@ -359,7 +359,7 @@ function ReceiptCluster() {
 
 /* THE TITLE SHEET (owner, 2026-09-10): paper, no grid, a double ink line
    round the content width with the sheet stamp and corner ticks; the mocks
-   carry a 1 px ink line and a hard offset shadow (landing-d.css, .lp-props).
+   carry a 1 px ink line and a hard offset shadow (landing-e.css, .lp-props).
    CSS only — no gradient, no image. */
 export function ProposalsSection({ proposal = KITCHEN, registerHref = "/auth/register", cta = "Start my free trial" }: { proposal?: ProposalContent; registerHref?: string; cta?: string }) {
   return (
@@ -435,6 +435,12 @@ export function ProposalsSection({ proposal = KITCHEN, registerHref = "/auth/reg
             See a sample proposal (PDF)
           </a>
         </Reveal>
+        {/* On a phone the sheet stamp sat on the sample link (owner's
+            screenshot, 2026-09-14): there it is its own row under the link,
+            at the right, and the frame's corner stamp is hidden. */}
+        <div className="mt-4 flex justify-end sm:hidden">
+          <StampIn className="lp-props-stamp lp-props-stamp--flow">Sheet 03 · Proposals &amp; Contracts</StampIn>
+        </div>
       </div>
     </section>
   );

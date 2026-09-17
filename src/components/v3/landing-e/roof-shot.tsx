@@ -124,6 +124,46 @@ const ROOF_CALLOUTS: CalloutSpec[] = [
   { key: "squares", text: "17.6 sq", pocket: "br", elbow: "h" },
 ];
 
+/* THE HERO'S OWN LAYOUT (owner, 2026-09-14). In the hero the plate is drawn
+   smaller (.lp-hero-stage) so the drawing has room around it, and every
+   figure stands OUTSIDE the outline, at least 12 px off the nearest line,
+   with a straight leader that is never within 10° of the line beside it —
+   an elbow's horizontal leg beside a horizontal eave read as one more eave.
+
+   From 640 px the labels are placed on points of the drawing itself (tilted
+   plan units, like the dimensions), so their distance to the roof holds at
+   every width; below 640 px the roof fills the width and the labels take the
+   stage's top corners and bottom-right pocket, above and below the roof.
+   The wing's anchor moved down its facet (300, 170) so its leader leaves the
+   hip E–W at 17°, the pitch anchor toward the north facet's east end so its
+   leader is short. Pocket and dimension coordinates are the TILTED end state
+   (the porch eave lands at y 199, not 238). The two dimension boxes are
+   hero-only from 1024 px. */
+const HERO_MARKS: Record<string, P3> = {
+  area: [112, 124, 14],
+  pitch: [240, 62, 24],   // north facet, near its east hip: a short leader to the right
+  squares: [300, 170, 10],
+};
+const HERO_POCKETS: Record<string, { x: number; y: number }> = {
+  area: { x: 58, y: 125 },     // right edge of the label, 15.6 units off the west eave
+  pitch: { x: 378, y: 140 },   // left edge, 17.6 units off the wing's east eave
+  squares: { x: 322, y: 194 }, // top edge, 22 units under the wing's south eave
+};
+const HERO_CALLOUTS_DESK: CalloutSpec[] = [
+  { key: "area", text: "1,760 sq ft", pocket: "tl", place: "marker", align: "r" },
+  { key: "pitch", text: "8/12 pitch", pocket: "tr", place: "marker", align: "l" },
+  { key: "squares", text: "17.6 sq", pocket: "br", place: "marker", align: "t" },
+];
+const HERO_CALLOUTS_PHONE: CalloutSpec[] = [
+  { key: "area", text: "1,760 sq ft", pocket: "tl", dy: 40, leader: "straight" },
+  { key: "pitch", text: "8/12 pitch", pocket: "tr", dy: 40, leader: "straight" },
+  { key: "squares", text: "17.6 sq", pocket: "br", leader: "straight" },
+];
+const HERO_DIMS: typeof ROOF_DIMS = [
+  { label: "48'-0\"", x: 184, y: 211, tx: "translate(-50%, 0)" },   // under the porch (tilted eave at 199), 12 units off
+  { label: "43'-6\"", x: 56, y: 170, tx: "translate(-100%, -50%)" }, // left of the west eave, 17.6 units off
+];
+
 /** 0 → flat bird's eye (the trace), 1 → tilted camera on the same model. */
 function useTiltT(on: boolean) {
   const [t, setT] = useState(0);
@@ -148,8 +188,25 @@ function useTiltT(on: boolean) {
   return t;
 }
 
-export function RoofShot({ active, instant = false }: { active: boolean; instant?: boolean }) {
+/** True from 1024 px — where the hero's two dimension boxes are shown. */
+function useWide() {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setWide(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return wide;
+}
+
+export function RoofShot({ active, instant = false, hero = false }: { active: boolean; instant?: boolean; hero?: boolean }) {
   const compact = useCompact();
+  const wide = useWide();
+  const marks = hero ? HERO_MARKS : ROOF_MARKS;
+  const callouts = hero ? (compact ? HERO_CALLOUTS_PHONE : HERO_CALLOUTS_DESK) : ROOF_CALLOUTS;
+  const dims = hero ? (wide ? HERO_DIMS : []) : ROOF_DIMS;
   const phase = usePhases([1100, 2000, 3400, 4800], active, instant);
   const typed = useTyped("142 Alder Ridge Rd", active, 20, instant);
   const lifted = phase >= 1;
@@ -180,7 +237,7 @@ export function RoofShot({ active, instant = false }: { active: boolean; instant
       <div className="relative">
         <Prompt label="Address" value={typed} lifted={lifted} search compact={compact} />
         <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_260px]">
-        <div className={STAGE} style={{ background: tilted ? "#f6f7f5" : "#e9eae6", transition: "background .9s ease" }}>
+        <div className={hero ? `${STAGE} lp-hero-stage` : STAGE} style={{ background: tilted ? "#f6f7f5" : "#e9eae6", transition: "background .9s ease" }}>
           <div style={planBoxStyle({ transform: "translateY(-50%)" })}>
             <div
               className="absolute inset-0"
@@ -230,12 +287,16 @@ export function RoofShot({ active, instant = false }: { active: boolean; instant
             </svg>
 
             {/* callout anchors: points on the model, projected like the drawing */}
-            {Object.entries(ROOF_MARKS).map(([key, v]) => (
+            {Object.entries(marks).map(([key, v]) => (
               <span key={key} data-callout-anchor={key} className="absolute h-px w-px" style={{ left: pctX(px(v)), top: pctY(py(v)) }} aria-hidden />
+            ))}
+            {/* hero, from 640 px: where each label sits, in the drawing's units */}
+            {hero && !compact && Object.entries(HERO_POCKETS).map(([key, v]) => (
+              <span key={key} data-callout-pocket={key} className="absolute h-px w-px" style={{ left: pctX(v.x), top: pctY(v.y) }} aria-hidden />
             ))}
 
             {/* the numbers, each against the line it measures */}
-            {ROOF_DIMS.map((d, i) => (
+            {dims.map((d, i) => (
               <span
                 key={d.label}
                 className="absolute z-20"
@@ -264,7 +325,7 @@ export function RoofShot({ active, instant = false }: { active: boolean; instant
           </span>
 
           {/* the callouts draw once the camera has settled and the takeoff is in */}
-          <MockCallouts specs={ROOF_CALLOUTS} armed={measured && t >= 1} />
+          <MockCallouts specs={callouts} armed={measured && t >= 1} />
         </div>
 
         <Rail title="Takeoff" shown={measured}>

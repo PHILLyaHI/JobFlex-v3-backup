@@ -1,10 +1,12 @@
-/* LANDING-E — the test copy of landing-d (2026-09-10). Same sections, same
-   data (imported from landing-d), same register links, sticky bar, consent
-   and pixel. Differs only in what it reports: cta_click and landing_view
-   carry `variant: "e"`. Mounted at /landing-e, noindex. */
-/* The landing itself, as one component, so `/` and `/landing-d` mount the SAME
-   build rather than two copies of the same section list. The CSS import lives
-   here for the same reason — either entry point pulls it in by rendering this.
+/* LANDING-E — THE landing, mounted at `/` (owner, 2026-09-16). It began as
+   the test copy of landing-d (2026-09-10) and won: honest trial copy, the
+   three-field register, the first-estimate card, the welcome email, Google
+   One Tap, the neutral ink palette and the phone pass. landing-d is gone;
+   the trade data (landing-variants, landing-groups, smart-scenarios) lives
+   here now. Its events still carry `variant: "e"` so the admin's d-vs-e
+   history reads on. */
+/* The landing itself, as one component; the CSS import lives here so any
+   entry point pulls it in by rendering this.
 
    Section order is the argument the page makes: what it is (hero, intro), what
    it does (estimators, the wall of real work), then the four surfaces a shop
@@ -51,11 +53,11 @@ const BuiltSection = dynamic(() => import("./built-section").then((m) => m.Built
 const ScrollFx = dynamic(() => import("./scroll-fx").then((m) => m.ScrollFx));
 import {
   isVariantReady,
+  signupHref,
   variantContent,
   type LandingVariantKey,
   type UtmParams,
 } from "./landing-variants";
-import { signupHrefE } from "./signup-href";
 import { MobileCta } from "./mobile-cta";
 import { GoogleOneTap } from "@/components/auth/google-one-tap";
 import { Nav } from "./nav";
@@ -73,8 +75,8 @@ export interface LandingEProps {
 
 export async function LandingE({ variant, explicitVariant = false, utm = {} }: LandingEProps) {
   const v = variantContent(variant);
-  // Every register link carries `v=e` (pass A): the register page reads it.
-  const register = signupHrefE(REGISTER, { industry: variant, utm });
+  // Every register link carries the trade and the visit's utm_*.
+  const register = signupHref(REGISTER, { industry: variant, utm });
   // The price anchor shows the Subscription page's own catalogue (CRO stage
   // 2); a catalogue read that fails leaves the section out rather than the
   // page down.

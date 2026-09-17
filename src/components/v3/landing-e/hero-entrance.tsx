@@ -48,7 +48,10 @@ export function HeroEntrance({ children }: { children: ReactNode }) {
         linesClass: "lp-h1-line",
         autoSplit: true,
         onSplit: (self) => {
-          gsap.set(self.lines, { yPercent: 110 });
+          // 130%, not 110%: the mask now clips a fifth of an em lower than the
+          // line box (landing-e.css, .lp-h1-line-mask), so a line parked at
+          // 110% could show its top edge before it rose.
+          gsap.set(self.lines, { yPercent: 130 });
           h1.style.visibility = "visible";
           const tl = gsap.timeline();
           tl.to(self.lines, { yPercent: 0, duration: 0.9, ease: "power3.out", stagger: 0.12 }, 0);

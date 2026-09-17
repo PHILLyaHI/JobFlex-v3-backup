@@ -64,9 +64,9 @@ const pendingSchema = z.object({
    *  kept next to the promo/referral attribution so the signup can be read
    *  back to its campaign. Advisory only — never overrides tradeTypes. */
   landingIndustry: z.enum(TRADE_TYPES).optional(),
-  /** landing-e's test variant (pass A, 2026-09-11): recorded on the
-   *  organization, carried on the completion event, and the switch for the
-   *  welcome email and the first-run card. Absent for every other signup. */
+  /** The signup flow, recorded on the organization and carried on the
+   *  completion event. "e" — landing-e's arm (pass A, 2026-09-11) — is the
+   *  only flow since 2026-09-16; older organizations carry null ("d"). */
   signupVariant: z.enum(["e"]).optional(),
   /** The visit's utm_*, as the landing carried them (CRO stage 1, 2026-09-09). */
   utm: z
@@ -536,9 +536,10 @@ export async function completePendingSignup(
   if (sessionId && rec.analytics) {
     after(() => captureSignupOutcome(rec.analytics, sessionId, analyticsOutcome, planSlug, analyticsLive, rec.landingIndustry ?? null, rec.utm ?? null, rec.signupVariant ?? null));
   }
-  // The welcome email (landing-e pass A): variant e only. Sent after the
-  // response; a failure is logged, never shown — the account already exists.
-  if (rec.signupVariant === "e") {
+  // The welcome email (landing-e pass A; every signup since 2026-09-16). Sent
+  // after the response; a failure is logged, never shown — the account
+  // already exists.
+  {
     const welcome = {
       to: rec.email,
       name: rec.name,

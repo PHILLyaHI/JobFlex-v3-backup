@@ -240,8 +240,8 @@ export function Rail({ title, shown, children }: { title: string; shown: boolean
         transform: shown ? "translateX(0)" : "translateX(18px)",
       }}
     >
-      <div className="text-[9px] font-black uppercase tracking-[0.18em] text-[#6a6a6a]">{title}</div>
-      <div className="mt-3 space-y-2.5">{children}</div>
+      <div className="lp-rail-row text-[9px] font-black uppercase tracking-[0.18em] text-[#6a6a6a]">{title}</div>
+      <div className="lp-rail-rows mt-3 space-y-2.5">{children}</div>
     </div>
   );
 }
@@ -281,7 +281,7 @@ export const STAGE = "lp-est-stage relative h-[286px] overflow-hidden sm:h-[430p
 export function planBoxStyle(extra?: React.CSSProperties): React.CSSProperties {
   return {
     position: "absolute",
-    // --plan-inset / --plan-y are set per breakpoint in landing-d.css. On a
+    // --plan-inset / --plan-y are set per breakpoint in landing-e.css. On a
     // phone the plate is pushed wider than the stage so it fills the floor
     // instead of floating in it, and nudged below centre because the prompt
     // owns the top of the stage.

@@ -34,7 +34,7 @@ export function HeroVisual({ variant }: { variant: LandingVariant }) {
   return (
     <div ref={ref}>
       {variant.visual === "fence" && <FenceShot active={active} instant={now} />}
-      {variant.visual === "roof" && <RoofShot active={active} instant={now} />}
+      {variant.visual === "roof" && <RoofShot active={active} instant={now} hero />}
       {variant.visual === "smart" && (
         <SmartProposalShot active={active} instant={now} scenario={SMART_SCENARIOS[variant.scenario ?? "kitchen"]} />
       )}

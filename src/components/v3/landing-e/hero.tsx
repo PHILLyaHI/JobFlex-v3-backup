@@ -31,7 +31,7 @@ export function Hero({
 }) {
   const shot = variant.visual !== "dashboard";
   // The hero plate is the LCP element: preload the one this viewport's CSS
-  // will ask for (landing-d.css switches at 860 px). One <link rel="preload">
+  // will ask for (landing-e.css switches at 860 px). One <link rel="preload">
   // per breakpoint in <head>, with imagesrcset/imagesizes and a media query.
   preload("/landing-d/bg-hero-ridge-800.webp", { as: "image", imageSrcSet: "/landing-d/bg-hero-ridge-800.webp 800w", imageSizes: "100vw", media: "(max-width: 860px)" });
   preload("/landing-d/bg-hero-ridge-1600.webp", { as: "image", imageSrcSet: "/landing-d/bg-hero-ridge-1600.webp 1600w", imageSizes: "100vw", media: "(min-width: 861px)" });
@@ -46,7 +46,9 @@ export function Hero({
           <a
             href={registerHref}
             data-cta="pill"
-            className="inline-flex items-center gap-1 rounded-full bg-lp-gold px-4 py-[7px] text-[15px] font-semibold text-ink transition-transform duration-200 hover:scale-[1.03] sm:text-[14px]"
+            // A fifth smaller on a phone (owner, 2026-09-14): 12 px / 13 px sides /
+            // 5.5 px top and bottom, against 15 / 16 / 7; from 640 px as before.
+            className="inline-flex items-center gap-1 rounded-full bg-lp-gold px-[13px] py-[5.5px] text-[12px] font-semibold text-ink transition-transform duration-200 hover:scale-[1.03] sm:px-4 sm:py-[7px] sm:text-[14px]"
           >
             Just launched: JobFlex AI Estimator
             <span aria-hidden>→</span>
@@ -66,7 +68,7 @@ export function Hero({
         {/* The line under the headline exists only on trade variants; the
             default hero never had one and renders nothing here. */}
         {variant.sub && (
-          <p className="lp-enter mx-auto max-w-[38rem] text-[15px] leading-[1.5] text-white/70 sm:text-[17px]" data-entrance="sub">{variant.sub}</p>
+          <p className="lp-enter mx-auto max-w-[38rem] text-[15px] leading-[1.5] text-white/70 sm:text-[17px] lg:max-w-[46rem]" data-entrance="sub">{variant.sub}</p>
         )}
         <div className="lp-enter w-full sm:w-auto" data-entrance="cta">
           <div className="mx-auto mt-4 flex w-full max-w-[22rem] flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:items-center sm:justify-center">

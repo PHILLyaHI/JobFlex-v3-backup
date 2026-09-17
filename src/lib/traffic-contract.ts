@@ -99,11 +99,11 @@ export const TRAFFIC_EVENTS = {
   error: "jf_registration_error",
   exposure: "jf_experiment_exposed",
   // One per landing load: which trade hero was shown ("default" when none)
-  // plus the visit's utm_*. Fired by landing-d's LandingVariantEffects.
+  // plus the visit's utm_*. Fired by the landing's LandingVariantEffects.
   landingView: "landing_view",
   // One per click on a landing CTA: placement (hero | google | pill | sticky |
   // footer | nav | intro | integrations), the button's words, the trade hero
-  // shown, the target path. Fired by landing-d's CtaTracker (2026-09-09).
+  // shown, the target path. Fired by the landing's CtaTracker (2026-09-09).
   ctaClick: "cta_click",
 } as const;
 

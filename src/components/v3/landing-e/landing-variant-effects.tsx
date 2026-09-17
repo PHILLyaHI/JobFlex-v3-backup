@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import { trackTraffic } from "@/lib/traffic-client";
 import { TRAFFIC_EVENTS } from "@/lib/traffic-contract";
-import { VARIANT_COOKIE, VARIANT_MAX_AGE_S } from "@/lib/signupVariant";
 import {
   INDUSTRY_COOKIE,
   INDUSTRY_MAX_AGE_S,
@@ -15,15 +14,12 @@ import {
 } from "./landing-variants";
 
 /** The landing's memory, written from the browser: the trade (when one was
- *  asked for), the visit's utm_* and — landing-e only (pass A) — the test
- *  variant, `jf_variant=e` for 30 days, which the register page reads when a
- *  link arrives without `v=e` (the return from Google, One Tap). Called after
- *  paint by this component and SYNCHRONOUSLY by the Google button before it
- *  leaves for Google, so the return from Google finds all of them even when
- *  the click beat the effect. */
+ *  asked for) and the visit's utm_*, for 30 days. Called after paint by this
+ *  component and SYNCHRONOUSLY by the Google button before it leaves for
+ *  Google, so the return from Google finds both even when the click beat the
+ *  effect. */
 export function writeLandingCookies(industry: LandingVariantKey | undefined, utm: UtmParams | undefined) {
   try {
-    document.cookie = `${VARIANT_COOKIE}=e; path=/; max-age=${VARIANT_MAX_AGE_S}; samesite=lax`;
     if (industry) document.cookie = `${INDUSTRY_COOKIE}=${industry}; path=/; max-age=${INDUSTRY_MAX_AGE_S}; samesite=lax`;
     if (hasUtm(utm)) document.cookie = `${UTM_COOKIE}=${encodeURIComponent(serializeUtm(utm!))}; path=/; max-age=${INDUSTRY_MAX_AGE_S}; samesite=lax`;
   } catch {

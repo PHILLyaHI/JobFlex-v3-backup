@@ -170,7 +170,7 @@ const PLATES: Array<{ col?: string; height: string; src: string; label: string }
    a removeChild crash on the next reconcile. Same result: the plate keeps its
    hatch and its label, the broken photo is gone. */
 /* The shared house mark (/jobflex-mark.png), clipped exactly the way
-   landing-d/logo.tsx does it — the "JF" plate was the donor's placeholder, not
+   landing-e/logo.tsx does it — the "JF" plate was the donor's placeholder, not
    the brand. Sized and inset by homeowner.css (.brand-mark / .brand-mark-img). */
 function BrandMark() {
   return (

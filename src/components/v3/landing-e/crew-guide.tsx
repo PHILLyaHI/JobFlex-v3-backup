@@ -13,8 +13,11 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
    Desk (two columns): down from the Schedule's bottom centre, across to the
    Revenue chart's top centre, down through it, out of the donut's bottom
-   edge, across to the Change order's top centre. Phone (stacked): a
-   vertical in the left gutter, x = 10 px, one node beside each mock.
+   edge, across to the Change order's top centre. Phone (stacked, owner
+   2026-09-14): the same route down the column — out of each mock's bottom
+   centre, into the next one's top centre, a 90° jog where their centres
+   differ — with a node at every one of those points, and a gap of 12 px
+   either side of any copy block ([data-guide-avoid]) the line would cross.
 
    The line draws with the scroll: a mask path's dashoffset follows a
    reference line at 85 % of the viewport, so the line is drawn to where the
@@ -75,19 +78,49 @@ function measure(root: HTMLElement): Geometry | null {
   const stacked = window.innerWidth < 1024;
 
   if (stacked) {
-    // Phone: the vertical in the left gutter, a node beside each mock's middle.
-    const x = 10;
-    const ys = Math.round(S.top + S.height / 2);
-    const yr = Math.round(R.top + R.height / 2);
-    const yc = Math.round(C.top + C.height / 2);
-    const { d, segs } = orthogonal([{ x, y: ys }, { x, y: yr }, { x, y: yc }]);
-    const l1 = len(segs[0]);
-    const l2 = len(segs[1]);
+    // Phone: the same route as the desk, down the column. Between two mocks
+    // the line runs from the upper one's bottom centre to the lower one's top
+    // centre, jogging sideways below any copy that sits between them, and it
+    // is cut 12 px clear of that copy's box rather than drawn across it.
+    const GAP = 12;
+    const avoid = Array.from(root.querySelectorAll<HTMLElement>("[data-guide-avoid]"))
+      .filter((el) => el.offsetParent !== null && el.offsetWidth > 0)
+      .map((el) => rectIn(el, root));
+    const run = (x1: number, y1: number, x2: number, y2: number) => {
+      const between = avoid.filter((a) => a.top >= y1 && a.bottom <= y2).sort((a, b) => a.top - b.top);
+      const last = between[between.length - 1];
+      // the jog sits in the clear space under the last copy block
+      const jogY = Math.round(last ? (last.bottom + GAP + y2) / 2 : (y1 + y2) / 2);
+      const pieces: string[] = [];
+      let length = 0;
+      // vertical from y1 down to the jog, broken around every copy block
+      let y = y1;
+      const cuts = between.map((a) => ({ from: a.top - GAP, to: a.bottom + GAP })).filter((c) => c.to < jogY);
+      for (const c of cuts) {
+        if (c.from > y) { pieces.push(`M${x1} ${y} V${c.from}`); length += c.from - y; }
+        y = c.to;
+      }
+      pieces.push(`M${x1} ${y} V${jogY}`); length += jogY - y;
+      if (x2 !== x1) { pieces.push(`H${x2}`); length += Math.abs(x2 - x1); }
+      pieces.push(`V${y2}`); length += y2 - jogY;
+      return { d: pieces.join(" "), length };
+    };
+    const sx = Math.round(S.left + S.width / 2), sy = Math.round(S.bottom);
+    const rx = Math.round(R.left + R.width / 2), ryIn = Math.round(R.top);
+    const dx = Math.round(D.left + D.width / 2), ryOut = Math.round(D.bottom);
+    const cx = Math.round(C.left + C.width / 2), cy = Math.round(C.top);
+    const first = run(sx, sy, rx, ryIn);
+    const second = run(dx, ryOut, cx, cy);
     return {
-      d,
-      length: l1 + l2,
-      nodes: [{ p: { x, y: ys }, at: 0 }, { p: { x, y: yr }, at: l1 }, { p: { x, y: yc }, at: l1 + l2 }],
-      width, height, startY: ys, endY: yc,
+      d: `${first.d} ${second.d}`,
+      length: first.length + second.length,
+      nodes: [
+        { p: { x: sx, y: sy }, at: 0 },
+        { p: { x: rx, y: ryIn }, at: first.length },
+        { p: { x: dx, y: ryOut }, at: first.length },
+        { p: { x: cx, y: cy }, at: first.length + second.length },
+      ],
+      width, height, startY: sy, endY: cy,
     };
   }
 

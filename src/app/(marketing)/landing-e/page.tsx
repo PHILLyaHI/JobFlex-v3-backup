@@ -1,35 +1,22 @@
-// LANDING-E — the test copy of landing-d (2026-09-10), for A/B work.
-//
-// Renders <LandingE /> from components/v3/landing-e: the same sections and
-// data as landing-d (data imported, not copied), the same ?industry= and
-// utm handling, the same register links, sticky bar, consent and pixel.
-// Its events carry variant "e". Not for search engines: noindex, nofollow.
+// /landing-e — landing-e IS the root now (owner, 2026-09-16). This URL was the
+// test copy's address for four days; links to it (review links, ad drafts)
+// land on `/` with the same query, so `?industry=` and utm_* survive.
 
-import type { Metadata, Viewport } from "next";
-
-import { LandingE } from "@/components/v3/landing-e/landing-e-page";
-import { readLandingVariant } from "@/components/v3/landing-e/landing-variant-server";
+import { permanentRedirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
-
-export const metadata: Metadata = {
-  title: "[E] JobFlex — Turn your trade into a business",
-  description:
-    "JobFlex is the operating system for small-shop contractors: estimating, proposals, scheduling, jobs, and invoicing in one workspace.",
-  robots: { index: false, follow: false },
-};
-
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  viewportFit: "cover",
-};
 
 export default async function LandingEPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const landing = readLandingVariant(await searchParams);
-  return <LandingE {...landing} />;
+  const sp = await searchParams;
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (typeof v === "string") q.set(k, v);
+    else if (Array.isArray(v)) for (const x of v) q.append(k, x);
+  }
+  const qs = q.toString();
+  permanentRedirect(qs ? `/?${qs}` : "/");
 }

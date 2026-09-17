@@ -1,16 +1,14 @@
-// `/` — the LANDING-D design, promoted (owner call, 2026-08-25).
+// `/` — the landing. landing-e, promoted (owner call, 2026-09-16).
 //
-// The root previously served the blueprint landing (LandingResponsive, shared
-// with /landing). The owner asked for the ported landing-d design to carry the
-// root; this renders the SAME <LandingD /> that /landing-d mounts — one
-// implementation, two entry points, so the two URLs cannot drift — and keeps
-// the one behaviour the marketing pages do not have: a signed-in visitor is
-// sent to work instead of to a pitch.
-//
-// /landing and /landing-d both stay up, each with its own metadata.
+// landing-d carried the root from 2026-08-25; landing-e was its test copy at
+// /landing-e (2026-09-10) with the honest trial copy, the three-field
+// register, the first-estimate card, the welcome email and Google One Tap.
+// The owner kept e and dropped d: this renders <LandingE /> from
+// components/v3/landing-e, /landing-e redirects here, and landing-d is gone.
+// Signed-in visitors are sent to work instead of to a pitch.
 //
 // TRADE VARIANT (2026-09-06). `?industry=fencing` (alias `?trade=`) swaps the
-// hero for the fence estimator's; see landing-d/landing-variants.ts. Resolved
+// hero for the fence estimator's; see landing-e/landing-variants.ts. Resolved
 // HERE, on the server, from the query ONLY, so the first byte already carries
 // the right hero — no client-side detection, no swap after paint. The
 // jf_industry cookie is never consulted for the landing (owner, 2026-09-10):
@@ -20,8 +18,8 @@
 import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { LandingD } from "@/components/v3/landing-d/landing-d-page";
-import { readLandingVariant } from "@/components/v3/landing-d/landing-variant-server";
+import { LandingE } from "@/components/v3/landing-e/landing-e-page";
+import { readLandingVariant } from "@/components/v3/landing-e/landing-variant-server";
 
 export const dynamic = "force-dynamic";
 
@@ -49,5 +47,5 @@ export default async function HomePage({
   const session = await auth();
   if (session?.user?.id) redirect("/dashboard");
   const landing = readLandingVariant(await searchParams);
-  return <LandingD {...landing} />;
+  return <LandingE {...landing} />;
 }

@@ -27,8 +27,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useSyncExternalStore } from "react";
 import { RegisterContent } from "@/components/v3/auth-register-blueprint/register-content";
 import type { TradeType } from "@/lib/tradeTypes";
-import type { UtmParams } from "@/components/v3/landing-d/landing-variants";
-import type { SignupVariant } from "@/lib/signupVariant";
+import type { UtmParams } from "@/components/v3/landing-e/landing-variants";
 
 /** CLAUDE.md's handheld target: ≤768px. Matches the mobile module's own scale. */
 const HANDHELD = "(max-width: 768px)";
@@ -85,13 +84,11 @@ function RegisterSwitch({
   google,
   industry,
   utm,
-  variant,
 }: {
   setup: SetupPrefill | null;
   google: GooglePrefill | null;
   industry: TradeType | null;
   utm: UtmParams | null;
-  variant: SignupVariant | null;
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const params = useSearchParams();
@@ -116,7 +113,7 @@ function RegisterSwitch({
      day the handheld build is ported to the pending-signup flow. */
   void isHandheld;
   void params;
-  return <RegisterContent setup={setup} google={google} industry={industry} utm={utm} variant={variant} />;
+  return <RegisterContent setup={setup} google={google} industry={industry} utm={utm} />;
 }
 
 // The attribution capture under either tree reads the query string, so the
@@ -127,7 +124,6 @@ export function RegisterResponsive({
   google = null,
   industry = null,
   utm = null,
-  variant = null,
 }: {
   setup?: SetupPrefill | null;
   google?: GooglePrefill | null;
@@ -135,12 +131,10 @@ export function RegisterResponsive({
   industry?: TradeType | null;
   /** The visit's utm_*, resolved by the page the same way. */
   utm?: UtmParams | null;
-  /** landing-e's test variant (`?v=e` / cookie), resolved by the page. */
-  variant?: SignupVariant | null;
 }) {
   return (
     <Suspense fallback={null}>
-      <RegisterSwitch setup={setup} google={google} industry={industry} utm={utm} variant={variant} />
+      <RegisterSwitch setup={setup} google={google} industry={industry} utm={utm} />
     </Suspense>
   );
 }
