@@ -480,10 +480,78 @@ record lands the site hero shows the area, year built and county, and a
 failed record becomes a warning rather than an error. The button reads "Look
 up the house" on every job.
 
+**Water heater, by brand (2026-09-17, owner's report).** The water-heater job
+picked a tank in the ledger but never showed it on the card, and the makers
+sat folded in "Change the unit". The card now names the picked tank (maker,
+model, gallons, UEF, vent, where it came from) and a strip above it offers one
+tank per maker that fits the sized plan (`waterHeaterOptions` in ledger.ts:
+smallest at or above the gallons or the tankless input, vent-compatible, the
+engine's pick first), each priced as the whole job; a tile says when its price
+is a rate-card default because the row has no cost. Changing the fuel or the
+type drops the pick, the ledger ignores a pick of another kind of appliance,
+and the swap list shows only this job's kind.
+
+**Service menu (2026-09-17, owner's ask).** The service job was a text box,
+a refrigerant count and three part slots. `src/lib/hvac/serviceMenu.ts` now
+carries 42 tasks in eight groups — tune-ups, refrigerant, electrical parts,
+gas furnace, coils/drains/airflow, refrigeration parts, thermostats, ductless,
+water heater — each with what it covers, typical 2026 shop labor, the part at a
+typical shop cost and the makers a supply house stocks (Mars, Genteq, Honeywell,
+Sporlan, Copeland, Ecobee…). `serviceMenuFor(model)` shows only what fits the
+system on record (no furnace group on a heat pump, no blower motors on a
+ductless), suggests the right tune-up, and opens with the words for an R-22 or
+a 15-year-old system. The page is a grid of tick tiles; a tune-up carries the
+diagnostic, a recharge takes the pounds, and "Not listed? Add it" takes a
+task with labor and part — "Add to this estimate" or "Save to my menu", which
+puts it on the rate card (`HvacRateCard.serviceMenu`, via
+`saveHvacServiceTask`) so it is there next time. The ledger prices every line
+as "typical — edit to your rate"; the older free-text estimates still price.
+
 Not in the catalog: multi-zone ductless outdoor units
 (no ratings read), Fujitsu (Halcyon RLS3 retired, Orion figures not
 published yet), non-condensing tankless. Re-verify the families after the
 2026 model year turns over.
+
+## Status — the Danville furnace that found nothing (2026-09-17)
+
+Owner ran a Furnace job at 24 Mira Loma Ln, Danville (Contra Costa) on
+jobflex.app and got NO FIT with every Carrier 58SB0 "not certified to
+14 ng/J". Cause: the shop's catalog on prod was loaded from the US list
+*before* the California ultra-low-NOx families and the package units were
+added (deploy 557d670). A load writes rows into `HvacCatalogItem`; a later
+deploy does not touch them, so the older rows sat there with no `noxNgJ`,
+which the district rule reads as the 40 ng/J class — and Contra Costa takes
+only 14. Locally the same house against the current list picks a Goodman
+GR9S96-040-U.
+
+Built so it cannot happen quietly again:
+
+- **The page knows the catalog is from an older build.** `usStale` compares
+  the shop's `us-…` rows with `US_CATALOG` (missing ids, or gas rows with no
+  NOx class). The Catalog panel's summary line reads "· update available" and
+  the panel carries an update notice with the counts.
+- **The no-fit call says what the wall is.** `noxWall`: every candidate is a
+  gas unit above 14 ng/J in a "required" county. The call then says so in
+  words, and carries an **Update the US catalog** button right there (same
+  `loadUsCatalog`, `replace: false`, the shop's own rows stay); with a shop's
+  own catalog it says to type the ULN model under Change the unit or put 14 in
+  the CSV. The package-house no-fit gets the same button when the catalog
+  predates the package rows.
+- **The NOx compliance check reads the unit and the county**
+  (`complianceChecks`): pass naming the unit and its class in a required
+  county; fix naming a 40 ng/J unit used anyway; verify for the other
+  California counties (their own districts) and when the county is not on
+  record.
+- **The NOx class can be typed and imported:** `noxNgJ` column on the catalog
+  CSV (download and import), and a "NOx class (gas heat)" select on the
+  typed-unit form (`buildTypedUnit`).
+
+QA: `hvac-catalog.check.ts` +4 (pass/fix/verify wording, and the
+older-catalog wall), `hvac-ledger.check.ts` +1 (CSV NOx column). Browser:
+`hvac-stale.js` (older catalog → no-fit words → one click → GR9S96-040-U) and
+`hvac-typed-nox.js` (typed 14 ng/J passes, typed 40 flagged by name). On prod
+the owner presses **Update the US catalog** once (from the no-fit call or the
+Catalog panel) — 629 rows.
 
 ## Sources checked 2026-09-15
 

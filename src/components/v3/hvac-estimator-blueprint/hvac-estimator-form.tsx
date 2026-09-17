@@ -27,7 +27,7 @@ import type { WalkthroughAnalysis } from "@/lib/estimate/video-schema";
 import type { BuildingModel, CatalogItem, EngineResult, Provenance } from "@/lib/hvac/types";
 import { runEngine } from "@/lib/hvac/engine";
 import { countiesFor } from "@/lib/hvac/designConditions";
-import { CATALOG_CSV_COLUMNS, DEFAULT_RATE_CARD, buildLedger, normalizeRateCard, tiersFor, type HvacRateCard, type LedgerLine } from "@/lib/hvac/ledger";
+import { CATALOG_CSV_COLUMNS, DEFAULT_RATE_CARD, buildLedger, normalizeRateCard, tiersFor, waterHeaterOptions, type HvacRateCard, type LedgerLine } from "@/lib/hvac/ledger";
 import { DEFAULT_JOB, JOBS, jobDef, type JobInput, type JobKind , type OutdoorKind } from "@/lib/hvac/jobs";
 import { applyNameplate, applyStated, applyStatedNested, applyTypedModelNumber, applyWalkthrough, modelFromSite, type NameplateRead, type SiteFacts } from "@/lib/hvac/intake";
 import { designConditionsFor } from "@/lib/hvac/designConditions";
@@ -46,6 +46,7 @@ import {
   loadUsCatalog,
   readHvacNameplate,
   saveHvacCatalogItem,
+  saveHvacServiceTask,
   recordHvacActual,
   requestHvacPermitReport,
   saveHvacEstimate,
@@ -56,6 +57,9 @@ import {
 import { calibrationLine, type CalibrationStats } from "@/lib/hvac/calibration";
 import { useHvacWalk } from "./use-hvac-walk";
 import { SHOTS, TIPS, coverageFor } from "./filming-guide";
+import { serviceMenuFor } from "@/lib/hvac/serviceMenu";
+import { US_CATALOG } from "@/lib/hvac/data/usCatalog";
+import { ultraLowNoxNeeded } from "@/lib/hvac/data/rules";
 import { CapacityChart } from "./capacity-chart";
 import s from "./hvac-estimator.module.css";
 
@@ -225,8 +229,46 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
   const [job, setJob] = React.useState<JobKind>(DEFAULT_JOB);
   const [jobInput, setJobInput] = React.useState<JobInput>({});
   const def = jobDef(job);
-  const setWh = (patch: Partial<NonNullable<JobInput["wh"]>>) => setJobInput((j) => ({ ...j, wh: { ...(j.wh ?? {}), ...patch } }));
+  const setWh = (patch: Partial<NonNullable<JobInput["wh"]>>) => {
+    setJobInput((j) => ({ ...j, wh: { ...(j.wh ?? {}), ...patch } }));
+    // A new fuel or type is a different appliance: the maker is picked again.
+    if ("fuel" in patch || "type" in patch) { setPickId(null); setCustom(null); }
+  };
   const setSvc = (patch: Partial<NonNullable<JobInput["service"]>>) => setJobInput((j) => ({ ...j, service: { ...(j.service ?? {}), ...patch } }));
+  const toggleTask = (id: string) => setJobInput((j) => {
+    const cur = j.service?.tasks ?? [];
+    const on = cur.includes(id);
+    const tasks = on ? cur.filter((x) => x !== id) : [...cur, id];
+    // Turning the recharge off clears its pounds.
+    return { ...j, service: { ...(j.service ?? {}), tasks, ...(id === "recharge" && on ? { refrigerantLb: undefined } : {}) } };
+  });
+  const [svcDraft, setSvcDraft] = React.useState<Record<string, string>>({});
+  const [svcMsg, setSvcMsg] = React.useState("");
+  const svcDraftTask = () => {
+    const name = (svcDraft.name ?? "").trim();
+    const labor = Number(svcDraft.labor);
+    if (!name || !Number.isFinite(labor) || labor < 0) return null;
+    const partCost = Number(svcDraft.partCost);
+    return { name, laborUsd: Math.round(labor), partName: (svcDraft.partName ?? "").trim() || undefined, partCost: Number.isFinite(partCost) && partCost > 0 ? Math.round(partCost) : undefined };
+  };
+  const addCustomTask = () => {
+    const t = svcDraftTask();
+    if (!t) { setSvcMsg("A name and a labor price, at least."); return; }
+    setSvc({ custom: [...(jobInput.service?.custom ?? []), t] });
+    setSvcDraft({});
+    setSvcMsg(`${t.name} is on this estimate.`);
+  };
+  const saveCustomTask = async () => {
+    const t = svcDraftTask();
+    if (!t) { setSvcMsg("A name and a labor price, at least."); return; }
+    setSvcMsg("Saving…");
+    const res = await saveHvacServiceTask({ title: t.name, laborUsd: t.laborUsd, partName: t.partName, partCost: t.partCost });
+    if (!res.ok) { setSvcMsg(res.error); return; }
+    setCard({ card: res.card, own: true });
+    setSvc({ tasks: [...(jobInput.service?.tasks ?? []).filter((x) => x !== res.id), res.id] });
+    setSvcDraft({});
+    setSvcMsg(`${t.name} is on your menu now, and on this estimate.`);
+  };
 
   // 1 · site
   const addrRef = React.useRef<HTMLInputElement | null>(null);
@@ -412,11 +454,12 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     const hit = (i: CatalogItem) => !q || `${i.brand} ${i.model}`.toLowerCase().includes(q);
     if (def.id === "water-heater") {
       const plan = engine?.waterHeater;
-      const rows = catalogItems.filter((c) => c.kind === "water-heater" && hit(c));
+      // Only this job's kind of appliance is on the list: a gas tank is not an
+      // option on a heat-pump job — the Type select is.
+      const rows = catalogItems.filter((c) => c.kind === "water-heater" && hit(c) && (!plan || ((c.fuel ?? "gas") === plan.fuel && (c.whType ?? "tank") === plan.type)));
       return rows.map((item) => {
-        const wrongKind = plan ? (item.fuel ?? "gas") !== plan.fuel || (item.whType ?? "tank") !== plan.type : false;
         const small = plan && plan.type !== "tankless" ? (item.gallons ?? 0) < plan.gallons : plan?.btuInput ? (item.btuInput ?? 0) < plan.btuInput : false;
-        const out = wrongKind ? `${/^[aeiou]/i.test(item.fuel ?? "gas") ? "An" : "A"} ${item.fuel ?? "gas"} ${item.whType ?? "tank"}; this job is set up as a ${plan?.fuel} ${plan?.type}.` : small ? `Smaller than the ${plan && plan.type !== "tankless" ? `${plan.gallons} gal` : `${Math.round((plan?.btuInput ?? 0) / 1000)}k BTU/h`} the household sizes to.` : undefined;
+        const out = small ? `Smaller than the ${plan && plan.type !== "tankless" ? `${plan.gallons} gal` : `${Math.round((plan?.btuInput ?? 0) / 1000)}k BTU/h`} the household sizes to.` : undefined;
         const why = [item.gallons ? `${item.gallons} gal` : "", item.btuInput ? `${Math.round(item.btuInput / 1000)}k BTU/h` : "", item.uef ? `${item.uef} UEF` : "", item.vent && item.vent !== "none" ? `${item.vent} vent` : ""].filter(Boolean).join(" · ");
         return { item, out, why, score: (item.gallons ?? item.btuInput ?? 0), miss: 0 };
       }).sort((a, b) => (a.out ? 1 : 0) - (b.out ? 1 : 0) || a.score - b.score);
@@ -468,6 +511,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
       ahriRef: (unitDraft.ahri ?? "").trim() || undefined,
       ratedStaticInWc: kind === "furnace" || kind === "air-handler" || kind === "coil" ? 0.5 : undefined,
       maxTons: kind === "furnace" || kind === "air-handler" ? n("maxTons") ?? (kbtu ? (kbtu <= 45 ? 3 : kbtu <= 70 ? 4 : 5) : tons) : undefined,
+      noxNgJ: kind === "furnace" || kind === "package" ? (unitDraft.nox === "14" ? 14 : 40) : undefined,
       gallons: kind === "water-heater" ? n("gallons") : undefined,
       whType: kind === "water-heater" ? ((unitDraft.whType || "tank") as CatalogItem["whType"]) : undefined,
       fuel: kind === "water-heater" ? ((unitDraft.fuel || "gas") as CatalogItem["fuel"]) : undefined,
@@ -501,6 +545,28 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     setPickId(res.item.id);
     setSwapMsg(`${res.item.brand} ${res.item.model} is in your catalog now, and on this estimate.`);
   };
+
+  // Water heater: one tank per maker that fits the sized plan, each priced as
+  // the whole job; the first is the engine's own pick unless one is chosen.
+  const whOptions = React.useMemo(() => {
+    if (def.id !== "water-heater" || !engine?.waterHeater || !model || !catalog) return [];
+    return waterHeaterOptions(catalogItems, engine.waterHeater).slice(0, 4).map((item) => ({ item, subtotal: buildLedger(engine, model, card.card, catalogItems, { job, input: jobInput, linesetFt, pick: item.id }).subtotal }));
+  }, [def.id, engine, model, catalog, catalogItems, card, job, jobInput, linesetFt]);
+  // The shop's catalog came from an older build of the US list: rows it lacks,
+  // and whether the NOx class is on its gas rows at all.
+  const usStale = React.useMemo(() => {
+    if (!catalog?.own) return null;
+    const have = new Set(catalog.items.map((c) => c.id));
+    const fromUs = catalog.items.filter((c) => c.id.startsWith("us-"));
+    if (!fromUs.length) return null;
+    const missing = US_CATALOG.filter((c) => !have.has(c.id));
+    const noNox = fromUs.some((c) => (c.kind === "furnace" || (c.kind === "package" && c.heatKind === "gas")) && c.noxNgJ === undefined);
+    return missing.length || noNox ? { missing: missing.length, noNox, uln: missing.filter((c) => (c.noxNgJ ?? 40) <= 14).length } : null;
+  }, [catalog]);
+  // No fit because every gas unit on the list is the 40 ng/J class in a
+  // district that takes only 14: the catalog, not the house, is the wall.
+  const noxWall = !!engine && !!model && !engine.selection.chosen && ultraLowNoxNeeded(model.state, model.county) === "required" && engine.selection.candidates.length > 0 && engine.selection.candidates.every((x) => (x.item.kind === "furnace" || (x.item.kind === "package" && x.item.heatKind === "gas")) && (x.item.noxNgJ ?? 40) > 14);
+  const whChosen = def.id === "water-heater" ? (whOptions.find((o) => o.item.id === pickId)?.item ?? catalogItems.find((c) => c.id === pickId && c.kind === "water-heater") ?? whOptions[0]?.item ?? null) : null;
 
   // The editable lines follow the ledger until the contractor edits them, and
   // reset when the design behind them changes. Derived state, adopted in render.
@@ -1152,21 +1218,56 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                 </div>
               </div>
             )}
-            {job === "service" && (
-              <div className={cx("fs")}>
-                <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>The visit</span></div>
-                <div className={cx("grid-f")}>
-                  <label className={cx("field")} htmlFor="hv-svc-task" style={{ gridColumn: "1 / -1" }}><span className={cx("lbl")}>Repair task</span><input id="hv-svc-task" className={cx("in")} placeholder="Replace the capacitor and contactor" defaultValue={jobInput.service?.task ?? ""} onBlur={(e) => setSvc({ task: e.target.value.trim() || undefined })} /></label>
-                  <label className={cx("field")} htmlFor="hv-svc-lb"><span className={cx("lbl")}>Refrigerant lb</span><input id="hv-svc-lb" className={cx("in", "num")} inputMode="decimal" placeholder="0" defaultValue={jobInput.service?.refrigerantLb ?? ""} onBlur={(e) => { const n = Number(e.target.value); setSvc({ refrigerantLb: e.target.value.trim() && Number.isFinite(n) && n > 0 ? n : undefined }); }} /></label>
-                  {[0, 1, 2].map((i) => (
-                    <React.Fragment key={i}>
-                      <label className={cx("field")} htmlFor={`hv-part-${i}`}><span className={cx("lbl")}>Part {i + 1}</span><input id={`hv-part-${i}`} className={cx("in")} placeholder={i === 0 ? "Run capacitor 45/5" : ""} defaultValue={jobInput.service?.parts?.[i]?.name ?? ""} onBlur={(e) => setSvc({ parts: [0, 1, 2].map((k) => (k === i ? { name: e.target.value.trim(), cost: jobInput.service?.parts?.[k]?.cost ?? 0 } : jobInput.service?.parts?.[k] ?? { name: "", cost: 0 })) })} /></label>
-                      <label className={cx("field")} htmlFor={`hv-part-cost-${i}`}><span className={cx("lbl")}>Part {i + 1} cost $</span><input id={`hv-part-cost-${i}`} className={cx("in", "num")} inputMode="decimal" defaultValue={jobInput.service?.parts?.[i]?.cost || ""} onBlur={(e) => { const n = Number(e.target.value.replace(/[$,]/g, "")); setSvc({ parts: [0, 1, 2].map((k) => (k === i ? { name: jobInput.service?.parts?.[k]?.name ?? "", cost: Number.isFinite(n) && n > 0 ? n : 0 } : jobInput.service?.parts?.[k] ?? { name: "", cost: 0 })) }); }} /></label>
-                    </React.Fragment>
+            {job === "service" && model && (() => {
+              const menu = serviceMenuFor(model, card.card.serviceMenu);
+              const sel = new Set(jobInput.service?.tasks ?? []);
+              const customOn = jobInput.service?.custom ?? [];
+              const rechargeOn = sel.has("recharge");
+              return (
+                <div className={cx("fs")}>
+                  <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>The visit</span><span className={cx("mono")}>{sel.size + customOn.length ? `${sel.size + customOn.length} task${sel.size + customOn.length === 1 ? "" : "s"} on the estimate` : "pick what the visit does — the diagnostic is on until a tune-up covers it"}</span></div>
+                  {menu.notes.map((n) => <div key={n} className={cx("call", "info")} style={{ marginBottom: 10 }}><span className={cx("stamp")}>say</span><span>{n}</span></div>)}
+                  {menu.groups.map((g) => (
+                    <div key={g.group} className={cx("svc-g")}>
+                      <div className={cx("svc-gt")}>{g.title}</div>
+                      <div className={cx("svc")}>
+                        {g.tasks.map((t) => {
+                          const on = sel.has(t.id);
+                          const rec = menu.recommended.includes(t.id);
+                          return (
+                            <button key={t.id} type="button" role="checkbox" aria-checked={on} className={cx("svc-t", on && "on", rec && !on && "rec")} onClick={() => toggleTask(t.id)}>
+                              <span className={cx("svc-n")}>{t.title}{rec && !on ? <span className={cx("svc-tag")}>suggested</span> : null}{t.custom ? <span className={cx("svc-tag")}>yours</span> : null}</span>
+                              <span className={cx("svc-i")}>{t.includes}</span>
+                              <span className={cx("mono", "svc-p")}>{t.unit === "lb" ? `$${card.card.labor.refrigerantPerLb}/lb labor + refrigerant` : `$${t.laborUsd.toLocaleString("en-US")} labor${t.part ? ` · part $${t.part.costUsd.toLocaleString("en-US")}` : ""}`}{t.part?.brands?.length ? ` · ${t.part.brands.join(" / ")}` : ""}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {g.group === "refrigerant" && rechargeOn && (
+                        <label className={cx("field")} htmlFor="hv-svc-lb" style={{ maxWidth: 220, marginTop: 8 }}><span className={cx("lbl")}>Refrigerant, lb</span><input id="hv-svc-lb" className={cx("in", "num")} inputMode="decimal" placeholder="3" defaultValue={jobInput.service?.refrigerantLb ?? ""} onBlur={(e) => { const n = Number(e.target.value); setSvc({ refrigerantLb: e.target.value.trim() && Number.isFinite(n) && n > 0 ? n : undefined }); }} /></label>
+                      )}
+                    </div>
                   ))}
+                  <div className={cx("svc-gt")} style={{ marginTop: 14 }}>Not listed? Add it</div>
+                  <div className={cx("grid", "grid-rc")}>
+                    <label className={cx("field")} htmlFor="hv-cust-name"><span className={cx("lbl")}>Task</span><input id="hv-cust-name" className={cx("in")} placeholder="Replace the zone damper actuator" value={svcDraft.name ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, name: e.target.value }))} /></label>
+                    <label className={cx("field")} htmlFor="hv-cust-labor"><span className={cx("lbl")}>Labor $</span><input id="hv-cust-labor" className={cx("in", "num")} inputMode="decimal" placeholder="180" value={svcDraft.labor ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, labor: e.target.value }))} /></label>
+                    <label className={cx("field")} htmlFor="hv-cust-part"><span className={cx("lbl")}>Part (optional)</span><input id="hv-cust-part" className={cx("in")} placeholder="Damper actuator" value={svcDraft.partName ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, partName: e.target.value }))} /></label>
+                    <label className={cx("field")} htmlFor="hv-cust-cost"><span className={cx("lbl")}>Part cost $</span><input id="hv-cust-cost" className={cx("in", "num")} inputMode="decimal" placeholder="85" value={svcDraft.partCost ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, partCost: e.target.value }))} /></label>
+                  </div>
+                  <div className={cx("acts")}>
+                    <button type="button" className={cx("btn", "btn-primary")} onClick={addCustomTask}>Add to this estimate</button>
+                    <button type="button" className={cx("btn", "btn-ghost")} onClick={() => void saveCustomTask()}>Save to my menu</button>
+                    <span className={cx("acts-note")}>{svcMsg}</span>
+                  </div>
+                  {customOn.length > 0 && (
+                    <ul className={cx("svc-list")}>
+                      {customOn.map((c, i) => <li key={`${c.name}-${i}`}><span>{c.name} — ${c.laborUsd.toLocaleString("en-US")} labor{c.partName ? ` · ${c.partName}${c.partCost ? ` $${c.partCost.toLocaleString("en-US")}` : ""}` : ""}</span><button type="button" className={cx("link")} onClick={() => setSvc({ custom: customOn.filter((_, k) => k !== i) })}>Remove</button></li>)}
+                    </ul>
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
 {(def.selection !== "none" || def.needs.ducts) && <div className={cx("fs")}>
               <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>How you want it done</span><span className={cx("mono")}>the calls that are yours, not the house&rsquo;s</span></div>
               <div className={cx("grid-f")}>
@@ -1260,6 +1361,21 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
               })}
             </div>
           )}
+          {whOptions.length > 0 && (
+            <div className={cx("tiers", "tiers-wh")} role="radiogroup" aria-label="Which tank">
+              {whOptions.map((o, i) => {
+                const on = (whChosen?.id ?? "") === o.item.id;
+                return (
+                  <button key={o.item.id} type="button" role="radio" aria-checked={on} className={cx("tier", on && "on")} onClick={() => { setPickId(o.item.id); setSwapMsg(""); }}>
+                    <span className={cx("tier-k")}>{i === 0 && !pickId ? "Engine's pick" : o.item.brand}</span>
+                    <span className={cx("tier-t")}>{o.item.brand} {o.item.model}</span>
+                    <span className={cx("tier-m")}>{[o.item.gallons ? `${o.item.gallons} gal` : o.item.btuInput ? `${Math.round(o.item.btuInput / 1000)}k BTU/h` : "", o.item.uef ? `${o.item.uef} UEF` : "", o.item.vent && o.item.vent !== "none" ? `${o.item.vent} vent` : "", o.item.typed ? "typed in" : ""].filter(Boolean).join(" · ")}</span>
+                    <span className={cx("tier-v")}>{money(o.subtotal)}{!o.item.cost && <small className={cx("tier-m")}> · rate-card price, no cost on the row</small>}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {tiers.length > 1 && (
             <div className={cx("tiers")} role="radiogroup" aria-label="Good, better, best">
               {tiers.map((t) => {
@@ -1278,7 +1394,20 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
           <div className={cx("design")}>
             <div>
               {def.selection === "none" ? (
-                <ul className={cx("notes")}>{engine.notes.filter((n) => n.kind === "contractor").map((n) => <li key={n.text}><span className={cx("chip", "chip-read")}>job</span><span>{n.text}</span></li>)}</ul>
+                <>
+                  {def.id === "water-heater" && engine.waterHeater && (
+                    <div className={cx("unit")}>
+                      <div className={cx("unit-t")}>{whChosen ? `${whChosen.brand} ${whChosen.model}` : `${engine.waterHeater.gallons ? `${engine.waterHeater.gallons} gal ` : ""}${engine.waterHeater.fuel} ${engine.waterHeater.type === "heat-pump" ? "heat-pump tank" : engine.waterHeater.type} — no catalog row fits`}</div>
+                      <div className={cx("mono", "unit-m")}>{whChosen ? [whChosen.gallons ? `${whChosen.gallons} gal` : "", whChosen.btuInput ? `${Math.round(whChosen.btuInput / 1000)}k BTU/h` : "", whChosen.uef ? `${whChosen.uef} UEF` : "", whChosen.vent && whChosen.vent !== "none" ? `${whChosen.vent} vent` : "", whChosen.typed ? "typed in" : whChosen.source === "shop" ? "your catalog" : "US catalog"].filter(Boolean).join(" · ") : "priced from the rate card until a row fits — pick or type one below"}</div>
+                      <ul>
+                        <li>{engine.waterHeater.sizedFrom}{whChosen && engine.waterHeater.type !== "tankless" && whChosen.gallons && whChosen.gallons > engine.waterHeater.gallons ? ` — the catalog's next size up is ${whChosen.gallons} gal` : ""}.</li>
+                        {whOptions.length > 1 && <li>{whOptions.length} makers fit this tank: {whOptions.map((o) => o.item.brand).join(", ")}. Tap one above to price it.</li>}
+                        {whChosen && whChosen.typed && <li>Typed in for this estimate — confirm it against the submittal.</li>}
+                      </ul>
+                    </div>
+                  )}
+                  <ul className={cx("notes")}>{engine.notes.filter((n) => n.kind === "contractor").map((n) => <li key={n.text}><span className={cx("chip", "chip-read")}>job</span><span>{n.text}</span></li>)}</ul>
+                </>
               ) : chosen ? (
                 <div className={cx("unit")}>
                   <div className={cx("unit-t")}>{engine.selection.systems > 1 ? `${engine.selection.systems} × ` : ""}{chosen.item.brand} {chosen.item.model}</div>
@@ -1290,7 +1419,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                   {engine.selection.runnerUp && <div className={cx("runner")}><b>Runner-up:</b> {engine.selection.runnerUp.item.brand} {engine.selection.runnerUp.item.model} — {engine.selection.runnerUp.reasons[0]}</div>}
                 </div>
               ) : (
-                <div className={cx("call", "warn")}><span className={cx("stamp")}>no fit</span><span>{model?.existing.kind === "package-unit" && engine.selection.candidates.length === 0 ? "No package rows in the catalog — the estimate prices a package unit from the rate card. Add your package rows (kind: package) to pick a model." : <>No catalog unit lands within Manual S limits for a {num(engine.load.coolingTotalBtuh)} BTU/h load. Target {engine.selection.targetTons} t — import the shop catalog or check the disqualifiers: {engine.selection.candidates.filter((c) => c.disqualified).slice(0, 3).map((c) => `${c.item.model}: ${c.disqualified}`).join(" · ")}</>}</span></div>
+                <div className={cx("call", "warn")}><span className={cx("stamp")}>no fit</span><span>{noxWall ? <>Every gas unit on your list is the 40 ng/J class, and {model?.county ?? "this"} County sits in a district that takes only ultra-low-NOx (14 ng/J) gas heat. {usStale ? <>Your catalog came from an older build of the US list, before the California families (Lennox NV/NE, Carrier 59SU5/59CU5, Goodman -U) were on it. <span className={cx("call-act")}><button type="button" className={cx("btn", "btn-primary")} onClick={onLoadUs} disabled={/^Loading/.test(catMsg)}>{/^Loading/.test(catMsg) ? "Updating…" : "Update the US catalog"}</button><span className={cx("mono")}>your own rows and costs stay</span></span></> : <>Add the ultra-low-NOx model you buy under <b>Change the unit</b> (set its NOx class to 14), or put 14 in the noxNgJ column of your CSV row.</>} A 40 ng/J unit can still go on with <i>Use anyway</i> under Change the unit when the job sits outside the district.</> : model?.existing.kind === "package-unit" && engine.selection.candidates.length === 0 ? (usStale ? <>No package rows in the catalog yet — your catalog came from an older build of the US list, before the package families were on it. <span className={cx("call-act")}><button type="button" className={cx("btn", "btn-primary")} onClick={onLoadUs} disabled={/^Loading/.test(catMsg)}>{/^Loading/.test(catMsg) ? "Updating…" : "Update the US catalog"}</button><span className={cx("mono")}>your own rows and costs stay</span></span> Until then the estimate prices a package unit from the rate card.</> : "No package rows in the catalog — the estimate prices a package unit from the rate card. Add your package rows (kind: package) to pick a model.") : <>No catalog unit lands within Manual S limits for a {num(engine.load.coolingTotalBtuh)} BTU/h load. Target {engine.selection.targetTons} t — import the shop catalog or check the disqualifiers: {engine.selection.candidates.filter((c) => c.disqualified).slice(0, 3).map((c) => `${c.item.model}: ${c.disqualified}`).join(" · ")}</>}</span></div>
               )}
               {chosen?.curve && chosen.item.kind === "heat-pump" && (
                 <>
@@ -1365,6 +1494,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                   <label className={cx("field")} htmlFor="hv-u-h5"><span className={cx("lbl")}>Heat at 5 °F, thousands</span><input id="hv-u-h5" className={cx("in", "num")} inputMode="decimal" placeholder="27" value={unitDraft.h5 ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, h5: e.target.value }))} /></label>
                   <label className={cx("field")} htmlFor="hv-u-refr"><span className={cx("lbl")}>Refrigerant</span><select id="hv-u-refr" className={cx("sel")} value={unitDraft.refrigerant ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, refrigerant: e.target.value }))}><option value="">not seen</option><option value="R-454B">R-454B</option><option value="R-32">R-32</option><option value="R-410A">R-410A</option><option value="R-22">R-22</option></select></label>
                   <label className={cx("field")} htmlFor="hv-u-stg"><span className={cx("lbl")}>Staging</span><select id="hv-u-stg" className={cx("sel")} value={unitDraft.staging ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, staging: e.target.value }))}><option value="">not seen</option><option value="single">single stage</option><option value="two-stage">two stage</option><option value="variable">variable</option></select></label>
+                  <label className={cx("field")} htmlFor="hv-u-nox"><span className={cx("lbl")}>NOx class (gas heat)</span><select id="hv-u-nox" className={cx("sel")} value={unitDraft.nox ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, nox: e.target.value }))}><option value="">standard, 40 ng/J</option><option value="14">ultra-low, 14 ng/J (California districts)</option></select></label>
                   <label className={cx("field")} htmlFor="hv-u-cold"><span className={cx("lbl")}>Cold-climate rated</span><select id="hv-u-cold" className={cx("sel")} value={unitDraft.coldClimate ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, coldClimate: e.target.value }))}><option value="">no</option><option value="yes">yes</option></select></label>
                   <label className={cx("field")} htmlFor="hv-u-gal"><span className={cx("lbl")}>Gallons (water heater)</span><input id="hv-u-gal" className={cx("in", "num")} inputMode="decimal" placeholder="50" value={unitDraft.gallons ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, gallons: e.target.value }))} /></label>
                   <label className={cx("field")} htmlFor="hv-u-cost"><span className={cx("lbl")}>Your cost $</span><input id="hv-u-cost" className={cx("in", "num")} inputMode="decimal" placeholder="3200" value={unitDraft.cost ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, cost: e.target.value }))} /></label>
@@ -1480,8 +1610,9 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
           </details>
 
           <details className={cx("panel")}>
-            <summary><svg className={cx("ic")}><use href="#i-file" /></svg>Catalog<span className={cx("mono")}>{catalog?.own ? `${catalog.items.length} rows from the shop` : "starter ladder · import your CSV"}</span></summary>
+            <summary><svg className={cx("ic")}><use href="#i-file" /></svg>Catalog<span className={cx("mono")}>{catalog?.own ? `${catalog.items.length} rows from the shop${usStale ? " · update available" : ""}` : "starter ladder · import your CSV"}</span></summary>
             <div className={cx("panel-body")}>
+              {usStale && <div className={cx("call", "warn")} style={{ marginBottom: 10 }}><span className={cx("stamp")}>update</span><span>Your catalog came from an older build of the US list: it is missing {usStale.missing} row{usStale.missing === 1 ? "" : "s"}{usStale.uln ? `, ${usStale.uln} of them ultra-low-NOx gas heat for California` : ""}{usStale.noNox ? ", and its gas rows carry no NOx class, so California districts rule them all out" : ""}. Press <b>Load the US catalog</b> to bring it up to date — your own rows and costs on other ids stay.</span></div>}
               <div className={cx("note")}><b>Load the US catalog</b> puts the most-sold American families on the pick list — Goodman, Carrier, Trane, Lennox, Rheem, Mitsubishi and the water-heater makers — as Good · Better · Best ladders with their published ratings. Download the CSV, put your costs in the <b>cost</b> column, delete what you don’t sell, and import it back with “Replace”. A hyphenated size (GLXT7C-036) is the family plus the nominal size — swap in your distributor’s exact model there. Or bring your own: one row per unit the shop installs. Columns: <b>{CATALOG_CSV_COLUMNS.join(", ")}</b> — kind, brand and model are required; a <b>cost</b> lets the ledger price from your number instead of the rate-card default; heat-pump rows want heat47/17/5 for the capacity curve. <a className={cx("link")} href={templateHref} download="jobflex-hvac-catalog-template.csv">Download the template</a>. An <b>AHRI</b> subscriber export or the <b>NEEP</b> cold-climate list (saved as CSV) imports as is — the columns are read by meaning and the import says which it used.</div>
               <div className={cx("acts")}>
                 <button type="button" className={cx("btn", "btn-primary")} onClick={() => void onLoadUs()}><svg className={cx("ic")}><use href="#i-box" /></svg>Load the US catalog</button>

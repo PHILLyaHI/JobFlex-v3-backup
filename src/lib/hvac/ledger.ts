@@ -10,6 +10,7 @@
 // a contractor edits once.
 
 import type { BuildingModel, CatalogItem, EngineResult , SelectionCandidate } from "./types";
+import { serviceTask, type ServiceTask } from "./serviceMenu";
 import { DEFAULT_JOB, jobDef, type JobInput, type JobKind } from "./jobs";
 import { waterHeaterPlan } from "./waterHeater";
 
@@ -62,6 +63,8 @@ export interface HvacRateCard {
     repairEach: number;
   };
   /** Stock prices, shop cost. */
+  /** The shop's own service tasks, saved from the page; they join the menu. */
+  serviceMenu?: ServiceTask[];
   materials: {
     pad: number;
     linesetPerFt: number;
@@ -232,6 +235,14 @@ export function normalizeRateCard(raw: unknown): HvacRateCard {
     materials: group("materials"),
     equipmentDefaults: group("equipmentDefaults"),
     linesetFtDefault: numOr(r.linesetFtDefault, DEFAULT_RATE_CARD.linesetFtDefault),
+    serviceMenu: Array.isArray(r.serviceMenu) ? (r.serviceMenu as unknown[]).flatMap((t) => {
+      const x = (t && typeof t === "object" ? t : {}) as Record<string, unknown>;
+      if (typeof x.id !== "string" || typeof x.title !== "string" || typeof x.laborUsd !== "number") return [];
+      const part = x.part && typeof x.part === "object" ? (x.part as Record<string, unknown>) : null;
+      const row: ServiceTask = { id: x.id.slice(0, 80), group: "custom", title: x.title.slice(0, 120), includes: typeof x.includes === "string" ? x.includes.slice(0, 240) : "", laborUsd: numOr(x.laborUsd, 0), custom: true };
+      if (part && typeof part.name === "string" && typeof part.costUsd === "number") row.part = { name: part.name.slice(0, 120), costUsd: numOr(part.costUsd, 0), brands: Array.isArray(part.brands) ? (part.brands as unknown[]).filter((b): b is string => typeof b === "string").slice(0, 6) : undefined };
+      return [row];
+    }).slice(0, 60) : undefined,
   };
   // v1: hours by task at tech + helper per hour.
   const hours = r.hours && typeof r.hours === "object" ? (r.hours as Record<string, unknown>) : null;
@@ -664,6 +675,19 @@ export function pickWaterHeater(catalog: CatalogItem[], plan: { fuel: string; ty
   return pool.filter((c) => (c.gallons ?? 0) >= plan.gallons).sort((a, b) => (a.gallons ?? 0) - (b.gallons ?? 0))[0];
 }
 
+/** One tank per maker that fits the plan — the smallest at or above the sized
+ *  gallons (or the tankless input), vent-compatible — with the engine's own
+ *  pick first. This is the strip the contractor chooses a brand from. */
+export function waterHeaterOptions(catalog: CatalogItem[], plan: { fuel: string; type: string; gallons: number; vent?: string; btuInput?: number }): CatalogItem[] {
+  const rows = catalog.filter((c) => c.kind === "water-heater" && (c.fuel ?? "gas") === plan.fuel && (c.whType ?? "tank") === plan.type && (plan.type === "tankless" ? (c.btuInput ?? 0) >= (plan.btuInput ?? 0) : (c.gallons ?? 0) >= plan.gallons) && (!c.vent || !plan.vent || c.vent === plan.vent || plan.vent === "none" || plan.type === "tankless"));
+  const best = new Map<string, CatalogItem>();
+  for (const r of rows.sort((a, b) => (plan.type === "tankless" ? (a.btuInput ?? 0) - (b.btuInput ?? 0) : (a.gallons ?? 0) - (b.gallons ?? 0)) || (b.uef ?? 0) - (a.uef ?? 0))) {
+    if (!best.has(r.brand)) best.set(r.brand, r);
+  }
+  const first = pickWaterHeater(catalog, plan);
+  return Array.from(best.values()).sort((a, b) => (a.id === first?.id ? -1 : b.id === first?.id ? 1 : a.brand.localeCompare(b.brand)));
+}
+
 /** The largest tank the catalog has for this fuel and type, for the note when none is big enough. */
 function largestWaterHeater(catalog: CatalogItem[], plan: { fuel: string; type: string }): CatalogItem | undefined {
   return catalog.filter((c) => c.kind === "water-heater" && (c.fuel ?? "gas") === plan.fuel && (c.whType ?? "tank") === plan.type).sort((a, b) => (b.gallons ?? b.btuInput ?? 0) - (a.gallons ?? a.btuInput ?? 0))[0];
@@ -679,7 +703,10 @@ function waterHeaterLedger(engine: EngineResult, m: BuildingModel, card: HvacRat
   const generic = plan.type === "tankless" ? `${plan.fuel === "electric" ? "Electric" : "Gas"} tankless water heater` : plan.type === "heat-pump" ? `${plan.gallons} gal heat-pump water heater` : `${plan.gallons} gal ${plan.fuel === "electric" ? "electric" : plan.fuel === "propane" ? "propane" : "gas"} tank water heater${plan.vent === "power" ? ", power vent" : plan.vent === "direct" ? ", direct vent" : ""}`;
   // The contractor's pick beats the plan's own; if it is short of the sized
   // gallons or the input, the estimate says so instead of quietly shrinking.
-  const picked = opts.pick ? catalog.find((c) => c.id === opts.pick && c.kind === "water-heater") : undefined;
+  // A pick that is a different kind of appliance (a gas tank on a heat-pump
+  // job) is not honoured: the job's setup decides the kind, the pick the maker.
+  const pickedRaw = opts.pick ? catalog.find((c) => c.id === opts.pick && c.kind === "water-heater") : undefined;
+  const picked = pickedRaw && (pickedRaw.fuel ?? "gas") === plan.fuel && (pickedRaw.whType ?? "tank") === plan.type ? pickedRaw : undefined;
   const row = picked ?? pickWaterHeater(catalog, plan);
   const genericLower = generic.replace(/^\d+ gal /, "").toLowerCase();
   const eqName = row ? `${row.brand} ${row.model} — ${row.gallons ? `${row.gallons} gal ` : ""}${genericLower}${row.uef ? ` · ${row.uef} UEF` : ""}` : generic;
@@ -692,7 +719,6 @@ function waterHeaterLedger(engine: EngineResult, m: BuildingModel, card: HvacRat
   if (picked) {
     if (plan.type !== "tankless" && (picked.gallons ?? 0) < plan.gallons) extraAssumptions.push(`You picked a ${picked.gallons} gal tank where the household sizes to ${plan.gallons} gal — the first-hour rating will be short; say so to the customer or pick the larger tank.`);
     if (plan.type === "tankless" && plan.btuInput && (picked.btuInput ?? 0) < plan.btuInput) extraAssumptions.push(`You picked a ${Math.round((picked.btuInput ?? 0) / 1000)}k BTU/h tankless where the plan calls for ${Math.round(plan.btuInput / 1000)}k — the flow at a 70 °F rise will be lower than sized.`);
-    if ((picked.fuel ?? "gas") !== plan.fuel || (picked.whType ?? "tank") !== plan.type) extraAssumptions.push(`The picked unit is a ${picked.fuel ?? "gas"} ${picked.whType ?? "tank"} and the job was set up as a ${plan.fuel} ${plan.type} — the gas, vent and circuit lines follow the job's setup, not the unit.`);
   }
   if (row) {
     const p = equipmentPrice(row, card);
@@ -806,22 +832,43 @@ function serviceLedger(engine: EngineResult, m: BuildingModel, card: HvacRateCar
   const lab: LedgerLine[] = [];
   const s = opts.input?.service;
   const L = card.labor;
-  lab.push({ id: "l-diag", name: "Diagnostic visit", quantity: 1, unitPrice: L.diagnostic, unit: "each", basis: "estimated" });
-  if (s?.refrigerantLb && s.refrigerantLb > 0) {
-    mat.push({ id: "m-refr", name: m.existing.refrigerant ? `Refrigerant ${m.existing.refrigerant}` : "Refrigerant (identify on the nameplate)", quantity: s.refrigerantLb, unitPrice: markup(m.existing.refrigerant === "R-22" ? card.materials.refrigerantR22PerLb : card.materials.refrigerantPerLb, card.materialsMarkupPct), unit: "lb", basis: m.existing.refrigerant ? "entered" : "estimated", note: m.existing.refrigerant === "R-22" ? "Reclaimed R-22 at today's cost" : undefined });
-    lab.push({ id: "l-refr", name: "Leak check and recharge", quantity: s.refrigerantLb, unitPrice: L.refrigerantPerLb, unit: "lb", basis: "entered" });
+  const mk = (c: number) => markup(c, card.materialsMarkupPct);
+  const custom = card.serviceMenu ?? [];
+  // The tasks the visit does, in the menu's order; unknown ids are skipped.
+  const tasks = (s?.tasks ?? []).map((id) => serviceTask(id, custom)).filter((t): t is NonNullable<typeof t> => !!t);
+  // A tune-up carries the inspection; otherwise the visit starts with the diagnostic.
+  if (!tasks.some((t) => t.includesDiagnostic)) lab.push({ id: "l-diag", name: "Diagnostic visit", quantity: 1, unitPrice: L.diagnostic, unit: "each", basis: "estimated" });
+  for (const t of tasks) {
+    if (t.unit === "lb") continue; // refrigerant is priced by the pound below
+    lab.push({ id: `l-svc-${t.id}`, name: t.title, quantity: 1, unitPrice: t.laborUsd, unit: "each", basis: "estimated", note: `${t.includes}${t.custom ? " · your saved task" : " · typical shop labor — edit to your rate"}` });
+    if (t.part) mat.push({ id: `m-svc-${t.id}`, name: t.part.name, quantity: 1, unitPrice: mk(t.part.costUsd), unit: "each", basis: "estimated", note: `${t.custom ? "Your saved cost" : "Typical shop cost"} $${t.part.costUsd.toLocaleString("en-US")} + ${card.materialsMarkupPct}%${t.part.brands?.length ? ` · ${t.part.brands.join(", ")}` : ""}` });
+  }
+  const lbs = s?.refrigerantLb && s.refrigerantLb > 0 ? s.refrigerantLb : 0;
+  if (lbs) {
+    mat.push({ id: "m-refr", name: m.existing.refrigerant ? `Refrigerant ${m.existing.refrigerant}` : "Refrigerant (identify on the nameplate)", quantity: lbs, unitPrice: markup(m.existing.refrigerant === "R-22" ? card.materials.refrigerantR22PerLb : card.materials.refrigerantPerLb, card.materialsMarkupPct), unit: "lb", basis: m.existing.refrigerant ? "entered" : "estimated", note: m.existing.refrigerant === "R-22" ? "Reclaimed R-22 at today's cost" : undefined });
+    lab.push({ id: "l-refr", name: "Leak check and recharge", quantity: lbs, unitPrice: L.refrigerantPerLb, unit: "lb", basis: "entered" });
+  }
+  // Tasks typed for this estimate, and the older free-text task and parts.
+  for (const [i, c] of (s?.custom ?? []).entries()) {
+    lab.push({ id: `l-cust-${i}`, name: c.name, quantity: 1, unitPrice: c.laborUsd, unit: "each", basis: "entered" });
+    if (c.partName) mat.push({ id: `m-cust-${i}`, name: c.partName, quantity: 1, unitPrice: mk(c.partCost ?? 0), unit: "each", basis: c.partCost ? "entered" : "estimated", note: c.partCost ? `Your cost $${c.partCost.toLocaleString("en-US")} + ${card.materialsMarkupPct}%` : "No cost given — put the part cost on the line" });
   }
   for (const [i, p] of (s?.parts ?? []).entries()) {
     if (!p.name) continue;
-    mat.push({ id: `m-part-${i}`, name: p.name, quantity: 1, unitPrice: markup(p.cost, card.materialsMarkupPct), unit: "each", basis: "entered", note: `Shop cost $${p.cost.toLocaleString("en-US")} + ${card.materialsMarkupPct}%` });
+    mat.push({ id: `m-part-${i}`, name: p.name, quantity: 1, unitPrice: mk(p.cost), unit: "each", basis: "entered", note: `Shop cost $${p.cost.toLocaleString("en-US")} + ${card.materialsMarkupPct}%` });
   }
   if (s?.task) lab.push({ id: "l-repair", name: s.task, quantity: 1, unitPrice: L.repairEach, unit: "each", basis: "entered" });
-  const assumptions = [`Priced from the shop rate card by the task: parts +${card.materialsMarkupPct}%.`];
-  if (m.existing.refrigerant === "R-22") assumptions.push("R-22 system: recharge is priced per pound at today's R-22 cost; a replacement quote is the alternative.");
+  const assumptions = [`Priced from the service menu by the task: typical shop labor and part costs (parts +${card.materialsMarkupPct}%) — edit any line to your rate.`];
+  for (const t of tasks) if (t.note) assumptions.push(t.note);
+  if (m.existing.refrigerant === "R-22") assumptions.push("R-22 system: recharge is priced per pound at today's reclaimed R-22 cost; a replacement quote is the alternative.");
   const subtotal = r2([...mat, ...lab].reduce((a, l) => a + l.quantity * l.unitPrice, 0));
+  const lower = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
+  const done = [...tasks.filter((t) => t.unit !== "lb").map((t) => lower(t.title)), ...(lbs ? [`recharge ${lbs} lb`] : []), ...(s?.custom ?? []).map((c) => lower(c.name)), ...(s?.task ? [lower(s.task)] : [])];
+  const count = tasks.length + (s?.custom?.length ?? 0);
+  const headline = tasks.length ? tasks.slice(0, 2).map((t) => t.title).join(", ") + (count > 2 ? ` +${count - 2}` : "") : s?.custom?.[0]?.name ?? s?.task ?? "diagnostic";
   return {
-    title: `Service — ${m.address.split(",")[0]}`,
-    scope: `Service call on the ${existingWords(m)} at ${m.address}: diagnostic${s?.task ? `, ${s.task.charAt(0).toLowerCase()}${s.task.slice(1)}` : ""}${s?.refrigerantLb ? `, recharge ${s.refrigerantLb} lb` : ""}${(s?.parts ?? []).some((p) => p.name) ? `, parts: ${(s?.parts ?? []).map((p) => p.name).filter(Boolean).join(", ")}` : ""}.`,
+    title: `Service: ${headline} — ${m.address.split(",")[0]}`,
+    scope: `Service call on the ${existingWords(m)} at ${m.address}: ${tasks.some((t) => t.includesDiagnostic) ? "" : "diagnostic, "}${done.join(", ") || "diagnostic"}${(s?.parts ?? []).some((p) => p.name) ? `, parts: ${(s?.parts ?? []).map((p) => p.name).filter(Boolean).join(", ")}` : ""}.`,
     materials: mat, labor: lab, assumptions, subtotal,
   };
 }
@@ -883,7 +930,7 @@ export const STARTER_CATALOG: CatalogItem[] = [
 // ── catalog CSV ─────────────────────────────────────────────────────────────
 
 /** Header the import understands; extra columns are ignored. */
-export const CATALOG_CSV_COLUMNS = ["kind", "brand", "model", "tons", "coolingBtuh", "heat47Btuh", "heat17Btuh", "heat5Btuh", "btuInput", "afue", "seer2", "eer2", "hspf2", "refrigerant", "staging", "coldClimate", "ahriRef", "mcaAmps", "ratedStaticInWc", "maxTons", "tier", "gallons", "whType", "fuel", "uef", "cost"] as const;
+export const CATALOG_CSV_COLUMNS = ["kind", "brand", "model", "tons", "coolingBtuh", "heat47Btuh", "heat17Btuh", "heat5Btuh", "btuInput", "afue", "seer2", "eer2", "hspf2", "refrigerant", "staging", "coldClimate", "ahriRef", "mcaAmps", "ratedStaticInWc", "maxTons", "tier", "gallons", "whType", "fuel", "uef", "noxNgJ", "cost"] as const;
 
 const KINDS = new Set<CatalogItem["kind"]>(["heat-pump", "air-conditioner", "furnace", "air-handler", "coil", "ductless", "package", "water-heater"]);
 
@@ -939,6 +986,8 @@ export function parseCatalogCsv(text: string): { items: CatalogItem[]; errors: s
       coldClimate: /^(y|yes|true|1)$/i.test(str(cells, "coldClimate") ?? ""),
       ahriRef: str(cells, "ahriRef"),
       mcaAmps: num(cells, "mcaAmps"),
+      // Gas rows: the NOx class the California districts read (14 = ultra-low).
+      noxNgJ: num(cells, "noxNgJ"),
       ratedStaticInWc: num(cells, "ratedStaticInWc"),
       maxTons: num(cells, "maxTons"),
       tier: (["value", "mid", "premium"] as const).find((t) => t === (str(cells, "tier") ?? "").toLowerCase()),

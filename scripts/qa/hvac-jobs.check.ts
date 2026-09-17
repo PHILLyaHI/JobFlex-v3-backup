@@ -6,12 +6,13 @@
 // crew rate) converts to per-task amounts; the water heater sizes from the
 // household and answers the gas / circuit / vent checks.
 import { runEngine } from "../../src/lib/hvac/engine";
-import { buildLedger, DEFAULT_RATE_CARD, tiersFor, normalizeRateCard, STARTER_CATALOG } from "../../src/lib/hvac/ledger";
+import { buildLedger, DEFAULT_RATE_CARD, tiersFor, normalizeRateCard, STARTER_CATALOG, waterHeaterOptions } from "../../src/lib/hvac/ledger";
 import { modelFromSite } from "../../src/lib/hvac/intake";
 import { JOBS, jobDef, type JobKind } from "../../src/lib/hvac/jobs";
 import { tankGallonsFor, waterHeaterPlan } from "../../src/lib/hvac/waterHeater";
 import type { BuildingModel, CatalogItem } from "../../src/lib/hvac/types";
 import { US_CATALOG } from "../../src/lib/hvac/data/usCatalog";
+import { SERVICE_MENU, serviceMenuFor } from "../../src/lib/hvac/serviceMenu";
 
 let failures = 0;
 let passes = 0;
@@ -116,7 +117,7 @@ ok("Ducts (poor): runs replaced per run ×12, permit and haul-off", ductsPoor.l.
 // service
 const svc = run("service", house({ existing: { kind: "split-ac-furnace", tons: 3, fuel: "gas", refrigerant: "R-22" } }), { service: { task: "Replace the capacitor and contactor", refrigerantLb: 2, parts: [{ name: "Run capacitor 45/5", cost: 28 }, { name: "Contactor 40 A", cost: 35 }] } });
 ok("Service: diagnostic, recharge by the lb, the repair task, two parts with markup; no permit", has(svc.l.labor, "l-diag", "l-refr", "l-repair") && svc.l.labor.find((r) => r.id === "l-refr")?.unit === "lb" && svc.l.materials.length === 3 && svc.l.materials.find((r) => r.id === "m-part-0")?.unitPrice === 35 && lacks(svc.l.labor, "l-permit"), ids(svc.l.materials).join(","));
-ok("Service on R-22 says so", svc.l.assumptions.some((a) => /R-22/.test(a)) && /Service —/.test(svc.l.title));
+ok("Service on R-22 says so", svc.l.assumptions.some((a) => /R-22/.test(a)) && /^Service: /.test(svc.l.title));
 
 // tiers price apart on the starter ladders
 const tierRun = (tier: "value" | "mid" | "premium") => { const e = runEngine(house(), { catalog: STARTER_CATALOG, job: "replace-system" }); const c = e.selection.candidates.filter((x) => !x.disqualified && x.item.kind === "air-conditioner" && x.item.tier === tier).sort((a, b) => b.score - a.score)[0]!; return buildLedger({ ...e, selection: { ...e.selection, chosen: c } }, house(), DEFAULT_RATE_CARD, STARTER_CATALOG, { job: "replace-system" }).subtotal; };
@@ -395,6 +396,66 @@ ok("A v2 card round-trips", JSON.stringify(normalizeRateCard(DEFAULT_RATE_CARD))
   const small = US_CATALOG.find((c) => c.kind === "water-heater" && c.whType === "tank" && c.fuel === "gas" && c.gallons === 40);
   const lWh = buildLedger(rWh, house({ occupants: 5 }), DEFAULT_RATE_CARD, US_CATALOG, { job: "water-heater", input: wh, pick: small?.id });
   ok("Water heater: the picked tank is the one priced, and a tank under the sized gallons is called out", lWh.materials[0].name.startsWith(`${small?.brand} ${small?.model}`) && lWh.assumptions.some((a) => /You picked a 40 gal tank where the household sizes to 75 gal/.test(a)), `${lWh.materials[0].name} · ${lWh.assumptions.find((a) => /You picked/.test(a))?.slice(0, 70)}`);
+}
+
+
+// ── Water heater: one tank per maker that fits, the engine's pick first ────
+{
+  const g = house();
+  const r = runEngine(g, { catalog: US_CATALOG, job: "water-heater", input: { wh: { fuel: "gas", type: "tank" } } });
+  const opts = waterHeaterOptions(US_CATALOG, r.waterHeater!);
+  ok("Gas 50 gal tank: three makers offered, one row each, all at or above 50 gal and atmospheric", opts.length === 3 && new Set(opts.map((o) => o.brand)).size === 3 && opts.every((o) => (o.gallons ?? 0) >= 50 && (o.vent ?? "atmospheric") === "atmospheric"), opts.map((o) => `${o.brand} ${o.model} ${o.gallons} gal`).join(" | "));
+  ok("The engine's own pick leads the strip", opts[0]?.id === buildLedger(r, g, DEFAULT_RATE_CARD, US_CATALOG, { job: "water-heater", input: { wh: { fuel: "gas", type: "tank" } } }).materials[0].id.replace(/^eq-main$/, opts[0]?.id ?? ""), opts[0]?.model);
+  const hp = runEngine(g, { catalog: US_CATALOG, job: "water-heater", input: { wh: { type: "heat-pump" } } });
+  const hpOpts = waterHeaterOptions(US_CATALOG, hp.waterHeater!);
+  ok("Heat-pump tank: the three makers' heat-pump tanks, sized up from the electric table", hpOpts.length === 3 && hpOpts.every((o) => o.whType === "heat-pump" && (o.gallons ?? 0) >= (hp.waterHeater?.gallons ?? 0)), hpOpts.map((o) => `${o.brand} ${o.gallons} gal`).join(" | "));
+  const tl = runEngine(g, { catalog: US_CATALOG, job: "water-heater", input: { wh: { fuel: "gas", type: "tankless" } } });
+  const tlOpts = waterHeaterOptions(US_CATALOG, tl.waterHeater!);
+  ok("Gas tankless: one per maker, none under the 199k plan", tlOpts.length >= 2 && tlOpts.every((o) => (o.btuInput ?? 0) >= 199_000), tlOpts.map((o) => `${o.brand} ${o.model} ${o.btuInput}`).join(" | "));
+  const picked = buildLedger(r, g, DEFAULT_RATE_CARD, US_CATALOG, { job: "water-heater", input: { wh: { fuel: "gas", type: "tank" } }, pick: opts[1]?.id });
+  ok("Picking the second maker puts that tank on the estimate", picked.materials[0].name.startsWith(`${opts[1]?.brand} ${opts[1]?.model}`), picked.materials[0].name);
+  const gasRowOnHp = buildLedger(hp, g, DEFAULT_RATE_CARD, US_CATALOG, { job: "water-heater", input: { wh: { type: "heat-pump" } }, pick: opts[0]?.id });
+  ok("A gas tank picked before the job became a heat-pump job is not honoured: a heat-pump tank is priced", /heat-pump water heater/.test(gasRowOnHp.materials[0].name) && !gasRowOnHp.materials[0].name.startsWith(`${opts[0]?.brand} ${opts[0]?.model}`), gasRowOnHp.materials[0].name);
+}
+
+
+// ── Service menu: what a visit can do, priced by the task ─────────────────
+{
+  const g = house();
+  ok("The menu is a real list: 40+ tasks, every one with labor, most with a part and its makers", SERVICE_MENU.length >= 40 && SERVICE_MENU.every((t) => t.title && t.includes && t.laborUsd >= 0) && SERVICE_MENU.filter((t) => t.part).length >= 25 && SERVICE_MENU.filter((t) => t.part?.brands?.length).length >= 20, `${SERVICE_MENU.length} tasks`);
+  ok("Menu ids are unique", new Set(SERVICE_MENU.map((t) => t.id)).size === SERVICE_MENU.length);
+  const gasAc = serviceMenuFor(g);
+  const groupsOf = (m: ReturnType<typeof serviceMenuFor>) => m.groups.map((x) => x.group);
+  ok("AC + gas furnace house: tune-ups, refrigerant, electrical, furnace, airflow, refrigeration, controls and water heater; no ductless group", ["tune-up", "refrigerant", "electrical", "furnace", "airflow", "refrigeration", "controls", "water-heater"].every((k) => groupsOf(gasAc).includes(k)) && !groupsOf(gasAc).includes("ductless"), groupsOf(gasAc).join(","));
+  ok("…and the AC tune-up is the suggested one", gasAc.recommended.includes("ac-tuneup"));
+  const hpHouse = house({ gas: { available: false }, existing: { kind: "split-heat-pump", tons: 3, fuel: "electric", refrigerant: "R-410A" } });
+  const hp = serviceMenuFor(hpHouse);
+  const hpIds = hp.groups.flatMap((x) => x.tasks.map((t) => t.id));
+  ok("Heat-pump house: reversing valve and defrost board are offered, the gas-furnace group is not, and the heat-pump tune-up is suggested", hpIds.includes("reversing-valve") && hpIds.includes("defrost-board") && !groupsOf(hp).includes("furnace") && hp.recommended.includes("hp-tuneup"));
+  const dl = serviceMenuFor(house({ existing: { kind: "ductless", tons: 1, fuel: "electric", refrigerant: "R-410A" }, gas: { available: false } }));
+  ok("Ductless house: the ductless group and head deep clean, no blower motors", groupsOf(dl).includes("ductless") && dl.recommended.includes("ductless-clean") && !dl.groups.flatMap((x) => x.tasks.map((t) => t.id)).includes("blower-psc"));
+  const r22 = serviceMenuFor(house({ existing: { kind: "split-ac-furnace", tons: 3, fuel: "gas", refrigerant: "R-22", yearMade: 2005 } }));
+  ok("An R-22 system from 2005 gets the reclaimed-refrigerant note and the age note", r22.notes.some((n) => /R-22/.test(n)) && r22.notes.some((n) => /years old/.test(n)), r22.notes.join(" | ").slice(0, 120));
+  const pick = { service: { tasks: ["capacitor", "contactor"] } };
+  const rS = runEngine(g, { catalog: US_CATALOG, job: "service", input: pick });
+  const lS = buildLedger(rS, g, DEFAULT_RATE_CARD, US_CATALOG, { job: "service", input: pick });
+  ok("Capacitor + contactor: the diagnostic, two labor lines and two part lines with the makers named", lS.labor.some((l) => l.id === "l-diag") && lS.labor.filter((l) => /^l-svc-/.test(l.id)).length === 2 && lS.materials.filter((l) => /^m-svc-/.test(l.id)).length === 2 && /Mars/.test(lS.materials.find((l) => l.id === "m-svc-capacitor")?.note ?? ""), `${lS.labor.map((l) => l.id).join(",")} · $${lS.subtotal}`);
+  ok("The part line is the typical cost plus the markup, and the labor line says it is typical", lS.materials.find((l) => l.id === "m-svc-capacitor")?.unitPrice === Math.round(28 * (1 + DEFAULT_RATE_CARD.materialsMarkupPct / 100) * 100) / 100 && /typical shop labor/.test(lS.labor.find((l) => l.id === "l-svc-capacitor")?.note ?? ""));
+  ok("Title and scope name the tasks", /^Service: Run capacitor, Contactor —/.test(lS.title) && /diagnostic, run capacitor, contactor\./.test(lS.scope), `${lS.title} · ${lS.scope.slice(-60)}`);
+  const tune = { service: { tasks: ["ac-tuneup", "recharge"], refrigerantLb: 2 } };
+  const lT = buildLedger(runEngine(g, { catalog: US_CATALOG, job: "service", input: tune }), g, DEFAULT_RATE_CARD, US_CATALOG, { job: "service", input: tune });
+  ok("A tune-up drops the diagnostic; the recharge is priced by the pound", !lT.labor.some((l) => l.id === "l-diag") && lT.labor.some((l) => l.id === "l-svc-ac-tuneup") && lT.labor.some((l) => l.id === "l-refr" && l.quantity === 2) && lT.materials.some((l) => l.id === "m-refr" && l.quantity === 2), lT.labor.map((l) => l.id).join(","));
+  const cust = { service: { tasks: ["igniter"], custom: [{ name: "Replace the zone damper actuator", laborUsd: 180, partName: "Damper actuator", partCost: 85 }] } };
+  const lC = buildLedger(runEngine(g, { catalog: US_CATALOG, job: "service", input: cust }), g, DEFAULT_RATE_CARD, US_CATALOG, { job: "service", input: cust });
+  ok("A task typed for this estimate prices its labor and its part as entered", lC.labor.some((l) => l.id === "l-cust-0" && l.unitPrice === 180 && l.basis === "entered") && lC.materials.some((l) => l.id === "m-cust-0" && l.basis === "entered"), `$${lC.subtotal} · ${lC.title}`);
+  const saved = normalizeRateCard({ ...DEFAULT_RATE_CARD, serviceMenu: [{ id: "custom-duct-static-test", title: "Duct static test", includes: "TESP at four points", laborUsd: 120 }, { id: 7, title: "bad" }] });
+  ok("A saved task rides on the rate card and a bad row is dropped", saved.serviceMenu?.length === 1 && saved.serviceMenu[0].custom === true && saved.serviceMenu[0].group === "custom");
+  const withSaved = { service: { tasks: ["custom-duct-static-test"] } };
+  const lSaved = buildLedger(runEngine(g, { catalog: US_CATALOG, job: "service", input: withSaved }), g, saved, US_CATALOG, { job: "service", input: withSaved });
+  ok("A saved task is priced from the menu like any other, and says it is the shop's", lSaved.labor.some((l) => l.id === "l-svc-custom-duct-static-test" && l.unitPrice === 120 && /your saved task/.test(l.note ?? "")) && serviceMenuFor(g, saved.serviceMenu).groups.some((x) => x.group === "custom"));
+  const old = { service: { task: "Replace the TXV and filter-drier", refrigerantLb: 3, parts: [{ name: "TXV", cost: 85 }] } };
+  const lOld = buildLedger(runEngine(g, { catalog: US_CATALOG, job: "service", input: old }), g, DEFAULT_RATE_CARD, US_CATALOG, { job: "service", input: old });
+  ok("An older saved estimate with free text still prices", lOld.labor.some((l) => l.id === "l-repair") && lOld.materials.some((l) => l.id === "m-part-0") && lOld.labor.some((l) => l.id === "l-refr"), lOld.title);
 }
 
 console.log(`\n${passes} passed, ${failures} failed`);

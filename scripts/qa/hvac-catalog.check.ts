@@ -132,6 +132,21 @@ ok("Water heater ledger names the catalog tank", /Rheem|A\.O\. Smith|Bradford Wh
   const la = house({ state: "CA", county: "Los Angeles", address: "Los Angeles, CA" });
   const rLa = runEngine(la, { catalog: US_CATALOG, job: "replace-furnace" });
   ok("A furnace in Los Angeles County: only an ultra-low-NOx unit is offered, the rest say why", (rLa.selection.chosen?.item.noxNgJ ?? 40) <= 14 && rLa.selection.candidates.some((c) => /takes only ultra-low-NOx/.test(c.disqualified ?? "")), `${rLa.selection.chosen?.item.brand} ${rLa.selection.chosen?.item.model}`);
+  {
+    const uln = rLa.checks.find((c) => c.id === "ca-uln-furnace");
+    ok("The NOx check names the unit picked and passes it in Los Angeles County", uln?.status === "pass" && !!rLa.selection.chosen && uln.detail.includes(rLa.selection.chosen.item.model) && /Los Angeles County/.test(uln.detail), `${uln?.status}: ${uln?.detail.slice(0, 90)}`);
+    const std = US_CATALOG.find((c) => c.kind === "furnace" && (c.noxNgJ ?? 40) > 14 && c.btuInput === 60000);
+    const rStd = runEngine(la, { catalog: US_CATALOG, job: "replace-furnace", pick: std?.id });
+    const ulnStd = rStd.checks.find((c) => c.id === "ca-uln-furnace");
+    ok("A 40 ng/J furnace used anyway there is flagged by name, as a fix", rStd.selection.chosen?.item.id === std?.id && ulnStd?.status === "fix" && /40 ng\/J class/.test(ulnStd?.detail ?? "") && !!std && ulnStd!.detail.includes(std.model), `${ulnStd?.status}: ${ulnStd?.detail.slice(0, 90)}`);
+    const rSh = runEngine(house({ state: "CA", county: "Shasta", address: "Redding, CA" }), { catalog: US_CATALOG, job: "replace-furnace" });
+    const ulnSh = rSh.checks.find((c) => c.id === "ca-uln-furnace");
+    ok("Outside the three districts the NOx check asks to confirm, and names the county", ulnSh?.status === "verify" && /Shasta County/.test(ulnSh.detail), `${ulnSh?.status}: ${ulnSh?.detail.slice(0, 90)}`);
+    // The catalog a shop loaded before the California families existed: every furnace is the 40 ng/J class.
+    const older = US_CATALOG.filter((c) => !(c.kind === "furnace" && (c.noxNgJ ?? 40) <= 14) && c.kind !== "package").map((c) => (c.kind === "furnace" ? { ...c, noxNgJ: undefined } : c));
+    const rOld = runEngine(house({ state: "CA", county: "Contra Costa", address: "Danville, CA" }), { catalog: older, job: "replace-furnace" });
+    ok("With a catalog from before the California families, a Contra Costa furnace job finds nothing and every row says why (the wall the page names)", !rOld.selection.chosen && rOld.selection.candidates.length > 0 && rOld.selection.candidates.every((c) => (c.item.noxNgJ ?? 40) > 14 && /14 ng\/J/.test(c.disqualified ?? "")), `${rOld.selection.candidates.length} rows · ${rOld.selection.candidates[0]?.disqualified?.slice(0, 80)}`);
+  }
   ok("The same furnace job outside those districts keeps the standard build on the list, with a note", (() => { const r = runEngine(house({ state: "CA", county: "Shasta", address: "Redding, CA" }), { catalog: US_CATALOG, job: "replace-furnace" }); return r.selection.candidates.some((c) => !c.disqualified && (c.item.noxNgJ ?? 40) > 14 && c.reasons.some((x) => /confirm the air district/.test(x))); })());
   for (const [st, county, want] of [["CA", "Los Angeles", "CF1R, CF2R and CF3R"], ["WA", "King", "Manual J load and Manual S selection"], ["OR", "Multnomah", "Minor label does not cover this"], ["FL", "Broward", "Wind tie-down and product approval"], ["TX", "Collin", "TDLR licence and permit"], ["NY", "Kings", "Sizing on the permit"]] as const) {
     const r = runEngine(house({ state: st, county, address: `Test, ${st}` }), { catalog: US_CATALOG, job: "replace-system" });
