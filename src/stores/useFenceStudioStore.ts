@@ -78,6 +78,9 @@ interface FenceStudioStore {
   setMaterialPrice: (m: MaterialId, v: number) => void;
   setOpeningPrice: (kind: OpeningKind, variant: OpeningVariant, v: number) => void;
   setDemolitionPrice: (v: number) => void;
+  setPermitFee: (v: number) => void;
+  setCleanupPrice: (v: number) => void;
+  setSlopeMult: (cls: "racked" | "stepped", v: number) => void;
   resetPricing: () => void;
   addMaterial: (name: string, color: string, perFt: number) => void;
   removeMaterial: (id: string) => void;
@@ -246,6 +249,20 @@ export const useFenceStudioStore = create<FenceStudioStore>()(
         set((s) => {
           s.pricing.demolitionPerFt = Math.max(0, v);
         }),
+      setPermitFee: (v) =>
+        set((s) => {
+          s.pricing.permitFee = Math.max(0, v);
+        }),
+      setCleanupPrice: (v) =>
+        set((s) => {
+          s.pricing.cleanupPerFt = Math.max(0, v);
+        }),
+      setSlopeMult: (cls, v) =>
+        set((s) => {
+          const next = { racked: 1, stepped: 1, ...(s.pricing.slopeMult ?? {}) };
+          next[cls] = Math.max(1, v);
+          s.pricing.slopeMult = next;
+        }),
       resetPricing: () =>
         set((s) => {
           // Reset built-in rates but keep any custom materials/openings priced.
@@ -305,6 +322,7 @@ export const useFenceStudioStore = create<FenceStudioStore>()(
             material: spec.material,
             openings: spec.gates,
             demolition: spec.demolition,
+            layout: { postCount: layout.postCount, bayCount: layout.bayCount },
           },
           pricing,
         );

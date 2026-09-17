@@ -23,6 +23,25 @@ export const PICKET_WIDTH_FT = 0.46; // ~5.5"
 export const PICKET_GAP_FT = 0.04; // small reveal so butted privacy pickets don't z-fight
 export const PICKET_PITCH_FT = PICKET_WIDTH_FT + PICKET_GAP_FT;
 
+/**
+ * Bays and posts for runs measured by HAND (the blueprint page's ledger types
+ * a length per run and never builds a layout). Same rule the layout below
+ * uses — bays of at most POST_SPACING_FT, evenly divided, one post per bay
+ * edge — so the estimate's post count matches the fence in the 3D view.
+ * Each run is its own fence: it carries a post at both ends.
+ */
+export function baysForRuns(runsFt: readonly number[]): number {
+  let bays = 0;
+  for (const len of runsFt) if (len > 0) bays += Math.max(1, Math.ceil(len / POST_SPACING_FT));
+  return bays;
+}
+
+export function postsForRuns(runsFt: readonly number[]): number {
+  let posts = 0;
+  for (const len of runsFt) if (len > 0) posts += Math.max(1, Math.ceil(len / POST_SPACING_FT)) + 1;
+  return posts;
+}
+
 const EPS = 1e-4;
 const CLOSE_TOL_FT = 0.5; // last point within this of the first ⇒ closed loop
 

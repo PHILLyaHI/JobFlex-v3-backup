@@ -27,6 +27,9 @@ export function FencePriceSheet() {
   const setMaterialPrice = useFenceStudioStore((s) => s.setMaterialPrice);
   const setOpeningPrice = useFenceStudioStore((s) => s.setOpeningPrice);
   const setDemolitionPrice = useFenceStudioStore((s) => s.setDemolitionPrice);
+  const setPermitFee = useFenceStudioStore((s) => s.setPermitFee);
+  const setCleanupPrice = useFenceStudioStore((s) => s.setCleanupPrice);
+  const setSlopeMult = useFenceStudioStore((s) => s.setSlopeMult);
   const resetPricing = useFenceStudioStore((s) => s.resetPricing);
   const addMaterial = useFenceStudioStore((s) => s.addMaterial);
   const removeMaterial = useFenceStudioStore((s) => s.removeMaterial);
@@ -106,6 +109,22 @@ export function FencePriceSheet() {
             <Row label="Demolition &amp; haul">
               <PriceInput key={`demo-${nonce}`} value={pricing.demolitionPerFt} suffix="/ft" onCommit={setDemolitionPrice} />
             </Row>
+            <Row label="Cleanup &amp; spoil haul">
+              <PriceInput key={`clean-${nonce}`} value={pricing.cleanupPerFt ?? 0} suffix="/ft" onCommit={setCleanupPrice} />
+            </Row>
+            <Row label="Permit &amp; inspection">
+              <PriceInput key={`permit-${nonce}`} value={pricing.permitFee ?? 0} suffix="/job" onCommit={setPermitFee} />
+            </Row>
+          </Group>
+
+          {/* Slope — what racked and stepped footage costs against level ground */}
+          <Group label="Slope">
+            <Row label="Racked install">
+              <PriceInput key={`racked-${nonce}`} value={pricing.slopeMult?.racked ?? 1} prefix="x" onCommit={(n) => setSlopeMult("racked", n)} />
+            </Row>
+            <Row label="Stepped install">
+              <PriceInput key={`stepped-${nonce}`} value={pricing.slopeMult?.stepped ?? 1} prefix="x" onCommit={(n) => setSlopeMult("stepped", n)} />
+            </Row>
           </Group>
 
           <button
@@ -171,15 +190,18 @@ function PriceInput({
   value,
   suffix,
   onCommit,
+  prefix = "$",
 }: {
   value: number;
   suffix?: string;
   onCommit: (v: number) => void;
+  /** "$" for a rate, "x" for a multiplier — the slope rows are not money. */
+  prefix?: string;
 }) {
   const [buf, setBuf] = React.useState(String(value));
   return (
     <span className="inline-flex h-8 w-[92px] shrink-0 items-center gap-1 rounded-[var(--r-sm)] bg-white/60 px-2 hairline focus-within:shadow-[0_0_0_3px_rgba(31,122,82,0.18)]">
-      <span className="text-[12px] text-[color:var(--ink-faint)]">$</span>
+      <span className="text-[12px] text-[color:var(--ink-faint)]">{prefix}</span>
       <input
         value={buf}
         inputMode="decimal"

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { useFenceStudioStore } from "@/stores/useFenceStudioStore";
 import { materialLabel, variantLabel } from "./fenceTypes";
 import { computeFenceLayout } from "./fenceGeometry";
-import { priceFence } from "./fencePricing";
+import { buildFenceEstimate } from "./fencePricing";
 
 const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -30,10 +30,19 @@ export function FencePriceBar({ onConvert, converting }: { onConvert: () => void
       material: materialLabel(material, customMaterials),
       opening: (_k: "gate" | "door", v: string) => variantLabel(v, customOpenings),
     };
+    // The drawn layout's own posts and bays go into the estimate, so the bill
+    // of materials counts the posts standing in the 3D view (audit 2026-09-17).
     return {
       lengthFt: layout.totalLengthFt,
-      price: priceFence(
-        { lengthFt: layout.totalLengthFt, height, material, openings: gates, demolition },
+      price: buildFenceEstimate(
+        {
+          lengthFt: layout.totalLengthFt,
+          height,
+          material,
+          openings: gates,
+          demolition,
+          layout: { postCount: layout.postCount, bayCount: layout.bayCount },
+        },
         pricing,
         labels,
       ),
@@ -50,17 +59,32 @@ export function FencePriceBar({ onConvert, converting }: { onConvert: () => void
           {usd(price.total)}
         </div>
         <div className="mt-1.5 text-[12px] text-[color:var(--ink-muted)] tabular">
-          {Math.round(lengthFt)} lf · {usd(price.perFoot)}/lf
+          {Math.round(price.billedFt)} lf · {usd(price.perFoot)}/lf
         </div>
       </div>
 
       <div className="px-4 py-3 space-y-1.5">
-        {price.breakdown.map((line) => (
-          <div key={line.label} className="flex items-baseline justify-between gap-3 text-[12.5px]">
-            <span className="text-[color:var(--ink-muted)] truncate">{line.label}</span>
+        {price.lines.map((line, i) => (
+          <div key={`${line.name}-${i}`} className="flex items-baseline justify-between gap-3 text-[12.5px]">
+            <span className="text-[color:var(--ink-muted)] truncate">
+              {line.name} · {line.quantity} {line.unit}
+            </span>
             <span className="tabular text-[color:var(--ink-soft)] shrink-0">{usd(line.amount)}</span>
           </div>
         ))}
+        {/* Material and labor carry their own subtotals; the total is their sum. */}
+        {!empty && (
+          <div className="pt-1.5 mt-1 border-t border-[color:var(--rule)] space-y-1">
+            <div className="flex items-baseline justify-between gap-3 text-[12px]">
+              <span className="quiet-caps text-[color:var(--ink-muted)]">Materials</span>
+              <span className="tabular text-[color:var(--ink-soft)]">{usd(price.materialSubtotal)}</span>
+            </div>
+            <div className="flex items-baseline justify-between gap-3 text-[12px]">
+              <span className="quiet-caps text-[color:var(--ink-muted)]">Labor</span>
+              <span className="tabular text-[color:var(--ink-soft)]">{usd(price.laborSubtotal)}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="px-4 pb-4 pt-1">

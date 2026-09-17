@@ -14,7 +14,7 @@ import { PlacesAutocomplete } from "@/components/estimator/roof/PlacesAutocomple
 import { useFenceStudioStore } from "@/stores/useFenceStudioStore";
 import { materialLabel, materialColor, variantLabel } from "./fenceTypes";
 import { computeFenceLayout } from "./fenceGeometry";
-import { buildFenceLineItems, type FenceLabels } from "./fencePricing";
+import { buildFenceEstimate, type FenceLabels } from "./fencePricing";
 import { convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
 import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 import { fetchPropertyBoundary } from "@/actions/fenceBoundary";
@@ -128,17 +128,21 @@ export function FenceStudio() {
     try {
       const layout = computeFenceLayout(points, gates);
       const lengthFt = layout.totalLengthFt;
-      const { materials, labor } = buildFenceLineItems(
+      // One estimate behind the ticket and the proposal, with the drawn
+      // layout's posts and bays as the bill of materials (audit 2026-09-17).
+      const estimate = buildFenceEstimate(
         {
           lengthFt,
           height,
           material,
           openings: gates,
           demolition,
+          layout: { postCount: layout.postCount, bayCount: layout.bayCount },
         },
         pricing,
         labels,
       );
+      const { materials, labor } = estimate;
       // Both hero panels stay mounted (opacity toggle keeps the 3D sized + live),
       // so the snapshot is available regardless of which view is active.
       const previewDataUrl = modelRef.current?.capture() ?? undefined;
@@ -152,6 +156,7 @@ export function FenceStudio() {
         `${Math.round(lengthFt)} linear ft across ${layout.segCount} run${layout.segCount === 1 ? "" : "s"}`,
         openingNotes.length ? openingNotes.join(", ") : "No gates or doors",
         demolition ? "Includes removal & haul-away of the existing fence" : "No demolition included",
+        ...estimate.notes,
       ];
       const res = await convertFenceEstimateToProposal({
         title: `${matName} fence · ${Math.round(lengthFt)} lf`,
