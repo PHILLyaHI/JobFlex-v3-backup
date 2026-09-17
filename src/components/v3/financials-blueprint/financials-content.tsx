@@ -23,6 +23,7 @@ import type {
   OverheadSheet,
   Rollup,
 } from "./financials-data";
+import { FinancialsActions } from "./financials-actions";
 import { FinancialsSprite } from "./sprite";
 
 export type FinancialsContentProps = {
@@ -71,6 +72,10 @@ export function FinancialsContent(props: FinancialsContentProps) {
           <div className="kicker">Money</div>
           <h1 className="page-title">Financials</h1>
         </div>
+        {/* The four things this page could never do: book an expense, raise a
+            change order, invoice a balance, scan a receipt. Each drives an
+            action that already existed elsewhere. */}
+        <FinancialsActions jobs={props.jobs} invoices={props.invoices} />
       </div>
 
       <nav className="fi-tabs" id="fiTabs">

@@ -968,6 +968,18 @@
 .bp :global(.content .photo-box .ic) { width: 20px; height: 20px; }
 .bp :global(.content .psheet-foot) { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 20px; border-top: 2px solid var(--ink); background: var(--paper-deep); flex-wrap: wrap; }
 .bp :global(.content .psheet-send) { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+/* The page-head dialogs' fields. Two to a row on the desk, one on a phone;
+   the input itself is the page's own .pinput. */
+.bp :global(.content .fi-form) { display: flex; flex-wrap: wrap; gap: 12px; }
+.bp :global(.content .fi-fld) { display: flex; flex-direction: column; gap: 6px; flex: 1 1 46%; min-width: 0; }
+.bp :global(.content .fi-fld--wide) { flex: 1 1 100%; }
+.bp :global(.content .fi-fld > span) { font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .fi-fld select.pinput) { height: 40px; padding: 0 10px; }
+.bp :global(.content .fi-fld-note) { flex: 1 1 100%; margin: 0; font-size: 13px; color: var(--ink-soft); }
+@media (max-width: 768px) {
+  .bp :global(.content .fi-fld) { flex: 1 1 100%; }
+}
 .bp :global(.content .pinput) {
   width: 236px; padding: 8px 11px;
   border: 1.5px solid var(--hair);
