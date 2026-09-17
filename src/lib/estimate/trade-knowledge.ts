@@ -248,6 +248,42 @@ export const TRADES: TradeProfile[] = [
     keyQuestions: ["Existing floor and substrate condition", "Tile size, pattern and grade", "Wet area — waterproofing and pan?"],
   },
   {
+    id: "coatings",
+    name: "Floor coatings",
+    lineRange: "4-7",
+    primary: ["epoxy", "polyaspartic", "polyurea", "floor coating", "garage floor coating", "flake floor", "flake system"],
+    keywords: ["flake", "flakes", "topcoat", "top coat", "grind", "grinding", "garage", "coating", "coatings", "urethane", "sealer", "concrete floor", "basement floor", "shop floor", "clear coat"],
+    preamble:
+      "Floor coating proposal — the system the brief names, priced as its own steps in build order and nothing more. A full-flake epoxy floor is: surface preparation (diamond grind to CSP 2-3, crack and joint fill, vacuum and clean), the pigmented 100% solids epoxy base coat, the full flake broadcast to rejection with scrape-back and vacuum, the clear topcoat the brief names (polyaspartic or urethane), and masking, protection and final cleanup. Every step is sqft on the floor area except cleanup (fixed). Moisture testing, vapor-barrier primers, cove base, extra build coats and slab repairs go in only when the brief asks for them or describes a wet, new or damaged slab.",
+    phases: [
+      "Surface preparation — diamond grind, crack and joint fill, vacuum and clean",
+      "Epoxy base coat — 100% solids pigmented epoxy",
+      "Full flake broadcast to rejection, scrape and vacuum",
+      "Clear topcoat — polyaspartic or urethane as named",
+      "Masking, protection and final cleanup",
+    ],
+    checklist: [
+      "Surface preparation on the full floor area (sqft)",
+      "Epoxy base coat on the full floor area (sqft)",
+      "Flake broadcast on the full floor area (sqft)",
+      "Topcoat on the full floor area (sqft)",
+      "Final cleanup (fixed)",
+    ],
+    anchors: [
+      "Surface prep — diamond grind CSP 2-3, crack/joint fill, vacuum: labor $1.00-2.00/sqft; consumables $0.15-0.35/sqft",
+      "Epoxy base coat, 100% solids pigmented (10-12 mil): material $0.90-1.60/sqft; labor $0.75-1.25/sqft",
+      "Full flake broadcast to rejection (0.5-0.7 lb/sqft) with scrape and vacuum: material $0.40-0.80/sqft; labor $0.50-0.90/sqft",
+      "Polyaspartic clear topcoat (8-10 mil): material $1.20-2.00/sqft; labor $0.60-1.00/sqft (urethane topcoat: material $0.80-1.40/sqft)",
+      "Masking, protection and final cleanup: fixed $150-400",
+      "A full-flake epoxy / polyaspartic floor sells at $6-12 per sqft installed; a 400-500 sqft two-car garage runs $3,000-5,500",
+    ],
+    keyQuestions: [
+      "Which system and topcoat the brief names (full flake, quartz, metallic, solid color; polyaspartic or urethane)",
+      "Floor area, and the slab — bare, sealed or previously coated (assume bare, sound, cured concrete when not stated)",
+      "Cove base, stem walls, stairs or a moisture concern only when the brief mentions them",
+    ],
+  },
+  {
     id: "flooring",
     name: "Flooring",
     primary: ["flooring", "hardwood", "laminate", "vinyl plank", "lvp", "carpet", "engineered wood", "refinish"],

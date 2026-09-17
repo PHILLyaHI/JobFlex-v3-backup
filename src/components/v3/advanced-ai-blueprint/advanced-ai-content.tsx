@@ -1627,7 +1627,10 @@ function GenerateOverlay({
  * "the AI had to assume" note. Every question takes a custom answer, so the
  * options can never trap a contractor whose job does not fit them, and
  * "Generate anyway" is always one press away — the gate advises, it never
- * blocks.
+ * blocks. Since 2026-09-17 the gate asks only what moves the price (a cracked
+ * slab, an old coating, a second roof layer), each with its reason, and never
+ * a preference — the owner's word: a contractor's question, not a homeowner's
+ * intake form.
  *
  * Settling is deliberately three-valued: answers (some or none) resume
  * generation, `null` abandons it. Escape and the scrim mean abandon, not
@@ -1730,12 +1733,11 @@ function ClarifyDialog({
         <div className={cx("clq-head")}>
           <div className={cx("clq-kicker")}>Smart Proposal · Intake</div>
           <div className={cx("clq-h")} id="clq-title">
-            A few quick questions
+            {questions.length === 1 ? "One thing moves this price" : "What moves this price"}
           </div>
           <p className={cx("clq-sub")}>
-            The brief is thin for this kind of job. Answer what you can and the estimate is
-            priced against real numbers instead of assumptions — or generate anyway and
-            tighten it afterwards.
+            Only what changes the cost of this job — the brief covers the rest. Tap what you
+            know, or generate anyway and the estimate assumes the standard case and says so.
           </p>
         </div>
 
@@ -1758,6 +1760,7 @@ function ClarifyDialog({
                 </span>
                 <div className={cx("clq-qt")}>
                   <label htmlFor={`clq-in-${q.id}`}>{q.question}</label>
+                  {q.why && <div className={cx("clq-why")}>{q.why}</div>}
 
                   {kind === "select" && q.options ? (
                     <div className={cx("clq-opts")}>

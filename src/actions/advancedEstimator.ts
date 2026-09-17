@@ -14,6 +14,7 @@ import { sellUnitPrice, resolveMarkupRates } from "@/lib/pricing/markup";
 import { PRICING_RULES, UNIT_RULES } from "@/lib/estimate/master-prompt";
 import { normalizeUnit, pairEstimateLines } from "@/lib/estimate/console-model";
 import { buildLegacyEstimatePrompt, legacyEstimateFromText, LEGACY_SYSTEM_MESSAGE } from "@/lib/estimate/legacy-estimate";
+import { bindEstimateToBrief, bindLinesToBrief, bindTextToBrief, keepCostCritical, readBrief, scrubUnaskedText, scrubUnaskedWork } from "@/lib/estimate/brief";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import {
   discountSchema,
@@ -513,20 +514,28 @@ export async function analyzeEstimatePrompt(input: {
   if (!isOpenAIEnabled()) return { ok: true, data: passthrough };
 
   const analyzePhotos = safePhotos(input.photos);
+  const facts = readBrief(input.description, { sqft: input.sqft });
+  const stated = [
+    facts.area ? `the area (${facts.area} sqft)` : "",
+    facts.length ? `the run (${facts.length} linear ft)` : "",
+    facts.sellPerUnit ? `the customer price ($${facts.sellPerUnit.amount} per ${facts.sellPerUnit.unit})` : "",
+    facts.sellTotal ? `the job price ($${facts.sellTotal.amount})` : "",
+  ].filter(Boolean);
 
   try {
     const client = getOpenAI();
     const completion = await client.chat.completions.create({
       model: OPENAI_MODEL,
-      temperature: 0.3,
+      temperature: 0.2,
       messages: [
         {
           role: "system",
           content:
-            'You are a senior estimator\'s intake assistant. Return JSON ONLY matching: {"correctedLocation": string|null, "enoughDetail": boolean, "questions": [{"id": string, "question": string, "kind": "select"|"number"|"text", "options"?: string[], "unit"?: string, "placeholder"?: string}]}. ' +
+            'You are a senior estimator\'s intake assistant. Return JSON ONLY matching: {"correctedLocation": string|null, "enoughDetail": boolean, "questions": [{"id": string, "question": string, "why": string, "kind": "select"|"number"|"text", "options"?: string[], "unit"?: string, "placeholder"?: string}]}. ' +
             "(1) correctedLocation: if a location is given, fix typos and normalize to \"City, ST\" (2-letter US state). If none or clearly not a place, null. " +
-            "(2) Decide if the description carries enough specifics (materials, dimensions/quantities, finish/quality level, site conditions) to produce an ACCURATE, line-itemed proposal for this project type. If yes: enoughDetail=true, questions=[]. If not: enoughDetail=false and write between 3 and 8 clarifying questions that close the BIGGEST gaps first — the thinner the brief, the more questions (hard max 8). " +
-            "Each question: use kind 'select' for a finite choice (give 2-5 concrete realistic options), 'number' for a measurement (set a `unit` like sqft, ft, count), or 'text' for open detail (set a short `placeholder`). Keep them concrete, contractor-answerable in seconds, non-redundant. `id` is a short kebab slug. Return JSON only.",
+            "(2) The contractor's brief is the whole intake. Ask a question ONLY when its answer is critical to the cost — an existing condition the contractor cannot price without knowing, that adds a line or moves the job's price by roughly 10% or more: cracks, pits or spalling to repair; an old coating, sealer or floor to grind off or remove; a second layer of shingles; rotten decking or framing; a fence to tear out; rocky or sloped ground; drywall repairs before paint; lead or asbestos era; a panel with no room. " +
+            "Never ask about preferences or logistics: color, pattern, brand, style, finish look, schedule, start date, access, parking, how they found you, or anything the brief already states. Never ask for a quantity, a system or a price the brief gives. " +
+            "Most briefs need NO question: then enoughDetail=true and questions=[]. Ask at most 3, the most cost-critical first. Each question is one plain sentence a contractor answers in a tap, its `why` is one short clause saying how the answer moves the price ('crack repair adds prep time and epoxy patch'), and its options (2-4, kind 'select') always include the standard case first ('Bare, sound concrete') so the contractor can confirm the default. Use kind 'number' with a `unit` for a measurement, 'text' with a `placeholder` only when no options fit.",
         },
         {
           role: "user",
@@ -534,9 +543,9 @@ export async function analyzeEstimatePrompt(input: {
             `${projectLine(input.projectType)}
 ${input.location ? `Location: ${input.location}` : "Location: (none given)"}
 ${input.sqft ? `Approx size: ${input.sqft} sqft` : ""}
-Description: ${input.description}${
+Description: ${input.description}${stated.length ? `\n\nThe brief already states ${stated.join(", ")} — do not ask about those.` : ""}${
               analyzePhotos.length
-                ? `\n\n${analyzePhotos.length} site photo(s) are attached. Read them before deciding the brief is thin — do not ask for anything a photo already shows.`
+                ? `\n\n${analyzePhotos.length} site photo(s) are attached. Read them before asking — a photo that shows the slab, the roof or the ground answers the condition question.`
                 : ""
             }`,
             analyzePhotos,
@@ -547,11 +556,12 @@ Description: ${input.description}${
     });
     const text = completion.choices[0]?.message?.content ?? "{}";
     const parsed = promptAnalysisSchema.parse(JSON.parse(text));
-    // Clamp to 8, and downgrade an option-less "select" to "text" so the UI never
-    // renders an unanswerable question. If "not enough" but zero questions came
-    // back, treat the brief as enough rather than showing an empty modal.
-    const questions = parsed.questions
-      .slice(0, 8)
+    // Only cost-critical questions survive (preferences and logistics are
+    // dropped whatever the model said), at most three, and an option-less
+    // "select" becomes "text" so the UI never renders an unanswerable one. If
+    // "not enough" but zero questions came back, the brief is enough.
+    const questions = keepCostCritical(parsed.questions, input.description)
+      .slice(0, 3)
       .map((q) =>
         q.kind === "select" && (!q.options || q.options.length === 0)
           ? { ...q, kind: "text" as const }
@@ -615,7 +625,7 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
     // specialty preamble, material profile, price book, tax guidance, template
     // rules, pricing rules, key questions) and parses the reply with the old
     // parser. One call at temperature 0 with seed 42, as it always ran.
-    const org = await db.organization.findUnique({ where: { id: organizationId }, select: { name: true } });
+    const org = await db.organization.findUnique({ where: { id: organizationId }, select: { name: true, materialMarkupPct: true, laborMarkupPct: true } });
     // gpt-5-class models (what the previous JobFlex ran) get the verbatim old
     // prompt. gpt-4o-class models answer it with 4-6 lines, so they also get
     // the trade profile + hard rules in the old "extra admin" slot, which
@@ -654,12 +664,24 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
     // Guard the ledger's arithmetic: no negative or NaN quantities, no line
     // with nothing on it. A zero-priced line is kept (the contractor fills it)
     // but logged, so a silent regression in the prompt is visible.
-    const items = called.items.map((it) => ({
+    const parsedItems = called.items.map((it) => ({
       ...it,
       dimensions: null as string | null,
       quantity: Number.isFinite(it.quantity) && it.quantity > 0 ? it.quantity : 1,
       unit: normalizeUnit(it.unit, it.materialUnitPrice > 0 ? "materials" : "labor"),
     }));
+    // ── The contractor's numbers win (lib/estimate/brief) ──────────────────
+    // Work the brief never asked for comes off (a coatings reply's moisture
+    // testing), the stated quantity goes back on every line in that unit (a
+    // 450 that was 400 plus waste), and the stated customer price is what the
+    // lines add up to — after the org's markup, which the proposal applies.
+    const scrub = scrubUnaskedWork(parsedItems, input.description, legacy.specialty.id);
+    if (scrub.dropped.length) console.info(`[advancedEstimator] dropped work the brief did not ask for: ${scrub.dropped.join(" | ")}`);
+    const bound = bindLinesToBrief(scrub.lines, legacy.facts, resolveMarkupRates(null, org));
+    if (bound.snapped.length || bound.fitted) console.info(`[advancedEstimator] held to the brief · snapped ${bound.snapped.map((x) => `${x.from}→${x.to} ${x.unit}`).join(", ") || "none"} · fitted ${bound.fitted ? `$${bound.sellTotal}` : "no"}`);
+    const items = bound.lines;
+    const heldTitle = bindTextToBrief(scrubUnaskedText(called.title, input.description, legacy.specialty.id), bound.snapped);
+    const heldScope = bindTextToBrief(scrubUnaskedText(called.scope, input.description, legacy.specialty.id), bound.snapped);
     const zeroed = items.filter((it) => it.materialUnitPrice <= 0 && it.laborUnitPrice <= 0);
     if (zeroed.length) {
       console.warn(`[advancedEstimator] ${zeroed.length} line(s) came back unpriced: ${zeroed.map((z) => z.name).join(" | ")}`);
@@ -712,9 +734,9 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
       }
     });
     const estimate: GeneratedEstimate = {
-      title: called.title.trim(),
-      scope: called.scope,
-      assumptions: called.assumptions,
+      title: heldTitle.trim(),
+      scope: heldScope,
+      assumptions: [...bound.notes, ...called.assumptions],
       estimatedTimelineDays: called.estimatedTimelineDays,
       materials,
       labor,
@@ -1096,6 +1118,17 @@ ${JSON.stringify(research)}`,
         );
         console.warn(`[advancedEstimator] refine re-shop failed: ${err?.message ?? err}`);
       }
+    }
+
+    // A price in the change request ("make it $4,000 total", "$10 per sq ft
+    // on the 400") is held the way the brief's is — after the re-shop, which
+    // may have re-priced a line from a listing.
+    const asked = readBrief(instructions);
+    if (asked.targetSell) {
+      const org = await db.organization.findUnique({ where: { id: organizationId }, select: { materialMarkupPct: true, laborMarkupPct: true } });
+      const held = bindEstimateToBrief(parsed, { ...asked, area: undefined, length: undefined, measures: [] }, resolveMarkupRates(null, org));
+      parsed.assumptions = [...held.notes, ...parsed.assumptions.filter((a) => !/^Priced to /.test(a))];
+      console.info(`[advancedEstimator] refine · held to $${held.sellTotal}`);
     }
 
     console.info(

@@ -28,6 +28,7 @@ import { parseAiDraftResponse, type AiDraftOutput, type AiDraftPricingLineItem }
 import { detectSpecialty } from "./legacy/specialtyDetector";
 import { getAiSpecialtyByIdSync, type AiSpecialty } from "./legacy/specialties";
 import { buildTradeRulesBlock } from "./estimate-prompt";
+import { briefRulesBlock, readBrief, type BriefFacts } from "./brief";
 
 /** The old route's fallback when no specialty matched. Verbatim. */
 export const GENERAL_CONTRACTING: AiSpecialty = {
@@ -104,8 +105,11 @@ export type LegacyPromptOptions = {
 export function buildLegacyEstimatePrompt(
   input: LegacyEstimateInput,
   opts: LegacyPromptOptions = {},
-): { specialty: AiSpecialty; prompt: string; hvac: boolean } {
+): { specialty: AiSpecialty; prompt: string; hvac: boolean; facts: BriefFacts } {
   const { specialty } = specialtyFor(input);
+  // The numbers the brief states — bound into the prompt here, held on the
+  // reply by the action (lib/estimate/brief).
+  const facts = readBrief(input.description, { sqft: input.sqft });
   const locale = localeFromLocation(input.location);
   // An HVAC brief gets the owner's HVAC proposal method right after the
   // master prompt, whatever model answers (lib/estimate/hvac-prompt). Either
@@ -121,6 +125,7 @@ export function buildLegacyEstimatePrompt(
     input.description.trim(),
     tier ? `Quality tier requested: ${tier}.` : "",
     clean.length ? `Contractor assumptions and constraints (treat as ground truth):\n${clean.map((a) => `- ${a}`).join("\n")}` : "",
+    briefRulesBlock(facts),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -143,7 +148,7 @@ export function buildLegacyEstimatePrompt(
       : null,
     pricingPrompt: null,
   });
-  return { specialty, prompt, hvac };
+  return { specialty, prompt, hvac, facts };
 }
 
 // ── Mapping the old draft onto fused line items ─────────────────────────────

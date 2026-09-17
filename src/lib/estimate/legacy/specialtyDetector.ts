@@ -39,7 +39,7 @@ const PRIMARY_TRADE_TOKEN: Record<string, string> = {
   electrical: 'electrical', electrician: 'electrical', wiring: 'electrical', breaker: 'electrical', panel: 'electrical',
   plumbing: 'plumbing', plumber: 'plumbing',
   hvac: 'hvac', minisplit: 'hvac', condenser: 'hvac', furnace: 'hvac',
-  epoxy: 'epoxy-flooring', polyaspartic: 'epoxy-flooring',
+  epoxy: 'epoxy-flooring', polyaspartic: 'epoxy-flooring', polyurea: 'epoxy-flooring',
   kitchen: 'kitchen-remodel',
   bathroom: 'bathroom-remodel', bath: 'bathroom-remodel',
   concrete: 'concrete-contractor', slab: 'concrete-contractor',

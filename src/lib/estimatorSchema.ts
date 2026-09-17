@@ -80,6 +80,8 @@ export type GeneratedEstimate = z.infer<typeof estimateSchema>;
 export const clarifyQuestionSchema = z.object({
   id: z.string(),
   question: z.string(),
+  /** How the answer moves the price — the reason the question is worth asking (owner, 2026-09-17: only cost-critical questions). */
+  why: z.string().optional(),
   kind: z.enum(["select", "number", "text"]).default("text"),
   options: z.array(z.string()).optional(),
   unit: z.string().optional(),

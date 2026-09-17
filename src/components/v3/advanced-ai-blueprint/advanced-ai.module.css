@@ -921,6 +921,8 @@
   font-variant-numeric: tabular-nums; color: var(--blueprint); padding-top: 1px; }
 .clq .clq-qt { min-width: 0; overflow-wrap: anywhere;
   font-size: 14px; font-weight: 700; line-height: 1.35; }
+/* Why the question is worth asking — how the answer moves the price. */
+.clq .clq-why { margin-top: 4px; font-size: 12.5px; font-weight: 500; line-height: 1.4; color: var(--muted); }
 .clq .clq-opts { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
 /* Option chips take the ink-outline / filled-blueprint pair the system uses for
    any picked-or-not control; the frame does not move when it is chosen. */

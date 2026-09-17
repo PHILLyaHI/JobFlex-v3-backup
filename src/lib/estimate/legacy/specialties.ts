@@ -478,11 +478,11 @@ const SPECIALTY_DEFINITIONS: AiSpecialtyDefinition[] = [
     description: "Epoxy, urethane, flake, quartz, and specialty floor coatings.",
     defaultTitle: "Epoxy Flooring Proposal",
     promptPreamble:
-      "You are preparing an epoxy flooring proposal. Include substrate prep, moisture testing, system build, topcoat performance, and return-to-service.",
+      "You are preparing an epoxy floor coating proposal. The line items are the steps of the system the brief names, in order: (1) surface preparation — diamond-grind the slab to a CSP 2-3 profile, fill cracks and joints, vacuum and clean; (2) the epoxy base coat — 100% solids pigmented epoxy, the coat the flake is broadcast into; (3) the full flake broadcast to rejection, then scrape and vacuum the loose flake; (4) the clear topcoat the brief names — polyaspartic or urethane; (5) masking, protection and final cleanup, with return-to-service times in the notes. Moisture testing, vapor-barrier primers, cove base, extra build coats and slab repairs are added ONLY when the brief asks for them or describes a wet, new or damaged slab — never on their own.",
     keyQuestions: [
-      "What square footage and concrete condition exist?",
-      "Is moisture mitigation, patching, or joint treatment required?",
-      "What finish (flake, quartz, metallic) and performance is desired?",
+      "Which system and topcoat did the brief name (full flake, quartz, metallic, solid color; polyaspartic or urethane)?",
+      "What floor area, and what is the slab — assume bare, sound, cured concrete when the brief does not say?",
+      "Any cove base, stem walls, stairs or moisture concern the brief actually mentions?",
     ],
     groups: ["specialty-surface-decor"],
   },
