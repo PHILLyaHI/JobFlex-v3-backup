@@ -129,6 +129,25 @@ export function pitchLaborFactor(pitch12: number, family?: RoofFamily): number {
 /** From here up the package carries a safety / staging line. */
 export const STEEP_PITCH = 8;
 
+/**
+ * THE pitch a roof is priced and labelled on — the whole number a contractor
+ * reads, never the raw measurement behind it.
+ *
+ * WHY (audit 2026-09-17). The measured pitch is a decimal (7.46/12) and the
+ * page has always DISPLAYED it rounded, while `pitchLaborFactor` and the
+ * steep-slope test read the raw figure. Two real roofs came out inconsistent:
+ * 12629 NE 100th Pl showed "7/12" and was priced at $250/sq — the 8-9/12 rate
+ * ($702 more than its own label implies) — and 12618 NE 100th St showed "8/12"
+ * yet carried no steep-slope safety line, because 7.563 < 8. One number now
+ * feeds all three: the rate, the STEEP_PITCH test and the line's own name.
+ *
+ * Deliberately NOT used by the flat rule (flatRule.ts) — rounding a measured
+ * 1.6/12 roof up to 2/12 would price a flat roof as shingles.
+ */
+export function displayPitch12(pitch12: number): number {
+  return Math.round(pitch12);
+}
+
 // ── Underlayment ────────────────────────────────────────────────────────────
 export interface Underlayment extends CatalogOption {
   perSq: number;

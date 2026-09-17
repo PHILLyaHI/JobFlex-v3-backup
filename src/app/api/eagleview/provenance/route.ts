@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { instantAddressKey, type InstantRoofData } from "@/lib/eagleview";
 import { readEntitlements } from "@/lib/eagleviewEntitlements";
 import { packsFromContent } from "@/lib/eagleviewOrder";
+import { mainStructureOf } from "@/lib/roofDiagram/instantTotals";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,7 +51,10 @@ export async function GET(req: NextRequest) {
     const prov = stored.provenance ?? {};
     let instant: InstantRoofData | null = null;
     try { instant = m.instantJson ? (JSON.parse(m.instantJson) as InstantRoofData) : null; } catch { /* unreadable */ }
-    const mainIndex = (prov.mainStructure as { index?: number } | undefined)?.index ?? 0;
+    // The same main-structure rule the page and the row's columns use, never a
+    // third one (audit 2026-09-17): recorded pick first, else the shared fallback.
+    const mainIndex =
+      mainStructureOf({ structures: instant?.structures ?? [], provenance: prov, origin: { lat: m.lat, lng: m.lng } }).index ?? 0;
     const st = instant?.structures?.[mainIndex] ?? null;
     const pm = prov.pitchMeasurement as Record<string, unknown> | undefined;
     return {

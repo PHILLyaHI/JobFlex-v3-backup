@@ -52,6 +52,7 @@ import {
   type RoofFamily,
   type RoofSystem,
   type Underlayment,
+  displayPitch12,
 } from "@/lib/roofPackage/catalog";
 import {
   buildRoofPackage,
@@ -753,7 +754,9 @@ export function RoofPackageBuilder({
   );
 
   // ── Summary lines: the row's content in one breath ──
-  const steepest = facts.pitchFamilies.reduce((m, f) => Math.max(m, f.pitch12), 0);
+  // The DISPLAYED pitch, the same number the package prices on
+  // (catalog.displayPitch12) — a roof this card calls 8/12 is charged as 8/12.
+  const steepest = facts.pitchFamilies.reduce((m, f) => Math.max(m, displayPitch12(f.pitch12)), 0);
   const lowSlope = spec.systemFamily === "low-slope";
   const sumSystem = [spec.systemName, `${rate(spec.systemMatPerSq)} + ${rate(spec.systemLaborPerSq)} /sq`, `${spec.wastePct}% waste`, !lowSlope && spec.capPerFt > 0 ? `cap ${rate(spec.capPerFt)}/ft` : null].filter(Boolean).join(" · ");
   const iceLabel = ICE_WATER.find((i) => i.id === spec.iceWater)?.label ?? spec.iceWater;
@@ -1071,7 +1074,7 @@ export function RoofPackageBuilder({
       {/* 6 · TEAR-OFF & EXTRAS */}
       <Row id="tear" title="Tear-off & extras" summary={sumTear} open={!!open.tear} onToggle={() => toggle("tear")}>
         <Group
-          note={steepest < 8 ? <div className="pk-note">Steep safety is charged from 8/12 up — this roof is {steepest > 0 ? `${Math.round(steepest)}/12` : "flatter"}, so it stays off.</div> : null}
+          note={steepest < 8 ? <div className="pk-note">Steep safety is charged from 8/12 up — this roof is {steepest > 0 ? `${steepest}/12` : "flatter"}, so it stays off.</div> : null}
         >
           <Sel label="Tear-off" value={String(spec.tearOffLayers)} options={[{ id: "0", label: "None · overlay" }, { id: "1", label: "1 layer" }, { id: "2", label: "2 layers" }, { id: "3", label: "3 layers" }]} onChange={(v) => set("tearOffLayers", Number(v) as 0 | 1 | 2 | 3)} disabled={disabled} />
           <Num label="Deck sheets" unit="each" value={spec.plywoodSheets} onChange={(v) => set("plywoodSheets", v)} disabled={disabled} />

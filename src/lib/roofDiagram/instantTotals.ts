@@ -87,6 +87,102 @@ export function foreignIndices(foreign: readonly string[] | undefined): number[]
   return (foreign ?? []).map((s) => Number(String(s).replace(/^s/, ""))).filter((n) => Number.isInteger(n));
 }
 
+/**
+ * THE main-structure rule, in one place (audit 2026-09-17).
+ *
+ * The server records its pick on the row (`provenance.mainStructure`) and that
+ * recorded index is what every reader must honour — the row's columns, the
+ * hero, the estimate and the provenance API are all about that one building.
+ * Only a row saved before the pick was recorded falls back to computing it,
+ * and then by ONE rule, not two: the page used to re-derive it with
+ * `parcelKnown: !!parcelVeto` while the server had used `parcelKnown: lot != null`,
+ * so a row with a known parcel but no vetoed neighbours could be re-derived by
+ * the nearest-pin rule instead of the area rule the server had applied.
+ */
+export function mainStructureOf(input: {
+  structures: readonly InstantStructure[];
+  provenance?: Record<string, unknown> | null;
+  origin?: { lat?: number | null; lng?: number | null } | null;
+}): MainStructurePick {
+  const prov = input.provenance ?? {};
+  const recorded = (prov.mainStructure as { index?: number; how?: string } | undefined) ?? undefined;
+  if (recorded?.index != null && input.structures[recorded.index]) {
+    return { index: recorded.index, how: (recorded.how as MainStructureHow) ?? "area+parcel" };
+  }
+  const veto = prov.parcelVeto as { foreignStructures?: string[] } | undefined;
+  const o = input.origin;
+  return pickMainStructure(input.structures, {
+    foreign: foreignIndices(veto?.foreignStructures),
+    origin: o?.lat != null && o?.lng != null ? { lat: o.lat, lng: o.lng } : null,
+    parcelKnown: !!veto,
+  });
+}
+
+const FT_PER_M = 3.28084;
+const EARTH_R_M = 6378137;
+
+/**
+ * Plan area of a lat/lng ring, sq ft — equirectangular about the ring's own
+ * centre, which is exact enough for one building at any US latitude.
+ */
+export function outlineAreaSqft(ring: ReadonlyArray<{ lat: number; lng: number }> | null | undefined): number | null {
+  if (!ring || ring.length < 3) return null;
+  if (ring.some((p) => !Number.isFinite(p.lat) || !Number.isFinite(p.lng))) return null;
+  const D2R = Math.PI / 180;
+  const lat0 = ring.reduce((a, p) => a + p.lat, 0) / ring.length;
+  const lng0 = ring.reduce((a, p) => a + p.lng, 0) / ring.length;
+  const kx = D2R * Math.cos(lat0 * D2R) * EARTH_R_M * FT_PER_M;
+  const ky = D2R * EARTH_R_M * FT_PER_M;
+  const pts = ring.map((p) => ({ x: (p.lng - lng0) * kx, y: (p.lat - lat0) * ky }));
+  let s = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    s += a.x * b.y - b.x * a.y;
+  }
+  const sqft = Math.abs(s / 2);
+  return Number.isFinite(sqft) && sqft > 0 ? sqft : null;
+}
+
+export type FootprintSource = "eagleview" | "outline" | "none";
+
+export interface FootprintRead {
+  /** The footprint the estimate should use, sq ft. */
+  sqft: number | null;
+  source: FootprintSource;
+  reportedSqft: number | null;
+  outlineSqft: number | null;
+  /** How far the reported figure sits from the building's own outline, share. */
+  delta: number | null;
+}
+
+/** Past this much disagreement the building's own outline is believed. */
+export const FOOTPRINT_OUTLINE_TOLERANCE = 0.1;
+
+/**
+ * The footprint of one structure, and where it came from.
+ *
+ * WHY (audit 2026-09-17). EagleView's `structure_footprint_sqft` normally sits
+ * within a few percent of the building outline it ships alongside — five of
+ * the six measured addresses agree to 3-7%. On 12117 202nd St SE it reported
+ * 2,580 sq ft for a building whose own outline encloses 3,456: a 25% gap that
+ * silently drives the edge estimate, the valley model and the attic
+ * ventilation count. Past FOOTPRINT_OUTLINE_TOLERANCE the outline wins — it is
+ * the geometry the drawing, the perimeter and the areas are all built on — and
+ * the swap is recorded so nobody has to guess which number was used.
+ */
+export function footprintRead(structure: InstantStructure | null | undefined): FootprintRead {
+  const reported = structure?.footprintSqft ?? null;
+  const outline = outlineAreaSqft(structure?.outline);
+  if (reported == null && outline == null) return { sqft: null, source: "none", reportedSqft: null, outlineSqft: null, delta: null };
+  if (reported == null) return { sqft: outline, source: "outline", reportedSqft: null, outlineSqft: outline, delta: null };
+  if (outline == null || outline <= 0) return { sqft: reported, source: "eagleview", reportedSqft: reported, outlineSqft: outline, delta: null };
+  const delta = (reported - outline) / outline;
+  return Math.abs(delta) > FOOTPRINT_OUTLINE_TOLERANCE
+    ? { sqft: outline, source: "outline", reportedSqft: reported, outlineSqft: outline, delta }
+    : { sqft: reported, source: "eagleview", reportedSqft: reported, outlineSqft: outline, delta };
+}
+
 export interface PitchFamily {
   pitch12: number;
   planSqft: number;
@@ -157,16 +253,11 @@ export function rowFigures(input: {
     !measured && legacyPs?.source === "measured" && typeof legacyPs.pitch12 === "number" ? `${Math.round(legacyPs.pitch12)}/12` : null;
   const inst = input.instant;
   if (inst?.structures?.length) {
-    const recorded = (prov.mainStructure as { index?: number } | undefined)?.index;
-    const veto = prov.parcelVeto as { foreignStructures?: string[] } | undefined;
-    const index =
-      recorded != null && inst.structures[recorded]
-        ? recorded
-        : pickMainStructure(inst.structures, {
-            foreign: foreignIndices(veto?.foreignStructures),
-            origin: input.columns.lat != null && input.columns.lng != null ? { lat: input.columns.lat, lng: input.columns.lng } : null,
-            parcelKnown: !!veto,
-          }).index;
+    const index = mainStructureOf({
+      structures: inst.structures,
+      provenance: prov,
+      origin: { lat: input.columns.lat, lng: input.columns.lng },
+    }).index;
     const main = index != null ? inst.structures[index] : null;
     const t = main ? instantTotalsOf([main]) : inst.totals;
     const fromMeasured = displayedPitchLabel(measured, null);

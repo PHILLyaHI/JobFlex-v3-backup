@@ -47,7 +47,7 @@ import { EstimateLinesTable, type EditableLine } from "./estimate-lines-table";
 import { estimateEdges, likeForLikeFamily, ringPerimeterFt, type MeasuredFootage, type RoofFacts, type RoofPackage, type RoofPackageSpec } from "@/lib/roofPackage/takeoff";
 import { evOrderRoof, evPriceRoof, evReportFootages, evReportStatus, evRoofModel } from "@/actions/eagleview";
 import { isMapsBrowserEnabled, loadMapsLibrary } from "@/lib/googleMaps";
-import { displayedPitchLabel, foreignIndices, instantTotalsOf, pickMainStructure, pitchFamilyShares } from "@/lib/roofDiagram/instantTotals";
+import { displayedPitchLabel, footprintRead, instantTotalsOf, mainStructureOf, pitchFamilyShares } from "@/lib/roofDiagram/instantTotals";
 import { AERIAL } from "@/lib/vendorLabels";
 import { familyOfMaterial } from "@/lib/roofPackage/catalog";
 import { isFlatRoof } from "@/lib/roofPackage/flatRule";
@@ -754,7 +754,9 @@ export function RoofEstimatorDataForm() {
         measurementNotes: manual
           ? `Contractor-entered takeoff: ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft), ${pitchNote}. No facet or linear-footage breakdown; allow for ridge, valley and flashing.`
           : `${AERIAL.vendor} (calibrated): ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft) for the main structure, ${pitchNote}, footprint ${
-              structure?.footprintSqft != null ? num(structure.footprintSqft) + " sq ft" : "not purchased"
+              footprint.sqft != null
+                ? `${num(footprint.sqft)} sq ft${footprint.source === "outline" ? " (from the building outline — the reported figure disagreed)" : ""}`
+                : "not purchased"
             }.${extrasNote}${factsNote ? ` Also known: ${factsNote}.` : ""} ${
               flatRoof
                 ? "Flat roof: itemize the membrane assembly, perimeter metal, drains and penetrations with a count or length, and say in the assumptions which figures are estimates."
@@ -922,21 +924,22 @@ export function RoofEstimatorDataForm() {
   // with checkboxes. A ticked structure joins the total and the estimate.
   const inst = measurement?.instant ?? null;
   const prov = measurement?.provenance;
-  const veto = (prov as Record<string, unknown> | undefined)?.parcelVeto as { foreignStructures?: string[] } | undefined;
   const mainPick: { index: number | null; how: string } = !inst
     ? { index: null, how: "none" }
-    : prov?.mainStructure
-      ? { index: prov.mainStructure.index, how: prov.mainStructure.how }
-      : pickMainStructure(inst.structures, {
-          foreign: foreignIndices(veto?.foreignStructures),
-          origin: measurement?.lat != null && measurement?.lng != null ? { lat: measurement.lat, lng: measurement.lng } : null,
-          parcelKnown: !!veto,
-        });
+    : mainStructureOf({
+        structures: inst.structures,
+        provenance: prov as Record<string, unknown> | null | undefined,
+        origin: { lat: measurement?.lat, lng: measurement?.lng },
+      });
   const structure: InstantStructure | null = inst && mainPick.index != null ? (inst.structures[mainPick.index] ?? null) : null;
   const otherStructures = inst ? inst.structures.map((s, i) => ({ s, i })).filter(({ i }) => i !== mainPick.index) : [];
   const includedStructures: InstantStructure[] = structure
     ? [structure, ...otherStructures.filter(({ i }) => extra.has(i)).map(({ s }) => s)]
     : [];
+  // The footprint the estimate prices on: EagleView's figure unless it
+  // disagrees with the building's own outline by more than a tenth, in which
+  // case the outline wins (lib/roofDiagram/instantTotals.footprintRead).
+  const footprint = footprintRead(structure);
   const totals = inst
     ? includedStructures.length
       ? instantTotalsOf(includedStructures)
@@ -1023,7 +1026,7 @@ export function RoofEstimatorDataForm() {
           ).filter((f) => Number.isFinite(f.pitch12)),
           pitchBasis: pitchKind === "entered" ? "entered" : pitchKind ? "measured" : null,
           perimeterFt: manual ? null : ringPerimeterFt(structure?.outline),
-          footprintSqft: manual ? null : structure?.footprintSqft ?? null,
+          footprintSqft: manual ? null : footprint.sqft,
           chimney: manual ? null : structure?.chimney ?? null,
           rooftopAcCount: manual ? null : structure?.rooftopAcCount ?? null,
           shape: manual ? null : structure?.shape ?? null,
@@ -1503,7 +1506,7 @@ export function RoofEstimatorDataForm() {
                     <div className="card-title">Structures</div>
                     <div className="card-sub">
                       {structure
-                        ? `Main structure ${structure.areaSqft != null ? num(structure.areaSqft) + " sq ft" : "— no area"}${structure.footprintSqft != null ? ` · footprint ${num(structure.footprintSqft)} sq ft` : ""}`
+                        ? `Main structure ${structure.areaSqft != null ? num(structure.areaSqft) + " sq ft" : "— no area"}${footprint.sqft != null ? ` · footprint ${num(footprint.sqft)} sq ft${footprint.source === "outline" ? " (outline)" : ""}` : ""}`
                         : `${measurement.instant?.structures.length ?? 0} on the property`}
                     </div>
                     {structure && (mainPick.how === "nearest-pin" || mainPick.how === "area+parcel") && (

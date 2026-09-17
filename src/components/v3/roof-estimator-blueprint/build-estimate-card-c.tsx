@@ -53,6 +53,7 @@ import {
   type RoofFamily,
   type RoofSystem,
   type Underlayment,
+  displayPitch12,
 } from "@/lib/roofPackage/catalog";
 import {
   buildRoofPackage,
@@ -707,7 +708,9 @@ function PackageLedger({
   // ── end of the verbatim block ──
 
   // ── Summaries: what is picked, in one breath. Rates stay inside the row. ──
-  const steepest = facts.pitchFamilies.reduce((m, f) => Math.max(m, f.pitch12), 0);
+  // The DISPLAYED pitch, the same number the package prices on
+  // (catalog.displayPitch12) — a roof this card calls 8/12 is charged as 8/12.
+  const steepest = facts.pitchFamilies.reduce((m, f) => Math.max(m, displayPitch12(f.pitch12)), 0);
   const lowSlope = spec.systemFamily === "low-slope";
   const noStarter = lowSlope || spec.systemFamily === "metal";
   const sumSystem = `${spec.systemName} · ${spec.wastePct}% waste`;
@@ -1294,7 +1297,7 @@ function PackageLedger({
           <Group
             note={
               steepest < 8 ? (
-                <div className="bec-note">Steep safety applies from 8/12 — this roof is {steepest > 0 ? `${Math.round(steepest)}/12` : "flatter"}, so it stays off.</div>
+                <div className="bec-note">Steep safety applies from 8/12 — this roof is {steepest > 0 ? `${steepest}/12` : "flatter"}, so it stays off.</div>
               ) : null
             }
           >

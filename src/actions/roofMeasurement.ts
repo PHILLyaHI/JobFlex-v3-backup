@@ -37,7 +37,7 @@ import { lotMaskFromPair, ringWhollyOutsideLot, type LotMask } from "@/lib/roofD
 import { lotRingForPoint, ringWhollyOutsideLotRing } from "@/lib/lotRing";
 import type { ArbiterSegment } from "@/lib/roofRecon/googleArbiter";
 import { areaOf, type FootprintPoint } from "@/lib/roofRecon/footprint";
-import { foreignIndices, pickMainStructure, rowFigures } from "@/lib/roofDiagram/instantTotals";
+import { foreignIndices, footprintRead, pickMainStructure, rowFigures } from "@/lib/roofDiagram/instantTotals";
 import { toDTO, toSummary, type StoredProvenance } from "@/lib/roofDiagram/dto";
 import type { MeasurementProvenance, MeasurementSource, RoofMeasurementDTO, RoofMeasurementSummary } from "@/lib/roofDiagram/types";
 
@@ -617,6 +617,21 @@ export async function measureRoofInstant(
       others: others.length,
       othersSqft: Math.round(others.reduce((a, s) => a + (s.areaSqft ?? 0), 0)),
     };
+  }
+  // Which footprint the estimate will price on, recorded where it can be read
+  // back: EagleView's figure, or the building's own outline when the two
+  // disagree by more than a tenth (audit 2026-09-17, 12117 202nd St SE).
+  if (mainSt) {
+    const fp = footprintRead(mainSt);
+    if (fp.sqft != null) {
+      provenance.footprintSource = {
+        source: fp.source,
+        sqft: Math.round(fp.sqft),
+        reportedSqft: fp.reportedSqft != null ? Math.round(fp.reportedSqft) : null,
+        outlineSqft: fp.outlineSqft != null ? Math.round(fp.outlineSqft) : null,
+        deltaPct: fp.delta != null ? Math.round(fp.delta * 1000) / 10 : null,
+      };
+    }
   }
   const mainRing: FootprintPoint[] | null =
     origin && mainSt?.outline && mainSt.outline.length >= 3

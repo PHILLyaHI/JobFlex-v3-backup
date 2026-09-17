@@ -297,6 +297,13 @@ export interface MeasurementProvenance {
    * are the rest, listed on the page with checkboxes.
    */
   mainStructure?: { index: number; how: string; others: number; othersSqft: number };
+  /**
+   * Which footprint the estimate prices on, and why (audit 2026-09-17).
+   * `eagleview` = the reported `structure_footprint_sqft`; `outline` = the
+   * building's own ring, believed when the two disagree by more than
+   * FOOTPRINT_OUTLINE_TOLERANCE (lib/roofDiagram/instantTotals.footprintRead).
+   */
+  footprintSource?: { source: "eagleview" | "outline" | "none"; sqft: number; reportedSqft: number | null; outlineSqft: number | null; deltaPct: number | null };
   unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
   /** Share of roof PLAN area sitting in those facets, 0–1 — the figure the
    *  confidence gate judges the layout on. */

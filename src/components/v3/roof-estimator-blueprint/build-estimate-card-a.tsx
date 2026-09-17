@@ -48,6 +48,7 @@ import {
   type RoofSystem,
   type Underlayment,
   type VentType,
+  displayPitch12,
 } from "@/lib/roofPackage/catalog";
 import {
   buildRoofPackage,
@@ -250,7 +251,9 @@ function Line({ id, label, pick, empty, chip, amount, open, onToggle, children }
 
 /** The roof's facts on one line: what was measured or entered, nothing else. */
 function FactsLine({ facts }: { facts: RoofFacts }) {
-  const steepest = facts.pitchFamilies.reduce((m, f) => Math.max(m, f.pitch12), 0);
+  // The DISPLAYED pitch, the same number the package prices on
+  // (catalog.displayPitch12) — a roof this card calls 8/12 is charged as 8/12.
+  const steepest = facts.pitchFamilies.reduce((m, f) => Math.max(m, displayPitch12(f.pitch12)), 0);
   return (
     <p className="bea-basis">
       <span>
@@ -480,7 +483,9 @@ function PackageSheet({
   // ── What each line says, in a few words ──
   const parts = React.useMemo(() => partTotals(spec, facts, total), [spec, facts, total]);
   const amt = (id: PartId) => (parts ? parts[id] : null);
-  const steepest = facts.pitchFamilies.reduce((m, f) => Math.max(m, f.pitch12), 0);
+  // The DISPLAYED pitch, the same number the package prices on
+  // (catalog.displayPitch12) — a roof this card calls 8/12 is charged as 8/12.
+  const steepest = facts.pitchFamilies.reduce((m, f) => Math.max(m, displayPitch12(f.pitch12)), 0);
   const lowSlope = spec.systemFamily === "low-slope";
   const starterApplies = !lowSlope && spec.systemFamily !== "metal";
   const pickSystemTxt = `${spec.systemName} · ${spec.wastePct}% waste`;
@@ -827,7 +832,7 @@ function PackageSheet({
         {/* TEAR-OFF & EXTRAS */}
         <Line id="tear" label="Tear-off & extras" pick={pickTearTxt} amount={amt("tear")} open={!!open.tear} onToggle={() => toggle("tear")}>
           <div className="bea-groups">
-            <Group note={steepest < 8 ? <div className="bea-note">Steep safety is charged from 8/12 up — this roof is {steepest > 0 ? `${Math.round(steepest)}/12` : "flatter"}, so it stays off.</div> : null}>
+            <Group note={steepest < 8 ? <div className="bea-note">Steep safety is charged from 8/12 up — this roof is {steepest > 0 ? `${steepest}/12` : "flatter"}, so it stays off.</div> : null}>
               <SelField label="Tear-off" value={String(spec.tearOffLayers)} options={[{ id: "0", label: "None · overlay" }, { id: "1", label: "1 layer" }, { id: "2", label: "2 layers" }, { id: "3", label: "3 layers" }]} onChange={(v) => set("tearOffLayers", Number(v) as 0 | 1 | 2 | 3)} disabled={disabled} />
               <NumField label="Deck sheets" unit="each" value={spec.plywoodSheets} onChange={(v) => set("plywoodSheets", v)} disabled={disabled} />
               <NumField label="Cleanup" unit="$" value={spec.cleanupLump} onChange={(v) => set("cleanupLump", v)} disabled={disabled} />

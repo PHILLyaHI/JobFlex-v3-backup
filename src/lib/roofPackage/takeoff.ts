@@ -19,6 +19,7 @@ import {
   CURB_EACH,
   CURB_LABOR,
   DISPOSAL_PER_SQ_LAYER,
+  displayPitch12,
   DRIP_EDGE_PROFILES,
   DRIP_EDGE_SIZES,
   familyOfMaterial,
@@ -300,13 +301,21 @@ export function underlaymentForFamily(family: RoofFamily, lists: CatalogLists): 
  *     hip/valley factor √(2 + (pitch/12)²).
  * Returns null — never a confident 0 — whenever the inputs cannot support a
  * figure: no facet count, a facet count scored under 0.5, a facet count below
- * the shape's own base, no outline, a body too small or too large for the
- * one-rectangle-with-wings model, or 20+ facets.
+ * the shape's own base, no outline, or a body too small or too large for the
+ * one-rectangle-with-wings model.
+ *
+ * A DELIVERED report's valley footage always wins over this (defaultSpecWith
+ * takes `facts.measured` first). The 20-facet ceiling this once carried is
+ * gone (audit 2026-09-17): a 22-facet roof with no report priced ZERO valleys
+ * — no valley metal, no valley labor and no ice & water band in the valleys —
+ * on the most cut-up roof in the set. The wing model is coarse on a roof that
+ * complex, so the count stays capped at 12 and the run at half the perimeter,
+ * and the lines carry the "estimated" basis that says so.
  */
 export function estimateValleys(facts: RoofFacts): { count: number; ftEach: number; totalFt: number } | null {
   if (isFlatRoof(facts)) return { count: 0, ftEach: 0, totalFt: 0 };
   const fc = facts.facetCount;
-  if (fc == null || !Number.isFinite(fc) || fc < 1 || fc >= 20) return null;
+  if (fc == null || !Number.isFinite(fc) || fc < 1) return null;
   if (facts.facetConfidence != null && facts.facetConfidence < 0.5) return null;
   const A = facts.footprintSqft != null && facts.footprintSqft > 0 ? facts.footprintSqft : null;
   const P = facts.perimeterFt != null && facts.perimeterFt > 0 ? facts.perimeterFt : A != null ? 4 * Math.sqrt(A) * 1.05 : null;
@@ -932,10 +941,16 @@ function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
   const families = facts.pitchFamilies.filter((f) => f.share > 0);
   if (families.length) {
     for (const f of families) {
-      const factor = pitchLaborFactor(f.pitch12, family);
+      // The DISPLAYED pitch prices the line (catalog.displayPitch12): the rate,
+      // the steep test below and this name are all the same whole number.
+      const p12 = displayPitch12(f.pitch12);
+      const factor = pitchLaborFactor(p12, family);
       const share = families.length > 1 ? ` · ${pct(f.share)} of roof` : "";
       labor.push({
-        name: `Install · ${sysName} · ${Math.round(f.pitch12)}/12${share}${factor > 1 ? " · steep-slope rate" : ""}`,
+        // Two different surcharges live in `factor`: shingles laid below 4/12
+        // (1.1) and the steep-slope bands from 7/12 up. Both used to print
+        // "steep-slope rate", so a 3/12 roof read as steep.
+        name: `Install · ${sysName} · ${p12}/12${share}${factor > 1 ? (p12 < 4 ? " · shallow-pitch rate" : " · steep-slope rate") : ""}`,
         quantity: r1(sq * f.share),
         unit: "square",
         unitPrice: Math.round(spec.systemLaborPerSq * factor),
@@ -971,7 +986,7 @@ function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
     labor.push({ name: `${t.label} · install`, quantity: t.unit === "each" ? Math.ceil(v.qty) : r1(v.qty), unit: t.unit, unitPrice: v.labor, kind: "labor", basis: t.id === "ridge" ? edgeB : "entered" });
   }
   if (spec.plywoodSheets > 0) labor.push({ name: "Roof deck replacement · install", quantity: spec.plywoodSheets, unit: "each", unitPrice: spec.plywoodLabor, kind: "labor", basis: "entered" });
-  const steep = families.some((f) => f.pitch12 >= STEEP_PITCH);
+  const steep = families.some((f) => displayPitch12(f.pitch12) >= STEEP_PITCH);
   if (steep && spec.safetyLump > 0) labor.push({ name: "Steep-slope safety · harnesses, anchors & staging", quantity: 1, unit: "lot", unitPrice: spec.safetyLump, kind: "labor", basis: facts.pitchBasis ?? "entered" });
   if (spec.cleanupLump > 0) labor.push({ name: "Cleanup & magnetic nail sweep", quantity: 1, unit: "lot", unitPrice: spec.cleanupLump, kind: "labor", basis: "entered" });
   if (spec.permitLump > 0) labor.push({ name: "Permit & inspection", quantity: 1, unit: "lot", unitPrice: spec.permitLump, kind: "labor", basis: "entered" });
@@ -988,8 +1003,8 @@ function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
   if (families.length) {
     assumptions.push(
       families.length > 1
-        ? `Pitch: ${families.map((f) => `${Math.round(f.pitch12)}/12 on ${pct(f.share)}`).join(" + ")} — ${facts.pitchBasis ?? "entered"}; labor priced per family.`
-        : `Pitch: ${Math.round(families[0].pitch12)}/12 — ${facts.pitchBasis ?? "entered"}.`,
+        ? `Pitch: ${families.map((f) => `${displayPitch12(f.pitch12)}/12 on ${pct(f.share)}`).join(" + ")} — ${facts.pitchBasis ?? "entered"}; labor priced per family.`
+        : `Pitch: ${displayPitch12(families[0].pitch12)}/12 — ${facts.pitchBasis ?? "entered"}.`,
     );
   }
   if (perimeter > 0 || capFt > 0) {
