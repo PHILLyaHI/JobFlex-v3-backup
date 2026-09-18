@@ -403,6 +403,16 @@
 .rfArea { min-height: 96px; }
 .fldHint { margin-top: 7px; font-size: 12.5px; font-weight: 500; color: var(--ink-muted, #555); line-height: 1.45; }
 .fldErr { margin-top: 8px; font-size: 12.5px; font-weight: 700; color: var(--danger); }
+
+/* Press and speak under the brief: the microphone, red and pulsing while it
+   listens; one line beneath if the phone would not give the mic. */
+.dictate { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 10px; }
+.mic { min-height: 44px; padding: 0 14px; font-size: 12px; align-self: flex-start; }
+.micOn { border-color: var(--danger); color: var(--danger); }
+.micOn .ic { animation: ma-mic-pulse 1.2s ease-in-out infinite; }
+.dictateNote { font-size: 12.5px; font-weight: 600; color: var(--danger); flex: 1 1 100%; }
+@keyframes ma-mic-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.25); opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .micOn .ic { animation: none; } }
 .fld.invalid .pinput,
 .fld.invalid .area { border-color: var(--danger); background: var(--danger-soft); }
 /* The location step's <select> (.sel / .selWrap) and the local gazetteer list

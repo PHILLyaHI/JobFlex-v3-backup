@@ -63,6 +63,7 @@
 //    (position:fixed, its own z-layer) and a phone user who just waited 40
 //    seconds for a price must never be shown an empty studio with no reason.
 
+import { DictateButton } from "@/components/estimator/DictateButton";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./mobile-advanced-ai.module.css";
@@ -1364,7 +1365,7 @@ export function MobileSmartProposal() {
 
   return (
     <div className={styles.app} onClick={onRootClick}>
-      {/* Two symbols the shared 48-icon sprite does not carry, prefixed so they
+      {/* Three symbols the shared 48-icon sprite does not carry, prefixed so they
           can never collide with it or with another page. Original lucide paths
           (package, pen-line), 24×24, stroke 2, currentColor. */}
       <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
@@ -1374,6 +1375,12 @@ export function MobileSmartProposal() {
             <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
             <path d="m3.3 7 8.7 5 8.7-5" />
             <path d="M12 22V12" />
+          </symbol>
+          <symbol id="i-advanced-ai-mic" viewBox="0 0 24 24">
+            <rect x="9" y="3" width="6" height="11" rx="3" />
+            <path d="M5 11a7 7 0 0 0 14 0" />
+            <path d="M12 18v3" />
+            <path d="M8 21h8" />
           </symbol>
           <symbol id="i-advanced-ai-pen" viewBox="0 0 24 24">
             <path d="M12 20h9" />
@@ -1538,6 +1545,23 @@ export function MobileSmartProposal() {
                         {errBrief ? (
                           <span className={styles.fldErr}>Describe the job before pricing it</span>
                         ) : null}
+                        {/* Press and speak — the phone's own recognition types
+                            the brief (owner, 2026-09-18). Hidden where the
+                            browser cannot listen. */}
+                        <DictateButton
+                          id="maBriefDictate"
+                          value={brief}
+                          onChange={(next) => {
+                            setBrief(next);
+                            if (next.trim()) setErrBrief(false);
+                          }}
+                          wrapClassName={styles.dictate}
+                          buttonClassName={`${styles.btn} ${styles.btnGhost} ${styles.mic}`}
+                          onClassName={styles.micOn}
+                          noteClassName={styles.dictateNote}
+                          iconId="i-advanced-ai-mic"
+                          iconClassName={styles.ic}
+                        />
                       </div>
 
                       {/* PHOTOS — the phone is the only device holding the job.

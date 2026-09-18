@@ -55,6 +55,7 @@ import {
 import { attachPlacesSuggest } from "@/components/v3/blueprint-shell/places-suggest";
 import { MDL_EXIT_MS } from "@/components/v3/blueprint-shell/mdl-motion";
 import { stateTaxPct } from "@/app/(mobile)/mobile-advanced-ai-v2/state-tax";
+import { DictateButton } from "@/components/estimator/DictateButton";
 import {
   analyzeEstimatePrompt,
   generateAdvancedEstimate,
@@ -914,6 +915,19 @@ export function AdvancedAiContent() {
                   placeholder={INTAKE.briefPlaceholder}
                   value={brief}
                   onChange={(e) => setBrief(e.target.value)}
+                />
+                {/* Press and speak — the words land in the field as they are
+                    recognised (owner, 2026-09-18). Hidden where the browser
+                    cannot listen. */}
+                <DictateButton
+                  id="briefDictate"
+                  value={brief}
+                  onChange={setBrief}
+                  wrapClassName={cx("est-dictate")}
+                  buttonClassName={cx("btn", "btn-ghost", "btn-sm", "est-mic")}
+                  onClassName={cx("on")}
+                  noteClassName={cx("est-dictate-note")}
+                  iconClassName={cx("ic")}
                 />
                 <div className={cx("samples")}>
                   {SAMPLES.map((t) => (

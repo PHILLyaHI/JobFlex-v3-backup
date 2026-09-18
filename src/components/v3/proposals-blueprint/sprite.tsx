@@ -43,6 +43,9 @@ export function Sprite() {
             estimator" item draws it too, which is why it lives here and not in
             a page-local sprite. */}
         <symbol id="i-video" viewBox="0 0 24 24"><rect x="2" y="6" width="13" height="12" rx="1.5" /><path d="M15 10.5 21 7v10l-6-3.5" /></symbol>
+        {/* Added 2026-09-18 for the Smart Proposal brief: a microphone —
+            press and speak. Same line style as the rest. */}
+        <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0" /><path d="M12 18v3" /><path d="M8 21h8" /></symbol>
         {/* Added 2026-09-18 for the HVAC estimator: an outdoor unit — the box
             and its fan. Drawn in the sprite's own line style; the nav asked
             for `i-bolt`, which only the Financials sprite has, so every other

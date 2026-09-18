@@ -652,6 +652,16 @@
 :global(.jf-blueprint .content) .est-area:focus { outline: none; border-color: var(--blueprint); }
 :global(.jf-blueprint .content) .est-area::placeholder { color: var(--ink-muted, #555); opacity: 1; }
 
+/* Press and speak, under the brief: the microphone button and, while it
+   listens, a pulsing ring on the icon; one line under it if the mic failed. */
+:global(.jf-blueprint .content) .est-dictate { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 10px; }
+:global(.jf-blueprint .content) .est-mic .ic { width: 15px; height: 15px; }
+:global(.jf-blueprint .content) .est-mic.on { border-color: var(--danger, #b3261e); color: var(--danger, #b3261e); background: #fff; }
+:global(.jf-blueprint .content) .est-mic.on .ic { animation: est-mic-pulse 1.2s ease-in-out infinite; }
+:global(.jf-blueprint .content) .est-dictate-note { font-size: 12.5px; color: var(--danger, #b3261e); flex: 1 1 100%; }
+@keyframes est-mic-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.25); opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { :global(.jf-blueprint .content) .est-mic.on .ic { animation: none; } }
+
 :global(.jf-blueprint .content) .samples { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
 :global(.jf-blueprint .content) .sample {
   max-width: 100%; padding: 7px 11px;
