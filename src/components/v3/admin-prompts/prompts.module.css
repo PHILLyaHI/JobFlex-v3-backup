@@ -1,0 +1,133 @@
+/* ============================================================
+   ADMIN PROMPTS — /admin/prompts
+
+   The page renders inside the blueprint shell, so the donor's
+   .page-head / .kicker / .page-title / .card / .card-head / .card-title
+   / .card-sub / .card-rule / .chip / .btn apply by literal class name,
+   and the text field / textarea treatment comes from the admin kit
+   (admin-users/admin-shared.module.css `.in` / `.ta`). This file adds
+   only what is this page's own: the slot list, the block footers, the
+   prompt <pre>, the specialty picker row and the preview chips.
+
+   Hashed classes scoped `:global(.jf-blueprint .content) .cls` ⇒
+   (0,3,0), which beats the dashboard module's (0,2,0) resets. Tokens
+   only. Mobile-first: every row wraps; the <pre> wraps and scrolls
+   inside its own box, never the page.
+   ============================================================ */
+
+/* The order the prompt is assembled in — a real sequence, so it is numbered. */
+:global(.jf-blueprint .content) .slots {
+  margin: 0; padding: 12px 0 4px 0;
+  display: grid; gap: 8px;
+  counter-reset: slot;
+  list-style: none;
+}
+:global(.jf-blueprint .content) .slot {
+  display: grid; grid-template-columns: 26px minmax(0, 1fr) auto;
+  gap: 10px; align-items: baseline;
+  font-size: 12.5px; color: var(--ink); line-height: 1.4;
+}
+:global(.jf-blueprint .content) .slot::before {
+  counter-increment: slot; content: counter(slot, decimal-leading-zero);
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.08em; color: var(--muted);
+}
+:global(.jf-blueprint .content) .slot b { font-weight: 800; }
+:global(.jf-blueprint .content) .slot em {
+  font-style: normal; font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+  white-space: nowrap;
+}
+:global(.jf-blueprint .content) .slot em.here { color: var(--blueprint); }
+@media (max-width: 560px) {
+  :global(.jf-blueprint .content) .slot { grid-template-columns: 26px minmax(0, 1fr); }
+  :global(.jf-blueprint .content) .slot em { grid-column: 2; }
+}
+
+/* A text block: the card body under the rule. */
+:global(.jf-blueprint .content) .body { display: grid; gap: 10px; padding-top: 12px; }
+:global(.jf-blueprint .content) .ta {
+  font-family: var(--font-mono); font-size: 12px; line-height: 1.5;
+  min-height: 120px; tab-size: 2;
+}
+:global(.jf-blueprint .content) .ta.tall { min-height: 320px; }
+:global(.jf-blueprint .content) .foot {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+:global(.jf-blueprint .content) .foot .grow { flex: 1 1 auto; }
+:global(.jf-blueprint .content) .count {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-light);
+  white-space: nowrap;
+}
+:global(.jf-blueprint .content) .count.dirty { color: var(--blueprint); }
+
+/* The prompt text, as sent: wraps inside its box, scrolls past a screen. */
+:global(.jf-blueprint .content) .pre {
+  margin: 0; padding: 12px 14px;
+  max-height: 520px; overflow: auto;
+  border: 1.5px solid var(--hair); border-radius: var(--radius);
+  background: var(--paper);
+  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5; color: var(--ink);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+:global(.jf-blueprint .content) .pre.short { max-height: 260px; }
+
+/* Head row of a block: title + the state chip. */
+:global(.jf-blueprint .content) .headRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+:global(.jf-blueprint .content) .stamp {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-light);
+}
+
+/* Specialty picker: filter + select on one line, stacking on a phone. */
+:global(.jf-blueprint .content) .pick {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 10px;
+  padding-top: 12px;
+}
+@media (max-width: 640px) {
+  :global(.jf-blueprint .content) .pick { grid-template-columns: minmax(0, 1fr); }
+}
+:global(.jf-blueprint .content) .pick .bp-sel { width: 100%; }
+:global(.jf-blueprint .content) .desc { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+:global(.jf-blueprint .content) .qs {
+  margin: 0; padding-left: 18px;
+  font-size: 12px; color: var(--ink); line-height: 1.5;
+  display: grid; gap: 3px;
+}
+:global(.jf-blueprint .content) .legend {
+  font-family: var(--font-mono); font-size: 10.5px; line-height: 1.6; color: var(--muted);
+  overflow-wrap: anywhere;
+}
+:global(.jf-blueprint .content) .legend code {
+  font-family: inherit; color: var(--ink); background: var(--paper-deep);
+  padding: 0 4px; border-radius: 3px;
+}
+:global(.jf-blueprint .content) details.asSent > summary {
+  cursor: pointer; font-size: 12px; font-weight: 800; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted); list-style: none;
+  display: flex; align-items: center; gap: 8px;
+}
+:global(.jf-blueprint .content) details.asSent > summary::before { content: "▸"; font-size: 11px; }
+:global(.jf-blueprint .content) details.asSent[open] > summary::before { content: "▾"; }
+:global(.jf-blueprint .content) details.asSent > .pre { margin-top: 10px; }
+
+/* Preview: the brief form, then the chips, then the prompt. */
+:global(.jf-blueprint .content) .form {
+  display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px; align-items: end; padding-top: 12px;
+}
+@media (max-width: 900px) {
+  :global(.jf-blueprint .content) .form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  :global(.jf-blueprint .content) .form .wide { grid-column: 1 / -1; }
+}
+@media (max-width: 560px) {
+  :global(.jf-blueprint .content) .form { grid-template-columns: minmax(0, 1fr); }
+}
+:global(.jf-blueprint .content) .chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+:global(.jf-blueprint .content) .chips .chip { white-space: nowrap; }
+:global(.jf-blueprint .content) .sys {
+  font-size: 12px; color: var(--muted); line-height: 1.5;
+  padding: 8px 12px; border-left: 3px solid var(--hair); overflow-wrap: anywhere;
+}
+:global(.jf-blueprint .content) .sys b { color: var(--ink); font-weight: 800; }

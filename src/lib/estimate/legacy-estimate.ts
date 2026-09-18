@@ -29,6 +29,7 @@ import { detectSpecialty } from "./legacy/specialtyDetector";
 import { getAiSpecialtyByIdSync, type AiSpecialty } from "./legacy/specialties";
 import { buildTradeRulesBlock } from "./estimate-prompt";
 import { briefRulesBlock, readBrief, type BriefFacts } from "./brief";
+import { formatProcedureBlock, PROCEDURE_RULES, procedureFor, type SpecialtyProcedure } from "./procedures";
 
 /** The old route's fallback when no specialty matched. Verbatim. */
 export const GENERAL_CONTRACTING: AiSpecialty = {
@@ -100,13 +101,44 @@ export type LegacyPromptOptions = {
    * without it and the old output's 12 with it.
    */
   withTradeRules?: boolean;
+  /**
+   * What the platform admin changed on /admin/prompts (lib/estimate/
+   * promptOverrides): the master prompt, the procedure rules, a specialty's
+   * preamble or procedure. Absent = the code defaults.
+   */
+  overrides?: PromptOverrideSet | null;
+  /** Skip detection and build for this specialty (the admin's prompt preview). */
+  specialtyId?: string | null;
 };
+
+/** The override shape this module reads — the loader's type without the db. */
+export type PromptOverrideSet = {
+  master?: string;
+  procedureRules?: string;
+  specialties: Record<string, { preamble?: string; procedure?: SpecialtyProcedure }>;
+};
+
+/**
+ * The procedure block for a specialty — the lines a professional estimate
+ * itemizes (lib/estimate/procedures), with the admin's edits applied. Null
+ * for a specialty no procedure is written for.
+ */
+export function procedureBlockFor(specialty: AiSpecialty, overrides?: PromptOverrideSet | null): string | null {
+  const own = overrides?.specialties[specialty.id];
+  const procedure = own?.procedure ?? procedureFor(specialty.id);
+  if (!procedure) return null;
+  return formatProcedureBlock(specialty.name, procedure, overrides?.procedureRules ?? PROCEDURE_RULES);
+}
 
 export function buildLegacyEstimatePrompt(
   input: LegacyEstimateInput,
   opts: LegacyPromptOptions = {},
-): { specialty: AiSpecialty; prompt: string; hvac: boolean; facts: BriefFacts } {
-  const { specialty } = specialtyFor(input);
+): { specialty: AiSpecialty; prompt: string; hvac: boolean; facts: BriefFacts; procedure: boolean } {
+  const detected = (opts.specialtyId ? getAiSpecialtyByIdSync(opts.specialtyId) : null) ?? specialtyFor(input).specialty;
+  // The admin's preamble, when one was saved for this specialty.
+  const ownPreamble = opts.overrides?.specialties[detected.id]?.preamble?.trim();
+  const specialty: AiSpecialty = ownPreamble ? { ...detected, promptPreamble: ownPreamble } : detected;
+  const master = opts.overrides?.master?.trim() || ESTIMATOR_MASTER_PROMPT;
   // The numbers the brief states — bound into the prompt here, held on the
   // reply by the action (lib/estimate/brief).
   const facts = readBrief(input.description, { sqft: input.sqft });
@@ -129,6 +161,19 @@ export function buildLegacyEstimatePrompt(
   ]
     .filter(Boolean)
     .join("\n\n");
+  // The specialty's procedure — the lines a pro itemizes, in order, with
+  // their units — rides in the old prompt's "extra admin" slot for every
+  // model, ahead of the trade profile block when that is sent too.
+  const procedureBlock = procedureBlockFor(specialty, opts.overrides);
+  const tradeRules = opts.withTradeRules
+    ? buildTradeRulesBlock({
+        description: input.description,
+        location: input.location,
+        qualityTier: input.qualityTier ?? "standard",
+        projectType: input.projectType,
+      })
+    : null;
+  const extra = [procedureBlock, tradeRules].filter((b): b is string => !!b).join("\n\n");
   const prompt = buildQuoteDraftPrompt({
     specialty,
     summary,
@@ -137,18 +182,11 @@ export function buildLegacyEstimatePrompt(
     companyName: input.companyName ?? undefined,
     locale,
     includePricing: true,
-    adminPrompt: hvac ? `${ESTIMATOR_MASTER_PROMPT}\n\n${hvacPromptBlock()}` : ESTIMATOR_MASTER_PROMPT,
-    adminPromptExtra: opts.withTradeRules
-      ? buildTradeRulesBlock({
-          description: input.description,
-          location: input.location,
-          qualityTier: input.qualityTier ?? "standard",
-          projectType: input.projectType,
-        })
-      : null,
+    adminPrompt: hvac ? `${master}\n\n${hvacPromptBlock()}` : master,
+    adminPromptExtra: extra || null,
     pricingPrompt: null,
   });
-  return { specialty, prompt, hvac, facts };
+  return { specialty, prompt, hvac, facts, procedure: procedureBlock !== null };
 }
 
 // ── Mapping the old draft onto fused line items ─────────────────────────────

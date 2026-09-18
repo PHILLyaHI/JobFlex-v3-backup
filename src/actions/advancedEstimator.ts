@@ -14,6 +14,7 @@ import { sellUnitPrice, resolveMarkupRates } from "@/lib/pricing/markup";
 import { PRICING_RULES, UNIT_RULES } from "@/lib/estimate/master-prompt";
 import { normalizeUnit, pairEstimateLines } from "@/lib/estimate/console-model";
 import { buildLegacyEstimatePrompt, legacyEstimateFromText, LEGACY_SYSTEM_MESSAGE } from "@/lib/estimate/legacy-estimate";
+import { loadPromptOverrides } from "@/lib/estimate/promptOverrides";
 import { bindEstimateToBrief, bindLinesToBrief, bindTextToBrief, keepCostCritical, readBrief, scrubUnaskedText, scrubUnaskedWork } from "@/lib/estimate/brief";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import {
@@ -631,6 +632,10 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
     // the trade profile + hard rules in the old "extra admin" slot, which
     // brings them to the old output's 12-13 lines (harness, 2026-09-03).
     const reasoningModel = /^(gpt-5|o[1-9])/.test(OPENAI_MODEL);
+    // What the platform admin changed on /admin/prompts — the master prompt,
+    // the system message, a specialty's preamble or procedure. Defaults when
+    // nothing was saved (or the table is not there yet).
+    const overrides = await loadPromptOverrides();
     const legacy = buildLegacyEstimatePrompt(
       {
         description: input.description,
@@ -641,10 +646,10 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
         assumptions: cleanAssumptions,
         qualityTier,
       },
-      { withTradeRules: !reasoningModel },
+      { withTradeRules: !reasoningModel, overrides },
     );
     console.info(
-      `[advancedEstimator] Step 1 (estimate) · specialty=${legacy.specialty.id} hvac=${legacy.hvac} tier=${qualityTier} photos=${photos.length} prompt=${legacy.prompt.length}ch`
+      `[advancedEstimator] Step 1 (estimate) · specialty=${legacy.specialty.id} procedure=${legacy.procedure} hvac=${legacy.hvac} tier=${qualityTier} photos=${photos.length} prompt=${legacy.prompt.length}ch`
     );
     const estimateCompletion = await client.chat.completions.create({
       model: OPENAI_MODEL,
@@ -652,7 +657,7 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
       // prices the same way twice. Reasoning models reject a temperature.
       ...(reasoningModel ? {} : { temperature: 0, seed: 42 }),
       messages: [
-        { role: "system", content: LEGACY_SYSTEM_MESSAGE },
+        { role: "system", content: overrides.system?.trim() || LEGACY_SYSTEM_MESSAGE },
         { role: "user", content: withPhotos(legacy.prompt, photos) },
       ],
       response_format: { type: "json_object" },

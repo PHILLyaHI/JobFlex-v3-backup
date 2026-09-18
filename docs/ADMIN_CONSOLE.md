@@ -30,6 +30,7 @@ server action, and route handler calls one as its first statement.
 - **`/admin/influencers`** — create affiliates (auto-issues a Stripe promo code + a login), set commission terms, toggle active, approve/reject payout requests.
 - **`/admin/plans`** — edit price / trial / yearly (with savings %); **Sync to Stripe** mints Products + Prices.
 - **`/admin/support`** — inbox for tickets raised at **`/dashboard/support`**; mark read/resolved.
+- **`/admin/prompts`** — the Smart Proposal prompts (2026-09-18): the current system message, master prompt, line-item rules, and every specialty's preamble and procedure, each with a Default / Customized chip, Save / Reset; a preview composes the exact prompt a brief sends. Overrides live in `PromptOverride` (`lib/estimate/promptOverrides`), read on every generate. See `docs/smart-proposal-procedures.md`.
 - **`/influencer`** — the affiliate's own promo codes, referred subscribers (confirmed via Stripe), earnings, Connect onboarding, and request-payout.
 
 ## Stripe-as-source-of-truth invariants

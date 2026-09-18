@@ -2108,6 +2108,19 @@ model FenceCatalog {
   updatedAt      DateTime @updatedAt
 }
 
+/// Platform-wide Smart Proposal prompt overrides, edited on /admin/prompts
+/// (2026-09-18). `key` is one of: master, system, procedure-rules,
+/// specialty:<id>:preamble, specialty:<id>:procedure. A missing row means the
+/// code default applies; the estimate pipeline reads the table in try/catch
+/// so an environment without it prices on the defaults.
+model PromptOverride {
+  key       String   @id
+  body      String
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model InstantOrder {
   id             String   @id @default(cuid())
   organizationId String
