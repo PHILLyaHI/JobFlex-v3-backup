@@ -176,6 +176,15 @@ export type Draft = {
   laborMarkupPct: number;
   overheadPct: number;
   profitPct: number;
+  /**
+   * Where overhead and profit land on the client's copy when a line's labor
+   * and material halves are shown (owner, 2026-09-17). They are ALWAYS inside
+   * the line prices — never a row of their own — but the breakdown can carry
+   * them across both halves (false, the default) or put them all in labor so
+   * the material half reads at its cost (true). Optional so the sibling
+   * card-lab routes are untouched.
+   */
+  marginOnLabor?: boolean;
 
   /**
    * A percentage off, applied to the pre-tax figure.

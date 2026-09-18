@@ -30,6 +30,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { clientSplit, splitCaption } from "@/lib/pricing/markup";
 import { contractTotal } from "@/lib/contractTotal";
 import { money, longDate } from "@/lib/format";
 import { parseProposalSettings } from "@/lib/settings";
@@ -173,7 +174,8 @@ export default async function PublicProposalPortal({
   // contractor can search on. Flagged in the port report.
   const refCode = publicId.replace(/-/g, "").slice(-4).toUpperCase();
 
-  const hasScope = Boolean(proposal.scopeOfWork && proposal.scopeOfWork.trim());
+  // The scope prints only when the builder's "Show to client" says so.
+  const hasScope = Boolean(proposal.showScope && proposal.scopeOfWork && proposal.scopeOfWork.trim());
   const hasDescription = Boolean(proposal.description && proposal.description.trim());
   const telHref = org.phone ? `tel:${org.phone.replace(/\s+/g, "")}` : null;
 
@@ -289,6 +291,12 @@ export default async function PublicProposalPortal({
               ]
                 .filter(Boolean)
                 .join(" · ");
+              // "Labor + material breakdown" (card 06 of the builder, saved on
+              // the row): the client-facing halves of the line, which add up to
+              // its total. Off, the line reads as one total.
+              const split = proposal.showBreakdown
+                ? splitCaption(clientSplit(item, { materialMarkupPct: proposal.materialMarkupPct, laborMarkupPct: proposal.laborMarkupPct }, { marginOnLabor: proposal.marginOnLabor }), money)
+                : null;
               return (
                 <div className="pv-li" key={item.id}>
                   <div>
@@ -297,6 +305,7 @@ export default async function PublicProposalPortal({
                       <div className="pv-li-d">{item.description}</div>
                     ) : null}
                     {meta ? <div className="pv-li-m">{meta}</div> : null}
+                    {split ? <div className="pv-li-m">{split}</div> : null}
                   </div>
                   <div className="pv-li-v">{money(item.total)}</div>
                 </div>

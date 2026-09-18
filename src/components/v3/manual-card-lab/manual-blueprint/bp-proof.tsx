@@ -105,7 +105,7 @@ export function TheirCopy({
                     and add up to the amount on the right. */}
                 {!options.hideBreakdown ? (
                   <span className={styles.printSub}>
-                    Materials {money(row.materialAmount)} · Labor {money(row.laborAmount)}
+                    {[row.materialAmount > 0 ? `Materials ${money(row.materialAmount)}` : "", row.laborAmount > 0 ? `Labor ${money(row.laborAmount)}` : ""].filter(Boolean).join(" · ")}
                   </span>
                 ) : null}
               </span>

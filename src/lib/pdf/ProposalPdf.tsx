@@ -214,6 +214,8 @@ export interface ProposalPdfData {
   previewImageUrl?: string | null;
   clientName?: string | null;
   clientAddress?: string | null;
+  /** "Show to client" — the scope prints only when asked; every route passes it. */
+  showScope?: boolean;
   lineItems: Array<{
     name: string;
     description?: string | null;
@@ -221,6 +223,8 @@ export interface ProposalPdfData {
     quantity: number;
     unitPrice: number;
     total: number;
+    /** "Labor + material breakdown" — set by the route when the proposal shows it. */
+    splitCaption?: string | null;
   }>;
   installments: Array<{
     label: string;
@@ -229,7 +233,7 @@ export interface ProposalPdfData {
   }>;
 }
 
-function money(n: number, currency = "USD") {
+export function money(n: number, currency = "USD") {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
@@ -330,6 +334,7 @@ export function ProposalPdfDocument({ data }: { data: ProposalPdfData }) {
                 <Text style={s.itemName}>{l.name}</Text>
                 {l.description && <Text style={s.itemDesc}>{l.description}</Text>}
                 <Text style={s.itemCaption}>{measurementCaption(l.measurementType)}</Text>
+                {l.splitCaption ? <Text style={s.itemCaption}>{l.splitCaption}</Text> : null}
               </View>
               <Text style={[s.num, { flex: 0.7 }]}>{l.quantity}</Text>
               <Text style={[s.num, { flex: 1 }]}>{money(l.unitPrice, data.currency)}</Text>
@@ -374,7 +379,7 @@ export function ProposalPdfDocument({ data }: { data: ProposalPdfData }) {
           </View>
         </View>
 
-        {data.scopeOfWork && (
+        {data.scopeOfWork && data.showScope !== false && (
           <View style={s.section}>
             <Text style={s.sectionLabel}>Scope of work</Text>
             <Text style={s.prose}>{data.scopeOfWork}</Text>

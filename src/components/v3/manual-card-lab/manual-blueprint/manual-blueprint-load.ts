@@ -186,6 +186,10 @@ export async function loadManualBuilder({
             laborMarkupPct: proposalRow.laborMarkupPct,
             overheadPct: proposalRow.overheadPct,
             profitPct: proposalRow.profitPct,
+            showBreakdown: proposalRow.showBreakdown,
+            showScope: proposalRow.showScope,
+            showSignature: proposalRow.showSignature,
+            marginOnLabor: proposalRow.marginOnLabor,
             discountTotal: proposalRow.discountTotal,
             subtotal: proposalRow.subtotal,
             discounts: proposalRow.discounts.map((d) => ({

@@ -126,3 +126,36 @@ export function priceLinesForClient<T extends { quantity: number; unitPrice: num
     return { ...l, unitPrice, total: round2(l.quantity * unitPrice) };
   });
 }
+
+/**
+ * The client-facing material and labor halves of a STORED line — what "Labor +
+ * material breakdown" prints on the portal and the PDF. `total` already carries
+ * the markup and the overhead/profit load; the halves take the raw split's
+ * marked-up ratio of it, labor as the remainder, so they add up to the total to
+ * the cent. A line with no split (both raw costs zero) has no halves.
+ */
+export function clientSplit(
+  line: { total: number; quantity?: number | null; materialCost?: number | null; laborCost?: number | null },
+  rates: MarkupRates,
+  /** `marginOnLabor`: overhead and profit sit in the labor half; the material half reads at its marked-up cost. */
+  where: { marginOnLabor?: boolean | null } = {},
+): { materialAmount: number; laborAmount: number } | null {
+  const material = (line.materialCost ?? 0) * (1 + rates.materialMarkupPct / 100);
+  const labor = (line.laborCost ?? 0) * (1 + rates.laborMarkupPct / 100);
+  const both = material + labor;
+  if (both <= 0 || !Number.isFinite(both)) return null;
+  const total = Number.isFinite(line.total) ? line.total : 0;
+  const qty = line.quantity ?? 0;
+  const materialAmount =
+    where.marginOnLabor && labor > 0 && qty > 0
+      ? Math.min(total, round2(qty * material))
+      : Math.min(total, round2(total * (material / both)));
+  return { materialAmount, laborAmount: round2(total - materialAmount) };
+}
+
+/** "Materials $472.00 · Labor $472.00" — or the one side a line has. */
+export function splitCaption(split: { materialAmount: number; laborAmount: number } | null, fmt: (n: number) => string): string | null {
+  if (!split) return null;
+  const parts = [split.materialAmount > 0 ? `Materials ${fmt(split.materialAmount)}` : "", split.laborAmount > 0 ? `Labor ${fmt(split.laborAmount)}` : ""].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}

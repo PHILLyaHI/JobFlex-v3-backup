@@ -596,6 +596,16 @@ model Proposal {
   laborMarkupPct    Float     @default(0)
   overheadPct       Float     @default(0)
   profitPct         Float     @default(0)
+  // "Show to client" (owner, 2026-09-17): how each line's price reads on the
+  // client's copy — one total, or its labor and material halves — and whether
+  // the scope and the signature lines print. Presentation only; never the price.
+  showBreakdown     Boolean   @default(true)
+  showScope         Boolean   @default(true)
+  showSignature     Boolean   @default(true)
+  // Where overhead and profit land inside the breakdown: across both halves
+  // (false) or in the labor half, materials reading at cost (true). They are
+  // always inside the line prices, never a row of their own.
+  marginOnLabor     Boolean   @default(false)
   validUntil        DateTime?
   sentAt            DateTime?
   viewedAt          DateTime?

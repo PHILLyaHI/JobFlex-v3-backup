@@ -169,6 +169,7 @@ function NumIn({
 function LineBlock({
   line: raw,
   adj,
+  clientAmount,
   index,
   open,
   onToggle,
@@ -177,6 +178,7 @@ function LineBlock({
 }: {
   line: Line;
   adj: Adjust;
+  clientAmount?: number;
   index: number;
   open: boolean;
   onToggle: () => void;
@@ -200,7 +202,10 @@ function LineBlock({
         {/* The row's answer, printed rather than typed — which is why it wears
             no field rule. Muted until the line has a name, because an unnamed
             line is priced but excluded from every total and never printed. */}
-        <span className={cx(s.lineTotal, !named && s.lineTotalOff)}>{money(fig.total)}</span>
+        <span className={cx(s.lineTotal, !named && s.lineTotalOff)}>
+          {money(fig.total)}
+          {clientAmount !== undefined && named ? <span className={s.clientAmt}>{money(clientAmount)}</span> : null}
+        </span>
         <button
           type="button"
           className={s.kill}
@@ -345,6 +350,7 @@ export function LinesMobile({
   onTaxPct,
   hideTax = false,
   adjust,
+  client,
 }: Props) {
   const taxId = useId();
   const adj = adjustOf(adjust);
@@ -373,6 +379,7 @@ export function LinesMobile({
           key={l.id}
           line={l}
           adj={adj}
+          clientAmount={client?.byId[l.id]}
           index={i}
           open={openIds.includes(l.id)}
           onToggle={() => onToggle(l.id)}
@@ -410,12 +417,14 @@ export function LinesMobile({
               the digits leaving the card. */}
           <span className={cx(s.footTotalAmt, money(sums.total).length > 13 && s.footTotalLong)}>
             {money(sums.total)}
+            {client ? <span className={s.clientAmt}>{money(client.total)}</span> : null}
           </span>
         </div>
         <span className={s.footNote}>
           {namedCount} counted
           {unnamedCount > 0 ? ` · ${unnamedCount} unnamed, excluded` : ""}
           {adj !== NEUTRAL ? ` · ${adjustNote(adjust)} — adjusted prices shown; saved as the line costs` : ""}
+          {client ? ` · Client price ${money(client.total)} — ${client.note}` : ""}
         </span>
       </div>
 

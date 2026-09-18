@@ -177,14 +177,25 @@ export function isNamed(line: Line): boolean {
  * that gets checked by hand, so the client's copy is what the arithmetic is
  * anchored to; `computeTotals` takes its `preTax` from this column instead.
  */
-function printedLines(named: Line[], rates: Rates, load: number): PrintedLine[] {
+function printedLines(named: Line[], rates: Rates, load: number, marginOnLabor: boolean): PrintedLine[] {
   return named.map((l) => {
     const unitPrice = round2(sellUnit(l, rates) * load);
     const amount = round2(safe(l.quantity) * unitPrice);
-    // The material share of the printed amount, carrying its own markup and
-    // the same load; labor is the remainder so the pair adds to the amount.
-    const materialSell = safe(l.materialCost) * (1 + safe(rates.materialMarkupPct) / 100) * load;
-    const materialAmount = Math.min(amount, round2(safe(l.quantity) * materialSell));
+    // The material share of the printed amount, labor the remainder so the
+    // pair adds to the amount — the same arithmetic `clientSplit` runs on the
+    // stored line (lib/pricing/markup), so the sheet and the portal agree.
+    // Across both halves: the marked-up halves' ratio of the amount (the load
+    // cancels out). Into labor: the material half stays at its marked-up cost
+    // and labor carries the overhead and profit — unless the line has no
+    // labor, when the material price is the only place they can sit.
+    const materialSell = safe(l.materialCost) * (1 + safe(rates.materialMarkupPct) / 100);
+    const laborSell = safe(l.laborCost) * (1 + safe(rates.laborMarkupPct) / 100);
+    const materialAmount =
+      materialSell + laborSell <= 0
+        ? 0
+        : marginOnLabor && laborSell > 0
+          ? Math.min(amount, round2(safe(l.quantity) * materialSell))
+          : Math.min(amount, round2(amount * (materialSell / (materialSell + laborSell))));
     return {
       id: l.id,
       name: l.name.trim(),
@@ -252,7 +263,7 @@ export function computeTotals(draft: Draft): Totals {
   // multiplies out, and the column adds up to the Subtotal printed beneath it.
   // With no named lines there is no column to add up, so the chain stands in —
   // it is 0 at that point anyway unless someone is quoting overhead on nothing.
-  const printed = printedLines(priced, rates, load);
+  const printed = printedLines(priced, rates, load, draft.marginOnLabor === true);
   const preTax =
     printed.length > 0 ? round2(printed.reduce((sum, r) => sum + r.amount, 0)) : chainPreTax;
 

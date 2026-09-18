@@ -203,6 +203,7 @@ export function emptyDraft(defaults: ManualDefaults): Draft {
     laborMarkupPct: 0,
     overheadPct: 0,
     profitPct: 0,
+    marginOnLabor: false,
 
     discountPct: 0,
     discountFlat: 0,
@@ -251,6 +252,11 @@ export type SaveProposalPayload = {
   overheadPct: number;
   profitPct: number;
   discount: { label: string; amount: number; isPercent: boolean } | null;
+  /** "Show to client" — saved with the row so the portal and the PDF print what card 06 says. */
+  showBreakdown: boolean;
+  showScope: boolean;
+  showSignature: boolean;
+  marginOnLabor: boolean;
 };
 
 /** The client id to file the proposal against, or null.
@@ -308,6 +314,10 @@ export function payloadFromDraft(draft: Draft, id?: string): SaveProposalPayload
       discountAmount > 0
         ? { label: "Discount", amount: discountAmount, isPercent: usingPercent }
         : null,
+    showBreakdown: !draft.options.hideBreakdown,
+    showScope: draft.options.showScope,
+    showSignature: draft.options.showSignature,
+    marginOnLabor: draft.marginOnLabor === true,
   };
 }
 
@@ -336,6 +346,11 @@ export type ProposalRowForDraft = {
   laborMarkupPct: number;
   overheadPct: number;
   profitPct: number;
+  /** Absent on a row read by an older loader: the editor's defaults apply. */
+  showBreakdown?: boolean | null;
+  showScope?: boolean | null;
+  showSignature?: boolean | null;
+  marginOnLabor?: boolean | null;
   discountTotal: number;
   subtotal: number;
   discounts: { amount: number; isPercent: boolean }[];
@@ -422,6 +437,7 @@ export function draftFromProposal(row: ProposalRowForDraft, defaults: ManualDefa
     laborMarkupPct: row.laborMarkupPct ?? 0,
     overheadPct: row.overheadPct ?? 0,
     profitPct: row.profitPct ?? 0,
+    marginOnLabor: row.marginOnLabor === true,
 
     discountPct: discount?.isPercent ? discount.amount : 0,
     discountFlat: discount && !discount.isPercent ? discount.amount : 0,
@@ -432,10 +448,10 @@ export function draftFromProposal(row: ProposalRowForDraft, defaults: ManualDefa
     terms: "",
 
     options: {
-      hideBreakdown: false,
+      hideBreakdown: row.showBreakdown === false,
       laborOnly: false,
-      showSignature: true,
-      showScope: true,
+      showSignature: row.showSignature ?? true,
+      showScope: row.showScope ?? true,
     },
     installments: row.installments.map((i) => ({
       // Keep the DB id: a paid stage must be updated in place, never recreated.

@@ -726,3 +726,9 @@
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
+
+/* Where overhead and profit land — the note and the two-way choice under
+   the sheet-level sliders. Same register as `.rateAmt`: an annotation of a
+   control, not an account. */
+:global(.jf-blueprint) .landing { display: grid; gap: 10px; margin-top: 4px; }
+:global(.jf-blueprint) .landNote { margin: 0; font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--muted); max-width: 62ch; }

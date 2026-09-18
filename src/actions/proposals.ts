@@ -76,6 +76,11 @@ const proposalInput = z.object({
   laborMarkupPct: z.number().min(0).max(500).optional(),
   overheadPct: z.number().min(0).max(200).optional(),
   profitPct: z.number().min(0).max(200).optional(),
+  // "Show to client" — presentation only. Absent leaves the row as it was.
+  showBreakdown: z.boolean().optional(),
+  showScope: z.boolean().optional(),
+  showSignature: z.boolean().optional(),
+  marginOnLabor: z.boolean().optional(),
 });
 
 type ProposalInput = z.infer<typeof proposalInput>;
@@ -290,6 +295,10 @@ export async function saveProposal(raw: unknown) {
         laborMarkupPct: data.laborMarkupPct ?? undefined,
         overheadPct: data.overheadPct ?? undefined,
         profitPct: data.profitPct ?? undefined,
+        showBreakdown: data.showBreakdown ?? undefined,
+        showScope: data.showScope ?? undefined,
+        showSignature: data.showSignature ?? undefined,
+        marginOnLabor: data.marginOnLabor ?? undefined,
         subtotal,
         ...(writesDiscount ? { discountTotal } : {}),
         taxTotal,
@@ -376,6 +385,10 @@ export async function saveProposal(raw: unknown) {
       laborMarkupPct: data.laborMarkupPct ?? 0,
       overheadPct: data.overheadPct ?? 0,
       profitPct: data.profitPct ?? 0,
+      showBreakdown: data.showBreakdown ?? true,
+      showScope: data.showScope ?? true,
+      showSignature: data.showSignature ?? true,
+      marginOnLabor: data.marginOnLabor ?? false,
       subtotal,
       discountTotal,
       taxTotal,

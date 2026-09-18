@@ -84,6 +84,7 @@ import {
   computeTotals,
   money,
   newId,
+  pct,
 } from "../manual-focus/manual-focus-math";
 import styles from "./manual-blueprint.module.css";
 import { Btn, Card, Field, Group, Pair, TextArea, TextField, cx } from "./bp-ui";
@@ -244,6 +245,26 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
     : LinesV2;
 
   const totals = useMemo(() => computeTotals(draft), [draft]);
+
+  /* THE CLIENT PRICE PER LINE, for card 03 (owner, 2026-09-17: "where does
+     the overhead and profit go?"). Once either sheet-level rate is on, every
+     row and the foot also print the price the client is charged — the same
+     figures card 10 prints — so the table and the total stop looking like two
+     different jobs. Off at 0% / 0%, when cost and price are one number. */
+  const clientPrices = useMemo(() => {
+    if (!draft.overheadPct && !draft.profitPct) return undefined;
+    const parts = [
+      draft.overheadPct ? `${pct(draft.overheadPct)} overhead` : "",
+      draft.profitPct ? `${pct(draft.profitPct)} profit` : "",
+    ].filter(Boolean);
+    const byId: Record<string, number> = {};
+    for (const row of totals.printed) byId[row.id] = row.amount;
+    return {
+      byId,
+      total: totals.preTax,
+      note: `${parts.join(" and ")} ${draft.marginOnLabor ? "in the labor half of every line" : "spread across every line"}`,
+    };
+  }, [draft.overheadPct, draft.profitPct, draft.marginOnLabor, totals]);
 
   /* ---- editing ------------------------------------------------------ */
 
@@ -720,6 +741,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
             onRemove={removeLine}
             baseTotal={totals.baseTotal}
             adjust={{ materialPct: draft.materialMarkupPct, laborPct: draft.laborMarkupPct }}
+            client={clientPrices}
             namedCount={totals.printed.length}
             unnamedCount={totals.unnamedCount}
             taxPct={draft.taxPct}
@@ -753,6 +775,8 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
             onLaborMarkupPct={(n) => patch({ laborMarkupPct: n })}
             onOverheadPct={(n) => patch({ overheadPct: n })}
             onProfitPct={(n) => patch({ profitPct: n })}
+            marginOnLabor={draft.marginOnLabor === true}
+            onMarginOnLabor={(v) => patch({ marginOnLabor: v })}
             discountPct={draft.discountPct}
             // The two dollar-mode fields are OPTIONAL on Draft so the sibling
             // manual-focus route is untouched by their addition; the defaults

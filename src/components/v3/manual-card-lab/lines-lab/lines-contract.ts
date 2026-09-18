@@ -46,6 +46,14 @@ export type LineItemsProps = {
    * sliders must spread through the line items, not just the totals).
    */
   adjust?: { materialPct: number; laborPct: number };
+
+  /**
+   * The client price of every line once overhead or profit is on: card 10's
+   * printed amounts by line id, their sum, and a note saying what is inside
+   * them. The rows print it under their total, the foot under its own, so
+   * the contractor sees the same lines the client sees.
+   */
+  client?: { byId: Record<string, number>; total: number; note: string };
   namedCount: number;
   /** Rows with no name: priced, but excluded from every total and never printed. */
   unnamedCount: number;

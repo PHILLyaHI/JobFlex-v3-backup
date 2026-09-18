@@ -61,12 +61,70 @@ This is a **server action change** (data layer): every caller of
 the stored prices — including proposal-builder-a's draft store, whose own
 preview already shows a "grand total" with them.
 
-## Not done (needs a column)
+## The choice reaches the client (same day)
 
-The Show-to-client choice is still not persisted — it shapes the on-screen
-copy and the print-your-own PDF, not the emailed portal, which prints qty ×
-unit price and the line total (the "Totals only" reading). Persisting it
-means a `Proposal` column and a portal change; ask before that.
+Owner: *"when labor + materials is on, the client proposal still shows totals
+only."* It did, because the four switches were never saved. Three columns on
+`Proposal` — `showBreakdown`, `showScope`, `showSignature` (all default
+true) — now ride with the row: `payloadFromDraft` sends them, `saveProposal`
+stores them, `draftFromProposal` reads them back, and the client-facing
+surfaces read them:
+
+- the portal (`/portal/q/[publicId]`) prints "Materials $ · Labor $" under
+  each line when `showBreakdown`, and the scope section only when
+  `showScope`;
+- the mobile client page (`mobile-proposal-client-v2`) prints the same split
+  line;
+- both PDF routes (`api/proposals/[id]/pdf`, `api/public-quote/[publicId]/pdf`)
+  add the split caption to each row and drop the scope when asked.
+
+The split of a STORED line is `clientSplit` (`lib/pricing/markup.ts`): the
+marked-up raw halves' ratio of the stored total, labor as the remainder, so
+the halves add up to the total and match the editor's own printed halves to
+the cent (the editor's `printedLines` uses the same arithmetic). A line with
+one side only — roof, fence and HVAC estimators write separate material and
+labor lines — prints just that side ("Materials $500.00"); a line with no
+split prints no breakdown. Every estimator that creates a proposal writes
+`materialCost` / `laborCost` (Smart Proposal, roof, fence, HVAC, templates),
+so their proposals can show the breakdown too.
+
+Schema change: three Boolean columns with defaults; the deploy's `prisma db
+push` adds them without touching data. Existing proposals default to
+breakdown shown, scope shown, signature lines shown — what the builder's
+card 06 defaulted to all along.
+
+## Where overhead and profit go (same day)
+
+Owner: *"when you throw extra on profit and overhead it just gets the total
+bigger … the client will ask where that money comes from."* They never were
+a row the client sees — the sheet, the portal and the PDF spread them into
+every line's price — but the builder's own line table showed costs only, so
+the contractor saw $10,730 of lines under a $29,463 pre-tax and assumed the
+client would too.
+
+- **Card 03 prints the client price under every line** once overhead or
+  profit is on (desk and handheld tables, `client` on `LineItemsProps`):
+  card 10's printed amount per line, and the pre-tax under the foot, with a
+  note — "Client price $29,463.58 — 69.5% overhead and 62% profit spread
+  across every line". At 0% / 0% cost and price are one number and nothing
+  extra prints.
+- **Card 04 says it and offers the one real choice**: a note under the two
+  sheet-level sliders, and "In the breakdown they land: Across materials and
+  labor | In labor only" (`Draft.marginOnLabor`, `Proposal.marginOnLabor`,
+  default false). Across: each half of a line carries the load in
+  proportion. In labor only: the material half reads at its (marked-up)
+  cost and the labor half carries overhead and profit; a line with no labor
+  keeps them in its material price. The choice never moves a line's amount
+  or the total — only how the two halves read when the breakdown is shown.
+- The stored split (`clientSplit`) takes the same choice, so the portal,
+  the mobile client page and both PDF routes show the same halves as card
+  10 (`proposal-money.check.ts`: same amounts either way; the portal's halves
+  match the sheet's under both settings).
+
+The Materials / Labor sliders remain the tool for moving the price of a
+whole bucket (baked into the costs on save); overhead and profit remain
+rates the proposal remembers, so the margin badge and Financials can read
+them back. Both end up in the line prices the client sees.
 
 ## Proof
 

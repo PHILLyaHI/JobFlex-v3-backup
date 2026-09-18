@@ -1,9 +1,10 @@
 import { createElement } from "react";
 import { NextResponse } from "next/server";
+import { clientSplit, splitCaption } from "@/lib/pricing/markup";
 import { renderToStream } from "@react-pdf/renderer";
 import { db } from "@/lib/db";
 import { requireProposalStaff } from "@/lib/orgContext";
-import { ProposalPdfDocument, type ProposalPdfData } from "@/lib/pdf/ProposalPdf";
+import { ProposalPdfDocument, money, type ProposalPdfData } from "@/lib/pdf/ProposalPdf";
 import { satellitePhotoPng } from "@/lib/staticMapPhoto";
 import { contractTotal } from "@/lib/contractTotal";
 
@@ -87,6 +88,7 @@ export async function GET(
     clientName: proposal.client?.name,
     clientAddress: proposal.client?.address,
     previewImageUrl,
+    showScope: proposal.showScope,
     lineItems: proposal.lineItems.map((l) => ({
       name: l.name,
       description: l.description,
@@ -94,6 +96,10 @@ export async function GET(
       quantity: l.quantity,
       unitPrice: l.unitPrice,
       total: l.total,
+      // "Labor + material breakdown", as the proposal was saved to show it.
+      splitCaption: proposal.showBreakdown
+        ? splitCaption(clientSplit(l, { materialMarkupPct: proposal.materialMarkupPct, laborMarkupPct: proposal.laborMarkupPct }, { marginOnLabor: proposal.marginOnLabor }), (n) => money(n, proposal.currency))
+        : null,
     })),
     installments: proposal.installments.map((i) => ({
       label: i.label,

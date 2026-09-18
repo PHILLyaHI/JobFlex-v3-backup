@@ -621,12 +621,15 @@ function SplitBand({
 function LineBlock({
   line: raw,
   adj,
+  clientAmount,
   first,
   onPatch,
   onRemove,
 }: {
   line: Line;
   adj: Adjust;
+  /** The price the client is charged for this line, when it differs from the cost. */
+  clientAmount?: number;
   first: boolean;
   onPatch: (patch: Partial<Line>) => void;
   onRemove: () => void;
@@ -767,7 +770,14 @@ function LineBlock({
 
       {/* Computed, and it wears no field rule — the absence of the box is the
           signal that this figure is the row's answer, not one of its inputs. */}
-      <span className={cx(s.total, s.cTotal, !named && s.totalOff)}>{money(fig.total)}</span>
+      <span className={cx(s.total, s.cTotal, !named && s.totalOff)}>
+        {money(fig.total)}
+        {clientAmount !== undefined && named ? (
+          <span className={s.clientAmt} title="What the client is charged for this line — overhead and profit inside">
+            {money(clientAmount)}
+          </span>
+        ) : null}
+      </span>
 
       <button
         type="button"
@@ -822,6 +832,7 @@ export function LinesV2(props: LinesV2Props) {
     onTaxPct,
     hideTax = false,
     adjust,
+    client,
   } = props;
   const taxId = useId();
   const adj = adjustOf(adjust);
@@ -906,6 +917,7 @@ export function LinesV2(props: LinesV2Props) {
           key={l.id}
           line={l}
           adj={adj}
+          clientAmount={client?.byId[l.id]}
           first={i === 0}
           onPatch={(patch) => onPatch(l.id, patch)}
           onRemove={() => onRemove(l.id)}
@@ -935,6 +947,12 @@ export function LinesV2(props: LinesV2Props) {
               <b>{adjustNote(adjust)}</b> — every line shows the adjusted price; saved as the line costs
             </>
           ) : null}
+          {client ? (
+            <>
+              {" · "}
+              <b>Client price {money(client.total)}</b> — {client.note}
+            </>
+          ) : null}
         </span>
 
         <span className={cx(s.footPart, s.footMat)}>
@@ -949,7 +967,10 @@ export function LinesV2(props: LinesV2Props) {
 
         {/* No label. It is the only figure in the block that needs none — it
             sits under the word TOTAL and it is the largest thing here. */}
-        <span className={s.footAmt}>{money(sums.total)}</span>
+        <span className={s.footAmt}>
+          {money(sums.total)}
+          {client ? <span className={s.clientAmt}>{money(client.total)}</span> : null}
+        </span>
       </div>
 
       {hideTax ? null : (

@@ -8,7 +8,7 @@
 // profit never reached the saved proposal).
 import { computeTotals, bakeAdjustments } from "../../src/components/v3/manual-card-lab/manual-focus/manual-focus-math";
 import type { Draft, Line } from "../../src/components/v3/manual-card-lab/manual-focus/manual-focus-types";
-import { overheadProfitLoad, priceLinesForClient } from "../../src/lib/pricing/markup";
+import { clientSplit, overheadProfitLoad, priceLinesForClient, splitCaption } from "../../src/lib/pricing/markup";
 
 let failures = 0;
 let passes = 0;
@@ -90,5 +90,39 @@ const sum = (ns: number[]) => Math.round(ns.reduce((a, b) => a + b, 0) * 100) / 
   ok("An unsplit line still takes the overhead load", loaded[0].unitPrice === 13.57, `$${loaded[0].unitPrice}`);
 }
 
+
+// ── The stored line's client-facing split (portal, PDF routes) ──────────────
+{
+  const fmt = (n: number) => `$${n.toFixed(2)}`;
+  const stored = priceLinesForClient([{ quantity: 400, unitPrice: 7.65, materialCost: 3.4, laborCost: 4.25 }], { materialMarkupPct: 20, laborMarkupPct: 10, overheadPct: 10, profitPct: 5 });
+  const split = clientSplit(stored[0], { materialMarkupPct: 20, laborMarkupPct: 10 });
+  ok("A stored line's halves carry markup and load and add up to its total", !!split && Math.round((split.materialAmount + split.laborAmount) * 100) / 100 === stored[0].total && split.materialAmount > 400 * 3.4 * 1.2, `${split?.materialAmount} + ${split?.laborAmount} = ${stored[0].total}`);
+  ok("The caption reads Materials · Labor", splitCaption(split, fmt) === `Materials ${fmt(split!.materialAmount)} · Labor ${fmt(split!.laborAmount)}`);
+  ok("A material-only line (roof, fence, HVAC estimators) shows one side", splitCaption(clientSplit({ total: 500, materialCost: 5, laborCost: 0 }, { materialMarkupPct: 0, laborMarkupPct: 0 }), fmt) === "Materials $500.00");
+  ok("A labor-only line shows one side", splitCaption(clientSplit({ total: 300, materialCost: 0, laborCost: 3 }, { materialMarkupPct: 0, laborMarkupPct: 0 }), fmt) === "Labor $300.00");
+  ok("A line with no split prints no breakdown", clientSplit({ total: 120, materialCost: 0, laborCost: 0 }, { materialMarkupPct: 0, laborMarkupPct: 0 }) === null && splitCaption(null, fmt) === null);
+  // The editor's own printed split and the stored split agree.
+  const d = draft({ overheadPct: 10, profitPct: 5 });
+  const t = computeTotals(d);
+  const named = d.lines.filter((l) => l.name.trim());
+  const rows = priceLinesForClient(named.map((l) => ({ quantity: l.quantity, unitPrice: l.materialCost + l.laborCost, materialCost: l.materialCost, laborCost: l.laborCost })), { materialMarkupPct: 0, laborMarkupPct: 0, overheadPct: 10, profitPct: 5 });
+  ok("The editor's printed halves and the portal's halves are the same numbers", rows.every((r, i) => { const sp = clientSplit(r, { materialMarkupPct: 0, laborMarkupPct: 0 }); return !!sp && sp.materialAmount === t.printed[i].materialAmount && sp.laborAmount === t.printed[i].laborAmount; }), rows.map((r, i) => `${clientSplit(r, { materialMarkupPct: 0, laborMarkupPct: 0 })?.materialAmount} vs ${t.printed[i].materialAmount}`).join(" | "));
+}
+
+// ── Where overhead and profit land in the breakdown ─────────────────────────
+{
+  const across = computeTotals(draft({ overheadPct: 20, profitPct: 10 }));
+  const inLabor = computeTotals(draft({ overheadPct: 20, profitPct: 10, marginOnLabor: true }));
+  ok("Same lines, same amounts either way — the choice never moves the price", across.preTax === inLabor.preTax && across.printed.every((p, i) => p.amount === inLabor.printed[i].amount), `$${across.preTax} vs $${inLabor.preTax}`);
+  ok("Across both halves: the material half carries the load", across.printed[1].materialAmount > 1360 && across.printed[1].materialAmount + across.printed[1].laborAmount === across.printed[1].amount, `${across.printed[1].materialAmount} + ${across.printed[1].laborAmount}`);
+  ok("In labor only: the material half reads at cost and labor carries overhead and profit", inLabor.printed[1].materialAmount === 1360 && inLabor.printed[1].laborAmount === Math.round((inLabor.printed[1].amount - 1360) * 100) / 100 && inLabor.printed[1].laborAmount > 1700, `${inLabor.printed[1].materialAmount} + ${inLabor.printed[1].laborAmount} = ${inLabor.printed[1].amount}`);
+  const matOnly = computeTotals(draft({ lines: [line("m", "Shingles supplied", "sqft", 100, 4, 0)], overheadPct: 10, profitPct: 10, marginOnLabor: true }));
+  ok("A material-only line keeps overhead and profit in its material price", matOnly.printed[0].materialAmount === matOnly.printed[0].amount && matOnly.printed[0].laborAmount === 0 && matOnly.printed[0].amount > 400, `${matOnly.printed[0].materialAmount} of ${matOnly.printed[0].amount}`);
+  // The stored line agrees under both settings.
+  const named = LINES.filter((l) => l.name.trim());
+  const stored = priceLinesForClient(named.map((l) => ({ quantity: l.quantity, unitPrice: l.materialCost + l.laborCost, materialCost: l.materialCost, laborCost: l.laborCost })), { materialMarkupPct: 0, laborMarkupPct: 0, overheadPct: 20, profitPct: 10 });
+  const agree = (t: ReturnType<typeof computeTotals>, onLabor: boolean) => stored.every((r, i) => { const sp = clientSplit(r, { materialMarkupPct: 0, laborMarkupPct: 0 }, { marginOnLabor: onLabor }); return !!sp && sp.materialAmount === t.printed[i].materialAmount && sp.laborAmount === t.printed[i].laborAmount; });
+  ok("The portal's halves match the sheet's under both settings", agree(across, false) && agree(inLabor, true));
+}
 console.log(`\n${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);
