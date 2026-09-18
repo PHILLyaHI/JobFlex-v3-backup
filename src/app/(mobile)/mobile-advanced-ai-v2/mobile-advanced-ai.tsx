@@ -103,6 +103,14 @@ import {
 } from "@/actions/advancedEstimator";
 import type { ClarifyQuestion, GeneratedEstimate } from "@/lib/estimatorSchema";
 
+/** "material live · Home Depot" out of a computed line's note, for the meta
+ *  row. A phone has no hover, so the source is printed rather than hidden. */
+function materialSourceOf(note: string): string {
+  const m = /material (live|cached|from trade anchor)/i.exec(note);
+  if (!m) return "";
+  return m[1].toLowerCase() === "from trade anchor" ? "material: anchor" : `material: ${m[1].toLowerCase()}`;
+}
+
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -1289,9 +1297,14 @@ export function MobileSmartProposal() {
                       {l.badge ? <span className={styles.lbadge}>{l.badge}</span> : null}
                       {l.flag === "auto" ? <span className={`${styles.lbadge} ${styles.lflag}`}>added</span> : null}
                       {l.flag === "adjusted" ? <span className={`${styles.lbadge} ${styles.lflag}`}>adjusted</span> : null}
+                      {/* On a phone there is no hover, so the source rides in
+                          title= for a long-press and is spelled out on the
+                          line's own meta row below. */}
+                      {l.flag === "computed" ? <span className={`${styles.lbadge} ${styles.lflag}`} title={l.flagNote ?? undefined}>computed</span> : null}
                     </span>
                     <span className={styles.lmeta}>
                       {l.qty} {l.unit} × {cash(l.materialPrice + l.laborPrice)}
+                      {l.flag === "computed" && l.flagNote ? ` · ${materialSourceOf(l.flagNote)}` : ""}
                     </span>
                   </button>
                   <div className={styles.lrowActs}>

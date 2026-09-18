@@ -174,7 +174,7 @@ export type LegacyItem = {
   /** Set by the post-generation validation pass, never by the model
    *  (lib/estimate/validate-estimate): a line the app added, a price it pulled
    *  to the anchor, or work the brief never asked for. */
-  flag?: "auto" | "adjusted" | "suggested";
+  flag?: "auto" | "adjusted" | "suggested" | "computed";
   flagNote?: string;
 };
 
@@ -196,7 +196,7 @@ export function legacyLineToItem(l: AiDraftPricingLineItem): LegacyItem | null {
   let unit = normalizeUnit(UNIT_OF_MEASUREMENT[mt] ?? mt ?? "unit");
   // The old shape filed roofing squares under 'unit' ("use 'unit' with
   // quantity in squares"); this picker has a word for them.
-  if (unit === "unit" && /shingle|roofing square|squares?/i.test(name)) unit = "sq boards";
+  if (unit === "unit" && /\bshingle|roofing square|\bsquares?\b/i.test(name)) unit = "sq boards";
   let qty =
     unit === "fixed"
       ? 1

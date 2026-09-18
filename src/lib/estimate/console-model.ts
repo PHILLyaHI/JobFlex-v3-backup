@@ -87,7 +87,7 @@ export type ConsoleLine = {
    * "suggested" = the description never asked for it. A SUGGESTED line is
    * shown apart and counts in no total until the contractor adds it.
    */
-  flag?: "auto" | "adjusted" | "suggested";
+  flag?: "auto" | "adjusted" | "suggested" | "computed";
   flagNote?: string;
 };
 

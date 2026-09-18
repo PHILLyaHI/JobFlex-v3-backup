@@ -20,6 +20,8 @@ import { sellUnitPrice, resolveMarkupRates } from "@/lib/pricing/markup";
 import { PRICING_RULES, UNIT_RULES } from "@/lib/estimate/master-prompt";
 import { normalizeUnit, pairEstimateLines } from "@/lib/estimate/console-model";
 import { applyRepairs, repairInstruction, validateEstimate } from "@/lib/estimate/validate-estimate";
+import { computeLines, computedPromptBlock, mergeComputed, type MaterialPricer } from "@/lib/estimate/computed-lines";
+import { priceMaterial } from "@/lib/estimate/material-price";
 import { detectTrade } from "@/lib/estimate/trade-knowledge";
 import { buildLegacyEstimatePrompt, legacyEstimateFromText, LEGACY_SYSTEM_MESSAGE } from "@/lib/estimate/legacy-estimate";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
@@ -701,7 +703,49 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
     // after that is repaired here and said out loud on the estimate
     // (lib/estimate/validate-estimate).
     const trade = detectTrade(`${input.projectType ?? ""} ${input.description}`);
-    let called = await askEstimateOnce("");
+
+    // ── Step 1a · The lines the brief MEASURES, priced without the model ────
+    // The audit of 2026-09-17 showed the spread is a quantity problem: asked
+    // the same brief three times the model invented a different set of
+    // quantities each time, for work the customer had never mentioned. So the
+    // phases the description actually measures are costed here — quantity out
+    // of the brief, material through the merchant path below, labor from the
+    // trade anchor at this state's index — handed to the model as settled
+    // facts, and merged back over anything it restates anyway.
+    //
+    // Material pricing is READ-THROUGH cached on purpose. Beyond saving the
+    // call it is what makes two runs of one brief agree: a live listing that
+    // moves between runs would put the spread straight back.
+    // One implementation, shared with the measurement harness
+    // (lib/estimate/material-price): cache first, merchant second, anchor last.
+    const priceComputedMaterial: MaterialPricer = (query) => priceMaterial(query, input.location);
+    const computed = await computeLines({
+      description: input.description,
+      trade,
+      state: input.location,
+      // No organization stores a labor rate today (schema check, 2026-09-18),
+      // so this is always null and labor comes from the anchor. The hook is
+      // here so the day one exists, one line changes.
+      orgLaborRate: null,
+      priceMaterial: priceComputedMaterial,
+    });
+    if (computed.lines.length) {
+      console.info(
+        `[advancedEstimator] Step 1a · ${computed.lines.length} computed line(s) [${computed.lines.map((l) => `${l.phaseId}:${l.quantity}${l.unit}`).join(", ")}], ${computed.skipped.length} phase(s) left to the model`,
+      );
+    }
+    const computedBlock = computedPromptBlock(computed.lines);
+
+    /** Every answer, first or re-ask, gets the computed lines merged over it. */
+    const withComputed = (r: Awaited<ReturnType<typeof askEstimateOnce>>) => {
+      const merged = mergeComputed(r.items, computed.lines);
+      if (merged.dropped.length) {
+        console.info(`[advancedEstimator] Step 1a · dropped ${merged.dropped.length} model line(s) already computed: ${merged.dropped.map((d) => d.name.slice(0, 40)).join(" | ")}`);
+      }
+      return { ...r, items: merged.items as typeof r.items };
+    };
+
+    let called = withComputed(await askEstimateOnce(computedBlock));
     if (called.warnings.length) console.warn(`[advancedEstimator] parser: ${called.warnings.join(" | ")}`);
     if (called.items.length === 0) throw new Error("The estimator returned no line items — try a more specific description.");
     let report = validateEstimate({ items: called.items, description: input.description, location: input.location, assumptions: called.assumptions, trade });
@@ -711,12 +755,13 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
       // never cost the contractor the estimate already in hand.
       let retry: Awaited<ReturnType<typeof askEstimate>>;
       try {
-        retry = await askEstimate(repairInstruction(report));
+        retry = await askEstimate(`${computedBlock}${repairInstruction(report)}`);
       } catch (err) {
         console.warn(`[advancedEstimator] Step 1b · re-ask failed, keeping the first answer: ${err instanceof Error ? err.message : String(err)}`);
         break;
       }
       if (!retry.items.length) break;
+      retry = withComputed(retry);
       const retryReport = validateEstimate({ items: retry.items, description: input.description, location: input.location, assumptions: retry.assumptions, trade });
       // Keep the better answer: fewer blocking violations wins, ties go to the newer.
       if (retryReport.blocking.length <= report.blocking.length) {

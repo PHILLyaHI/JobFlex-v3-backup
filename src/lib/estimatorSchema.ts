@@ -54,7 +54,10 @@ export const lineSchema = z.object({
   // catalogue anchor, "suggested" = the description never asked for this
   // work, so it is offered as an option and stays OUT of every total until
   // the contractor adds it. `flagNote` is the short reason, shown on the row.
-  flag: z.enum(["auto", "adjusted", "suggested"]).optional(),
+  // "computed" is the fourth state (2026-09-18): the line's quantity was
+  // measured out of the brief and its price built from the merchant path or a
+  // trade anchor, so neither the model nor the repair pass may move it.
+  flag: z.enum(["auto", "adjusted", "suggested", "computed"]).optional(),
   flagNote: trimmedOpt,
 });
 

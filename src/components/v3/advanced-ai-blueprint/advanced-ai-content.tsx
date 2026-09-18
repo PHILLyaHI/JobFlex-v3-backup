@@ -824,6 +824,10 @@ export function AdvancedAiContent() {
             catalogue anchor. Same 9px mono chip as the refine badge. */}
         {r.flag === "auto" && <em className={cx("sp-flag")} title={r.flagNote}>added</em>}
         {r.flag === "adjusted" && <em className={cx("sp-flag")} title={r.flagNote}>adjusted</em>}
+        {/* Measured out of the customer's own words and priced from the merchant
+            path or the trade anchor — not the model's opinion. The hover names
+            which of the three the material price came from. */}
+        {r.flag === "computed" && <em className={cx("sp-flag")} title={r.flagNote}>computed</em>}
       </span>
 
       {numField(r, "q", "qty", MAX_QTY, "quantity", "sp-in--qty")}

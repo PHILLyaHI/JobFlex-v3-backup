@@ -41,7 +41,7 @@ export interface CheckedItem {
   notes?: string;
   searchQuery: string | null;
   /** Set by the repair pass; travels to the UI. */
-  flag?: "auto" | "adjusted" | "suggested";
+  flag?: "auto" | "adjusted" | "suggested" | "computed";
   flagNote?: string;
 }
 
@@ -262,6 +262,12 @@ export function validateEstimate(input: ValidationInput): ValidationReport {
 
   // (b) prices against the trade's anchors, in this state's market
   items.forEach((it, i) => {
+    // A computed line is a measurement, not an opinion: its quantity came out of
+    // the brief and its price out of the merchant path or the trade anchor. The
+    // corridor check exists to catch a model inventing a number, so running it
+    // here would only ever argue with arithmetic — and, worse, the violation
+    // would be handed back to the model as something to "fix".
+    if (it.flag === "computed") return;
     const anchor: ParsedAnchor | null = matchAnchor(it.name, anchors);
     if (!anchor) return;
     if (HANDLING_ONLY.test(it.name) && !HANDLING_ONLY.test(anchor.label)) return;
@@ -285,6 +291,9 @@ export function validateEstimate(input: ValidationInput): ValidationReport {
   const area = briefAreaSqft(input.description);
   const lfCap = area ? perimeterOf(area) * 4 : null;
   items.forEach((it, i) => {
+    // Same reason as the corridor pass: a measured quantity in its own unit is
+    // not the model guessing, and these emitters are blocking.
+    if (it.flag === "computed") return;
     const u = normalizeUnit(it.unit);
     if (headIs(LENGTH_WORK, it.name) && !AREA_WORK.test(it.name) && u === "sqft") {
       v.push({ code: "unit-mismatch", item: i, blocking: true, message: `"${it.name}" is measured in linear feet, not sqft. Re-state the quantity as linear ft.` });
@@ -339,6 +348,7 @@ export function repairInstruction(report: ValidationReport): string {
     "YOUR PREVIOUS ANSWER WAS REJECTED. Fix exactly these and return the whole estimate again:",
     ...list.map((x, i) => `  ${i + 1}. ${x.message}`),
     "Keep everything else as it was — same scope, same structure, same quantities where they were right.",
+    "Lines already priced for you are fixed: do not restate their quantity or their prices. You may add lines and write notes.",
     "═══════════════════════════════════════════════════════════════",
     "",
   ].join("\n");
@@ -389,6 +399,10 @@ export function applyRepairs(input: ValidationInput, report: ValidationReport): 
     if (v.code !== "price-out-of-corridor" || v.item == null) continue;
     const it = items[v.item];
     if (!it) continue;
+    // Never snap a computed price to an anchor — the anchor is already one of
+    // its two possible sources, and the other (a live merchant price inside the
+    // sanity corridor) is deliberately more specific than the anchor.
+    if (it.flag === "computed") continue;
     const anchor = matchAnchor(it.name, anchors);
     if (!anchor) continue;
     for (const kind of ["material", "labor"] as const) {
