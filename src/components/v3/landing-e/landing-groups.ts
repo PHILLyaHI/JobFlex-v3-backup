@@ -113,7 +113,7 @@ const TOOLS_STATS: StatsRow[] = [
   {
     label: "Roofers",
     lede: "The roof is just the start",
-    sub: "Measured from the address, priced, signed and on the calendar the same day",
+    sub: "Measured from the address, priced, approved and on the calendar the same day",
     cards: [
       { src: IMG.p5, name: "Summit Roofing", tag: "Re-roofs" },
       { src: IMG.p3, name: "Cascade Roof & Gutter", tag: "Roofing" },
@@ -231,7 +231,7 @@ const EXTERIOR_STATS: StatsRow[] = [
   {
     label: "Deck builders",
     lede: "The yard is just the start",
-    sub: "Frame, boards and rail priced from the size, signed before the lumber order",
+    sub: "Frame, boards and rail priced from the size, approved before the lumber order",
     cards: [
       { src: IMG.p3, name: "Whitfield Outdoor Living", tag: "Decks" },
       { src: IMG.p5, name: "Kenmore Deck & Rail", tag: "Composite" },

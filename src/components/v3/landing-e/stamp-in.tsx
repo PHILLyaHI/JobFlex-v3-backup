@@ -5,7 +5,7 @@ import { loadCustomEase, loadGsapFor, reducedMotion } from "./gsap-lazy";
 
 /* A STAMP LANDING (landing-e pass C, 2026-09-11): scale 1.15 → 1 with a
    slight overshoot on a CustomEase, opacity 0 → 1, 300 ms. `active` runs it
-   when it flips to true (the change order's SIGNED, at the moment its
+   when it flips to true (the change order's APPROVED, at the moment its
    sequence gets there); without `active` it runs once when the element
    enters the viewport (the title sheet's SHEET 03 stamp). Under reduced
    motion nothing runs and the stamp is simply there.

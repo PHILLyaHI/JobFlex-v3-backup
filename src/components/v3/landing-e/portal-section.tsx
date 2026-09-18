@@ -64,9 +64,10 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
               <div className="lp-portal-mock w-full max-w-[360px] rounded-[12px] bg-white p-5 sm:max-w-[330px] sm:rounded-[10px] sm:p-6">
                 <div className="text-center">
                   <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-lp-blue/10">
+                    {/* A tick, not a pen. The pen said "sign this" over a flow
+                        that records an online approval and no signature. */}
                     <svg viewBox="0 0 20 20" className="h-5 w-5 text-lp-blue" aria-hidden>
-                      <path d="M4 14.5l8.5-8.5 1.5 1.5L5.5 16H4v-1.5z" fill="currentColor" />
-                      <path d="M12 4l4 4" stroke="currentColor" strokeWidth="1.4" />
+                      <path d="M4.5 10.5l4 4 7-8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   </div>
                   <div className="mt-3 text-[19px] font-bold text-ink">Review &amp; approve</div>
@@ -125,18 +126,19 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
                   </span>
                 </div>
 
-                {/* Signature */}
+                {/* Approval */}
                 <div className="relative mt-4 h-[74px] rounded-lg border border-dashed border-slate-300 bg-slate-50">
                   <span className="absolute left-3 top-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[#666666]">
-                    Sign here
+                    Tap to approve
                   </span>
                   <svg viewBox="0 0 260 60" className="absolute inset-0 h-full w-full" aria-hidden>
                     <path
-                      d="M24 42c10-18 16-24 18-16 2 7-6 20 2 18 9-2 13-24 22-24s2 26 12 24 14-22 22-22 4 22 14 20c8-1.5 16-14 30-14 10 0 16 6 34 4 12-1.4 22-6 38-4"
+                      d="M108 28 l14 14 l40 -28"
                       fill="none"
                       stroke="#0a0a0a"
-                      strokeWidth="1.8"
+                      strokeWidth="3"
                       strokeLinecap="round"
+                      strokeLinejoin="round"
                       pathLength={1}
                       strokeDasharray={1}
                       strokeDashoffset={step >= 2 ? 0 : 1}
@@ -159,15 +161,15 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
                       <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
                         <path d="M3 8.5l3.2 3L13 5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
-                      Signed — deposit paid
+                      Approved — deposit paid
                     </>
                   ) : (
-                    "Approve & sign"
+                    "Approve online"
                   )}
                 </div>
               </div>
 
-              {/* signed-doc badge */}
+              {/* approved-doc badge */}
               {step === 3 && (
                 <span
                   className="lp-portal-mock absolute right-[14%] top-[12%] flex h-12 w-12 items-center justify-center rounded-2xl bg-white"
@@ -191,10 +193,10 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
               2026-08-25). */}
           <Reveal delay={120} className="order-1 lg:order-2">
             <p className="text-[30px] font-bold leading-[1.08] tracking-[-0.02em] text-white sm:text-[clamp(34px,4vw,58px)] sm:leading-[1.05] sm:tracking-[-0.015em]">
-              Get jobs signed.
+              Get jobs approved.
             </p>
             <p className="mt-4 max-w-[26rem] text-[17px] leading-[1.5] text-white/80 sm:text-[20px] sm:leading-[1.55]">
-              Homeowners pick options, sign, and pay the deposit — right from
+              Homeowners pick options, approve, and pay the deposit — right from
               their phone.
             </p>
           </Reveal>

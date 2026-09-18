@@ -38,7 +38,7 @@ export function SmartProposalShot({ active, scenario, instant = false }: { activ
   const lines = scenario.lines;
 
   return (
-    <AppFrame path="app.jobflex.com/proposals/new" action="Send for signature">
+    <AppFrame path="app.jobflex.com/proposals/new" action="Send for approval">
       <div className="relative">
         <Prompt label="Scope" value={typed} lifted={lifted} attach compact={compact} />
         <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_260px]">

@@ -308,7 +308,7 @@ export function buildOwnerChangeOrderAnswered(i: OwnerChangeOrderAnsweredInput):
     headline: i.approved ? `${i.clientName} approved ${label.toLowerCase()}` : `${i.clientName} declined ${label.toLowerCase()}`,
     prose: [
       i.approved
-        ? `Signed as "${i.note ?? i.clientName}". The amount is on the payment schedule as its own stage.`
+        ? `Approved as "${i.note ?? i.clientName}". The amount is on the payment schedule as its own stage.`
         : "The scope and price stay as sold. Talk to the client before doing the extra work.",
     ],
     box,

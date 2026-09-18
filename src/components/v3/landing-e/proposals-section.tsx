@@ -75,7 +75,7 @@ function ProposalMobile({ p }: { p: ProposalContent }) {
   );
 }
 
-type SendStage = "draft" | "pressing" | "delivered" | "signed";
+type SendStage = "draft" | "pressing" | "delivered" | "approved";
 
 /* The desktop proposal. Deliberately compact — the whole document has to be
    readable inside one screen, so this is a trimmed plate rather than a
@@ -83,9 +83,9 @@ type SendStage = "draft" | "pressing" | "delivered" | "signed";
 
    It also plays the thing the section claims. The one action button carries the
    whole story rather than a toast appearing beside it: it is pressed, the
-   button itself becomes "Delivered to M. Nguyen", and when the client signs
+   button itself becomes "Delivered to M. Nguyen", and when the client approves
    the same button becomes the
-   signed confirmation. One stage value drives the button, the total, the
+   approved confirmation. One stage value drives the button, the total, the
    scrawl and the stamp, so they can never disagree. */
 function ProposalDoc({ p }: { p: ProposalContent }) {
   const { ref, inView } = useInView<HTMLDivElement>(0.3);
@@ -95,7 +95,7 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
     if (!inView) return;
     // Reduced motion gets the outcome, with no press or loop.
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      const id = requestAnimationFrame(() => setStage("signed"));
+      const id = requestAnimationFrame(() => setStage("approved"));
       return () => cancelAnimationFrame(id);
     }
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -106,15 +106,15 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
         setStage("pressing");
       });
       at(1980, () => setStage("delivered"));
-      at(4400, () => setStage("signed"));
+      at(4400, () => setStage("approved"));
       at(9200, run);
     };
     run();
     return () => timers.forEach(clearTimeout);
   }, [inView]);
 
-  const sent = stage === "delivered" || stage === "signed";
-  const signed = stage === "signed";
+  const sent = stage === "delivered" || stage === "approved";
+  const approved = stage === "approved";
   const pressing = stage === "pressing";
 
   return (
@@ -127,14 +127,14 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
           <div className="flex items-center gap-2.5">
             <span className="font-semibold text-ink">&lsaquo; Proposals</span>
             <span className="hidden text-[#6a6a6a] sm:inline">
-              {signed ? "Signed" : sent ? "Sent" : "Draft — saved"}
+              {approved ? "Approved" : sent ? "Sent" : "Draft — saved"}
             </span>
           </div>
           <div className="flex items-center gap-3">
             <span className="hidden font-medium text-[#666666] sm:inline">Preview</span>
             <span
               className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] font-semibold ${
-                signed
+                approved
                   ? "bg-emerald-600 text-white"
                   : sent
                     ? "bg-lp-blue text-white"
@@ -146,7 +146,7 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
                   "transform .28s cubic-bezier(.22,.61,.36,1), background-color .35s ease",
               }}
             >
-              {signed ? (
+              {approved ? (
                 <>
                   <svg viewBox="0 0 16 16" className="h-3 w-3" aria-hidden>
                     <path
@@ -158,7 +158,7 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
                       strokeLinejoin="round"
                     />
                   </svg>
-                  {p.client} signed the proposal
+                  {p.client} approved the proposal
                 </>
               ) : sent ? (
                 /* No blinking dot (owner, 2026-08-25): a pulsing indicator on a
@@ -171,7 +171,7 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
                 </>
               ) : (
                 <>
-                  Send for signature
+                  Send for approval
                   <svg viewBox="0 0 16 16" className="h-3 w-3" aria-hidden>
                     <path d="M1.5 8L14.5 1.5 10 14.5l-2.6-4.4L1.5 8z" fill="currentColor" />
                   </svg>
@@ -209,7 +209,7 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
           ))}
           <div
             className={`flex items-center justify-between border-t px-3 py-2 transition-colors duration-500 ${
-              signed ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-white"
+              approved ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-white"
             }`}
           >
             <span className="text-[12px] font-bold text-ink">Project total</span>
@@ -217,7 +217,7 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
           </div>
         </div>
 
-        {/* Option and signature share a row so the plate stays short */}
+        {/* Option and approval share a row so the plate stays short */}
         <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
           <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 px-3 py-2">
             <div className="min-w-0">
@@ -227,11 +227,14 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
             <span className="shrink-0 text-[12.5px] font-bold text-ink">{p.option.price}</span>
           </div>
 
-          {/* Signature block — the scrawl draws itself once the client signs,
-              and the stamp lands on the corner of the block it belongs to
-              rather than floating over the photo strip. */}
+          {/* Approval block. It drew a handwritten scrawl until 2026-09-18,
+              which promised an e-signature the product does not have: the
+              public accept route records no signature, no typed name and no
+              signed-at. A tick and the client's name is what actually happens.
+              The stamp lands on the corner of the block it belongs to rather
+              than floating over the photo strip. */}
           <div className="relative rounded-lg border border-slate-200 px-3 py-2">
-            {signed && (
+            {approved && (
               <div
                 className="pointer-events-none absolute -top-3.5 right-1 z-10 -rotate-[9deg] rounded-md border-2 border-emerald-600/70 bg-white/85 px-2.5 py-0.5 text-[11.5px] font-black uppercase tracking-[0.2em] text-emerald-700/90"
                 style={{ animation: "lpStamp .45s cubic-bezier(.2,.8,.3,1.2) backwards" }}
@@ -240,12 +243,12 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
               </div>
             )}
             <div className="text-[9.5px] font-bold uppercase tracking-[1.2px] text-[#6a6a6a]">
-              Client signature
+              Client approval
             </div>
             <div className="relative h-7">
               <svg viewBox="0 0 150 34" className="absolute inset-0 h-full w-[120px]" aria-hidden>
                 <path
-                  d="M6 25 C20 6 30 30 44 16 C56 6 62 26 78 18 C94 10 102 26 120 14 141 2 136 22 144 18"
+                  d="M8 19 l9 9 l20 -20"
                   fill="none"
                   stroke="#1854A0"
                   strokeWidth="2"
@@ -253,14 +256,14 @@ function ProposalDoc({ p }: { p: ProposalContent }) {
                   pathLength={1}
                   style={{
                     strokeDasharray: 1,
-                    strokeDashoffset: signed ? 0 : 1,
+                    strokeDashoffset: approved ? 0 : 1,
                     transition: "stroke-dashoffset 1.1s cubic-bezier(.4,0,.2,1)",
                   }}
                 />
               </svg>
             </div>
             <div className="border-t border-slate-200 pt-1 text-[9.5px] text-[#6a6a6a]">
-              {signed ? `${p.client} · signed today` : "Awaiting the client"}
+              {approved ? `${p.client} · approved today` : "Awaiting the client"}
             </div>
           </div>
         </div>
@@ -374,10 +377,10 @@ export function ProposalsSection({ proposal = KITCHEN, registerHref = "/auth/reg
               headline it was labelling (owner, 2026-08-25). */}
           <h2 className="lp-eyebrow hidden text-[#555555] sm:block">Proposals &amp; contracts</h2>
           <p className="lp-props-title max-w-[56rem] sm:mt-5 text-[clamp(36px,4.4vw,64px)] font-bold leading-[1.02] tracking-[-0.02em] text-ink">
-            Send proposals clients can sign.
+            Send proposals clients can approve online.
           </p>
           <p className="mt-5 text-[17px] font-medium leading-[1.5] text-[#555555] sm:mt-7 sm:text-[clamp(19px,1.7vw,24px)]">
-            A finished estimate becomes a signed contract in one click.
+            A finished estimate becomes an approved job in one click.
           </p>
         </Reveal>
 

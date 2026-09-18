@@ -132,7 +132,7 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
             <div className="mt-1 text-[9.5px] text-[#6a6a6a]">Deck rebuild — $16,900</div>
             <div className="mt-2.5 h-8 rounded border border-dashed border-slate-300 bg-slate-50" />
             <div className="mt-2 rounded bg-lp-base py-1.5 text-center text-[10px] font-semibold text-white">
-              Approve &amp; sign
+              Approve online
             </div>
           </div>
         </div>
@@ -235,7 +235,7 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
         <div className="mt-3 flex items-center justify-between">
           <span className="text-[13px] font-bold text-ink">+$1,240</span>
           <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[9px] font-bold text-sky-700">
-            SIGNED
+            APPROVED
           </span>
         </div>
         <div className="mt-2.5 font-serif text-[15px] italic text-[#6a6a6a]">M. Nguyen</div>

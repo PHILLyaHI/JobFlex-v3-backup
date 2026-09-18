@@ -87,8 +87,8 @@ const CO_AMOUNT = "1,240";
 type CoStage = "form" | "priced" | "statement";
 
 /* The change order writes itself: the scope is typed into the field, the price
-   lands, then the form resolves into the signed statement that goes to the
-   client. Three stages so the caret, the fields and the signature can never
+   lands, then the form resolves into the approved statement that goes to the
+   client. Three stages so the caret, the fields and the approval can never
    contradict each other; the loop only runs while the card is on screen. */
 function ChangeOrderMock() {
   const { ref, inView } = useInView<HTMLDivElement>(0.4);
@@ -150,7 +150,7 @@ function ChangeOrderMock() {
               done ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-[#666666]"
             }`}
           >
-            {done ? <StampIn active>SIGNED</StampIn> : "DRAFT"}
+            {done ? <StampIn active>APPROVED</StampIn> : "DRAFT"}
           </span>
         </div>
 
@@ -195,7 +195,7 @@ function ChangeOrderMock() {
           patch &amp; paint. Two added days on the schedule.
         </p>
 
-        {/* Price + signature */}
+        {/* Price + approval */}
         <div className="mt-4 flex items-end justify-between border-t border-slate-100 pt-4">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[1.2px] text-[#6a6a6a]">
