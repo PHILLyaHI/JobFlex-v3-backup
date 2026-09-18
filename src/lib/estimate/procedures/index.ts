@@ -55,6 +55,22 @@ export const SPECIALTY_PROCEDURES: ProcedureMap = {
   ...DEVELOPMENT,
 };
 
+/** The core (unconditional) step count — the fewest lines a complete answer has. */
+export function coreStepCount(procedure: SpecialtyProcedure | null | undefined): number {
+  return procedure ? procedure.steps.filter((s) => !s.when).length : 0;
+}
+
+/**
+ * A reply with far fewer lines than the procedure's core steps is a thin
+ * estimate — the sewer job that came back as six lines, the bathroom as
+ * eight. The action asks once more with the shortfall named. Seven tenths
+ * leaves room for a brief that fairly excludes a few steps.
+ */
+export function shortOfProcedure(lineCount: number, coreSteps: number): boolean {
+  if (coreSteps < 4) return false;
+  return lineCount < Math.ceil(coreSteps * 0.7);
+}
+
 /** The procedure for a specialty id, or null when none is written for it. */
 export function procedureFor(specialtyId: string): SpecialtyProcedure | null {
   return SPECIALTY_PROCEDURES[specialtyId] ?? null;
@@ -91,9 +107,14 @@ export function formatProcedureBlock(
   lines.push(RULE);
   lines.push(`PROCEDURE — ${specialtyName.toUpperCase()}: THE LINES A PROFESSIONAL ESTIMATE ITEMIZES`);
   lines.push(RULE);
+  const core = procedure.steps.filter((s) => !s.when).length;
+  const conditional = procedure.steps.length - core;
   lines.push(`Measured and sold by: ${procedure.basis.trim()}.`);
   lines.push(
     "Walk the steps in order. A step marked [core] is its own line on every job of this kind unless the brief plainly excludes it (state the exclusion in notes). A step marked [when …] is a line only when the brief or the site calls for it. The unit after the dash is the unit that line carries.",
+  );
+  lines.push(
+    `This procedure has ${core} core steps and ${conditional} conditional ones. A complete answer has AT LEAST ${core} line items — one per core step, in this order — plus every conditional step the brief or the site calls for. An answer with fewer lines is incomplete and is rejected. Labor on every line is a licensed crew's time at the job's local rates, never a token amount.`,
   );
   procedure.steps.forEach((s, i) => {
     const tag = s.when ? `[when ${s.when.trim()}]` : "[core]";

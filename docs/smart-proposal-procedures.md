@@ -55,6 +55,15 @@ line and never a bare word; real quantities in the step's unit; both cost
 halves on every line; no padding, no duplicates; extras go to upsells; a
 trade profile's phases group the steps and its anchors govern the numbers.
 
+**A thin answer is asked again** (2026-09-18, a full bathroom remodel in
+Kirkland came back as eight lines at $12,600 — no permits, tile floor,
+waterproofing, fan, lighting, drywall, accessories or dumpster). The block
+now states the counts ("this procedure has 18 core steps … a complete
+answer has AT LEAST 18 line items; fewer is rejected") and that labor is a
+licensed crew's time at local rates. After the reply, `shortOfProcedure`
+(fewer lines than seven tenths of the core steps) makes the action ask
+once more with the shortfall named; the fuller answer is kept.
+
 **The admin page** `/admin/prompts` (sidebar → Operate → Prompts). Every
 box shows the CURRENT text — the saved change when there is one, the code
 default otherwise — with a Default / Customized chip and the save time:
@@ -93,7 +102,7 @@ breaks on an override.
 
 ## Proof
 
-`scripts/qa/procedures.check.ts` (33 checks): every specialty covered,
+`scripts/qa/procedures.check.ts` (36 checks): every specialty covered,
 no orphan keys, every procedure past the shared bar, every unit legal,
 real quantities dominate, no cloned procedures and siblings sharing at
 most three steps, the sewer case (locate, permits, trench, bedding, pipe by

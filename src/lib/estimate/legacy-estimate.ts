@@ -29,7 +29,7 @@ import { detectSpecialty } from "./legacy/specialtyDetector";
 import { getAiSpecialtyByIdSync, type AiSpecialty } from "./legacy/specialties";
 import { buildTradeRulesBlock } from "./estimate-prompt";
 import { briefRulesBlock, readBrief, type BriefFacts } from "./brief";
-import { formatProcedureBlock, PROCEDURE_RULES, procedureFor, type SpecialtyProcedure } from "./procedures";
+import { coreStepCount, formatProcedureBlock, PROCEDURE_RULES, procedureFor, type SpecialtyProcedure } from "./procedures";
 
 /** The old route's fallback when no specialty matched. Verbatim. */
 export const GENERAL_CONTRACTING: AiSpecialty = {
@@ -124,16 +124,20 @@ export type PromptOverrideSet = {
  * for a specialty no procedure is written for.
  */
 export function procedureBlockFor(specialty: AiSpecialty, overrides?: PromptOverrideSet | null): string | null {
-  const own = overrides?.specialties[specialty.id];
-  const procedure = own?.procedure ?? procedureFor(specialty.id);
+  const procedure = effectiveProcedure(specialty.id, overrides);
   if (!procedure) return null;
   return formatProcedureBlock(specialty.name, procedure, overrides?.procedureRules ?? PROCEDURE_RULES);
+}
+
+/** The admin's procedure for the specialty when saved, else the code's. */
+export function effectiveProcedure(specialtyId: string, overrides?: PromptOverrideSet | null): SpecialtyProcedure | null {
+  return overrides?.specialties[specialtyId]?.procedure ?? procedureFor(specialtyId);
 }
 
 export function buildLegacyEstimatePrompt(
   input: LegacyEstimateInput,
   opts: LegacyPromptOptions = {},
-): { specialty: AiSpecialty; prompt: string; hvac: boolean; facts: BriefFacts; procedure: boolean } {
+): { specialty: AiSpecialty; prompt: string; hvac: boolean; facts: BriefFacts; procedure: boolean; procedureCoreSteps: number } {
   const detected = (opts.specialtyId ? getAiSpecialtyByIdSync(opts.specialtyId) : null) ?? specialtyFor(input).specialty;
   // The admin's preamble, when one was saved for this specialty.
   const ownPreamble = opts.overrides?.specialties[detected.id]?.preamble?.trim();
@@ -186,7 +190,14 @@ export function buildLegacyEstimatePrompt(
     adminPromptExtra: extra || null,
     pricingPrompt: null,
   });
-  return { specialty, prompt, hvac, facts, procedure: procedureBlock !== null };
+  return {
+    specialty,
+    prompt,
+    hvac,
+    facts,
+    procedure: procedureBlock !== null,
+    procedureCoreSteps: coreStepCount(effectiveProcedure(specialty.id, opts.overrides)),
+  };
 }
 
 // ── Mapping the old draft onto fused line items ─────────────────────────────

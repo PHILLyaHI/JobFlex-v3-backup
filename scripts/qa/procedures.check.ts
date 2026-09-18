@@ -6,6 +6,8 @@
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/procedures.check.ts
 import { getAiSpecialtiesSync, AI_SPECIALTY_GROUPS } from "../../src/lib/estimate/legacy/specialties";
 import {
+  coreStepCount,
+  shortOfProcedure,
   formatProcedureBlock,
   PROCEDURE_RULES,
   PROCEDURE_UNITS,
@@ -97,6 +99,9 @@ check("sewer: pavement cut, dewatering, traffic control are conditional", sewer.
 const block = formatProcedureBlock("Sanitary Sewer Contractor", sewer);
 check("the block names the specialty, the basis, numbered steps with [core]/[when …] tags and the unit after a dash",
   /PROCEDURE — SANITARY SEWER CONTRACTOR/.test(block) && /Measured and sold by: linear feet/.test(block) && /^\s+1\. \[core\] .* — fixed$/m.test(block) && /\[when the run crosses asphalt or concrete\] .* — sqft$/m.test(block));
+check("the block states the core and conditional counts and the minimum line count", new RegExp(`This procedure has ${coreStepCount(sewer)} core steps and ${sewer.steps.length - coreStepCount(sewer)} conditional ones\\. A complete answer has AT LEAST ${coreStepCount(sewer)} line items`).test(block) && coreStepCount(sewer) === 13);
+check("a thin answer is recognised: 8 lines for 18 core steps is short, 13 is not, a tiny procedure never is", shortOfProcedure(8, 18) && !shortOfProcedure(13, 18) && !shortOfProcedure(1, 3) && shortOfProcedure(6, 13) && !shortOfProcedure(10, 13));
+check("buildLegacyEstimatePrompt reports the core step count", buildLegacyEstimatePrompt({ description: "full bathroom remodel, Kirkland WA" }).procedureCoreSteps === coreStepCount(procedureFor("bathroom-remodel")) && buildLegacyEstimatePrompt({ description: "full bathroom remodel" }).specialty.id === "bathroom-remodel");
 check("the block carries the avoid list, the notes and the rules", /NEVER write these lines/.test(block) && /STATE IN NOTES/.test(block) && block.endsWith(PROCEDURE_RULES));
 check("custom rules replace the default paragraph", formatProcedureBlock("X", sewer, "MY RULES").endsWith("MY RULES") && !formatProcedureBlock("X", sewer, "MY RULES").includes("LINE-ITEM DISCIPLINE"));
 
