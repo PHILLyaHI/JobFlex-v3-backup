@@ -1,0 +1,85 @@
+/* ============================================================
+   ADMIN USER ACTIVITY — BLUEPRINT
+   /admin/activity
+   Page-specific vocabulary only; shared furniture lives in
+   admin-influencers/admin-ui.module.css. Scoped (0,3,0).
+   ============================================================ */
+
+:global(.jf-blueprint .content) .root { display: flex; flex-direction: column; gap: 22px; }
+
+/* The range: a drawn switch in the page head — 7 · 30 · 90 days · all time. */
+:global(.jf-blueprint .content) .range { display: flex; gap: 0; border: 1.5px solid var(--ink); }
+:global(.jf-blueprint .content) .rangeBtn {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 14px;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink); text-decoration: none; border-right: 1.5px solid var(--ink);
+}
+:global(.jf-blueprint .content) .rangeBtn:last-child { border-right: none; }
+:global(.jf-blueprint .content) .rangeBtn:hover { background: rgba(10, 10, 10, 0.05); }
+:global(.jf-blueprint .content) .rangeOn { background: var(--ink); color: var(--paper); }
+:global(.jf-blueprint .content) .rangeOn:hover { background: var(--ink); }
+
+/* By user: user · created · sent · accepted · estimates · last active · action */
+:global(.jf-blueprint .content) .userCols { grid-template-columns: minmax(0, 2.2fr) 84px 84px 130px 120px 110px 120px; }
+:global(.jf-blueprint .content) .userRowOn { background: rgba(24, 84, 160, 0.05); }
+:global(.jf-blueprint .content) .won { display: block; margin-top: 2px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--success); text-align: right; white-space: nowrap; }
+:global(.jf-blueprint .content) .split { display: block; margin-top: 2px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-light); text-align: right; white-space: nowrap; }
+
+/* The trail: when · who · what · detail · action */
+:global(.jf-blueprint .content) .feedCols { grid-template-columns: 118px minmax(0, 1.5fr) minmax(0, 1.2fr) minmax(0, 2.4fr) 132px; }
+:global(.jf-blueprint .content) .when { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+:global(.jf-blueprint .content) .whenSub { display: block; margin-top: 3px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-light); white-space: nowrap; }
+:global(.jf-blueprint .content) .detail { font-size: 13px; line-height: 1.45; color: var(--ink); overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .detailRef { display: block; margin-top: 3px; font-size: 12px; color: var(--muted-light); }
+
+/* The who-chip in the feed head: the user the trail is narrowed to. */
+:global(.jf-blueprint .content) .who {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 6px 0 12px;
+  border: 1.5px solid var(--blueprint); color: var(--blueprint); font-size: 12.5px; font-weight: 700;
+}
+:global(.jf-blueprint .content) .whoX { appearance: none; border: none; background: none; cursor: pointer; color: inherit; display: inline-flex; padding: 6px; }
+:global(.jf-blueprint .content) .whoX :global(.ic) { width: 14px; height: 14px; }
+
+:global(.jf-blueprint .content) .search { flex: 1; min-width: 160px; max-width: 320px; }
+:global(.jf-blueprint .content) .searchIn {
+  width: 100%; min-height: 36px; padding: 0 12px; border: 1.5px solid var(--hair); background: #fff;
+  font-family: inherit; font-size: 13px; color: var(--ink);
+}
+:global(.jf-blueprint .content) .searchIn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+
+:global(.jf-blueprint .content) .more { display: flex; justify-content: center; padding-top: 14px; }
+
+/* The proposal sheet */
+:global(.jf-blueprint .content .pmdl) .pTitle { font-size: 17px; font-weight: 900; letter-spacing: -0.005em; line-height: 1.25; }
+:global(.jf-blueprint .content .pmdl) .pSub { margin-top: 5px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+:global(.jf-blueprint .content .pmdl) .pStatus { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+:global(.jf-blueprint .content .pmdl) .pMoney { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 16px; border: 1.5px solid var(--ink); }
+:global(.jf-blueprint .content .pmdl) .pCell { padding: 10px 12px; border-right: 1.5px solid var(--ink); }
+:global(.jf-blueprint .content .pmdl) .pCell:last-child { border-right: none; }
+:global(.jf-blueprint .content .pmdl) .pCellL { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content .pmdl) .pCellV { margin-top: 5px; font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content .pmdl) .pCellTotal { color: var(--blueprint); }
+:global(.jf-blueprint .content .pmdl) .pSec { margin-top: 18px; padding-bottom: 7px; border-bottom: 1.5px solid var(--ink); font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content .pmdl) .pTimeline { list-style: none; margin: 0; padding: 0; }
+:global(.jf-blueprint .content .pmdl) .pTimeline li { display: grid; grid-template-columns: 112px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--hair-soft); font-size: 13px; }
+:global(.jf-blueprint .content .pmdl) .pTimeline li:last-child { border-bottom: none; }
+:global(.jf-blueprint .content .pmdl) .pWhen { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+:global(.jf-blueprint .content .pmdl) .pItems { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+:global(.jf-blueprint .content .pmdl) .pItems th { text-align: left; padding: 7px 0; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--hair); }
+:global(.jf-blueprint .content .pmdl) .pItems td { padding: 7px 0; border-bottom: 1px solid var(--hair-soft); vertical-align: top; }
+:global(.jf-blueprint .content .pmdl) .pItems tr:last-child td { border-bottom: none; }
+:global(.jf-blueprint .content .pmdl) .pItems .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; padding-left: 14px; }
+:global(.jf-blueprint .content .pmdl) .pItems th.num { text-align: right; }
+
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .range { width: 100%; }
+  :global(.jf-blueprint .content) .rangeBtn { flex: 1; min-height: 44px; padding: 0 6px; letter-spacing: 0.06em; white-space: nowrap; }
+  :global(.jf-blueprint .content) .won, :global(.jf-blueprint .content) .split { text-align: left; }
+  :global(.jf-blueprint .content) .who { min-height: 44px; }
+  :global(.jf-blueprint .content) .search { max-width: none; width: 100%; }
+  :global(.jf-blueprint .content) .searchIn { min-height: 44px; }
+  :global(.jf-blueprint .content .pmdl) .pMoney { grid-template-columns: 1fr 1fr; }
+  :global(.jf-blueprint .content .pmdl) .pCell:nth-child(2) { border-right: none; }
+  :global(.jf-blueprint .content .pmdl) .pCell:nth-child(-n+2) { border-bottom: 1.5px solid var(--ink); }
+  :global(.jf-blueprint .content .pmdl) .pTimeline li { grid-template-columns: 1fr; gap: 3px; }
+}
