@@ -15,9 +15,9 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
+import { InvoiceSheet } from "@/components/billing/InvoiceSheet";
 import { toast } from "@/components/ui/Toast";
 import { addJobExpense } from "@/actions/expenses";
-import { getInvoiceOptions, sendInstallmentInvoice } from "@/actions/notify";
 import type { FinancialsJob } from "./financials-behavior";
 import type { Invoice } from "./financials-data";
 
@@ -51,28 +51,12 @@ export function FinancialsActions({ jobs, invoices }: { jobs: FinancialsJob[]; i
     }
     return [...seen.values()];
   }, [invoices]);
-  const [proposalId, setProposalId] = React.useState(proposals[0]?.id ?? "");
-  const [method, setMethod] = React.useState<"card" | "bank" | "any">("any");
-  const [rails, setRails] = React.useState<{ card: boolean; bank: boolean } | null>(null);
 
   const close = () => {
     if (busy) return;
     setDialog(null);
     setErr("");
   };
-
-  async function openInvoice() {
-    setDialog("invoice");
-    setErr("");
-    if (rails) return;
-    try {
-      const o = await getInvoiceOptions();
-      setRails({ card: o.card, bank: o.bank });
-      setMethod(o.card ? "card" : o.bank ? "bank" : "any");
-    } catch {
-      setRails({ card: false, bank: false });
-    }
-  }
 
   async function saveExpense() {
     const value = Number(amount);
@@ -92,26 +76,6 @@ export function FinancialsActions({ jobs, invoices }: { jobs: FinancialsJob[]; i
       router.refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not book the expense.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function sendInvoice() {
-    if (!proposalId) return setErr("Pick the proposal to invoice.");
-    setBusy(true);
-    setErr("");
-    try {
-      const res = await sendInstallmentInvoice(proposalId, null, method);
-      if (!res.ok) {
-        setErr(res.error ?? "The invoice could not be sent.");
-        return;
-      }
-      toast.success("Invoice sent", `${res.label} · $${res.amount.toLocaleString("en-US")}`);
-      setDialog(null);
-      router.refresh();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "The invoice could not be sent.");
     } finally {
       setBusy(false);
     }
@@ -183,7 +147,7 @@ export function FinancialsActions({ jobs, invoices }: { jobs: FinancialsJob[]; i
           </svg>
           Add change order
         </button>
-        <button className="btn btn-ghost" type="button" onClick={() => void openInvoice()}>
+        <button className="btn btn-ghost" type="button" onClick={() => { setDialog("invoice"); setErr(""); }}>
           <svg className="ic">
             <use href="#i-receipt" />
           </svg>
@@ -264,38 +228,14 @@ export function FinancialsActions({ jobs, invoices }: { jobs: FinancialsJob[]; i
           "i-file",
         )}
 
-      {dialog === "invoice" &&
-        modal(
-          "Send an invoice",
-          proposals.length ? (
-            <>
-              <p className="fi-fld-note">Invoices the balance still owing on a proposal, on the rail you pick.</p>
-              <label className="fi-fld fi-fld--wide">
-                <span>Proposal</span>
-                <select className="pinput" value={proposalId} onChange={(e) => setProposalId(e.target.value)}>
-                  {proposals.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="fi-fld fi-fld--wide">
-                <span>Pay by</span>
-                <select className="pinput" value={method} onChange={(e) => setMethod(e.target.value as "card" | "bank" | "any")}>
-                  {rails?.card !== false && <option value="card">Card</option>}
-                  {rails?.bank !== false && <option value="bank">Bank transfer</option>}
-                  <option value="any">Let the client choose</option>
-                </select>
-              </label>
-            </>
-          ) : (
-            <p className="fi-fld-note">No proposal on this page has an invoice yet — raise the first one from the proposal itself.</p>
-          ),
-          () => void sendInvoice(),
-          "Send invoice",
-          "i-receipt",
-        )}
+      {/* Invoicing is the same two questions everywhere, so it is the same
+          sheet the handheld Financials build and the proposal rail mount. */}
+      <InvoiceSheet
+        open={dialog === "invoice"}
+        onClose={() => setDialog(null)}
+        targets={proposals}
+        onSent={() => router.refresh()}
+      />
 
       {coOpen && <ChangeOrderSheet open={coOpen} onClose={() => setCoOpen(false)} jobId={coJob} onDone={() => router.refresh()} />}
     </>

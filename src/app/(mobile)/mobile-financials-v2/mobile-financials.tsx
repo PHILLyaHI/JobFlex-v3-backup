@@ -63,6 +63,8 @@ import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import { safeHref } from "@/lib/safeHref";
 import { loadFinancials } from "@/actions/financialsMobile";
+import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
+import { InvoiceSheet } from "@/components/billing/InvoiceSheet";
 import { scanReceipt, saveReceiptExpense } from "@/actions/receiptOcr";
 import { addJobExpense, deleteJobExpense } from "@/actions/expenses";
 import { deleteChangeOrder, sendChangeOrder } from "@/actions/changeOrders";
@@ -256,6 +258,17 @@ export function MobileFinancials() {
   const [page, setPage] = useState(1);
   const [filterOpen, setFilterOpen] = useState(false);
   const [sheet, setSheet] = useState<SheetRef | null>(null);
+  /* ---------- the page-head actions menu -------------------------------
+     Four ways to add to the books, the desk's four. Two of them hand off to
+     the SHARED sheets — the change order is the one the job and the proposal
+     raise, the invoice is the one the desk's Financials raises — so this
+     build adds no second copy of either form. `step` is the menu's own second
+     page: a change order needs the job it amends, and the job list is the
+     picker (no new form for that either). */
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [actionsStep, setActionsStep] = useState<"root" | "job">("root");
+  const [coJob, setCoJob] = useState<string | null>(null);
+  const [invOpen, setInvOpen] = useState(false);
   /** What the row sheet's kicker carries instead of the record line: the write
    *  that is on the wire, or the reason the server refused it. The sheet stays
    *  OPEN while a write runs, so the refusal lands on the record it names. */
@@ -435,7 +448,7 @@ export function MobileFinancials() {
      The drawer is not listed: MobileNav handles its own Escape and only binds
      while open, so two listeners can never claim one key press. */
   useEffect(() => {
-    if (!filterOpen && !formOpen && !sheet) return;
+    if (!filterOpen && !formOpen && !sheet && !actionsOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       // Never while a write is on the wire, or the user is left unsure whether
@@ -443,11 +456,12 @@ export function MobileFinancials() {
       if (filterOpen) setFilterOpen(false);
       else if (formOpen) {
         if (!saving) setFormOpen(false);
-      } else if (sheet && !menuBusy) setSheet(null);
+      } else if (actionsOpen) setActionsOpen(false);
+      else if (sheet && !menuBusy) setSheet(null);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [filterOpen, formOpen, sheet, saving, menuBusy]);
+  }, [filterOpen, formOpen, sheet, saving, menuBusy, actionsOpen]);
 
   /* ---------- Filter dropdown: close on outside pointerdown ------------ */
   useEffect(() => {
@@ -1190,7 +1204,7 @@ export function MobileFinancials() {
     setLandedId(rec.id);
   };
 
-  const anyOverlay = sheetOpen || formOpen;
+  const anyOverlay = sheetOpen || formOpen || actionsOpen;
 
   // Swipe-down dismissal, one gesture per sheet, wired to the close paths the
   // scrim and Cancel already use — and, like them, inert while a write runs.
@@ -1200,6 +1214,28 @@ export function MobileFinancials() {
   const formDrag = useSheetDrag(formOpen, () => {
     if (!saving) setFormOpen(false);
   });
+  /** The proposals this page knows about, one entry each — the invoice sheet's picker. */
+  const invoiceTargets = useMemo(() => {
+    const seen = new Map<string, { id: string; label: string }>();
+    for (const i of invoices) {
+      if (!i.proposalId || seen.has(i.proposalId)) continue;
+      seen.set(i.proposalId, { id: i.proposalId, label: `${i.client} · ${i.num}` });
+    }
+    return [...seen.values()];
+  }, [invoices]);
+
+  const addDrag = useSheetDrag(actionsOpen, () => setActionsOpen(false));
+
+  /* ---------- what the page-head menu offers ---------------------------
+     The desk's four, in the desk's order. Two of them open a shared sheet;
+     a change order asks which job first, because it amends one. */
+  const addRows: Array<{ act: "expense" | "co" | "invoice" | "scan"; icon: string; tone?: string; title: string; sub: string; disabled?: boolean }> = [
+    { act: "expense", icon: "i-plus", tone: styles.miSky, title: "Add expense", sub: "Book a cost against a job" },
+    { act: "co", icon: "i-jobs", tone: styles.miWarn, title: "Add change order", sub: jobs.length ? "Amend a job, then send it" : "No job to amend yet", disabled: !jobs.length },
+    { act: "invoice", icon: "i-financials-receipt", tone: styles.miSky, title: "New invoice", sub: invoiceTargets.length ? "Bill the balance on a proposal" : "No proposal to invoice yet", disabled: !invoiceTargets.length },
+    { act: "scan", icon: "i-financials-receipt", title: "Scan receipt", sub: "Photograph it and read the total" },
+  ];
+
   const rowCls = (id: string) =>
     `${styles.rowIn} ${strike?.id === id ? styles.striking : ""} ${landedId === id ? styles.landed : ""}`;
 
@@ -1253,8 +1289,17 @@ export function MobileFinancials() {
               <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => pickFile("scan")}>
                 <Icon id="i-financials-receipt" />Capture receipt
               </button>
-              <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={openForm}>
-                <Icon id="i-plus" />Log expense
+              <button
+                className={`${styles.btn} ${styles.btnGhost}`}
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={actionsOpen}
+                onClick={() => {
+                  setActionsStep("root");
+                  setActionsOpen(true);
+                }}
+              >
+                <Icon id="i-plus" />Actions
               </button>
             </div>
             {/* The camera / photo picker behind both entry points. Off-screen
@@ -1874,8 +1919,124 @@ export function MobileFinancials() {
         onClick={() => {
           if (!menuBusy) setSheet(null);
           if (!saving) setFormOpen(false);
+          setActionsOpen(false);
         }}
         aria-hidden="true"
+      />
+
+      {/* ============ ADD SHEET — the page head's four ============
+          Page one is the four actions; page two is the job list, which is the
+          change order's context picker. Nothing here is a form: Add expense
+          opens the page's own expense sheet, and the change order and the
+          invoice open the SHARED sheets. */}
+      <div
+        className={`${styles.sheet} ${actionsOpen ? styles.on : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={actionsStep === "job" ? "Pick the job to amend" : "Add to the books"}
+        aria-hidden={!actionsOpen}
+        {...addDrag.sheetProps}
+      >
+        <div className={styles.sheetGrab} {...addDrag.handleProps} />
+        <div className={styles.sheetHead} {...addDrag.handleProps}>
+          <div className={styles.sheetKicker}>{actionsStep === "job" ? "Change order" : "Add to the books"}</div>
+          <div className={styles.sheetTitle}>{actionsStep === "job" ? "Which job does it amend?" : "Four ways in"}</div>
+        </div>
+        <div className={styles.sheetBody}>
+          {actionsStep === "root"
+            ? addRows.map((r) => (
+                <button
+                  key={r.act}
+                  type="button"
+                  disabled={r.disabled}
+                  className={styles.menuItem}
+                  onClick={() => {
+                    if (r.act === "expense") {
+                      setActionsOpen(false);
+                      openForm();
+                    } else if (r.act === "scan") {
+                      setActionsOpen(false);
+                      // The same call the head's Capture button makes. Inside
+                      // a map() the rule cannot see that this closure only
+                      // ever runs on a tap, so the file input it opens reads
+                      // like a ref touched during render.
+                      // eslint-disable-next-line react-hooks/refs
+                      pickFile("scan");
+                    } else if (r.act === "invoice") {
+                      setActionsOpen(false);
+                      setInvOpen(true);
+                    } else {
+                      // a change order amends ONE job — the menu's second page picks it
+                      setActionsStep("job");
+                    }
+                  }}
+                >
+                  <span className={`${styles.miIc} ${r.tone ?? ""}`}>
+                    <Icon id={r.icon} />
+                  </span>
+                  <span>
+                    <span className={styles.menuItemT}>{r.title}</span>
+                    <span className={styles.menuItemS}>{r.sub}</span>
+                  </span>
+                </button>
+              ))
+            : jobs.map((j) => (
+                <button
+                  key={j.id}
+                  type="button"
+                  className={styles.menuItem}
+                  onClick={() => {
+                    setCoJob(j.id);
+                    setActionsOpen(false);
+                    setActionsStep("root");
+                  }}
+                >
+                  <span className={`${styles.miIc} ${styles.miWarn}`}>
+                    <Icon id="i-jobs" />
+                  </span>
+                  <span>
+                    <span className={styles.menuItemT}>{j.title}</span>
+                    <span className={styles.menuItemS}>{j.status.toLowerCase()}</span>
+                  </span>
+                </button>
+              ))}
+        </div>
+        <button
+          className={styles.sheetCancel}
+          type="button"
+          onClick={() => {
+            if (actionsStep === "job") setActionsStep("root");
+            else setActionsOpen(false);
+          }}
+        >
+          {actionsStep === "job" ? "Back" : "Cancel"}
+        </button>
+      </div>
+
+      {/* The shared sheets: the job/proposal change order, and the invoice the
+          desk's Financials raises. Both reload the book, so the new record is
+          in the ledger and in the sums without a page reload. */}
+      {coJob ? (
+        <ChangeOrderSheet
+          open={Boolean(coJob)}
+          onClose={() => setCoJob(null)}
+          jobId={coJob}
+          onDone={() => {
+            void load();
+            setTab("orders");
+          }}
+        />
+      ) : null}
+      <InvoiceSheet
+        open={invOpen}
+        onClose={() => setInvOpen(false)}
+        targets={invoiceTargets}
+        onSent={() => {
+          // Sending bills the balance and stamps the installment; it writes no
+          // Invoice record, so this reloads the book but does not pretend the
+          // Invoices ledger has a new row to show.
+          void load();
+        }}
       />
 
       {/* ============ ROW ACTIONS SHEET ============ */}
