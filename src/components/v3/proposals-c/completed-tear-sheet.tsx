@@ -100,7 +100,9 @@ function CompletedCard({ row, index }: { row: ProposalCRow; index: number }) {
   // Everything reads as settled since the proposal is PAID.
   const resolved = row.installments.map((l) => ({
     ...l,
-    dollars: l.isPercent ? Math.round(row.total * (l.amount / 100)) : l.amount,
+    // What landed if it settled, else the server's resolved figure — the same
+    // cents the Accepted tab next door shows.
+    dollars: l.status === "PAID" && l.paidAmount != null ? l.paidAmount : l.owed,
   }));
 
   return (
@@ -436,7 +438,7 @@ function dateOrDash(iso: string | null): string {
 function estimateDeposit(row: ProposalCRow): number {
   const first = row.installments.find((l) => l.position === 0) ?? row.installments[0];
   if (!first) return 0;
-  return first.isPercent ? Math.round(row.total * (first.amount / 100)) : first.amount;
+  return first.status === "PAID" && first.paidAmount != null ? first.paidAmount : first.owed;
 }
 
 function EmptyCompleted() {
@@ -448,7 +450,7 @@ function EmptyCompleted() {
           Finished jobs settle here
         </h3>
         <p className="text-[13px] text-[color:var(--ink-muted)] max-w-md mx-auto">
-          Mark an accepted proposal completed and it'll move to this tab — receipts, dates, and
+          Mark an accepted proposal completed and it&apos;ll move to this tab — receipts, dates, and
           before-and-after photos all in one tear sheet.
         </p>
       </div>

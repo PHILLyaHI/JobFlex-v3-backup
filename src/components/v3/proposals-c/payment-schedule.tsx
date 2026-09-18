@@ -46,12 +46,10 @@ export function PaymentSchedule({
     isPaid: l.status === "PAID",
     isWaived: l.status === "WAIVED",
     isPending: l.status === "PENDING",
-    dollars:
-      l.status === "PAID" && l.paidAmount != null
-        ? l.paidAmount
-        : l.isPercent
-          ? Math.round(total * (l.amount / 100))
-          : l.amount,
+    // The server's resolved figure for an open stage (a fixed stage can be
+    // clamped to the balance too, so it is not just percents), and what
+    // actually landed once it is paid.
+    dollars: l.status === "PAID" && l.paidAmount != null ? l.paidAmount : l.owed,
   }));
   const scheduledTotal = resolved.reduce((a, l) => a + l.dollars, 0);
   const paidTotal = resolved.filter((l) => l.isPaid).reduce((a, l) => a + l.dollars, 0);

@@ -754,7 +754,15 @@ model Invoice {
   proposalId     String?
   clientId       String?
   number         String
+  /// What this row is worth in every money total: the ask while it is open,
+  /// and what actually landed on its installments once it is settled.
   amount         Float
+  /// What the client was ASKED for, stamped when the invoice was sent and left
+  /// alone afterwards. Settlement re-states `amount`, so without this the
+  /// figure in the client's email would be lost; the book shows both when they
+  /// differ. Null on rows nobody was sent (a receipt settlement wrote itself,
+  /// and every row that predates this column).
+  billedAmount   Float?
   status         String    @default("PENDING")
   provider       String    @default("MANUAL")
   externalId     String?
@@ -766,6 +774,7 @@ model Invoice {
   proposal     Proposal?    @relation(fields: [proposalId], references: [id])
   payments     Payment[]
 
+  @@unique([organizationId, number])
   @@index([organizationId, status])
 }
 

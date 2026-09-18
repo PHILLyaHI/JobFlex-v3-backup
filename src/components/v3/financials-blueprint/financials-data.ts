@@ -94,7 +94,11 @@ export type Invoice = {
   status: string;
   provider: string;
   due: string;
+  /** What the row is worth: the ask while open, what landed once settled. */
   amount: number;
+  /** What the client was ASKED for, when that is not what landed — the book
+   *  prints "billed $X · paid $Y". Null when they agree. */
+  billed: number | null;
   proposalId: string | null;
   overdue: boolean;
 };

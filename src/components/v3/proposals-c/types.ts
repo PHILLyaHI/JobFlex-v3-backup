@@ -17,8 +17,12 @@ export type ProposalCStatus =
 export interface InstallmentLine {
   id: string;
   label: string;
+  /** The raw column: dollars, or a PERCENT when `isPercent`. */
   amount: number;
   isPercent: boolean;
+  /** What the RESOLVER says the stage is worth right now, to the cent
+   *  (lib/paymentSchedule) — the figure Mark paid prefills and the write uses. */
+  owed: number;
   dueDate: string | null;
   position: number;
   /** Installment.status — UNPAID | PENDING | PAID | WAIVED. */

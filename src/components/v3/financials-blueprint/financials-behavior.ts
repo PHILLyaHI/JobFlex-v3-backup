@@ -174,6 +174,13 @@ export function initFinancialsContent(
   function money(n: number) {
     return "$" + Math.round(n).toLocaleString("en-US");
   }
+  /** The invoices book prints CENTS. Everywhere else on this page whole dollars
+   *  are the house style, but an invoice is a document the office reconciles
+   *  against a bank line, and the 47¢ that a rounded figure hides is exactly
+   *  what used to split a stage in two. */
+  function moneyCents(n: number) {
+    return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
   /** money() on a negative prints "$-5,100"; the minus belongs in front of the
    *  dollar sign, not after it. Only the overhead card can go negative. */
   function signedMoney(n: number) {
@@ -893,10 +900,14 @@ export function initFinancialsContent(
             '<td><span class="pt-mono">' +
             esc(i.due) +
             "</span></td>" +
-            '<td class="num"><span class="pt-money' +
+            '<td class="num">' +
+            // When a payment did not match the ask, the row prints both: what
+            // the client was billed, then what actually landed on it.
+            (i.billed != null ? '<span class="fi-note">billed ' + moneyCents(i.billed) + " · </span>" : "") +
+            '<span class="pt-money' +
             (i.status === "PAID" ? " banked" : "") +
             '">' +
-            money(i.amount) +
+            moneyCents(i.amount) +
             "</span></td>" +
             "</tr>"
           );

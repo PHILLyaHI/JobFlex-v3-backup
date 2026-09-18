@@ -26,6 +26,7 @@ export default async function InvoicesPage() {
     proposalId: i.proposalId,
     clientName: i.clientId ? (clientName.get(i.clientId) ?? "—") : "—",
     amount: i.amount,
+    billedAmount: i.billedAmount,
     status: i.status,
     provider: i.provider,
     dueDate: i.dueDate,

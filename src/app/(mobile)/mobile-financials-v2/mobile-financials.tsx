@@ -83,6 +83,7 @@ import {
   type ChangeOrder,
   type Expense,
   type FinancialsJob,
+  type FinancialsSnapshot,
   type Invoice,
   type InvoiceTarget,
   type MonthPoint,
@@ -94,6 +95,10 @@ const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+/** The invoices book prints CENTS — whole dollars are this page's style, but an
+ *  invoice is a document the office reconciles against a bank line. */
+const moneyCents = (n: number) =>
+  `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 /** A loss reads "−$4,100", never "$-4,100". */
 const signed = (n: number) => (n < 0 ? `−${money(Math.abs(n))}` : money(n));
 /** Chart axis ticks only — the donor's helper. */
@@ -279,7 +284,13 @@ export function MobileFinancials() {
   /** What the row sheet's kicker carries instead of the record line: the write
    *  that is on the wire, or the reason the server refused it. The sheet stays
    *  OPEN while a write runs, so the refusal lands on the record it names. */
-  const [sheetNote, setSheetNote] = useState("");
+  /* ---------- A new record, a clean status line ------------------------
+     The note carries the id of the row it is ABOUT, and the text is derived in
+     render: opening another row's menu shows nothing, while a note set on the
+     row already open survives. It used to be reset by an effect on [sheet],
+     which is a state write in an effect body — the same shape the Projects
+     book avoids by settling in callbacks. */
+  const [sheetNote, setSheetNote] = useState<{ id: string; text: string } | null>(null);
   const [menuBusy, setMenuBusy] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [staged, setStaged] = useState(false);
@@ -314,23 +325,29 @@ export function MobileFinancials() {
    *  result. "attach" — the form's own Receipt toggle, which only attaches. */
   const pickMode = useRef<"scan" | "attach">("scan");
 
-  /* ---------- the one read ---------------------------------------------- */
-  const load = useCallback(async () => {
+  /* ---------- the one read ----------------------------------------------
+     Both settlements land in a CALLBACK rather than in the caller's body, so
+     the mount effect below is a subscription to the read rather than a
+     synchronous state write — the shape the Projects book uses
+     (mobile-projects-v2/mobile-projects.tsx). */
+  const applyBook = useCallback((snap: FinancialsSnapshot) => {
+    setJobs(snap.jobs);
+    setMonthly(snap.monthly);
+    setRollup(snap.rollup);
+    setExpenses(snap.expenses);
+    setOrders(snap.orders);
+    setInvoices(snap.invoices);
+    setInvoiceTargets(snap.invoiceTargets);
     setLoadErr(null);
-    try {
-      const snap = await loadFinancials();
-      setJobs(snap.jobs);
-      setMonthly(snap.monthly);
-      setRollup(snap.rollup);
-      setExpenses(snap.expenses);
-      setOrders(snap.orders);
-      setInvoices(snap.invoices);
-      setInvoiceTargets(snap.invoiceTargets);
-      setReady(true);
-    } catch (err) {
-      setLoadErr(actionError(err));
-    }
+    setReady(true);
   }, []);
+  const applyBookError = useCallback((err: unknown) => {
+    setLoadErr(actionError(err));
+  }, []);
+  const load = useCallback(
+    () => loadFinancials().then(applyBook, applyBookError),
+    [applyBook, applyBookError],
+  );
 
   useEffect(() => {
     void load();
@@ -493,13 +510,6 @@ export function MobileFinancials() {
     }
     scrollRef.current?.scrollTo({ top: 0, behavior: prefersReducedMotion() ? "auto" : "smooth" });
   }, [page]);
-
-  /* ---------- A new record, a clean status line ------------------------
-     Keyed on the sheet REFERENCE, so opening another row's menu clears the
-     last refusal while a note set on the row already open survives. */
-  useEffect(() => {
-    setSheetNote("");
-  }, [sheet]);
 
   /* ---------- The one blue flash on a record you just changed ----------- */
   useEffect(() => {
@@ -880,7 +890,8 @@ export function MobileFinancials() {
   // A write in flight, or one the server refused, takes the kicker line: it is
   // the one place in this sheet that is already a status line, and it sits
   // directly above the record the message is about.
-  const sheetHead = sheetNote ? { kicker: sheetNote, title: record.title } : record;
+  const noteText = sheetNote && sheet && sheetNote.id === sheet.id ? sheetNote.text : "";
+  const sheetHead = noteText ? { kicker: noteText, title: record.title } : record;
 
   /* Only gestures with a REAL action behind them are offered. The fixture
      edition listed five invoice actions and a change-order approval that no
@@ -953,17 +964,17 @@ export function MobileFinancials() {
 
     if (act === "del") {
       setMenuBusy(true);
-      setSheetNote("Deleting…");
+      setSheetNote({ id: ref.id, text: "Deleting…" });
       try {
         if (ref.kind === "exp") await deleteJobExpense(ref.id);
         else await deleteChangeOrder(ref.id);
       } catch (err) {
         setMenuBusy(false);
-        setSheetNote(actionError(err));
+        setSheetNote({ id: ref.id, text: actionError(err) });
         return;
       }
       setMenuBusy(false);
-      setSheetNote("");
+      setSheetNote(null);
       setSheet(null);
       removeRow(ref);
       return;
@@ -971,16 +982,16 @@ export function MobileFinancials() {
 
     if (act === "send" && ref.kind === "co") {
       setMenuBusy(true);
-      setSheetNote("Sending…");
+      setSheetNote({ id: ref.id, text: "Sending…" });
       try {
         await sendChangeOrder(ref.id);
       } catch (err) {
         setMenuBusy(false);
-        setSheetNote(actionError(err));
+        setSheetNote({ id: ref.id, text: actionError(err) });
         return;
       }
       setMenuBusy(false);
-      setSheetNote("");
+      setSheetNote(null);
       setSheet(null);
       setOrders((prev) => prev.map((o) => (o.id === ref.id ? { ...o, status: "SENT" } : o)));
       setLandedId(ref.id);
@@ -991,7 +1002,7 @@ export function MobileFinancials() {
       const src = expenses.find((e) => e.id === ref.id);
       if (!src) return;
       setMenuBusy(true);
-      setSheetNote("Logging…");
+      setSheetNote({ id: ref.id, text: "Logging…" });
       let created: { id: string };
       try {
         created = await addJobExpense({
@@ -1002,11 +1013,11 @@ export function MobileFinancials() {
         });
       } catch (err) {
         setMenuBusy(false);
-        setSheetNote(actionError(err));
+        setSheetNote({ id: ref.id, text: actionError(err) });
         return;
       }
       setMenuBusy(false);
-      setSheetNote("");
+      setSheetNote(null);
       setSheet(null);
       const rec: Expense = { ...src, id: created.id, when: plate(new Date()), receiptUrl: null };
       setExpenses((prev) => [rec, ...prev]);
@@ -1873,8 +1884,12 @@ export function MobileFinancials() {
                       </span>
                       <span className={styles.frowFigs}>
                         <span className={styles.frowMono}>due {inv.due}</span>
+                        {/* The ask, when a payment did not match it. */}
+                        {inv.billed != null ? (
+                          <span className={styles.frowMono}>billed {moneyCents(inv.billed)}</span>
+                        ) : null}
                         <span className={`${styles.money} ${paid ? styles.banked : ""} ${inv.amount ? "" : styles.isZero}`}>
-                          {inv.amount ? money(inv.amount) : "—"}
+                          {inv.amount ? moneyCents(inv.amount) : "—"}
                         </span>
                       </span>
                     </div>

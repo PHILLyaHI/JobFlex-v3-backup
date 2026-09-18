@@ -24,8 +24,12 @@ export type Installment = {
   label: string;
   /** Short plate — "JUL 20" — or null for "no due date". */
   due: string | null;
+  /** The raw column: dollars, or a PERCENT when `pct`. */
   amount: number;
   pct: boolean;
+  /** What the RESOLVER says this stage is worth right now, to the cent
+   *  (lib/paymentSchedule). The figure every write uses. */
+  owed: number;
   /** Installment.status — UNPAID | PENDING | PAID | WAIVED. */
   status: string;
   /** Dollars that actually landed when PAID. */
@@ -34,10 +38,13 @@ export type Installment = {
   paidVia: string | null;
 };
 
-/** What a stage is worth right now: frozen when paid, computed otherwise. */
+/** What a stage is worth right now: what landed if it is paid, else the
+ *  resolver's figure — never a percent re-derived on the client, which rounded
+ *  to whole dollars and made every prefill ask for the wrong cents. */
 export function instDollars(p: { total: number }, it: Installment): number {
   if (it.status === "PAID" && it.paidAmt != null) return it.paidAmt;
-  return it.pct ? Math.round((p.total * it.amount) / 100) : it.amount;
+  if (typeof it.owed === "number") return it.owed;
+  return it.pct ? Math.round((p.total * it.amount)) / 100 : it.amount;
 }
 
 export type ProposalRow = {

@@ -13,6 +13,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { contractSchedule } from "@/lib/contractTotal";
+import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
 import { ProposalsCView } from "@/components/v3/proposals-c/proposals-c-view";
 import { V3_PORTED_ROUTES } from "@/lib/v3/routes";
 import type {
@@ -55,6 +57,9 @@ export default async function ProposalsCPage() {
         orderBy: { position: "asc" },
         include: { payment: { select: { provider: true } } },
       },
+      // The contract value a percent stage is measured against includes every
+      // approved change order (lib/contractTotal).
+      changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } },
       lineItems: {
         select: {
           id: true,
@@ -75,6 +80,22 @@ export default async function ProposalsCPage() {
       },
     },
   });
+
+  // One resolved schedule per proposal, so a stage's worth is the SERVER's
+  // figure everywhere: the strip, the Mark paid prefill and the write all agree
+  // to the cent.
+  const resolved = new Map(
+    proposals.map((p) => [
+      p.id,
+      new Map(
+        resolveSchedule({
+          ...contractSchedule(p.total, p.changeOrders),
+          currency: p.currency,
+          installments: p.installments,
+        }).stages.map((s) => [s.id, fromMinor(s.amountMinor)]),
+      ),
+    ]),
+  );
 
   const rows: ProposalCRow[] = proposals.map((p) => ({
     id: p.id,
@@ -103,6 +124,12 @@ export default async function ProposalsCPage() {
       label: i.label,
       amount: i.amount,
       isPercent: i.isPercent,
+      // The resolver's figure, to the cent — what Mark paid prefills and what
+      // markInstallmentPaid would default to. A percent re-derived on the
+      // client rounds, and settle.ts then splits the stage.
+      owed:
+        resolved.get(p.id)?.get(i.id) ??
+        (i.isPercent ? Math.round(p.total * i.amount) / 100 : i.amount),
       dueDate: i.dueDate?.toISOString() ?? null,
       position: i.position,
       status: i.status,

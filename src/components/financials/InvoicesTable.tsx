@@ -2,6 +2,7 @@
 import * as React from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import type { Route } from "next";
 import { Badge } from "@/components/ui/Badge";
 import { money, shortDate } from "@/lib/format";
 import { listStagger, listItem } from "@/lib/theme/motion";
@@ -9,6 +10,8 @@ import { listStagger, listItem } from "@/lib/theme/motion";
 export interface InvoiceRow {
   id: string;
   number: string;
+  /** What the client was asked for, when a payment did not match it. */
+  billedAmount: number | null;
   proposalId: string | null;
   clientName: string;
   amount: number;
@@ -100,7 +103,7 @@ export function InvoicesTable({ rows }: { rows: InvoiceRow[] }) {
                   <td className="px-5 py-3.5">
                     {r.proposalId ? (
                       <Link
-                        href={`/dashboard/proposals/${r.proposalId}` as any}
+                        href={`/dashboard/proposals/${r.proposalId}` as Route}
                         className="font-medium text-[color:var(--ink)] hover:text-[color:var(--accent)]"
                       >
                         #{r.number}
@@ -129,6 +132,11 @@ export function InvoicesTable({ rows }: { rows: InvoiceRow[] }) {
                     {r.dueDate ? shortDate(r.dueDate) : "—"}
                   </td>
                   <td className="px-5 py-3.5 text-right font-display tabular text-[14px]">
+                    {r.billedAmount != null && Math.abs(r.billedAmount - r.amount) > 0.005 ? (
+                      <span className="text-[12px] text-[color:var(--ink-muted)]">
+                        billed {money(r.billedAmount)} ·{" "}
+                      </span>
+                    ) : null}
                     {money(r.amount)}
                   </td>
                 </motion.tr>

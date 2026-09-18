@@ -19,7 +19,7 @@
 import { requireProposalStaff } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { contractSchedule, contractTotal } from "@/lib/contractTotal";
-import { resolveSchedule } from "@/lib/paymentSchedule";
+import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
 import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
 import { describeAddress, zillowSearchUrl } from "@/lib/zillow";
 import type { Installment, ProposalRow } from "./proposals-data";
@@ -108,6 +108,13 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
     }));
     // Same predicate the classic row menu used for its "N items" hint.
     const shoppable = materials.filter((m) => (m.materialCost ?? 0) > 0 && m.quantity > 0);
+    const schedule = resolveSchedule({ ...contractSchedule(p.total, p.changeOrders), currency: p.currency, installments: p.installments });
+    // The resolver's own per-stage figure, to the cent. A client re-deriving a
+    // percent stage from the total cannot land on the same number — it has no
+    // largest-remainder allocation and no clamp to the balance — and a prefill
+    // that is off by cents makes settle.ts split the stage and leave a
+    // remainder installment behind.
+    const resolvedOwed = new Map(schedule.stages.map((s) => [s.id, fromMinor(s.amountMinor)]));
     const inst: Installment[] = p.installments.map((i) => ({
       // The Remind button mails THIS instalment — notifyPaymentReminder looks
       // it up by id, so the id has to travel with the row.
@@ -116,11 +123,11 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
       due: plateDate(i.dueDate) ?? null,
       amount: i.amount,
       pct: i.isPercent,
+      owed: resolvedOwed.get(i.id) ?? 0,
       status: i.status,
       paidAmt: i.paidAmount,
       paidVia: i.payment?.provider ?? null,
     }));
-    const schedule = resolveSchedule({ ...contractSchedule(p.total, p.changeOrders), currency: p.currency, installments: p.installments });
     const addr = {
       address: p.client?.address,
       city: p.client?.city,

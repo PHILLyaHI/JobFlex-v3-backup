@@ -40,6 +40,13 @@
 // are read as a claim on the WHOLE contract, so the first new invoice on that
 // proposal supersedes them instead of double billing beside them.
 //
+// `amount` is what the row is worth in every money total — the ask while it is
+// open, what landed once it is settled. `billedAmount` keeps the figure the
+// client was ASKED for: it is stamped by the writes below that change the ask
+// (a send, a re-send, a claim that shrank) and NEVER by settlement, so the book
+// can print "billed $X · paid $Y" when a payment did not match the ask. A row
+// nobody was sent — the receipt settlement writes itself — has none.
+//
 // Vocabulary is the one the table already speaks: PENDING is "sent, waiting
 // for the money" — the rollup counts it as outstanding and calls it overdue
 // past its due date — PAID is settled, and VOID is superseded: still visible
@@ -134,6 +141,29 @@ export async function nextInvoiceNumber(organizationId: string, tx: AnyDb = db):
   return `INV-${max + 1}`;
 }
 
+/** Create a row, allocating its number under the unique index on
+ *  (organizationId, number). Two sends that race both read the same "next"
+ *  number and one of them loses with P2002 — it simply takes the next one.
+ *  Without the retry that loser would raise, and its invoice would go out with
+ *  no row behind it. */
+async function createNumbered(
+  tx: Tx,
+  organizationId: string,
+  data: Omit<Prisma.InvoiceUncheckedCreateInput, "number" | "organizationId">,
+): Promise<string> {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const number = await nextInvoiceNumber(organizationId, tx);
+    try {
+      await tx.invoice.create({ data: { ...data, organizationId, number } });
+      return number;
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code !== "P2002" || attempt === 5) throw err;
+    }
+  }
+  throw new Error("Could not allocate an invoice number");
+}
+
 export interface RecordInvoiceInput {
   organizationId: string;
   proposalId: string;
@@ -195,7 +225,7 @@ export async function recordInvoiceSent(input: RecordInvoiceInput, tx?: Tx): Pro
     await tx.invoice.update({
       where: { id: row.id },
       data: restOwed > 0
-        ? { externalId: claimKey(rest), amount: restOwed }
+        ? { externalId: claimKey(rest), amount: restOwed, billedAmount: restOwed }
         : { status: INVOICE_VOID },
     });
   }
@@ -208,26 +238,27 @@ export async function recordInvoiceSent(input: RecordInvoiceInput, tx?: Tx): Pro
       // Re-keyed as well: a row that predates the claim key (the seed's, or a
       // "remaining:" row from the first cut) says exactly what it bills from
       // here on, instead of being read as "the whole contract" for ever.
-      data: { amount: input.amount, provider: input.provider, dueDate: input.dueDate, externalId: key },
+      data: {
+        amount: input.amount,
+        billedAmount: input.amount,
+        provider: input.provider,
+        dueDate: input.dueDate,
+        externalId: key,
+      },
     });
     return restate.number;
   }
 
-  const number = await nextInvoiceNumber(input.organizationId, tx);
-  await tx.invoice.create({
-    data: {
-      organizationId: input.organizationId,
-      proposalId: input.proposalId,
-      clientId: input.clientId,
-      number,
-      amount: input.amount,
-      status: INVOICE_OPEN,
-      provider: input.provider,
-      externalId: key,
-      dueDate: input.dueDate,
-    },
+  return createNumbered(tx, input.organizationId, {
+    proposalId: input.proposalId,
+    clientId: input.clientId,
+    amount: input.amount,
+    billedAmount: input.amount,
+    status: INVOICE_OPEN,
+    provider: input.provider,
+    externalId: key,
+    dueDate: input.dueDate,
   });
-  return number;
 }
 
 export interface SettleInvoicesInput {
@@ -289,7 +320,8 @@ export async function settleInvoicesForPayment(tx: Tx, input: SettleInvoicesInpu
       data: {
         status: INVOICE_PAID,
         paidAt: input.paidAt,
-        // The row is worth what landed on it, and now claims only that.
+        // The row is worth what landed on it, and now claims only that. What
+        // was ASKED stays in billedAmount, untouched.
         amount: collected,
         externalId: claimKey(done),
       },
@@ -299,18 +331,15 @@ export async function settleInvoicesForPayment(tx: Tx, input: SettleInvoicesInpu
     if (rest.length && restOwed > 0) {
       // Part of what it billed is still owed: that part carries on as its own
       // open row, the way settle.ts splits a part-paid stage.
-      await tx.invoice.create({
-        data: {
-          organizationId: input.organizationId,
-          proposalId: input.proposalId,
-          clientId: input.clientId,
-          number: await nextInvoiceNumber(input.organizationId, tx),
-          amount: restOwed,
-          status: INVOICE_OPEN,
-          provider: row.provider,
-          externalId: claimKey(rest),
-          dueDate: row.dueDate,
-        },
+      await createNumbered(tx, input.organizationId, {
+        proposalId: input.proposalId,
+        clientId: input.clientId,
+        amount: restOwed,
+        billedAmount: restOwed,
+        status: INVOICE_OPEN,
+        provider: row.provider,
+        externalId: claimKey(rest),
+        dueDate: row.dueDate,
       });
     }
   }
@@ -322,18 +351,14 @@ export async function settleInvoicesForPayment(tx: Tx, input: SettleInvoicesInpu
   if (uncovered.length) {
     const amount = collectedOf(uncovered, facts);
     if (amount > 0) {
-      await tx.invoice.create({
-        data: {
-          organizationId: input.organizationId,
-          proposalId: input.proposalId,
-          clientId: input.clientId,
-          number: await nextInvoiceNumber(input.organizationId, tx),
-          amount,
-          status: INVOICE_PAID,
-          provider: input.provider,
-          externalId: claimKey(uncovered, true),
-          paidAt: input.paidAt,
-        },
+      await createNumbered(tx, input.organizationId, {
+        proposalId: input.proposalId,
+        clientId: input.clientId,
+        amount,
+        status: INVOICE_PAID,
+        provider: input.provider,
+        externalId: claimKey(uncovered, true),
+        paidAt: input.paidAt,
       });
     }
   }
@@ -393,18 +418,15 @@ export async function reopenInvoicesForPayment(tx: Tx, input: ReopenInvoicesInpu
         data: { amount: collectedOf(kept, facts), externalId: claimKey(kept) },
       });
       if (owed > 0) {
-        await tx.invoice.create({
-          data: {
-            organizationId: input.organizationId,
-            proposalId: input.proposalId,
-            clientId: row.clientId,
-            number: await nextInvoiceNumber(input.organizationId, tx),
-            amount: owed,
-            status: INVOICE_OPEN,
-            provider: row.provider,
-            externalId: claimKey(gone),
-            dueDate: row.dueDate,
-          },
+        await createNumbered(tx, input.organizationId, {
+          proposalId: input.proposalId,
+          clientId: row.clientId,
+          amount: owed,
+          billedAmount: owed,
+          status: INVOICE_OPEN,
+          provider: row.provider,
+          externalId: claimKey(gone),
+          dueDate: row.dueDate,
         });
       }
       continue;
@@ -412,7 +434,7 @@ export async function reopenInvoicesForPayment(tx: Tx, input: ReopenInvoicesInpu
     await tx.invoice.update({
       where: { id: row.id },
       data: owed > 0
-        ? { status: INVOICE_OPEN, paidAt: null, amount: owed, externalId: claimKey(gone) }
+        ? { status: INVOICE_OPEN, paidAt: null, amount: owed, billedAmount: owed, externalId: claimKey(gone) }
         : { status: INVOICE_VOID, paidAt: null },
     });
   }
@@ -447,7 +469,10 @@ export async function repriceOpenInvoices(
     }
     const key = claimKey(live);
     if (key === row.externalId && Math.abs(row.amount - owed) < 0.005) continue;
-    await tx.invoice.update({ where: { id: row.id }, data: { externalId: key, amount: owed } });
+    await tx.invoice.update({
+      where: { id: row.id },
+      data: { externalId: key, amount: owed, billedAmount: owed },
+    });
     changed += 1;
   }
   return changed;

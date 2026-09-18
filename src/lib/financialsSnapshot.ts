@@ -157,6 +157,12 @@ export async function getFinancialsSnapshot(
     provider: i.provider,
     due: plate(i.dueDate),
     amount: i.amount,
+    // What the client was asked for. Only carried when it differs from what the
+    // row is worth now, so a renderer can print the pair without comparing
+    // floats itself; null on a receipt row and on anything older than the
+    // column.
+    billed:
+      i.billedAmount != null && Math.abs(i.billedAmount - i.amount) > 0.005 ? i.billedAmount : null,
     proposalId: i.proposalId,
     overdue: i.status === "PENDING" && !!i.dueDate && i.dueDate < now,
   }));

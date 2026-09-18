@@ -189,9 +189,19 @@ export function initProposalsContent(
   function fmtMoney(n: number) {
     return "$" + Math.round(n).toLocaleString("en-US");
   }
+  /** Money that has to be exact because a write uses the same figure: the
+   *  invoice dialog's quote and the confirmation of what was actually sent. */
+  function fmtCents(n: number) {
+    return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  /** What a stage is worth right now, to the cent. The row carries the
+   *  RESOLVER's figure (proposals-query) — re-deriving a percent here rounded
+   *  to whole dollars, and this figure is what the invoice dialog quotes before
+   *  sendInstallmentInvoice bills the exact amount. */
   function instDollars(p: ProposalRow, inst: Installment) {
     if (inst.status === "PAID" && inst.paidAmt != null) return inst.paidAmt;
-    return inst.pct ? Math.round(p.total * (inst.amount / 100)) : inst.amount;
+    if (typeof inst.owed === "number") return inst.owed;
+    return inst.pct ? Math.round(p.total * inst.amount) / 100 : inst.amount;
   }
   function payPct(p: ProposalRow): number {
     const contract = p.contract ?? p.total;
@@ -1525,7 +1535,7 @@ export function initProposalsContent(
     if (note) {
       const amount = inst ? instDollars(p, inst) : p.owed;
       note.textContent =
-        `${fmtMoney(amount)} on "${p.title}" for ${p.client}. ` +
+        `${fmtCents(amount)} on "${p.title}" for ${p.client}. ` +
         (p.clientEmail ? "The invoice goes to the email on the client record" : "This client has no email on file — a text goes out if there is a phone") +
         ". Choose how they should pay:";
     }
@@ -1555,7 +1565,7 @@ export function initProposalsContent(
       closeDlg("invMdl");
       showAlert(
         "Invoice sent",
-        `${fmtMoney(r.amount)} — ${r.label}. Email ${r.email}, text ${r.sms}. The client pays from the link${method === "bank" ? " or by bank transfer using the details in the email" : ""}.`,
+        `${fmtCents(r.amount)} — ${r.label}. Email ${r.email}, text ${r.sms}. The client pays from the link${method === "bank" ? " or by bank transfer using the details in the email" : ""}.`,
       );
     } catch (err) {
       setDlgError("#invErr", actionError(err));

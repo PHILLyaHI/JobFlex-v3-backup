@@ -76,8 +76,14 @@ function AcceptedCard({ row, index }: { row: ProposalCRow; index: number }) {
   // Count of purchasable material lines — matches what the module shows.
   const materialCount = row.materials.filter((m) => (m.materialCost ?? 0) > 0).length;
 
+  /** What the stage is worth, to the cent: what landed if it is paid, else the
+   *  server's resolved figure. Re-deriving a percent here rounded to whole
+   *  dollars, so Mark paid prefilled $1,619 for a $1,619.47 stage — and
+   *  settle.ts, seeing a part payment, split the stage and left a 47¢
+   *  remainder installment behind. */
   function stageDollars(line: InstallmentLine) {
-    return line.isPercent ? Math.round(row.total * (line.amount / 100)) : line.amount;
+    if (line.status === "PAID" && line.paidAmount != null) return line.paidAmount;
+    return line.owed;
   }
 
   function openMarkPaid(line: InstallmentLine) {
