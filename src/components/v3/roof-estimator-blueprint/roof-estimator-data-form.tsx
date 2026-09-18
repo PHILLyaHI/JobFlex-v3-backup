@@ -275,10 +275,11 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
   const builtByOldPipeline = !!measurement?.calibration;
 
   // ── Packs still coming from the aerial provider ──
-  // A save with the area alone (the grouped pack order was slower than the
-  // 30 s poll) shows zero facets and no pitch. Rather than wait for the next
-  // click, ask the server to collect the pending orders every few seconds for
-  // about two minutes and swap the fuller measurement in when it lands.
+  // The first click returns with the area alone (2026-09-18: the detail packs
+  // are ordered the moment the area lands and never waited for), so a fresh
+  // save shows zero facets and no pitch. Ask the server to collect the pending
+  // orders every few seconds for about two minutes and swap the fuller
+  // measurement in as it lands.
   const instantPacks = measurement && measurement.source !== "recon" && measurement.instant ? measurement.provenance?.instantPacks ?? null : null;
   // Placed and paid, not delivered when the row was saved: the server
   // collects these for free, and nothing is priced until they land.
@@ -383,7 +384,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
   // What the intake shows when a measurement fails: one plain sentence, and
   // the one action that fits (a free re-check for an order still processing,
   // a billed new lookup when the paid answer holds no roof).
-  const [intakeError, setIntakeError] = React.useState<{ text: string; kind: "no-roof" | "processing" | "failed"; target: OrderInput } | null>(null);
+  const [intakeError, setIntakeError] = React.useState<{ text: string; kind: "no-roof" | "processing" | "failed"; target: OrderInput; reorder?: boolean } | null>(null);
   // The previous pick, for the retype rule below (the effect's closure cannot read state).
   const lastPickRef = React.useRef<PickedPlace | null>(null);
 
@@ -715,7 +716,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
       if (!res.ok) {
         stop();
         setPanel("intake");
-        setIntakeError({ text: res.error, kind: res.noRoof ? "no-roof" : res.stillProcessing ? "processing" : "failed", target: input });
+        setIntakeError({ text: res.error, kind: res.noRoof ? "no-roof" : res.stillProcessing ? "processing" : "failed", target: input, reorder: res.canReorder === true });
         toast.error("Couldn't measure this roof", res.error);
         return;
       }
@@ -1326,6 +1327,11 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
                       >
                         {intakeError.kind === "no-roof" ? "Order a new lookup — billed" : "Check again — free"}
                       </button>
+                      {intakeError.kind === "processing" && intakeError.reorder && (
+                        <button type="button" className="btn btn-ghost btn--sm" disabled={busy} onClick={() => void runInstant(true, intakeError.target)}>
+                          Order a new lookup — billed
+                        </button>
+                      )}
                     </span>
                   )}
                 </div>

@@ -115,7 +115,7 @@ function fakeDeps(world: FakeWorld) {
       read: async () => new Map<string, PackRecord>((world.entitlements ?? [[P.ROOF_AREA, "live"], [P.PITCH_EAVE, "live"]]).map(([pack, status]) => [pack, { pack, status, checkedAt: new Date(), error: null }])),
       mark: async (packs, status) => { marks.push([[...packs], status]); },
     },
-    isTerminalFailure: (err) => err instanceof Error && /^Property Data request (?!failed \()/i.test(err.message) && /fail|error|reject/i.test(err.message),
+    isTerminalFailure: (err) => err instanceof Error && /^Property Data request (?!failed \()/i.test(err.message) && /fail|error|reject|cancel/i.test(err.message),
     sleep: async (ms) => { clock += ms; },
     now: () => clock,
   };
@@ -125,38 +125,33 @@ const input: EvOrderInput = { address: "1 Main St", city: "Frisco", state: "TX",
 const short = (packs: readonly string[]) => packs.map((p) => p.slice(-3)).join(",");
 
 (async () => {
-  console.log("── the first click: every order placed before any is waited for");
+  console.log("── the first click: the area alone, waited for; the rest placed behind it and left to the page");
   {
-    const w = fakeDeps({ readiness: { "001": 1, "002": 2, "008": 1, "005": 1, "007": 1, "003": 1, "004": 1 } });
+    const w = fakeDeps({ readiness: { "001": 3, "002": 2, "008": 1, "005": 1, "007": 1, "003": 1, "004": 1 } });
     const out = await orderPacksFor(input, w.deps, { collectBudgetMs: 60_000 });
-    const firstPoll = w.calls.findIndex((c) => c.startsWith("poll"));
-    const lastSubmit = w.calls.map((c, i) => (c.startsWith("submit") ? i : -1)).filter((i) => i >= 0).pop() ?? -1;
-    check("all seven submits happen before the first poll", lastSubmit < firstPoll, w.calls.slice(0, 8).join(" | "));
-    check("every accepted order is in the ledger before any poll", w.calls.filter((c) => c.startsWith("ledger.create")).length === 7 && w.calls.findIndex((c) => c.startsWith("ledger.create req7")) < firstPoll);
-    check("each poll is a single ask (no order waited on alone)", w.calls.filter((c) => c.startsWith("poll")).every((c) => c.endsWith("@0")));
-    check("the answer carries every pack", short(out.report.have) === "001,002,003,004,005,007,008" && out.report.pending == null, JSON.stringify(out.report));
-    check("the merged answer has the area, the pitch, the outline and the imagery", out.instant.totals.areaSqft === 2400 && out.instant.structures[0].pitch === "6/12" && (out.instant.structures[0].outline?.length ?? 0) >= 3 && out.instant.imagery.length === 1);
+    const submits = w.calls.map((c, i) => (c.startsWith("submit") ? i : -1)).filter((i) => i >= 0);
+    const polls = w.calls.map((c, i) => (c.startsWith("poll") ? i : -1)).filter((i) => i >= 0);
+    check("001 is submitted first and alone; the other six follow", w.calls[0] === "submit 001" && submits.length === 7, w.calls.filter((c) => c.startsWith("submit")).join(" | "));
+    check("the area is waited for before anything else is placed", polls.length > 0 && polls.every((i) => i < submits[1]), w.calls.slice(0, 6).join(" | "));
+    check("only the area order is ever asked about, one ask per round", w.calls.filter((c) => c.startsWith("poll")).every((c) => c === "poll req1@0") && w.asks.req1 === 3, JSON.stringify(w.asks));
+    check("every accepted order is in the ledger", w.calls.filter((c) => c.startsWith("ledger.create")).length === 7);
+    check("the answer carries the area; the rest is pending for the page", short(out.report.have) === "001" && short(out.report.pending ?? []) === "002,003,004,005,007,008", JSON.stringify(out.report));
+    check("nothing is failed or missing", out.report.failed.length === 0 && out.report.missing.length === 0);
+    check("the merged answer has the area", out.instant.totals.areaSqft === 2400);
     check("the base order is pack 001 (merge keeps its id)", out.instant.requestId === "req1", out.instant.requestId);
     check("acceptance marks the packs live", w.marks.some(([p, s]) => s === "live" && p.includes(P.ROOF_AREA)) && w.marks.some(([p, s]) => s === "live" && p.includes(P.OUTLINES)));
   }
 
-  console.log("── a slow pack is pending, not failed, and the area is never waited past the budget");
+  console.log("── the area is waited for up to the budget, and never past it");
   {
-    // 002 needs 60 asks: at one ask per 2 s round that is past a 20 s budget.
-    const w = fakeDeps({ readiness: { "001": 1, "002": 60, "008": 1, "005": 1, "007": 1, "003": 1, "004": 1 } });
-    const out = await orderPacksFor(input, w.deps, { collectBudgetMs: 20_000 });
-    check("the slow pack is reported pending", short(out.report.pending ?? []) === "002", JSON.stringify(out.report));
-    check("…and not as failed or missing", out.report.failed.length === 0 && out.report.missing.length === 0);
-    check("its ledger row stays pending (nothing marked failed)", w.ledger.req2.status === "pending");
-    check("the other packs are in", short(out.report.have) === "001,003,004,005,007,008");
-    check("the wait stopped at the budget (rounds of ~2 s)", w.asks.req2 >= 9 && w.asks.req2 <= 12, `asked ${w.asks.req2} times`);
-  }
-  {
-    const w = fakeDeps({ readiness: { "001": 60, "002": 1, "008": 1, "005": 1, "007": 1, "003": 1, "004": 1 } });
+    // 001 needs 60 asks: at one ask per 2 s round that is past a 20 s budget.
+    const w = fakeDeps({ readiness: { "001": 60 } });
     let msg = "";
-    try { await orderPacksFor(input, w.deps, { collectBudgetMs: 10_000 }); } catch (err) { msg = (err as Error).message; }
+    try { await orderPacksFor(input, w.deps, { collectBudgetMs: 20_000 }); } catch (err) { msg = (err as Error).message; }
     check("the area itself still processing → the click fails with the order id kept", /taking longer.*req1.*without paying twice/s.test(msg), msg);
     check("…and the area's ledger row is still pending for the next click", w.ledger.req1.status === "pending");
+    check("the wait stopped at the budget (rounds of ~2 s)", w.asks.req1 >= 9 && w.asks.req1 <= 12, `asked ${w.asks.req1} times`);
+    check("nothing else was placed over a click that got no measurement", w.calls.filter((c) => c.startsWith("submit")).join() === "submit 001", w.calls.filter((c) => c.startsWith("submit")).join(" | "));
   }
 
   console.log("── refusals, placement failures, EagleView's own failures");
@@ -165,13 +160,13 @@ const short = (packs: readonly string[]) => packs.map((p) => p.slice(-3)).join("
     const out = await orderPacksFor(input, w.deps, { collectBudgetMs: 20_000 });
     check("a refused grouped order is probed pack by pack", w.calls.includes("submit 002") && w.calls.filter((c) => c === "submit 002").length === 2, w.calls.filter((c) => c.startsWith("submit")).join(" | "));
     check("a 403 probe is denied", short(out.report.denied) === "008", JSON.stringify(out.report.denied));
-    check("EagleView's own failure verdict is failed and recorded", short(out.report.failed) === "003" && Object.values(w.ledger).some((r) => r.packs.join() === "003" && r.status === "failed"));
-    check("the rest is in", short(out.report.have) === "001,002,004,005,007");
+    check("the area is in; the accepted probes are pending for the page (EagleView's own verdict on them comes then)", short(out.report.have) === "001" && short(out.report.pending ?? []) === "002,003,004,005,007", JSON.stringify(out.report));
+    check("nothing the page will collect is marked failed", out.report.failed.length === 0 && Object.values(w.ledger).every((r) => r.status !== "failed"));
   }
   {
     const w = fakeDeps({ readiness: { "001": 1, "002": 1 }, refuse: { "002": "5xx" } });
     const out = await orderPacksFor(input, w.deps, { collectBudgetMs: 5_000 });
-    check("a grouped order that could not be placed is failed, not pending", short(out.report.failed) === "002" && !out.report.pending, JSON.stringify(out.report));
+    check("a grouped order that could not be placed is failed, not pending", short(out.report.failed) === "002" && !(out.report.pending ?? []).includes(P.PITCH_EAVE), JSON.stringify(out.report));
   }
   {
     const w = fakeDeps({ readiness: {}, refuse: { "001": "403" } });
@@ -188,6 +183,7 @@ const short = (packs: readonly string[]) => packs.map((p) => p.slice(-3)).join("
     check("neither 001 nor the pending 002 is submitted", !w.calls.some((c) => c === "submit 001" || c.includes("002")), w.calls.filter((c) => c.startsWith("submit")).join(" | "));
     check("the stored area is the merge's base", out.instant.requestId === "old1" && out.instant.totals.areaSqft === 2400);
     check("skipped packs count as had", short(out.report.have).startsWith("001,002"));
+    check("the bought packs are pending, not waited for (no poll at all)", short(out.report.pending ?? []) === "003,004,005,007,008" && !w.calls.some((c) => c.startsWith("poll")), w.calls.join(" | "));
   }
 
   console.log("── collecting placed orders together");
@@ -214,6 +210,30 @@ const short = (packs: readonly string[]) => packs.map((p) => p.slice(-3)).join("
     check("a transport error is not a verdict: the order is asked again and lands", c.landed.some((l) => l.order.requestId === "a") && w.asks.a === 2);
     check("EagleView's failure verdict closes the order as failed", c.failed.map((o) => o.requestId).join() === "c" && w.ledger.c.status === "failed");
     check("nothing is left pending", c.pending.length === 0);
+  }
+
+  console.log("── collecting until the area: the pending-collect of a plain click");
+  {
+    const orders: PlacedOrder[] = [
+      { requestId: "a", packs: [P.PITCH_EAVE], completeAddress: "x" },
+      { requestId: "b", packs: [P.ROOF_AREA], completeAddress: "x" },
+      { requestId: "c", packs: [P.PROPERTY_DETAILS], completeAddress: "x" },
+    ];
+    const w = fakeDeps({ readiness: {} });
+    const need: Record<string, number> = { a: 50, b: 3, c: 50 };
+    (w.deps as unknown as { poll: OrderDeps["poll"] }).poll = async (requestId, _i, _a, onRaw) => {
+      w.asks[requestId] = (w.asks[requestId] ?? 0) + 1;
+      if (w.asks[requestId] < need[requestId]) return null;
+      onRaw("{}");
+      return answerFor(requestId, orders.find((x) => x.requestId === requestId)!.packs);
+    };
+    const c = await collectPlacedOrders(orders, input, w.deps, 45_000, { untilPack: P.ROOF_AREA });
+    check("the wait ends the moment the area lands", c.landed.map((l) => l.order.requestId).join() === "b" && w.asks.b === 3, JSON.stringify(w.asks));
+    check("the others are left pending, asked only while the area was open", c.pending.map((o) => o.requestId).join() === "a,c" && w.asks.a <= 3 && w.asks.c <= 3, JSON.stringify(w.asks));
+    const w0 = fakeDeps({ readiness: {} });
+    (w0.deps as unknown as { poll: OrderDeps["poll"] }).poll = async (requestId) => { w0.asks[requestId] = (w0.asks[requestId] ?? 0) + 1; return null; };
+    const c0 = await collectPlacedOrders(orders, input, w0.deps, 0);
+    check("a budget of 0 is one round: each order asked once, nothing waited for", c0.pending.length === 3 && Object.values(w0.asks).every((n) => n === 1), JSON.stringify(w0.asks));
   }
 
   console.log("── the report and the roof test");

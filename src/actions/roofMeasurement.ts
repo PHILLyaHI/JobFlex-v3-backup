@@ -7,13 +7,17 @@
 // строениям, парсель-вето. modelJson остаётся полем схемы; новый код его
 // НЕ пишет ("{}").
 //
-// THE FIRST CLICK GETS THE WHOLE ANSWER (review 2026-09-17). Every pack is
-// ordered up front and collected together (lib/eagleviewOrder); whatever is
-// still processing when the budget runs out is saved as `pending` and the
-// page collects it without a new charge. Nothing pending is ever re-bought:
-// a re-measure skips packs the address already has, complete or on the way.
-// The whole action runs under one budget (ACTION_BUDGET_MS) below the page's
-// maxDuration, and the elevation pass takes only what is left of it.
+// THE FIRST CLICK GETS THE MEASUREMENT; THE DETAILS LAND BEHIND IT
+// (2026-09-18). The area pack is ordered alone and waited for alone
+// (lib/eagleviewOrder); the moment it lands the other packs are ordered and
+// the click returns with them saved as `pending` — the page collects them
+// without a new charge and prices nothing until they are in. Nothing pending
+// is ever re-bought: a re-measure skips packs the address already has,
+// complete or on the way. The one exception is an area order the provider
+// has sat on for STALE_PENDING_MS: it no longer blocks the address, and the
+// page offers a new, billed lookup over it. The whole action runs under one
+// budget (ACTION_BUDGET_MS) below the page's maxDuration, and the elevation
+// pass takes only what is left of it.
 
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
@@ -79,6 +83,8 @@ type MeasureResult =
       noRoof?: boolean;
       /** A paid order is still processing — the next click collects it for free. */
       stillProcessing?: boolean;
+      /** …and has been for STALE_PENDING_MS: a new, billed lookup may be ordered over it. */
+      canReorder?: boolean;
       debug?: Record<string, unknown>;
     };
 
@@ -98,8 +104,10 @@ const RECON_DEADLINE_MS = SOLAR_CALL_SLOTS * SOLAR_CALL_BUDGET_MS;
  */
 const ACTION_BUDGET_MS = 250_000;
 const RECON_FLOOR_MS = 20_000;
-/** How long a plain click waits for orders an earlier click left processing. */
+/** How long a plain click waits for an AREA order an earlier click left processing; detail orders are asked once and left to the page. */
 const PENDING_COLLECT_BUDGET_MS = 45_000;
+/** An area order the provider has not delivered in this long no longer blocks a new, billed lookup. */
+const STALE_PENDING_MS = 15 * 60_000;
 /** How long the page's background collect asks about pending orders per call. */
 const BACKGROUND_COLLECT_BUDGET_MS = 12_000;
 /** The elevation pass re-run when a late pack changes the roof's outline or pitch. */
@@ -149,7 +157,7 @@ function reconFailureKind(err: unknown): SolarFailureKind {
 
 /** A terminal Property Data verdict (failed/rejected), as opposed to "not ready yet". */
 const isTerminalPdFailure = (err: unknown): boolean =>
-  err instanceof Error && /^Property Data request (?!failed \()/i.test(err.message) && /fail|error|reject/i.test(err.message);
+  err instanceof Error && /^Property Data request (?!failed \()/i.test(err.message) && /fail|error|reject|cancel/i.test(err.message);
 
 interface ObtainedInstant {
   instant: InstantRoofData;
@@ -207,10 +215,10 @@ async function completeOrdersFor(organizationId: string, addressKey: string): Pr
 }
 
 /** Orders for the address that were placed but not collected yet, oldest first. */
-async function pendingOrdersFor(organizationId: string, addressKey: string, input: EvOrderInput): Promise<PlacedOrder[]> {
+async function pendingOrdersFor(organizationId: string, addressKey: string, input: EvOrderInput): Promise<Array<PlacedOrder & { placedAt: Date }>> {
   const rows = await db.instantOrder.findMany({ where: { organizationId, addressKey, status: "pending" }, orderBy: { createdAt: "asc" } });
   const completeAddress = instantCompleteAddress(input);
-  return rows.map((r) => ({ requestId: r.requestId, packs: rowPacks(r.packs) as PdPack[], completeAddress }));
+  return rows.map((r) => ({ requestId: r.requestId, packs: rowPacks(r.packs) as PdPack[], completeAddress, placedAt: r.createdAt }));
 }
 
 /** What the account is currently refused, for the report of a reused answer. */
@@ -236,10 +244,19 @@ class NoRoofError extends Error {
   }
 }
 
-/** A paid order for the roof area is still processing — nothing to build on yet, and never a second order over it. */
+/**
+ * A paid order for the roof area is still processing — nothing to build on
+ * yet, and no second order over it by a plain click. Once the provider has
+ * sat on it for STALE_PENDING_MS the order is `stale`: the page may offer a
+ * new, billed lookup, which abandons it.
+ */
 class StillProcessingError extends Error {
-  constructor(requestId: string) {
-    super(`The aerial provider is still working on this address (order ${requestId}). Measure again in a minute — the paid order is collected then without a new charge.`);
+  constructor(requestId: string, readonly stale: boolean) {
+    super(
+      stale
+        ? `The aerial provider has been working on this address for over ${Math.round(STALE_PENDING_MS / 60_000)} minutes (order ${requestId}). Check again for free, or order a new lookup — billed.`
+        : `The aerial provider is still working on this address (order ${requestId}). Measure again in a minute — the paid order is collected then without a new charge.`,
+    );
     this.name = "StillProcessingError";
   }
 }
@@ -276,24 +293,42 @@ async function obtainInstant(input: EvOrderInput, organizationId: string, forceN
   const deps = orderDeps(organizationId, addressKey, input);
   const owned = keyed ? await completeOrdersFor(organizationId, addressKey) : { parts: [], have: [], requestId: null };
 
-  // 1. what an earlier click left processing
+  // 1. what an earlier click left processing. The area on the way is waited
+  //    for (it is the measurement, up to PENDING_COLLECT_BUDGET_MS); detail
+  //    orders on the way are asked once and left to the page's collect.
   let recovered: Array<{ instant: InstantRoofData; packs: PdPack[]; requestId: string }> = [];
   let stillPending: string[] = [];
-  let pendingAreaOrder: string | null = null;
+  let pendingArea: { requestId: string; packs: PdPack[]; placedAt: Date } | null = null;
   if (keyed) {
     const open = await pendingOrdersFor(organizationId, addressKey, input);
     if (open.length) {
-      const budget = Math.min(PENDING_COLLECT_BUDGET_MS, Math.max(0, deadlineAt - Date.now() - RECON_FLOOR_MS));
-      const c = await collectPlacedOrders(open, input, deps, budget);
+      const areaOnTheWay = !owned.have.includes(PD_PACK.ROOF_AREA) && open.some((o) => o.packs.includes(PD_PACK.ROOF_AREA));
+      const budget = areaOnTheWay ? Math.min(PENDING_COLLECT_BUDGET_MS, Math.max(0, deadlineAt - Date.now() - RECON_FLOOR_MS)) : 0;
+      const c = await collectPlacedOrders(open, input, deps, budget, areaOnTheWay ? { untilPack: PD_PACK.ROOF_AREA } : {});
       recovered = c.landed.map((l) => ({ instant: l.instant, packs: l.order.packs, requestId: l.order.requestId }));
       stillPending = c.pending.flatMap((o) => o.packs);
-      pendingAreaOrder = c.pending.find((o) => o.packs.includes(PD_PACK.ROOF_AREA))?.requestId ?? null;
+      const pa = c.pending.find((o) => o.packs.includes(PD_PACK.ROOF_AREA));
+      if (pa) pendingArea = { requestId: pa.requestId, packs: pa.packs, placedAt: open.find((o) => o.requestId === pa.requestId)?.placedAt ?? new Date() };
     }
   }
   const have = [...new Set([...owned.have, ...recovered.flatMap((r) => r.packs)])];
   const parts = areaFirst([...owned.parts, ...recovered.map((r) => r.instant)]);
-  // The area itself is still on the way: nothing to build on, and no second order over it, re-measure or not.
-  if (!have.includes(PD_PACK.ROOF_AREA) && pendingAreaOrder) throw new StillProcessingError(pendingAreaOrder);
+  // The area itself is still on the way: nothing to build on, and no second
+  // order over it — unless the provider has sat on it past STALE_PENDING_MS
+  // and the contractor explicitly orders a new lookup, which abandons it.
+  if (!have.includes(PD_PACK.ROOF_AREA) && pendingArea) {
+    const stale = Date.now() - pendingArea.placedAt.getTime() >= STALE_PENDING_MS;
+    if (!(forceNewOrder && stale)) throw new StillProcessingError(pendingArea.requestId, stale);
+    console.warn("[roofMeasurement] abandoning a stale area order for a new lookup", { requestId: pendingArea.requestId, placedAt: pendingArea.placedAt });
+    await db.instantOrder
+      .update({
+        where: { requestId: pendingArea.requestId },
+        data: { status: "failed", error: `Not delivered in ${Math.round(STALE_PENDING_MS / 60_000)} min — a new lookup was ordered over it on ${new Date().toISOString()}` },
+      })
+      .catch(() => {});
+    const abandoned = new Set<string>(pendingArea.packs);
+    stillPending = stillPending.filter((p) => !abandoned.has(p));
+  }
 
   if (keyed && !forceNewOrder) {
     // 2a. complete orders in the ledger (and what was just collected), merged
@@ -343,8 +378,8 @@ async function obtainInstant(input: EvOrderInput, organizationId: string, forceN
   const hasAll = PD_DIAGRAM_PACKS.every((p) => have.includes(p));
   const skip = forceNewOrder && hasAll ? [] : [...have, ...stillPending];
   const base = skip.length && parts.length ? mergeInstantResults(parts) : null;
-  // Placing up to seven orders takes a few seconds each at worst; the collect
-  // wait takes what is left, and the elevation pass after it keeps its floor.
+  // The area order is waited for under this budget; the other packs are placed
+  // once it lands and left to the page, and the elevation pass keeps its floor.
   const collectBudgetMs = Math.max(15_000, Math.min(ORDER_COLLECT_BUDGET_MS, deadlineAt - Date.now() - RECON_FLOOR_MS - 30_000));
   const { instant, report } = await orderPacksFor(input, deps, { skip, base, collectBudgetMs });
   if (!hasRoof(instant)) throw new NoRoofError(instant.requestId);
@@ -577,10 +612,10 @@ async function witnessInstant(p: {
 
 /**
  * Collect the packs EagleView had not finished when the measurement was
- * saved. Since 2026-09-17 the first click places every order up front and
- * waits for all of them together, so this is the exception, not the rule:
- * an order slower than the collect budget is saved as `pending` on the row
- * and the page calls this every few seconds for about two minutes. Each
+ * saved. Since 2026-09-18 this is the rule, not the exception: the first
+ * click waits for the area alone and returns the moment it lands, with the
+ * detail packs saved as `pending` on the row, and the page calls this every
+ * few seconds for about two minutes until they are in. Each
  * pending order is asked about briefly; what has landed is merged into the
  * saved row (columns, packs report and all) and, when a pack the witnesses
  * read landed (the outline, the pitch, the details), the elevation pass is
@@ -820,7 +855,7 @@ export async function measureRoofInstant(
       ok: false,
       error: userFacingInstantError(err),
       ...(err instanceof NoRoofError ? { noRoof: true } : {}),
-      ...(err instanceof StillProcessingError ? { stillProcessing: true } : {}),
+      ...(err instanceof StillProcessingError ? { stillProcessing: true, ...(err.stale ? { canReorder: true } : {}) } : {}),
       debug,
     };
   }

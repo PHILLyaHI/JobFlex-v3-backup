@@ -20,24 +20,34 @@ paying for everything again.
 
 ## What holds now
 
-**The planner places first and collects together** (`lib/eagleviewOrder.ts`).
-Every order is placed before any is waited for — 001 alone, then the packs
-the account is known to have in one request, then the probes — each written
-to the ledger the moment EagleView accepts it. The placed orders are then
-collected in one round-robin wait under a single budget (75 s): one result
-request at a time, every open order asked in turn every two seconds. An order
-still processing when the budget runs out is reported as **`pending`** —
-placed, paid, collected later for free — never as failed and never
-re-ordered. A transport error on one ask is not a verdict (asked again next
-round); only EagleView's own failed/rejected status closes an order as failed.
-If 001 itself has not answered, the click fails with the order id kept and the
-next click collects it.
+**The area is the measurement; the rest lands behind it** (2026-09-18,
+`lib/eagleviewOrder.ts`). The first live run of the 2026-09-17 planner
+(all seven placed up front, all waited for together) showed its cost: the
+click waited the whole 75 s budget for the slowest pack, and with seven
+orders on one address at once the area itself was still processing after it
+— the page sat on STILL PROCESSING and the contractor had nothing. Now 001 is
+placed **alone** and waited for **alone** (asked every two seconds, up to
+75 s); the moment it lands the other packs are placed — the packs the account
+is known to have in one request, then the probes, each written to the ledger
+the moment EagleView accepts it — and the click returns. Those are reported
+as **`pending`** — placed, paid, never waited for by the click — and the page
+collects them every few seconds (`collectPendingInstant`), pricing nothing
+until they are in. A transport error on one ask is not a verdict (asked again
+next round); only EagleView's own failed/rejected/cancelled status closes an
+order as failed. If 001 itself has not answered within the budget, the click
+fails with the order id kept and the next click collects it.
 
 **The action runs under one budget** (`actions/roofMeasurement.ts`,
-`ACTION_BUDGET_MS` 250 s under the page's new `maxDuration = 300`). Orders an
-earlier click left processing are collected first (all of them, 45 s), then a
-stored answer is reused, then — only then — the packs the address lacks are
-bought, skipping what is complete **and what is still on the way**. The
+`ACTION_BUDGET_MS` 250 s under the page's `maxDuration = 300`). Orders an
+earlier click left processing are collected first — the area on the way is
+waited for (45 s, and the wait ends the moment it lands); detail orders on
+the way are asked once and left to the page — then a stored answer is
+reused, then — only then — the packs the address lacks are bought, skipping
+what is complete **and what is still on the way**. An area order the provider
+has sat on for 15 minutes (`STALE_PENDING_MS`) is the one exception: the
+STILL PROCESSING panel then also offers **Order a new lookup — billed**,
+which abandons the stale order (ledger row failed, reason kept) and buys
+again. The
 elevation pass takes what is left of the budget and is skipped (and says so on
 the row) when the order used it up; the page's free retry runs it then. The
 unused Google-segments call is gone.

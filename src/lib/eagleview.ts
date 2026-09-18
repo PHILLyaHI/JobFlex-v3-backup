@@ -1344,7 +1344,7 @@ export async function submitInstantOrder(
  * Poll result/{requestId} until Complete, a terminal failure, or the ceiling.
  * Returns null while the order is genuinely still processing — the order is
  * NOT lost, only not ready; ask again later with the same id. Throws on
- * failed/rejected status and on transport errors.
+ * failed/rejected/cancelled status and on transport errors.
  */
 export async function pollInstantResult(
   requestId: string,
@@ -1406,7 +1406,7 @@ export async function pollInstantResult(
       }
       return parseInstantResult(data as PdResult, requestId, input, completeAddress);
     }
-    if (/fail|error|reject/i.test(status)) throw new Error(`Property Data request ${status}`);
+    if (/fail|error|reject|cancel/i.test(status)) throw new Error(`Property Data request ${status}`);
   } while (Date.now() < deadline);
   return null;
 }

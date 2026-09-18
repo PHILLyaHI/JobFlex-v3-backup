@@ -14,16 +14,19 @@
 //      knocked out of step 2. 202 → live; 403 → denied (a refusal is free);
 //      anything else → failed, verdict unchanged.
 //
-// PLACE FIRST, COLLECT TOGETHER (review 2026-09-17). Until then every accepted
-// order was polled to completion — up to 30 s each — before the next one was
-// even placed, so a first click on a new address could wait 30 s × 7 and the
-// function limit cut it off with the area pack collected and the rest never
-// ordered. Now every order is PLACED before any is waited for, and the placed
-// orders are collected in one round-robin wait under a single budget: one
-// result request at a time, each order asked in turn every couple of seconds.
-// An order still processing when the budget runs out is reported as
-// `pending` — placed, paid, and collected later without a new charge
-// (collectPendingInstant) — never as failed and never re-ordered.
+// THE AREA IS THE MEASUREMENT; THE REST LANDS BEHIND IT (2026-09-18). Until
+// 2026-09-17 every accepted order was polled to completion — up to 30 s each —
+// before the next one was even placed, so a first click on a new address could
+// wait 30 s × 7 and the function limit cut it off. The 2026-09-17 review then
+// placed all seven up front and waited for all of them together, and the first
+// live run showed the cost: the click waited the whole budget for the slowest
+// pack, and with seven orders on the same address at once the area itself was
+// still processing after it. Now the area order is placed ALONE and waited for
+// ALONE (asked round after round, up to the budget); the moment it lands the
+// other packs are placed and the click returns — those are reported as
+// `pending`: placed, paid, and collected by the page without a new charge
+// (collectPendingInstant), never as failed and never re-ordered. The page
+// prices nothing until they are in.
 //
 // Whatever the billing model, only accepted packs are paid for: EagleView
 // rejects a refused request whole. Every accepted request is written to the
@@ -191,13 +194,17 @@ export interface CollectOutcome {
  * still open asked in turn, a short pause between rounds, until all have
  * answered or the budget is spent. A transport error on one ask is not a
  * verdict — the order stays open and is asked again next round; only
- * EagleView's own failed/rejected status closes an order as failed.
+ * EagleView's own failed/rejected/cancelled status closes an order as failed.
+ * A budget of 0 is one round: every order asked once, no waiting. With
+ * `untilPack` the wait ends the moment the order carrying that pack has
+ * answered (landed or failed) — the others are left pending for the page.
  */
 export async function collectPlacedOrders(
   orders: readonly PlacedOrder[],
   input: EvOrderInput,
   deps: OrderDeps,
   budgetMs: number,
+  opts: { untilPack?: PdPack } = {},
 ): Promise<CollectOutcome> {
   const now = deps.now ?? (() => Date.now());
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -206,7 +213,8 @@ export async function collectPlacedOrders(
   const failed: PlacedOrder[] = [];
   const deadline = now() + Math.max(0, budgetMs);
   let first = true;
-  while (open.length) {
+  const waitingFor = (): boolean => !opts.untilPack || open.some((o) => o.packs.includes(opts.untilPack as PdPack));
+  while (open.length && waitingFor()) {
     // The first round asks every order once without a pause; from then on
     // the loop waits between rounds and stops when the budget is spent.
     if (!first) {
@@ -231,6 +239,7 @@ export async function collectPlacedOrders(
           deps.log?.(`result for ${order.requestId} (${order.packs.join(",")}) not answered this round: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
+      if (!waitingFor()) break;
     }
   }
   landed.sort((a, b) => Number(b.order.packs.includes(ROOF_AREA)) - Number(a.order.packs.includes(ROOF_AREA)));
@@ -250,10 +259,14 @@ async function placeOrder(deps: OrderDeps, input: EvOrderInput, packs: PdPack[])
 
 /**
  * Buy the diagram packs for an address, minus `skip` (packs the address
- * already has from earlier orders, complete or still processing). Throws when
- * pack 001 itself is refused or fails to place — there is no measurement
- * without the area — and when 001 is placed but has not answered within the
- * budget (the order is in the ledger; the next click collects it for free).
+ * already has from earlier orders, complete or still processing). The area
+ * (pack 001) is placed alone and waited for alone: it is the measurement,
+ * and a click returns the moment it lands. Throws when 001 is refused or
+ * fails to place — there is no measurement without the area — and when 001
+ * is placed but has not answered within the budget (the order is in the
+ * ledger; the next click collects it for free). The other packs are placed
+ * once the area is in and are NOT waited for: they come back as `pending`
+ * and the page collects them.
  */
 export async function orderPacksFor(
   input: EvOrderInput,
@@ -265,21 +278,33 @@ export async function orderPacksFor(
   const have = new Set<string>(skip);
   const denied = new Set<string>();
   const failed = new Set<string>();
-  const placed: PlacedOrder[] = [];
+  const parts: InstantRoofData[] = [];
 
-  // ── PLACE every order first; nothing is waited for yet ──
-  // 1. the area, alone and first
+  // ── 1. the area, alone: placed, then waited for ──
   if (wanted.includes(ROOF_AREA)) {
+    let areaOrder: PlacedOrder;
     try {
-      placed.push(await placeOrder(deps, input, [ROOF_AREA]));
+      areaOrder = await placeOrder(deps, input, [ROOF_AREA]);
       await deps.entitlements.mark([ROOF_AREA], "live");
     } catch (err) {
       if (err instanceof PdEntitlementError) await deps.entitlements.mark([ROOF_AREA], "denied", err.message);
       throw err;
     }
+    const c = await collectPlacedOrders([areaOrder], input, deps, opts.collectBudgetMs ?? ORDER_COLLECT_BUDGET_MS);
+    if (c.pending.length) {
+      throw new Error(
+        `Property Data is taking longer than expected (order ${areaOrder.requestId}, roof area). The order is saved — measuring this address again will collect it without paying twice.`,
+      );
+    }
+    const landed = c.landed[0];
+    if (!landed) throw new Error(`Property Data request failed for the roof area (order ${areaOrder.requestId})`);
+    parts.push(landed.instant);
+    have.add(ROOF_AREA);
   }
 
-  // 2. everything the account is known to have, in one request
+  // ── 2. the rest: placed now, collected by the page ──
+  const placed: PlacedOrder[] = [];
+  // 2a. everything the account is known to have, in one request
   const rest = wanted.filter((p) => p !== ROOF_AREA);
   const known = await deps.entitlements.read();
   const live = rest.filter((p) => known.get(p)?.status === "live");
@@ -300,7 +325,7 @@ export async function orderPacksFor(
     }
   }
 
-  // 3. one pack at a time, in the order the page misses them
+  // 2b. one pack at a time, in the order the page misses them
   const probeOrder = PROBE_ORDER as readonly string[];
   const toProbe: string[] = oneByOne;
   const ordered = [...probeOrder.filter((p) => toProbe.includes(p)), ...toProbe.filter((p) => !probeOrder.includes(p))];
@@ -318,26 +343,8 @@ export async function orderPacksFor(
       }
     }
   }
-
-  // ── COLLECT them together ──
-  const collected = await collectPlacedOrders(placed, input, deps, opts.collectBudgetMs ?? ORDER_COLLECT_BUDGET_MS);
-  const parts: InstantRoofData[] = [];
-  for (const { order, instant } of collected.landed) {
-    parts.push(instant);
-    order.packs.forEach((p) => have.add(p));
-  }
-  for (const order of collected.failed) order.packs.forEach((p) => failed.add(p));
-  const stillPending = collected.pending.flatMap((o) => o.packs);
-
-  const areaOrder = placed.find((o) => o.packs.includes(ROOF_AREA));
-  if (areaOrder && !have.has(ROOF_AREA)) {
-    if (collected.pending.includes(areaOrder)) {
-      throw new Error(
-        `Property Data is taking longer than expected (order ${areaOrder.requestId}, roof area). The order is saved — measuring this address again will collect it without paying twice.`,
-      );
-    }
-    throw new Error(`Property Data request failed for the roof area (order ${areaOrder.requestId})`);
-  }
+  // Placed and paid, not waited for: the page collects them (collectPendingInstant).
+  const stillPending = placed.flatMap((o) => o.packs);
 
   // The base (pack 001, this order's or an earlier one's) goes first so every
   // later part fills its structures in; the merge re-derives the totals.
