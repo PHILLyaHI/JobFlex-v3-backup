@@ -395,7 +395,15 @@
 :global(.jf-blueprint .content) .rrow-wrap:last-child { border-bottom: none; }
 :global(.jf-blueprint .content) .rrow-wrap .rrow { border-bottom: none; cursor: default; }
 :global(.jf-blueprint .content) .rrow-open { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; font-family: var(--font); color: var(--ink); }
-:global(.jf-blueprint .content) .rrow-open:hover .rrow-a { color: var(--blueprint); }
+
+/* The recent rows on a phone: a nowrap title used to set the grid column's
+   minimum width past the viewport and clip "Record actual" off the edge. */
+:global(.jf-blueprint .content) .recent > * { min-width: 0; }
+:global(.jf-blueprint .content) .rrow-open > * { max-width: 100%; }
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .rrow-a { white-space: normal; }
+  :global(.jf-blueprint .content) .rrow-v { white-space: normal; }
+}:global(.jf-blueprint .content) .rrow-open:hover .rrow-a { color: var(--blueprint); }
 :global(.jf-blueprint .content) .actual { display: grid; grid-template-columns: 150px 150px minmax(0, 1fr) auto; gap: 10px; align-items: end; padding: 0 18px 14px; }
 @media (max-width: 860px) {
   :global(.jf-blueprint .content) .actual { grid-template-columns: 1fr 1fr; }

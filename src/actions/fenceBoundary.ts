@@ -44,6 +44,8 @@ export type { LatLngPoint };
 export interface BuildingRing {
   ring: LatLngPoint[];
   heightFt: number;
+  /** True when the height came from a real `height` / `building:levels` tag; false = the one-storey default. */
+  heightTagged?: boolean;
 }
 
 // ── Building footprints ────────────────────────────────────────────────────
@@ -58,18 +60,22 @@ const OSM_RADIUS_M = 130; // ≈ 425 ft — the subject lot + immediate neighbou
 const MAX_BUILDINGS = 40;
 
 function heightFromTags(tags: Record<string, unknown> | undefined): number {
-  if (tags) {
-    // OSM `height` is metres by default; honour an explicit ft/' suffix.
-    const h = tags["height"];
-    if (typeof h === "string" || typeof h === "number") {
-      const s = String(h);
-      const n = parseFloat(s);
-      if (Number.isFinite(n) && n > 0) return /'|ft/i.test(s) ? n : n * FT_PER_M;
-    }
-    const levels = parseFloat(String(tags["building:levels"] ?? ""));
-    if (Number.isFinite(levels) && levels > 0) return levels * 10 + 3; // 10 ft/story + roof structure
+  return taggedHeight(tags) ?? DEFAULT_BUILDING_FT;
+}
+
+/** The height a real tag states, in feet; undefined when nothing is tagged. */
+function taggedHeight(tags: Record<string, unknown> | undefined): number | undefined {
+  if (!tags) return undefined;
+  // OSM `height` is metres by default; honour an explicit ft/' suffix.
+  const h = tags["height"];
+  if (typeof h === "string" || typeof h === "number") {
+    const s = String(h);
+    const n = parseFloat(s);
+    if (Number.isFinite(n) && n > 0) return /'|ft/i.test(s) ? n : n * FT_PER_M;
   }
-  return DEFAULT_BUILDING_FT;
+  const levels = parseFloat(String(tags["building:levels"] ?? ""));
+  if (Number.isFinite(levels) && levels > 0) return levels * 10 + 3; // 10 ft/story + roof structure
+  return undefined;
 }
 
 function regridBuildings(data: RegridResponse): BuildingRing[] {
@@ -77,7 +83,7 @@ function regridBuildings(data: RegridResponse): BuildingRing[] {
   const out: BuildingRing[] = [];
   for (const f of feats) {
     const ring = outerRing(f?.geometry);
-    if (ring.length >= 3) out.push({ ring, heightFt: heightFromTags(f?.properties) });
+    if (ring.length >= 3) out.push({ ring, heightFt: heightFromTags(f?.properties), heightTagged: taggedHeight(f?.properties) !== undefined });
   }
   return out;
 }
@@ -167,6 +173,7 @@ async function fetchOsmContext(
         buildings.push({
           ring: pts.map(([la, ln]) => ({ lat: la, lng: ln })),
           heightFt: heightFromTags(el.tags),
+          heightTagged: taggedHeight(el.tags) !== undefined,
         });
       }
     }

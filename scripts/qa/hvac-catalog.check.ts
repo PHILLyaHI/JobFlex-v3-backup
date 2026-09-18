@@ -122,7 +122,7 @@ ok("Water heater ledger names the catalog tank", /Rheem|A\.O\. Smith|Bradford Wh
   const pkgs = by("package");
   ok("Package units: every heat kind, from the big brands", pkgs.length >= 60 && ["gas", "heat-pump", "electric"].every((k) => pkgs.some((c) => c.heatKind === k)) && ["Goodman", "Carrier", "Trane", "Rheem", "York"].every((b) => pkgs.some((c) => c.brand === b)), `${pkgs.length} rows · ${Array.from(new Set(pkgs.map((c) => c.brand))).join(", ")}`);
   ok("A gas package carries its gas input and AFUE; a heat-pump package its HSPF2", pkgs.filter((c) => c.heatKind === "gas").every((c) => c.afue) && pkgs.some((c) => c.heatKind === "gas" && c.btuInput) && pkgs.filter((c) => c.heatKind === "heat-pump").every((c) => c.hspf2));
-  ok("A single-package unit answers to the national floor, so a 13.4 SEER2 package is legal in California", (() => { const f = efficiencyFloor("CA", "air-conditioner", 36000, true); return f.seer2 === 13.4 && f.eer2 === 11; })(), efficiencyFloor("CA", "air-conditioner", 36000, true).text);
+  ok("A single-package unit answers to the national floor, so a 13.4 SEER2 / 10.6 EER2 package is legal in California", (() => { const f = efficiencyFloor("CA", "air-conditioner", 36000, true); return f.seer2 === 13.4 && f.eer2 === 10.6; })(), efficiencyFloor("CA", "air-conditioner", 36000, true).text);
   const gasPkg = pkgs.filter((c) => c.heatKind === "gas");
   ok("Gas packages carry a NOx class, and the ultra-low ones exist for California", gasPkg.every((c) => c.noxNgJ) && gasPkg.some((c) => (c.noxNgJ ?? 40) <= 14), `${gasPkg.filter((c) => (c.noxNgJ ?? 40) <= 14).length} ultra-low of ${gasPkg.length}`);
   const ulnFurnaces = by("furnace").filter((c) => (c.noxNgJ ?? 40) <= 14);

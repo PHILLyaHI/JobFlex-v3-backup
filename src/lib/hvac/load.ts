@@ -75,7 +75,9 @@ function windowShares(m: BuildingModel): Array<{ label: string; share: number; g
 
 export function computeBlockLoad(m: BuildingModel, c: DesignConditions, opts: { zone?: boolean } = {}): LoadResult {
   const assumptions: string[] = [];
-  const area = Math.max(200, m.conditionedSqft);
+  // A whole house is at least a 200 sq ft box; a ductless zone can be a
+  // 100 sq ft room (the engine floors it there and says so).
+  const area = Math.max(opts.zone ? 100 : 200, m.conditionedSqft);
   const storeys = Math.max(1, Math.round(m.storeys || 1));
   const ceiling = m.ceilingHeightFt > 0 ? m.ceilingHeightFt : 8;
   if (!(m.ceilingHeightFt > 0)) assumptions.push("Ceiling height assumed 8 ft.");
@@ -106,6 +108,16 @@ export function computeBlockLoad(m: BuildingModel, c: DesignConditions, opts: { 
   const volume = area * ceiling;
   const infilCfm = (ach * volume) / 60;
   assumptions.push(`Infiltration from a "${m.tightness}" blower-door class (${ACH50[m.tightness]} ACH50 ÷ ${nFactor}).`);
+  // A tight house (2012 IECC and later, and every CA / WA / OR house) runs a
+  // whole-house fan the code requires, and Manual J (Section 11) adds that
+  // air to the load: ASHRAE 62.2, 0.03 CFM per sq ft plus 7.5 CFM per person.
+  // Not on a ductless zone — one room does not carry the house's fan.
+  const ventilated = !opts.zone && (m.tightness === "tight" || m.tightness === "very-tight" || (m.yearBuilt ?? 0) >= 2012);
+  // Air at altitude is thinner: the 1.1 / 0.68 constants are sea-level, and
+  // Manual J's altitude correction (about 0.83 at 5,000 ft) scales them.
+  const acf = Math.max(0.6, Math.pow(1 - 6.8754e-6 * Math.max(0, c.elevationFt ?? 0), 5.2559));
+  const SENS = 1.1 * acf;
+  const LAT = 0.68 * acf;
 
   const occupants = m.occupants > 0 ? m.occupants : 3;
   if (!(m.occupants > 0)) assumptions.push("Occupants assumed 3.");
@@ -130,7 +142,13 @@ export function computeBlockLoad(m: BuildingModel, c: DesignConditions, opts: { 
   push(`Ceiling · ${Math.round(footprint)} sq ft under ${m.ceilingInsulation === "none" ? "an uninsulated attic" : m.ceilingInsulation.toUpperCase() + " attic"}, ${m.roofColor} roof`, ceilU * footprint * dtHeat, ceilU * footprint * (dtCool + roofAdd));
   push(`Floor · ${floor.label}`, floorUA * dtHeat, floor.coolingShare * floorUA * dtCool);
   const grains = Math.max(0, c.grainsDiff);
-  push(`Infiltration · ${Math.round(infilCfm)} CFM natural`, 1.1 * infilCfm * dtHeat, 1.1 * infilCfm * dtCool, 0.68 * infilCfm * grains);
+  push(`Infiltration · ${Math.round(infilCfm)} CFM natural`, SENS * infilCfm * dtHeat, SENS * infilCfm * dtCool, LAT * infilCfm * grains);
+  const ventCfm = ventilated ? 0.03 * area + 7.5 * (m.occupants > 0 ? m.occupants : 3) : 0;
+  if (ventCfm > 0) {
+    push(`Ventilation · ${Math.round(ventCfm)} CFM (ASHRAE 62.2 whole-house fan)`, SENS * ventCfm * dtHeat, SENS * ventCfm * dtCool, LAT * ventCfm * grains);
+    assumptions.push(`Mechanical ventilation ${Math.round(ventCfm)} CFM (ASHRAE 62.2: 0.03 CFM/sq ft + 7.5 CFM per person) is in the load — a tight house runs its whole-house fan. Drop it if the house has none.`);
+  }
+  if (acf < 0.97) assumptions.push(`Air at ${Math.round(c.elevationFt ?? 0).toLocaleString("en-US")} ft is ${Math.round((1 - acf) * 100)}% thinner: infiltration and ventilation loads carry Manual J's altitude factor ${acf.toFixed(2)}.`);
   push(`People and appliances · ${occupants} occupants`, 0, occupants * OCCUPANT_SENSIBLE + appliances, occupants * OCCUPANT_LATENT);
 
   let heat = components.reduce((a, k) => a + k.heatingBtuh, 0);

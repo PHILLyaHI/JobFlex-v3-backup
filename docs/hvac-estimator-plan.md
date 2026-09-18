@@ -553,6 +553,104 @@ older-catalog wall), `hvac-ledger.check.ts` +1 (CSV NOx column). Browser:
 the owner presses **Update the US catalog** once (from the no-fit call or the
 Catalog panel) — 629 rows.
 
+## Status — the full inspection (2026-09-17)
+
+Owner asked for "check inspection of entire hvac estimator and logic". Five
+reviewers walked it in parallel — the load calculation, selection and
+checks, the ledger, the catalog and rule data, the page and actions — each
+proving its findings with probes, browser runs or sources. Everything they
+proved is fixed and pinned in `scripts/qa/hvac-review.check.ts` (51 checks);
+the older suites pass unchanged except where an assertion had encoded the
+old behaviour (wall bearings, the package EER2 floor, the furnace under a
+big coil, a load that moved with the ventilation term).
+
+**The house and the load**
+- Footprint walls carried their direction of travel where the solar table
+  wanted the direction they face; an east–west wall was scored as east or
+  west glass. `ringGeometry` now turns each wall by the ring's winding.
+- The county design temperatures are the ENERGY STAR *limits* — the most
+  extreme station within 40 miles (King County's 11 °F is Stampede Pass,
+  Los Angeles's 14 °F is Mount Baldy). Nine metro counties (King, Pierce,
+  Snohomish, Los Angeles, San Diego, San Bernardino, Riverside, Clark,
+  Maricopa, Suffolk MA) now design on their metro station with the limit
+  named in the source; the page carries two fields for the address's own
+  1% / 99% figures (`JobInput.designCoolingF / designHeatingF`, saved with
+  the estimate) and a note under the county when the row is a limit.
+- A footprint with no height tag (every Regrid ring, most OSM ones)
+  arrived as a 13 ft default and overwrote the assessor's storey count with
+  1; a ridge height was read as ~11 ft a floor. Tagged heights only, never
+  over the record, on a (h − 6) / 10 ladder.
+- A tight (2012+) house now carries the ASHRAE 62.2 ventilation term; air
+  constants carry Manual J's altitude factor; a ductless zone can be a
+  100 sq ft room and says so; "Furnace capacity: 80,000 BTU" is an input,
+  not 6.5 tons; attic and wall insulation read on the walk land in the
+  envelope; Cool Calc gets a clean city/state from a typed address.
+
+**Selection and checks**
+- Manual S for a heat pump where heating governs: up to 125% of the
+  cooling load (135% variable) and the size that carries the most heat
+  ranks first — on heat-pump jobs; a gas house still leads with the AC.
+- A furnace under a coil no 100–140% cabinet's blower carries takes the
+  smallest cabinet that does, over 140% with a "Furnace fit" verify, instead
+  of a 40k that starves the coil.
+- Package units: judged on their heat (gas section vs the heating load, heat
+  at design and backup for heat-pump packs, strips for electric packs),
+  gas lines and the gas-pipe / CO checks only where they burn gas, no gas
+  pack on a no-gas house, no package on a split house unless picked by
+  hand, the NOx flags only on gas packs; the DOE floor is 13.4 SEER2 with
+  10.6 EER2 in the Southwest only (the old 11.0 "nationwide" ruled out every
+  value gas pack including the California ULN builds); the Southeast
+  install rule is for splits.
+- The electric furnace runs the NEC count with its heat kit; a strip kit on
+  an indoor unit that ran on 120 V is a breaker to find room for; propane
+  sizes on the propane table; runs past 200 ft are a verify; a missing
+  HSPF2 is a verify and a low one fails at selection; ductless is judged on
+  the heat-pump floor; the smallest unit made is accepted (said so) rather
+  than "no fit"; a boiler house converts all-electric with the no-ducts
+  flag; a heat pump picked by hand on a gas full system carries no
+  "dual fuel" mark; the full system's companion furnace obeys the NOx
+  district and the NOx check names it.
+
+**The ledger**
+- What is on site decides the lines: no gas flex on an electric furnace,
+  no outdoor-unit removal on a furnace-only house, nothing hauled from a
+  house with nothing installed, the strip-kit circuit only where the old
+  indoor unit ran on 120 V (with its breaker on the quote), a drain and
+  attic pan on a dual-fuel conversion's coil, the gas capped when a full
+  system's heat pump pulls the furnace, gas lines by the package's heat
+  kind, two circuits and two pumps on a two-system house, a measured line
+  set on a same-refrigerant swap still "flush and reuse", a recharge with
+  no pounds out of the headline, the pricing note true of the row, the
+  catalog CSV round-tripping heat kind / vent / first-hour / states with
+  same-model coil sizes kept apart, a blank cell blank, no division by a
+  zero line-set default.
+
+**The data**
+- Carrier 27VNA1 is one 4.5-t row (27VNA154A003); Bosch IDS Premium names
+  its two chassis; the R-410A ductless rows and the LG row say what they
+  are; 59CU5 is single-stage; GR9S96-U is 14 ng/J; the furnace-floor flag
+  says the 2028 rule is under review (vacated and remanded 2026-06-08);
+  the coastal-county map covers the Gulf, the Atlantic, the Pacific
+  Northwest and Alaska.
+
+**The page and the actions**
+- A reopened estimate keeps the ledger as edited and the tank picked on the
+  strip (`draft.pick`, `draft.linesetFt`, line ids saved); the typed-unit
+  schema keeps `noxNgJ` / `heatKind` / availability; a new address on a
+  no-load job confirms and clears the last house; a hand pick is let go
+  when the load re-sizes the job, with a note; switching the job leaves the
+  saved row and the report behind; the Manual J sentence only on a load
+  job; the converted proposal carries the address and the state's tax; the
+  catalog import is one transaction; server errors reach the browser as a
+  sentence; the radio strips answer the arrow keys; blanks clear a number,
+  negatives are refused; the recent rows fit a phone.
+
+Left as noted: York TM8V / YCV rows still need a distributor check; the
+water-heater rows carry UEF / first-hour for one size per family; Carrier
+48NL / 48NG packs have no gas input on the row (the gas check asks for the
+submittal). Design temperatures outside the nine metro overrides are the
+county limit, said so on the page.
+
 ## Sources checked 2026-09-15
 
 ACCA approved software list (acca.org/standards/approved-software); Cool Calc

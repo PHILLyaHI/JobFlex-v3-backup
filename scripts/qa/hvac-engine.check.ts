@@ -103,7 +103,7 @@ const hp = (tons: number, over: Partial<CatalogItem> = {}): CatalogItem => ({ id
   ok("13 SEER2 fails the Southeast 14.3 floor", !!low.disqualified);
   ok("North region AC floor is 13.4 SEER2", efficiencyFloor("OH", "air-conditioner", 36000).seer2 === 13.4);
   ok("Southwest carries an EER2 floor, with the lower one for a high-SEER2 unit", efficiencyFloor("AZ", "air-conditioner", 36000).eer2 === 11.7 && efficiencyFloor("AZ", "air-conditioner", 48000).eer2 === 11.2 && efficiencyFloor("AZ", "air-conditioner", 36000).eer2IfHighSeer === 9.8);
-  ok("A single-package unit answers to the national floor, not the regional one", efficiencyFloor("AZ", "air-conditioner", 36000, true).seer2 === 13.4 && efficiencyFloor("AZ", "air-conditioner", 36000, true).eer2 === 11 && efficiencyFloor("CA", "heat-pump", 36000, true).hspf2 === 6.7, efficiencyFloor("CA", "air-conditioner", 36000, true).text);
+  ok("A single-package unit answers to the national floor, not the regional one (Southwest adds 10.6 EER2 at installation; the North none)", efficiencyFloor("AZ", "air-conditioner", 36000, true).seer2 === 13.4 && efficiencyFloor("AZ", "air-conditioner", 36000, true).eer2 === 10.6 && efficiencyFloor("OH", "air-conditioner", 36000, true).eer2 === undefined && efficiencyFloor("CA", "heat-pump", 36000, true).hspf2 === 6.7, efficiencyFloor("CA", "air-conditioner", 36000, true).text);
   const sel = selectSystem([hp(2), hp(3), hp(3.5), hp(4), hp(5)], load, dallas, house());
   ok("selection picks an in-window unit and a runner-up", !!sel.chosen && !!sel.runnerUp && !sel.chosen.disqualified, sel.chosen?.item.model);
   ok("target tons rounds to the half ton", sel.targetTons % 0.5 === 0);

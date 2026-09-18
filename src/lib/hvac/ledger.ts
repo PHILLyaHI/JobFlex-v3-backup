@@ -9,6 +9,7 @@
 // and lives beside the catalog; what ships below is a defensible starting card
 // a contractor edits once.
 
+import { ultraLowNoxNeeded } from "./data/rules";
 import type { BuildingModel, CatalogItem, EngineResult , SelectionCandidate } from "./types";
 import { serviceTask, type ServiceTask } from "./serviceMenu";
 import { DEFAULT_JOB, jobDef, type JobInput, type JobKind } from "./jobs";
@@ -234,7 +235,7 @@ export function normalizeRateCard(raw: unknown): HvacRateCard {
     labor: group("labor"),
     materials: group("materials"),
     equipmentDefaults: group("equipmentDefaults"),
-    linesetFtDefault: numOr(r.linesetFtDefault, DEFAULT_RATE_CARD.linesetFtDefault),
+    linesetFtDefault: Math.max(1, numOr(r.linesetFtDefault, DEFAULT_RATE_CARD.linesetFtDefault)),
     serviceMenu: Array.isArray(r.serviceMenu) ? (r.serviceMenu as unknown[]).flatMap((t) => {
       const x = (t && typeof t === "object" ? t : {}) as Record<string, unknown>;
       if (typeof x.id !== "string" || typeof x.title !== "string" || typeof x.laborUsd !== "number") return [];
@@ -331,17 +332,19 @@ function equipmentPrice(item: CatalogItem, card: HvacRateCard): { price: number;
   }
   if (tier && (item.kind === "air-conditioner" || item.kind === "heat-pump" || item.kind === "package" || item.kind === "ductless")) cost *= tier.cooling;
   if (tier && item.kind === "furnace") cost *= tier.furnace;
-  return { price: markup(cost, card.equipmentMarkupPct), basis: "estimated", note: `${item.typed ? "Typed in — no cost given" : "No shop cost on the catalog row"} — rate-card default per ${item.kind === "furnace" ? "10k BTU" : "ton"}${item.tier ? ` × ${item.tier} tier` : ""} + ${card.equipmentMarkupPct}%` };
+  const tiered = tier && (item.kind === "air-conditioner" || item.kind === "heat-pump" || item.kind === "package" || item.kind === "ductless" || item.kind === "furnace");
+  return { price: markup(cost, card.equipmentMarkupPct), basis: "estimated", note: `${item.typed ? "Typed in — no cost given" : "No shop cost on the catalog row"} — rate-card default ${item.kind === "furnace" ? "per 10k BTU" : item.kind === "water-heater" ? (item.whType === "tankless" || item.whType === "heat-pump" ? "each" : "per gallon") : "per ton"}${tiered && item.tier ? ` × ${item.tier} tier` : ""} + ${card.equipmentMarkupPct}%` };
 }
 
 /** The indoor half of the system: the smallest row that carries the load,
  *  from the outdoor unit's own brand first (a matched system), and from its
  *  sales tier when that brand offers one (Good = 80% furnace, Best = the
  *  modulating one), then whatever the catalog has. */
-function pickCompanion(catalog: CatalogItem[], kind: CatalogItem["kind"], tons: number, heatingBtuh?: number, like?: { brand?: string; tier?: CatalogItem["tier"]; refrigerant?: CatalogItem["refrigerant"] }): CatalogItem | undefined {
+function pickCompanion(catalog: CatalogItem[], kind: CatalogItem["kind"], tons: number, heatingBtuh?: number, like?: { brand?: string; tier?: CatalogItem["tier"]; refrigerant?: CatalogItem["refrigerant"]; /** A California district that takes only 14 ng/J: no 40 ng/J furnace may be the companion. */ ulnOnly?: boolean }): CatalogItem | undefined {
   // A coil or air handler listed for another refrigerant is no match (the
-  // TXV and the A2L board are refrigerant-specific); a furnace carries any.
-  const rows = catalog.filter((c) => c.kind === kind && !(kind !== "furnace" && like?.refrigerant && c.refrigerant && c.refrigerant !== like.refrigerant));
+  // TXV and the A2L board are refrigerant-specific); a furnace carries any —
+  // except where the air district takes only ultra-low-NOx gas heat.
+  const rows = catalog.filter((c) => c.kind === kind && !(kind !== "furnace" && like?.refrigerant && c.refrigerant && c.refrigerant !== like.refrigerant) && !(kind === "furnace" && like?.ulnOnly && (c.noxNgJ ?? 40) > 14));
   if (!rows.length) return undefined;
   const fit = (pool: CatalogItem[]): CatalogItem | undefined => {
     if (kind === "furnace" && heatingBtuh) {
@@ -378,7 +381,7 @@ function equipmentLine(id: string, item: CatalogItem, card: HvacRateCard, qty = 
 
 /** The house keeps a gas furnace with this system. */
 /** The furnace the ledger would set under this outdoor unit (for the engine's gas check). */
-export function companionFurnace(catalog: CatalogItem[], tons: number, heatingBtuh: number, like?: { brand?: string; tier?: CatalogItem["tier"] }): CatalogItem | undefined {
+export function companionFurnace(catalog: CatalogItem[], tons: number, heatingBtuh: number, like?: { brand?: string; tier?: CatalogItem["tier"]; ulnOnly?: boolean }): CatalogItem | undefined {
   return pickCompanion(catalog, "furnace", tons, heatingBtuh, like);
 }
 
@@ -417,6 +420,18 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
   const allElectricHp = job === "heat-pump-conversion" && !gasHouse;
   // An outdoor swap that puts a heat pump where an AC was.
   const hpSwap = job === "replace-outdoor" && chosen?.item.kind === "heat-pump" && m.existing.kind !== "split-heat-pump";
+  // What is on site, not what the job is called, decides the removals, the
+  // gas cap and the circuits (review, 2026-09-17): a furnace-only house has no
+  // outdoor unit to recover, a house with nothing installed has nothing to
+  // haul, a heat-pump house already runs its air handler on 240 V.
+  const onSite = m.existing.kind;
+  const hasOutdoor = onSite === "split-ac-furnace" || onSite === "split-heat-pump" || onSite === "package-unit" || onSite === "ductless";
+  const hasFurnace = onSite === "split-ac-furnace" || onSite === "furnace-only";
+  const hasIndoor = hasFurnace || onSite === "split-heat-pump";
+  const indoorWas240 = onSite === "split-heat-pump" || m.existing.fuel === "electric";
+  // A gas/electric package unit burns gas; a heat-pump or electric one does
+  // not — the unit's own heat kind, not the house's fuel, decides the gas lines.
+  const pkgGas = chosen?.item.kind === "package" ? (chosen.item.heatKind ?? "gas") === "gas" : (!chosen && job === "replace-system" && m.existing.kind === "package-unit" && keepsGas(m));
   // What the coil sits in when the indoor unit stays.
   const indoorWord = gasHouse || m.existing.kind === "furnace-only" ? "furnace" : "air handler";
   const linesetFt = opts.linesetFt ?? card.linesetFtDefault;
@@ -448,7 +463,7 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
       if (wantsFurnace) {
         // On a zoned house each furnace carries its own zone's heat.
         const heat = engine.selection.perSystem?.heatingBtuh ?? engine.load.heatingBtuh;
-        const furnace = pickCompanion(catalog, "furnace", tons, heat, item);
+        const furnace = pickCompanion(catalog, "furnace", tons, heat, { brand: item.brand, tier: item.tier, refrigerant: item.refrigerant, ulnOnly: ultraLowNoxNeeded(m.state, m.county) === "required" });
         if (furnace) {
           mat.push(equipmentLine("eq-furnace", furnace, card, n, sysNote));
           const out = (furnace.btuInput ?? 0) * (furnace.afue ?? 0.8);
@@ -501,7 +516,7 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
   // The furnace job on an all-electric house: an air handler plus the heat kit.
   const electricFurnace = job === "replace-furnace" && chosen?.item.kind === "air-handler";
   const condensingFurnace = job === "replace-furnace" && !electricFurnace && (chosen?.item.kind !== "furnace" || (chosen.item.afue ?? 0.8) >= 0.9);
-  const newLineset = job === "replace-system" || job === "add-ac" || job === "heat-pump-conversion" || job === "ductless" || (job === "replace-outdoor" && (refrigerantChanges(m, chosen?.item) || !!opts.linesetFt));
+  const newLineset = job === "replace-system" || job === "add-ac" || job === "heat-pump-conversion" || job === "ductless" || (job === "replace-outdoor" && refrigerantChanges(m, chosen?.item));
   if (outdoorNew && !isPackage) {
     if (job === "ductless") {
       stock("m-lineset", "Line set, insulated copper", linesetFt * heads, "ln ft", card.materials.linesetPerFt, `${linesetNote} · per head`, linesetBasis);
@@ -513,9 +528,9 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
     stock("m-disc", "Outdoor disconnect + whip", n, "each", card.materials.disconnect + card.materials.whipKit);
     stock("m-surge", "Surge protector, outdoor unit", n, "each", card.materials.surgeProtector);
   }
-  const drains = job === "replace-furnace" ? (condensingFurnace || m.existing.kind === "split-ac-furnace" || m.existing.kind === "split-heat-pump") : indoorNew || job === "add-ac" || job === "ductless";
+  const drains = job === "replace-furnace" ? (condensingFurnace || m.existing.kind === "split-ac-furnace" || m.existing.kind === "split-heat-pump") : indoorNew || job === "add-ac" || job === "ductless" || (job === "heat-pump-conversion" && dualFuel && m.existing.kind === "furnace-only");
   if (drains) stock("m-drain", job === "ductless" ? "Condensate drain line, per head" : "Condensate drain kit, trap and safety switch", job === "ductless" ? heads : n, "each", card.materials.drainKit);
-  if (drains && job !== "ductless" && !isPackage && m.ducts.location === "attic") stock("m-pump", "Secondary drain pan / condensate pump (attic unit)", 1, "each", card.materials.condensatePump, "Attic air handler");
+  if (drains && job !== "ductless" && !isPackage && m.ducts.location === "attic") stock("m-pump", "Secondary drain pan / condensate pump (attic unit)", n, "each", card.materials.condensatePump, job === "replace-furnace" && !electricFurnace ? "Attic furnace" : "Attic air handler");
   // A new thermostat comes with a new system, and with an AC that becomes a
   // heat pump (the old stat has no O/B or aux terminals); a like-for-like
   // outdoor swap keeps the one on the wall.
@@ -523,13 +538,13 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
     const staged = chosen?.item.staging === "variable" || dualFuel || hpSwap;
     stock("m-tstat", dualFuel ? "Dual-fuel thermostat" : hpSwap ? "Heat-pump thermostat (O/B, aux heat)" : chosen?.item.staging === "variable" ? "Communicating thermostat" : "Programmable thermostat", n, "each", card.materials.thermostat * (staged ? 1.6 : 1));
   }
-  if (job === "replace-system" && gasHouse && (chosen?.item.kind === "air-conditioner" || isPackage)) stock("m-gasflex", "Gas flex connector, shutoff and drip leg", n, "each", card.materials.gasFlexKit);
+  if (job === "replace-system" && gasHouse && (chosen?.item.kind === "air-conditioner" || pkgGas)) stock("m-gasflex", "Gas flex connector, shutoff and drip leg", n, "each", card.materials.gasFlexKit);
   // Nothing burns in an electric furnace: no vent, no neutralizer, no CO alarm.
   const newFurnace = (job === "replace-furnace" && !electricFurnace) || mat.some((l) => l.id === "eq-furnace");
   const furnaceRow = chosen?.item.kind === "furnace" ? chosen.item : catalog.find((c) => c.kind === "furnace" && mat.some((l) => l.id === "eq-furnace" && l.name.startsWith(`${c.brand} ${c.model}`)));
   const condensing = newFurnace && (furnaceRow ? (furnaceRow.afue ?? 0.8) >= 0.9 : true);
   const noGasHouse = m.gas.available === false;
-  if (job === "replace-furnace" && !noGasHouse) stock("m-gasflex", "Gas flex connector, shutoff and drip leg", 1, "each", card.materials.gasFlexKit);
+  if (job === "replace-furnace" && !noGasHouse && !electricFurnace) stock("m-gasflex", "Gas flex connector, shutoff and drip leg", 1, "each", card.materials.gasFlexKit);
   if (newFurnace) {
     stock("m-vent", condensing ? "PVC vent and intake, termination and hangers" : "Vent kit (B-vent), termination and hangers", n, "each", condensing ? card.materials.ventKit : card.materials.bVentKit);
     if (condensing) stock("m-neut", "Condensate neutralizer and drain for the condensing furnace", n, "each", card.materials.neutralizer);
@@ -545,16 +560,28 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
   // An air handler with a strip kit is a new 240 V load of its own (the old
   // gas furnace ran on 120 V): breaker and branch sized to the kit.
   const stripsKw = mat.find((l) => l.id === "eq-strips");
-  if (stripsKw) stock("m-breaker-ah", `Breaker + branch circuit for the air handler and ${stripsKw.name.replace(" backup heat kit", "")} strip kit (240 V)`, 40, "ln ft", card.materials.breakerAndWirePerFt, "40 ft run assumed — sized to the strip kW");
-  if (newCircuit) stock("m-breaker", serviceFix && job !== "add-ac" ? "Breaker + branch circuit for the new unit (service upgrade quoted separately)" : "Breaker + branch circuit for the outdoor unit", 40, "ln ft", card.materials.breakerAndWirePerFt, "40 ft run assumed — measure panel to pad");
+  const stripCircuit = !!stripsKw && !indoorWas240;
+  if (stripCircuit) {
+    stock("m-breaker-ah", `Breaker + branch circuit for the air handler and ${stripsKw!.name.replace(/ (backup )?heat kit$/, "")} strip kit (240 V)`, 40 * n, "ln ft", card.materials.breakerAndWirePerFt, `${n > 1 ? `${n} × ` : ""}40 ft run assumed — sized to the strip kW`);
+    stock("m-brk-ah", "2-pole breaker for the strip-kit circuit", n, "each", card.materials.breaker);
+  } else if (stripsKw) assumptions.push("The strip kit reuses the existing 240 V air-handler circuit — confirm its breaker and wire size against the kit's MCA.");
+  if (newCircuit) {
+    stock("m-breaker", serviceFix && job !== "add-ac" ? "Breaker + branch circuit for the new unit (service upgrade quoted separately)" : "Breaker + branch circuit for the outdoor unit", 40 * n, "ln ft", card.materials.breakerAndWirePerFt, `${n > 1 ? `${n} × ` : ""}40 ft run assumed — measure panel to pad`);
+    stock("m-brk", "2-pole breaker for the new circuit", n, "each", card.materials.breaker);
+  }
   if (check("return") === "fix") stock("m-return", "Return grille and duct upsize", 1, "each", card.materials.returnGrilleUpsize, engine.checks.find((c) => c.id === "return")?.detail);
   if (check("duct-cond") === "fix" || (m.ducts.condition === "poor" && job !== "replace-outdoor" && job !== "ductless")) stock("m-seal", "Duct sealing (mastic, tape, collars)", 1, "lot", card.materials.ductSealKit);
 
   // ── labor, by the task ────────────────────────────────────────────────────
   const L = card.labor;
-  if (job === "replace-system") task("l-remove", isPackage ? "Remove and recover the old package unit (EPA 608)" : "Remove the old split system, recover refrigerant (EPA 608)", n, "each", isPackage ? L.removePackage : L.removeSplit, sysNote);
-  if (job === "replace-outdoor" || job === "heat-pump-conversion") task("l-remove", "Remove the old outdoor unit, recover refrigerant (EPA 608)", n, "each", L.removeOutdoor, sysNote);
-  if (job === "replace-furnace" || allElectricHp) task("l-remove-furnace", electricFurnace ? "Remove the old air handler / electric furnace" : "Remove the old furnace", n, "each", L.removeFurnace);
+  if (job === "replace-system") {
+    if (onSite === "package-unit") task("l-remove", "Remove and recover the old package unit (EPA 608)", n, "each", L.removePackage, sysNote);
+    else if (hasOutdoor) task("l-remove", "Remove the old split system, recover refrigerant (EPA 608)", n, "each", L.removeSplit, sysNote);
+    else if (hasFurnace) task("l-remove-furnace", "Remove the old furnace", n, "each", L.removeFurnace, sysNote);
+    // "none": nothing installed, nothing to remove.
+  }
+  if ((job === "replace-outdoor" || job === "heat-pump-conversion") && hasOutdoor) task("l-remove", "Remove the old outdoor unit, recover refrigerant (EPA 608)", n, "each", L.removeOutdoor, sysNote);
+  if ((job === "replace-furnace" && hasIndoor) || (allElectricHp && hasIndoor)) task("l-remove-furnace", electricFurnace || onSite === "split-heat-pump" ? "Remove the old air handler / electric furnace" : "Remove the old furnace", n, "each", L.removeFurnace);
   if (isPackage) task("l-set", "Set the package unit, curb adapter, connections", n, "each", L.setPackage, sysNote);
   else if (job === "ductless") {
     task("l-outdoor", "Mount the outdoor unit (pad or bracket)", 1, "each", L.setOutdoor);
@@ -571,12 +598,13 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
       else task("l-lineset", "Flush and reuse the existing line set, pressure test, evacuate", n, "each", L.linesetFlush, "Same refrigerant class — the run stays");
     }
   }
-  if (mat.some((l) => l.id === "m-breaker-ah")) task("l-elec-ah", "Electrical: air-handler and strip-kit circuit from the panel", 1, "each", L.electricalCircuit);
-  if (newCircuit) task("l-elec", serviceFix && job !== "add-ac" ? "Electrical: new circuit and disconnect (panel work quoted separately)" : "Electrical: new circuit from the panel, disconnect, whip", 1, "each", L.electricalCircuit);
+  if (mat.some((l) => l.id === "m-breaker-ah")) task("l-elec-ah", "Electrical: air-handler and strip-kit circuit from the panel", n, "each", L.electricalCircuit, sysNote);
+  if (newCircuit) task("l-elec", serviceFix && job !== "add-ac" ? "Electrical: new circuit and disconnect (panel work quoted separately)" : "Electrical: new circuit from the panel, disconnect, whip", n, "each", L.electricalCircuit, sysNote);
   else if (outdoorNew || job === "replace-furnace") task("l-elec", job === "replace-furnace" ? "Electrical: reconnect the furnace circuit and thermostat wire" : "Electrical: disconnect, whip, thermostat wire", n, "each", L.electricalConnect, sysNote);
-  if ((job === "replace-furnace" || (job === "replace-system" && mat.some((l) => l.id === "eq-furnace"))) && !noGasHouse) task("l-gas", "Gas: connect the furnace, shutoff, drip leg, leak test", n, "each", L.gasConnect, sysNote);
-  else if (isPackage && gasHouse) task("l-gas", "Gas: connect the package unit, shutoff, drip leg, leak test", n, "each", L.gasConnect, sysNote);
-  if (allElectricHp && m.gas.available !== false && (m.existing.kind === "split-ac-furnace" || m.existing.kind === "furnace-only") && m.existing.fuel !== "electric") task("l-gascap", "Gas: cap and label the line at the old furnace", 1, "each", L.gasConnect);
+  if (((job === "replace-furnace" && !electricFurnace) || (job === "replace-system" && mat.some((l) => l.id === "eq-furnace"))) && !noGasHouse) task("l-gas", "Gas: connect the furnace, shutoff, drip leg, leak test", n, "each", L.gasConnect, sysNote);
+  else if (pkgGas && gasHouse) task("l-gas", "Gas: connect the package unit, shutoff, drip leg, leak test", n, "each", L.gasConnect, sysNote);
+  const furnaceGoes = (allElectricHp || (job === "replace-system" && !isPackage && chosen?.item.kind === "heat-pump" && !mat.some((l) => l.id === "eq-furnace"))) && hasFurnace && m.existing.fuel !== "electric";
+  if (furnaceGoes && m.gas.available !== false) task("l-gascap", "Gas: cap and label the line at the old furnace", 1, "each", L.gasConnect);
   if (check("gas") === "fix" && !noGasHouse) { const ft = Math.max(10, Math.round(m.gas.longestRunFt ?? 20)); task("l-gaspipe", "Gas pipe upsizing to the furnace", ft, "ln ft", L.gasPipePerFt, `${engine.checks.find((c) => c.id === "gas")?.detail ?? ""} · ${m.gas.longestRunFt ? "run entered" : "20 ft run assumed"}`, m.gas.longestRunFt ? "entered" : "estimated"); }
   if (newFurnace) task("l-vent", condensing ? "Venting: run and terminate the PVC vent and intake" : "Venting: run and terminate the flue", 10 * n, "ln ft", L.ventingPerFt, "10 ft assumed — measure to the termination");
   if (check("return") === "fix") task("l-return", "Cut in and duct the larger return", 1, "each", L.returnUpsize);
@@ -584,7 +612,7 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
   if (mat.some((l) => l.id === "m-tstat")) task("l-tstat", "Thermostat install and setup", n, "each", L.thermostat, sysNote);
   task("l-startup", job === "ductless" ? "Start-up, charge check, homeowner walkthrough" : "Start-up, charge, airflow and static check, homeowner walkthrough", n, "each", L.startup, sysNote);
   lab.push({ id: "l-permit", name: "Mechanical permit and inspection", quantity: 1, unitPrice: card.permitFee, unit: "lot", basis: "estimated" });
-  if (job !== "add-ac" && job !== "ductless") lab.push({ id: "l-disposal", name: "Haul-off and disposal of old equipment", quantity: 1, unitPrice: card.disposalFee, unit: "lot", basis: "estimated" });
+  if (job !== "add-ac" && job !== "ductless" && lab.some((l) => l.id === "l-remove" || l.id === "l-remove-furnace")) lab.push({ id: "l-disposal", name: "Haul-off and disposal of old equipment", quantity: 1, unitPrice: card.disposalFee, unit: "lot", basis: "estimated" });
   if (isPackage) lab.push({ id: "l-crane", name: "Crane / lift", quantity: 1, unitPrice: card.craneFee, unit: "lot", basis: "estimated" });
 
   if (n > 1) assumptions.push(`${n} systems, one per zone — the zoning (which rooms go on which system) is confirmed on site.`);
@@ -605,7 +633,7 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
     : `Design load ${l.coolingTotalBtuh.toLocaleString("en-US")} BTU/h cooling and ${l.heatingBtuh.toLocaleString("en-US")} BTU/h heating at ${c.coolingF} °F / ${c.heatingF} °F design conditions for ${c.county ? `${c.county} County, ` : ""}${c.state}, ${m.conditionedSqft.toLocaleString("en-US")} sq ft conditioned.`;
   const what: Record<JobKind, string> = {
     "replace-system": `Replace the existing ${existingWords(m)} at ${m.address} with ${n > 1 ? `${n} systems, each a ${tons}-ton ${chosen ? kindPhrase(chosen.item) : isPackage ? "package unit" : "system"} (${sys}), one per zone` : `a ${tons}-ton ${chosen ? kindPhrase(chosen.item) : isPackage ? "package unit" : "system"} (${sys})`}.`,
-    "replace-outdoor": `Replace the outdoor unit of the existing ${existingWords(m)} at ${m.address} with a ${tons}-ton ${chosen?.item.kind === "heat-pump" ? "heat pump" : "condenser"} (${sys})${hpSwap ? (dualFuel ? " in place of the AC — dual fuel, the existing furnace stays as backup" : " in place of the AC, on the existing air handler") : ""}${refrigerantChanges(m, chosen?.item) ? ", with a matched coil and new line set for the new refrigerant" : hpSwap ? ", with a heat-pump-rated matched coil on the existing line set" : ", on the existing coil and line set"}.`,
+    "replace-outdoor": `Replace the outdoor unit of the existing ${existingWords(m)} at ${m.address} with a ${tons}-ton ${chosen?.item.kind === "heat-pump" ? "heat pump" : "condenser"} (${sys})${hpSwap ? (dualFuel ? " in place of the AC — dual fuel, the existing furnace stays as backup" : " in place of the AC, on the existing air handler") : ""}${newLineset ? ", with a matched coil and new line set for the new refrigerant" : hpSwap ? ", with a heat-pump-rated matched coil on the existing line set" : ", on the existing coil and line set"}.`,
     "replace-furnace": `Replace the ${electricFurnace ? "electric furnace" : "furnace"} at ${m.address} with ${sys}${electricFurnace ? " and its heat kit" : ""}${m.existing.kind === "split-ac-furnace" ? ", re-setting the existing coil" : ""}.`,
     "add-ac": `Add central cooling to the furnace at ${m.address}: a ${tons}-ton condenser (${sys}) with a matched coil, line set, new circuit and drain.`,
     "heat-pump-conversion": `Convert ${m.address} to a ${tons}-ton heat pump (${sys})${dualFuel ? " as dual fuel with the existing furnace" : " with an air handler and backup heat, all-electric"}.`,
@@ -613,11 +641,11 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
     "water-heater": "", ducts: "", service: "",
   };
   const includes: Record<JobKind, string> = {
-    "replace-system": isPackage ? "Includes removal and refrigerant recovery, the new package unit set on the curb and connected, electrical, drain, thermostat, start-up and commissioning, permit and disposal." : "Includes removal and refrigerant recovery, new equipment set, line set, electrical, drain, thermostat, start-up and commissioning, permit and disposal.",
+    "replace-system": isPackage ? `Includes ${hasOutdoor ? "removal and refrigerant recovery, " : ""}the new package unit set on the curb and connected, electrical, drain, thermostat, start-up and commissioning, permit${hasOutdoor ? " and disposal" : ""}.` : `Includes ${hasOutdoor ? "removal and refrigerant recovery, " : hasFurnace ? "removal of the old furnace, " : ""}new equipment set, line set, electrical, drain, thermostat, start-up and commissioning, permit${hasOutdoor || hasFurnace ? " and disposal" : ""}.`,
     "replace-outdoor": hpSwap ? "Includes removal and recovery, the new heat pump set and connected, the matched coil, a heat-pump thermostat, pressure test and evacuation, start-up, permit and disposal." : "Includes removal and recovery, the new unit set and connected, pressure test and evacuation, start-up, permit and disposal.",
     "replace-furnace": electricFurnace ? "Includes removal, the new air handler and heat kit set, the circuit reconnected, start-up, permit and disposal." : "Includes removal, the new furnace set, gas and vent connected, electrical reconnect, start-up, permit and disposal.",
     "add-ac": "Includes the condenser and coil set, line set, a new circuit and disconnect, drain, thermostat, start-up and permit.",
-    "heat-pump-conversion": "Includes removal of the old outdoor unit, the heat pump set, indoor side, line set, circuit, thermostat, start-up, permit and disposal.",
+    "heat-pump-conversion": `Includes ${hasOutdoor ? "removal of the old outdoor unit, " : ""}the heat pump set, indoor side${drains ? " and drain" : ""}, line set, circuit, thermostat, start-up, permit${hasOutdoor || (allElectricHp && hasIndoor) ? " and disposal" : ""}.`,
     ductless: "Includes the outdoor unit, the heads mounted and cored, line sets, condensate, circuit and disconnect, start-up and permit.",
     "water-heater": "", ducts: "", service: "",
   };
@@ -744,7 +772,7 @@ function waterHeaterLedger(engine: EngineResult, m: BuildingModel, card: HvacRat
   const L = card.labor;
   const task = (id: string, name: string, qty: number, unit: string, price: number, note?: string) => lab.push({ id, name, quantity: qty, unitPrice: price, unit, basis: "estimated", note });
   task("l-remove", "Drain and remove the old water heater", 1, "each", L.removeWaterHeater);
-  task("l-set", "Set the new water heater, connect water, expansion tank, T&P, pan", 1, "each", L.setWaterHeater);
+  task("l-set", plan.type === "tankless" ? "Set the new water heater, connect water, expansion tank, T&P" : "Set the new water heater, connect water, expansion tank, T&P, pan", 1, "each", L.setWaterHeater);
   if (toGas) {
     if (newGasAppliance) task("l-gasbranch", "Gas branch to the water heater (new run from the meter or manifold)", Math.max(10, Math.round(m.gas.longestRunFt ?? 20)), "ln ft", L.gasPipePerFt, "New gas branch — measure the run; the utility's service is not on this estimate");
     task("l-gas", "Gas: connect, shutoff, drip leg, leak test", 1, "each", L.gasConnect);
@@ -770,7 +798,7 @@ function waterHeaterLedger(engine: EngineResult, m: BuildingModel, card: HvacRat
   const article = /^[aeiou]/i.test(eqScope) ? "an" : "a";
   return {
     title: `${eqName.replace(/^(\d+ gal )/, "")} replacement — ${m.address.split(",")[0]}`,
-    scope: `Replace the water heater at ${m.address} with ${article} ${eqScope} (${plan.sizedFrom}). Includes removal and disposal, the new unit set and connected, expansion tank, T&P discharge, drain pan, ${plan.fuel !== "electric" && plan.type !== "heat-pump" ? "gas connection and venting" : "the electrical circuit"}, permit and inspection.`,
+    scope: `Replace the water heater at ${m.address} with ${article} ${eqScope} (${plan.sizedFrom}). Includes removal and disposal, the new unit set and connected, expansion tank, T&P discharge, ${plan.type === "tankless" ? "" : "drain pan, "}${plan.fuel !== "electric" && plan.type !== "heat-pump" ? "gas connection and venting" : "the electrical circuit"}, permit and inspection.`,
     materials: mat, labor: lab, assumptions, subtotal,
   };
 }
@@ -864,11 +892,15 @@ function serviceLedger(engine: EngineResult, m: BuildingModel, card: HvacRateCar
   const subtotal = r2([...mat, ...lab].reduce((a, l) => a + l.quantity * l.unitPrice, 0));
   const lower = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
   const done = [...tasks.filter((t) => t.unit !== "lb").map((t) => lower(t.title)), ...(lbs ? [`recharge ${lbs} lb`] : []), ...(s?.custom ?? []).map((c) => lower(c.name)), ...(s?.task ? [lower(s.task)] : [])];
-  const count = tasks.length + (s?.custom?.length ?? 0);
-  const headline = tasks.length ? tasks.slice(0, 2).map((t) => t.title).join(", ") + (count > 2 ? ` +${count - 2}` : "") : s?.custom?.[0]?.name ?? s?.task ?? "diagnostic";
+  // A by-the-pound task prices only through the pounds entered; without them
+  // it is not on the quote, so it is not in the headline either.
+  const named = tasks.filter((t) => t.unit !== "lb" || lbs > 0);
+  if (tasks.some((t) => t.unit === "lb") && !lbs) assumptions.push("Refrigerant is billed by the pound — enter the pounds to put the recharge on the quote.");
+  const count = named.length + (s?.custom?.length ?? 0);
+  const headline = named.length ? named.slice(0, 2).map((t) => t.title).join(", ") + (count > 2 ? ` +${count - 2}` : "") : s?.custom?.[0]?.name ?? s?.task ?? "diagnostic";
   return {
     title: `Service: ${headline} — ${m.address.split(",")[0]}`,
-    scope: `Service call on the ${existingWords(m)} at ${m.address}: ${tasks.some((t) => t.includesDiagnostic) ? "" : "diagnostic, "}${done.join(", ") || "diagnostic"}${(s?.parts ?? []).some((p) => p.name) ? `, parts: ${(s?.parts ?? []).map((p) => p.name).filter(Boolean).join(", ")}` : ""}.`,
+    scope: `Service call on the ${existingWords(m)} at ${m.address}: ${tasks.some((t) => t.includesDiagnostic) ? done.join(", ") || "inspection" : done.length ? `diagnostic, ${done.join(", ")}` : "diagnostic"}${(s?.parts ?? []).some((p) => p.name) ? `, parts: ${(s?.parts ?? []).map((p) => p.name).filter(Boolean).join(", ")}` : ""}.`,
     materials: mat, labor: lab, assumptions, subtotal,
   };
 }
@@ -891,13 +923,13 @@ function kindPhrase(i: CatalogItem): string {
   switch (i.kind) {
     case "heat-pump": return `${i.coldClimate ? "cold-climate " : ""}${i.staging === "variable" ? "variable-speed " : ""}heat pump`;
     case "air-conditioner": return `${i.staging === "variable" ? "variable-speed " : ""}air conditioner with matched furnace`;
-    case "package": return "package unit";
+    case "package": return i.heatKind === "heat-pump" ? "heat-pump package unit" : i.heatKind === "electric" ? "electric package unit" : "gas/electric package unit";
     case "ductless": return "ductless heat pump";
     default: return i.kind;
   }
 }
 function kindTitle(i: CatalogItem): string {
-  return i.kind === "heat-pump" ? "Heat pump" : i.kind === "air-conditioner" ? "AC + furnace" : i.kind === "package" ? "Package unit" : i.kind === "ductless" ? "Ductless" : "HVAC";
+  return i.kind === "heat-pump" ? "Heat pump" : i.kind === "air-conditioner" ? "AC + furnace" : i.kind === "package" ? (i.heatKind === "heat-pump" ? "Heat-pump package unit" : "Package unit") : i.kind === "ductless" ? "Ductless" : "HVAC";
 }
 
 /** A catalog with enough rows to price a job before the shop uploads its own —
@@ -930,7 +962,7 @@ export const STARTER_CATALOG: CatalogItem[] = [
 // ── catalog CSV ─────────────────────────────────────────────────────────────
 
 /** Header the import understands; extra columns are ignored. */
-export const CATALOG_CSV_COLUMNS = ["kind", "brand", "model", "tons", "coolingBtuh", "heat47Btuh", "heat17Btuh", "heat5Btuh", "btuInput", "afue", "seer2", "eer2", "hspf2", "refrigerant", "staging", "coldClimate", "ahriRef", "mcaAmps", "ratedStaticInWc", "maxTons", "tier", "gallons", "whType", "fuel", "uef", "noxNgJ", "cost"] as const;
+export const CATALOG_CSV_COLUMNS = ["kind", "brand", "model", "tons", "coolingBtuh", "heat47Btuh", "heat17Btuh", "heat5Btuh", "btuInput", "afue", "seer2", "eer2", "hspf2", "refrigerant", "staging", "coldClimate", "ahriRef", "mcaAmps", "ratedStaticInWc", "maxTons", "tier", "gallons", "whType", "fuel", "uef", "firstHourGal", "vent", "heatKind", "noxNgJ", "states", "notStates", "availabilityNote", "cost"] as const;
 
 const KINDS = new Set<CatalogItem["kind"]>(["heat-pump", "air-conditioner", "furnace", "air-handler", "coil", "ductless", "package", "water-heater"]);
 
@@ -947,13 +979,21 @@ export function parseCatalogCsv(text: string): { items: CatalogItem[]; errors: s
   const num = (cells: string[], name: string): number | undefined => {
     const i = idx(name);
     if (i < 0) return undefined;
-    const v = Number(String(cells[i] ?? "").replace(/[$,%\s]/g, ""));
-    return Number.isFinite(v) && cells[i] !== "" ? v : undefined;
+    const raw = String(cells[i] ?? "").replace(/[$,%\s]/g, "");
+    const v = Number(raw);
+    return raw !== "" && Number.isFinite(v) ? v : undefined;
   };
   const str = (cells: string[], name: string): string | undefined => {
     const i = idx(name);
     const v = i >= 0 ? String(cells[i] ?? "").trim() : "";
     return v || undefined;
+  };
+  /** "CA|WA" or "CA; WA" — the two-letter states a row is limited to. */
+  const list = (cells: string[], name: string): string[] | undefined => {
+    const v = str(cells, name);
+    if (!v) return undefined;
+    const out = v.split(/[|;/]/).map((x) => x.trim().toUpperCase()).filter((x) => /^[A-Z]{2}$/.test(x));
+    return out.length ? out : undefined;
   };
   const items: CatalogItem[] = [];
   lines.slice(1).forEach((line, n) => {
@@ -995,10 +1035,27 @@ export function parseCatalogCsv(text: string): { items: CatalogItem[]; errors: s
       whType: (["tank", "heat-pump", "tankless"] as const).find((t) => t === (str(cells, "whType") ?? "").toLowerCase().replace(/\s+/g, "-")),
       fuel: (["gas", "electric", "propane"] as const).find((t) => t === (str(cells, "fuel") ?? "").toLowerCase()),
       uef: num(cells, "uef"),
+      firstHourGal: num(cells, "firstHourGal"),
+      vent: (["atmospheric", "power", "direct", "none"] as const).find((t) => t === (str(cells, "vent") ?? "").toLowerCase()),
+      // Package units: what makes the heat. A gas pack is judged like a furnace.
+      heatKind: (["gas", "electric", "heat-pump"] as const).find((t) => t === (str(cells, "heatKind") ?? "").toLowerCase().replace(/\s+/g, "-")),
+      states: list(cells, "states"),
+      notStates: list(cells, "notStates"),
+      availabilityNote: str(cells, "availabilityNote"),
       cost: num(cells, "cost"),
       source: "shop",
     });
   });
+  // A maker prints one model on several sizes (Goodman CAPTA2422B3 is the
+  // 1.5-t and the 2-t coil): a repeated slug takes its size so no row is lost
+  // on import. Ids stay as they were for every row that is unique in the file.
+  const seen = new Map<string, number>();
+  for (const it of items) seen.set(it.id, (seen.get(it.id) ?? 0) + 1);
+  for (const it of items) {
+    if ((seen.get(it.id) ?? 0) < 2) continue;
+    const size = it.tons ?? (it.btuInput ? it.btuInput / 1000 : undefined) ?? it.gallons;
+    if (size !== undefined) it.id = `${it.id}-${String(size).replace(/[^0-9a-z.]/gi, "")}`;
+  }
   return { items, errors };
 }
 

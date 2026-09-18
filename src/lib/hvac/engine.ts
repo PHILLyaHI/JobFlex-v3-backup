@@ -5,13 +5,13 @@
 import type { BuildingModel, CatalogItem, CheckResult, DesignConditions, EngineResult, EquipmentKind, SelectionCandidate } from "./types";
 import { DEFAULT_JOB, jobDef, type JobInput, type JobKind, type OutdoorKind } from "./jobs";
 import { waterHeaterChecks, waterHeaterPlan } from "./waterHeater";
-import { fuelChecks } from "./checks";
+import { fuelChecks, resolveUlnCheck } from "./checks";
 import { companionFurnace, keepsGas } from "./ledger";
 import { computeBlockLoad, ENGINE_VERSION } from "./load";
 import { selectSystem } from "./select";
 import { allChecks, defaultedFields, gasCheck } from "./checks";
 import { designConditionsFor } from "./designConditions";
-import { incentivesFor } from "./data/rules";
+import { incentivesFor, ultraLowNoxNeeded } from "./data/rules";
 import { DEFAULTS_SOURCE } from "./data/defaults";
 
 export interface RunEngineOptions {
@@ -66,7 +66,13 @@ export function runEngine(model: BuildingModel, opts: RunEngineOptions): EngineR
   const job = jobDef(opts.job ?? DEFAULT_JOB);
   // A typed-in unit stands beside the catalog rows and is judged with them.
   const catalog = opts.custom ? [...opts.catalog.filter((c) => c.id !== opts.custom?.id), opts.custom] : opts.catalog;
-  const conditions = opts.conditions ?? designConditionsFor(model.state, model.county, model.elevationFt ?? 0).conditions;
+  const county = designConditionsFor(model.state, model.county, model.elevationFt ?? 0).conditions;
+  const setC = opts.input?.designCoolingF;
+  const setH = opts.input?.designHeatingF;
+  // The contractor's own design temperatures for the address beat the county's row.
+  const conditions = opts.conditions ?? (Number.isFinite(setC) || Number.isFinite(setH)
+    ? { ...county, coolingF: Number.isFinite(setC) ? (setC as number) : county.coolingF, heatingF: Number.isFinite(setH) ? (setH as number) : county.heatingF, source: `set for this address by the contractor (${Number.isFinite(setC) ? `${setC} °F cooling` : ""}${Number.isFinite(setC) && Number.isFinite(setH) ? ", " : ""}${Number.isFinite(setH) ? `${setH} °F heating` : ""}); the county row reads ${county.coolingF} °F / ${county.heatingF} °F — ${county.source}` }
+    : county);
   // A ductless zone is loaded on its own area, one storey, the house's envelope.
   const zoneSqft = job.id === "ductless" ? Math.max(100, Math.round(opts.input?.zoneSqft ?? 0)) : 0;
   const heads = job.id === "ductless" ? Math.max(1, Math.round(opts.input?.heads ?? 1)) : 0;
@@ -76,6 +82,7 @@ export function runEngine(model: BuildingModel, opts: RunEngineOptions): EngineR
   const zoneOccupants = zoneSqft ? Math.max(1, Math.min(model.occupants > 0 ? model.occupants : 3, Math.ceil(zoneSqft / 300))) : model.occupants;
   const loadModel = zoneSqft ? { ...model, conditionedSqft: zoneSqft, storeys: 1, occupants: zoneOccupants, ducts: { location: "none" as const, condition: "good" as const }, perimeterFt: undefined, footprintEdges: undefined } : model;
   const load = computeBlockLoad(loadModel, conditions, { zone: zoneSqft > 0 });
+  if (zoneSqft && !(opts.input?.zoneSqft && opts.input.zoneSqft > 0)) load.assumptions.unshift("Zone size not given — loaded as a 100 sq ft room; type the zone's square feet.");
   // A package-unit house gets a package unit on a full replacement; with no
   // package rows in the catalog the ledger prices one from the rate card.
   // What goes outside: the contractor's choice when the job allows it; else
@@ -99,6 +106,12 @@ export function runEngine(model: BuildingModel, opts: RunEngineOptions): EngineR
   // A choice the house cannot take (an AC where there is no furnace, a kind
   // the catalog lacks) falls back to the job's own pool, not an empty design.
   if (job.selection !== "none" && !selection.chosen && outdoorKind && !packageHouse) selection = selectSystem(catalog, load, conditions, model, { kinds: job.kinds, wantsHeatPump: job.id === "heat-pump-conversion", keepsIndoor, minTons });
+  // A heat pump picked by hand on a job that offers both kinds is judged as a
+  // heat-pump job — no "offer this as dual fuel" mark from the AC ranking.
+  if (opts.pick && !asked && job.selection !== "none" && !packageHouse && job.kinds.includes("heat-pump") && job.kinds.includes("air-conditioner")) {
+    const pickedItem = catalog.find((c) => c.id === opts.pick);
+    if (pickedItem?.kind === "heat-pump" && selection.chosen?.item.kind !== "heat-pump") selection = selectSystem(catalog, load, conditions, model, { kinds: ["heat-pump"], wantsHeatPump: true, keepsIndoor, minTons });
+  }
   // The contractor's pick (or the page's Better-tier base) becomes the chosen
   // unit, so the checks and notes below describe the unit on the estimate.
   if (opts.pick) {
@@ -115,13 +128,21 @@ export function runEngine(model: BuildingModel, opts: RunEngineOptions): EngineR
   const chosenItem = selection.chosen?.item;
   // A heat pump where the furnace stays (a conversion, or an outdoor swap on
   // an AC + furnace house) runs dual fuel: no strips, a dual-fuel thermostat.
-  const dualFuel = (job.id === "heat-pump-conversion" || (job.id === "replace-outdoor" && chosenItem?.kind === "heat-pump")) && keepsGas(model);
+  // Dual fuel needs a forced-air gas furnace to pair with: an AC + furnace
+  // house, a furnace-only house, or a heat-pump house already paired with a
+  // gas furnace. A boiler house (no ducts) keeps its gas but the heat pump
+  // goes all-electric with its own air handler.
+  const forcedAirFurnace = model.ducts.location !== "none" && (model.existing.kind === "split-ac-furnace" || model.existing.kind === "furnace-only" || (model.existing.kind === "split-heat-pump" && (model.existing.fuel === "gas" || model.existing.fuel === "propane")));
+  const dualFuel = (job.id === "heat-pump-conversion" || (job.id === "replace-outdoor" && chosenItem?.kind === "heat-pump")) && keepsGas(model) && forcedAirFurnace;
   if (dualFuel) {
     // The furnace, not electric strips, carries the heat below the balance point.
     const reword = (r: string) => r.replace(/[\d.]+ kW of backup carries the rest below ([^ ]+) °F\./, "the furnace carries the rest below $1 °F (dual fuel).").replace("the strips will run most cold nights", "the furnace will run most cold nights");
     for (const c of selection.candidates) c.reasons = c.reasons.map(reword);
   }
-  const gasFurnace = job.id === "replace-furnace" || (job.id === "replace-system" && chosenItem?.kind === "air-conditioner" && keepsGas(model));
+  // Gas heat on the job: a gas furnace being set, the furnace a full system's
+  // AC brings, or a gas/electric package unit.
+  const gasPackage = chosenItem?.kind === "package" && (chosenItem.heatKind ?? "gas") === "gas";
+  const gasFurnace = (job.id === "replace-furnace" && !electricFurnace) || (job.id === "replace-system" && chosenItem?.kind === "air-conditioner" && keepsGas(model)) || gasPackage;
   // The kept furnace / air handler needs the A2L sensor only when the
   // refrigerant actually changes to an A2L; an R-454B house has one already.
   // The furnace that stays must move the coil's air: its blower is sized by
@@ -142,27 +163,39 @@ export function runEngine(model: BuildingModel, opts: RunEngineOptions): EngineR
   const blowerUnknown = coilTons && !blowerShort && (!blowerTons || (!furnaceStays && job.id !== "replace-furnace" && coilTons > blowerTons)) ? { tons: coilTons, cfm: coilCfm } : undefined;
   // An all-electric conversion pulls the gas furnace: the water heater may be
   // left alone on the flue, and the gas drop gets capped.
-  const furnaceRemoved = job.id === "heat-pump-conversion" && !dualFuel && model.gas.available !== false && (model.existing.kind === "split-ac-furnace" || model.existing.kind === "furnace-only") && model.existing.fuel !== "electric";
+  const furnaceRemoved = ((job.id === "heat-pump-conversion" && !dualFuel) || (job.id === "replace-system" && chosenItem?.kind === "heat-pump")) && model.gas.available !== false && forcedAirFurnace && model.existing.fuel !== "electric";
   // The outdoor circuit is reused on a swap or a conversion of a house that
   // already has an outdoor unit; the ledger adds a breaker only when the MCA says so.
   const reusesCircuit = job.id === "replace-outdoor" || (job.id === "heat-pump-conversion" && (model.existing.kind === "split-ac-furnace" || model.existing.kind === "split-heat-pump" || model.existing.kind === "package-unit"));
-  const a2lOnExisting = !!chosenItem && (chosenItem.refrigerant === "R-454B" || chosenItem.refrigerant === "R-32") && (job.id === "add-ac" || dualFuel || job.id === "replace-outdoor") && model.existing.refrigerant !== chosenItem.refrigerant;
+  const a2lOnExisting = !!chosenItem && (chosenItem.refrigerant === "R-454B" || chosenItem.refrigerant === "R-32") && (job.id === "add-ac" || dualFuel || job.id === "replace-outdoor") && indoorStays && model.existing.refrigerant !== chosenItem.refrigerant;
+  // A strip kit on an indoor unit that ran on 120 V (or where there was none)
+  // is a new two-pole breaker to find room for, whatever the outdoor circuit does.
+  const indoorWas240 = model.existing.kind === "split-heat-pump" || model.existing.fuel === "electric";
+  const addsCircuit = !indoorWas240 && ((chosenItem?.kind === "heat-pump" && !dualFuel && job.id !== "replace-outdoor") || electricFurnace);
   const checks = waterHeater
     ? [...waterHeaterChecks(model, waterHeater, opts.input?.wh?.existingFuel ? opts.input.wh.existingFuel === "electric" : model.gas.available === false), ...fuelChecks(model, { gasFurnace: false, gasWaterHeater: waterHeater.fuel !== "electric" && waterHeater.type !== "heat-pump", whVent: waterHeater.vent, whLocation: waterHeater.location, furnaceReplaced: false, a2lCoilOnExistingFurnace: false })]
     : job.selection === "none"
       ? [...(wanted.has("refrigerant") ? serviceRefrigerantCheck(model) : []), ...allChecks(load, conditions, model, null, { touchesRefrigerant: false, removesEquipment: false, kind: job.id }).filter((c) => wanted.has(c.id) || (wanted.has("code") && !["return", "static", "duct-cond", "duct-ins", "ducts-none", "service", "gas", "refrigerant", "efficiency"].includes(c.id)))]
-      : [...allChecks(load, conditions, model, selection.chosen, { dualFuel, removesEquipment: job.id !== "add-ac" && job.id !== "ductless", reusesCircuit, newFurnace: gasFurnace }).filter((c) => wanted.has(c.id) || (c.id === "code" && wanted.has("code")) || (!["return", "static", "duct-cond", "duct-ins", "ducts-none", "service", "gas", "refrigerant", "efficiency"].includes(c.id) && wanted.has("code"))), ...fuelChecks(model, { gasFurnace, gasWaterHeater: false, furnaceReplaced: gasFurnace || furnaceRemoved, a2lCoilOnExistingFurnace: a2lOnExisting, furnaceMaxTonsUnknown: blowerUnknown, furnaceBlowerShort: blowerShort, indoorWord })];
+      : [...allChecks(load, conditions, model, selection.chosen, { dualFuel, removesEquipment: job.id !== "add-ac" && job.id !== "ductless", reusesCircuit, addsCircuit, newFurnace: gasFurnace }).filter((c) => wanted.has(c.id) || (c.id === "code" && wanted.has("code")) || (!["return", "static", "duct-cond", "duct-ins", "ducts-none", "service", "gas", "refrigerant", "efficiency"].includes(c.id) && wanted.has("code"))), ...fuelChecks(model, { gasFurnace, gasWaterHeater: false, furnaceReplaced: gasFurnace || furnaceRemoved, a2lCoilOnExistingFurnace: a2lOnExisting, furnaceMaxTonsUnknown: blowerUnknown, furnaceBlowerShort: blowerShort, indoorWord })];
 
   // A full system with an AC brings a furnace the ledger picks: its gas line
   // and its fit against the heating load are checked here, for that furnace.
   if (gasFurnace && chosenItem && chosenItem.kind !== "furnace") {
     const heat = selection.perSystem?.heatingBtuh ?? load.heatingBtuh;
     const tonsForFurnace = chosenItem.tons ?? selection.targetTons;
-    const fRow = companionFurnace(catalog, tonsForFurnace, heat, chosenItem) ?? { id: "synthetic-furnace", kind: "furnace" as const, brand: "", model: "furnace", btuInput: Math.max(40000, Math.ceil((heat / 0.95) / 20000) * 20000), afue: 0.95, source: "shop" as const };
+    const fRow = companionFurnace(catalog, tonsForFurnace, heat, { brand: chosenItem.brand, tier: chosenItem.tier, ulnOnly: ultraLowNoxNeeded(model.state, model.county) === "required" }) ?? { id: "synthetic-furnace", kind: "furnace" as const, brand: "", model: "furnace", btuInput: Math.max(40000, Math.ceil((heat / 0.95) / 20000) * 20000), afue: 0.95, source: "shop" as const };
     const g = gasCheck(model, fRow);
     if (g && !checks.some((c) => c.id === "gas")) checks.push(g);
+    // The NOx check reads the furnace the estimate carries, not the AC.
+    const uln = checks.find((c) => c.id === "ca-uln-furnace");
+    if (uln) resolveUlnCheck(uln, model, fRow);
     const out = (fRow.btuInput ?? 0) * (fRow.afue ?? 0.8);
     if (heat > 0 && out / heat > 1.4) checks.push({ id: "code", title: "Furnace fit", status: "verify", detail: `The ${Math.round((fRow.btuInput ?? 0) / 1000)}k furnace is the smallest cabinet whose blower carries the ${tonsForFurnace}-t coil — ${Math.round((out / heat) * 100)}% of the heating load, over Manual S's 140%. Confirm with the inspector or step the coil down.`, rule: "ACCA Manual S" });
+  }
+  // The furnace job's cabinet chosen for its blower, over Manual S's 140%.
+  if (job.id === "replace-furnace" && selection.chosen && !selection.chosen.overridden && (selection.chosen.outputRatio ?? 0) > 1.4 && coilTons) {
+    const it = selection.chosen.item;
+    checks.push({ id: "code", title: "Furnace fit", status: "verify", detail: `${it.brand} ${it.model} puts out ${Math.round((selection.chosen.outputRatio ?? 0) * 100)}% of the heating load — over Manual S's 140% — because it is the smallest cabinet whose blower carries the ${coilTons}-t coil. Confirm with the inspector, or step the coil down with the furnace.`, rule: "ACCA Manual S" });
   }
   if (selection.chosen?.overridden) {
     const it = selection.chosen.item;

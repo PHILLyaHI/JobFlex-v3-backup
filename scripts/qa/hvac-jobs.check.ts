@@ -68,7 +68,10 @@ ok("Outdoor only on a heat-pump house picks a heat pump", run("replace-outdoor",
 
 // furnace only
 const furnace = run("replace-furnace");
-ok("Furnace: a furnace is chosen by the heating load, within 100–140%", furnace.e.selection.chosen?.item.kind === "furnace" && (furnace.e.selection.chosen?.outputRatio ?? 0) >= 1 && (furnace.e.selection.chosen?.outputRatio ?? 9) <= 1.4, `${furnace.e.selection.chosen?.item.model} ${furnace.e.selection.chosen?.outputRatio}`);
+// The Frisco house keeps a 3.5-t coil: no 100–140% cabinet's blower carries it, so
+// the smallest cabinet that does goes on, over 140%, with the "Furnace fit" verify.
+ok("Furnace under a 3.5-t coil: the smallest cabinet whose blower carries the coil, over 140% and said so", furnace.e.selection.chosen?.item.kind === "furnace" && (furnace.e.selection.chosen?.outputRatio ?? 0) >= 1 && (furnace.e.selection.chosen?.item.maxTons ?? 0) >= 3.5 && ((furnace.e.selection.chosen?.outputRatio ?? 9) <= 1.4 || furnace.e.checks.some((c) => c.title === "Furnace fit" && c.status === "verify")), `${furnace.e.selection.chosen?.item.model} ${furnace.e.selection.chosen?.outputRatio} · maxTons ${furnace.e.selection.chosen?.item.maxTons}`);
+ok("Furnace under a 3.5-t coil: no blower-airflow fix, since the cabinet carries it", !furnace.e.checks.some((c) => /blower airflow/i.test(c.title) && c.status === "fix"), furnace.e.checks.filter((c) => /blower/i.test(c.title)).map((c) => `${c.title}=${c.status}`).join(","));
 ok("Furnace: gas flex, vent kit, thermostat; no line set, pad or disconnect", has(furnace.l.materials, "eq-main", "m-gasflex", "m-vent", "m-tstat") && lacks(furnace.l.materials, "m-lineset", "m-pad", "m-disc", "m-surge"), ids(furnace.l.materials).join(","));
 ok("Furnace: remove furnace, set furnace, re-set the coil, gas, vent by the foot, electrical reconnect, start-up", has(furnace.l.labor, "l-remove-furnace", "l-indoor", "l-recoil", "l-gas", "l-vent", "l-elec", "l-startup") && furnace.l.labor.find((r) => r.id === "l-vent")?.unit === "ln ft", ids(furnace.l.labor).join(","));
 const tiny = run("replace-furnace", house({ conditionedSqft: 700, provenance: { ...house().provenance, conditionedSqft: { source: "stated", confidence: "high" } } }));
@@ -125,7 +128,8 @@ const [tv, tm, tp] = [tierRun("value"), tierRun("mid"), tierRun("premium")];
 ok("Good < Better < Best on the same house", tv < tm && tm < tp && tp - tv > 1500, `${tv} < ${tm} < ${tp}`);
 
 // the trade review's fixes (2026-09-16)
-const fOnly = run("replace-furnace");
+// A furnace-only gas house (no coil): the load-fit condensing cabinet.
+const fOnly = run("replace-furnace", house({ existing: { kind: "furnace-only", fuel: "gas" } }));
 ok("Furnace-only: the return check is sized from the load, not 0 tons", !/\b0 CFM|\b0-ton|\b0 sq in/.test(fOnly.e.checks.find((c) => c.id === "return")?.detail ?? "") && /\d{3,} CFM/.test(fOnly.e.checks.find((c) => c.id === "return")?.detail ?? ""), fOnly.e.checks.find((c) => c.id === "return")?.detail);
 ok("Furnace-only: vent, neutralizer, CO alarm, vent labor", has(fOnly.l.materials, "m-vent", "m-neut", "m-co") && has(fOnly.l.labor, "l-vent"), ids(fOnly.l.materials).join(","));
 ok("Furnace-only: the orphaned water-heater vent and the CO alarm are flagged", fOnly.e.checks.some((c) => /Water-heater vent/.test(c.title)) && fOnly.e.checks.some((c) => /CO alarm/.test(c.title)), fOnly.e.checks.map((c) => c.title).join(" | "));
