@@ -11,7 +11,8 @@
 //
 // The page now calls the real actions in `@/actions/advancedEstimator`:
 //   Generate  → analyzeEstimatePrompt() then generateAdvancedEstimate()
-//   Apply     → refineAdvancedEstimate()
+//   (the written change request and its Apply were removed 2026-09-18:
+//    the sheet's cells and the proposal's sliders cover price changes)
 //   Save      → saveEstimate() then convertEstimateToProposal() then router.push
 //
 // The donor's LOOK is untouched — same cards, same grid, same type, same
@@ -59,25 +60,21 @@ import { DictateButton } from "@/components/estimator/DictateButton";
 import {
   analyzeEstimatePrompt,
   generateAdvancedEstimate,
-  refineAdvancedEstimate,
   saveEstimate,
   convertEstimateToProposal,
 } from "@/actions/advancedEstimator";
-import type { ClarifyQuestion, GeneratedEstimate } from "@/lib/estimatorSchema";
+import type { ClarifyQuestion } from "@/lib/estimatorSchema";
 import {
   briefWithAnswers,
   computeTotals,
-  discountFromSchema,
   discountToSchema,
   estimateFromLines,
   lineTotal,
   linesFromEstimate,
   materialsRequest,
   materialsRequestTotal,
-  mergeRefined,
   newLineId,
   blankLine,
-  unitPriceOf,
   unitSelectOptions,
   NO_DISCOUNT,
   type ClarifyAnswer,
@@ -148,27 +145,6 @@ function reducedMotion(): boolean {
 type Panel = "intake" | "estimate";
 type Photo = { id: string; name: string; size: number; dataUrl: string };
 
-/** Everything an Apply can touch, snapshotted so one Undo restores it exactly. */
-type Snapshot = {
-  lines: ConsoleLine[];
-  title: string;
-  scope: string;
-  assumptions: string[];
-  baseline: string[];
-  timelineDays: number | null;
-  discount: DiscountState;
-  history: string[];
-};
-
-/** A refine result parked for review. Nothing applies until it is confirmed. */
-type Pending = {
-  data: GeneratedEstimate;
-  warnings: string[];
-  reshopFailed: boolean;
-  rows: { kind: "Added" | "Removed" | "Changed"; name: string; detail: string }[];
-  instructions: string;
-};
-
 const STATE_OPTIONS = STATES.map(([value, label]) => ({ value, label }));
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -210,7 +186,6 @@ export function AdvancedAiContent() {
   const [title, setTitle] = useState("");
   const [scope, setScope] = useState("");
   const [assumptions, setAssumptions] = useState<string[]>([]);
-  const [baseline, setBaseline] = useState<string[]>([]);
   const [timelineDays, setTimelineDays] = useState<number | null>(null);
   const [discount, setDiscount] = useState<DiscountState>(NO_DISCOUNT);
   // Rate and pin live in ONE state object so the Places pick handler — which is
@@ -237,13 +212,6 @@ export function AdvancedAiContent() {
   const [locationUsed, setLocationUsed] = useState("");
   /** The full job ADDRESS as typed. Saved onto the proposal; never a market. */
   const [addrUsed, setAddrUsed] = useState("");
-
-  // ── Refine ───────────────────────────────────────────────────────
-  const [refineText, setRefineText] = useState("");
-  const [refineBusy, setRefineBusy] = useState(false);
-  const [pending, setPending] = useState<Pending | null>(null);
-  const [undoSnap, setUndoSnap] = useState<Snapshot | null>(null);
-  const [history, setHistory] = useState<string[]>([]);
   // Three-valued, not a boolean. `router.push` resolves immediately and the
   // navigation continues afterwards, so clearing the flag in a `finally` put the
   // button back to "Save as proposal" while the app was still loading the
@@ -342,12 +310,6 @@ export function AdvancedAiContent() {
   }, [addr, usState]);
 
   const cleanAssumptions = assumptions.map((a) => a.trim()).filter(Boolean);
-  const cleanBaseline = baseline.map((a) => a.trim()).filter(Boolean);
-  const assumptionsDirty =
-    cleanAssumptions.length !== cleanBaseline.length ||
-    cleanAssumptions.some((a, i) => a !== cleanBaseline[i]);
-  const canApply = (refineText.trim().length > 0 || assumptionsDirty) && !refineBusy;
-  const uiLocked = refineBusy || !!pending;
 
   const canGenerate = brief.trim().length > 0 && !generating;
 
@@ -473,7 +435,6 @@ export function AdvancedAiContent() {
       setTitle(est.title);
       setScope(est.scope || description);
       setAssumptions(est.assumptions);
-      setBaseline(est.assumptions);
       setTimelineDays(est.estimatedTimelineDays ?? null);
       setDiscount(NO_DISCOUNT);
       setDemoMode(Boolean(res.disabled));
@@ -481,10 +442,6 @@ export function AdvancedAiContent() {
       setTypeUsed(projectType);
       setLocationUsed(useLocation);
       setAddrUsed(useAddress);
-      setHistory([]);
-      setUndoSnap(null);
-      setPending(null);
-      setRefineText("");
       setStageIdx(GEN_STAGES.length);
       setGenDone(true);
       // Land on "generated" for a beat so the checklist reads as finished
@@ -508,15 +465,10 @@ export function AdvancedAiContent() {
     setPanel("intake");
     setLines([]);
     setAssumptions([]);
-    setBaseline([]);
     setTitle("");
     setScope("");
     setTimelineDays(null);
     setDiscount(NO_DISCOUNT);
-    setPending(null);
-    setUndoSnap(null);
-    setHistory([]);
-    setRefineText("");
     setOpenQuestions([]);
     setDemoMode(false);
     setGenError("");
@@ -536,147 +488,6 @@ export function AdvancedAiContent() {
   /** The edit buffer: raw text while a cell has focus, the model otherwise. */
   function cellValue(key: string, n: number): string {
     return field?.key === key ? field.text : String(n);
-  }
-
-  // ══════════════ REFINE ══════════════
-  async function applyChanges() {
-    if (!canApply) return;
-    const instructions = refineText.trim();
-    setRefineBusy(true);
-    try {
-      const res = await refineAdvancedEstimate({
-        projectType: typeUsed || projectType,
-        location: locationUsed || location || undefined,
-        instructions,
-        history: history.slice(-5),
-        assumptions: cleanAssumptions,
-        current: estimateFromLines(lines, {
-          title,
-          scope: scope || briefUsed,
-          assumptions: cleanAssumptions,
-          estimatedTimelineDays: timelineDays ?? undefined,
-          discount: discountToSchema(discount),
-        }),
-      });
-      if (!res.ok) {
-        fail(res, "Couldn't apply");
-        return;
-      }
-      if (res.disabled) {
-        // No estimator key: the action echoes the estimate back with the edited
-        // assumptions folded in. Say so instead of showing an empty diff.
-        setAssumptions(res.data.assumptions);
-        setBaseline(res.data.assumptions);
-        toast.info("Demo mode", "No estimator key configured — assumptions saved, nothing re-priced.");
-        return;
-      }
-
-      const before = new Map(lines.map((l) => [l.id, l]));
-      const after = linesFromEstimate(res.data);
-      const rows: Pending["rows"] = [];
-      for (const n of after) {
-        const o = before.get(n.id);
-        if (!o) {
-          rows.push({
-            kind: "Added",
-            name: n.name,
-            detail: `${n.qty} ${n.unit} × ${moneyU(unitPriceOf(n))} · ${money(lineTotal(n))}`,
-          });
-          continue;
-        }
-        const bits: string[] = [];
-        if (o.name !== n.name) bits.push(`“${o.name}” → “${n.name}”`);
-        if (o.qty !== n.qty) bits.push(`${o.qty} → ${n.qty} ${n.unit}`);
-        if (o.materialPrice !== n.materialPrice)
-          bits.push(`material ${moneyU(o.materialPrice)} → ${moneyU(n.materialPrice)}`);
-        if (o.laborPrice !== n.laborPrice)
-          bits.push(`labor ${moneyU(o.laborPrice)} → ${moneyU(n.laborPrice)}`);
-        if (bits.length) rows.push({ kind: "Changed", name: o.name, detail: bits.join(" · ") });
-      }
-      const kept = new Set(after.map((l) => l.id));
-      for (const o of lines) {
-        if (!kept.has(o.id)) {
-          rows.push({ kind: "Removed", name: o.name, detail: `was ${money(lineTotal(o))}` });
-        }
-      }
-      const discountMoved =
-        JSON.stringify(res.data.discount ?? null) !== JSON.stringify(discountToSchema(discount));
-      if (discountMoved) {
-        const d = res.data.discount;
-        rows.push({
-          kind: d ? "Changed" : "Removed",
-          name: "Discount",
-          detail: d ? (d.isPercent ? `${d.amount}% off` : `${money(d.amount)} off`) : "cleared",
-        });
-      }
-      if (rows.length === 0 && res.warnings.length === 0) {
-        toast.info("No changes", "Nothing came back different — try being more specific.");
-        return;
-      }
-      setPending({
-        data: res.data,
-        warnings: res.warnings,
-        reshopFailed: res.reshopFailed,
-        rows,
-        instructions,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Couldn't apply changes.";
-      toast.error("Couldn't apply", msg);
-    } finally {
-      setRefineBusy(false);
-    }
-  }
-
-  function keepChanges() {
-    const p = pending;
-    if (!p) return;
-    setUndoSnap({
-      lines,
-      title,
-      scope,
-      assumptions,
-      baseline,
-      timelineDays,
-      discount,
-      history,
-    });
-    // mergeRefined keeps each surviving line's retail price unless the server
-    // re-shopped it — so an edited price does not start claiming to be the shelf
-    // price, and a genuinely re-matched line picks up its new one.
-    setLines(mergeRefined(lines, p.data));
-    setTitle(p.data.title || title);
-    setScope(p.data.scope || scope);
-    setAssumptions(p.data.assumptions);
-    setBaseline(p.data.assumptions);
-    setTimelineDays(p.data.estimatedTimelineDays ?? timelineDays);
-    // The refine owns the discount too ("give them 8% off" sets it, "drop the
-    // discount" clears it), so it round-trips through the same converter the
-    // save path uses rather than a second hand-rolled mapping.
-    if (p.data.discount !== undefined) setDiscount(discountFromSchema(p.data.discount));
-    if (p.instructions) setHistory((h) => [...h, p.instructions].slice(-8));
-    setRefineText("");
-    setPending(null);
-    if (p.reshopFailed) {
-      toast.info("Applied with caveats", "Live pricing failed on the changed lines.");
-    } else {
-      toast.success("Estimate updated", "Undo is available until the next change.");
-    }
-  }
-
-  function undo() {
-    const snap = undoSnap;
-    if (!snap) return;
-    setLines(snap.lines.map((l) => ({ ...l, badge: undefined })));
-    setTitle(snap.title);
-    setScope(snap.scope);
-    setAssumptions(snap.assumptions);
-    setBaseline(snap.baseline);
-    setTimelineDays(snap.timelineDays);
-    setDiscount(snap.discount);
-    setHistory(snap.history);
-    setUndoSnap(null);
-    toast.success("Reverted", "Restored the previous version.");
   }
 
   // ══════════════ SAVE AS PROPOSAL ══════════════
@@ -787,7 +598,6 @@ export function AdvancedAiContent() {
         autoComplete="off"
         value={cellValue(k, r[field])}
         aria-label={`${r.name || "Line item"} — ${label}`}
-        disabled={uiLocked}
         onChange={(e) => {
           const text = e.target.value.replace(/[^0-9.]/g, "");
           setField({ key: k, text });
@@ -810,7 +620,6 @@ export function AdvancedAiContent() {
             value={r.name}
             placeholder="Line item"
             aria-label="Item name"
-            disabled={uiLocked}
             onChange={(e) => patch(r.id, { name: e.target.value })}
           />
         </HoverTitle>
@@ -826,7 +635,6 @@ export function AdvancedAiContent() {
         placeholder="unit"
         ariaLabel={`${r.name || "Line item"} — unit`}
         triggerClass="sp-unit"
-        disabled={uiLocked}
       />
 
       {numField(r, "m", "materialPrice", MAX_MONEY, "material price per unit")}
@@ -838,7 +646,6 @@ export function AdvancedAiContent() {
         className={cx("sp-row-x")}
         type="button"
         aria-label={`Remove ${r.name || "line item"}`}
-        disabled={uiLocked}
         onClick={() => removeLine(r.id)}
       >
         <svg className={cx("ic")}>
@@ -867,7 +674,7 @@ export function AdvancedAiContent() {
       </div>
       <div>{lines.map(row)}</div>
       {lines.length === 0 && <div className={cx("sp-empty")}>Nothing here yet.</div>}
-      <button className={cx("sp-add")} type="button" disabled={uiLocked} onClick={addLine}>
+      <button className={cx("sp-add")} type="button" onClick={addLine}>
         <svg className={cx("ic")}>
           <use href="#i-plus" />
         </svg>
@@ -1109,7 +916,7 @@ export function AdvancedAiContent() {
           <button
             className={cx("btn", "btn-danger")}
             type="button"
-            disabled={uiLocked || Boolean(saveBusy)}
+            disabled={Boolean(saveBusy)}
             onClick={startOver}
           >
             <svg className={cx("ic")}>
@@ -1120,7 +927,7 @@ export function AdvancedAiContent() {
           <button
             className={cx("btn", "btn-primary")}
             type="button"
-            disabled={uiLocked || Boolean(saveBusy) || lines.length === 0}
+            disabled={Boolean(saveBusy) || lines.length === 0}
             onClick={saveAsProposal}
           >
             <svg className={cx("ic")}>
@@ -1230,7 +1037,6 @@ export function AdvancedAiContent() {
               spellCheck={false}
               aria-label="Scope of work"
               value={scope}
-              disabled={uiLocked}
               onChange={(e) => setScope(e.target.value)}
             />
           </section>
@@ -1282,7 +1088,6 @@ export function AdvancedAiContent() {
                     inputMode="decimal"
                     value={cellValue("disc", discount.value)}
                     aria-label="Discount amount"
-                    disabled={uiLocked}
                     onChange={(e) => {
                       setField({ key: "disc", text: e.target.value });
                       setDiscount((d) => ({
@@ -1297,7 +1102,6 @@ export function AdvancedAiContent() {
                       type="button"
                       className={cx("sp-tog-b", discount.mode === "pct" && "on")}
                       aria-pressed={discount.mode === "pct"}
-                      disabled={uiLocked}
                       onClick={() =>
                         setDiscount((d) => ({ mode: "pct", value: Math.min(d.value, 100) }))
                       }
@@ -1308,7 +1112,6 @@ export function AdvancedAiContent() {
                       type="button"
                       className={cx("sp-tog-b", discount.mode === "amt" && "on")}
                       aria-pressed={discount.mode === "amt"}
-                      disabled={uiLocked}
                       onClick={() => setDiscount((d) => ({ ...d, mode: "amt" }))}
                     >
                       $
@@ -1329,7 +1132,6 @@ export function AdvancedAiContent() {
                     inputMode="decimal"
                     value={cellValue("tax", tax.pct)}
                     aria-label="Tax percent"
-                    disabled={uiLocked}
                     onChange={(e) => {
                       setField({ key: "tax", text: e.target.value });
                       setTax({ pct: clampNum(e.target.value, 30), pinned: true });
@@ -1355,7 +1157,7 @@ export function AdvancedAiContent() {
           <button
             className={cx("btn", "btn-primary", "sp-convert")}
             type="button"
-            disabled={uiLocked || Boolean(saveBusy) || lines.length === 0}
+            disabled={Boolean(saveBusy) || lines.length === 0}
             onClick={saveAsProposal}
           >
             <svg className={cx("ic")}>
@@ -1364,163 +1166,62 @@ export function AdvancedAiContent() {
             {saveBusy === "opening" ? "Opening…" : saveBusy ? "Saving…" : "Convert to proposal"}
           </button>
 
-          {/* REFINE */}
+          {/* ASSUMPTIONS — what the price rests on. Edited by hand and saved
+              with the estimate. The written change request that sat above
+              them ("Change the estimate" → Apply, diff, Undo) was removed
+              2026-09-18 on the owner's call: the sheet's cells and the
+              proposal's sliders cover price changes, and reworded lines come
+              from Generate, which carries the specialty procedure. */}
           <section className={cx("card")}>
             <div className={cx("sp-h")}>
               <div className={cx("sp-h-txt")}>
-                <h2 className={cx("sp-t")}>Change the estimate</h2>
+                <h2 className={cx("sp-t")}>Assumptions</h2>
               </div>
             </div>
-
-            {!pending && !refineBusy && (
+            <div className={cx("sp-asm")}>
               <div>
-                <textarea
-                  className={cx("sp-refine-in")}
-                  spellCheck={false}
-                  maxLength={4000}
-                  placeholder={LIVE.refinePlaceholder}
-                  aria-label="Change the estimate"
-                  value={refineText}
-                  onChange={(e) => setRefineText(e.target.value)}
-                />
-                {openQuestions.length > 0 && (
-                  <div className={cx("sp-qs")}>
-                    <div className={cx("sp-asm-l")}>Worth confirming</div>
-                    {openQuestions.map((q) => (
-                      <button
-                        key={q}
-                        type="button"
-                        className={cx("sp-q")}
-                        onClick={() =>
-                          setRefineText((t) => (t ? `${t.trim()} ${q}` : q))
-                        }
-                      >
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div className={cx("sp-apply-row")}>
-                  <button
-                    className={cx("btn", "btn-primary", "sp-apply")}
-                    type="button"
-                    disabled={!canApply}
-                    onClick={applyChanges}
-                  >
-                    Apply changes
-                  </button>
-                  {/* Undo lives here, beside the control that creates the thing
-                      it undoes — not up in the page head next to Start over. */}
-                  {undoSnap && (
-                    <button className={cx("btn", "btn-warning")} type="button" onClick={undo}>
-                      <svg className={cx("ic")}>
-                        <use href="#i-undo" />
-                      </svg>
-                      Undo
-                    </button>
-                  )}
-                </div>
-
-                {/* ASSUMPTIONS — moved out of Summary. They are an INPUT to the
-                    refine (the action takes them as ground truth), so they
-                    belong with the control that sends them. */}
-                <div className={cx("sp-asm")}>
-                  <div className={cx("sp-asm-l")}>Assumptions</div>
-                  <div>
-                    {assumptions.map((a, i) => (
-                      <div className={cx("sp-asm-row")} key={`asm-${i}`}>
-                        {/* A textarea, not an input: assumptions are whole
-                            sentences and the rail is narrow, so a single-line
-                            field clipped the half that carries the meaning. */}
-                        <GrowText
-                          className={cx("sp-asm-in")}
-                          value={a}
-                          ariaLabel={`Assumption ${i + 1}`}
-                          onChange={(v) =>
-                            setAssumptions((rows) => rows.map((x, j) => (j === i ? v : x)))
-                          }
-                        />
-                        <button
-                          className={cx("sp-asm-x")}
-                          type="button"
-                          aria-label={`Remove assumption ${i + 1}`}
-                          onClick={() => setAssumptions((rows) => rows.filter((_, j) => j !== i))}
-                        >
-                          <svg className={cx("ic")}>
-                            <use href="#i-x" />
-                          </svg>
-                        </button>
-                      </div>
-                    ))}
-                    {assumptions.length === 0 && (
-                      <div className={cx("sp-empty")}>None — add what the price depends on.</div>
-                    )}
-                  </div>
-                  <button
-                    className={cx("sp-add")}
-                    type="button"
-                    onClick={() => setAssumptions((rows) => [...rows, ""])}
-                  >
-                    <svg className={cx("ic")}>
-                      <use href="#i-plus" />
-                    </svg>
-                    Add assumption
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {refineBusy && (
-              <div>
-                <div className={cx("sp-busy")}>
-                  <span className={cx("sp-busy-dot")}></span>Editing the estimate…
-                </div>
-              </div>
-            )}
-
-            {pending && (
-              <div>
-                <div className={cx("sp-diff-l")}>Review changes</div>
-                {pending.warnings.map((w) => (
-                  <div className={cx("sp-warn")} key={w}>
-                    {w}
-                  </div>
-                ))}
-                {pending.rows.map((d, i) => (
-                  <div className={cx("sp-diff-row")} key={`${d.name}-${i}`}>
-                    <span
-                      className={cx(
-                        "sp-pill",
-                        d.kind === "Added"
-                          ? "sp-pill--add"
-                          : d.kind === "Removed"
-                            ? "sp-pill--del"
-                            : "sp-pill--chg",
-                      )}
+                {assumptions.map((a, i) => (
+                  <div className={cx("sp-asm-row")} key={`asm-${i}`}>
+                    {/* A textarea, not an input: assumptions are whole
+                        sentences and the rail is narrow, so a single-line
+                        field clipped the half that carries the meaning. */}
+                    <GrowText
+                      className={cx("sp-asm-in")}
+                      value={a}
+                      ariaLabel={`Assumption ${i + 1}`}
+                      onChange={(v) => setAssumptions((rows) => rows.map((x, j) => (j === i ? v : x)))}
+                    />
+                    <button
+                      className={cx("sp-asm-x")}
+                      type="button"
+                      aria-label={`Remove assumption ${i + 1}`}
+                      onClick={() => setAssumptions((rows) => rows.filter((_, j) => j !== i))}
                     >
-                      {d.kind}
-                    </span>
-                    <div className={cx("sp-diff-txt")}>
-                      <b>{d.name}</b>
-                      <i>{d.detail}</i>
-                    </div>
+                      <svg className={cx("ic")}>
+                        <use href="#i-x" />
+                      </svg>
+                    </button>
                   </div>
                 ))}
-                {pending.rows.length === 0 && (
-                  <div className={cx("sp-empty")}>Only caveats — no line changes.</div>
+                {assumptions.length === 0 && (
+                  <div className={cx("sp-empty")}>None — add what the price depends on.</div>
                 )}
-                <div className={cx("sp-diff-btns")}>
-                  <button className={cx("btn", "btn-primary")} type="button" onClick={keepChanges}>
-                    Keep changes
-                  </button>
-                  <button
-                    className={cx("btn", "btn-ghost")}
-                    type="button"
-                    onClick={() => setPending(null)}
-                  >
-                    Discard
-                  </button>
-                </div>
+              </div>
+              <button className={cx("sp-add")} type="button" onClick={() => setAssumptions((rows) => [...rows, ""])}>
+                <svg className={cx("ic")}>
+                  <use href="#i-plus" />
+                </svg>
+                Add assumption
+              </button>
+            </div>
+            {openQuestions.length > 0 && (
+              <div className={cx("sp-qs")}>
+                <div className={cx("sp-asm-l")}>Worth confirming with the client</div>
+                {openQuestions.map((q) => (
+                  <div key={q} className={cx("sp-q")}>
+                    {q}
+                  </div>
+                ))}
               </div>
             )}
           </section>

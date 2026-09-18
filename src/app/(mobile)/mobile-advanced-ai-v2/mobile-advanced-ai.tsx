@@ -85,7 +85,6 @@ import {
   linesFromEstimate,
   materialsRequest,
   materialsRequestTotal,
-  mergeRefined,
   newLineId,
   NO_DISCOUNT,
   unitSelectOptions,
@@ -99,7 +98,6 @@ import {
   analyzeEstimatePrompt,
   convertEstimateToProposal,
   generateAdvancedEstimate,
-  refineAdvancedEstimate,
   saveEstimate,
 } from "@/actions/advancedEstimator";
 import type { ClarifyQuestion, GeneratedEstimate } from "@/lib/estimatorSchema";
@@ -242,30 +240,6 @@ function Thumb({ src, alt }: { src?: string; alt: string }) {
   );
 }
 
-type Delta = {
-  kind: "add" | "chg" | "rem";
-  group: string;
-  title: string;
-  from?: string;
-  to?: string;
-  note?: string;
-};
-type Snapshot = {
-  lines: ConsoleLine[];
-  scope: string;
-  assumptions: string[];
-  title: string;
-  discount: DiscountState;
-  timelineDays: number | null;
-  history: string[];
-};
-type Pending = {
-  instructions: string;
-  deltas: Delta[];
-  warnings: string[];
-  data: GeneratedEstimate;
-};
-
 type Banner = {
   tone: "danger" | "warning" | "info";
   title: string;
@@ -285,7 +259,6 @@ type MenuRow = {
   danger?: boolean;
 };
 
-const clone = (list: ConsoleLine[]) => list.map((l) => ({ ...l }));
 /** The search text a retail link is resolved against: what it is, and how big. */
 const buyQuery = (l: { name: string; dimensions?: string }) =>
   [l.name, l.dimensions].filter(Boolean).join(" ").trim();
@@ -369,14 +342,8 @@ export function MobileSmartProposal() {
      gate normalizes "bothel wa" to "Bothell, WA", and refine / save must use
      what was priced, not what was typed. */
   const [locUsed, setLocUsed] = useState("");
-  const [history, setHistory] = useState<string[]>([]);
-  const [pending, setPending] = useState<Pending | null>(null);
-  const [undoSnap, setUndoSnap] = useState<Snapshot | null>(null);
-  const [refineTxt, setRefineTxt] = useState("");
-  const [errRefine, setErrRefine] = useState(false);
 
   /* ---------- request state --------------------------------------------- */
-  const [refineBusy, setRefineBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [banner, setBanner] = useState<Banner | null>(null);
 
@@ -701,10 +668,6 @@ export function MobileSmartProposal() {
     setTimelineDays(est.estimatedTimelineDays ?? null);
     setDiscount(discountFromSchema(est.discount));
     setLocUsed(opts.location);
-    setUndoSnap(null);
-    setPending(null);
-    setHistory([]);
-    setRefineTxt("");
     setBanner(
       opts.disabled
         ? {
@@ -872,10 +835,6 @@ export function MobileSmartProposal() {
     setAssumptions([]);
     setTimelineDays(null);
     setDiscount(NO_DISCOUNT);
-    setPending(null);
-    setUndoSnap(null);
-    setHistory([]);
-    setRefineTxt("");
     setBanner(null);
     setPhase("intake");
     setDir("back");
@@ -940,177 +899,6 @@ export function MobileSmartProposal() {
     }
     setArmedDel(null);
     setLines((prev) => prev.filter((l) => l.id !== id));
-  };
-
-  /* ---------- refine: the real AI edit, reviewed before it lands --------- */
-  const buildDeltas = (prev: ConsoleLine[], next: GeneratedEstimate): Delta[] => {
-    const after = linesFromEstimate(next);
-    const before = new Map(prev.map((l) => [l.id, l]));
-    const afterIds = new Set(after.map((l) => l.id));
-    const out: Delta[] = [];
-    const group = "Line";
-    for (const l of after) {
-      const o = before.get(l.id);
-      if (!o) {
-        out.push({
-          kind: "add",
-          group,
-          title: l.name,
-          note: `${l.qty} ${l.unit} × ${cash(l.materialPrice + l.laborPrice)} — added`,
-        });
-        continue;
-      }
-      if (o.name !== l.name) {
-        out.push({ kind: "chg", group, title: o.name, note: "Renamed", from: o.name, to: l.name });
-      }
-      if (o.qty !== l.qty || o.unit !== l.unit) {
-        out.push({
-          kind: "chg", group, title: l.name, note: "Quantity",
-          from: `${o.qty} ${o.unit}`, to: `${l.qty} ${l.unit}`,
-        });
-      }
-      if (Math.abs(o.materialPrice - l.materialPrice) > 0.005) {
-        out.push({
-          kind: "chg", group, title: l.name, note: "Material / unit",
-          from: cash(o.materialPrice), to: cash(l.materialPrice),
-        });
-      }
-      if (Math.abs(o.laborPrice - l.laborPrice) > 0.005) {
-        out.push({
-          kind: "chg", group, title: l.name, note: "Labor / unit",
-          from: cash(o.laborPrice), to: cash(l.laborPrice),
-        });
-      }
-    }
-    for (const l of prev) {
-      if (!afterIds.has(l.id)) {
-        out.push({
-          kind: "rem",
-          group,
-          title: l.name,
-          note: "Removed from the estimate",
-        });
-      }
-    }
-    const nextDiscount = discountFromSchema(next.discount);
-    if (nextDiscount.mode !== discount.mode || nextDiscount.value !== discount.value) {
-      out.push({
-        kind: nextDiscount.value ? "chg" : "rem",
-        group: "Order",
-        title: "Discount",
-        note: nextDiscount.value
-          ? `Set to ${nextDiscount.mode === "pct" ? `${nextDiscount.value}%` : money(nextDiscount.value)}`
-          : "Discount removed",
-      });
-    }
-    if ((next.scope || "").trim() && (next.scope || "").trim() !== scope.trim()) {
-      out.push({ kind: "chg", group: "Estimate", title: "Scope of work", note: "Rewritten" });
-    }
-    return out;
-  };
-
-  const runRefine = async () => {
-    const text = refineTxt.trim();
-    if (!text) {
-      setErrRefine(true);
-      return;
-    }
-    if (refineBusy) return;
-    setRefineBusy(true);
-    setBanner(null);
-    try {
-      const res = await refineAdvancedEstimate({
-        projectType: typeLabel,
-        location: locUsed || undefined,
-        instructions: text,
-        history: history.slice(-5),
-        assumptions,
-        current: estimateFromLines(lines, {
-          title: estTitle,
-          scope,
-          assumptions,
-          estimatedTimelineDays: timelineDays ?? undefined,
-          discount: discountToSchema(discount),
-        }),
-      });
-      if (!res.ok) {
-        setBanner(
-          res.code === "PLAN_LIMIT_REACHED"
-            ? PLAN_LIMIT_BANNER(res.error)
-            : { tone: "danger", title: "Couldn't apply that change", body: res.error },
-        );
-        return;
-      }
-      if (res.disabled) {
-        setBanner({
-          tone: "warning",
-          title: "AI is switched off",
-          body: "Add OPENAI_API_KEY to apply written changes. Nothing was altered.",
-        });
-        return;
-      }
-      const deltas = buildDeltas(lines, res.data);
-      if (deltas.length === 0 && res.warnings.length === 0) {
-        setBanner({
-          tone: "info",
-          title: "Nothing changed",
-          body: "The AI reported no edits for that request — try naming the line or the number you want moved.",
-        });
-        return;
-      }
-      setPending({ instructions: text, deltas, warnings: res.warnings, data: res.data });
-    } catch (err) {
-      setBanner({ tone: "danger", title: "Couldn't apply that change", body: errText(err) });
-    } finally {
-      setRefineBusy(false);
-    }
-  };
-
-  const commitPending = () => {
-    const p = pending;
-    if (!p) return;
-    setUndoSnap({
-      lines: clone(lines),
-      scope,
-      assumptions,
-      title,
-      discount,
-      timelineDays,
-      history,
-    });
-    // mergeRefined keeps each line's retail price unless the server actually
-    // re-shopped it, so the materials request keeps quoting the real shelf.
-    setLines(mergeRefined(lines, p.data));
-    setTitle(p.data.title || title);
-    setScope(p.data.scope || scope);
-    setAssumptions(p.data.assumptions);
-    setTimelineDays(p.data.estimatedTimelineDays ?? timelineDays);
-    setDiscount(discountFromSchema(p.data.discount));
-    setHistory((h) => [...h, p.instructions].slice(-8));
-    setPending(null);
-    setRefineTxt("");
-    if (p.warnings.length) {
-      setBanner({
-        tone: "warning",
-        title: "Applied, with caveats",
-        body: "Check these lines before you send the proposal:",
-        list: p.warnings,
-      });
-    }
-  };
-
-  const runUndo = () => {
-    const s = undoSnap;
-    if (!s) return;
-    setLines(clone(s.lines));
-    setScope(s.scope);
-    setAssumptions(s.assumptions);
-    setTitle(s.title);
-    setDiscount(s.discount);
-    setTimelineDays(s.timelineDays);
-    setHistory(s.history);
-    setUndoSnap(null);
-    setBanner(null);
   };
 
   /* ---------- save → proposal -------------------------------------------- */
@@ -1247,7 +1035,7 @@ export function MobileSmartProposal() {
           <div className={styles.lempty}>
             <div className={styles.lemptyT}>Nothing costed yet</div>
             <div className={styles.lemptyS}>
-              Every line was removed. Add one back, or refine the estimate below.
+              Every line was removed. Add one back, or start over and generate again.
             </div>
             <button className={styles.lemptyA} type="button" onClick={addLine}>
               <Icon id="i-plus" />Add line
@@ -2073,132 +1861,34 @@ export function MobileSmartProposal() {
                 </div>
               </section>
 
-              {/* CHANGE THE ESTIMATE — plain words in, a real AI edit out,
-                  nothing applied until the diff is confirmed. Undo sits beside
-                  Apply, and the assumptions the estimate rests on sit under
-                  both, because they are the other half of the same instruction
-                  the model is given. */}
-              <section className={styles.card} key="refine">
+              {/* ASSUMPTIONS — what the price rests on, edited by hand and
+                  saved with the estimate. The written change request that
+                  sat above them (Apply, diff, Undo) was removed 2026-09-18 on
+                  the owner's call: the lines' own fields cover price changes. */}
+              <section className={styles.card} key="assumptions">
                 <div className={styles.cardHead}>
-                  <span className={styles.cardLbl}>
-                    {pending ? "Review changes" : "Change the estimate"}
-                  </span>
+                  <span className={styles.cardLbl}>Assumptions</span>
+                  <span className={styles.asmCount}>{assumptions.length}</span>
                 </div>
                 <div className={styles.cardPad}>
-                  {pending ? (
-                    <>
-                      <div className={styles.rfNote}>“{pending.instructions}”</div>
-                      <ul className={styles.diffList}>
-                        {pending.deltas.map((d, i) => (
-                          <li
-                            key={`${d.kind}-${d.title}-${i}`}
-                            className={`${styles.diffItem} ${
-                              d.kind === "add" ? styles.diffAdd : d.kind === "rem" ? styles.diffRem : styles.diffChg
-                            }`}
+                  {assumptions.length ? (
+                    <ul className={styles.assump}>
+                      {assumptions.map((a, i) => (
+                        <li key={`${a}-${i}`}>
+                          <span className={styles.asmT}>{a}</span>
+                          <button
+                            className={styles.asmX}
+                            type="button"
+                            aria-label={`Remove assumption: ${a}`}
+                            onClick={() => setAssumptions((list) => list.filter((_, j) => j !== i))}
                           >
-                            <div className={styles.diffGrp}>{d.group}</div>
-                            <div className={styles.diffT}>{d.title}</div>
-                            <div className={styles.diffM}>
-                              {d.from ? (
-                                <>
-                                  {d.note} <s className={styles.diffOld}>{d.from}</s> → {d.to}
-                                </>
-                              ) : (
-                                d.note
-                              )}
-                            </div>
-                          </li>
-                        ))}
-                        {pending.warnings.map((w) => (
-                          <li key={w} className={`${styles.diffItem} ${styles.diffChg}`}>
-                            <div className={styles.diffGrp}>Check this</div>
-                            <div className={styles.diffT}>{w}</div>
-                          </li>
-                        ))}
-                      </ul>
-                      <div className={styles.rfAct}>
-                        <button className={styles.rfBtn} type="button" onClick={() => setPending(null)}>
-                          Discard
-                        </button>
-                        <button className={styles.rfBtn} type="button" onClick={commitPending}>
-                          <Icon id="i-check" />Apply
-                        </button>
-                      </div>
-                    </>
+                            <Icon id="i-x" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   ) : (
-                    <>
-                      <div className={styles.rfNote}>
-                        Ask for a change in plain words — add a line, re-spec a material, drop one,
-                        or take money off. It is re-priced and shown as a diff before anything is
-                        applied.
-                      </div>
-                      <div className={`${styles.fld} ${errRefine ? styles.invalid : ""}`}>
-                        <textarea
-                          className={`${styles.area} ${styles.rfArea}`}
-                          aria-label="Describe the change"
-                          maxLength={4000}
-                          disabled={refineBusy}
-                          placeholder="e.g. Use 30-year shingles instead of 25-year, drop the ridge vents, add a 10% discount…"
-                          value={refineTxt}
-                          aria-invalid={errRefine}
-                          onChange={(e) => {
-                            setRefineTxt(e.target.value);
-                            if (e.target.value.trim()) setErrRefine(false);
-                          }}
-                        />
-                        {errRefine ? (
-                          <span className={styles.fldErr}>Say what should change</span>
-                        ) : null}
-                      </div>
-                      <div className={styles.rfAct}>
-                        <button
-                          className={styles.rfBtn}
-                          type="button"
-                          disabled={refineBusy}
-                          onClick={() => void runRefine()}
-                        >
-                          <Icon id="i-bulb" />
-                          {refineBusy ? "Working…" : "Apply changes"}
-                        </button>
-                        <button
-                          className={`${styles.rfBtn} ${styles.rfBtnWarn}`}
-                          type="button"
-                          disabled={!undoSnap || refineBusy}
-                          onClick={runUndo}
-                        >
-                          <Icon id="i-rotate" />Undo last change
-                        </button>
-                      </div>
-
-                      <div className={styles.asmHead}>
-                        <span className={styles.cardLbl}>Assumptions</span>
-                        <span className={styles.asmCount}>{assumptions.length}</span>
-                      </div>
-                      {assumptions.length ? (
-                        <ul className={styles.assump}>
-                          {assumptions.map((a, i) => (
-                            <li key={`${a}-${i}`}>
-                              <span className={styles.asmT}>{a}</span>
-                              <button
-                                className={styles.asmX}
-                                type="button"
-                                aria-label={`Remove assumption: ${a}`}
-                                onClick={() =>
-                                  setAssumptions((list) => list.filter((_, j) => j !== i))
-                                }
-                              >
-                                <Icon id="i-x" />
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <div className={styles.asmEmpty}>
-                          No assumptions left. The next change request will be applied on the
-                          estimate alone.
-                        </div>
-                      )}
-                    </>
+                    <div className={styles.asmEmpty}>No assumptions — the estimate stands on its lines alone.</div>
                   )}
                 </div>
               </section>
