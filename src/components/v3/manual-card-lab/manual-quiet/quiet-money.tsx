@@ -28,6 +28,7 @@ import {
 } from "../manual-focus/manual-focus-math";
 import styles from "./manual-quiet.module.css";
 import { Btn, DRow, Field, IconBtn, NumField, SubHead, cx } from "./quiet-ui";
+import { unitTogglePatches } from "@/lib/paymentSchedule";
 
 /* ============================================================
    04 — MARKUP & MARGIN
@@ -163,7 +164,11 @@ export function PaymentBlock({
               type="button"
               className={styles.unitToggle}
               aria-label={inst.isPercent ? "Switch to dollars" : "Switch to percent"}
-              onClick={() => onPatch(inst.id, { isPercent: !inst.isPercent })}
+              onClick={() => {
+                for (const p of unitTogglePatches(installments, inst.id, !inst.isPercent, total)) {
+                  onPatch(p.id, p.patch);
+                }
+              }}
             >
               {inst.isPercent ? "%" : "$"}
             </button>

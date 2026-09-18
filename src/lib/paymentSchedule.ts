@@ -84,6 +84,135 @@ export function fromMinor(minor: number): number {
   return Math.round(minor) / 100;
 }
 
+/* ============================================================
+   THE %/$ UNIT TOGGLE — builder-side, but a money rule
+   ============================================================
+
+   Flipping the unit on a stage used to flip `isPercent` and leave `amount`
+   where it was, in all six builder skins: a 30% stage became a $30 stage, and
+   $1,619.47 became 1619.47% of the total. Six copies of the control, six
+   copies of the bug — so the conversion lives here, next to the resolver whose
+   arithmetic it has to agree with, and every skin calls it.
+
+   The money stands still. A percentage becomes the figure this module would
+   bill for that stage, to the cent; a dollar figure becomes a percentage to
+   two decimals, which is as fine as a percentage is ever typed. Two decimals
+   can move real money on a large contract — $333,333.33 of $1,000,000 is
+   33.3333…%, which prints as 33.33% and is worth $33.33 less — so the
+   difference lands on the LAST other stage, the way `cleanRemaining` in
+   settle.ts puts the balance on the last stage it pays. The schedule therefore
+   covers exactly what it covered before the click.
+
+   Two shapes, one implementation: skins that own the list write the list, and
+   skins that can only patch one row at a time apply the patches. */
+
+export interface UnitToggleStage {
+  id: string;
+  /** Dollars, or a PERCENT of the total when `isPercent`. */
+  amount: number;
+  isPercent: boolean;
+  status?: string | null;
+}
+
+export interface UnitTogglePatch {
+  id: string;
+  patch: { isPercent?: boolean; amount: number };
+}
+
+/** A stage in minor units, rounded the way this module rounds one stage. */
+function stageMinor(stage: UnitToggleStage, totalMinor: number): number {
+  const amount = Number.isFinite(stage.amount) ? stage.amount : 0;
+  return stage.isPercent ? Math.round((totalMinor * amount) / 100) : toMinor(amount);
+}
+
+function pctOf(minor: number, totalMinor: number): number {
+  return Math.round((minor / totalMinor) * 10000) / 100;
+}
+
+/**
+ * The stage list with `id` switched to percent or dollars and its value
+ * converted with it. A no-op when the stage is already in that unit — the
+ * segmented controls fire on every tap, including the unit already chosen, and
+ * converting twice would turn $3,761.05 into 3761.05%.
+ *
+ * With no total to convert against (a draft with no priced lines yet) the unit
+ * changes and the field is cleared: a percentage of nothing, and a dollar
+ * figure derived from nothing, are both fiction, and a fresh stage starts at 0
+ * the same way.
+ */
+export function applyUnitToggle<T extends UnitToggleStage>(
+  stages: readonly T[],
+  id: string,
+  toPercent: boolean,
+  total: number,
+): T[] {
+  const rows = [...stages];
+  const idx = rows.findIndex((r) => r.id === id);
+  if (idx < 0 || rows[idx].isPercent === toPercent) return rows;
+
+  const totalMinor = toMinor(total);
+  if (totalMinor <= 0) {
+    rows[idx] = { ...rows[idx], isPercent: toPercent, amount: 0 };
+    return rows;
+  }
+
+  const sum = (list: readonly T[]) => list.reduce((n, r) => n + stageMinor(r, totalMinor), 0);
+  const before = sum(rows);
+  const minor = stageMinor(rows[idx], totalMinor);
+  rows[idx] = {
+    ...rows[idx],
+    isPercent: toPercent,
+    amount: toPercent ? pctOf(minor, totalMinor) : fromMinor(minor),
+  };
+
+  const drift = before - sum(rows);
+  if (drift === 0) return rows;
+  // The last stage that is neither the one just converted nor SETTLED:
+  // nudging the converted row would undo the conversion the user asked for,
+  // and a paid, waived or checkout-pending stage is refused by the save
+  // itself ("its amount can't change" — src/actions/proposals.ts).
+  let absorber = -1;
+  for (let n = rows.length - 1; n >= 0; n -= 1) {
+    const st = normStatus(rows[n].status);
+    if (n !== idx && st === "UNPAID") {
+      absorber = n;
+      break;
+    }
+  }
+  // Nowhere to put it: the difference stays visible in the card's own
+  // "scheduled $X of $Y" line rather than being hidden in a settled stage.
+  if (absorber < 0) return rows;
+  const target = stageMinor(rows[absorber], totalMinor) + drift;
+  rows[absorber] = {
+    ...rows[absorber],
+    amount: rows[absorber].isPercent ? pctOf(target, totalMinor) : fromMinor(target),
+  };
+  return rows;
+}
+
+/** The same conversion for a skin that can only patch one stage at a time. */
+export function unitTogglePatches<T extends UnitToggleStage>(
+  stages: readonly T[],
+  id: string,
+  toPercent: boolean,
+  total: number,
+): UnitTogglePatch[] {
+  const next = applyUnitToggle(stages, id, toPercent, total);
+  const out: UnitTogglePatch[] = [];
+  next.forEach((row, n) => {
+    const was = stages[n];
+    if (!was || (was.amount === row.amount && was.isPercent === row.isPercent)) return;
+    out.push({
+      id: row.id,
+      patch:
+        was.isPercent === row.isPercent
+          ? { amount: row.amount }
+          : { isPercent: row.isPercent, amount: row.amount },
+    });
+  });
+  return out;
+}
+
 function normStatus(s: string | null | undefined): StageStatus {
   return s === "PAID" || s === "PENDING" || s === "WAIVED" ? s : "UNPAID";
 }

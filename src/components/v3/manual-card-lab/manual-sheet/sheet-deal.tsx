@@ -35,6 +35,7 @@ import {
 } from "../manual-focus/manual-focus-math";
 import s from "./manual-sheet.module.css";
 import { BlockHead, Btn, Cross, Field, NumIn, Seg, TextIn } from "./sheet-ui";
+import { applyUnitToggle } from "@/lib/paymentSchedule";
 
 /** Rotating stand-ins for "Add file". Real names, so the row looks like a row. */
 const FILE_POOL: { name: string; size: number; kind: string }[] = [
@@ -153,7 +154,11 @@ export function ChapterDeal({
                     { value: "pct", label: "%" },
                     { value: "usd", label: "$" },
                   ]}
-                  onChange={(v) => setInst(inst.id, { isPercent: v === "pct" })}
+                  onChange={(v) =>
+                    patch({
+                      installments: applyUnitToggle(draft.installments, inst.id, v === "pct", total),
+                    })
+                  }
                 />
               </div>
 

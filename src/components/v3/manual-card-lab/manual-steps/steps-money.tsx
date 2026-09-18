@@ -51,6 +51,7 @@ import {
 } from "./steps-ui";
 import type { Patch } from "./steps-pickers";
 import s from "./manual-steps.module.css";
+import { applyUnitToggle } from "@/lib/paymentSchedule";
 
 /* ══ 04 · MARKUP ════════════════════════════════════════════════════════ */
 
@@ -191,7 +192,16 @@ export function PaymentsCard({ draft, patch, totals }: { draft: Draft; patch: Pa
                       { value: "pct", label: "%" },
                       { value: "usd", label: "$" },
                     ]}
-                    onChange={(next) => editInst(inst.id, { isPercent: next === "pct" })}
+                    onChange={(next) =>
+                      patch({
+                        installments: applyUnitToggle(
+                          draft.installments,
+                          inst.id,
+                          next === "pct",
+                          totals.total,
+                        ),
+                      })
+                    }
                   />
                 </div>
 

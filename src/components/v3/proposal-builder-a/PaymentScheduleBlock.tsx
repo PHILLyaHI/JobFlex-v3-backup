@@ -13,6 +13,7 @@ import {
   type DraftInstallment,
 } from "@/stores/useProposalDraftStore";
 import { cn } from "@/lib/cn";
+import { unitTogglePatches } from "@/lib/paymentSchedule";
 
 // Borderless register: each installment is a hairline-divided row, not a boxed
 // card with three more boxes inside it. Fields are quiet at rest (a sage focus
@@ -30,6 +31,17 @@ function InstallmentRow({
 }) {
   const update = useProposalDraftStore((s) => s.updateInstallment);
   const remove = useProposalDraftStore((s) => s.removeInstallment);
+  // The unit and the VALUE move together (lib/paymentSchedule.applyUnitToggle),
+  // which needs the whole schedule and the total this row is a share of — a
+  // primitive selector, so subscribing to the total does not re-render on every
+  // unrelated draft keystroke.
+  const installments = useProposalDraftStore((s) => s.draft.installments);
+  const total = useProposalDraftStore((s) => s.computed().total);
+  const setUnit = (toPercent: boolean) => {
+    for (const p of unitTogglePatches(installments, installment.id, toPercent, total)) {
+      update(p.id, p.patch);
+    }
+  };
   // A stage the client has paid (or is paying) keeps its amount and its place.
   const locked = isLockedInstallment(installment);
   const lockWord =
@@ -88,7 +100,7 @@ function InstallmentRow({
         <button
           type="button"
           aria-pressed={installment.isPercent}
-          onClick={() => update(installment.id, { isPercent: true })}
+          onClick={() => setUnit(true)}
           className={cn(
             "grid h-7 w-7 place-items-center rounded-[var(--r-sm)] text-[13px] font-medium transition-colors focus-ring",
             installment.isPercent
@@ -101,7 +113,7 @@ function InstallmentRow({
         <button
           type="button"
           aria-pressed={!installment.isPercent}
-          onClick={() => update(installment.id, { isPercent: false })}
+          onClick={() => setUnit(false)}
           className={cn(
             "grid h-7 w-7 place-items-center rounded-[var(--r-sm)] text-[13px] font-medium transition-colors focus-ring",
             !installment.isPercent

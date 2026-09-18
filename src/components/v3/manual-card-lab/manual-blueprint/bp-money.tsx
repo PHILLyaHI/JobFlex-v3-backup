@@ -34,6 +34,7 @@ import {
 import styles from "./manual-blueprint.module.css";
 import m from "./bp-money.module.css";
 import { Btn, Ic, NumField, cx } from "./bp-ui";
+import { unitTogglePatches } from "@/lib/paymentSchedule";
 
 /* ============================================================
    THE SCHEDULE
@@ -166,7 +167,13 @@ export function PaymentBlock({
               type="button"
               className={m.unitBtn}
               aria-label={inst.isPercent ? "Switch to dollars" : "Switch to percent"}
-              onClick={() => onPatch(inst.id, { isPercent: !inst.isPercent })}
+              onClick={() => {
+                // The unit and the VALUE move together — the conversion lives in
+                // manual-focus-math (applyUnitToggle) so all six skins share it.
+                for (const p of unitTogglePatches(installments, inst.id, !inst.isPercent, total)) {
+                  onPatch(p.id, p.patch);
+                }
+              }}
             >
               {inst.isPercent ? "%" : "$"}
             </button>

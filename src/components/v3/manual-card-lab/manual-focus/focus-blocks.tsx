@@ -38,6 +38,7 @@ import {
 } from "./manual-focus-math";
 import { AddBtn, Empty, Ic, IconBtn, NumIn, SwitchRow, cx } from "./focus-ui";
 import styles from "./manual-focus.module.css";
+import { unitTogglePatches } from "@/lib/paymentSchedule";
 
 /* ============================================================
    06 · WHAT PRINTS
@@ -150,6 +151,16 @@ export function PaymentBlock({
   onAdd: () => void;
   onRemove: (id: string) => void;
 }) {
+  /** The unit and the value move together — one conversion for every skin
+   *  (applyUnitToggle in manual-focus-math). These two buttons SET the unit
+   *  rather than flipping it, so tapping the unit a row already uses has to be
+   *  a no-op; the helper returns nothing in that case. */
+  const setUnit = (id: string, toPercent: boolean) => {
+    for (const p of unitTogglePatches(installments, id, toPercent, total)) {
+      onPatch(p.id, p.patch);
+    }
+  };
+
   const covered = coveredAmount(installments, total);
   // The bar can only draw as far as full; how far PAST full a schedule runs is
   // said in words and in the danger palette, not in a bar that overflows its
@@ -192,7 +203,7 @@ export function PaymentBlock({
                   type="button"
                   className={cx(styles.segBtn, inst.isPercent && styles.segOn)}
                   aria-pressed={inst.isPercent}
-                  onClick={() => onPatch(inst.id, { isPercent: true })}
+                  onClick={() => setUnit(inst.id, true)}
                 >
                   %
                 </button>
@@ -200,7 +211,7 @@ export function PaymentBlock({
                   type="button"
                   className={cx(styles.segBtn, !inst.isPercent && styles.segOn)}
                   aria-pressed={!inst.isPercent}
-                  onClick={() => onPatch(inst.id, { isPercent: false })}
+                  onClick={() => setUnit(inst.id, false)}
                 >
                   $
                 </button>
