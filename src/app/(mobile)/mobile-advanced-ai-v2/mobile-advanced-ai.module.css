@@ -740,19 +740,32 @@
   font-weight: 600;
 }
 /* Work the description never asked for, and what the check changed. */
-.suggBlock { margin: 10px 0 0; padding-top: 10px; border-top: 1.5px dashed rgba(10, 10, 10, 0.2); }
+/* The card's own gutter — the rows above carry it on themselves, so the
+   block has to repeat it or it runs to the card edge. */
+.suggBlock {
+  margin: 10px 0 0;
+  padding: 10px var(--pad-x) 0;
+  border-top: 1.5px dashed rgba(10, 10, 10, 0.2);
+}
 .suggHead {
   font-size: 9.5px; font-weight: 600; letter-spacing: 0.12em;
   text-transform: uppercase; color: var(--muted);
 }
 .suggRow {
-  display: flex; align-items: center; gap: 10px; width: 100%;
+  display: flex; align-items: center; gap: 8px; width: 100%;
   min-height: 44px; padding: 0; border: 0; background: none; text-align: left;
 }
-.suggName { flex: 1; font-size: 13px; color: var(--ink-soft); }
-.suggCash { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--muted); }
+/* The name yields first: at 390 the price and the ADD chip must stay whole,
+   or the chip is clipped by the card edge. */
+.suggName {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13px; color: var(--ink-soft);
+}
+.suggCash { flex: 0 0 auto; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.suggRow .lbadge { flex: 0 0 auto; margin-left: 0; }
 .checkNotes {
-  margin: 8px 0 0; padding-left: 16px;
+  margin: 8px var(--pad-x) 0; padding-left: 16px;
   font-size: 11px; line-height: 1.6; color: var(--muted);
 }
 .lrowActs { grid-column: 2; grid-row: 1; align-self: start; display: flex; gap: 6px; }
