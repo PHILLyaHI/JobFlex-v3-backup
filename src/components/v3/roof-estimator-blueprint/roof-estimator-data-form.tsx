@@ -85,15 +85,38 @@ const STATES = [
   "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY",
 ];
 const FACADE: Record<string, string> = { N: "North", E: "East", S: "South", W: "West" };
-// The measuring screen's stage captions. The action is one awaited call, so
-// the stages are timed, and the words say only what is true at that time:
-// the order is placed, the provider is being waited for, a slow pack is
-// saved and collected into the report by itself (review 2026-09-17).
-const MS_STAGES = ["Ordering the roof data…", "Waiting for the aerial provider…", "Still waiting — a slow pack is saved and loads into the report by itself", "Report ready"];
-// The measuring screen's second caption comes early; the third only once the
-// wait is genuinely long (the orders are collected together for ~75 s).
-const MS_WAIT_MS = 1_500;
-const MS_LONG_MS = 45_000;
+// The measuring screen's progress (owner's call 2026-09-18: a percentage and
+// a step list that say what the estimator is doing — never how, or through
+// whom). The measure is one awaited call, so the percentage is timed against
+// how long a measurement usually takes: it climbs quickly through the first
+// steps, slows through the wait and creeps under 96 until the answer lands;
+// only the answer itself makes it 100. Each waypoint names the step under
+// way from that moment; the step list ticks the ones before it.
+const MS_STEPS = ["Locate the property", "Confirm the roof outline", "Measure the roof area", "Read the pitch, edges and details", "Finish the report"] as const;
+const MS_WAYPOINTS: ReadonlyArray<{ atMs: number; pct: number; step: number }> = [
+  { atMs: 0, pct: 0, step: 0 },
+  { atMs: 1_500, pct: 8, step: 1 },
+  { atMs: 6_000, pct: 24, step: 2 },
+  { atMs: 20_000, pct: 55, step: 3 },
+  { atMs: 45_000, pct: 80, step: 4 },
+  { atMs: 90_000, pct: 90, step: 4 },
+  { atMs: 180_000, pct: 94, step: 4 },
+  { atMs: 300_000, pct: 96, step: 4 },
+];
+const MS_TICK_MS = 250;
+type MsProgress = { pct: number; step: number; done: boolean };
+/** Where the timed progress stands `elapsedMs` into a measurement. */
+function msProgressAt(elapsedMs: number): MsProgress {
+  const w = MS_WAYPOINTS;
+  const last = w[w.length - 1];
+  if (elapsedMs >= last.atMs) return { pct: last.pct, step: last.step, done: false };
+  let i = 0;
+  while (i + 1 < w.length && w[i + 1].atMs <= elapsedMs) i += 1;
+  const a = w[i];
+  const b = w[i + 1];
+  const t = (elapsedMs - a.atMs) / (b.atMs - a.atMs);
+  return { pct: Math.round(a.pct + (b.pct - a.pct) * t), step: a.step, done: false };
+}
 const RECENT_LIMIT = 12;
 
 // `instant-outline` is a FAILED measurement wearing the totals of a successful
@@ -203,7 +226,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
 
   // ── Screen ──
   const [panel, setPanel] = React.useState<Panel>("intake");
-  const [msStage, setMsStage] = React.useState(0);
+  const [ms, setMs] = React.useState<MsProgress>({ pct: 0, step: 0, done: false });
   const [msReport, setMsReport] = React.useState<string>("—");
   const [msHint, setMsHint] = React.useState<string | null>(null);
 
@@ -316,8 +339,8 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
         if (res.ok && res.updated) {
           setMeasurement(res.measurement);
           toast.success(
-            res.pending > 0 ? "More aerial data arrived" : "All aerial data is in",
-            res.pending > 0 ? "Part of the order landed; the rest is still processing." : "Pitch, facets and details filled in from the order that was still processing.",
+            res.pending > 0 ? "More roof details arrived" : "All roof details are in",
+            res.pending > 0 ? "Part of the measurement landed; the rest is still being read." : "Pitch, facets and details filled in from the part of the measurement that was still being read.",
           );
           more = res.pending > 0;
         } else if (res.ok && res.pending === 0) {
@@ -519,13 +542,14 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
     setOrthoErr(null);
   }
 
-  // The action includes provider work and persistence. Until it resolves we
-  // know only that it is waiting, not that it has reached a saving stage.
-  function runStages(): () => void {
-    setMsStage(0);
-    const requesting = setTimeout(() => setMsStage(1), MS_WAIT_MS);
-    const waiting = setTimeout(() => setMsStage(2), MS_LONG_MS);
-    return () => { clearTimeout(requesting); clearTimeout(waiting); };
+  // The action is one awaited call; until it resolves the screen shows the
+  // timed progress (MS_WAYPOINTS), ticking a few times a second. The answer
+  // — not the clock — is what completes it.
+  function runProgress(): () => void {
+    const startedAt = Date.now();
+    setMs(msProgressAt(0));
+    const timer = setInterval(() => setMs(msProgressAt(Date.now() - startedAt)), MS_TICK_MS);
+    return () => clearInterval(timer);
   }
 
   type OrderInput = { address: string; city: string; state: string; zip: string; lat?: number; lng?: number };
@@ -683,7 +707,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
       toast.error("Check the ZIP code", "Enter all 5 digits, or a ZIP+4 code.");
       return;
     }
-    if (forceNewOrder && !window.confirm(`Order a NEW ${AERIAL.vendor.toLowerCase()} lookup for ${input.address}? This is billed; packs the address already has are not bought again.`)) {
+    if (forceNewOrder && !window.confirm(`Order a new measurement for ${input.address}? This is billed; details the address already has are not bought again.`)) {
       return;
     }
     resetResult();
@@ -691,9 +715,9 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
     setInstantBusy(true);
     setReusedInstant(null);
     setMsReport(input.address);
-    setMsHint("Usually under a minute. The roof shows once the provider answers; a pack slower than that is saved and loads into the report by itself.");
+    setMsHint("Usually under a minute. The roof opens as soon as it is measured; any detail that finishes later fills into the report by itself.");
     setPanel("measuring");
-    const stop = runStages();
+    const stop = runProgress();
     try {
       const res = await measureRoofInstant(input, forceNewOrder ? { forceNewOrder } : undefined);
       // DEBUG (2026-09-08, owner's call — on until told otherwise): the whole
@@ -721,7 +745,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
         return;
       }
       stop();
-      setMsStage(MS_STAGES.length - 1);
+      setMs({ pct: 100, step: MS_STEPS.length, done: true });
       showMeasurement(res.measurement, !!res.unsaved);
       setReusedInstant(res.reusedInstant?.how ?? null);
       // The row's own columns: the main structure's figures, not the parcel's.
@@ -730,11 +754,11 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
       toast.success(
         res.unsaved ? "Roof measured — not saved" : pendingNow ? "Roof measured — details still arriving" : "Roof measured",
         `${t?.facetCount ?? "—"} facets · ${t?.squares != null ? t.squares.toFixed(1) : "—"} squares` +
-          (pendingNow ? " · the provider is still working on part of the order; it loads here by itself" : "") +
+          (pendingNow ? " · the pitch and details are still being read; they load here by themselves" : "") +
           (res.reusedInstant
             ? res.reusedInstant.how === "recovered"
               ? " · collected the earlier paid order — nothing new was billed"
-              : " · reused the already-paid aerial data — nothing new was billed"
+              : " · reused the already-paid measurement — nothing new was billed"
             : ""),
       );
       if (!res.unsaved) void loadRecent();
@@ -792,12 +816,12 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
       return;
     }
     if (packsPending) {
-      toast.info("Still collecting the aerial data", "The pitch and details are on their way; the estimate prices once they land.");
+      toast.info("Still reading the details", "The pitch and details are on their way; the estimate prices once they land.");
       return;
     }
     // No pitch, no price: the button is disabled in this state, this is the belt.
     if (!pitchForEstimate || !pitchKind) {
-      toast.error("Enter the pitch first", "The aerial data has no pitch for this roof; pick one to price it.");
+      toast.error("Enter the pitch first", "The measurement has no pitch for this roof; pick one to price it.");
       return;
     }
     setGenBusy(true);
@@ -916,7 +940,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
       return null;
     }
     if (packsPending) {
-      toast.info("Still collecting the aerial data", "The pitch and details are on their way; the package prices once they land.");
+      toast.info("Still reading the details", "The pitch and details are on their way; the package prices once they land.");
       return null;
     }
     if (tablesEdited && !window.confirm("Replace the lines you edited with the package as it is configured now?")) return null;
@@ -1409,10 +1433,24 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
         <div className="card rf-card measuring">
           <div className="ms-body">
             <div className="ms-num">{msReport}</div>
-            <div className="ms-stage" role="status" aria-live="polite">{MS_STAGES[msStage]}</div>
-            <div className="ms-track" aria-hidden="true">
-              <span className="ms-fill ms-fill--waiting" />
+            <div className="ms-head">
+              <div className="ms-stage" role="status" aria-live="polite">
+                {ms.done ? "Report ready" : `${MS_STEPS[Math.min(ms.step, MS_STEPS.length - 1)]}…`}
+              </div>
+              <div className="ms-pct">{ms.pct}%</div>
             </div>
+            <div className="ms-track" role="progressbar" aria-label="Measurement progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={ms.pct}>
+              <span className="ms-fill" style={{ width: `${ms.pct}%` }} />
+            </div>
+            <ol className="ms-steps" aria-label="Measurement steps">
+              {MS_STEPS.map((label, i) => (
+                <li key={label} className={"ms-step" + (ms.done || i < ms.step ? " is-done" : i === ms.step ? " is-active" : "")}>
+                  <span className="ms-step-mark" aria-hidden="true" />
+                  <span>{label}</span>
+                  <span className="ms-step-state">{ms.done || i < ms.step ? "done" : i === ms.step ? "in progress" : ""}</span>
+                </li>
+              ))}
+            </ol>
             <div className="ms-hint">
               {msHint ?? "Measuring the structure, pitch by pitch."}
             </div>
@@ -1440,8 +1478,8 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
                   <div>
                     <span className="rf-stamp">{collectingShown === "checking" ? "STILL COLLECTING" : "NOT ALL IN YET"}</span>
                     {collectingShown === "checking"
-                      ? `The aerial provider is still working on part of this order${packsPendingList.length ? ` (${packNames(packsPendingList)})` : ""} — it loads here by itself as it lands, and the estimate prices once it is in. No need to measure again; nothing extra is charged.`
-                      : "The aerial provider is taking longer than usual with the rest of this order. Reopen this measurement from Recent measurements later and it collects the rest without a new charge — or price on what is here with a pitch you enter."}
+                      ? `Part of this measurement is still being read${packsPendingList.length ? ` (${packNames(packsPendingList)})` : ""} — it loads here by itself as it lands, and the estimate prices once it is in. No need to measure again; nothing extra is charged.`
+                      : "The rest of this measurement is taking longer than usual. Reopen it from Recent measurements later and it collects the rest without a new charge — or price on what is here with a pitch you enter."}
                   </div>
                 </div>
               </div>
@@ -1507,7 +1545,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
                         ? "Google has no high-resolution elevation data for this address, so the elevation checks (coverage, measured pitch) are not available here. The measured totals above are unaffected."
                         : reconDown.kind === "config"
                           ? "The imagery service rejected our request — a setup problem on our side, not the address. The source-status figures (coverage, registration) are absent; the measured totals above are unaffected."
-                          : "The aerial elevation data for this address did not arrive in time, so the source-status figures (coverage, registration) are absent. This is not a statement about the address — the measured totals above are unaffected. Measure again: the paid answer is reused, so the retry costs nothing."}
+                          : "The elevation check for this address did not finish in time, so the source-status figures (coverage, registration) are absent. This is not a statement about the address — the measured totals above are unaffected. Measure again: the paid answer is reused, so the retry costs nothing."}
                       {reconDown.message && reconDown.kind !== "no-coverage" && <span className="rf-why">{reconDown.message}</span>}
                       {reconDown.kind !== "no-coverage" && reconDown.kind !== "config" && (
                         <button
@@ -1768,7 +1806,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
               onWaste={setWaste}
               wasteOptions={WASTE_OPTIONS}
               aiEnabled={aiEnabled}
-              waiting={packsPending ? "Still collecting the pitch and details from the aerial provider — the estimate prices once they land." : null}
+              waiting={packsPending ? "Still reading the pitch and details — the estimate prices once they land." : null}
               pitchEntry={
                 /* EagleView supplied no pitch (pack 002 not bought): the
                    contractor states one, and the estimate says so. Not while
@@ -1781,9 +1819,9 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
                 busy: genBusy,
                 disabled: isRecon || genBusy || totals?.squares == null || !pitchForEstimate || packsPending,
                 reason: packsPending
-                  ? "Still collecting the pitch and details from the aerial provider."
+                  ? "Still reading the pitch and details."
                   : !pitchForEstimate
-                    ? "Enter the pitch first — the aerial data has none for this roof."
+                    ? "Enter the pitch first — the measurement has none for this roof."
                     : undefined,
                 onClick: () => void generate(),
               }}

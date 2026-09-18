@@ -76,9 +76,11 @@ structure carrying an area is a failure (`hasRoof`), kept so a plain click
 never re-bills, with "Order a new lookup — billed" on the intake's error card;
 an order still processing offers "Check again — free". Failure text is one
 plain sentence (credentials, refusal, timeout, no data) — the vendor payload
-stays in the console. The measuring captions say what is true at the time
-("Ordering the roof data…", "Waiting for the aerial provider…", the long-wait
-line only after 45 s). The ELEVATION notice has its own words per kind and
+stays in the console. The measuring screen (2026-09-18) shows a timed
+percentage and a five-step list ("Locate the property" → "Finish the
+report") that ticks as the measurement goes; the answer, not the clock,
+makes it 100, and nothing on the screen — or in the wait and error copy —
+names how or through whom the roof is measured. The ELEVATION notice has its own words per kind and
 offers the free retry only where a retry can help (not for no-coverage or a
 key problem), and the retry measures **the open measurement's own address**
 (on a row reopened from Recent it used to measure nothing).

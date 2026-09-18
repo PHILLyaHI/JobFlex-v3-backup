@@ -1435,16 +1435,27 @@
 .bp :global(.content .measuring) { max-width: 520px; }
 .bp :global(.content .ms-body) { padding: 26px 22px 24px; }
 .bp :global(.content .ms-num) { font-family: var(--font-mono); font-size: 12px; font-weight: 700; letter-spacing: 0.14em; color: var(--muted); }
-.bp :global(.content .ms-stage) { margin-top: 10px; font-size: 18px; font-weight: 900; letter-spacing: -0.005em; }
-.bp :global(.content .ms-track) { margin-top: 15px; height: 10px; border: 1.5px solid var(--ink); background: #fff; overflow: hidden; }
-.bp :global(.content .ms-fill) { display: block; height: 100%; width: 0; background: var(--blueprint); transition: width 520ms var(--ease-out); }
-.bp :global(.content .ms-fill--waiting) { width: 36%; animation: roofWait 1.8s ease-in-out infinite alternate; }
-@keyframes roofWait { from { transform: translateX(0); } to { transform: translateX(178%); } }
+.bp :global(.content .ms-head) { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 10px; }
+.bp :global(.content .ms-stage) { font-size: 18px; font-weight: 900; letter-spacing: -0.005em; }
+.bp :global(.content .ms-pct) { font-family: var(--font-mono); font-size: 14px; font-weight: 700; letter-spacing: 0.06em; color: var(--blueprint); font-variant-numeric: tabular-nums; }
+.bp :global(.content .ms-track) { margin-top: 12px; height: 10px; border: 1.5px solid var(--ink); background: #fff; overflow: hidden; }
+.bp :global(.content .ms-fill) { display: block; height: 100%; width: 0; background: var(--blueprint); transition: width 300ms linear; }
+/* The step list: what is done, what is under way, what is still to come. */
+.bp :global(.content .ms-steps) { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 7px; }
+.bp :global(.content .ms-step) { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.bp :global(.content .ms-step-mark) { width: 10px; height: 10px; border: 1.5px solid currentColor; background: #fff; }
+.bp :global(.content .ms-step-state) { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.bp :global(.content .ms-step.is-done) { color: var(--ink); }
+.bp :global(.content .ms-step.is-done .ms-step-mark) { background: var(--ink); border-color: var(--ink); }
+.bp :global(.content .ms-step.is-active) { color: var(--ink); font-weight: 700; }
+.bp :global(.content .ms-step.is-active .ms-step-mark) { background: var(--blueprint); border-color: var(--blueprint); animation: roofWaitPulse 0.9s ease-in-out infinite alternate; }
+.bp :global(.content .ms-step.is-active .ms-step-state) { color: var(--blueprint); }
 @keyframes roofWaitPulse { from { opacity: .35; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .bp :global(.content .ms-fill--waiting), .bp :global(.content .rf-status-dot) { animation: none; }
+  .bp :global(.content .ms-step.is-active .ms-step-mark), .bp :global(.content .rf-status-dot) { animation: none; }
+  .bp :global(.content .ms-fill) { transition: none; }
 }
-.bp :global(.content .ms-hint) { margin-top: 12px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.bp :global(.content .ms-hint) { margin-top: 14px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 
 /* hero figures */
 .bp :global(.content .rf-hero) { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); padding: 0; overflow: hidden; margin-bottom: 16px; }

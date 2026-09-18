@@ -238,7 +238,7 @@ const areaFirst = (parts: InstantRoofData[]): InstantRoofData[] =>
 class NoRoofError extends Error {
   constructor(requestId: string | null) {
     super(
-      `The aerial provider found no roof at this address${requestId ? ` (order ${requestId})` : ""}. Check the address and the pin; a new lookup can be ordered from the report.`,
+      `No roof was found at this address${requestId ? ` (order ${requestId})` : ""}. Check the address and the pin; a new measurement can be ordered from the report.`,
     );
     this.name = "NoRoofError";
   }
@@ -254,8 +254,8 @@ class StillProcessingError extends Error {
   constructor(requestId: string, readonly stale: boolean) {
     super(
       stale
-        ? `The aerial provider has been working on this address for over ${Math.round(STALE_PENDING_MS / 60_000)} minutes (order ${requestId}). Check again for free, or order a new lookup — billed.`
-        : `The aerial provider is still working on this address (order ${requestId}). Measure again in a minute — the paid order is collected then without a new charge.`,
+        ? `This address has been measuring for over ${Math.round(STALE_PENDING_MS / 60_000)} minutes (order ${requestId}). Check again for free, or order a new measurement — billed.`
+        : `This address is still being measured (order ${requestId}). Measure again in a minute — the paid order is collected then without a new charge.`,
     );
     this.name = "StillProcessingError";
   }
@@ -808,12 +808,12 @@ async function persistData(p: {
 function userFacingInstantError(err: unknown): string {
   if (err instanceof NoRoofError || err instanceof StillProcessingError) return err.message;
   const msg = errorMessage(err, "");
-  if (/not entitled|entitlement|403/i.test(msg)) return "The aerial provider refused this order: the account is not entitled to the roof-area data. This is an account setting, not the address.";
-  if (/credentials|invalid_client|401|sandbox app/i.test(msg)) return "The aerial provider rejected our credentials. This is a setup problem on our side, not the address.";
+  if (/not entitled|entitlement|403/i.test(msg)) return "This order was refused: the account is not entitled to roof-area measurements. This is an account setting, not the address.";
+  if (/credentials|invalid_client|401|sandbox app/i.test(msg)) return "The measurement service rejected our credentials. This is a setup problem on our side, not the address.";
   if (/taking longer|still processing/i.test(msg)) return msg.replace(/\s*Account org.*$/s, "");
-  if (/timed out|timeout|abort/i.test(msg)) return "The aerial provider did not answer in time. Nothing was lost — measure again in a minute; any order that was placed is collected without a new charge.";
-  if (/no request id|nothing to measure/i.test(msg)) return "The aerial provider returned no roof data for this address.";
-  return "The aerial provider could not answer for this address" + (msg ? ` (${msg.replace(/\s*Account org.*$/s, "").slice(0, 140)})` : "") + ".";
+  if (/timed out|timeout|abort/i.test(msg)) return "The measurement did not come back in time. Nothing was lost — measure again in a minute; any order that was placed is collected without a new charge.";
+  if (/no request id|nothing to measure/i.test(msg)) return "No roof data came back for this address.";
+  return "This address could not be measured" + (msg ? ` (${msg.replace(/\s*Account org.*$/s, "").slice(0, 140)})` : "") + ".";
 }
 
 /**
@@ -835,7 +835,7 @@ export async function measureRoofInstant(
   } catch (err) {
     return { ok: false, error: errorMessage(err, "Not authorised") };
   }
-  if (!isEagleViewEnabled()) return { ok: false, error: "Aerial data is not configured" };
+  if (!isEagleViewEnabled()) return { ok: false, error: "Roof measurement is not configured" };
   if (!input.address && input.lat == null) return { ok: false, error: "Pick an address first" };
   const deadlineAt = Date.now() + ACTION_BUDGET_MS;
 
