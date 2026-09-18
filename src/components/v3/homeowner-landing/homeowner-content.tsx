@@ -221,7 +221,7 @@ export function HomeownerContent() {
         </a>
         <div className="nav-tag">Homeowner Portal</div>
         <div className="nav-gap"></div>
-        <Link className="nav-cta" href="/landing">
+        <Link className="nav-cta" href="/">
           For contractors
           <svg className="ic ic-sm">
             <use href="#i-arrow-r" />
@@ -614,7 +614,7 @@ export function HomeownerContent() {
           <span>JobFlex</span>
         </div>
         <div className="foot-links">
-          <Link className="lead" href="/landing">
+          <Link className="lead" href="/">
             For contractors
           </Link>
           <Link href="/terms">Terms</Link>

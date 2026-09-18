@@ -225,7 +225,7 @@ export function MobileHomeowner() {
             <span className="nav-tag">Homeowner Portal</span>
           </span>
         </a>
-        <Link className="nav-cta" href="/landing">
+        <Link className="nav-cta" href="/">
           For contractors
           <svg className="ic ic-sm">
             <use href="#jfmh-i-arrow-r" />
@@ -605,7 +605,7 @@ export function MobileHomeowner() {
           <span>JobFlex</span>
         </div>
         <div className="foot-links">
-          <Link className="lead" href="/landing">
+          <Link className="lead" href="/">
             For contractors
           </Link>
           <Link href="/terms">Terms</Link>

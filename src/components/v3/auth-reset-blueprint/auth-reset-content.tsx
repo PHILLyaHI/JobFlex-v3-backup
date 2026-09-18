@@ -95,7 +95,7 @@ export function AuthResetContent() {
 
       <main className="auth">
         <section className="auth-form">
-          <Link className="brand" href={"/landing" as never}><span className="brand-mark">J</span><span className="brand-name">JobFlex</span></Link>
+          <Link className="brand" href="/"><span className="brand-mark">J</span><span className="brand-name">JobFlex</span></Link>
 
           {/* No `?token=` in the URL — the route has always guarded this, and the
               guard is kept. The mockup has no such state, so it is composed

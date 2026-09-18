@@ -173,16 +173,6 @@ export const V3_PORTED_ROUTES = {
   // stylesheet with a uniform `.jf-mobile-auth-login` root-class prefix, not a
   // CSS Module — see src/components/v3/mobile-auth-login/mobile-auth-login.css.
   mobileAuthLoginV1: "/mobile-v1/auth/login",
-  // ── Handheld marketing landing ───────────────────────────────────────────
-  // jobflex-page-styler + mobile-app-ui-design. The handheld rebuild of the
-  // marketing landing, fluid 320–768px. Unlike its (mobile) siblings this is
-  // a PUBLIC page (no auth gate, no data layer) and it is not a second URL for
-  // the same content: /landing itself now serves this build at <= 768px via a
-  // media-query switch in src/app/(marketing)/landing/landing-responsive.tsx.
-  // This entry is the direct preview, so the composition can be reviewed at any
-  // viewport width. Both entry points import the same component from
-  // src/components/v3/mobile-landing/, so they cannot drift.
-  mobileLandingV2: "/mobile-landing-v2",
   // ── Handheld project detail ──────────────────────────────────────────────
   // jobflex-page-styler + mobile-app-ui-design. The handheld rebuild of the
   // project detail surface, fluid 320–768px, on real project data (same

@@ -12,15 +12,40 @@ const PROTECTED_PREFIXES = ["/dashboard", "/admin", "/influencer", "/v3", "/mobi
 // Handheld surfaces that are public by design (marketing, homeowner intake,
 // the customer's proposal view, the auth screens, the estimator picker).
 const PUBLIC_MOBILE_PREFIXES = [
-  "/mobile-landing-v2",
   "/mobile-homeowner-v2",
   "/mobile-proposal-client-v2",
   "/mobile-estimator-picker-v2",
   "/mobile-v1",
 ];
 
+/* THE LANDINGS THAT ARE GONE (owner, 2026-09-18). landing-e is the only one,
+   and it is the root; /landing, its A/B/C drafts, the aerial draft and the
+   handheld twin were removed with their components. They are redirected rather
+   than left to 404 because links to them exist outside this codebase — an ad,
+   a bookmark, a signature — and a 404 spends a visitor the ads were paid for.
+
+   308, not 302: the move is permanent and the method must be preserved. The
+   query string rides along untouched, which is the point — `?industry=roofing`
+   picks the trade hero, and utm_* / fbclid are how the visit is attributed.
+   /landing-e keeps its own redirect in the route itself (it has to read the
+   query to rebuild it there); everything listed here is gone from the app. */
+const REMOVED_LANDINGS = new Set([
+  "/landing",
+  "/landing-a",
+  "/landing-b",
+  "/landing-c",
+  "/landing-aerial",
+  "/mobile-landing-v2",
+]);
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  if (REMOVED_LANDINGS.has(pathname)) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/";
+    // url.search is carried over by clone(); nothing else is touched.
+    return NextResponse.redirect(url, 308);
+  }
   // Influencer login + invite set-password must stay reachable without a session.
   if (
     pathname.startsWith("/influencer/login") ||
@@ -122,5 +147,16 @@ export const config = {
     "/mobile-:slug*",
     "/trade-services/:path*",
     "/trade-services",
+    // The removed landings, by exact path: the middleware exists for them only
+    // to answer 308, and matching a prefix would put every /landing-* URL this
+    // app may grow later through the auth machinery above for no reason.
+    "/landing",
+    "/landing-a",
+    "/landing-b",
+    "/landing-c",
+    "/landing-aerial",
+    // Listed exactly, not left to "/mobile-:slug*": that pattern did not match
+    // this path and the URL 404'd instead of redirecting.
+    "/mobile-landing-v2",
   ],
 };
