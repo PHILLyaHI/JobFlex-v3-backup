@@ -1475,3 +1475,182 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
   .jf-lp #field .lp-ph-name { font-size: 18px; }
   .jf-lp #field .lp-ph-sub { font-size: 10px; }
 }
+/* ── THE COMPARISON, inside the one-app section (#compare) ──────
+   Rebuilt 2026-09-18. It used to be a neutral drafting sheet standing on its
+   own between Stats and the field pitch, with our column marked only by a rule
+   and a paper fill — a table that asked to be read rather than one that could
+   be glanced at. Now it lives under the one-app line and the eye is given one
+   job: a solid ink column of ticks on the left, and qualifications on the right.
+
+   No gradient anywhere; the only shadow is the house's hard offset. */
+/* #compare lands on this section, and above lg the nav is sticky at the top of
+   the viewport — without a margin the anchor parks the one-app line, which is
+   now the heading for both halves, underneath it. Below lg the nav is
+   `relative` and scrolls away, so no offset is wanted there. */
+@media (min-width: 1024px) {
+  .jf-lp #compare { scroll-margin-top: 104px; }
+}
+
+.jf-lp .lp-cmp-wrap {
+  /* The scroller. The page must never move sideways, so the overflow is here
+     and the section clips. */
+  margin-top: 26px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.jf-lp .lp-cmp {
+  width: 100%;
+  /* Capped so the slack does NOT land in the competitor columns: at the full
+     1072px wrap they stretched to ~170px each and the crosses drifted so far
+     apart that the right-hand side stopped reading as one quiet block. */
+  max-width: 880px;
+  min-width: 640px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* ── Column heads ─────────────────────────────────────────────── */
+.jf-lp .lp-cmp thead th {
+  padding: 0 14px 12px;
+  text-align: left;
+  vertical-align: bottom;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  /* Muted on purpose: the competitors are context, not the subject. */
+  color: #8a8a8a;
+}
+.jf-lp .lp-cmp-usHead {
+  color: #fff;
+  background: #101010;
+  padding-top: 14px;
+  border-radius: var(--lp-r-sm) var(--lp-r-sm) 0 0;
+}
+.jf-lp .lp-cmp-usHead .lp-cmp-usMark {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+/* The house mark sits ABOVE the name, paper-toned for the ink fill. The box is
+   0.35 x the mark size, so 46px is a ~17x21 mark — the shell s xs lockup. */
+.jf-lp .lp-cmp-usHead .lp-mark-box { --lp-mark-size: 58px; }
+
+/* ── Rows ─────────────────────────────────────────────────────── */
+.jf-lp .lp-cmp td,
+.jf-lp .lp-cmp th[scope="row"] {
+  padding: 13px 14px;
+  vertical-align: middle;
+  border-bottom: 1px solid rgba(10, 10, 10, 0.1);
+}
+.jf-lp .lp-cmp tbody tr:last-child td,
+.jf-lp .lp-cmp tbody tr:last-child th[scope="row"] { border-bottom: 0; }
+
+.jf-lp .lp-cmp-row {
+  width: 38%;
+  min-width: 210px;
+  text-align: left;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #0a0a0a;
+  overflow-wrap: anywhere;
+}
+
+/* OUR COLUMN — filled, first after the labels, and the only thing in colour. */
+.jf-lp .lp-cmp-us {
+  background: #101010;
+  width: 118px;
+  min-width: 118px;
+}
+.jf-lp .lp-cmp tbody tr:last-child .lp-cmp-us { border-radius: 0 0 var(--lp-r-sm) var(--lp-r-sm); }
+.jf-lp .lp-cmp-usHead,
+.jf-lp .lp-cmp-us { box-shadow: 3px 0 0 rgba(10, 10, 10, 0.07); }
+
+/* A big square tick, not a glyph: 26px box, 2.5px stroke, paper on ink. */
+.jf-lp .lp-cmp-tick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 2px;
+  background: #fff;
+}
+.jf-lp .lp-cmp-tick svg { width: 17px; height: 17px; color: #101010; }
+
+/* ── Competitor cells ─────────────────────────────────────────── */
+.jf-lp .lp-cmp-them { width: 128px; min-width: 128px; }
+/* "нет" is a thin grey cross — present, unmistakable, and quiet. */
+.jf-lp .lp-cmp-no { display: inline-block; width: 18px; height: 18px; color: #c4c4c4; }
+.jf-lp .lp-cmp-no svg { width: 18px; height: 18px; }
+/* Everything a competitor charges for or has not shipped is a small mono
+   label, so the qualifications read as a column of footnotes. */
+.jf-lp .lp-cmp-tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6a6a6a;
+  max-width: 108px;
+}
+/* A competitor that simply has it gets an ink tick with no plate — it must not
+   compete with ours for attention. */
+.jf-lp .lp-cmp-themYes { display: inline-block; width: 18px; height: 18px; color: #4a4a4a; }
+.jf-lp .lp-cmp-themYes svg { width: 18px; height: 18px; }
+
+/* ── Motion: the landing's own. Rows arrive in order, once. ───── */
+.jf-lp .lp-cmp-r {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.5s var(--lp-ease), transform 0.5s var(--lp-ease);
+}
+.jf-lp .lp-in .lp-cmp-r,
+.jf-lp .lp-cmp-r.lp-in { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .jf-lp .lp-cmp-r { opacity: 1; transform: none; transition: none; }
+}
+
+/* ── 390: labels and our column stay, the rest scrolls ─────────── */
+@media (max-width: 639px) {
+  .jf-lp .lp-cmp { min-width: 568px; max-width: none; }
+  .jf-lp .lp-cmp-row {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    /* The sticky pair is 146 + 86 = 232, which leaves a 118px window inside a
+       350px scroller — just wider than one competitor column, so a competitor
+       can always be read whole. At the first sizes (168 + 96) the window was
+       86px and the last column could never be brought fully into view. */
+    width: 146px;
+    min-width: 146px;
+    background: #fff;
+    font-size: 14px;
+    /* The seam where the sticky pair ends and the scroll begins. */
+    box-shadow: 1px 0 0 rgba(10, 10, 10, 0.1);
+  }
+  .jf-lp .lp-cmp-us,
+  .jf-lp .lp-cmp-usHead {
+    position: sticky;
+    left: 146px;
+    z-index: 2;
+    width: 86px;
+    min-width: 86px;
+    box-shadow: 4px 0 8px -4px rgba(10, 10, 10, 0.28);
+  }
+  .jf-lp .lp-cmp thead th { font-size: 10.5px; }
+  .jf-lp .lp-cmp td,
+  .jf-lp .lp-cmp th[scope="row"] { padding: 12px 9px; }
+  .jf-lp .lp-cmp-them { width: 112px; min-width: 112px; }
+  /* Tightened until PAY-AS-YOU-GO sits on one line in a 126px column — the
+     wrap broke it as PAY-AS-YOU / GO, which reads like two answers. */
+  .jf-lp .lp-cmp-tag { font-size: 10px; letter-spacing: 0.05em; max-width: 94px; }
+}
