@@ -105,6 +105,21 @@ const MS_WAYPOINTS: ReadonlyArray<{ atMs: number; pct: number; step: number }> =
 ];
 const MS_TICK_MS = 250;
 type MsProgress = { pct: number; step: number; done: boolean };
+/**
+ * When the measurement comes back with details still on the way (the area
+ * is in, the pitch and facets are being read), the report is HELD: the
+ * measuring screen stays on the "Read the pitch, edges and details" step
+ * while the details are collected, and the report opens once, complete
+ * (owner, 2026-09-18: a half-filled report with a "still collecting" banner
+ * that fills in fifteen seconds later reads as broken). A provider slower
+ * than this cap opens the report anyway, with the collecting note.
+ */
+const HOLD_MAX_MS = 120_000;
+/** While held, the percent creeps a point at a time from where the answer landed toward 96. */
+const HOLD_STEP = 3;
+const HOLD_CREEP_MS = 2_500;
+/** The wall clock, read only from timers and click handlers. */
+const nowMs = () => Date.now();
 /** Where the timed progress stands `elapsedMs` into a measurement. */
 function msProgressAt(elapsedMs: number): MsProgress {
   const w = MS_WAYPOINTS;
@@ -227,6 +242,15 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
   // ── Screen ──
   const [panel, setPanel] = React.useState<Panel>("intake");
   const [ms, setMs] = React.useState<MsProgress>({ pct: 0, step: 0, done: false });
+  // The measurement whose report is held on the measuring screen while its
+  // details are collected (see HOLD_MAX_MS), and when the hold began.
+  const holdRef = React.useRef<{ id: string; startedAt: number } | null>(null);
+  const [holding, setHolding] = React.useState(false);
+  const holdTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  // The latest measurement the page holds, for the toast at the reveal.
+  const latestRef = React.useRef<RoofMeasurementDTO | null>(null);
+  // The reveal, reachable from the collect loop below without re-running it.
+  const revealRef = React.useRef<() => void>(() => {});
   const [msReport, setMsReport] = React.useState<string>("—");
   const [msHint, setMsHint] = React.useState<string | null>(null);
 
@@ -338,10 +362,15 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
         if (cancelled) return;
         if (res.ok && res.updated) {
           setMeasurement(res.measurement);
-          toast.success(
-            res.pending > 0 ? "More roof details arrived" : "All roof details are in",
-            res.pending > 0 ? "Part of the measurement landed; the rest is still being read." : "Pitch, facets and details filled in from the part of the measurement that was still being read.",
-          );
+          latestRef.current = res.measurement;
+          // While the report is held nothing is on screen to announce; the
+          // reveal says it all at once.
+          if (holdRef.current?.id !== collectFor) {
+            toast.success(
+              res.pending > 0 ? "More roof details arrived" : "All roof details are in",
+              res.pending > 0 ? "Part of the measurement landed; the rest is still being read." : "Pitch, facets and details filled in from the part of the measurement that was still being read.",
+            );
+          }
           more = res.pending > 0;
         } else if (res.ok && res.pending === 0) {
           // Nothing pending in the ledger — the packs are simply not there (refused, or failed for good).
@@ -356,13 +385,19 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
       if (cancelled) return;
       if (!more) {
         setCollecting({ id: collectFor, state: "done" });
+        // Everything is in (or nothing more is coming): the held report opens now, complete.
+        if (holdRef.current?.id === collectFor) revealRef.current();
         return;
       }
       if (attempts >= 20) {
         setCollecting({ id: collectFor, state: "gave-up" });
+        if (holdRef.current?.id === collectFor) revealRef.current();
         return;
       }
       setCollecting({ id: collectFor, state: "checking" });
+      // A provider slower than the cap: open the report with what is in and
+      // keep collecting behind it (the report's own note says so).
+      if (holdRef.current?.id === collectFor && nowMs() - holdRef.current.startedAt > HOLD_MAX_MS) revealRef.current();
       timer = setTimeout(() => void tick(), 6_000);
     };
     void tick();
@@ -546,9 +581,9 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
   // timed progress (MS_WAYPOINTS), ticking a few times a second. The answer
   // — not the clock — is what completes it.
   function runProgress(): () => void {
-    const startedAt = Date.now();
+    const startedAt = nowMs();
     setMs(msProgressAt(0));
-    const timer = setInterval(() => setMs(msProgressAt(Date.now() - startedAt)), MS_TICK_MS);
+    const timer = setInterval(() => setMs(msProgressAt(nowMs() - startedAt)), MS_TICK_MS);
     return () => clearInterval(timer);
   }
 
@@ -674,16 +709,60 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
     m.setZoom(LIVE_MAP_ZOOM);
   }
 
-  function showMeasurement(m: RoofMeasurementDTO, wasUnsaved: boolean) {
+  function showMeasurement(m: RoofMeasurementDTO, wasUnsaved: boolean, reveal = true) {
     setMeasurement(m);
+    latestRef.current = m;
     setReport({ state: "loading" });
     setExtra(new Set());
     setPitchEntered(null);
     setUnsaved(wasUnsaved);
-    setPanel("report");
+    if (reveal) setPanel("report");
     const willLiveMap = isMapsBrowserEnabled() && !mapDown && m.instant?.lat != null && m.instant?.lng != null;
     if (!wasUnsaved && m.id !== "unsaved" && !willLiveMap) loadSatellite(m.id);
   }
+
+  /** A step's label: while the report is held, the details step names what
+   *  is still being read — the pitch and eave height, the facets and details,
+   *  the outline — and shortens as each part lands (owner, 2026-09-18). */
+  function stepLabel(i: number, label: string = MS_STEPS[Math.min(i, MS_STEPS.length - 1)]): string {
+    if (holding && i === HOLD_STEP && packsPendingList.length) return "Reading " + packNames(packsPendingList);
+    return label;
+  }
+  /** "Roof measured" with the row's own figures — the main structure's, not the parcel's. */
+  function measuredToast(m: RoofMeasurementDTO, wasUnsaved: boolean, reused: "stored" | "recovered" | null) {
+    toast.success(
+      wasUnsaved ? "Roof measured — not saved" : "Roof measured",
+      `${m.facetCount ?? "—"} facets · ${m.squares != null ? m.squares.toFixed(1) : "—"} squares` +
+        (reused === "recovered" ? " · collected the earlier paid order — nothing new was billed" : reused === "stored" ? " · reused the already-paid measurement — nothing new was billed" : ""),
+    );
+  }
+  /** While the report is held, the percent creeps toward 96 on the details step. */
+  function startHoldProgress() {
+    stopHoldProgress();
+    setMs((prev) => ({ pct: Math.max(Math.round(prev.pct), 80), step: HOLD_STEP, done: false }));
+    holdTimerRef.current = setInterval(() => {
+      setMs((prev) => (prev.done ? prev : { pct: Math.min(96, Math.round(prev.pct) + 1), step: HOLD_STEP, done: false }));
+    }, HOLD_CREEP_MS);
+  }
+  function stopHoldProgress() {
+    if (holdTimerRef.current) clearInterval(holdTimerRef.current);
+    holdTimerRef.current = null;
+  }
+  /** Open the held report: 100 %, the report panel, one toast with the final figures. */
+  function revealHeld() {
+    if (!holdRef.current) return;
+    holdRef.current = null;
+    setHolding(false);
+    stopHoldProgress();
+    setMs({ pct: 100, step: MS_STEPS.length, done: true });
+    setPanel("report");
+    const m = latestRef.current;
+    if (m) measuredToast(m, false, reusedInstant);
+  }
+  React.useEffect(() => {
+    revealRef.current = revealHeld;
+  });
+  React.useEffect(() => () => stopHoldProgress(), []);
 
   // Measure. A repeat of an address the org already paid for REUSES the
   // stored EagleView answer (no new bill); `forceNewOrder` is the explicit
@@ -711,6 +790,9 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
       return;
     }
     resetResult();
+    holdRef.current = null;
+    setHolding(false);
+    stopHoldProgress();
     setIntakeError(null);
     setInstantBusy(true);
     setReusedInstant(null);
@@ -745,23 +827,24 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
         return;
       }
       stop();
+      const pendingNow = res.measurement.provenance?.instantPacks?.pending?.length ?? 0;
+      setReusedInstant(res.reusedInstant?.how ?? null);
+      if (!res.unsaved) void loadRecent();
+      if (pendingNow > 0 && !res.unsaved && res.measurement.id !== "unsaved") {
+        // The area is in; the pitch, facets and details are still being read.
+        // Hold the report on the measuring screen — the collect loop (keyed on
+        // the measurement below) brings the rest, and the reveal shows the
+        // finished report once.
+        showMeasurement(res.measurement, false, false);
+        holdRef.current = { id: res.measurement.id, startedAt: nowMs() };
+        setHolding(true);
+        setMsHint("The roof area is measured. The pitch, facets and details are being read now — the report opens when everything is in.");
+        startHoldProgress();
+        return;
+      }
       setMs({ pct: 100, step: MS_STEPS.length, done: true });
       showMeasurement(res.measurement, !!res.unsaved);
-      setReusedInstant(res.reusedInstant?.how ?? null);
-      // The row's own columns: the main structure's figures, not the parcel's.
-      const t = { facetCount: res.measurement.facetCount, squares: res.measurement.squares };
-      const pendingNow = res.measurement.provenance?.instantPacks?.pending?.length ?? 0;
-      toast.success(
-        res.unsaved ? "Roof measured — not saved" : pendingNow ? "Roof measured — details still arriving" : "Roof measured",
-        `${t?.facetCount ?? "—"} facets · ${t?.squares != null ? t.squares.toFixed(1) : "—"} squares` +
-          (pendingNow ? " · the pitch and details are still being read; they load here by themselves" : "") +
-          (res.reusedInstant
-            ? res.reusedInstant.how === "recovered"
-              ? " · collected the earlier paid order — nothing new was billed"
-              : " · reused the already-paid measurement — nothing new was billed"
-            : ""),
-      );
-      if (!res.unsaved) void loadRecent();
+      measuredToast(res.measurement, !!res.unsaved, res.reusedInstant?.how ?? null);
     } catch (err) {
       stop();
       setPanel("intake");
@@ -1435,7 +1518,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
             <div className="ms-num">{msReport}</div>
             <div className="ms-head">
               <div className="ms-stage" role="status" aria-live="polite">
-                {ms.done ? "Report ready" : `${MS_STEPS[Math.min(ms.step, MS_STEPS.length - 1)]}…`}
+                {ms.done ? "Report ready" : `${stepLabel(Math.min(ms.step, MS_STEPS.length - 1))}…`}
               </div>
               <div className="ms-pct">{ms.pct}%</div>
             </div>
@@ -1446,7 +1529,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
               {MS_STEPS.map((label, i) => (
                 <li key={label} className={"ms-step" + (ms.done || i < ms.step ? " is-done" : i === ms.step ? " is-active" : "")}>
                   <span className="ms-step-mark" aria-hidden="true" />
-                  <span>{label}</span>
+                  <span>{stepLabel(i, label)}</span>
                   <span className="ms-step-state">{ms.done || i < ms.step ? "done" : i === ms.step ? "in progress" : ""}</span>
                 </li>
               ))}
@@ -1454,6 +1537,14 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
             <div className="ms-hint">
               {msHint ?? "Measuring the structure, pitch by pitch."}
             </div>
+            {holding && (
+              <div className="ms-acts">
+                <button type="button" className="btn btn-ghost btn--sm" id="msOpenNow" onClick={revealHeld}>
+                  Open the report now
+                </button>
+                <span className="ms-acts-note">The details keep loading into it.</span>
+              </div>
+            )}
           </div>
         </div>
       </section>

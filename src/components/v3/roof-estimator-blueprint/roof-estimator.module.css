@@ -1796,6 +1796,9 @@
    provider's reason) wraps instead of pushing the page sideways. */
 .bp :global(.content .call > div) { min-width: 0; }
 .bp :global(.content .rf-intake-error) { margin-top: 12px; }
+/* The held report's way out: a quiet button under the progress hint. */
+.bp :global(.content .ms-acts) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; }
+.bp :global(.content .ms-acts-note) { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
 .bp :global(.content .rf-notice .call) { font-size: 12.5px; line-height: 1.55; }
 .bp :global(.content .rf-notice .call b) { color: var(--ink); }
 

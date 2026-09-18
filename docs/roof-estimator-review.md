@@ -61,6 +61,19 @@ one. Coverage is now measured on rings converted into the raster's own frame
 registration transform — before, rings converted from EagleView's pin were
 measured unregistered, and a few metres of offset read as roof "not seen".
 
+**The report is held until the details are in** (owner, 2026-09-18: a
+half-filled report with a "still collecting" banner that fills in fifteen
+seconds later reads as broken). When the measurement comes back with packs
+still on the way, the page keeps the measuring screen up on the details
+step — worded with what is still being read ("Reading pitch and eave
+height, shape, facets and details…", shortening as each part lands), the
+percent creeping a point at a time toward 96 — collects the rest behind
+it (`collectPendingInstant`), and opens the finished report once at 100 %
+with one "Roof measured" toast. A provider slower than two minutes opens
+the report anyway with the collecting note, and "Open the report now"
+under the progress does the same on request. Reopening a row from Recent
+is not the click and shows what it has at once.
+
 **Nothing is priced on a roof whose packs are on the way.** The page's collect
 loop shows STILL COLLECTING from the first paint (it used to appear only after
 the first check resolved, ~20 s in), names the packs on the way, and the build
