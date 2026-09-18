@@ -16,7 +16,7 @@
 // the donors disagree on are arbitrated in blueprint-global.css via
 // `[data-page]`.
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { initBlueprintShell, type ShellHandle } from "./shell-behavior";
 import { CommandPalette } from "./command-palette";
@@ -25,6 +25,7 @@ import { PlanLimitDialog } from "@/components/billing/PlanLimitDialog";
 import { SupportWidget } from "@/components/v3/support-widget/support-widget";
 import { Sprite } from "./sprite";
 import { Sidebar, type SidebarUser } from "./sidebar";
+import { writeSidebarFold } from "./sidebar-fold";
 import { Topbar } from "./topbar";
 import proposalStyles from "@/components/v3/proposals-blueprint/proposals.module.css";
 import dashboardStyles from "@/components/v3/dashboard-blueprint/blueprint.module.css";
@@ -107,14 +108,41 @@ function pageKey(pathname: string): string {
 export function BlueprintShell({
   children,
   user,
+  sidebarFolded = false,
 }: {
   children: React.ReactNode;
   /** Signed-in identity for the sidebar's account block. Read server-side in
    *  the layout — the blueprint tree has no SessionProvider, so `useSession`
    *  is not available down here. */
   user?: SidebarUser;
+  /** Start with the sidebar folded to its icon rail (the jf_sb cookie). */
+  sidebarFolded?: boolean;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  // FOLDED SIDEBAR (owner, 2026-09-18: "more space for the estimate … an
+  // arrow in the middle of the sidebar to fold it"). Desktop only — at 860px
+  // and below the sidebar is already a drawer and the attribute is ignored by
+  // the CSS. Remembered in a cookie so the next page load paints it folded.
+  const [folded, setFolded] = useState(sidebarFolded);
+  const toggleFold = useCallback(() => {
+    setFolded((f) => {
+      writeSidebarFold(!f);
+      return !f;
+    });
+  }, []);
+  // ⌘\ / Ctrl+\ folds and unfolds from anywhere, the editors' own shortcut
+  // for the side panel. Ignored on a phone-width window, where there is
+  // nothing to fold.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "\\" || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (window.innerWidth <= 860) return;
+      e.preventDefault();
+      toggleFold();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleFold]);
   const handleRef = useRef<ShellHandle | null>(null);
   const pathname = usePathname() ?? "/dashboard";
   const key = pageKey(pathname);
@@ -141,6 +169,7 @@ export function BlueprintShell({
         .filter(Boolean)
         .join(" ")}
       data-page={key}
+      data-sb={folded ? "fold" : undefined}
     >
       <Sprite />
 
@@ -186,7 +215,7 @@ export function BlueprintShell({
       <SupportWidget signedIn={Boolean(user)} />
 
       <div className="layout">
-        <Sidebar user={user} />
+        <Sidebar user={user} folded={folded} onToggleFold={toggleFold} />
 
         <div className="sb-overlay" id="sbOverlay"></div>
 

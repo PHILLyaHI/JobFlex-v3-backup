@@ -195,7 +195,6 @@ export function AdvancedAiContent() {
   // number the contractor deliberately entered.
   const [tax, setTax] = useState<{ pct: number; pinned: boolean }>({ pct: 0, pinned: false });
   const [demoMode, setDemoMode] = useState(false);
-  const [openQuestions, setOpenQuestions] = useState<string[]>([]);
   // The overlay is held mounted through its exit keyframes; `genExit` is what
   // plays them. Without it the box is cut out of the frame instantly while the
   // arrival got a full 240ms, and the hard cut is the half you notice.
@@ -402,18 +401,10 @@ export function AdvancedAiContent() {
         // Backed out — nothing is priced, and the brief is untouched.
         if (answers === null) return;
         description = briefWithAnswers(typedBrief, answers);
-        // Anything they DIDN'T answer still rides along to the refine card, so
-        // "Generate anyway" leaves the same open questions it always did.
-        const answered = new Set(answers.map((a) => a.question));
-        setOpenQuestions(
-          gate.data.questions.filter((q) => !answered.has(q.question)).map((q) => q.question),
-        );
         setGenError("");
         setGenDone(false);
         setGenExit(false);
         setGenerating(true);
-      } else {
-        setOpenQuestions([]);
       }
       // The brief has been read — the one boundary the client can observe.
       setStageIdx(1);
@@ -469,7 +460,6 @@ export function AdvancedAiContent() {
     setScope("");
     setTimelineDays(null);
     setDiscount(NO_DISCOUNT);
-    setOpenQuestions([]);
     setDemoMode(false);
     setGenError("");
   }
@@ -1165,105 +1155,9 @@ export function AdvancedAiContent() {
             </svg>
             {saveBusy === "opening" ? "Opening…" : saveBusy ? "Saving…" : "Convert to proposal"}
           </button>
-
-          {/* ASSUMPTIONS — what the price rests on. Edited by hand and saved
-              with the estimate. The written change request that sat above
-              them ("Change the estimate" → Apply, diff, Undo) was removed
-              2026-09-18 on the owner's call: the sheet's cells and the
-              proposal's sliders cover price changes, and reworded lines come
-              from Generate, which carries the specialty procedure. */}
-          <section className={cx("card")}>
-            <div className={cx("sp-h")}>
-              <div className={cx("sp-h-txt")}>
-                <h2 className={cx("sp-t")}>Assumptions</h2>
-              </div>
-            </div>
-            <div className={cx("sp-asm")}>
-              <div>
-                {assumptions.map((a, i) => (
-                  <div className={cx("sp-asm-row")} key={`asm-${i}`}>
-                    {/* A textarea, not an input: assumptions are whole
-                        sentences and the rail is narrow, so a single-line
-                        field clipped the half that carries the meaning. */}
-                    <GrowText
-                      className={cx("sp-asm-in")}
-                      value={a}
-                      ariaLabel={`Assumption ${i + 1}`}
-                      onChange={(v) => setAssumptions((rows) => rows.map((x, j) => (j === i ? v : x)))}
-                    />
-                    <button
-                      className={cx("sp-asm-x")}
-                      type="button"
-                      aria-label={`Remove assumption ${i + 1}`}
-                      onClick={() => setAssumptions((rows) => rows.filter((_, j) => j !== i))}
-                    >
-                      <svg className={cx("ic")}>
-                        <use href="#i-x" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-                {assumptions.length === 0 && (
-                  <div className={cx("sp-empty")}>None — add what the price depends on.</div>
-                )}
-              </div>
-              <button className={cx("sp-add")} type="button" onClick={() => setAssumptions((rows) => [...rows, ""])}>
-                <svg className={cx("ic")}>
-                  <use href="#i-plus" />
-                </svg>
-                Add assumption
-              </button>
-            </div>
-            {openQuestions.length > 0 && (
-              <div className={cx("sp-qs")}>
-                <div className={cx("sp-asm-l")}>Worth confirming with the client</div>
-                {openQuestions.map((q) => (
-                  <div key={q} className={cx("sp-q")}>
-                    {q}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
         </div>
       </div>
     </>
-  );
-}
-
-/** A one-line-looking textarea that grows to whatever it holds. */
-function GrowText({
-  value,
-  onChange,
-  className,
-  ariaLabel,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  className: string;
-  ariaLabel: string;
-}) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  const fit = (el: HTMLTextAreaElement | null) => {
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  };
-  // Refit when the text changes underneath us — a refine rewrites assumptions
-  // wholesale, and a two-line one landing in a one-line box would be clipped.
-  useEffect(() => fit(ref.current), [value]);
-  return (
-    <textarea
-      ref={ref}
-      rows={1}
-      className={className}
-      value={value}
-      aria-label={ariaLabel}
-      onChange={(e) => {
-        fit(e.currentTarget);
-        onChange(e.target.value);
-      }}
-    />
   );
 }
 

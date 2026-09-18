@@ -1861,37 +1861,6 @@ export function MobileSmartProposal() {
                 </div>
               </section>
 
-              {/* ASSUMPTIONS — what the price rests on, edited by hand and
-                  saved with the estimate. The written change request that
-                  sat above them (Apply, diff, Undo) was removed 2026-09-18 on
-                  the owner's call: the lines' own fields cover price changes. */}
-              <section className={styles.card} key="assumptions">
-                <div className={styles.cardHead}>
-                  <span className={styles.cardLbl}>Assumptions</span>
-                  <span className={styles.asmCount}>{assumptions.length}</span>
-                </div>
-                <div className={styles.cardPad}>
-                  {assumptions.length ? (
-                    <ul className={styles.assump}>
-                      {assumptions.map((a, i) => (
-                        <li key={`${a}-${i}`}>
-                          <span className={styles.asmT}>{a}</span>
-                          <button
-                            className={styles.asmX}
-                            type="button"
-                            aria-label={`Remove assumption: ${a}`}
-                            onClick={() => setAssumptions((list) => list.filter((_, j) => j !== i))}
-                          >
-                            <Icon id="i-x" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div className={styles.asmEmpty}>No assumptions — the estimate stands on its lines alone.</div>
-                  )}
-                </div>
-              </section>
             </>
           )}
         </div>

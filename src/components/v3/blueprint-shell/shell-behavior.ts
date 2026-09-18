@@ -40,9 +40,12 @@ export function initBlueprintShell(root: HTMLElement): ShellHandle {
       sb.classList.toggle("open", open);
       overlay.classList.toggle("on", open);
     };
-    burger.addEventListener("click", () => setNav(!sb.classList.contains("open")));
-    overlay.addEventListener("click", () => setNav(false));
-    sb.addEventListener("click", (e) => {
+    // Through `on()`, so destroy() removes them: React's development mode
+    // runs this setup twice, and a burger holding two listeners opened the
+    // drawer and shut it again on the same tap.
+    on(burger, "click", () => setNav(!sb.classList.contains("open")));
+    on(overlay, "click", () => setNav(false));
+    on(sb, "click", (e) => {
       if ((e.target as HTMLElement).closest(".sb-link")) setNav(false);
     });
   })();
