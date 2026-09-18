@@ -70,16 +70,21 @@ export function parsePaymentSettings(json: string | null | undefined): PaymentSe
 // Mirrors Organization.proposalSettingsJson. Only `terms` is read today (the
 // public portal's Terms & conditions disclosure); the rest of the blob is
 // declared so a future reader does not have to re-derive its shape.
+// NO `requireSig` (2026-09-18). It was declared here, defaulted to true and
+// read by nothing: the public accept route records no signature, no typed name
+// and no signed-at, so the setting promised a gate that did not exist. Removed
+// from the shape with the toggle that set it. The COLUMN keeps whatever an org
+// already wrote — `safeParse` spreads unknown keys straight through, so an old
+// `requireSig: true` survives in the blob and is simply not read, and nothing
+// needs a migration.
 export interface ProposalSettings {
   validityDays: number;
   terms: string;
-  requireSig: boolean;
   autoFollowUp: boolean;
 }
 export const PROPOSAL_DEFAULTS: ProposalSettings = {
   validityDays: 14,
   terms: "",
-  requireSig: true,
   autoFollowUp: true,
 };
 export function parseProposalSettings(json: string | null | undefined): ProposalSettings {

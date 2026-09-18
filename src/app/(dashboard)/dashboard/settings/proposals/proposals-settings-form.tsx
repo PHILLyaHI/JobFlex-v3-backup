@@ -34,7 +34,6 @@ export function ProposalsSettingsForm({
 }) {
   const [validity, setValidity] = React.useState(14);
   const [autoFollow, setAutoFollow] = React.useState(true);
-  const [requireSig, setRequireSig] = React.useState(true);
   const [showMargin, setShowMargin] = React.useState(false);
   const [steps, setSteps] = React.useState<ScheduleStep[]>(DEFAULT_STEPS);
 
@@ -101,12 +100,6 @@ export function ProposalsSettingsForm({
             />
           </div>
           <div className="mt-4 divide-y divide-[color:var(--ink-line)]">
-            <Toggle
-              checked={requireSig}
-              onChange={setRequireSig}
-              label="Require client signature"
-              description="Captured digitally on the public proposal page."
-            />
             <Toggle
               checked={autoFollow}
               onChange={setAutoFollow}
