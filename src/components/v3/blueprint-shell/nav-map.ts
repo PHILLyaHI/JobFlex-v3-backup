@@ -88,9 +88,10 @@ export const NAV_SECTIONS: NavSection[] = [
       // does not list this surface, so adding it here would be inventing a
       // grant rather than reflecting one.
       { label: "Video estimator", icon: "i-video", href: "/dashboard/video-estimator" },
-      // Added 2026-09-15. The bolt is the closest glyph the sprite has to a
-      // heating-and-cooling system; `i-topo` is the fence page's terrain.
-      { label: "HVAC estimator", icon: "i-bolt", href: "/dashboard/hvac-estimator" },
+      // Added 2026-09-15; the heat pump glyph on 2026-09-18 (until then the
+      // item asked for `i-bolt`, which only the Financials sprite carries, so
+      // the sidebar drew a blank beside it on every other page).
+      { label: "HVAC estimator", icon: "i-heatpump", href: "/dashboard/hvac-estimator" },
       { label: "Phone", icon: "i-phone", href: "/dashboard/phone" },
       { label: "Messages", icon: "i-msg", href: "/dashboard/messages" },
       { label: "Reviews", icon: "i-thumb", href: "/dashboard/reviews" },
