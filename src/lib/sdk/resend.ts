@@ -36,6 +36,21 @@ export function isEmailEnabled() {
  * `replyTo` lets customer-facing mail send from the platform address while
  * routing replies back to the contractor.
  */
+/** The last message this deployment got out, for the integrations-health
+ *  panel (lib/integrationsHealth). Best-effort: bookkeeping never fails a send. */
+async function stampSent(): Promise<void> {
+  try {
+    const { db } = await import("@/lib/db");
+    await db.syncState.upsert({
+      where: { key: "email:last-sent" },
+      update: { cursor: new Date().toISOString() },
+      create: { key: "email:last-sent", cursor: new Date().toISOString() },
+    });
+  } catch {
+    /* the panel will say "nothing yet" */
+  }
+}
+
 export async function sendEmail(opts: {
   to: string | string[];
   subject: string;
@@ -88,6 +103,7 @@ export async function sendEmail(opts: {
         err.name = r.error.name ?? "resend_error";
         throw err;
       }
+      void stampSent();
       return { id: r.data?.id ?? "", skipped: false as const };
     });
   }

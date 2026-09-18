@@ -37,6 +37,78 @@
 :global(.jf-blueprint .content) .kpiBad { color: var(--danger); }
 :global(.jf-blueprint .content) .kpiUnknown { color: var(--muted-light); }
 
+/* ── Integrations health panel ──────────────────────────────
+   Four tones, the same three tokens the rest of the console uses plus a muted
+   one for "nobody configured this". A dot AND a word: colour alone is not a
+   status anyone can read out loud, or see the same way. */
+:global(.jf-blueprint .content) .healthOk { color: var(--success); }
+:global(.jf-blueprint .content) .healthWarn { color: var(--warning); }
+:global(.jf-blueprint .content) .healthDown { color: var(--danger); }
+:global(.jf-blueprint .content) .healthOff { color: var(--muted-light); }
+
+:global(.jf-blueprint .content) .healthVerdict {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+:global(.jf-blueprint .content) .healthBtn {
+  border: 1.5px solid var(--ink);
+  background: transparent;
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer;
+}
+:global(.jf-blueprint .content) .healthBtn:hover:not(:disabled) { background: var(--ink); color: #fff; }
+:global(.jf-blueprint .content) .healthBtn:disabled { opacity: 0.5; cursor: default; }
+
+:global(.jf-blueprint .content) .healthList { list-style: none; margin: 14px 0 0; padding: 0; }
+:global(.jf-blueprint .content) .healthRow {
+  display: grid;
+  grid-template-columns: 10px 128px 92px 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--rule, rgba(10, 10, 10, 0.12));
+  font-size: 13px;
+}
+:global(.jf-blueprint .content) .healthRow:first-child { border-top: none; }
+:global(.jf-blueprint .content) .healthDot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: currentColor;
+  transform: translateY(-1px);
+}
+:global(.jf-blueprint .content) .healthName { font-weight: 700; }
+/* "optional · last-resort fallback" — the reason a red row here is not an
+   incident. Quiet by design: it qualifies the name, it does not announce. */
+:global(.jf-blueprint .content) .healthNote {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted-light);
+  white-space: nowrap;
+}
+:global(.jf-blueprint .content) .healthLevel {
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+:global(.jf-blueprint .content) .healthReason { color: var(--muted); }
+:global(.jf-blueprint .content) .healthWhen {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted-light);
+  white-space: nowrap;
+}
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .healthRow { grid-template-columns: 10px 1fr auto; row-gap: 2px; }
+  :global(.jf-blueprint .content) .healthReason { grid-column: 2 / -1; }
+  :global(.jf-blueprint .content) .healthWhen { grid-column: 2 / -1; }
+}
+
 /* Small mono annotation inside a KPI tile — source of the number, not a
    label restating it ("STRIPE · LIVE", "LOCAL MIRROR"). */
 :global(.jf-blueprint .content) .kpiSrc {

@@ -18,6 +18,8 @@ import s from "./admin-shared.module.css";
 import { LineChart } from "./admin-charts";
 import { useAdminMotion } from "./admin-motion";
 import { Ic, StatusChip, ago, shortDay } from "./admin-ui";
+import { IntegrationsHealthCard } from "./integrations-health-card";
+import type { HealthReport } from "@/lib/integrationsHealth";
 import {
   changeKindLabel,
   unlinkedShort,
@@ -30,7 +32,7 @@ const TRAFFIC = "/admin/traffic" as Route;
 const SUBSCRIBERS = "/admin/subscribers" as Route;
 const SUPPORT = "/admin/support" as Route;
 
-export function AdminOverviewContent({ data }: { data: AdminOverviewData }) {
+export function AdminOverviewContent({ data, health }: { data: AdminOverviewData; health: HealthReport | null }) {
   useAdminMotion();
 
   const total12w = data.weeks.reduce((a, w) => a + w.count, 0);
@@ -135,6 +137,10 @@ export function AdminOverviewContent({ data }: { data: AdminOverviewData }) {
           <div className={s.kpiSrc}>{quotaSrc}</div>
         </div>
       </div>
+
+      {/* Everything above is this deployment's own numbers; this is everything
+          it depends on. Read from the stored report — see the card. */}
+      <IntegrationsHealthCard initial={health} now={data.generatedAt} />
 
       <div className="grid-23">
         <div className="card card--chart">

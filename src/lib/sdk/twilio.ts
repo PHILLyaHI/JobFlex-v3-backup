@@ -25,6 +25,17 @@ export async function sendSMS(to: string, body: string) {
     to,
     body,
   });
+  try {
+    const { db } = await import("@/lib/db");
+    const at = new Date().toISOString();
+    await db.syncState.upsert({
+      where: { key: "sms:last-sent" },
+      update: { cursor: at },
+      create: { key: "sms:last-sent", cursor: at },
+    });
+  } catch {
+    /* bookkeeping for the integrations-health panel; never fails a send */
+  }
   return { sid: msg.sid, skipped: false as const };
 }
 

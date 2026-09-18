@@ -104,6 +104,24 @@ export function extractRing(data: RegridResponse, lat: number, lng: number): Lat
 // That distinction matters more than usual here: Regrid issues 30-day JWTs, so a
 // working integration goes 401 on a schedule and the message needs to say so
 // rather than blaming coverage.
+
+/** Records a fact the integrations-health panel reads (lib/integrationsHealth).
+ *  Best-effort by design: a bookkeeping write must never fail the work it is
+ *  keeping book on. */
+async function stampHealth(key: string, value: string): Promise<void> {
+  try {
+    const { db } = await import("@/lib/db");
+    await db.syncState.upsert({ where: { key }, update: { cursor: value }, create: { key, cursor: value } });
+  } catch {
+    /* the panel will say "nothing yet" — nobody's call is affected */
+  }
+}
+
+/** SyncState key holding the status of the most recent Regrid answer. Regrid
+ *  issues 30-day JWTs, so an expired token is a scheduled event and the admin
+ *  panel needs to see it as one rather than as "no parcel here". */
+const REGRID_STATUS_KEY = "regrid:last-status";
+
 export async function fetchRegridPoint(
   lat: number,
   lng: number,
@@ -114,12 +132,17 @@ export async function fetchRegridPoint(
   )}`;
   try {
     const res = await externalFetch("regrid", "parcel point", url, {}, { timeoutMs: REGRID_TIMEOUT_MS });
+    void stampHealth(REGRID_STATUS_KEY, String(res.status));
     return { data: (await res.json()) as RegridResponse, status: res.status };
   } catch (err) {
     // The {data, status} contract predates the wrapper and fenceBoundary reads
     // the status, so an HTTP failure stays a status here; only the unanswered
     // case propagates as a throw, exactly as the bare fetch used to.
-    if (err instanceof ExternalCallError && err.httpStatus != null) return { data: null, status: err.httpStatus };
+    if (err instanceof ExternalCallError && err.httpStatus != null) {
+      void stampHealth(REGRID_STATUS_KEY, String(err.httpStatus));
+      return { data: null, status: err.httpStatus };
+    }
+    void stampHealth(REGRID_STATUS_KEY, "unreachable");
     throw err;
   }
 }

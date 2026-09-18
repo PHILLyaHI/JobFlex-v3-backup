@@ -77,6 +77,21 @@ function alignFrom(from: string): string {
   return name ? `${name} <${user}>` : user;
 }
 
+/** Same stamp the Resend path writes — one key for "mail left this
+ *  deployment", whichever transport carried it (lib/integrationsHealth). */
+async function stampSmtpSent(): Promise<void> {
+  try {
+    const { db } = await import("@/lib/db");
+    await db.syncState.upsert({
+      where: { key: "email:last-sent" },
+      update: { cursor: new Date().toISOString() },
+      create: { key: "email:last-sent", cursor: new Date().toISOString() },
+    });
+  } catch {
+    /* the panel will say "nothing yet" */
+  }
+}
+
 export async function sendViaSmtp(opts: {
   to: string | string[];
   subject: string;
@@ -101,6 +116,7 @@ export async function sendViaSmtp(opts: {
       html: opts.html,
       replyTo: opts.replyTo,
     });
+    void stampSmtpSent();
     return { id: info.messageId ?? "", skipped: false as const };
   });
 }
