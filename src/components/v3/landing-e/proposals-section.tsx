@@ -425,13 +425,22 @@ export function ProposalsSection({ proposal = KITCHEN, registerHref = "/auth/reg
         </div>
 
         {/* The section's CTA (pass B): the trial, and the sample proposal —
-            a ghost link until the PDF exists. */}
+            public/samples/jobflex-sample-proposal.pdf, exported from the app's
+            own proposal export so the page shows the real thing rather than a
+            drawing of it. Opens in a new tab: a visitor reading the page is not
+            done with it. */}
         <Reveal className="mt-[12vmin] flex flex-col items-start gap-4 sm:mt-[8vmin] sm:flex-row sm:items-center sm:gap-6">
           <a href={registerHref} className="lp-btn-lime w-full sm:w-auto" data-cta="proposals">
             {cta}
             <span aria-hidden>→</span>
           </a>
-          <a href="#" className="inline-flex items-center gap-2 text-[16px] font-semibold text-ink underline underline-offset-4 hover:text-lp-blue" data-cta="proposals-sample">
+          <a
+            href="/samples/jobflex-sample-proposal.pdf"
+            target="_blank"
+            rel="noopener"
+            className="inline-flex items-center gap-2 text-[16px] font-semibold text-ink underline underline-offset-4 hover:text-lp-blue"
+            data-cta="sample_pdf"
+          >
             See a sample proposal (PDF)
           </a>
         </Reveal>
