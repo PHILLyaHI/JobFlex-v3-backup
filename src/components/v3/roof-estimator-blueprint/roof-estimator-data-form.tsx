@@ -49,7 +49,7 @@ import { evOrderRoof, evPriceRoof, evReportFootages, evReportStatus, evRoofModel
 import { isMapsBrowserEnabled, loadMapsLibrary } from "@/lib/googleMaps";
 import { displayedPitchLabel, foreignIndices, instantTotalsOf, pickMainStructure, pitchFamilyShares } from "@/lib/roofDiagram/instantTotals";
 import { AERIAL } from "@/lib/vendorLabels";
-import { familyOfMaterial } from "@/lib/roofPackage/catalog";
+import { familyOfMaterial, WASTE_OPTIONS } from "@/lib/roofPackage/catalog";
 import { isFlatRoof } from "@/lib/roofPackage/flatRule";
 import { joinClauses, readBuilding } from "@/lib/roofPackage/commercial";
 
@@ -84,11 +84,16 @@ const STATES = [
   "ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC",
   "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY",
 ];
-const WASTES = [8, 10, 12, 15];
 const FACADE: Record<string, string> = { N: "North", E: "East", S: "South", W: "West" };
-// Donor: the measuring screen's stage captions, re-worded for the data path
-// (Instant request → totals → save; no facet tracing happens any more).
-const MS_STAGES = ["Requesting roof data…", "Collecting aerial measurements…", "Still waiting for the aerial provider…", "Report ready"];
+// The measuring screen's stage captions. The action is one awaited call, so
+// the stages are timed, and the words say only what is true at that time:
+// the order is placed, the provider is being waited for, a slow pack is
+// saved and collected into the report by itself (review 2026-09-17).
+const MS_STAGES = ["Ordering the roof data…", "Waiting for the aerial provider…", "Still waiting — a slow pack is saved and loads into the report by itself", "Report ready"];
+// The measuring screen's second caption comes early; the third only once the
+// wait is genuinely long (the orders are collected together for ~75 s).
+const MS_WAIT_MS = 1_500;
+const MS_LONG_MS = 45_000;
 const RECENT_LIMIT = 12;
 
 // `instant-outline` is a FAILED measurement wearing the totals of a successful
@@ -99,6 +104,38 @@ const SOURCE_CHIP: Record<MeasurementSource, { label: string; tone: "ok" | "wait
   "instant+recon": { label: "Instant", tone: "ok" },
   "instant-outline": { label: "No facets", tone: "bad" },
   recon: { label: "Estimate", tone: "wait" },
+};
+
+/** Sum of the known values; null when none is known. */
+const sumOrNull = (xs: Array<number | null | undefined>): number | null => {
+  const known = xs.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+  return known.length ? known.reduce((a, b) => a + b, 0) : null;
+};
+/** True when any is true, false when all known are false, null when none is known. */
+const anyOrNull = (xs: Array<boolean | null | undefined>): boolean | null => {
+  const known = xs.filter((x): x is boolean => typeof x === "boolean");
+  return known.length ? known.some(Boolean) : null;
+};
+/** Storeys from the reported eave heights (10 ft steps): the high side counts —
+ *  the crew works from it. Null when no height was reported. */
+const storeysFromEaves = (eaves: Array<{ ft: number }>): number | null => {
+  if (!eaves.length) return null;
+  const maxFt = Math.max(...eaves.map((e) => e.ft));
+  return Math.max(1, Math.min(3, Math.round(maxFt / 10)));
+};
+/** Pack ids → what they carry, for the contractor. */
+const PACK_WORDS: Record<string, string> = {
+  property_data_id_001: "roof area",
+  property_data_id_002: "pitch and eave height",
+  property_data_id_003: "material and condition",
+  property_data_id_004: "roof age",
+  property_data_id_005: "shape, facets and details",
+  property_data_id_007: "the building outline",
+  property_data_id_008: "imagery",
+};
+const packNames = (ids: readonly string[]): string => {
+  const words = [...new Set(ids.map((id) => PACK_WORDS[id] ?? id))];
+  return words.length > 1 ? words.slice(0, -1).join(", ") + " and " + words[words.length - 1] : words[0] ?? "";
 };
 
 const num = (n: number, d = 0) =>
@@ -161,7 +198,7 @@ function shotDateLabel(v: string | undefined): string | null {
   return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
 
-export function RoofEstimatorDataForm() {
+export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolean } = {}) {
   const router = useRouter();
 
   // ── Screen ──
@@ -242,16 +279,27 @@ export function RoofEstimatorDataForm() {
   // 30 s poll) shows zero facets and no pitch. Rather than wait for the next
   // click, ask the server to collect the pending orders every few seconds for
   // about two minutes and swap the fuller measurement in when it lands.
-  const packsIncomplete = React.useMemo(() => {
-    const ip = measurement?.provenance?.instantPacks;
-    if (!ip || measurement?.source === "recon" || !measurement?.instant) return false;
-    return ip.failed.length > 0 || ip.missing.length > 0;
-  }, [measurement]);
-  const [collecting, setCollecting] = React.useState<null | "checking" | "gave-up">(null);
-  const collectFor = measurement && packsIncomplete && measurement.id !== "unsaved" ? measurement.id : null;
-  // The chip belongs to the measurement being collected for — a swap to a
-  // complete one (or to none) drops it without a render-time state write.
-  const collectingShown = collectFor ? collecting : null;
+  const instantPacks = measurement && measurement.source !== "recon" && measurement.instant ? measurement.provenance?.instantPacks ?? null : null;
+  // Placed and paid, not delivered when the row was saved: the server
+  // collects these for free, and nothing is priced until they land.
+  const packsPendingList = React.useMemo(() => instantPacks?.pending ?? [], [instantPacks]);
+  // What the ledger may still hold for this address: the pending packs, and
+  // — on rows saved before `pending` existed (2026-09-17) — packs counted as
+  // failed or missing while a slow order was in fact still processing.
+  const packsToCollect = packsPendingList.length > 0 || (!!instantPacks && (instantPacks.failed.length > 0 || instantPacks.missing.length > 0));
+  // Keyed by measurement id, so a swap to another row never inherits a verdict.
+  const [collecting, setCollecting] = React.useState<{ id: string; state: "checking" | "gave-up" | "done" } | null>(null);
+  const collectFor = measurement && packsToCollect && measurement.id !== "unsaved" ? measurement.id : null;
+  // "checking" from the first paint: the loop starts with the panel, and the
+  // page must not read as final while it runs (review 2026-09-17: the chip
+  // used to appear only after the first check resolved, 20 s in).
+  const collectingShown: "checking" | "gave-up" | "done" | null = collectFor ? (collecting?.id === collectFor ? collecting.state : "checking") : null;
+  // Pricing waits for the packs on the way (the pitch, the details). Once the
+  // loop gives up, the contractor prices on what is there — an entered pitch.
+  const packsPending = packsPendingList.length > 0 && collectingShown === "checking";
+  // Packs the address lacks for good (refused, failed, never attempted) —
+  // the explicit paid order buys just these, nothing already bought.
+  const packsMissing = !!instantPacks && !packsPending && collectingShown !== "checking" && (instantPacks.failed.length > 0 || instantPacks.missing.length > 0);
   React.useEffect(() => {
     if (!collectFor) return;
     let cancelled = false;
@@ -266,10 +314,16 @@ export function RoofEstimatorDataForm() {
         if (cancelled) return;
         if (res.ok && res.updated) {
           setMeasurement(res.measurement);
-          toast.success("More aerial data arrived", "Pitch, facets and details filled in from the order that was still processing.");
+          toast.success(
+            res.pending > 0 ? "More aerial data arrived" : "All aerial data is in",
+            res.pending > 0 ? "Part of the order landed; the rest is still processing." : "Pitch, facets and details filled in from the order that was still processing.",
+          );
           more = res.pending > 0;
         } else if (res.ok && res.pending === 0) {
           // Nothing pending in the ledger — the packs are simply not there (refused, or failed for good).
+          more = false;
+        } else if (!res.ok) {
+          // "Not found" / not authorised: asking again changes nothing.
           more = false;
         }
       } catch {
@@ -277,14 +331,14 @@ export function RoofEstimatorDataForm() {
       }
       if (cancelled) return;
       if (!more) {
-        setCollecting(null);
+        setCollecting({ id: collectFor, state: "done" });
         return;
       }
       if (attempts >= 20) {
-        setCollecting("gave-up");
+        setCollecting({ id: collectFor, state: "gave-up" });
         return;
       }
-      setCollecting("checking");
+      setCollecting({ id: collectFor, state: "checking" });
       timer = setTimeout(() => void tick(), 6_000);
     };
     void tick();
@@ -326,6 +380,12 @@ export function RoofEstimatorDataForm() {
   const [stateCode, setStateCode] = React.useState("");
   const [zip, setZip] = React.useState("");
   const [addressLoading, setAddressLoading] = React.useState(false);
+  // What the intake shows when a measurement fails: one plain sentence, and
+  // the one action that fits (a free re-check for an order still processing,
+  // a billed new lookup when the paid answer holds no roof).
+  const [intakeError, setIntakeError] = React.useState<{ text: string; kind: "no-roof" | "processing" | "failed"; target: OrderInput } | null>(null);
+  // The previous pick, for the retype rule below (the effect's closure cannot read state).
+  const lastPickRef = React.useRef<PickedPlace | null>(null);
 
   // Google Places on the donor's plain <input>, the same module the Fence
   // studio uses. Uncontrolled on purpose: the module writes the field itself.
@@ -337,11 +397,18 @@ export function RoofEstimatorDataForm() {
       autoComplete: "new-password",
       onResolving: setAddressLoading,
       onPick(p) {
+        const prev = lastPickRef.current;
+        lastPickRef.current = p;
         setPicked(p);
         if (p.typed) {
-          setCity("");
-          setStateCode("");
-          setZip("");
+          // City, state and ZIP filled in by a picked suggestion belong to
+          // THAT address and go when it is typed over; ones typed by hand
+          // stay (review 2026-09-17: fixing a typo used to wipe all three).
+          if (prev && !prev.typed) {
+            setCity("");
+            setStateCode("");
+            setZip("");
+          }
           return;
         }
         input.value = p.address;
@@ -378,7 +445,12 @@ export function RoofEstimatorDataForm() {
     let cancelled = false;
     void evReportFootages({ address: m.address, city: m.city, state: m.state, zip: m.zip, lat: m.lat, lng: m.lng })
       .then((r) => {
-        if (cancelled || !r.ok) return;
+        if (cancelled) return;
+        if (!r.ok) {
+          // The offer to order a report still stands; the check simply could not run.
+          setReport({ state: "none" });
+          return;
+        }
         if (r.state === "measured") {
           const f = r.footage;
           setReport({ state: "measured", reportId: r.reportId, footage: { reportId: r.reportId, eaveFt: f.EAVE, rakeFt: f.RAKE, ridgeFt: f.RIDGE, hipFt: f.HIP, valleyFt: f.VALLEY, stepFlashFt: f.STEPFLASH } });
@@ -388,7 +460,9 @@ export function RoofEstimatorDataForm() {
           setReport({ state: "none" });
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setReport({ state: "none" });
+      });
     return () => {
       cancelled = true;
     };
@@ -399,6 +473,12 @@ export function RoofEstimatorDataForm() {
   // from, what to confirm) and never reach the client (owner, 2026-09-14).
   const [scopeText, setScopeText] = React.useState("");
   const [convertBusy, setConvertBusy] = React.useState(false);
+  // The tables hold the SAMPLE the server returns when no AI key is set: it
+  // looks like an estimate and is not one, so it never becomes a proposal.
+  const [sampleEstimate, setSampleEstimate] = React.useState(false);
+  // The contractor changed lines in the tables since the package filled
+  // them: those edits win over a rebuild, and a rebuild asks first.
+  const [tablesEdited, setTablesEdited] = React.useState(false);
   // Hand-entered takeoff (runManual). Cleared by resetResult, so it never
   // coexists with a measurement.
   const [manual, setManual] = React.useState<ManualTakeoff | null>(null);
@@ -427,6 +507,8 @@ export function RoofEstimatorDataForm() {
     setUnsaved(false);
     setMaterials([]);
     setLabor([]);
+    setSampleEstimate(false);
+    setTablesEdited(false);
     setAssumptions([]);
     setScopeText("");
     setView("satellite");
@@ -440,12 +522,13 @@ export function RoofEstimatorDataForm() {
   // know only that it is waiting, not that it has reached a saving stage.
   function runStages(): () => void {
     setMsStage(0);
-    const requesting = setTimeout(() => setMsStage(1), 1500);
-    const waiting = setTimeout(() => setMsStage(2), 20000);
+    const requesting = setTimeout(() => setMsStage(1), MS_WAIT_MS);
+    const waiting = setTimeout(() => setMsStage(2), MS_LONG_MS);
     return () => { clearTimeout(requesting); clearTimeout(waiting); };
   }
 
-  function orderInput() {
+  type OrderInput = { address: string; city: string; state: string; zip: string; lat?: number; lng?: number };
+  function orderInput(): OrderInput {
     return { address: picked?.address ?? "", city, state: stateCode, zip, lat: picked?.lat, lng: picked?.lng };
   }
 
@@ -577,31 +660,41 @@ export function RoofEstimatorDataForm() {
     if (!wasUnsaved && m.id !== "unsaved" && !willLiveMap) loadSatellite(m.id);
   }
 
-  // Instant measure. A repeat of an address the org already paid for REUSES
-  // the stored EagleView answer (no new bill); `forceNewOrder` is the explicit
+  // Measure. A repeat of an address the org already paid for REUSES the
+  // stored EagleView answer (no new bill); `forceNewOrder` is the explicit
   // "re-measure at a new cost" gesture and is never set by a plain click.
-  async function runInstant(forceNewOrder = false) {
+  // `target` is the address to measure when it is not the intake's — the
+  // report's own retry buttons pass the open measurement's address (review
+  // 2026-09-17: on a row opened from Recent they measured nothing at all).
+  async function runInstant(forceNewOrder = false, target?: OrderInput) {
     if (addressLoading) return;
-    if (!picked?.address) {
-      addrRef.current?.focus();
+    const input = target ?? orderInput();
+    if (!input.address) {
+      if (target) {
+        toast.error("No address on this measurement");
+      } else {
+        addrRef.current?.focus();
+        toast.info("Enter the address first", "Type the street address or pick it from the suggestions, then measure.");
+      }
       return;
     }
-    if (zip && !/^\d{5}(?:-\d{4})?$/.test(zip.trim())) {
+    if (!target && zip && !/^\d{5}(?:-\d{4})?$/.test(zip.trim())) {
       toast.error("Check the ZIP code", "Enter all 5 digits, or a ZIP+4 code.");
       return;
     }
-    if (forceNewOrder && !window.confirm(`Order a NEW ${AERIAL.vendor.toLowerCase()} lookup for this address? This is billed, even though a paid answer already exists.`)) {
+    if (forceNewOrder && !window.confirm(`Order a NEW ${AERIAL.vendor.toLowerCase()} lookup for ${input.address}? This is billed; packs the address already has are not bought again.`)) {
       return;
     }
     resetResult();
+    setIntakeError(null);
     setInstantBusy(true);
     setReusedInstant(null);
-    setMsReport("Instant measure");
-    setMsHint("Area, pitch and imagery will appear as the provider returns them. This can take a minute.");
+    setMsReport(input.address);
+    setMsHint("Usually under a minute. The roof shows once the provider answers; a pack slower than that is saved and loads into the report by itself.");
     setPanel("measuring");
     const stop = runStages();
     try {
-      const res = await measureRoofInstant(orderInput(), forceNewOrder ? { forceNewOrder } : undefined);
+      const res = await measureRoofInstant(input, forceNewOrder ? { forceNewOrder } : undefined);
       // DEBUG (2026-09-08, owner's call — on until told otherwise): the whole
       // EagleView story for this click, in the browser console.
       console.info(
@@ -619,16 +712,24 @@ export function RoofEstimatorDataForm() {
             }
           : res,
       );
-      if (!res.ok) throw new Error(res.error);
+      if (!res.ok) {
+        stop();
+        setPanel("intake");
+        setIntakeError({ text: res.error, kind: res.noRoof ? "no-roof" : res.stillProcessing ? "processing" : "failed", target: input });
+        toast.error("Couldn't measure this roof", res.error);
+        return;
+      }
       stop();
       setMsStage(MS_STAGES.length - 1);
       showMeasurement(res.measurement, !!res.unsaved);
       setReusedInstant(res.reusedInstant?.how ?? null);
       // The row's own columns: the main structure's figures, not the parcel's.
       const t = { facetCount: res.measurement.facetCount, squares: res.measurement.squares };
+      const pendingNow = res.measurement.provenance?.instantPacks?.pending?.length ?? 0;
       toast.success(
-        res.unsaved ? "Roof measured — not saved" : "Roof measured",
+        res.unsaved ? "Roof measured — not saved" : pendingNow ? "Roof measured — details still arriving" : "Roof measured",
         `${t?.facetCount ?? "—"} facets · ${t?.squares != null ? t.squares.toFixed(1) : "—"} squares` +
+          (pendingNow ? " · the provider is still working on part of the order; it loads here by itself" : "") +
           (res.reusedInstant
             ? res.reusedInstant.how === "recovered"
               ? " · collected the earlier paid order — nothing new was billed"
@@ -639,7 +740,13 @@ export function RoofEstimatorDataForm() {
     } catch (err) {
       stop();
       setPanel("intake");
-      toast.error("Couldn't measure this roof", errMsg(err));
+      // A thrown error is the network or the server, never the provider's
+      // verdict: keep it plain and keep the detail in the console.
+      console.warn("[roof:debug] measure threw", err);
+      const text = "The measurement request did not complete. Check the connection and measure again; a placed order is collected without a new charge.";
+      setIntakeError({ text, kind: "failed", target: input });
+      toast.error("Couldn't measure this roof", text);
+      void errMsg(err);
     } finally {
       setInstantBusy(false);
     }
@@ -664,6 +771,8 @@ export function RoofEstimatorDataForm() {
       if (!m) throw new Error("This measurement is no longer available.");
       resetResult();
       showMeasurement(m, false);
+      // A saved row IS a stored answer: the paid re-order is offered the same way.
+      setReusedInstant(m.instant ? "stored" : null);
     } catch (err) {
       toast.error("Couldn't open measurement", errMsg(err));
     } finally {
@@ -677,8 +786,12 @@ export function RoofEstimatorDataForm() {
     if (isRecon) {
       toast.error(
         "Estimated measurements can’t be priced",
-        "Run Instant measure for this address to build a priced estimate.",
+        "Use Measure this roof on this address to build a priced estimate.",
       );
+      return;
+    }
+    if (packsPending) {
+      toast.info("Still collecting the aerial data", "The pitch and details are on their way; the estimate prices once they land.");
       return;
     }
     // No pitch, no price: the button is disabled in this state, this is the belt.
@@ -767,13 +880,16 @@ export function RoofEstimatorDataForm() {
         if (reportPlanLimitResult(res)) return;
         throw new Error(res.error);
       }
-      if (res.disabled) toast.info("AI disabled · sample estimate loaded");
+      if (res.disabled) toast.info("AI is off on this server — sample lines loaded", "They show the shape of an estimate and can't become a proposal. Build the package instead.");
+      setSampleEstimate(!!res.disabled);
+      setTablesEdited(false);
       setTitle(res.data.title);
       setAssumptions(res.data.assumptions);
       setScopeText(res.data.scope ?? "");
       setMaterials(res.data.materials.map((m) => ({ id: nanoid(6), ...m })));
       setLabor(res.data.labor.map((m) => ({ id: nanoid(6), ...m })));
-      toast.success("Estimate ready");
+      if (!res.disabled) toast.success("Estimate ready");
+      revealTables();
     } catch (err) {
       toast.error("Generation failed", errMsg(err));
     } finally {
@@ -783,11 +899,26 @@ export function RoofEstimatorDataForm() {
 
   // The package builder's output becomes the estimate: the same two tables the
   // AI fills, with the basis of every quantity carried on the line.
+  // The tables sit under the card: bring them into view and hand focus to
+  // them, so "Review N lines" is seen to do something (review 2026-09-17).
+  function revealTables() {
+    window.requestAnimationFrame(() => {
+      const out = document.getElementById("buildOut");
+      if (!out) return;
+      out.scrollIntoView({ behavior: "smooth", block: "start" });
+      out.querySelector<HTMLElement>("[data-lines-heading]")?.focus({ preventScroll: true });
+    });
+  }
   function applyPackage(pkg: RoofPackage, spec: RoofPackageSpec, quiet = false) {
     if (!pitchForEstimate) {
       toast.error("Enter the roof pitch first");
       return null;
     }
+    if (packsPending) {
+      toast.info("Still collecting the aerial data", "The pitch and details are on their way; the package prices once they land.");
+      return null;
+    }
+    if (tablesEdited && !window.confirm("Replace the lines you edited with the package as it is configured now?")) return null;
     const toLine = (l: RoofPackage["materials"][number]): EditableLine => ({
       id: nanoid(6),
       name: l.name,
@@ -805,14 +936,26 @@ export function RoofEstimatorDataForm() {
     };
     setMaterials(next.materials);
     setLabor(next.labor);
+    setSampleEstimate(false);
+    setTablesEdited(false);
     setAssumptions(next.assumptions);
     setScopeText(next.scope);
     setTitle(next.title);
-    if (!quiet) toast.success("Estimate built", `${pkg.materials.length} material and ${pkg.labor.length} labor lines — adjust anything below, then convert.`);
+    if (!quiet) {
+      toast.success("Estimate built", `${pkg.materials.length} material and ${pkg.labor.length} labor lines — adjust anything below, then convert.`);
+      revealTables();
+    }
     return next;
   }
-  // "Convert as is": the package straight to a proposal, no review stop.
+  // "Convert as is": the package straight to a proposal, no review stop —
+  // unless the contractor already reviewed and edited lines below, in which
+  // case THOSE lines are the estimate and the card's button converts them
+  // (review 2026-09-17: a qty edited 15 → 99 was silently dropped).
   function convertPackage(pkg: RoofPackage, spec: RoofPackageSpec) {
+    if (hasEstimate && tablesEdited) {
+      void convert();
+      return;
+    }
     const estimate = applyPackage(pkg, spec, true);
     if (estimate) void convertWith(estimate);
   }
@@ -884,7 +1027,11 @@ export function RoofEstimatorDataForm() {
   async function convertWith(input: { title: string; materials: EditableLine[]; labor: EditableLine[]; assumptions: string[]; scope: string }) {
     if (!measurement && !manual) return;
     if (isRecon) {
-      toast.error("Estimated measurements can’t become a proposal", "Run Instant measure for this address first.");
+      toast.error("Estimated measurements can’t become a proposal", "Use Measure this roof on this address first.");
+      return;
+    }
+    if (sampleEstimate) {
+      toast.error("Sample lines can’t become a proposal", "AI is off on this server, so these are placeholder figures. Build the package for a priced estimate.");
       return;
     }
     if (!input.materials.length && !input.labor.length) {
@@ -901,6 +1048,9 @@ export function RoofEstimatorDataForm() {
         labor: input.labor.map(stripId),
         assumptions: input.assumptions,
         measurementId: savedId,
+        // The job address rides with the proposal (and sets the state's sales
+        // tax); the server prefers the saved measurement's own when there is one.
+        address: siteAddress ?? undefined,
       });
       toast.success("Proposal created");
       router.push(`/dashboard/proposals/${res.id}` as Parameters<typeof router.push>[0]);
@@ -1022,12 +1172,16 @@ export function RoofEstimatorDataForm() {
               : []
           ).filter((f) => Number.isFinite(f.pitch12)),
           pitchBasis: pitchKind === "entered" ? "entered" : pitchKind ? "measured" : null,
-          perimeterFt: manual ? null : ringPerimeterFt(structure?.outline),
-          footprintSqft: manual ? null : structure?.footprintSqft ?? null,
-          chimney: manual ? null : structure?.chimney ?? null,
-          rooftopAcCount: manual ? null : structure?.rooftopAcCount ?? null,
+          // A ticked outbuilding joins the edges and the flashing counts, not
+          // only the squares (review 2026-09-17: the barn's drip edge, starter
+          // and vents were priced on the house's outline alone).
+          perimeterFt: manual ? null : sumOrNull(includedStructures.map((s) => ringPerimeterFt(s.outline))),
+          footprintSqft: manual ? null : sumOrNull(includedStructures.map((s) => s.footprintSqft ?? null)),
+          chimney: manual ? null : anyOrNull(includedStructures.map((s) => s.chimney ?? null)),
+          rooftopAcCount: manual ? null : sumOrNull(includedStructures.map((s) => s.rooftopAcCount ?? null)),
           shape: manual ? null : structure?.shape ?? null,
-          facetCount: manual ? null : structure?.facetCount ?? null,
+          facetCount: manual ? null : sumOrNull(includedStructures.map((s) => s.facetCount ?? null)),
+          storeys: manual ? null : storeysFromEaves(eaveHeights),
           measured: manual ? null : report.state === "measured" ? report.footage ?? null : null,
           existingMaterial: manual ? null : structure?.material ?? null,
           facetConfidence: manual ? null : structure?.confidence?.facetCount ?? null,
@@ -1114,7 +1268,13 @@ export function RoofEstimatorDataForm() {
             </div>
           </div>
 
-          <div className="rf-body">
+          <form
+            className="rf-body"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void runInstant();
+            }}
+          >
             <div className="addr-grid">
               <label className="est-field addr-wide">
                 <span className="est-lbl">Address</span>
@@ -1149,6 +1309,28 @@ export function RoofEstimatorDataForm() {
             <div id="rf-address-status" className="rf-address-status" role="status" aria-live="polite">
               {addressLoading && <><span className="rf-status-dot" />Loading address details and roof pin…</>}
             </div>
+            {intakeError && (
+              <div className="call warn rf-intake-error" role="alert" data-intake-error={intakeError.kind}>
+                <div>
+                  <span className="rf-stamp">
+                    {intakeError.kind === "no-roof" ? "NO ROOF IN THE ANSWER" : intakeError.kind === "processing" ? "STILL PROCESSING" : "COULDN’T MEASURE"}
+                  </span>
+                  {intakeError.text}
+                  {intakeError.kind !== "failed" && (
+                    <span className="rf-use-acts">
+                      <button
+                        type="button"
+                        className="btn btn-primary btn--sm"
+                        disabled={busy}
+                        onClick={() => void runInstant(intakeError.kind === "no-roof", intakeError.target)}
+                      >
+                        {intakeError.kind === "no-roof" ? "Order a new lookup — billed" : "Check again — free"}
+                      </button>
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Pin-on-the-roof check before the BILLED lookup. Only a picked
                 suggestion carries the rooftop point; free typing hides it. */}
@@ -1157,14 +1339,14 @@ export function RoofEstimatorDataForm() {
             )}
 
             <div className="rf-actions">
-              <button className="btn btn-primary btn--sm" type="button" id="instantBtn" disabled={busy || addressLoading} onClick={() => void runInstant()}>
+              <button className="btn btn-primary btn--sm" type="submit" id="instantBtn" disabled={busy || addressLoading}>
                 <svg className="ic"><use href="#i-roof" /></svg>
                 {instantBusy ? "Measuring…" : "Measure this roof"}
               </button>
               {/* What the click costs, said once, as a drawing annotation. */}
               <span className="rf-actions-note">Billed per lookup · a paid answer for the same address is reused free</span>
             </div>
-          </div>
+          </form>
         </div>
 
         {/* Recent measurements — reopen a saved measurement without paying again. */}
@@ -1246,14 +1428,31 @@ export function RoofEstimatorDataForm() {
                 </div>
               </div>
             )}
-            {collectingShown && !manual && (
+            {collectingShown && collectingShown !== "done" && !manual && (
               <div className="rf-notice">
-                <div className={"call " + (collectingShown === "checking" ? "info" : "warn")}>
+                <div className={"call " + (collectingShown === "checking" ? "info" : "warn")} data-collecting={collectingShown}>
                   <div>
                     <span className="rf-stamp">{collectingShown === "checking" ? "STILL COLLECTING" : "NOT ALL IN YET"}</span>
                     {collectingShown === "checking"
-                      ? "The aerial provider is still working on the rest of this order — pitch, facets, details and imagery load here by themselves as they land. No need to measure again; nothing extra is charged."
-                      : "The aerial provider is taking longer than usual with the rest of this order. Reopen this measurement from Recent measurements later and it collects the rest without a new charge."}
+                      ? `The aerial provider is still working on part of this order${packsPendingList.length ? ` (${packNames(packsPendingList)})` : ""} — it loads here by itself as it lands, and the estimate prices once it is in. No need to measure again; nothing extra is charged.`
+                      : "The aerial provider is taking longer than usual with the rest of this order. Reopen this measurement from Recent measurements later and it collects the rest without a new charge — or price on what is here with a pitch you enter."}
+                  </div>
+                </div>
+              </div>
+            )}
+            {packsMissing && !manual && instantPacks && (
+              <div className="rf-notice">
+                <div className="call warn" data-packs-missing="1">
+                  <div>
+                    <span className="rf-stamp">NOT EVERYTHING WAS BOUGHT</span>
+                    This answer is missing {packNames([...instantPacks.failed, ...instantPacks.missing])}
+                    {instantPacks.denied.length ? `; the account is not entitled to ${packNames(instantPacks.denied)}` : ""}. The figures shown are
+                    real; the missing packs can be ordered on their own — nothing already bought is bought again.
+                    <span className="rf-use-acts">
+                      <button type="button" className="btn btn-primary btn--sm" disabled={busy} onClick={() => void runInstant(true, reportInput())}>
+                        Order the missing packs — billed
+                      </button>
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1267,8 +1466,9 @@ export function RoofEstimatorDataForm() {
                       ? `This roof reads like a commercial building: ${joinClauses(buildingRead.clauses)}. `
                       : `This could be a commercial building — ${joinClauses(buildingRead.clauses.slice(0, 2))}. `}
                     The aerial data doesn’t record how a building is used, so choose how to price it. Commercial adds
-                    mobilization, a safety plan, a permit on the job value and general conditions, and lowers field labor
-                    per square on a big deck.
+                    mobilization, a safety plan, a permit on the job value and general conditions, lowers field labor
+                    per square on a big deck, and starts a flat roof from commercial defaults (R-25 insulation, parapet
+                    coping, overflow drains, crane, a manufacturer’s warranty) — every row stays editable.
                     <span className="rf-use-acts">
                       <button type="button" className="btn btn-primary btn--sm" onClick={() => answerUse("commercial")}>
                         Price as commercial
@@ -1296,21 +1496,23 @@ export function RoofEstimatorDataForm() {
                 {reconDown && (
                   <div className="call warn">
                     <div>
-                      <span className="rf-stamp">ELEVATION DATA NOT RECEIVED</span>
-                      The aerial elevation data for this address did not arrive
-                      {reconDown.kind === "config" ? " because the imagery service rejected our request" : " in time"}
-                      , so the source-status figures (coverage, registration) are absent. This is not a statement
-                      about the address — the measured totals above are unaffected. Measure again — the
-                      paid answer is reused, so a retry costs nothing.
-                      {reconDown.message && <span className="rf-why">{reconDown.message}</span>}
-                      <button
-                        type="button"
-                        className="btn btn-primary btn--sm"
-                        onClick={() => void runInstant()}
-                        disabled={instantBusy}
-                      >
-                        {instantBusy ? "Measuring…" : "Measure again — free"}
-                      </button>
+                      <span className="rf-stamp">{reconDown.kind === "no-coverage" ? "NO ELEVATION DATA HERE" : "ELEVATION DATA NOT RECEIVED"}</span>
+                      {reconDown.kind === "no-coverage"
+                        ? "Google has no high-resolution elevation data for this address, so the elevation checks (coverage, measured pitch) are not available here. The measured totals above are unaffected."
+                        : reconDown.kind === "config"
+                          ? "The imagery service rejected our request — a setup problem on our side, not the address. The source-status figures (coverage, registration) are absent; the measured totals above are unaffected."
+                          : "The aerial elevation data for this address did not arrive in time, so the source-status figures (coverage, registration) are absent. This is not a statement about the address — the measured totals above are unaffected. Measure again: the paid answer is reused, so the retry costs nothing."}
+                      {reconDown.message && reconDown.kind !== "no-coverage" && <span className="rf-why">{reconDown.message}</span>}
+                      {reconDown.kind !== "no-coverage" && reconDown.kind !== "config" && (
+                        <button
+                          type="button"
+                          className="btn btn-primary btn--sm"
+                          onClick={() => void runInstant(false, reportInput())}
+                          disabled={instantBusy}
+                        >
+                          {instantBusy ? "Measuring…" : "Measure again — free"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1558,18 +1760,25 @@ export function RoofEstimatorDataForm() {
               onBuildMode={setBuildMode}
               waste={waste}
               onWaste={setWaste}
-              wasteOptions={WASTES}
+              wasteOptions={WASTE_OPTIONS}
+              aiEnabled={aiEnabled}
+              waiting={packsPending ? "Still collecting the pitch and details from the aerial provider — the estimate prices once they land." : null}
               pitchEntry={
                 /* EagleView supplied no pitch (pack 002 not bought): the
-                   contractor states one, and the estimate says so. */
-                !(manual?.pitchLabel) && !pitchMeasured && !evPitch && totals?.squares != null
+                   contractor states one, and the estimate says so. Not while
+                   the pitch pack is still on its way. */
+                !(manual?.pitchLabel) && !pitchMeasured && !evPitch && totals?.squares != null && !packsPending
                   ? { value: pitchEntered, onChange: setPitchEntered, options: PITCHES }
                   : null
               }
               generate={{
                 busy: genBusy,
-                disabled: isRecon || genBusy || totals?.squares == null || !pitchForEstimate,
-                reason: !pitchForEstimate ? "Enter the pitch first — the aerial data has none for this roof." : undefined,
+                disabled: isRecon || genBusy || totals?.squares == null || !pitchForEstimate || packsPending,
+                reason: packsPending
+                  ? "Still collecting the pitch and details from the aerial provider."
+                  : !pitchForEstimate
+                    ? "Enter the pitch first — the aerial data has none for this roof."
+                    : undefined,
                 onClick: () => void generate(),
               }}
               caution={
@@ -1613,8 +1822,13 @@ export function RoofEstimatorDataForm() {
                 <div className={"build-out" + (hasEstimate ? "" : " is-hidden")} id="buildOut">
                   {hasEstimate && (
                     <>
-                      <EstimateLinesTable title="Materials" rows={materials} onChange={setMaterials} disabled={convertBusy} addLabel="Add material" />
-                      <EstimateLinesTable title="Labor" rows={labor} onChange={setLabor} disabled={convertBusy} addLabel="Add labor" />
+                      <EstimateLinesTable title="Materials" rows={materials} onChange={(rows) => { setMaterials(rows); setTablesEdited(true); }} disabled={convertBusy} addLabel="Add material" />
+                      <EstimateLinesTable title="Labor" rows={labor} onChange={(rows) => { setLabor(rows); setTablesEdited(true); }} disabled={convertBusy} addLabel="Add labor" />
+                      {sampleEstimate && (
+                        <p className="bo-sample" role="note">
+                          Sample lines — AI is off on this server, so these are placeholder figures. Build the package above for a priced estimate; sample lines can’t become a proposal.
+                        </p>
+                      )}
                       {assumptions.length > 0 && (
                         <div className="bo-assume">
                           <span className="kpi-lbl">Assumptions</span>
@@ -1629,7 +1843,14 @@ export function RoofEstimatorDataForm() {
                         <span className="kpi-lbl">Estimate total</span>
                         <span className="bo-total-v">{money(materialsTotal + laborTotal)}</span>
                         <span className="bo-total-acts">
-                          <button className="btn btn-primary btn--sm" type="button" id="convertBtn" disabled={convertBusy || isRecon} onClick={() => void convert()}>
+                          <button
+                            className="btn btn-primary btn--sm"
+                            type="button"
+                            id="convertBtn"
+                            disabled={convertBusy || isRecon || sampleEstimate}
+                            title={sampleEstimate ? "Sample lines (AI is off) can’t become a proposal — build the package instead." : "Create a draft proposal from these lines"}
+                            onClick={() => void convert()}
+                          >
                             <svg className="ic"><use href="#i-file" /></svg>
                             {convertBusy ? "Creating…" : "Convert to proposal"}
                           </button>
@@ -1649,9 +1870,11 @@ export function RoofEstimatorDataForm() {
         disabled={busy}
         onClick={() => {
           setPanel("intake");
+          window.requestAnimationFrame(() => addrRef.current?.focus());
         }}
-        showRemeasure={panel === "report" && reusedInstant != null}
-        onRemeasure={() => void runInstant(true)}
+        showRemeasure={panel === "report" && !manual && reusedInstant != null}
+        remeasureLabel={packsMissing ? "Order the missing packs — billed" : "Re-measure — new paid lookup"}
+        onRemeasure={() => void runInstant(true, reportInput())}
       />
       {/* The photo CARD is square (owner's call): the card hugs the square
           stage, head and caption ride above/below it, and DETAILS/STRUCTURES
@@ -1775,6 +1998,7 @@ function AgainPortal({
   disabled,
   onClick,
   showRemeasure,
+  remeasureLabel,
   onRemeasure,
 }: {
   show: boolean;
@@ -1782,6 +2006,7 @@ function AgainPortal({
   onClick: () => void;
   /** The shown result reused an already-paid answer — offer the explicit paid re-order. */
   showRemeasure?: boolean;
+  remeasureLabel?: string;
   onRemeasure?: () => void;
 }) {
   // The host is a sibling in the same React tree, so it exists by the time this
@@ -1801,9 +2026,9 @@ function AgainPortal({
           id="remeasureBtn"
           disabled={disabled}
           onClick={onRemeasure}
-          title="This result reused already-paid aerial data. Re-measuring orders a fresh lookup, which is billed."
+          title="This result reused already-paid aerial data. A new order is billed; packs the address already has are not bought again."
         >
-          Re-measure — new paid lookup
+          {remeasureLabel ?? "Re-measure — new paid lookup"}
         </button>
       )}
       <button className={"btn btn-ghost" + (show ? "" : " is-hidden")} type="button" id="againBtn" disabled={disabled} onClick={onClick}>

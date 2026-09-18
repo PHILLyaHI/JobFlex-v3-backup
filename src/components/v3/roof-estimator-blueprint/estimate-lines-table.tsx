@@ -69,7 +69,8 @@ export function EstimateLinesTable({
   return (
     <div className="bo-sec bo-edit">
       <div className="bo-head">
-        <span className="kpi-lbl">{title}</span>
+        {/* The focus target after "Review N lines" fills the tables (data-lines-heading). */}
+        <span className="kpi-lbl" tabIndex={-1} data-lines-heading>{title}</span>
         <span className="bo-sum">{money(sum)}</span>
       </div>
       <table className="bo-table bo-table--edit">
@@ -119,7 +120,7 @@ export function EstimateLinesTable({
           ))}
         </tbody>
       </table>
-      {rows.length === 0 && <p className="bo-empty">No {title.toLowerCase()} lines yet.</p>}
+      {rows.length === 0 && <p className="bo-empty">No {title.toLowerCase()} yet — add a line, or build the package above.</p>}
       <div className="bo-add">
         <button type="button" className="btn btn-ghost btn--sm" disabled={disabled} onClick={add}>
           + {addLabel}

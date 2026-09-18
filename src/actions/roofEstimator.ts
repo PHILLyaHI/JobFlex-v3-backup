@@ -10,6 +10,7 @@ import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
+import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 
 /**
  * The sample shown when no OpenAI key is set. Scaled from the REAL squares
@@ -167,6 +168,9 @@ const convertSchema = z.object({
   // The measurement this estimate was priced from: its satellite photo is
   // what the client sees on the proposal (ProposalSitePhoto).
   measurementId: z.string().optional().nullable(),
+  // The job address, for a hand takeoff with no measurement row; the saved
+  // measurement's own address wins when there is one.
+  address: z.string().max(300).optional().nullable(),
 });
 
 export async function convertRoofEstimateToProposal(raw: unknown) {
@@ -207,6 +211,28 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
 
   const subtotal = lines.reduce((a, l) => a + l.total, 0);
 
+  // The job address and the state's sales tax, the way the HVAC convert
+  // writes them (review 2026-09-17: a roof proposal landed with no address
+  // and taxRate 0, so a Texas job carried no tax and the client's copy had
+  // no site). The measurement's own address wins over the browser's.
+  let address = data.address?.trim() || null;
+  let stateHint: string | null = null;
+  let measurementRow: { id: string } | null = null;
+  if (data.measurementId) {
+    const m = await db.roofMeasurement
+      .findFirst({ where: { id: data.measurementId, organizationId }, select: { id: true, address: true, city: true, state: true, zip: true } })
+      .catch(() => null);
+    if (m) {
+      measurementRow = { id: m.id };
+      const full = [m.address, [m.city, m.state].filter(Boolean).join(", "), m.zip].filter(Boolean).join(", ");
+      address = full || address;
+      stateHint = m.state;
+    }
+  }
+  const org = await db.organization.findUnique({ where: { id: organizationId }, select: { defaultTaxRate: true } });
+  const taxRate = stateTaxRate(stateFromAddress(address) ?? stateHint) ?? org?.defaultTaxRate ?? 0;
+  const taxTotal = subtotal * taxRate;
+
   const proposal = await db.proposal.create({
     data: {
       publicId: randomUUID(),
@@ -217,9 +243,12 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
       // Scope only — assumptions stay on the estimate, never baked into the
       // proposal's scope (keeps the preview / calendar / job detail clean).
       scopeOfWork: data.scope ?? "",
+      address,
       status: ProposalStatus.DRAFT,
       subtotal,
-      total: subtotal,
+      taxRate,
+      taxTotal,
+      total: subtotal + taxTotal,
       validUntil: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
       lineItems: {
         create: lines.map((l, i) => ({ ...l, position: i })),
@@ -236,14 +265,11 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
   // The house photo for the client: link the measurement, never trusting the
   // id from the browser past this org. A missing link table (not pushed yet)
   // costs the photo, not the proposal.
-  if (data.measurementId) {
-    const m = await db.roofMeasurement.findFirst({ where: { id: data.measurementId, organizationId }, select: { id: true } });
-    if (m) {
-      try {
-        await db.proposalSitePhoto.create({ data: { proposalId: proposal.id, roofMeasurementId: m.id } });
-      } catch {
-        /* table not pushed yet */
-      }
+  if (measurementRow) {
+    try {
+      await db.proposalSitePhoto.create({ data: { proposalId: proposal.id, roofMeasurementId: measurementRow.id } });
+    } catch {
+      /* table not pushed yet */
     }
   }
 

@@ -18,6 +18,12 @@ import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { RoofEstimatorContent } from "@/components/v3/roof-estimator-blueprint/roof-estimator-content";
 
 export const dynamic = "force-dynamic";
+// The measure action this page calls places up to seven aerial orders, waits
+// for them together, then runs the elevation pass — a few minutes at worst.
+// A server action runs under the segment config of the page that calls it,
+// so the ceiling is set here (review 2026-09-17: with the platform default
+// the first click on a new address was cut off mid-order).
+export const maxDuration = 300;
 
 export const metadata: Metadata = {
   title: "JobFlex · Roof Estimator",

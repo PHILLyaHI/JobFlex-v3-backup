@@ -338,6 +338,7 @@ function PackageLedger({
   converting,
   lead,
   needsPitch = false,
+  blockedReason = "Enter pitch to price.",
   onBuildingUse,
 }: {
   facts: RoofFacts;
@@ -350,6 +351,8 @@ function PackageLedger({
   /** The pitch picker, when the aerial data carried no pitch: it leads the title block. */
   lead?: React.ReactNode;
   needsPitch?: boolean;
+  /** Why nothing is priced while `needsPitch`: the pitch, or packs still on the way. */
+  blockedReason?: string;
 }) {
   // ── State, effects, handlers and derived values: verbatim from
   //    roof-package-builder.tsx (the functionality). ──
@@ -841,7 +844,7 @@ function PackageLedger({
       className="btn btn-primary bec-btn bec-btn--stamp"
       disabled={disabled || converting || needsPitch}
       onClick={() => onConvert(pkg, spec)}
-      title={needsPitch ? "Enter pitch to price." : "Straight to a proposal with these lines — you can still edit them there"}
+      title={needsPitch ? blockedReason : "Straight to a proposal with these lines — lines you already edited below are what gets converted"}
     >
       <svg className="ic"><use href="#i-file" /></svg>
       {converting ? "Creating…" : "Convert to proposal"}
@@ -872,6 +875,7 @@ function PackageLedger({
             type="button"
             className="btn btn-ghost bec-btn"
             disabled={disabled || needsPitch}
+            data-blocked={needsPitch ? blockedReason : undefined}
             onClick={() => onBuild(pkg, spec)}
             title={needsPitch ? "Enter pitch to price." : "Fill the estimate tables below to review and adjust before converting"}
           >
@@ -1699,11 +1703,21 @@ export default function BuildEstimateCardC({
   report,
   output,
   onBuildingUse,
+  aiEnabled = true,
+  waiting = null,
 }: BuildEstimateCardProps) {
-  const needsPitch = !!pitchEntry && !pitchEntry.value;
+  // Nothing is priced while the aerial provider is still delivering the
+  // packs pricing needs, nor on a pitch nobody stated.
+  const needsPitch = !!waiting || (!!pitchEntry && !pitchEntry.value);
+  const blockedReason = waiting ?? "Enter pitch to price.";
   // EagleView supplied no pitch (pack 002 not bought): the contractor states
   // one before anything is priced, in either mode.
-  const pitchSel = pitchEntry ? (
+  const pitchSel = waiting ? (
+    <div className="est-field bec-f bec-f--pitch" data-waiting="1">
+      <span className="est-lbl">Pitch</span>
+      <p className="bec-note bec-pitch-help">{waiting}</p>
+    </div>
+  ) : pitchEntry ? (
     <div className="est-field bec-f bec-f--pitch">
       <span className="est-lbl">Pitch</span>
       <BlueprintSelect
@@ -1728,7 +1742,7 @@ export default function BuildEstimateCardC({
           <div className="card-title">Build an estimate</div>
         </div>
         <div className="vsw" role="radiogroup" aria-label="How to build the estimate">
-          {(["package", "ai"] as const).map((m) => (
+          {(aiEnabled ? (["package", "ai"] as const) : (["package"] as const)).map((m) => (
             <button
               key={m}
               type="button"
@@ -1755,13 +1769,13 @@ export default function BuildEstimateCardC({
       )}
       {isRecon && (
         <div className="bec-empty">
-          These figures are estimated from aerial imagery, so they can’t be priced. Run <b>Instant measure</b> for this address to build a quote.
+          These figures are estimated from aerial imagery, so they can’t be priced. Use <b>Measure this roof</b> on this address to build a quote.
         </div>
       )}
 
       {buildMode === "package" ? (
         !isRecon && facts ? (
-          <PackageLedger facts={facts} disabled={builderDisabled} converting={converting} onBuild={onBuild} onConvert={onConvert} lead={pitchSel} needsPitch={needsPitch} report={report} onBuildingUse={onBuildingUse} />
+          <PackageLedger facts={facts} disabled={builderDisabled} converting={converting} onBuild={onBuild} onConvert={onConvert} lead={pitchSel} needsPitch={needsPitch} blockedReason={blockedReason} report={report} onBuildingUse={onBuildingUse} />
         ) : pitchSel ? (
           <div className="bec-console">{pitchSel}</div>
         ) : null

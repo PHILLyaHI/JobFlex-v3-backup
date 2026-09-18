@@ -310,7 +310,20 @@ export function saneLists(l: unknown): CatalogLists | null {
   if (!x || !Array.isArray(x.systems) || !Array.isArray(x.underlayments) || !x.systems.length || !x.underlayments.length) return null;
   const okSys = x.systems.every((s) => s && typeof s.id === "string" && typeof s.label === "string" && typeof s.matPerSq === "number" && typeof s.laborPerSq === "number");
   const okUnd = x.underlayments.every((u) => u && typeof u.id === "string" && typeof u.label === "string" && typeof u.perSq === "number");
-  return okSys && okUnd ? upgradeLists(x) : null;
+  if (!okSys || !okUnd) return null;
+  // A row saved before wastePct / capPerFt existed reads as NaN in the
+  // takeoff (review 2026-09-17): fill the two from the built-in row of the
+  // same id, else the catalog's plain defaults.
+  const builtin = new Map(BUILTIN_LISTS.systems.map((s) => [s.id, s]));
+  const systems = x.systems.map((s) => {
+    const b = builtin.get(s.id);
+    return {
+      ...s,
+      wastePct: typeof s.wastePct === "number" && Number.isFinite(s.wastePct) ? s.wastePct : b?.wastePct ?? 10,
+      capPerFt: typeof s.capPerFt === "number" && Number.isFinite(s.capPerFt) ? s.capPerFt : b?.capPerFt ?? 0,
+    };
+  });
+  return upgradeLists({ ...x, systems });
 }
 
 /** Swap untouched all-in flat rows for today's rows, and add the built-in

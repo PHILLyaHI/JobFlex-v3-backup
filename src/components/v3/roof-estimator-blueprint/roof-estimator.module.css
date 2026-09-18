@@ -603,6 +603,7 @@
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--ink-soft);
+  overflow-wrap: anywhere;
 }
 
 /* Capped lists: <=4 in full, 5–10 scroll, >10 truncate + button */
@@ -1747,7 +1748,10 @@
 .bp :global(.content .bo-table td) { padding: 9px 14px; border-bottom: 1.5px solid var(--hair-soft); font-size: 13px; }
 .bp :global(.content .bo-table tbody tr:last-child td) { border-bottom: none; }
 .bp :global(.content .bo-table tbody tr:nth-child(even)) { background: var(--paper-deep); }
-.bp :global(.content .bo-total) { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; border-top: 2px solid var(--ink); background: var(--paper-deep); }
+.bp :global(.content .bo-total) { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 16px; border-top: 2px solid var(--ink); background: var(--paper-deep); }
+.bp :global(.content .bo-total-acts) { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Sample lines (no AI key): said under the tables, where the figures are. */
+.bp :global(.content .bo-sample) { margin: 10px 16px 0; padding: 8px 10px; border: 1.5px dashed var(--hair); border-radius: var(--radius); font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--muted); }
 .bp :global(.content .bo-total-v) { font-size: 24px; font-weight: 900; color: var(--blueprint); font-variant-numeric: tabular-nums; }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -1777,11 +1781,16 @@
 
 /* Synthetic-estimate notice above the hero: the donor's .call, full width. */
 .bp :global(.content .rf-notice) { margin-bottom: 16px; }
+/* A notice's text column shrinks with the card; a long token (a URL in a
+   provider's reason) wraps instead of pushing the page sideways. */
+.bp :global(.content .call > div) { min-width: 0; }
+.bp :global(.content .rf-intake-error) { margin-top: 12px; }
 .bp :global(.content .rf-notice .call) { font-size: 12.5px; line-height: 1.55; }
 .bp :global(.content .rf-notice .call b) { color: var(--ink); }
 
 /* The intake's sandbox chip sits on the card head's right edge. */
 .bp :global(.content .rf-head--bar > .chip) { flex: 0 0 auto; margin-top: 2px; }
+.bp :global(.content .rf-head--bar > div) { min-width: 0; }
 
 /* Sample tiles are plain text again — the donor's block tile, no status dot. */
 .bp :global(.content .sample) { display: block; }
@@ -1907,13 +1916,20 @@
   .bp :global(.content .addr-wide) { grid-column: span 2; }
   .bp :global(.content .est-field--sm) { width: auto; }
   .bp :global(.content .rf-actions) { flex-wrap: wrap; }
-  .bp :global(.content .rf-head--bar) { flex-direction: column; }
+  /* A column head stretches its children: a long address ellipsises inside
+     the card instead of running past it (a phone review, 2026-09-17). */
+  .bp :global(.content .rf-head--bar) { flex-direction: column; align-items: stretch; }
+  .bp :global(.content .rf-head--bar > div) { max-width: 100%; }
+  .bp :global(.content .rf-viewer .card-sub) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bp :global(.content .vw-controls) { width: 100%; }
   .bp :global(.content .vsw) { flex: 1; }
   .bp :global(.content .vsw-btn) { flex: 1; }
   .bp :global(.content .build-ctl) { width: 100%; }
   .bp :global(.content .build-ctl .btn) { flex: 1; justify-content: center; }
   .bp :global(.content .hero-cell) { border-right: none; border-bottom: 1.5px solid var(--hair-soft); }
+  /* The estimate total's button drops under the figure instead of clipping. */
+  .bp :global(.content .bo-total-acts) { flex-basis: 100%; }
+  .bp :global(.content .bo-total-acts .btn) { flex: 1; justify-content: center; }
 }
 
 /* Geometry gate: shown INSTEAD of a plan that fails the R01–R16 invariants

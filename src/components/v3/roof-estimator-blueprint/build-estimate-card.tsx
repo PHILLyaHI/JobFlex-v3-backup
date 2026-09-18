@@ -47,6 +47,12 @@ export interface BuildEstimateCardProps {
   waste: number;
   onWaste: (pct: number) => void;
   wasteOptions: readonly number[];
+  /** Whether the server has an AI key: without one the Smart estimate mode
+   *  returns a sample, so the card does not offer it (default true). */
+  aiEnabled?: boolean;
+  /** Set while the aerial provider is still delivering the packs pricing
+   *  needs (the pitch, the details): the card prices nothing and says why. */
+  waiting?: string | null;
   /** The aerial data carried no pitch, so the contractor states one before
    *  anything is priced. null = not needed for this roof. */
   pitchEntry: { value: string | null; onChange: (pitch: string | null) => void; options: readonly string[] } | null;

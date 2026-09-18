@@ -276,10 +276,13 @@ export interface MeasurementProvenance {
    * made of (2026-09-08, partial entitlement — packs are bought one by one).
    * `have` were bought, by this order or an earlier one for the address;
    * `denied` the account is not entitled to (403 / 10880); `failed` errored
-   * for another reason; `missing` were not attempted. Absent on rows saved
-   * before per-pack ordering, which were single seven-pack orders.
+   * for another reason; `missing` were not attempted; `pending` were placed
+   * and paid for but had not answered when the row was saved — the page
+   * collects them without a new charge and prices nothing until they land
+   * (2026-09-17). Absent on rows saved before per-pack ordering, which were
+   * single seven-pack orders.
    */
-  instantPacks?: { have: string[]; denied: string[]; failed: string[]; missing: string[]; unknown?: string[] };
+  instantPacks?: { have: string[]; denied: string[]; failed: string[]; missing: string[]; pending?: string[]; unknown?: string[] };
   /**
    * Which of the answer's structures the row's figures are about (audit
    * 2026-09-08). EagleView returns every structure on the parcel; the hero,

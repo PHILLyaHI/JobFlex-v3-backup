@@ -18,7 +18,6 @@ import {
   COUNTER_PER_FT,
   CURB_EACH,
   CURB_LABOR,
-  DISPOSAL_PER_SQ_LAYER,
   DRIP_EDGE_PROFILES,
   DRIP_EDGE_SIZES,
   familyOfMaterial,
@@ -40,7 +39,8 @@ import {
   STEEP_SAFETY_LUMP,
   STEP_FLASHING_LABOR_PER_FT,
   STEP_FLASHING_SIZES,
-  TEAROFF_LABOR_PER_SQ_LAYER,
+  storeyLaborFactor,
+  tearOffRatesFor,
   VALLEY_FOR_FAMILY,
   VALLEY_TYPES,
   VENT_TYPES,
@@ -112,6 +112,12 @@ export interface RoofFacts {
    * no occupancy field, so the app never decides this by itself.
    */
   buildingUse?: "residential" | "commercial" | null;
+  /**
+   * Storeys under the roof, read off the reported eave heights (10 ft steps,
+   * the high side counts). Null when no height was reported. Steep labor
+   * carries a factor for it (storeyLaborFactor).
+   */
+  storeys?: number | null;
 }
 
 export interface MeasuredFootage {
@@ -256,23 +262,39 @@ const r1 = (n: number) => Math.round(n * 10) / 10;
 export function estimateEdges(facts: RoofFacts): { eaveFt: number; rakeFt: number; ridgeFt: number; hipFt: number; valleyFt: number | null } | null {
   // A zero footprint or perimeter is "not known", never a real zero — a 0
   // here once turned the whole estimate into NaN (review, 2026-09-14).
-  const A = facts.footprintSqft != null && facts.footprintSqft > 0 ? facts.footprintSqft : null;
+  const main = facts.pitchFamilies.filter((f) => f.share > 0).reduce<{ pitch12: number; share: number } | null>((a, f) => (a == null || f.share > a.share ? f : a), null);
+  const t = Math.max(0, Math.min(20, main?.pitch12 ?? 5)) / 12;
+  // The one flat verdict (flatRule.ts), not the shape word alone: a 1/12 roof
+  // the data calls "Complex" is still flat and has no ridge or hip.
+  const flat = isFlatRoof(facts);
+  let A = facts.footprintSqft != null && facts.footprintSqft > 0 ? facts.footprintSqft : null;
+  // No outline at all (a hand takeoff, or the outline pack not bought): the
+  // plan area follows from the squares and the pitch — sloped area over the
+  // slope factor — and the perimeter from that, as for a footprint without
+  // an outline. Review 2026-09-17: before this a hand takeoff priced no drip
+  // edge, starter, cap or ridge vent at all and could still be converted.
+  if (A == null && facts.perimeterFt == null && facts.squares > 0) {
+    A = (facts.squares * 100) / (flat ? 1 : Math.sqrt(1 + t * t));
+  }
   const P = facts.perimeterFt != null && facts.perimeterFt > 0 ? facts.perimeterFt : A != null ? 4 * Math.sqrt(A) * 1.05 : null;
   if (P == null) return null;
   const L = A != null ? Math.sqrt(A * 1.6) : P / 2 / (1 + 1 / 1.6);
   const shape = (facts.shape ?? "").toLowerCase();
   const hip = shape.includes("hip");
   const gable = shape.includes("gable");
-  // The one flat verdict (flatRule.ts), not the shape word alone: a 1/12 roof
-  // the data calls "Complex" is still flat and has no ridge or hip.
-  const flat = isFlatRoof(facts);
   const W = A != null ? A / L : L / 1.6;
   const eave = flat || hip ? P : gable ? Math.min(P, 2 * L) : P * 0.8;
+  // Rakes and hips run UP the slope: their plan length times the slope
+  // factor for a rake, and √(2 + t²)/√2 for a hip on the 45° plan diagonal
+  // (review 2026-09-17: both were priced at plan length).
+  const rakePlan = Math.max(0, P - eave);
+  const rakeSlope = flat ? 1 : Math.sqrt(1 + t * t);
+  const hipSlope = flat ? 1 : Math.sqrt(2 + t * t) / Math.SQRT2;
   return {
     eaveFt: r1(eave),
-    rakeFt: r1(Math.max(0, P - eave)),
+    rakeFt: r1(rakePlan * rakeSlope),
     ridgeFt: r1(flat ? 0 : hip ? Math.max(0, L - W) : gable ? L : 0.7 * L),
-    hipFt: r1(flat ? 0 : hip ? 2.83 * W : gable ? 0 : 1.4 * W),
+    hipFt: r1(flat ? 0 : (hip ? 2.83 * W : gable ? 0 : 1.4 * W) * hipSlope),
     valleyFt: estimateValleys(facts)?.totalFt ?? null,
   };
 }
@@ -415,10 +437,14 @@ export function defaultSpecWith(facts: RoofFacts, lists: CatalogLists, sys: Roof
   const chimneySize = CHIMNEY_SIZES[1];
   const ridgeVent = VENT_TYPES.find((v) => v.id === "ridge")!;
   const soffit = VENT_TYPES.find((v) => v.id === "soffit16x8")!;
-  // Intake to balance the ridge: half the attic's requirement, in 16 × 8 vents.
+  // Intake to balance the ridge: at least half the attic's requirement, and
+  // never less than the exhaust the ridge provides — a roof that exhausts
+  // more than it takes in pulls conditioned air (and weather) through the
+  // ridge (review 2026-09-17). In 16 × 8 vents.
   const attic = facts.footprintSqft ?? facts.squares * 100 * 0.8;
-  const intakeNeed = (attic * 144) / NFA_RATIO_BALANCED / 2;
   const ridgeFt = edges?.ridgeFt ?? 0;
+  const intakeNeed = Math.max((attic * 144) / NFA_RATIO_BALANCED / 2, ridgeFt * ridgeVent.nfaSqIn);
+  const existing = tearOffRatesFor(facts.existingMaterial);
   const base: RoofPackageSpec = {
     systemId: sys.id,
     systemName: sys.label,
@@ -480,8 +506,8 @@ export function defaultSpecWith(facts: RoofFacts, lists: CatalogLists, sys: Roof
         ],
     ventBalanced: true,
     tearOffLayers: 1,
-    tearOffPerSqLayer: TEAROFF_LABOR_PER_SQ_LAYER,
-    disposalPerSqLayer: DISPOSAL_PER_SQ_LAYER,
+    tearOffPerSqLayer: existing.tearOff,
+    disposalPerSqLayer: existing.disposal,
     plywoodSheets: 0,
     plywoodEach: PLYWOOD_SHEET_EACH,
     plywoodLabor: PLYWOOD_SHEET_LABOR,
@@ -497,6 +523,17 @@ export function defaultSpecWith(facts: RoofFacts, lists: CatalogLists, sys: Roof
     systemAuto: true,
   };
   return sys.family === "low-slope" ? flattenForLowSlope(base) : base;
+}
+
+/** Which steep families lay a starter course of shingles along eaves and rakes. */
+export function takesStarter(family: RoofFamily): boolean {
+  return family === "asphalt" || family === "synthetic" || family === "shake";
+}
+/** The fastener line's name per family — screws and clips are not roofing nails. */
+export function fastenersName(family: RoofFamily): string {
+  if (family === "metal") return "Fasteners · screws, clips & closures";
+  if (family === "tile" || family === "slate") return "Fasteners · nails, clips & hooks";
+  return "Roofing nails & fasteners";
 }
 
 /** The outline perimeter this roof's spec starts from, ft; 0 when unknown. */
@@ -805,9 +842,11 @@ export function checkVentilation(spec: RoofPackageSpec, facts: RoofFacts): VentC
     else exhaustSqIn += v.qty * t.nfaSqIn;
   }
   // Balanced: at least half the requirement as intake, the rest exhaust (a
-  // powered unit counts as exhaust covered, but still wants intake to feed it).
+  // powered unit counts as exhaust covered, but still wants intake to feed
+  // it) — and the intake at least matches the exhaust, or the ridge pulls
+  // air from the house instead of the soffits.
   const half = requiredSqIn / 2;
-  const ok = intakeSqIn >= half * 0.95 && (poweredExhaust > 0 || exhaustSqIn >= half * 0.95);
+  const ok = intakeSqIn >= half * 0.95 && intakeSqIn >= exhaustSqIn * 0.95 && (poweredExhaust > 0 || exhaustSqIn >= half * 0.95);
   return { requiredSqIn, exhaustSqIn, intakeSqIn, ratio, ok, poweredExhaust };
 }
 
@@ -885,8 +924,17 @@ function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
     const size = DRIP_EDGE_SIZES.find((s) => s.id === spec.dripSizeId)?.label ?? "";
     materials.push({ name: `Drip edge · ${profile}${size ? ` · ${size}` : ""}`, quantity: r1(perimeter), unit: "linear ft", unitPrice: spec.dripPerFt, kind: "material", basis: edgeB });
   }
-  if (spec.starterOn && perimeter > 0 && family !== "low-slope" && family !== "metal") {
+  // Starter strip is a shingle course: asphalt, synthetic and shake take it;
+  // tile and slate start on a bird stop / eave riser, metal on its eave trim
+  // (review 2026-09-17: tile carried shingle starter).
+  if (spec.starterOn && perimeter > 0 && takesStarter(family)) {
     materials.push({ name: "Starter strip · eaves + rakes", quantity: r1(perimeter), unit: "linear ft", unitPrice: spec.starterPerFt, kind: "material", basis: edgeB });
+  }
+  if (spec.eaveFt > 0 && (family === "tile" || family === "slate")) {
+    materials.push({ name: family === "tile" ? "Eave riser / bird stop · tile" : "Eave starter course · slate", quantity: r1(spec.eaveFt), unit: "linear ft", unitPrice: spec.starterPerFt, kind: "material", basis: edgeB });
+  }
+  if (spec.eaveFt > 0 && family === "metal") {
+    materials.push({ name: "Eave trim & closures · metal", quantity: r1(spec.eaveFt), unit: "linear ft", unitPrice: spec.starterPerFt, kind: "material", basis: edgeB });
   }
   const capFt = spec.ridgeFt + spec.hipFt;
   if (capFt > 0 && spec.capPerFt > 0) {
@@ -911,10 +959,10 @@ function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
   }
   if (spec.chimneyCount > 0) {
     const size = CHIMNEY_SIZES.find((c) => c.id === spec.chimneySizeId)?.label ?? "";
-    materials.push({ name: `Chimney flashing kit${size ? ` · ${size}` : ""}`, quantity: spec.chimneyCount, unit: "each", unitPrice: spec.chimneyEach, kind: "material", basis: facts.chimney != null ? "measured" : "entered" });
+    materials.push({ name: `Chimney flashing kit${size ? ` · ${size}` : ""}`, quantity: spec.chimneyCount, unit: "each", unitPrice: spec.chimneyEach, kind: "material", basis: facts.chimney != null && spec.chimneyCount === (facts.chimney ? 1 : 0) ? "measured" : "entered" });
   }
   if (spec.curbCount > 0) {
-    materials.push({ name: "Curb flashing · rooftop unit / skylight", quantity: spec.curbCount, unit: "each", unitPrice: spec.curbEach, kind: "material", basis: facts.rooftopAcCount != null ? "measured" : "entered" });
+    materials.push({ name: "Curb flashing · rooftop unit / skylight", quantity: spec.curbCount, unit: "each", unitPrice: spec.curbEach, kind: "material", basis: facts.rooftopAcCount != null && spec.curbCount === facts.rooftopAcCount ? "measured" : "entered" });
   }
   for (const v of spec.vents) {
     const t = VENT_TYPES.find((x) => x.id === v.id);
@@ -922,7 +970,7 @@ function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
     materials.push({ name: t.label, quantity: t.unit === "each" ? Math.ceil(v.qty) : r1(v.qty), unit: t.unit, unitPrice: v.each, kind: "material", basis: t.id === "ridge" ? edgeB : "entered" });
   }
   if (spec.plywoodSheets > 0) materials.push({ name: "Roof deck replacement · ½ in plywood, 4 × 8 sheets", quantity: spec.plywoodSheets, unit: "each", unitPrice: spec.plywoodEach, kind: "material", basis: "entered" });
-  if (spec.nailsPerSq > 0) materials.push({ name: "Roofing nails & fasteners", quantity: sqWaste, unit: "square", unitPrice: spec.nailsPerSq, kind: "material", basis: facts.squaresBasis });
+  if (spec.nailsPerSq > 0) materials.push({ name: fastenersName(family), quantity: sqWaste, unit: "square", unitPrice: spec.nailsPerSq, kind: "material", basis: facts.squaresBasis });
   if (spec.sealantPerSq > 0) materials.push({ name: "Sealant, caulk & pipe collars", quantity: sqWaste, unit: "square", unitPrice: spec.sealantPerSq, kind: "material", basis: facts.squaresBasis });
   for (const c of spec.custom) {
     if (c.kind === "material" && c.name.trim()) materials.push({ name: c.name.trim(), quantity: c.qty, unit: c.unit, unitPrice: c.unitPrice, kind: "material", basis: "entered" });
@@ -930,12 +978,14 @@ function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
 
   // ── Labor ──
   const families = facts.pitchFamilies.filter((f) => f.share > 0);
+  const storeyF = storeyLaborFactor(facts.storeys);
+  const storeyWord = storeyF > 1 ? ` · ${facts.storeys}-storey` : "";
   if (families.length) {
     for (const f of families) {
-      const factor = pitchLaborFactor(f.pitch12, family);
+      const factor = pitchLaborFactor(f.pitch12, family) * storeyF;
       const share = families.length > 1 ? ` · ${pct(f.share)} of roof` : "";
       labor.push({
-        name: `Install · ${sysName} · ${Math.round(f.pitch12)}/12${share}${factor > 1 ? " · steep-slope rate" : ""}`,
+        name: `Install · ${sysName} · ${Math.round(f.pitch12)}/12${share}${pitchLaborFactor(f.pitch12, family) > 1 ? " · steep-slope rate" : ""}${storeyWord}`,
         quantity: r1(sq * f.share),
         unit: "square",
         unitPrice: Math.round(spec.systemLaborPerSq * factor),
@@ -944,12 +994,15 @@ function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
       });
     }
   } else {
-    labor.push({ name: `Install · ${sysName}`, quantity: r1(sq), unit: "square", unitPrice: spec.systemLaborPerSq, kind: "labor", basis: facts.squaresBasis });
+    labor.push({ name: `Install · ${sysName}${storeyWord}`, quantity: r1(sq), unit: "square", unitPrice: Math.round(spec.systemLaborPerSq * storeyF), kind: "labor", basis: facts.squaresBasis });
     assumptions.push("No pitch stated — install labor priced at the standard-slope rate.");
   }
+  if (storeyF > 1) assumptions.push(`Eave height reported at about ${(facts.storeys ?? 1) * 10} ft (${facts.storeys} storeys): install labor carries a ${Math.round((storeyF - 1) * 100)}% height factor for ladders, staging and loading.`);
   if (spec.tearOffLayers > 0) {
     const L = spec.tearOffLayers;
-    labor.push({ name: `Tear-off · ${L} layer${L === 1 ? "" : "s"}`, quantity: r1(sq), unit: "square", unitPrice: spec.tearOffPerSqLayer * L, kind: "labor", basis: facts.squaresBasis });
+    const ex = tearOffRatesFor(facts.existingMaterial);
+    labor.push({ name: `Tear-off · ${ex.family && ex.family !== "asphalt" ? `${ex.family} · ` : ""}${L} layer${L === 1 ? "" : "s"}`, quantity: r1(sq), unit: "square", unitPrice: spec.tearOffPerSqLayer * L, kind: "labor", basis: facts.squaresBasis });
+    if (ex.family && ex.family !== "asphalt") assumptions.push(`Existing ${facts.existingMaterial}: tear-off and disposal seeded at the ${ex.family} rates ($${ex.tearOff} + $${ex.disposal} per square per layer), not the shingle rates.`);
     labor.push({ name: "Disposal · dumpster & haul-off", quantity: r1(sq), unit: "square", unitPrice: spec.disposalPerSqLayer * L, kind: "labor", basis: facts.squaresBasis });
   } else {
     assumptions.push("No tear-off — the new roof goes over the existing layer (check local code allows it).");
@@ -1004,7 +1057,7 @@ function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
   }
   if (spec.valleyCount > 0) {
     assumptions.push(
-      `${spec.valleyCount} valley${spec.valleyCount === 1 ? "" : "s"} at ${fmt(spec.valleyFtEach)} ft — ${
+      `${spec.valleyBasis === "measured" && spec.valleyCount === 1 ? `Valleys: ${fmt(spec.valleyFtEach)} ft in total` : `${spec.valleyCount} valley${spec.valleyCount === 1 ? "" : "s"} at ${fmt(spec.valleyFtEach)} ft`} — ${
         spec.valleyBasis === "measured"
           ? "measured by the aerial report"
           : spec.valleyBasis === "estimated"
@@ -1042,7 +1095,7 @@ function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
   if (spec.plywoodSheets > 0) scope.push("Replace damaged roof decking with ½ in plywood.");
   const und = spec.underlaymentId !== "none" && spec.underlaymentName.trim() ? spec.underlaymentName.trim().toLowerCase() : null;
   scope.push(`Install ${sysName}${und ? ` over ${und}` : ""}${spec.iceWater !== "none" && spec.underlaymentId !== "peel_stick" ? `, with ice & water shield at the ${spec.iceWater === "full" ? "full deck" : spec.iceWater === "eaves" ? "eaves" : "eaves and valleys"}` : ""}.`);
-  const edgeWork = [spec.dripEdgeOn && perimeter > 0 ? "drip edge" : null, spec.starterOn && family !== "low-slope" && family !== "metal" && perimeter > 0 ? "starter" : null, capFt > 0 && spec.capPerFt > 0 ? (family === "metal" ? "ridge and hip trim" : "hip and ridge cap") : null].filter(Boolean);
+  const edgeWork = [spec.dripEdgeOn && perimeter > 0 ? "drip edge" : null, spec.starterOn && takesStarter(family) && perimeter > 0 ? "starter" : null, spec.eaveFt > 0 && (family === "tile" || family === "slate") ? "eave riser" : null, spec.eaveFt > 0 && family === "metal" ? "eave trim" : null, capFt > 0 && spec.capPerFt > 0 ? (family === "metal" ? "ridge and hip trim" : "hip and ridge cap") : null].filter(Boolean);
   if (edgeWork.length) scope.push(`Install new ${edgeWork.join(", ")}.`);
   const flashWork = [valleyFtTotal > 0 ? "valleys" : null, stepFt > 0 ? "sidewalls" : null, spec.apronFt > 0 || spec.counterFt > 0 ? "headwalls" : null, PIPE_BOOT_SIZES.some((z) => (spec.pipeBoots[z.id] ?? 0) > 0) ? "pipes" : null, spec.chimneyCount > 0 ? "the chimney" : null, spec.curbCount > 0 ? "curbs and skylights" : null].filter(Boolean);
   if (flashWork.length) scope.push(`Flash the ${flashWork.join(", ").replace(/, ([^,]*)$/, " and $1")}.`);
