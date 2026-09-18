@@ -90,7 +90,10 @@ export async function getReportsRollup(organizationId: string): Promise<ReportsR
 
   const [invoices, payments, leads, proposals, jobs, workers, memberships] = await Promise.all([
     db.invoice.findMany({
-      where: { organizationId, createdAt: { gte: windowStart } },
+      // A VOID row was superseded by a later invoice for the same money
+      // (lib/payments/invoiceRecord) — counting it would bill the client twice
+      // in this report.
+      where: { organizationId, createdAt: { gte: windowStart }, status: { not: "VOID" } },
       select: { amount: true, createdAt: true },
     }),
     db.payment.findMany({

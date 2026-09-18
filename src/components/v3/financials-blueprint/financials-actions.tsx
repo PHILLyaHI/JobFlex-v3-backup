@@ -9,24 +9,37 @@
  *
  * Every one of them drives an EXISTING action — addJobExpense, the shared
  * ChangeOrderSheet, sendInstallmentInvoice, and the receipt-capture card that
- * is already on this page. Nothing new is written to the data layer.
+ * is already on this page. No new endpoint: the invoice book row that a send
+ * now leaves behind is written by sendInvoice itself, not from here.
  */
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { InvoiceSheet } from "@/components/billing/InvoiceSheet";
 import { toast } from "@/components/ui/Toast";
 import { addJobExpense } from "@/actions/expenses";
 import type { FinancialsJob } from "./financials-behavior";
-import type { Invoice } from "./financials-data";
+import type { InvoiceTarget } from "./financials-data";
 
 type Dialog = null | "expense" | "order" | "invoice";
 const EXPENSE_CATEGORIES = ["Materials", "Labor", "Equipment", "Permit", "Subcontractor", "Fuel", "Other"];
 const today = () => new Date().toISOString().slice(0, 10);
 
-export function FinancialsActions({ jobs, invoices }: { jobs: FinancialsJob[]; invoices: Invoice[] }) {
-  const router = useRouter();
+/** Land the page on the book a write just touched.
+ *
+ *  This page's three books are built ONCE, from the payload financials-content
+ *  mounted with — it holds them in a write-once ref so a re-render cannot
+ *  replay the reveal cascade — so `router.refresh()` re-renders React and
+ *  leaves every table exactly as it was. The route has to be read again — a
+ *  hash alone would not do it, since a same-document jump reloads nothing — and
+ *  `?tab=` tells the fresh page which book to open on. The short pause lets
+ *  the toast (which names the invoice number) be read first.
+ */
+function landOn(tab: "expenses" | "orders" | "invoices") {
+  window.setTimeout(() => window.location.assign(`/dashboard/financials?tab=${tab}`), 700);
+}
+
+export function FinancialsActions({ jobs, invoiceTargets }: { jobs: FinancialsJob[]; invoiceTargets: InvoiceTarget[] }) {
   const [dialog, setDialog] = React.useState<Dialog>(null);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
@@ -41,16 +54,6 @@ export function FinancialsActions({ jobs, invoices }: { jobs: FinancialsJob[]; i
   // change order
   const [coJob, setCoJob] = React.useState(jobs[0]?.id ?? "");
   const [coOpen, setCoOpen] = React.useState(false);
-
-  // invoice — the proposals this page already knows about, one entry each
-  const proposals = React.useMemo(() => {
-    const seen = new Map<string, { id: string; label: string }>();
-    for (const i of invoices) {
-      if (!i.proposalId || seen.has(i.proposalId)) continue;
-      seen.set(i.proposalId, { id: i.proposalId, label: `${i.client} · ${i.num}` });
-    }
-    return [...seen.values()];
-  }, [invoices]);
 
   const close = () => {
     if (busy) return;
@@ -73,7 +76,7 @@ export function FinancialsActions({ jobs, invoices }: { jobs: FinancialsJob[]; i
       setAmount("");
       setNote("");
       setDialog(null);
-      router.refresh();
+      landOn("expenses");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not book the expense.");
     } finally {
@@ -233,11 +236,18 @@ export function FinancialsActions({ jobs, invoices }: { jobs: FinancialsJob[]; i
       <InvoiceSheet
         open={dialog === "invoice"}
         onClose={() => setDialog(null)}
-        targets={proposals}
-        onSent={() => router.refresh()}
+        targets={invoiceTargets}
+        onSent={() => landOn("invoices")}
       />
 
-      {coOpen && <ChangeOrderSheet open={coOpen} onClose={() => setCoOpen(false)} jobId={coJob} onDone={() => router.refresh()} />}
+      {coOpen && (
+        <ChangeOrderSheet
+          open={coOpen}
+          onClose={() => setCoOpen(false)}
+          jobId={coJob}
+          onDone={() => landOn("orders")}
+        />
+      )}
     </>
   );
 }

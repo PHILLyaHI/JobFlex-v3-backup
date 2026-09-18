@@ -999,6 +999,7 @@
 .stPaid { border-color: var(--success); background: var(--success-soft); color: var(--success-dark); }
 .stFailed { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
 .stRefunded { border-color: var(--hair-soft); background: var(--paper-deep); color: var(--muted); }
+.stVoid { border-color: var(--hair-soft); background: var(--paper-deep); color: var(--muted); }
 /* ============================================================
    PAGER + EMPTY STATES
    ============================================================ */

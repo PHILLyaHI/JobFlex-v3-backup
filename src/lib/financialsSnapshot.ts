@@ -17,10 +17,13 @@
 
 import { db } from "@/lib/db";
 import { getFinancialsRollup, getMonthlyRollup } from "@/actions/financials";
+import { contractSchedule } from "@/lib/contractTotal";
+import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
 import type {
   ChangeOrder,
   Expense,
   Invoice,
+  InvoiceTarget,
   MonthPoint,
   Rollup,
 } from "@/components/v3/financials-blueprint/financials-data";
@@ -38,6 +41,8 @@ export type FinancialsSnapshot = {
   expenses: Expense[];
   orders: ChangeOrder[];
   invoices: Invoice[];
+  /** What "New invoice" can bill — read from the CONTRACTS, not from the book. */
+  invoiceTargets: InvoiceTarget[];
 };
 
 /** The ledger plate the tables print: "Jul 22", never a full date. Formatted
@@ -50,7 +55,7 @@ function plate(d: Date | null): string {
 export async function getFinancialsSnapshot(
   organizationId: string,
 ): Promise<FinancialsSnapshot> {
-  const [rollupRaw, monthlyRaw, expenseRows, orderRows, invoiceRows, jobs] = await Promise.all([
+  const [rollupRaw, monthlyRaw, expenseRows, orderRows, invoiceRows, jobs, openContracts] = await Promise.all([
     getFinancialsRollup(organizationId),
     getMonthlyRollup(organizationId, 12),
     db.jobExpense.findMany({
@@ -80,6 +85,24 @@ export async function getFinancialsSnapshot(
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
       select: { id: true, title: true, status: true },
       take: 200,
+    }),
+    // What "New invoice" can bill. Read from the CONTRACTS — every accepted
+    // proposal that still owes money — and NOT from the invoice book: deriving
+    // the list from rows that already exist made the first invoice on a
+    // proposal impossible to raise from this page.
+    db.proposal.findMany({
+      where: { organizationId, status: "ACCEPTED" },
+      orderBy: { acceptedAt: "desc" },
+      take: 200,
+      select: {
+        id: true,
+        title: true,
+        total: true,
+        currency: true,
+        client: { select: { name: true } },
+        installments: { orderBy: { position: "asc" } },
+        changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } },
+      },
     }),
   ]);
 
@@ -138,5 +161,24 @@ export async function getFinancialsSnapshot(
     overdue: i.status === "PENDING" && !!i.dueDate && i.dueDate < now,
   }));
 
-  return { jobs, monthly, rollup, expenses, orders, invoices };
+  // The balance each contract still owes, resolved the way every other money
+  // read resolves it (contract value + approved change orders, percent stages
+  // against the ORIGINAL total). A contract with nothing left to collect drops
+  // off the list rather than offering a $0 invoice.
+  const invoiceTargets: InvoiceTarget[] = openContracts
+    .map((p) => {
+      const schedule = resolveSchedule({
+        ...contractSchedule(p.total, p.changeOrders),
+        currency: p.currency,
+        installments: p.installments,
+      });
+      return {
+        id: p.id,
+        label: `${p.client?.name ?? "—"} · ${p.title}`,
+        owed: fromMinor(schedule.remainingMinor),
+      };
+    })
+    .filter((t) => t.owed > 0);
+
+  return { jobs, monthly, rollup, expenses, orders, invoices, invoiceTargets };
 }

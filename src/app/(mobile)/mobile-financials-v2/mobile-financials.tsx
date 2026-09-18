@@ -84,6 +84,7 @@ import {
   type Expense,
   type FinancialsJob,
   type Invoice,
+  type InvoiceTarget,
   type MonthPoint,
   type Rollup,
   type TabKey,
@@ -229,6 +230,9 @@ const INV_TONE: Record<string, string> = {
   PAID: styles.stPaid,
   FAILED: styles.stFailed,
   REFUNDED: styles.stRefunded,
+  // Superseded by a later invoice for the same money: in the book, out of
+  // every total (lib/payments/invoiceRecord).
+  VOID: styles.stVoid,
 };
 
 export function MobileFinancials() {
@@ -249,6 +253,9 @@ export function MobileFinancials() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [orders, setOrders] = useState<ChangeOrder[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  /** Contracts that still owe money — the invoice picker's list, read from the
+   *  proposals by the snapshot, not derived from the book. */
+  const [invoiceTargets, setInvoiceTargets] = useState<InvoiceTarget[]>([]);
   const [ready, setReady] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
@@ -318,6 +325,7 @@ export function MobileFinancials() {
       setExpenses(snap.expenses);
       setOrders(snap.orders);
       setInvoices(snap.invoices);
+      setInvoiceTargets(snap.invoiceTargets);
       setReady(true);
     } catch (err) {
       setLoadErr(actionError(err));
@@ -1214,16 +1222,6 @@ export function MobileFinancials() {
   const formDrag = useSheetDrag(formOpen, () => {
     if (!saving) setFormOpen(false);
   });
-  /** The proposals this page knows about, one entry each — the invoice sheet's picker. */
-  const invoiceTargets = useMemo(() => {
-    const seen = new Map<string, { id: string; label: string }>();
-    for (const i of invoices) {
-      if (!i.proposalId || seen.has(i.proposalId)) continue;
-      seen.set(i.proposalId, { id: i.proposalId, label: `${i.client} · ${i.num}` });
-    }
-    return [...seen.values()];
-  }, [invoices]);
-
   const addDrag = useSheetDrag(actionsOpen, () => setActionsOpen(false));
 
   /* ---------- what the page-head menu offers ---------------------------
@@ -1232,7 +1230,7 @@ export function MobileFinancials() {
   const addRows: Array<{ act: "expense" | "co" | "invoice" | "scan"; icon: string; tone?: string; title: string; sub: string; disabled?: boolean }> = [
     { act: "expense", icon: "i-plus", tone: styles.miSky, title: "Add expense", sub: "Book a cost against a job" },
     { act: "co", icon: "i-jobs", tone: styles.miWarn, title: "Add change order", sub: jobs.length ? "Amend a job, then send it" : "No job to amend yet", disabled: !jobs.length },
-    { act: "invoice", icon: "i-financials-receipt", tone: styles.miSky, title: "New invoice", sub: invoiceTargets.length ? "Bill the balance on a proposal" : "No proposal to invoice yet", disabled: !invoiceTargets.length },
+    { act: "invoice", icon: "i-financials-receipt", tone: styles.miSky, title: "New invoice", sub: invoiceTargets.length ? "Bill the balance on a contract" : "No contract owes anything", disabled: !invoiceTargets.length },
     { act: "scan", icon: "i-financials-receipt", title: "Scan receipt", sub: "Photograph it and read the total" },
   ];
 
@@ -2032,10 +2030,11 @@ export function MobileFinancials() {
         onClose={() => setInvOpen(false)}
         targets={invoiceTargets}
         onSent={() => {
-          // Sending bills the balance and stamps the installment; it writes no
-          // Invoice record, so this reloads the book but does not pretend the
-          // Invoices ledger has a new row to show.
+          // Sending bills the balance, stamps the installment AND writes the
+          // row in the invoice book (lib/payments/invoiceRecord) — so the
+          // reload has something new to show, and the tab it landed in opens.
           void load();
+          goTab("invoices");
         }}
       />
 

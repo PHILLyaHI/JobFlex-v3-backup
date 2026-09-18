@@ -951,6 +951,14 @@ export function initFinancialsContent(
       const b = (e.target as Element).closest<HTMLElement>(".fi-tab");
       if (b && !b.classList.contains("active") && b.dataset.tab) switchTab(b.dataset.tab);
     });
+  // A write that lands elsewhere — raising an invoice from the page head —
+  // reads the route again rather than re-rendering, because these books are
+  // built once from the payload this module was mounted with. `?tab=` says
+  // which book the fresh page should open on.
+  const wantedTab = new URLSearchParams(window.location.search).get("tab") ?? "";
+  if (wantedTab && fiTabs && fiTabs.querySelector('[data-tab="' + wantedTab + '"]')) {
+    switchTab(wantedTab);
+  }
 
   // ================= RECEIPT CAPTURE (real) =================
   // The donor staged a hardcoded "Bothell Building Supply · $1,284.40" the

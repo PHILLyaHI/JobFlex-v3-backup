@@ -19,6 +19,7 @@ import {
 } from "@/lib/paymentSchedule";
 import { notifyPaymentIssue, notifyPaymentReceived } from "@/lib/notify";
 import { billPlatformFee } from "./feeBilling";
+import { reopenInvoicesForPayment, repriceOpenInvoices, settleInvoicesForPayment } from "./invoiceRecord";
 
 type Tx = Prisma.TransactionClient;
 
@@ -146,6 +147,11 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
 
     let unappliedMinor = 0;
     const coveredLabels: string[] = [];
+    /** The stages this payment closed outright — the invoice book keys on them. */
+    const coveredIds: string[] = [];
+    /** stage → the stage that inherited its unpaid part, when this payment only
+     *  partly covered it. An open invoice claim follows the money. */
+    const successors: Record<string, string> = {};
     let meta: Record<string, unknown> = {};
 
     if (cleanStages) {
@@ -164,6 +170,7 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
           },
         });
         coveredLabels.push(s.label);
+        coveredIds.push(s.id);
       }
     } else if (cleanRemaining) {
       // Everything still open gets paid; the balance (if any) rides on the last stage.
@@ -190,6 +197,7 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
           },
         });
         coveredLabels.push(s.label);
+        coveredIds.push(s.id);
       }
       if (!open.length) {
         const row = await tx.installment.create({
@@ -206,6 +214,7 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
           },
         });
         coveredLabels.push(row.label);
+        coveredIds.push(row.id);
       }
     } else {
       // 4) drifted: greedy application over the CURRENT schedule.
@@ -226,6 +235,7 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
           },
         });
         coveredLabels.push(s.label);
+        coveredIds.push(m.id);
       }
       if (app.split) {
         const s = schedule.stages.find((x) => x.id === app.split!.id)!;
@@ -258,7 +268,11 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
           },
         });
         meta = { ...meta, splitRemainderId: remainder.id };
+        successors[s.id] = remainder.id;
         coveredLabels.push(`${s.label} (part)`);
+        // PAID for the part that arrived: real money, so the invoice book
+        // closes its claim on this stage for exactly that.
+        coveredIds.push(s.id);
       }
       if (app.newBalanceStage) {
         const covers = app.newBalanceStage.paidAmountMinor >= schedule.remainingMinor;
@@ -276,6 +290,7 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
           },
         });
         coveredLabels.push(row.label);
+        coveredIds.push(row.id);
       }
       unappliedMinor = app.unappliedMinor;
       if (unappliedMinor > 0) meta = { ...meta, unappliedMinor };
@@ -324,10 +339,40 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
       }
     }
 
-    if (Object.keys(meta).length || input.note) {
+    // 6) the invoice book: whatever this payment covered stops being
+    //    outstanding. Same transaction as the stages, so the Invoices tab can
+    //    never show "pending" for a stage this commit marked PAID. Read the
+    //    schedule once more when the sweep above waived stages — a claim on a
+    //    waived stage closes for what it collected, which is nothing.
+    const bookStages = proposalPaid
+      ? resolveSchedule({
+          ...contractSchedule(proposal.total, proposal.changeOrders),
+          currency: proposal.currency,
+          installments: await tx.installment.findMany({ where: { proposalId: proposal.id }, orderBy: { position: "asc" } }),
+        }).stages
+      : after.stages;
+    const closedInvoiceIds = await settleInvoicesForPayment(tx, {
+      organizationId: proposal.organizationId,
+      proposalId: proposal.id,
+      clientId: input.clientId ?? proposal.clientId,
+      justPaidIds: coveredIds,
+      successors,
+      stages: bookStages,
+      paidAt,
+      provider: input.provider,
+    });
+
+    if (Object.keys(meta).length || input.note || closedInvoiceIds.length === 1) {
       await tx.payment.update({
         where: { id: payment.id },
-        data: { meta: JSON.stringify({ ...meta, note: input.note }) },
+        data: {
+          // One invoice closed → the payment row points at it. Several, and
+          // the link would have to pick a winner, so it stays off.
+          ...(closedInvoiceIds.length === 1 ? { invoiceId: closedInvoiceIds[0] } : {}),
+          ...(Object.keys(meta).length || input.note
+            ? { meta: JSON.stringify({ ...meta, note: input.note }) }
+            : {}),
+        },
       });
     }
 
@@ -474,6 +519,26 @@ export async function recordRefund(input: RefundInput): Promise<"not_found" | "r
           });
         }
       }
+      // The invoice book follows the money back out: what this payment closed
+      // is owed again, and the receipt row settlement wrote for it goes away.
+      // Without this the tab would keep reporting a refunded payment as
+      // collected (lib/payments/invoiceRecord).
+      await reopenInvoicesForPayment(tx, {
+        organizationId: payment.organizationId,
+        proposalId: payment.proposal.id,
+        stageIds: payment.installments.map((i) => i.id),
+        stages: after.stages,
+        invoiceId: payment.invoiceId,
+      });
+      await repriceOpenInvoices(tx, {
+        organizationId: payment.organizationId,
+        proposalId: payment.proposal.id,
+        stages: resolveSchedule({
+          ...contractSchedule(payment.proposal.total, await approvedChangeOrders(payment.proposal.id, tx)),
+          currency: payment.proposal.currency,
+          installments: await tx.installment.findMany({ where: { proposalId: payment.proposal.id } }),
+        }).stages,
+      });
     }
 
     await tx.activityEvent.create({

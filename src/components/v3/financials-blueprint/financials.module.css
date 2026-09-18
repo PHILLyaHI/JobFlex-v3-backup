@@ -1451,6 +1451,7 @@
 .bp :global(.content .inv--paid) { border-color: var(--success); color: var(--success-dark); background: var(--success-soft); }
 .bp :global(.content .inv--failed) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 .bp :global(.content .inv--refunded) { border-color: var(--hair-soft); color: var(--muted); background: var(--paper-deep); }
+.bp :global(.content .inv--void) { border-color: var(--hair-soft); color: var(--muted); background: var(--paper-deep); }
 .bp :global(.content .co--draft) { border-color: var(--hair-soft); color: var(--muted); background: var(--paper-deep); }
 .bp :global(.content .co--sent) { border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.06); }
 .bp :global(.content .co--approved) { border-color: var(--success); color: var(--success-dark); background: var(--success-soft); }

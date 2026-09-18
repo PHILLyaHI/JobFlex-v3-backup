@@ -4,6 +4,7 @@ import { z } from "zod";
 import { InstallmentStatus } from "@/lib/prismaEnums";
 import { diffUnpaid, resolveSchedule } from "@/lib/paymentSchedule";
 import { expireOpenCheckoutsForProposal } from "@/lib/payments/checkouts";
+import { repriceOpenInvoices } from "@/lib/payments/invoiceRecord";
 import { contractSchedule } from "@/lib/contractTotal";
 import { approvedChangeOrders } from "@/lib/changeOrders/extras";
 import { randomUUID } from "node:crypto";
@@ -159,6 +160,7 @@ function assertLockedStagesUntouched(existing: StageRow[], incoming: StageInput[
  * longer matches is expired so the client gets a fresh one.
  */
 async function upsertInstallments(
+  organizationId: string,
   proposalId: string,
   prev: { total: number; currency: string; installments: StageRow[] },
   next: { total: number; currency: string },
@@ -226,6 +228,13 @@ async function upsertInstallments(
 
   const fresh = await db.installment.findMany({ where: { proposalId }, orderBy: { position: "asc" } });
   const after = resolveSchedule({ ...contractSchedule(next.total, cos), currency: next.currency, installments: fresh });
+  // The stages an open invoice bills may have been re-amounted or dropped by
+  // this very save, so its rows are re-priced against the schedule that now
+  // exists — otherwise the Invoices tab keeps asking for the old figure
+  // (lib/payments/invoiceRecord).
+  await repriceOpenInvoices(db, { organizationId, proposalId, stages: after.stages }).catch((err) =>
+    console.warn("[proposals] could not re-price the open invoices:", err),
+  );
   if (diffUnpaid(before, after)) {
     await db.proposal.update({ where: { id: proposalId }, data: { scheduleVersion: { increment: 1 } } });
     // An in-flight checkout is only killed when the money it asks for is
@@ -342,7 +351,7 @@ export async function saveProposal(raw: unknown) {
         });
       }
     }
-    await upsertInstallments(proposalId, prev, { total, currency: prev.currency }, data.installments);
+    await upsertInstallments(organizationId, proposalId, prev, { total, currency: prev.currency }, data.installments);
     const refreshed = await db.proposal.findUnique({
       where: { id: proposalId },
       select: { id: true, publicId: true },

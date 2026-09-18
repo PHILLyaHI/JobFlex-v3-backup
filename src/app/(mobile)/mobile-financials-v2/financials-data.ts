@@ -75,6 +75,17 @@ export type ChangeOrder = {
   amount: number;
 };
 
+/** One line in the "New invoice" picker: a contract that still owes money.
+ *  Read from the proposals, never from the invoice book — otherwise the first
+ *  invoice on a proposal could never be raised from this page. */
+export type InvoiceTarget = {
+  id: string;
+  /** "Client · Proposal title". */
+  label: string;
+  /** What the schedule still says is owed, in dollars. */
+  owed: number;
+};
+
 /** A row of the invoices book — one `Invoice`. Read-only on this page. */
 export type Invoice = {
   id: string;
@@ -98,6 +109,7 @@ export type FinancialsSnapshot = {
   expenses: Expense[];
   orders: ChangeOrder[];
   invoices: Invoice[];
+  invoiceTargets: InvoiceTarget[];
 };
 
 /** The honest starting state: no revenue, no expenses, no pipeline. What the
@@ -137,7 +149,7 @@ export const PAGE_SIZE = 6;
 export const ALL = 'ALL';
 
 export const CO_STATUSES = ['DRAFT', 'SENT', 'APPROVED', 'DECLINED'];
-export const INV_STATUSES = ['PENDING', 'PAID', 'FAILED', 'REFUNDED'];
+export const INV_STATUSES = ['PENDING', 'PAID', 'FAILED', 'REFUNDED', 'VOID'];
 
 /**
  * Two letters, so a page of invoices is scannable: "M. Henderson" → MH,

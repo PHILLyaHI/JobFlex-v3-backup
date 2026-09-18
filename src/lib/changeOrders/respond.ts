@@ -24,6 +24,10 @@
 import { db } from "@/lib/db";
 import { InstallmentStatus, ProposalStatus } from "@/lib/prismaEnums";
 import { ensureSchedule } from "@/lib/payments/settle";
+import { repriceOpenInvoices } from "@/lib/payments/invoiceRecord";
+import { approvedChangeOrders } from "@/lib/changeOrders/extras";
+import { contractSchedule } from "@/lib/contractTotal";
+import { resolveSchedule } from "@/lib/paymentSchedule";
 import { expireOpenCheckoutsForProposal } from "@/lib/payments/checkouts";
 import { CO_STATUS } from "./types";
 
@@ -51,7 +55,9 @@ async function loadForDecision(coId: string) {
     where: { id: coId },
     include: {
       organization: { select: { deletedAt: true } },
-      proposal: { select: { id: true, status: true, title: true } },
+      // total + currency: an approval re-prices the open invoice rows of the
+      // contract (repriceOpenInvoices), which needs the resolved schedule.
+      proposal: { select: { id: true, status: true, title: true, total: true, currency: true } },
     },
   });
 }
@@ -108,6 +114,20 @@ export async function approveChangeOrder(input: ApproveInput): Promise<RespondRe
         if (co.proposal.status === ProposalStatus.PAID) {
           await tx.proposal.update({ where: { id: co.proposalId }, data: { status: ProposalStatus.ACCEPTED, paidAt: null } });
         }
+        // An approved change order moves the contract value, so the percent
+        // stages an open invoice bills are worth something else now — a CREDIT
+        // lowers them. Re-price those rows against the schedule as it stands,
+        // or the Invoices tab keeps asking for the old figure (invoiceRecord).
+        const stages = resolveSchedule({
+          ...contractSchedule(co.proposal.total, await approvedChangeOrders(co.proposalId, tx)),
+          currency: co.proposal.currency,
+          installments: await tx.installment.findMany({ where: { proposalId: co.proposalId }, orderBy: { position: "asc" } }),
+        }).stages;
+        await repriceOpenInvoices(tx, {
+          organizationId: co.organizationId,
+          proposalId: co.proposalId,
+          stages,
+        });
       }
 
       await tx.activityEvent.create({

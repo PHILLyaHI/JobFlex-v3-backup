@@ -10,6 +10,7 @@ import { requireManager } from "@/lib/orgContext";
 import { ActivityKind, InstallmentStatus, PaymentStatus, ProposalStatus } from "@/lib/prismaEnums";
 import { fromMinor, resolveSchedule, toMinor } from "@/lib/paymentSchedule";
 import { ensureSchedule, settleInstallmentPayment } from "@/lib/payments/settle";
+import { reopenInvoicesForPayment, repriceOpenInvoices } from "@/lib/payments/invoiceRecord";
 import { contractSchedule } from "@/lib/contractTotal";
 import { approvedChangeOrders } from "@/lib/changeOrders/extras";
 import { expireOpenCheckoutsForProposal } from "@/lib/payments/checkouts";
@@ -150,12 +151,18 @@ export async function unmarkInstallmentPaid(raw: unknown) {
   }
 
   await db.$transaction(async (tx) => {
-    // Every stage this manual payment covered comes back open.
+    // Every stage this manual payment covered comes back open — read before
+    // the update clears the link, because the invoice book keys on them.
+    const covered = await tx.installment.findMany({
+      where: { paymentId: stage.payment!.id },
+      select: { id: true },
+    });
     await tx.installment.updateMany({
       where: { paymentId: stage.payment!.id },
       data: { status: InstallmentStatus.UNPAID, paidAt: null, paidAmount: null, paymentId: null },
     });
     await tx.payment.update({ where: { id: stage.payment!.id }, data: { status: PaymentStatus.VOID } });
+
     const after = resolveSchedule({
       ...contractSchedule(stage.proposal.total, await approvedChangeOrders(stage.proposal.id, tx)),
       currency: stage.proposal.currency,
@@ -173,6 +180,35 @@ export async function unmarkInstallmentPaid(raw: unknown) {
         });
       }
     }
+    // Money that is taken back is owed again: the invoices this payment closed
+    // go back to outstanding, and the receipt row settlement wrote for itself
+    // goes away, rather than leaving the tab claiming money that isn't in.
+    // Read after the restore above, so the rows are re-priced at what the
+    // stages are worth again.
+    const restored = resolveSchedule({
+      ...contractSchedule(stage.proposal.total, await approvedChangeOrders(stage.proposal.id, tx)),
+      currency: stage.proposal.currency,
+      installments: await tx.installment.findMany({ where: { proposalId: stage.proposal.id } }),
+    });
+    await reopenInvoicesForPayment(tx, {
+      organizationId,
+      proposalId: stage.proposal.id,
+      stageIds: covered.map((c) => c.id),
+      stages: restored.stages,
+      invoiceId: stage.payment!.invoiceId,
+    });
+    // The resolver clamps what unpaid stages may ask for to the balance, and an
+    // undo leaves the split remainder behind, so the reopened rows are priced
+    // against the schedule as it now reads.
+    await repriceOpenInvoices(tx, {
+      organizationId,
+      proposalId: stage.proposal.id,
+      stages: resolveSchedule({
+        ...contractSchedule(stage.proposal.total, await approvedChangeOrders(stage.proposal.id, tx)),
+        currency: stage.proposal.currency,
+        installments: await tx.installment.findMany({ where: { proposalId: stage.proposal.id } }),
+      }).stages,
+    });
     await tx.activityEvent.create({
       data: {
         organizationId,

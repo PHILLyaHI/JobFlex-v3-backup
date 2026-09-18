@@ -18,6 +18,7 @@ import type {
   ChangeOrder,
   Expense,
   Invoice,
+  InvoiceTarget,
   MonthPoint,
   OverheadMonth,
   OverheadSheet,
@@ -36,6 +37,8 @@ export type FinancialsContentProps = {
   expenses: Expense[];
   orders: ChangeOrder[];
   invoices: Invoice[];
+  /** Contracts that still owe money — what "New invoice" may bill. */
+  invoiceTargets: InvoiceTarget[];
   /** Twelve months of job money, oldest first — the Overhead tab's month
    *  cursor walks this, so switching months costs no round trip. */
   overheadMonths: OverheadMonth[];
@@ -75,7 +78,7 @@ export function FinancialsContent(props: FinancialsContentProps) {
         {/* The four things this page could never do: book an expense, raise a
             change order, invoice a balance, scan a receipt. Each drives an
             action that already existed elsewhere. */}
-        <FinancialsActions jobs={props.jobs} invoices={props.invoices} />
+        <FinancialsActions jobs={props.jobs} invoiceTargets={props.invoiceTargets} />
       </div>
 
       <nav className="fi-tabs" id="fiTabs">

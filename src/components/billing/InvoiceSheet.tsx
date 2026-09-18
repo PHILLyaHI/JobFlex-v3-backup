@@ -26,6 +26,10 @@ export interface InvoiceTarget {
   id: string;
   /** What the picker shows: the client and the proposal's own label. */
   label: string;
+  /** What that contract still owes, in dollars. Shown under the picker so the
+   *  office sees the figure before it sends, since this sheet bills the
+   *  balance rather than a named stage. */
+  owed?: number;
 }
 
 type Method = "card" | "bank" | "any";
@@ -48,6 +52,7 @@ export function InvoiceSheet({
    *  derived rather than synced: whatever was picked, if it is still on the
    *  list, else the first entry. */
   const proposalId = targets.some((t) => t.id === picked) ? picked : targets[0]?.id ?? "";
+  const owed = targets.find((t) => t.id === proposalId)?.owed;
   const [method, setMethod] = React.useState<Method>("any");
   const [rails, setRails] = React.useState<{ card: boolean; bank: boolean } | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -93,7 +98,9 @@ export function InvoiceSheet({
       // Say what actually reached the client — a proposal with no email on
       // file still raises the invoice, and the contractor should know.
       const where = [res.email === "sent" ? "emailed" : null, res.sms === "sent" ? "texted" : null].filter(Boolean).join(" and ");
-      toast.success("Invoice sent", `${res.label} · $${res.amount.toLocaleString("en-US")}${where ? ` · ${where}` : " · no contact on file"}`);
+      // The number is the row it just wrote into the Invoices tab — name it,
+      // so the contractor knows what to look for there.
+      toast.success(res.number ? `${res.number} sent` : "Invoice sent", `${res.label} · $${res.amount.toLocaleString("en-US")}${where ? ` · ${where}` : " · no contact on file"}`);
       onSent?.();
       onClose();
     } catch (e) {
@@ -126,7 +133,8 @@ export function InvoiceSheet({
     >
       {targets.length === 0 ? (
         <p className="text-[13px] text-[color:var(--ink-soft)]">
-          No proposal here has an invoice yet — raise the first one from the proposal itself.
+          Nothing to bill: no accepted contract has a balance owing. Accept a proposal first, and it
+          appears here.
         </p>
       ) : (
         <div className="space-y-4">
@@ -139,6 +147,11 @@ export function InvoiceSheet({
                 </option>
               ))}
             </select>
+            {owed != null ? (
+              <span className="block text-[12px] text-[color:var(--ink-soft)]">
+                Balance owing: ${owed.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+              </span>
+            ) : null}
           </label>
 
           <label className="block space-y-1.5">

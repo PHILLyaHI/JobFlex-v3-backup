@@ -18,6 +18,7 @@ import { parsePaymentSettings } from "@/lib/settings";
 import { getConnections } from "@/lib/payments/connections";
 import { getStripeMode } from "@/lib/stripeMode";
 import { resolvePayOptions } from "@/lib/payments/payOptions";
+import { recordInvoiceSent } from "@/lib/payments/invoiceRecord";
 
 export type InvoiceMethod = "card" | "bank" | "any";
 
@@ -52,6 +53,25 @@ export interface InvoiceReport {
   label: string;
   amount: number;
   href: string | null;
+  /** The number of the row this send wrote into the invoice book. Absent only
+   *  when the send failed, or when the bookkeeping write itself did. */
+  number?: string;
+}
+
+/** The rail the client will pay on, in the Invoices tab's vocabulary. */
+function invoiceProvider(method: InvoiceMethod, opts: InvoiceOptions): string {
+  if (method === "bank" || !opts.cardVia.length) return "MANUAL";
+  return opts.cardVia[0].toUpperCase();
+}
+
+/** A stage carries its own due date. Anything else is due on the org's terms
+ *  — "Net 14" in Settings → Payments — rather than on an invented one. */
+function netTermsDue(netTerms: string): Date {
+  const parsed = Number(/(\d+)/.exec(netTerms ?? "")?.[1]);
+  const days = Number.isFinite(parsed) && parsed > 0 && parsed <= 180 ? parsed : 14;
+  const due = new Date();
+  due.setDate(due.getDate() + days);
+  return due;
 }
 
 export async function sendInvoice(input: { proposalId: string; installmentId: string | null; method: InvoiceMethod; organizationId: string }): Promise<InvoiceReport> {
@@ -142,5 +162,30 @@ export async function sendInvoice(input: { proposalId: string; installmentId: st
       summary: `Invoice (${input.method}) · ${label} · $${amount.toFixed(2)} — email ${report.email}, text ${report.sms}`,
     },
   });
+  // The book. An invoice that went out is a row in the Invoices tab, not just
+  // a stamp on the stage — but the money is already asked for by this point,
+  // so a bookkeeping failure is logged, never raised at the sender.
+  try {
+    // What this invoice bills: the one stage named, or every stage the balance
+    // covers. The book keys on those ids, so a later invoice over the same
+    // stages replaces this claim instead of billing the money twice.
+    const billed = stageRow
+      ? [stageRow.id]
+      : schedule.stages
+          .filter((s) => !s.synthetic && (s.status === "UNPAID" || s.status === "PENDING"))
+          .map((s) => s.id);
+    report.number = await recordInvoiceSent({
+      organizationId: proposal.organizationId,
+      proposalId: proposal.id,
+      clientId: proposal.clientId,
+      stageIds: billed,
+      stages: schedule.stages,
+      amount,
+      provider: invoiceProvider(input.method, opts),
+      dueDate: stageRow?.dueDate ?? netTermsDue(settings.netTerms),
+    });
+  } catch (err) {
+    console.warn("[invoices] could not write the invoice row:", err);
+  }
   return report;
 }

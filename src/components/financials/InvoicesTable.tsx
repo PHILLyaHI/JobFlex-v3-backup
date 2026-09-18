@@ -23,6 +23,7 @@ const TONE: Record<string, "neutral" | "accent" | "success" | "danger" | "warn">
   PAID: "success",
   FAILED: "danger",
   REFUNDED: "neutral",
+  VOID: "neutral",
 };
 
 export function InvoicesTable({ rows }: { rows: InvoiceRow[] }) {
@@ -39,6 +40,10 @@ export function InvoicesTable({ rows }: { rows: InvoiceRow[] }) {
 
   const totals = rows.reduce(
     (a, r) => {
+      // VOID = superseded by a later invoice for the same money
+      // (lib/payments/invoiceRecord): it was never billed twice, so it is not
+      // billed once here either.
+      if (r.status === "VOID") return a;
       a.total += r.amount;
       if (r.status === "PAID") a.paid += r.amount;
       if (r.status === "PENDING") a.pending += r.amount;
