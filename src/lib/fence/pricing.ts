@@ -1,0 +1,538 @@
+// Fence package pricing — dollars from a layout, on the same takeoff the
+// BOM panel shows, so the ticket, the proposal and the material list can
+// never disagree. Ported 2026-09-18 from the owner's FenceScan app
+// (lib/pricing.ts buildFenceLineItems + lib/fence/pricing.ts) with one
+// JobFlex difference: every line carries its MATERIAL and LABOR halves,
+// because a JobFlex proposal prints both to the client (Show to client →
+// breakdown) and the org's markup applies to each half on its own.
+//
+//   per-LF package (materials) + professional installation (labor)
+//   + gates by width + slope steps + post upgrade + tear-out + stain
+//   + a mobilization floor on a tiny job
+//
+// Rates: the catalog's national rate, scaled to the job's market (state +
+// ZIP), unless the shop's price book sets that figure — a rate the
+// contractor typed is the number they charge, not a national equivalent.
+
+import {
+  CATEGORY_LABEL,
+  effectiveSpacingFt,
+  fenceType,
+  heightFactor,
+  nearestHeight,
+  TERRAIN_FACTOR,
+  TERRAIN_LABEL,
+  type FenceType,
+  type FenceTypeId,
+  type Terrain,
+} from "./catalog";
+import { blendedFactor, laborFactor, LINE_MATERIAL_SHARE, marketFrostIn, materialFactor, type MarketSnapshot } from "./market";
+import { standardRate, type FenceRate, type RateBook } from "./rates";
+import { computeFenceTakeoff, gateKitLabel, openingTotals, type FenceLayoutInput, type FenceOpeningInput, type FenceTakeoff } from "./takeoff";
+import type { SlopeSummary } from "./slope";
+
+/** Share of a fence's $/LF that is the posts + footings. Tightening the
+ *  post spacing scales exactly this slice of the line — 8'→4' o.c. doubles
+ *  the posts, which is a ~25% material / ~30% labor bump, not a doubling. */
+const POST_MATERIAL_SHARE = 0.25;
+const POST_LABOR_SHARE = 0.3;
+
+/** Every real crew has a mobilization floor — the truck, the fuel, the
+ *  morning that a 20 LF job burns exactly like a 200 LF one. */
+export const FENCE_JOB_MINIMUM = 450;
+
+/** Tear-out per LF at national rates — crew time plus the dump fee. */
+export const REMOVAL_PER_LF = 4;
+/** A slope step: extended post, extra set and trim time. */
+export const STEP_EACH = 28;
+/** Stain & seal per sq ft of face, two coats. */
+export const STAIN_PER_SQFT = 1.1;
+export const POST_UPGRADE_EACH = { steel: 24, "6x6": 14 } as const;
+
+/** A shop's own fence type: built like a catalog type, priced at its own rates. */
+export interface CustomFenceType {
+  id: string;
+  label: string;
+  /** The catalog type it is built like — spec, spacing, heights, BOM. */
+  like: FenceTypeId;
+  materialPerLf: number;
+  laborPerLf: number;
+  gateSingle?: number;
+  color?: string;
+}
+
+/** What a type id resolves to on this shop's page: the catalog type (or the
+ *  base of a custom one), its label, and the rates that apply. */
+export interface ResolvedFenceType {
+  type: FenceType;
+  id: string;
+  label: string;
+  custom: CustomFenceType | null;
+}
+
+export function resolveFenceType(id: string, customs: readonly CustomFenceType[] = []): ResolvedFenceType {
+  const c = customs.find((x) => x.id === id) ?? null;
+  const t = fenceType(c ? c.like : id);
+  return { type: t, id: c ? c.id : t.id, label: c ? c.label : t.label, custom: c };
+}
+
+export interface FencePriceOptions {
+  /** The shop's price book. */
+  rates?: RateBook;
+  /** The shop's own types. */
+  customs?: readonly CustomFenceType[];
+  /** The job's market, frozen at estimate time. */
+  market?: MarketSnapshot;
+  /** The shop's tear-out rate, $/LF; default REMOVAL_PER_LF at the market's labor rate. */
+  removalPerLf?: number;
+  /** Per-opening price overrides ($ each, installed), keyed by the page's opening id. */
+  openingPrices?: Record<string, number>;
+  jobMinimum?: number;
+}
+
+/** The rates a job prices at, and where each came from. */
+export interface JobRates extends Required<FenceRate> {
+  source: { materialPerLf: "book" | "market" | "catalog"; laborPerLf: "book" | "market" | "catalog"; gateSingle: "book" | "market" | "catalog" };
+}
+
+/**
+ * The catalog's national rate scaled to the market, unless the book (or a
+ * custom type) sets the figure — then that figure, as typed.
+ */
+export function jobRates(res: ResolvedFenceType, opts: FencePriceOptions): JobRates {
+  const std = standardRate(res.type.id);
+  const book = res.custom ? { materialPerLf: res.custom.materialPerLf, laborPerLf: res.custom.laborPerLf, gateSingle: res.custom.gateSingle } : opts.rates?.[res.type.id];
+  const mk = opts.market;
+  const matF = materialFactor(mk, res.type.id);
+  const labF = laborFactor(mk);
+  const gateF = blendedFactor(mk, res.type.id, LINE_MATERIAL_SHARE.gate);
+  const pick = (field: keyof FenceRate, factor: number): [number, "book" | "market" | "catalog"] => {
+    const v = book?.[field];
+    if (Number.isFinite(v) && (v as number) > 0) return [v as number, "book"];
+    return [round2(std[field] * factor), mk && factor !== 1 ? "market" : "catalog"];
+  };
+  const [materialPerLf, ms] = pick("materialPerLf", matF);
+  const [laborPerLf, ls] = pick("laborPerLf", labF);
+  const [gateSingle, gs] = pick("gateSingle", gateF);
+  return { materialPerLf, laborPerLf, gateSingle, source: { materialPerLf: ms, laborPerLf: ls, gateSingle: gs } };
+}
+
+export interface FencePackageLine {
+  id: string;
+  name: string;
+  description?: string;
+  quantity: number;
+  unit: "ln ft" | "ea" | "sqft" | "lot";
+  /** Per-unit cost basis (before the org's markup), material half. */
+  materialCost: number;
+  /** Per-unit cost basis, labor half. */
+  laborCost: number;
+  /** material + labor, per unit. */
+  unitPrice: number;
+  /** Sales tax lands on materials; labor is untaxed in most states. */
+  taxable: boolean;
+}
+
+export interface FencePackage {
+  lines: FencePackageLine[];
+  subtotal: number;
+  materialSubtotal: number;
+  laborSubtotal: number;
+  /** subtotal ÷ net fence LF — the headline number. */
+  pricePerLf: number;
+  netFenceLf: number;
+  totalLf: number;
+  takeoff: FenceTakeoff;
+  resolved: ResolvedFenceType;
+  builtHeightFt: number;
+  rates: JobRates;
+  market?: MarketSnapshot;
+}
+
+/** Continuous gate pricing by width: a walk gate (≤4') is 1×, the 10' drive
+ *  gate is 2.4×, widths between interpolate; past 10', the drive gate's
+ *  per-foot rate. A cliff at 5' once repriced a gate 47% for one extra inch. */
+export function gateWidthFactor(widthFt: number): number {
+  const w = Math.max(0, widthFt);
+  return w <= 4 ? 1 : w <= 10 ? 1 + 1.4 * ((w - 4) / 6) : 2.4 * (w / 10);
+}
+
+/** What an arched top or a pedestrian door does to the kit price. */
+export function openingVariantFactor(o: FenceOpeningInput): number {
+  if (o.kind === "door") return o.variant === "slatted" ? 0.9 : 0.8;
+  if (o.variant === "arched") return 1.4;
+  return 1;
+}
+
+/** What one opening costs on a type at a height — the popover's and the row's figure. */
+export function openingEach(res: ResolvedFenceType, opts: FencePriceOptions, o: FenceOpeningInput, heightFt: number): number {
+  const override = o.variant ? opts.openingPrices?.[o.variant] : undefined;
+  if (Number.isFinite(override) && (override as number) > 0) return override as number;
+  const rates = jobRates(res, opts);
+  const hf = heightFactor(res.type, nearestHeight(res.type, heightFt));
+  return round2(rates.gateSingle * gateWidthFactor(o.widthFt) * openingVariantFactor(o) * hf);
+}
+
+/** One openings line per distinct kit. */
+function openingLines(openings: readonly FenceOpeningInput[], gateSingle: number, hf: number, opts: FencePriceOptions): FencePackageLine[] {
+  const groups = new Map<string, { o: FenceOpeningInput; n: number; each: number }>();
+  for (const o of openings) {
+    if (!(o.widthFt > 0)) continue;
+    const key = `${o.kind}:${o.variant ?? ""}:${o.widthFt}`;
+    const override = o.variant ? opts.openingPrices?.[o.variant] : undefined;
+    const each = Number.isFinite(override) && (override as number) > 0 ? (override as number) : round2(gateSingle * gateWidthFactor(o.widthFt) * openingVariantFactor(o) * hf);
+    const g = groups.get(key) ?? { o, n: 0, each };
+    g.n += 1;
+    groups.set(key, g);
+  }
+  return [...groups.values()].map(({ o, n, each }, i) => {
+    const kit = gateKitLabel(o).replace(/ kit/, "");
+    return {
+      id: `gate-${i}`,
+      name: `${o.label ?? kit} — framed & hung`,
+      description: o.kind === "door" ? "Frame, hinges & latch included" : o.widthFt >= 9 ? "Double swing, drop rod & latch included" : "Heavy-set posts, hinges & latch included",
+      quantity: n,
+      unit: "ea" as const,
+      materialCost: round2(each * LINE_MATERIAL_SHARE.gate),
+      laborCost: round2(each - round2(each * LINE_MATERIAL_SHARE.gate)),
+      unitPrice: each,
+      taxable: true,
+    };
+  });
+}
+
+export function priceFencePackage(layout: FenceLayoutInput, opts: FencePriceOptions = {}): FencePackage {
+  const resolved = resolveFenceType(layout.type, opts.customs);
+  const t = resolved.type;
+  const mk = opts.market;
+  const frostIn = layout.frostIn ?? marketFrostIn(mk);
+  const takeoff = computeFenceTakeoff({ ...layout, type: t.id, frostIn });
+  const hFt = nearestHeight(t, layout.heightFt);
+  const hf = heightFactor(t, hFt);
+  const waste = 1 + Math.min(30, Math.max(0, layout.wastePct ?? 10)) / 100;
+  const rates = jobRates(resolved, opts);
+  const effSpacing = effectiveSpacingFt(t, layout.postSpacingFt);
+  const spacingRatio = t.postSpacingFt / effSpacing;
+  const spacingMatF = 1 + POST_MATERIAL_SHARE * (spacingRatio - 1);
+  const spacingLabF = 1 + POST_LABOR_SHARE * (spacingRatio - 1);
+  const lf = takeoff.netFenceLf;
+  const terrain: Terrain = layout.terrain;
+
+  const lines: FencePackageLine[] = [];
+  const line = (l: Omit<FencePackageLine, "unitPrice">) => {
+    if (l.quantity <= 0) return;
+    lines.push({ ...l, materialCost: round2(l.materialCost), laborCost: round2(l.laborCost), unitPrice: round2(l.materialCost + l.laborCost) });
+  };
+
+  const spacingNote = spacingRatio !== 1 ? ` — ${effSpacing}' post spacing` : "";
+  line({
+    id: "fence-materials",
+    name: `${resolved.label} — ${hFt}' fence package`,
+    description: `Posts, ${t.build === "mesh" ? "top rail, fabric & tension hardware" : t.build === "panel" ? "panels" : t.build === "rail" ? "rails" : "rails & pickets"}, concrete, caps & fasteners${spacingNote}`,
+    quantity: lf,
+    unit: "ln ft",
+    materialCost: rates.materialPerLf * hf * waste * spacingMatF,
+    laborCost: 0,
+    taxable: true,
+  });
+  line({
+    id: "fence-labor",
+    name: "Professional installation",
+    description: terrain === "flat" ? "Layout, post setting, build & cleanup" : `Layout, post setting, build & cleanup — ${TERRAIN_LABEL[terrain].toLowerCase()}`,
+    quantity: lf,
+    unit: "ln ft",
+    materialCost: 0,
+    laborCost: rates.laborPerLf * hf * TERRAIN_FACTOR[terrain] * spacingLabF,
+    taxable: false,
+  });
+  // A gate is a piece of the fence beside it — an 8' privacy gate has a
+  // heavier frame, a third hinge and more infill than a 4' one, so gate
+  // lines take the same height factor as the fence.
+  for (const g of openingLines(layout.openings, rates.gateSingle, hf, opts)) lines.push(g);
+
+  const stepped = Math.max(0, Math.round(layout.steppedSections ?? 0));
+  if (stepped > 0) {
+    const each = STEP_EACH * blendedFactor(mk, t.id, LINE_MATERIAL_SHARE.step);
+    line({
+      id: "fence-steps",
+      name: "Slope steps — extended posts & leveling",
+      description: `${stepped} stepped ${stepped === 1 ? "section" : "sections"} on the grade, each ≤ 1' so the top line stays at code height`,
+      quantity: stepped,
+      unit: "ea",
+      materialCost: each * LINE_MATERIAL_SHARE.step,
+      laborCost: each * (1 - LINE_MATERIAL_SHARE.step),
+      taxable: true,
+    });
+  }
+  // A post upgrade only exists where the base build can take it: wood
+  // fences on standard 4×4 stock. Chain link and ornamental are already
+  // steel, vinyl rails route through vinyl posts, split rail is mortised —
+  // and horizontal-modern ships on 6×6 stock.
+  const upgradeApplies = !!layout.postUpgrade && t.category === "wood" && !(layout.postUpgrade === "6x6" && t.spec.postWidthIn >= 5.5);
+  if (upgradeApplies) {
+    const up = layout.postUpgrade as "steel" | "6x6";
+    const posts = takeoff.posts.total;
+    line({
+      id: "fence-post-upgrade",
+      name: up === "steel" ? "Galvanized steel posts — upgrade" : "6×6 pressure-treated posts — upgrade",
+      description: up === "steel" ? `${posts} posts — steel never rots, warps or leans` : `${posts} posts — heavy 6×6 stock at every post`,
+      quantity: posts,
+      unit: "ea",
+      materialCost: POST_UPGRADE_EACH[up] * materialFactor(mk, up === "steel" ? "steel-ornamental" : "pt-pine-privacy"),
+      laborCost: 0,
+      taxable: true,
+    });
+  }
+  const removal = Math.max(0, layout.removalLf ?? 0);
+  if (removal > 0) {
+    line({
+      id: "fence-removal",
+      name: "Tear out & haul away existing fence",
+      quantity: round1(removal),
+      unit: "ln ft",
+      materialCost: 0,
+      laborCost: Number.isFinite(opts.removalPerLf) && (opts.removalPerLf as number) > 0 ? (opts.removalPerLf as number) : REMOVAL_PER_LF * laborFactor(mk),
+      taxable: false,
+    });
+  }
+  if (layout.stain && t.stainable) {
+    const each = STAIN_PER_SQFT * blendedFactor(mk, t.id, LINE_MATERIAL_SHARE.stain);
+    line({
+      id: "fence-stain",
+      name: "Stain & seal (both faces)",
+      description: "Premium penetrating stain, 2 coats",
+      quantity: Math.ceil(lf * hFt * 2),
+      unit: "sqft",
+      materialCost: each * LINE_MATERIAL_SHARE.stain,
+      laborCost: each * (1 - LINE_MATERIAL_SHARE.stain),
+      taxable: true,
+    });
+  }
+  // Mobilization floor: when the whole job sums under the minimum, a visible
+  // line makes up the difference — a 30 LF gate repair still rolls a truck.
+  const minimum = opts.jobMinimum ?? FENCE_JOB_MINIMUM;
+  const jobSubtotal = lines.reduce((a, l) => a + l.quantity * l.unitPrice, 0);
+  if (jobSubtotal > 0 && jobSubtotal < minimum) {
+    line({
+      id: "fence-job-minimum",
+      name: "Mobilization & job minimum",
+      description: "Small-job floor — crew, truck & setup",
+      quantity: 1,
+      unit: "lot",
+      materialCost: 0,
+      laborCost: minimum - jobSubtotal,
+      taxable: false,
+    });
+  }
+
+  const subtotal = round2(lines.reduce((a, l) => a + l.quantity * l.unitPrice, 0));
+  const materialSubtotal = round2(lines.reduce((a, l) => a + l.quantity * l.materialCost, 0));
+  const laborSubtotal = round2(lines.reduce((a, l) => a + l.quantity * l.laborCost, 0));
+  return {
+    lines,
+    subtotal,
+    materialSubtotal,
+    laborSubtotal,
+    pricePerLf: lf > 0 ? round2(subtotal / lf) : 0,
+    netFenceLf: lf,
+    totalLf: takeoff.totalLf,
+    takeoff,
+    resolved,
+    builtHeightFt: hFt,
+    rates,
+    market: mk,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Good / Better / Best                                               */
+/* ------------------------------------------------------------------ */
+
+export interface FenceTier {
+  id: "good" | "better" | "best";
+  name: string;
+  tagline: string;
+  /** Catalog type this tier quotes (may upgrade the material). */
+  type: FenceTypeId;
+  stain: boolean;
+  recommended?: boolean;
+}
+
+/**
+ * Tier ladder for a chosen base type: Good = value build of the same
+ * category, Better = the chosen type as drawn, Best = chosen type plus
+ * stain / seal (wood) or the premium sibling. Siblings are held to the
+ * job's height — one that does not come in that height falls back to the
+ * base — and a "value" sibling that would cost MORE at this height
+ * collapses to the base too: Good must never out-price Better.
+ */
+export function fenceTiers(base: FenceTypeId, heightFt?: number): FenceTier[] {
+  const t = fenceType(base);
+  const held = (id: FenceTypeId): FenceTypeId => {
+    if (id === base) return base;
+    if (heightFt !== undefined && !fenceType(id).heightsFt.includes(heightFt)) return base;
+    return id;
+  };
+  const costPerLf = (id: FenceTypeId): number => {
+    const ft = fenceType(id);
+    const h = heightFt !== undefined ? heightFt : ft.defaultHeightFt;
+    return (ft.materialPerLf + ft.laborPerLf) * heightFactor(ft, h);
+  };
+  let valueSibling: FenceTypeId = held(
+    t.category === "wood"
+      ? "pt-pine-privacy"
+      : t.category === "vinyl"
+        ? "vinyl-picket"
+        : t.category === "composite"
+          ? "vinyl-privacy"
+          : t.category === "chain-link"
+            ? "chain-link-galv"
+            : t.category === "aluminum" || t.category === "steel"
+              ? "aluminum-ornamental"
+              : "split-rail-2",
+  );
+  if (valueSibling !== base && costPerLf(valueSibling) >= costPerLf(base)) valueSibling = base;
+  const premiumSibling: FenceTypeId = held(
+    t.category === "wood"
+      ? "board-on-board"
+      : t.category === "chain-link"
+        ? "chain-link-black"
+        : t.category === "aluminum" || t.category === "steel"
+          ? "steel-ornamental"
+          : base === "vinyl-picket"
+            ? "vinyl-privacy"
+            : base === "vinyl-privacy"
+              ? "composite-privacy"
+              : base === "split-rail-2"
+                ? "ranch-rail-3"
+                : base,
+  );
+  const bestType = t.stainable ? base : premiumSibling;
+  return [
+    { id: "good", name: "Good", tagline: valueSibling !== base ? "Solid build, best price" : "Same fence, value-priced", type: valueSibling, stain: false },
+    { id: "better", name: "Better", tagline: "The fence as designed", type: base, stain: false, recommended: true },
+    {
+      id: "best",
+      name: "Best",
+      tagline: t.stainable ? "Stained & sealed" : bestType !== base ? "Premium line" : "Priority scheduling",
+      type: bestType,
+      stain: t.stainable,
+    },
+  ];
+}
+
+/* ------------------------------------------------------------------ */
+/*  The client's scope, and the contractor's checks                    */
+/* ------------------------------------------------------------------ */
+
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+/** What the client reads: the work, in plain sentences. No prices, no estimate words. */
+export function fenceScope(pkg: FencePackage, layout: FenceLayoutInput, where?: string | null): string[] {
+  const t = pkg.resolved.type;
+  const tk = pkg.takeoff;
+  const gates = openingTotals(layout.openings);
+  const out: string[] = [];
+  out.push(`Supply and install ${Math.round(pkg.netFenceLf)} linear ft of ${pkg.builtHeightFt}' ${pkg.resolved.label.toLowerCase()}${where ? ` at ${where}` : ""} — ${t.blurb.replace(/\.$/, "")}.`);
+  out.push(
+    `${t.spec.setInConcrete ? "Posts set in concrete" : "Posts tamped in gravel"}, ${tk.spacingFt}' on center — ${plural(tk.posts.total, "post")} (${[
+      tk.posts.line ? `${tk.posts.line} line` : null,
+      tk.posts.corner ? `${tk.posts.corner} corner` : null,
+      tk.posts.end ? `${tk.posts.end} end` : null,
+      tk.posts.gate ? `${tk.posts.gate} gate` : null,
+    ]
+      .filter(Boolean)
+      .join(", ")}), ${t.spec.postMaterial}.`,
+  );
+  if (t.build === "stick") out.push(`${t.spec.railMaterial}; ${t.spec.infillMaterial}.`);
+  else if (t.build === "panel") out.push(`${tk.sections} prefab ${t.postSpacingFt}' panels — ${t.spec.infillMaterial}, ${t.spec.railMaterial}.`);
+  else if (t.build === "mesh") out.push(`${t.spec.infillMaterial} stretched on ${t.spec.railMaterial}, tension bars and bands at every terminal post.`);
+  else out.push(`${t.spec.railMaterial}.`);
+  if (gates.count > 0) {
+    const kinds = new Map<string, number>();
+    for (const o of layout.openings) {
+      if (!(o.widthFt > 0)) continue;
+      const k = `${o.label ?? (o.kind === "door" ? "door" : "gate")} (${Math.round(o.widthFt * 10) / 10}')`;
+      kinds.set(k, (kinds.get(k) ?? 0) + 1);
+    }
+    out.push(`${[...kinds].map(([k, n]) => `${n} × ${k}`).join(", ")} — hung, latched and adjusted.`);
+  }
+  if ((layout.steppedSections ?? 0) > 0) out.push(`${plural(layout.steppedSections!, "section")} stepped down the grade with extended posts, each step within 1' so the top line stays at code height.`);
+  if (layout.postUpgrade === "steel" && t.category === "wood") out.push("Galvanized steel posts throughout — they never rot, warp or lean.");
+  else if (layout.postUpgrade === "6x6" && t.category === "wood" && t.spec.postWidthIn < 5.5) out.push("Heavy 6×6 pressure-treated posts throughout.");
+  if (layout.stain && t.stainable) out.push("Penetrating stain and seal, two coats on both faces, after install.");
+  if ((layout.removalLf ?? 0) > 0) out.push(`Tear-out and haul-away of ${Math.round(layout.removalLf!)} linear ft of the existing fence.`);
+  out.push("Layout staked and string-lined before digging; site cleaned and swept when the work is done.");
+  return out;
+}
+
+export interface FenceCheck {
+  level: "info" | "warn";
+  text: string;
+}
+
+/**
+ * The contractor's notes: what the package assumed and what deserves a
+ * second look before the quote goes out. Facts about THIS layout only.
+ */
+export function fenceChecks(pkg: FencePackage, layout: FenceLayoutInput, slope?: SlopeSummary | null): FenceCheck[] {
+  const t = pkg.resolved.type;
+  const out: FenceCheck[] = [];
+  if (pkg.netFenceLf <= 0) return out;
+  if (!t.heightsFt.includes(layout.heightFt)) {
+    out.push({ level: "warn", text: `${layout.heightFt}' is not offered in ${pkg.resolved.label.toLowerCase()} (${t.heightsFt.map((h) => h + "'").join(", ")}) — priced and built at ${pkg.builtHeightFt}'.` });
+  }
+  if (pkg.builtHeightFt > 6) {
+    out.push({ level: "warn", text: `${pkg.builtHeightFt}' fence — most cities cap backyard fences at 6' and front yards at 4'; check the permit and the HOA before quoting.` });
+  }
+  if ((t.category === "aluminum" || t.category === "steel") && pkg.builtHeightFt >= 4) {
+    out.push({ level: "info", text: `Pickets ${t.spec.infillPitchIn}" on center — under the 4" clear opening most pool-barrier codes require.` });
+  }
+  const eff = pkg.takeoff.spacingFt;
+  if (eff !== t.postSpacingFt) {
+    out.push({
+      level: "info",
+      text: eff < t.postSpacingFt ? `Posts ${eff}' on center — tighter than the ${t.postSpacingFt}' standard: more posts and a stiffer fence; the price and the takeoff follow.` : `Posts ${eff}' on center — wider than the ${t.postSpacingFt}' standard; check that the rail stock spans ${eff}'.`,
+    });
+  }
+  if (layout.terrain !== "flat") {
+    out.push({ level: "info", text: `${TERRAIN_LABEL[layout.terrain]} — installation labor ×${TERRAIN_FACTOR[layout.terrain]}${slope ? ` (grade ${slope.avgGradePct}% avg, ${slope.maxGradePct}% max)` : ""}.` });
+  }
+  if ((layout.steppedSections ?? 0) > 0) {
+    out.push({ level: "info", text: `${plural(layout.steppedSections!, "step")} down the slope — ${pkg.takeoff.postLengthFt.step}' posts there, ${pkg.takeoff.postLengthFt.base}' elsewhere.` });
+  }
+  if (slope && slope.wallSegments > 0) {
+    out.push({ level: "warn", text: `A sheer drop measured on ~${Math.round(slope.wallLikeLf)} LF — a retaining wall or cut bank? Posts on a wall are core-drilled and anchored, not dug; not priced here.` });
+  }
+  if (slope && slope.rackedExtraLf >= 1) {
+    out.push({ level: "info", text: `Racked bays follow the ground: the fabric runs about ${Math.round(slope.rackedExtraLf)} LF longer than the map length — inside the ${layout.wastePct ?? 10}% waste factor.` });
+  }
+  const frostIn = layout.frostIn ?? marketFrostIn(pkg.market);
+  if (frostIn > 0 && t.spec.setInConcrete) {
+    const deep = pkg.takeoff.burialFt * 12;
+    out.push({ level: "info", text: `Post holes ${Math.round(deep)}" deep${pkg.market?.state ? ` — ${frostIn}" frost line in ${pkg.market.label}` : ""}; ${pkg.takeoff.bom.find((b) => b.key === "concrete")?.qty ?? 0} bags of concrete.` });
+  }
+  for (const o of layout.openings) {
+    if (o.kind === "gate" && o.widthFt > 12) {
+      out.push({ level: "warn", text: `A ${Math.round(o.widthFt)}' swing gate is at the limit of hinged hardware — consider a cantilever or slide gate.` });
+      break;
+    }
+  }
+  if (t.category === "chain-link" && pkg.builtHeightFt >= 8) {
+    out.push({ level: "info", text: "8' chain link — line posts step up to 2⅜″ and the run takes a mid-rail; priced at the standard spec." });
+  }
+  if ((layout.removalLf ?? 0) > pkg.totalLf + 1) {
+    out.push({ level: "warn", text: `Tear-out (${Math.round(layout.removalLf!)} LF) is longer than the new fence (${Math.round(pkg.totalLf)} LF).` });
+  }
+  if (pkg.lines.some((l) => l.id === "fence-job-minimum")) {
+    out.push({ level: "info", text: `Under the $${FENCE_JOB_MINIMUM} job minimum — mobilization makes up the difference.` });
+  }
+  if (pkg.rates.source.materialPerLf === "market" || pkg.rates.source.laborPerLf === "market") {
+    out.push({ level: "info", text: `Rates calibrated to ${pkg.market!.label}: labor ${pctWord(pkg.market!.labor)}, ${CATEGORY_LABEL[t.category].toLowerCase()} materials ${pctWord(materialFactor(pkg.market, t.id))} vs national — until you set your own on the type's row.` });
+  }
+  return out;
+}
+
+const pctWord = (f: number) => `${f >= 1 ? "+" : "−"}${Math.abs(Math.round((f - 1) * 100))}%`;
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const round1 = (n: number) => Math.round(n * 10) / 10;

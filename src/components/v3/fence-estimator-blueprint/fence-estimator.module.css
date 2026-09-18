@@ -1613,6 +1613,77 @@
 .bp :global(.content .tgl.on) { background: rgba(24, 84, 160, 0.22); border-color: var(--blueprint-dark); }
 .bp :global(.content .tgl.on)::after { transform: translateX(19px); background: var(--blueprint); }
 
+/* ── The package engine's additions (2026-09-18) ──────────────────────────
+   Type rows carry a one-line blurb and open a rate strip; the ticket carries
+   the tier strip and the notes; the takeoff card lists the bill of materials;
+   the Site rows that pick from options use a segmented control. */
+.bp :global(.content .mat-cat) { padding: 7px 14px 3px; font-family: var(--font-mono); font-size: 9px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-light); background: var(--paper-deep); cursor: default; }
+.bp :global(.content .mats li.mat-cat:hover) { background: var(--paper-deep); }
+.bp :global(.content .mat-name) { min-width: 0; }
+.bp :global(.content .mat-sub) { display: block; margin-top: 1px; font-size: 10.5px; font-weight: 500; line-height: 1.35; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bp :global(.content .mat-edit) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; background: var(--accent-soft); cursor: default; }
+.bp :global(.content .mats li.mat-edit:hover) { background: var(--accent-soft); }
+.bp :global(.content .mat-edit-f) { display: inline-flex; align-items: center; gap: 5px; }
+.bp :global(.content .mat-edit-l) { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .mat-edit-u) { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+.bp :global(.content .mat-edit .mat-new-in) { width: 64px; }
+.bp :global(.content .mat-edit-note) { flex-basis: 100%; font-size: 11px; line-height: 1.45; color: var(--muted); }
+.bp :global(.content .mat-edit-acts) { display: flex; align-items: center; gap: 8px; flex-basis: 100%; }
+.bp :global(.content .mat-new) { flex-wrap: wrap; }
+.bp :global(.content .mat-new-like) { flex: 1 1 100%; min-width: 0; }
+.bp :global(.content .mats-add) { display: flex; flex-wrap: wrap; gap: 8px; }
+.bp :global(.content .tk-tiers) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 12px; }
+.bp :global(.content .tk-tiers.is-hidden) { display: none; }
+/* A button is a poor flex container (Chromium keeps an anonymous block
+   inside it), so the tile clips its own overflow and the type name wraps to
+   two lines instead of running into the next tile. */
+.bp :global(.content .tier) { display: block; min-width: 0; overflow: hidden; padding: 8px 8px 9px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; text-align: left; transition: border-color 0.12s, background 0.12s; }
+.bp :global(.content .tier:hover) { border-color: var(--ink); }
+.bp :global(.content .tier.on) { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.07); box-shadow: inset 0 0 0 1px var(--blueprint); }
+.bp :global(.content .tier-n) { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .tier-t) { display: block; margin-top: 2px; min-height: 2.6em; font-size: 11px; font-weight: 600; line-height: 1.3; color: var(--ink-soft); overflow-wrap: anywhere; }
+.bp :global(.content .tier-v) { display: block; margin-top: 3px; font-size: 14px; font-weight: 900; font-variant-numeric: tabular-nums; color: var(--ink); }
+.bp :global(.content .tier.on .tier-v) { color: var(--blueprint); }
+.bp :global(.content .tk-notes) { list-style: none; margin: 0 0 14px; padding: 10px 0 0; border-top: 1.5px solid var(--hair-soft); }
+.bp :global(.content .tk-notes.is-hidden) { display: none; }
+.bp :global(.content .tk-notes .note) { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; font-size: 11.5px; line-height: 1.45; color: var(--ink-soft); }
+.bp :global(.content .note-dot) { flex: 0 0 auto; width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: var(--blueprint); }
+.bp :global(.content .note.warn .note-dot) { background: var(--warning); }
+.bp :global(.content .takeoff-head) { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.bp :global(.content .takeoff-meta) { text-transform: none; letter-spacing: 0; font-size: 10.5px; color: var(--muted); text-align: right; min-width: 0; }
+.bp :global(.content .bom) { list-style: none; margin: 0; padding: 4px 0; }
+.bp :global(.content .bom li) { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 5px 14px; font-size: 12px; border-bottom: 1.5px solid var(--hair-soft); }
+.bp :global(.content .bom li:last-child) { border-bottom: none; }
+.bp :global(.content .bom li span:first-child) { color: var(--ink-soft); min-width: 0; }
+.bp :global(.content .bom li span:last-child) { flex: 0 0 auto; font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bp :global(.content .takeoff-foot) { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; padding: 9px 14px 11px; border-top: 1.5px solid var(--hair-soft); background: var(--paper-deep); font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+.bp :global(.content .site-row + .site-row) { border-top: 1.5px solid var(--hair-soft); }
+.bp :global(.content .site-row.is-hidden) { display: none; }
+.bp :global(.content .site-row--stack) { flex-direction: column; align-items: stretch; gap: 9px; }
+.bp :global(.content .site-seg) { display: flex; flex-wrap: wrap; gap: 6px; }
+.bp :global(.content .site-seg .seg-btn) { flex: 1 1 auto; min-width: 56px; height: 30px; font-size: 12px; }
+.bp :global(.content .site-rate) { display: inline-flex; align-items: center; gap: 2px; vertical-align: middle; }
+.bp :global(.content .site-rate .mat-new-in) { width: 54px; height: 26px; }
+
+/* ── Full-screen stage (2026-09-18) ──────────────────────────────────────
+   The stage card fills the screen: the browser's own full screen where it
+   exists, a fixed overlay elsewhere — the same class carries both. Tools on
+   top, the map (or the 3D view) taking every remaining pixel, the trace
+   controls and the hint under it; the zoom stack and the full-screen button
+   stay where they were. Safe-area insets keep the tools off a phone's notch
+   and the buttons off its home bar. */
+.bp :global(.content .fs-stage.is-full) { position: fixed; inset: 0; z-index: 300; display: flex; flex-direction: column; width: auto; height: auto; max-width: none; margin: 0; border-radius: 0; border: none; box-shadow: none; background: var(--paper); }
+.bp :global(.content .fs-stage.is-full .stage-tools) { flex: 0 0 auto; padding-top: calc(9px + env(safe-area-inset-top, 0px)); padding-left: calc(12px + env(safe-area-inset-left, 0px)); padding-right: calc(12px + env(safe-area-inset-right, 0px)); }
+.bp :global(.content .fs-stage.is-full .stage-canvas) { flex: 1 1 auto; min-height: 0; height: auto; }
+.bp :global(.content .fs-stage.is-full .draw-ctl), .bp :global(.content .fs-stage.is-full .stage-hint) { flex: 0 0 auto; }
+.bp :global(.content .fs-stage.is-full .stage-hint) { padding-bottom: calc(9px + env(safe-area-inset-bottom, 0px)); }
+.bp :global(.content .fs-stage.is-full .stage-zoom) { right: calc(12px + env(safe-area-inset-right, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+.bp :global(.content .fs-stage.is-full .house-panel), .bp :global(.content .fs-stage.is-full .parcel-panel) { display: none; }
+.bp :global(.content .zoom-btn--full .ic) { width: 14px; height: 14px; }
+.bp :global(.content .zoom-btn--full.on) { background: var(--blueprint); color: #fff; border-color: var(--blueprint-dark); }
+/* The page behind the overlay does not scroll while the stage is pinned. */
+:global(html.jf-stage-full), :global(html.jf-stage-full body) { overflow: hidden; }
+
 @media (max-width: 1100px) {
   .bp :global(.content .fs-grid) { grid-template-columns: minmax(0, 1fr); }
   .bp :global(.content .fs-rail) { position: static; }

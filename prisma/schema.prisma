@@ -2096,6 +2096,18 @@ model RoofCatalog {
   updatedAt      DateTime @updatedAt
 }
 
+/// The organization's fence price book and its own fence types
+/// (lib/fence/catalogSchema.ts), one JSON document per org — the same
+/// shape as RoofCatalog. Read in try/catch: the fence page prices on the
+/// catalog's national rates until the table exists (2026-09-18).
+model FenceCatalog {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  catalogJson    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
 model InstantOrder {
   id             String   @id @default(cuid())
   organizationId String
