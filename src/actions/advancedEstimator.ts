@@ -836,16 +836,6 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
         console.warn(`[advancedEstimator] thin-answer re-ask failed, keeping the first: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    // Still far under the job's range after the retry: the model's numbers
-    // are not an estimate. Every line but the pass-through fees rises by one
-    // share to the range's point for the tier (lib/estimate/remodel-sanity).
-    const floored = floorToRange(called.items, legacy.range, qualityTier);
-    if (floored && legacy.range) {
-      console.warn(
-        `[advancedEstimator] raised to the range · total ${Math.round(floored.from)} → ${Math.round(floored.to)} (${legacy.range.job}, ${legacy.range.place}, ${qualityTier})`,
-      );
-      called = { ...called, items: floored.items, assumptions: [...called.assumptions, floorNote(legacy.range, floored.from, floored.to)] };
-    }
     if (called.warnings.length) console.warn(`[advancedEstimator] parser: ${called.warnings.join(" | ")}`);
     if (called.items.length === 0) throw new Error("The estimator returned no line items — try a more specific description.");
     let report = validateEstimate({ items: called.items, description: input.description, location: input.location, assumptions: called.assumptions, trade });
@@ -874,6 +864,17 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
     const estimateNotes = repaired.notes;
     if (estimateNotes.length) console.info(`[advancedEstimator] Step 1b · ${estimateNotes.join(" ")}`);
     called = { ...called, items: repaired.items, assumptions: repaired.assumptions };
+    // The last word on the prices, after every re-ask and repair: a total
+    // still far under the job's range is not an estimate. Every line but the
+    // pass-through fees rises by one share to the range's point for the tier
+    // (lib/estimate/remodel-sanity).
+    const floored = floorToRange(called.items, legacy.range, qualityTier);
+    if (floored && legacy.range) {
+      console.warn(
+        `[advancedEstimator] raised to the range · total ${Math.round(floored.from)} → ${Math.round(floored.to)} (${legacy.range.job}, ${legacy.range.place}, ${qualityTier})`,
+      );
+      called = { ...called, items: floored.items, assumptions: [...called.assumptions, floorNote(legacy.range, floored.from, floored.to)] };
+    }
     // Guard the ledger's arithmetic: no negative or NaN quantities, no line
     // with nothing on it. A zero-priced line is kept (the contractor fills it)
     // but logged, so a silent regression in the prompt is visible.
