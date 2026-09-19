@@ -15,7 +15,7 @@ import { PRICING_RULES, UNIT_RULES } from "@/lib/estimate/master-prompt";
 import { normalizeUnit, pairEstimateLines } from "@/lib/estimate/console-model";
 import { buildLegacyEstimatePrompt, legacyEstimateFromText, LEGACY_SYSTEM_MESSAGE } from "@/lib/estimate/legacy-estimate";
 import { loadPromptOverrides } from "@/lib/estimate/promptOverrides";
-import { shortOfProcedure } from "@/lib/estimate/procedures";
+import { fullerAnswer, linesTotal, retryReasons } from "@/lib/estimate/remodel-sanity";
 import { bindEstimateToBrief, bindLinesToBrief, bindTextToBrief, keepCostCritical, readBrief, scrubUnaskedText, scrubUnaskedWork } from "@/lib/estimate/brief";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import {
@@ -650,7 +650,7 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
       { withTradeRules: !reasoningModel, overrides },
     );
     console.info(
-      `[advancedEstimator] Step 1 (estimate) · specialty=${legacy.specialty.id} procedure=${legacy.procedure} hvac=${legacy.hvac} tier=${qualityTier} photos=${photos.length} prompt=${legacy.prompt.length}ch`
+      `[advancedEstimator] Step 1 (estimate) · specialty=${legacy.specialty.id} scope=${legacy.scope} method=${legacy.remodelDomains.join("+") || "none"} procedure=${legacy.procedure} hvac=${legacy.hvac} tier=${qualityTier} photos=${photos.length} prompt=${legacy.prompt.length}ch`
     );
     const askEstimate = async (userPrompt: string) => {
       const completion = await client.chat.completions.create({
@@ -667,16 +667,25 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
       return legacyEstimateFromText(completion.choices[0]?.message?.content ?? "{}", legacy.specialty);
     };
     let called = await askEstimate(legacy.prompt);
-    // A thin answer — far fewer lines than the specialty's core steps (the
-    // bathroom that came back as eight lines, 2026-09-18) — is asked once
-    // more with the shortfall named; the fuller answer is kept.
-    if (shortOfProcedure(called.items.length, legacy.procedureCoreSteps)) {
-      console.warn(`[advancedEstimator] thin answer: ${called.items.length} lines for ${legacy.procedureCoreSteps} core steps — asking again`);
-      const again = await askEstimate(
-        `YOUR PREVIOUS ANSWER TO THIS BRIEF HAD ONLY ${called.items.length} LINE ITEMS. THE PROCEDURE BELOW HAS ${legacy.procedureCoreSteps} CORE STEPS AND EVERY ONE OF THEM IS ITS OWN LINE ITEM — return at least ${legacy.procedureCoreSteps} lines, in the procedure's order, plus the conditional steps this brief calls for.\n\n${legacy.prompt}`,
+    // A thin or cheap answer is asked once more with every reason named: a
+    // whole job with far fewer lines than its procedure's core steps (the
+    // bathroom that came back as eight lines, 2026-09-18), or a whole remodel
+    // of a known kind totaling under its range (lib/estimate/remodel-sanity).
+    // A brief for part of a room has no line quota; a stated price has no
+    // range. The fuller answer is kept.
+    const reasons = retryReasons({
+      lines: called.items.length,
+      coreSteps: legacy.procedureCoreSteps,
+      total: linesTotal(called.items),
+      range: legacy.range,
+    });
+    if (reasons.length) {
+      console.warn(
+        `[advancedEstimator] asking again · ${called.items.length} lines for ${legacy.procedureCoreSteps} core steps · total ${Math.round(linesTotal(called.items))}${legacy.range ? ` vs ${legacy.range.low}-${legacy.range.high} (${legacy.range.job}, ${legacy.range.place})` : ""}`,
       );
-      console.info(`[advancedEstimator] second answer: ${again.items.length} lines`);
-      if (again.items.length > called.items.length) called = again;
+      const again = await askEstimate(`${reasons.join("\n\n")}\n\n${legacy.prompt}`);
+      console.info(`[advancedEstimator] second answer: ${again.items.length} lines, total ${Math.round(linesTotal(again.items))}`);
+      called = fullerAnswer(called, again);
     }
     if (called.warnings.length) console.warn(`[advancedEstimator] parser: ${called.warnings.join(" | ")}`);
     if (called.items.length === 0) throw new Error("The estimator returned no line items — try a more specific description.");

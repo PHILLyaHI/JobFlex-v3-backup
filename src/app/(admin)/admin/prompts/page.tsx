@@ -15,7 +15,7 @@
 import type { Metadata } from "next";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { loadPromptOverrides } from "@/lib/estimate/promptOverrides";
-import { composePreview, masterState, rulesState, specialtyDetail, specialtyRows, systemState } from "@/lib/estimate/promptAdmin";
+import { composePreview, masterState, remodelStates, rulesState, specialtyDetail, specialtyRows, systemState } from "@/lib/estimate/promptAdmin";
 import { AdminPromptsContent } from "@/components/v3/admin-prompts/prompts-content";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +41,7 @@ export default async function AdminPromptsPage() {
       master={masterState(overrides)}
       system={systemState(overrides)}
       rules={rulesState(overrides)}
+      remodel={remodelStates(overrides)}
       groups={groups}
       specialties={rows}
       initialDetail={detail}

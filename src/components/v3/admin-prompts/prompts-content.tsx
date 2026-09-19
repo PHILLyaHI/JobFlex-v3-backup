@@ -23,7 +23,7 @@ import {
   savePromptOverride,
 } from "@/actions/adminPrompts";
 import { OVERRIDE_KEYS } from "@/lib/estimate/promptKeys";
-import type { PromptPreview, PromptTextState, SpecialtyPromptDetail, SpecialtyRow } from "@/lib/estimate/promptAdmin";
+import type { PromptPreview, PromptTextState, RemodelPartState, SpecialtyPromptDetail, SpecialtyRow } from "@/lib/estimate/promptAdmin";
 import { Ic } from "@/components/v3/admin-overview/admin-ui";
 import { useAdminMotion } from "@/components/v3/admin-overview/admin-motion";
 import { kx } from "@/components/v3/admin-users/admin-kit";
@@ -223,6 +223,7 @@ export function AdminPromptsContent({
   master,
   system,
   rules,
+  remodel,
   groups,
   specialties,
   initialDetail,
@@ -233,6 +234,7 @@ export function AdminPromptsContent({
   master: PromptTextState;
   system: PromptTextState;
   rules: PromptTextState;
+  remodel: RemodelPartState[];
   groups: { id: string; label: string }[];
   specialties: SpecialtyRow[];
   initialDetail: SpecialtyPromptDetail;
@@ -255,6 +257,8 @@ export function AdminPromptsContent({
   // (server props — refresh re-reads them, state stays); a specialty row also
   // changes the block as sent, re-read through the detail.
   const changed = () => router.refresh();
+  const [remodelKey, setRemodelKey] = useState<RemodelPartState["key"]>("read");
+  const remodelPart = remodel.find((r) => r.key === remodelKey) ?? remodel[0];
   const specialtyChanged = () => {
     router.refresh();
     pick(detail.id);
@@ -308,8 +312,9 @@ export function AdminPromptsContent({
           <div className="card-titles">
             <div className="card-title">How the prompt is built</div>
             <div className="card-sub">
-              One model call prices a brief. The user message is assembled in this order; the parts marked <em>edit here</em> are the boxes below. The rest is code
-              (the material profile and price book follow the specialty; the tax guidance follows the state).
+              One model call prices a brief. The user message is assembled in this order; the parts marked <em>edit here</em> are the boxes below. The rest is code.
+              The price book, material profile and tax guidance of the old builder are not sent on this path; prices come from the master prompt&apos;s guidelines, the
+              trade profile&apos;s anchors and the method&apos;s sanity ranges.
             </div>
           </div>
         </div>
@@ -318,11 +323,11 @@ export function AdminPromptsContent({
           <li className={p.slot}><span><b>System message</b> — who the model is and that it answers in JSON.</span><em className={p.here}>edit here</em></li>
           <li className={p.slot}><span><b>Master prompt</b> — the estimator&apos;s method: photos and blueprints first, room naming, waste, units, pricing rules.</span><em className={p.here}>edit here</em></li>
           <li className={p.slot}><span><b>Specialty preamble</b> — one paragraph for the detected specialty (229 specialties in 14 groups).</span><em className={p.here}>edit here</em></li>
-          <li className={p.slot}><span><b>Material profile and price book</b> — the specialty&apos;s curated materials and the trade-filtered rate book.</span><em>code</em></li>
-          <li className={p.slot}><span><b>Sales-tax guidance</b> — from the job&apos;s state.</span><em>code</em></li>
-          <li className={p.slot}><span><b>Procedure</b> — the lines a professional estimate itemizes for the specialty, in order, each with its unit, plus the line-item rules.</span><em className={p.here}>edit here</em></li>
+          <li className={p.slot}><span><b>Procedure</b> — the lines a professional estimate itemizes for the specialty, in order, each with its unit, plus the line-item rules. A brief that names part of a room (a sink, a toilet, a tub-to-shower) gets the steps as a menu, never a line quota.</span><em className={p.here}>edit here</em></li>
+          <li className={p.slot}><span><b>Remodel method</b> — for kitchen, bath and interior briefs: how to read the brief, what it implies (only the rooms its words reach), hidden-work chains, code triggers, what is never forgotten, when to ask, what never to write, sanity ranges, worked examples; a whole remodel of a known kind also gets its price range for the place.</span><em className={p.here}>edit here</em></li>
           <li className={p.slot}><span><b>Trade profile</b> — phases, checklist and price anchors for the 20 deep trades (sent to gpt-4o-class models; gpt-5-class models get the prompt without it).</span><em>code</em></li>
           <li className={p.slot}><span><b>Output rules</b> — the proposal template, the JSON shape, project-type detection, the brief with its binding numbers, the key questions.</span><em>code</em></li>
+          <li className={p.slot}><span><b>The check after the reply</b> — a whole job far short of its procedure&apos;s steps, or a whole remodel under its range, is asked once more with the reasons named; the fuller answer is kept.</span><em>code</em></li>
         </ol>
       </div>
 
@@ -352,6 +357,45 @@ export function AdminPromptsContent({
         keyName={OVERRIDE_KEYS.procedureRules}
         state={rules}
         onChanged={specialtyChanged}
+      />
+
+      <div className="card" data-remodel-card>
+        <div className="card-head">
+          <div className="card-titles">
+            <div className="card-title">Remodel method</div>
+            <div className="card-sub">
+              Rides with kitchen, bathroom and interior briefs. Every brief gets the three core parts; the room parts ride only when the brief&apos;s words reach that room.
+              Pick a part to see and change it.
+            </div>
+          </div>
+        </div>
+        <hr className="card-rule" />
+        <div className={p.pick}>
+          <span className="bp-sel bp-sel--admin">
+            <select id="p-remodel-part" className="bp-sel-in" value={remodelKey} onChange={(e) => setRemodelKey(e.target.value as RemodelPartState["key"])} aria-label="Remodel method part">
+              {remodel.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.label}
+                  {r.savedAt ? " · edited" : ""}
+                </option>
+              ))}
+            </select>
+          </span>
+          <div className={p.desc} data-remodel-covers>
+            {remodelPart.covers}
+          </div>
+        </div>
+      </div>
+
+      <TextBlock
+        key={`remodel:${remodelPart.key}`}
+        block="remodel"
+        title={`Remodel method — ${remodelPart.label}`}
+        sub="Markdown headings keep their section numbers; the other parts refer to them. The worked examples of a room part start at a ### 9. heading."
+        keyName={OVERRIDE_KEYS.remodel(remodelPart.key)}
+        state={remodelPart}
+        tall
+        onChanged={changed}
       />
 
       <div className="card" data-specialty-card>
@@ -490,6 +534,17 @@ export function AdminPromptsContent({
               {preview.procedure ? "procedure block sent" : "no procedure block"}
             </span>
             <span className={`chip ${s.chipMuted}`}>{preview.tradeRules ? "trade profile sent" : "trade profile skipped"}</span>
+            <span className={preview.remodelDomains.length ? "chip ok" : `chip ${s.chipMuted}`} data-preview-method={preview.remodelDomains.join("+") || "none"}>
+              {preview.remodelDomains.length ? `remodel method: ${preview.remodelDomains.join(", ")}` : "no remodel method"}
+            </span>
+            <span className={`chip ${s.chipMuted}`} data-preview-scope={preview.scope}>
+              {preview.scope === "partial" ? "part of a room: steps as a menu" : "whole job"}
+            </span>
+            {preview.range ? (
+              <span className="chip ok" data-preview-range={`${preview.range.low}-${preview.range.high}`}>
+                range ${preview.range.low.toLocaleString("en-US")}-${preview.range.high.toLocaleString("en-US")} ({preview.range.place})
+              </span>
+            ) : null}
             <span className={p.count} data-preview-count>
               {preview.prompt.length.toLocaleString()} characters
             </span>

@@ -98,10 +98,23 @@ const RULE = "══════════════════════
  * unit and its condition, then the lines to avoid, the notes to state and
  * the rules.
  */
+/**
+ * The notice a brief for PART of a room gets instead of the step quota
+ * ("replace the kitchen sink" detected as a kitchen remodel): the procedure
+ * is a menu, the method's section 2 lists the lines.
+ */
+export const PARTIAL_SCOPE_NOTICE =
+  "THIS BRIEF NAMES PART OF THE JOB this procedure describes, not the whole job. The steps are a menu: write a line only for the steps the brief's work reaches, plus what that work implies (the REMODEL ESTIMATING METHOD, section 2, when it is present). Never add a step the brief does not reach — a sink swap is not a kitchen remodel, a tub-to-shower is not a full bathroom. The rule to itemize every core step applies to a whole job only. Labor on every line is a licensed crew's time at the job's local rates, never a token amount.";
+
+/** Said again after the rules, so the partial brief wins over "itemize every core step". */
+export const PARTIAL_SCOPE_TAIL =
+  "PARTIAL BRIEF: the rule to itemize every core step applies to a whole job only; this brief itemizes the steps its work reaches and what that work implies.";
+
 export function formatProcedureBlock(
   specialtyName: string,
   procedure: SpecialtyProcedure,
   rules: string = PROCEDURE_RULES,
+  opts: { partial?: boolean } = {},
 ): string {
   const lines: string[] = [];
   lines.push(RULE);
@@ -110,12 +123,17 @@ export function formatProcedureBlock(
   const core = procedure.steps.filter((s) => !s.when).length;
   const conditional = procedure.steps.length - core;
   lines.push(`Measured and sold by: ${procedure.basis.trim()}.`);
-  lines.push(
-    "Walk the steps in order. A step marked [core] is its own line on every job of this kind unless the brief plainly excludes it (state the exclusion in notes). A step marked [when …] is a line only when the brief or the site calls for it. The unit after the dash is the unit that line carries.",
-  );
-  lines.push(
-    `This procedure has ${core} core steps and ${conditional} conditional ones. A complete answer has AT LEAST ${core} line items — one per core step, in this order — plus every conditional step the brief or the site calls for. An answer with fewer lines is incomplete and is rejected. Labor on every line is a licensed crew's time at the job's local rates, never a token amount.`,
-  );
+  if (opts.partial) {
+    lines.push(PARTIAL_SCOPE_NOTICE);
+    lines.push("The steps of the whole job, for reference; the unit after the dash is the unit such a line carries:");
+  } else {
+    lines.push(
+      "Walk the steps in order. A step marked [core] is its own line on every job of this kind unless the brief plainly excludes it (state the exclusion in notes). A step marked [when …] is a line only when the brief or the site calls for it. The unit after the dash is the unit that line carries.",
+    );
+    lines.push(
+      `This procedure has ${core} core steps and ${conditional} conditional ones. A complete answer has AT LEAST ${core} line items — one per core step, in this order — plus every conditional step the brief or the site calls for. An answer with fewer lines is incomplete and is rejected. Labor on every line is a licensed crew's time at the job's local rates, never a token amount.`,
+    );
+  }
   procedure.steps.forEach((s, i) => {
     const tag = s.when ? `[when ${s.when.trim()}]` : "[core]";
     lines.push(`  ${i + 1}. ${tag} ${s.item.trim()} — ${s.unit}`);
@@ -130,6 +148,7 @@ export function formatProcedureBlock(
   }
   lines.push("");
   lines.push(rules.trim());
+  if (opts.partial) lines.push(PARTIAL_SCOPE_TAIL);
   return lines.join("\n");
 }
 

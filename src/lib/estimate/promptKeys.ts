@@ -6,4 +6,6 @@ export const OVERRIDE_KEYS = {
   procedureRules: "procedure-rules",
   preamble: (specialtyId: string) => `specialty:${specialtyId}:preamble`,
   procedure: (specialtyId: string) => `specialty:${specialtyId}:procedure`,
+  /** A part of the REMODEL ESTIMATING METHOD (read, kitchen, bathroom, interior, chains, rules). */
+  remodel: (part: string) => `remodel:${part}`,
 } as const;

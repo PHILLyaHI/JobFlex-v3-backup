@@ -30,7 +30,7 @@ server action, and route handler calls one as its first statement.
 - **`/admin/influencers`** — create affiliates (auto-issues a Stripe promo code + a login), set commission terms, toggle active, approve/reject payout requests.
 - **`/admin/plans`** — edit price / trial / yearly (with savings %); **Sync to Stripe** mints Products + Prices.
 - **`/admin/support`** — inbox for tickets raised at **`/dashboard/support`**; mark read/resolved.
-- **`/admin/prompts`** — the Smart Proposal prompts (2026-09-18): the current system message, master prompt, line-item rules, and every specialty's preamble and procedure, each with a Default / Customized chip, Save / Reset; a preview composes the exact prompt a brief sends. Overrides live in `PromptOverride` (`lib/estimate/promptOverrides`), read on every generate. See `docs/smart-proposal-procedures.md`.
+- **`/admin/prompts`** — the Smart Proposal prompts (2026-09-18): the current system message, master prompt, line-item rules, and every specialty's preamble and procedure, each with a Default / Customized chip, Save / Reset; a preview composes the exact prompt a brief sends. Overrides live in `PromptOverride` (`lib/estimate/promptOverrides`), read on every generate. The Remodel method card edits the six parts of the method remodel briefs carry (`remodel:<part>`), and the preview shows the rooms, whole job vs part of a room and the range. See `docs/smart-proposal-procedures.md` and `docs/remodel-method.md`.
 - **`/influencer`** — the affiliate's own promo codes, referred subscribers (confirmed via Stripe), earnings, Connect onboarding, and request-payout.
 
 ## Stripe-as-source-of-truth invariants

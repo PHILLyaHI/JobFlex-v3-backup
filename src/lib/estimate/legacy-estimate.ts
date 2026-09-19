@@ -30,6 +30,8 @@ import { getAiSpecialtyByIdSync, type AiSpecialty } from "./legacy/specialties";
 import { buildTradeRulesBlock } from "./estimate-prompt";
 import { briefRulesBlock, readBrief, type BriefFacts } from "./brief";
 import { coreStepCount, formatProcedureBlock, PROCEDURE_RULES, procedureFor, type SpecialtyProcedure } from "./procedures";
+import { briefScope, formatRemodelMethod, remodelDomainsFor, type BriefScope, type RemodelDomain, type RemodelOverrides } from "./remodel-method";
+import { rangeLine, remodelJob, remodelRange, type RemodelRange } from "./remodel-sanity";
 
 /** The old route's fallback when no specialty matched. Verbatim. */
 export const GENERAL_CONTRACTING: AiSpecialty = {
@@ -116,6 +118,8 @@ export type PromptOverrideSet = {
   master?: string;
   procedureRules?: string;
   specialties: Record<string, { preamble?: string; procedure?: SpecialtyProcedure }>;
+  /** The remodel method's parts as the admin edited them. */
+  remodel?: RemodelOverrides;
 };
 
 /**
@@ -123,10 +127,10 @@ export type PromptOverrideSet = {
  * itemizes (lib/estimate/procedures), with the admin's edits applied. Null
  * for a specialty no procedure is written for.
  */
-export function procedureBlockFor(specialty: AiSpecialty, overrides?: PromptOverrideSet | null): string | null {
+export function procedureBlockFor(specialty: AiSpecialty, overrides?: PromptOverrideSet | null, scope: BriefScope = "full"): string | null {
   const procedure = effectiveProcedure(specialty.id, overrides);
   if (!procedure) return null;
-  return formatProcedureBlock(specialty.name, procedure, overrides?.procedureRules ?? PROCEDURE_RULES);
+  return formatProcedureBlock(specialty.name, procedure, overrides?.procedureRules ?? PROCEDURE_RULES, { partial: scope === "partial" });
 }
 
 /** The admin's procedure for the specialty when saved, else the code's. */
@@ -137,7 +141,21 @@ export function effectiveProcedure(specialtyId: string, overrides?: PromptOverri
 export function buildLegacyEstimatePrompt(
   input: LegacyEstimateInput,
   opts: LegacyPromptOptions = {},
-): { specialty: AiSpecialty; prompt: string; hvac: boolean; facts: BriefFacts; procedure: boolean; procedureCoreSteps: number } {
+): {
+  specialty: AiSpecialty;
+  prompt: string;
+  hvac: boolean;
+  facts: BriefFacts;
+  procedure: boolean;
+  /** The fewest lines a complete answer has — 0 for a brief that names part of a room. */
+  procedureCoreSteps: number;
+  /** "partial" when the brief names a piece of a room the specialty remodels whole. */
+  scope: BriefScope;
+  /** The remodel method's room parts this brief carries (empty = no method). */
+  remodelDomains: RemodelDomain[];
+  /** A whole remodel of a known kind: its standard-grade range here, before markup. */
+  range: RemodelRange | null;
+} {
   const detected = (opts.specialtyId ? getAiSpecialtyByIdSync(opts.specialtyId) : null) ?? specialtyFor(input).specialty;
   // The admin's preamble, when one was saved for this specialty.
   const ownPreamble = opts.overrides?.specialties[detected.id]?.preamble?.trim();
@@ -168,7 +186,19 @@ export function buildLegacyEstimatePrompt(
   // The specialty's procedure — the lines a pro itemizes, in order, with
   // their units — rides in the old prompt's "extra admin" slot for every
   // model, ahead of the trade profile block when that is sent too.
-  const procedureBlock = procedureBlockFor(specialty, opts.overrides);
+  const briefText = `${input.projectType ?? ""} ${input.description}`;
+  const scope = briefScope(briefText, specialty.id);
+  const procedureBlock = procedureBlockFor(specialty, opts.overrides, scope);
+  // The remodel method — what this brief implies, the chains, the code
+  // triggers, the never-forgotten lines and the sanity ranges — for the
+  // rooms the brief's words reach (lib/estimate/remodel-method).
+  const remodelDomains = remodelDomainsFor(briefText, specialty.id);
+  const remodelMethod = formatRemodelMethod(remodelDomains, opts.overrides?.remodel);
+  // A whole remodel of a known kind carries its range, so the model sees the
+  // number before it answers; the action asks again when the reply falls
+  // under it (lib/estimate/remodel-sanity). A stated price has no range.
+  const range = remodelRange(remodelJob(briefText, facts, scope, specialty.id, remodelDomains), facts, input.location);
+  const remodelBlock = remodelMethod ? (range ? `${remodelMethod}\n\n${rangeLine(range)}` : remodelMethod) : null;
   const tradeRules = opts.withTradeRules
     ? buildTradeRulesBlock({
         description: input.description,
@@ -177,7 +207,7 @@ export function buildLegacyEstimatePrompt(
         projectType: input.projectType,
       })
     : null;
-  const extra = [procedureBlock, tradeRules].filter((b): b is string => !!b).join("\n\n");
+  const extra = [procedureBlock, remodelBlock, tradeRules].filter((b): b is string => !!b).join("\n\n");
   const prompt = buildQuoteDraftPrompt({
     specialty,
     summary,
@@ -196,7 +226,10 @@ export function buildLegacyEstimatePrompt(
     hvac,
     facts,
     procedure: procedureBlock !== null,
-    procedureCoreSteps: coreStepCount(effectiveProcedure(specialty.id, opts.overrides)),
+    procedureCoreSteps: scope === "full" ? coreStepCount(effectiveProcedure(specialty.id, opts.overrides)) : 0,
+    scope,
+    remodelDomains,
+    range,
   };
 }
 

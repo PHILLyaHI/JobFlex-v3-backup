@@ -12,6 +12,7 @@
 
 import { db } from "@/lib/db";
 import { procedureFromText, type SpecialtyProcedure } from "./procedures";
+import { REMODEL_PART_KEYS, type RemodelOverrides, type RemodelPartKey } from "./remodel-method";
 
 import { OVERRIDE_KEYS } from "./promptKeys";
 
@@ -23,16 +24,19 @@ export type PromptOverrides = {
   procedureRules?: string;
   /** Per specialty id: an edited preamble and/or an edited procedure (already parsed). */
   specialties: Record<string, { preamble?: string; procedure?: SpecialtyProcedure; procedureText?: string }>;
+  /** The remodel method's parts as edited. */
+  remodel: RemodelOverrides;
   /** Every key found, with when it was last saved — for the admin page's chips. */
   savedAt: Record<string, string>;
 };
 
-export const NO_OVERRIDES: PromptOverrides = { specialties: {}, savedAt: {} };
+export const NO_OVERRIDES: PromptOverrides = { specialties: {}, remodel: {}, savedAt: {} };
 
 const KEY_RE = /^specialty:([a-z0-9-]+):(preamble|procedure)$/;
+const REMODEL_RE = /^remodel:([a-z]+)$/;
 
 export function parseOverrideRows(rows: { key: string; body: string; updatedAt: Date }[]): PromptOverrides {
-  const out: PromptOverrides = { specialties: {}, savedAt: {} };
+  const out: PromptOverrides = { specialties: {}, remodel: {}, savedAt: {} };
   for (const row of rows) {
     const body = row.body;
     if (!body.trim()) continue;
@@ -40,7 +44,11 @@ export function parseOverrideRows(rows: { key: string; body: string; updatedAt: 
     if (row.key === OVERRIDE_KEYS.master) out.master = body;
     else if (row.key === OVERRIDE_KEYS.system) out.system = body;
     else if (row.key === OVERRIDE_KEYS.procedureRules) out.procedureRules = body;
-    else {
+    else if (REMODEL_RE.test(row.key)) {
+      const part = row.key.match(REMODEL_RE)![1] as RemodelPartKey;
+      if (REMODEL_PART_KEYS.includes(part)) out.remodel[part] = body;
+      else delete out.savedAt[row.key];
+    } else {
       const m = row.key.match(KEY_RE);
       if (!m) continue;
       if (m[2] === "preamble") {

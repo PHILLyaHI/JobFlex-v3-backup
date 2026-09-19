@@ -17,6 +17,8 @@ import {
   procedureToText,
 } from "./procedures";
 import { OVERRIDE_KEYS, type PromptOverrides } from "./promptOverrides";
+import { REMODEL_PART_KEYS, REMODEL_PARTS, type BriefScope, type RemodelDomain, type RemodelPartKey } from "./remodel-method";
+import type { RemodelRange } from "./remodel-sanity";
 import { OPENAI_MODEL } from "@/lib/sdk/openai";
 
 /** The model the estimate runs on decides whether the trade block rides along
@@ -57,7 +59,16 @@ export type PromptPreview = {
   procedure: boolean;
   tradeRules: boolean;
   model: string;
+  /** "partial" when the brief names a piece of a room the specialty remodels whole. */
+  scope: BriefScope;
+  /** The remodel method's room parts the brief carries (empty = no method). */
+  remodelDomains: RemodelDomain[];
+  /** A whole remodel of a known kind: its range here. */
+  range: RemodelRange | null;
 };
+
+/** One part of the remodel method as the admin sees it. */
+export type RemodelPartState = { key: RemodelPartKey; label: string; covers: string } & PromptTextState;
 
 const groupLabel = new Map(AI_SPECIALTY_GROUPS.map((g) => [g.id, g.label]));
 const groupOf = new Map<string, string>();
@@ -75,6 +86,16 @@ export function systemState(o: PromptOverrides): PromptTextState {
 }
 export function rulesState(o: PromptOverrides): PromptTextState {
   return state(PROCEDURE_RULES, o.procedureRules, o.savedAt[OVERRIDE_KEYS.procedureRules]);
+}
+
+/** Every part of the remodel method, current text and state. */
+export function remodelStates(o: PromptOverrides): RemodelPartState[] {
+  return REMODEL_PARTS.map((p) => ({
+    key: p.key,
+    label: p.label,
+    covers: p.covers,
+    ...state(p.text, o.remodel[p.key], o.savedAt[OVERRIDE_KEYS.remodel(p.key)]),
+  }));
 }
 
 /** Every AI specialty with its group and whether an override touches it. */
@@ -128,11 +149,15 @@ export function composePreview(
     procedure: built.procedure,
     tradeRules: !reasoning,
     model: OPENAI_MODEL,
+    scope: built.scope,
+    remodelDomains: built.remodelDomains,
+    range: built.range,
   };
 }
 
 const KEY_RE = /^specialty:([a-z0-9-]+):(preamble|procedure)$/;
-const MAX_BODY = 80_000;
+const REMODEL_RE = /^remodel:([a-z]+)$/;
+const MAX_BODY = 160_000;
 
 /**
  * Check an override before it is stored. Returns the body to store, or an
@@ -146,7 +171,11 @@ export function checkOverride(key: string, body: string): { ok: true; body: stri
   if (key === OVERRIDE_KEYS.master) def = ESTIMATOR_MASTER_PROMPT;
   else if (key === OVERRIDE_KEYS.system) def = LEGACY_SYSTEM_MESSAGE;
   else if (key === OVERRIDE_KEYS.procedureRules) def = PROCEDURE_RULES;
-  else {
+  else if (REMODEL_RE.test(key)) {
+    const part = key.match(REMODEL_RE)![1] as RemodelPartKey;
+    if (!REMODEL_PART_KEYS.includes(part)) return { ok: false, error: `No remodel method part "${part}".` };
+    def = REMODEL_PARTS.find((p) => p.key === part)!.text;
+  } else {
     const m = key.match(KEY_RE);
     if (!m) return { ok: false, error: "Unknown prompt key." };
     const s = getAiSpecialtyByIdSync(m[1]);
