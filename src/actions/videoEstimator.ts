@@ -29,7 +29,7 @@ import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
-import { getOpenAI, isOpenAIEnabled } from "@/lib/sdk/openai";
+import { getOpenAI, getVisionModel, isOpenAIEnabled, isReasoningModelName } from "@/lib/sdk/openai";
 import { HVAC_READING_ADDENDUM, isHvacBrief } from "@/lib/estimate/hvac-prompt";
 import { checkPlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
@@ -43,8 +43,10 @@ import {
 
 /** Vision quality matters more here than on the text-only planner: reading a
  *  fence run off a frame against a door for scale is spatial reasoning, which
- *  is exactly where the mini tier falls over. Own knob, defaulting to gpt-4o. */
-const VIDEO_MODEL = process.env.OPENAI_VIDEO_MODEL ?? "gpt-4o";
+ *  is exactly where the mini tier falls over. Own knob (OPENAI_VIDEO_MODEL),
+ *  else the pictures' model — the estimators' model, never a mini tier
+ *  (lib/sdk/openai getVisionModel). Read at call time. */
+const videoModel = () => process.env.OPENAI_VIDEO_MODEL?.trim() || getVisionModel();
 
 type Fail = { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey };
 
@@ -135,11 +137,13 @@ export async function analyzeWalkthrough(
   try {
     const client = getOpenAI();
     console.info(
-      `[videoEstimator] reading walkthrough · ${frames.length} frames · audio=${input.audioState} · hvac=${hvac} · ${clock(input.duration)}`,
+      `[videoEstimator] reading walkthrough · model=${videoModel()} · ${frames.length} frames · audio=${input.audioState} · hvac=${hvac} · ${clock(input.duration)}`,
     );
+    const model = videoModel();
     const completion = await client.chat.completions.create({
-      model: VIDEO_MODEL,
-      temperature: 0.2,
+      model,
+      // A reasoning model rejects a temperature.
+      ...(isReasoningModelName(model) ? {} : { temperature: 0.2 }),
       messages: [
         {
           role: "system",

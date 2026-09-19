@@ -36,7 +36,8 @@ export type BriefFacts = {
 
 const NUM = "(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)";
 const AREA_WORD = "(?:sq\\.?\\s*ft\\.?|sqft|sq\\.?\\s*feet|square\\s*(?:feet|foot|ft)|sf|sq)";
-const LENGTH_WORD = "(?:linear\\s*(?:feet|foot|ft)|lin\\.?\\s*ft\\.?|lf|running\\s*(?:feet|foot|ft)|feet|foot|ft|')";
+// "lineal feet" is the trade's word as often as "linear feet" (2026-09-19).
+const LENGTH_WORD = "(?:linea[lr]\\s*(?:feet|foot|ft)|lin\\.?\\s*ft\\.?|lf|running\\s*(?:feet|foot|ft)|feet|foot|ft|')";
 const SQYD_WORD = "(?:sq\\.?\\s*(?:yd|yard)s?|square\\s*yards?)";
 const CUYD_WORD = "(?:cu\\.?\\s*(?:yd|yard)s?|cubic\\s*yards?)";
 const COUNT_WORD = "(?:units?|each|ea|pieces?|pcs?|windows?|doors?|fixtures?|outlets?|posts?|panels?|trees?|items?|heads?|zones?)";
