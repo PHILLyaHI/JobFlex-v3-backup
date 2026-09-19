@@ -13,6 +13,7 @@ export async function assertLinksInOrg(
     clientId?: string | null;
     proposalId?: string | null;
     jobId?: string | null;
+    projectId?: string | null;
   },
 ): Promise<void> {
   if (d.leadId) {
@@ -42,5 +43,12 @@ export async function assertLinksInOrg(
       select: { organizationId: true },
     });
     if (!row || row.organizationId !== organizationId) throw new Error("Job not found");
+  }
+  if (d.projectId) {
+    const row = await db.project.findUnique({
+      where: { id: d.projectId },
+      select: { organizationId: true },
+    });
+    if (!row || row.organizationId !== organizationId) throw new Error("Project not found");
   }
 }

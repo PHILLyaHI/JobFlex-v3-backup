@@ -16,6 +16,7 @@ import { createClient, updateClient } from "@/actions/clients";
 import { closeMdl, openMdl, MDL_EXIT_MS } from "@/components/v3/blueprint-shell/mdl-motion";
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { PAGE_SIZE, type Client } from "./clients-data";
+import { openAddToProject } from "@/components/v3/project-links/open-add-to-project";
 
 export type ClientsContentOptions = {
   /** The org's real client book, read server-side. REQUIRED. It used to be
@@ -150,7 +151,9 @@ export function initClientsContent(
   };
 
   function money(n: number) {
-    return "$" + n.toLocaleString("en-US");
+    // Whole dollars. A bare toLocaleString keeps up to three decimals, so a
+    // float sum of proposal totals printed as "$61,970.446" (owner, 2026-09-18).
+    return "$" + Math.round(n).toLocaleString("en-US");
   }
   /** Two letters for the avatar plate. Letters in ANY script count (the old
    *  Latin-only strip turned a Cyrillic or CJK name into an empty list and
@@ -497,6 +500,15 @@ export function initClientsContent(
       esc(c.address || c.email || "No location on file") +
       "</div></div>" +
       menuItem("i-file", "pmi--bp", "Open client", c.proposalCount + " proposals", "open") +
+      // 2026-09-18: the client and their proposals into a project (the React
+      // sheet mounted by clients-content listens for the event).
+      menuItem(
+        "i-folder",
+        "pmi--sky",
+        "Add to project",
+        c.proposalCount ? "With " + c.proposalCount + " proposal" + (c.proposalCount === 1 ? "" : "s") : "New or existing project",
+        "project",
+      ) +
       menuItem("i-pen", "", "Edit client", "Name, contact, location", "edit") +
       menuItem(
         "i-send",
@@ -879,6 +891,8 @@ export function initClientsContent(
         if (!c) return;
         if (act === "open") {
           openRecord(c.id);
+        } else if (act === "project") {
+          openAddToProject(c.id);
         } else if (act === "edit") {
           openDlg(c);
         } else if (act === "mail" && c.email) {

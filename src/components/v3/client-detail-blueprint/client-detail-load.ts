@@ -45,6 +45,9 @@ export type ClientDetailRecord = {
    *  the record's chair with its Save button quietly switched off. */
   clientId: string;
   client: ClientRecord;
+  /** The client's open projects (2026-09-18), newest first — the masthead
+   *  links the first and "Add to project" files the rest. */
+  projects: { id: string; name: string }[];
   proposals: ProposalRow[];
   payments: PaymentRow[];
   activity: ActivityRow[];
@@ -196,6 +199,7 @@ export async function loadClientDetail(
       payments: { orderBy: { createdAt: "desc" }, take: 50 },
       activities: { orderBy: { createdAt: "desc" }, take: 30 },
       tags: { include: { tag: true } },
+      projects: { where: { status: { not: "ARCHIVED" } }, orderBy: { updatedAt: "desc" }, select: { id: true, name: true } },
     },
   });
   if (!row || row.organizationId !== organizationId || row.deletedAt) {
@@ -239,6 +243,7 @@ export async function loadClientDetail(
     found: true,
     clientId: row.id,
     client,
+    projects: row.projects,
     editable: {
       name: row.name,
       email: row.email ?? "",

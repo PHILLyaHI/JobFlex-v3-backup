@@ -49,6 +49,9 @@ export type ManualBuilderData = {
   /** The client `?client=<id>` resolved to, or null. Ignored when a proposal
    *  was loaded — that record already names its own client. */
   initialClientId: string | null;
+  /** The project `?project=<id>` resolved to (for a NEW proposal), or the
+   *  reopened proposal's own project, or null. */
+  initialProjectId: string | null;
 };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -91,6 +94,7 @@ export async function loadManualBuilder({
   userId,
   clientId,
   proposalId,
+  projectId,
 }: {
   organizationId: string;
   /** Active-org membership role — SALES and ESTIMATOR may only reopen their
@@ -99,6 +103,7 @@ export async function loadManualBuilder({
   userId: string;
   clientId?: string;
   proposalId?: string;
+  projectId?: string;
 }): Promise<ManualBuilderData> {
   const ownProposalsOnly = isSalesRole(role) || isEstimatorRole(role);
 
@@ -108,10 +113,12 @@ export async function loadManualBuilder({
       orderBy: { name: "asc" },
       select: CLIENT_SELECT,
     }),
+    // Archived projects stay out of the picker — unless this proposal is
+    // already in one, which the list below adds back.
     db.project.findMany({
-      where: { organizationId },
+      where: { organizationId, OR: [{ status: { not: "ARCHIVED" } }, ...(proposalId ? [{ proposals: { some: { id: proposalId } } }] : [])] },
       orderBy: { name: "asc" },
-      select: { id: true, name: true, description: true },
+      select: { id: true, name: true, description: true, clientId: true },
     }),
     db.organization.findUnique({
       where: { id: organizationId },
@@ -176,6 +183,7 @@ export async function loadManualBuilder({
         clientId: proposalRow.clientId,
         draft: draftFromProposal(
           {
+            projectId: proposalRow.projectId,
             title: proposalRow.title,
             description: proposalRow.description,
             scopeOfWork: proposalRow.scopeOfWork,
@@ -223,9 +231,15 @@ export async function loadManualBuilder({
   // just a new proposal.
   const proposalMissing = Boolean(proposalId) && proposal === null;
 
+  // A new proposal opened from a project files under it, and takes the
+  // project's client when the link named none.
+  const fromProject = !proposal && projectId ? (projectRows.find((p) => p.id === projectId) ?? null) : null;
+  const initialProjectId = proposal ? (proposalRow?.projectId ?? null) : (fromProject?.id ?? null);
+
   const initialClientId =
     proposal?.clientId ??
-    (clientId && clients.some((c) => c.id === clientId) ? clientId : null);
+    (clientId && clients.some((c) => c.id === clientId) ? clientId : null) ??
+    (fromProject?.clientId && clients.some((c) => c.id === fromProject.clientId) ? fromProject.clientId : null);
 
   const now = new Date();
   const identity: SheetIdentity = {
@@ -249,5 +263,6 @@ export async function loadManualBuilder({
     proposal,
     proposalMissing,
     initialClientId,
+    initialProjectId,
   };
 }

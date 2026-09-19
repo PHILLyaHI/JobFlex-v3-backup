@@ -20,7 +20,7 @@
 import { notFound, redirect } from "next/navigation";
 import type { Metadata, Viewport } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
-import { db } from "@/lib/db";
+import { loadProjectDetail } from "@/components/v3/project-detail-blueprint/project-detail-load";
 import { MobileProjectDetail } from "@/components/v3/mobile-project-detail/mobile-project-detail";
 
 export const dynamic = "force-dynamic";
@@ -59,72 +59,8 @@ export default async function MobileProjectDetailV2Page({
     throw err;
   }
 
-  const project = await db.project.findUnique({
-    where: { id },
-    include: {
-      jobs: {
-        include: { client: { select: { name: true } } },
-        orderBy: [{ startsAt: "asc" }, { createdAt: "asc" }],
-      },
-    },
-  });
+  const props = await loadProjectDetail(id, organizationId);
+  if (!props) notFound();
 
-  if (!project || project.organizationId !== organizationId) notFound();
-
-  // Attach candidates: the org's proposals, with the jobs each one owns, so the
-  // sheet can say which are linkable and why the rest are not.
-  const proposals = await db.proposal.findMany({
-    where: { organizationId },
-    select: {
-      id: true,
-      title: true,
-      status: true,
-      total: true,
-      client: { select: { name: true } },
-      jobs: { select: { id: true, projectId: true } },
-    },
-    orderBy: { updatedAt: "desc" },
-    take: 100,
-  });
-
-  const availableProposals = proposals
-    // Already on THIS project — it is attached, not attachable.
-    .filter((p) => !p.jobs.some((j) => j.projectId === project.id))
-    .map((p) => {
-      const linkJobIds = p.jobs.filter((j) => !j.projectId).map((j) => j.id);
-      return {
-        id: p.id,
-        title: p.title,
-        status: p.status,
-        total: p.total,
-        clientName: p.client?.name ?? null,
-        linkJobIds,
-        blocked: linkJobIds.length
-          ? null
-          : p.jobs.length
-            ? "On another project"
-            : "No job to link yet",
-      };
-    });
-
-  return (
-    <MobileProjectDetail
-      project={{
-        id: project.id,
-        name: project.name,
-        startsAt: project.startsAt,
-        endsAt: project.endsAt,
-        budget: project.budget,
-      }}
-      jobs={project.jobs.map((j) => ({
-        id: j.id,
-        title: j.title,
-        status: j.status,
-        startsAt: j.startsAt,
-        endsAt: j.endsAt,
-        clientName: j.client?.name ?? null,
-      }))}
-      availableProposals={availableProposals}
-    />
-  );
+  return <MobileProjectDetail {...props} />;
 }

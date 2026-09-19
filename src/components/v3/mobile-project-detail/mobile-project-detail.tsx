@@ -50,7 +50,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { attachJob } from "@/actions/projects";
+import { setProposalProject } from "@/actions/projectLinks";
+import Link from "next/link";
+import type { Route } from "next";
 import { money } from "@/lib/format";
 import { lockScroll } from "@/lib/scrollLock";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
@@ -65,17 +67,30 @@ import {
   type PdAvailProposal,
   type PdJob,
   type PdProject,
+  type PdProposal,
   attachableFirst,
   badgeMod,
   bucketOf,
   labelOf,
   monthKey,
+  proposalLabel,
   proposalMeta,
+  proposalTone,
   shortDate,
 } from "@/components/v3/project-detail-blueprint/project-detail-data";
 import "./mobile-project-detail.css";
 
 const DAY_MS = 86400000;
+
+const wholeDollars = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
+
+/** The Proposals card's count line: what is sold, and what is still open. */
+function proposalsSummary(list: PdProposal[]): string {
+  if (!list.length) return "None yet";
+  const sold = list.filter((p) => proposalTone(p.status) === "done").reduce((n, p) => n + p.contract, 0);
+  const open = list.filter((p) => proposalTone(p.status) === "prog" || proposalTone(p.status) === "sch").reduce((n, p) => n + p.total, 0);
+  return [String(list.length), sold ? `${wholeDollars(sold)} sold` : null, open ? `${wholeDollars(open)} open` : null].filter(Boolean).join(" · ");
+}
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -260,10 +275,12 @@ function windowOf(project: PdProject, jobs: PdJob[]): { w0: number; w1: number }
 export function MobileProjectDetail({
   project,
   jobs,
+  proposals = [],
   availableProposals,
 }: {
   project: PdProject;
   jobs: PdJob[];
+  proposals?: PdProposal[];
   availableProposals: PdAvailProposal[];
 }) {
   const router = useRouter();
@@ -445,20 +462,15 @@ export function MobileProjectDetail({
      refresh. */
   const shownJobs = jobs;
 
-  /** Attach a PROPOSAL: move every one of its project-less jobs onto this
-   *  project through the existing `attachJob` action. Sequential rather than
-   *  `Promise.all` — each call revalidates the same two paths, and a partial
-   *  failure should stop rather than race. */
+  /** Attach a PROPOSAL: file it under this project; its job and change
+   *  orders come with it (actions/projectLinks). */
   const onAttach = useCallback(
     async (p: PdAvailProposal) => {
-      if (p.blocked || !p.linkJobIds.length) return;
       setAttachErr(null);
       setBusyId(p.id);
       setMoved((m) => [...m, p.id]);
       try {
-        for (const jobId of p.linkJobIds) {
-          await attachJob(project.id, jobId);
-        }
+        await setProposalProject({ proposalId: p.id, projectId: project.id });
         startTransition(() => router.refresh());
       } catch (err) {
         setMoved((m) => m.filter((x) => x !== p.id));
@@ -497,6 +509,11 @@ export function MobileProjectDetail({
             {/* No "All projects" back link and no "Projects" kicker (owner's
                 call, 2026-08-12): the drawer already carries the way back, and
                 on a phone the project name should own the top of the page. */}
+            {project.client ? (
+              <Link className="mpd-client" href={`/dashboard/client-detail?client=${project.client.id}` as Route}>
+                {project.client.name}
+              </Link>
+            ) : null}
             <h1 className="mpd-title">{project.name}</h1>
             <div className="mpd-dateline">
               {hasWindow ? (
@@ -537,6 +554,30 @@ export function MobileProjectDetail({
               </div>
             </div>
           </div>
+
+          {/* ============ PROPOSALS (2026-09-18) ============ */}
+          <section className="mpd-card mpd-props" aria-label="Proposals in this project">
+            <div className="mpd-card-h">
+              <div className="mpd-card-t">Proposals</div>
+              <div className="mpd-card-s">{proposalsSummary(proposals)}</div>
+            </div>
+            {proposals.map((p) => (
+              <Link className="mpd-prop" key={p.id} href={`/dashboard/proposals/${p.id}` as Route}>
+                <span className="mpd-prop-txt">
+                  <span className="mpd-row-n">{p.title}</span>
+                  <span className="mpd-row-m">
+                    {wholeDollars(p.contract)}
+                    {p.co.count ? ` · ${p.co.count} change order${p.co.count === 1 ? "" : "s"}` : ""}
+                  </span>
+                </span>
+                <span className={`mpd-b mpd-b--${proposalTone(p.status) === "bad" ? "sch" : proposalTone(p.status)}`}>{proposalLabel(p.status)}</span>
+              </Link>
+            ))}
+            <Link className="mpd-btn mpd-props-new" href={`/dashboard/manual-blueprint?project=${project.id}` as Route}>
+              <Icon id="i-plus" />
+              New proposal in this project
+            </Link>
+          </section>
 
           {/* ============ VIEW BAR ============ */}
           <div className="mpd-views">
@@ -610,7 +651,7 @@ export function MobileProjectDetail({
         <div className="mpd-sheet-head" {...attachDrag.handleProps}>
           <div className="mpd-sheet-kick">Delivery / attach</div>
           <div className="mpd-sheet-t" id="mpdAttachTitle">Attach a proposal</div>
-          <div className="mpd-sheet-s">Picking one files its jobs under {project.name}.</div>
+          <div className="mpd-sheet-s">Picking one files it under {project.name}, with its change orders and job.</div>
         </div>
         <div className="mpd-sheet-body">
           {attachErr ? (
@@ -621,7 +662,7 @@ export function MobileProjectDetail({
           ) : null}
           {shownAvail.length ? (
             shownAvail.map((p) => (
-              <div className={`mpd-av${p.blocked ? " mpd-av-off" : ""}`} key={p.id}>
+              <div className="mpd-av" key={p.id}>
                 <div className="mpd-av-txt">
                   <div className="mpd-av-n">{p.title}</div>
                   <div className="mpd-av-m">{proposalMeta(p, money)}</div>
@@ -629,7 +670,7 @@ export function MobileProjectDetail({
                 <button
                   className="mpd-av-btn"
                   type="button"
-                  disabled={Boolean(p.blocked) || busyId === p.id}
+                  disabled={busyId === p.id}
                   onClick={() => onAttach(p)}
                 >
                   {busyId === p.id ? "Attaching" : "Attach"}

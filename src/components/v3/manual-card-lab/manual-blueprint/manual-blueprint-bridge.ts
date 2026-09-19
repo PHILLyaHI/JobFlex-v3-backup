@@ -14,8 +14,10 @@
 // scope of work, internal notes, job address, tax rate, the four markup rates,
 // the discount, every named line item and the payment schedule.
 //
+// The PROJECT pick is persisted since 2026-09-18 (Proposal.projectId).
+//
 // NOT persisted, because the Proposal table has no column for it and this pass
-// adds no schema: the PROJECT pick, the TERMS text, the four "what prints"
+// adds no schema: the TERMS text, the four "what prints"
 // toggles and the staged FILES. Those four controls stay live on the page and
 // are re-read from the draft on every keystroke; they simply do not survive a
 // reload. Flagged here rather than hidden, and each of the four cards says so.
@@ -231,6 +233,7 @@ export function emptyDraft(defaults: ManualDefaults): Draft {
 export type SaveProposalPayload = {
   id?: string;
   title: string;
+  projectId?: string | null;
   clientId: string | null;
   description: string;
   scopeOfWork: string;
@@ -280,6 +283,7 @@ export function payloadFromDraft(draft: Draft, id?: string): SaveProposalPayload
     id,
     title: draft.title.trim(),
     clientId: clientIdOf(draft),
+    projectId: draft.projectId || null,
     description: draft.description,
     scopeOfWork: draft.scopeOfWork,
     notes: draft.notes,
@@ -336,6 +340,7 @@ export function whyNotSavable(draft: Draft): string | null {
    ============================================================ */
 
 export type ProposalRowForDraft = {
+  projectId?: string | null;
   title: string;
   description: string | null;
   scopeOfWork: string | null;
@@ -400,7 +405,7 @@ export function draftFromProposal(row: ProposalRowForDraft, defaults: ManualDefa
   return {
     title: row.title,
     description: row.description ?? "",
-    projectId: "",
+    projectId: row.projectId ?? "",
     client: { mode: "none" },
 
     address,

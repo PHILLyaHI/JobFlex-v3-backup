@@ -55,6 +55,8 @@ import { lockScroll } from "@/lib/scrollLock";
 import { createClient, updateClient } from "@/actions/clients";
 import { clientChannels, messageClient, type ClientChannel } from "@/actions/clientMessage";
 import { loadClientBook } from "./client-book";
+import { AddToProjectSheet } from "@/components/v3/project-links/add-to-project-sheet";
+import { openAddToProject } from "@/components/v3/project-links/open-add-to-project";
 import {
   ALL,
   PAGE_SIZE,
@@ -494,7 +496,7 @@ export function MobileClients() {
   );
 
   /* ---------- row sheet ------------------------------------------------
-     Five actions, and every one of them reaches something real. The desktop
+     Six actions, and every one of them reaches something real. The desktop
      row menu offers three (open / edit / message); the two extra here are the
      ones a phone is actually better at — starting a proposal on site, and
      driving to the address. */
@@ -504,6 +506,8 @@ export function MobileClients() {
     return [
       { act: "open", icon: "i-users", tone: styles.cmiBp, title: "Open client", sub: "Full record and history" },
       { act: "prop", icon: "i-file", tone: styles.cmiSky, title: "New proposal", sub: `Start one for ${c.name}` },
+      // 2026-09-18: the client and their proposals into a project.
+      { act: "proj", icon: "i-folder", tone: styles.cmiBp, title: "Add to project", sub: "New or existing, with their proposals" },
       // `i-user` and not `i-pen`: the handheld sprite (mobile-shell/sprite.tsx)
       // has no pen, and an edit box drawn with a missing symbol renders an
       // empty 24px square that reads as a broken icon.
@@ -542,6 +546,10 @@ export function MobileClients() {
           new CustomEvent("jf:estimator-picker", { detail: { clientId: c.id } }),
         );
       });
+    } else if (act === "proj") {
+      // Next frame, for the same reason as "prop" above: this sheet is still
+      // playing its exit.
+      requestAnimationFrame(() => openAddToProject(c.id));
     } else if (act === "edit") {
       openForm(c);
     } else if (act === "msg") {
@@ -801,6 +809,7 @@ export function MobileClients() {
       {/* Shared handheld nav: topbar + drawer + sprite. Owns its own open
           state, so the page holds none. */}
       <MobileNav />
+      <AddToProjectSheet />
 
       {/* ============ SCROLLER ============ */}
       <main className={styles.scroll} ref={scrollRef}>

@@ -167,7 +167,9 @@ function recordOf(clients: ClientRecord[], choice: ClientChoice): ClientRecord |
  * which is the whole point of arriving from a client's record.
  */
 function openingDraft(data: ManualBuilderData): Draft {
-  const base = data.proposal ? data.proposal.draft : emptyDraft(data.defaults);
+  const opened = data.proposal ? data.proposal.draft : emptyDraft(data.defaults);
+  // A new proposal opened from a project page files under that project.
+  const base: Draft = !data.proposal && data.initialProjectId ? { ...opened, projectId: data.initialProjectId } : opened;
   const id = data.initialClientId;
   if (!id) return base;
   const rec = data.clients.find((c) => c.id === id);
@@ -644,10 +646,9 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
               projects={data.projects}
               value={draft.projectId}
               onChange={(id) => patch({ projectId: id })}
-              // A proposal has no project column, so a pick is a working note
-              // for this session and nothing more. Said out loud rather than
-              // discovered on the next reload.
-              hint="Reference only — not stored on the proposal"
+              // Stored on the proposal since 2026-09-18: the proposal, its
+              // change orders and its job show on the project.
+              hint="Groups it with the project's other proposals"
             />
           </Group>
           <Field label="Overview" htmlFor="q-overview">

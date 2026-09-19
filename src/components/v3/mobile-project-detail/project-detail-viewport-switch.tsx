@@ -47,6 +47,7 @@ import type {
   PdAvailProposal,
   PdJob,
   PdProject,
+  PdProposal,
 } from "@/components/v3/project-detail-blueprint/project-detail-data";
 
 /** CLAUDE.md's handheld target: ≤768px. The same literal the shell uses. */
@@ -86,6 +87,7 @@ const getServerSnapshot = () => false;
 export function ProjectDetailViewportSwitch(props: {
   project: PdProject;
   jobs: PdJob[];
+  proposals: PdProposal[];
   availableProposals: PdAvailProposal[];
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);

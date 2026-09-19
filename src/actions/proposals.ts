@@ -64,6 +64,10 @@ const proposalInput = z.object({
   id: z.string().optional(),
   title: z.string().min(1),
   clientId: z.string().optional().nullable(),
+  // The project the proposal belongs to. Absent leaves it as it was (callers
+  // that know nothing of projects — the estimators — never move one); null
+  // takes it out of its project.
+  projectId: z.string().optional().nullable(),
   description: z.string().optional(),
   scopeOfWork: z.string().optional(),
   notes: z.string().optional(),
@@ -258,7 +262,7 @@ export async function saveProposal(raw: unknown) {
   const data = proposalInput.parse(raw);
   // The linked client must be this org's — a foreign id would make the portal,
   // PDF and sendProposal address another tenant's customer.
-  await assertLinksInOrg(organizationId, { clientId: data.clientId });
+  await assertLinksInOrg(organizationId, { clientId: data.clientId, projectId: data.projectId });
   const { subtotal, discountTotal, taxTotal, total, priced } = computeTotals(data);
   // Only callers that SENT the key own the proposal's discount — see the
   // tri-state note on discountSchema. `undefined` leaves both the column and
@@ -286,6 +290,7 @@ export async function saveProposal(raw: unknown) {
       data: {
         title: data.title,
         clientId: data.clientId ?? null,
+        ...(data.projectId !== undefined ? { projectId: data.projectId ?? null } : {}),
         description: data.description,
         scopeOfWork: data.scopeOfWork,
         notes: data.notes,
@@ -310,6 +315,12 @@ export async function saveProposal(raw: unknown) {
     // by proposalId. These only execute if the ownership-gated update above
     // succeeded, so they remain org-isolated.
     const proposalId = data.id;
+    // The job a proposal became travels with it between projects.
+    if (data.projectId !== undefined) {
+      await db.job.updateMany({ where: { organizationId, proposalId }, data: { projectId: data.projectId ?? null } });
+      if (data.projectId) revalidatePath(`/dashboard/projects/${data.projectId}`);
+      revalidatePath("/dashboard/projects");
+    }
     await db.lineItem.deleteMany({ where: { proposalId } });
     for (let i = 0; i < priced.length; i += 1) {
       const l = priced[i];
@@ -375,6 +386,7 @@ export async function saveProposal(raw: unknown) {
       organizationId,
       ownerId: user.id,
       clientId: data.clientId ?? null,
+      projectId: data.projectId ?? null,
       title: data.title,
       description: data.description,
       scopeOfWork: data.scopeOfWork,
@@ -429,6 +441,7 @@ export async function saveProposal(raw: unknown) {
   });
 
   revalidatePath("/dashboard/proposals");
+  if (created.projectId) revalidatePath(`/dashboard/projects/${created.projectId}`);
   return { id: created.id, publicId: created.publicId };
 }
 
