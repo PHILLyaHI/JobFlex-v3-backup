@@ -38,7 +38,9 @@ const UTILITY_SPECIALTIES = new Set([
 const SEWER = /\bsewer|\bside[-\s]sewer|\blateral\b/i;
 const STORM = /\bstorm\s+(?:drain|sewer|line|pipe)|\bculvert|\bcatch\s+basin/i;
 const WATER = /\bwater\s+(?:main|service|line)\b/i;
-const STREET = /\b(?:in|under|along|across|down|up|through)\s+(?:the\s+|a\s+)?(?:street|road|avenue|right[-\s]of[-\s]way|row|alley)\b|\bstreet\b|\bpublic\s+(?:sewer|main)|\bsewer\s+main\b|\bwater\s+main\b|\bmain\s+line\b/i;
+const STREET = /\b(?:in|under|along|across|down|up|through)\s+(?:the\s+|a\s+)?(?:street|road|avenue|right[-\s]of[-\s]way|row|alley)\b|\bstreet\b|\broad(?:way)?s?\b|\bhighway\b|\bpublic\s+(?:sewer|main)|\bsewer\s+main\b|\bwater\s+main\b|\bmain\s+line\b/i;
+/** A sewer pipe 8 in. or larger is a main — a side sewer from a house is 4-6 in. */
+const MAIN_SIZE = /\b(?:8|10|12|15|18|21|24|30|36)\s*(?:-\s*)?(?:inch(?:es)?|in\.|")(?![a-z])|\b(?:8|10|12|15|18|21|24|30|36)\s*in\s+(?:pvc|pipe|main|sewer|line|diameter|ductile|sdr)\b/i;
 const FROM_HOUSE = /\b(?:from|off)\s+the\s+(?:house|home|building|foundation)|\bto\s+the\s+(?:city\s+|public\s+|street\s+)?(?:main|street|sewer)\b|\bside[-\s]sewer|\blateral\b|\bservice\s+line\b/i;
 const YARD = /\byard\b|\blawn\b|\blandscap|\bbackyard\b|\bfront\s+yard\b|\bgarden\b/i;
 const REPAIR = /\b(?:clog\w*|backed?\s*up|backup|snake|jet(?:ting)?|camera\s+(?:the|it)|smell\w*|roots?\s+in)\b/i;
@@ -62,7 +64,7 @@ export function utilityJob(description: string, specialtyId: string): UtilityJob
   // Sewer: a line from the house is a side sewer (in the yard, or out to the
   // main in the street); a line in the street with no house named is a main.
   if (FROM_HOUSE.test(t)) return STREET.test(t) || /\bto\s+the\s+(?:city\s+|public\s+)?main\b/i.test(t) ? "side-sewer-to-street" : "side-sewer-yard";
-  if (STREET.test(t)) return "sewer-main-street";
+  if (STREET.test(t) || MAIN_SIZE.test(t)) return "sewer-main-street";
   if (YARD.test(t)) return "side-sewer-yard";
   return "side-sewer-yard";
 }

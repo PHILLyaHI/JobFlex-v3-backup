@@ -81,6 +81,13 @@ if (CITY_COST_INDEX.length) {
   check("city rows are well formed", CITY_COST_INDEX.every((r) => /^[A-Z]{2}$/.test(r.state) && r.factor > 0.6 && r.factor < 1.8 && r.city.trim().length > 1));
 }
 
+// ── The owner's own brief, 2026-09-19 ───────────────────────────────────────
+const own = buildLegacyEstimatePrompt({ description: "install 300 lineal feet of sewer 8 inch pipe and the asphalt road", location: "20100 48th Ave W, Lynnwood, WA 98036" });
+check("the owner's brief: sewer work (not asphalt paving), 300 lineal feet read, a street main, the Lynnwood bid range at cost",
+  own.specialty.id === "sanitary-sewer" && own.facts.length === 300 && own.utilityJob === "sewer-main-street" && own.range?.low === 208700 && own.range?.high === 417400, JSON.stringify({ s: own.specialty.id, len: own.facts.length, u: own.utilityJob, r: own.range }));
+check("an 8 in. sewer is a main, a 4 in. lateral from the house is not; asphalt paving alone stays paving",
+  utilityJob("new 8 inch sewer pipe, 250 ft", "sanitary-sewer") === "sewer-main-street" && utilityJob("replace 4 inch sewer lateral from the house, 60 ft", "sanitary-sewer") === "side-sewer-yard" && detectSpecialty("asphalt driveway paving, 1200 sqft")?.specialty.id === "asphalt-paving");
+
 // ── The floor after the retry (2026-09-19) ──────────────────────────────────
 // The owner's bath as it came back on jobflex.app — seven round lines, $16,000
 // — plus a permit, which the floor never touches.

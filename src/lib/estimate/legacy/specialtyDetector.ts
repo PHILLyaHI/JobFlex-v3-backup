@@ -81,6 +81,11 @@ const PHRASE_VOTES: Array<{ re: RegExp; id: string; bonus: number; unlessRepair?
   { re: /\b(?:replace|replacing|install|installing|new|swap|add|adding|vent|move|moving)\b[^.]{0,30}\b(?:dish\s?washer|(?:garbage\s+)?disposal|range\s+hood|hood|cook\s?top|wall\s+oven|(?:gas|electric|induction)\s+range|range|over[-\s]the[-\s]range\s+microwave|microwave|ice\s?maker|kitchen\s+sink|kitchen\s+faucet)\b/i, id: 'kitchen-remodel', bonus: 150, unlessRepair: true },
   { re: /\bfinish\w*\s+(?:the\s+|my\s+|a\s+|an\s+|our\s+)?(?:\d[\d,]*\s*(?:sq\.?\s*ft|sqft|sf)\s+)?basement|\bbasement\s+(?:finish\w*|remodel\w*|renovation|build[-\s]?out)/i, id: 'interior-remodel', bonus: 220 },
   { re: /\breplac\w*\s+(?:\w+\s+){0,3}windows?\b|\bwindow\s+replacement/i, id: 'window-replacement', bonus: 200 },
+  // A sewer to install — a pipe, a length, a main, a street or a road — is
+  // sewer work even when the road's asphalt is named too (2026-09-19:
+  // "install 300 lineal feet of sewer 8 inch pipe and the asphalt road" went
+  // to asphalt paving). Never a backup or a clog: that is drain cleaning.
+  { re: /^(?![\s\S]*\b(?:backed\s+up|backing\s+up|clog\w*|snak\w*|jet\w*|roots?\s+in)\b)(?=[\s\S]*\bsewer\b)(?=[\s\S]*\b(?:pipe|main|lf|linear|lineal|feet|ft|street|road|asphalt|manholes?|trench\w*|install\w*|run|new)\b)/i, id: 'sanitary-sewer', bonus: 150 },
   { re: /\b(?:sewer|drain|main\s+line|toilet|sink|tub)\b[^.]{0,30}\b(?:backed\s+up|backing\s+up|clog\w*|slow|roots?|jet\w*|snak\w*)\b|\b(?:backed\s+up|clog\w*|snake|hydro[-\s]?jet\w*|roots?)\b[^.]{0,30}\b(?:sewer|drain|main\s+line)\b/i, id: 'drain-cleaning', bonus: 150 },
   { re: /\bpocket\s+doors?\b/i, id: 'interior-remodel', bonus: 150 },
   { re: /\b(?:front|entry|exterior|patio|sliding|french|back|storm)\s+doors?\b/i, id: 'window-door', bonus: 150 },
