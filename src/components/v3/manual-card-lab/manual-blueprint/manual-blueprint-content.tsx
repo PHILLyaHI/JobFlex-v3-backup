@@ -75,6 +75,7 @@ import type {
   ProposalOptions,
   StagedFile,
 } from "../manual-focus/manual-focus-types";
+import { contractTotal } from "@/lib/contractTotal";
 // What survives from the donor's data module: the starter TERMS text (a button
 // the user presses, not seeded content) and the address → sales-tax lookup.
 // Every fixture record, the seeded draft and the fake org identity are gone.
@@ -244,6 +245,15 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
     : LinesV2;
 
   const totals = useMemo(() => computeTotals(draft), [draft]);
+  /** What the client owes in total: this sheet plus every APPROVED change
+   *  order, through the same helper the resolver, the portal and the invoice
+   *  book use. A change order is not draft state — it is not edited or saved
+   *  here — but it brings its own payment stage, so the coverage meter has to
+   *  measure against it or a balanced schedule reads "over". */
+  const contractValue = useMemo(
+    () => contractTotal(totals.total, data.proposal?.changeOrders ?? []),
+    [totals.total, data.proposal],
+  );
 
   /* ---- editing ------------------------------------------------------ */
 
@@ -824,7 +834,8 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
         <Card num="08" title="Payment & deposits" id="q-08">
           <PaymentBlock
             installments={draft.installments}
-            total={totals.total}
+            total={contractValue}
+            pctBase={totals.total}
             onPatch={patchInstallment}
             onAdd={addInstallment}
             onRemove={(id) =>

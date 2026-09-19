@@ -22,6 +22,7 @@
 
 import { db } from "@/lib/db";
 import { isEstimatorRole, isSalesRole } from "@/lib/orgContext";
+import { APPROVED_CO_SELECT } from "@/lib/contractTotal";
 import {
   draftFromProposal,
   proposalRef,
@@ -135,6 +136,12 @@ export async function loadManualBuilder({
             lineItems: { orderBy: { position: "asc" } },
             installments: { orderBy: { position: "asc" } },
             discounts: true,
+            // An APPROVED change order is money the client owes on top of the
+            // proposal's own total, and it arrives as its own installment row
+            // (lib/changeOrders/respond). Without these the coverage meter
+            // measures that row against a total that excludes it and calls a
+            // balanced schedule "over". Same select every money read uses.
+            changeOrders: APPROVED_CO_SELECT,
           },
         })
       : Promise.resolve(null),
@@ -212,6 +219,12 @@ export async function loadManualBuilder({
           },
           defaults,
         ),
+        // Read-only context, not draft state: what the client owes on top of
+        // this proposal because a change order was approved.
+        changeOrders: proposalRow.changeOrders.map((c: { status: string; total: number | null }) => ({
+          status: c.status,
+          total: c.total,
+        })),
       }
     : null;
 

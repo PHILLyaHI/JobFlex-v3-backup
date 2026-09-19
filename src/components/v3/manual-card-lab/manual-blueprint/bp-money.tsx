@@ -54,12 +54,22 @@ const NOTE: Record<string, string> = {
 export function PaymentBlock({
   installments,
   total,
+  pctBase,
   onPatch,
   onAdd,
   onRemove,
 }: {
   installments: Installment[];
+  /** The CONTRACT the schedule has to cover: this proposal plus every approved
+   *  change order (lib/contractTotal). A change order arrives as its own stage,
+   *  so measuring it against the proposal alone read "over by the change
+   *  order". */
   total: number;
+  /** What a percent stage is a percentage OF — the proposal's own total. A
+   *  change order raises what is owed without touching the 30/70 split, which
+   *  is the rule resolveSchedule keeps. Defaults to `total` for a proposal
+   *  with no change orders, where the two are the same number. */
+  pctBase?: number;
   onPatch: (id: string, patch: Partial<Installment>) => void;
   onAdd: () => void;
   onRemove: (id: string) => void;
@@ -68,7 +78,7 @@ export function PaymentBlock({
   // (lib/paymentSchedule), and everything else on this block is a presentation
   // of it: the column, the meter fill and the note under it. A settled stage
   // counts for what it COLLECTED — the card and the rows it prints agree.
-  const coverage = scheduleCoverage(installments, total);
+  const coverage = scheduleCoverage(installments, total, pctBase ?? total);
   const state = coverage.state;
   const values = coverage.values;
 

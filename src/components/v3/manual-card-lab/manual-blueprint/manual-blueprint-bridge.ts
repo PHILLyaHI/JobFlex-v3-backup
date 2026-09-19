@@ -42,6 +42,7 @@ import type {
 } from "../manual-focus/manual-focus-types";
 import { estimateFromAddress } from "../manual-focus/manual-focus-data";
 import { computeTotals, newId, round2 } from "../manual-focus/manual-focus-math";
+import type { ContractCo } from "@/lib/contractTotal";
 
 /** The six values `LineItem.measurementType` is allowed to hold — the literal
  *  union `saveProposal`'s zod schema parses. */
@@ -151,6 +152,12 @@ export type ManualProposal = {
   status: string;
   clientId: string | null;
   draft: Draft;
+  /** The APPROVED change orders on this proposal, in the shape
+   *  lib/contractTotal takes. They are NOT draft state — nothing here edits or
+   *  saves them; they are what the schedule is measured against, because an
+   *  approved change order raises the contract and brings its own stage.
+   *  Empty for a new proposal and for one that has none. */
+  changeOrders: ContractCo[];
 };
 
 /* ============================================================
