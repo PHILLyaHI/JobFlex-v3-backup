@@ -4,7 +4,7 @@
 // approved as its own stage. The completion stage must stay $7,000 (70% of the
 // ORIGINAL), the change order $1,080, and paying the completion stage must
 // not waive the change order.
-import { resolveSchedule } from "../../src/lib/paymentSchedule";
+import { applyUnitToggle, resolveSchedule, scheduleCoverage, unitTogglePatches } from "../../src/lib/paymentSchedule";
 import { contractSchedule } from "../../src/lib/contractTotal";
 
 let failed = 0;
@@ -62,6 +62,32 @@ check("remaining never goes negative", credit.remainingMinor === 0);
 // Legacy: an APPROVED row with no total is already folded into the proposal — not counted.
 const legacy = resolveSchedule({ ...contractSchedule(11200, [{ status: "APPROVED", total: null }]), currency: "USD", installments: [] });
 check("legacy approved change order is not double-counted", legacy.totalMinor === 1120000);
+
+// THE %/$ TOGGLE ON A CONTRACT WITH AN APPROVED CHANGE ORDER (2026-09-19).
+// The builder card measures coverage against the CONTRACT and converts the
+// unit against the PROPOSAL — a "100%" stage is 100% of the proposal, because
+// an approved change order raises what is owed without moving the split. When
+// the toggle was handed the contract instead, the order was counted twice:
+// $45,368 became $47,488 and a balanced schedule read "$2,120 more than the
+// total".
+{
+  const sched = contractSchedule(45368, [{ status: "APPROVED", total: 2120 }]);
+  check("contract is the proposal plus the order", sched.total === 47488, sched.total);
+  check("the percent base stays the proposal", sched.pctBase === 45368, sched.pctBase);
+
+  const rows = [
+    { id: "full", amount: 100, isPercent: true },
+    { id: "co", amount: 2120, isPercent: false },
+  ];
+  const patches = unitTogglePatches(rows, "full", false, sched.pctBase);
+  check("100% converts to the proposal, not the contract", patches.length === 1 && patches[0].patch.amount === 45368, patches);
+
+  const after = scheduleCoverage(applyUnitToggle(rows, "full", false, sched.pctBase), sched.total, sched.pctBase);
+  check("and the schedule still covers the contract exactly", after.covered === 47488 && after.state === "exact", after);
+
+  const wrong = scheduleCoverage(applyUnitToggle(rows, "full", false, sched.total), sched.total, sched.pctBase);
+  check("converting against the contract would over-schedule", wrong.state === "over", wrong);
+}
 
 if (failed) {
   console.log(`\n${failed} check(s) failed`);

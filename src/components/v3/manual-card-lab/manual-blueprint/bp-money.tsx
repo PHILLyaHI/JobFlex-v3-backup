@@ -154,7 +154,16 @@ export function PaymentBlock({
               onClick={() => {
                 // The unit and the VALUE move together — the conversion lives in
                 // manual-focus-math (applyUnitToggle) so all six skins share it.
-                for (const p of unitTogglePatches(installments, inst.id, !inst.isPercent, total)) {
+                //
+                // It converts against the PERCENT BASE, not the contract. On a
+                // proposal with an approved change order the two differ, and the
+                // contract is the wrong one: a "100%" stage is 100% of the
+                // proposal ($45,368), not of the proposal plus the order
+                // ($47,488) — that is the rule resolveSchedule resolves the
+                // column by, and the same `pctBase` the meter above measures
+                // with. Handing `total` here made the toggle print the change
+                // order twice and the card read "over by the change order".
+                for (const p of unitTogglePatches(installments, inst.id, !inst.isPercent, pctBase ?? total)) {
                   onPatch(p.id, p.patch);
                 }
               }}
