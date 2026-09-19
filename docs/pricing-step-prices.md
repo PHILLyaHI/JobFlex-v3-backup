@@ -100,6 +100,37 @@ fuller of two thin answers. Nothing forced the total.
   lines or a "concise" answer, and `recommendedPrice` is now the sum of the
   lines, computed last — not a total picked first and split.
 
+## The questions before the price (2026-09-19)
+
+Owner: *"make sure when running smart estimator ask question that price
+effective check, make smart."* The intake gate used to be the model's
+judgment alone. The app already knows what moves money, so
+`lib/estimate/intake-questions` picks the questions and the model only puts
+them in a contractor's words.
+
+- **The job's own measure comes first** when the trade sells by one and the
+  brief states none. Without it no range checks the price and no floor
+  catches a cheap answer. It is always asked, and it carries what the trade
+  charges per unit in that city.
+- **Then the conditional steps**, priced on this job: the step's cost from
+  the price book, times the book's typical quantity for it, else the job's
+  own measure — the whole of it when the condition covers the job ("heated
+  floors are in the scope"), a quarter when it fixes or crosses something
+  ("the subfloor is soft or rotted"). Only steps worth at least $300 or a
+  twenty-fifth of the job are asked, most money first, at most three.
+- **Alternatives of one choice become one question.** Three fence material
+  steps ("the fence is chain link", "…a panel system", "…stick-built wood")
+  ask "Which fence?", and what hangs on it is the spread between the
+  dearest and the cheapest.
+- **What the brief rules out is never asked**: no exterior siding question
+  on an interior paint job.
+- **Each question says the money.** "the estimate carries it when the
+  tear-off exposes rotted decking; about $1,774 on a job this size."
+- A condition rides only when the model asks it back, since it read the
+  brief and the photos; the measure question rides regardless. The server
+  log names them: `sanitary-sewer · 3 cost-critical (job-measure $15222,
+  step-17 $2759, step-6 $1452) · asking 3`.
+
 ## Coverage
 
 | Group | Specialties | Steps | Sourced | Derived | Estimated |

@@ -24,7 +24,9 @@ import { applyRepairs, repairInstruction, validateEstimate } from "@/lib/estimat
 import { computeLines, computedPromptBlock, mergeComputed, type MaterialPricer } from "@/lib/estimate/computed-lines";
 import { priceMaterial } from "@/lib/estimate/material-price";
 import { detectTrade } from "@/lib/estimate/trade-knowledge";
-import { buildLegacyEstimatePrompt, legacyEstimateFromText, LEGACY_SYSTEM_MESSAGE } from "@/lib/estimate/legacy-estimate";
+import { buildLegacyEstimatePrompt, legacyEstimateFromText, LEGACY_SYSTEM_MESSAGE, specialtyFor } from "@/lib/estimate/legacy-estimate";
+import { costQuestionBlock, costQuestions } from "@/lib/estimate/intake-questions";
+import { procedureFor } from "@/lib/estimate/procedures";
 import { loadPromptOverrides } from "@/lib/estimate/promptOverrides";
 import { floorNote, floorToRange, fullerAnswer, linesTotal, retryReasons } from "@/lib/estimate/remodel-sanity";
 import { bindEstimateToBrief, bindLinesToBrief, bindTextToBrief, keepCostCritical, readBrief, scrubUnaskedText, scrubUnaskedWork } from "@/lib/estimate/brief";
@@ -534,6 +536,13 @@ export async function analyzeEstimatePrompt(input: {
 
   const analyzePhotos = safePhotos(input.photos);
   const facts = readBrief(input.description, { sqft: input.sqft });
+  // What to ask is decided here, not by the model: the job's own measure
+  // (without it no range checks the price) and the conditional steps of this
+  // trade's procedure, ranked by what each costs on this job
+  // (lib/estimate/intake-questions). The model only puts them in words.
+  const gateSpecialty = specialtyFor({ description: input.description, projectType: input.projectType }).specialty;
+  const wanted = costQuestions(gateSpecialty.id, procedureFor(gateSpecialty.id), facts, input.location, { brief: input.description });
+  const wantedBlock = costQuestionBlock(wanted);
   const stated = [
     facts.area ? `the area (${facts.area} sqft)` : "",
     facts.length ? `the run (${facts.length} linear ft)` : "",
@@ -564,7 +573,7 @@ export async function analyzeEstimatePrompt(input: {
             `${projectLine(input.projectType)}
 ${input.location ? `Location: ${input.location}` : "Location: (none given)"}
 ${input.sqft ? `Approx size: ${input.sqft} sqft` : ""}
-Description: ${input.description}${stated.length ? `\n\nThe brief already states ${stated.join(", ")} — do not ask about those.` : ""}${
+Description: ${input.description}${stated.length ? `\n\nThe brief already states ${stated.join(", ")} — do not ask about those.` : ""}${wantedBlock ? `\n\n${wantedBlock}` : ""}${
               analyzePhotos.length
                 ? `\n\n${analyzePhotos.length} site photo(s) are attached. Read them before asking — a photo that shows the slab, the roof or the ground answers the condition question.`
                 : ""
@@ -581,13 +590,37 @@ Description: ${input.description}${stated.length ? `\n\nThe brief already states
     // dropped whatever the model said), at most three, and an option-less
     // "select" becomes "text" so the UI never renders an unanswerable one. If
     // "not enough" but zero questions came back, the brief is enough.
-    const questions = keepCostCritical(parsed.questions, input.description)
+    // The chosen questions ride in their own order with the model's wording;
+    // anything else it asked follows, and the cost-critical filter still rules.
+    // A missing measure is a fact, so it is always asked. A condition is a
+    // judgment: it rides only when the model, which read the brief and the
+    // photos, asked it back — that is what drops the ones the job rules out.
+    const said = new Map(parsed.questions.map((q) => [q.id, q]));
+    const asked = wanted
+      .filter((w) => w.id === "job-measure" || said.has(w.id))
+      .map((w) => {
+        const m = said.get(w.id);
+        return {
+          id: w.id,
+          question: m?.question?.trim() || w.question,
+          why: m?.why?.trim() || w.why,
+          kind: m?.kind ?? w.kind,
+          options: w.kind === "select" ? (m?.options?.length ? m.options : w.options) : m?.options,
+          unit: w.unit ?? m?.unit,
+          placeholder: m?.placeholder,
+        };
+      });
+    const extras = parsed.questions.filter((q) => !wanted.some((w) => w.id === q.id));
+    const questions = keepCostCritical([...asked, ...extras], input.description)
       .slice(0, 3)
       .map((q) =>
         q.kind === "select" && (!q.options || q.options.length === 0)
           ? { ...q, kind: "text" as const }
           : q,
       );
+    console.info(
+      `[analyzeEstimatePrompt] ${gateSpecialty.id} · ${wanted.length} cost-critical (${wanted.map((w) => `${w.id} $${Math.round(w.impact)}`).join(", ") || "none"}) · asking ${questions.length}`,
+    );
     return {
       ok: true,
       data: { ...parsed, questions, enoughDetail: parsed.enoughDetail || questions.length === 0 },
