@@ -775,12 +775,7 @@ function buildSections(d: DocProps): Section[] {
     title: "Schedule of work & pricing",
     // The card-10 classes, deliberately. Two sets of row styles for one priced
     // column is how the screen and the paper start disagreeing.
-    body: d.options.laborOnly ? (
-      <div className={cx(styles.printRow, styles.printFirst)}>
-        <span className={styles.printName}>Complete scope of work as described</span>
-        <span className={styles.printAmt}>{money(d.totals.preTax)}</span>
-      </div>
-    ) : d.totals.printed.length === 0 ? (
+    body: d.totals.printed.length === 0 ? (
       <div className={styles.empty}>No named lines yet — nothing prints.</div>
     ) : (
       d.totals.printed.map((row, i) => (
@@ -788,9 +783,12 @@ function buildSections(d: DocProps): Section[] {
           <span>
             <span className={styles.printName}>{row.name}</span>
             {row.description ? <span className={styles.printSub}>{row.description}</span> : null}
+            <span className={styles.printSub}>
+              {qty(row.quantity)} {UNIT_LABEL[row.unit]} · {money(row.unitPrice)} each
+            </span>
             {!d.options.hideBreakdown ? (
               <span className={styles.printSub}>
-                {qty(row.quantity)} {UNIT_LABEL[row.unit]} · {money(row.unitPrice)} each
+                {[row.materialAmount > 0 ? `Materials ${money(row.materialAmount)}` : "", row.laborAmount > 0 ? `Labor ${money(row.laborAmount)}` : ""].filter(Boolean).join(" · ")}
               </span>
             ) : null}
           </span>

@@ -70,6 +70,8 @@ export function MobileSprite() {
             (proposals-blueprint/sprite.tsx) gained the same symbol when that
             page shipped. Donor path data verbatim. */}
         <symbol id="i-video" viewBox="0 0 24 24"><rect x="2" y="6" width="13" height="12" rx="1.5" /><path d="M15 10.5 21 7v10l-6-3.5" /></symbol>
+        {/* Added 2026-09-18 with the desktop sprite: the HVAC estimator's outdoor unit. */}
+        <symbol id="i-heatpump" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="12" cy="12" r="4.5" /><path d="M12 12V8.5" /><path d="m12 12 3 1.8" /><path d="m12 12-3 1.8" /></symbol>
         <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></symbol>
       </defs>
     </svg>

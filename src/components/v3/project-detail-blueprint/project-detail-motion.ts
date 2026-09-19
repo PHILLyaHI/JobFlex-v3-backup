@@ -122,14 +122,22 @@ export function useProjectDetailMotion(opts: {
         const target = parseInt(digits.replace(/,/g, ""), 10);
         if (!isFinite(target)) return;
         let t0: number | null = null;
+        let raf = 0;
         function frame(t: number) {
           if (!t0) t0 = t;
           const pr = Math.min(1, (t - t0) / 750);
           const e = 1 - Math.pow(1 - pr, 3);
           el.textContent = prefix + Math.round(target * e).toLocaleString("en-US") + suffix;
-          if (pr < 1) requestAnimationFrame(frame);
+          if (pr < 1) raf = requestAnimationFrame(frame);
         }
-        requestAnimationFrame(frame);
+        raf = requestAnimationFrame(frame);
+        // Torn down mid-count (React's development mode runs this setup twice):
+        // stop, and put the real figure back, or the next run reads the "0" this
+        // one painted and counts to zero.
+        disposers.push(() => {
+          cancelAnimationFrame(raf);
+          el.textContent = raw;
+        });
       });
 
       // Пресс-эффекты

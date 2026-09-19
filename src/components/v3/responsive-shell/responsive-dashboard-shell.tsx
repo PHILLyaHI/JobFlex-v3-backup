@@ -287,6 +287,7 @@ const BLUEPRINT_HANDHELD = new Set(["/dashboard/manual-blueprint"]);
 
 export function ResponsiveDashboardShell({
   children,
+  sidebarFolded,
   user,
   identity,
   badges,
@@ -311,6 +312,8 @@ export function ResponsiveDashboardShell({
   locked?: string[];
   /** Remaining plan quota by nav href (lib/navLimits) for the sidebar pills. */
   limits?: Record<string, NavLimit>;
+  /** The desktop sidebar starts folded (the jf_sb cookie, read in the layout). */
+  sidebarFolded?: boolean;
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const pathname = usePathname();
@@ -421,7 +424,7 @@ export function ResponsiveDashboardShell({
     PAGE_OWNED_STATIC.has(pathname ?? "") ||
     PAGE_OWNED_HANDHELD.test(pathname ?? "");
   const desk = (
-    <BlueprintShell user={user}>
+    <BlueprintShell user={user} sidebarFolded={sidebarFolded}>
       <CustomGateSwap>{children}</CustomGateSwap>
     </BlueprintShell>
   );

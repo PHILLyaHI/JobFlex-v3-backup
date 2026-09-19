@@ -34,7 +34,7 @@
 
 import { redirect } from "next/navigation";
 import type { Route } from "next";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { SETUP_PATH, needsCompanySetup } from "@/lib/orgSetup";
@@ -45,6 +45,7 @@ import { isCustomBlockedPath } from "@/lib/customPlan";
 import { getBadgeCounts } from "@/lib/badgeCounts";
 import { getNavLimitCounters, type NavLimitInfo } from "@/lib/navLimits";
 import { ResponsiveDashboardShell } from "@/components/v3/responsive-shell/responsive-dashboard-shell";
+import { SIDEBAR_FOLD_COOKIE } from "@/components/v3/blueprint-shell/sidebar-fold";
 import { LeadOfferPopup } from "@/components/leads/LeadOfferPopup";
 import { DashboardAnnouncementDismiss } from "@/app/(dashboard)/announcement-dismiss";
 
@@ -173,8 +174,14 @@ export default async function DashboardBlueprintLayout({
   // see lib/notify's ownerEmailFor).
   const canHandleLeads = role === "OWNER";
 
+  // The folded sidebar is remembered in a cookie (not localStorage) so the
+  // server paints it folded — a stored flag read after hydration would flash
+  // the wide sidebar on every page load.
+  const sidebarFolded = (await cookies()).get(SIDEBAR_FOLD_COOKIE)?.value === "1";
+
   return (
     <ResponsiveDashboardShell
+      sidebarFolded={sidebarFolded}
       user={user}
       identity={{ role, name }}
       badges={badges}

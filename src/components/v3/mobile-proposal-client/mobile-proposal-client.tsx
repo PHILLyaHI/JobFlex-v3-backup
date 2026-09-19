@@ -505,6 +505,7 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
                     <div className="mpc-li-t">
                       <div className="mpc-li-n">{item.name}</div>
                       {item.description ? <div className="mpc-li-d">{item.description}</div> : null}
+                      {item.split ? <div className="mpc-li-m">{item.split}</div> : null}
                       {item.meta ? <div className="mpc-li-m">{item.meta}</div> : null}
                     </div>
                     <div className="mpc-li-v">{item.amount}</div>

@@ -169,9 +169,15 @@ const LABELS: Array<{ re: RegExp; apply: (m: BuildingModel, v: string, p: Proven
   { re: /free .*slots?|open .*slots?|spare/i, apply: (m, v, p) => { const n = num(v); if (n !== undefined && n >= 0 && n <= 40) setNested(m, "electrical.freeSlots", n, p); } },
   { re: /static/i, apply: (m, v, p) => { const n = num(v); if (n !== undefined && n > 0 && n < 3) setNested(m, "ducts.measuredTespInWc", n, p); } },
   { re: /return (grille|air)/i, apply: (m, v, p) => { const n = area(v); if (n && n > 40 && n < 4000) setNested(m, "ducts.returnGrilleSqIn", n, p); } },
-  { re: /tons?|tonnage|capacity/i, apply: (m, v, p) => { const n = num(v); if (n && n >= 1 && n <= 10) setNested(m, "existing.tons", n, p); else if (n && n >= 12000 && n <= 120000) setNested(m, "existing.tons", Math.round((n / 12000) * 2) / 2, p); } },
-  { re: /btu|furnace input/i, apply: (m, v, p) => { const n = num(v); if (n && n >= 20000 && n <= 200000) setNested(m, "existing.btuInput", Math.round(n), p); } },
+  // A BTU/h figure is a furnace input whatever the label says ("Furnace
+  // capacity: 80,000 BTU"); tons are tons; a bare 12,000–120,000 under a
+  // cooling label is BTU/h of cooling and reads as tons.
+  { re: /btu|furnace input|heating capacity|furnace capacity|input rating/i, apply: (m, v, p) => { const n = num(v); if (n && n >= 20000 && n <= 200000) setNested(m, "existing.btuInput", Math.round(n), p); else if (n && n >= 1 && n <= 10 && /cooling|ac\b|condenser|heat pump/i.test(v)) setNested(m, "existing.tons", n, p); } },
+  { re: /tons?|tonnage|capacity/i, apply: (m, v, p) => { const n = num(v); if (n && n >= 1 && n <= 10) setNested(m, "existing.tons", n, p); else if (n && n >= 12000 && n <= 120000 && !/btu/i.test(v)) setNested(m, "existing.tons", Math.round((n / 12000) * 2) / 2, p); else if (n && n >= 20000 && n <= 200000) setNested(m, "existing.btuInput", Math.round(n), p); } },
   { re: /seer/i, apply: (m, v, p) => { const n = num(v); if (n && n >= 8 && n <= 30) setNested(m, "existing.seer", n, p); } },
+  // Insulation read on the walk: "Attic insulation: R-19 blown", "Wall insulation: R-13 batts", "no insulation".
+  { re: /attic insulation|ceiling insulation|attic r|roof insulation/i, apply: (m, v, p) => { const b = ceilingBucket(v); if (b) setFact(m, "ceilingInsulation", b, p); } },
+  { re: /wall insulation|walls? r-?\d/i, apply: (m, v, p) => { const b = wallBucket(v); if (b) setFact(m, "wallInsulation", b, p); } },
   { re: /afue/i, apply: (m, v, p) => { const n = num(v); if (n && n >= 50 && n <= 99) setNested(m, "existing.afue", n / 100, p); } },
   { re: /model/i, apply: (m, v, p) => { setNested(m, "existing.model", v.trim(), p); applyModelString(m, v, p); } },
   { re: /serial/i, apply: (m, v, p) => { setNested(m, "existing.serial", v.trim(), p); } },
@@ -179,6 +185,25 @@ const LABELS: Array<{ re: RegExp; apply: (m: BuildingModel, v: string, p: Proven
   { re: /gas (pipe|line) size|pipe size/i, apply: (m, v, p) => { const n = num(v); if (n && n > 0 && n <= 2) setNested(m, "gas.pipeIn", n, p); } },
   { re: /refrigerant/i, apply: (m, v, p) => { const r = refrigerantIn(v); if (r) setNested(m, "existing.refrigerant", r, p); } },
 ];
+
+/** An R-value on the walk to the nearest bucket the load tables carry. */
+function rValue(s: string): number | undefined {
+  if (/\b(no|none|uninsulated|bare)\b/i.test(s)) return 0;
+  const m = s.match(/r-?\s*(\d{1,2})\b/i);
+  return m ? Number(m[1]) : undefined;
+}
+function ceilingBucket(s: string): BuildingModel["ceilingInsulation"] | undefined {
+  const r = rValue(s);
+  if (r === undefined) return undefined;
+  const ladder: Array<[number, BuildingModel["ceilingInsulation"]]> = [[0, "none"], [11, "r11"], [19, "r19"], [30, "r30"], [38, "r38"], [49, "r49"]];
+  return ladder.reduce((best, cur) => (Math.abs(cur[0] - r) < Math.abs(best[0] - r) ? cur : best))[1];
+}
+function wallBucket(s: string): BuildingModel["wallInsulation"] | undefined {
+  const r = rValue(s);
+  if (r === undefined) return undefined;
+  const ladder: Array<[number, BuildingModel["wallInsulation"]]> = [[0, "none"], [11, "r11"], [13, "r13"], [19, "r19"], [21, "r21"]];
+  return ladder.reduce((best, cur) => (Math.abs(cur[0] - r) < Math.abs(best[0] - r) ? cur : best))[1];
+}
 
 function refrigerantIn(s: string): "R-22" | "R-410A" | "R-454B" | "R-32" | undefined {
   const t = s.toUpperCase();

@@ -23,6 +23,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
@@ -40,7 +41,7 @@ import { regridRecordOf } from "@/lib/hvac/regridRecord";
 import { assessorRecordAt } from "@/lib/hvac/assessors";
 import { runVisionJson } from "@/lib/sdk/openaiVision";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
-import { stateFromAddress } from "@/lib/pricing/salesTax";
+import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import type { CatalogItem } from "@/lib/hvac/types";
 import { pickBuilding, ringGeometry, storeysFromHeight } from "@/lib/hvac/site";
 import type { SiteFacts, NameplateRead } from "@/lib/hvac/intake";
@@ -53,6 +54,11 @@ type Fail = { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: 
 const parseJson = <T,>(s: string | null | undefined): T | null => { if (!s) return null; try { return JSON.parse(s) as T; } catch { return null; } };
 
 const missingTable = (err: unknown) => /does not exist|no such table|relation .* Hvac/i.test(err instanceof Error ? err.message : String(err));
+/** Log the real error on the server; the browser gets a sentence without table or column names. */
+const failed = (what: string, err: unknown): string => {
+  console.error(`[hvacEstimator] ${what}:`, err instanceof Error ? err.message : err);
+  return `Couldn't ${what} — try again in a moment; the details are in the server log.`;
+};
 
 async function runBlocked(organizationId: string): Promise<Fail | null> {
   const quota = await checkPlanLimit(organizationId, "estimatorUses");
@@ -193,8 +199,11 @@ export async function hvacSiteFacts(raw: unknown): Promise<{ ok: true; facts: Si
         facts.footprintEdges = g.edges;
         facts.sources.footprint = site.fromRecord ? (pick.inside ? "building outline on the parcel record" : "nearest building outline on the parcel record") : pick.inside ? "building footprint at the pin" : "nearest building footprint — confirm it is the house";
         if (!pick.inside && !site.fromRecord) warnings.push("The pin is not inside a building footprint; the nearest one was used. Confirm the area.");
-        const storeys = storeysFromHeight(pick.building.heightFt);
-        if (storeys) {
+        // A tagged height fills a storey count the record lacks; it never
+        // overrides the assessor, and an untagged footprint (the one-storey
+        // default every Regrid ring and most OSM rings carry) says nothing.
+        const storeys = pick.building.heightTagged ? storeysFromHeight(pick.building.heightFt) : undefined;
+        if (storeys && !facts.storeys) {
           facts.storeys = storeys;
           facts.sources.storeys = `building height ${Math.round(pick.building.heightFt ?? 0)} ft on the footprint record`;
         }
@@ -297,17 +306,19 @@ export async function importHvacCatalogCsv(raw: unknown): Promise<{ ok: true; im
   const note = dir && dir.source ? `Read as a ${dir.source.toUpperCase()} export · columns used: ${Object.values(dir.recognised).join(", ")}` : undefined;
   if (!items.length) return { ok: false, error: (dir && !dir.source ? dir.errors[0] : errors[0]) ?? "No rows to import." };
   try {
-    if (parsed.data.replace) await db.hvacCatalogItem.deleteMany({ where: { organizationId } });
-    for (const item of items) {
-      await db.hvacCatalogItem.upsert({
+    // One transaction: a bad row halfway through leaves the catalog as it was,
+    // instead of emptied by the Replace delete and half refilled.
+    await db.$transaction([
+      ...(parsed.data.replace ? [db.hvacCatalogItem.deleteMany({ where: { organizationId } })] : []),
+      ...items.map((item) => db.hvacCatalogItem.upsert({
         where: { organizationId_itemId: { organizationId, itemId: item.id } },
         create: { organizationId, itemId: item.id, kind: item.kind, brand: item.brand, model: item.model, itemJson: JSON.stringify(item) },
         update: { kind: item.kind, brand: item.brand, model: item.model, itemJson: JSON.stringify(item) },
-      });
-    }
+      })),
+    ]);
     return { ok: true, imported: items.length, errors, note };
   } catch (err) {
-    return { ok: false, error: missingTable(err) ? "The catalog table isn't in this database yet — run `prisma db push`, then import again." : `Couldn't import — ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}` };
+    return { ok: false, error: missingTable(err) ? "The catalog table isn't in this database yet — run `prisma db push`, then import again." : failed("import the catalog", err) };
   }
 }
 
@@ -328,7 +339,7 @@ export async function loadUsCatalog(raw: unknown): Promise<{ ok: true; imported:
     ]);
     return { ok: true, imported: US_CATALOG.length, verifiedOn: US_CATALOG_VERIFIED_ON };
   } catch (err) {
-    return { ok: false, error: missingTable(err) ? "The catalog table isn't in this database yet — run `prisma db push`, then load again." : `Couldn't load — ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}` };
+    return { ok: false, error: missingTable(err) ? "The catalog table isn't in this database yet — run `prisma db push`, then load again." : failed("load the US catalog", err) };
   }
 }
 
@@ -347,7 +358,7 @@ export async function saveHvacCatalogItem(raw: unknown): Promise<{ ok: true; ite
     });
     return { ok: true, item };
   } catch (err) {
-    return { ok: false, error: missingTable(err) ? "The catalog table isn't in this database yet — run `prisma db push`, then save again." : `Couldn't save — ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}` };
+    return { ok: false, error: missingTable(err) ? "The catalog table isn't in this database yet — run `prisma db push`, then save again." : failed("save", err) };
   }
 }
 
@@ -403,7 +414,7 @@ export async function saveHvacServiceTask(raw: unknown): Promise<{ ok: true; car
     await db.hvacSettings.upsert({ where: { organizationId }, create: { organizationId, rateCardJson }, update: { rateCardJson } });
     return { ok: true, card, id };
   } catch (err) {
-    return { ok: false, error: missingTable(err) ? "The settings table isn't in this database yet — run `prisma db push`, then save again." : `Couldn't save — ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}` };
+    return { ok: false, error: missingTable(err) ? "The settings table isn't in this database yet — run `prisma db push`, then save again." : failed("save", err) };
   }
 }
 
@@ -416,16 +427,18 @@ export async function saveHvacRateCard(raw: unknown): Promise<{ ok: true } | { o
     await db.hvacSettings.upsert({ where: { organizationId }, create: { organizationId, rateCardJson }, update: { rateCardJson } });
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: missingTable(err) ? "The settings table isn't in this database yet — run `prisma db push`, then save again. Your card stays in this browser meanwhile." : `Couldn't save — ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}` };
+    return { ok: false, error: missingTable(err) ? "The settings table isn't in this database yet — run `prisma db push`, then save again. Your card stays in this browser meanwhile." : failed("save", err) };
   }
 }
 
 // ── the estimate ────────────────────────────────────────────────────────────
 
-const lineSchema = z.object({ name: z.string().max(200), quantity: z.number().min(0), unitPrice: z.number().min(0), unit: z.string().max(40).optional(), basis: z.string().max(20).optional(), note: z.string().max(400).optional() });
+const lineSchema = z.object({ /** The ledger's own line id, so a reopened estimate's rows stay editable. */ id: z.string().max(80).optional(), name: z.string().max(200), quantity: z.number().min(0), unitPrice: z.number().min(0), unit: z.string().max(40).optional(), basis: z.string().max(20).optional(), note: z.string().max(400).optional() });
 const jobInputSchema = z.object({
   zoneSqft: z.number().min(0).max(20000).optional(),
   heads: z.number().int().min(1).max(8).optional(),
+  designCoolingF: z.number().min(60).max(125).optional(),
+  designHeatingF: z.number().min(-60).max(70).optional(),
   wh: z.object({ existingFuel: z.enum(["gas", "electric", "propane"]).optional(), fuel: z.enum(["gas", "electric", "propane"]).optional(), type: z.enum(["tank", "heat-pump", "tankless"]).optional(), gallons: z.number().min(0).max(200).optional(), vent: z.enum(["atmospheric", "power", "direct", "none"]).optional(), location: z.enum(["garage", "closet", "basement", "utility", "attic", "outdoor"]).optional() }).optional(),
   supplyRegisters: z.number().int().min(0).max(60).optional(),
   service: z.object({
@@ -468,6 +481,14 @@ const customItemSchema = z.object({
   ahriRef: z.string().max(60).optional(),
   cost: z.number().min(0).max(200_000).optional(),
   tier: z.enum(["value", "mid", "premium"]).optional(),
+  /** Gas rows: the NOx class the California districts read (14 = ultra-low). Dropping it turned a typed ULN furnace back into a 40 ng/J one on save (review, 2026-09-17). */
+  noxNgJ: z.number().min(0).max(200).optional(),
+  heatKind: z.enum(["gas", "electric", "heat-pump"]).optional(),
+  firstHourGal: z.number().min(0).max(500).optional(),
+  states: z.array(z.string().length(2)).max(60).optional(),
+  notStates: z.array(z.string().length(2)).max(60).optional(),
+  availabilityNote: z.string().max(240).optional(),
+  verifiedOn: z.string().max(20).optional(),
   typed: z.literal(true).optional(),
   source: z.enum(["shop", "ahri", "neep", "manufacturer"]),
 });
@@ -476,6 +497,8 @@ const draftSchema = z.object({
   job: jobKindSchema,
   input: jobInputSchema,
   outdoorKind: z.enum(OUTDOOR_KINDS).optional(),
+  /** The measured line-set run, so a reopened estimate prices the same feet. */
+  linesetFt: z.number().min(0).max(500).optional(),
   /** The unit the contractor chose by hand, and one they typed in. */
   pick: z.string().max(120).optional(),
   custom: customItemSchema.optional(),
@@ -567,7 +590,7 @@ export async function saveHvacEstimate(raw: unknown): Promise<{ ok: true; id: st
     const row = await db.hvacEstimate.create({ data });
     return { ok: true, id: row.id };
   } catch (err) {
-    return { ok: false, error: missingTable(err) ? "The HVAC tables aren't in this database yet — run `prisma db push` to keep estimates." : `Couldn't save — ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}` };
+    return { ok: false, error: missingTable(err) ? "The HVAC tables aren't in this database yet — run `prisma db push` to keep estimates." : failed("save", err) };
   }
 }
 
@@ -609,7 +632,7 @@ export async function recordHvacActual(raw: unknown): Promise<{ ok: true } | { o
     const n = await db.hvacEstimate.updateMany({ where: { id: parsed.data.estimateId, organizationId }, data: { actualJson: JSON.stringify({ ...a, recordedAt: new Date().toISOString() }) } });
     return n.count ? { ok: true } : { ok: false, error: "That estimate isn't here any more." };
   } catch (err) {
-    return { ok: false, error: missingTable(err) ? "The HVAC tables aren't in this database yet." : `Couldn't record — ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}` };
+    return { ok: false, error: missingTable(err) ? "The HVAC tables aren't in this database yet." : failed("record the actuals", err) };
   }
 }
 
@@ -630,9 +653,9 @@ export async function requestHvacPermitReport(raw: unknown): Promise<{ ok: true;
   await enforceRateLimit(`coolcalc:${organizationId}`, 20, HOUR, "Cool Calc requests");
   const cfg = coolCalcConfig();
   if (!cfg) return { ok: false, error: "Cool Calc isn't connected — set COOLCALC_CLIENT_ID, COOLCALC_API_KEY and COOLCALC_DEALER_ID on the server." };
-  let row: { id: string; address: string; draftJson: string; permitJson: string | null; engineJson: string } | null;
+  let row: { id: string; address: string; state: string | null; county: string | null; draftJson: string; permitJson: string | null; engineJson: string } | null;
   try {
-    row = await db.hvacEstimate.findFirst({ where: { id: parsed.data.estimateId, organizationId }, select: { id: true, address: true, draftJson: true, permitJson: true, engineJson: true } });
+    row = await db.hvacEstimate.findFirst({ where: { id: parsed.data.estimateId, organizationId }, select: { id: true, address: true, state: true, county: true, draftJson: true, permitJson: true, engineJson: true } });
   } catch {
     return { ok: false, error: "The HVAC tables aren't in this database yet." };
   }
@@ -641,7 +664,9 @@ export async function requestHvacPermitReport(raw: unknown): Promise<{ ok: true;
   const { COOLCALC_APP_URL } = await import("@/lib/hvac/coolcalc");
   if (existing?.projectId && existing.systemId) return { ok: true, permit: existing, appUrl: COOLCALC_APP_URL };
   const title = String(parseJson<{ title?: string }>(row.draftJson)?.title ?? row.address);
-  const parts = splitAddress(row.address);
+  // The saved state stands in when the typed address does not spell one.
+  const parts = { ...splitAddress(row.address) };
+  if (!parts.state && row.state) parts.state = row.state.toUpperCase();
   try {
     const project = await coolCalcCreateProject(cfg, { project: `${title} · JobFlex ${row.id.slice(-6)}`, address: parts.address, city: parts.city, state: parts.state, zip: parts.zip });
     const systems = Number(parseJson<{ selection?: { systems?: number } }>(row.engineJson)?.selection?.systems ?? 1);
@@ -650,7 +675,7 @@ export async function requestHvacPermitReport(raw: unknown): Promise<{ ok: true;
     await db.hvacEstimate.update({ where: { id: row.id }, data: { permitJson: JSON.stringify(permit) } });
     return { ok: true, permit, appUrl: COOLCALC_APP_URL };
   } catch (err) {
-    return { ok: false, error: `Cool Calc refused — ${(err instanceof Error ? err.message : String(err)).slice(0, 240)}` };
+    return { ok: false, error: failed("reach Cool Calc", err) };
   }
 }
 
@@ -674,7 +699,7 @@ export async function attachHvacPermitReport(raw: unknown): Promise<{ ok: true; 
     await db.hvacEstimate.update({ where: { id: row.id }, data: { approvedReportUrl: url, permitJson: permit ? JSON.stringify({ ...permit, attachedAt: new Date().toISOString() }) : row.permitJson } });
     return { ok: true, url };
   } catch (err) {
-    return { ok: false, error: missingTable(err) ? "The HVAC tables aren't in this database yet." : `Couldn't attach — ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}` };
+    return { ok: false, error: missingTable(err) ? "The HVAC tables aren't in this database yet." : failed("attach the report", err) };
   }
 }
 
@@ -705,6 +730,8 @@ function unitToType(unit: string | undefined): string {
 
 const convertSchema = z.object({
   estimateId: z.string().optional().nullable(),
+  /** The job address; the saved estimate's own wins when there is one. */
+  address: z.string().max(300).optional(),
   /** Set when the estimate carries an approved report; one sentence in the scope. */
   permitNote: z.string().max(300).optional(),
   title: z.string().min(1).max(200),
@@ -721,15 +748,32 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
   await enforcePlanLimit(organizationId, "proposalsCreated");
   const data = convertSchema.parse(raw);
 
-  const clientId = data.clientId
+  const named = data.clientId
     ? ((await db.client.findFirst({ where: { id: data.clientId, organizationId }, select: { id: true } }))?.id ?? null)
     : null;
+  // Started from a project or a client's page, the picker recorded where this
+  // estimate files (lib/filingContext); an explicit client still wins.
+  const filing = await readFilingContext(organizationId);
+  const clientId = named ?? filing?.clientId ?? null;
+  const projectId = filing?.projectId ?? null;
 
   const lines = [
     ...data.materials.map((l) => ({ name: l.name, measurementType: unitToType(l.unit), quantity: l.quantity, unitPrice: l.unitPrice, materialCost: l.unitPrice, laborCost: 0, total: l.quantity * l.unitPrice })),
     ...data.labor.map((l) => ({ name: l.name, measurementType: unitToType(l.unit), quantity: l.quantity, unitPrice: l.unitPrice, materialCost: 0, laborCost: l.unitPrice, total: l.quantity * l.unitPrice })),
   ];
   const subtotal = lines.reduce((a, l) => a + l.total, 0);
+  // The job address and the state's sales tax, the way the other estimators'
+  // converts write them (review, 2026-09-17: the proposal used to land with
+  // no address and taxRate 0, so a Texas job carried no tax).
+  let address = data.address?.trim() || null;
+  let stateHint: string | null = null;
+  if (data.estimateId) {
+    const saved = await db.hvacEstimate.findFirst({ where: { id: data.estimateId, organizationId }, select: { address: true, state: true } }).catch(() => null);
+    if (saved) { address = saved.address || address; stateHint = saved.state; }
+  }
+  const org = await db.organization.findUnique({ where: { id: organizationId }, select: { defaultTaxRate: true } });
+  const taxRate = stateTaxRate(stateFromAddress(address) ?? stateHint) ?? org?.defaultTaxRate ?? 0;
+  const taxTotal = subtotal * taxRate;
 
   const proposal = await db.proposal.create({
     data: {
@@ -737,11 +781,15 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
       organizationId,
       ownerId: user.id,
       clientId,
+      projectId,
       title: data.title,
       scopeOfWork: [data.scope ?? "", data.permitNote ?? ""].filter(Boolean).join("\n\n"),
+      address,
       status: ProposalStatus.DRAFT,
       subtotal,
-      total: subtotal,
+      taxRate,
+      taxTotal,
+      total: subtotal + taxTotal,
       validUntil: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
       lineItems: { create: lines.map((l, i) => ({ ...l, position: i })) },
       installments: {
@@ -765,6 +813,8 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
     data: { organizationId, actorId: user.id, proposalId: proposal.id, kind: "CREATED", summary: `Converted HVAC estimate to proposal "${proposal.title}"` },
   });
 
+  if (filing) await clearFilingContext();
+  if (projectId) revalidatePath(`/dashboard/projects/${projectId}`);
   revalidatePath("/dashboard/proposals");
   return { id: proposal.id };
 }

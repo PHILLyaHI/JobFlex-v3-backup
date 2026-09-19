@@ -36,6 +36,8 @@ export interface PdProject {
   startsAt: Date | null;
   endsAt: Date | null;
   budget: number;
+  /** The client the project is for (2026-09-18), or null. */
+  client?: PdClient | null;
 }
 
 export interface PdJob {
@@ -60,30 +62,44 @@ export interface PdAvailJob {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   ATTACHING A PROPOSAL — what the schema actually allows (2026-08-15)
+   PROPOSALS ON A PROJECT (2026-09-18)
 
-   The attach control on this page attaches PROPOSALS, not jobs. There is no
-   `Proposal.projectId` column and no server action that writes one: the
-   proposal builder's Basics block carries a project picker, but it is local
-   state and says so in its own source ("Project selection is local-only — the
-   Proposal model has no projectId column yet"). Prisma changes are out of
-   scope, so the link cannot be direct.
-
-   What DOES exist is the chain the data model already draws:
-
-       Proposal ──< Job.proposalId          Job.projectId >── Project
-
-   So a proposal is "on" a project when its JOBS are, and attaching one is
-   `attachJob(projectId, jobId)` — the existing action, unchanged — run over
-   the jobs that proposal owns. That is the whole of the write.
-
-   The consequence is honest and has to be shown rather than hidden: a proposal
-   with no job yet has nothing to link, and one whose jobs already sit on some
-   other project is spoken for. Both still appear in the list — the reader asked
-   "which of my proposals can go on this project", and an answer that silently
-   drops two thirds of the book is not an answer — but they arrive carrying
-   `blocked`, and the row says why instead of offering a button that would lie.
+   A proposal is on a project when its own `projectId` says so — the column
+   exists now. Until then the link ran through the proposal's JOBS (a proposal
+   with no job yet could not be attached at all); that detour is gone. Moving a
+   proposal carries its job with it (actions/projectLinks.setProposalProject),
+   and its change orders hang off the proposal, so they come along untouched.
    ══════════════════════════════════════════════════════════════════════════ */
+
+/** The client a project is for, or null for one that names none. */
+export interface PdClient {
+  id: string;
+  name: string;
+}
+
+/** One proposal filed under the project, as the page's Proposals card reads it. */
+export interface PdProposal {
+  id: string;
+  title: string;
+  /** Raw Prisma Proposal.status. */
+  status: string;
+  total: number;
+  /** The contract today: the total plus the approved change orders. */
+  contract: number;
+  clientName: string | null;
+  updatedAt: Date;
+  co: { count: number; approved: number; pending: number; approvedTotal: number; pendingTotal: number };
+}
+
+/** A proposal of the project's own client that sits in no project — the page
+ *  offers to bring these in with one tap. */
+export interface PdLooseProposal {
+  id: string;
+  title: string;
+  total: number;
+}
+
+/** A proposal that could be filed under this project. */
 export interface PdAvailProposal {
   id: string;
   title: string;
@@ -91,30 +107,37 @@ export interface PdAvailProposal {
   status: string;
   total: number;
   clientName: string | null;
-  /** The proposal's jobs that sit on no project — exactly what attaching moves.
-   *  Empty means the row cannot be attached, and `blocked` says why. */
-  linkJobIds: string[];
-  /** Why this proposal cannot be attached, or null when it can. */
+  /** The project it is in now, when that is another one — attaching moves it. */
+  projectName: string | null;
+  /** Kept for the handheld list's shape; nothing blocks an attach any more. */
   blocked: string | null;
 }
 
-/** Attachable rows first, each group keeping the server's own order (most
- *  recently touched first). A list that opens on six rows you cannot use reads
- *  as an empty list. */
+/** Proposals in no project first, then the ones another project holds; each
+ *  group keeps the server's order (most recently touched first). */
 export function attachableFirst(list: PdAvailProposal[]): PdAvailProposal[] {
-  return [...list].sort((a, b) => Number(Boolean(a.blocked)) - Number(Boolean(b.blocked)));
+  return [...list].sort((a, b) => Number(Boolean(a.projectName)) - Number(Boolean(b.projectName)));
 }
 
-/** The row's mono annotation: who it is for, what it is worth, and what
- *  attaching would actually move. */
+/** The row's mono annotation: who it is for, what it is worth, and where it
+ *  sits now. */
 export function proposalMeta(p: PdAvailProposal, money: (n: number) => string): string {
-  const jobs = p.linkJobIds.length;
-  const bits = [
-    p.clientName ?? "No client",
-    money(p.total),
-    p.blocked ?? (jobs === 1 ? "1 job" : `${jobs} jobs`),
-  ];
-  return bits.join(" · ");
+  return [p.clientName ?? "No client", money(p.total), p.projectName ? `in ${p.projectName} — moves here` : null]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** The status badge's modifier for a PROPOSAL, on the page's three tones plus
+ *  a warning one for a lost proposal. */
+export function proposalTone(status: string): "done" | "prog" | "sch" | "bad" {
+  if (status === "ACCEPTED" || status === "PAID" || status === "COMPLETED") return "done";
+  if (status === "SENT" || status === "VIEWED") return "prog";
+  if (status === "DECLINED" || status === "EXPIRED") return "bad";
+  return "sch";
+}
+
+export function proposalLabel(status: string): string {
+  return status.charAt(0) + status.slice(1).toLowerCase();
 }
 
 /**

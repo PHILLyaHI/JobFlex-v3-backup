@@ -36,6 +36,24 @@ export type LineItemsProps = {
 
   /** Sum of the named rows, pre-markup. The card's foot figure. */
   baseTotal: number;
+
+  /**
+   * Card 04's two cost sliders, in percentage points (+10 = every material
+   * cost × 1.10). When set, the rows and the foot show the ADJUSTED figures —
+   * the numbers the sliders will bake into the lines on save — and a typed
+   * figure is read back through the same factor, so what the contractor sees
+   * in the table is what the client will be charged (owner, 2026-09-17: the
+   * sliders must spread through the line items, not just the totals).
+   */
+  adjust?: { materialPct: number; laborPct: number };
+
+  /**
+   * The client price of every line once overhead or profit is on: card 10's
+   * printed amounts by line id, their sum, and a note saying what is inside
+   * them. The rows print it under their total, the foot under its own, so
+   * the contractor sees the same lines the client sees.
+   */
+  client?: { byId: Record<string, number>; total: number; note: string };
   namedCount: number;
   /** Rows with no name: priced, but excluded from every total and never printed. */
   unnamedCount: number;

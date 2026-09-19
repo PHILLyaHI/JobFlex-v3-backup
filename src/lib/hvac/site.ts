@@ -7,7 +7,8 @@
 import type { FootprintEdge } from "./types";
 
 export interface LatLng { lat: number; lng: number }
-export interface BuildingRing { ring: LatLng[]; heightFt?: number | null }
+/** A footprint ring; `heightTagged` says the height came from a real tag, not a one-storey default. */
+export interface BuildingRing { ring: LatLng[]; heightFt?: number | null; heightTagged?: boolean }
 
 const FT_PER_DEG_LAT = 364_000;
 
@@ -20,7 +21,7 @@ export function ringGeometry(ring: LatLng[]): { areaSqft: number; perimeterFt: n
   const pts = ring.map((p) => ({ x: p.lng * kx, y: p.lat * FT_PER_DEG_LAT }));
   let area = 0;
   let perim = 0;
-  const edges: FootprintEdge[] = [];
+  const walls: Array<{ dirDeg: number; lengthFt: number }> = [];
   for (let i = 0; i < pts.length; i++) {
     const a = pts[i];
     const b = pts[(i + 1) % pts.length];
@@ -30,10 +31,17 @@ export function ringGeometry(ring: LatLng[]): { areaSqft: number; perimeterFt: n
     const len = Math.hypot(dx, dy);
     if (len < 1) continue;
     perim += len;
-    // Bearing of the wall's outward-facing direction is what the solar table
-    // wants; the wall's own bearing is enough to tell N/E/S/W walls apart.
-    edges.push({ bearingDeg: Math.round((((Math.atan2(dx, dy) * 180) / Math.PI) + 360) % 360), lengthFt: Math.round(len * 10) / 10 });
+    walls.push({ dirDeg: (((Math.atan2(dx, dy) * 180) / Math.PI) + 360) % 360, lengthFt: Math.round(len * 10) / 10 });
   }
+  // The solar table wants the direction each wall FACES, not the direction it
+  // runs: an east–west wall faces north or south. The shoelace sign says
+  // which way the ring is traced (positive = counter-clockwise in this
+  // x-east / y-north frame), so the outward normal is the wall's direction
+  // turned 90° to the right of travel on a counter-clockwise ring and to the
+  // left on a clockwise one (review, 2026-09-17: the old code scored an
+  // east–west wall as east or west glass).
+  const ccw = area > 0;
+  const edges: FootprintEdge[] = walls.map((w) => ({ bearingDeg: Math.round((w.dirDeg + (ccw ? 90 : 270)) % 360), lengthFt: w.lengthFt }));
   return { areaSqft: Math.round(Math.abs(area) / 2), perimeterFt: Math.round(perim), edges };
 }
 
@@ -61,8 +69,11 @@ export function pickBuilding(buildings: BuildingRing[], lat: number, lng: number
   return { building: nearest, inside: false };
 }
 
-/** Storeys from a footprint record's height: ~11 ft a floor, 1–3. */
+/** Storeys from a footprint record's height, 1–3. A tagged height is the
+ *  ridge, not the eave: a ranch runs 16–20 ft, two storeys 26–30, so about
+ *  10 ft a floor after the roof's 6 ft (building:levels arrives as
+ *  levels × 10 + 3, which lands on the same ladder). */
 export function storeysFromHeight(heightFt: number | null | undefined): number | undefined {
   if (!heightFt || heightFt <= 0) return undefined;
-  return Math.max(1, Math.min(3, Math.round(heightFt / 11)));
+  return Math.max(1, Math.min(3, Math.round((heightFt - 6) / 10)));
 }

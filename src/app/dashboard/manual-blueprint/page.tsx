@@ -28,6 +28,9 @@
 //   ?proposal=<id>  an existing proposal to reopen. Written into the URL by the
 //                   page itself after the first successful save, so navigating
 //                   away and back finds the row instead of a blank sheet.
+//   ?project=<id>   the project a NEW proposal is filed under (2026-09-18: the
+//                   project page's "New proposal"); its client comes with it
+//                   when no ?client= is given.
 //
 // See manual-blueprint-bridge.ts for what round-trips and what does not.
 
@@ -73,6 +76,7 @@ export default async function ManualBlueprintPage({
     userId: ctx.user.id,
     clientId: one(params.client),
     proposalId: one(params.proposal),
+    projectId: one(params.project),
   });
 
   return <ManualBlueprintContent data={data} />;

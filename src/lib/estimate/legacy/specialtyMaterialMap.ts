@@ -170,9 +170,10 @@ export function formatSpecialtyMaterialProfile(
   const lines: string[] = [
     `=== SPECIALTY MATERIAL PROFILE: ${profile.specialtyId} ===`,
     '',
-    'These are the curated products and vendors for this specialty. Anchor your',
-    'estimate to the prices shown here when the project description matches —',
-    'the values reflect contractor-grade SKUs we stand behind.',
+    'These are the curated products and vendors for this specialty. Use the prices',
+    'as a check on the MATERIAL side of the lines they cover when the project',
+    'description matches — they reflect contractor-grade SKUs we stand behind. The',
+    'lines stay itemized: a pack or package is never written as one line.',
     '',
   ];
 

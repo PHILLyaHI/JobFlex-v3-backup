@@ -41,7 +41,7 @@ export const UNIT_RULES =
   "(g) a LOCKED-IN price with no measurable quantity — permits, plan review, mobilization, dumpster, general conditions, a subcontractor's quoted lump sum, an allowance, a day-rate rental — is `fixed`, quantity 1, unitPrice = the whole price. " +
   "Gallons, rolls, bundles, boxes, bags, sheets and pails are PACKAGES, not units: price paint per sqft of coverage, underlayment per sqft, shingles per sq boards, and describe the package (\"5 gal pail\", \"1 roll = 10 sq\", \"3 bundles = 1 sq\") in `dimensions`. " +
   "Do NOT use sqft for anything measured linearly. Do NOT default to `fixed` or `unit` when a real quantity exists: 70 outlets is unit × 70, 900 ft of baseboard is linear ft × 900, 14 doors is unit × 14. " +
-  "`quantity` is the measured quantity in that unit (waste applied where the methodology says so), `unitPrice` is the price per ONE of that unit, and quantity × unitPrice is the line total.";
+  "`quantity` is the net measured quantity in that unit (waste is priced into the material unit price and stated in notes, never added to the quantity), `unitPrice` is the price per ONE of that unit, and quantity × unitPrice is the line total.";
 
 /**
  * The pricing rule: line prices are unit prices from the guidelines, the retail
@@ -361,22 +361,22 @@ Every finish-trade line item generated from plans **MUST** name the specific roo
 - ❌ "Doors and trim — 18 ea"
 
 **REQUIRED (room-named):**
-- ✅ "Interior paint — Master Bedroom (288 sf walls + 288 sf ceiling, 2 coats)"
-- ✅ "Interior paint — Bedrooms 2 & 3 + Hall (612 sf walls + 410 sf ceiling, 2 coats)"
-- ✅ "Hardwood flooring — Great Room, Kitchen, Dining, Foyer, Office (1,084 sf, 5/8 engineered oak)"
-- ✅ "Carpet — Master Bedroom + Master WIC + Bedrooms 2 & 3 (684 sf, mid-grade nylon w/ 8 lb pad)"
-- ✅ "Tile flooring — Master Bath, Hall Bath, Powder, Mudroom (350 sf 12×24 porcelain)"
-- ✅ "Kitchen base cabinets — 22 LF Shaker style w/ soft-close, plywood box"
-- ✅ "Kitchen upper cabinets — 18 LF Shaker style w/ soft-close, 42\\" tall"
+- ✅ "Interior paint — Master Bedroom walls and ceiling, 2 coats" (the sqft in the quantity field)
+- ✅ "Interior paint — Bedrooms 2 & 3 + Hall walls and ceilings, 2 coats"
+- ✅ "Hardwood flooring — Great Room, Kitchen, Dining, Foyer, Office (5/8 engineered oak)"
+- ✅ "Carpet — Master Bedroom + Master WIC + Bedrooms 2 & 3 (mid-grade nylon w/ 8 lb pad)"
+- ✅ "Tile flooring — Master Bath, Hall Bath, Powder, Mudroom (12×24 porcelain)"
+- ✅ "Kitchen base cabinets — Shaker style w/ soft-close, plywood box"
+- ✅ "Kitchen upper cabinets — Shaker style w/ soft-close, 42\\" tall"
 - ✅ "Master Bath vanity — 72\\" double w/ quartz top, undermount sinks"
 - ✅ "Hall Bath vanity — 36\\" single w/ cultured marble top"
-- ✅ "Toilet, supply, shutoffs — Master Bath (1 ea, comfort-height elongated)"
-- ✅ "Toilet, supply, shutoffs — Hall Bath (1 ea)"
-- ✅ "Toilet, supply, shutoffs — Powder Room (1 ea)"
-- ✅ "Interior doors & casing — Master Bedroom (1 ea 32\\" 6-panel + closet bypass)"
-- ✅ "Interior doors & casing — Bedrooms 2 & 3 (2 ea 32\\" 6-panel + 2 reach-in closet doors)"
-- ✅ "Interior doors & casing — Bathrooms (3 ea 30\\" privacy 6-panel)"
-- ✅ "Window installation — Master Bedroom (2 ea 4'-0\\" × 5'-0\\" double-hung vinyl)"
+- ✅ "Toilet, supply, shutoffs — Master Bath (comfort-height elongated)"
+- ✅ "Toilet, supply, shutoffs — Hall Bath"
+- ✅ "Toilet, supply, shutoffs — Powder Room"
+- ✅ "Interior doors & casing — Master Bedroom (32\\" 6-panel and closet bypass)"
+- ✅ "Interior doors & casing — Bedrooms 2 & 3 (32\\" 6-panel and reach-in closet doors)"
+- ✅ "Interior doors & casing — Bathrooms (30\\" privacy 6-panel)"
+- ✅ "Window installation — Master Bedroom (4'-0\\" × 5'-0\\" double-hung vinyl)"
 
 **Trades that REQUIRE room-specific naming:**
 - All flooring (hardwood, carpet, tile, LVP, polished concrete)
@@ -396,21 +396,21 @@ Every finish-trade line item generated from plans **MUST** name the specific roo
 - Site protection, demolition (whole-house only — itemize the rooms being demoed)
 - Foundation, framing, roof, siding, insulation, drywall hang/finish, primer
 - Whole-house rough-in plumbing/electrical/HVAC (rough-in only — finish must be per room)
-- General conditions, overhead, profit, permits
+- General conditions and permits (overhead and profit are never lines — the contractor's markup carries them)
 
-**When multiple rooms get the same finish, you MAY bundle them on one line, but you MUST list every room name in the description.** Example: "Carpet installation — Master Bedroom, Master WIC, Bedrooms 2 & 3 (684 sf total: 288 + 96 + 156 + 144)".
+**When multiple rooms get the same finish, you MAY bundle them on one line, but you MUST list every room name in the description.** Example: "Carpet installation — Master Bedroom, Master WIC, Bedrooms 2 & 3", quantity 684 sqft. Counts and sums live in the quantity field, never in the name.
 
 ### Step 3: Pricing Rules for Blueprint Estimates
 
 - Use ACTUAL quantities extracted from the plans with correct units for every line item
 - Reference the **Room Schedule (Step 1A)** for every finish-trade quantity. Each line item description must name the specific room(s) it applies to.
 - Overhead and profit are applied by the contractor's own markup settings AFTER this estimate — price lines at cost + trade labor, do not add overhead or profit lines
-- Include waste factors: 10% lumber, 10-15% tile/flooring, 10% siding, 5% drywall
+- Quantities are the net measured quantities; price the waste factor (10% lumber, 10-15% tile and flooring, 10% siding, 5% drywall) into the material unit price and state it in notes
 - If dimensions are partially readable, state assumptions clearly
 - Every phase must have line items — do NOT skip trades even if not explicitly detailed on plans (use standard allowances)
 - For items not specified on plans (paint color, fixture brand, etc.), use mid-range standard selections
 
-### DEFAULT WASTE FACTORS (Apply to all blueprint quantity takeoffs)
+### DEFAULT WASTE FACTORS (priced into the material unit price; quantities stay net)
 
 | Material | Waste % | | Material | Waste % |
 |---|---|---|---|---|
@@ -424,7 +424,7 @@ Every finish-trade line item generated from plans **MUST** name the specific roo
 | Ductwork | 10% | | Siding (lap/panel) | 8% |
 | Metal studs | 5% | | Trim / fascia | 10% |
 
-State the waste % applied on each line item's notes. Increase for complex geometry, excessive cuts, or difficult installations and note the reason.
+State the waste % applied in each line item's notes and never add it to the quantity. Increase for complex geometry, excessive cuts, or difficult installations and note the reason.
 
 ### BLUEPRINT ESTIMATE CONFIDENCE REQUIREMENTS
 
@@ -441,22 +441,7 @@ If overall confidence is below 50, label the estimate as "Preliminary — Low Co
 
 **When NO Photos PROVIDED:**
 1. **GENERATE DETAILED ITEMIZED BREAKDOWN** - Do NOT create a single lump sum line item
-2. **BREAK DOWN ALL COMPONENTS** - Each major component gets its own line item:
-   - Demolition and disposal (separate line item)
-   - Cabinet removal (separate line item)
-   - New cabinets - base units (separate line item)
-   - New cabinets - upper units (separate line item)
-   - Countertops with fabrication (separate line item)
-   - Sink and faucet installation (separate line item)
-   - Backsplash tile and installation (separate line item)
-   - Flooring removal (separate line item)
-   - New flooring installation (separate line item)
-   - Appliance removal (separate line item)
-   - Appliance installation (separate line item)
-   - Plumbing rough-in (separate line item)
-   - Electrical work (separate line item)
-   - Painting and trim (separate line item)
-   - Finish work and cleanup (separate line item)
+2. **THE LINES ARE THE JOB THE BRIEF NAMES** - walked through its PROCEDURE, and through the REMODEL ESTIMATING METHOD when it is present: every piece of work its own line, every connection the work touches priced (a sink's under-sink plumbing, a disposal's switch and circuit). A like-for-like fixture swap is 4-7 lines; a whole room remodel carries every step of its procedure. Never write a room's full checklist on a brief for part of it: a sink swap is not a kitchen remodel.
 3. **USE STANDARD DIMENSIONS** - Base estimate on typical project sizes from the description
 4. **CLEAN PROFESSIONAL DESCRIPTIONS** - Each line item description must describe the WORK being performed, NOT show math formulas or calculations. Put all numeric values (qty, unit price, total) in their respective JSON fields only.
 
@@ -606,14 +591,14 @@ Typical components (use CORRECT units for each):
 - **Remove and dispose of existing siding** → sqft (net siding area)
 - **Install housewrap / WRB (weather-resistant barrier)** → sqft (net wall area)
 - **Window/door head flashing, Z-flashings, penetration flashings** → linear ft (NOT sqft — measure lineal feet along transitions and around openings)
-- **Siding panels (lap siding, fiber cement, vinyl, etc.)** → sqft (order area with waste factor, typically 10%)
+- **Siding panels (lap siding, fiber cement, vinyl, etc.)** → sqft (net siding area; the typical 10% waste is priced into the material unit price)
 - **Install siding** → sqft (net siding area for labor)
 - **Trim boards (fiber-cement or primed)** → linear ft (typically 12% of net siding area converted to linear feet)
 - **Corner boards** → linear ft (building height × number of outside corners × 2 pieces per corner)
 - **Window/door casing trim** → linear ft (perimeter of each opening: 2 × height + width for each window/door)
 - **Starter strips** → linear ft (bottom of each siding run)
 - **J-channel** → linear ft (around windows, doors, soffits)
-- **Fasteners, nails, caulk, sealants, adhesives** → sqft (allowance per net siding area) or fixed
+- **Fasteners, nails, caulk, sealants, adhesives** → never their own line; they ride inside the material price of the siding and trim lines they serve
 - **Scaffolding / lift rental** → fixed (day rate) or hour (for 2+ story work)
 - **Jobsite cleanup, haul-off** → fixed
 - **Localized sheathing repair** → unit or fixed (per sheet of plywood)
@@ -630,7 +615,7 @@ Typical components (use CORRECT units for each):
 Typical components:
 - **Tear-off / removal** → sqft
 - **Underlayment (felt or synthetic)** → sqft
-- **Shingles / roofing material (supply)** → sq boards (roof area ÷ 100 with 10-15% waste); **install labor** → sqft
+- **Shingles / roofing material (supply)** → sq boards (roof area ÷ 100; the 10-15% waste is priced into the material price per square); **install labor** → sqft
 - **Ridge cap** → linear ft (ridge length)
 - **Drip edge** → linear ft (along eaves and rakes)
 - **Valley flashing** → linear ft
@@ -659,25 +644,27 @@ Typical components:
 
 ## PRICING GUIDELINES
 
+The PRICE BOOK in the procedure block governs every step it prices — the contractor's cost per unit, scaled by the LOCATION factor. The figures below are a cross-check and price only what the book leaves unpriced.
+
 ### KITCHEN MATERIALS (per linear foot of cabinets)
 - Stock cabinets: $100-200/LF
 - Semi-custom cabinets: $200-400/LF
 - Custom cabinets: $400-800/LF
 - Countertop (quartz): $60-120/SF
 - Countertop (granite): $50-100/SF
-- Countertop (laminate): $20-40/SF
-- Backsplash tile: $10-30/SF (material)
+- Countertop (laminate): $25-45/SF installed
+- Backsplash tile: $3-15/SF material (3x6 ceramic subway $3-6)
 - Backsplash labor: $15-25/SF
 
 ### BATHROOM MATERIALS
-- Vanity (stock): $200-800
+- Vanity (stock, 36 in.): cabinet $350-900, top $150-450; $700-1,100 with the top
 - Vanity (custom): $800-3000+
-- Toilet: $200-600
+- Toilet: $250-550 (comfort-height 1.28 gpf elongated)
 - Tub: $300-2000
-- Shower (prefab): $800-2500
-- Shower (custom tile): $3000-10000+
-- Tile (floor): $5-20/SF material, $8-15/SF labor
-- Tile (walls): $5-25/SF material, $10-20/SF labor
+- Shower (prefab base and surround kit, material): $800-2,500; installed tub-to-shower with a prefab kit $6,500-11,000
+- Tiled shower: never one line — itemize the pan, membrane, backer, tile, glass and valve; installed tub-to-shower check $10,000-18,000, never under $12,000 in the Seattle area and the CA and NY metros
+- Tile (floor): $3-8/SF material (standard porcelain; mosaic $8-15), $10-18/SF labor
+- Tile (walls): $3-8/SF material, $12-25/SF labor on shower walls, $18-30/SF for mosaics and niches
 
 ### EXTERIOR / SIDING MATERIALS
 - Fiber-cement lap siding (material): $2.50-4.00/SF
@@ -713,16 +700,17 @@ Typical components:
 - Deck railing: $30-80/LF installed
 
 ### LABOR RATES
-- Demolition: $3-8/SF
-- Tile installation: $8-20/SF
+- Demolition: $3-8 per sqft of surface removed; a room gut priced whole: bath $1,200-2,800, kitchen $1,800-4,000, disposal on its own line
+- Tile installation: floors $10-18/SF, walls $12-25/SF, mosaics and niches $18-30/SF
 - Cabinet installation: $50-100/LF
-- Plumbing rough-in: $500-1500/fixture
-- Electrical rough-in: $200-500/circuit
+- Plumbing rough-in: per fixture in place $600-1,200; per relocated fixture $1,500-3,500
+- Electrical: new 20 A circuit with breaker and device $450-900; 240 V 50 A range circuit $700-1,600; device swap $75-150; new bath fan ducted outdoors with its switch $1,000-2,200
 - Painting: $2-5/SF
 - Siding installation: $3.50-5.50/SF
 - Trim installation: $3.00-4.00/LF
 - Flashing installation: $0.80-1.25/LF
-- Hourly trades: handyman $50-90/hr, carpenter $60-110/hr, electrician $80-150/hr, plumber $80-160/hr
+- Hourly trades: handyman $55-95/hr, carpenter $65-110/hr, electrician $100-160/hr (Seattle area $140-200), plumber $110-180/hr (Seattle area $150-220), HVAC technician $95-160/hr, tile setter $65-110/hr, painter $55-90/hr
+- Every remodel carries: permit $300-1,500 (King County, Bay Area and NYC $800-2,500); floor and dust protection $250-600; final clean $250-500; a drywall patch $250-450 for the first opening; in Washington the asbestos survey $300-700
 
 ## ${PRICING_RULES}
 
@@ -732,26 +720,27 @@ Typical components:
 One line "Full Kitchen Remodel (15' x 15') with 4' x 8' Island", unit fixed, qty 1, one big price.
 
 ### ✅ GOOD - Professional Itemized Breakdown (ALWAYS DO THIS):
-A kitchen becomes tasks like these, each with a measured quantity, its unit, a material $/unit and a labor $/unit:
-- "Demolition and Disposal — remove existing cabinets, countertops, appliances, and flooring throughout kitchen area" · sqft · 225 · material 0 · labor $5.00/sqft
-- "Semi-Custom Base Cabinets — 20 LF shaker-style with soft-close doors and drawers" · linear ft · 20 · material $300/LF · labor $75/LF
-- "Semi-Custom Upper Cabinets — 16 LF shaker-style with soft-close doors" · linear ft · 16 · material $250/LF · labor $60/LF
-- "Quartz Countertops - Perimeter — engineered quartz with eased edge, fabrication and installation" · sqft · 72 · material $85/sqft · labor $0 (fabricator's price includes install)
-- "Quartz Island Countertop — engineered quartz island top with waterfall edge" · sqft · 32 · material $95/sqft
-- "Tile Backsplash — ceramic subway tile backsplash with installation" · sqft · 45 · material $12/sqft · labor $18/sqft
-- "Luxury Vinyl Plank Flooring — waterproof LVP with underlayment and installation" · sqft · 225 · material $4.50/sqft · labor $3.00/sqft
-- "Undermount Sink and Faucet — stainless undermount sink with pull-down faucet, installation and plumbing hookup" · unit · 1 · material $450 · labor $350
-- "Plumbing Rough-In — relocate water supply lines, drain lines for sink and dishwasher, gas line for range" · fixed · 1 · material $800 · labor $1,200
-- "Electrical Upgrades — (2) new 20A circuits, (5) new outlets, under-cabinet LED lighting, pendant lights over island" · fixed · 1 · material $1,200 · labor $1,800
-- "Appliance Installation — install and hook up refrigerator, range, dishwasher, microwave (appliances by owner)" · fixed · 1 · labor $800
-- "Paint and Finish — prime and paint walls and ceiling with two coats premium paint" · sqft · 225 · material $1.50/sqft · labor $3.00/sqft
-- "Permits and Final Cleanup — building permits, inspections, final cleanup and debris removal" · fixed · 1 · material $500 · labor $400
+A 12x14 same-layout kitchen (appliances by owner) becomes tasks like these, each with a measured quantity, its unit, a material $/unit and a labor $/unit:
+- "Floor and finish protection and dust control — Ram Board from the entry, zipper dust walls, registers sealed" · fixed · 1 · material $150 · labor $300
+- "Demolition of the base and wall cabinets, laminate tops, splash and sink; appliances disconnected and pulled" · linear ft · 36 · material 0 · labor $60/LF
+- "Debris disposal — 20 cu yard dumpster, delivery, one pull and dump fees" · fixed · 1 · material $600 · labor 0
+- "Semi-custom Shaker base cabinets set level, scribed and screwed to the studs, toe kicks and fillers" · linear ft · 20 · material $300/LF · labor $75/LF
+- "Semi-custom Shaker wall cabinets with crown, hung level and screwed to the studs" · linear ft · 16 · material $250/LF · labor $60/LF
+- "3 cm quartz countertops templated after the cabinets are set, eased edge, undermount sink cutout and faucet hole" · sqft · 45 · material $85/sqft · labor 0 (the fabricator's installed price)
+- "Ceramic subway tile backsplash on modified thinset, grouted, silicone at the counter, metal edge profile" · sqft · 35 · material $5/sqft · labor $20/sqft
+- "Under-sink plumbing — 1-1/2 in. P-trap kit, disposal elbow and dishwasher branch, faucet supplies on new quarter-turn stops, leak-tested" · unit · 1 · material $120 · labor $250
+- "Second 20 A small-appliance circuit, 12-2 NM-B from the panel, GFCI breaker" · unit · 1 · material $120 · labor $550
+- "Countertop receptacles, 20 A tamper-resistant and GFCI-protected, no counter point more than 24 in. from one" · unit · 6 · material $25 · labor $110
+- "Dishwasher set on side brackets, braided supply, drain loop, cord kit, full cycle run" · unit · 1 · material $40 · labor $250
+- "Rigid-core LVP floated to the toe kicks and under the appliance openings" · sqft · 116 · material $3.75/sqft · labor $3.00/sqft
+- "Walls and ceiling primed and painted two coats" · sqft · 370 · material $0.50/sqft · labor $2.25/sqft
+- "Building permit with the rough and final inspections" · fixed · 1 · material $900 · labor 0
+- "Final construction clean — surfaces wiped, cabinets vacuumed out, floors mopped" · fixed · 1 · material $50 · labor $350
 
 **KEY POINTS:**
-- Minimum 8-15 line items for kitchen remodels
-- Minimum 6-12 line items for bathroom remodels
-- Each major component = separate line item
-- Put quantities in the qty field — do NOT repeat calculations in descriptions
+- The line count follows the job: a like-for-like fixture swap is 4-7 lines, a whole hall bath 22-30, a whole same-layout kitchen 24-32; the PROCEDURE block sets the floor for a whole job
+- Each piece of work = its own line item; countable work is never a fixed lump
+- Put quantities and counts in the qty field — never in a line's name, never as calculations
 - Write clean, professional descriptions that describe the WORK, not the math
 
 ## OUTPUT SHAPE — TWO LEDGERS

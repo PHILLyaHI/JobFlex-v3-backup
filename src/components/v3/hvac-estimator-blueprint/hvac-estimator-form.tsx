@@ -155,8 +155,10 @@ function Field({ label, path, model, kind, options, onChange, placeholder, step 
             const v = e.target.value.trim();
             if (kind === "num") {
               const n = Number(v.replace(/,/g, ""));
-              if (v === "") return;
-              if (Number.isFinite(n) && n !== raw) onChange(path, n);
+              // Blank clears a typed answer (the plate or the record shows again); a
+              // negative count, size or amperage is a typo, not a fact.
+              if (v === "") { if (raw !== undefined && raw !== null) onChange(path, undefined); return; }
+              if (Number.isFinite(n) && n >= 0 && n !== raw) onChange(path, n);
             } else if (v !== (raw ?? "")) onChange(path, v || undefined);
           }}
         />
@@ -273,6 +275,10 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
   // 1 · site
   const addrRef = React.useRef<HTMLInputElement | null>(null);
   const [picked, setPicked] = React.useState<PickedPlace | null>(null);
+  /** The ledger lines of a reopened estimate, adopted on the first render that has a design. */
+  const savedLinesRef = React.useRef<{ materials: LedgerLine[]; labor: LedgerLine[] } | null>(null);
+  /** The design (target tons, systems, kind) a hand pick was made against; a different design clears the pick. */
+  const pickDesignRef = React.useRef<string>("");
   const [stateCode, setStateCode] = React.useState("");
   const [county, setCounty] = React.useState("");
   const [countyPicked, setCountyPicked] = React.useState(false);
@@ -430,6 +436,17 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
   // out included), else the Better tier as the base quote when the catalog has
   // tiers, else the engine's own first choice. The run is repeated for that
   // unit so the checks and the notes describe what is being sold.
+  // The design a pick belongs to: when the load re-sizes the job (a new square
+  // footage, a second system), a Good/Better/Best or swap pick made against
+  // the old design is dropped, and the panel says so, rather than the old unit
+  // quietly staying on the estimate as the "Best" it no longer is.
+  const pickDesign = engineRaw ? `${engineRaw.selection.targetTons}|${engineRaw.selection.systems}|${engineRaw.selection.chosen?.item.kind ?? ""}` : "";
+  if (def.needs.load && pickId && pickDesignRef.current && pickDesignRef.current !== pickDesign) {
+    pickDesignRef.current = "";
+    setPickId(null);
+    setSwapMsg("The load changed, so the unit you had picked was let go — the engine's pick is back on the estimate; pick again if you want another.");
+  }
+  if (pickId && !pickDesignRef.current) pickDesignRef.current = pickDesign;
   const engine = React.useMemo<EngineResult | null>(() => {
     if (!engineRaw || !model) return engineRaw;
     const rerun = (id: string) => runEngine(model, { catalog: catalogItems, job, input: jobInput, outdoorKind: outdoorKind ?? undefined, custom: custom ?? undefined, pick: id });
@@ -573,9 +590,26 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
   // The names are part of the key: a catalog swap that keeps the size and
   // the price still renames the unit, and the lines must follow.
   const ledgerKey = ledger ? `${ledger.subtotal}|${ledger.materials.map((l) => l.id + l.name + l.quantity).join(",")}|${ledger.labor.map((l) => l.id + l.name + l.quantity).join(",")}` : "";
-  if (ledger && lines?.key !== ledgerKey) setLines({ key: ledgerKey, materials: ledger.materials, labor: ledger.labor });
+  if (ledger && lines?.key !== ledgerKey) {
+    const saved = savedLinesRef.current;
+    savedLinesRef.current = null;
+    setLines(saved ? { key: ledgerKey, materials: saved.materials, labor: saved.labor } : { key: ledgerKey, materials: ledger.materials, labor: ledger.labor });
+  }
 
   const onTyped = React.useCallback((path: string, v: unknown) => setTyped((t) => ({ ...t, [path]: v })), []);
+  /** Arrow keys walk a radio strip and pick as they go (the APG radiogroup pattern). */
+  const radioKeys = (e: React.KeyboardEvent<HTMLElement>) => {
+    const keys: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+    const step = keys[e.key];
+    if (!step) return;
+    const radios = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]'));
+    const i = radios.indexOf(document.activeElement as HTMLButtonElement);
+    if (i < 0 || radios.length < 2) return;
+    e.preventDefault();
+    const next = radios[(i + step + radios.length) % radios.length];
+    next.focus();
+    next.click();
+  };
   const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   // ── 1 · site lookup ───────────────────────────────────────────────────────
@@ -589,8 +623,12 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
       // (county, year built, area) fills in behind it when the lookup lands.
       const st = (stateCode || (full.match(/\b([A-Z]{2})\b(?=\s*\d{5}|\s*$)/) ?? [])[1] || "").toUpperCase();
       if (!st) { setSiteError("Add the state to the address (e.g. WA)."); return; }
+      const hadIntake = analysis || Object.keys(plates).length > 0 || Object.keys(typed).length > 0 || restored || pickId || Object.keys(jobInput).length > 0;
+      const isSameHouse = site?.address === full;
+      if (hadIntake && !isSameHouse && !window.confirm("Start over? The answers, plates and service picks for this house will be cleared.")) return;
       setSiteError("");
       setRestored(null); setPickId(null); setOutdoorKind(null); setCustom(null); setSwapMsg(""); setSavedId(null); setPermit(null); setReportUrl(null); setPermitMsg(""); setTitle(null);
+      if (!isSameHouse) { setTyped({}); setAnalysis(null); setPlates({}); setJobInput({}); setLinesetFt(undefined); }
       setSite({ address: full, state: st, county: countyPicked && county ? county : undefined, sources: {} });
       setSiteLocal(true);
       setStateCode(st);
@@ -618,7 +656,8 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
       }
       return;
     }
-    const hasIntake = analysis || Object.keys(plates).length > 0 || Object.keys(typed).length > 0;
+    // A reopened estimate, a hand pick or a typed unit is as much work as a walk.
+    const hasIntake = analysis || Object.keys(plates).length > 0 || Object.keys(typed).length > 0 || !!restored || !!pickId || !!custom || outdoorKind !== null;
     const sameHouse = site?.address === full;
     if (hasIntake && !sameHouse && !window.confirm("Start over? The walk, plates and typed answers for this house will be cleared.")) return;
     setSiteBusy(true);
@@ -633,7 +672,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
       setReportUrl(null);
       setPermitMsg("");
       setTitle(null);
-      if (!sameHouse) { setTyped({}); setAnalysis(null); setPlates({}); }
+      if (!sameHouse) { setTyped({}); setAnalysis(null); setPlates({}); setJobInput({}); setLinesetFt(undefined); }
       setSite(res.facts);
       setSiteLocal(false);
       setStateCode(res.facts.state);
@@ -706,8 +745,9 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
   // The current catalog as the import sheet: add costs in a spreadsheet, import it back.
   const onDownloadCatalog = () => {
     if (!catalog) return;
-    const esc = (v: unknown) => { const s = v === undefined || v === null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-    const rows = catalog.items.map((c) => CATALOG_CSV_COLUMNS.map((k) => esc(k === "afue" && c.afue ? Math.round(c.afue * 100) : (c as unknown as Record<string, unknown>)[k])).join(","));
+    // Lists ride as "CA|WA"; AFUE as the percent the makers print, to a tenth.
+    const esc = (v: unknown) => { const s = v === undefined || v === null ? "" : Array.isArray(v) ? v.join("|") : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const rows = catalog.items.map((c) => CATALOG_CSV_COLUMNS.map((k) => esc(k === "afue" && c.afue ? Math.round(c.afue * 1000) / 10 : (c as unknown as Record<string, unknown>)[k])).join(","));
     const blob = new Blob([[CATALOG_CSV_COLUMNS.join(","), ...rows].join("\n")], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -740,9 +780,12 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     job,
     input: jobInput,
     outdoorKind: kindQuotes.length === 2 ? outdoorKind ?? undefined : undefined,
-    pick: engine?.selection.chosen?.item.id,
+    // The pick as made (a tank on the strip, a unit in the swap panel) — the
+    // engine's chosen unit stands in for a sized job with no pick.
+    pick: pickId ?? engine?.selection.chosen?.item.id,
+    linesetFt,
     custom: custom ?? undefined,
-    title: title ?? ledger?.title ?? "HVAC replacement",
+    title: (title ?? "").trim() || ledger?.title || "HVAC replacement",
     scope: ledger?.scope ?? "",
     materials: lines?.materials ?? [],
     labor: lines?.labor ?? [],
@@ -767,7 +810,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     try {
       const id = savedId ?? (await save());
       const d = draft();
-      const res = await convertHvacEstimateToProposal({ estimateId: id, title: d.title, scope: d.scope, materials: d.materials, labor: d.labor, permitNote: reportUrl ? `Manual J load calculation: ACCA-approved report attached (Cool Calc${permit ? ` project ${permit.projectId}` : ""}).` : undefined });
+      const res = await convertHvacEstimateToProposal({ estimateId: id, title: d.title, scope: d.scope, materials: d.materials, labor: d.labor, permitNote: reportUrl && def.needs.load ? `Manual J load calculation: ACCA-approved report attached (Cool Calc${permit ? ` project ${permit.projectId}` : ""}).` : undefined });
       router.push(`/dashboard/manual-blueprint?proposal=${res.id}`);
     } catch (err) {
       if (!reportPlanLimit(err)) toast.error("Couldn't convert", errMsg(err));
@@ -797,6 +840,15 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     const d = res.row.draft as { pick?: string; custom?: CatalogItem };
     setCustom(d.custom ?? null);
     setPickId(d.pick ?? null);
+    setLinesetFt((res.row.draft as { linesetFt?: number }).linesetFt);
+    // The ledger the contractor edited and saved is what reopens — not a
+    // fresh rebuild that forgets the price they typed and the line they cut.
+    type SavedLine = { id?: string; name: string; quantity: number; unitPrice: number; unit?: string; basis?: string; note?: string };
+    const dl = res.row.draft as unknown as { materials?: SavedLine[]; labor?: SavedLine[] };
+    const asLines = (rows: SavedLine[] | undefined, prefix: string): LedgerLine[] =>
+      (rows ?? []).map((l, i) => ({ id: l.id ?? `${prefix}-saved-${i}`, name: l.name, quantity: l.quantity, unitPrice: l.unitPrice, unit: l.unit ?? "each", basis: (l.basis === "measured" || l.basis === "estimated" || l.basis === "entered" ? l.basis : "entered"), note: l.note }));
+    savedLinesRef.current = dl.materials?.length || dl.labor?.length ? { materials: asLines(dl.materials, "m"), labor: asLines(dl.labor, "l") } : null;
+    setPicked(null);
     setSavedId(res.row.id);
     setPermit(res.row.permit);
     setReportUrl(res.row.approvedReportUrl);
@@ -872,9 +924,9 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
           </div>
         </div>
         <div className={cx("body")}>
-          <div className={cx("jobs")} role="radiogroup" aria-label="Job">
+          <div className={cx("jobs")} role="radiogroup" aria-label="Job" onKeyDown={radioKeys}>
             {JOBS.map((j) => (
-              <button key={j.id} type="button" role="radio" aria-checked={job === j.id} className={cx("job", job === j.id && "on")} onClick={() => { setJob(j.id); setTitle(null); setPickId(null); setOutdoorKind(null); setCustom(null); setSwapMsg(""); if (!site) setTimeout(() => addrRef.current?.focus(), 30); else if (siteLocal && j.needs.load) { setSite(null); setSiteLocal(false); setTimeout(() => { addrRef.current?.focus(); scrollTo("hv-site"); }, 30); } }}>
+              <button key={j.id} type="button" role="radio" aria-checked={job === j.id} className={cx("job", job === j.id && "on")} onClick={() => { setJob(j.id); setTitle(null); setSavedId(null); setPermit(null); setReportUrl(null); setPermitMsg(""); setPickId(null); setOutdoorKind(null); setCustom(null); setSwapMsg(""); if (!site) setTimeout(() => addrRef.current?.focus(), 30); else if (siteLocal && j.needs.load) { setSite(null); setSiteLocal(false); setTimeout(() => { addrRef.current?.focus(); scrollTo("hv-site"); }, 30); } }}>
                 <span className={cx("job-t")}>{j.title}</span>
                 <span className={cx("job-s")}>{j.sub}</span>
               </button>
@@ -911,7 +963,16 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                 {counties.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </label>}
+            {site && def.needs.load && <label className={cx("field")} htmlFor="hv-design-cool">
+              <span className={cx("lbl")}>Design °F cooling <span className={cx("mono")} style={{ textTransform: "none", letterSpacing: 0 }}>1% · county {conditions?.conditions.coolingF ?? "—"}</span></span>
+              <input id="hv-design-cool" className={cx("in", "num")} inputMode="numeric" placeholder={conditions ? String(conditions.conditions.coolingF) : ""} defaultValue={jobInput.designCoolingF ?? ""} key={`dc-${jobInput.designCoolingF ?? ""}`} onBlur={(e) => { const v = e.target.value.trim(); const n = Number(v); setJobInput((i) => ({ ...i, designCoolingF: v && Number.isFinite(n) && n >= 60 && n <= 125 ? n : undefined })); }} />
+            </label>}
+            {site && def.needs.load && <label className={cx("field")} htmlFor="hv-design-heat">
+              <span className={cx("lbl")}>Design °F heating <span className={cx("mono")} style={{ textTransform: "none", letterSpacing: 0 }}>99% · county {conditions?.conditions.heatingF ?? "—"}</span></span>
+              <input id="hv-design-heat" className={cx("in", "num")} inputMode="numeric" placeholder={conditions ? String(conditions.conditions.heatingF) : ""} defaultValue={jobInput.designHeatingF ?? ""} key={`dh-${jobInput.designHeatingF ?? ""}`} onBlur={(e) => { const v = e.target.value.trim(); const n = Number(v); setJobInput((i) => ({ ...i, designHeatingF: v && Number.isFinite(n) && n >= -60 && n <= 70 ? n : undefined })); }} />
+            </label>}
           </div>
+          {site && def.needs.load && conditions && /metro station|ENERGY STAR/.test(conditions.conditions.source) && <div className={cx("note")} style={{ marginTop: 8 }}>{/metro station/.test(conditions.conditions.source) ? "The county's figure is the most extreme station within 40 miles; the design runs on the metro station instead. " : "The county's figure is the most extreme station within 40 miles of the county centre — conservative for a house in the valley. "}Set the address&apos;s own Manual J design temperatures above if your permit office or your Manual J table gives different ones.</div>}
           {siteError && <div className={cx("call", "bad")} style={{ marginTop: 12 }}>{siteError}</div>}
           <div className={cx("acts")}>
             <button type="button" className={cx("btn", "btn-primary")} disabled={siteBusy} onClick={() => void lookupSite()}>
@@ -944,7 +1005,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
             <div className={cx("hero")}>
               <div className={cx("hero-cell")}>
                 <div className={cx("kpi-lbl")}>Design day</div>
-                <div className={cx("hero-v", "accent")}>{conditions ? `${conditions.conditions.coolingF}° / ${conditions.conditions.heatingF}°` : "—"}</div>
+                <div className={cx("hero-v", "accent")}>{conditions ? `${jobInput.designCoolingF ?? conditions.conditions.coolingF}° / ${jobInput.designHeatingF ?? conditions.conditions.heatingF}°` : "—"}</div>
                 <div className={cx("hero-h")} title={conditions?.conditions.source}>{conditions?.match === "county" || conditions?.match === "fuzzy" ? `${conditions.conditions.county} County` : conditions?.match === "state" ? "state median — pick the county" : "no table"} · {conditions?.conditions.state}{conditions?.approx ? " · approx" : ""}</div>
               </div>
               <div className={cx("hero-cell")}>
@@ -1348,7 +1409,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
             )}
           </div>}
           {kindQuotes.length === 2 && (
-            <div className={cx("kinds")} role="radiogroup" aria-label={def.id === "replace-outdoor" ? "What goes outside" : "System type"}>
+            <div className={cx("kinds")} role="radiogroup" aria-label={def.id === "replace-outdoor" ? "What goes outside" : "System type"} onKeyDown={radioKeys}>
               <span className={cx("kinds-lbl")}>{def.id === "replace-outdoor" ? "What goes outside" : "System"}</span>
               {kindQuotes.map((q) => {
                 const on = engineRaw?.selection.chosen?.item.kind === q.kind;
@@ -1362,7 +1423,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
             </div>
           )}
           {whOptions.length > 0 && (
-            <div className={cx("tiers", "tiers-wh")} role="radiogroup" aria-label="Which tank">
+            <div className={cx("tiers", "tiers-wh")} role="radiogroup" aria-label="Which tank" onKeyDown={radioKeys}>
               {whOptions.map((o, i) => {
                 const on = (whChosen?.id ?? "") === o.item.id;
                 return (
@@ -1377,7 +1438,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
             </div>
           )}
           {tiers.length > 1 && (
-            <div className={cx("tiers")} role="radiogroup" aria-label="Good, better, best">
+            <div className={cx("tiers")} role="radiogroup" aria-label="Good, better, best" onKeyDown={radioKeys}>
               {tiers.map((t) => {
                 const on = (engine?.selection.chosen?.item.id ?? "") === t.candidate.item.id;
                 return (
@@ -1662,7 +1723,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                 </div>
                 {actualFor === r.id && (
                   <div className={cx("actual")}>
-                    <label className={cx("field")} htmlFor={`act-t-${r.id}`}><span className={cx("lbl")}>Quoted / installed tons</span><input id={`act-t-${r.id}`} className={cx("in", "num")} inputMode="decimal" value={actualDraft.tons} onChange={(e) => setActualDraft({ ...actualDraft, tons: e.target.value })} /></label>
+                    <label className={cx("field")} htmlFor={`act-t-${r.id}`}><span className={cx("lbl")}>Quoted / installed tons (total across all systems)</span><input id={`act-t-${r.id}`} className={cx("in", "num")} inputMode="decimal" value={actualDraft.tons} onChange={(e) => setActualDraft({ ...actualDraft, tons: e.target.value })} /></label>
                     <label className={cx("field")} htmlFor={`act-p-${r.id}`}><span className={cx("lbl")}>Quoted price $</span><input id={`act-p-${r.id}`} className={cx("in", "num")} inputMode="decimal" value={actualDraft.price} onChange={(e) => setActualDraft({ ...actualDraft, price: e.target.value })} /></label>
                     <label className={cx("field")} htmlFor={`act-n-${r.id}`}><span className={cx("lbl")}>Notes</span><input id={`act-n-${r.id}`} className={cx("in")} value={actualDraft.notes} placeholder="what changed and why" onChange={(e) => setActualDraft({ ...actualDraft, notes: e.target.value })} /></label>
                     <button type="button" className={cx("btn", "btn-primary", "btn-sm")} onClick={() => void saveActual(r.id)}>Save actual</button>

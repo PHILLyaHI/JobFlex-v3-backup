@@ -61,6 +61,8 @@ import {
   type MessageHandle,
 } from "./cd-dialogs";
 import styles from "./client-detail.module.css";
+import { AddToProjectSheet } from "@/components/v3/project-links/add-to-project-sheet";
+import { openAddToProject } from "@/components/v3/project-links/open-add-to-project";
 import { useReveal } from "./use-reveal";
 
 const FILTERS: { value: ProposalFilter; label: string }[] = [
@@ -172,8 +174,8 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
   // and listens on the document — the topbar's own New Estimate button opens
   // the same dialog the same way, minus the client.
   const newProposal = useCallback(() => {
-    document.dispatchEvent(new CustomEvent("jf:estimator-picker", { detail: { clientId } }));
-  }, [clientId]);
+    document.dispatchEvent(new CustomEvent("jf:estimator-picker", { detail: { clientId, clientName: view.client.name } }));
+  }, [clientId, view.client.name]);
 
   /** The ledger rows were `<button>`s with no handler — twelve pixels of hover
    *  feedback on a control that did nothing. Each row is a real proposal id, so
@@ -195,6 +197,7 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
 
   return (
     <div className={styles.page}>
+      <AddToProjectSheet />
       {/* MASTHEAD --------------------------------------------------- */}
       <div className={cx("page-head", styles.head)} data-rv="">
         {/* `min-width: 0` on the title column and `overflow-wrap: anywhere` on
@@ -211,6 +214,17 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
           <div className={styles.actions}>
             <Btn tone="quiet" icon="pen" onClick={() => editRef.current?.open()}>
               Edit
+            </Btn>
+            {/* The client's project, one tap away; or the door into one
+                (2026-09-18). A client already in a project can still be added
+                to another — the sheet opens on the one they are in. */}
+            {view.projects[0] ? (
+              <Btn icon="folder" onClick={() => router.push(`/dashboard/projects/${view.projects[0].id}` as Route)}>
+                {view.projects[0].name.length > 28 ? view.projects[0].name.slice(0, 27) + "…" : view.projects[0].name}
+              </Btn>
+            ) : null}
+            <Btn icon="folder" tone={view.projects[0] ? "quiet" : "plain"} onClick={() => openAddToProject(clientId)}>
+              {view.projects[0] ? "Projects" : "Add to project"}
             </Btn>
             <Btn icon="msg" onClick={() => messageRef.current?.open()}>
               Message

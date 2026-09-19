@@ -50,6 +50,7 @@
 
 import { scheduleCoverage, type CoverageStage, type CoverageState } from "@/lib/paymentSchedule";
 import type { Draft, Line, PrintedLine, Totals, Unit } from "./manual-focus-types";
+import { overheadProfitLoad } from "@/lib/pricing/markup";
 
 /* ============================================================
    NUMERIC HYGIENE
@@ -177,9 +178,25 @@ export function isNamed(line: Line): boolean {
  * that gets checked by hand, so the client's copy is what the arithmetic is
  * anchored to; `computeTotals` takes its `preTax` from this column instead.
  */
-function printedLines(named: Line[], rates: Rates, load: number): PrintedLine[] {
+function printedLines(named: Line[], rates: Rates, load: number, marginOnLabor: boolean): PrintedLine[] {
   return named.map((l) => {
     const unitPrice = round2(sellUnit(l, rates) * load);
+    const amount = round2(safe(l.quantity) * unitPrice);
+    // The material share of the printed amount, labor the remainder so the
+    // pair adds to the amount — the same arithmetic `clientSplit` runs on the
+    // stored line (lib/pricing/markup), so the sheet and the portal agree.
+    // Across both halves: the marked-up halves' ratio of the amount (the load
+    // cancels out). Into labor: the material half stays at its marked-up cost
+    // and labor carries the overhead and profit — unless the line has no
+    // labor, when the material price is the only place they can sit.
+    const materialSell = safe(l.materialCost) * (1 + safe(rates.materialMarkupPct) / 100);
+    const laborSell = safe(l.laborCost) * (1 + safe(rates.laborMarkupPct) / 100);
+    const materialAmount =
+      materialSell + laborSell <= 0
+        ? 0
+        : marginOnLabor && laborSell > 0
+          ? Math.min(amount, round2(safe(l.quantity) * materialSell))
+          : Math.min(amount, round2(amount * (materialSell / (materialSell + laborSell))));
     return {
       id: l.id,
       name: l.name.trim(),
@@ -187,7 +204,9 @@ function printedLines(named: Line[], rates: Rates, load: number): PrintedLine[] 
       unit: l.unit,
       quantity: safe(l.quantity),
       unitPrice,
-      amount: round2(safe(l.quantity) * unitPrice),
+      amount,
+      materialAmount,
+      laborAmount: round2(amount - materialAmount),
       materialCost: safe(l.materialCost),
       laborCost: safe(l.laborCost),
     };
@@ -236,14 +255,16 @@ export function computeTotals(draft: Draft): Totals {
 
   // Overhead and profit ride inside the printed unit prices. At the 0% / 0%
   // defaults this factor is exactly 1 and the printed prices equal the ledger's.
-  const load = subtotalCosts > 0 ? chainPreTax / subtotalCosts : 1;
+  // The SAME helper prices the saved line items (actions/proposals), so the
+  // sheet, the portal and the PDF carry one number.
+  const load = overheadProfitLoad(subtotalCosts, safe(draft.overheadPct), safe(draft.profitPct));
 
   // THE PRINTED COLUMN IS BUILT FIRST, and the pre-tax figure is its sum. That
   // is what makes the client's copy self-consistent: every printed line
   // multiplies out, and the column adds up to the Subtotal printed beneath it.
   // With no named lines there is no column to add up, so the chain stands in —
   // it is 0 at that point anyway unless someone is quoting overhead on nothing.
-  const printed = printedLines(priced, rates, load);
+  const printed = printedLines(priced, rates, load, draft.marginOnLabor === true);
   const preTax =
     printed.length > 0 ? round2(printed.reduce((sum, r) => sum + r.amount, 0)) : chainPreTax;
 

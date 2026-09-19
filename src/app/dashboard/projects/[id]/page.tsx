@@ -24,8 +24,7 @@
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
-import { db } from "@/lib/db";
-import { contractTotal } from "@/lib/contractTotal";
+import { loadProjectDetail } from "@/components/v3/project-detail-blueprint/project-detail-load";
 // The page renders the VIEWPORT SWITCH rather than the desktop content
 // directly: above 768px it is ProjectDetailContent, unchanged, and at or below
 // it the handheld rebuild in src/components/v3/mobile-project-detail/. Exactly
@@ -59,84 +58,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     throw err;
   }
 
-  const project = await db.project.findUnique({
-    where: { id },
-    include: {
-      jobs: {
-        include: {
-          client: { select: { name: true } },
-          // The contract behind the job: original → approved changes → current.
-          proposal: { select: { total: true, changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } } } },
-        },
-        orderBy: [{ startsAt: "asc" }, { createdAt: "asc" }],
-      },
-    },
-  });
+  const props = await loadProjectDetail(id, organizationId);
+  if (!props) notFound();
 
-  if (!project || project.organizationId !== organizationId) notFound();
-
-  // Attach candidates: the org's proposals, with the jobs each one owns, so the
-  // page can say which are linkable and why the rest are not. `take` is the
-  // same ceiling the job list carried.
-  const proposals = await db.proposal.findMany({
-    where: { organizationId },
-    select: {
-      id: true,
-      title: true,
-      status: true,
-      total: true,
-      client: { select: { name: true } },
-      jobs: { select: { id: true, projectId: true } },
-    },
-    orderBy: { updatedAt: "desc" },
-    take: 100,
-  });
-
-  const availableProposals = proposals
-    // Already on THIS project — it is attached, not attachable.
-    .filter((p) => !p.jobs.some((j) => j.projectId === project.id))
-    .map((p) => {
-      const linkJobIds = p.jobs.filter((j) => !j.projectId).map((j) => j.id);
-      return {
-        id: p.id,
-        title: p.title,
-        status: p.status,
-        total: p.total,
-        clientName: p.client?.name ?? null,
-        linkJobIds,
-        blocked: linkJobIds.length
-          ? null
-          : p.jobs.length
-            ? "On another project"
-            : "No job to link yet",
-      };
-    });
-
-  return (
-    <ProjectDetailViewportSwitch
-      project={{
-        id: project.id,
-        name: project.name,
-        startsAt: project.startsAt,
-        endsAt: project.endsAt,
-        budget: project.budget,
-      }}
-      jobs={project.jobs.map((j) => ({
-        id: j.id,
-        title: j.title,
-        status: j.status,
-        startsAt: j.startsAt,
-        endsAt: j.endsAt,
-        clientName: j.client?.name ?? null,
-        contract: j.proposal
-          ? {
-              original: j.proposal.total,
-              changes: Math.round((contractTotal(j.proposal.total, j.proposal.changeOrders) - j.proposal.total) * 100) / 100,
-              current: contractTotal(j.proposal.total, j.proposal.changeOrders),
-            }
-          : null,
-      }))}
-      availableProposals={availableProposals}
-    />
-  );
+  return <ProjectDetailViewportSwitch {...props} />;
 }

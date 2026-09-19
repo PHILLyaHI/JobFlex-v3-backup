@@ -35,7 +35,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { attachJob } from "@/actions/projects";
+import { setProposalProject } from "@/actions/projectLinks";
+import Link from "next/link";
+import type { Route } from "next";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { money } from "@/lib/format";
 import { useProjectDetailMotion } from "./project-detail-motion";
@@ -45,15 +47,35 @@ import {
   type PdAvailProposal,
   type PdJob,
   type PdProject,
+  type PdProposal,
   attachableFirst,
   badgeMod,
   bucketOf,
   labelOf,
   monthKey,
+  proposalLabel,
   proposalMeta,
+  proposalTone,
   shortDate,
 } from "./project-detail-data";
 import s from "./project-detail.module.css";
+import { LooseProposalsStrip } from "@/components/v3/project-links/loose-proposals-strip";
+
+/** "New proposal" on a project opens the estimator picker filed under it, so
+ *  any engine — Smart Proposal, roof, fence, HVAC, video or manual — can make
+ *  the project's next proposal (owner, 2026-09-18). */
+function newProposalIn(project: PdProject) {
+  document.dispatchEvent(
+    new CustomEvent("jf:estimator-picker", {
+      detail: {
+        projectId: project.id,
+        projectName: project.name,
+        clientId: project.client?.id ?? null,
+        clientName: project.client?.name ?? null,
+      },
+    }),
+  );
+}
 
 /** Hashed module class, or the literal name when the module has none — which is
  *  how the fleet's global `rv` / `rv-in` / `rv-cell` / `pressed` pass through. */
@@ -82,11 +104,15 @@ const moneyShort = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 export function ProjectDetailContent({
   project,
   jobs,
+  proposals = [],
   availableProposals,
+  looseProposals = [],
 }: {
   project: PdProject;
   jobs: PdJob[];
+  proposals?: PdProposal[];
   availableProposals: PdAvailProposal[];
+  looseProposals?: Array<{ id: string; title: string; total: number }>;
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -174,20 +200,15 @@ export function ProjectDetailContent({
      does), and the jobs arrive with the refresh. */
   const shownJobs = jobs;
 
-  /** Attach a PROPOSAL: move every one of its project-less jobs onto this
-   *  project through the existing `attachJob` action. Sequential rather than
-   *  `Promise.all` — each call revalidates the same two paths, and a partial
-   *  failure should stop rather than race. */
+  /** Attach a PROPOSAL: file it under this project (its job and change orders
+   *  come with it — actions/projectLinks). */
   const onAttach = useCallback(
     async (p: PdAvailProposal) => {
-      if (p.blocked || !p.linkJobIds.length) return;
       setAttachErr(null);
       setBusyId(p.id);
       setMoved((m) => [...m, p.id]);
       try {
-        for (const jobId of p.linkJobIds) {
-          await attachJob(project.id, jobId);
-        }
+        await setProposalProject({ proposalId: p.id, projectId: project.id });
         startTransition(() => router.refresh());
       } catch (err) {
         setMoved((m) => m.filter((x) => x !== p.id));
@@ -207,11 +228,30 @@ export function ProjectDetailContent({
 
   return (
     <>
-      {/* PAGE HEAD */}
+      {/* PAGE HEAD — the client the project is for, and the door to a new
+          proposal filed straight under it (2026-09-18). */}
       <div className={cx("page-head")}>
         <div>
-          <div className={cx("kicker")}>Projects</div>
+          <div className={cx("kicker")}>
+            Projects
+            {project.client ? (
+              <>
+                {" · "}
+                <Link className={cx("pd-client-link")} href={`/dashboard/client-detail?client=${project.client.id}` as Route}>
+                  {project.client.name}
+                </Link>
+              </>
+            ) : null}
+          </div>
           <h1 className={cx("page-title")}>{project.name}</h1>
+        </div>
+        <div className={cx("page-actions")}>
+          <button className={cx("btn", "btn-primary")} type="button" onClick={() => newProposalIn(project)}>
+            <svg className={cx("ic")}>
+              <use href="#i-plus" />
+            </svg>
+            New proposal
+          </button>
         </div>
       </div>
 
@@ -234,6 +274,9 @@ export function ProjectDetailContent({
           <div className={cx("kpi-val")}>{money(project.budget)}</div>
         </div>
       </div>
+
+      <LooseProposalsStrip projectId={project.id} client={project.client} loose={looseProposals} />
+      <ProposalsCard proposals={proposals} project={project} onAttach={openAttach} />
 
       {/* ВИДЫ + ATTACH */}
       <div className={cx("pd-bar")}>
@@ -298,19 +341,19 @@ export function ProjectDetailContent({
             </button>
           </div>
           <div className={cx("mdl-txt")}>
-            Picking one files its jobs under {project.name}.
+            Picking one files it under {project.name} — its change orders and its job come with it.
           </div>
           <div className={cx("mdl-body", "pd-attach-list")}>
             {attachErr && <div className={cx("pd-attach-err")}>{attachErr}</div>}
             {shownAvail.length ? (
               shownAvail.map((p) => (
-                <div className={cx("pd-av", p.blocked && "pd-av--off")} key={p.id}>
+                <div className={cx("pd-av")} key={p.id}>
                   <span className={cx("pd-av-n")}>{p.title}</span>
                   <span className={cx("pd-av-m")}>{proposalMeta(p, money)}</span>
                   <button
                     className={cx("btn", "btn-primary")}
                     type="button"
-                    disabled={Boolean(p.blocked) || busyId === p.id}
+                    disabled={busyId === p.id}
                     onClick={() => onAttach(p)}
                   >
                     {busyId === p.id ? "Attaching" : "Attach"}
@@ -339,6 +382,117 @@ export function ProjectDetailContent({
         )}
       </div>
     </>
+  );
+}
+
+/* ================= PROPOSALS (2026-09-18) =================
+   The proposals filed under the project, oldest first — the order the job was
+   sold in. Each row: what it is, its status, its contract today (the total
+   plus approved change orders) and what is still waiting on the client. The
+   card's head carries the project's sold value and the open value, which is
+   the number a contractor looks for first. */
+
+function ProposalsCard({
+  proposals,
+  project,
+  onAttach,
+}: {
+  proposals: PdProposal[];
+  project: PdProject;
+  onAttach: () => void;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+  const won = proposals.filter((p) => proposalTone(p.status) === "done");
+  const open = proposals.filter((p) => proposalTone(p.status) === "prog" || proposalTone(p.status) === "sch");
+  const sold = won.reduce((n, p) => n + p.contract, 0);
+  const pending = open.reduce((n, p) => n + p.total, 0);
+
+  const moveOut = async (p: PdProposal) => {
+    if (!window.confirm(`Take "${p.title}" out of this project? The proposal itself is not changed.`)) return;
+    setBusy(p.id);
+    try {
+      await setProposalProject({ proposalId: p.id, projectId: null });
+      startTransition(() => router.refresh());
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className={cx("card", "pd-props")} aria-label="Proposals in this project">
+      <div className={cx("pd-jobs-h")}>
+        <h2 className={cx("pd-jobs-t")}>Proposals</h2>
+        <span className={cx("pd-props-sum")}>
+          {won.length ? (
+            <>
+              Sold <b>{moneyShort(sold)}</b>
+            </>
+          ) : null}
+          {won.length && open.length ? " · " : null}
+          {open.length ? (
+            <>
+              Open <b>{moneyShort(pending)}</b>
+            </>
+          ) : null}
+          {!proposals.length ? "None yet" : null}
+        </span>
+      </div>
+      {proposals.length ? (
+        <div className={cx("pd-props-list")}>
+          {proposals.map((p, i) => (
+            <div className={cx("pd-prop")} key={p.id}>
+              <span className={cx("pd-prop-no")} aria-hidden="true">
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <div className={cx("pd-prop-main")}>
+                <Link className={cx("pd-prop-n")} href={`/dashboard/proposals/${p.id}` as Route}>
+                  {p.title}
+                </Link>
+                <div className={cx("pd-row-m")}>
+                  {p.clientName ?? "No client"}
+                  {p.co.count
+                    ? ` · ${p.co.count} change order${p.co.count === 1 ? "" : "s"}` +
+                      (p.co.approved ? ` · ${p.co.approvedTotal >= 0 ? "+" : "−"}${moneyShort(Math.abs(p.co.approvedTotal))} approved` : "") +
+                      (p.co.pending ? ` · ${moneyShort(p.co.pendingTotal)} waiting` : "")
+                    : ""}
+                  {" · "}
+                  {shortDate(p.updatedAt)}
+                </div>
+              </div>
+              <span className={cx("pd-b", "pd-b--" + proposalTone(p.status))}>{proposalLabel(p.status)}</span>
+              <span className={cx("pd-prop-amt")}>
+                {moneyShort(p.contract)}
+                {Math.round(p.contract) !== Math.round(p.total) ? <i>was {moneyShort(p.total)}</i> : null}
+              </span>
+              <button
+                className={cx("pd-prop-x")}
+                type="button"
+                aria-label={`Take ${p.title} out of this project`}
+                title="Take out of this project"
+                disabled={busy === p.id}
+                onClick={() => void moveOut(p)}
+              >
+                <svg className={cx("ic")}>
+                  <use href="#i-x" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className={cx("pd-props-empty")}>
+          <span>No proposals in this project yet.</span>
+          <button className={cx("btn", "btn-primary")} type="button" onClick={() => newProposalIn(project)}>
+            New proposal
+          </button>
+          <button className={cx("btn", "btn-ghost")} type="button" onClick={onAttach}>
+            Attach one
+          </button>
+        </div>
+      )}
+    </section>
   );
 }
 

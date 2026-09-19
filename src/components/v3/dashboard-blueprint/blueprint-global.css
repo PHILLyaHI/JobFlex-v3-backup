@@ -475,3 +475,98 @@ body:has(.jf-blueprint) {
 .jf-blueprint .list.scrollable::-webkit-scrollbar-track { background: transparent; }
 .jf-blueprint .list.scrollable::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 0; border: none; }
 .jf-blueprint .list.scrollable::-webkit-scrollbar-thumb:hover { background: var(--muted-light); }
+
+/* ── Folded sidebar (owner, 2026-09-18) ──────────────────────────────
+   The desktop sidebar folds to an icon rail from the arrow on its edge
+   (or ⌘\ / Ctrl+\), handing its width to the page. Global and on
+   `.jf-blueprint[data-sb]` on purpose: a dozen page modules each redeclare
+   `--sidebar-w: 264px` on their own `.bp`, and (0,2,0) outranks all of
+   them without touching one. Everything reads `--sidebar-w` — the grid
+   column, the graph-paper field — so narrowing it moves the whole layout.
+   Desktop only: at 860px and below the sidebar is a drawer, the arrow is
+   hidden and the attribute changes nothing. */
+
+@media (min-width: 861px) {
+  .jf-blueprint .layout { transition: grid-template-columns 0.24s cubic-bezier(0.4, 0, 0.2, 1); }
+  .jf-blueprint .main::before { transition: left 0.24s cubic-bezier(0.4, 0, 0.2, 1); }
+  /* The arrow straddles the sidebar's border, so the sidebar may no longer
+     clip — its own scroller still does, sideways. */
+  .jf-blueprint .sb { position: relative; overflow: visible; z-index: 30; }
+
+  .jf-blueprint .sb-fold {
+    position: absolute; top: 50%; right: -13px; z-index: 3;
+    width: 26px; height: 26px; margin-top: -13px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--paper); color: var(--ink);
+    border: 1.5px solid var(--ink); border-radius: var(--radius);
+    box-shadow: 2px 2px 0 var(--ink);
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 0.14s, background 0.14s, color 0.14s, transform 0.14s, box-shadow 0.14s;
+  }
+  /* Quiet until wanted: full strength when the sidebar is pointed at or the
+     arrow has focus, so it never competes with the page. */
+  .jf-blueprint .sb:hover .sb-fold, .jf-blueprint .sb-fold:focus-visible { opacity: 1; }
+  .jf-blueprint .sb-fold:hover { background: var(--ink); color: var(--paper); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+  .jf-blueprint .sb-fold:active { transform: none; box-shadow: none; }
+  .jf-blueprint .sb-fold:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+  .jf-blueprint .sb-fold .ic { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: square; stroke-linejoin: miter; transition: transform 0.24s cubic-bezier(0.4, 0, 0.2, 1); }
+
+  /* The hover label — one plate beside the rail, the house tooltip voice. */
+  .jf-blueprint .sb-tip {
+    position: absolute; left: calc(100% + 14px); z-index: 4;
+    transform: translateY(-50%);
+    padding: 6px 10px;
+    background: var(--ink); color: var(--paper);
+    border-radius: var(--radius);
+    font-size: 12px; font-weight: 700; letter-spacing: 0.01em; line-height: 1.2;
+    white-space: nowrap; pointer-events: none;
+    box-shadow: 3px 3px 0 rgba(10, 10, 10, 0.18);
+    animation: sbTipIn 0.12s ease-out;
+  }
+  @keyframes sbTipIn { from { opacity: 0; transform: translate(-4px, -50%); } to { opacity: 1; transform: translateY(-50%); } }
+
+  /* ── the rail ── */
+  .jf-blueprint[data-sb="fold"] { --sidebar-w: 72px; }
+  .jf-blueprint[data-sb="fold"] .sb-fold .ic { transform: rotate(180deg); }
+
+  .jf-blueprint[data-sb="fold"] .sb-head { justify-content: center; padding: 0; }
+  .jf-blueprint[data-sb="fold"] .sb-head-txt { display: none; }
+
+  /* Section names become the rule between groups. */
+  .jf-blueprint[data-sb="fold"] .sb-sec-label {
+    height: 0; margin: 12px 16px 8px; padding: 0; overflow: hidden;
+    border-top: 1.5px solid var(--hair); color: transparent;
+  }
+  .jf-blueprint[data-sb="fold"] .sb-indicator + .sb-sec-label { margin-top: 6px; border-top-color: transparent; }
+
+  .jf-blueprint[data-sb="fold"] .sb-link { justify-content: center; gap: 0; margin: 1px 10px; padding: 9px 0; }
+  .jf-blueprint[data-sb="fold"] .sb-link .ic { width: 19px; height: 19px; }
+  .jf-blueprint[data-sb="fold"] .sb-indicator { left: 10px; right: 10px; }
+  /* The label stays in the accessibility tree — the row keeps its name. */
+  .jf-blueprint[data-sb="fold"] .sb-lbl {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  /* A count survives as a corner tag on the icon; the quota pill and the
+     padlock step back (the hover label says both). */
+  .jf-blueprint[data-sb="fold"] .sb-badge {
+    position: absolute; top: 2px; right: 6px; margin: 0;
+    min-width: 15px; height: 15px; padding: 0 3px; font-size: 9px;
+  }
+  .jf-blueprint[data-sb="fold"] .sb-quota { display: none; }
+  .jf-blueprint[data-sb="fold"] .sb-lock-ic { position: absolute; right: 7px; bottom: 5px; width: 10px; height: 10px; margin: 0; }
+
+  .jf-blueprint[data-sb="fold"] .sb-foot { flex-direction: column; padding: 10px 0 12px; gap: 6px; }
+  .jf-blueprint[data-sb="fold"] .sb-foot-acc { flex: none; padding: 4px; }
+  .jf-blueprint[data-sb="fold"] .sb-foot-txt { display: none; }
+}
+
+@media (max-width: 860px) {
+  .jf-blueprint .sb-fold, .jf-blueprint .sb-tip { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-blueprint .layout, .jf-blueprint .main::before, .jf-blueprint .sb-fold .ic { transition: none; }
+  .jf-blueprint .sb-tip { animation: none; }
+}

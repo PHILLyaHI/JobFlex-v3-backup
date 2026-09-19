@@ -89,13 +89,14 @@ export function stateFromAddress(text: string | null | undefined): string | null
       .split(/\s+/)
       .filter((w) => !/^\d{5}(-\d{4})?$/.test(w)); // drop ZIP / ZIP+4 tokens
     if (words.length === 0) continue;
+    // The whole segment first: "West Virginia 25301" is WV, not the
+    // "Virginia" inside it. Also multi-word names beside a ZIP ("New York 10001").
+    const joined = resolveStateCode(words.join(" "));
+    if (joined) return joined;
     for (const w of words) {
       const code = resolveStateCode(w);
       if (code) return code;
     }
-    // Multi-word names sharing a segment with other tokens ("New York 10001").
-    const joined = resolveStateCode(words.join(" "));
-    if (joined) return joined;
   }
   return null;
 }

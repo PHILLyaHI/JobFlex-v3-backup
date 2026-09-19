@@ -53,8 +53,7 @@ export function TheirCopy({
   totals: Totals;
 }) {
   const settings = [
-    options.laborOnly ? "Summary quote" : "Full quote",
-    options.hideBreakdown ? "costs not broken down" : "costs broken down",
+    options.hideBreakdown ? "one total per line" : "labor + material per line",
     options.showScope ? "scope printed" : "scope withheld",
     options.showSignature ? "signature lines" : "no signature lines",
   ].join(" · ");
@@ -88,12 +87,7 @@ export function TheirCopy({
       </div>
 
       <div>
-        {options.laborOnly ? (
-          <div className={cx(styles.printRow, styles.printFirst)}>
-            <span className={styles.printName}>Complete scope of work as described</span>
-            <span className={styles.printAmt}>{money(totals.preTax)}</span>
-          </div>
-        ) : totals.printed.length === 0 ? (
+        {totals.printed.length === 0 ? (
           <div className={styles.empty}>No named lines yet — nothing prints.</div>
         ) : (
           totals.printed.map((row, i) => (
@@ -103,9 +97,15 @@ export function TheirCopy({
                 {row.description ? (
                   <span className={styles.printSub}>{row.description}</span>
                 ) : null}
+                <span className={styles.printSub}>
+                  {qty(row.quantity)} {UNIT_LABEL[row.unit]} · {money(row.unitPrice)} each
+                </span>
+                {/* "Labor + material breakdown": the client-facing split of the
+                    line — both halves carry their markup, overhead and profit,
+                    and add up to the amount on the right. */}
                 {!options.hideBreakdown ? (
                   <span className={styles.printSub}>
-                    {qty(row.quantity)} {UNIT_LABEL[row.unit]} · {money(row.unitPrice)} each
+                    {[row.materialAmount > 0 ? `Materials ${money(row.materialAmount)}` : "", row.laborAmount > 0 ? `Labor ${money(row.laborAmount)}` : ""].filter(Boolean).join(" · ")}
                   </span>
                 ) : null}
               </span>

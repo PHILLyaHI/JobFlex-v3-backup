@@ -275,6 +275,36 @@ export const NFA_RATIO_BALANCED = 300;
 // ── Tear-off & extras ───────────────────────────────────────────────────────
 export const TEAROFF_LABOR_PER_SQ_LAYER = 55;
 export const DISPOSAL_PER_SQ_LAYER = 28;
+/**
+ * Tear-off labor and disposal per square per layer BY WHAT IS ON THE ROOF
+ * NOW (review 2026-09-17: a tile or slate roof was torn off at the shingle
+ * rate, though it weighs three to four times as much and comes off piece by
+ * piece). Seeded from the aerial data's material word; the contractor edits
+ * the rate on the card as always.
+ */
+export const EXISTING_STEEP: Record<Exclude<RoofFamily, "low-slope">, { tearOff: number; disposal: number }> = {
+  asphalt: { tearOff: TEAROFF_LABOR_PER_SQ_LAYER, disposal: DISPOSAL_PER_SQ_LAYER },
+  synthetic: { tearOff: 55, disposal: 28 },
+  shake: { tearOff: 70, disposal: 40 },
+  metal: { tearOff: 60, disposal: 25 },
+  tile: { tearOff: 120, disposal: 75 },
+  slate: { tearOff: 130, disposal: 90 },
+};
+/** The tear-off rates the existing roof calls for; the shingle rates when the material is unknown or a membrane. */
+export function tearOffRatesFor(existingMaterial: string | null | undefined): { tearOff: number; disposal: number; family: RoofFamily | null } {
+  const family = familyOfMaterial(existingMaterial);
+  if (!family || family === "low-slope") return { tearOff: TEAROFF_LABOR_PER_SQ_LAYER, disposal: DISPOSAL_PER_SQ_LAYER, family };
+  return { ...EXISTING_STEEP[family], family };
+}
+/**
+ * Labor factor for the height of the work: a two-storey eave means longer
+ * ladders, more staging and slower loading on every square; three storeys
+ * more so. 1 for a single storey or when the height is unknown.
+ */
+export function storeyLaborFactor(storeys: number | null | undefined): number {
+  if (storeys == null || storeys <= 1) return 1;
+  return storeys >= 3 ? 1.15 : 1.08;
+}
 export const PLYWOOD_SHEET_EACH = 42;
 export const PLYWOOD_SHEET_LABOR = 35;
 export const NAILS_PER_SQ = 4.5;

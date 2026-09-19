@@ -16,6 +16,8 @@ export function Sprite() {
         <symbol id="i-door-open" viewBox="0 0 24 24"><path d="M13 4h3a2 2 0 0 1 2 2v14" /><path d="M2 20h3" /><path d="M13 20h9" /><path d="M10 12v.01" /><path d="M13 4.8v14.4a.6.6 0 0 1-.7.6l-5-1a.6.6 0 0 1-.3-.5V5.7a.6.6 0 0 1 .5-.6l5-1a.6.6 0 0 1 .5.7Z" /></symbol>
         <symbol id="i-topo" viewBox="0 0 24 24"><path d="M3 17c3-1 4-4 8-4s5 3 10 2" /><path d="M5 11c2-1 3-3 6-3s4 2 7 1" /><path d="M8 5.5c1.5-.6 2.5-1.5 4-1.5s2.5 1 3.5 1" /></symbol>
         <symbol id="i-door-closed" viewBox="0 0 24 24"><path d="M18 20V6a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v14" /><path d="M2 20h20" /><path d="M14 12v.01" /></symbol>
+        <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 9V4h5" /><path d="M20 9V4h-5" /><path d="M4 15v5h5" /><path d="M20 15v5h-5" /></symbol>
+        <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M9 4v5H4" /><path d="M15 4v5h5" /><path d="M9 20v-5H4" /><path d="M15 20v-5h5" /></symbol>
       </defs>
     </svg>
   );

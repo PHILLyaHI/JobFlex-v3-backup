@@ -46,7 +46,9 @@ import { ChunkRecoveryBoundary } from "@/components/v3/shared/chunk-recovery-bou
 import type {
   PdAvailProposal,
   PdJob,
+  PdLooseProposal,
   PdProject,
+  PdProposal,
 } from "@/components/v3/project-detail-blueprint/project-detail-data";
 
 /** CLAUDE.md's handheld target: ≤768px. The same literal the shell uses. */
@@ -86,7 +88,9 @@ const getServerSnapshot = () => false;
 export function ProjectDetailViewportSwitch(props: {
   project: PdProject;
   jobs: PdJob[];
+  proposals: PdProposal[];
   availableProposals: PdAvailProposal[];
+  looseProposals: PdLooseProposal[];
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   // The handheld half is a lazy chunk, so it inherits the deploy-skew failure

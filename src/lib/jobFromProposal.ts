@@ -41,6 +41,8 @@ export async function createJobFromProposalInternal(proposalId: string) {
       title: proposal.title,
       clientId: proposal.clientId,
       proposalId: proposal.id,
+      // A proposal in a project makes its job there.
+      projectId: proposal.projectId ?? null,
       status: JobStatus.SCHEDULED,
       scopeOfWork: proposal.scopeOfWork ?? null,
     },

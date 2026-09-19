@@ -104,11 +104,26 @@ export function ultraLowNoxNeeded(state: string, county?: string): "required" | 
  *  matter. Florida is treated as coastal throughout. Verified 2026-09-17. */
 const COASTAL_COUNTIES: Record<string, Set<string>> = {
   CA: new Set(["del norte", "humboldt", "mendocino", "sonoma", "marin", "san francisco", "san mateo", "santa cruz", "monterey", "san luis obispo", "santa barbara", "ventura", "los angeles", "orange", "san diego"]),
-  TX: new Set(["jefferson", "chambers", "galveston", "brazoria", "matagorda", "calhoun", "aransas", "nueces", "kleberg", "willacy", "cameron", "harris"]),
+  OR: new Set(["clatsop", "tillamook", "lincoln", "lane", "douglas", "coos", "curry"]),
+  WA: new Set(["pacific", "grays harbor", "jefferson", "clallam", "island", "san juan", "whatcom", "skagit", "snohomish", "king", "pierce", "kitsap", "mason", "thurston"]),
+  AK: new Set(["anchorage", "juneau", "kenai peninsula", "kodiak island", "sitka", "ketchikan gateway"]),
+  TX: new Set(["jefferson", "orange", "chambers", "galveston", "brazoria", "matagorda", "calhoun", "refugio", "aransas", "san patricio", "nueces", "kleberg", "kenedy", "willacy", "cameron", "harris"]),
+  MS: new Set(["hancock", "harrison", "jackson"]),
+  AL: new Set(["mobile", "baldwin"]),
   SC: new Set(["horry", "georgetown", "charleston", "berkeley", "colleton", "beaufort", "jasper"]),
-  NC: new Set(["currituck", "dare", "hyde", "carteret", "onslow", "pender", "new hanover", "brunswick", "beaufort", "pamlico"]),
+  NC: new Set(["currituck", "camden", "pasquotank", "dare", "tyrrell", "hyde", "craven", "carteret", "onslow", "pender", "new hanover", "brunswick", "beaufort", "pamlico"]),
   GA: new Set(["chatham", "bryan", "liberty", "mcintosh", "glynn", "camden"]),
-  LA: new Set(["cameron", "vermilion", "iberia", "st. mary", "terrebonne", "lafourche", "jefferson", "plaquemines", "st. bernard", "orleans"]),
+  LA: new Set(["cameron", "vermilion", "iberia", "st. mary", "terrebonne", "lafourche", "jefferson", "plaquemines", "st. bernard", "orleans", "st. tammany"]),
+  VA: new Set(["virginia beach city", "norfolk city", "chesapeake city", "hampton city", "newport news city", "portsmouth city", "poquoson city", "accomack", "northampton", "mathews", "gloucester", "york"]),
+  MD: new Set(["worcester", "somerset", "wicomico", "dorchester", "talbot", "queen anne's", "kent", "anne arundel", "calvert", "st. mary's"]),
+  DE: new Set(["sussex", "kent", "new castle"]),
+  NJ: new Set(["cape may", "atlantic", "ocean", "monmouth", "middlesex", "hudson"]),
+  NY: new Set(["suffolk", "nassau", "queens", "kings", "richmond", "bronx", "new york", "westchester"]),
+  CT: new Set(["fairfield", "new haven", "middlesex", "new london"]),
+  RI: new Set(["washington", "newport", "bristol", "kent", "providence"]),
+  MA: new Set(["suffolk", "essex", "norfolk", "plymouth", "bristol", "barnstable", "dukes", "nantucket"]),
+  NH: new Set(["rockingham"]),
+  ME: new Set(["york", "cumberland", "sagadahoc", "lincoln", "knox", "waldo", "hancock", "washington"]),
 };
 
 /** Is the job close enough to salt water that the coastal build is the right call? */
@@ -149,9 +164,15 @@ export function efficiencyFloor(state: string, kind: "air-conditioner" | "heat-p
   // the date it was made, not the date it is installed — the regional split
   // rules below do not reach it.
   if (packaged) {
+    // DOE's 2023 table: single-package AC is 13.4 SEER2 nationally by date of
+    // manufacture; only the Southwest adds an EER2 floor, 10.6, by date of
+    // installation (review, 2026-09-17 — the old 11.0 "nationwide" figure
+    // ruled out every value gas pack, including the California ULN builds).
     return kind === "heat-pump"
       ? { seer2: 13.4, hspf2: 6.7, text: "Single-package heat pumps: 13.4 SEER2 and 6.7 HSPF2 nationwide, enforced by the date of manufacture.", source }
-      : { seer2: 13.4, eer2: 11, text: "Single-package air conditioners: 13.4 SEER2 and 11.0 EER2 nationwide, enforced by the date of manufacture.", source };
+      : region === "southwest"
+        ? { seer2: 13.4, eer2: 10.6, text: "Single-package air conditioners: 13.4 SEER2 nationwide by date of manufacture; the Southwest also takes 10.6 EER2 at installation.", source }
+        : { seer2: 13.4, text: "Single-package air conditioners: 13.4 SEER2 nationwide, enforced by the date of manufacture (no EER2 floor outside the Southwest).", source };
   }
   if (kind === "heat-pump") {
     return { seer2: 14.3, hspf2: 7.5, text: "Split heat pumps: 14.3 SEER2 and 7.5 HSPF2 nationwide.", source };
@@ -266,7 +287,7 @@ export function incentivesFor(state: string): IncentiveRow[] {
 export interface CodeFlag {
   id: string;
   title: string;
-  applies: (job: { state: string; county?: string; touchesRefrigerant: boolean; touchesDucts: boolean; newConstruction: boolean; removesEquipment?: boolean; kind?: string; newFurnace?: boolean; coastal?: boolean }) => boolean;
+  applies: (job: { state: string; county?: string; touchesRefrigerant: boolean; touchesDucts: boolean; newConstruction: boolean; removesEquipment?: boolean; kind?: string; /** Package units: what makes the heat. */ heatKind?: string; newFurnace?: boolean; coastal?: boolean }) => boolean;
   status: CheckStatus;
   text: string;
   source: string;
@@ -277,7 +298,7 @@ export const CODE_FLAGS: CodeFlag[] = [
   {
     id: "ca-uln-furnace",
     title: "Ultra-low NOx gas heat",
-    applies: (j) => j.state.toUpperCase() === "CA" && (j.kind === "furnace" || j.kind === "package" || !!j.newFurnace),
+    applies: (j) => j.state.toUpperCase() === "CA" && (j.kind === "furnace" || (j.kind === "package" && (j.heatKind ?? "gas") === "gas") || !!j.newFurnace),
     status: "fix",
     text: "In the South Coast, San Joaquin Valley and Bay Area districts a residential gas furnace must be certified at 14 ng/J or less to be sold or installed — order the ultra-low-NOx build (Lennox NV/NE, Carrier 59SU5/59CU5, Goodman -U). Outside those districts, confirm your own air district's limit.",
     source: "South Coast AQMD Rule 1111 Table 1 (amended 2026-01-09); SJVAPCD Rule 4905; BAAQMD Reg 9 Rule 4 (verified 2026-09-17)",
@@ -367,7 +388,7 @@ export const CODE_FLAGS: CodeFlag[] = [
   {
     id: "or-minor-label",
     title: "Minor label does not cover this",
-    applies: (j) => j.state.toUpperCase() === "OR" && (j.kind === "furnace" || j.kind === "package" || !!j.newFurnace),
+    applies: (j) => j.state.toUpperCase() === "OR" && (j.kind === "furnace" || (j.kind === "package" && (j.heatKind ?? "gas") === "gas") || !!j.newFurnace),
     status: "verify",
     text: "Oregon's minor mechanical label cannot be used when fuel-burning equipment is replaced and the venting changes with it — an 80% to condensing conversion needs a full mechanical permit and inspection.",
     source: "Oregon BCD minor label program; Portland PP&D program guide §B.2.d (verified 2026-09-17)",
@@ -384,7 +405,9 @@ export const CODE_FLAGS: CodeFlag[] = [
   {
     id: "fl-seer2-install",
     title: "Southeast minimum is an install rule",
-    applies: (j) => ["FL", "GA", "AL", "MS", "LA", "SC", "NC", "TN", "AR", "OK", "TX", "VA", "KY", "DE", "MD", "DC", "HI"].includes(j.state.toUpperCase()) && (j.kind === "air-conditioner" || j.kind === "package"),
+    // Split systems only: a single-package unit answers to the national
+    // standard by its date of manufacture, not the regional install rule.
+    applies: (j) => ["FL", "GA", "AL", "MS", "LA", "SC", "NC", "TN", "AR", "OK", "TX", "VA", "KY", "DE", "MD", "DC", "HI"].includes(j.state.toUpperCase()) && j.kind === "air-conditioner",
     status: "fix",
     text: "In the Southeast region the SEER2 minimum binds the installer, not just the seller: it is illegal to install a split air conditioner below it, even one bought before the rule. Check the AHRI rating of the exact matched system, not the outdoor unit alone.",
     source: "DOE regional standards enforcement, effective 2023-01-01 (verified 2026-09-17)",
@@ -451,9 +474,9 @@ export const CODE_FLAGS: CodeFlag[] = [
     id: "furnace-floor",
     title: "Furnace efficiency floor",
     applies: (j) => j.kind === "furnace",
-    status: "pass",
-    text: "Gas furnaces: 80% AFUE today; non-weatherized gas furnaces made from 2028-12-18 must reach 95% AFUE (condensing), so an 80% unit installed later will be a repair-only class.",
-    source: "DOE 10 CFR 430.32(e), final rule 2023-12",
+    status: "verify",
+    text: "Gas furnaces: 80% AFUE today. The 2028-12-18 condensing (95% AFUE) rule was vacated and remanded by the Supreme Court on 2026-06-08 and is being re-heard — do not promise a customer that an 80% furnace becomes a repair-only class; say the rule is under review.",
+    source: "DOE 10 CFR 430.32(e), final rule 2023-12; Supreme Court order of 2026-06-08 (verified 2026-09-17)",
   },
   {
     id: "epa-608",

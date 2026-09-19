@@ -71,9 +71,36 @@ import type {
 // stays off the initial bundle of a page whose primary surface is a map.
 import type { FenceModel3D, FenceTerrain3D } from "@/components/estimator/fence/FenceModel3D";
 import {
-  buildFenceLineItems,
-  type FencePricingConfig,
-} from "@/components/estimator/fence/fencePricing";
+  CATEGORY_LABEL,
+  DEFAULT_FENCE_TYPE,
+  FENCE_TYPES,
+  effectiveSpacingFt,
+  nearestHeight,
+  spacingOptions,
+  TERRAIN_FACTOR,
+  TERRAIN_LABEL,
+  TERRAINS,
+  type FenceType,
+  type FenceTypeId,
+  type Terrain,
+} from "@/lib/fence/catalog";
+import { resolveMarket, type MarketSnapshot } from "@/lib/fence/market";
+import { RATE_LIMITS, sanitizeRateBook, standardRate, type RateBook } from "@/lib/fence/rates";
+import { summarizeSlope, type SlopeSummary } from "@/lib/fence/slope";
+import type { FenceLayoutInput, FenceOpeningInput, FenceRunInput } from "@/lib/fence/takeoff";
+import { polylinesToRuns, typedRuns } from "@/lib/fence/layout";
+import {
+  fenceChecks,
+  fenceScope,
+  fenceTiers,
+  jobRates,
+  openingEach,
+  priceFencePackage,
+  resolveFenceType,
+  type CustomFenceType,
+  type FencePackage,
+} from "@/lib/fence/pricing";
+import { getFenceCatalog, saveFenceCatalog } from "@/actions/fenceCatalog";
 import type { ArmedOpening } from "@/stores/useFenceStudioStore";
 import { fetchPropertyBoundary } from "@/actions/fenceBoundary";
 import {
@@ -88,14 +115,7 @@ import {
 import { pointInRing } from "@/lib/parcel";
 import { convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
 import { isPlanLimitError, PLAN_LIMIT_MESSAGE } from "@/lib/planLimits";
-import {
-  MATERIALS,
-  HEIGHTS,
-  OPENINGS,
-  DEMO_PER_FT,
-  type Material,
-  type OpeningType,
-} from "./fence-estimator-data";
+import { DEFAULT_REMOVAL_PER_LF, OPENINGS, type OpeningType } from "./fence-estimator-data";
 
 /** Where a created proposal opens: the BLUEPRINT manual builder, loaded with
  *  the record that was just written (`?proposal=<id>`). A fence estimate that
@@ -136,17 +156,30 @@ type FenceOpening = {
 };
 type FenceState = {
   mode: string;
+  /** The fence TYPE — a catalog id (lib/fence/catalog) or one of the shop's own. */
   material: string;
   height: number;
   demo: boolean;
-  /** Edited base rates, keyed by material id — what the contractor typed over
-   *  the figure on the material's own row. Survives a navigation within the tab
-   *  (sessionStorage): a shop that prices cedar at $34 should not retype it per
-   *  address. */
-  rates: Record<string, number>;
-  /** Materials the contractor added. Same shape as the card's built-ins, so
-   *  every consumer (rows, ticket, 3D colour, proposal) reads them unchanged. */
-  customMats: Material[];
+  /** The shop's tear-out rate, $/lf. */
+  removalPerLf: number;
+  /** Stain & seal after install (wood types only). */
+  stain: boolean;
+  /** Post stock upgrade (wood types only). */
+  postUpgrade: "steel" | "6x6" | null;
+  /** Line-post spacing override, ft o.c.; null = the type's standard. */
+  spacing: number | null;
+  /** Ground difficulty: measured from the profile ("auto") or the contractor's pick. */
+  terrain: Terrain | "auto";
+  /** Waste on cut goods, percent. */
+  wastePct: number;
+  /** The type picked from the list — what the tier ladder is built on. A
+   *  tier click prices its own type without moving the ladder, so Better
+   *  always brings the designed fence back. */
+  tierBase: string;
+  /** The shop's price book: what it charges per type, where it differs from the catalog. */
+  rates: RateBook;
+  /** The shop's own fence types, each built like a catalog type. */
+  customs: CustomFenceType[];
   runs: FenceRun[];
   openings: FenceOpening[];
 };
@@ -208,15 +241,14 @@ export function initFenceEstimatorContent(
   });
 
   // ================= FENCE STUDIO: STATE =================
-  // MATERIALS / HEIGHTS / OPENINGS / DEMO_PER_FT live in ./fence-estimator-data
-  // — the RATE CARD, which is real reference data and stays.
+  // The fence TYPES, their build specs, heights and rates live in lib/fence —
+  // the FenceScan engine (ported 2026-09-18). The page holds the shop's
+  // price book on top of it, the openings it offers (./fence-estimator-data)
+  // and this property's geometry.
   //
-  // The donor opened on nine runs and one gate. That fixture is GONE. It existed
-  // to make a static mockup look inhabited, and once "Convert to proposal"
-  // reaches the database it stops being a mockup: an untouched page would have
-  // written a 222 ft cedar fence nobody measured into a real proposal. The page
-  // now opens empty, `#runsEmpty` says so, and every foot on the ticket got
-  // there by being traced on the map or typed into a run row.
+  // The donor opened on nine runs and one gate. That fixture is GONE. The page
+  // opens empty, `#runsEmpty` says so, and every foot on the ticket got there
+  // by being traced on the map or typed into a run row.
   //
   // The sequence counters are per-mount; ids only have to be unique within one
   // visit, and a navigation away rebuilds the module's whole closure.
@@ -224,75 +256,191 @@ export function initFenceEstimatorContent(
     opSeq = 0,
     matSeq = 0;
   const fs: FenceState = {
-    mode: 'draw', material: 'composite', height: 6, demo: false,
+    mode: 'draw', material: DEFAULT_FENCE_TYPE, height: 6, demo: false,
+    removalPerLf: DEFAULT_REMOVAL_PER_LF,
+    stain: false,
+    postUpgrade: null,
+    spacing: null,
+    terrain: 'auto',
+    wastePct: 10,
+    tierBase: DEFAULT_FENCE_TYPE,
     rates: {},
-    customMats: [],
+    customs: [],
     runs: [],
     openings: []
   };
 
-  /** Per tab, not per browser: a rate card is a shop's decision for the session,
-   *  and a stale one silently pricing next week's estimate is worse than
-   *  retyping it. Holds the edited rates AND the materials the shop added. */
-  const RATE_KEY = 'jf.fence.mats';
-  /** The colour a new material's swatch takes until the palette is exhausted —
-   *  a custom material still has to READ as a material in the row and in 3D. */
+  /** The shop's book, per tab: the organization's saved book loads on top of
+   *  the catalog at mount, and every edit is kept here until "Save as company
+   *  defaults" writes it back for everyone. */
+  const RATE_KEY = 'jf.fence.book.v2';
+  /** The colour a new type's swatch takes until the palette is exhausted —
+   *  a custom type still has to READ as a material in the row and in 3D. */
   const CUSTOM_COLORS = ['#5f7d4f', '#8a5a3c', '#4a5b6b', '#9b8557', '#6b5b7d'];
 
   function money(n: number) { return '$' + Math.round(n).toLocaleString('en-US'); }
-  /** Built-ins plus whatever the shop added, in that order. */
-  function allMats(): Material[] { return MATERIALS.concat(fs.customMats); }
-  function mat(): Material {
-    return allMats().find(function (m) { return m.id === fs.material; }) || MATERIALS[0];
+
+  // ── Types and rates ────────────────────────────────────────────────────
+  /** One row of the type list: a catalog type or one of the shop's own. */
+  type TypeRow = { id: string; label: string; color: string; type: FenceType; custom: CustomFenceType | null; category: string };
+  function typeRows(): TypeRow[] {
+    const rows: TypeRow[] = FENCE_TYPES.map(function (t) { return { id: t.id, label: t.label, color: t.color, type: t, custom: null, category: t.category }; });
+    fs.customs.forEach(function (c) {
+      const r = resolveFenceType(c.id, fs.customs);
+      rows.push({ id: c.id, label: c.label, color: c.color || r.type.color, type: r.type, custom: c, category: 'custom' });
+    });
+    return rows;
   }
-  /** The $/lf a material is priced at: the edited figure when there is one, else
-   *  the card's own. This is the ONLY rate on the page — there is no second box
-   *  that could disagree with the number on the row. */
-  function baseOf(m: Material): number {
-    const edited = fs.rates[m.id];
-    return Number.isFinite(edited) && edited > 0 ? edited : m.base;
+  function typeRow(id: string): TypeRow {
+    return typeRows().find(function (r) { return r.id === id; }) || typeRows()[0];
   }
-  function isEdited(m: Material): boolean {
-    return Number.isFinite(fs.rates[m.id]) && fs.rates[m.id] > 0 && fs.rates[m.id] !== m.base;
-  }
-  function heightMult() { const h = HEIGHTS.find(function (x) { return x.ft === fs.height; }); return h ? h.mult : 1; }
+  /** The picked type, resolved (custom → its base). */
+  function currentType() { return resolveFenceType(fs.material, fs.customs); }
   function opType(id: string): OpeningType { return OPENINGS.find(function (o) { return o.id === id; }) || OPENINGS[0]; }
   function totalFt() { return fs.runs.reduce(function (a, r) { return a + (r.ft || 0); }, 0); }
-  /** The picked material's rate at the picked height. */
-  function cardPerFt() { return baseOf(mat()) * heightMult(); }
+
+  /** The job's market — the site's state + ZIP (national until an address resolves). */
+  let marketMemo: { key: string; market: MarketSnapshot | undefined } | null = null;
+  function market(): MarketSnapshot | undefined {
+    const p = sitePlace;
+    const key = p ? [p.state, p.zip, p.formatted || p.address].join('|') : '';
+    if (marketMemo && marketMemo.key === key) return marketMemo.market;
+    const m = p ? resolveMarket({ state: p.state || null, zip: p.zip || null, address: p.formatted || p.address || null }) : undefined;
+    marketMemo = { key: key, market: m };
+    return m;
+  }
+  function priceOpts() {
+    return { rates: fs.rates, customs: fs.customs, market: market(), removalPerLf: fs.removalPerLf };
+  }
+  /** What one opening of this kind costs on the picked type at the picked height. */
+  function openingPrice(o: OpeningType): number {
+    return openingEach(currentType(), priceOpts(), { widthFt: o.width, kind: o.kind, label: o.label, variant: o.variant }, fs.height);
+  }
+  /** The all-in $/lf a type row shows: material + labor at ITS default height, this shop's rates. */
+  function rowPerLf(r: TypeRow): number {
+    const jr = jobRates(resolveFenceType(r.id, fs.customs), priceOpts());
+    return jr.materialPerLf + jr.laborPerLf;
+  }
+  function rowEdited(r: TypeRow): boolean {
+    if (r.custom) return true;
+    const b = fs.rates[r.type.id];
+    return !!b && (b.materialPerLf !== undefined || b.laborPerLf !== undefined || b.gateSingle !== undefined);
+  }
+
+  // ── The layout the engine prices ─────────────────────────────────────
+  /** The measured ground as the slope rules read it. */
+  function slope(): SlopeSummary | null {
+    const t = usableTerrain();
+    if (!t || !t.segs.length) return null;
+    return summarizeSlope(
+      t.segs.map(function (sg) { return { planFt: sg.planFt, gradeFt: sg.gradeFt, riseFt: sg.riseFt, thetaDeg: sg.thetaDeg, cls: sg.cls, steps: sg.steps, stepDropFt: sg.stepDropFt }; }),
+      fs.height,
+      effectiveSpacingFt(currentType().type, fs.spacing),
+      market()?.frostIn ?? 0,
+    );
+  }
+  /** The ground difficulty the labor is priced at. */
+  function effTerrain(): Terrain {
+    if (fs.terrain !== 'auto') return fs.terrain;
+    return slope()?.suggestedTerrain ?? 'flat';
+  }
+  /**
+   * The runs as the takeoff counts them: the traced polylines (corners inside,
+   * ends where they stop, none on a ring) with each segment's ledger length
+   * along the ground; or, typed by hand, ONE fence whose runs meet at corners
+   * — three typed runs are a fence with two corners, not three loose pieces.
+   * The grouping rule lives in lib/fence/layout so it has its own checks.
+   */
+  function layoutRuns(): FenceRunInput[] {
+    const lengthOf = function (r: FenceRun) { return (r.ft || 0) * segFactor(r); };
+    if (!mapOwnsRuns || mapPoints.length < 2) return typedRuns(fs.runs.map(lengthOf));
+    return polylinesToRuns(mapPoints, function (i) {
+      const r = fs.runs.find(function (x) { return x.id === 'm' + i; });
+      return r ? lengthOf(r) : null;
+    });
+  }
+  function layoutOpenings(): FenceOpeningInput[] {
+    return fs.openings.map(function (o) {
+      const t = opType(o.type);
+      return { widthFt: t.width, kind: t.kind, label: t.label, variant: t.variant };
+    });
+  }
+  function layoutInput(): FenceLayoutInput {
+    const sl = slope();
+    return {
+      type: fs.material,
+      heightFt: fs.height,
+      runs: layoutRuns(),
+      openings: layoutOpenings(),
+      terrain: effTerrain(),
+      wastePct: fs.wastePct,
+      removalLf: fs.demo ? Math.round(billFt()) : 0,
+      stain: fs.stain,
+      steppedSections: sl ? sl.steppedSections : 0,
+      postUpgrade: fs.postUpgrade,
+      postSpacingFt: fs.spacing,
+      frostIn: market()?.frostIn,
+    };
+  }
+  /** The priced package for the page's current state — one computation per state. */
+  let pkgMemo: { key: string; pkg: FencePackage; layout: FenceLayoutInput } | null = null;
+  function pkg(): FencePackage {
+    const layout = layoutInput();
+    const key = JSON.stringify([layout, fs.rates, fs.customs, fs.removalPerLf, market()?.label ?? '']);
+    if (pkgMemo && pkgMemo.key === key) return pkgMemo.pkg;
+    const built = priceFencePackage(layout, priceOpts());
+    pkgMemo = { key: key, pkg: built, layout: layout };
+    return built;
+  }
   function saveRate() {
     try {
       window.sessionStorage.setItem(
         RATE_KEY,
-        JSON.stringify({ rates: fs.rates, customMats: fs.customMats }),
+        JSON.stringify({ rates: fs.rates, customs: fs.customs, removalPerLf: fs.removalPerLf, wastePct: fs.wastePct }),
       );
     } catch {
       // Storage denied (private windows) — the edits still hold for this mount.
     }
   }
+  /** Read a saved book (the browser's or the organization's) into the state. */
+  function applyBook(data: { rates?: unknown; customs?: unknown; custom?: unknown; removalPerLf?: unknown; wastePct?: unknown } | null | undefined) {
+    if (!data || typeof data !== 'object') return;
+    fs.rates = sanitizeRateBook(data.rates);
+    const customs = Array.isArray(data.customs) ? data.customs : Array.isArray(data.custom) ? data.custom : [];
+    fs.customs = (customs as CustomFenceType[]).filter(function (c) {
+      return c && typeof c.id === 'string' && typeof c.label === 'string' && typeof c.like === 'string' && Number.isFinite(c.materialPerLf) && Number.isFinite(c.laborPerLf);
+    });
+    fs.customs.forEach(function (c) {
+      const n = parseInt(c.id.replace(/^custom-/, ''), 10);
+      if (Number.isFinite(n) && n > matSeq) matSeq = n;
+    });
+    const rem = Number(data.removalPerLf);
+    if (Number.isFinite(rem) && rem >= 0) fs.removalPerLf = rem;
+    const w = Number(data.wastePct);
+    if (Number.isFinite(w) && w >= 0 && w <= 30) fs.wastePct = w;
+  }
   function restoreRate() {
     try {
       const raw = window.sessionStorage.getItem(RATE_KEY);
-      if (!raw) return;
-      const data = JSON.parse(raw) as { rates?: Record<string, number>; customMats?: Material[] };
-      if (data.rates && typeof data.rates === 'object') {
-        Object.keys(data.rates).forEach(function (k) {
-          const n = Number(data.rates?.[k]);
-          if (Number.isFinite(n) && n > 0) fs.rates[k] = n;
-        });
-      }
-      if (Array.isArray(data.customMats)) {
-        fs.customMats = data.customMats.filter(function (m) {
-          return m && typeof m.id === 'string' && typeof m.label === 'string' && Number.isFinite(m.base);
-        });
-        // Ids are minted from this counter, so it has to clear the restored ones.
-        fs.customMats.forEach(function (m) {
-          const n = parseInt(m.id.replace(/^custom-/, ''), 10);
-          if (Number.isFinite(n) && n > matSeq) matSeq = n;
-        });
+      if (raw) applyBook(JSON.parse(raw));
+    } catch {
+      // No storage or a corrupt value: no restore.
+    }
+  }
+  /** The organization's saved book, when the table exists and holds one. The
+   *  browser's own edits win over it for this tab (they are newer). */
+  async function loadOrgBook() {
+    try {
+      const doc = await getFenceCatalog();
+      if (!doc) return;
+      const hasLocal = !!window.sessionStorage.getItem(RATE_KEY);
+      if (!hasLocal) {
+        applyBook(doc);
+        if (!typeRows().some(function (r) { return r.id === fs.material; })) { fs.material = DEFAULT_FENCE_TYPE; fs.tierBase = DEFAULT_FENCE_TYPE; }
+        renderStudio();
       }
     } catch {
-      // Same: no storage or a corrupt value, no restore.
+      /* the table is not there yet, or the request failed: the catalog's rates it is */
     }
   }
   /** Billed footage: each run's (possibly hand-edited) plan feet times its
@@ -301,22 +449,17 @@ export function initFenceEstimatorContent(
   function billFt() {
     return fs.runs.reduce(function (a, r) { return a + (r.ft || 0) * segFactor(r); }, 0);
   }
-  /** Billed footage of one slope class (racked / stepped), for the labor split. */
+  /** Billed footage of one slope class (racked / stepped), for the assumptions. */
   function classFt(cls: string) {
     return fs.runs.reduce(function (a, r) {
       const s = terrainSegForRun(r);
       return a + (s && s.cls === cls ? (r.ft || 0) * segFactor(r) : 0);
     }, 0);
   }
+  /** The figures the ticket reads. */
   function price() {
-    const ft = totalFt();
-    const gradeFt = billFt();
-    const perFt = cardPerFt();
-    const fence = gradeFt * perFt;
-    const ops = fs.openings.reduce(function (a, o) { return a + opType(o.type).price; }, 0);
-    const demo = fs.demo ? gradeFt * DEMO_PER_FT : 0;
-    const total = fence + ops + demo;
-    return { ft: ft, gradeFt: gradeFt, perFt: perFt, fence: fence, ops: ops, demo: demo, total: total, perAll: gradeFt ? total / gradeFt : 0 };
+    const p = pkg();
+    return { ft: totalFt(), gradeFt: billFt(), total: p.subtotal, perAll: p.pricePerLf, pkg: p };
   }
 
   /** The donor rebuilt this strip in two places — the markup is identical.
@@ -341,36 +484,83 @@ export function initFenceEstimatorContent(
     const tkLines = $('#tkLines');
     if (!tkTotal || !tkSub || !tkLines) return;
     // Nothing measured is not "$0" — a zero total reads like a priced job that
-    // came to nothing. The donor's own em-dash is the honest resting state, and
-    // it is what the markup ships with.
+    // came to nothing. The em-dash is the honest resting state.
     if (p.ft <= 0 && !fs.openings.length) {
       tkTotal.textContent = '—';
       tkSub.textContent = 'Nothing measured yet';
       tkLines.innerHTML = '';
+      renderTiers();
+      renderNotes();
       return;
     }
     tkTotal.textContent = money(p.total);
     // The ticket bills the along-grade footage; on level (or unmeasured)
     // ground it IS the plan footage, so nothing changes shape.
-    tkSub.textContent = Math.round(p.gradeFt) + ' lf · ' + money(p.perAll) + '/lf';
-    const groups: Record<string, number> = {};
-    fs.openings.forEach(function (o) {
-      const t = opType(o.type);
-      groups[t.label] = (groups[t.label] || 0) + 1;
-    });
-    // The fence line only exists once there is fence. Reaching here with no
-    // footage means an opening was added before any run was measured, and
-    // "Composite · 6 ft · 0 lf — $0" is a line about nothing.
-    let html = p.ft > 0
-      ? '<li><span>' + mat().label + ' · ' + fs.height + ' ft · ' + Math.round(p.gradeFt) + ' lf</span><span>' + money(p.fence) + '</span></li>'
-      : '';
-    Object.keys(groups).forEach(function (k) {
-      // The keys came out of `opType(...).label`, so the lookup always hits.
-      const t = OPENINGS.find(function (o) { return o.label === k; }) as OpeningType;
-      html += '<li><span>' + k + ' × ' + groups[k] + '</span><span>' + money(t.price * groups[k]) + '</span></li>';
-    });
-    if (p.demo > 0) html += '<li><span>Demolition &amp; haul · ' + money(DEMO_PER_FT) + '/lf</span><span>' + money(p.demo) + '</span></li>';
-    tkLines.innerHTML = html;
+    tkSub.textContent = Math.round(p.gradeFt) + ' lf · ' + money(p.perAll) + '/lf' +
+      (p.pkg.market && p.pkg.market.resolution !== 'national' ? ' · ' + esc(p.pkg.market.label) + ' rates' : '');
+    tkLines.innerHTML = p.pkg.lines.map(function (l) {
+      const qty = l.unit === 'lot' ? '' : ' × ' + (l.unit === 'ln ft' ? Math.round(l.quantity) + ' lf' : l.unit === 'sqft' ? Math.round(l.quantity) + ' sq ft' : String(l.quantity));
+      return '<li><span>' + esc(l.name) + qty + '</span><span>' + money(l.quantity * l.unitPrice) + '</span></li>';
+    }).join('');
+    renderTiers();
+    renderNotes();
+  }
+
+  /** Good / Better / Best for the picked type: three totals, the picked one marked. */
+  function renderTiers() {
+    const box = $('#tkTiers');
+    if (!box) return;
+    const p = price();
+    const base = resolveFenceType(fs.tierBase, fs.customs);
+    if (p.ft <= 0 || base.custom || currentType().custom) { box.innerHTML = ''; box.classList.add('is-hidden'); return; }
+    const layout = layoutInput();
+    const tiers = fenceTiers(base.type.id, fs.height);
+    const html = tiers.map(function (tier) {
+      const total = priceFencePackage({ ...layout, type: tier.type, stain: tier.stain || (layout.stain && tier.id !== 'good') }, priceOpts()).subtotal;
+      const on = tier.type === fs.material && (tier.id !== 'best' || fs.stain === tier.stain || !base.type.stainable);
+      const t = typeRow(tier.type);
+      return '<button class="tier' + (on ? ' on' : '') + '" type="button" data-tier="' + tier.id + '" title="' + esc(tier.tagline) + '">' +
+        '<span class="tier-n">' + tier.name + '</span>' +
+        '<span class="tier-t">' + esc(t.label) + (tier.stain ? ' · stained' : '') + '</span>' +
+        '<span class="tier-v">' + money(total) + '</span></button>';
+    }).join('');
+    box.innerHTML = html;
+    box.classList.remove('is-hidden');
+  }
+
+  /** The contractor's notes under the ticket: what the package assumed and what to check. */
+  function renderNotes() {
+    const box = $('#tkNotes');
+    if (!box) return;
+    const p = price();
+    const checks = p.ft > 0 ? fenceChecks(p.pkg, layoutInput(), slope()) : [];
+    if (!checks.length) { box.innerHTML = ''; box.classList.add('is-hidden'); return; }
+    box.innerHTML = checks.map(function (c) {
+      return '<li class="note ' + c.level + '"><span class="note-dot"></span><span>' + esc(c.text) + '</span></li>';
+    }).join('');
+    box.classList.remove('is-hidden');
+  }
+
+  /** The material takeoff card: posts by kind, every part, crew time. Built
+   *  by the same engine the ticket bills, so the two can never disagree. */
+  function renderTakeoff() {
+    const card = $('#takeoffCard');
+    const list = $('#bomList');
+    const meta = $('#takeoffMeta');
+    const foot = $('#takeoffFoot');
+    if (!card || !list || !meta || !foot) return;
+    const p = price();
+    if (p.ft <= 0) { card.classList.add('is-hidden'); return; }
+    const tk = p.pkg.takeoff;
+    card.classList.remove('is-hidden');
+    meta.textContent = Math.round(tk.netFenceLf) + ' lf of fence · ' + tk.sections + ' sections at ' + tk.spacingFt + "' o.c. · " + tk.posts.total + ' posts';
+    list.innerHTML = tk.bom.map(function (b) {
+      const unit = b.unit === 'ea' ? '' : b.unit === 'lf' ? ' lf' : b.unit === 'bag' ? (b.qty === 1 ? ' bag' : ' bags') : b.unit === 'box' ? (b.qty === 1 ? ' box' : ' boxes') : b.unit === 'gal' ? ' gal' : ' ' + b.unit;
+      return '<li><span>' + esc(b.label) + '</span><span>' + b.qty.toLocaleString('en-US') + unit + '</span></li>';
+    }).join('');
+    const posts = [tk.posts.line ? tk.posts.line + ' line' : '', tk.posts.corner ? tk.posts.corner + ' corner' : '', tk.posts.end ? tk.posts.end + ' end' : '', tk.posts.gate ? tk.posts.gate + ' gate' : ''].filter(Boolean).join(' · ');
+    foot.innerHTML = '<span>Posts: ' + esc(posts) + ' · ' + tk.postLengthFt.base + "' stock" + (tk.bom.some(function (b) { return b.key === 'step-posts'; }) ? ' (' + tk.postLengthFt.step + "' at steps)" : '') + '</span>' +
+      '<span>Crew time ≈ ' + tk.laborHours + ' hrs</span>';
   }
   // ---- one row's markup, so a row can be ADDED or PATCHED without rebuilding
   // the list it lives in. Every edit on this page used to call renderStudio(),
@@ -385,34 +575,48 @@ export function initFenceEstimatorContent(
       '<span class="run-u">ft</span>' +
       '<button class="row-x" type="button" data-del-run aria-label="Remove run">×</button></li>';
   }
-  /** One material row. The RATE IS THE CONTROL: `.mat-rate` is a button, and
-   *  clicking it swaps in a number field over the same figure (see `editRate`),
-   *  which is why there is no separate rate box on the card any more. A material
-   *  the shop added also carries a delete. */
-  function matRowHtml(m: Material) {
-    const on = fs.material === m.id;
-    const custom = !MATERIALS.some(function (b) { return b.id === m.id; });
-    return '<li class="' + (on ? 'on' : '') + '" data-mat="' + esc(m.id) +
+  /** One type row. The RATE IS THE CONTROL: `.mat-rate` is a button, and
+   *  clicking it opens the row's rate strip (material / labor per lf and the
+   *  walk gate — see `editRate`). A type the shop added also carries a delete. */
+  function matRowHtml(r: TypeRow) {
+    const on = fs.material === r.id;
+    return '<li class="' + (on ? 'on' : '') + '" data-mat="' + esc(r.id) +
       '" role="option" tabindex="0" aria-selected="' + (on ? 'true' : 'false') + '">' +
-      '<span class="mat-sw" style="background:' + esc(m.color) + '"></span>' +
-      '<span class="mat-name">' + esc(m.label) + '</span>' +
-      '<button class="mat-rate' + (isEdited(m) ? ' is-custom' : '') + '" type="button" data-rate="' +
-      esc(m.id) + '" aria-label="Edit the ' + esc(m.label) + ' rate">' + money(baseOf(m)) + '/lf</button>' +
-      (custom
-        ? '<button class="row-x" type="button" data-del-mat="' + esc(m.id) + '" aria-label="Remove ' + esc(m.label) + '">×</button>'
+      '<span class="mat-sw" style="background:' + esc(r.color) + '"></span>' +
+      '<span class="mat-name">' + esc(r.label) + '<span class="mat-sub">' + esc(r.custom ? 'built like ' + r.type.label.toLowerCase() : r.type.blurb) + '</span></span>' +
+      '<button class="mat-rate' + (rowEdited(r) ? ' is-custom' : '') + '" type="button" data-rate="' +
+      esc(r.id) + '" aria-label="Edit the ' + esc(r.label) + ' rates">' + money(rowPerLf(r)) + '/lf</button>' +
+      (r.custom
+        ? '<button class="row-x" type="button" data-del-mat="' + esc(r.id) + '" aria-label="Remove ' + esc(r.label) + '">×</button>'
         : '') +
       '</li>';
   }
+  /** The list, grouped by family with a small header per group. */
+  function matListHtml() {
+    const rows = typeRows();
+    const groups: Array<{ key: string; label: string; rows: TypeRow[] }> = [];
+    rows.forEach(function (r) {
+      const key = r.category;
+      let g = groups.find(function (x) { return x.key === key; });
+      if (!g) {
+        g = { key: key, label: key === 'custom' ? 'Your own' : CATEGORY_LABEL[key as keyof typeof CATEGORY_LABEL] || key, rows: [] };
+        groups.push(g);
+      }
+      g.rows.push(r);
+    });
+    return groups.map(function (g) {
+      return '<li class="mat-cat" aria-hidden="true">' + esc(g.label) + '</li>' + g.rows.map(matRowHtml).join('');
+    }).join('');
+  }
 
-  /** Repaint one material row's rate cell after an edit — the list is not
-   *  rebuilt, so the row the user just typed in keeps its place and its focus
-   *  ring instead of re-cascading. */
+  /** Repaint one type row's rate cell after an edit — the list is not
+   *  rebuilt, so the row the user just typed in keeps its place. */
   function paintMatRate(id: string) {
-    const m = allMats().find(function (x) { return x.id === id; });
+    const r = typeRows().find(function (x) { return x.id === id; });
     const cell = $('#matList [data-rate="' + id + '"]');
-    if (!m || !cell) return;
-    cell.textContent = money(baseOf(m)) + '/lf';
-    cell.classList.toggle('is-custom', isEdited(m));
+    if (!r || !cell) return;
+    cell.textContent = money(rowPerLf(r)) + '/lf';
+    cell.classList.toggle('is-custom', rowEdited(r));
   }
 
   /** Grouped by kind, so the native menu shows a labelled rule between the gates
@@ -442,7 +646,7 @@ export function initFenceEstimatorContent(
       // delegate matches it there and walks up to `[data-op]`.
       '<span class="bp-sel op-sel"><select class="bp-sel-in" data-op-type aria-label="Opening type">' +
       openOptionsHtml(o.type) + '</select></span>' +
-      '<span class="op-price">' + money(t.price) + '</span>' +
+      '<span class="op-price">' + money(openingPrice(t)) + '</span>' +
       '<button class="row-x" type="button" data-del-op aria-label="Remove opening">×</button>' +
       '<span class="op-sub">' + t.width + ' ft · ' + (o.run ? 'Run ' + o.run : 'Free') + '</span></li>';
   }
@@ -452,7 +656,7 @@ export function initFenceEstimatorContent(
     const use = li.querySelector<SVGUseElement>('.op-ic use');
     use?.setAttribute('href', t.kind === 'gate' ? '#i-door-open' : '#i-door-closed');
     const price = li.querySelector<HTMLElement>('.op-price');
-    if (price) price.textContent = money(t.price);
+    if (price) price.textContent = money(openingPrice(t));
     const sub = li.querySelector<HTMLElement>('.op-sub');
     if (sub) sub.textContent = t.width + ' ft · ' + (o.run ? 'Run ' + o.run : 'Free');
   }
@@ -471,9 +675,15 @@ export function initFenceEstimatorContent(
    *  no list is rebuilt, so nothing re-animates. */
   function renderFigures() {
     renderTicket();
+    renderTakeoff();
     renderStrip();
     syncRunsEmpty();
     paintRunGrades();
+    // Opening prices follow the type and the height.
+    $$('#openList [data-op]').forEach(function (li) {
+      const o = fs.openings.find(function (x) { return x.id === li.dataset.op; });
+      if (o) paintOpenRow(li, o);
+    });
     // Material, height and openings are the 3D scene's inputs too. No-op until
     // the scene is mounted, and `modelGates()` keeps the array identity stable
     // so a keystroke in a run-length box does not rebuild it.
@@ -506,27 +716,96 @@ export function initFenceEstimatorContent(
     const heights = $('#heights');
     const demoTgl = $('#demoTgl');
     if (!matList || !heights || !demoTgl) return;
-    matList.innerHTML = allMats().map(matRowHtml).join('');
-    heights.innerHTML = HEIGHTS.map(function (h) {
-      return '<button class="seg-btn' + (fs.height === h.ft ? ' on' : '') + '" type="button" data-h="' + h.ft + '">' + h.ft + ' ft</button>';
-    }).join('');
+    matList.innerHTML = matListHtml();
+    renderHeights();
     demoTgl.classList.toggle('on', fs.demo);
+    renderSite();
+  }
+  /** The heights THIS type comes in; the picked one snaps to the nearest offered. */
+  function renderHeights() {
+    const heights = $('#heights');
+    if (!heights) return;
+    const t = currentType().type;
+    if (!t.heightsFt.includes(fs.height)) fs.height = nearestHeight(t, fs.height);
+    heights.innerHTML = t.heightsFt.map(function (h) {
+      return '<button class="seg-btn' + (fs.height === h ? ' on' : '') + '" type="button" data-h="' + h + '">' + h + ' ft</button>';
+    }).join('');
+  }
+  /** The Site rows that depend on the type: stain (wood), post upgrade
+   *  (wood), post spacing (stick and mesh), the ground, the tear-out rate. */
+  function renderSite() {
+    const t = currentType().type;
+    const stainRow = $('#stainRow');
+    if (stainRow) {
+      stainRow.classList.toggle('is-hidden', !t.stainable);
+      $('#stainTgl')?.classList.toggle('on', fs.stain && t.stainable);
+    }
+    const upRow = $('#upgradeRow');
+    if (upRow) {
+      const can = t.category === 'wood';
+      upRow.classList.toggle('is-hidden', !can);
+      const six = t.spec.postWidthIn >= 5.5;
+      const seg = upRow.querySelector<HTMLElement>('.site-seg');
+      if (seg) {
+        seg.innerHTML = ([['', 'Standard'], ['steel', 'Steel'], ['6x6', '6×6']] as Array<[string, string]>).map(function (o) {
+          if (o[0] === '6x6' && six) return '';
+          const on = (fs.postUpgrade || '') === o[0];
+          return '<button class="seg-btn' + (on ? ' on' : '') + '" type="button" data-upgrade="' + o[0] + '">' + o[1] + '</button>';
+        }).join('');
+      }
+    }
+    const spRow = $('#spacingRow');
+    if (spRow) {
+      const opts = spacingOptions(t);
+      const seg = spRow.querySelector<HTMLElement>('.site-seg');
+      const hint = spRow.querySelector<HTMLElement>('.tg-h');
+      if (opts && seg) {
+        seg.innerHTML = [null as number | null].concat(opts).map(function (o) {
+          const on = (fs.spacing ?? null) === o;
+          return '<button class="seg-btn' + (on ? ' on' : '') + '" type="button" data-spacing="' + (o === null ? '' : o) + '">' + (o === null ? 'Std ' + t.postSpacingFt + "'" : o + "'") + '</button>';
+        }).join('');
+        if (hint) hint.textContent = 'Line posts on center. ' + (t.build === 'stick' ? "A 2×4 rail spans 8' at most." : "Chain link runs out to 12'.");
+      } else if (seg) {
+        seg.innerHTML = '';
+        if (hint) hint.textContent = t.build === 'panel' ? t.label + " installs as prefab " + t.postSpacingFt + "' panels — spacing is fixed by the section width." : t.label + " spacing is set by the rail stock itself — the " + t.postSpacingFt + "' rails span post to post.";
+      }
+    }
+    const grRow = $('#groundRow');
+    if (grRow) {
+      const seg = grRow.querySelector<HTMLElement>('.site-seg');
+      const hint = grRow.querySelector<HTMLElement>('.tg-h');
+      const sl = slope();
+      if (seg) {
+        seg.innerHTML = (['auto'] as Array<Terrain | 'auto'>).concat(TERRAINS).map(function (k) {
+          const on = fs.terrain === k;
+          const label = k === 'auto' ? 'Auto' : k === 'flat' ? 'Flat' : k === 'sloped' ? 'Gentle' : k === 'steep' ? 'Steep' : 'Rocky';
+          return '<button class="seg-btn' + (on ? ' on' : '') + '" type="button" data-terrain="' + k + '">' + label + '</button>';
+        }).join('');
+      }
+      if (hint) {
+        const eff = effTerrain();
+        hint.textContent = (fs.terrain === 'auto'
+          ? (sl ? 'Measured: grade ' + sl.avgGradePct + '% avg, ' + sl.maxGradePct + '% max → ' + TERRAIN_LABEL[eff].toLowerCase() : 'Reads the traced line\u2019s elevation profile; flat until measured')
+          : TERRAIN_LABEL[eff]) + ' · labor ×' + TERRAIN_FACTOR[eff] + '.';
+      }
+    }
+    const rem = $('#removalRate');
+    if (rem instanceof HTMLInputElement && document.activeElement !== rem) rem.value = String(fs.removalPerLf);
   }
   function renderPops() {
     ['gate', 'door'].forEach(function (kind) {
       const box = $(kind === 'gate' ? '#popGate' : '#popDoor');
       if (!box) return;
       // Each entry carries its own icon and the list is ruled between items, so
-      // "Single gate / Double gate / Slide gate" stop reading as one block of
-      // near-identical text. The icon is the door glyph the ledger row uses for
-      // the same opening, so the popover and the row agree.
+      // "Single gate / Double gate / Triple gate" stop reading as one block of
+      // near-identical text. The price is the picked type's, at the picked height.
       box.innerHTML = OPENINGS.filter(function (o) { return o.kind === kind; }).map(function (o) {
         return '<button class="tp-item" type="button" data-add-open="' + o.id + '">' +
           '<span class="tp-ic"><svg class="ic"><use href="#' +
             (o.kind === 'gate' ? 'i-door-open' : 'i-door-closed') + '"/></svg></span>' +
           '<span class="tp-t"><span class="tp-n">' + o.label + '</span>' +
           '<span class="tp-w">' + o.width + ' ft wide</span></span>' +
-          '<span class="tp-p">' + money(o.price) + '</span></button>';
+          '<span class="tp-p">' + money(openingPrice(o)) + '</span></button>';
       }).join('');
     });
   }
@@ -564,80 +843,121 @@ export function initFenceEstimatorContent(
    *  re-render), so `aria-selected` must move with the `on` class. */
   function pickMaterial(m: HTMLElement) {
     fs.material = m.dataset.mat || '';
+    fs.tierBase = fs.material;
     $$('#matList [data-mat]').forEach(function (li) {
       const picked = li === m;
       li.classList.toggle('on', picked);
       li.setAttribute('aria-selected', picked ? 'true' : 'false');
     });
+    // The heights, the site options and the opening prices are the type's.
+    renderHeights();
+    renderSite();
+    renderPops();
     renderFigures();
   }
 
-  // ── The rate IS the row ────────────────────────────────────────────────────
-  // Clicking the figure on a material row turns it into a number field over the
-  // same spot. There is deliberately no second "Rate" box on the card: two
-  // places to set one price is one place too many, and the one on the row is the
-  // one the contractor is already reading.
+  // ── The rate IS the row ────────────────────────────────────────────────
+  // Clicking the figure on a type row opens a strip under it with the three
+  // numbers the engine charges for that type: material per lf, labor per lf
+  // and the walk gate. A blank field means "the catalog's number" — the
+  // strip says what that is — and a value equal to it is not stored.
 
-  /** Swap a rate cell for an input. Commits on Enter / blur, cancels on Esc; an
-   *  empty or nonsense value means "back to the card price" rather than $0. */
+  function closeRateStrip() {
+    $$('#matList .mat-edit').forEach(function (el) { el.remove(); });
+  }
   function editRate(cell: HTMLElement) {
     const id = cell.dataset.rate || '';
-    const m = allMats().find(function (x) { return x.id === id; });
-    if (!m || cell.dataset.editing) return;
-    cell.dataset.editing = '1';
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.min = '1';
-    input.step = '1';
-    input.inputMode = 'decimal';
-    input.className = 'mat-rate-in';
-    input.value = String(Math.round(baseOf(m) * 100) / 100);
-    input.setAttribute('aria-label', m.label + ' rate, dollars per linear foot');
-    cell.replaceWith(input);
-    input.focus();
-    input.select();
-
-    let done = false;
-    const finish = (commit: boolean) => {
-      if (done) return;
-      done = true;
-      if (commit) {
-        const n = parseFloat(input.value);
-        if (Number.isFinite(n) && n > 0) fs.rates[id] = n;
-        else delete fs.rates[id];
-        saveRate();
-      }
-      delete cell.dataset.editing;
-      input.replaceWith(cell);
-      paintMatRate(id);
-      // A rate that is not the picked material's still moves nothing on the
-      // ticket, and renderFigures is cheap enough not to branch on it.
-      renderFigures();
+    const r = typeRows().find(function (x) { return x.id === id; });
+    const li = cell.closest<HTMLElement>('[data-mat]');
+    if (!r || !li) return;
+    const open = li.nextElementSibling instanceof HTMLElement && li.nextElementSibling.classList.contains('mat-edit') && li.nextElementSibling.dataset.for === id;
+    closeRateStrip();
+    if (open) return;
+    const std = standardRate(r.type.id);
+    const jr = jobRates(resolveFenceType(r.id, fs.customs), priceOpts());
+    const book = r.custom ? { materialPerLf: r.custom.materialPerLf, laborPerLf: r.custom.laborPerLf, gateSingle: r.custom.gateSingle } : (fs.rates[r.type.id] || {});
+    const field = function (key: 'materialPerLf' | 'laborPerLf' | 'gateSingle', label: string, unit: string) {
+      const v = book[key];
+      return '<label class="mat-edit-f"><span class="mat-edit-l">' + label + '</span>' +
+        '<span class="mat-new-rate"><span class="mat-cur">$</span>' +
+        '<input class="mat-new-in" type="number" min="' + RATE_LIMITS[key].min + '" max="' + RATE_LIMITS[key].max + '" step="0.5" inputmode="decimal" data-rate-field="' + key + '" value="' + (Number.isFinite(v) ? v : '') + '" placeholder="' + Math.round(jr[key] * 100) / 100 + '" aria-label="' + esc(r.label) + ' ' + label.toLowerCase() + '"></span>' +
+        '<span class="mat-edit-u">' + unit + '</span></label>';
     };
-    input.addEventListener('keydown', function (ev) {
-      if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
-      else if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
-    });
-    input.addEventListener('blur', function () { finish(true); });
+    const strip = document.createElement('li');
+    strip.className = 'mat-edit';
+    strip.dataset.for = id;
+    strip.innerHTML =
+      field('materialPerLf', 'Material', '/lf') + field('laborPerLf', 'Labor', '/lf') + field('gateSingle', 'Walk gate', 'each') +
+      '<span class="mat-edit-note">' + (r.custom
+        ? 'Your own type — its rates as typed.'
+        : 'Blank = the catalog\u2019s $' + std.materialPerLf + ' / $' + std.laborPerLf + ' / $' + std.gateSingle + (jr.source.materialPerLf === 'market' || jr.source.laborPerLf === 'market' ? ', scaled to ' + esc(market()!.label) : '') + '. A typed rate is what you charge.') + '</span>' +
+      '<span class="mat-edit-acts"><button class="btn btn-primary btn--sm" type="button" data-rate-save="' + esc(id) + '">Apply</button>' +
+      (r.custom ? '' : '<button class="btn btn-ghost btn--sm" type="button" data-rate-reset="' + esc(id) + '">Catalog</button>') +
+      '<button class="row-x" type="button" data-rate-cancel aria-label="Cancel">×</button></span>';
+    li.after(strip);
+    staggerIn([strip]);
+    strip.querySelector<HTMLInputElement>('input')?.focus();
+  }
+  function saveRateStrip(id: string) {
+    const strip = $('#matList .mat-edit[data-for="' + id + '"]');
+    const r = typeRows().find(function (x) { return x.id === id; });
+    if (!strip || !r) return;
+    const read = function (key: string): number | undefined {
+      const el = strip.querySelector<HTMLInputElement>('[data-rate-field="' + key + '"]');
+      const n = parseFloat(el?.value || '');
+      return Number.isFinite(n) && n > 0 ? n : undefined;
+    };
+    if (r.custom) {
+      const m = read('materialPerLf');
+      const l = read('laborPerLf');
+      if (m === undefined || l === undefined) { sayHint('A type of your own needs both a material and a labor rate.'); return; }
+      r.custom.materialPerLf = m;
+      r.custom.laborPerLf = l;
+      r.custom.gateSingle = read('gateSingle');
+    } else {
+      fs.rates = sanitizeRateBook({ ...fs.rates, [r.type.id]: { materialPerLf: read('materialPerLf'), laborPerLf: read('laborPerLf'), gateSingle: read('gateSingle') } });
+    }
+    saveRate();
+    closeRateStrip();
+    paintMatRate(id);
+    renderPops();
+    renderFigures();
+  }
+  function resetRateStrip(id: string) {
+    const r = typeRows().find(function (x) { return x.id === id; });
+    if (!r || r.custom) return;
+    const next = { ...fs.rates };
+    delete next[r.type.id];
+    fs.rates = next;
+    saveRate();
+    closeRateStrip();
+    paintMatRate(id);
+    renderPops();
+    renderFigures();
   }
 
-  /** The add-material row: a name, a rate, and the swatch colour it will carry.
-   *  Appended to the list rather than opened as a dialog — it is two fields, and
-   *  it belongs among the materials it is joining. */
+  /** The add-type row: a name, what it is built like, and its two rates.
+   *  Appended to the list rather than opened as a dialog — it belongs among
+   *  the types it is joining. */
   function openMatAdd() {
     const list = $('#matList');
     if (!list || list.querySelector('.mat-new')) {
       list?.querySelector<HTMLInputElement>('.mat-new-name')?.focus();
       return;
     }
-    const color = CUSTOM_COLORS[fs.customMats.length % CUSTOM_COLORS.length];
+    const color = CUSTOM_COLORS[fs.customs.length % CUSTOM_COLORS.length];
     const li = document.createElement('li');
     li.className = 'mat-new';
     li.innerHTML =
       '<span class="mat-sw" style="background:' + color + '"></span>' +
-      '<input class="mat-new-name" type="text" placeholder="Material name" aria-label="Material name" maxlength="40">' +
+      '<input class="mat-new-name" type="text" placeholder="Type name (e.g. Redwood privacy)" aria-label="Type name" maxlength="40">' +
+      '<span class="bp-sel mat-new-like"><select class="bp-sel-in" data-mat-like aria-label="Built like">' +
+        FENCE_TYPES.map(function (t) { return '<option value="' + t.id + '"' + (t.id === currentType().type.id ? ' selected' : '') + '>Built like ' + esc(t.label.toLowerCase()) + '</option>'; }).join('') +
+      '</select></span>' +
       '<span class="mat-new-rate"><span class="mat-cur">$</span>' +
-      '<input class="mat-new-in" type="number" min="1" step="1" inputmode="decimal" placeholder="0" aria-label="Rate, dollars per linear foot"></span>' +
+      '<input class="mat-new-in" type="number" min="1" step="0.5" inputmode="decimal" placeholder="mat" aria-label="Material, dollars per linear foot" data-mat-new-mat></span>' +
+      '<span class="mat-new-rate"><span class="mat-cur">$</span>' +
+      '<input class="mat-new-in" type="number" min="1" step="0.5" inputmode="decimal" placeholder="labor" aria-label="Labor, dollars per linear foot" data-mat-new-lab></span>' +
       '<button class="btn btn-primary btn--sm" type="button" data-mat-save>Add</button>' +
       '<button class="row-x" type="button" data-mat-cancel aria-label="Cancel">×</button>';
     list.appendChild(li);
@@ -649,51 +969,62 @@ export function initFenceEstimatorContent(
     $('#matList .mat-new')?.remove();
   }
 
-  /** Commit the add row. A material with no name or no rate is not a material,
-   *  so the row stays open and says which field is missing rather than adding
-   *  "Untitled · $0/lf" to the card. */
+  /** Commit the add row. A type with no name or no rates is not a type, so
+   *  the row stays open and says which field is missing. */
   function saveMatAdd() {
     const li = $('#matList .mat-new');
     if (!li) return;
     const nameEl = li.querySelector<HTMLInputElement>('.mat-new-name');
-    const rateEl = li.querySelector<HTMLInputElement>('.mat-new-in');
+    const likeEl = li.querySelector<HTMLSelectElement>('[data-mat-like]');
+    const matEl = li.querySelector<HTMLInputElement>('[data-mat-new-mat]');
+    const labEl = li.querySelector<HTMLInputElement>('[data-mat-new-lab]');
     const name = (nameEl?.value || '').trim();
-    const rate = parseFloat(rateEl?.value || '');
-    if (!name) { nameEl?.focus(); sayHint('Give the material a name before adding it.'); return; }
-    if (!Number.isFinite(rate) || rate <= 0) {
-      rateEl?.focus();
-      sayHint('Give the material a price per linear foot before adding it.');
-      return;
-    }
+    const mat = parseFloat(matEl?.value || '');
+    const lab = parseFloat(labEl?.value || '');
+    if (!name) { nameEl?.focus(); sayHint('Give the type a name before adding it.'); return; }
+    if (!Number.isFinite(mat) || mat <= 0) { matEl?.focus(); sayHint('Give the type a material price per linear foot.'); return; }
+    if (!Number.isFinite(lab) || lab <= 0) { labEl?.focus(); sayHint('Give the type a labor price per linear foot.'); return; }
     matSeq += 1;
-    const m: Material = {
+    const like = (likeEl?.value || DEFAULT_FENCE_TYPE) as FenceTypeId;
+    const c: CustomFenceType = {
       id: 'custom-' + matSeq,
       label: name,
-      base: rate,
+      like: like,
+      materialPerLf: mat,
+      laborPerLf: lab,
       color: CUSTOM_COLORS[(matSeq - 1) % CUSTOM_COLORS.length],
     };
-    fs.customMats.push(m);
+    fs.customs.push(c);
     saveRate();
     li.remove();
-    appendRow($('#matList'), matRowHtml(m));
-    // Added means chosen: a contractor typing in their own fence material is
+    const list = $('#matList');
+    if (list && !list.querySelector('.mat-cat[data-custom]')) {
+      const head = document.createElement('li');
+      head.className = 'mat-cat';
+      head.dataset.custom = '1';
+      head.setAttribute('aria-hidden', 'true');
+      head.textContent = 'Your own';
+      list.appendChild(head);
+    }
+    appendRow(list, matRowHtml(typeRow(c.id)));
+    // Added means chosen: a contractor typing in their own fence type is
     // pricing THIS job with it.
-    const row = $('#matList [data-mat="' + m.id + '"]');
+    const row = $('#matList [data-mat="' + c.id + '"]');
     if (row) pickMaterial(row);
     else renderFigures();
   }
 
-  /** Remove a material the shop added. Built-ins have no delete. */
+  /** Remove a type the shop added. Built-ins have no delete. */
   function deleteMaterial(id: string) {
     const li = $('#matList [data-mat="' + id + '"]');
-    fs.customMats = fs.customMats.filter(function (m) { return m.id !== id; });
-    delete fs.rates[id];
+    fs.customs = fs.customs.filter(function (c) { return c.id !== id; });
     saveRate();
     const fallback = () => {
-      // The deleted material cannot stay picked; the card's first entry is the
+      if (!fs.customs.length) $('#matList .mat-cat[data-custom]')?.remove();
+      // The deleted type cannot stay picked; the catalog's first entry is the
       // page's own default and is always present.
       if (fs.material === id) {
-        fs.material = MATERIALS[0].id;
+        fs.material = DEFAULT_FENCE_TYPE;
         const next = $('#matList [data-mat="' + fs.material + '"]');
         if (next) pickMaterial(next);
       }
@@ -703,10 +1034,109 @@ export function initFenceEstimatorContent(
     else fallback();
   }
 
+  /** "Save as company defaults": the book, the shop's types and the site
+   *  rates go to the organization, for every estimator in it. */
+  async function saveOrgBook(btn: HTMLElement) {
+    if (btn.dataset.busy) return;
+    btn.dataset.busy = '1';
+    const old = btn.innerHTML;
+    btn.innerHTML = '<svg class="ic"><use href="#i-check"/></svg>Saving…';
+    try {
+      const res = await saveFenceCatalog({ version: 1, rates: fs.rates, custom: fs.customs, removalPerLf: fs.removalPerLf, wastePct: fs.wastePct });
+      if (res.ok) {
+        btn.innerHTML = '<svg class="ic"><use href="#i-check"/></svg>Saved for the company';
+        sayHint('Your rates and types are now the company defaults — every estimator on this account prices with them.');
+      } else {
+        btn.innerHTML = old;
+        sayHint(res.error);
+      }
+    } catch (err) {
+      btn.innerHTML = old;
+      sayHint(err instanceof Error && err.message.length <= 160 ? err.message : 'The price book could not be saved. Try again.');
+    }
+    after(function () { btn.innerHTML = old; delete btn.dataset.busy; }, 2400);
+  }
+
+  // ================= FULL-SCREEN STAGE =================
+  // While tracing, the map (or the 3D view) can take the whole screen: the
+  // stage card goes to the browser's full screen where the browser allows it
+  // (desktop, Android), and everywhere else — iOS Safari has no element full
+  // screen — it becomes a fixed overlay over the page, which is the same
+  // thing to the eye. The `is-full` class carries the layout in both cases;
+  // the same button, or Escape, leaves. The map surface is told to re-lay
+  // its tiles once the new size has settled.
+  let stageFull = false;
+  function stageEl(): HTMLElement | null { return $('.fs-stage'); }
+  function paintFullBtn() {
+    const btn = $('#fullBtn');
+    if (!btn) return;
+    btn.setAttribute('aria-pressed', stageFull ? 'true' : 'false');
+    btn.setAttribute('aria-label', stageFull ? 'Leave full screen' : 'Full screen');
+    btn.title = stageFull ? 'Leave full screen — Esc' : 'Full screen map — Esc to leave';
+    btn.querySelector('use')?.setAttribute('href', stageFull ? '#i-collapse' : '#i-expand');
+    btn.classList.toggle('on', stageFull);
+  }
+  /** Once the layout has settled (two frames), the surfaces read their new size. */
+  function afterStageResize() {
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        mapApi?.resized();
+        pushMap();
+        pushModel();
+      });
+    });
+    after(function () { mapApi?.resized(); }, 380);
+  }
+  function setStageFull(on: boolean) {
+    const stage = stageEl();
+    if (!stage || stageFull === on) return;
+    stageFull = on;
+    stage.classList.toggle('is-full', on);
+    root.classList.toggle('is-stage-full', on);
+    document.documentElement.classList.toggle('jf-stage-full', on);
+    paintFullBtn();
+    // The browser's own full screen, where it exists. A refusal (a browser
+    // that has none, or one that wants a gesture it did not get) leaves the
+    // overlay, which already fills the viewport.
+    const doc = document as Document & { webkitFullscreenElement?: Element | null; webkitExitFullscreen?: () => Promise<void> | void };
+    const el = stage as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void };
+    if (on) {
+      const req = el.requestFullscreen ?? el.webkitRequestFullscreen;
+      if (req) {
+        try { void Promise.resolve(req.call(el)).catch(function () {}); } catch { /* overlay it is */ }
+      }
+      // Anything armed or aligning stays; the trace continues on the bigger surface.
+    } else {
+      const active = document.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+      if (active === stage) {
+        const exit = document.exitFullscreen ?? doc.webkitExitFullscreen;
+        if (exit) { try { void Promise.resolve(exit.call(document)).catch(function () {}); } catch { /* already out */ } }
+      }
+    }
+    afterStageResize();
+  }
+  // The browser left full screen on its own (Escape, a system gesture, a tab
+  // switch): the overlay must follow, or the page would stay pinned.
+  const onFullscreenChange = function () {
+    const doc = document as Document & { webkitFullscreenElement?: Element | null };
+    const active = document.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+    if (stageFull && !active) setStageFull(false);
+  };
+  on(document, 'fullscreenchange', onFullscreenChange);
+  on(document, 'webkitfullscreenchange', onFullscreenChange);
+  disposers.push(function () {
+    // A navigation away must not leave the page pinned or the browser full screen.
+    if (stageFull) setStageFull(false);
+  });
+
   // ================= EVENTS =================
   on(document, 'click', function (e) {
     if (!(e.target instanceof Element)) return;
     const target = e.target;
+    if (target.closest('#fullBtn')) {
+      setStageFull(!stageFull);
+      return;
+    }
     // Before `[data-mat]`: these controls live INSIDE a material row, and the
     // row's own handler would otherwise swallow the click.
     const rateCell = target.closest<HTMLElement>('[data-rate]');
@@ -719,9 +1149,37 @@ export function initFenceEstimatorContent(
       deleteMaterial(delMat.dataset.delMat || '');
       return;
     }
+    const rateSave = target.closest<HTMLElement>('[data-rate-save]');
+    if (rateSave) { saveRateStrip(rateSave.dataset.rateSave || ''); return; }
+    const rateReset = target.closest<HTMLElement>('[data-rate-reset]');
+    if (rateReset) { resetRateStrip(rateReset.dataset.rateReset || ''); return; }
+    if (target.closest('[data-rate-cancel]')) { closeRateStrip(); return; }
+    if (target.closest('.mat-edit')) return;
     if (target.closest('[data-mat-save]')) { saveMatAdd(); return; }
     if (target.closest('[data-mat-cancel]')) { closeMatAdd(); return; }
+    if (target.closest('.mat-new')) return;
     if (target.closest('#matAdd')) { openMatAdd(); return; }
+    const saveBook = target.closest<HTMLElement>('#saveBook');
+    if (saveBook) { void saveOrgBook(saveBook); return; }
+    const tier = target.closest<HTMLElement>('[data-tier]');
+    if (tier) {
+      const base = resolveFenceType(fs.tierBase, fs.customs);
+      const picked = fenceTiers(base.type.id, fs.height).find(function (t) { return t.id === tier.dataset.tier; });
+      if (!picked) return;
+      // Price the tier's type; the ladder stays on the designed fence.
+      fs.material = picked.type;
+      if (base.type.stainable || picked.stain) fs.stain = picked.stain;
+      $$('#matList [data-mat]').forEach(function (li) {
+        const on = li.dataset.mat === fs.material;
+        li.classList.toggle('on', on);
+        li.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      renderHeights();
+      renderSite();
+      renderPops();
+      renderFigures();
+      return;
+    }
     const md = target.closest<HTMLElement>('[data-mode]');
     if (md) {
       fs.mode = md.dataset.mode || '';
@@ -745,12 +1203,44 @@ export function initFenceEstimatorContent(
     if (h) {
       fs.height = Number(h.dataset.h);
       $$('#heights [data-h]').forEach(function (b) { b.classList.toggle('on', b === h); });
+      renderSite();
+      renderPops();
       renderFigures();
       return;
     }
     if (target.closest('#demoTgl')) {
       fs.demo = !fs.demo;
       $('#demoTgl')?.classList.toggle('on', fs.demo);
+      renderFigures();
+      return;
+    }
+    if (target.closest('#stainTgl')) {
+      fs.stain = !fs.stain;
+      $('#stainTgl')?.classList.toggle('on', fs.stain);
+      renderFigures();
+      return;
+    }
+    const up = target.closest<HTMLElement>('[data-upgrade]');
+    if (up) {
+      const v = up.dataset.upgrade;
+      fs.postUpgrade = v === 'steel' ? 'steel' : v === '6x6' ? '6x6' : null;
+      $$('#upgradeRow [data-upgrade]').forEach(function (b) { b.classList.toggle('on', b === up); });
+      renderFigures();
+      return;
+    }
+    const sp = target.closest<HTMLElement>('[data-spacing]');
+    if (sp) {
+      const v = Number(sp.dataset.spacing);
+      fs.spacing = sp.dataset.spacing && Number.isFinite(v) ? v : null;
+      $$('#spacingRow [data-spacing]').forEach(function (b) { b.classList.toggle('on', b === sp); });
+      renderFigures();
+      return;
+    }
+    const gr = target.closest<HTMLElement>('[data-terrain]');
+    if (gr) {
+      const v = gr.dataset.terrain;
+      fs.terrain = v === 'auto' ? 'auto' : (TERRAINS.find(function (k) { return k === v; }) || 'auto');
+      renderSite();
       renderFigures();
       return;
     }
@@ -949,7 +1439,12 @@ export function initFenceEstimatorContent(
       fs.runs = [];
       fs.openings = [];
       fs.demo = false;
-      fs.material = 'composite';
+      fs.stain = false;
+      fs.postUpgrade = null;
+      fs.spacing = null;
+      fs.terrain = 'auto';
+      fs.material = DEFAULT_FENCE_TYPE;
+      fs.tierBase = DEFAULT_FENCE_TYPE;
       fs.height = 6;
       clearFenceDone();
       // The rate card and any materials the shop added SURVIVE: they are the
@@ -1020,10 +1515,25 @@ export function initFenceEstimatorContent(
   on(document, 'keydown', function (e) {
     const ev = e as KeyboardEvent;
     if (!(ev.target instanceof Element)) return;
-    // The add-material row is a two-field form: Enter adds it, Esc drops it.
+    // Escape leaves the full-screen overlay — unless a run or a house is
+    // being traced, when the surface's own Escape (cancel the draft) wins.
+    // In the browser's real full screen the browser handles Escape itself.
+    if (ev.key === 'Escape' && stageFull && !document.fullscreenElement && !draftState.fence && draftState.houseCorners === 0 && !armed) {
+      ev.preventDefault();
+      setStageFull(false);
+      return;
+    }
+    // The add-type row is a small form: Enter adds it, Esc drops it. Same for
+    // the rate strip under a type row.
     if (ev.target.closest('.mat-new')) {
       if (ev.key === 'Enter') { ev.preventDefault(); saveMatAdd(); }
       else if (ev.key === 'Escape') { ev.preventDefault(); closeMatAdd(); }
+      return;
+    }
+    const strip = ev.target.closest<HTMLElement>('.mat-edit');
+    if (strip) {
+      if (ev.key === 'Enter') { ev.preventDefault(); saveRateStrip(strip.dataset.for || ''); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); closeRateStrip(); }
       return;
     }
     if (ev.key !== 'Enter' && ev.key !== ' ') return;
@@ -1045,12 +1555,20 @@ export function initFenceEstimatorContent(
   on(document, 'input', function (e) {
     const t = e.target;
     if (!(t instanceof HTMLInputElement)) return;
+    if (t.matches('#removalRate')) {
+      const n = parseFloat(t.value);
+      fs.removalPerLf = Number.isFinite(n) && n >= 0 ? n : DEFAULT_REMOVAL_PER_LF;
+      saveRate();
+      renderFigures();
+      return;
+    }
     if (t.matches('[data-run-ft]')) {
       const li = t.closest<HTMLElement>('[data-run]');
       if (!li) return;
       const r = fs.runs.find(function (x) { return x.id === li.dataset.run; });
       if (r) { r.ft = Math.max(0, parseInt(t.value, 10) || 0); }
       renderTicket();
+      renderTakeoff();
       const strip = $('#statStrip');
       if (strip) strip.innerHTML = statStripHtml();
       return;
@@ -2160,10 +2678,11 @@ export function initFenceEstimatorContent(
     return {
       points: mapPoints,
       height: fs.height,
-      material: fs.material,
-      // This page's swatch, so the 3D fence is the colour of the material chip
+      // The scene knows five looks; every type renders as one of them.
+      material: currentType().type.family,
+      // This page's swatch, so the 3D fence is the colour of the type chip
       // the user picked in the rail.
-      materialColor: mat().color,
+      materialColor: typeRow(fs.material).color,
       gates: modelGates(),
       // No segment-selection UI on this page, so nothing is ever highlighted.
       selectedSegment: null,
@@ -2908,35 +3427,13 @@ export function initFenceEstimatorContent(
 
 
   // ================= CONVERT TO PROPOSAL =================
-  // The last leg of the flow, and the only one that writes. It used to be a
-  // 1.8-second "Proposal created" flash over a setTimeout — the button reported
-  // a record that was never created.
-  //
-  // It now runs the SAME path the sage studio's Convert button runs:
-  // `buildFenceLineItems` (components/estimator/fence/fencePricing) turns the
-  // spec into `{name, quantity, unitPrice, unit}` rows in exactly the shape
-  // `convertFenceEstimateToProposal`'s zod schema takes, and that action creates
-  // the Proposal, its line items and its deposit/completion installments,
-  // applying the org's markup and default tax on the server.
-  //
-  // WHAT MAKES THE NUMBERS AGREE. `buildFenceLineItems` takes the rate card as
-  // an argument, so it is given THIS PAGE'S card (below) rather than the
-  // library's defaults. The proposal's pre-markup subtotal is therefore the
-  // ticket total to the cent, and editing fence-estimator-data.ts moves both.
-  // (The org's hidden markup and tax are added on top by the server — that is
-  // the app's designed behaviour, and it is why the proposal's grand total can
-  // read higher than the ticket.)
-
-  /** This page's rate card, in the shared pricing engine's shape. */
-  function pageRateCard(): FencePricingConfig {
-    const materialPerFt: Record<string, number> = {};
-    MATERIALS.forEach(function (m) { materialPerFt[m.id] = m.base; });
-    const openingPrice: FencePricingConfig['openingPrice'] = { gate: {}, door: {} };
-    OPENINGS.forEach(function (o) {
-      openingPrice[o.kind === 'door' ? 'door' : 'gate'][o.id] = o.price;
-    });
-    return { materialPerFt: materialPerFt, openingPrice: openingPrice, demolitionPerFt: DEMO_PER_FT };
-  }
+  // The last leg of the flow, and the only one that writes. The proposal's
+  // lines are the SAME package the ticket bills (lib/fence/pricing), each
+  // with its material and labor halves, so the proposal's pre-markup
+  // subtotal is the ticket total to the cent; the org's markup and the
+  // state's sales tax are added on the server. The scope of work is the
+  // engine's own sentences about THIS fence — the posts, the sections, the
+  // gates — and the assumptions carry the takeoff summary and every check.
 
   /** `n gate(s)` / `n door(s)`, or nothing when there are none of that kind. */
   function countPhrase(n: number, word: string) {
@@ -2955,8 +3452,6 @@ export function initFenceEstimatorContent(
 
     const p = price();
     if (p.ft <= 0) {
-      // No footage means no fence. The old fixture hid this case by always
-      // having 222 ft on the books.
       say('i-file', 'Nothing to convert');
       sayHint('Trace the fence on the map, or add a run and type its length, before converting.');
       restore();
@@ -2965,88 +3460,67 @@ export function initFenceEstimatorContent(
 
     say('i-file', 'Creating…');
     try {
-      const lengthFt = p.ft;
-      // Measured ground (when the profile is current): the proposal bills the
-      // along-grade footage and splits the labor by install method.
-      const measured = usableTerrain() !== null;
-      const rackedFt = classFt('racked');
-      const steppedFt = classFt('stepped');
-      const { materials, labor } = buildFenceLineItems(
-        {
-          lengthFt: lengthFt,
-          height: fs.height,
-          material: fs.material,
-          openings: fs.openings.map(function (o) {
-            const t = opType(o.type);
-            return { kind: (t.kind === 'door' ? 'door' : 'gate') as OpeningKind, variant: o.type };
-          }),
-          demolition: fs.demo,
-          terrain: measured ? { gradeLenFt: p.gradeFt, rackedFt: rackedFt, steppedFt: steppedFt } : null,
-        },
-        pageRateCard(),
-        // Only the material label is overridden: leaving `opening` unset lets the
-        // engine build "Single gate" from the variant, which is already this
-        // page's own label for it. Passing OPENINGS' label would read "Single
-        // gate gate".
-        { material: mat().label },
-      );
-
+      const layout = layoutInput();
+      const pk = p.pkg;
+      const tk = pk.takeoff;
       const where = sitePlace ? (sitePlace.formatted || sitePlace.address) : '';
-      // The billed footage: along the ground when measured, plan otherwise.
-      const lf = Math.round(p.gradeFt);
+      const lf = Math.round(pk.netFenceLf);
       const gateN = fs.openings.filter(function (o) { return opType(o.type).kind === 'gate'; }).length;
       const doorN = fs.openings.length - gateN;
       const openingNote = [
         gateN > 0 ? countPhrase(gateN, 'gate') : '',
         doorN > 0 ? countPhrase(doorN, 'door') : '',
       ].filter(Boolean).join(', ');
+      const rackedFt = classFt('racked');
+      const steppedFt = classFt('stepped');
+      const checks = fenceChecks(pk, layout, slope());
+      const runsNote = layout.runs.length + ' ' + (layout.runs.length === 1 ? 'run' : 'runs') + ', ' + layout.runs.reduce(function (a, r) { return a + r.corners; }, 0) + ' corners';
 
       const res = await convertFenceEstimateToProposal({
-        title: mat().label + ' fence · ' + lf + ' lf',
-        scope: 'Supply and install ' + lf + ' linear ft of ' + mat().label.toLowerCase() +
-          ' fence at ' + fs.height + ' ft tall' + (where ? ' at ' + where : '') + '.',
-        materials: materials,
-        labor: labor,
+        title: pk.resolved.label + ' fence · ' + lf + ' lf',
+        scope: fenceScope(pk, layout, where || null).join('\n'),
+        lines: pk.lines.map(function (l) {
+          return { name: l.name, description: l.description, quantity: l.quantity, unit: l.unit, materialCost: l.materialCost, laborCost: l.laborCost };
+        }),
+        materials: [],
+        labor: [],
         assumptions: [
-          mat().label + ' fence, ' + fs.height + ' ft tall',
-          lf + ' linear ft across ' + countPhrase(fs.runs.length, 'run'),
+          pk.resolved.label + ', ' + pk.builtHeightFt + ' ft tall' + (fs.height !== pk.builtHeightFt ? ' (' + fs.height + ' ft asked; not offered in this type)' : ''),
+          lf + ' linear ft of fence across ' + runsNote + (Math.round(pk.totalLf) !== lf ? '; ' + Math.round(pk.totalLf) + ' ft drawn, gate openings taken out' : ''),
+          'Takeoff: ' + tk.sections + ' sections at ' + tk.spacingFt + "' o.c., " + tk.posts.total + ' posts (' + tk.posts.line + ' line, ' + tk.posts.corner + ' corner, ' + tk.posts.end + ' end, ' + tk.posts.gate + ' gate), ' + tk.postLengthFt.base + "' post stock, " + (tk.bom.find(function (b) { return b.key === 'concrete'; })?.qty ?? 0) + ' bags of concrete, ' + fs.wastePct + '% waste on cut goods, ≈' + tk.laborHours + ' crew-hours',
           // The one honest line about the ground: measured (with the plan →
-          // grade split), failed, or never traced. Replaces the old silent
-          // "level ground" default.
+          // grade split), failed, or never traced.
           terrainAssumption(
             usableTerrain(),
             terrainStatus === 'failed' ? 'failed' : usableTerrain() ? 'ok' : mapOwnsRuns ? 'failed' : 'idle',
             { billedPlanFt: p.ft, billedGradeFt: p.gradeFt, billedRackedFt: rackedFt, billedSteppedFt: steppedFt },
-          ),
+          ) + ' · ' + TERRAIN_LABEL[layout.terrain].toLowerCase() + ' labor rate',
           openingNote || 'No gates or doors',
           fs.demo
-            ? 'Includes removal and haul-away of the existing fence'
+            ? 'Includes removal and haul-away of the existing fence (' + Math.round(layout.removalLf || 0) + ' lf at $' + fs.removalPerLf + '/lf)'
             : 'No demolition included',
-        ].concat(where ? ['Site: ' + where] : []),
+          'Rates: ' + (pk.rates.source.materialPerLf === 'book' || pk.rates.source.laborPerLf === 'book' ? 'this shop\u2019s price book' : pk.market && pk.market.resolution !== 'national' ? 'catalog rates calibrated to ' + pk.market.label : 'catalog national rates'),
+        ]
+          .concat(checks.filter(function (c) { return c.level === 'warn'; }).map(function (c) { return 'Check: ' + c.text; }))
+          .concat(where ? ['Site: ' + where] : []),
+        address: where || undefined,
         // The 3D scene renders with `preserveDrawingBuffer`, so its canvas can be
-        // read straight off the island host — the same PNG the sage studio
-        // attaches. Only present once the user has actually opened the 3D view.
+        // read straight off the island host. Only present once the user has
+        // actually opened the 3D view.
         previewDataUrl: captureModel() ?? undefined,
       });
 
       // No `restore()`: the router is about to unmount this page, and the
-      // teardown clears every pending timer anyway. The label stays on "created"
-      // for the frame or two before the detail route paints.
+      // teardown clears every pending timer anyway.
       say('i-check', 'Proposal created');
       opts.navigate(PROPOSAL_ROUTE + res.id);
     } catch (err) {
       console.error('[fence-estimator] convert failed:', err);
       if (isPlanLimitError(err)) {
-        // The upgrade dialog lives in the classic (dashboard) layout and is not
-        // mounted on this route, so the limit has to be readable HERE or it is
-        // silent.
         say('i-file', 'Plan limit');
         sayHint(PLAN_LIMIT_MESSAGE + ' — this organization is at its proposal cap for the period.');
       } else {
         say('i-file', "Couldn't convert");
-        // The action's own message when it has a usable one. A production build
-        // redacts thrown server errors into a paragraph about digests, so
-        // anything that long is replaced rather than printed under the stage.
         const msg = err instanceof Error ? err.message.trim() : '';
         sayHint(msg && msg.length <= 160
           ? msg
@@ -3061,6 +3535,9 @@ export function initFenceEstimatorContent(
   // would render the card price and then swap it, which reads as a glitch.
   restoreRate();
   renderStudio();
+  // The organization's saved book lands after the first paint; a tab with
+  // its own edits keeps them (they are newer than the saved copy).
+  void loadOrgBook();
   // The map is NOT mounted here: it mounts when an address resolves (showSite).
   // Without a browser key there is no surface to wait for, so the slot is told
   // that now rather than leaving a prompt that can never be satisfied.

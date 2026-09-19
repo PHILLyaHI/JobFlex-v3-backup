@@ -18,7 +18,7 @@ import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { assertLinksInOrg } from "@/lib/assertLinksInOrg";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
-import { sellUnitPrice } from "@/lib/pricing/markup";
+import { priceLinesForClient } from "@/lib/pricing/markup";
 import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
 
 const lineItemSchema = z.object({
@@ -65,6 +65,10 @@ const proposalInput = z.object({
   id: z.string().optional(),
   title: z.string().min(1),
   clientId: z.string().optional().nullable(),
+  // The project the proposal belongs to. Absent leaves it as it was (callers
+  // that know nothing of projects — the estimators — never move one); null
+  // takes it out of its project.
+  projectId: z.string().optional().nullable(),
   description: z.string().optional(),
   scopeOfWork: z.string().optional(),
   notes: z.string().optional(),
@@ -77,6 +81,11 @@ const proposalInput = z.object({
   laborMarkupPct: z.number().min(0).max(500).optional(),
   overheadPct: z.number().min(0).max(200).optional(),
   profitPct: z.number().min(0).max(200).optional(),
+  // "Show to client" — presentation only. Absent leaves the row as it was.
+  showBreakdown: z.boolean().optional(),
+  showScope: z.boolean().optional(),
+  showSignature: z.boolean().optional(),
+  marginOnLabor: z.boolean().optional(),
 });
 
 type ProposalInput = z.infer<typeof proposalInput>;
@@ -84,17 +93,18 @@ type ProposalInput = z.infer<typeof proposalInput>;
 function computeTotals(
   input: Pick<
     ProposalInput,
-    "lineItems" | "taxRate" | "materialMarkupPct" | "laborMarkupPct" | "discount"
+    "lineItems" | "taxRate" | "materialMarkupPct" | "laborMarkupPct" | "overheadPct" | "profitPct" | "discount"
   >,
 ) {
-  // Subtotal is the client-facing SELL price: each line's cost marked up by the
-  // material/labor markup %s. sellUnitPrice returns the raw unitPrice at 0% (and
-  // for unsplit lines), so this equals the old subtotal exactly when markup is 0.
-  const rates = {
-    materialMarkupPct: input.materialMarkupPct ?? 0,
-    laborMarkupPct: input.laborMarkupPct ?? 0,
-  };
-  const subtotal = input.lineItems.reduce((a, l) => a + l.quantity * sellUnitPrice(l, rates), 0);
+  // Every stored line carries the client-facing SELL price: its cost marked up
+  // by the material/labor %s, then the overhead and profit load on top — the
+  // same chain the manual builder's sheet prints (manual-focus-math), so the
+  // portal, the PDF and the builder quote one number. Unit prices are quoted
+  // in cents and a line's total is quantity × that rounded price, so the
+  // client's own arithmetic checks out row by row. At 0% everywhere this is
+  // the raw unitPrice and the old subtotal exactly.
+  const priced = priceLinesForClient(input.lineItems, input);
+  const subtotal = Math.round((priced.reduce((a, l) => a + l.total, 0) + Number.EPSILON) * 100) / 100;
   // Discount comes off BEFORE tax, so tax is charged on what the client owes
   // rather than on a figure nobody pays — the same order the builder's own
   // ledger prints, and the order convertEstimateToProposal already uses. Capped
@@ -107,7 +117,7 @@ function computeTotals(
   const taxable = subtotal - discountTotal;
   const taxTotal = taxable * input.taxRate;
   // With no discount sent this is byte-for-byte the previous arithmetic.
-  return { subtotal, discountTotal, taxTotal, total: taxable + taxTotal };
+  return { subtotal, discountTotal, taxTotal, total: taxable + taxTotal, priced };
 }
 
 type StageRow = {
@@ -261,19 +271,12 @@ export async function saveProposal(raw: unknown) {
   const data = proposalInput.parse(raw);
   // The linked client must be this org's — a foreign id would make the portal,
   // PDF and sendProposal address another tenant's customer.
-  await assertLinksInOrg(organizationId, { clientId: data.clientId });
-  const { subtotal, discountTotal, taxTotal, total } = computeTotals(data);
+  await assertLinksInOrg(organizationId, { clientId: data.clientId, projectId: data.projectId });
+  const { subtotal, discountTotal, taxTotal, total, priced } = computeTotals(data);
   // Only callers that SENT the key own the proposal's discount — see the
   // tri-state note on discountSchema. `undefined` leaves both the column and
   // the Discount rows exactly as they were.
   const writesDiscount = data.discount !== undefined;
-  // Markup rates used to bake the SELL price into each persisted line, so every
-  // downstream reader (portal, PDF) shows sell prices that sum to the subtotal.
-  const markupRates = {
-    materialMarkupPct: data.materialMarkupPct ?? 0,
-    laborMarkupPct: data.laborMarkupPct ?? 0,
-  };
-
   if (data.id) {
     // The schedule BEFORE this edit — paid stages are frozen and any change
     // to what the client can still be asked for bumps scheduleVersion.
@@ -296,6 +299,7 @@ export async function saveProposal(raw: unknown) {
       data: {
         title: data.title,
         clientId: data.clientId ?? null,
+        ...(data.projectId !== undefined ? { projectId: data.projectId ?? null } : {}),
         description: data.description,
         scopeOfWork: data.scopeOfWork,
         notes: data.notes,
@@ -305,6 +309,10 @@ export async function saveProposal(raw: unknown) {
         laborMarkupPct: data.laborMarkupPct ?? undefined,
         overheadPct: data.overheadPct ?? undefined,
         profitPct: data.profitPct ?? undefined,
+        showBreakdown: data.showBreakdown ?? undefined,
+        showScope: data.showScope ?? undefined,
+        showSignature: data.showSignature ?? undefined,
+        marginOnLabor: data.marginOnLabor ?? undefined,
         subtotal,
         ...(writesDiscount ? { discountTotal } : {}),
         taxTotal,
@@ -316,9 +324,15 @@ export async function saveProposal(raw: unknown) {
     // by proposalId. These only execute if the ownership-gated update above
     // succeeded, so they remain org-isolated.
     const proposalId = data.id;
+    // The job a proposal became travels with it between projects.
+    if (data.projectId !== undefined) {
+      await db.job.updateMany({ where: { organizationId, proposalId }, data: { projectId: data.projectId ?? null } });
+      if (data.projectId) revalidatePath(`/dashboard/projects/${data.projectId}`);
+      revalidatePath("/dashboard/projects");
+    }
     await db.lineItem.deleteMany({ where: { proposalId } });
-    for (let i = 0; i < data.lineItems.length; i += 1) {
-      const l = data.lineItems[i];
+    for (let i = 0; i < priced.length; i += 1) {
+      const l = priced[i];
       await db.lineItem.create({
         data: {
           proposalId,
@@ -326,10 +340,11 @@ export async function saveProposal(raw: unknown) {
           description: l.description,
           measurementType: l.measurementType,
           quantity: l.quantity,
-          unitPrice: sellUnitPrice(l, markupRates),
+          // The client-facing price: markup, overhead and profit inside it.
+          unitPrice: l.unitPrice,
           materialCost: l.materialCost,
           laborCost: l.laborCost,
-          total: l.quantity * sellUnitPrice(l, markupRates),
+          total: l.total,
           position: i,
           store: l.store ?? null,
           productUrl: l.productUrl ?? null,
@@ -380,6 +395,7 @@ export async function saveProposal(raw: unknown) {
       organizationId,
       ownerId: user.id,
       clientId: data.clientId ?? null,
+      projectId: data.projectId ?? null,
       title: data.title,
       description: data.description,
       scopeOfWork: data.scopeOfWork,
@@ -390,6 +406,10 @@ export async function saveProposal(raw: unknown) {
       laborMarkupPct: data.laborMarkupPct ?? 0,
       overheadPct: data.overheadPct ?? 0,
       profitPct: data.profitPct ?? 0,
+      showBreakdown: data.showBreakdown ?? true,
+      showScope: data.showScope ?? true,
+      showSignature: data.showSignature ?? true,
+      marginOnLabor: data.marginOnLabor ?? false,
       subtotal,
       discountTotal,
       taxTotal,
@@ -397,12 +417,7 @@ export async function saveProposal(raw: unknown) {
       status: ProposalStatus.DRAFT,
       validUntil: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
       lineItems: {
-        create: data.lineItems.map((l, i) => ({
-          ...l,
-          unitPrice: sellUnitPrice(l, markupRates),
-          total: l.quantity * sellUnitPrice(l, markupRates),
-          position: i,
-        })),
+        create: priced.map((l, i) => ({ ...l, position: i })),
       },
       installments: {
         create: data.installments.map((i, idx) => ({ ...i, position: idx })),
@@ -435,6 +450,7 @@ export async function saveProposal(raw: unknown) {
   });
 
   revalidatePath("/dashboard/proposals");
+  if (created.projectId) revalidatePath(`/dashboard/projects/${created.projectId}`);
   return { id: created.id, publicId: created.publicId };
 }
 

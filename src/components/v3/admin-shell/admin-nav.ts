@@ -20,6 +20,9 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Overview", icon: "i-grid", href: "/admin" },
       { label: "Traffic", icon: "i-chart", href: "/admin/traffic" },
+      // Added 2026-09-18: what each member did — proposals created and sent,
+      // estimates made — counted per user, with the trail beneath.
+      { label: "User activity", icon: "i-clock", href: "/admin/activity" },
       { label: "Subscribers", icon: "i-card", href: "/admin/subscribers" },
     ],
   },
@@ -43,6 +46,9 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
       { label: "Announcements", icon: "i-bell", href: "/admin/announcements" },
       { label: "Campaigns", icon: "i-send", href: "/admin/campaigns" },
       { label: "Specialties", icon: "i-box", href: "/admin/specialties" },
+      // Added 2026-09-18: the Smart Proposal prompts — see the current text,
+      // change it, preview the exact prompt a brief produces.
+      { label: "Prompts", icon: "i-pen", href: "/admin/prompts" },
     ],
   },
 ];

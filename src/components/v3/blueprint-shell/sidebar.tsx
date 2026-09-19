@@ -10,7 +10,7 @@
 // This lives in the shared layout, so it mounts ONCE and survives navigation
 // between blueprint pages — no teardown, no re-running the entry cascade.
 
-import { Fragment } from "react";
+import { Fragment, useCallback, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import type { Route } from "next";
@@ -22,6 +22,7 @@ import { usePathname } from "next/navigation";
 import { NAV_SECTIONS, activeHref, canOpen, isLimitedRole, navSectionsFor } from "./nav-map";
 import { useNavBadges, useNavLimits, type NavLimit, useNavLocked, useNavRole } from "./nav-role";
 import { SignOutButton } from "./sign-out";
+import { foldShortcutLabel } from "./sidebar-fold";
 
 export { NAV_SECTIONS };
 
@@ -50,8 +51,46 @@ function quotaTip(q: NavLimit): string {
   return `${q.remaining} of ${q.limit} ${q.label} left${cycle}.`;
 }
 
-export function Sidebar({ user }: { user?: SidebarUser }) {
+export function Sidebar({
+  user,
+  folded = false,
+  onToggleFold,
+}: {
+  user?: SidebarUser;
+  /** Drawn as the icon rail (desktop only; the drawer ignores it). */
+  folded?: boolean;
+  onToggleFold?: () => void;
+}) {
   const pathname = usePathname() ?? "";
+  // HOVER LABELS for the folded rail. One plate, positioned against the
+  // sidebar itself (not the viewport): the shell root carries a CSS zoom, and
+  // offsets measured inside it stay in its own coordinates where viewport
+  // rectangles do not. `.sb-scroll` clips sideways, so the plate lives outside
+  // it, in `.sb`.
+  const sbRef = useRef<HTMLElement>(null);
+  const [tip, setTip] = useState<{ text: string; top: number } | null>(null);
+  const showTip = useCallback(
+    (el: HTMLElement, text: string, always = false) => {
+      if (!folded && !always) return;
+      const sb = sbRef.current;
+      if (!sb) return;
+      let top = el.offsetHeight / 2;
+      let node: HTMLElement | null = el;
+      while (node && node !== sb) {
+        top += node.offsetTop - (node.parentElement && node.parentElement !== sb ? node.parentElement.scrollTop : 0);
+        node = node.offsetParent as HTMLElement | null;
+      }
+      setTip({ text, top });
+    },
+    [folded],
+  );
+  const hideTip = useCallback(() => setTip(null), []);
+  const tipProps = (text: string, always = false) => ({
+    onMouseEnter: (e: React.MouseEvent<HTMLElement>) => showTip(e.currentTarget, text, always),
+    onFocus: (e: React.FocusEvent<HTMLElement>) => showTip(e.currentTarget, text, always),
+    onMouseLeave: hideTip,
+    onBlur: hideTip,
+  });
   const active = activeHref(pathname);
   // The shell renders on routes that read the session server-side and pass it
   // down. The fallback is deliberately generic rather than the donor's "Ivan":
@@ -78,7 +117,7 @@ export function Sidebar({ user }: { user?: SidebarUser }) {
   const canOpenAccount = canOpen(navRole, "/dashboard/settings/account", navLocked);
 
   return (
-    <aside className="sb">
+    <aside className="sb" ref={sbRef}>
       <div className="sb-head">
         {/* The real product mark, not the drawn `i-logo` sketch J (owner's
             call, 2026-07-30) — desktop now shows the same logo as the handheld
@@ -95,7 +134,7 @@ export function Sidebar({ user }: { user?: SidebarUser }) {
         </div>
       </div>
 
-      <nav className="sb-scroll">
+      <nav className="sb-scroll" onScroll={hideTip}>
         <div className="sb-indicator" id="sbIndicator"></div>
         {/* Fragments, not wrapper elements: the donor keeps labels and links as
             direct children of .sb-scroll, and the indicator measures
@@ -105,22 +144,28 @@ export function Sidebar({ user }: { user?: SidebarUser }) {
             <div className="sb-sec-label">{section.label}</div>
             {section.items.map((item) =>
               item.href === "#" ? (
-                <a key={item.label} className="sb-link" href="#">
+                <a key={item.label} className="sb-link" href="#" {...tipProps(item.label)}>
                   <svg className="ic">
                     <use href={`#${item.icon}`} />
                   </svg>
-                  {item.label}
+                  <span className="sb-lbl">{item.label}</span>
                 </a>
               ) : (
                 <Link
                   key={item.label}
                   className={`sb-link${item.href === active ? " active" : ""}${item.locked ? " sb-lockd" : ""}`}
                   href={item.href as Route}
+                  {...tipProps(
+                    (badges[item.href] ?? 0) > 0 ? `${item.label} · ${badges[item.href]} new` : item.locked ? `${item.label} · not in your plan` : item.label,
+                  )}
                 >
                   <svg className="ic">
                     <use href={`#${item.icon}`} />
                   </svg>
-                  {item.label}
+                  {/* The label in its own span so the folded rail can hide it
+                      and keep it for screen readers; the row's name is still
+                      its text. */}
+                  <span className="sb-lbl">{item.label}</span>
                   {/* CUSTOM-PLAN LOCK — the page is not in this org's plan.
                       Still a live link on purpose: the route renders the
                       upgrade offer, so the padlock is a door, not a wall. */}
@@ -165,7 +210,7 @@ export function Sidebar({ user }: { user?: SidebarUser }) {
           page, and the name, role and monogram come from the session. */}
       <div className="sb-foot">
         {canOpenAccount ? (
-          <Link className="sb-foot-acc" href={"/dashboard/settings/account" as Route} title="Account">
+          <Link className="sb-foot-acc" href={"/dashboard/settings/account" as Route} {...tipProps(`${name}${role ? ` · ${role}` : ""}`)}>
             <span className="sb-foot-av">{monogram(name)}</span>
             <span className="sb-foot-txt">
               <span className="sb-foot-name">{name}</span>
@@ -195,8 +240,8 @@ export function Sidebar({ user }: { user?: SidebarUser }) {
           <Link
             className={`sb-foot-ic${pathname.startsWith("/dashboard/settings") ? " on" : ""}`}
             href={"/dashboard/settings" as Route}
-            title="Settings"
             aria-label="Settings"
+            {...tipProps("Settings")}
           >
             <svg className="ic">
               <use href="#i-gear" />
@@ -212,6 +257,34 @@ export function Sidebar({ user }: { user?: SidebarUser }) {
           <SignOutButton className="sb-foot-ic sb-foot-out" iconClassName="ic" />
         )}
       </div>
+
+      {/* THE FOLD ARROW — on the sidebar's edge, halfway down (owner,
+          2026-09-18). It points the way the sidebar will move; its label says
+          what it does and the shortcut that does the same. Desktop only: the
+          drawer below 860px hides it. */}
+      {onToggleFold && (
+        <button
+          type="button"
+          className="sb-fold"
+          aria-label={folded ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!folded}
+          onClick={() => {
+            hideTip();
+            onToggleFold();
+          }}
+          {...tipProps(`${folded ? "Expand" : "Collapse"} · ${foldShortcutLabel()}`, true)}
+        >
+          <svg className="ic" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+        </button>
+      )}
+
+      {tip && (
+        <div className="sb-tip" role="tooltip" style={{ top: tip.top }}>
+          {tip.text}
+        </div>
+      )}
     </aside>
   );
 }

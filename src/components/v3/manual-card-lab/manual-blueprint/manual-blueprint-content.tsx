@@ -85,6 +85,7 @@ import {
   computeTotals,
   money,
   newId,
+  pct,
 } from "../manual-focus/manual-focus-math";
 import styles from "./manual-blueprint.module.css";
 import { Btn, Card, Field, Group, Pair, TextArea, TextField, cx } from "./bp-ui";
@@ -167,7 +168,9 @@ function recordOf(clients: ClientRecord[], choice: ClientChoice): ClientRecord |
  * which is the whole point of arriving from a client's record.
  */
 function openingDraft(data: ManualBuilderData): Draft {
-  const base = data.proposal ? data.proposal.draft : emptyDraft(data.defaults);
+  const opened = data.proposal ? data.proposal.draft : emptyDraft(data.defaults);
+  // A new proposal opened from a project page files under that project.
+  const base: Draft = !data.proposal && data.initialProjectId ? { ...opened, projectId: data.initialProjectId } : opened;
   const id = data.initialClientId;
   if (!id) return base;
   const rec = data.clients.find((c) => c.id === id);
@@ -254,6 +257,26 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
     () => contractTotal(totals.total, data.proposal?.changeOrders ?? []),
     [totals.total, data.proposal],
   );
+
+  /* THE CLIENT PRICE PER LINE, for card 03 (owner, 2026-09-17: "where does
+     the overhead and profit go?"). Once either sheet-level rate is on, every
+     row and the foot also print the price the client is charged — the same
+     figures card 10 prints — so the table and the total stop looking like two
+     different jobs. Off at 0% / 0%, when cost and price are one number. */
+  const clientPrices = useMemo(() => {
+    if (!draft.overheadPct && !draft.profitPct) return undefined;
+    const parts = [
+      draft.overheadPct ? `${pct(draft.overheadPct)} overhead` : "",
+      draft.profitPct ? `${pct(draft.profitPct)} profit` : "",
+    ].filter(Boolean);
+    const byId: Record<string, number> = {};
+    for (const row of totals.printed) byId[row.id] = row.amount;
+    return {
+      byId,
+      total: totals.preTax,
+      note: `${parts.join(" and ")} ${draft.marginOnLabor ? "in the labor half of every line" : "spread across every line"}`,
+    };
+  }, [draft.overheadPct, draft.profitPct, draft.marginOnLabor, totals]);
 
   /* ---- editing ------------------------------------------------------ */
 
@@ -633,10 +656,9 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
               projects={data.projects}
               value={draft.projectId}
               onChange={(id) => patch({ projectId: id })}
-              // A proposal has no project column, so a pick is a working note
-              // for this session and nothing more. Said out loud rather than
-              // discovered on the next reload.
-              hint="Reference only — not stored on the proposal"
+              // Stored on the proposal since 2026-09-18: the proposal, its
+              // change orders and its job show on the project.
+              hint="Groups it with the project's other proposals"
             />
           </Group>
           <Field label="Overview" htmlFor="q-overview">
@@ -729,6 +751,8 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
             onAdd={addLine}
             onRemove={removeLine}
             baseTotal={totals.baseTotal}
+            adjust={{ materialPct: draft.materialMarkupPct, laborPct: draft.laborMarkupPct }}
+            client={clientPrices}
             namedCount={totals.printed.length}
             unnamedCount={totals.unnamedCount}
             taxPct={draft.taxPct}
@@ -762,6 +786,8 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
             onLaborMarkupPct={(n) => patch({ laborMarkupPct: n })}
             onOverheadPct={(n) => patch({ overheadPct: n })}
             onProfitPct={(n) => patch({ profitPct: n })}
+            marginOnLabor={draft.marginOnLabor === true}
+            onMarginOnLabor={(v) => patch({ marginOnLabor: v })}
             discountPct={draft.discountPct}
             // The two dollar-mode fields are OPTIONAL on Draft so the sibling
             // manual-focus route is untouched by their addition; the defaults
@@ -798,7 +824,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
         </Card>
 
         {/* 06 ------------------------------------------------------- */}
-        <Card num="06" title="What prints" id="q-06">
+        <Card num="06" title="Show to client" id="q-06">
           <PrintOptions options={draft.options} onPatch={patchOptions} />
         </Card>
 

@@ -240,6 +240,12 @@ export function FenceEstimatorContent() {
               <div className="model-note is-hidden" id="modelNote">Terrain not shown — ground rendered flat</div>
             </div>
             <div className="stage-zoom">
+              {/* Full screen: the stage takes the whole screen while tracing —
+                  the browser's own full screen where it allows it, a fixed
+                  overlay elsewhere (iOS). The same button, or Escape, leaves. */}
+              <button className="zoom-btn zoom-btn--full" type="button" id="fullBtn" aria-pressed="false" aria-label="Full screen" title="Full screen map — Esc to leave">
+                <svg className="ic"><use href="#i-expand" /></svg>
+              </button>
               <button className="zoom-btn" type="button" data-zoom="1" data-flash-icon="" aria-label="Zoom in">+</button>
               <button className="zoom-btn" type="button" data-zoom="-1" data-flash-icon="" aria-label="Zoom out">−</button>
             </div>
@@ -304,7 +310,14 @@ export function FenceEstimatorContent() {
               <div className="kpi-lbl">Estimated total</div>
               <div className="tk-total" id="tkTotal">—</div>
               <div className="tk-sub" id="tkSub">—</div>
+              {/* Good / Better / Best for the picked type — three totals from
+                  the same engine; tapping one picks that fence. Hidden until
+                  there is fence to price. */}
+              <div className="tk-tiers is-hidden" id="tkTiers" role="group" aria-label="Price options"></div>
               <ul className="tk-lines" id="tkLines"></ul>
+              {/* The contractor's notes: what the package assumed and what to
+                  check before the quote goes out (lib/fence/pricing fenceChecks). */}
+              <ul className="tk-notes is-hidden" id="tkNotes" aria-label="Notes"></ul>
               <button className="btn btn-primary" id="convertBtn">
                 <svg className="ic">
                   <use href="#i-file" />
@@ -335,20 +348,39 @@ export function FenceEstimatorContent() {
             <div className="open-empty is-hidden" id="openEmpty">No openings yet — add a gate or door above.</div>
           </div>
 
+          {/* MATERIAL TAKEOFF — the bill of materials the same engine prices:
+              posts by kind, rails / pickets / panels / mesh, concrete from the
+              holes actually dug, hardware, gate kits, stain, tear-out. Hidden
+              until there is fence to take off. */}
+          <div className="card fs-card takeoff is-hidden" id="takeoffCard">
+            <div className="ledger-head takeoff-head">
+              <span>Material takeoff</span>
+              <span className="takeoff-meta" id="takeoffMeta"></span>
+            </div>
+            <ul className="bom" id="bomList"></ul>
+            <div className="takeoff-foot" id="takeoffFoot"></div>
+          </div>
+
           <div className="card fs-card">
-            {/* The rate card is a starting point, not a quote: a contractor who
-                prices cedar at $34 says so BY EDITING CEDAR — click the figure
-                on the row and type. There is no separate rate box any more; a
-                second place to set a price is a second price to disagree with
-                the one on the row. Materials of your own are added here too. */}
-            <div className="ledger-head">Material</div>
+            {/* The catalog's rates are a starting point, not a quote: a
+                contractor who charges $26 for cedar says so BY EDITING CEDAR —
+                click the figure on the row and type the material, labor and
+                walk-gate rates. Types of your own are added here too, built
+                like one of the catalog's so the takeoff still counts. */}
+            <div className="ledger-head">Fence type</div>
             <ul className="mats" id="matList"></ul>
             <div className="mats-add">
               <button className="btn btn-ghost btn--sm" type="button" id="matAdd">
                 <svg className="ic">
                   <use href="#i-plus" />
                 </svg>
-                Add material
+                Add a type of your own
+              </button>
+              <button className="btn btn-ghost btn--sm" type="button" id="saveBook" title="Your rates and types become the company's defaults for every estimator on this account">
+                <svg className="ic">
+                  <use href="#i-check" />
+                </svg>
+                Save as company defaults
               </button>
             </div>
             <div className="ledger-head">Height</div>
@@ -357,9 +389,41 @@ export function FenceEstimatorContent() {
             <div className="site-row">
               <div>
                 <div className="tg-t">Remove existing fence</div>
-                <div className="tg-h">Teardown and haul, per linear foot.</div>
+                <div className="tg-h">
+                  Tear-out and haul-away, at{" "}
+                  <span className="site-rate"><span className="mat-cur">$</span><input className="mat-new-in" id="removalRate" type="number" min="0" step="0.5" inputMode="decimal" aria-label="Tear-out rate, dollars per linear foot" defaultValue="6" /></span>
+                  {" "}per linear foot.
+                </div>
               </div>
               <button className="tgl" type="button" id="demoTgl" aria-label="Remove existing fence"></button>
+            </div>
+            <div className="site-row is-hidden" id="stainRow">
+              <div>
+                <div className="tg-t">Stain &amp; seal after install</div>
+                <div className="tg-h">Two coats, both faces — wood fences only.</div>
+              </div>
+              <button className="tgl" type="button" id="stainTgl" aria-label="Stain and seal after install"></button>
+            </div>
+            <div className="site-row site-row--stack is-hidden" id="upgradeRow">
+              <div>
+                <div className="tg-t">Posts</div>
+                <div className="tg-h">Galvanized steel never rots or leans; 6×6 is heavy stock at every post.</div>
+              </div>
+              <div className="site-seg" role="group" aria-label="Post upgrade"></div>
+            </div>
+            <div className="site-row site-row--stack" id="spacingRow">
+              <div>
+                <div className="tg-t">Post spacing</div>
+                <div className="tg-h"></div>
+              </div>
+              <div className="site-seg" role="group" aria-label="Post spacing"></div>
+            </div>
+            <div className="site-row site-row--stack" id="groundRow">
+              <div>
+                <div className="tg-t">Ground</div>
+                <div className="tg-h"></div>
+              </div>
+              <div className="site-seg" role="group" aria-label="Ground difficulty"></div>
             </div>
           </div>
         </aside>

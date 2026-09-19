@@ -72,11 +72,11 @@ export function formatPriceBookForPrompt(
   book: PriceBookEntry[] = PRICE_BOOK,
 ): string {
   const lines: string[] = [
-    "=== MATERIAL & LABOR PRICE REFERENCE (US Market Data — use as baseline) ===",
+    "=== MATERIAL PRICE REFERENCE (US market data — material only, no labor) ===",
     "",
-    "IMPORTANT: Use these unit prices as your PRIMARY reference when calculating material_cost and labor_cost.",
-    "Multiply unit price × quantity to get line item costs. Do NOT invent prices outside these ranges",
-    "unless the specific item is not listed below.",
+    "Use these as the reference for a line's material cost per unit; labor comes from the trade anchors and the",
+    "pricing guidelines, never from this list. Stay inside these material ranges unless the item is not listed",
+    "or the quality tier calls for more. Packages (gallons, bags, boxes) are the shopping list, never a line.",
     "",
   ];
 

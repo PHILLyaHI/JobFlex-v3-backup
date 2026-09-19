@@ -39,7 +39,7 @@ const PRIMARY_TRADE_TOKEN: Record<string, string> = {
   electrical: 'electrical', electrician: 'electrical', wiring: 'electrical', breaker: 'electrical', panel: 'electrical',
   plumbing: 'plumbing', plumber: 'plumbing',
   hvac: 'hvac', minisplit: 'hvac', condenser: 'hvac', furnace: 'hvac',
-  epoxy: 'epoxy-flooring', polyaspartic: 'epoxy-flooring',
+  epoxy: 'epoxy-flooring', polyaspartic: 'epoxy-flooring', polyurea: 'epoxy-flooring',
   kitchen: 'kitchen-remodel',
   bathroom: 'bathroom-remodel', bath: 'bathroom-remodel',
   concrete: 'concrete-contractor', slab: 'concrete-contractor',
@@ -49,17 +49,15 @@ const PRIMARY_TRADE_TOKEN: Record<string, string> = {
   siding: 'siding-installation',
   gutter: 'gutter-installation', gutters: 'gutter-installation',
   flooring: 'flooring-installation',
-  tile: 'tile-installation', tiling: 'tile-installation',
-  cabinet: 'cabinetry', cabinets: 'cabinetry', cabinetry: 'cabinetry',
-  countertop: 'countertops', countertops: 'countertops',
-  window: 'windows', windows: 'windows',
-  door: 'doors', doors: 'doors',
+  tile: 'tile-stone', tiling: 'tile-stone',
+  countertop: 'countertop-installer', countertops: 'countertop-installer',
+  window: 'window-door', windows: 'window-door',
   demolition: 'demolition', demo: 'demolition',
   framing: 'framing-contractor', studs: 'framing-contractor',
   foundation: 'foundation-retaining',
   solar: 'solar', photovoltaic: 'solar',
   pool: 'pool-spa', spa: 'pool-spa',
-  irrigation: 'irrigation', sprinkler: 'irrigation',
+  irrigation: 'irrigation-contractor',
   landscaping: 'landscaping', landscape: 'landscaping',
   pest: 'pest-control', termite: 'pest-control',
   snow: 'snow-removal', plow: 'snow-removal',
@@ -67,6 +65,29 @@ const PRIMARY_TRADE_TOKEN: Record<string, string> = {
   deck: 'decking', decking: 'decking',
   insulation: 'insulation-weatherization', weatherization: 'insulation-weatherization',
 };
+
+/**
+ * Phrase votes (2026-09-18): briefs whose single words mislead the token pass.
+ * "Tub to shower conversion" scored as a garage conversion; "finish the
+ * basement with a bathroom" as a bathroom remodel; "replace toilet", "install
+ * a dishwasher" and "vent the range hood" matched nothing. A phrase vote lands
+ * even on a specialty with no keyword overlap. Repairs are left to the
+ * keyword pass (appliance repair, plumbing).
+ */
+const REPAIR_WORDS = /\b(?:repair|fix|broken|not\s+working|won'?t|doesn'?t|leak\w*|clog\w*|running|noisy|stuck)\b/i;
+const PHRASE_VOTES: Array<{ re: RegExp; id: string; bonus: number; unlessRepair?: boolean }> = [
+  { re: /\btub[\s-]*to[\s-]*shower|\bshower\s+conversion|\bconvert\w*\s+(?:the\s+|a\s+|my\s+)?(?:bath)?tub\b|\bwalk[-\s]in\s+shower/i, id: 'bathroom-remodel', bonus: 150 },
+  { re: /\b(?:replace|replacing|install|installing|new|swap|add|adding|set)\b[^.]{0,30}\b(?:toilets?|vanit(?:y|ies)|(?:bath)?tubs?|lavator(?:y|ies)|bathroom\s+sink|bath\s+fan)\b/i, id: 'bathroom-remodel', bonus: 150, unlessRepair: true },
+  { re: /\b(?:replace|replacing|install|installing|new|swap|add|adding|vent|move|moving)\b[^.]{0,30}\b(?:dish\s?washer|(?:garbage\s+)?disposal|range\s+hood|hood|cook\s?top|wall\s+oven|(?:gas|electric|induction)\s+range|range|over[-\s]the[-\s]range\s+microwave|microwave|ice\s?maker|kitchen\s+sink|kitchen\s+faucet)\b/i, id: 'kitchen-remodel', bonus: 150, unlessRepair: true },
+  { re: /\bfinish\w*\s+(?:the\s+|my\s+|a\s+|an\s+|our\s+)?(?:\d[\d,]*\s*(?:sq\.?\s*ft|sqft|sf)\s+)?basement|\bbasement\s+(?:finish\w*|remodel\w*|renovation|build[-\s]?out)/i, id: 'interior-remodel', bonus: 220 },
+  { re: /\breplac\w*\s+(?:\w+\s+){0,3}windows?\b|\bwindow\s+replacement/i, id: 'window-replacement', bonus: 200 },
+  { re: /\b(?:sewer|drain|main\s+line|toilet|sink|tub)\b[^.]{0,30}\b(?:backed\s+up|backing\s+up|clog\w*|slow|roots?|jet\w*|snak\w*)\b|\b(?:backed\s+up|clog\w*|snake|hydro[-\s]?jet\w*|roots?)\b[^.]{0,30}\b(?:sewer|drain|main\s+line)\b/i, id: 'drain-cleaning', bonus: 150 },
+  { re: /\bpocket\s+doors?\b/i, id: 'interior-remodel', bonus: 150 },
+  { re: /\b(?:front|entry|exterior|patio|sliding|french|back|storm)\s+doors?\b/i, id: 'window-door', bonus: 150 },
+  { re: /\binterior\s+doors?\b|\bprehung\s+doors?\b|\bpre-hung\s+doors?\b|\bbarn\s+doors?\b|\bbifold\s+doors?\b|\bcloset\s+doors?\b/i, id: 'finish-carpentry', bonus: 150 },
+  { re: /\bre-?til\w*|\btil(?:e|ing)\s+(?:the\s+|a\s+|my\s+)?(?:shower|tub|bath\w*|floor|backsplash|wall)/i, id: 'tile-stone', bonus: 150 },
+  { re: /\b(?:lawn|yard|garden|landscape|irrigation|drip)\b[^.]{0,25}\bsprinklers?\b|\bsprinklers?\b[^.]{0,25}\b(?:lawn|yard|garden|zones?|heads?|timer|controller)\b/i, id: 'irrigation-contractor', bonus: 150 },
+];
 
 /** Tokens we hand-tune up because they're highly discriminative trade signals. */
 const HIGH_VALUE_TOKENS = new Set([
@@ -176,6 +197,14 @@ export function detectSpecialty(description: string): DetectionResult | null {
   if (/mini[-\s]?split/i.test(description)) {
     primaryVotes.set('hvac', (primaryVotes.get('hvac') ?? 0) + 100);
   }
+  const phraseVoted = new Set<string>();
+  const repair = REPAIR_WORDS.test(description);
+  for (const v of PHRASE_VOTES) {
+    if (v.unlessRepair && repair) continue;
+    if (!v.re.test(description)) continue;
+    primaryVotes.set(v.id, (primaryVotes.get(v.id) ?? 0) + v.bonus);
+    phraseVoted.add(v.id);
+  }
 
   // Score each specialty against the description tokens.
   const scores: Array<{ p: PreparedSpecialty; score: number; matches: Map<string, number> }> = [];
@@ -188,7 +217,7 @@ export function detectSpecialty(description: string): DetectionResult | null {
       score += w;
       matches.set(tok, (matches.get(tok) ?? 0) + w);
     }
-    if (score === 0) continue;
+    if (score === 0 && !phraseVoted.has(p.spec.id)) continue;
 
     // Base-trade bias: if the specialty id (with hyphens → spaces) is a
     // verbatim substring of the description OR matches a single description

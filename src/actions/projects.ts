@@ -14,7 +14,17 @@ const projectInput = z.object({
   startsAt: z.coerce.date().optional().nullable(),
   endsAt: z.coerce.date().optional().nullable(),
   budget: z.number().min(0).default(0),
+  // The client the project is for (2026-09-18). Checked against the org.
+  clientId: z.string().min(1).optional().nullable(),
 });
+
+/** The client, when it is this organization's and not deleted; else null. */
+async function clientInOrg(organizationId: string, clientId: string | null | undefined): Promise<string | null> {
+  if (!clientId) return null;
+  const c = await db.client.findFirst({ where: { id: clientId, organizationId, deletedAt: null }, select: { id: true } });
+  if (!c) throw new Error("Client not found");
+  return c.id;
+}
 
 /** One row of the project book, as both editions of /dashboard/projects render
  *  it. The two date fields are the card's short "Jul 08" plates rather than
@@ -31,6 +41,8 @@ export type ProjectBookRow = {
   budget: number;
   jobCount: number;
   completedJobs: number;
+  /** Whose project it is (2026-09-18), or null. */
+  clientName?: string | null;
 };
 
 /** Formatted in UTC on purpose: project dates are stored as UTC midnight (the
@@ -59,7 +71,7 @@ export async function listProjects(): Promise<ProjectBookRow[]> {
   const projects = await db.project.findMany({
     where: { organizationId, status: { not: "ARCHIVED" } },
     orderBy: { updatedAt: "desc" },
-    include: { jobs: { select: { id: true, status: true } } },
+    include: { jobs: { select: { id: true, status: true } }, client: { select: { name: true } } },
   });
   return projects.map((p) => ({
     id: p.id,
@@ -71,16 +83,32 @@ export async function listProjects(): Promise<ProjectBookRow[]> {
     budget: p.budget,
     jobCount: p.jobs.length,
     completedJobs: p.jobs.filter((j) => j.status === "COMPLETED").length,
+    clientName: p.client?.name ?? null,
   }));
+}
+
+/** The org's clients for a New Project form that loads its own data (the
+ *  handheld projects page is mounted with no props). Read-only. */
+export async function listProjectClients(): Promise<Array<{ id: string; name: string; street: string }>> {
+  const { organizationId } = await requireOrg();
+  const rows = await db.client.findMany({
+    where: { organizationId, deletedAt: null },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, address: true },
+    take: 1000,
+  });
+  return rows.map((c) => ({ id: c.id, name: c.name, street: (c.address ?? "").split("\n")[0]?.trim() ?? "" }));
 }
 
 export async function createProject(raw: unknown) {
   const { organizationId } = await requireEstimatorOrManager();
   await enforcePlanLimit(organizationId, "projects");
   const data = projectInput.parse(raw);
+  const clientId = await clientInOrg(organizationId, data.clientId);
   const p = await db.project.create({
     data: {
       organizationId,
+      clientId,
       name: data.name,
       description: data.description ?? null,
       status: data.status,
@@ -110,6 +138,7 @@ export async function updateProject(raw: unknown) {
       ...(rest.startsAt !== undefined && { startsAt: rest.startsAt }),
       ...(rest.endsAt !== undefined && { endsAt: rest.endsAt }),
       ...(rest.budget !== undefined && { budget: rest.budget }),
+      ...(rest.clientId !== undefined && { clientId: await clientInOrg(organizationId, rest.clientId) }),
     },
   });
   revalidatePath("/dashboard/projects");

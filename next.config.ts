@@ -139,9 +139,12 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          // microphone=(self): the Smart Proposal brief is dictated in the
+          // browser (2026-09-18) — "()" made every browser refuse the mic
+          // before asking. Still closed to embedded third-party frames.
           {
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=(self)",
+            value: "camera=(), microphone=(self), geolocation=(self)",
           },
         ],
       },

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
 import { sellUnitPrice, resolveMarkupRates } from "@/lib/pricing/markup";
 import { uploadBlob, isBlobEnabled } from "@/lib/sdk/blob";
 import { getOpenAI, isOpenAIEnabled, resolveOpenAIModel } from "@/lib/sdk/openai";
@@ -12,6 +13,7 @@ import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
+import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 
 const STUB: GeneratedEstimate = {
   title: "Cedar privacy fence estimate · AI disabled",
@@ -95,8 +97,8 @@ ${input.notes ? `Notes: ${input.notes}` : ""}`,
     const text = completion.choices[0]?.message?.content ?? "{}";
     const parsed = estimateSchema.parse(JSON.parse(text));
     return { ok: true, data: parsed };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? "Generation failed" };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error && err.message ? err.message : "Generation failed" };
   }
 }
 
@@ -120,6 +122,26 @@ const convertSchema = z.object({
     }),
   ),
   assumptions: z.array(z.string()),
+  // The package engine's lines (lib/fence/pricing, 2026-09-18): one row per
+  // part of the job with its MATERIAL and LABOR halves per unit, so the
+  // proposal can print both to the client and the org's markup lands on
+  // each half. When present these are the proposal's lines; `materials` /
+  // `labor` above stay for the older callers.
+  lines: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(200),
+        description: z.string().max(400).optional(),
+        quantity: z.number().finite().min(0),
+        unit: z.string().optional(),
+        materialCost: z.number().finite().min(0),
+        laborCost: z.number().finite().min(0),
+      }),
+    )
+    .max(80)
+    .optional(),
+  // The job address: rides with the proposal and sets the state's sales tax.
+  address: z.string().max(300).optional().nullable(),
   // Optional 3D snapshot (PNG data URL) — uploaded to Blob and attached when present.
   previewDataUrl: z.string().optional(),
   // Pre-links the proposal to a client when converted from a client's page.
@@ -132,7 +154,7 @@ export async function convertFenceEstimateToProposal(raw: unknown) {
   const data = convertSchema.parse(raw);
 
   // Never trust a client id from the browser — it must belong to this org.
-  const clientId = data.clientId
+  const named = data.clientId
     ? (
         await db.client.findFirst({
           where: { id: data.clientId, organizationId },
@@ -140,6 +162,11 @@ export async function convertFenceEstimateToProposal(raw: unknown) {
         })
       )?.id ?? null
     : null;
+  // Started from a project or a client's page, the picker recorded where this
+  // estimate files (lib/filingContext); an explicit client still wins.
+  const filing = await readFilingContext(organizationId);
+  const clientId = named ?? filing?.clientId ?? null;
+  const projectId = filing?.projectId ?? null;
 
   // Hidden profit markup: seed from the org-wide default, then apply so each
   // line's unitPrice is the SELL price (0% → equals cost).
@@ -149,7 +176,23 @@ export async function convertFenceEstimateToProposal(raw: unknown) {
   });
   const markupRates = resolveMarkupRates(null, org);
 
+  // A split line (the package engine): the sell price marks up each half at
+  // its own rate; the stored unit price is the client-facing figure.
+  const split = (data.lines ?? []).map((l) => {
+    const sell = sellUnitPrice({ unitPrice: l.materialCost + l.laborCost, materialCost: l.materialCost, laborCost: l.laborCost }, markupRates);
+    return {
+      name: l.name,
+      description: l.description,
+      measurementType: unitToType(l.unit),
+      quantity: l.quantity,
+      unitPrice: sell,
+      materialCost: l.materialCost,
+      laborCost: l.laborCost,
+      total: l.quantity * sell,
+    };
+  });
   const lines = [
+    ...split,
     ...data.materials.map((l) => ({
       name: l.name,
       measurementType: unitToType(l.unit),
@@ -175,9 +218,11 @@ export async function convertFenceEstimateToProposal(raw: unknown) {
   ];
 
   const subtotal = lines.reduce((a, l) => a + l.total, 0);
-  // Tax sits on top of the marked-up subtotal (sell price), applied once. Seeded
-  // from the org default. taxRate is a FRACTION (0.08 = 8%), not a percent.
-  const taxRate = org?.defaultTaxRate ?? 0;
+  // Tax sits on top of the marked-up subtotal (sell price), applied once: the
+  // job's state rate from the address, the way the roof and HVAC converts
+  // write it, else the org default. taxRate is a FRACTION (0.08 = 8%).
+  const address = data.address?.trim() || null;
+  const taxRate = stateTaxRate(stateFromAddress(address)) ?? org?.defaultTaxRate ?? 0;
   const taxTotal = subtotal * taxRate;
 
   // Best-effort: persist the 3D snapshot to Blob so it can ride along in the
@@ -199,11 +244,13 @@ export async function convertFenceEstimateToProposal(raw: unknown) {
       organizationId,
       ownerId: user.id,
       clientId,
+      projectId,
       ...(beforePhotos ? { beforePhotos } : {}),
       title: data.title,
       // Scope only — assumptions stay on the estimate, never baked into the
       // proposal's scope (keeps the preview / calendar / job detail clean).
       scopeOfWork: data.scope ?? "",
+      address,
       status: ProposalStatus.DRAFT,
       subtotal,
       taxRate,
@@ -224,6 +271,8 @@ export async function convertFenceEstimateToProposal(raw: unknown) {
     },
   });
 
+  if (filing) await clearFilingContext();
+  if (projectId) revalidatePath(`/dashboard/projects/${projectId}`);
   revalidatePath("/dashboard/proposals");
   return { id: proposal.id };
 }
@@ -237,6 +286,8 @@ function unitToType(unit: string | undefined): string {
       return "LINEAR_FT";
     case "hour":
       return "HOUR";
+    case "lot":
+      return "LUMP_SUM";
     default:
       return "UNIT";
   }

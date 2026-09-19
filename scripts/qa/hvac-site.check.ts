@@ -25,7 +25,8 @@ const house = [
 const g = ringGeometry(house);
 ok("Area of a 100 × 60 ft ring", Math.abs(g.areaSqft - 6000) <= 30, String(g.areaSqft));
 ok("Perimeter 320 ft", Math.abs(g.perimeterFt - 320) <= 2, String(g.perimeterFt));
-ok("Four walls with bearings E, N, W, S", g.edges.length === 4 && g.edges.map((e) => e.bearingDeg).join(",") === "90,0,270,180", g.edges.map((e) => e.bearingDeg).join(","));
+// The walls FACE south, east, north, west (the ring is traced from the south-west corner eastward): the outward normal, not the direction of travel.
+ok("Four walls facing S, E, N, W", g.edges.length === 4 && g.edges.map((e) => e.bearingDeg).join(",") === "180,90,0,270", g.edges.map((e) => e.bearingDeg).join(","));
 ok("Wall lengths", g.edges.map((e) => Math.round(e.lengthFt)).join(",") === "100,60,100,60", g.edges.map((e) => e.lengthFt).join(","));
 ok("Degenerate ring → zeros", ringGeometry([house[0], house[1]]).areaSqft === 0);
 ok("Point inside", pointInRing(lat0 + 30 * dLat, lng0 + 50 * dLng, house));

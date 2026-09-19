@@ -1,0 +1,30 @@
+/* The filing chip — bottom-left on desktop, clear of the support plate
+   (bottom-right); full-width above the page's own sticky actions on a phone. */
+.chip {
+  /* Bottom-centre: clear of the sidebar's account block (bottom-left) and
+     the support plate (bottom-right). */
+  position: fixed; left: 50%; bottom: 24px; z-index: 120; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  max-width: min(460px, calc(100vw - 120px));
+  padding: 8px 8px 8px 12px;
+  background: #fff; color: var(--ink);
+  border: 2px solid var(--ink); border-radius: var(--radius);
+  box-shadow: 4px 4px 0 var(--accent);
+  font-family: var(--font-sans);
+  animation: in 0.2s var(--ease-out);
+}
+@keyframes in { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translateX(-50%); } }
+.ic { flex-shrink: 0; width: 18px; height: 18px; fill: none; stroke: var(--accent); stroke-width: 2; }
+.txt { min-width: 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.lbl { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-muted); }
+.name { font-size: 13.5px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.sub { font-size: 12px; color: var(--ink-muted); white-space: nowrap; }
+.x { flex-shrink: 0; width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--ink-line); border-radius: var(--radius); background: #fff; color: var(--ink-muted); cursor: pointer; }
+.x:hover { border-color: var(--ink); color: var(--ink); }
+.x svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.2; }
+@media (max-width: 768px) {
+  .chip { left: 12px; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom)); max-width: none; transform: none; animation: none; }
+  .x { width: 44px; height: 44px; }
+  .name { max-width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .chip { animation: none; } }

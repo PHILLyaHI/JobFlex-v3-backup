@@ -665,3 +665,8 @@
   .estp *::after { transition: none !important; animation: none !important; }
 }
 .estp :focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+
+/* Where the estimate will be filed (2026-09-18) — opened from a project or a
+   client, the kicker names it instead of the engine count. */
+.estp .estp-kick b { color: var(--blueprint, #1854a0); font-weight: 800; }
+.estp .estp-kick { max-width: 60%; overflow: hidden; text-overflow: ellipsis; }

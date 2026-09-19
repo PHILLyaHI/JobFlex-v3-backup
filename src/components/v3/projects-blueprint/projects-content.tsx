@@ -15,14 +15,14 @@
 import { useCallback, useRef } from "react";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initProjectsContent } from "./projects-behavior";
-import type { Project } from "./projects-data";
+import type { Project, ProjectClientChoice } from "./projects-data";
 
 /**
  * @param projects the org's real project book, read in the page's server
  *   component. The behavior module takes it as its starting state and then
  *   keeps itself in step with the database through `createProject`.
  */
-export function ProjectsContent({ projects }: { projects: Project[] }) {
+export function ProjectsContent({ projects, clients = [] }: { projects: Project[]; clients?: ProjectClientChoice[] }) {
   // The rows reach `init` through a ref, NOT through the callback's deps.
   // `useBlueprintContent` re-runs whenever `init` changes identity, and a
   // re-run tears the page down and replays the whole reveal cascade — so the
@@ -106,6 +106,23 @@ export function ProjectsContent({ projects }: { projects: Project[] }) {
                 autoComplete="off"
               />
               <span className="fld-err">Enter a project name</span>
+            </div>
+
+            {/* CLIENT (2026-09-18) — whose project it is. Picking one names
+                the project for the client and the street when the name is
+                still blank; the project page then offers that client's loose
+                proposals, and "New proposal" there files for them. */}
+            <div className="fld">
+              <label className="fld-lbl" htmlFor="pjfClient">Client</label>
+              <select className="pinput" id="pjfClient" name="clientId" defaultValue="">
+                <option value="">No client</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id} data-street={c.street}>
+                    {c.name}
+                    {c.street ? ` — ${c.street}` : ""}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="fld">

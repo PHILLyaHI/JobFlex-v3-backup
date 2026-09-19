@@ -151,7 +151,7 @@ const res = runEngine(m, { catalog: STARTER_CATALOG });
 ok("Engine resolves Collin County TX", res.conditions.county === "Collin" && res.conditions.coolingF >= 96, `${res.conditions.county} ${res.conditions.coolingF}`);
 ok("Load in band for 2,400 sq ft, 9 ft ceilings, single-pane, dark roof, no shade, poor attic ducts", res.load.coolingTotalBtuh >= 40000 && res.load.coolingTotalBtuh <= 85000, `${res.load.coolingTotalBtuh}`);
 ok("A starter unit was chosen", !!res.selection.chosen, res.selection.chosen?.item.model);
-ok("74k load → two systems, each sized to half", res.selection.systems === 2 && !!res.selection.perSystem && res.selection.perSystem.coolingTotalBtuh === 37000, `${res.selection.systems} × ${res.selection.perSystem?.coolingTotalBtuh}`);
+ok("A load past 40k → two systems, each sized to half", res.selection.systems === 2 && !!res.selection.perSystem && Math.abs(res.selection.perSystem.coolingTotalBtuh * 2 - res.load.coolingTotalBtuh) <= 500, `${res.selection.systems} × ${res.selection.perSystem?.coolingTotalBtuh} of ${res.load.coolingTotalBtuh}`);
 ok("The split is explained in the notes", res.notes.some((x) => x.kind === "contractor" && /2 systems/.test(x.text)));
 ok("Keep-gas house picks an AC (not a heat pump)", res.selection.chosen?.item.kind === "air-conditioner", res.selection.chosen?.item.kind);
 ok("Assumption note names the era table", res.notes.some((n) => n.kind === "assumption" && /era table/.test(n.text)));

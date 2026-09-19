@@ -14,6 +14,20 @@
 //      knocked out of step 2. 202 → live; 403 → denied (a refusal is free);
 //      anything else → failed, verdict unchanged.
 //
+// THE AREA IS THE MEASUREMENT; THE REST LANDS BEHIND IT (2026-09-18). Until
+// 2026-09-17 every accepted order was polled to completion — up to 30 s each —
+// before the next one was even placed, so a first click on a new address could
+// wait 30 s × 7 and the function limit cut it off. The 2026-09-17 review then
+// placed all seven up front and waited for all of them together, and the first
+// live run showed the cost: the click waited the whole budget for the slowest
+// pack, and with seven orders on the same address at once the area itself was
+// still processing after it. Now the area order is placed ALONE and waited for
+// ALONE (asked round after round, up to the budget); the moment it lands the
+// other packs are placed and the click returns — those are reported as
+// `pending`: placed, paid, and collected by the page without a new charge
+// (collectPendingInstant), never as failed and never re-ordered. The page
+// prices nothing until they are in.
+//
 // Whatever the billing model, only accepted packs are paid for: EagleView
 // rejects a refused request whole. Every accepted request is written to the
 // ledger BEFORE its first poll, exactly as the single order was (a lost
@@ -45,6 +59,12 @@ export interface PackReport {
   /** Neither bought nor refused — not attempted. */
   missing: string[];
   /**
+   * Ordered and paid for, not delivered yet when the answer was saved. The
+   * page collects these without a new charge; nothing is priced on a roof
+   * whose pitch or details are still on the way.
+   */
+  pending?: string[];
+  /**
    * No record either way: an answer reused from a measurement row saved
    * before the ledger (2026-08-26) says what it CONTAINS, not what was asked
    * for — a pack whose fields are absent may have been refused, empty for
@@ -53,18 +73,34 @@ export interface PackReport {
   unknown?: string[];
 }
 
-export function packReport(have: Iterable<string>, denied: Iterable<string>, failed: Iterable<string>, unknown: Iterable<string> = []): PackReport {
+export function packReport(
+  have: Iterable<string>,
+  denied: Iterable<string>,
+  failed: Iterable<string>,
+  unknown: Iterable<string> = [],
+  pending: Iterable<string> = [],
+): PackReport {
   const h = new Set(have);
-  const d = new Set([...denied].filter((p) => !h.has(p)));
-  const f = new Set([...failed].filter((p) => !h.has(p) && !d.has(p)));
-  const u = new Set([...unknown].filter((p) => !h.has(p) && !d.has(p) && !f.has(p)));
+  const p = new Set([...pending].filter((x) => !h.has(x)));
+  const d = new Set([...denied].filter((x) => !h.has(x) && !p.has(x)));
+  const f = new Set([...failed].filter((x) => !h.has(x) && !p.has(x) && !d.has(x)));
+  const u = new Set([...unknown].filter((x) => !h.has(x) && !p.has(x) && !d.has(x) && !f.has(x)));
   return {
-    have: PD_DIAGRAM_PACKS.filter((p) => h.has(p)),
-    denied: PD_DIAGRAM_PACKS.filter((p) => d.has(p)),
-    failed: PD_DIAGRAM_PACKS.filter((p) => f.has(p)),
-    missing: PD_DIAGRAM_PACKS.filter((p) => !h.has(p) && !d.has(p) && !f.has(p) && !u.has(p)),
-    ...(u.size ? { unknown: PD_DIAGRAM_PACKS.filter((p) => u.has(p)) } : {}),
+    have: PD_DIAGRAM_PACKS.filter((x) => h.has(x)),
+    denied: PD_DIAGRAM_PACKS.filter((x) => d.has(x)),
+    failed: PD_DIAGRAM_PACKS.filter((x) => f.has(x)),
+    missing: PD_DIAGRAM_PACKS.filter((x) => !h.has(x) && !p.has(x) && !d.has(x) && !f.has(x) && !u.has(x)),
+    ...(p.size ? { pending: PD_DIAGRAM_PACKS.filter((x) => p.has(x)) } : {}),
+    ...(u.size ? { unknown: PD_DIAGRAM_PACKS.filter((x) => u.has(x)) } : {}),
   };
+}
+
+/** The packs a report says are still on the way (absent on rows saved before 2026-09-17). */
+export const pendingPacks = (r: PackReport | null | undefined): string[] => r?.pending ?? [];
+
+/** Whether an Instant answer describes a roof at all: at least one structure with an area. */
+export function hasRoof(instant: InstantRoofData | null | undefined): boolean {
+  return !!instant?.structures?.some((s) => (s.areaSqft ?? 0) > 0);
 }
 
 /**
@@ -101,8 +137,12 @@ export function rowPacks(packsJson: string | null | undefined): string[] {
 export interface OrderDeps {
   /** Places ONE billed order; throws PdEntitlementError on 403. */
   submit(input: EvOrderInput, packs: PdPack[]): Promise<{ requestId: string; completeAddress: string }>;
-  /** Collects a placed order; null while still processing. */
-  poll(requestId: string, input: EvOrderInput, completeAddress: string, onRaw: (body: string) => void): Promise<InstantRoofData | null>;
+  /**
+   * Asks for a placed order's result; null while still processing. `maxWaitMs`
+   * 0 means ONE request and no waiting — the planner does its own waiting,
+   * across every placed order, so no single order is waited on alone.
+   */
+  poll(requestId: string, input: EvOrderInput, completeAddress: string, onRaw: (body: string) => void, maxWaitMs: number): Promise<InstantRoofData | null>;
   ledger: {
     create(requestId: string, packs: PdPack[]): Promise<void>;
     complete(requestId: string, instant: InstantRoofData, raw: string | null): Promise<void>;
@@ -115,6 +155,9 @@ export interface OrderDeps {
   /** Whether a poll error is EagleView's final verdict on the order. */
   isTerminalFailure(err: unknown): boolean;
   log?(msg: string): void;
+  /** Test seams: the pause between rounds of the collect loop, and the clock. */
+  sleep?(ms: number): Promise<void>;
+  now?(): number;
 }
 
 export interface OrderOutcome {
@@ -125,61 +168,143 @@ export interface OrderOutcome {
 
 const ROOF_AREA = PD_PACK.ROOF_AREA;
 
-/** One accepted order, end to end: ledger row before the first poll. */
-async function placeOrder(deps: OrderDeps, input: EvOrderInput, packs: PdPack[]): Promise<InstantRoofData> {
+/** How long a fresh order is waited for, all packs together, before the rest is left pending. */
+export const ORDER_COLLECT_BUDGET_MS = 75_000;
+/** Pause between rounds of asking each placed order in turn. */
+export const COLLECT_ROUND_MS = 2_000;
+
+/** A placed, ledgered order the collect loop is waiting on. */
+export interface PlacedOrder {
+  requestId: string;
+  packs: PdPack[];
+  completeAddress: string;
+}
+
+export interface CollectOutcome {
+  /** Orders that completed, with their answers; the pack-001 order first. */
+  landed: Array<{ order: PlacedOrder; instant: InstantRoofData }>;
+  /** Still processing when the budget ran out — placed and paid, collected later. */
+  pending: PlacedOrder[];
+  /** EagleView's final verdict was failure; recorded in the ledger. */
+  failed: PlacedOrder[];
+}
+
+/**
+ * Collect placed orders together: one result request at a time, every order
+ * still open asked in turn, a short pause between rounds, until all have
+ * answered or the budget is spent. A transport error on one ask is not a
+ * verdict — the order stays open and is asked again next round; only
+ * EagleView's own failed/rejected/cancelled status closes an order as failed.
+ * A budget of 0 is one round: every order asked once, no waiting. With
+ * `untilPack` the wait ends the moment the order carrying that pack has
+ * answered (landed or failed) — the others are left pending for the page.
+ */
+export async function collectPlacedOrders(
+  orders: readonly PlacedOrder[],
+  input: EvOrderInput,
+  deps: OrderDeps,
+  budgetMs: number,
+  opts: { untilPack?: PdPack } = {},
+): Promise<CollectOutcome> {
+  const now = deps.now ?? (() => Date.now());
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const open = [...orders];
+  const landed: CollectOutcome["landed"] = [];
+  const failed: PlacedOrder[] = [];
+  const deadline = now() + Math.max(0, budgetMs);
+  let first = true;
+  const waitingFor = (): boolean => !opts.untilPack || open.some((o) => o.packs.includes(opts.untilPack as PdPack));
+  while (open.length && waitingFor()) {
+    // The first round asks every order once without a pause; from then on
+    // the loop waits between rounds and stops when the budget is spent.
+    if (!first) {
+      if (now() >= deadline) break;
+      await sleep(Math.min(COLLECT_ROUND_MS, Math.max(0, deadline - now())));
+    }
+    first = false;
+    for (const order of [...open]) {
+      let raw: string | null = null;
+      try {
+        const got = await deps.poll(order.requestId, input, order.completeAddress, (body) => { raw = body; }, 0);
+        if (!got) continue;
+        await deps.ledger.complete(order.requestId, got, raw).catch(() => {});
+        landed.push({ order, instant: got });
+        open.splice(open.indexOf(order), 1);
+      } catch (err) {
+        if (deps.isTerminalFailure(err)) {
+          await deps.ledger.fail(order.requestId, err instanceof Error ? err.message : String(err)).catch(() => {});
+          failed.push(order);
+          open.splice(open.indexOf(order), 1);
+        } else {
+          deps.log?.(`result for ${order.requestId} (${order.packs.join(",")}) not answered this round: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      if (!waitingFor()) break;
+    }
+  }
+  landed.sort((a, b) => Number(b.order.packs.includes(ROOF_AREA)) - Number(a.order.packs.includes(ROOF_AREA)));
+  return { landed, pending: open, failed };
+}
+
+/** One accepted order: ledger row the moment EagleView accepts it, before anything else. */
+async function placeOrder(deps: OrderDeps, input: EvOrderInput, packs: PdPack[]): Promise<PlacedOrder> {
   const { requestId, completeAddress } = await deps.submit(input, packs);
   try {
     await deps.ledger.create(requestId, packs);
   } catch (err) {
-    deps.log?.(`COULD NOT RECORD instant order ${requestId} (${packs.join(",")}) — a poll timeout will orphan it: ${String(err)}`);
+    deps.log?.(`COULD NOT RECORD instant order ${requestId} (${packs.join(",")}) — a lost id is a paid result nobody can fetch: ${String(err)}`);
   }
-  let raw: string | null = null;
-  let got: InstantRoofData | null;
-  try {
-    got = await deps.poll(requestId, input, completeAddress, (body) => { raw = body; });
-  } catch (err) {
-    if (deps.isTerminalFailure(err)) await deps.ledger.fail(requestId, err instanceof Error ? err.message : String(err)).catch(() => {});
-    throw err;
-  }
-  if (!got) {
-    throw new Error(
-      `Property Data is taking longer than expected (order ${requestId}, ${packs.join(", ")}). The order is saved — measuring this address again will collect it without paying twice.`,
-    );
-  }
-  await deps.ledger.complete(requestId, got, raw).catch(() => {});
-  return got;
+  return { requestId, packs, completeAddress };
 }
 
 /**
  * Buy the diagram packs for an address, minus `skip` (packs the address
- * already has from earlier complete orders). Throws when pack 001 itself is
- * refused or fails — there is no measurement without the area.
+ * already has from earlier orders, complete or still processing). The area
+ * (pack 001) is placed alone and waited for alone: it is the measurement,
+ * and a click returns the moment it lands. Throws when 001 is refused or
+ * fails to place — there is no measurement without the area — and when 001
+ * is placed but has not answered within the budget (the order is in the
+ * ledger; the next click collects it for free). The other packs are placed
+ * once the area is in and are NOT waited for: they come back as `pending`
+ * and the page collects them.
  */
 export async function orderPacksFor(
   input: EvOrderInput,
   deps: OrderDeps,
-  opts: { skip?: readonly string[]; base?: InstantRoofData | null } = {},
+  opts: { skip?: readonly string[]; base?: InstantRoofData | null; collectBudgetMs?: number } = {},
 ): Promise<OrderOutcome> {
   const skip = new Set(opts.skip ?? []);
   const wanted = PD_DIAGRAM_PACKS.filter((p) => !skip.has(p));
-  const parts: InstantRoofData[] = opts.base ? [opts.base] : [];
   const have = new Set<string>(skip);
   const denied = new Set<string>();
   const failed = new Set<string>();
+  const parts: InstantRoofData[] = [];
 
-  // 1. the area, alone and first
+  // ── 1. the area, alone: placed, then waited for ──
   if (wanted.includes(ROOF_AREA)) {
+    let areaOrder: PlacedOrder;
     try {
-      parts.unshift(await placeOrder(deps, input, [ROOF_AREA]));
-      have.add(ROOF_AREA);
+      areaOrder = await placeOrder(deps, input, [ROOF_AREA]);
       await deps.entitlements.mark([ROOF_AREA], "live");
     } catch (err) {
       if (err instanceof PdEntitlementError) await deps.entitlements.mark([ROOF_AREA], "denied", err.message);
       throw err;
     }
+    const c = await collectPlacedOrders([areaOrder], input, deps, opts.collectBudgetMs ?? ORDER_COLLECT_BUDGET_MS);
+    if (c.pending.length) {
+      throw new Error(
+        `Property Data is taking longer than expected (order ${areaOrder.requestId}, roof area). The order is saved — measuring this address again will collect it without paying twice.`,
+      );
+    }
+    const landed = c.landed[0];
+    if (!landed) throw new Error(`Property Data request failed for the roof area (order ${areaOrder.requestId})`);
+    parts.push(landed.instant);
+    have.add(ROOF_AREA);
   }
 
-  // 2. everything the account is known to have, in one request
+  // ── 2. the rest: placed now, collected by the page ──
+  const placed: PlacedOrder[] = [];
+  // 2a. everything the account is known to have, in one request
   const rest = wanted.filter((p) => p !== ROOF_AREA);
   const known = await deps.entitlements.read();
   const live = rest.filter((p) => known.get(p)?.status === "live");
@@ -187,8 +312,7 @@ export async function orderPacksFor(
   for (const p of rest) if (!live.includes(p) && !oneByOne.includes(p)) denied.add(p); // fresh refusals, not re-asked
   if (live.length) {
     try {
-      parts.push(await placeOrder(deps, input, live));
-      live.forEach((p) => have.add(p));
+      placed.push(await placeOrder(deps, input, live));
       await deps.entitlements.mark(live, "live");
     } catch (err) {
       if (err instanceof PdEntitlementError) {
@@ -196,18 +320,18 @@ export async function orderPacksFor(
         oneByOne = [...live, ...oneByOne];
       } else {
         live.forEach((p) => failed.add(p));
+        deps.log?.(`grouped order for ${live.join(",")} could not be placed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }
 
-  // 3. one pack at a time, in the order the page misses them
+  // 2b. one pack at a time, in the order the page misses them
   const probeOrder = PROBE_ORDER as readonly string[];
-  const pending: string[] = oneByOne;
-  const ordered = [...probeOrder.filter((p) => pending.includes(p)), ...pending.filter((p) => !probeOrder.includes(p))];
+  const toProbe: string[] = oneByOne;
+  const ordered = [...probeOrder.filter((p) => toProbe.includes(p)), ...toProbe.filter((p) => !probeOrder.includes(p))];
   for (const pack of ordered as PdPack[]) {
     try {
-      parts.push(await placeOrder(deps, input, [pack]));
-      have.add(pack);
+      placed.push(await placeOrder(deps, input, [pack]));
       await deps.entitlements.mark([pack], "live");
     } catch (err) {
       if (err instanceof PdEntitlementError) {
@@ -215,11 +339,16 @@ export async function orderPacksFor(
         await deps.entitlements.mark([pack], "denied", err.message);
       } else {
         failed.add(pack);
-        deps.log?.(`pack ${pack} failed: ${err instanceof Error ? err.message : String(err)}`);
+        deps.log?.(`pack ${pack} could not be placed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }
+  // Placed and paid, not waited for: the page collects them (collectPendingInstant).
+  const stillPending = placed.flatMap((o) => o.packs);
 
-  if (!parts.length) throw new Error("Property Data returned nothing to measure from");
-  return { instant: mergeInstantResults(parts), report: packReport(have, denied, failed) };
+  // The base (pack 001, this order's or an earlier one's) goes first so every
+  // later part fills its structures in; the merge re-derives the totals.
+  const all = opts.base ? [opts.base, ...parts] : parts;
+  if (!all.length) throw new Error("Property Data returned nothing to measure from");
+  return { instant: mergeInstantResults(all), report: packReport(have, denied, failed, [], stillPending) };
 }

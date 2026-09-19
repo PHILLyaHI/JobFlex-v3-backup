@@ -105,7 +105,11 @@ export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignCondi
   const st = (m.state || "").toUpperCase();
   if (st && item.notStates?.map((x) => x.toUpperCase()).includes(st)) return fail(`Not sold or not permitted in ${st}${item.availabilityNote ? ` — ${item.availabilityNote}` : ""}.`);
   if (st && item.states?.length && !item.states.map((x) => x.toUpperCase()).includes(st)) return fail(`Sold in ${item.states.join(", ")} only${item.availabilityNote ? ` — ${item.availabilityNote}` : ""}.`);
-  if (item.kind === "air-conditioner" && noGas && !opts.keepsIndoor) return fail("An AC needs a furnace; this house has no gas.");
+  if (item.kind === "air-conditioner" && noGas && !opts.keepsIndoor) return fail("An AC pairs with a gas furnace on a full replacement, and this house has no gas — a heat pump is the fit (an AC on an electric air handler can still be chosen by hand).");
+  if (item.kind === "package" && (item.heatKind ?? "gas") === "gas" && noGas) return fail("A gas/electric package unit on a house with no gas — a heat-pump or electric package unit is the fit.");
+  // A package unit replaces a package unit: a split house keeps its split
+  // (the contractor can still put a package on by hand).
+  if (item.kind === "package" && m.existing.kind !== "package-unit") return fail("A package unit goes where a package unit was; this house has a split system — choose it by hand if the job goes that way.");
   if (item.kind === "heat-pump" && keepsGas) {
     // Decisive, not a nudge: a variable-speed heat pump that carries the
     // design day picks up +14 elsewhere, and a gas house should still see
@@ -119,39 +123,74 @@ export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignCondi
   if (cools) {
     const cap = ratedCoolingBtuh(item);
     if (cap <= 0) return fail("No cooling capacity on the catalog row.");
-    const floor = efficiencyFloor(m.state, item.kind === "heat-pump" || (item.kind === "package" && item.heatKind === "heat-pump") ? "heat-pump" : "air-conditioner", cap, item.kind === "package");
+    const heatPumpClass = item.kind === "heat-pump" || item.kind === "ductless" || (item.kind === "package" && item.heatKind === "heat-pump");
+    const floor = efficiencyFloor(m.state, heatPumpClass ? "heat-pump" : "air-conditioner", cap, item.kind === "package");
     if (item.seer2 && item.seer2 < floor.seer2) return fail(`${item.seer2} SEER2 is below the ${floor.seer2} SEER2 regional minimum.`);
     // The Southwest EER2 floor drops for a unit already certified high on SEER2.
     const eerFloor = floor.eer2IfHighSeer && (item.seer2 ?? 0) >= 15.2 ? floor.eer2IfHighSeer : floor.eer2;
     if (eerFloor && item.eer2 && item.eer2 < eerFloor) return fail(`${item.eer2} EER2 is below the ${eerFloor} EER2 minimum for this region.`);
+    if (floor.hspf2 && item.hspf2 && item.hspf2 < floor.hspf2) return fail(`${item.hspf2} HSPF2 is below the ${floor.hspf2} HSPF2 minimum for a heat pump.`);
     if (!item.seer2) { score -= 5; reasons.push("SEER2 not on the catalog row — confirm it meets the regional minimum."); }
     const ratio = load.coolingTotalBtuh > 0 ? cap / load.coolingTotalBtuh : 0;
     out.coolingRatio = Math.round(ratio * 100) / 100;
-    const upper = item.staging === "variable" ? 1.25 : 1.15;
+    // Manual S: cooling gear lands in 90–115% (variable 125%). A heat pump in
+    // a house whose heating load is the bigger one may run to 125% (variable
+    // 135%) so the unit that carries the most heat is not thrown out for
+    // cooling alone — heating governs (review, 2026-09-17).
+    const heatingGoverns = (item.kind === "heat-pump" || (item.kind === "package" && item.heatKind === "heat-pump")) && load.heatingBtuh > load.coolingTotalBtuh;
+    const upper = item.staging === "variable" ? (heatingGoverns ? 1.35 : 1.25) : heatingGoverns ? 1.25 : 1.15;
     // Judged on whole percent: a 42,000 BTU/h unit on a 36,500 load is 115%, not 115.07%.
     const pct = Math.round(ratio * 100);
     if (pct < 90) return fail(`Cooling capacity is ${pct}% of the load; Manual S wants at least 90%.`);
     if (pct > Math.round(upper * 100)) return fail(`Cooling capacity is ${pct}% of the load; Manual S allows up to ${Math.round(upper * 100)}% for this equipment.`);
-    // Closest to a touch over the load scores best: 100–110% ideal.
-    score -= Math.round(Math.abs(ratio - 1.05) * 100);
-    reasons.push(`Cooling ${Math.round(ratio * 100)}% of the ${load.coolingTotalBtuh.toLocaleString("en-US")} BTU/h load.`);
+    // Closest to a touch over the load scores best: 100–110% ideal. Where
+    // heating governs the cooling fit is a bound, not the ranking: the heat
+    // carried at the design temperature ranks the sizes (below).
+    score -= heatingGoverns && !keepsGas ? Math.round(Math.abs(ratio - 1.05) * 20) : Math.round(Math.abs(ratio - 1.05) * 100);
+    reasons.push(`Cooling ${Math.round(ratio * 100)}% of the ${load.coolingTotalBtuh.toLocaleString("en-US")} BTU/h load${heatingGoverns ? " — heating governs, so Manual S allows up to " + Math.round(upper * 100) + "%" : ""}.`);
     if (item.staging === "variable") { score += 6; reasons.push("Variable capacity: better humidity control and part-load efficiency."); }
     else if (item.staging === "two-stage") { score += 3; }
     if (c.humidity === "humid" && item.staging === "single" && ratio > 1.1) { score -= 6; reasons.push("Single-stage and oversized in a humid climate: short cycles, poor dehumidification."); }
   }
 
-  if (item.kind === "heat-pump") {
+  if (item.kind === "package" && item.heatKind === "electric") {
+    // Electric strip heat: the whole heating load is resistance, on the panel
+    // and on the bill — a heat-pump package outranks it wherever one fits.
+    out.backupKw = Math.round((load.heatingBtuh / BTU_PER_KW) * 10) / 10;
+    score -= 18;
+    reasons.push(`Electric heat only: ${out.backupKw} kW of strips carry the ${load.heatingBtuh.toLocaleString("en-US")} BTU/h heating load — a heat-pump package cuts the winter bill.`);
+  }
+  if (item.kind === "package" && (item.heatKind ?? "gas") === "gas") {
+    // The gas section is a furnace: 100–140% of the heating load when its
+    // input is on the row; otherwise the check asks for the submittal.
+    if (item.btuInput) {
+      const output = item.btuInput * (item.afue ?? 0.81);
+      out.furnaceOutputBtuh = Math.round(output);
+      const ratio = load.heatingBtuh > 0 ? output / load.heatingBtuh : 0;
+      out.outputRatio = Math.round(ratio * 100) / 100;
+      if (ratio < 1) { score -= 12; reasons.push(`Gas section ${Math.round(output).toLocaleString("en-US")} BTU/h is under the ${load.heatingBtuh.toLocaleString("en-US")} BTU/h heating load — confirm the next heat size in this cabinet.`); }
+      else if (ratio > 1.4) { score -= 4; reasons.push(`Gas section is ${Math.round(ratio * 100)}% of the heating load — over Manual S's 140%; the smaller heat option in this cabinet may fit.`); }
+      else reasons.push(`Gas section ${Math.round(ratio * 100)}% of the heating load.`);
+    } else reasons.push("Gas input not on the row — confirm the heat section against the heating load on the submittal.");
+  }
+  if (item.kind === "heat-pump" || (item.kind === "package" && item.heatKind === "heat-pump")) {
     const atDesign = heatPumpCapacityAt(item, c.heatingF);
     out.heatAtDesignBtuh = Math.round(atDesign);
     out.balancePointF = balancePointF(item, load, c) ?? undefined;
     out.backupKw = Math.round((Math.max(0, load.heatingBtuh - atDesign) / BTU_PER_KW) * 10) / 10;
     out.curve = capacityCurve(item, load, c);
+    const heatingGoverns = load.heatingBtuh > load.coolingTotalBtuh;
     if (atDesign >= load.heatingBtuh) {
       score += 8;
       reasons.push(`Carries the ${load.heatingBtuh.toLocaleString("en-US")} BTU/h heating load at ${c.heatingF} °F with no backup.`);
     } else {
       const share = atDesign / load.heatingBtuh;
       reasons.push(`Covers ${Math.round(share * 100)}% of the heating load at ${c.heatingF} °F; ${out.backupKw} kW of backup carries the rest below ${out.balancePointF ?? "—"} °F.`);
+      // Where heating governs, the size that carries the most heat inside
+      // the cooling window ranks first (Manual S sizes the heat pump on heat)
+      // — among heat pumps. On a house that keeps its gas the AC still leads
+      // and the heat pump stays the dual-fuel runner-up.
+      if (heatingGoverns && !keepsGas) score += Math.round(share * 30);
       if (share < 0.6) { score -= 15; reasons.push("Under 60% at the design temperature — the strips will run most cold nights."); }
       else if (share < 0.8) score -= 6;
     }
@@ -219,7 +258,7 @@ export function selectSystem(catalog: CatalogItem[], load: LoadResult, c: Design
     const fits = candidates.filter((x) => !x.disqualified && x.item.kind === "air-handler" && (x.item.maxTons ?? x.item.tons ?? 99) >= need).sort((a, b) => (a.item.tons ?? 99) - (b.item.tons ?? 99));
     const pool2 = fits.length ? fits : candidates.filter((x) => x.item.kind === "air-handler").sort((a, b) => (b.item.tons ?? 0) - (a.item.tons ?? 0));
     const kw = Math.round((load.heatingBtuh / 3412) * 10) / 10;
-    const withReason = pool2.map((x) => ({ ...x, disqualified: undefined, reasons: [...x.reasons.filter((r) => !/SEER2|cold-climate/i.test(r)), `Electric furnace: this cabinet carries the ${need}-ton coil, with a ${Math.max(5, Math.ceil(kw / 5) * 5)} kW heat kit for the ${Math.round(load.heatingBtuh / 1000)}k BTU/h heating load.`] }));
+    const withReason = pool2.map((x) => ({ ...x, disqualified: undefined, backupKw: kw, reasons: [...x.reasons.filter((r) => !/SEER2|cold-climate/i.test(r)), `Electric furnace: this cabinet carries the ${need}-ton coil, with a ${Math.max(5, Math.ceil(kw / 5) * 5)} kW heat kit for the ${Math.round(load.heatingBtuh / 1000)}k BTU/h heating load.`] }));
     return { chosen: withReason[0] ?? null, runnerUp: withReason[1] ?? null, candidates, targetTons, systems: 1 };
   }
   // Furnace-only jobs pick a furnace; everything else picks an outdoor unit.
@@ -235,13 +274,34 @@ export function selectSystem(catalog: CatalogItem[], load: LoadResult, c: Design
       }
     }
     // The blower must move the coil's air: among the fits, prefer cabinets
-    // rated for the coil (maxTons); if none is, the engine flags it.
+    // rated for the coil (maxTons). When no cabinet inside 100–140% carries
+    // it, the smallest one that does goes on — over 140%, said so — because
+    // "replace the furnace" cannot end in a furnace that starves the coil
+    // (review, 2026-09-17). Only when no cabinet at all carries the coil does
+    // the engine hand back the closest fit and flag the blower.
     const carries = opts.coilTons ? furnaces.filter((x) => (x.item.maxTons ?? 99) >= (opts.coilTons ?? 0)) : furnaces;
+    if (opts.coilTons && !carries.length) {
+      const big = candidates.filter((x) => x.item.kind === "furnace" && (x.outputRatio ?? 0) >= 1 && (x.item.maxTons ?? 0) >= (opts.coilTons ?? 0) && (!x.disqualified || /140%/.test(x.disqualified))).sort((a, b) => (a.outputRatio ?? 9) - (b.outputRatio ?? 9))[0];
+      if (big) {
+        const chosen: SelectionCandidate = { ...big, disqualified: undefined, score: 60, reasons: [`Output ${Math.round((big.outputRatio ?? 0) * 100)}% of the heating load — over Manual S's 140%, but the smallest cabinet whose blower carries the ${opts.coilTons}-ton coil; step the coil down to stay inside 140%.`, ...big.reasons.filter((r) => !/^Output /.test(r))] };
+        return { chosen, runnerUp: furnaces[0] ?? null, candidates, targetTons, systems: 1 };
+      }
+    }
     const ranked = carries.length ? carries : furnaces;
     return { chosen: ranked[0] ?? null, runnerUp: ranked[1] ?? null, candidates, targetTons, systems: 1 };
   }
   const outdoor = candidates.filter(isOutdoor);
   if (outdoor.length || load.coolingTotalBtuh <= 40000) {
+    if (!outdoor.length) {
+      // A load under the smallest unit made: Manual S accepts the smallest
+      // available unit over its window — said so, not hidden as "no fit".
+      const over = candidates.filter((x) => /allows up to/.test(x.disqualified ?? "") && (x.item.kind === "heat-pump" || x.item.kind === "air-conditioner" || x.item.kind === "package" || x.item.kind === "ductless")).sort((a, b) => ratedCoolingBtuh(a.item) - ratedCoolingBtuh(b.item) || b.score - a.score);
+      const smallest = over[0];
+      if (smallest && ratedCoolingBtuh(smallest.item) <= Math.min(...pool.filter((i) => i.kind === smallest.item.kind).map((i) => ratedCoolingBtuh(i) || Infinity))) {
+        const chosen: SelectionCandidate = { ...smallest, disqualified: undefined, score: 60, reasons: [`Cooling ${Math.round((smallest.coolingRatio ?? 0) * 100)}% of the load — over Manual S's window, but the smallest ${smallest.item.kind === "ductless" ? "head" : "unit"} made; accepted as the smallest available, confirm with the inspector.`, ...smallest.reasons.filter((r) => !/^Cooling /.test(r))] };
+        return { chosen, runnerUp: over[1] ?? null, candidates, targetTons, systems: 1 };
+      }
+    }
     return { chosen: outdoor[0] ?? null, runnerUp: outdoor[1] ?? null, candidates, targetTons, systems: 1 };
   }
   for (const n of [2, 3]) {

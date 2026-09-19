@@ -32,6 +32,30 @@ export function buildQuoteDraftPrompt(options: BuildPromptOptions): string {
   });
 }
 
+/**
+ * The previous JobFlex's anchored prompt, sync (2026-09-18): the
+ * specialty-filtered price book and the curated material profile, which are
+ * static data. The Smart Proposal had been calling the bare builder above,
+ * so neither reached the model after the port. The old tax block stays out:
+ * it says tax applies to materials only, while this app's proposal taxes
+ * the subtotal at the job's state rate.
+ */
+export function buildQuoteDraftPromptAnchored(options: BuildPromptOptions): string {
+  let priceBookBlock: string | null = null;
+  let materialProfileBlock: string | null = null;
+  try {
+    priceBookBlock = formatPriceBookForPrompt(priceBookCategoriesForSpecialty(options.specialty.id, options.specialty.category));
+  } catch (err) {
+    console.warn("[buildQuoteDraftPromptAnchored] price book skipped:", err instanceof Error ? err.message : err);
+  }
+  try {
+    materialProfileBlock = formatSpecialtyMaterialProfile(options.specialty.id, options.locale?.state ?? null);
+  } catch (err) {
+    console.warn("[buildQuoteDraftPromptAnchored] material profile skipped:", err instanceof Error ? err.message : err);
+  }
+  return assembleQuoteDraftPrompt(options, { priceBookBlock, materialProfileBlock, taxBlock: null });
+}
+
 /** Async wrapper: fetches the live, specialty-filtered PriceBook + curated
  *  material profile + sales-tax guidance, then assembles the prompt. Falls
  *  back to the bare prompt if any fetch fails — anchoring is best-effort,

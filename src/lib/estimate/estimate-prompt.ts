@@ -24,7 +24,8 @@
 // Plain module, no "use server": lib/estimate/legacy-estimate imports it.
 
 import { ESTIMATOR_MASTER_PROMPT, UNIT_RULES } from "./master-prompt";
-import { detectTrade, stateCostIndex, type TradeProfile } from "./trade-knowledge";
+import { detectTrade, type TradeProfile } from "./trade-knowledge";
+import { locationIndex } from "./location-index";
 
 export type EstimatePromptInput = {
   description: string;
@@ -68,10 +69,12 @@ export function buildEstimateSystemPrompt(trade: TradeProfile, input: EstimatePr
       : input.qualityTier === "luxury"
         ? "LUXURY — the high end of every range, premium materials and detailing"
         : "STANDARD — the middle of every range, contractor-grade materials";
-  const region = stateCostIndex(input.location);
-  const regionText = region
-    ? `The job is in ${region.state}: multiply national material and labor anchors by about ${region.index.toFixed(2)} (metro areas run higher still).`
-    : "No state was given: price at the US national average and say so in the assumptions.";
+  // City first, then the state, then national (lib/estimate/location-index).
+  const region = locationIndex(input.location);
+  const regionText =
+    region.level === "national"
+      ? "No city or state was recognized in the job's location: price at the US national average and say so in the assumptions."
+      : `The job is in ${region.place}: multiply national material and labor anchors by about ${region.factor.toFixed(2)} (${region.level === "city" ? "its construction cost index" : "the state index; a major city in it runs higher"}).`;
 
   return [
     ESTIMATOR_MASTER_PROMPT,
@@ -81,7 +84,12 @@ export function buildEstimateSystemPrompt(trade: TradeProfile, input: EstimatePr
     "═══════════════════════════════════════════════════════════════",
     trade.preamble,
     "",
-    "PHASES A COMPLETE ESTIMATE FOR THIS TRADE COVERS. Every phase below is REQUIRED as its own line, in this order — including allowances, consumables, permit and cleanup — unless the brief explicitly excludes it (write the exclusion in `assumptions`). Add phases the brief calls for that are not listed:",
+    // WHICH phases are in play is the brief's call (a whole job takes them
+    // all, a sink takes the ones its work touches); INSIDE that set every
+    // phase is its own line and none may be quietly dropped. The conditional
+    // ones are excluded here and offered by name below, or a repipe grows a
+    // water heater nobody asked for.
+    "PHASES OF A WHOLE JOB OF THIS TRADE, in order. On a whole job every phase below is REQUIRED as its own line (or several) — including allowances, the permit and cleanup — unless the brief explicitly excludes it (write the exclusion in `assumptions`). A brief for PART of the job (a sink, a toilet, a faucet) writes only the phases its work touches, and every phase it does touch is still its own line. Consumables ride inside the lines they serve, never their own line. Add phases the brief calls for that are not listed:",
     ...trade.phases.filter((p) => !(trade.conditional ?? []).includes(p)).map((p, i) => `  ${i + 1}. ${p}`),
     "",
     ...((trade.conditional ?? []).length
@@ -112,10 +120,10 @@ export function buildEstimateSystemPrompt(trade: TradeProfile, input: EstimatePr
     "HARD RULES — the output is rejected when any is broken",
     "═══════════════════════════════════════════════════════════════",
     "1. ONE LINE PER PHASE, BOTH COSTS ON EVERY LINE. Each item is a piece of WORK with a measured `quantity`, its `unit`, a `materialUnitPrice` (material $ per one unit) and a `laborUnitPrice` (labor $ per one unit). Material and labor are columns of every row — never separate rows, never a row called 'Labor' or 'Materials'. A supply-only line (a countertop from a fabricator) has laborUnitPrice 0; a labor-only line (demolition, cleanup) has materialUnitPrice 0 or a small consumables figure. Never both 0.",
-    `2. COMPLETE COVERAGE. A real job has ${trade.lineRange ?? "8-16"} lines and ALWAYS includes: protection/mobilization or site prep; demolition or removal with disposal when anything existing comes out; every installation phase in the trade profile that the brief calls for; consumables and fasteners; the permit when the trade needs one; final cleanup and haul-off. A three-line estimate is wrong.`,
+    `2. COMPLETE COVERAGE. Line count: ${trade.lineRange ?? "8-16 for a whole job"}. A whole job ALWAYS includes: protection/mobilization or site prep; demolition or removal with disposal when anything existing comes out; every installation phase in the trade profile that the brief calls for; the permit when the trade needs one; final cleanup and haul-off. Consumables and fasteners ride inside the lines they serve. A three-line whole job is wrong.`,
     "3. NAMES READ LIKE A SCOPE SENTENCE. Each `name` states WHAT is done, HOW, and WITH WHAT — 'Remove existing asphalt shingles and debris down to the deck, load out and dispose at an approved facility', 'Supply and install self-adhered ice and water shield at eaves and valleys per manufacturer requirements'. Forbidden: bare product names ('Ice and water shield — 3 ft x 65 ft roll'), category words ('Roofing', 'Labor', 'Materials'), and any math or 'Calc:' text.",
     `4. ${UNIT_RULES}`,
-    "5. QUANTITY IS THE MEASURED QUANTITY in that unit, waste applied where the methodology says so. 2,400 sqft of roof is 2,400 sqft of tear-off labor, ~2,640 sqft of underlayment with waste, 27 sq boards of shingles (24 + 12% waste, rounded up), ~220 linear ft of drip edge on a typical perimeter. Compute the derived quantities the brief does not state — perimeter, ridge, wall area — from standard proportions and record the assumption.",
+    "5. QUANTITY IS THE NET MEASURED QUANTITY in that unit; waste is priced into the material unit price and stated in notes, never added to the quantity. 2,400 sqft of roof is 2,400 sqft of tear-off labor, 2,400 sqft of underlayment and 24 sq boards of shingles, their 10-15% waste in the material prices, ~220 linear ft of drip edge on a typical perimeter. Compute the derived quantities the brief does not state — perimeter, ridge, wall area — from standard proportions and record the assumption.",
     "6. LABOR SCALES WITH SIZE. Reason as crew × hours × rate per phase, then express it as labor $ per unit; a 2,400 sqft roof cannot carry the same labor as a 900 sqft roof. Never put hours or time in a line's name.",
     "7. PRICE PER UNIT, NOT PER PACKAGE. Anchors are per measured unit. Packages, gallons, rolls and boxes are described in `dimensions` only.",
     "8. `searchQuery` is set on every line that has material $ — a retail search a buyer would type into Home Depot or Lowe's for that product with size and spec ('30 year architectural asphalt shingles', 'synthetic roofing underlayment 10 square roll'); null on labor-only lines. It feeds the contractor's shop list and nothing else.",

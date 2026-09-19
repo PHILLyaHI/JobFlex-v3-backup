@@ -104,6 +104,23 @@ export function designConditionsFor(state: string, county: string | undefined | 
       },
     };
   }
+  // A county whose limit comes from a mountain or desert station far from the
+  // houses takes the metro station the houses actually sit under.
+  const metro = METRO_STATION[st]?.[countyKey(row.county)];
+  if (metro) {
+    return {
+      match,
+      approx: false,
+      conditions: {
+        ...base,
+        county: row.county,
+        coolingF: metro.coolingF,
+        heatingF: metro.heatingF,
+        hddCddRatio: row.hddCddRatio,
+        source: `${metro.station} — ASHRAE 1% / 99% design conditions for the metro station (the county limit in the ENERGY STAR guide is ${row.coolingF} °F / ${row.heatingF} °F, taken at ${metro.limitFrom}); ${metro.note}`,
+      },
+    };
+  }
   return {
     match,
     approx: row.approx,
@@ -117,6 +134,39 @@ export function designConditionsFor(state: string, county: string | undefined | 
     },
   };
 }
+
+/**
+ * The ENERGY STAR county limits are the most extreme station within 40 miles
+ * of the county's centre — right as a bound, wrong as a design condition
+ * where that station is a mountain pass or a desert (review, 2026-09-17:
+ * King County's 11 °F is Stampede Pass; Los Angeles County's 14 °F is Mount
+ * Baldy). These counties take the ASHRAE 2017 1% / 99% figures for the metro
+ * station instead, rounded to the degree. Counties that span a coast and hot
+ * inland valleys say so, and the contractor can set the address's own design
+ * temperatures on the page.
+ */
+const METRO_STATION: Record<string, Record<string, { station: string; coolingF: number; heatingF: number; limitFrom: string; note: string }>> = {
+  WA: {
+    king: { station: "Seattle-Tacoma Intl", coolingF: 84, heatingF: 26, limitFrom: "Stampede Pass", note: "the county's 11 °F limit is a mountain pass; set the address's own figures for the foothills." },
+    pierce: { station: "Tacoma Narrows", coolingF: 84, heatingF: 26, limitFrom: "a Cascade station", note: "set the address's own figures for the foothills." },
+    snohomish: { station: "Paine Field", coolingF: 82, heatingF: 26, limitFrom: "a Cascade station", note: "set the address's own figures for the foothills." },
+  },
+  CA: {
+    "los angeles": { station: "Los Angeles downtown (USC)", coolingF: 90, heatingF: 43, limitFrom: "Hillcrest / Mount Baldy", note: "the coast runs ~81 °F, the San Fernando Valley ~99 °F — set the address's own figures." },
+    "san diego": { station: "San Diego (Miramar / Lindbergh)", coolingF: 88, heatingF: 43, limitFrom: "Borrego / Palomar", note: "the coast runs ~83 °F, the inland valleys ~95 °F — set the address's own figures." },
+    "san bernardino": { station: "San Bernardino", coolingF: 104, heatingF: 34, limitFrom: "Baker / Big Bear", note: "the high desert and the mountains differ — set the address's own figures." },
+    riverside: { station: "Riverside", coolingF: 101, heatingF: 36, limitFrom: "Palm Desert / Mt San Jacinto", note: "the Coachella Valley runs ~112 °F — set the address's own figures there." },
+  },
+  NV: {
+    clark: { station: "Las Vegas (Harry Reid Intl)", coolingF: 107, heatingF: 31, limitFrom: "Willow Beach / Indian Springs", note: "the metro figures suit the valley." },
+  },
+  AZ: {
+    maricopa: { station: "Phoenix Sky Harbor", coolingF: 109, heatingF: 34, limitFrom: "Gila Bend / Harquahala", note: "the metro figures suit the valley." },
+  },
+  MA: {
+    suffolk: { station: "Boston Logan", coolingF: 89, heatingF: 9, limitFrom: "an inland station", note: "the metro figures suit the city." },
+  },
+};
 
 /** Every county the table knows for a state, for a picker. */
 export function countiesFor(state: string): string[] {

@@ -62,8 +62,27 @@ export function idFromLocation(location: string | null | undefined): string | nu
 
 /** "461 Ocean Blvd, Golden Beach, FL 33160" → its parts for the project template. */
 export function splitAddress(full: string): { address: string; city: string; state: string; zip: string } {
-  const parts = full.split(",").map((p) => p.trim()).filter(Boolean);
-  const out = { address: parts[0] ?? full.trim(), city: "", state: "", zip: "" };
+  // "…, USA" / "…, United States" is Google's suffix, not a part of the address.
+  const cleaned = full.replace(/,?\s*(USA|U\.S\.A\.|United States(?: of America)?)\s*$/i, "").trim();
+  // No commas at all ("4518 Bluestem Hollow Dr Frisco TX 75034"): read the
+  // state and ZIP off the tail and the street off the head.
+  if (!cleaned.includes(",")) {
+    const tail = cleaned.match(/^(.*?)\s+([A-Za-z]{2})\s+(\d{5})(?:-\d{4})?$/);
+    if (tail) {
+      const head = tail[1].trim();
+      // The street ends at its suffix (Dr, St, Blvd…); the city is what follows.
+      // With no suffix the city is the last word.
+      const words = head.split(/\s+/);
+      const SUFFIX = /^(dr|drive|st|street|ave|avenue|blvd|boulevard|ln|lane|rd|road|ct|court|way|pl|place|cir|circle|trl|trail|pkwy|parkway|hwy|highway|ter|terrace|loop|run|pass|path|sq|square|pike|row|walk|crossing|xing)\.?$/i;
+      let cut = -1;
+      words.forEach((w, i) => { if (SUFFIX.test(w) && i < words.length - 1) cut = i; });
+      const streetWords = cut >= 0 ? words.slice(0, cut + 1) : words.slice(0, -1);
+      const cityWords = cut >= 0 ? words.slice(cut + 1) : words.slice(-1);
+      return { address: streetWords.join(" "), city: cityWords.join(" "), state: tail[2].toUpperCase(), zip: tail[3] };
+    }
+  }
+  const parts = cleaned.split(",").map((p) => p.trim()).filter(Boolean);
+  const out = { address: parts[0] ?? cleaned, city: "", state: "", zip: "" };
   const last = parts[parts.length - 1] ?? "";
   const m = last.match(/^([A-Za-z]{2})\s*(\d{5})?(?:-\d{4})?$/);
   if (parts.length >= 2 && m) {

@@ -74,7 +74,7 @@ import {
 } from "../manual-focus/manual-focus-math";
 import { stateDisplayName } from "../manual-focus/manual-focus-data";
 import type { Totals } from "../manual-focus/manual-focus-types";
-import { NumField, cx } from "./bp-ui";
+import { NumField, Segmented, cx } from "./bp-ui";
 import s from "./bp-markup.module.css";
 
 /** "+10.0%" / "−20.0%" / "0.0%" — the adjustment register is signed. */
@@ -137,6 +137,10 @@ export type MarkupBlockProps = {
   onLaborMarkupPct: (next: number) => void;
   onOverheadPct: (next: number) => void;
   onProfitPct: (next: number) => void;
+
+  /** Where overhead and profit land in the client's breakdown — see Draft.marginOnLabor. */
+  marginOnLabor: boolean;
+  onMarginOnLabor: (next: boolean) => void;
 
   /** The two ADJUSTMENTS, which used to be a card of their own. See the note on
    *  `Adjustments` below for why they now sit under the four rates. Each mode of
@@ -648,6 +652,8 @@ export function MarkupBlock({
   onLaborMarkupPct,
   onOverheadPct,
   onProfitPct,
+  marginOnLabor,
+  onMarginOnLabor,
   discountPct,
   discountFlat,
   discountIsPercent,
@@ -704,6 +710,31 @@ export function MarkupBlock({
             amount={totals.profitAmount}
             onChange={onProfitPct}
           />
+
+          {/* WHERE THE TWO SHEET-LEVEL RATES GO (owner, 2026-09-17). They are
+              never a row the client sees: both are spread into the price of
+              every line on the client's copy, the portal and the PDF, so the
+              lines add up to the total the client is asked to pay. The only
+              choice is which half of a line carries them when the breakdown
+              is shown — across materials and labor alike, or in labor so the
+              material half reads at its cost. Card 03 prints the resulting
+              client price under every line. */}
+          <div className={s.landing}>
+            <p className={s.landNote}>
+              Overhead and profit are inside every line&apos;s price on the client&apos;s copy — never a
+              row of their own, so the lines add up to the total. Card 03 shows the client price
+              under each line.
+            </p>
+            <Segmented<"all" | "labor">
+              label="In the breakdown they land"
+              value={marginOnLabor ? "labor" : "all"}
+              options={[
+                { value: "all", label: "Across materials and labor" },
+                { value: "labor", label: "In labor only" },
+              ]}
+              onChange={(v) => onMarginOnLabor(v === "labor")}
+            />
+          </div>
 
           <Adjustments
             discountPct={discountPct}

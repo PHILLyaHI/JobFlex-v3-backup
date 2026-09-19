@@ -1169,3 +1169,13 @@ body:has(.jf-mobile-project-detail)::before { content: none; }
   .jf-mobile-project-detail .mpd-rv-cell { opacity: 1; transform: none; }
   .jf-mobile-project-detail .mpd-g-bar { transform: scaleX(1); }
 }
+
+/* ── PROPOSALS (2026-09-18) — the project's proposals, each a 52px row into
+   the proposal, and the door to a new one filed under the project. */
+.jf-mobile-project-detail .mpd-client { display: inline-block; margin-bottom: 4px; font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent, #1854a0); text-decoration: none; min-height: 24px; }
+.jf-mobile-project-detail .mpd-props { margin-top: 14px; }
+.jf-mobile-project-detail .mpd-prop { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 0; border-bottom: 1px dashed var(--ink-line, rgba(10,10,10,.12)); color: inherit; text-decoration: none; }
+.jf-mobile-project-detail .mpd-prop-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.jf-mobile-project-detail .mpd-prop .mpd-row-n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jf-mobile-project-detail .mpd-props-new { width: 100%; justify-content: center; margin-top: 12px; min-height: 48px; text-decoration: none; }
+.jf-mobile-project-detail .mpd-loose:not(:empty) { margin-top: 14px; }

@@ -14,8 +14,10 @@
 // scope of work, internal notes, job address, tax rate, the four markup rates,
 // the discount, every named line item and the payment schedule.
 //
+// The PROJECT pick is persisted since 2026-09-18 (Proposal.projectId).
+//
 // NOT persisted, because the Proposal table has no column for it and this pass
-// adds no schema: the PROJECT pick, the TERMS text, the four "what prints"
+// adds no schema: the TERMS text, the four "what prints"
 // toggles and the staged FILES. Those four controls stay live on the page and
 // are re-read from the draft on every keystroke; they simply do not survive a
 // reload. Flagged here rather than hidden, and each of the four cards says so.
@@ -210,6 +212,7 @@ export function emptyDraft(defaults: ManualDefaults): Draft {
     laborMarkupPct: 0,
     overheadPct: 0,
     profitPct: 0,
+    marginOnLabor: false,
 
     discountPct: 0,
     discountFlat: 0,
@@ -237,6 +240,7 @@ export function emptyDraft(defaults: ManualDefaults): Draft {
 export type SaveProposalPayload = {
   id?: string;
   title: string;
+  projectId?: string | null;
   clientId: string | null;
   description: string;
   scopeOfWork: string;
@@ -258,6 +262,11 @@ export type SaveProposalPayload = {
   overheadPct: number;
   profitPct: number;
   discount: { label: string; amount: number; isPercent: boolean } | null;
+  /** "Show to client" — saved with the row so the portal and the PDF print what card 06 says. */
+  showBreakdown: boolean;
+  showScope: boolean;
+  showSignature: boolean;
+  marginOnLabor: boolean;
 };
 
 /** The client id to file the proposal against, or null.
@@ -281,6 +290,7 @@ export function payloadFromDraft(draft: Draft, id?: string): SaveProposalPayload
     id,
     title: draft.title.trim(),
     clientId: clientIdOf(draft),
+    projectId: draft.projectId || null,
     description: draft.description,
     scopeOfWork: draft.scopeOfWork,
     notes: draft.notes,
@@ -315,6 +325,10 @@ export function payloadFromDraft(draft: Draft, id?: string): SaveProposalPayload
       discountAmount > 0
         ? { label: "Discount", amount: discountAmount, isPercent: usingPercent }
         : null,
+    showBreakdown: !draft.options.hideBreakdown,
+    showScope: draft.options.showScope,
+    showSignature: draft.options.showSignature,
+    marginOnLabor: draft.marginOnLabor === true,
   };
 }
 
@@ -333,6 +347,7 @@ export function whyNotSavable(draft: Draft): string | null {
    ============================================================ */
 
 export type ProposalRowForDraft = {
+  projectId?: string | null;
   title: string;
   description: string | null;
   scopeOfWork: string | null;
@@ -343,6 +358,11 @@ export type ProposalRowForDraft = {
   laborMarkupPct: number;
   overheadPct: number;
   profitPct: number;
+  /** Absent on a row read by an older loader: the editor's defaults apply. */
+  showBreakdown?: boolean | null;
+  showScope?: boolean | null;
+  showSignature?: boolean | null;
+  marginOnLabor?: boolean | null;
   discountTotal: number;
   subtotal: number;
   discounts: { amount: number; isPercent: boolean }[];
@@ -378,6 +398,10 @@ export type ProposalRowForDraft = {
  */
 export function draftFromProposal(row: ProposalRowForDraft, defaults: ManualDefaults): Draft {
   const materialMarkupPct = row.materialMarkupPct ?? 0;
+  // A stored unitPrice carries the markup AND the overhead/profit load
+  // (actions/proposals prices every line the way the sheet prints it), so an
+  // unsplit line reads its raw cost back through both.
+  const load = (1 + (row.overheadPct ?? 0) / 100) * (1 + (row.profitPct ?? 0) / 100);
   const address = row.address ?? "";
   const stored = row.discounts[0] ?? null;
   const discount =
@@ -388,7 +412,7 @@ export function draftFromProposal(row: ProposalRowForDraft, defaults: ManualDefa
   return {
     title: row.title,
     description: row.description ?? "",
-    projectId: "",
+    projectId: row.projectId ?? "",
     client: { mode: "none" },
 
     address,
@@ -402,7 +426,7 @@ export function draftFromProposal(row: ProposalRowForDraft, defaults: ManualDefa
             const raw = (l.materialCost ?? 0) + (l.laborCost ?? 0);
             const unsplit =
               raw <= 0 && l.unitPrice > 0
-                ? round2(l.unitPrice / (1 + materialMarkupPct / 100))
+                ? round2(l.unitPrice / (1 + materialMarkupPct / 100) / load)
                 : 0;
             return {
               id: newId("ln"),
@@ -425,6 +449,7 @@ export function draftFromProposal(row: ProposalRowForDraft, defaults: ManualDefa
     laborMarkupPct: row.laborMarkupPct ?? 0,
     overheadPct: row.overheadPct ?? 0,
     profitPct: row.profitPct ?? 0,
+    marginOnLabor: row.marginOnLabor === true,
 
     discountPct: discount?.isPercent ? discount.amount : 0,
     discountFlat: discount && !discount.isPercent ? discount.amount : 0,
@@ -435,10 +460,10 @@ export function draftFromProposal(row: ProposalRowForDraft, defaults: ManualDefa
     terms: "",
 
     options: {
-      hideBreakdown: false,
+      hideBreakdown: row.showBreakdown === false,
       laborOnly: false,
-      showSignature: true,
-      showScope: true,
+      showSignature: row.showSignature ?? true,
+      showScope: row.showScope ?? true,
     },
     installments: row.installments.map((i) => ({
       // Keep the DB id: a paid stage must be updated in place, never recreated.

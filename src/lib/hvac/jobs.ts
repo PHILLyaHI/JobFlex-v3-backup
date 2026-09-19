@@ -63,7 +63,9 @@ export const JOBS: JobDef[] = [
     needs: { load: true, existing: true, electrical: false, ducts: true, gas: true, zone: false, waterHeater: false },
     selection: "furnace",
     kinds: ["furnace"],
-    checks: ["return", "static", "duct-cond", "gas", "code"],
+    // "service": an electric furnace is a 240 V heat kit on the panel; a gas
+    // furnace's 120 V circuit passes the count trivially.
+    checks: ["return", "static", "duct-cond", "gas", "service", "code"],
     shots: [2, 4, 5, 6],
   },
   {
@@ -83,7 +85,7 @@ export const JOBS: JobDef[] = [
     needs: { load: true, existing: true, electrical: true, ducts: true, gas: true, zone: false, waterHeater: false },
     selection: "heat-pump",
     kinds: ["heat-pump"],
-    checks: ["return", "static", "duct-cond", "duct-ins", "service", "refrigerant", "efficiency", "code"],
+    checks: ["return", "static", "duct-cond", "duct-ins", "ducts-none", "service", "refrigerant", "efficiency", "code"],
     shots: [1, 2, 3, 4, 6, 7],
   },
   {
@@ -143,6 +145,12 @@ export interface JobInput {
   /** Ductless: the zone the heads serve. */
   zoneSqft?: number;
   heads?: number;
+  /** The address's own 1% cooling / 99% heating design temperatures, °F,
+   *  when the contractor sets them (a county's figure can be a mountain or a
+   *  desert station's; the local Manual J table or the permit office has the
+   *  right one). Either one may be left to the county. */
+  designCoolingF?: number;
+  designHeatingF?: number;
   /** Water heater. */
   wh?: {
     /** What is there now — decides whether a circuit or a gas line exists. */

@@ -603,6 +603,7 @@
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--ink-soft);
+  overflow-wrap: anywhere;
 }
 
 /* Capped lists: <=4 in full, 5–10 scroll, >10 truncate + button */
@@ -1434,16 +1435,27 @@
 .bp :global(.content .measuring) { max-width: 520px; }
 .bp :global(.content .ms-body) { padding: 26px 22px 24px; }
 .bp :global(.content .ms-num) { font-family: var(--font-mono); font-size: 12px; font-weight: 700; letter-spacing: 0.14em; color: var(--muted); }
-.bp :global(.content .ms-stage) { margin-top: 10px; font-size: 18px; font-weight: 900; letter-spacing: -0.005em; }
-.bp :global(.content .ms-track) { margin-top: 15px; height: 10px; border: 1.5px solid var(--ink); background: #fff; overflow: hidden; }
-.bp :global(.content .ms-fill) { display: block; height: 100%; width: 0; background: var(--blueprint); transition: width 520ms var(--ease-out); }
-.bp :global(.content .ms-fill--waiting) { width: 36%; animation: roofWait 1.8s ease-in-out infinite alternate; }
-@keyframes roofWait { from { transform: translateX(0); } to { transform: translateX(178%); } }
+.bp :global(.content .ms-head) { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 10px; }
+.bp :global(.content .ms-stage) { font-size: 18px; font-weight: 900; letter-spacing: -0.005em; }
+.bp :global(.content .ms-pct) { font-family: var(--font-mono); font-size: 14px; font-weight: 700; letter-spacing: 0.06em; color: var(--blueprint); font-variant-numeric: tabular-nums; }
+.bp :global(.content .ms-track) { margin-top: 12px; height: 10px; border: 1.5px solid var(--ink); background: #fff; overflow: hidden; }
+.bp :global(.content .ms-fill) { display: block; height: 100%; width: 0; background: var(--blueprint); transition: width 300ms linear; }
+/* The step list: what is done, what is under way, what is still to come. */
+.bp :global(.content .ms-steps) { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 7px; }
+.bp :global(.content .ms-step) { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.bp :global(.content .ms-step-mark) { width: 10px; height: 10px; border: 1.5px solid currentColor; background: #fff; }
+.bp :global(.content .ms-step-state) { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.bp :global(.content .ms-step.is-done) { color: var(--ink); }
+.bp :global(.content .ms-step.is-done .ms-step-mark) { background: var(--ink); border-color: var(--ink); }
+.bp :global(.content .ms-step.is-active) { color: var(--ink); font-weight: 700; }
+.bp :global(.content .ms-step.is-active .ms-step-mark) { background: var(--blueprint); border-color: var(--blueprint); animation: roofWaitPulse 0.9s ease-in-out infinite alternate; }
+.bp :global(.content .ms-step.is-active .ms-step-state) { color: var(--blueprint); }
 @keyframes roofWaitPulse { from { opacity: .35; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .bp :global(.content .ms-fill--waiting), .bp :global(.content .rf-status-dot) { animation: none; }
+  .bp :global(.content .ms-step.is-active .ms-step-mark), .bp :global(.content .rf-status-dot) { animation: none; }
+  .bp :global(.content .ms-fill) { transition: none; }
 }
-.bp :global(.content .ms-hint) { margin-top: 12px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.bp :global(.content .ms-hint) { margin-top: 14px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 
 /* hero figures */
 .bp :global(.content .rf-hero) { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); padding: 0; overflow: hidden; margin-bottom: 16px; }
@@ -1747,7 +1759,10 @@
 .bp :global(.content .bo-table td) { padding: 9px 14px; border-bottom: 1.5px solid var(--hair-soft); font-size: 13px; }
 .bp :global(.content .bo-table tbody tr:last-child td) { border-bottom: none; }
 .bp :global(.content .bo-table tbody tr:nth-child(even)) { background: var(--paper-deep); }
-.bp :global(.content .bo-total) { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; border-top: 2px solid var(--ink); background: var(--paper-deep); }
+.bp :global(.content .bo-total) { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 16px; border-top: 2px solid var(--ink); background: var(--paper-deep); }
+.bp :global(.content .bo-total-acts) { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Sample lines (no AI key): said under the tables, where the figures are. */
+.bp :global(.content .bo-sample) { margin: 10px 16px 0; padding: 8px 10px; border: 1.5px dashed var(--hair); border-radius: var(--radius); font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--muted); }
 .bp :global(.content .bo-total-v) { font-size: 24px; font-weight: 900; color: var(--blueprint); font-variant-numeric: tabular-nums; }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -1777,11 +1792,19 @@
 
 /* Synthetic-estimate notice above the hero: the donor's .call, full width. */
 .bp :global(.content .rf-notice) { margin-bottom: 16px; }
+/* A notice's text column shrinks with the card; a long token (a URL in a
+   provider's reason) wraps instead of pushing the page sideways. */
+.bp :global(.content .call > div) { min-width: 0; }
+.bp :global(.content .rf-intake-error) { margin-top: 12px; }
+/* The held report's way out: a quiet button under the progress hint. */
+.bp :global(.content .ms-acts) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; }
+.bp :global(.content .ms-acts-note) { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
 .bp :global(.content .rf-notice .call) { font-size: 12.5px; line-height: 1.55; }
 .bp :global(.content .rf-notice .call b) { color: var(--ink); }
 
 /* The intake's sandbox chip sits on the card head's right edge. */
 .bp :global(.content .rf-head--bar > .chip) { flex: 0 0 auto; margin-top: 2px; }
+.bp :global(.content .rf-head--bar > div) { min-width: 0; }
 
 /* Sample tiles are plain text again — the donor's block tile, no status dot. */
 .bp :global(.content .sample) { display: block; }
@@ -1907,13 +1930,20 @@
   .bp :global(.content .addr-wide) { grid-column: span 2; }
   .bp :global(.content .est-field--sm) { width: auto; }
   .bp :global(.content .rf-actions) { flex-wrap: wrap; }
-  .bp :global(.content .rf-head--bar) { flex-direction: column; }
+  /* A column head stretches its children: a long address ellipsises inside
+     the card instead of running past it (a phone review, 2026-09-17). */
+  .bp :global(.content .rf-head--bar) { flex-direction: column; align-items: stretch; }
+  .bp :global(.content .rf-head--bar > div) { max-width: 100%; }
+  .bp :global(.content .rf-viewer .card-sub) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bp :global(.content .vw-controls) { width: 100%; }
   .bp :global(.content .vsw) { flex: 1; }
   .bp :global(.content .vsw-btn) { flex: 1; }
   .bp :global(.content .build-ctl) { width: 100%; }
   .bp :global(.content .build-ctl .btn) { flex: 1; justify-content: center; }
   .bp :global(.content .hero-cell) { border-right: none; border-bottom: 1.5px solid var(--hair-soft); }
+  /* The estimate total's button drops under the figure instead of clipping. */
+  .bp :global(.content .bo-total-acts) { flex-basis: 100%; }
+  .bp :global(.content .bo-total-acts .btn) { flex: 1; justify-content: center; }
 }
 
 /* Geometry gate: shown INSTEAD of a plan that fails the R01–R16 invariants

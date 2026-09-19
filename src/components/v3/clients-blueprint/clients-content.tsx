@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initClientsContent } from "./clients-behavior";
 import type { Client } from "./clients-data";
+import { AddToProjectSheet } from "@/components/v3/project-links/add-to-project-sheet";
 
 /**
  * @param entries the org's real client book, read in the page's server
@@ -50,6 +51,7 @@ export function ClientsContent({ entries }: { entries: Client[] }) {
 
   return (
     <>
+      <AddToProjectSheet />
       {/* PAGE HEAD — eyebrow "CRM", title and copy from the original page */}
       <div className="page-head">
         <div>

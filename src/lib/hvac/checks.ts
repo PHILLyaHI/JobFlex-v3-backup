@@ -58,7 +58,7 @@ export function ductChecks(load: LoadResult, m: BuildingModel, chosen: Selection
  * General loads at 100% of the first 8 kVA and 40% of the rest, the new
  * heating or cooling load at 100%, against the service rating.
  */
-export function electricalCheck(m: BuildingModel, chosen: SelectionCandidate | null, opts: { dualFuel?: boolean; reusesCircuit?: boolean } = {}): CheckResult {
+export function electricalCheck(m: BuildingModel, chosen: SelectionCandidate | null, opts: { dualFuel?: boolean; reusesCircuit?: boolean; addsCircuit?: boolean } = {}): CheckResult {
   const e = m.electrical;
   if (typeof e.mainAmps !== "number" || e.mainAmps <= 0) {
     return { id: "service", title: "Electrical service", status: "verify", detail: "Photograph the panel: main breaker size and free slots decide whether the new system needs a circuit, a subpanel or a service upgrade.", rule: "NEC 220.83" };
@@ -68,11 +68,14 @@ export function electricalCheck(m: BuildingModel, chosen: SelectionCandidate | n
   let hvacVa = 0;
   if (chosen) {
     const it = chosen.item;
-    const outdoorVa = it.mcaAmps ? it.mcaAmps * 240 : (ratedCoolingBtuh(it) / 12000) * 1600;
-    // Dual fuel: the furnace is the backup, no strips on the count.
-    const strips = it.kind === "heat-pump" && !opts.dualFuel ? Math.ceil((chosen.backupKw ?? 0) / 5) * 5 * 1000 : 0;
-    hvacVa = Math.max(outdoorVa + 500, strips + 500 + (it.kind === "heat-pump" ? 0 : 0)); // heating vs cooling, whichever is larger
-    if (it.kind === "heat-pump") hvacVa = Math.max(outdoorVa + 500, outdoorVa + strips + 500);
+    const outdoorVa = it.kind === "air-handler" ? 0 : it.mcaAmps ? it.mcaAmps * 240 : (ratedCoolingBtuh(it) / 12000) * 1600;
+    // Dual fuel: the furnace is the backup, no strips on the count. An
+    // electric furnace (air handler + heat kit), a heat-pump package and an
+    // electric package all put their strips on the panel.
+    const hasStrips = (it.kind === "heat-pump" && !opts.dualFuel) || it.kind === "air-handler" || (it.kind === "package" && (it.heatKind === "heat-pump" || it.heatKind === "electric"));
+    const strips = hasStrips ? Math.ceil((chosen.backupKw ?? 0) / 5) * 5 * 1000 : 0;
+    // Heating and cooling do not run together: the larger of the two counts.
+    hvacVa = it.kind === "heat-pump" || (it.kind === "package" && it.heatKind === "heat-pump") ? Math.max(outdoorVa + 500, outdoorVa + strips + 500) : Math.max(outdoorVa + 500, strips + 500);
   } else {
     hvacVa = (Math.max(1.5, m.conditionedSqft / 700) * 1600) + 500;
   }
@@ -83,41 +86,58 @@ export function electricalCheck(m: BuildingModel, chosen: SelectionCandidate | n
   if (share > 1) return { id: "service", title: "Electrical service", status: "fix", detail: `${base}: the new system needs a service upgrade or load management. Price it as an optional line with a warning.`, rule: "NEC 220.83(B)" };
   if (share > 0.9) return { id: "service", title: "Electrical service", status: "verify", detail: `${base}: tight. A licensed electrician's load calculation should confirm before the panel is touched.`, rule: "NEC 220.83(B)" };
   const slots = typeof e.freeSlots === "number" ? e.freeSlots : null;
-  if (!opts.reusesCircuit && slots !== null && slots < 2 && !(e.existingHvacAmps && e.existingHvacAmps > 0)) {
+  // A reused outdoor circuit still leaves a strip kit's own two-pole breaker to find room for.
+  if ((!opts.reusesCircuit || opts.addsCircuit) && slots !== null && slots < 2 && !(e.existingHvacAmps && e.existingHvacAmps > 0 && !opts.addsCircuit)) {
     return { id: "service", title: "Electrical service", status: "verify", detail: `${base}: capacity is fine, but only ${slots} free slot(s) — plan a tandem breaker or a small subpanel.`, rule: "NEC 220.83(B)" };
   }
   return { id: "service", title: "Electrical service", status: "pass", detail: `${base}: fits.`, rule: "NEC 220.83(B)" };
 }
 
-/** Longest-run capacity of low-pressure gas pipe, kBTU/h (0.5 in. w.c. drop). */
+/** Longest-run capacity of Schedule 40 pipe, kBTU/h: natural gas at a 0.5 in.
+ *  w.c. drop (NFPA 54 Table 6.2(a)), and undiluted propane at 11 in. w.c.
+ *  inlet, 0.5 in. w.c. drop (Table 6.4(f)) — propane carries roughly 1.7× the
+ *  natural-gas figure. Runs past 200 ft are outside the table. */
 const GAS_TABLE: Record<string, Array<[number, number]>> = {
-  "0.5": [[10, 172], [20, 118], [40, 81], [60, 66], [100, 50]],
-  "0.75": [[10, 360], [20, 247], [40, 170], [60, 138], [100, 105]],
-  "1": [[10, 678], [20, 466], [40, 320], [60, 260], [100, 199]],
+  "0.5": [[10, 172], [20, 118], [40, 81], [60, 66], [100, 50], [125, 44], [150, 40], [175, 37], [200, 35]],
+  "0.75": [[10, 360], [20, 247], [40, 170], [60, 138], [100, 105], [125, 93], [150, 84], [175, 77], [200, 72]],
+  "1": [[10, 678], [20, 466], [40, 320], [60, 260], [100, 199], [125, 174], [150, 158], [175, 145], [200, 135]],
+};
+const PROPANE_TABLE: Record<string, Array<[number, number]>> = {
+  "0.5": [[10, 291], [20, 200], [40, 137], [60, 111], [100, 84], [125, 74], [150, 67], [175, 62], [200, 58]],
+  "0.75": [[10, 608], [20, 418], [40, 287], [60, 232], [100, 176], [125, 155], [150, 141], [175, 129], [200, 120]],
+  "1": [[10, 1146], [20, 788], [40, 541], [60, 437], [100, 332], [125, 292], [150, 265], [175, 243], [200, 227]],
 };
 
 /** The gas line against the appliance being set PLUS what else hangs on it.
  *  `otherLoadBtuh` is the rest of the house (the furnace when a water heater
  *  is set, the water heater when a furnace is); when nothing is known a gas
  *  house is assumed to carry a 40k water heater alongside a furnace. */
-export function gasCheck(m: BuildingModel, chosen: CatalogItem | null, opts: { appliance?: string; otherLoadBtuh?: number } = {}): CheckResult | null {
-  if (!chosen || chosen.kind !== "furnace") return null;
-  const who = opts.appliance ?? "the furnace";
+export function gasCheck(m: BuildingModel, chosen: CatalogItem | null, opts: { appliance?: string; otherLoadBtuh?: number; fuel?: "gas" | "propane" } = {}): CheckResult | null {
+  if (!chosen || !(chosen.kind === "furnace" || (chosen.kind === "package" && (chosen.heatKind ?? "gas") === "gas"))) return null;
+  const who = opts.appliance ?? (chosen.kind === "package" ? "the package unit" : "the furnace");
+  const propane = (opts.fuel ?? (m.existing.fuel === "propane" ? "propane" : "gas")) === "propane";
+  const TABLE = propane ? PROPANE_TABLE : GAS_TABLE;
+  const gasWord = propane ? "propane" : "gas";
   if (!m.gas.available) return { id: "gas", title: "Gas supply", status: "fix", detail: `No gas at the property: ${who} needs a gas service, or the job goes electric.`, rule: "" };
   const input = chosen.btuInput ?? 0;
-  const other = opts.otherLoadBtuh ?? (who === "the furnace" ? 40_000 : 0);
+  if (!input) return { id: "gas", title: "Gas supply", status: "verify", detail: `The gas input of ${who} is not on the catalog row — read it off the submittal and confirm the pipe size and run can carry it${opts.otherLoadBtuh ? ` plus ${Math.round(opts.otherLoadBtuh / 1000)} kBTU/h for the other appliances` : ""}.`, rule: `NFPA 54 pipe sizing (${gasWord})` };
+  const other = opts.otherLoadBtuh ?? (who === "the furnace" || who === "the package unit" ? 40_000 : 0);
   const totalK = Math.round((input + other) / 1000);
   const size = typeof m.gas.pipeIn === "number" ? String(m.gas.pipeIn) : null;
   const run = m.gas.longestRunFt;
-  if (!size || !GAS_TABLE[size] || typeof run !== "number") {
+  if (size && TABLE[size] && typeof run === "number" && run > TABLE[size][TABLE[size].length - 1][0]) {
+    return { id: "gas", title: "Gas supply", status: "verify", detail: `A ${run} ft run is past the sizing table (200 ft): size the ${size}" branch from the NFPA 54 ${gasWord} tables for ${totalK} kBTU/h, or shorten the run.`, rule: `NFPA 54 pipe sizing (${gasWord})` };
+  }
+  if (!size || !TABLE[size] || typeof run !== "number") {
     return { id: "gas", title: "Gas supply", status: "verify", detail: `Confirm the pipe size and run length can carry ${Math.round(input / 1000)} kBTU/h for ${who}${other ? ` plus ${Math.round(other / 1000)} for the other appliances (${totalK} total)` : ""}.`, rule: "NFPA 54 pipe sizing" };
   }
-  const row = GAS_TABLE[size].find(([ft]) => ft >= run) ?? GAS_TABLE[size][GAS_TABLE[size].length - 1];
+  const row = TABLE[size].find(([ft]) => ft >= run) ?? TABLE[size][TABLE[size].length - 1];
   const capK = row[1];
   const others = other ? ` plus ${Math.round(other / 1000)} for the other appliances (${totalK} total)` : "";
-  if (totalK <= capK * 0.85) return { id: "gas", title: "Gas supply", status: "pass", detail: `${size}" pipe over ${run} ft carries ${capK} kBTU/h; ${who} draws ${Math.round(input / 1000)}${others}.`, rule: "NFPA 54 pipe sizing" };
-  if (totalK <= capK) return { id: "gas", title: "Gas supply", status: "verify", detail: `${size}" pipe over ${run} ft carries ${capK} kBTU/h and ${who} draws ${Math.round(input / 1000)}${others}: no margin. Confirm the load on the branch.`, rule: "NFPA 54 pipe sizing" };
-  return { id: "gas", title: "Gas supply", status: "fix", detail: `${size}" pipe over ${run} ft carries ${capK} kBTU/h; ${who} draws ${Math.round(input / 1000)}${others}. Upsize the branch.`, rule: "NFPA 54 pipe sizing" };
+  const ruleName = `NFPA 54 pipe sizing (${gasWord})`;
+  if (totalK <= capK * 0.85) return { id: "gas", title: "Gas supply", status: "pass", detail: `${size}" pipe over ${run} ft carries ${capK} kBTU/h of ${gasWord}; ${who} draws ${Math.round(input / 1000)}${others}.`, rule: ruleName };
+  if (totalK <= capK) return { id: "gas", title: "Gas supply", status: "verify", detail: `${size}" pipe over ${run} ft carries ${capK} kBTU/h of ${gasWord} and ${who} draws ${Math.round(input / 1000)}${others}: no margin. Confirm the load on the branch.`, rule: "NFPA 54 pipe sizing" };
+  return { id: "gas", title: "Gas supply", status: "fix", detail: `${size}" pipe over ${run} ft carries ${capK} kBTU/h of ${gasWord}; ${who} draws ${Math.round(input / 1000)}${others}. Upsize the branch.`, rule: ruleName };
 }
 
 /** Fuel-burning appliance items an inspector asks about on a permit. */
@@ -135,7 +155,7 @@ export function fuelChecks(m: BuildingModel, o: { gasFurnace: boolean; gasWaterH
   return out;
 }
 
-export function complianceChecks(m: BuildingModel, chosen: CatalogItem | null, opts: { touchesRefrigerant: boolean; touchesDucts: boolean; newConstruction: boolean; removesEquipment?: boolean; kind?: string; newFurnace?: boolean }): CheckResult[] {
+export function complianceChecks(m: BuildingModel, chosen: CatalogItem | null, opts: { touchesRefrigerant: boolean; touchesDucts: boolean; newConstruction: boolean; removesEquipment?: boolean; kind?: string; heatKind?: string; newFurnace?: boolean }): CheckResult[] {
   const out: CheckResult[] = [];
   if (chosen) {
     const rr = refrigerantRule(m.state, chosen.refrigerant);
@@ -147,7 +167,8 @@ export function complianceChecks(m: BuildingModel, chosen: CatalogItem | null, o
       const okSeer = (!chosen.seer2 || chosen.seer2 >= floor.seer2) && okEer;
       const okHspf = !floor.hspf2 || !chosen.hspf2 || chosen.hspf2 >= floor.hspf2;
       const ok = okSeer && okHspf;
-      out.push({ id: "efficiency", title: "Efficiency floor", status: ok ? (chosen.seer2 ? "pass" : "verify") : "fix", detail: `${floor.text}${chosen.seer2 ? ` This unit: ${chosen.seer2} SEER2${chosen.hspf2 ? `, ${chosen.hspf2} HSPF2` : ""}.` : " SEER2 not on the catalog row."}${!okHspf ? " Below the HSPF2 floor." : ""}`, rule: floor.source });
+      const missingHspf = !!floor.hspf2 && !chosen.hspf2;
+      out.push({ id: "efficiency", title: "Efficiency floor", status: ok ? (chosen.seer2 && !missingHspf ? "pass" : "verify") : "fix", detail: `${floor.text}${chosen.seer2 ? ` This unit: ${chosen.seer2} SEER2${chosen.hspf2 ? `, ${chosen.hspf2} HSPF2` : ""}.` : " SEER2 not on the catalog row."}${!okHspf ? " Below the HSPF2 floor." : ""}`, rule: floor.source });
     }
   }
   for (const f of CODE_FLAGS) {
@@ -155,7 +176,17 @@ export function complianceChecks(m: BuildingModel, chosen: CatalogItem | null, o
   }
   // The NOx flag reads the county and the unit that was picked, not just the state.
   const uln = out.find((c) => c.id === "ca-uln-furnace");
-  if (uln) {
+  if (uln) resolveUlnCheck(uln, m, chosen);
+  return out;
+}
+
+
+/**
+ * The California ultra-low-NOx check, read against a gas unit: the furnace or
+ * gas package that was picked, or the companion furnace a full system brings
+ * (the engine points it at that row). Rewrites the flag's status and text.
+ */
+export function resolveUlnCheck(uln: CheckResult, m: BuildingModel, chosen: CatalogItem | null): void {
     const need = ultraLowNoxNeeded(m.state, m.county);
     const gasUnit = chosen && (chosen.kind === "furnace" || (chosen.kind === "package" && chosen.heatKind === "gas")) ? chosen : null;
     const name = gasUnit ? `${gasUnit.brand} ${gasUnit.model}` : "";
@@ -173,16 +204,14 @@ export function complianceChecks(m: BuildingModel, chosen: CatalogItem | null, o
       uln.status = "verify";
       uln.detail = `County not on record — set it: inside the South Coast, San Joaquin Valley and Bay Area districts only a 14 ng/J furnace installs${cls !== undefined ? ` (${name} is the ${cls} ng/J class)` : ""}.`;
     }
-  }
-  return out;
 }
 
-export function allChecks(load: LoadResult, c: DesignConditions, m: BuildingModel, chosen: SelectionCandidate | null, opts: { dualFuel?: boolean; removesEquipment?: boolean; reusesCircuit?: boolean; touchesRefrigerant?: boolean; kind?: string; newFurnace?: boolean } = {}): CheckResult[] {
+export function allChecks(load: LoadResult, c: DesignConditions, m: BuildingModel, chosen: SelectionCandidate | null, opts: { dualFuel?: boolean; removesEquipment?: boolean; reusesCircuit?: boolean; addsCircuit?: boolean; touchesRefrigerant?: boolean; kind?: string; newFurnace?: boolean } = {}): CheckResult[] {
   const item = chosen?.item ?? null;
   const touchesRefrigerant = opts.touchesRefrigerant ?? (!item || item.kind !== "furnace");
   const touchesDucts = m.ducts.condition === "poor" || m.ducts.location === "none";
   const gas = gasCheck(m, item);
-  return [...ductChecks(load, m, chosen), electricalCheck(m, chosen, { dualFuel: opts.dualFuel, reusesCircuit: opts.reusesCircuit }), ...(gas ? [gas] : []), ...complianceChecks(m, item, { touchesRefrigerant, touchesDucts, newConstruction: false, removesEquipment: opts.removesEquipment, kind: opts.kind ?? item?.kind, newFurnace: opts.newFurnace })];
+  return [...ductChecks(load, m, chosen), electricalCheck(m, chosen, { dualFuel: opts.dualFuel, reusesCircuit: opts.reusesCircuit, addsCircuit: opts.addsCircuit }), ...(gas ? [gas] : []), ...complianceChecks(m, item, { touchesRefrigerant, touchesDucts, newConstruction: false, removesEquipment: opts.removesEquipment, kind: opts.kind ?? item?.kind, heatKind: item?.heatKind, newFurnace: opts.newFurnace })];
 }
 
 /** Which of the load's inputs came from a table rather than the house. */

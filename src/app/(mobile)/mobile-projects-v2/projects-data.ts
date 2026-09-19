@@ -20,6 +20,8 @@ export type Project = {
   budget: number;
   jobCount: number;
   completedJobs: number;
+  /** Whose project it is (2026-09-18), or null. */
+  clientName?: string | null;
 };
 
 /** The desktop statuses, verbatim and in the desktop's order. */

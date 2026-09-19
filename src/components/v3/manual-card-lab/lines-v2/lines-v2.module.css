@@ -1288,3 +1288,8 @@
     transition: none;
   }
 }
+
+/* The client price under a cost figure (row total and foot total) once
+   overhead or profit is on: the same register as the foot note, stacked
+   under the figure it explains. */
+:global(.jf-blueprint) .clientAmt { display: block; margin-top: 2px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; line-height: 1.2; color: var(--blueprint, #1d4ed8); }

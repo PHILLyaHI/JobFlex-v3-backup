@@ -205,7 +205,9 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
   }
 
   function money(n: number) {
-    return "$" + n.toLocaleString("en-US");
+    // Whole dollars. A bare toLocaleString keeps up to three decimals, so a
+    // float sum of proposal totals printed as "$61,970.446" (owner, 2026-09-18).
+    return "$" + Math.round(n).toLocaleString("en-US");
   }
   function titleCase(s: string) {
     return s.charAt(0) + s.slice(1).toLowerCase();

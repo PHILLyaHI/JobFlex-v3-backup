@@ -1436,3 +1436,7 @@
   .bp :global(.content .mdl-foot) { padding: 12px 14px calc(12px + var(--safe-bottom, 0px)); }
   .bp :global(.content .mdl-foot .btn) { height: 44px; }
 }
+
+/* The client a project is for (2026-09-18), above its scope line. */
+.bp :global(.pjc-client) { margin-top: 5px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--blueprint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bp :global(select.pinput) { appearance: auto; cursor: pointer; }

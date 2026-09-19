@@ -55,7 +55,7 @@ export function RoofEstimatorContent({
         drawingEnabled ? (
           <RoofEstimatorBlueprintForm aiEnabled={aiEnabled} />
         ) : (
-          <RoofEstimatorDataForm />
+          <RoofEstimatorDataForm aiEnabled={aiEnabled} />
         )
       ) : (
         <div className="card rf-card">

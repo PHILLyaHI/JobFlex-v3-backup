@@ -110,6 +110,9 @@ export type FenceDrawMapApi = {
   refreshCursor: () => void;
   hideGhost: () => void;
   zoomBy: (delta: number) => void;
+  /** The host changed the surface's size (full-screen stage): re-lay the
+   *  tiles and keep the same centre — Maps anchors a resize at the top-left. */
+  resized: () => void;
   /** Finish what is being traced: stop the fence run, or close the house outline. */
   finishDraft: () => void;
   /** Take back the last dot of the fence run or the last house corner. */
@@ -1551,6 +1554,12 @@ export function FenceDrawMap({
           zoomBy: (delta: number) => {
             const z = map.getZoom();
             if (typeof z === "number") map.setZoom(z + delta);
+          },
+          resized: () => {
+            const centre = map.getCenter();
+            const g = (window as unknown as { google?: GMaps }).google;
+            g?.maps?.event?.trigger?.(map, "resize");
+            if (centre) map.setCenter(centre);
           },
           finishDraft: () => {
             if (houseDraft.length >= 3) closeHouse();

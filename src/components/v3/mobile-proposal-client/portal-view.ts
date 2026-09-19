@@ -25,6 +25,7 @@
 // can offer. The pay routes derive every amount server-side again.
 
 import type { PortalPayModel } from "@/lib/payments/portalModel";
+import { clientSplit, splitCaption } from "@/lib/pricing/markup";
 
 /** Donor rule: "roof_squares" → "roof squares", empty → null. */
 function measurementLabel(t: string | null | undefined) {
@@ -39,6 +40,8 @@ export type PortalLineItem = {
   description: string | null;
   /** The donor's meta line: "2400 sqft · 2400 × $1.50". */
   meta: string | null;
+  /** "Materials $472.00 · Labor $472.00" when the proposal shows its breakdown. */
+  split: string | null;
   amount: string;
 };
 
@@ -111,6 +114,11 @@ type ProposalRow = {
   validUntil: Date | null;
   client: { name: string | null } | null;
   organization: { name: string | null; phone: string | null };
+  /** "Show to client" (saved on the row); absent on an older caller = shown. */
+  showBreakdown?: boolean | null;
+  marginOnLabor?: boolean | null;
+  materialMarkupPct?: number | null;
+  laborMarkupPct?: number | null;
   lineItems: Array<{
     id: string;
     name: string;
@@ -119,6 +127,8 @@ type ProposalRow = {
     unitPrice: number;
     total: number;
     measurementType: string | null;
+    materialCost?: number | null;
+    laborCost?: number | null;
   }>;
   installments: Array<{
     id: string;
@@ -182,6 +192,10 @@ export function buildPortalView(
         name: item.name,
         description: item.description?.trim() ? item.description : null,
         meta: meta || null,
+        split:
+          proposal.showBreakdown !== false
+            ? splitCaption(clientSplit(item, { materialMarkupPct: proposal.materialMarkupPct ?? 0, laborMarkupPct: proposal.laborMarkupPct ?? 0 }, { marginOnLabor: proposal.marginOnLabor }), money)
+            : null,
         amount: money(item.total),
       };
     }),
