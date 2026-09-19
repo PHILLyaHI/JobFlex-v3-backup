@@ -45,6 +45,7 @@ import {
   MO,
   MOFULL,
   type PdAvailProposal,
+  type PdBudget,
   type PdJob,
   type PdProject,
   type PdProposal,
@@ -60,6 +61,8 @@ import {
 } from "./project-detail-data";
 import s from "./project-detail.module.css";
 import { LooseProposalsStrip } from "@/components/v3/project-links/loose-proposals-strip";
+import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
+import { ProjectBudgetCard } from "@/components/v3/project-links/project-budget-card";
 
 /** "New proposal" on a project opens the estimator picker filed under it, so
  *  any engine — Smart Proposal, roof, fence, HVAC, video or manual — can make
@@ -107,12 +110,14 @@ export function ProjectDetailContent({
   proposals = [],
   availableProposals,
   looseProposals = [],
+  budget,
 }: {
   project: PdProject;
   jobs: PdJob[];
   proposals?: PdProposal[];
   availableProposals: PdAvailProposal[];
   looseProposals?: Array<{ id: string; title: string; total: number }>;
+  budget?: PdBudget;
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -277,6 +282,7 @@ export function ProjectDetailContent({
 
       <LooseProposalsStrip projectId={project.id} client={project.client} loose={looseProposals} />
       <ProposalsCard proposals={proposals} project={project} onAttach={openAttach} />
+      {budget ? <ProjectBudgetCard projectId={project.id} budget={budget} /> : null}
 
       {/* ВИДЫ + ATTACH */}
       <div className={cx("pd-bar")}>
@@ -403,6 +409,9 @@ function ProposalsCard({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
+  // The proposal whose change orders are open (2026-09-18) — the same sheet
+  // the Proposals page and the job page use: price extras, send for signature.
+  const [coFor, setCoFor] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const won = proposals.filter((p) => proposalTone(p.status) === "done");
   const open = proposals.filter((p) => proposalTone(p.status) === "prog" || proposalTone(p.status) === "sch");
@@ -422,6 +431,12 @@ function ProposalsCard({
 
   return (
     <section className={cx("card", "pd-props")} aria-label="Proposals in this project">
+      <ChangeOrderSheet
+        open={coFor !== null}
+        onClose={() => setCoFor(null)}
+        proposalId={coFor ?? undefined}
+        onDone={() => startTransition(() => router.refresh())}
+      />
       <div className={cx("pd-jobs-h")}>
         <h2 className={cx("pd-jobs-t")}>Proposals</h2>
         <span className={cx("pd-props-sum")}>
@@ -462,6 +477,17 @@ function ProposalsCard({
                 </div>
               </div>
               <span className={cx("pd-b", "pd-b--" + proposalTone(p.status))}>{proposalLabel(p.status)}</span>
+              <button
+                className={cx("pd-prop-co")}
+                type="button"
+                onClick={() => setCoFor(p.id)}
+                aria-label={`Change orders for ${p.title}`}
+              >
+                <svg className={cx("ic")}>
+                  <use href="#i-plus" />
+                </svg>
+                {p.co.count ? `Change orders · ${p.co.count}` : "Change order"}
+              </button>
               <span className={cx("pd-prop-amt")}>
                 {moneyShort(p.contract)}
                 {Math.round(p.contract) !== Math.round(p.total) ? <i>was {moneyShort(p.total)}</i> : null}

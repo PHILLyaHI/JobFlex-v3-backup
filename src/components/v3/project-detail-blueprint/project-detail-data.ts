@@ -91,6 +91,26 @@ export interface PdProposal {
   co: { count: number; approved: number; pending: number; approvedTotal: number; pendingTotal: number };
 }
 
+/** The project's Budget card (2026-09-18): the arithmetic from
+ *  lib/projectBudget, the lines as the editor holds them, and the recent
+ *  spending — logged on the project or on one of its jobs. */
+export interface PdBudget {
+  summary: import("@/lib/projectBudget").BudgetSummary;
+  lines: Array<{ category: string; amount: number }>;
+  expenses: Array<{
+    id: string;
+    /** "project" rows can be deleted here; "job" rows are managed on the job. */
+    source: "project" | "job";
+    jobTitle: string | null;
+    category: string;
+    amount: number;
+    vendor: string | null;
+    note: string | null;
+    /** ISO date. */
+    at: string;
+  }>;
+}
+
 /** A proposal of the project's own client that sits in no project — the page
  *  offers to bring these in with one tap. */
 export interface PdLooseProposal {

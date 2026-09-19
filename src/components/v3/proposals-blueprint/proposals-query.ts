@@ -71,6 +71,9 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
         select: { name: true, email: true, address: true, city: true, state: true, zip: true },
       },
       owner: { select: { name: true } },
+      // The project a proposal is filed under (2026-09-18) — the list chains
+      // a project's proposals together under its name.
+      project: { select: { id: true, name: true } },
       installments: { orderBy: { position: "asc" }, include: { payment: { select: { provider: true } } } },
       changeOrders: { where: { status: { in: ["DRAFT", "SENT", "APPROVED"] } }, select: { status: true, total: true, amount: true } },
       lineItems: {
@@ -132,6 +135,9 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
       publicId: p.publicId,
       title: p.title,
       client: p.client?.name ?? "Unassigned",
+      clientId: p.clientId,
+      projectId: p.project?.id ?? null,
+      projectName: p.project?.name ?? null,
       clientEmail: p.client?.email ?? null,
       city: p.client?.city ?? "",
       status: p.status,

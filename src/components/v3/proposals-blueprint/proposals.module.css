@@ -1697,3 +1697,26 @@
 .bp :global(.content .psheet-head:hover a.pt-link),
 .bp :global(.content a.pt-link:focus-visible) { color: var(--blueprint); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 2px; }
 .bp :global(.content a.pt-link:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+
+/* ── PROJECT CHAINS (2026-09-18) ─────────────────────────────────────────
+   A project's proposals together: a header row naming the project, its
+   client and its money, and a rail down the left edge joining the rows. */
+.bp :global(.content .prow-grp td) { padding: 14px 16px 6px; border-bottom: none; background: transparent; }
+.bp :global(.content .ptable tbody tr.prow-grp:hover) { background: transparent; }
+.bp :global(.content .pgrp) { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bp :global(.content .pgrp-ic) { width: 16px; height: 16px; color: var(--blueprint); flex-shrink: 0; }
+.bp :global(.content .pgrp-name) { font-size: 13px; font-weight: 900; letter-spacing: 0.01em; color: var(--ink); text-decoration: none; }
+.bp :global(.content .pgrp-name:hover) { color: var(--blueprint); text-decoration: underline; text-underline-offset: 3px; }
+.bp :global(.content .pgrp-client) { font-size: 12.5px; color: var(--muted); }
+.bp :global(.content .pgrp-cont) { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-light); }
+.bp :global(.content .pgrp-meta) { margin-left: auto; font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--muted); }
+.bp :global(.content .pgrp-meta b) { color: var(--ink); font-weight: 800; }
+/* The rail: a 2px line in the gutter of the first cell, a dot at each row. */
+.bp :global(.content .prow--chain td:first-child) { position: relative; padding-left: 38px; }
+.bp :global(.content .prow--chain td:first-child::before) { content: ""; position: absolute; left: 22px; top: 0; bottom: 0; width: 2px; background: var(--blueprint); opacity: 0.35; }
+.bp :global(.content .prow--chain-end td:first-child::before) { bottom: 50%; }
+.bp :global(.content .prow--chain td:first-child::after) { content: ""; position: absolute; left: 18px; top: 50%; width: 10px; height: 10px; margin-top: -5px; border: 2px solid var(--blueprint); border-radius: 50%; background: var(--paper-deep, #fff); }
+.bp :global(.content .prow--chain:not(.prow--chain-end) td) { border-bottom-style: dashed; }
+/* A proposal's project, named on its line when it has no header above it. */
+.bp :global(.content a.pt-proj) { color: var(--blueprint); font-weight: 700; text-decoration: none; }
+.bp :global(.content a.pt-proj:hover) { text-decoration: underline; text-underline-offset: 2px; }

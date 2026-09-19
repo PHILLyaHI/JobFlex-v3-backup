@@ -65,6 +65,9 @@ import {
   statusPlate,
   type Installment,
   type ProposalRow,
+  chainsOf,
+  chained,
+  type Chain,
 } from "./proposals-data";
 
 export type ProposalsContentOptions = {
@@ -464,19 +467,53 @@ export function initProposalsContent(
       ' aria-label="Next page"><svg class="ic rot-r"><use href="#i-chev"/></svg></button>';
   }
 
+  /* ── PROJECT CHAINS (2026-09-18) ────────────────────────────────────────
+     Proposals filed under the same project read as one piece of work: they
+     sit together, under a header naming the project, its client and the
+     project's combined contract, joined by a rail down the left edge. The
+     group takes the place of its most recently touched proposal, so the list
+     still reads newest first. A project with a single proposal in view gets
+     no header — its row just names the project. */
+  function chainHeadHtml(c: Chain, continued: boolean) {
+    return (
+      '<tr class="prow-grp" data-grp="' +
+      esc(c.id) +
+      '"><td colspan="7"><div class="pgrp">' +
+      '<svg class="ic pgrp-ic"><use href="#i-folder"/></svg>' +
+      '<a class="pgrp-name" href="/dashboard/projects/' +
+      encodeURIComponent(c.id) +
+      '">' +
+      esc(c.name) +
+      "</a>" +
+      (c.client ? '<span class="pgrp-client">' + esc(c.client) + "</span>" : "") +
+      (continued ? '<span class="pgrp-cont">continued</span>' : "") +
+      '<span class="pgrp-meta">' +
+      c.count +
+      " proposals" +
+      (c.sold ? " · <b>" + fmtMoney(c.sold) + "</b> sold" : "") +
+      (c.open ? " · <b>" + fmtMoney(c.open) + "</b> open" : "") +
+      "</span>" +
+      "</div></td></tr>"
+    );
+  }
+
   /** The rows the ALL table is currently showing, with the page clamped. */
   function allSlice() {
-    const rows = filteredAll();
+    const rows = chained(filteredAll());
     const pages = Math.max(1, Math.ceil(rows.length / PAGE_ALL));
     if (pstate.pageAll > pages) pstate.pageAll = pages;
     return { rows, pages, slice: rows.slice((pstate.pageAll - 1) * PAGE_ALL, pstate.pageAll * PAGE_ALL) };
   }
-  function allRowHtml(p: ProposalRow) {
+  function allRowHtml(p: ProposalRow, chain = "") {
     const st = statusPlate(p.status);
     return (
-      '<tr class="prow" data-id="' +
+      '<tr class="prow' +
+      chain +
+      '" data-id="' +
       esc(p.id) +
-      '">' +
+      '"' +
+      (chain && p.projectId ? ' data-grp="' + esc(p.projectId) + '"' : "") +
+      ">" +
       // The title is a real link to the proposal (⌘-click opens a tab); a
       // click anywhere else on the row follows it too — see openFromRow.
       '<td><a class="pt-title pt-link" href="' +
@@ -485,6 +522,11 @@ export function initProposalsContent(
       esc(p.title) +
       '</a><div class="pt-sub">' +
       esc(subLine(p)) +
+      // A proposal alone in view from its project names it; a chained one has
+      // the header above it to say so.
+      (p.projectId && !chain
+        ? ' · <a class="pt-proj" href="/dashboard/projects/' + encodeURIComponent(p.projectId) + '">' + esc(p.projectName ?? "Project") + "</a>"
+        : "") +
       (p.co && p.co.count
         ? ' · <span class="pt-co' + (p.co.pending ? " pt-co--wait" : "") + '">' + p.co.count + " change order" + (p.co.count === 1 ? "" : "s") + (p.co.pending ? " · " + p.co.pending + " awaiting approval" : "") + "</span>"
         : "") +
@@ -540,8 +582,27 @@ export function initProposalsContent(
   function renderAll(stagger = false) {
     const body = $("#propTableBody");
     if (!body) return;
-    const { slice } = allSlice();
-    body.innerHTML = slice.map(allRowHtml).join("");
+    const { rows, slice } = allSlice();
+    const chains = chainsOf(rows);
+    const start = (pstate.pageAll - 1) * PAGE_ALL;
+    let html = "";
+    slice.forEach((p, i) => {
+      const c = p.projectId ? chains.get(p.projectId) : undefined;
+      if (!c || c.count < 2) {
+        html += allRowHtml(p);
+        return;
+      }
+      const at = start + i;
+      const prev = rows[at - 1];
+      const next = rows[at + 1];
+      const firstInChain = !prev || prev.projectId !== p.projectId;
+      const lastInChain = !next || next.projectId !== p.projectId;
+      // A header opens the chain, and opens it again at the top of a page that
+      // starts in the middle of one.
+      if (i === 0 || firstInChain) html += chainHeadHtml(c, i === 0 && !firstInChain);
+      html += allRowHtml(p, " prow--chain" + (lastInChain ? " prow--chain-end" : ""));
+    });
+    body.innerHTML = html;
     syncAllChrome();
     if (stagger && panelVisible("all")) {
       staggerIn(Array.from(body.querySelectorAll<HTMLElement>(".prow")));
@@ -631,6 +692,7 @@ export function initProposalsContent(
       "</a>" +
       '<div class="pjob-sub">' +
       esc(subLine(p)) +
+      (p.projectId ? ' · <a class="pt-proj" href="/dashboard/projects/' + encodeURIComponent(p.projectId) + '">' + esc(p.projectName ?? "Project") + "</a>" : "") +
       (p.accepted ? " · accepted " + esc(p.accepted) : "") +
       "</div></div>" +
       '<div class="pjob-total"><span class="pt-mono">Contract value</span><span class="pt-money">' +
@@ -752,6 +814,7 @@ export function initProposalsContent(
       "</a>" +
       '<div class="pjob-sub">' +
       esc(subLine(p)) +
+      (p.projectId ? ' · <a class="pt-proj" href="/dashboard/projects/' + encodeURIComponent(p.projectId) + '">' + esc(p.projectName ?? "Project") + "</a>" : "") +
       "</div></div>" +
       '<div><span class="psheet-banklbl">Banked</span><span class="pt-money banked big">' +
       fmtMoney(p.paidAmt ?? 0) +
@@ -906,6 +969,13 @@ export function initProposalsContent(
     const body = $("#propTableBody");
     const tr = findRow(body, id);
     const onPage = allSlice().slice.some((p) => p.id === id);
+    // A chained row carries its project's header totals with it: redraw the
+    // table silently rather than patch one row around a stale header.
+    if (tr && tr.dataset.grp) {
+      renderAll();
+      repaintExcept("all");
+      return;
+    }
     if (tr && !onPage) {
       leaveRow(
         tr,
