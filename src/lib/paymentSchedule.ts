@@ -213,6 +213,142 @@ export function unitTogglePatches<T extends UnitToggleStage>(
   return out;
 }
 
+/** Largest-remainder split of a set of percentages over a base, in minor
+ *  units: three 33.33% stages of an odd total still add up to the total, to
+ *  the cent. Shared by the resolver and by the builders' coverage read below,
+ *  so a card and an invoice never round a stage differently. */
+function allocatePercentMinor(pcts: readonly number[], baseMinor: number): number[] {
+  const sumPct = pcts.reduce((n, p) => n + p, 0);
+  const target = Math.round((baseMinor * sumPct) / 100);
+  const raws = pcts.map((p) => (baseMinor * p) / 100);
+  const floors = raws.map((r) => Math.floor(r));
+  let leftover = target - floors.reduce((n, f) => n + f, 0);
+  const order = raws
+    .map((r, i) => ({ i, frac: r - Math.floor(r) }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i);
+  for (const { i } of order) {
+    if (leftover <= 0) break;
+    floors[i] += 1;
+    leftover -= 1;
+  }
+  return floors.map((f) => Math.max(0, f));
+}
+
+/* ============================================================
+   WHAT THE SCHEDULE COVERS — the builders' reading
+   ============================================================
+
+   The builder cards print "Scheduled $X of $Y" and a Balanced / Over / Short
+   badge. They used to sum every stage as "a percent of the current total, or
+   its dollar amount", which ignores the rule this module exists to keep: a
+   PAID or WAIVED stage is FROZEN at what it actually collected. On a contract
+   whose stages are mostly paid the card therefore invented money — a covered
+   $5,398.24 contract read "Scheduled $6,177.18 of $5,398.24", because two paid
+   stages were re-derived from their percentages instead of being taken at the
+   $1,619.47 and $3,000.00 that landed on them.
+
+   So the cards read their figures here, with the same arithmetic the money
+   uses. One difference, on purpose: these amounts are NOT clamped to the
+   balance. Clamping is what the money path does to avoid collecting more than
+   is owed; a builder that clamped could never say "over by $420", which is the
+   one thing the badge is for. `mismatchMinor` in resolveSchedule is the same
+   figure this reports as `difference`. */
+
+export type CoverageState = "none" | "under" | "exact" | "over";
+
+export interface CoverageStage {
+  id?: string;
+  /** Dollars, or a PERCENT of the base when `isPercent`. */
+  amount: number;
+  isPercent: boolean;
+  status?: string | null;
+  paidAmount?: number | null;
+}
+
+export interface ScheduleCoverage {
+  /** What each stage is worth on the card, in dollars, by stage id (or index
+   *  for a row that has none yet). A settled stage is what it collected. */
+  byId: Record<string, number>;
+  /** The same figures in row order. */
+  values: number[];
+  covered: number;
+  coveredMinor: number;
+  total: number;
+  /** covered − total. Positive is over-scheduled, negative is short. */
+  difference: number;
+  state: CoverageState;
+}
+
+/**
+ * What a draft schedule covers, and whether that balances the contract.
+ * `pctBase` is what percent stages are percentages OF — the original total,
+ * which differs from `total` only once approved change orders are in play.
+ */
+export function scheduleCoverage(
+  stages: readonly CoverageStage[],
+  total: number,
+  pctBase: number = total,
+): ScheduleCoverage {
+  const totalMinor = Math.max(0, toMinor(total));
+  const pctBaseMinor = Math.max(0, toMinor(pctBase));
+  const values: number[] = new Array(stages.length).fill(0);
+  const minors: number[] = new Array(stages.length).fill(0);
+
+  // A settled stage is frozen at what it collected; a waived one collected
+  // nothing. Everything else is still a plan, and is read as one.
+  const openIdx: number[] = [];
+  stages.forEach((s, i) => {
+    const st = normStatus(s.status);
+    if (st === "PAID") minors[i] = Math.max(0, toMinor(s.paidAmount ?? 0));
+    else if (st === "WAIVED") minors[i] = 0;
+    else openIdx.push(i);
+  });
+
+  const pctIdx = openIdx.filter((i) => stages[i].isPercent);
+  if (pctIdx.length) {
+    const alloc = allocatePercentMinor(
+      pctIdx.map((i) => (Number.isFinite(stages[i].amount) ? stages[i].amount : 0)),
+      pctBaseMinor,
+    );
+    pctIdx.forEach((i, n) => {
+      minors[i] = alloc[n];
+    });
+  }
+  for (const i of openIdx) {
+    if (!stages[i].isPercent) minors[i] = Math.max(0, toMinor(stages[i].amount));
+  }
+
+  const byId: Record<string, number> = {};
+  let coveredMinor = 0;
+  stages.forEach((s, i) => {
+    values[i] = fromMinor(minors[i]);
+    byId[s.id ?? String(i)] = values[i];
+    coveredMinor += minors[i];
+  });
+
+  const differenceMinor = coveredMinor - totalMinor;
+  const state: CoverageState =
+    stages.length === 0 || totalMinor <= 0
+      ? "none"
+      : // A cent of slack: saying "over" about one cent of rounding is the kind
+        // of false alarm that trains people to ignore the badge.
+        Math.abs(differenceMinor) < 1
+        ? "exact"
+        : differenceMinor > 0
+          ? "over"
+          : "under";
+
+  return {
+    byId,
+    values,
+    covered: fromMinor(coveredMinor),
+    coveredMinor,
+    total: fromMinor(totalMinor),
+    difference: fromMinor(differenceMinor),
+    state,
+  };
+}
+
 function normStatus(s: string | null | undefined): StageStatus {
   return s === "PAID" || s === "PENDING" || s === "WAIVED" ? s : "UNPAID";
 }
@@ -276,21 +412,9 @@ export function resolveSchedule(input: {
   const unpaid = stages.filter((s) => s.status === "UNPAID" || s.status === "PENDING");
   const pctStages = unpaid.filter((s) => s.isPercent);
   if (pctStages.length) {
-    const sumPct = pctStages.reduce((n, s) => n + (s.pct ?? 0), 0);
-    const target = Math.round((pctBaseMinor * sumPct) / 100);
-    const raws = pctStages.map((s) => (pctBaseMinor * (s.pct ?? 0)) / 100);
-    const floors = raws.map((r) => Math.floor(r));
-    let leftover = target - floors.reduce((n, f) => n + f, 0);
-    const order = raws
-      .map((r, i) => ({ i, frac: r - Math.floor(r) }))
-      .sort((a, b) => b.frac - a.frac || a.i - b.i);
-    for (const { i } of order) {
-      if (leftover <= 0) break;
-      floors[i] += 1;
-      leftover -= 1;
-    }
+    const alloc = allocatePercentMinor(pctStages.map((s) => s.pct ?? 0), pctBaseMinor);
     pctStages.forEach((s, i) => {
-      s.amountMinor = Math.max(0, floors[i]);
+      s.amountMinor = alloc[i];
     });
   }
   for (const s of unpaid) {

@@ -26,15 +26,12 @@
 
 import { isLockedInstallment, type Installment } from "../manual-focus/manual-focus-types";
 import {
-  coverState,
-  installmentValue,
   money,
-  round2,
 } from "../manual-focus/manual-focus-math";
 import styles from "./manual-blueprint.module.css";
 import m from "./bp-money.module.css";
 import { Btn, Ic, NumField, cx } from "./bp-ui";
-import { unitTogglePatches } from "@/lib/paymentSchedule";
+import { scheduleCoverage, unitTogglePatches } from "@/lib/paymentSchedule";
 
 /* ============================================================
    THE SCHEDULE
@@ -45,37 +42,14 @@ const NOTE: Record<string, string> = {
   exact: "Covers the total exactly.",
 };
 
-/**
- * The dollar column beside the rows — and the one place on this card where a
- * figure is derived locally rather than taken from `computeTotals`.
- *
- * THE LAST ROW IS A REMAINDER. 30% + 30% + 40% is 100%, but three independently
- * rounded percentages of $12,536.82 are $3,761.05 + $3,761.05 + $5,014.73 =
- * $12,536.83 — one cent MORE than the total the client is being asked to sign,
- * printed directly under it. So every row but the last keeps its own rounded
- * value and the last one absorbs whatever the rounding left over. This is the
- * house technique, used verbatim by `figures()` in lines-v2 (labor is total
- * minus material, never its own rounded product) and by `applyUnitPrice` in the
- * math module for the same reason.
- *
- * It lives here rather than in `installmentValue` because that helper is shared
- * with the /dashboard/manual-focus route, and because a per-row helper cannot
- * see the row's position in the schedule — a remainder is a property of the
- * COLUMN, not of an installment.
- *
- * ONLY WHEN THE SCHEDULE ACTUALLY COVERS THE TOTAL. Under- or over-scheduled,
- * every row keeps its honest independent value: folding a $1,200 shortfall into
- * the last installment would silently balance the schedule and hide the exact
- * thing the coverage meter exists to report. A cent of rounding is arithmetic;
- * a thousand dollars of shortfall is a fact.
- */
-function scheduleValues(installments: Installment[], total: number, exact: boolean): number[] {
-  const raw = installments.map((inst) => installmentValue(inst, total));
-  if (!exact || raw.length === 0) return raw;
-  const head = raw.slice(0, -1);
-  const consumed = round2(head.reduce((sum, v) => sum + v, 0));
-  return [...head, round2(total - consumed)];
-}
+/* THE DOLLAR COLUMN used to be derived here, with the last row absorbing the
+   rounding so three independently rounded percentages could not print a cent
+   more than the total the client signs. Both halves of that job now belong to
+   lib/paymentSchedule: its largest-remainder split makes the column add up to
+   the cent by construction, and it is the only arithmetic that knows a PAID
+   stage is frozen at what it collected. The local pass could not — it rounded
+   a percentage of the CURRENT total even for a paid stage, and its remainder
+   landed on whichever row came last, paid or not. */
 
 export function PaymentBlock({
   installments,
@@ -90,20 +64,20 @@ export function PaymentBlock({
   onAdd: () => void;
   onRemove: (id: string) => void;
 }) {
-  // ONE reading of under / exact / over, taken from the shared helper, and
-  // everything else on this block is a presentation of it: the header
-  // percentage, the meter fill and the note under it.
-  const state = coverState(installments, total);
-  const exact = state === "exact";
-
-  const values = scheduleValues(installments, total, exact);
+  // ONE reading of the schedule, taken from the module that resolves money
+  // (lib/paymentSchedule), and everything else on this block is a presentation
+  // of it: the column, the meter fill and the note under it. A settled stage
+  // counts for what it COLLECTED — the card and the rows it prints agree.
+  const coverage = scheduleCoverage(installments, total);
+  const state = coverage.state;
+  const values = coverage.values;
 
   // The covered figure is the sum of the column the user can SEE, not a second
   // pass over the installments — so the meter can never disagree with the rows
   // above it. For every state but "exact" this is `coveredAmount` by
   // construction; for "exact" it is the total, which is the whole point of the
   // remainder.
-  const covered = round2(values.reduce((sum, v) => sum + v, 0));
+  const covered = coverage.covered;
   const ratio = total > 0 ? Math.min(covered / total, 1) : 0;
 
   const note =

@@ -48,6 +48,7 @@
 // what lets the row carry an honest "NEEDS A NAME" tag instead of quietly
 // contributing to a total nobody can trace.
 
+import { scheduleCoverage, type CoverageStage, type CoverageState } from "@/lib/paymentSchedule";
 import type { Draft, Line, PrintedLine, Totals, Unit } from "./manual-focus-types";
 
 /* ============================================================
@@ -361,38 +362,38 @@ export function spreadLabor(lines: Line[], totalLabor: number): Line[] {
    PAYMENT SCHEDULE
    ============================================================ */
 
-/** One installment in dollars. A percentage is meaningless until a total
- *  exists, which is why the row only prints this figure once one does. */
+/** One installment in dollars — what it COLLECTED once it is settled, what it
+ *  is planned at while it is open. A percentage is meaningless until a total
+ *  exists, which is why the row only prints this figure once one does.
+ *
+ *  The arithmetic is the resolver's (lib/paymentSchedule): this used to take
+ *  {amount, isPercent} alone, so a paid 70% stage that collected $3,000 printed
+ *  70% of the current total instead — on the card, in the client's PDF, and in
+ *  every card total built out of it. */
 export function installmentValue(
-  inst: { amount: number; isPercent: boolean },
+  inst: { amount: number; isPercent: boolean; status?: string | null; paidAmount?: number | null },
   total: number,
 ): number {
-  return round2(inst.isPercent ? (total * safe(inst.amount)) / 100 : safe(inst.amount));
+  return scheduleCoverage([inst], total).values[0] ?? 0;
 }
 
-/** How much of the total the schedule accounts for, in dollars. */
+/** How much of the total the schedule accounts for, in dollars. A settled
+ *  stage counts for what it collected, which is the whole point. */
 export function coveredAmount(
-  installments: { amount: number; isPercent: boolean }[],
+  installments: CoverageStage[],
   total: number,
 ): number {
-  return round2(installments.reduce((sum, i) => sum + installmentValue(i, total), 0));
+  return scheduleCoverage(installments, total).covered;
 }
 
 /** Under / exact / over. A cent of slack absorbs the rounding a 30/30/40 split
  *  produces on an odd total — the schedule is balanced, and saying otherwise
  *  over one cent is the kind of false alarm that trains people to ignore
  *  warnings. */
-export type CoverState = "under" | "exact" | "over" | "none";
+export type CoverState = CoverageState;
 
-export function coverState(
-  installments: { amount: number; isPercent: boolean }[],
-  total: number,
-): CoverState {
-  if (installments.length === 0) return "none";
-  if (total <= 0) return "none";
-  const covered = coveredAmount(installments, total);
-  if (Math.abs(covered - total) < 0.01) return "exact";
-  return covered > total ? "over" : "under";
+export function coverState(installments: CoverageStage[], total: number): CoverState {
+  return scheduleCoverage(installments, total).state;
 }
 
 /* ============================================================

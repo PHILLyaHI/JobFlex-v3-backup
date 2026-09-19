@@ -28,9 +28,6 @@
 import type { Draft, Installment, Totals } from "../manual-focus/manual-focus-types";
 import { DEFAULT_MARKUPS } from "../manual-focus/manual-focus-data";
 import {
-  coverState,
-  coveredAmount,
-  installmentValue,
   money,
   newId,
   pct1,
@@ -51,7 +48,7 @@ import {
 } from "./steps-ui";
 import type { Patch } from "./steps-pickers";
 import s from "./manual-steps.module.css";
-import { applyUnitToggle } from "@/lib/paymentSchedule";
+import { applyUnitToggle, scheduleCoverage } from "@/lib/paymentSchedule";
 
 /* ══ 04 · MARKUP ════════════════════════════════════════════════════════ */
 
@@ -138,8 +135,11 @@ export function MarkupCard({ draft, patch, totals }: { draft: Draft; patch: Patc
 /* ══ 08 · PAYMENTS ══════════════════════════════════════════════════════ */
 
 export function PaymentsCard({ draft, patch, totals }: { draft: Draft; patch: Patch; totals: Totals }) {
-  const covered = coveredAmount(draft.installments, totals.total);
-  const state = coverState(draft.installments, totals.total);
+  // One reading for the meter, the badge and the column (lib/paymentSchedule):
+  // a settled stage counts for what it collected, not for its percentage.
+  const coverage = scheduleCoverage(draft.installments, totals.total);
+  const covered = coverage.covered;
+  const state = coverage.state;
   const fill = totals.total > 0 ? Math.min(1, covered / totals.total) : 0;
 
   function editInst(id: string, next: Partial<Installment>) {
@@ -206,7 +206,7 @@ export function PaymentsCard({ draft, patch, totals }: { draft: Draft; patch: Pa
                 </div>
 
                 <div className={s.lineMoney}>
-                  <span className={s.lineTotal}>{money(installmentValue(inst, totals.total))}</span>
+                  <span className={s.lineTotal}>{money(coverage.byId[inst.id] ?? 0)}</span>
                 </div>
               </div>
             </div>

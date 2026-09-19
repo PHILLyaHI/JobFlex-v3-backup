@@ -29,16 +29,14 @@ import { useRef, useState } from "react";
 import type { Installment, ProposalOptions, StagedFile } from "./manual-focus-types";
 import type { CoverState } from "./manual-focus-math";
 import {
-  coveredAmount,
   fileSize,
-  installmentValue,
   money,
   newId,
   pct,
 } from "./manual-focus-math";
 import { AddBtn, Empty, Ic, IconBtn, NumIn, SwitchRow, cx } from "./focus-ui";
 import styles from "./manual-focus.module.css";
-import { unitTogglePatches } from "@/lib/paymentSchedule";
+import { scheduleCoverage, unitTogglePatches } from "@/lib/paymentSchedule";
 
 /* ============================================================
    06 · WHAT PRINTS
@@ -161,7 +159,10 @@ export function PaymentBlock({
     }
   };
 
-  const covered = coveredAmount(installments, total);
+  // One reading for the meter, the copy and the column (lib/paymentSchedule):
+  // a settled stage counts for what it collected.
+  const coverage = scheduleCoverage(installments, total);
+  const covered = coverage.covered;
   // The bar can only draw as far as full; how far PAST full a schedule runs is
   // said in words and in the danger palette, not in a bar that overflows its
   // own frame. So one clamp, at 1, and no second one further down.
@@ -220,7 +221,7 @@ export function PaymentBlock({
               {/* A percentage means nothing until a total exists, which is why
                   this figure only appears once one does. */}
               <span className={total > 0 ? styles.instCalc : styles.instCalcOff}>
-                {total > 0 ? money(installmentValue(inst, total)) : "no total yet"}
+                {total > 0 ? money(coverage.byId[inst.id] ?? 0) : "no total yet"}
               </span>
 
               <IconBtn

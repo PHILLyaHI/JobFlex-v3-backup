@@ -26,16 +26,13 @@
 
 import type { Draft, Installment, StagedFile, Totals } from "../manual-focus/manual-focus-types";
 import {
-  coverState,
-  coveredAmount,
   fileSize,
-  installmentValue,
   money,
   newId,
 } from "../manual-focus/manual-focus-math";
 import s from "./manual-sheet.module.css";
 import { BlockHead, Btn, Cross, Field, NumIn, Seg, TextIn } from "./sheet-ui";
-import { applyUnitToggle } from "@/lib/paymentSchedule";
+import { applyUnitToggle, scheduleCoverage } from "@/lib/paymentSchedule";
 
 /** Rotating stand-ins for "Add file". Real names, so the row looks like a row. */
 const FILE_POOL: { name: string; size: number; kind: string }[] = [
@@ -64,8 +61,11 @@ export function ChapterDeal({
   totals: Totals;
 }) {
   const total = totals.total;
-  const covered = coveredAmount(draft.installments, total);
-  const state = coverState(draft.installments, total);
+  // One reading for the cover word, the ratio and the column
+  // (lib/paymentSchedule): a settled stage counts for what it collected.
+  const coverage = scheduleCoverage(draft.installments, total);
+  const covered = coverage.covered;
+  const state = coverage.state;
   const ratio = total > 0 ? Math.min(1, covered / total) : 0;
 
   const setInst = (id: string, p: Partial<Installment>) =>
@@ -162,7 +162,7 @@ export function ChapterDeal({
                 />
               </div>
 
-              <div className={s.instValue}>{money(installmentValue(inst, total))}</div>
+              <div className={s.instValue}>{money(coverage.byId[inst.id] ?? 0)}</div>
 
               <button
                 type="button"

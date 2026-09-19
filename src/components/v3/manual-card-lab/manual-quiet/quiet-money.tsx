@@ -15,20 +15,17 @@
 //
 // Status colour appears here and in the unnamed-line warning and nowhere else
 // on the page: under = amber, exact = green, over = red, straight from
-// `coverState` so the bar and the sentence can never grade the same schedule
+// one `scheduleCoverage` reading so the bar and the sentence can never grade
 // differently.
 
 import type { Installment } from "../manual-focus/manual-focus-types";
 import {
-  coverState,
-  coveredAmount,
-  installmentValue,
   money,
   pct1,
 } from "../manual-focus/manual-focus-math";
 import styles from "./manual-quiet.module.css";
 import { Btn, DRow, Field, IconBtn, NumField, SubHead, cx } from "./quiet-ui";
-import { unitTogglePatches } from "@/lib/paymentSchedule";
+import { scheduleCoverage, unitTogglePatches } from "@/lib/paymentSchedule";
 
 /* ============================================================
    04 — MARKUP & MARGIN
@@ -129,8 +126,11 @@ export function PaymentBlock({
   onAdd: () => void;
   onRemove: (id: string) => void;
 }) {
-  const covered = coveredAmount(installments, total);
-  const state = coverState(installments, total);
+  // One reading for the bar, the sentence and the column — from the module
+  // that resolves money, so a paid stage counts for what it collected.
+  const coverage = scheduleCoverage(installments, total);
+  const covered = coverage.covered;
+  const state = coverage.state;
   const ratio = total > 0 ? Math.min(covered / total, 1) : 0;
 
   const note =
@@ -172,7 +172,7 @@ export function PaymentBlock({
             >
               {inst.isPercent ? "%" : "$"}
             </button>
-            <span className={styles.instValue}>{money(installmentValue(inst, total))}</span>
+            <span className={styles.instValue}>{money(coverage.byId[inst.id] ?? 0)}</span>
             <IconBtn
               label="Remove installment"
               icon="trash"
