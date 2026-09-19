@@ -16,7 +16,7 @@ import { PRICING_RULES, UNIT_RULES } from "@/lib/estimate/master-prompt";
 import { normalizeUnit, pairEstimateLines } from "@/lib/estimate/console-model";
 import { buildLegacyEstimatePrompt, legacyEstimateFromText, LEGACY_SYSTEM_MESSAGE } from "@/lib/estimate/legacy-estimate";
 import { loadPromptOverrides } from "@/lib/estimate/promptOverrides";
-import { fullerAnswer, linesTotal, retryReasons } from "@/lib/estimate/remodel-sanity";
+import { floorNote, floorToRange, fullerAnswer, linesTotal, retryReasons } from "@/lib/estimate/remodel-sanity";
 import { bindEstimateToBrief, bindLinesToBrief, bindTextToBrief, keepCostCritical, readBrief, scrubUnaskedText, scrubUnaskedWork } from "@/lib/estimate/brief";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import {
@@ -687,6 +687,16 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
       const again = await askEstimate(`${reasons.join("\n\n")}\n\n${legacy.prompt}`);
       console.info(`[advancedEstimator] second answer: ${again.items.length} lines, total ${Math.round(linesTotal(again.items))}`);
       called = fullerAnswer(called, again);
+    }
+    // Still far under the job's range after the retry: the model's numbers
+    // are not an estimate. Every line but the pass-through fees rises by one
+    // share to the range's point for the tier (lib/estimate/remodel-sanity).
+    const floored = floorToRange(called.items, legacy.range, qualityTier);
+    if (floored && legacy.range) {
+      console.warn(
+        `[advancedEstimator] raised to the range · total ${Math.round(floored.from)} → ${Math.round(floored.to)} (${legacy.range.job}, ${legacy.range.place}, ${qualityTier})`,
+      );
+      called = { ...called, items: floored.items, assumptions: [...called.assumptions, floorNote(legacy.range, floored.from, floored.to)] };
     }
     if (called.warnings.length) console.warn(`[advancedEstimator] parser: ${called.warnings.join(" | ")}`);
     if (called.items.length === 0) throw new Error("The estimator returned no line items — try a more specific description.");

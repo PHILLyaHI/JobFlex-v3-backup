@@ -213,6 +213,52 @@ export function retryReasons(input: { lines: number; coreSteps: number; total: n
   return reasons;
 }
 
+/** A line the floor never scales: a permit, a fee, a utility or capacity charge — passed through as charged. */
+const PASS_THROUGH = /\bpermits?\b|\bfees?\b|\bcapacity charge|\bconnection charge|\btap charge/i;
+
+/** Where in its range a job lands for the tier: budget the low end, standard the middle, luxury the high end. */
+export function rangeTarget(range: { low: number; high: number }, tier: "budget" | "standard" | "luxury" = "standard"): number {
+  if (tier === "budget") return range.low;
+  if (tier === "luxury") return range.high;
+  return (range.low + range.high) / 2;
+}
+
+const cents = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * The last word on a reply still far under its job's range after the retry
+ * (2026-09-19: a full bath came back at $16,000 and a 300 ft street sewer at
+ * $15,000 — the model's own numbers, asked twice). Every line but the
+ * pass-through fees rises by one share, so the total lands at the range's
+ * point for the tier; the lines, their quantities and their split stay. Null
+ * when there is no range, the total is not far under it, or nothing scales.
+ */
+export function floorToRange<T extends { name: string; quantity: number; materialUnitPrice: number; laborUnitPrice: number }>(
+  items: readonly T[],
+  range: JobRange | null,
+  tier: "budget" | "standard" | "luxury" = "standard",
+): { items: T[]; from: number; to: number } | null {
+  if (!range || !(range.low > 0)) return null;
+  const from = linesTotal(items);
+  if (!(from > 0) || from >= range.low * 0.9) return null;
+  const target = rangeTarget(range, tier);
+  const fixed = linesTotal(items.filter((it) => PASS_THROUGH.test(it.name)));
+  const scalable = from - fixed;
+  if (!(scalable > 0) || target <= fixed) return null;
+  const share = (target - fixed) / scalable;
+  const out = items.map((it) =>
+    PASS_THROUGH.test(it.name)
+      ? it
+      : { ...it, materialUnitPrice: cents(it.materialUnitPrice * share), laborUnitPrice: cents(it.laborUnitPrice * share) },
+  );
+  return { items: out, from, to: linesTotal(out) };
+}
+
+/** What the estimate records (never the proposal) when the floor raised it. */
+export function floorNote(range: JobRange, from: number, to: number): string {
+  return `The estimator's lines came to ${usd(from)} before markup, far under the ${usd(range.low)}-${usd(range.high)} a ${range.label} in ${range.place} runs; every line except permits and fees was raised by the same share, to ${usd(to)}. Check each line against the job before you send it.`;
+}
+
 /** Keep the fuller answer: more lines, or as many lines and a higher total. */
 export function fullerAnswer<T extends { items: readonly { quantity: number; materialUnitPrice: number; laborUnitPrice: number }[] }>(first: T, second: T): T {
   if (second.items.length > first.items.length) return second;

@@ -77,6 +77,29 @@ every procedure, and gives every specialty a benchmark for a whole job.
   unpriced rather than wrongly priced. The `/admin/prompts` preview shows
   how many steps the book prices.
 
+## The next day: still low on jobflex.app (2026-09-19)
+
+A full bath came back at $16,000 in seven round lines, and a 300 ft street
+sewer at about $15,000, twelve hours after the price book deployed. The
+path was the Smart Proposal with the new prompt; the model (gpt-4o-mini by
+default) wrote a thin answer and was asked again, and the retry kept the
+fuller of two thin answers. Nothing forced the total.
+
+- **How the old JobFlex priced.** It had no price arithmetic of its own:
+  the AI wrote every line price from the prompt (the admin's estimator and
+  pricing prompts, the material price book and profile), and the old
+  parser kept the AI's suggested profit on the draft. Its results
+  depended on the model and on the owner's saved admin prompts.
+- **The floor.** After the retry, a total still under nine tenths of the
+  job's range (remodel, utility or trade benchmark) is raised: every line
+  except permits and fees by one share, to the range's middle for standard
+  work (low end for budget, high end for luxury). The lines and quantities
+  stay. The saved estimate records a note; the proposal never shows it.
+  The server log says `raised to the range · total 16400 → 40750`.
+- **The old prompt's closing words** no longer ask for "at least three"
+  lines or a "concise" answer, and `recommendedPrice` is now the sum of the
+  lines, computed last — not a total picked first and split.
+
 ## Coverage
 
 | Group | Specialties | Steps | Sourced | Derived | Estimated |
