@@ -60,7 +60,20 @@ check("a zero footprint and no perimeter is no figure, never NaN", estimateValle
 check("a low facet confidence is no figure", estimateValleys(house({ facetConfidence: 0.19 })) === null);
 check("a trusted facet confidence gives a figure", estimateValleys(house({ facetConfidence: 0.8 }))?.count === 2);
 check("facets below the shape's base is no figure", estimateValleys(house({ facetCount: 3 })) === null);
-check("20+ facets is no figure", estimateValleys(house({ facetCount: 24 })) === null);
+// THE 20-FACET CEILING IS GONE (audit 2026-09-17, documented on
+// estimateValleys itself): a 22-facet roof with no report priced ZERO valleys
+// — no valley metal, no valley labor, no ice & water band in the valleys — on
+// the most cut-up roof in the set. This check pinned that hole; what it pins
+// now is the pair of caps that replaced it. The wing model is coarse this far
+// out, so the count stops at 12 and the plan run at half the perimeter (the
+// billed figure is that run along the slope), and the lines carry the
+// "estimated" basis that says so.
+const v24 = estimateValleys(house({ facetCount: 24 }));
+check("a very cut-up roof still prices valleys", (v24?.count ?? 0) > 0, JSON.stringify(v24));
+check("the count stops at 12", v24?.count === 12, JSON.stringify(v24));
+check("the run stops at half the perimeter, along the slope", v24 != null && v24.totalFt <= 0.5 * 232 * Math.sqrt(2 + (5 / 12) ** 2) + 0.05, JSON.stringify(v24));
+check("12 valleys of 12.5 ft", v24?.ftEach === 12.5 && v24?.totalFt === 150, JSON.stringify(v24));
+check("past the cap, more facets change nothing", JSON.stringify(estimateValleys(house({ facetCount: 40 }))) === JSON.stringify(v24));
 check("a tiny body is no figure", estimateValleys(house({ footprintSqft: 180, perimeterFt: 54 })) === null);
 check("a flat roof has no valleys", estimateValleys(flatRoof({ facetCount: 5 }))?.count === 0);
 const measuredZero = defaultSpec(house({ measured: { reportId: 9, eaveFt: 200, rakeFt: 30, ridgeFt: 40, hipFt: 80, valleyFt: 0, stepFlashFt: 0 } }));
