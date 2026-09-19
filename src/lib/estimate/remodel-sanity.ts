@@ -109,21 +109,57 @@ export function remodelJob(
 
 export type RemodelRange = { job: RemodelJobId; label: string; low: number; high: number; place: string };
 
+/**
+ * A hall bath larger than about 60 sqft (a 12x8 is 96) costs more than the
+ * 5x8 the reviewed range describes: more floor tile, wall, paint and trim,
+ * and usually a bigger shower. Each sqft past 60 adds half the slope between
+ * the reviewed hall-bath and primary-bath anchors, capped at the primary
+ * range. A derived rule, stated as such in docs/remodel-method.md.
+ */
+const BATH_SIZE = { from: 60, low: 105, high: 235, metroLow: 130, metroHigh: 295 };
+
 const round100 = (n: number) => Math.round(n / 100) * 100;
 
+/**
+ * The room's floor area from "12x8", "8 x 10 ft", "12 by 8" — for the range
+ * only. The brief reader counts a pair as an area only from 100 sqft up (a
+ * stated area is binding on the lines, and a door is 8 x 7), which skips most
+ * bathrooms; binding stays as it is. Tile and sheet sizes ("12x24 porcelain",
+ * "4x8 sheet") and lumber ("2x4") are not rooms.
+ */
+export function roomAreaFrom(text: string): number | undefined {
+  const re = /(?<![$\d.])(\d{1,2}(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(?:x|×|by)\s*(\d{1,2}(?:\.\d+)?)\s*(?:ft|feet|foot|')?(?![\d.])(?!\s*(?:in\b|inch|"|porcelain|tile|ceramic|marble|stone|subway|mosaic|sheet|panel|board|plank|lumber|post|beam|header))/gi;
+  for (const m of (text ?? "").matchAll(re)) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    if (a >= 4 && b >= 4 && a * b >= 24 && a * b <= 3000) return a * b;
+  }
+  return undefined;
+}
+
 /** The job's range here, before markup. Per-sqft jobs need the area. */
-export function remodelRange(job: RemodelJob | null, facts: BriefFacts, location: string | null | undefined): RemodelRange | null {
+export function remodelRange(job: RemodelJob | null, facts: BriefFacts, location: string | null | undefined, description = ""): RemodelRange | null {
   if (!job) return null;
   const loc = locationFactor(location);
+  const roomArea = facts.area ?? roomAreaFrom(description);
   if (job.perSqft) {
-    const area = facts.area;
+    const area = roomArea;
     if (!area || area < 80) return null;
     return { job: job.id, label: `${job.label} of about ${Math.round(area).toLocaleString("en-US")} sqft`, low: round100(job.low * area * loc.factor), high: round100(job.high * area * loc.factor), place: loc.label };
   }
+  const extra = job.id === "hall-bath" && roomArea && roomArea > BATH_SIZE.from ? roomArea - BATH_SIZE.from : 0;
+  const label = extra ? `${job.label} of about ${Math.round(roomArea!).toLocaleString("en-US")} sqft` : job.label;
+  // Only a bath grown past 60 sqft moves, and never past the primary bath.
+  const primary = REMODEL_JOBS["primary-bath"];
+  const grow = (base: number, perSqft: number, cap: number) => (extra ? Math.min(base + extra * perSqft, cap) : base);
   if (loc.metro && job.metroLow && job.metroHigh) {
-    return { job: job.id, label: job.label, low: job.metroLow, high: job.metroHigh, place: loc.label };
+    const low = grow(job.metroLow, BATH_SIZE.metroLow, primary.metroLow!);
+    const high = grow(job.metroHigh, BATH_SIZE.metroHigh, primary.metroHigh!);
+    return { job: job.id, label, low: round100(low), high: round100(high), place: loc.label };
   }
-  return { job: job.id, label: job.label, low: round100(job.low * loc.factor), high: round100(job.high * loc.factor), place: loc.label };
+  const low = grow(job.low, BATH_SIZE.low, primary.low) * loc.factor;
+  const high = grow(job.high, BATH_SIZE.high, primary.high) * loc.factor;
+  return { job: job.id, label, low: round100(low), high: round100(high), place: loc.label };
 }
 
 const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;

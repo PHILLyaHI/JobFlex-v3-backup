@@ -7,7 +7,9 @@
 > the unit vocabulary because older estimates carry it; the method never
 > uses it) and item 9 (a line's combined unitPrice stays above zero; a
 > labor-only line has materialCost 0). Items 11 and 12 needed no change
-> once the anchors were corrected. Section F's
+> once the anchors were corrected. Later the same evening the corrected
+> price book and the material profile went back into the live prompt, as the
+> previous JobFlex sent them (docs/remodel-method.md). Section F's
 > open decisions (contingency, who supplies fixtures, project management,
 > derived Seattle rates) stand as the method states them. Line numbers
 > below are from before the fix. See `docs/remodel-method.md`.

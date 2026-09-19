@@ -117,6 +117,38 @@ lists the prompt's order no longer claims the price book, material
 profile and tax guidance are sent (the live builder passes all three as
 empty), and names the method and the check after the reply.
 
+## Later the same evening: "looks too cheap" (a 12x8 bath in WV at $16,000)
+
+The owner's first estimate after the push (a 12x8 full bath, 12 lines,
+$16,000 before tax) was generated about ten minutes after the push, most
+likely before the deploy was live; its lines match the old prompt (tile, pan
+and floor as one line, backer and membrane as one, no fan duct, no
+dumpster). The owner's instinct — "go to the price book, as the previous
+JobFlex did" — was right in one respect, and three fixes followed:
+
+- **The previous JobFlex's price book and material profile ride again.**
+  The old app built its prompt with the anchored builder (the
+  specialty-filtered price book, the curated material profile and a tax
+  block); the port called the bare builder, so none of them reached the
+  model. `buildQuoteDraftPromptAnchored` (sync — the data is static) puts
+  the price book (now material only, corrected by the audit) and the
+  material profile back. The profile's packages are a check on the
+  material side, never a line. The old tax block stays out: it says tax
+  applies to materials only, while this app's proposal taxes the subtotal
+  at the job's state rate.
+- **Bathroom ranges scale with the room.** The range had judged a 12x8 (96
+  sqft) against a 5x8 hall bath, so $16,000 in WV (index 0.88) passed. Each
+  sqft past 60 now adds half the slope between the reviewed hall-bath and
+  primary-bath anchors ($105-235 national, $130-295 metro), capped at the
+  primary range — a derived rule, not a reviewed number. The 12x8 in WV
+  now reads $19,200-35,600, and its 12-line, $16,000 answer is asked again
+  for both reasons. The room size is read for the range only
+  (`roomAreaFrom`); the binding keeps its 100 sqft rule.
+- **A tile size is no longer the job's area.** The brief reader took
+  "12x24 porcelain tile" as a 288 sqft area (and could snap lines to it);
+  tile, sheet and plank sizes are skipped, and a number is read whole, so
+  "12x24 in. tile in a 10x12 kitchen" reads 120.
+
 ## Data-layer changes
 
 - None to the schema. Six new override keys (`remodel:read`,
@@ -128,7 +160,7 @@ empty), and names the method and the check after the reply.
 
 ## Proof
 
-`scripts/qa/remodel-method.check.ts`: the six parts and their sections,
+`scripts/qa/remodel-method.check.ts` (49 checks): the six parts and their sections,
 every implication bullet and example row ending in a legal unit, prices
 only in section 8, the owner's sink and disposal lines; the room parts for
 fifteen briefs; whole vs partial for eleven; the procedure block's

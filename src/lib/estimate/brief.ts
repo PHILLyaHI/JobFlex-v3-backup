@@ -78,7 +78,8 @@ export function readBrief(text: string, hint: { sqft?: number } = {}): BriefFact
   let area = measures.find((m) => m.unit === "sqft")?.value;
   if (area === undefined) {
     // "20x20 garage", "20 by 24 ft" — a pair of dimensions is an area.
-    const dims = t.match(new RegExp(`(?<![$\\d.])(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot|')?\\s*(?:x|×|by)\\s*(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot|')?(?![a-z])`, "i"));
+    // A tile or sheet size ("12x24 porcelain", "4x8 sheet") is not the job's area.
+    const dims = t.match(new RegExp(`(?<![$\\d.])(\\d+(?:\\.\\d+)?)\\s*(?:ft|feet|foot|')?\\s*(?:x|×|by)\\s*(\\d+(?:\\.\\d+)?)(?![\\d.])\\s*(?:ft|feet|foot|')?(?![a-z])(?!\\s*(?:in\\b|inch|"|porcelain|tile|ceramic|marble|stone|subway|mosaic|sheet|panel|board|plank))`, "i"));
     if (dims) {
       const a = Number(dims[1]) * Number(dims[2]);
       // A door is 8 x 7; a floor starts around 100 sq ft.

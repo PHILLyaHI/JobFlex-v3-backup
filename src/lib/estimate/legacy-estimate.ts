@@ -23,7 +23,7 @@
 import { ESTIMATOR_MASTER_PROMPT } from "./master-prompt";
 import { hvacPromptBlock, isHvacBrief } from "./hvac-prompt";
 import { normalizeUnit } from "./console-model";
-import { buildQuoteDraftPrompt } from "./legacy/prompt";
+import { buildQuoteDraftPromptAnchored } from "./legacy/prompt";
 import { parseAiDraftResponse, type AiDraftOutput, type AiDraftPricingLineItem } from "./legacy/parse";
 import { detectSpecialty } from "./legacy/specialtyDetector";
 import { getAiSpecialtyByIdSync, type AiSpecialty } from "./legacy/specialties";
@@ -197,7 +197,7 @@ export function buildLegacyEstimatePrompt(
   // A whole remodel of a known kind carries its range, so the model sees the
   // number before it answers; the action asks again when the reply falls
   // under it (lib/estimate/remodel-sanity). A stated price has no range.
-  const range = remodelRange(remodelJob(briefText, facts, scope, specialty.id, remodelDomains), facts, input.location);
+  const range = remodelRange(remodelJob(briefText, facts, scope, specialty.id, remodelDomains), facts, input.location, briefText);
   const remodelBlock = remodelMethod ? (range ? `${remodelMethod}\n\n${rangeLine(range)}` : remodelMethod) : null;
   const tradeRules = opts.withTradeRules
     ? buildTradeRulesBlock({
@@ -208,7 +208,9 @@ export function buildLegacyEstimatePrompt(
       })
     : null;
   const extra = [procedureBlock, remodelBlock, tradeRules].filter((b): b is string => !!b).join("\n\n");
-  const prompt = buildQuoteDraftPrompt({
+  // The previous JobFlex sent the price book and the material profile with
+  // every estimate; the anchored builder puts them back (2026-09-18).
+  const prompt = buildQuoteDraftPromptAnchored({
     specialty,
     summary,
     projectSize: input.sqft ? `${input.sqft} sqft` : undefined,

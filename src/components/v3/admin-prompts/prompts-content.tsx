@@ -313,8 +313,8 @@ export function AdminPromptsContent({
             <div className="card-title">How the prompt is built</div>
             <div className="card-sub">
               One model call prices a brief. The user message is assembled in this order; the parts marked <em>edit here</em> are the boxes below. The rest is code.
-              The price book, material profile and tax guidance of the old builder are not sent on this path; prices come from the master prompt&apos;s guidelines, the
-              trade profile&apos;s anchors and the method&apos;s sanity ranges.
+              Prices come from the master prompt&apos;s guidelines, the price book and material profile of the previous JobFlex (material only), the trade
+              profile&apos;s anchors and the method&apos;s sanity ranges. The old tax block is not sent: the proposal taxes the subtotal at the job&apos;s state rate.
             </div>
           </div>
         </div>
@@ -323,6 +323,7 @@ export function AdminPromptsContent({
           <li className={p.slot}><span><b>System message</b> — who the model is and that it answers in JSON.</span><em className={p.here}>edit here</em></li>
           <li className={p.slot}><span><b>Master prompt</b> — the estimator&apos;s method: photos and blueprints first, room naming, waste, units, pricing rules.</span><em className={p.here}>edit here</em></li>
           <li className={p.slot}><span><b>Specialty preamble</b> — one paragraph for the detected specialty (229 specialties in 14 groups).</span><em className={p.here}>edit here</em></li>
+          <li className={p.slot}><span><b>Material profile and price book</b> — the previous JobFlex&apos;s curated products for the specialty and its trade-filtered material prices, as a check on the material side of the lines.</span><em>code</em></li>
           <li className={p.slot}><span><b>Procedure</b> — the lines a professional estimate itemizes for the specialty, in order, each with its unit, plus the line-item rules. A brief that names part of a room (a sink, a toilet, a tub-to-shower) gets the steps as a menu, never a line quota.</span><em className={p.here}>edit here</em></li>
           <li className={p.slot}><span><b>Remodel method</b> — for kitchen, bath and interior briefs: how to read the brief, what it implies (only the rooms its words reach), hidden-work chains, code triggers, what is never forgotten, when to ask, what never to write, sanity ranges, worked examples; a whole remodel of a known kind also gets its price range for the place.</span><em className={p.here}>edit here</em></li>
           <li className={p.slot}><span><b>Trade profile</b> — phases, checklist and price anchors for the 20 deep trades (sent to gpt-4o-class models; gpt-5-class models get the prompt without it).</span><em>code</em></li>

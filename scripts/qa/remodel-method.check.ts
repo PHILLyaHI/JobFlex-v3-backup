@@ -5,7 +5,7 @@
 // book header and the specialty detector. No model call.
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/remodel-method.check.ts
 import { briefScope, formatRemodelMethod, remodelDomainsFor, REMODEL_PARTS, remodelPartDefault } from "../../src/lib/estimate/remodel-method";
-import { fullerAnswer, linesTotal, locationFactor, remodelJob, remodelRange, retryReasons } from "../../src/lib/estimate/remodel-sanity";
+import { fullerAnswer, linesTotal, locationFactor, remodelJob, remodelRange, retryReasons, roomAreaFrom } from "../../src/lib/estimate/remodel-sanity";
 import { buildLegacyEstimatePrompt } from "../../src/lib/estimate/legacy-estimate";
 import { formatProcedureBlock, procedureFor } from "../../src/lib/estimate/procedures";
 import { readBrief } from "../../src/lib/estimate/brief";
@@ -110,10 +110,21 @@ check("the sink brief: kitchen method rides (2A, examples 9.1 and 9.3), partial 
   sink.specialty.id === "kitchen-remodel" && sink.scope === "partial" && sink.procedureCoreSteps === 0 && sink.range === null &&
   sink.prompt.includes(METHOD_HEAD) && sink.prompt.includes("### 2A. KITCHEN") && sink.prompt.includes("### 9.1 ") && !sink.prompt.includes("### 2C.") && !sink.prompt.includes("### 2B.") &&
   sink.prompt.indexOf("PROCEDURE — KITCHEN") < sink.prompt.indexOf(METHOD_HEAD) && sink.prompt.includes("THIS BRIEF NAMES PART OF THE JOB"));
-const kirkland = buildLegacyEstimatePrompt({ description: "Full bathroom remodel, 8x10 hall bath, Kirkland WA", location: "Kirkland, WA" });
+const kirkland = buildLegacyEstimatePrompt({ description: "Full bathroom remodel, 5x8 hall bath, Kirkland WA", location: "Kirkland, WA" });
 check("the Kirkland bath: whole job, bathroom method, the metro range in the prompt",
   kirkland.scope === "full" && kirkland.remodelDomains.join() === "bathroom" && kirkland.range?.low === 28000 && kirkland.range?.high === 45000 && kirkland.procedureCoreSteps >= 10 &&
   kirkland.prompt.includes("THIS BRIEF'S RANGE: a full hall bath remodel in Kirkland runs $28,000-$45,000"), JSON.stringify(kirkland.range));
+const wv = buildLegacyEstimatePrompt({ description: "Full Bathroom Remodel - 12x8", location: "WV" });
+check("the owner's 12x8 in WV is judged as a 96 sqft bath, not a 5x8 (WV 0.88)", wv.range?.low === 19200 && wv.range?.high === 35600 && /about 96 sqft/.test(wv.range.label), JSON.stringify(wv.range));
+check("…so its $16,000, 12-line answer is asked again for both reasons", retryReasons({ lines: 12, coreSteps: wv.procedureCoreSteps, total: 16000, range: wv.range }).length === 2);
+const k810 = buildLegacyEstimatePrompt({ description: "Full bathroom remodel, 8x10 hall bath", location: "Kirkland, WA" });
+check("an 8x10 Kirkland bath scales above the 5x8's metro range", k810.range?.low === 30600 && k810.range?.high === 50900, JSON.stringify(k810.range));
+check("a big bath is capped at the primary-bath range", buildLegacyEstimatePrompt({ description: "Full bathroom remodel 20x14", location: "Dallas, TX" }).range?.high === 70000);
+check("room sizes read for the range, tile, sheet and lumber sizes skipped", roomAreaFrom("bath 12 by 8") === 96 && roomAreaFrom("12 x 8 ft bath") === 96 && roomAreaFrom("new 4x8 sheet") === undefined && roomAreaFrom("2x4 blocking") === undefined && roomAreaFrom("12x24 porcelain tile") === undefined);
+check("the brief reader no longer takes a tile size for the job's area", readBrief("full bathroom remodel with 12x24 porcelain tile").area === undefined && readBrief("12x24 in. tile floor in a 10x12 kitchen").area === 120 && readBrief("20x20 garage epoxy").area === 400);
+check("the previous JobFlex's price book and material profile ride again, the old tax block does not",
+  wv.prompt.includes("MATERIAL PRICE REFERENCE (US market data — material only, no labor)") && wv.prompt.includes("SPECIALTY MATERIAL PROFILE: bathroom-remodel") && !wv.prompt.includes("SALES TAX RULES") &&
+  wv.prompt.includes("a pack or package is never written as one line"));
 const spokane = buildLegacyEstimatePrompt({ description: "Full kitchen remodel", location: "Spokane, WA" });
 check("outside the metros the state index scales the national range (WA 1.15)", spokane.range?.low === 43700 && spokane.range?.high === 75900, JSON.stringify(spokane.range));
 const bothell = buildLegacyEstimatePrompt({ description: "full kitchen remodel 12x14 with an island", location: "Bothell, WA" });
