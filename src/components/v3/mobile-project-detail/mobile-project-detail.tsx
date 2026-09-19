@@ -79,6 +79,7 @@ import {
   shortDate,
 } from "@/components/v3/project-detail-blueprint/project-detail-data";
 import "./mobile-project-detail.css";
+import { LooseProposalsStrip } from "@/components/v3/project-links/loose-proposals-strip";
 
 const DAY_MS = 86400000;
 
@@ -277,11 +278,13 @@ export function MobileProjectDetail({
   jobs,
   proposals = [],
   availableProposals,
+  looseProposals = [],
 }: {
   project: PdProject;
   jobs: PdJob[];
   proposals?: PdProposal[];
   availableProposals: PdAvailProposal[];
+  looseProposals?: Array<{ id: string; title: string; total: number }>;
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -555,6 +558,9 @@ export function MobileProjectDetail({
             </div>
           </div>
 
+          <div className="mpd-loose">
+            <LooseProposalsStrip projectId={project.id} client={project.client} loose={looseProposals} />
+          </div>
           {/* ============ PROPOSALS (2026-09-18) ============ */}
           <section className="mpd-card mpd-props" aria-label="Proposals in this project">
             <div className="mpd-card-h">
@@ -573,10 +579,26 @@ export function MobileProjectDetail({
                 <span className={`mpd-b mpd-b--${proposalTone(p.status) === "bad" ? "sch" : proposalTone(p.status)}`}>{proposalLabel(p.status)}</span>
               </Link>
             ))}
-            <Link className="mpd-btn mpd-props-new" href={`/dashboard/manual-blueprint?project=${project.id}` as Route}>
+            <button
+              className="mpd-btn mpd-props-new"
+              type="button"
+              onClick={() =>
+                // The picker is mounted in MobileNav; any engine files here.
+                document.dispatchEvent(
+                  new CustomEvent("jf:estimator-picker", {
+                    detail: {
+                      projectId: project.id,
+                      projectName: project.name,
+                      clientId: project.client?.id ?? null,
+                      clientName: project.client?.name ?? null,
+                    },
+                  }),
+                )
+              }
+            >
               <Icon id="i-plus" />
               New proposal in this project
-            </Link>
+            </button>
           </section>
 
           {/* ============ VIEW BAR ============ */}

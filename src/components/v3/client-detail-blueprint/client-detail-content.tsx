@@ -174,8 +174,8 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
   // and listens on the document — the topbar's own New Estimate button opens
   // the same dialog the same way, minus the client.
   const newProposal = useCallback(() => {
-    document.dispatchEvent(new CustomEvent("jf:estimator-picker", { detail: { clientId } }));
-  }, [clientId]);
+    document.dispatchEvent(new CustomEvent("jf:estimator-picker", { detail: { clientId, clientName: view.client.name } }));
+  }, [clientId, view.client.name]);
 
   /** The ledger rows were `<button>`s with no handler — twelve pixels of hover
    *  feedback on a control that did nothing. Each row is a real proposal id, so

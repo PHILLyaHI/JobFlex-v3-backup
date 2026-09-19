@@ -61,7 +61,7 @@ import styles from "./mobile-projects.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
-import { archiveProject, createProject, listProjects, updateProject } from "@/actions/projects";
+import { archiveProject, createProject, listProjectClients, listProjects, updateProject } from "@/actions/projects";
 import {
   FILTERS,
   ISO_DATE,
@@ -493,6 +493,11 @@ export function MobileProjects() {
 
   /* ---- new-project form ---- */
   const [form, setForm] = useState({ name: "", scope: "", starts: "", ends: "", budget: "" });
+  // Whose project it is (2026-09-18). The list is fetched the first time the
+  // sheet opens; a picked client names a still-blank project for them.
+  const [clientChoices, setClientChoices] = useState<Array<{ id: string; name: string; street: string }> | null>(null);
+  const [clientPick, setClientPick] = useState("");
+  const nameAutoRef = useRef(false);
   const [draftStatus, setDraftStatus] = useState<string>(STATUSES[0]);
   const [nameErr, setNameErr] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -834,6 +839,9 @@ export function MobileProjects() {
   /* ---------- new-project form ----------------------------------------- */
   const openNew = () => {
     setForm({ name: "", scope: "", starts: "", ends: "", budget: "" });
+    setClientPick("");
+    nameAutoRef.current = false;
+    if (!clientChoices) void listProjectClients().then(setClientChoices).catch(() => setClientChoices([]));
     setDraftStatus(STATUSES[0]);
     setNameErr(false);
     setSaveErr(null);
@@ -874,6 +882,7 @@ export function MobileProjects() {
         startsAt: ISO_DATE.test(form.starts) ? form.starts : null,
         endsAt: ISO_DATE.test(form.ends) ? form.ends : null,
         budget: Math.round(Number(form.budget.replace(/[^\d.]/g, "")) || 0),
+        clientId: clientPick || null,
       });
       await load();
       // Drop back to All, so a project created while a filter was active is
@@ -1067,7 +1076,10 @@ export function MobileProjects() {
                         before the project it belongs to, same as the eye. */}
                     <div className={styles.pjMeta}>{windowLabel(p)}</div>
                     {/* Row 2 — identity, actions hard right */}
-                    <div className={styles.pjName}>{p.name}</div>
+                    <div className={styles.pjName}>
+                      {p.name}
+                      {p.clientName ? <span className={styles.pjClient}>{p.clientName}</span> : null}
+                    </div>
                     {/* `stopPropagation`: the ⋮ sits inside the card's own tap
                         target, and without it opening the menu would also open
                         the record underneath it. */}
@@ -1196,10 +1208,39 @@ export function MobileProjects() {
               placeholder="Willow Park fencing" autoComplete="off" value={form.name}
               aria-invalid={nameErr} aria-describedby={nameErr ? "mpNameErr" : undefined}
               onChange={(e) => {
+                nameAutoRef.current = false;
                 setForm((f) => ({ ...f, name: e.target.value }));
                 if (e.target.value.trim()) setNameErr(false);
               }} />
             {nameErr ? <span className={styles.fldErr} id="mpNameErr">Enter a project name</span> : null}
+          </div>
+
+          <div className={styles.fld}>
+            <label className={styles.fldLbl} htmlFor="mpClient">Client</label>
+            <select className={styles.pinput} id="mpClient" name="clientId" value={clientPick}
+              onChange={(e) => {
+                const id = e.target.value;
+                setClientPick(id);
+                const c = clientChoices?.find((x) => x.id === id);
+                // Name a blank project for the client and the street; never
+                // overwrite a name the contractor typed.
+                setForm((f) => {
+                  if (!c) return nameAutoRef.current ? { ...f, name: "" } : f;
+                  if (f.name.trim() && !nameAutoRef.current) return f;
+                  nameAutoRef.current = true;
+                  return { ...f, name: c.street ? `${c.name} — ${c.street}` : c.name };
+                });
+                if (c) setNameErr(false);
+              }}>
+              <option value="">{clientChoices ? "No client" : "Loading clients…"}</option>
+              {(clientChoices ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {c.street ? ` — ${c.street}` : ""}
+                </option>
+              ))}
+            </select>
+            <span className={styles.fldHint}>Its proposals can join the project from the project page.</span>
           </div>
 
           <div className={styles.fld}>

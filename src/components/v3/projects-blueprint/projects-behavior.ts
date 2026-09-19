@@ -201,6 +201,8 @@ export function initProjectsContent(
       '">' +
       esc(p.name) +
       "</div>" +
+      // Whose project it is (2026-09-18), above the scope line.
+      (p.clientName ? '<p class="pjc-client">' + esc(p.clientName) + "</p>" : "") +
       (p.description ? '<p class="pjc-desc">' + esc(p.description) + "</p>" : "") +
       "</div>" +
       '<span class="pstatus pjs--' +
@@ -413,6 +415,7 @@ export function initProjectsContent(
 
     function resetDlg() {
       pjForm!.reset();
+      nameAuto = false;
       draftStatus = STATUSES[0];
       paintStatus();
       markErr(false);
@@ -420,6 +423,34 @@ export function initProjectsContent(
     }
 
     if (newProjectBtn) on(newProjectBtn, "click", openDlg);
+
+    // Picking a client names a still-blank project for the client and the
+    // street ("Dima Petrov — 12103 202nd St SE"); a name the contractor typed
+    // is never overwritten, and a name this filled in follows a re-pick.
+    let nameAuto = false;
+    const clientSelEl = pjDlg!.querySelector<HTMLSelectElement>("#pjfClient");
+    const nameInput = pjDlg!.querySelector<HTMLInputElement>("#pjfName");
+    if (clientSelEl && nameInput) {
+      on(nameInput, "input", () => {
+        nameAuto = false;
+      });
+      on(clientSelEl, "change", () => {
+        const opt = clientSelEl.selectedOptions[0];
+        if (!clientSelEl.value || !opt) {
+          if (nameAuto) {
+            nameInput.value = "";
+            nameAuto = false;
+          }
+          return;
+        }
+        if (nameInput.value.trim() && !nameAuto) return;
+        const name = (opt.textContent ?? "").split(" — ")[0];
+        const street = opt.dataset.street ?? "";
+        nameInput.value = street ? `${name} — ${street}` : name;
+        nameAuto = true;
+        markErr(false);
+      });
+    }
 
     on(pjDlg, "click", (e) => {
       const t = e.target as HTMLElement;
@@ -486,6 +517,9 @@ export function initProjectsContent(
       const budget = Math.round(
         Number((inp("#pjfBudget")?.value || "").replace(/[^\d.]/g, "")) || 0,
       );
+      const clientSel = pjDlg!.querySelector<HTMLSelectElement>("#pjfClient");
+      const clientId = clientSel?.value || null;
+      const clientName = clientSel && clientSel.value ? (clientSel.selectedOptions[0]?.textContent ?? "").split(" — ")[0] : null;
 
       setBusy(true);
       try {
@@ -498,6 +532,7 @@ export function initProjectsContent(
           startsAt: ISO_DATE.test(startRaw) ? startRaw : null,
           endsAt: ISO_DATE.test(endRaw) ? endRaw : null,
           budget,
+          clientId,
         });
         projectsData.unshift({
           id: res.id,
@@ -509,6 +544,7 @@ export function initProjectsContent(
           budget,
           jobCount: 0,
           completedJobs: 0,
+          clientName,
         });
         setBusy(false);
         if (pjstate.filter === "ALL") {

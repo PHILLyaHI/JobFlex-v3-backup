@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
 import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
 import { estimateSchema, type GeneratedEstimate } from "@/lib/estimatorSchema";
 import { ProposalStatus } from "@/lib/prismaEnums";
@@ -179,7 +180,7 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
   const data = convertSchema.parse(raw);
 
   // Never trust a client id from the browser — it must belong to this org.
-  const clientId = data.clientId
+  const named = data.clientId
     ? (
         await db.client.findFirst({
           where: { id: data.clientId, organizationId },
@@ -187,6 +188,11 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
         })
       )?.id ?? null
     : null;
+  // Started from a project or a client's page, the picker recorded where this
+  // estimate files (lib/filingContext); an explicit client still wins.
+  const filing = await readFilingContext(organizationId);
+  const clientId = named ?? filing?.clientId ?? null;
+  const projectId = filing?.projectId ?? null;
 
   const lines = [
     ...data.materials.map((l) => ({
@@ -239,6 +245,7 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
       organizationId,
       ownerId: user.id,
       clientId,
+      projectId,
       title: data.title,
       // Scope only — assumptions stay on the estimate, never baked into the
       // proposal's scope (keeps the preview / calendar / job detail clean).
@@ -283,6 +290,8 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
     },
   });
 
+  if (filing) await clearFilingContext();
+  if (projectId) revalidatePath(`/dashboard/projects/${projectId}`);
   revalidatePath("/dashboard/proposals");
   return { id: proposal.id };
 }

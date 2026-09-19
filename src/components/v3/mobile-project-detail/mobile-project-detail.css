@@ -1178,3 +1178,4 @@ body:has(.jf-mobile-project-detail)::before { content: none; }
 .jf-mobile-project-detail .mpd-prop-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .jf-mobile-project-detail .mpd-prop .mpd-row-n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .jf-mobile-project-detail .mpd-props-new { width: 100%; justify-content: center; margin-top: 12px; min-height: 48px; text-decoration: none; }
+.jf-mobile-project-detail .mpd-loose:not(:empty) { margin-top: 14px; }

@@ -6,13 +6,15 @@
 
 import { db } from "@/lib/db";
 import { contractTotal } from "@/lib/contractTotal";
-import type { PdAvailProposal, PdJob, PdProject, PdProposal } from "./project-detail-data";
+import type { PdAvailProposal, PdJob, PdLooseProposal, PdProject, PdProposal } from "./project-detail-data";
 
 export type ProjectDetailProps = {
   project: PdProject;
   jobs: PdJob[];
   proposals: PdProposal[];
   availableProposals: PdAvailProposal[];
+  /** The project's client's proposals that are in no project yet. */
+  looseProposals: PdLooseProposal[];
 };
 
 export async function loadProjectDetail(id: string, organizationId: string): Promise<ProjectDetailProps | null> {
@@ -65,6 +67,9 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     take: 100,
   });
   const isMine = (clientId: string | null) => Boolean(project.clientId && clientId === project.clientId);
+  const looseProposals = candidates
+    .filter((p) => isMine(p.clientId) && !p.project)
+    .map((p) => ({ id: p.id, title: p.title, total: p.total }));
   const availableProposals = [...candidates]
     .sort((a, b) => Number(isMine(b.clientId)) - Number(isMine(a.clientId)))
     .map((p) => ({
@@ -122,5 +127,6 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
         : null,
     })),
     availableProposals,
+    looseProposals,
   };
 }

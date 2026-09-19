@@ -5,6 +5,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
 import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
@@ -1266,7 +1267,7 @@ export async function convertEstimateToProposal(raw: unknown) {
   const data = convertInput.parse(raw);
 
   // Never trust a client id from the browser — it must belong to this org.
-  const clientId = data.clientId
+  const named = data.clientId
     ? (
         await db.client.findFirst({
           where: { id: data.clientId, organizationId },
@@ -1274,6 +1275,11 @@ export async function convertEstimateToProposal(raw: unknown) {
         })
       )?.id ?? null
     : null;
+  // Started from a project or a client's page, the picker recorded where this
+  // estimate files (lib/filingContext); an explicit client still wins.
+  const filing = await readFilingContext(organizationId);
+  const clientId = named ?? filing?.clientId ?? null;
+  const projectId = filing?.projectId ?? null;
 
   // Hidden profit markup: seed this proposal from the org-wide default, then
   // apply it so each line's unitPrice is the SELL price (0% → equals cost).
@@ -1351,6 +1357,7 @@ export async function convertEstimateToProposal(raw: unknown) {
       organizationId,
       ownerId: user.id,
       clientId,
+      projectId,
       title: data.title,
       scopeOfWork: scope || null,
       address,
@@ -1396,6 +1403,8 @@ export async function convertEstimateToProposal(raw: unknown) {
     },
   });
 
+  if (filing) await clearFilingContext();
+  if (projectId) revalidatePath(`/dashboard/projects/${projectId}`);
   revalidatePath("/dashboard/proposals");
   return { id: proposal.id };
 }

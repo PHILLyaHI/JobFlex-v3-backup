@@ -22,7 +22,12 @@ export type Project = {
   budget: number;
   jobCount: number;
   completedJobs: number;
+  /** Whose project it is (2026-09-18), or null. */
+  clientName?: string | null;
 };
+
+/** A client the New Project dialog can file the project for. */
+export type ProjectClientChoice = { id: string; name: string; street: string };
 
 /** The three statuses the filter rail and the create dialog offer. ARCHIVED is
  *  deliberately absent: the page's query hides archived projects. */

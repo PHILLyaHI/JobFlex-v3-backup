@@ -23,6 +23,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
@@ -747,9 +748,14 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
   await enforcePlanLimit(organizationId, "proposalsCreated");
   const data = convertSchema.parse(raw);
 
-  const clientId = data.clientId
+  const named = data.clientId
     ? ((await db.client.findFirst({ where: { id: data.clientId, organizationId }, select: { id: true } }))?.id ?? null)
     : null;
+  // Started from a project or a client's page, the picker recorded where this
+  // estimate files (lib/filingContext); an explicit client still wins.
+  const filing = await readFilingContext(organizationId);
+  const clientId = named ?? filing?.clientId ?? null;
+  const projectId = filing?.projectId ?? null;
 
   const lines = [
     ...data.materials.map((l) => ({ name: l.name, measurementType: unitToType(l.unit), quantity: l.quantity, unitPrice: l.unitPrice, materialCost: l.unitPrice, laborCost: 0, total: l.quantity * l.unitPrice })),
@@ -775,6 +781,7 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
       organizationId,
       ownerId: user.id,
       clientId,
+      projectId,
       title: data.title,
       scopeOfWork: [data.scope ?? "", data.permitNote ?? ""].filter(Boolean).join("\n\n"),
       address,
@@ -806,6 +813,8 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
     data: { organizationId, actorId: user.id, proposalId: proposal.id, kind: "CREATED", summary: `Converted HVAC estimate to proposal "${proposal.title}"` },
   });
 
+  if (filing) await clearFilingContext();
+  if (projectId) revalidatePath(`/dashboard/projects/${projectId}`);
   revalidatePath("/dashboard/proposals");
   return { id: proposal.id };
 }

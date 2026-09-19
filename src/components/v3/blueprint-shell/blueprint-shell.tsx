@@ -21,6 +21,7 @@ import { usePathname } from "next/navigation";
 import { initBlueprintShell, type ShellHandle } from "./shell-behavior";
 import { CommandPalette } from "./command-palette";
 import { EstimatorPicker } from "@/components/v3/estimators-blueprint/estimator-picker";
+import { FilingChip } from "@/components/v3/filing-chip/filing-chip";
 import { PlanLimitDialog } from "@/components/billing/PlanLimitDialog";
 import { SupportWidget } from "@/components/v3/support-widget/support-widget";
 import { Sprite } from "./sprite";
@@ -182,6 +183,8 @@ export function BlueprintShell({
           a /dashboard/estimators page and its sidebar item — choosing an engine
           is a decision on the way somewhere, not a place you go. */}
       <EstimatorPicker />
+      {/* Where the estimate on screen will be filed, when the picker was opened from a project or a client (2026-09-18). */}
+      <FilingChip />
 
       {/* Same reasoning, and it closes a gap six separate pages hit
           independently: the create flows call `reportPlanLimit()` when the org

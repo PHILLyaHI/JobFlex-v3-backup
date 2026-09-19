@@ -59,6 +59,23 @@ import {
   shortDate,
 } from "./project-detail-data";
 import s from "./project-detail.module.css";
+import { LooseProposalsStrip } from "@/components/v3/project-links/loose-proposals-strip";
+
+/** "New proposal" on a project opens the estimator picker filed under it, so
+ *  any engine — Smart Proposal, roof, fence, HVAC, video or manual — can make
+ *  the project's next proposal (owner, 2026-09-18). */
+function newProposalIn(project: PdProject) {
+  document.dispatchEvent(
+    new CustomEvent("jf:estimator-picker", {
+      detail: {
+        projectId: project.id,
+        projectName: project.name,
+        clientId: project.client?.id ?? null,
+        clientName: project.client?.name ?? null,
+      },
+    }),
+  );
+}
 
 /** Hashed module class, or the literal name when the module has none — which is
  *  how the fleet's global `rv` / `rv-in` / `rv-cell` / `pressed` pass through. */
@@ -89,11 +106,13 @@ export function ProjectDetailContent({
   jobs,
   proposals = [],
   availableProposals,
+  looseProposals = [],
 }: {
   project: PdProject;
   jobs: PdJob[];
   proposals?: PdProposal[];
   availableProposals: PdAvailProposal[];
+  looseProposals?: Array<{ id: string; title: string; total: number }>;
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -227,12 +246,12 @@ export function ProjectDetailContent({
           <h1 className={cx("page-title")}>{project.name}</h1>
         </div>
         <div className={cx("page-actions")}>
-          <Link className={cx("btn", "btn-primary")} href={`/dashboard/manual-blueprint?project=${project.id}` as Route}>
+          <button className={cx("btn", "btn-primary")} type="button" onClick={() => newProposalIn(project)}>
             <svg className={cx("ic")}>
               <use href="#i-plus" />
             </svg>
             New proposal
-          </Link>
+          </button>
         </div>
       </div>
 
@@ -256,7 +275,8 @@ export function ProjectDetailContent({
         </div>
       </div>
 
-      <ProposalsCard proposals={proposals} projectId={project.id} onAttach={openAttach} />
+      <LooseProposalsStrip projectId={project.id} client={project.client} loose={looseProposals} />
+      <ProposalsCard proposals={proposals} project={project} onAttach={openAttach} />
 
       {/* ВИДЫ + ATTACH */}
       <div className={cx("pd-bar")}>
@@ -374,11 +394,11 @@ export function ProjectDetailContent({
 
 function ProposalsCard({
   proposals,
-  projectId,
+  project,
   onAttach,
 }: {
   proposals: PdProposal[];
-  projectId: string;
+  project: PdProject;
   onAttach: () => void;
 }) {
   const router = useRouter();
@@ -464,9 +484,9 @@ function ProposalsCard({
       ) : (
         <div className={cx("pd-props-empty")}>
           <span>No proposals in this project yet.</span>
-          <Link className={cx("btn", "btn-primary")} href={`/dashboard/manual-blueprint?project=${projectId}` as Route}>
+          <button className={cx("btn", "btn-primary")} type="button" onClick={() => newProposalIn(project)}>
             New proposal
-          </Link>
+          </button>
           <button className={cx("btn", "btn-ghost")} type="button" onClick={onAttach}>
             Attach one
           </button>

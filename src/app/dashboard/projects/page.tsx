@@ -49,11 +49,20 @@ export default async function ProjectsPage() {
     throw err;
   }
 
-  const projects = await db.project.findMany({
-    where: { organizationId, status: { not: "ARCHIVED" } },
-    orderBy: { updatedAt: "desc" },
-    include: { jobs: { select: { id: true, status: true } } },
-  });
+  const [projects, clientRows] = await Promise.all([
+    db.project.findMany({
+      where: { organizationId, status: { not: "ARCHIVED" } },
+      orderBy: { updatedAt: "desc" },
+      include: { jobs: { select: { id: true, status: true } }, client: { select: { name: true } } },
+    }),
+    // For the New Project dialog's client field (2026-09-18).
+    db.client.findMany({
+      where: { organizationId, deletedAt: null },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, address: true },
+      take: 1000,
+    }),
+  ]);
 
   const rows: Project[] = projects.map((p) => ({
     id: p.id,
@@ -65,7 +74,9 @@ export default async function ProjectsPage() {
     budget: p.budget,
     jobCount: p.jobs.length,
     completedJobs: p.jobs.filter((j) => j.status === "COMPLETED").length,
+    clientName: p.client?.name ?? null,
   }));
+  const clients = clientRows.map((c) => ({ id: c.id, name: c.name, street: (c.address ?? "").split("\n")[0]?.trim() ?? "" }));
 
-  return <ProjectsContent projects={rows} />;
+  return <ProjectsContent projects={rows} clients={clients} />;
 }

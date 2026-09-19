@@ -543,7 +543,7 @@ export function MobileClients() {
       // outgoing scrim and reads as a click that did nothing.
       requestAnimationFrame(() => {
         document.dispatchEvent(
-          new CustomEvent("jf:estimator-picker", { detail: { clientId: c.id } }),
+          new CustomEvent("jf:estimator-picker", { detail: { clientId: c.id, clientName: c.name } }),
         );
       });
     } else if (act === "proj") {

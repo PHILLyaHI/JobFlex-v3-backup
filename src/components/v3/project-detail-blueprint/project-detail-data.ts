@@ -91,6 +91,14 @@ export interface PdProposal {
   co: { count: number; approved: number; pending: number; approvedTotal: number; pendingTotal: number };
 }
 
+/** A proposal of the project's own client that sits in no project — the page
+ *  offers to bring these in with one tap. */
+export interface PdLooseProposal {
+  id: string;
+  title: string;
+  total: number;
+}
+
 /** A proposal that could be filed under this project. */
 export interface PdAvailProposal {
   id: string;

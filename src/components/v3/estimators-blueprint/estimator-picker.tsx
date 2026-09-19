@@ -32,6 +32,7 @@ import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import { canOpen } from "@/components/v3/blueprint-shell/nav-map";
 import { useNavLocked, useNavRole } from "@/components/v3/blueprint-shell/nav-role";
+import { clearFiling, writeFiling, type Filing } from "@/lib/filingCookie";
 import { ENGINES, QUEUED_COUNT, type EngineDiagram } from "./estimators-data";
 
 // Split once at module scope — the roster is a constant, so there is nothing
@@ -209,7 +210,9 @@ export function EstimatorPicker() {
   // The topbar's New Estimate button opens the picker with no client, and a
   // client id left over from a previous open would silently attach the wrong
   // homeowner to the next estimate anybody started from anywhere in the app.
-  const [clientId, setClientId] = useState<string | null>(null);
+  // Since 2026-09-18 a project can ride along too ("New proposal" on a project
+  // page): whichever engine is chosen files its proposal there.
+  const [filing, setFiling] = useState<Filing | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   // Whatever had focus when the dialog opened — almost always the topbar's
   // New Estimate button. Focus goes back there on close, so dismissing does not
@@ -236,10 +239,10 @@ export function EstimatorPicker() {
     function onOpen(e: Event) {
       returnRef.current = document.activeElement as HTMLElement | null;
       if (exitTimer.current) window.clearTimeout(exitTimer.current);
-      // `detail.clientId` is optional and read defensively: the topbar
-      // dispatches a plain Event, the client record dispatches a CustomEvent.
-      const detail = (e as CustomEvent<{ clientId?: string } | undefined>).detail;
-      setClientId(detail?.clientId ?? null);
+      // The detail is optional and read defensively: the topbar dispatches a
+      // plain Event, a client record or a project a CustomEvent.
+      const detail = (e as CustomEvent<Filing | undefined>).detail;
+      setFiling(detail && (detail.clientId || detail.projectId) ? detail : null);
       setLeaving(false);
       setOpen(true);
     }
@@ -286,13 +289,25 @@ export function EstimatorPicker() {
   );
 
   function choose(href: string) {
-    // The client rides through to whichever engine was picked. Which engine it
-    // is does not matter and is not this dialog's business — the user chose an
-    // ENGINE, they had already chosen the CLIENT by starting from their record,
-    // and an estimate that forgot the second decision while honouring the first
-    // is how a finished proposal ends up saved against nobody. Every engine
-    // reads the same `?client=` param, so there is one spelling to keep.
-    const to = clientId ? `${href}?client=${encodeURIComponent(clientId)}` : href;
+    // The client and the project ride through to whichever engine was picked.
+    // Which engine it is does not matter and is not this dialog's business —
+    // the user chose an ENGINE, they had already chosen WHERE by starting from
+    // a client's record or a project, and an estimate that forgot that is how a
+    // finished proposal ends up saved against nobody.
+    //
+    // Two carriers, because the engines differ (2026-09-18): the manual builder
+    // reads `?client=` / `?project=`; the estimators read neither (several are
+    // mounted with no props on a phone), so the choice is also written to the
+    // filing cookie, which their convert actions read on the server
+    // (lib/filingContext) and a chip on their page shows. Opened with no
+    // context — the topbar's New Estimate — any earlier filing is dropped, so
+    // a fresh estimate never lands in a project nobody chose for it.
+    if (filing) writeFiling(filing);
+    else clearFiling();
+    const q = new URLSearchParams();
+    if (filing?.clientId) q.set("client", filing.clientId);
+    if (filing?.projectId) q.set("project", filing.projectId);
+    const to = q.size ? `${href}?${q.toString()}` : href;
     // Navigate first, then play the exit: the dialog is leaving either way, and
     // waiting 190ms before routing makes the click feel sticky.
     router.push(to as Route);
@@ -315,7 +330,16 @@ export function EstimatorPicker() {
             New estimate
           </div>
           <span className="estp-kick">
-            {openEngines.length} active &middot; {QUEUED_COUNT} queued
+            {filing?.projectName || filing?.clientName ? (
+              <>
+                Files under <b>{filing.projectName ?? filing.clientName}</b>
+                {filing.projectName && filing.clientName ? <> &middot; {filing.clientName}</> : null}
+              </>
+            ) : (
+              <>
+                {openEngines.length} active &middot; {QUEUED_COUNT} queued
+              </>
+            )}
           </span>
           <button className="estp-x" type="button" aria-label="Close" onClick={close}>
             <svg className="ic">
