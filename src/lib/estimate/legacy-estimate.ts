@@ -30,8 +30,11 @@ import { getAiSpecialtyByIdSync, type AiSpecialty } from "./legacy/specialties";
 import { buildTradeRulesBlock } from "./estimate-prompt";
 import { briefRulesBlock, readBrief, type BriefFacts } from "./brief";
 import { coreStepCount, formatProcedureBlock, PROCEDURE_RULES, procedureFor, type SpecialtyProcedure } from "./procedures";
-import { briefScope, formatRemodelMethod, remodelDomainsFor, type BriefScope, type RemodelDomain, type RemodelOverrides } from "./remodel-method";
-import { rangeLine, remodelJob, remodelRange, type RemodelRange } from "./remodel-sanity";
+import { briefScope, formatRemodelMethod, inRemodelFamily, remodelDomainsFor, type BriefScope, type RemodelDomain, type RemodelOverrides } from "./remodel-method";
+import { rangeLine, remodelJob, remodelRange, type JobRange } from "./remodel-sanity";
+import { fitsUtilityJob, utilityJob, utilityPriceBlock, utilityRange, utilityRangeLine, type UtilityJobId } from "./utility-work";
+import { locationIndex, locationLine } from "./location-index";
+import { pricesFor, specialtyRange, specialtyRangeLine, type SpecialtyPrices } from "./step-prices";
 
 /** The old route's fallback when no specialty matched. Verbatim. */
 export const GENERAL_CONTRACTING: AiSpecialty = {
@@ -127,10 +130,18 @@ export type PromptOverrideSet = {
  * itemizes (lib/estimate/procedures), with the admin's edits applied. Null
  * for a specialty no procedure is written for.
  */
-export function procedureBlockFor(specialty: AiSpecialty, overrides?: PromptOverrideSet | null, scope: BriefScope = "full"): string | null {
+export function procedureBlockFor(
+  specialty: AiSpecialty,
+  overrides?: PromptOverrideSet | null,
+  scope: BriefScope = "full",
+  prices: SpecialtyPrices | null = pricesFor(specialty.id),
+): string | null {
   const procedure = effectiveProcedure(specialty.id, overrides);
   if (!procedure) return null;
-  return formatProcedureBlock(specialty.name, procedure, overrides?.procedureRules ?? PROCEDURE_RULES, { partial: scope === "partial" });
+  return formatProcedureBlock(specialty.name, procedure, overrides?.procedureRules ?? PROCEDURE_RULES, {
+    partial: scope === "partial",
+    prices,
+  });
 }
 
 /** The admin's procedure for the specialty when saved, else the code's. */
@@ -153,10 +164,20 @@ export function buildLegacyEstimatePrompt(
   scope: BriefScope;
   /** The remodel method's room parts this brief carries (empty = no method). */
   remodelDomains: RemodelDomain[];
-  /** A whole remodel of a known kind: its standard-grade range here, before markup. */
-  range: RemodelRange | null;
+  /** A whole remodel of a known kind, an underground utility run, or a whole job of stated size: its range here, before markup. */
+  range: JobRange | null;
+  /** The kind of underground utility job the brief is (sewer, storm, water; street or yard). */
+  utilityJob: UtilityJobId | null;
+  /** How many of the procedure's steps the price book prices (null: no procedure or no book). */
+  priced: { steps: number; of: number } | null;
 } {
-  const detected = (opts.specialtyId ? getAiSpecialtyByIdSync(opts.specialtyId) : null) ?? specialtyFor(input).specialty;
+  const chosen = opts.specialtyId ? getAiSpecialtyByIdSync(opts.specialtyId) : undefined;
+  const found = chosen ? null : specialtyFor(input);
+  const detected = chosen ?? found!.specialty;
+  // No specialty matched: the general-contracting fallback. It prices its
+  // steps, but gets no benchmark range — that is a remodel's, and an
+  // unmatched small job must never be asked to reach it.
+  const fallback = !!found && !found.detected;
   // The admin's preamble, when one was saved for this specialty.
   const ownPreamble = opts.overrides?.specialties[detected.id]?.preamble?.trim();
   const specialty: AiSpecialty = ownPreamble ? { ...detected, promptPreamble: ownPreamble } : detected;
@@ -188,17 +209,35 @@ export function buildLegacyEstimatePrompt(
   // model, ahead of the trade profile block when that is sent too.
   const briefText = `${input.projectType ?? ""} ${input.description}`;
   const scope = briefScope(briefText, specialty.id);
-  const procedureBlock = procedureBlockFor(specialty, opts.overrides, scope);
   // The remodel method — what this brief implies, the chains, the code
   // triggers, the never-forgotten lines and the sanity ranges — for the
   // rooms the brief's words reach (lib/estimate/remodel-method).
   const remodelDomains = remodelDomainsFor(briefText, specialty.id);
+  // Sewer, storm and water lines are civil work, priced at public bid prices
+  // (lib/estimate/utility-work) — never as house plumbing.
+  const utility = remodelDomains.length ? null : utilityJob(briefText, specialty.id);
+  // The price book's cost on every step (lib/estimate/step-prices) — unless
+  // this is a utility job the specialty's book is the wrong scale for (a
+  // side-sewer book on a street main): then the job's bid prices govern.
+  const book = pricesFor(specialty.id);
+  const prices = book && utility && !fitsUtilityJob(book, utility) ? null : book;
+  const procedureBlock = procedureBlockFor(specialty, opts.overrides, scope, prices);
   const remodelMethod = formatRemodelMethod(remodelDomains, opts.overrides?.remodel);
   // A whole remodel of a known kind carries its range, so the model sees the
   // number before it answers; the action asks again when the reply falls
   // under it (lib/estimate/remodel-sanity). A stated price has no range.
-  const range = remodelRange(remodelJob(briefText, facts, scope, specialty.id, remodelDomains), facts, input.location, briefText);
-  const remodelBlock = remodelMethod ? (range ? `${remodelMethod}\n\n${rangeLine(range)}` : remodelMethod) : null;
+  const remodel = remodelRange(remodelJob(briefText, facts, scope, specialty.id, remodelDomains), facts, input.location, briefText);
+  const remodelBlock = remodelMethod ? (remodel ? `${remodelMethod}\n\n${rangeLine(remodel)}` : remodelMethod) : null;
+  const utilityRun = utilityRange(utility, facts, input.location);
+  // Any other whole job whose size the brief states in the unit the trade
+  // sells by gets the price book's benchmark for the trade
+  // (lib/estimate/step-prices) — a floor or a paint job that names a room
+  // too. Remodelers and general contractors keep the method's ranges. A
+  // stated price is binding and has no range.
+  const statedPrice = !!(facts.sellTotal || facts.sellPerUnit);
+  const benchmark =
+    !remodel && !utility && !inRemodelFamily(specialty.id) && scope === "full" && !statedPrice && !fallback ? specialtyRange(specialty, facts, input.location) : null;
+  const range: JobRange | null = remodel ?? utilityRun ?? benchmark;
   const tradeRules = opts.withTradeRules
     ? buildTradeRulesBlock({
         description: input.description,
@@ -207,7 +246,14 @@ export function buildLegacyEstimatePrompt(
         projectType: input.projectType,
       })
     : null;
-  const extra = [procedureBlock, remodelBlock, tradeRules].filter((b): b is string => !!b).join("\n\n");
+  // The job's market, city first (lib/estimate/location-index). The trade
+  // block carries the same line when it is sent, so it rides alone otherwise.
+  const location = tradeRules ? null : locationLine(locationIndex(input.location));
+  const utilityBlock = utility
+    ? [tradeRules ? null : utilityPriceBlock(utility), utilityRun ? utilityRangeLine(utilityRun) : null].filter((b): b is string => !!b).join("\n\n") || null
+    : null;
+  const benchmarkLine = benchmark ? specialtyRangeLine(benchmark) : null;
+  const extra = [location, procedureBlock, benchmarkLine, remodelBlock, utilityBlock, tradeRules].filter((b): b is string => !!b).join("\n\n");
   // The previous JobFlex sent the price book and the material profile with
   // every estimate; the anchored builder puts them back (2026-09-18).
   const prompt = buildQuoteDraftPromptAnchored({
@@ -222,16 +268,20 @@ export function buildLegacyEstimatePrompt(
     adminPromptExtra: extra || null,
     pricingPrompt: null,
   });
+  const effective = effectiveProcedure(specialty.id, opts.overrides);
+  const priced = effective && prices ? { steps: effective.steps.filter((s) => prices.steps[s.item.trim()]).length, of: effective.steps.length } : null;
   return {
     specialty,
     prompt,
     hvac,
     facts,
     procedure: procedureBlock !== null,
-    procedureCoreSteps: scope === "full" ? coreStepCount(effectiveProcedure(specialty.id, opts.overrides)) : 0,
+    procedureCoreSteps: scope === "full" ? coreStepCount(effective) : 0,
     scope,
     remodelDomains,
     range,
+    utilityJob: utility,
+    priced,
   };
 }
 

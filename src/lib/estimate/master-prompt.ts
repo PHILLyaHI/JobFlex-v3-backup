@@ -644,6 +644,8 @@ Typical components:
 
 ## PRICING GUIDELINES
 
+The PRICE BOOK in the procedure block governs every step it prices — the contractor's cost per unit, scaled by the LOCATION factor. The figures below are a cross-check and price only what the book leaves unpriced.
+
 ### KITCHEN MATERIALS (per linear foot of cabinets)
 - Stock cabinets: $100-200/LF
 - Semi-custom cabinets: $200-400/LF

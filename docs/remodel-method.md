@@ -149,6 +149,16 @@ JobFlex did" — was right in one respect, and three fixes followed:
   tile, sheet and plank sizes are skipped, and a number is read whole, so
   "12x24 in. tile in a 10x12 kitchen" reads 120.
 
+## Later: prices by city (the sewer brief)
+
+The remodel ranges now read the job's market from the city index
+(`docs/pricing-sources.md`). A listed city uses its own factor. Otherwise
+a metro the old rule knew stays at 1.25, and the rest use the corrected
+state index. Kirkland and Bothell stay at 1.25. Spokane falls from 1.15 to
+1.06, WV rises from 0.88 to 0.94 and Dallas falls from 1.00 to 0.92. The
+12x8 bath in WV now reads $20,500-38,000, and its $16,000 answer is still
+asked again.
+
 ## Data-layer changes
 
 - None to the schema. Six new override keys (`remodel:read`,
@@ -171,11 +181,11 @@ reasons and the fuller-answer choice; the override parse, block and save
 checks; the master-prompt, trade-profile, trade-block and price-book
 fixes; the detector on nineteen briefs and two repairs. The existing
 `procedures.check.ts` and `estimate-brief.check.ts` stay green. On the
-stand (`adshoot/prompts-remodel.js`, 24 checks, desktop and phone): the
+stand (`adshoot/prompts-remodel.js`, 26 checks, desktop and phone): the
 truthful order card, the six-part picker, an edited kitchen part landing
 in the composed prompt and resetting, the chips for a sink (kitchen, part
 of a room, no range), the Kirkland bath (bathroom, whole job,
-$28,000-45,000, its prompt carrying section 2B, example 9.5 and the range line) and a roof (no method).
+$30,600-50,900, its prompt carrying section 2B, example 9.5 and the range line) and a roof (no method).
 
 Not verified here: a live OpenAI run (no key on the stand). The owner sees
 the lines on jobflex.app; the console line `[advancedEstimator] Step 1`

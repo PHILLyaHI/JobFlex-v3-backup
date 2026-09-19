@@ -22,7 +22,8 @@
 // Plain module, no "use server": lib/estimate/legacy-estimate imports it.
 
 import { ESTIMATOR_MASTER_PROMPT, UNIT_RULES } from "./master-prompt";
-import { detectTrade, stateCostIndex, type TradeProfile } from "./trade-knowledge";
+import { detectTrade, type TradeProfile } from "./trade-knowledge";
+import { locationIndex } from "./location-index";
 
 export type EstimatePromptInput = {
   description: string;
@@ -66,10 +67,12 @@ export function buildEstimateSystemPrompt(trade: TradeProfile, input: EstimatePr
       : input.qualityTier === "luxury"
         ? "LUXURY — the high end of every range, premium materials and detailing"
         : "STANDARD — the middle of every range, contractor-grade materials";
-  const region = stateCostIndex(input.location);
-  const regionText = region
-    ? `The job is in ${region.state}: multiply national material and labor anchors by about ${region.index.toFixed(2)} (metro areas run higher still).`
-    : "No state was given: price at the US national average and say so in the assumptions.";
+  // City first, then the state, then national (lib/estimate/location-index).
+  const region = locationIndex(input.location);
+  const regionText =
+    region.level === "national"
+      ? "No city or state was recognized in the job's location: price at the US national average and say so in the assumptions."
+      : `The job is in ${region.place}: multiply national material and labor anchors by about ${region.factor.toFixed(2)} (${region.level === "city" ? "its construction cost index" : "the state index; a major city in it runs higher"}).`;
 
   return [
     ESTIMATOR_MASTER_PROMPT,

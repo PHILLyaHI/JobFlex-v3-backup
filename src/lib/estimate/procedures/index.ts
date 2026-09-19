@@ -34,6 +34,7 @@ import {
   type ProcedureUnit,
   type SpecialtyProcedure,
 } from "./types";
+import { STEP_PRICE_HEADER, stepCostText, type SpecialtyPrices } from "../step-prices";
 
 export * from "./types";
 
@@ -89,7 +90,7 @@ export const PROCEDURE_RULES =
   "Every line carries both materialCost and laborCost: a labor-only step has materialCost 0, a permit or fee has laborCost 0, a supplied-and-installed step has both. " +
   "Never pad: work already covered by one line is not written again under another name, and two different steps are never priced as one line. " +
   "Do not add work the procedure does not list and the brief does not ask for — an extra a pro would offer goes to `upsells`. " +
-  "Where a TRADE PROFILE with phases also appears, its phases group these steps and its price anchors govern the numbers.";
+  "Where a TRADE PROFILE with phases also appears, its phases group these steps; the step costs of the PRICE BOOK govern the numbers, and the profile's anchors price any step the book leaves unpriced.";
 
 const RULE = "═══════════════════════════════════════════════════════════════";
 
@@ -114,7 +115,7 @@ export function formatProcedureBlock(
   specialtyName: string,
   procedure: SpecialtyProcedure,
   rules: string = PROCEDURE_RULES,
-  opts: { partial?: boolean } = {},
+  opts: { partial?: boolean; prices?: SpecialtyPrices | null } = {},
 ): string {
   const lines: string[] = [];
   lines.push(RULE);
@@ -134,9 +135,15 @@ export function formatProcedureBlock(
       `This procedure has ${core} core steps and ${conditional} conditional ones. A complete answer has AT LEAST ${core} line items — one per core step, in this order — plus every conditional step the brief or the site calls for. An answer with fewer lines is incomplete and is rejected. Labor on every line is a licensed crew's time at the job's local rates, never a token amount.`,
     );
   }
+  // The price book prices a step by its exact text; an admin's edited step
+  // that no longer matches goes unpriced rather than wrongly priced.
+  const book = opts.prices ?? null;
+  const priced = book ? procedure.steps.filter((s) => book.steps[s.item.trim()]).length : 0;
+  if (book && priced) lines.push(STEP_PRICE_HEADER);
   procedure.steps.forEach((s, i) => {
     const tag = s.when ? `[when ${s.when.trim()}]` : "[core]";
-    lines.push(`  ${i + 1}. ${tag} ${s.item.trim()} — ${s.unit}`);
+    const price = book?.steps[s.item.trim()];
+    lines.push(`  ${i + 1}. ${tag} ${s.item.trim()} — ${s.unit}${price ? ` · ${stepCostText(s.unit, price, book!.op)}` : ""}`);
   });
   if (procedure.avoid.length) {
     lines.push("NEVER write these lines for this trade:");

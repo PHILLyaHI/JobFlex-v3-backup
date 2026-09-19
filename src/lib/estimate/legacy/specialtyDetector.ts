@@ -81,6 +81,7 @@ const PHRASE_VOTES: Array<{ re: RegExp; id: string; bonus: number; unlessRepair?
   { re: /\b(?:replace|replacing|install|installing|new|swap|add|adding|vent|move|moving)\b[^.]{0,30}\b(?:dish\s?washer|(?:garbage\s+)?disposal|range\s+hood|hood|cook\s?top|wall\s+oven|(?:gas|electric|induction)\s+range|range|over[-\s]the[-\s]range\s+microwave|microwave|ice\s?maker|kitchen\s+sink|kitchen\s+faucet)\b/i, id: 'kitchen-remodel', bonus: 150, unlessRepair: true },
   { re: /\bfinish\w*\s+(?:the\s+|my\s+|a\s+|an\s+|our\s+)?(?:\d[\d,]*\s*(?:sq\.?\s*ft|sqft|sf)\s+)?basement|\bbasement\s+(?:finish\w*|remodel\w*|renovation|build[-\s]?out)/i, id: 'interior-remodel', bonus: 220 },
   { re: /\breplac\w*\s+(?:\w+\s+){0,3}windows?\b|\bwindow\s+replacement/i, id: 'window-replacement', bonus: 200 },
+  { re: /\b(?:sewer|drain|main\s+line|toilet|sink|tub)\b[^.]{0,30}\b(?:backed\s+up|backing\s+up|clog\w*|slow|roots?|jet\w*|snak\w*)\b|\b(?:backed\s+up|clog\w*|snake|hydro[-\s]?jet\w*|roots?)\b[^.]{0,30}\b(?:sewer|drain|main\s+line)\b/i, id: 'drain-cleaning', bonus: 150 },
   { re: /\bpocket\s+doors?\b/i, id: 'interior-remodel', bonus: 150 },
   { re: /\b(?:front|entry|exterior|patio|sliding|french|back|storm)\s+doors?\b/i, id: 'window-door', bonus: 150 },
   { re: /\binterior\s+doors?\b|\bprehung\s+doors?\b|\bpre-hung\s+doors?\b|\bbarn\s+doors?\b|\bbifold\s+doors?\b|\bcloset\s+doors?\b/i, id: 'finish-carpentry', bonus: 150 },

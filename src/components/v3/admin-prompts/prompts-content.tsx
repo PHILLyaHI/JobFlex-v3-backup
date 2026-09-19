@@ -541,6 +541,21 @@ export function AdminPromptsContent({
             <span className={`chip ${s.chipMuted}`} data-preview-scope={preview.scope}>
               {preview.scope === "partial" ? "part of a room: steps as a menu" : "whole job"}
             </span>
+            <span
+              className={preview.priced && preview.priced.steps ? "chip ok" : `chip ${s.chipMuted}`}
+              data-preview-priced={preview.priced ? `${preview.priced.steps}/${preview.priced.of}` : "none"}
+            >
+              {preview.priced && preview.priced.steps
+                ? `price book: ${preview.priced.steps} of ${preview.priced.of} steps priced`
+                : preview.utilityJob
+                  ? "priced by the utility bid prices"
+                  : "no price book"}
+            </span>
+            {preview.utilityJob ? (
+              <span className="chip ok" data-preview-utility={preview.utilityJob}>
+                utility: {preview.utilityJob.replace(/-/g, " ")}
+              </span>
+            ) : null}
             {preview.range ? (
               <span className="chip ok" data-preview-range={`${preview.range.low}-${preview.range.high}`}>
                 range ${preview.range.low.toLocaleString("en-US")}-${preview.range.high.toLocaleString("en-US")} ({preview.range.place})

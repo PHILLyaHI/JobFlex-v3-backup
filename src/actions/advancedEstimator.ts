@@ -651,7 +651,7 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
       { withTradeRules: !reasoningModel, overrides },
     );
     console.info(
-      `[advancedEstimator] Step 1 (estimate) · specialty=${legacy.specialty.id} scope=${legacy.scope} method=${legacy.remodelDomains.join("+") || "none"} procedure=${legacy.procedure} hvac=${legacy.hvac} tier=${qualityTier} photos=${photos.length} prompt=${legacy.prompt.length}ch`
+      `[advancedEstimator] Step 1 (estimate) · specialty=${legacy.specialty.id} scope=${legacy.scope} method=${legacy.remodelDomains.join("+") || "none"} utility=${legacy.utilityJob ?? "none"} prices=${legacy.priced ? `${legacy.priced.steps}/${legacy.priced.of}` : "none"} range=${legacy.range ? `${legacy.range.low}-${legacy.range.high}` : "none"} procedure=${legacy.procedure} hvac=${legacy.hvac} tier=${qualityTier} photos=${photos.length} prompt=${legacy.prompt.length}ch`
     );
     const askEstimate = async (userPrompt: string) => {
       const completion = await client.chat.completions.create({

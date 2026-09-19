@@ -18,7 +18,8 @@ import {
 } from "./procedures";
 import { OVERRIDE_KEYS, type PromptOverrides } from "./promptOverrides";
 import { REMODEL_PART_KEYS, REMODEL_PARTS, type BriefScope, type RemodelDomain, type RemodelPartKey } from "./remodel-method";
-import type { RemodelRange } from "./remodel-sanity";
+import type { JobRange } from "./remodel-sanity";
+import { pricesFor } from "./step-prices";
 import { OPENAI_MODEL } from "@/lib/sdk/openai";
 
 /** The model the estimate runs on decides whether the trade block rides along
@@ -63,8 +64,12 @@ export type PromptPreview = {
   scope: BriefScope;
   /** The remodel method's room parts the brief carries (empty = no method). */
   remodelDomains: RemodelDomain[];
-  /** A whole remodel of a known kind: its range here. */
-  range: RemodelRange | null;
+  /** A whole remodel of a known kind, a utility run or a whole job of stated size: its range here. */
+  range: JobRange | null;
+  /** The underground utility job the brief is, when it is one. */
+  utilityJob: string | null;
+  /** How many of the procedure's steps the price book prices. */
+  priced: { steps: number; of: number } | null;
 };
 
 /** One part of the remodel method as the admin sees it. */
@@ -125,7 +130,7 @@ export function specialtyDetail(id: string, o: PromptOverrides): SpecialtyPrompt
     keyQuestions: s.keyQuestions,
     preamble,
     procedure,
-    block: effective ? formatProcedureBlock(s.name, effective, o.procedureRules ?? PROCEDURE_RULES) : null,
+    block: effective ? formatProcedureBlock(s.name, effective, o.procedureRules ?? PROCEDURE_RULES, { prices: pricesFor(s.id) }) : null,
     units: PROCEDURE_UNITS,
   };
 }
@@ -152,6 +157,8 @@ export function composePreview(
     scope: built.scope,
     remodelDomains: built.remodelDomains,
     range: built.range,
+    utilityJob: built.utilityJob,
+    priced: built.priced,
   };
 }
 

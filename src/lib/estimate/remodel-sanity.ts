@@ -11,10 +11,12 @@
 // (or a tub-to-shower, a defined job) and states no price — a stated price is
 // binding (lib/estimate/brief) and never argued with. Plain module.
 
-import { stateCostIndex } from "./trade-knowledge";
+import { locationIndex } from "./location-index";
 import { shortOfProcedure } from "./procedures";
 import type { BriefFacts } from "./brief";
 import type { BriefScope, RemodelDomain } from "./remodel-method";
+import type { UtilityRange } from "./utility-work";
+import type { SpecialtyRange } from "./step-prices";
 
 export type RemodelJobId =
   | "tub-to-shower"
@@ -59,13 +61,19 @@ export const REMODEL_JOBS: Record<RemodelJobId, RemodelJob> = {
 const METRO =
   /\b(seattle|bellevue|kirkland|redmond|bothell|woodinville|sammamish|issaquah|mercer\s+island|shoreline|lynnwood|edmonds|mill\s+creek|renton|kenmore|newcastle|san\s+francisco|oakland|berkeley|san\s+jose|palo\s+alto|mountain\s+view|sunnyvale|menlo\s+park|fremont|los\s+angeles|santa\s+monica|pasadena|beverly\s+hills|san\s+diego|new\s+york|brooklyn|manhattan|queens|bronx|staten\s+island|boston|cambridge|somerville|brookline|washington,?\s*d\.?\s*c\.?)\b/i;
 
+/**
+ * The job's market: the city's cost index where the city is listed (else the
+ * state's, else national), and whether it is one of the metros the method's
+ * section 8 gives its own reviewed checks.
+ */
 export function locationFactor(location: string | null | undefined): { factor: number; metro: boolean; label: string } {
   const loc = (location ?? "").trim();
   const m = loc.match(METRO);
-  if (m) return { factor: 1.25, metro: true, label: m[1].replace(/\s+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) };
-  const st = stateCostIndex(loc);
-  if (st) return { factor: st.index, metro: false, label: st.state };
-  return { factor: 1, metro: false, label: "the US" };
+  const idx = locationIndex(loc);
+  const metroName = m ? m[1].replace(/\s+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : null;
+  const factor = idx.level === "city" ? idx.factor : m ? 1.25 : idx.factor;
+  const label = idx.city ?? metroName ?? idx.state ?? "the US";
+  return { factor, metro: !!m, label };
 }
 
 const TUB_TO_SHOWER = /\btub[\s-]*to[\s-]*shower|\bshower\s+conversion|\bconvert\w*\s+(?:the\s+|a\s+|my\s+)?(?:bath)?tub\b|\breplace\s+(?:the\s+)?(?:bath)?tub\s+with\s+(?:a\s+)?(?:walk[-\s]in\s+)?shower/i;
@@ -107,7 +115,10 @@ export function remodelJob(
   return null;
 }
 
-export type RemodelRange = { job: RemodelJobId; label: string; low: number; high: number; place: string };
+export type RemodelRange = { kind?: "remodel"; job: RemodelJobId; label: string; low: number; high: number; place: string };
+
+/** A remodel's range or an underground utility job's (lib/estimate/utility-work). */
+export type JobRange = RemodelRange | UtilityRange | SpecialtyRange;
 
 /**
  * A hall bath larger than about 60 sqft (a 12x8 is 96) costs more than the
@@ -179,14 +190,22 @@ export function linesTotal(items: readonly { quantity: number; materialUnitPrice
  * tenths of a whole job's core steps, or a total under nine tenths of the
  * job's range. One retry carries every reason.
  */
-export function retryReasons(input: { lines: number; coreSteps: number; total: number; range: RemodelRange | null }): string[] {
+export function retryReasons(input: { lines: number; coreSteps: number; total: number; range: JobRange | null }): string[] {
   const reasons: string[] = [];
   if (shortOfProcedure(input.lines, input.coreSteps)) {
     reasons.push(
       `YOUR PREVIOUS ANSWER TO THIS BRIEF HAD ONLY ${input.lines} LINE ITEMS. THE PROCEDURE BELOW HAS ${input.coreSteps} CORE STEPS AND EVERY ONE OF THEM IS ITS OWN LINE ITEM — return at least ${input.coreSteps} lines, in the procedure's order, plus the conditional steps this brief calls for.`,
     );
   }
-  if (input.range && input.total > 0 && input.total < input.range.low * 0.9) {
+  if (input.range && input.total > 0 && input.total < input.range.low * 0.9 && input.range.kind === "specialty") {
+    reasons.push(
+      `YOUR PREVIOUS ANSWER TOTALED ${usd(input.total)} BEFORE MARKUP. A ${input.range.label.toUpperCase()} IN ${input.range.place.toUpperCase()} RUNS ${usd(input.range.low)}-${usd(input.range.high)} AT CONTRACTOR COST (THE PRICE BOOK'S BENCHMARK FOR THIS TRADE). An answer this far under it leaves out steps of the PROCEDURE or prices them below the step costs the PRICE BOOK gives: walk the procedure again, write every core step as its own line, and price each at its step cost scaled by the LOCATION factor. Fix the lines, never just the total.`,
+    );
+  } else if (input.range && input.total > 0 && input.total < input.range.low * 0.9 && input.range.kind === "utility") {
+    reasons.push(
+      `YOUR PREVIOUS ANSWER TOTALED ${usd(input.total)} BEFORE MARKUP. A ${input.range.label.toUpperCase()} IN ${input.range.place.toUpperCase()} RUNS ${usd(input.range.low)}-${usd(input.range.high)} AT CONTRACTOR COST (PUBLIC BID PRICES LESS THE BIDDER'S OVERHEAD AND PROFIT). An answer this far under the range prices the line as house plumbing or leaves out the work around the pipe: walk the PROCEDURE again — traffic control, the pavement cut and restoration, trench shoring, manholes, the connection to the main, bypass pumping, testing — and price each at the installed unit prices given. Fix the lines, never just the total.`,
+    );
+  } else if (input.range && input.total > 0 && input.total < input.range.low * 0.9) {
     reasons.push(
       `YOUR PREVIOUS ANSWER TOTALED ${usd(input.total)} BEFORE MARKUP. A ${input.range.label.toUpperCase()} IN ${input.range.place.toUpperCase()} RUNS ${usd(input.range.low)}-${usd(input.range.high)} AT STANDARD GRADE. An answer this far under the range is missing lines or prices licensed labor below the trade: walk section 2, the chains of section 3 and the lines of section 5 of the REMODEL ESTIMATING METHOD again, add every missing line, and price labor at the trade rates of section 8. Fix the lines, never just the total.`,
     );

@@ -115,29 +115,29 @@ check("the Kirkland bath: whole job, bathroom method, the metro range in the pro
   kirkland.scope === "full" && kirkland.remodelDomains.join() === "bathroom" && kirkland.range?.low === 28000 && kirkland.range?.high === 45000 && kirkland.procedureCoreSteps >= 10 &&
   kirkland.prompt.includes("THIS BRIEF'S RANGE: a full hall bath remodel in Kirkland runs $28,000-$45,000"), JSON.stringify(kirkland.range));
 const wv = buildLegacyEstimatePrompt({ description: "Full Bathroom Remodel - 12x8", location: "WV" });
-check("the owner's 12x8 in WV is judged as a 96 sqft bath, not a 5x8 (WV 0.88)", wv.range?.low === 19200 && wv.range?.high === 35600 && /about 96 sqft/.test(wv.range.label), JSON.stringify(wv.range));
+check("the owner's 12x8 in WV is judged as a 96 sqft bath, not a 5x8 (WV 0.94)", wv.range?.low === 20500 && wv.range?.high === 38000 && /about 96 sqft/.test(wv.range.label), JSON.stringify(wv.range));
 check("…so its $16,000, 12-line answer is asked again for both reasons", retryReasons({ lines: 12, coreSteps: wv.procedureCoreSteps, total: 16000, range: wv.range }).length === 2);
 const k810 = buildLegacyEstimatePrompt({ description: "Full bathroom remodel, 8x10 hall bath", location: "Kirkland, WA" });
 check("an 8x10 Kirkland bath scales above the 5x8's metro range", k810.range?.low === 30600 && k810.range?.high === 50900, JSON.stringify(k810.range));
-check("a big bath is capped at the primary-bath range", buildLegacyEstimatePrompt({ description: "Full bathroom remodel 20x14", location: "Dallas, TX" }).range?.high === 70000);
+check("a big bath is capped at the primary-bath range (Dallas 0.92)", buildLegacyEstimatePrompt({ description: "Full bathroom remodel 20x14", location: "Dallas, TX" }).range?.high === 64400);
 check("room sizes read for the range, tile, sheet and lumber sizes skipped", roomAreaFrom("bath 12 by 8") === 96 && roomAreaFrom("12 x 8 ft bath") === 96 && roomAreaFrom("new 4x8 sheet") === undefined && roomAreaFrom("2x4 blocking") === undefined && roomAreaFrom("12x24 porcelain tile") === undefined);
 check("the brief reader no longer takes a tile size for the job's area", readBrief("full bathroom remodel with 12x24 porcelain tile").area === undefined && readBrief("12x24 in. tile floor in a 10x12 kitchen").area === 120 && readBrief("20x20 garage epoxy").area === 400);
 check("the previous JobFlex's price book and material profile ride again, the old tax block does not",
   wv.prompt.includes("MATERIAL PRICE REFERENCE (US market data — material only, no labor)") && wv.prompt.includes("SPECIALTY MATERIAL PROFILE: bathroom-remodel") && !wv.prompt.includes("SALES TAX RULES") &&
   wv.prompt.includes("a pack or package is never written as one line"));
 const spokane = buildLegacyEstimatePrompt({ description: "Full kitchen remodel", location: "Spokane, WA" });
-check("outside the metros the state index scales the national range (WA 1.15)", spokane.range?.low === 43700 && spokane.range?.high === 75900, JSON.stringify(spokane.range));
+check("outside the metros the city index scales the national range (Spokane 1.06)", spokane.range?.low === 40300 && spokane.range?.high === 70000, JSON.stringify(spokane.range));
 const bothell = buildLegacyEstimatePrompt({ description: "full kitchen remodel 12x14 with an island", location: "Bothell, WA" });
 check("a metro kitchen uses the metro check", bothell.range?.low === 50000 && bothell.range?.high === 90000, JSON.stringify(bothell.range));
 const tub = buildLegacyEstimatePrompt({ description: "tub to shower conversion hall bath 5x8", location: "Dallas, TX" });
-check("a tub-to-shower is part of a bath with its own range", tub.specialty.id === "bathroom-remodel" && tub.scope === "partial" && tub.range?.job === "tub-to-shower" && tub.range.low === 10000, JSON.stringify(tub.range));
+check("a tub-to-shower is part of a bath with its own range", tub.specialty.id === "bathroom-remodel" && tub.scope === "partial" && tub.range?.job === "tub-to-shower" && tub.range.low === 9200, JSON.stringify(tub.range));
 const priced2 = buildLegacyEstimatePrompt({ description: "full bathroom remodel, total $15,000", location: "Kirkland, WA" });
 check("a stated price has no range (the brief binds it)", priced2.range === null);
 const basement = buildLegacyEstimatePrompt({ description: "finish 800 sqft basement with a bedroom and bathroom", location: "Denver, CO" });
-check("a basement finish with a bath is priced per sqft of the stated area (CO 1.10)", basement.specialty.id === "interior-remodel" && basement.range?.job === "basement-finish-bath" && basement.range.low === 52800 && basement.range.high === 101200, JSON.stringify(basement.range));
+check("a basement finish with a bath is priced per sqft of the stated area (Denver 1.06)", basement.specialty.id === "interior-remodel" && basement.range?.job === "basement-finish-bath" && basement.range.low === 50900 && basement.range.high === 97500, JSON.stringify(basement.range));
 const roof = buildLegacyEstimatePrompt({ description: "replace the roof, 2400 sqft architectural shingles", location: "Bothell, WA" });
-check("a roof brief carries no remodel method and no range", roof.remodelDomains.length === 0 && roof.range === null && !roof.prompt.includes(METHOD_HEAD));
-check("location factor: metro 1.25, state index, national", locationFactor("Kirkland, WA").factor === 1.25 && locationFactor("Yakima, WA").factor === 1.15 && locationFactor("").factor === 1);
+check("a roof brief carries no remodel method and no remodel range — the price book's roofing benchmark instead", roof.remodelDomains.length === 0 && roof.range?.kind === "specialty" && roof.range.job === "roofing" && !roof.prompt.includes(METHOD_HEAD), JSON.stringify(roof.range));
+check("location factor: the city index, the state index, national", locationFactor("Kirkland, WA").factor === 1.25 && locationFactor("Yakima, WA").factor === 1.04 && locationFactor("Somewhere, WA").factor === 1.16 && locationFactor("").factor === 1);
 check("remodelJob: primary, powder, galley and layout kitchens",
   remodelJob("full master bathroom remodel", readBrief("full master bathroom remodel"), "full", "bathroom-remodel", ["bathroom"])?.id === "primary-bath" &&
   remodelJob("powder room remodel", readBrief("powder room remodel"), "full", "bathroom-remodel", ["bathroom"])?.id === "powder-room" &&

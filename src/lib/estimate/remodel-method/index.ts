@@ -61,6 +61,9 @@ const REMODEL_FAMILY: Record<string, RemodelDomain | null> = {
   "tenant-improvement": null,
 };
 
+/** A remodeler or general contractor: its ranges are the method's section 8, never a trade's benchmark. */
+export const inRemodelFamily = (specialtyId: string) => specialtyId in REMODEL_FAMILY;
+
 /** Groups whose briefs are often a piece of a room remodel: the method rides
  *  only when the brief's words name a kitchen, bath or interior piece. */
 const WORD_GATED_GROUPS = new Set(["interior-finishes", "mep", "specialty-surface-decor", "general-professional", "waterproofing-envelope"]);
