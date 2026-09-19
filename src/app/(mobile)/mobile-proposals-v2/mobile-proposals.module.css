@@ -1022,3 +1022,17 @@
 .prowTap { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .prowTap:active { background: var(--paper-deep); }
 .prowTap:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+
+/* ── PROJECT CHAINS (2026-09-18) — a project's proposals together, under a
+   header that opens the project, joined by a rail on the left. */
+.pgrp { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 12px var(--card-pad) 8px; border-bottom: 1.5px dashed var(--ink-line, rgba(10,10,10,.14)); text-decoration: none; color: inherit; background: var(--paper-deep); }
+.pgrpIc { width: 18px; height: 18px; color: var(--blueprint, #1854a0); flex-shrink: 0; }
+.pgrpTxt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pgrpName { font-size: 14px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pgrpMeta { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: var(--muted, #666); }
+.prowChain { position: relative; padding-left: calc(var(--card-pad) + 22px); }
+.prowChain::before { content: ""; position: absolute; left: calc(var(--card-pad) + 6px); top: 0; bottom: 0; width: 2px; background: var(--blueprint, #1854a0); opacity: 0.35; }
+.prowChainEnd::before { bottom: 50%; }
+.prowChain::after { content: ""; position: absolute; left: calc(var(--card-pad) + 2px); top: 50%; width: 10px; height: 10px; margin-top: -5px; border: 2px solid var(--blueprint, #1854a0); border-radius: 50%; background: var(--paper-deep, #fff); }
+.prowChain:not(.prowChainEnd) { border-bottom-style: dashed; border-bottom-width: 1px; }
+.prowProj { color: var(--blueprint, #1854a0); font-weight: 700; }

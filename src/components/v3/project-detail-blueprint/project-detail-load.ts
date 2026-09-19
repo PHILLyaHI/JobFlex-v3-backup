@@ -6,7 +6,8 @@
 
 import { db } from "@/lib/db";
 import { contractTotal } from "@/lib/contractTotal";
-import type { PdAvailProposal, PdJob, PdLooseProposal, PdProject, PdProposal } from "./project-detail-data";
+import { categoryOf, summarizeBudget } from "@/lib/projectBudget";
+import type { PdAvailProposal, PdBudget, PdJob, PdLooseProposal, PdProject, PdProposal } from "./project-detail-data";
 
 export type ProjectDetailProps = {
   project: PdProject;
@@ -15,6 +16,7 @@ export type ProjectDetailProps = {
   availableProposals: PdAvailProposal[];
   /** The project's client's proposals that are in no project yet. */
   looseProposals: PdLooseProposal[];
+  budget: PdBudget;
 };
 
 export async function loadProjectDetail(id: string, organizationId: string): Promise<ProjectDetailProps | null> {
@@ -22,6 +24,8 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     where: { id },
     include: {
       client: { select: { id: true, name: true } },
+      budgetLines: { orderBy: { position: "asc" }, select: { category: true, amount: true } },
+      expenses: { orderBy: { spentAt: "desc" }, take: 200, select: { id: true, category: true, amount: true, vendor: true, note: true, spentAt: true } },
       // The project's own proposals (Proposal.projectId, 2026-09-18), with the
       // change orders that move each one's contract.
       proposals: {
@@ -40,6 +44,8 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
       jobs: {
         include: {
           client: { select: { name: true } },
+          // What the job has spent — part of the project's spend (2026-09-18).
+          expenses: { select: { id: true, category: true, amount: true, note: true, createdAt: true } },
           // The contract behind the job: original → approved changes → current.
           proposal: { select: { total: true, changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } } } },
         },
@@ -82,7 +88,33 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
       blocked: null,
     }));
 
+  // ── the Budget card ──
+  const jobSpends = project.jobs.flatMap((j) =>
+    j.expenses.map((e) => ({ id: e.id, source: "job" as const, jobTitle: j.title, category: categoryOf(e.category), amount: e.amount, vendor: e.category, note: e.note, at: e.createdAt.toISOString() })),
+  );
+  const projectSpends = project.expenses.map((e) => ({
+    id: e.id,
+    source: "project" as const,
+    jobTitle: null,
+    category: e.category,
+    amount: e.amount,
+    vendor: e.vendor,
+    note: e.note,
+    at: e.spentAt.toISOString(),
+  }));
+  const budget: PdBudget = {
+    summary: summarizeBudget({
+      lines: project.budgetLines,
+      projectBudget: project.budget,
+      spends: [...projectSpends, ...jobSpends],
+      proposals: project.proposals.map((p) => ({ status: p.status, total: p.total, contract: contractTotal(p.total, p.changeOrders) })),
+    }),
+    lines: project.budgetLines,
+    expenses: [...projectSpends, ...jobSpends].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 60),
+  };
+
   return {
+    budget,
     project: {
         id: project.id,
         name: project.name,

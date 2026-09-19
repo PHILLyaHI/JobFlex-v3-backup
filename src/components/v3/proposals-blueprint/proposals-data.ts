@@ -54,6 +54,11 @@ export type ProposalRow = {
   publicId: string;
   title: string;
   client: string;
+  /** Proposal.clientId, or null. */
+  clientId?: string | null;
+  /** The project the proposal is filed under (2026-09-18), or null. */
+  projectId?: string | null;
+  projectName?: string | null;
   clientEmail: string | null;
   city: string;
   status: string;
@@ -125,3 +130,42 @@ export function statusPlate(status: string): { label: string; cls: string } {
 export const PAGE_ALL = 8;
 export const PAGE_ACC = 3;
 export const PAGE_DONE = 2;
+
+/* ── PROJECT CHAINS (2026-09-18) ──────────────────────────────────────────
+   Shared by the desktop Proposals page and its handheld build: proposals
+   filed under the same project sit together, under the project's name and
+   money, where the project's most recently touched proposal would have been. */
+/** A project's proposals in view: who it is for and what it is worth. */
+export type Chain = { id: string; name: string; client: string; count: number; contract: number; sold: number; open: number };
+export function chainsOf(rows: ProposalRow[]): Map<string, Chain> {
+  const m = new Map<string, Chain>();
+  for (const p of rows) {
+    if (!p.projectId) continue;
+    const c = m.get(p.projectId) ?? { id: p.projectId, name: p.projectName ?? "Project", client: p.client, count: 0, contract: 0, sold: 0, open: 0 };
+    c.count += 1;
+    const value = p.contract ?? p.total;
+    c.contract += value;
+    if (p.status === "ACCEPTED" || p.status === "COMPLETED" || p.status === "PAID") c.sold += value;
+    else if (p.status === "DRAFT" || p.status === "SENT" || p.status === "VIEWED") c.open += p.total;
+    if (c.client !== p.client) c.client = "";
+    m.set(p.projectId, c);
+  }
+  return m;
+}
+/** Each project's proposals together, the group where its newest member was. */
+export function chained(rows: ProposalRow[]): ProposalRow[] {
+  const chains = chainsOf(rows);
+  const placed = new Set<string>();
+  const out: ProposalRow[] = [];
+  for (const p of rows) {
+    const c = p.projectId ? chains.get(p.projectId) : undefined;
+    if (!c || c.count < 2) {
+      out.push(p);
+      continue;
+    }
+    if (placed.has(c.id)) continue;
+    placed.add(c.id);
+    for (const q of rows) if (q.projectId === c.id) out.push(q);
+  }
+  return out;
+}

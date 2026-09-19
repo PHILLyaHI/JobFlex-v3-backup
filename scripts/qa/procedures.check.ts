@@ -138,7 +138,7 @@ const brief = { description: "Sewer line installation, 300 ft from the house to 
 const plain = buildLegacyEstimatePrompt(brief, { withTradeRules: true });
 check("the sewer brief detects sanitary-sewer and the prompt carries the procedure block before the trade block",
   plain.specialty.id === "sanitary-sewer" && plain.procedure && plain.prompt.indexOf("PROCEDURE — SANITARY SEWER") > 0 && plain.prompt.indexOf("PROCEDURE — SANITARY SEWER") < plain.prompt.indexOf("TRADE PROFILE:") && plain.prompt.includes(ESTIMATOR_MASTER_PROMPT.slice(0, 60)));
-check("the block sits after the price book and before the output rules", plain.prompt.indexOf("PROCEDURE — SANITARY SEWER") < plain.prompt.indexOf("Return a concise JSON object"));
+check("the block sits after the price book and before the output rules", plain.prompt.indexOf("PROCEDURE — SANITARY SEWER") < plain.prompt.indexOf("Return a JSON object with the following structure"));
 const withO = buildLegacyEstimatePrompt(brief, { withTradeRules: false, overrides: o });
 check("overrides land: master replaced, preamble replaced, edited step in the block, custom rules, no trade block",
   withO.prompt.startsWith("MASTER OVERRIDE") && withO.prompt.includes("Sewer preamble override.") && withO.prompt.includes("Locate call (811)") && withO.prompt.includes("RULES OVERRIDE") && !withO.prompt.includes("LINE-ITEM DISCIPLINE") && !withO.prompt.includes("TRADE PROFILE:") && !withO.prompt.includes(ESTIMATOR_MASTER_PROMPT.slice(0, 60)));

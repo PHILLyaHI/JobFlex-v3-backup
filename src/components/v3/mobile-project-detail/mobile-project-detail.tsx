@@ -65,6 +65,7 @@ import {
   MO,
   MOFULL,
   type PdAvailProposal,
+  type PdBudget,
   type PdJob,
   type PdProject,
   type PdProposal,
@@ -80,6 +81,8 @@ import {
 } from "@/components/v3/project-detail-blueprint/project-detail-data";
 import "./mobile-project-detail.css";
 import { LooseProposalsStrip } from "@/components/v3/project-links/loose-proposals-strip";
+import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
+import { ProjectBudgetCard } from "@/components/v3/project-links/project-budget-card";
 
 const DAY_MS = 86400000;
 
@@ -279,12 +282,14 @@ export function MobileProjectDetail({
   proposals = [],
   availableProposals,
   looseProposals = [],
+  budget,
 }: {
   project: PdProject;
   jobs: PdJob[];
   proposals?: PdProposal[];
   availableProposals: PdAvailProposal[];
   looseProposals?: Array<{ id: string; title: string; total: number }>;
+  budget?: PdBudget;
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -302,6 +307,8 @@ export function MobileProjectDetail({
   // filtered by one control of the same shape.
   const [ganttF, setGanttF] = useState<ListFilter>("all");
   const [attachOpen, setAttachOpen] = useState(false);
+  // The proposal whose change orders are open (2026-09-18).
+  const [coFor, setCoFor] = useState<string | null>(null);
 
   // The authoritative lists are the server's, so the optimistic move is a set
   // of ids laid OVER them: once router.refresh() lands, the job is already in
@@ -561,6 +568,12 @@ export function MobileProjectDetail({
           <div className="mpd-loose">
             <LooseProposalsStrip projectId={project.id} client={project.client} loose={looseProposals} />
           </div>
+          <ChangeOrderSheet
+            open={coFor !== null}
+            onClose={() => setCoFor(null)}
+            proposalId={coFor ?? undefined}
+            onDone={() => startTransition(() => router.refresh())}
+          />
           {/* ============ PROPOSALS (2026-09-18) ============ */}
           <section className="mpd-card mpd-props" aria-label="Proposals in this project">
             <div className="mpd-card-h">
@@ -568,16 +581,20 @@ export function MobileProjectDetail({
               <div className="mpd-card-s">{proposalsSummary(proposals)}</div>
             </div>
             {proposals.map((p) => (
-              <Link className="mpd-prop" key={p.id} href={`/dashboard/proposals/${p.id}` as Route}>
-                <span className="mpd-prop-txt">
+              <div className="mpd-prop" key={p.id}>
+                <Link className="mpd-prop-txt" href={`/dashboard/proposals/${p.id}` as Route}>
                   <span className="mpd-row-n">{p.title}</span>
                   <span className="mpd-row-m">
                     {wholeDollars(p.contract)}
                     {p.co.count ? ` · ${p.co.count} change order${p.co.count === 1 ? "" : "s"}` : ""}
                   </span>
-                </span>
+                </Link>
                 <span className={`mpd-b mpd-b--${proposalTone(p.status) === "bad" ? "sch" : proposalTone(p.status)}`}>{proposalLabel(p.status)}</span>
-              </Link>
+                <button className="mpd-prop-co" type="button" aria-label={`Change orders for ${p.title}`} onClick={() => setCoFor(p.id)}>
+                  <Icon id="i-plus" />
+                  CO
+                </button>
+              </div>
             ))}
             <button
               className="mpd-btn mpd-props-new"
@@ -600,6 +617,13 @@ export function MobileProjectDetail({
               New proposal in this project
             </button>
           </section>
+
+          {/* ============ BUDGET (2026-09-18) ============ */}
+          {budget ? (
+            <div className="mpd-budget">
+              <ProjectBudgetCard projectId={project.id} budget={budget} />
+            </div>
+          ) : null}
 
           {/* ============ VIEW BAR ============ */}
           <div className="mpd-views">

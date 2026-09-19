@@ -9,7 +9,7 @@ import { utilityJob, utilityRange, utilityPriceBlock, utilityRangeLine } from ".
 import { UTILITY_COMPONENTS, UTILITY_JOBS, utilityAnchorLines } from "../../src/lib/estimate/utility-prices-data";
 import { locationIndex, locationLine } from "../../src/lib/estimate/location-index";
 import { CITY_COST_INDEX } from "../../src/lib/estimate/location-index-data";
-import { retryReasons } from "../../src/lib/estimate/remodel-sanity";
+import { floorToRange, floorNote, retryReasons } from "../../src/lib/estimate/remodel-sanity";
 import { readBrief } from "../../src/lib/estimate/brief";
 import { stateFromAddress } from "../../src/lib/pricing/salesTax";
 
@@ -80,6 +80,38 @@ if (CITY_COST_INDEX.length) {
   check("300 LF of street sewer in Lynnwood uses the Seattle-area bids at cost, $208,700-$417,400; the owner's $300,000 sells inside it at a 15% markup", lynnSewer.range?.low === 208700 && lynnSewer.range?.high === 417400, JSON.stringify(lynnSewer.range));
   check("city rows are well formed", CITY_COST_INDEX.every((r) => /^[A-Z]{2}$/.test(r.state) && r.factor > 0.6 && r.factor < 1.8 && r.city.trim().length > 1));
 }
+
+// ── The floor after the retry (2026-09-19) ──────────────────────────────────
+// The owner's bath as it came back on jobflex.app — seven round lines, $16,000
+// — plus a permit, which the floor never touches.
+const line = (name: string, quantity: number, m: number, l: number) => ({ name, unit: "unit", quantity, materialUnitPrice: m, laborUnitPrice: l });
+const bathLines = [
+  line("Demolition of existing bathroom fixtures and finishes", 1, 500, 1500),
+  line("Installation of freestanding tub with plumbing adjustments", 1, 1000, 2000),
+  line("Construction of tiled shower pan with three sides of glass", 100, 20, 30),
+  line("Replacement of hardwood flooring with tile", 150, 10, 10),
+  line("Installation of new two-sink countertop", 1, 1000, 1500),
+  line("Final cleanup and disposal of debris", 1, 200, 300),
+  line("Building permit and inspections", 1, 400, 0),
+];
+const bathBrief = buildLegacyEstimatePrompt({ description: "Full bathroom remodel, 8x10 hall bath", location: "Kirkland, WA" });
+const bathRange = bathBrief.range!;
+const std = floorToRange(bathLines, bathRange, "standard");
+const mid = (bathRange.low + bathRange.high) / 2;
+check(`the owner's $16,400 bath in Kirkland rises to the middle of its $${bathRange.low}-$${bathRange.high} range; the permit stays`,
+  !!std && Math.round(std.from) === 16400 && Math.abs(std.to - mid) < 5 && std.items[6].materialUnitPrice === 400 && Math.abs(std.items[0].laborUnitPrice / std.items[0].materialUnitPrice - 3) < 0.01, JSON.stringify(std && { from: std.from, to: std.to }));
+check("budget lands at the low end, luxury at the high end",
+  Math.abs(floorToRange(bathLines, bathRange, "budget")!.to - bathRange.low) < 5 && Math.abs(floorToRange(bathLines, bathRange, "luxury")!.to - bathRange.high) < 5);
+check("a total already near the range stands; no range, no floor",
+  floorToRange([line("Full bath per the method", 1, 0, bathRange.low * 0.95)], bathRange) === null && floorToRange(bathLines, null) === null);
+const sewerLynn = buildLegacyEstimatePrompt({ description: "Run sewer in the street 300 linear feet", location: "Lynnwood, WA" });
+const sewerLines = [line("Excavation and trenching for the sewer line", 300, 10, 20), line("PVC sewer pipe 8 in.", 300, 12, 8), line("Right-of-way permit", 1, 500, 0)];
+const sewerFloor = floorToRange(sewerLines, sewerLynn.range, "standard");
+check("the owner's $15,500 street sewer in Lynnwood rises to the middle of its bid range at cost",
+  !!sewerFloor && Math.round(sewerFloor.from) === 15500 && Math.abs(sewerFloor.to - (208700 + 417400) / 2) < 5, JSON.stringify(sewerFloor && { from: sewerFloor.from, to: sewerFloor.to }));
+check("the note says what happened and stays off the proposal's wording", /came to \$16,400 before markup, far under the \$30,600-\$50,900 a full hall bath remodel/.test(floorNote(bathRange, 16400, std!.to)));
+check("the old prompt no longer asks for three lines or a total picked first",
+  !bathBrief.prompt.includes("at least three pricing lineItems") && !bathBrief.prompt.includes("Return a concise JSON") && bathBrief.prompt.includes("Return one pricing lineItem per step of the PROCEDURE block above") && bathBrief.prompt.includes("recommendedPrice is the sum of the line item totals, computed last"));
 
 console.log(bad ? `\n${bad} check(s) FAILED` : "\nall checks passed");
 process.exit(bad ? 1 : 0);

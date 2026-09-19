@@ -50,6 +50,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { Fragment } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./mobile-proposals.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
@@ -78,6 +79,7 @@ import {
   type ProposalRow,
   type TabKey,
 } from "./proposals-data";
+import { chainsOf, chained } from "@/components/v3/proposals-blueprint/proposals-data";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -486,10 +488,12 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
   }, [sheetId]);
 
   /* ---------- derived lists ------------------------------------------ */
+  // A project's proposals sit together under its name (2026-09-18).
   const listAll = useMemo(
-    () => (filter === "ALL" ? data : data.filter((p) => p.status === filter)),
+    () => chained(filter === "ALL" ? data : data.filter((p) => p.status === filter)),
     [data, filter],
   );
+  const chains = useMemo(() => chainsOf(listAll), [listAll]);
   const listAcc = useMemo(() => data.filter((p) => p.status === "ACCEPTED"), [data]);
   const listDone = useMemo(() => data.filter((p) => p.status === "PAID"), [data]);
 
@@ -919,8 +923,28 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
               <div className={styles.pledger}>
                 {sliceAll.map((p, i) => {
                   const st = statusPlate(p.status);
+                  const c = p.projectId ? chains.get(p.projectId) : undefined;
+                  const inChain = Boolean(c && c.count > 1);
+                  const at = (pageAll - 1) * PAGE_ALL + i;
+                  const first = inChain && (i === 0 || listAll[at - 1]?.projectId !== p.projectId);
+                  const last = inChain && listAll[at + 1]?.projectId !== p.projectId;
                   return (
-                    <div key={p.id} className={`${styles.prow} ${styles.rowIn} ${styles.prowTap}`} style={{ animationDelay: `${i * 45}ms` }}
+                    <Fragment key={p.id}>
+                    {first && c ? (
+                      <Link className={styles.pgrp} href={`/dashboard/projects/${c.id}`}>
+                        <Icon id="i-folder" className={styles.pgrpIc} />
+                        <span className={styles.pgrpTxt}>
+                          <span className={styles.pgrpName}>{c.name}</span>
+                          <span className={styles.pgrpMeta}>
+                            {c.count} proposals
+                            {c.sold ? ` · ${money(c.sold)} sold` : ""}
+                            {c.open ? ` · ${money(c.open)} open` : ""}
+                            {i === 0 && listAll[at - 1]?.projectId === p.projectId ? " · continued" : ""}
+                          </span>
+                        </span>
+                      </Link>
+                    ) : null}
+                    <div className={`${styles.prow} ${styles.rowIn} ${styles.prowTap}${inChain ? " " + styles.prowChain : ""}${last ? " " + styles.prowChainEnd : ""}`} style={{ animationDelay: `${i * 45}ms` }}
                       role="link" tabIndex={0} aria-label={`Open ${p.title}`}
                       onClick={(e) => openFromTap(e, p.id)} onKeyDown={(e) => { if (e.key === "Enter") router.push(`/dashboard/proposals/${p.id}`); }}>
                       <div>
@@ -934,6 +958,7 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                       {/* Row 2 — who and where, hard left */}
                       <div className={styles.prowWho}>
                         {[p.client, p.city].filter(Boolean).join(" · ")}
+                        {p.projectName && !inChain ? <span className={styles.prowProj}> · {p.projectName}</span> : null}
                       </div>
                       {/* Row 3 — badge leads, price closes at the far right. */}
                       <div className={styles.prowFoot}>
@@ -942,6 +967,7 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                         <span className={styles.prowMoney}>{money(p.total)}</span>
                       </div>
                     </div>
+                    </Fragment>
                   );
                 })}
               </div>
