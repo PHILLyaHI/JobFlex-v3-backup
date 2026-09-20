@@ -1,118 +1,120 @@
-import { LogoMark } from "./logo";
 import { Reveal } from "./reveal";
 import { StampIn } from "./stamp-in";
 import { COMPARE_COMPETITORS, COMPARE_ROWS, type CompareCell } from "./landing-compare";
 
-/* THE COMPARISON TABLE. It has no heading of its own — it lives inside the
-   one-app section (intro.tsx) and borrows that section's line as its title, so
-   the reader meets one claim and then the evidence for it, not two headings in
-   a row.
- *
-   WHAT THE EYE IS MEANT TO DO. Left to right: the row label, then our column,
-   filled ink with a white square tick, then three muted columns that are
-   mostly a grey cross or a small mono footnote. Our column is first after the
-   labels for that reason — a reader who stops after two columns has still read
-   the argument. Nothing here is a gradient or a star; the only shadow is the
-   house's hard offset, and the ticks and crosses are drawn in the same 24-grid
-   stroke style as the rest of landing-e (which ships inline icons, not a
-   <symbol> sprite — there is no sprite on this page to pull from).
+/* THE COMPARISON — a schedule off a drawing sheet, inside the one-app section
+   (the owner's pick of three drafts, 2026-09-19). No heading of its own: it
+   borrows the section's line.
 
-   The evidence — the quote, the URL, the date — stays in landing-compare.ts
-   and is deliberately NOT rendered. See the header of that file for how each
-   cell earned its status and which row was dropped. */
+   The rules it is drawn to: the section is paper with the drafting grid; the
+   plate is white with a 2 px ink line and the hard offset shadow; our column
+   is the plate's own white, framed by ONE 2 px blueprint rectangle from the
+   head to the last row (drawn in the stylesheet — see .lp-spec-us::before),
+   with a blueprint square and a white tick per row; a competitor's cross is
+   the SAME 26 px square as the tick, outlined in ink, never a hairline; the
+   vendor's own word for a charge is a mono label of at least 12 px; and every
+   mark and label sits on the centre line of its column, on the same axis as
+   the vendor's name in the head — only the row labels are set left. The
+   ticks and crosses are drawn in the landing's inline 24-grid stroke style;
+   this page ships no <symbol> sprite.
 
-function CheckIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="square" strokeLinejoin="miter" aria-hidden="true">
-      <path d="M4.5 12.5 9.5 17.5 19.5 6.5" />
-    </svg>
-  );
+   The evidence — quote, URL, date — stays in landing-compare.ts and is not
+   rendered. */
+
+const COUNT = COMPARE_ROWS.length;
+
+/* One 26 px square for tick and cross alike, so the two read as the same kind
+   of answer. `blue` is ours — blueprint fill, white tick; `ink` is the
+   outlined competitor mark. */
+function Mark({ kind, tone, stamp }: { kind: "yes" | "no"; tone: "blue" | "ink"; stamp?: boolean }) {
+  const glyph =
+    kind === "yes" ? (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="square" strokeLinejoin="miter" aria-hidden="true">
+        <path d="M4.5 12.5 9.5 17.5 19.5 6.5" />
+      </svg>
+    ) : (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.25} strokeLinecap="square" aria-hidden="true">
+        <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" />
+      </svg>
+    );
+  const cls = `lp-cmp-mark is-${kind} is-${tone}`;
+  if (stamp) return <StampIn className={cls}>{glyph}</StampIn>;
+  return <span className={cls}>{glyph}</span>;
 }
 
-function CrossIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="square" aria-hidden="true">
-      <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" />
-    </svg>
-  );
-}
-
-/* A competitor cell. "Paid separately" and "coming soon" are the vendor's own
-   qualification, so they are set as a footnote rather than as a verdict. */
 function ThemCell({ cell }: { cell: CompareCell }) {
   if (cell.status === "yes") {
     return (
       <>
-        <span className="lp-cmp-themYes">
-          <CheckIcon />
-        </span>
-        <span className="sr-only">Yes</span>
+        <Mark kind="yes" tone="ink" />
+        <span className="sr-only">Included</span>
       </>
     );
   }
   if (cell.status === "no") {
     return (
       <>
-        <span className="lp-cmp-no">
-          <CrossIcon />
-        </span>
-        <span className="sr-only">No</span>
+        <Mark kind="no" tone="ink" />
+        <span className="sr-only">Not offered</span>
       </>
     );
   }
-  return <span className="lp-cmp-tag">{cell.status === "soon" ? "Coming soon" : cell.label}</span>;
+  // The vendor's own word for the charge, or for the state it is in.
+  return <span className="lp-cmp-tag">{cell.label ?? (cell.status === "soon" ? "Coming soon" : "Paid")}</span>;
 }
 
 export function CompareSection() {
   return (
-    <Reveal delay={120}>
-      {/* The scroller. On a phone the page must not move sideways, so the
-          horizontal overflow is owned here and the label + JobFlex columns are
-          stuck to the left inside it. */}
-      <div className="lp-cmp-wrap">
-        <table className="lp-cmp">
+    <Reveal delay={120} className="lp-cmp-body">
+      <div className="lp-cmp-plate lp-spec-wrap">
+        <table className="lp-spec">
           <caption className="sr-only">
-            JobFlex compared with Jobber, Housecall Pro and Roofr on six capabilities.
+            JobFlex compared with Jobber, Housecall Pro and Roofr on {COUNT} capabilities.
           </caption>
           <thead>
             <tr>
-              <th scope="col" className="lp-cmp-row">
-                <span className="sr-only">Capability</span>
+              <th scope="col" className="lp-spec-no">
+                No.
               </th>
-              <th scope="col" className="lp-cmp-us lp-cmp-usHead">
-                <span className="lp-cmp-usMark">
-                  <LogoMark tone="paper" />
-                  JobFlex
-                </span>
+              <th scope="col" className="lp-spec-label">
+                Capability
+              </th>
+              <th scope="col" className="lp-spec-us">
+                JobFlex
               </th>
               {COMPARE_COMPETITORS.map((c) => (
-                <th key={c.id} scope="col" className="lp-cmp-them">
+                <th key={c.id} scope="col" className="lp-spec-them">
                   {c.name}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {COMPARE_ROWS.map((row, i) => (
-              // The landing's own motion: the rows arrive in sequence off the
-              // one `lp-in` the Reveal above sets, once.
-              <tr key={row.id} className="lp-cmp-r" style={{ transitionDelay: `${120 + i * 70}ms` }}>
-                <th scope="row" className="lp-cmp-row">
-                  {row.label}
-                </th>
-                <td className="lp-cmp-us">
-                  <StampIn className="lp-cmp-tick">
-                    <CheckIcon />
-                  </StampIn>
-                  <span className="sr-only">Yes</span>
-                </td>
-                {COMPARE_COMPETITORS.map((c) => (
-                  <td key={c.id} className="lp-cmp-them">
-                    <ThemCell cell={row.them[c.id]} />
+            {COMPARE_ROWS.map((row, i) => {
+              const no = String(i + 1).padStart(2, "0");
+              return (
+                <tr key={row.id} className="lp-cmp-r" style={{ transitionDelay: `${120 + i * 60}ms` }}>
+                  <td className="lp-spec-no">{no}</td>
+                  <th scope="row" className="lp-spec-label">
+                    {/* The number rides inside the label on a phone, where the
+                        No. column is hidden to give the scroll its width. */}
+                    <span className="lp-spec-inno" aria-hidden="true">
+                      {no}
+                    </span>
+                    {row.label}
+                  </th>
+                  <td className="lp-spec-us">
+                    <Mark kind="yes" tone="blue" stamp />
+                    <span className="sr-only">Included</span>
                   </td>
-                ))}
-              </tr>
-            ))}
+                  {COMPARE_COMPETITORS.map((c) => (
+                    <td key={c.id} className="lp-spec-them">
+                      <ThemCell cell={row.them[c.id]} />
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
