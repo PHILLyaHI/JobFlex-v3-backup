@@ -12,6 +12,7 @@ import {
   isOpenAIEnabled,
   isTransientAIError,
   resolveOpenAIModel,
+  samplingOptions,
 } from "@/lib/sdk/openai";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
@@ -556,7 +557,7 @@ export async function analyzeEstimatePrompt(input: {
       // The model this process may call (lib/sdk/openai), at the temperature
       // the estimator was tuned to.
       model: await resolveOpenAIModel(),
-      temperature: 0.2,
+      ...(await samplingOptions(0.2)),
       messages: [
         {
           role: "system",
@@ -1094,7 +1095,7 @@ export async function refineAdvancedEstimate(raw: unknown): Promise<
     );
     const completion = await client.chat.completions.create({
       model: await resolveOpenAIModel(),
-      temperature: 0.3,
+      ...(await samplingOptions(0.3)),
       messages: [
         {
           role: "system",
@@ -1228,7 +1229,7 @@ ${JSON.stringify(input.current)}`,
         });
         const matchCompletion = await client.chat.completions.create({
           model: await resolveOpenAIModel(),
-          temperature: 0.3,
+          ...(await samplingOptions(0.3)),
           messages: [
             {
               role: "system",

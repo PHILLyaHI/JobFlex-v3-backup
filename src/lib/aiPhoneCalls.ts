@@ -5,7 +5,7 @@
 // verified the X-Twilio-Signature. The session-guarded action createLeadFromCall
 // stays in src/actions/aiPhoneCalls.ts.
 import { db } from "@/lib/db";
-import { getOpenAI, isOpenAIEnabled, resolveOpenAIModel } from "@/lib/sdk/openai";
+import { getOpenAI, isOpenAIEnabled, samplingOptions, resolveOpenAIModel } from "@/lib/sdk/openai";
 
 export async function startInboundCall(
   callSid: string,
@@ -79,7 +79,7 @@ async function summarizeAndMaybeCreateLead(callId: string) {
   const client = getOpenAI();
   const completion = await client.chat.completions.create({
     model,
-    temperature: 0.2,
+    ...(await samplingOptions(0.2)),
     response_format: { type: "json_object" },
     messages: [
       {

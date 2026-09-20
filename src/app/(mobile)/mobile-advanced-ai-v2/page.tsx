@@ -25,6 +25,11 @@ import { auth } from "@/lib/auth";
 import { MobileSmartProposal } from "./mobile-advanced-ai";
 
 export const dynamic = "force-dynamic";
+// A server action runs under the segment config of the page that calls it,
+// so the ceiling is set here: a reasoning model (gpt-5) thinks for a minute
+// or more, and the estimate can be asked again after a validation pass
+// (2026-09-19, set up so OPENAI_MODEL can move to gpt-5).
+export const maxDuration = 300;
 
 export const metadata: Metadata = {
   title: "Smart Proposal · JobFlex Mobile",

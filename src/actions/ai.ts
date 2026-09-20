@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { getOpenAI, isOpenAIEnabled, resolveOpenAIModel } from "@/lib/sdk/openai";
+import { getOpenAI, isOpenAIEnabled, samplingOptions, resolveOpenAIModel } from "@/lib/sdk/openai";
 import { checkPlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
@@ -99,7 +99,7 @@ export async function generateAiProposal(prompt: string): Promise<
     const client = getOpenAI();
     const completion = await client.chat.completions.create({
       model,
-      temperature: 0.6,
+      ...(await samplingOptions(0.6)),
       messages: [
         {
           role: "system",
