@@ -3,7 +3,7 @@ import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 import { revalidatePath } from "next/cache";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { isOpenAIEnabled } from "@/lib/sdk/openai";
+import { friendlyAIError, isOpenAIEnabled } from "@/lib/sdk/openai";
 import { runVisionJson } from "@/lib/sdk/openaiVision";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
@@ -28,6 +28,23 @@ const STUB: OcrResult = {
   ],
 };
 
+/** The formats the vision model reads. HEIC is not one of them — the browser
+ *  re-encodes a phone photo to JPEG before it gets here (lib/receiptImage),
+ *  and anything else is refused with a sentence rather than a 400 from OpenAI. */
+const READABLE_DATA_URL = /^data:image\/(png|jpe?g|webp|gif);base64,/i;
+/** Decoded bytes. The client sends ~3 MB at most; this is the wall behind it,
+ *  under the 4.5 MB request ceiling production enforces before the code runs. */
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+
+function decodedBytes(dataUrl: string): number {
+  const i = dataUrl.indexOf(",");
+  const b64 = i >= 0 ? dataUrl.slice(i + 1) : dataUrl;
+  const pad = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+  return Math.floor((b64.length * 3) / 4) - pad;
+}
+
+/** Every refusal names what happened. A silent "No OCR result" was the whole
+ *  of what the owner saw when a phone photo failed (2026-09-19). */
 export async function scanReceipt(input: {
   jobId: string;
   dataUrl: string;
@@ -37,9 +54,27 @@ export async function scanReceipt(input: {
   | { ok: false; error: string }
 > {
   const { organizationId } = await requireManager();
-await enforceRateLimit(`vision:${organizationId}`, 60, HOUR, "receipt scans");
+  await enforceRateLimit(`vision:${organizationId}`, 60, HOUR, "receipt scans");
   const job = await db.job.findUnique({ where: { id: input.jobId } });
-  if (!job || job.organizationId !== organizationId) return { ok: false, error: "Not found" };
+  if (!job || job.organizationId !== organizationId) return { ok: false, error: "That job isn't in this organization — pick another job and retry." };
+
+  const dataUrl = typeof input.dataUrl === "string" ? input.dataUrl : "";
+  if (!dataUrl.startsWith("data:image/")) {
+    return { ok: false, error: "That is not an image — a receipt uploads as a photo: JPG, PNG or WebP." };
+  }
+  if (!READABLE_DATA_URL.test(dataUrl)) {
+    const kind = (dataUrl.match(/^data:image\/([a-z0-9.+-]+)/i)?.[1] ?? "that").toUpperCase();
+    return {
+      ok: false,
+      error: /hei[cf]/i.test(kind)
+        ? "HEIC photos can't be read here — share it from the phone as JPEG, or screenshot it and upload that."
+        : `${kind} images can't be read here — upload a JPG, PNG or WebP of the receipt.`,
+    };
+  }
+  const bytes = decodedBytes(dataUrl);
+  if (bytes > MAX_IMAGE_BYTES) {
+    return { ok: false, error: `That photo is ${(bytes / 1048576).toFixed(1)} MB — too large to read. Try a closer shot of just the receipt.` };
+  }
 
   if (!isOpenAIEnabled()) return { ok: true, ocr: STUB, disabled: true };
 
@@ -48,12 +83,32 @@ await enforceRateLimit(`vision:${organizationId}`, 60, HOUR, "receipt scans");
       systemPrompt:
         'You are an expense clerk reading a receipt photo. Return strictly JSON: {vendor: string, total: number, category: one of [Materials, Labor, Fuel, Tools, Subcontractor, Other], note: string, lineItems: [{name: string, amount: number}] (up to 10)}. Do your best to infer the total even if torn or faded. If it is not a receipt, return {vendor: "", total: 0, category: "Other", note: "not a receipt", lineItems: []}.',
       userPrompt: "Extract the fields from this receipt.",
-      imageUrl: input.dataUrl,
+      imageUrl: dataUrl,
+      // A receipt is a tall strip of small print: at "auto" the model may
+      // take one 512px glance at it. "high" tiles it at full resolution, so
+      // the long edge the browser keeps (2000px, under the model's own 2048)
+      // is actually read.
+      detail: "high",
     });
-    if (!result) return { ok: false, error: "No OCR result" };
-    return { ok: true, ocr: result };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? "OCR failed" };
+    if (!result) {
+      return { ok: false, error: "The reader answered with nothing usable from that photo — try a sharper, straighter shot of the whole receipt." };
+    }
+    const vendor = typeof result.vendor === "string" ? result.vendor.trim() : "";
+    const total = typeof result.total === "number" && Number.isFinite(result.total) ? result.total : 0;
+    if (!vendor && total <= 0) {
+      return { ok: false, error: "That doesn't read as a receipt — no vendor or total was found. Try a clearer photo of the whole receipt, top to bottom." };
+    }
+    return { ok: true, ocr: { ...result, vendor, total } };
+  } catch (err) {
+    // A 400 is the model refusing the picture itself (format, corrupt bytes,
+    // a data URL it cannot open) — say that, since "try again" would not help.
+    const status = (err as { status?: number })?.status;
+    const raw = err instanceof Error ? err.message : String(err);
+    if (status === 400 || /image|invalid_image|unsupported/i.test(raw)) {
+      console.error(`[receiptOcr] the model refused the image (${status ?? "?"}): ${raw}`);
+      return { ok: false, error: "The reader couldn't open that photo. Upload a JPG or PNG straight from the camera, or a screenshot of it." };
+    }
+    return { ok: false, error: friendlyAIError(err, "the receipt reader") };
   }
 }
 

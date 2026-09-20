@@ -1,33 +1,130 @@
 "use client";
 import * as React from "react";
 import { createPortal } from "react-dom";
+import { dollars, planDiff, type PlanLike } from "@/lib/planDiff";
 import "./confirm-plan-change.css";
 
 /**
- * "Are you sure?" for a plan change — hand-rolled, blueprint-drawn, shared by
- * the subscription page and /dashboard/upgrade. Mounted only while open; the
- * `is-on` class lands a frame after mount so the box has a start state to
- * transition from (same two-flag pattern as every dialog in this fleet).
+ * THE PLAN DIALOG — one box for an upgrade, a downgrade and the plan-limit
+ * gate, and for the desktop and handheld builds alike (2026-09-19).
+ *
+ * The content is "was → now" (the owner's pick, 2026-09-19, over a
+ * specification table): the current plan and the new one as two tiles, an
+ * arrow between them and nothing else — no price difference, the prices
+ * themselves are on the tiles (owner, 2026-09-19) — then what opens (or
+ * closes), then the one line that says what the money does.
+ *
+ * Everything in it is read from the catalog rows (lib/planDiff): prices and
+ * entitlements. Nothing is typed in here that /admin/plans could later
+ * contradict. The payment line says only what the code does — checkout
+ * replaces the subscription on return with no credit; a downgrade is switched
+ * in place with nothing charged and nothing refunded.
+ *
+ * The box is 560px, the two buttons sit on one line at equal height and
+ * never wrap their words; under 600px the box takes the width and the
+ * buttons stack. A `body` may be passed instead of plans (the custom-plan
+ * confirmations, the limit gate) and the same box draws it.
  */
+
+export interface ConfirmPlanChangeProps {
+  open: boolean;
+  kicker?: string;
+  title: string;
+  confirmLabel: string;
+  busy?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  /** Free content — used when no plan comparison applies. */
+  body?: React.ReactNode;
+  /** The comparison, when there is one. */
+  compare?: {
+    plans: PlanLike[];
+    /** Null when the org has no catalog plan (nothing yet, or the Custom plan). */
+    from: PlanLike | null;
+    to: PlanLike;
+    direction: "up" | "down";
+    /** How the change is carried out — decides the payment line. */
+    how: "checkout" | "switch";
+  };
+}
+
+const CHECK = (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M5 12.5 10 17.5 19 7" />
+  </svg>
+);
+const LOCK = (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="4" y="11" width="16" height="10" rx="1.5" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </svg>
+);
+const ARROW = (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M4 12h15M13 6l6 6-6 6" />
+  </svg>
+);
+
+/** The one true sentence about the money, per how the change is made. */
+function paymentLine(how: "checkout" | "switch", direction: "up" | "down"): string {
+  if (how === "checkout") {
+    return "Paid on Stripe now · your current subscription ends the moment payment goes through · no credit for its unused days";
+  }
+  return direction === "down"
+    ? "Switched now · nothing is charged · the lower price is on your next bill · this cycle is not refunded"
+    : "Switched now on your card on file · the difference is invoiced today";
+}
+
+function Compare({ c }: { c: NonNullable<ConfirmPlanChangeProps["compare"]> }) {
+  const d = planDiff(c.plans, c.from?.slug ?? null, c.to.slug);
+  const up = c.direction === "up";
+  const lines = (up ? d.opens : d.closes).slice(0, 4);
+  return (
+    <>
+      <div className="jf-confirm-tiles">
+        <div className="jf-confirm-tile is-now">
+          <span className="jf-confirm-tile-k">Now</span>
+          <span className="jf-confirm-tile-n">{c.from?.name ?? "No plan"}</span>
+          <span className="jf-confirm-tile-p">{c.from ? `${dollars(c.from.priceCents)}/mo` : "—"}</span>
+        </div>
+        <div className="jf-confirm-arrow" aria-hidden="true">
+          {ARROW}
+        </div>
+        <div className="jf-confirm-tile is-after">
+          <span className="jf-confirm-tile-k">After</span>
+          <span className="jf-confirm-tile-n">{c.to.name}</span>
+          <span className="jf-confirm-tile-p is-big">
+            {dollars(c.to.priceCents)}
+            <i>/mo</i>
+          </span>
+        </div>
+      </div>
+      {lines.length ? (
+        <ul className={"jf-confirm-lines" + (up ? "" : " is-closing")}>
+          {lines.map((l) => (
+            <li key={l}>
+              <span className="jf-confirm-ic">{up ? CHECK : LOCK}</span>
+              {l}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p className="jf-confirm-pay">{paymentLine(c.how, c.direction)}</p>
+    </>
+  );
+}
+
 export function ConfirmPlanChange({
   open,
   kicker = "Change plan",
   title,
   body,
+  compare,
   confirmLabel,
   busy = false,
   onConfirm,
   onCancel,
-}: {
-  open: boolean;
-  kicker?: string;
-  title: string;
-  body: React.ReactNode;
-  confirmLabel: string;
-  busy?: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
+}: ConfirmPlanChangeProps) {
   const [mounted, setMounted] = React.useState(false);
   const [on, setOn] = React.useState(false);
   const exit = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -82,21 +179,21 @@ export function ConfirmPlanChange({
         <h2 className="jf-confirm-h" id="jf-confirm-title">
           {title}
         </h2>
-        <p className="jf-confirm-p">{body}</p>
+        {compare ? (
+          <Compare c={compare} />
+        ) : body ? (
+          <div className="jf-confirm-p">{body}</div>
+        ) : null}
         <div className="jf-confirm-row">
           <button type="button" className="jf-confirm-btn" disabled={busy} onClick={onCancel}>
             Keep my plan
           </button>
-          <button
-            type="button"
-            className="jf-confirm-btn primary"
-            disabled={busy}
-            onClick={onConfirm}
-          >
+          <button type="button" className="jf-confirm-btn primary" disabled={busy} onClick={onConfirm}>
             {busy ? "Working…" : confirmLabel}
           </button>
         </div>
       </div>
-    </div>
-  , document.body);
+    </div>,
+    document.body,
+  );
 }

@@ -10,6 +10,7 @@ import { toast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { money } from "@/lib/format";
 import { scanReceipt, type OcrResult } from "@/actions/receiptOcr";
+import { prepareReceiptImage, receiptTransportError, ReceiptImageError } from "@/lib/receiptImage";
 import { addJobExpense } from "@/actions/expenses";
 
 interface JobOption {
@@ -46,12 +47,18 @@ export function ReceiptDropzone({ jobs }: Props) {
       toast.error("Pick a job first");
       return;
     }
-    if (!file.type.startsWith("image/")) {
-      toast.error("Image files only", "JPG, PNG, HEIC, etc.");
+    // Upright, 2000px on the long edge, JPEG under 3 MB — the same preparation
+    // the Financials page makes (lib/receiptImage), so a phone photo fits the
+    // request and a HEIC the browser cannot decode is refused in words.
+    setScanning(true);
+    let dataUrl: string;
+    try {
+      dataUrl = (await prepareReceiptImage(file)).dataUrl;
+    } catch (err) {
+      setScanning(false);
+      toast.error("Couldn't read that photo", err instanceof ReceiptImageError ? err.message : "Try a JPG or PNG of the receipt.");
       return;
     }
-    const dataUrl = await fileToDataUrl(file);
-    setScanning(true);
     try {
       const res = await scanReceipt({ jobId, dataUrl });
       if (!res.ok) {
@@ -68,8 +75,8 @@ export function ReceiptDropzone({ jobs }: Props) {
         category: res.ocr.category ?? "Materials",
         note: res.ocr.note ?? "",
       });
-    } catch (err: any) {
-      toast.error("Scan failed", err?.message);
+    } catch (err) {
+      toast.error("Scan failed", receiptTransportError(err));
     } finally {
       setScanning(false);
     }
@@ -103,8 +110,8 @@ export function ReceiptDropzone({ jobs }: Props) {
       toast.success("Expense saved", `${money(staged.total)} logged on the job.`);
       setStaged(null);
       router.refresh();
-    } catch (err: any) {
-      toast.error("Couldn't save", err?.message);
+    } catch (err) {
+      toast.error("Couldn't save", err instanceof Error ? err.message : undefined);
     } finally {
       setSavingExpense(false);
     }
@@ -282,13 +289,4 @@ export function ReceiptDropzone({ jobs }: Props) {
       </div>
     </div>
   );
-}
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result as string);
-    r.onerror = reject;
-    r.readAsDataURL(file);
-  });
 }

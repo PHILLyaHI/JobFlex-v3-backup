@@ -22,7 +22,8 @@
 //     charged once now ($10 each), the subscription price steps up, and the
 //     next cycle bills the new total — no second charge for the base.
 
-import { PlanActivated } from "@/components/billing/PlanActivated";
+import { PlanConfetti } from "@/components/billing/PlanConfetti";
+import { DEV_EVENT, type DevUpgradeEvent } from "@/lib/devSimulation";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -58,8 +59,10 @@ export function UpgradeContent({
   checkoutReady,
   sandbox,
   upgradedTo,
+  upgradedDirection = "up",
   cancelled,
   embedded = false,
+  devTools,
 }: {
   plans: UpgradePlan[];
   /** Subscription.plan as stored ("PROFESSIONAL", "CUSTOM", …), or null. */
@@ -73,10 +76,15 @@ export function UpgradeContent({
   sandbox: boolean;
   /** Slug just purchased on this request's ?session_id return, if any. */
   upgradedTo: string | null;
+  /** Which way that return went; a downgrade gets the banner, not the confetti. */
+  upgradedDirection?: "up" | "down";
   cancelled: boolean;
   /** Rendered inside another page (the subscription page's plan section):
    *  no page head, no return-leg banners — just the cards and their dialogs. */
   embedded?: boolean;
+  /** TEMP (2026-09-19): the DEV ONLY block, handed in by the page behind the
+   *  server gate; undefined everywhere else. */
+  devTools?: React.ReactNode;
 }) {
   const router = useRouter();
   // False on the server render and the hydration pass, true after: the portal
@@ -101,21 +109,32 @@ export function UpgradeContent({
   const [ownedOverride, setOwned] = useState<string[] | null>(null);
   const owned = ownedOverride ?? customPages;
 
-  /* THE RETURN FROM STRIPE. The layout that draws the sidebar rendered
-     BEFORE verifyReturn wrote the new plan, so locks and quota pills were
-     stale until a manual reload. Refresh once, and drop the session id from
-     the URL so a reload cannot re-verify. The banner is kept in state. */
-  const [doneMsg] = useState<string | null>(upgradedTo);
+  /* THE RETURN FROM STRIPE (and the dev simulator's ?simulated= twin). The
+     layout that draws the sidebar rendered BEFORE verifyReturn wrote the new
+     plan, so locks and quota pills were stale until a manual reload: refresh
+     at once, and drop the query so a reload cannot re-verify. The banner and
+     the confetti key off state derived from the prop DURING RENDER, not a
+     useState initialiser — the simulator's router.push lands on this same
+     mounted component with a new prop, and an initialiser would never see it
+     (the old stamp never played for that reason). */
+  const [seenReturn, setSeenReturn] = useState<string | null>(null);
+  const [done, setDone] = useState<{ slug: string; dir: "up" | "down"; key: number } | null>(null);
+  if (upgradedTo !== seenReturn) {
+    setSeenReturn(upgradedTo);
+    if (upgradedTo) {
+      const slug = upgradedTo;
+      setDone((prev) => ({ slug, dir: upgradedDirection, key: (prev?.key ?? 0) + 1 }));
+    }
+  }
   useEffect(() => {
     if (!upgradedTo) return;
     router.replace("/dashboard/upgrade");
     router.refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const doneName = doneMsg
-    ? doneMsg === CUSTOM_PLAN_SLUG
-      ? "the Custom plan"
-      : (plans.find((p) => p.slug === doneMsg)?.name ?? doneMsg)
+  }, [upgradedTo, router]);
+  const doneName = done
+    ? done.slug === CUSTOM_PLAN_SLUG
+      ? "Custom plan"
+      : (plans.find((p) => p.slug === done.slug)?.name ?? done.slug)
     : null;
 
   // The feature comparison, with "Everything in <plan>" expanded so a dearer
@@ -143,8 +162,8 @@ export function UpgradeContent({
      replaces the current subscription on the return); "down" is switched in
      place, free. */
   const [confirm, setConfirm] = useState<
-    | { kind: "up"; plan: UpgradePlan }
-    | { kind: "down"; plan: UpgradePlan }
+    | { kind: "up"; plan: UpgradePlan; from?: UpgradePlan }
+    | { kind: "down"; plan: UpgradePlan; from?: UpgradePlan }
     | { kind: "custom"; pages: string[] }
     | { kind: "remove"; pages: string[]; removing: string[] }
     | null
@@ -275,6 +294,30 @@ export function UpgradeContent({
       ? "Checkout is not configured"
       : null;
 
+  /* TEMP (2026-09-19): the DEV ONLY block's "Preview dialog" — one rung up
+     or down from here, without changing anything; at the top (or bottom) of
+     the ladder the pair is taken from one rung below (above) so the dialog
+     never shows a $0 move. Heard only when the page handed us devTools. */
+  useEffect(() => {
+    if (!devTools) return;
+    const onDev = (e: Event) => {
+      const d = (e as CustomEvent<DevUpgradeEvent>).detail;
+      if (d?.type !== "preview-dialog") return;
+      const at = plans.findIndex((p) => p.slug === cur);
+      if (d.direction === "up") {
+        const to = plans[at + 1] ?? plans[plans.length - 1];
+        const from = plans[at + 1] ? undefined : plans[plans.length - 2];
+        if (to) setConfirm({ kind: "up", plan: to, from });
+      } else {
+        const to = at > 0 ? plans[at - 1] : plans[0];
+        const from = at > 0 ? undefined : plans[1];
+        if (to) setConfirm({ kind: "down", plan: to, from });
+      }
+    };
+    window.addEventListener(DEV_EVENT, onDev);
+    return () => window.removeEventListener(DEV_EVENT, onDev);
+  }, [devTools, plans, cur]);
+
   return (
     <div className={"jf-upgrade" + (embedded ? " jf-up-embed" : "")}>
       <div className={"jf-up-head" + (embedded ? " jf-up-head--embed" : "")}>
@@ -301,19 +344,28 @@ export function UpgradeContent({
         )}
       </div>
 
+      {devTools && !embedded ? devTools : null}
       {sandbox ? (
         <div className="jf-up-sand" role="status">
           Sandbox mode — payments here are Stripe TEST charges. Card 4242 4242 4242 4242 works.
         </div>
       ) : null}
-      {doneMsg && !embedded ? (
+      {done && !embedded ? (
         <div className="jf-up-ok" role="status">
-          Done — you&apos;re on <b>{doneName}</b> now.
+          <span className="jf-up-ok-k">{done.dir === "down" ? "Plan changed" : "Plan activated"}</span>
+          <b>{doneName}</b>
         </div>
       ) : null}
-      {/* The one moment the plan actually turns on: a stamp and a short rain
-          of grid glyphs, 1.5 s, blocking nothing. */}
-      <PlanActivated plan={doneName} active={!!doneMsg} />
+      {/* The one moment the plan actually turns on: confetti from both side
+          edges, blocking nothing. A downgrade gets the banner only. */}
+      {!embedded ? (
+        <PlanConfetti
+          active={done?.dir === "up"}
+          token={done?.key ?? 0}
+          once={!devTools}
+          devReplay={Boolean(devTools)}
+        />
+      ) : null}
       {cancelled && !embedded ? (
         <div className="jf-up-err" role="alert">
           Checkout was cancelled — nothing changed.
@@ -449,6 +501,20 @@ export function UpgradeContent({
 
       <ConfirmPlanChange
         open={confirm !== null}
+        compare={
+          confirm && (confirm.kind === "up" || confirm.kind === "down")
+            ? {
+                plans,
+                from:
+                  confirm.from ??
+                  plans.find((p) => p.slug === cur) ??
+                  (onCustom ? { slug: cur, name: "Custom plan", priceCents: customPriceCents(owned), features: [] } : null),
+                to: confirm.plan,
+                direction: confirm.kind,
+                how: confirm.kind === "up" ? "checkout" : "switch",
+              }
+            : undefined
+        }
         kicker={
           confirm?.kind === "down"
             ? "Downgrade"

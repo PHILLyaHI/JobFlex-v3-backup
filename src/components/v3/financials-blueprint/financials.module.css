@@ -976,6 +976,12 @@
 .bp :global(.content .fi-fld > span) { font-family: var(--font-mono); font-size: 10px; font-weight: 600;
   letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 .bp :global(.content .fi-fld select.pinput) { height: 40px; padding: 0 10px; }
+/* A control fills its cell. The donor's .pinput is a fixed 236px (below), and a
+   46% cell of a 380px dialog is ~160px — so Job drew over Category and Amount
+   over Date (owner, 2026-09-19). The cell is the measure now; `min-width: 0`
+   and `box-sizing` so a <select>'s intrinsic width and the 1.5px border cannot
+   push it back out. */
+.bp :global(.content .fi-fld .pinput) { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
 .bp :global(.content .fi-fld-note) { flex: 1 1 100%; margin: 0; font-size: 13px; color: var(--ink-soft); }
 @media (max-width: 768px) {
   .bp :global(.content .fi-fld) { flex: 1 1 100%; }

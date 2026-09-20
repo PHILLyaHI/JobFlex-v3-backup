@@ -1,5 +1,7 @@
-/* CONFIRM PLAN CHANGE — see ConfirmPlanChange.tsx. Self-scoped, (0,3,0)
-   selectors (see plan-limit-dialog.css for why). */
+/* THE PLAN DIALOG — see ConfirmPlanChange.tsx. Self-scoped, (0,3,0)
+   selectors so the blueprint shell's globals cannot restyle it. Tokens only;
+   the shadows are the system's two (commit 398a84c): the box rests on the
+   muted card shadow, a button imprints in solid ink on hover. */
 .jf-confirm,
 .jf-confirm *,
 .jf-confirm *::before,
@@ -23,25 +25,27 @@
   inset: 0;
   background: rgba(10, 10, 10, 0.55);
   opacity: 0;
-  transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 0.22s var(--ease, cubic-bezier(0.4, 0, 0.2, 1));
 }
 .jf-confirm.jf-confirm.is-on .jf-confirm-scrim {
   opacity: 1;
 }
 .jf-confirm.jf-confirm .jf-confirm-box {
   position: relative;
-  width: min(460px, 100%);
-  padding: 24px 26px 22px;
+  width: min(560px, 100%);
+  max-height: min(92dvh, 760px);
+  overflow: auto;
+  padding: 24px 28px 24px;
   border: 2px solid var(--ink, #0a0a0a);
   border-radius: var(--radius, 2px);
   background: #fff;
-  box-shadow: 8px 8px 0 var(--ink, #0a0a0a);
+  box-shadow: 3px 3px 0 var(--shadow, rgba(10, 10, 10, 0.06));
   opacity: 0;
   transform: translateY(12px) scale(0.985);
   transform-origin: 50% 0;
   transition:
-    opacity 0.16s cubic-bezier(0.4, 0, 0.2, 1),
-    transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+    opacity 0.16s var(--ease, cubic-bezier(0.4, 0, 0.2, 1)),
+    transform 0.22s var(--ease-out, cubic-bezier(0.22, 0.61, 0.36, 1));
 }
 .jf-confirm.jf-confirm.is-on .jf-confirm-box {
   opacity: 1;
@@ -53,20 +57,23 @@
     transition: none;
   }
 }
+
+/* ── Head ───────────────────────────────────────────────────── */
 .jf-confirm.jf-confirm .jf-confirm-kick {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--blueprint, #1854a0);
 }
 .jf-confirm.jf-confirm .jf-confirm-h {
-  margin-top: 5px;
+  margin-top: 6px;
   font-size: 22px;
   font-weight: 900;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   line-height: 1.1;
+  text-transform: uppercase;
 }
 .jf-confirm.jf-confirm .jf-confirm-p {
   margin-top: 12px;
@@ -78,6 +85,151 @@
   color: var(--ink, #0a0a0a);
   font-weight: 800;
 }
+
+/* ── The two tiles ──────────────────────────────────────────── */
+.jf-confirm.jf-confirm .jf-confirm-tiles {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: stretch;
+  gap: 12px;
+}
+.jf-confirm.jf-confirm .jf-confirm-tile {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1.5px solid var(--ink-line, rgba(10, 10, 10, 0.12));
+  border-radius: var(--radius, 2px);
+  background: var(--paper, #f2f0eb);
+  color: var(--muted, #555);
+}
+.jf-confirm.jf-confirm .jf-confirm-tile.is-after {
+  border: 2px solid var(--blueprint, #1854a0);
+  background: #fff;
+  color: var(--ink, #0a0a0a);
+}
+.jf-confirm.jf-confirm .jf-confirm-tile-k {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.jf-confirm.jf-confirm .jf-confirm-tile.is-after .jf-confirm-tile-k {
+  color: var(--blueprint, #1854a0);
+}
+.jf-confirm.jf-confirm .jf-confirm-tile-n {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.jf-confirm.jf-confirm .jf-confirm-tile-p {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.jf-confirm.jf-confirm .jf-confirm-tile-p.is-big {
+  margin-top: 2px;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink, #0a0a0a);
+}
+.jf-confirm.jf-confirm .jf-confirm-tile-p.is-big i {
+  margin-left: 2px;
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted, #555);
+}
+.jf-confirm.jf-confirm .jf-confirm-arrow {
+  display: grid;
+  place-items: center;
+  min-width: 64px;
+}
+.jf-confirm.jf-confirm .jf-confirm-arrow svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: var(--ink, #0a0a0a);
+  stroke-width: 2;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+/* What opens / closes. */
+.jf-confirm.jf-confirm .jf-confirm-lines {
+  list-style: none;
+  margin-top: 16px;
+  display: grid;
+  gap: 8px;
+}
+.jf-confirm.jf-confirm .jf-confirm-lines li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.jf-confirm.jf-confirm .jf-confirm-lines.is-closing li {
+  color: var(--muted, #555);
+  font-weight: 500;
+}
+.jf-confirm.jf-confirm .jf-confirm-ic {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--blueprint, #1854a0);
+  border-radius: var(--radius, 2px);
+  color: var(--blueprint, #1854a0);
+}
+.jf-confirm.jf-confirm .jf-confirm-lines.is-closing .jf-confirm-ic {
+  border-color: var(--muted, #555);
+  color: var(--muted, #555);
+}
+.jf-confirm.jf-confirm .jf-confirm-ic svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: square;
+}
+
+/* The money line — one sentence, mono, exactly what the code does. */
+.jf-confirm.jf-confirm .jf-confirm-pay {
+  margin-top: 16px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.6;
+  text-transform: uppercase;
+  color: var(--muted, #555);
+}
+
+/* ── The limit gate's meter, drawn in this box ──────────────── */
+.jf-confirm.jf-confirm .jf-confirm-meter {
+  margin-top: 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--ink, #0a0a0a);
+  border-radius: var(--radius, 2px);
+  background: var(--paper, #f2f0eb);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink, #0a0a0a);
+}
+
+/* ── Buttons: one line, equal height, no wrapping ───────────── */
 .jf-confirm.jf-confirm .jf-confirm-row {
   margin-top: 22px;
   display: flex;
@@ -85,7 +237,8 @@
 }
 .jf-confirm.jf-confirm .jf-confirm-btn {
   flex: 1 1 0;
-  min-height: 44px;
+  min-width: 0;
+  min-height: 46px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -95,17 +248,23 @@
   background: var(--paper, #f2f0eb);
   color: var(--ink, #0a0a0a);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
   cursor: pointer;
-  box-shadow: 3px 3px 0 var(--ink, #0a0a0a);
-  transition: transform 0.1s, box-shadow 0.1s;
+  transition:
+    transform 0.12s var(--ease, cubic-bezier(0.22, 0.61, 0.36, 1)),
+    box-shadow 0.12s var(--ease, cubic-bezier(0.22, 0.61, 0.36, 1));
 }
 .jf-confirm.jf-confirm .jf-confirm-btn:hover:not(:disabled) {
   transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 var(--ink, #0a0a0a);
+  box-shadow: 3px 3px 0 var(--ink, #0a0a0a);
+}
+.jf-confirm.jf-confirm .jf-confirm-btn:active:not(:disabled) {
+  transform: translate(0, 0);
+  box-shadow: none;
 }
 .jf-confirm.jf-confirm .jf-confirm-btn:disabled {
   opacity: 0.55;
@@ -113,5 +272,37 @@
 }
 .jf-confirm.jf-confirm .jf-confirm-btn.primary {
   background: var(--blueprint, #1854a0);
+  border-color: var(--blueprint, #1854a0);
   color: #fff;
+}
+
+/* ── Handheld: the width, stacked buttons ───────────────────── */
+@media (max-width: 600px) {
+  .jf-confirm.jf-confirm {
+    padding: 12px;
+    align-items: end;
+  }
+  .jf-confirm.jf-confirm .jf-confirm-box {
+    width: 100%;
+    padding: 20px 18px 18px;
+  }
+  .jf-confirm.jf-confirm .jf-confirm-h {
+    font-size: 19px;
+  }
+  .jf-confirm.jf-confirm .jf-confirm-tiles {
+    grid-template-columns: 1fr;
+  }
+  .jf-confirm.jf-confirm .jf-confirm-arrow {
+    padding: 2px 0;
+  }
+  .jf-confirm.jf-confirm .jf-confirm-arrow svg {
+    transform: rotate(90deg);
+  }
+  .jf-confirm.jf-confirm .jf-confirm-row {
+    flex-direction: column;
+  }
+  .jf-confirm.jf-confirm .jf-confirm-btn {
+    flex: 0 0 auto;
+    width: 100%;
+  }
 }

@@ -34,7 +34,9 @@
 // already on Custom; and the one-shot refresh on the ?session_id return leg so
 // the sidebar's locks and quota pills redraw.
 
-import { PlanActivated } from "@/components/billing/PlanActivated";
+import { PlanConfetti } from "@/components/billing/PlanConfetti";
+import { DEV_EVENT, type DevUpgradeEvent } from "@/lib/devSimulation";
+import { ConfirmPlanChange } from "@/components/billing/ConfirmPlanChange";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -61,8 +63,8 @@ const prefersReducedMotion = () =>
 const dollars = (cents: number) => `$${(cents / 100).toFixed(0)}`;
 
 type Confirm =
-  | { kind: "up"; plan: UpgradePlan }
-  | { kind: "down"; plan: UpgradePlan }
+  | { kind: "up"; plan: UpgradePlan; from?: UpgradePlan }
+  | { kind: "down"; plan: UpgradePlan; from?: UpgradePlan }
   | { kind: "custom"; pages: string[] }
   | { kind: "remove"; pages: string[]; removing: string[] };
 
@@ -79,10 +81,15 @@ export type MobileUpgradeProps = {
   sandbox: boolean;
   /** Slug just purchased on this request's ?session_id return, if any. */
   upgradedTo: string | null;
+  /** Which way that return went; a downgrade gets the banner, not the confetti. */
+  upgradedDirection?: "up" | "down";
   cancelled: boolean;
   /** Rendered inside the subscription page: no shell, no head, no return-leg
    *  banners — the cards as a swipe carousel plus their sheets. */
   embedded?: boolean;
+  /** TEMP (2026-09-19): the DEV ONLY block, handed in by the page behind the
+   *  server gate; undefined everywhere else. */
+  devTools?: React.ReactNode;
 };
 
 function Tick({ on }: { on: boolean }) {
@@ -101,8 +108,10 @@ export function MobileUpgradeContent({
   checkoutReady,
   sandbox,
   upgradedTo,
+  upgradedDirection = "up",
   cancelled,
   embedded = false,
+  devTools,
 }: MobileUpgradeProps) {
   const router = useRouter();
   /* MONTHLY ONLY for now (owner, 2026-09-04): the yearly tier is unreviewed,
@@ -123,21 +132,32 @@ export function MobileUpgradeContent({
   const scrollRef = useRef<HTMLElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
-  /* THE RETURN FROM STRIPE. The layout that draws the nav rendered BEFORE
-     verifyReturn wrote the new plan, so locks and quota pills were stale until
-     a manual reload. Refresh once, and drop the session id from the URL so a
-     reload cannot re-verify. The banner is kept in state. */
-  const [doneMsg] = useState<string | null>(upgradedTo);
+  /* THE RETURN FROM STRIPE (and the dev simulator's ?simulated= twin). The
+     layout that draws the nav rendered BEFORE verifyReturn wrote the new
+     plan, so locks and quota pills were stale until a manual reload: refresh
+     at once, and drop the query so a reload cannot re-verify. The banner and
+     the confetti key off state derived from the prop DURING RENDER, not a
+     useState initialiser — the simulator's router.push lands on this same
+     mounted component with a new prop, and an initialiser would never see it
+     (the old stamp never played for that reason). */
+  const [seenReturn, setSeenReturn] = useState<string | null>(null);
+  const [done, setDone] = useState<{ slug: string; dir: "up" | "down"; key: number } | null>(null);
+  if (upgradedTo !== seenReturn) {
+    setSeenReturn(upgradedTo);
+    if (upgradedTo) {
+      const slug = upgradedTo;
+      setDone((prev) => ({ slug, dir: upgradedDirection, key: (prev?.key ?? 0) + 1 }));
+    }
+  }
   useEffect(() => {
     if (!upgradedTo) return;
     router.replace("/dashboard/upgrade");
     router.refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const doneName = doneMsg
-    ? doneMsg === CUSTOM_PLAN_SLUG
-      ? "the Custom plan"
-      : (plans.find((p) => p.slug === doneMsg)?.name ?? doneMsg)
+  }, [upgradedTo, router]);
+  const doneName = done
+    ? done.slug === CUSTOM_PLAN_SLUG
+      ? "Custom plan"
+      : (plans.find((p) => p.slug === done.slug)?.name ?? done.slug)
     : null;
 
   // The feature comparison, with "Everything in <plan>" expanded so a dearer
@@ -161,6 +181,7 @@ export function MobileUpgradeContent({
 
   const onCustom = cur === CUSTOM_PLAN_SLUG;
 
+
   /* ── SHEETS ────────────────────────────────────────────────────────────
      Both are mounted first and given `is-on` a frame later, so the box has a
      start state to slide out of; leaving removes the class and unmounts
@@ -176,6 +197,31 @@ export function MobileUpgradeContent({
     setConfirmOn(false);
     window.setTimeout(() => setConfirm(null), SHEET_EXIT_MS);
   }, []);
+
+  /* TEMP (2026-09-19): the DEV ONLY block's "Preview dialog" — one rung up
+     or down from here, without changing anything; at the top (or bottom) of
+     the ladder the pair is taken from one rung below (above) so the dialog
+     never shows a $0 move. Heard only when the page handed us devTools. */
+  useEffect(() => {
+    if (!devTools) return;
+    const onDev = (e: Event) => {
+      const d = (e as CustomEvent<DevUpgradeEvent>).detail;
+      if (d?.type !== "preview-dialog") return;
+      const at = plans.findIndex((p) => p.slug === cur);
+      if (d.direction === "up") {
+        const to = plans[at + 1] ?? plans[plans.length - 1];
+        const from = plans[at + 1] ? undefined : plans[plans.length - 2];
+        if (to) setConfirm({ kind: "up", plan: to, from });
+      } else {
+        const to = at > 0 ? plans[at - 1] : plans[0];
+        const from = at > 0 ? undefined : plans[1];
+        if (to) setConfirm({ kind: "down", plan: to, from });
+      }
+    };
+    window.addEventListener(DEV_EVENT, onDev);
+    return () => window.removeEventListener(DEV_EVENT, onDev);
+  }, [devTools, plans, cur]);
+
 
   const searchParams = useSearchParams();
   // /dashboard/upgrade?custom=1 (the subscription page's "Build it", and the
@@ -608,6 +654,43 @@ export function MobileUpgradeContent({
         )
       : null;
 
+  /* Up and down go through the one plan dialog the desktop build uses (the
+     comparison is read from the catalog there); the custom-plan sheets stay. */
+  const planDialog = (
+    <ConfirmPlanChange
+      open={confirm?.kind === "up" || confirm?.kind === "down"}
+      kicker={confirm?.kind === "down" ? "Downgrade" : "Upgrade"}
+      title={
+        confirm?.kind === "down"
+          ? `Downgrade to ${confirm.plan.name}?`
+          : confirm?.kind === "up"
+            ? `Upgrade to ${confirm.plan.name}?`
+            : ""
+      }
+      confirmLabel={confirm?.kind === "down" ? `Downgrade to ${confirm.plan.name}` : "Continue to payment"}
+      busy={Boolean(busy)}
+      onCancel={() => closeConfirm()}
+      onConfirm={() => {
+        if (confirm?.kind === "down") void switchDown(confirm.plan);
+        else if (confirm?.kind === "up") void payFor(confirm.plan.slug);
+      }}
+      compare={
+        confirm && (confirm.kind === "up" || confirm.kind === "down")
+          ? {
+              plans,
+              from:
+                confirm.from ??
+                plans.find((p) => p.slug === cur) ??
+                (onCustom ? { slug: cur, name: "Custom plan", priceCents: customPriceCents(owned), features: [] } : null),
+              to: confirm.plan,
+              direction: confirm.kind,
+              how: confirm.kind === "up" ? "checkout" : "switch",
+            }
+          : undefined
+      }
+    />
+  );
+
   const pickerSheet =
     pickerOpen && typeof document !== "undefined"
       ? createPortal(
@@ -838,7 +921,7 @@ export function MobileUpgradeContent({
         {!isOwner ? (
           <p className="mu-fine">Plan changes are owner-only — ask the account owner.</p>
         ) : null}
-        {confirmSheet}
+        {confirm?.kind === "custom" || confirm?.kind === "remove" ? confirmSheet : planDialog}
         {pickerSheet}
       </div>
     );
@@ -875,20 +958,25 @@ export function MobileUpgradeContent({
           </div>
 
 
+          {devTools}
           {sandbox ? (
             <div className="mu-note is-warn" role="status">
               <b>Sandbox mode</b>
               <span>Payments here are Stripe TEST charges. Card 4242 4242 4242 4242 works.</span>
             </div>
           ) : null}
-          {/* The plan-activation shot, the handheld twin of the desktop one. */}
-          <PlanActivated plan={doneName} active={!!doneMsg} />
-          {doneMsg ? (
+          {/* The plan turning on: confetti from both side edges, the same
+              effect as the desktop build's. A downgrade gets the banner only. */}
+          <PlanConfetti
+            active={done?.dir === "up"}
+            token={done?.key ?? 0}
+            once={!devTools}
+            devReplay={Boolean(devTools)}
+          />
+          {done ? (
             <div className="mu-done" role="status">
-              <span className="mu-done-k">Done</span>
-              <b>
-                You&rsquo;re on {doneName} now.
-              </b>
+              <span className="mu-done-k">{done.dir === "down" ? "Plan changed" : "Plan activated"}</span>
+              <b>{doneName}</b>
             </div>
           ) : null}
           {cancelled ? (
@@ -927,7 +1015,7 @@ export function MobileUpgradeContent({
         </div>
       </main>
 
-      {confirmSheet}
+      {confirm?.kind === "custom" || confirm?.kind === "remove" ? confirmSheet : planDialog}
       {pickerSheet}
     </div>
   );

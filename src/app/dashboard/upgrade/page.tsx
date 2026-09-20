@@ -32,6 +32,10 @@ import type { UpgradePlan } from "@/components/v3/upgrade-blueprint/upgrade-cont
 // components/v3/mobile-upgrade at or below it. Same props, one loader — see
 // upgrade-responsive.tsx.
 import { UpgradeResponsive } from "./upgrade-responsive";
+import { recordPlanChange } from "@/lib/subscriptionRecord";
+// TEMP (2026-09-19): the dev-only plan simulator; see lib/devSimulation.
+import { isDevSimulationEnabled } from "@/lib/devSimulation";
+import { DevPlanSimulator } from "./dev-plan-simulator";
 
 export const metadata = { title: "Plans & upgrade — JobFlex" };
 export const dynamic = "force-dynamic";
@@ -86,29 +90,9 @@ async function verifyReturn(organizationId: string, sessionId: string): Promise<
         })
         .catch(() => {});
     }
-    await db.subscription.upsert({
-      where: { organizationId },
-      update: {
-        plan: planSlug.toUpperCase(),
-        status,
-        provider: "STRIPE",
-        ...(customerId ? { externalCustomerId: customerId } : {}),
-        ...(subId ? { externalSubId: subId } : {}),
-        trialEndsAt: trialEnd,
-        currentPeriodEnd: periodEnd,
-      },
-      create: {
-        organizationId,
-        plan: planSlug.toUpperCase(),
-        status,
-        provider: "STRIPE",
-        externalCustomerId: customerId,
-        externalSubId: subId,
-        trialEndsAt: trialEnd,
-        currentPeriodEnd: periodEnd,
-      },
-    });
-    return planSlug;
+    // The write itself lives in lib/subscriptionRecord so the dev simulator
+    // records a plan change by the same code rather than a copy of it.
+    return await recordPlanChange({ organizationId, planSlug, status, customerId, subId, trialEnd, periodEnd });
   } catch (err) {
     console.warn("[upgrade] checkout verify failed:", err);
     return null;
@@ -118,7 +102,7 @@ async function verifyReturn(organizationId: string, sessionId: string): Promise<
 export default async function UpgradePage({
   searchParams,
 }: {
-  searchParams: Promise<{ session_id?: string; checkout?: string }>;
+  searchParams: Promise<{ session_id?: string; checkout?: string; simulated?: string; dir?: string }>;
 }) {
   let ctx: Awaited<ReturnType<typeof requireOrg>>;
   try {
@@ -128,9 +112,16 @@ export default async function UpgradePage({
   }
 
   const params = await searchParams;
+  // TEMP (2026-09-19): ?simulated=&dir= is the dev simulator's return leg —
+  // read ONLY behind the server gate, so on Vercel both parameters are inert.
+  const devSim = isDevSimulationEnabled();
   const upgradedTo = params.session_id
     ? await verifyReturn(ctx.organizationId, params.session_id)
-    : null;
+    : devSim && params.simulated
+      ? params.simulated
+      : null;
+  // A checkout return is always a step up; only the simulator can say "down".
+  const upgradedDirection: "up" | "down" = !params.session_id && devSim && params.dir === "down" ? "down" : "up";
 
   const [catalog, sub, mode] = await Promise.all([
     getPlanCatalog(),
@@ -176,7 +167,12 @@ export default async function UpgradePage({
       checkoutReady={isStripeEnabled()}
       sandbox={mode === "test"}
       upgradedTo={upgradedTo}
+      upgradedDirection={upgradedDirection}
       cancelled={params.checkout === "cancelled"}
+      /* TEMP (2026-09-19): the DEV ONLY block — not rendered at all unless the
+         server gate is open; handed to the content so it sits inside both
+         builds (above the handheld shell it fell under the fixed header). */
+      devTools={devSim ? <DevPlanSimulator currentPlan={sub?.plan ?? null} /> : undefined}
     />
   );
 }

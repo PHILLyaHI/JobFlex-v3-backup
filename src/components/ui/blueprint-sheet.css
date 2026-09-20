@@ -1,0 +1,266 @@
+/* THE BLUEPRINT SHEET — see BlueprintSheet.tsx.
+ *
+ * Global on purpose and prefixed `bps-` throughout: the sheet portals to
+ * <body>, outside every page's `.bp .content` scope, so a CSS module scoped to
+ * a page could not reach it and the page's own resets cannot flatten it.
+ *
+ * Every value is the Financials page's "Add an expense" dialog, verbatim
+ * (financials.module.css .mdl-*, .fi-fld, .pinput, .btn), with the blueprint
+ * tokens restated on the root so the sheet draws the same wherever it opens.
+ */
+
+.bps {
+  --bps-ink: #0a0a0a;
+  --bps-paper: #f2f0eb;
+  --bps-muted: #555;
+  --bps-muted-faint: #b0aea8;
+  --bps-hair: rgba(10, 10, 10, 0.12);
+  --bps-hair-soft: rgba(10, 10, 10, 0.08);
+  --bps-blue: #1854a0;
+  --bps-blue-dark: #0e3d7a;
+  --bps-danger: #a83232;
+  --bps-success: #3a7d44;
+  --bps-warning: #b88420;
+  --bps-radius: 2px;
+  --bps-font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --bps-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, "Courier New", monospace;
+  --bps-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  font-family: var(--bps-font);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--bps-ink);
+  -webkit-font-smoothing: antialiased;
+}
+.bps-bg { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); animation: bpsBgIn 150ms linear; }
+.bps-box {
+  position: relative;
+  width: var(--bps-w, min(520px, 100%));
+  max-width: 100%;
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 2px solid var(--bps-ink);
+  border-radius: var(--bps-radius);
+  box-shadow: 5px 5px 0 var(--bps-ink);
+  animation: bpsBoxIn 280ms var(--bps-ease);
+}
+.bps-grab { display: none; }
+
+.bps-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 15px 17px 0; flex: 0 0 auto; }
+.bps-head-txt { min-width: 0; }
+.bps-kicker {
+  font-family: var(--bps-mono);
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--bps-muted);
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+.bps-title { margin: 0; font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.02em; line-height: 1.25; }
+/* The line under the title — the dialog's own muted text (.mdl-txt), not a
+   kicker: the contract, the number, what the sheet is for. */
+.bps-sub { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--bps-muted); overflow-wrap: anywhere; }
+.bps-x {
+  width: 26px; height: 26px; flex: 0 0 auto; margin: -3px -3px 0 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--bps-hair-soft); border-radius: var(--bps-radius);
+  background: none; color: var(--bps-muted); cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.bps-x:hover { border-color: var(--bps-ink); color: var(--bps-ink); background: var(--bps-paper); }
+.bps-x svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+
+.bps-body { padding: 12px 17px 15px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+.bps-foot { display: flex; gap: 9px; padding: 11px 17px; border-top: 1.5px solid var(--bps-ink); background: #fff; flex: 0 0 auto; }
+.bps-foot > * { flex: 1; }
+.bps-foot--right { justify-content: flex-end; }
+.bps-foot--right > * { flex: 0 0 auto; }
+
+/* ── The blueprint form vocabulary, for sheets written against it ───────── */
+.bps-form { display: flex; flex-wrap: wrap; gap: 12px; }
+.bps-fld { display: flex; flex-direction: column; gap: 6px; flex: 1 1 46%; min-width: 0; }
+.bps-fld--wide { flex: 1 1 100%; }
+.bps-lbl, .bps-fld > span:first-child {
+  font-family: var(--bps-mono);
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--bps-muted);
+}
+.bps-in {
+  width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box;
+  height: 40px; padding: 0 10px;
+  border: 1.5px solid var(--bps-ink); border-radius: var(--bps-radius);
+  background: #fff;
+  font-family: var(--bps-font); font-size: 12.5px; color: var(--bps-ink);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+textarea.bps-in { height: auto; padding: 8px 10px; resize: vertical; }
+.bps-in::placeholder { color: var(--bps-muted-faint); }
+.bps-in:focus { outline: none; border-color: var(--bps-blue); box-shadow: 2px 2px 0 rgba(24, 84, 160, 0.25); }
+.bps-in:disabled { color: var(--bps-muted); background: var(--bps-paper); cursor: not-allowed; }
+.bps-hint { font-size: 12px; color: var(--bps-muted); }
+.bps-note { margin: 0; font-size: 13px; color: var(--bps-muted); }
+.bps-err {
+  flex: 1 1 100%; margin: 0; padding: 9px 11px;
+  border: 1.5px solid var(--bps-danger); border-radius: var(--bps-radius);
+  font-size: 12.5px; font-weight: 700; color: var(--bps-danger);
+}
+
+/* Buttons — the page's .btn, .btn-primary, .btn-ghost, .btn--sm. */
+.bps-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  padding: 0 16px; height: 40px;
+  border: 2px solid var(--bps-ink); border-radius: var(--bps-radius);
+  background: #fff; color: var(--bps-ink);
+  font-family: var(--bps-font); font-size: 12px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap;
+  cursor: pointer;
+  transition: transform 0.12s var(--bps-ease), box-shadow 0.12s var(--bps-ease), background 0.12s;
+}
+.bps-btn svg { width: 15px; height: 15px; flex: 0 0 auto; }
+.bps-btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--bps-ink); }
+.bps-btn:active { transform: none; box-shadow: none; }
+.bps-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
+.bps-btn--primary { background: var(--bps-blue); color: #fff; }
+.bps-btn--primary:hover { background: var(--bps-blue-dark); }
+.bps-btn--ghost { background: #fff; color: var(--bps-ink); }
+.bps-btn--ghost:hover { background: var(--bps-paper); }
+.bps-btn--sm { height: 30px; padding: 0 10px; font-size: 10.5px; border-width: 1.5px; gap: 5px; }
+.bps-btn--sm:hover { box-shadow: 2px 2px 0 var(--bps-ink); }
+
+/* Chips (a row of choices), a segmented pair, a plate, a status badge. */
+.bps-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.bps-chip {
+  height: 32px; padding: 0 12px;
+  border: 1.5px solid var(--bps-ink); border-radius: var(--bps-radius);
+  background: #fff; color: var(--bps-ink);
+  font-family: var(--bps-mono); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  cursor: pointer; transition: background 0.12s, color 0.12s;
+}
+.bps-chip:hover { background: var(--bps-paper); }
+.bps-chip.is-on { background: var(--bps-ink); color: #fff; }
+.bps-seg { display: inline-flex; flex: 0 0 auto; border: 1.5px solid var(--bps-ink); border-radius: var(--bps-radius); overflow: hidden; background: #fff; }
+.bps-seg > button {
+  height: 32px; padding: 0 10px; border: 0; border-radius: 0;
+  background: transparent; color: var(--bps-muted);
+  font-family: var(--bps-mono); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+}
+.bps-seg > button + button { border-left: 1.5px solid var(--bps-ink); }
+.bps-seg > button.is-on { background: var(--bps-ink); color: #fff; }
+.bps-plate { border: 1.5px solid var(--bps-ink); border-radius: var(--bps-radius); background: #fff; padding: 10px; }
+.bps-badge {
+  display: inline-block; padding: 2px 7px;
+  border: 1.5px solid currentColor; border-radius: var(--bps-radius);
+  font-family: var(--bps-mono); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.bps-badge--ok { color: var(--bps-success); }
+.bps-badge--wait { color: var(--bps-warning); }
+.bps-badge--bad { color: var(--bps-danger); }
+.bps-badge--mute { color: var(--bps-muted); }
+
+/* ── A sheet whose body is still written in the ui/* primitives ───────────
+   (Input, Textarea, Button, the utility-class <select>s) is dressed here by
+   descent, so its markup need not change: hairline wrappers become ink
+   fields, the Button primitive becomes the page's .btn, `quiet-caps` labels
+   become the mono kicker, every soft radius squares off. */
+.bps-body .quiet-caps {
+  font-family: var(--bps-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--bps-muted);
+}
+.bps-body .hairline {
+  box-shadow: none;
+  border: 1.5px solid var(--bps-ink);
+  border-radius: var(--bps-radius);
+  background: #fff;
+}
+.bps-body .hairline:focus-within { border-color: var(--bps-blue); box-shadow: 2px 2px 0 rgba(24, 84, 160, 0.25); }
+.bps-body select.hairline, .bps-body select:not(.bps-in):not(.hairline) {
+  height: 40px; padding: 0 10px;
+  border: 1.5px solid var(--bps-ink); border-radius: var(--bps-radius);
+  background: #fff; box-shadow: none;
+  font-family: var(--bps-font); font-size: 12.5px; color: var(--bps-ink);
+}
+.bps-body select:focus { outline: none; border-color: var(--bps-blue); box-shadow: 2px 2px 0 rgba(24, 84, 160, 0.25); }
+.bps-body .hairline input, .bps-body .hairline textarea { font-family: var(--bps-font); font-size: 12.5px; }
+.bps-body [class*="rounded-"] { border-radius: var(--bps-radius) !important; }
+.bps-body [class*="bg-white/"] { background-color: #fff !important; }
+/* A status badge that still wears the primitive's tint classes (bg-amber-100
+   text-amber-800 …) reads as the page's mono badge: white, its colour on the
+   text and the 1.5px rule, never a tinted plate. Badges only — a trash button
+   that turns rose on hover is not a badge. */
+.bps-badge[class*="bg-"] { background-color: #fff !important; }
+.bps-badge[class*="text-amber-"] { color: var(--bps-warning) !important; }
+.bps-badge[class*="text-emerald-"] { color: var(--bps-success) !important; }
+.bps-badge[class*="text-rose-"] { color: var(--bps-danger) !important; }
+.bps-badge[class*="text-zinc-"] { color: var(--bps-muted) !important; }
+
+/* The Button primitive (always `group relative inline-flex …`). */
+.bps button.group {
+  height: 40px; padding: 0 16px; gap: 9px;
+  border: 2px solid var(--bps-ink); border-radius: var(--bps-radius);
+  background: #fff; color: var(--bps-ink);
+  font-family: var(--bps-font); font-size: 12px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap;
+  box-shadow: none; transform: none;
+  transition: transform 0.12s var(--bps-ease), box-shadow 0.12s var(--bps-ease), background 0.12s;
+}
+.bps button.group:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--bps-ink); background: var(--bps-paper); }
+.bps button.group:active { transform: none; box-shadow: none; }
+.bps button.group:disabled { opacity: 0.55; transform: none; box-shadow: none; }
+.bps button.group[class*="var(--accent)"] { background: var(--bps-blue); color: #fff; }
+.bps button.group[class*="var(--accent)"]:hover { background: var(--bps-blue-dark); }
+.bps button.group.h-8 { height: 30px; padding: 0 10px; font-size: 10.5px; border-width: 1.5px; gap: 5px; }
+.bps button.group.h-8:hover { box-shadow: 2px 2px 0 var(--bps-ink); }
+.bps button.group .truncate { overflow: visible; }
+
+/* ── Phone: a bottom sheet in the same tokens ─────────────────────────── */
+@media (max-width: 768px) {
+  .bps { padding: 0; align-items: flex-end; }
+  .bps-box {
+    width: 100%; max-height: calc(100dvh * 0.92);
+    border-width: 2px 0 0; border-radius: 0; box-shadow: none;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    animation: bpsUp 300ms var(--bps-ease);
+  }
+  .bps-grab { display: block; width: 44px; height: 3px; background: var(--bps-hair); margin: 10px auto 0; flex: 0 0 auto; }
+  .bps-head { padding: 12px 16px 0; }
+  .bps-x { width: 44px; height: 44px; margin: -8px -8px 0 0; }
+  .bps-x svg { width: 16px; height: 16px; }
+  .bps-body { padding: 12px 16px 16px; }
+  .bps-foot { padding: 11px 16px; }
+  .bps-foot .bps-btn, .bps-foot button.group { min-height: 44px; }
+  .bps-fld { flex-basis: 100%; }
+  .bps-in, .bps-body select { height: 44px; font-size: 16px; }
+  /* A phone is 390px wide and the buttons are caps: three of them in a row
+     do not fit at the desk's tracking. Tighter, and a row that is allowed to
+     wrap — the footer's own grid included — so nothing runs off the edge. */
+  .bps button.group, .bps .bps-btn { padding: 0 12px; font-size: 11px; letter-spacing: 0.08em; }
+  .bps-foot .grid, .bps-foot .flex { display: flex; flex-wrap: wrap; }
+  .bps-foot .grid > button, .bps-foot .flex > button { flex: 1 1 auto; }
+  /* The side panel this footer was written for kept 72px clear of its own
+     close button (`pr-[72px]`); the bottom sheet has no such button. */
+  .bps-foot > [class*="pr-["] { padding-right: 0 !important; }
+  .bps-plate > .flex { flex-wrap: wrap; }
+  .bps-plate > .flex > :first-child { flex: 1 1 140px; min-width: 0; }
+  .bps-plate .hairline { min-width: 0; }
+  .bps-seg > button { padding: 0 8px; font-size: 10px; }
+}
+
+@keyframes bpsBgIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes bpsBoxIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes bpsUp { from { transform: translateY(100%); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .bps-bg, .bps-box { animation: none; }
+}

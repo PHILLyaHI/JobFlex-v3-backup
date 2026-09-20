@@ -15,6 +15,7 @@
 //   always runs in a browser that has matchMedia).
 
 import { scanReceipt, saveReceiptExpense } from "@/actions/receiptOcr";
+import { prepareReceiptImage, receiptTransportError, ReceiptImageError, type PreparedReceipt } from "@/lib/receiptImage";
 import { deleteJobExpense } from "@/actions/expenses";
 import { safeHref } from "@/lib/safeHref";
 import { deleteChangeOrder, sendChangeOrder } from "@/actions/changeOrders";
@@ -1008,39 +1009,62 @@ export function initFinancialsContent(
     el.classList.toggle("rc-note--bad", tone === "bad");
   }
 
-  /** Read the picked file, run it past the OCR, and stage the result for review. */
+  /** Put the receipt card's panel on screen: its tab, read off the panel the
+   *  card sits in, then the card itself. The note and the staged result are
+   *  children of that card, so nothing the capture says can land out of sight. */
+  function revealReceiptCard() {
+    const drop = $("#rcDrop");
+    const panel = drop?.closest<HTMLElement>("[data-panel]");
+    const tab = panel ? root.querySelector<HTMLButtonElement>(`#fiTabs [data-tab="${panel.dataset.panel}"]`) : null;
+    if (tab && !tab.classList.contains("active")) tab.click();
+    if (drop && drop.getBoundingClientRect().height > 0) drop.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  /** Read the picked file, run it past the OCR, and stage the result for review.
+   *
+   *  The file is made sendable in the browser first (lib/receiptImage): turned
+   *  upright, scaled to 2000px on the long edge and re-encoded as JPEG under
+   *  3 MB. A 4 MB phone photo used to go up as a 5.4 MB data URL, over the
+   *  request ceiling on production, and the page had nothing to say about it
+   *  (owner, 2026-09-19). Every refusal — format, size, HEIC the browser cannot
+   *  decode, a model that found no receipt — now lands in #rcNote in words. */
   async function captureReceipt(file: File) {
     if (!jobs.length) {
       rcNote("A receipt is charged to a job, and this org has none yet.", "bad");
       return;
     }
-    if (!/^image\//.test(file.type)) {
-      rcNote("That is not an image — receipts upload as JPG, PNG or WebP.", "bad");
-      return;
-    }
-    // 8MB: comfortably above a phone photo, below anything that would stall the
-    // vision call or the blob upload.
-    if (file.size > 8 * 1024 * 1024) {
-      rcNote("That image is over 8MB — try a smaller photo.", "bad");
-      return;
-    }
 
-    rcFilename = file.name || "receipt.jpg";
-    rcNote("Reading the receipt…");
+    // Whatever opened the picker, the progress line and the result paint in
+    // the card's own panel — so that panel is on screen first. A caller that
+    // switched tabs before opening the picker (the page head's Scan receipt
+    // once did) otherwise leaves the whole read invisible.
+    revealReceiptCard();
+    rcNote("Preparing the photo…");
     $("#rcDrop")?.classList.add("is-busy");
 
     try {
-      rcDataUrl = await new Promise<string>(function (resolve, reject) {
-        const fr = new FileReader();
-        fr.onload = () => resolve(String(fr.result || ""));
-        fr.onerror = () => reject(new Error("Could not read that file"));
-        fr.readAsDataURL(file);
-      });
+      let prepared: PreparedReceipt;
+      try {
+        prepared = await prepareReceiptImage(file);
+      } catch (err) {
+        rcNote(err instanceof ReceiptImageError ? err.message : "That image couldn't be read — try a JPG or PNG of the receipt.", "bad");
+        return;
+      }
+      rcDataUrl = prepared.dataUrl;
+      rcFilename = prepared.filename;
+      rcNote("Reading the receipt…");
 
       // scanReceipt is job-scoped on the server (it checks the job belongs to
       // the org before spending a vision call), so it needs a job up front. The
       // first live job is the default; the reviewer can change it before saving.
-      const res = await scanReceipt({ jobId: jobs[0].id, dataUrl: rcDataUrl });
+      let res: Awaited<ReturnType<typeof scanReceipt>>;
+      try {
+        res = await scanReceipt({ jobId: jobs[0].id, dataUrl: rcDataUrl });
+      } catch (err) {
+        console.error("[financials] receipt scan did not answer:", err);
+        rcNote(receiptTransportError(err), "bad");
+        return;
+      }
       if (!res.ok) {
         rcNote(res.error || "Could not read that receipt.", "bad");
         return;
@@ -1107,6 +1131,9 @@ export function initFinancialsContent(
       '<button class="btn btn-primary btn--sm" type="button" data-act="save-exp"><svg class="ic"><use href="#i-check"/></svg><span data-save-lbl>Save expense</span></button>' +
       '<button class="btn btn-ghost btn--sm" type="button" data-act="discard-exp">Discard</button>' +
       "</div>";
+    // The result is the whole point: bring it into the viewport, not just the
+    // drop zone above it, so the read is seen the moment it lands.
+    box.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
   /**
