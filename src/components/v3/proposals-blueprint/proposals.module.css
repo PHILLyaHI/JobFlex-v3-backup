@@ -1720,3 +1720,20 @@
 /* A proposal's project, named on its line when it has no header above it. */
 .bp :global(.content a.pt-proj) { color: var(--blueprint); font-weight: 700; text-decoration: none; }
 .bp :global(.content a.pt-proj:hover) { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ── VIEWS (2026-09-20) ───────────────────────────────────────────────────
+   The count a contractor looks for after sending, drawn as a plate instead
+   of a bare numeral: quiet when a draft cannot be opened, amber-outlined
+   while a sent proposal sits unopened, blueprint once the client has read
+   it — with how long ago underneath. */
+.bp :global(.content .pt-views) { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border: 1.5px solid var(--hair); border-radius: var(--radius); font-family: var(--font-mono); white-space: nowrap; }
+.bp :global(.content .pt-views .ic) { width: 13px; height: 13px; opacity: 0.85; }
+.bp :global(.content .pt-views b) { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.bp :global(.content .pt-views i) { font-style: normal; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.85; }
+.bp :global(.content .pt-views--na) { border-color: transparent; color: var(--muted-light); padding-left: 0; padding-right: 0; }
+.bp :global(.content .pt-views--none) { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
+.bp :global(.content .pt-views--seen) { border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.07); }
+/* Settled another way — no warning, just the fact. */
+.bp :global(.content .pt-views--quiet) { border-color: var(--hair); color: var(--muted); }
+/* The column is right-aligned; the plate keeps its own left edge. */
+.bp :global(.content .ptable td.num .pt-views) { margin-left: auto; }

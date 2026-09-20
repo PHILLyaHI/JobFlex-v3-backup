@@ -81,6 +81,33 @@ import {
 } from "./proposals-data";
 import { chainsOf, chained } from "@/components/v3/proposals-blueprint/proposals-data";
 
+/**
+ * VIEWS — what the contractor checks after sending (owner, 2026-09-20). A
+ * draft cannot be opened; a sent proposal nobody has opened says so; an
+ * opened one carries the count and when it was last read.
+ */
+function Views({ p }: { p: ProposalRow }) {
+  if (p.status === "DRAFT") return <span className={styles.viewsNa}>Not sent</span>;
+  if (p.views <= 0) {
+    // Amber only while the proposal is still waiting on the client.
+    const waiting = p.status === "SENT" || p.status === "VIEWED";
+    return (
+      <span className={`${styles.views} ${waiting ? styles.viewsNone : styles.viewsQuiet}`}>
+        <Icon id="i-eye" className={styles.viewsIc} />
+        <b>0</b>
+        <i>not opened</i>
+      </span>
+    );
+  }
+  return (
+    <span className={`${styles.views} ${styles.viewsSeen}`}>
+      <Icon id="i-eye" className={styles.viewsIc} />
+      <b>{p.views}</b>
+      <i>{p.lastViewed ?? (p.views === 1 ? "view" : "views")}</i>
+    </span>
+  );
+}
+
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -963,7 +990,7 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                       {/* Row 3 — badge leads, price closes at the far right. */}
                       <div className={styles.prowFoot}>
                         <span className={`${styles.pstatus} ${st.cls ? styles[st.cls] : ""}`}>{st.label}</span>
-                        <span className={styles.prowMono}>{p.views} views</span>
+                        <Views p={p} />
                         <span className={styles.prowMoney}>{money(p.total)}</span>
                       </div>
                     </div>
@@ -1105,7 +1132,7 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                       <div className={styles.pcol}>
                         <div className={styles.pcolLbl}>Signed</div>
                         <div className={styles.pcolVal}>{p.accepted ?? "—"}</div>
-                        <div className={styles.pcolSub}>{p.views} views</div>
+                        <div className={styles.pcolSub}>{p.views > 0 ? `${p.views} view${p.views === 1 ? "" : "s"}${p.lastViewed ? ` · ${p.lastViewed}` : ""}` : "not opened"}</div>
                       </div>
                       <div className={styles.pcol}>
                         <div className={styles.pcolLbl}>Paid</div>

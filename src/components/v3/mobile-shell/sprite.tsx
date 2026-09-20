@@ -72,6 +72,8 @@ export function MobileSprite() {
         <symbol id="i-video" viewBox="0 0 24 24"><rect x="2" y="6" width="13" height="12" rx="1.5" /><path d="M15 10.5 21 7v10l-6-3.5" /></symbol>
         {/* Added 2026-09-18 with the desktop sprite: the HVAC estimator's outdoor unit. */}
         <symbol id="i-heatpump" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="12" cy="12" r="4.5" /><path d="M12 12V8.5" /><path d="m12 12 3 1.8" /><path d="m12 12-3 1.8" /></symbol>
+        {/* Added 2026-09-20 with the desktop sprite: the views plate. */}
+        <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></symbol>
         <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></symbol>
       </defs>
     </svg>
