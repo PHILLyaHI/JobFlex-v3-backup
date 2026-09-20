@@ -42,7 +42,8 @@
   border: 2px solid var(--ink, #0a0a0a);
   border-radius: var(--radius, 2px);
   background: #fff;
-  box-shadow: 8px 8px 0 var(--ink, #0a0a0a);
+  /* The system's card shadow — see confirm-plan-change.css for the why. */
+  box-shadow: 3px 3px 0 var(--shadow, rgba(10, 10, 10, 0.06));
   opacity: 0;
   transform: translateY(12px) scale(0.985);
   transform-origin: 50% 0;
@@ -153,16 +154,16 @@
   text-transform: uppercase;
   text-decoration: none;
   cursor: pointer;
-  box-shadow: 3px 3px 0 var(--ink, #0a0a0a);
-  transition: transform 0.1s, box-shadow 0.1s;
+  /* Imprint on hover only (blueprint .btn); nothing at rest, nothing pressed. */
+  transition: transform 0.12s var(--ease, cubic-bezier(0.22, 0.61, 0.36, 1)), box-shadow 0.12s var(--ease, cubic-bezier(0.22, 0.61, 0.36, 1));
 }
 .jf-limit.jf-limit .jf-limit-btn:hover {
   transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 var(--ink, #0a0a0a);
+  box-shadow: 3px 3px 0 var(--ink, #0a0a0a);
 }
 .jf-limit.jf-limit .jf-limit-btn:active {
-  transform: none;
-  box-shadow: 1px 1px 0 var(--ink, #0a0a0a);
+  transform: translate(0, 0);
+  box-shadow: none;
 }
 .jf-limit.jf-limit .jf-limit-btn.primary {
   background: var(--blueprint, #1854a0);

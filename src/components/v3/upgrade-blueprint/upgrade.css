@@ -60,7 +60,7 @@
   border: 2px solid var(--ink, #101010);
   border-radius: var(--radius, 2px);
   overflow: hidden;
-  box-shadow: 3px 3px 0 var(--shadow, rgba(16, 16, 16, 0.14));
+  box-shadow: 3px 3px 0 var(--shadow, rgba(10, 10, 10, 0.06));
 }
 .jf-upgrade .jf-up-int-b {
   display: inline-flex;
@@ -145,13 +145,16 @@
   border-radius: var(--radius, 2px);
   background: var(--paper, #f6f4ef);
 }
+/* Cards rest on the muted system shadow, whatever their standing: the hero
+   plan keeps its deeper paper, the current plan keeps its blueprint frame,
+   and neither borrows the solid imprint that means "hover me". */
 .jf-upgrade .jf-up-plan.hero {
   background: var(--paper-deep, #eceae3);
-  box-shadow: 4px 4px 0 var(--ink, #101010);
+  box-shadow: 3px 3px 0 var(--shadow, rgba(10, 10, 10, 0.06));
 }
 .jf-upgrade .jf-up-plan.cur {
   border-color: var(--blueprint, #1854a0);
-  box-shadow: 4px 4px 0 var(--blueprint, #1854a0);
+  box-shadow: 3px 3px 0 var(--shadow, rgba(10, 10, 10, 0.06));
 }
 .jf-upgrade .jf-up-tag {
   position: absolute;
@@ -343,14 +346,18 @@
   background: var(--blueprint, #1854a0);
   border-color: var(--blueprint, #1854a0);
   color: #fff;
-  box-shadow: 3px 3px 0 var(--ink, #101010);
-  transition: transform 0.1s, box-shadow 0.1s, background 0.12s;
+  /* Rest: no shadow. Hover: the lift and the 3px imprint (blueprint .btn). */
+  transition: transform 0.12s var(--ease, cubic-bezier(0.22, 0.61, 0.36, 1)), box-shadow 0.12s var(--ease, cubic-bezier(0.22, 0.61, 0.36, 1)), background 0.12s;
 }
 .jf-upgrade .jf-up-go:hover:not(:disabled) {
   background: var(--blueprint-dark, #0e3d7a);
   border-color: var(--blueprint-dark, #0e3d7a);
   transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 var(--ink, #101010);
+  box-shadow: 3px 3px 0 var(--ink, #101010);
+}
+.jf-upgrade .jf-up-go:active:not(:disabled) {
+  transform: translate(0, 0);
+  box-shadow: none;
 }
 .jf-upgrade .jf-up-go.down {
   background: var(--paper, #f6f4ef);
@@ -406,7 +413,7 @@
   border: 2px solid var(--ink, #101010);
   border-radius: var(--radius, 2px);
   background: #fff;
-  box-shadow: 8px 8px 0 var(--ink, #101010);
+  box-shadow: 3px 3px 0 var(--shadow, rgba(10, 10, 10, 0.06));
 }
 .jf-upgrade .jf-up-pick-head {
   display: flex;

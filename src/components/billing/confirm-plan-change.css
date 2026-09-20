@@ -35,7 +35,12 @@
   border: 2px solid var(--ink, #0a0a0a);
   border-radius: var(--radius, 2px);
   background: #fff;
-  box-shadow: 8px 8px 0 var(--ink, #0a0a0a);
+  /* A modal is a card: the system's resting shadow — 3px offset, no blur,
+     muted (the --shadow token; in the dashboard it is retired to transparent,
+     and the fallback is the design spec's rgba(ink, .06) for a portal that
+     lands outside that scope). The 8px solid ink it had was a fourth shadow
+     language on a page that already spoke three. */
+  box-shadow: 3px 3px 0 var(--shadow, rgba(10, 10, 10, 0.06));
   opacity: 0;
   transform: translateY(12px) scale(0.985);
   transform-origin: 50% 0;
@@ -100,12 +105,17 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
-  box-shadow: 3px 3px 0 var(--ink, #0a0a0a);
-  transition: transform 0.1s, box-shadow 0.1s;
+  /* No shadow at rest. The solid ink imprint belongs to the hover only, with
+     the lift — the system's base for every button (blueprint .btn). */
+  transition: transform 0.12s var(--ease, cubic-bezier(0.22, 0.61, 0.36, 1)), box-shadow 0.12s var(--ease, cubic-bezier(0.22, 0.61, 0.36, 1));
 }
 .jf-confirm.jf-confirm .jf-confirm-btn:hover:not(:disabled) {
   transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 var(--ink, #0a0a0a);
+  box-shadow: 3px 3px 0 var(--ink, #0a0a0a);
+}
+.jf-confirm.jf-confirm .jf-confirm-btn:active:not(:disabled) {
+  transform: translate(0, 0);
+  box-shadow: none;
 }
 .jf-confirm.jf-confirm .jf-confirm-btn:disabled {
   opacity: 0.55;
