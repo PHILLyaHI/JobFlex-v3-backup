@@ -65,6 +65,11 @@ export function SettingsContent({
   const params = useSearchParams();
   const tabParam = params.get("tab");
   const subParam = params.get("sub");
+  const notice = {
+    gmail: params.get("gmail") ?? undefined,
+    stripe: params.get("stripe") ?? undefined,
+    square: params.get("square") ?? undefined,
+  };
   const [active, setActive] = useState<RailKey>(
     tabParam && RAIL_KEYS.has(tabParam) ? (tabParam as RailKey) : (initialPane ?? DEFAULT_RAIL),
   );
@@ -126,7 +131,7 @@ export function SettingsContent({
                 <div className="pane-h">
                   <div className="pane-t">{item.label}</div>
                 </div>
-                <PaneBody data={data} navigate={navigate} sub={sub} />
+                <PaneBody data={data} navigate={navigate} sub={sub} notice={notice} />
               </div>
             );
           })}

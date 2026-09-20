@@ -618,35 +618,13 @@ export const GMAIL_FROM_LABELS = {
   replyTo: 'Reply-to address',
 } as const;
 
-export const SIGNATURE_OPTIONS: readonly string[] = [
-  'Brand signature',
-  'Personal signature',
-  'No signature',
-];
-export const SIGNATURE_DEFAULT = 'Brand signature' as const;
-
-/** `gmailSettingsJson.signature` stores the bare key ("brand"); the dropdown
- *  shows the donor's label. */
-const SIGNATURE_BY_KEY: Record<string, string> = {
-  brand: 'Brand signature',
-  personal: 'Personal signature',
-  none: 'No signature',
-};
-export function signatureOptionFor(key: string): string {
-  return SIGNATURE_BY_KEY[key] ?? SIGNATURE_DEFAULT;
-}
-export function signatureKeyFor(option: string): string {
-  const hit = Object.entries(SIGNATURE_BY_KEY).find(([, label]) => label === option);
-  return hit?.[0] ?? 'brand';
-}
-
 export const GMAIL_BEHAVIOR_CARD: CardHead = {
   title: 'Behavior',
   sub: 'Quietly improve every send.',
 };
 
-/** Keys into `GmailSettings` — the flag each donor row reads and writes. */
-export type GmailToggleKey = 'sendFromUser' | 'trackOpens' | 'autoSync';
+/** Keys into `GmailSettings` — the flag each row reads and writes. */
+export type GmailToggleKey = 'sendFromUser';
 
 export interface GmailToggleRow {
   readonly key: GmailToggleKey;
@@ -654,27 +632,20 @@ export interface GmailToggleRow {
   readonly desc: string;
 }
 
+/** One toggle. "Track opens" and "Two-way thread sync" were rows with
+ *  nothing behind them (sync would need a restricted read scope the app does
+ *  not ask for) and left on 2026-09-20. */
 export const GMAIL_BEHAVIOR_TOGGLES: readonly GmailToggleRow[] = [
   {
     key: 'sendFromUser',
     name: 'Send from my Gmail',
     desc: 'Outbound mail leaves from your connected address.',
   },
-  {
-    key: 'trackOpens',
-    name: 'Track opens',
-    desc: 'Adds an invisible pixel so you know when it landed.',
-  },
-  {
-    key: 'autoSync',
-    name: 'Two-way thread sync',
-    desc: 'Replies come back into JobFlex conversations.',
-  },
 ];
 
 export const GMAIL_PERMISSIONS_CARD: CardHead = {
   title: 'Permissions',
-  sub: 'Granted scopes — you can review or revoke any time.',
+  sub: 'Granted scopes. Disconnect revokes them at Google.',
 };
 
 /** Donor `&#10003;` inside each `.scope > i`. */
@@ -812,12 +783,6 @@ export const NET_TERMS_SELECT: SelectSpec = {
   defaultValue: NET_TERMS_DEFAULT,
 };
 
-export const SIGNATURE_SELECT: SelectSpec = {
-  label: 'Default signature',
-  options: SIGNATURE_OPTIONS,
-  defaultValue: SIGNATURE_DEFAULT,
-};
-
 /* ------------------------------------------------------------------ */
 /* Notification preferences — User.notificationPrefsJson               */
 /* ------------------------------------------------------------------ */
@@ -884,10 +849,11 @@ export interface GmailData {
   connectedEmail: string;
   displayName: string;
   replyTo: string;
-  signature: string;
   sendFromUser: boolean;
-  trackOpens: boolean;
-  autoSync: boolean;
+  /** Google refused the grant and the tokens were dropped (lib/email/orgSend):
+   *  ISO date or "". The card says so and offers Reconnect. */
+  revokedAt: string;
+  revokedReason: string;
   /** Placeholders for the two From-address inputs. */
   displayNamePlaceholder: string;
   replyToPlaceholder: string;
@@ -942,4 +908,33 @@ export interface PaneProps {
   navigate: (rail: RailKey, sub?: SubTabKey) => void;
   /** Integrations only: the subtab the page wants open. */
   sub?: SubTabKey;
+  /** What an OAuth round trip came back with (?gmail= / ?stripe= / ?square=),
+   *  shown once as a note on the tab it concerns. */
+  notice?: OAuthNotice;
 }
+
+/** The status words the OAuth routes redirect back with. */
+export interface OAuthNotice {
+  gmail?: string;
+  stripe?: string;
+  square?: string;
+}
+
+/** One line per outcome of the Gmail round trip, in the user's words. */
+export const GMAIL_OAUTH_NOTICE: Record<string, { title: string; sub: string; tone: 'ok' | 'warn' }> = {
+  connected: { title: 'Gmail connected', sub: 'Proposals and follow-ups now leave from your address.', tone: 'ok' },
+  denied: { title: 'Gmail was not connected', sub: 'Google reported that access was declined. Nothing changed.', tone: 'warn' },
+  badstate: { title: 'Gmail was not connected', sub: 'The sign-in took too long or was opened from another tab. Try again from this page.', tone: 'warn' },
+  mismatch: { title: 'Gmail was not connected', sub: 'The sign-in was started for a different workspace. Try again from this page.', tone: 'warn' },
+  norefresh: { title: 'Gmail was not connected', sub: 'Google did not hand over a lasting permission. Remove JobFlex under your Google account\'s third-party access, then connect again.', tone: 'warn' },
+  unconfigured: { title: 'Gmail is not switched on here', sub: 'This deployment has no Google OAuth client configured.', tone: 'warn' },
+  nobox: { title: 'Gmail cannot be stored here', sub: 'This deployment has no key for keeping connection secrets, so the grant was not saved.', tone: 'warn' },
+  error: { title: 'Gmail was not connected', sub: 'Google did not complete the exchange. Try again in a minute.', tone: 'warn' },
+};
+
+export const GMAIL_REVOKED_NOTE = {
+  title: 'Gmail disconnected — emails are going from the JobFlex address',
+  sub: 'Google no longer accepts the connection (the permission was removed or expired). Reconnect to send from your own address again.',
+} as const;
+export const GMAIL_RECONNECT_ACTION: ActionSpec = { label: 'Reconnect Gmail', icon: 'i-google' };
+export const GMAIL_TEST_ACTION: ActionSpec = { label: 'Send test email' };

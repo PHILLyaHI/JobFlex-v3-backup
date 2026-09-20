@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { buildInvoice } from "@/lib/email/build/client";
-import { sendOrgEmail } from "@/lib/email/orgSend";
+import { noteGmailFallback, sendOrgEmail } from "@/lib/email/orgSend";
 import { isTwilioEnabled, sendSMS } from "@/lib/sdk/twilio";
 import { toE164 } from "@/lib/phone";
 import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
@@ -128,8 +128,9 @@ export async function sendInvoice(input: { proposalId: string; installmentId: st
           bankInstructions: input.method === "bank" ? settings.bankTransferInstructions : null,
         }),
       );
-      await sendOrgEmail(org, { to: proposal.client.email, subject, html });
+      const sent = await sendOrgEmail(org, { to: proposal.client.email, subject, html });
       report.email = "sent";
+      await noteGmailFallback(sent, { organizationId: org.id, proposalId: proposal.id, clientId: proposal.clientId, what: "The invoice email" });
     } catch (err) {
       console.warn("[invoices] email failed:", err);
       report.email = "failed";

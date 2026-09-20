@@ -192,10 +192,9 @@ export async function loadSettingsData(ctx: SettingsOrgContext): Promise<Setting
         // has one, else the signed-in user's address. Saving persists it.
         displayName: gmail.displayName || org.name,
         replyTo: gmail.replyTo || org.billingEmail || me?.email || user.email || "",
-        signature: gmail.signature,
         sendFromUser: gmail.sendFromUser,
-        trackOpens: gmail.trackOpens,
-        autoSync: gmail.autoSync,
+        revokedAt: gmail.revokedAt,
+        revokedReason: gmail.revokedReason,
         displayNamePlaceholder: org.name,
         replyToPlaceholder: me?.email ?? user.email ?? "",
         scopes: gmailConnected ? GMAIL_SCOPES.map((s) => s.split("/auth/")[1] ?? s) : [],

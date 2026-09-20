@@ -10,7 +10,7 @@ import { db } from "@/lib/db";
 import { contractSchedule } from "@/lib/contractTotal";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
-import { sendOrgEmail } from "@/lib/email/orgSend";
+import { noteGmailFallback, sendOrgEmail } from "@/lib/email/orgSend";
 import { sendSMS, isTwilioEnabled } from "@/lib/sdk/twilio";
 import { toE164 } from "@/lib/phone";
 import { renderTemplate, type TemplateVars } from "@/lib/email/render";
@@ -115,7 +115,7 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
       client: true,
       lineItems: { orderBy: { position: "asc" }, take: 13 },
       organization: {
-        select: { name: true, billingEmail: true, gmailSettingsJson: true, gmailTokensJson: true, logoUrl: true, phone: true },
+        select: { id: true, name: true, billingEmail: true, gmailSettingsJson: true, gmailTokensJson: true, logoUrl: true, phone: true },
       },
     },
   });
@@ -165,10 +165,17 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
   // Customer-facing: goes out FROM the contractor's connected Gmail when they
   // opted in (Settings → Integrations → Gmail), else from the platform with
   // the contractor as reply-to. sendOrgEmail owns that decision.
-  await sendOrgEmail(proposal.organization, {
+  const sent = await sendOrgEmail(proposal.organization, {
     to: proposal.client.email,
     subject: subj,
     html,
+  });
+  // Gmail meant, platform sent: the feed says so, the send is not lost.
+  await noteGmailFallback(sent, {
+    organizationId: proposal.organizationId,
+    proposalId: proposal.id,
+    clientId: proposal.clientId,
+    what: "The proposal email",
   });
 
   return {
