@@ -46,6 +46,21 @@ async function main() {
     },
   });
 
+  // The automation account (2026-09-20): every script and Playwright run signs
+  // in as this one, so the owner's own login is never spent on the sign-in
+  // brake (8 attempts per address per 15 minutes) by a test.
+  const qaPassword = await bcrypt.hash("qa-pass-2026", 10);
+  const qa = await prisma.user.upsert({
+    where: { email: "qa@acme.test" },
+    update: { hashedPassword: qaPassword, activeOrgId: org.id, name: "QA Robot" },
+    create: {
+      email: "qa@acme.test",
+      name: "QA Robot",
+      hashedPassword: qaPassword,
+      activeOrgId: org.id,
+    },
+  });
+
   const installer = await prisma.user.upsert({
     where: { email: "installer@acme.test" },
     update: { hashedPassword: password, activeOrgId: org.id, name: "Casey Stone" },
@@ -61,6 +76,11 @@ async function main() {
     where: { userId_organizationId: { userId: owner.id, organizationId: org.id } },
     update: { role: Role.OWNER },
     create: { userId: owner.id, organizationId: org.id, role: Role.OWNER },
+  });
+  await prisma.membership.upsert({
+    where: { userId_organizationId: { userId: qa.id, organizationId: org.id } },
+    update: { role: Role.OWNER },
+    create: { userId: qa.id, organizationId: org.id, role: Role.OWNER },
   });
   await prisma.membership.upsert({
     where: { userId_organizationId: { userId: sales.id, organizationId: org.id } },

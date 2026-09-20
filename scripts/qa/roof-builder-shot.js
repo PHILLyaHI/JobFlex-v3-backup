@@ -22,7 +22,7 @@
 //   --wait      ms to settle after the clicks (default 600)
 //   --squares   roof size for the hand takeoff (default 24)
 //   --pitch     pitch option for the hand takeoff (default 6/12)
-//   --email / --password   login (default owner@acme.test / password123)
+//   --email / --password   login (default qa@acme.test / qa-pass-2026)
 //   --fresh     ignore the cached session and log in again
 //
 // Prints console errors and the card's rendered size.
@@ -46,8 +46,8 @@ const out = args.out || path.join(process.cwd(), `roof-builder-${builder}-${widt
 const wait = Number(args.wait || 600);
 const squares = args.squares || "24";
 const pitch = args.pitch || "6/12";
-const email = args.email || "owner@acme.test";
-const password = args.password || "password123";
+const email = args.email || "qa@acme.test";
+const password = args.password || "qa-pass-2026";
 const base = args.base || "http://localhost:3000";
 const hides = ["header.topbar", ...multi.hide];
 

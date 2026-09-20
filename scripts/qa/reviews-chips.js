@@ -4,8 +4,8 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   const b = await chromium.launch();
   const p = await b.newPage({ viewport: { width: 1728, height: 1000 } });
   await p.goto("http://localhost:3000/auth/login", { waitUntil: "domcontentloaded" });
-  await p.fill("input[type=email]", "owner@acme.test");
-  await p.fill("input[type=password]", "password123");
+  await p.fill("input[type=email]", "qa@acme.test");
+  await p.fill("input[type=password]", "qa-pass-2026");
   await Promise.all([p.waitForURL(/dashboard/, { timeout: 30000 }).catch(() => {}), p.click("button[type=submit]")]);
   await p.goto("http://localhost:3000/dashboard/reviews", { waitUntil: "networkidle" });
   await p.waitForTimeout(1500);

@@ -9,8 +9,8 @@ const { chromium } = require("playwright");
 
   // Login once (session cookie persists in the context).
   await page.goto("http://localhost:3000/auth/login", { waitUntil: "domcontentloaded" });
-  await page.fill('input[type="email"]', "owner@acme.test");
-  await page.fill('input[type="password"]', "password123");
+  await page.fill('input[type="email"]', "qa@acme.test");
+  await page.fill('input[type="password"]', "qa-pass-2026");
   await Promise.all([
     page.waitForURL(/dashboard|overview|\/$/, { timeout: 30000 }).catch(() => {}),
     page.click('button[type="submit"]'),

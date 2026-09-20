@@ -3,8 +3,8 @@ const { chromium } = require("playwright");
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
   await page.goto("http://localhost:3000/auth/login", { waitUntil: "domcontentloaded" });
-  await page.fill('input[type="email"]', "owner@acme.test");
-  await page.fill('input[type="password"]', "password123");
+  await page.fill('input[type="email"]', "qa@acme.test");
+  await page.fill('input[type="password"]', "qa-pass-2026");
   await Promise.all([page.waitForURL(/dashboard/, { timeout: 30000 }).catch(() => {}), page.click('button[type="submit"]')]);
   await page.goto("http://localhost:3000/dashboard/beige", { waitUntil: "networkidle" });
   const info = await page.evaluate(() => {
