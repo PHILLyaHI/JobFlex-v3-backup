@@ -66,6 +66,7 @@ import { loadFinancials } from "@/actions/financialsMobile";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { InvoiceSheet } from "@/components/billing/InvoiceSheet";
 import { scanReceipt, saveReceiptExpense } from "@/actions/receiptOcr";
+import { prepareReceiptImage, receiptTransportError, ReceiptImageError } from "@/lib/receiptImage";
 import { addJobExpense, deleteJobExpense } from "@/actions/expenses";
 import { deleteChangeOrder, sendChangeOrder } from "@/actions/changeOrders";
 import {
@@ -1076,33 +1077,24 @@ export function MobileFinancials() {
     const file = ev.target.files?.[0];
     if (!file) return;
     const mode = pickMode.current;
-    // The desktop's guards, verbatim: 8MB is comfortably above a phone photo
-    // and below anything that would stall the vision call or the upload.
-    if (!/^image\//.test(file.type)) {
-      setFormNote("That is not an image — receipts upload as JPG, PNG or WebP.");
-      if (mode === "scan") setFormOpen(true);
-      return;
-    }
-    if (file.size > 8 * 1024 * 1024) {
-      setFormNote("That image is over 8MB — try a smaller photo.");
-      if (mode === "scan") setFormOpen(true);
-      return;
-    }
-
+    // The same preparation the desktop makes (lib/receiptImage): upright,
+    // 2000px on the long edge, JPEG under 3 MB — a phone photo as the phone
+    // took it went up as a 5 MB data URL and never reached the reader. Every
+    // refusal is a sentence in the form's own note line.
     let dataUrl: string;
+    let filename: string;
     try {
-      dataUrl = await new Promise<string>((resolve, reject) => {
-        const fr = new FileReader();
-        fr.onload = () => resolve(String(fr.result || ""));
-        fr.onerror = () => reject(new Error("Could not read that file"));
-        fr.readAsDataURL(file);
-      });
-    } catch {
-      setFormNote("Could not read that file.");
-      if (mode === "scan") setFormOpen(true);
+      const prepared = await prepareReceiptImage(file);
+      dataUrl = prepared.dataUrl;
+      filename = prepared.filename;
+    } catch (err) {
+      setFormNote(err instanceof ReceiptImageError ? err.message : "That image couldn't be read — try a JPG or PNG of the receipt.");
+      if (mode === "scan") {
+        setStaged(true);
+        setFormOpen(true);
+      }
       return;
     }
-    const filename = file.name || "receipt.jpg";
     setImage({ dataUrl, filename });
 
     if (mode === "attach") {
@@ -1124,7 +1116,7 @@ export function MobileFinancials() {
     try {
       res = await scanReceipt({ jobId, dataUrl });
     } catch (err) {
-      setFormNote(actionError(err));
+      setFormNote(receiptTransportError(err));
       return;
     }
     if (!res.ok) {

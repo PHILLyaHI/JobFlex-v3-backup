@@ -175,12 +175,16 @@ export function FinancialsContent(props: FinancialsContentProps) {
                   <use href="#i-imgadd" />
                 </svg>
                 <span className="rc-t">Drop a receipt or click to upload</span>
-                <span className="rc-h">JPG or PNG · read, then charged to a job</span>
+                <span className="rc-h">A phone photo — JPG, PNG or HEIC · read, then charged to a job</span>
               </button>
+              {/* Any image the picker offers, HEIC included: the browser
+                  re-encodes what it can decode (lib/receiptImage) and says in
+                  words what it cannot, instead of the picker greying the
+                  owner's phone photo out. */}
               <input
                 type="file"
                 id="rcFile"
-                accept="image/png,image/jpeg,image/webp"
+                accept="image/*,.heic,.heif"
                 className="is-hidden"
               />
               {/* Progress and failure both land here — "Reading the receipt…",
