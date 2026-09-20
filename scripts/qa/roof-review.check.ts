@@ -15,13 +15,14 @@ import {
   type PlacedOrder,
 } from "../../src/lib/eagleviewOrder";
 import type { PackRecord, PackStatus } from "../../src/lib/eagleviewEntitlements";
-import { BUILTIN_LISTS, EXISTING_STEEP, storeyLaborFactor, tearOffRatesFor, VENT_TYPES } from "../../src/lib/roofPackage/catalog";
+import { BUILTIN_LISTS, EXISTING_STEEP, FASCIA_OPTIONS, storeyLaborFactor, tearOffRatesFor, VENT_TYPES } from "../../src/lib/roofPackage/catalog";
 import {
   buildRoofPackage,
   checkVentilation,
   defaultSpec,
   estimateEdges,
   fastenersName,
+  flattenForLowSlope,
   takesStarter,
   type RoofFacts,
   type RoofPackage,
@@ -297,6 +298,41 @@ const short = (packs: readonly string[]) => packs.map((p) => p.slice(-3)).join("
     check("the tile tear-off line says so and the assumption explains the rate", has(tilePkg, /Tear-off · tile/) && tilePkg.assumptions.some((a) => /tile rates \(\$120 \+ \$75/.test(a)), tilePkg.assumptions.join(" | "));
     const asphaltPkg = buildRoofPackage(defaultSpec(house(), L), house());
     check("the shingle tear-off line reads as before", has(asphaltPkg, /^Tear-off · 1 layer$/));
+  }
+
+  console.log("── fascia: replaced with the roof, with the gutters that hang on it");
+  {
+    const facts = house();
+    const spec = defaultSpec(facts, L);
+    check("a tear-off opens with the fascia in", spec.fasciaOn && spec.fasciaRun === "eaves" && spec.gutterPlan === "reset");
+    const pkg = buildRoofPackage(spec, facts);
+    const fasciaMat = [...pkg.materials].find((l) => /^Fascia ·/.test(l.name));
+    const fasciaLab = [...pkg.labor].find((l) => /^Fascia ·/.test(l.name));
+    check("it prices along the eaves, material and labor", !!fasciaMat && !!fasciaLab && near(fasciaMat.quantity, spec.eaveFt, 0.01) && near(fasciaLab.quantity, spec.eaveFt, 0.01), `${fasciaMat?.name} ${fasciaMat?.quantity}`);
+    check("…at the board's own two rates", fasciaMat?.unitPrice === FASCIA_OPTIONS[0].perFt && fasciaLab?.unitPrice === FASCIA_OPTIONS[0].laborPerFt);
+    const reset = [...pkg.labor].find((l) => /Gutters · detach & reset/.test(l.name));
+    check("the gutters come off and go back on, at the eave length", !!reset && near(reset.quantity, spec.eaveFt, 0.01));
+    check("no new gutter is charged for a reset", !has(pkg, /Gutter · 6 in seamless/));
+    check("the scope and the assumptions say so", pkg.scope.some((t) => /Replace the fascia board/.test(t)) && pkg.assumptions.some((t) => /Rotten rafter tails/.test(t)));
+
+    const rakes = buildRoofPackage({ ...spec, fasciaRun: "eaves_rakes" }, facts);
+    const rakeMat = [...rakes.materials].find((l) => /^Fascia ·/.test(l.name));
+    check("eaves + rakes prices the whole perimeter", !!rakeMat && near(rakeMat.quantity, spec.eaveFt + spec.rakeFt, 0.01), String(rakeMat?.quantity));
+    const own = buildRoofPackage({ ...spec, fasciaRun: "custom", fasciaFt: 64 }, facts);
+    check("a typed length wins and reads as entered", [...own.materials].some((l) => /^Fascia ·/.test(l.name) && l.quantity === 64 && l.basis === "entered"));
+
+    const newGutters = buildRoofPackage({ ...spec, gutterPlan: "replace" }, facts);
+    check("replacing gutters prices the gutter and hanging it", has(newGutters, /Gutter · 6 in seamless/) && [...newGutters.labor].some((l) => /Gutters · remove old & hang new/.test(l.name)) && ![...newGutters.labor].some((l) => /detach & reset/.test(l.name)));
+    const noGutters = buildRoofPackage({ ...spec, gutterPlan: "none" }, facts);
+    check("a house with no gutters is charged for none", !has(noGutters, /Gutter/) && ![...noGutters.labor].some((l) => /Gutters/.test(l.name)));
+
+    const wrap = FASCIA_OPTIONS.find((f) => f.wrap);
+    const wrapped = buildRoofPackage({ ...spec, fasciaOptionId: wrap?.id ?? "wrap", fasciaPerFt: wrap?.perFt ?? 3, fasciaLaborPerFt: wrap?.laborPerFt ?? 4 }, facts);
+    check("a wrap covers the board instead of replacing it", [...wrapped.labor].some((l) => /Fascia · wrap over existing/.test(l.name)) && wrapped.assumptions.some((t) => /existing board stays/.test(t)));
+
+    const off = buildRoofPackage({ ...spec, fasciaOn: false }, facts);
+    check("off prices nothing and says it is only reachable now", !has(off, /Fascia/) && ![...off.labor].some((l) => /Fascia|Gutters/.test(l.name)) && off.assumptions.some((t) => /only reachable while the roof is off/.test(t)));
+    check("a flat roof carries no fascia of its own", !flattenForLowSlope(spec).fasciaOn);
   }
 
   console.log("── intake covers the exhaust");
