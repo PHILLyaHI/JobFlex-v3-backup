@@ -1497,9 +1497,10 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
    competitor's cross is the SAME 26 px square as our tick, not a hairline;
    mono labels never under 12 px; no fill leaves the plate; no gradient; every
    mark and label on the centre line of its column, on the axis of the name in
-   the head. Our column is not filled (owner, 2026-09-19): it is framed by ONE
-   2 px blueprint rectangle from the head to the last row, and carries the
-   blue over to the tick and the name instead. The offset shadow has no token in globals (resting shadows are
+   the head. Our column (owner, 2026-09-19): a blueprint-filled head cell —
+   paper mark and name on blue — sitting flush on ONE 2 px blueprint
+   rectangle around rows 01–11, no gap and no double line between them, so
+   the two read as one figure: a blue tab over an outline. The offset shadow has no token in globals (resting shadows are
    retired app-wide), so the sheet's own 4px 4px 0 ink — the pricing plates' —
    is one knob here. */
 .jf-lp { --lp-shadow-offset: 4px 4px 0 var(--ink, #0a0a0a); }
@@ -1611,6 +1612,9 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
   text-transform: uppercase;
   color: var(--ink-muted, #555);
   white-space: nowrap;
+  /* Bottom, not middle: our head is taller (mark over name) and the
+     neighbours' names sit on the rule beside it. */
+  vertical-align: bottom;
   border-bottom: 2px solid var(--ink, #0a0a0a);
 }
 .jf-lp .lp-spec-no {
@@ -1632,25 +1636,40 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
 /* Centred columns: ours and the three competitors, head and cells alike. */
 .jf-lp .lp-spec .lp-spec-us,
 .jf-lp .lp-spec .lp-spec-them { text-align: center; }
-/* Ours: the plate's own white, and ONE 2 px blueprint rectangle around the
-   whole column, head to last row. A single element cannot ride a sticky
-   column, so the rectangle is drawn as one overlay segment per cell — each
-   ::before runs its two vertical edges 1–2 px past its own cell to cover the
-   row separator, the head adds the top edge and the last row the bottom.
-   Adjacent segments overlap on the same pixels, so it reads as one line with
-   no doubling, and the grey separators pass under it across the column like
-   everywhere else. Straight corners, no shadow. */
+/* Ours. THE HEAD is filled: blueprint, with the paper mark over the name.
+   Its bottom border is the same 2 px as the neighbours' rule but transparent,
+   so the fill runs to the very edge of the cell and the frame's top edge is
+   painted on those two pixels — the tab sits flush on the outline, no gap
+   and no double line.
+   THE ROWS are the plate's own white inside ONE 2 px blueprint rectangle
+   from the top of row 01 to the bottom of row 11. A single element cannot
+   ride a sticky column, so the rectangle is drawn as one overlay segment per
+   body cell — each ::before runs its two vertical edges 1 px past its own
+   cell to cover the row separator; the first row adds the top edge (2 px up,
+   over the head's transparent border) and the last row the bottom. Adjacent
+   segments overlap on the same pixels, so it reads as one line with no
+   doubling, and the grey separators pass under it across the column like
+   everywhere else. Head and rectangle are one cell wide, on one axis.
+   Straight corners, no shadow. */
 .jf-lp .lp-spec-us {
   position: relative;
   width: 116px;
   background: #fff;
 }
 .jf-lp .lp-spec thead .lp-spec-us {
-  color: var(--accent, #1854a0);
-  /* Heavier than its neighbours (700) so the name carries the column. */
+  background: var(--accent, #1854a0);
+  color: #fff;
   font-weight: 800;
+  border-bottom-color: transparent;
 }
-.jf-lp .lp-spec .lp-spec-us::before {
+.jf-lp .lp-spec-usHead {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+.jf-lp .lp-spec thead .lp-spec-us .lp-mark-box { --lp-mark-size: 52px; }
+.jf-lp .lp-spec tbody .lp-spec-us::before {
   content: "";
   position: absolute;
   left: 0;
@@ -1662,7 +1681,7 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
   pointer-events: none;
   z-index: 1;
 }
-.jf-lp .lp-spec thead .lp-spec-us::before { bottom: -2px; border-top: 2px solid var(--accent, #1854a0); }
+.jf-lp .lp-spec tbody tr:first-child .lp-spec-us::before { top: -2px; border-top: 2px solid var(--accent, #1854a0); }
 .jf-lp .lp-spec tbody tr:last-child .lp-spec-us::before { bottom: 0; border-bottom: 2px solid var(--accent, #1854a0); }
 /* 148 so PAY-AS-YOU-GO (13 mono caps at 12 px) sits on one line inside the
    12 px cell padding. */
