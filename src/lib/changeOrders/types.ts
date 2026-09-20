@@ -28,11 +28,18 @@ export function unitFromMeasurementType(t: string | null | undefined): CoUnit {
   }
 }
 
+/** The words that mean roofing work. A roof FAMILY word does not: "composite"
+ *  is a fence picket as often as a shingle, "cedar" a fence as often as a
+ *  shake, "shaker" a cabinet door — and every one of those contracts was
+ *  opening the change-order sheet on plywood under the shingles (owner,
+ *  2026-09-19: a composite fence offered sheathing replacement). The family
+ *  only says WHICH plywood once the job is known to be a roof. */
+const ROOFING_WORDS = /\broof(?:ing|s)?\b|shingle|underlayment|drip edge|ridge (?:vent|cap)|ice (?:&|and) water|tear-off|tear off|starter strip|\bsquares? of roof/;
+
 /** A proposal is a roofing job when its lines say so — that is when the plywood type applies. */
 export function isRoofingProposal(input: { title?: string | null; lineNames: readonly string[] }): boolean {
-  if (inferRoofFamily(input.lineNames)) return true;
   const text = `${input.title ?? ""} ${input.lineNames.join(" ")}`.toLowerCase();
-  return /\broof|shingle|underlayment|drip edge|ridge vent|tear-off|tear off/.test(text);
+  return ROOFING_WORDS.test(text);
 }
 export type CoLineKind = "material" | "labor";
 
