@@ -28,7 +28,7 @@
 // signIn, the promo/referral attribution capture, and the Google OAuth entry.
 // No server action, API route or Prisma call was added or altered.
 
-import { PlanActivated } from "@/components/billing/PlanActivated";
+import { PlanConfetti } from "@/components/billing/PlanConfetti";
 import * as React from "react";
 import Link from "next/link";
 import type { Route } from "next";
@@ -1189,11 +1189,8 @@ export function RegisterContent({
 
           <div className={step === 4 ? "step" : "step is-hidden"} id="stepDone">
             {/* The plan turning on, once, when the workspace has settled —
-                the panel is display:none until step 4, so it fires on arrival. */}
-            <PlanActivated
-              plan={planSlug ? (plans.find((p) => p.slug === planSlug)?.name ?? null) : null}
-              active={step === 4 && !payBusy}
-            />
+                the same side-cannon confetti as the upgrade page's return leg. */}
+            <PlanConfetti active={step === 4 && !payBusy} />
             <div className={payBusy ? "done-mark is-busy" : "done-mark"}>
               <svg className="ic">
                 <use href="#i-check" />

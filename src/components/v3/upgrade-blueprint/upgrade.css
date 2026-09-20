@@ -557,34 +557,42 @@
   padding: 0 22px;
 }
 
-/* ── DONE BANNER (2026-09-02): filled, bigger, unmistakable. */
+/* ── DONE BANNER (2026-09-19): the info-banner rule — a 6px success edge on
+   the soft success tint, no frame, no shadow. "Plan activated · <PLAN>" (or
+   "Plan changed" on a downgrade); the confetti is the celebration, the banner
+   is the record. */
 .jf-upgrade .jf-up-ok {
-  padding: 16px 20px;
-  border: 2px solid var(--ink, #101010);
-  background: var(--success, #3a7d44);
-  color: #fff;
-  font-family: var(--font, var(--font-sans, system-ui));
-  font-size: 17px;
-  font-weight: 800;
-  letter-spacing: -0.01em;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 14px 18px;
+  border: 0;
+  border-left: 6px solid var(--success, #3a7d44);
+  border-radius: var(--radius, 2px);
+  background: var(--success-soft, rgba(58, 125, 68, 0.07));
+  color: var(--ink, #0a0a0a);
+  box-shadow: none;
   text-transform: none;
-  box-shadow: 4px 4px 0 var(--ink, #101010);
+  letter-spacing: 0;
+}
+.jf-upgrade .jf-up-ok-k {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--success, #3a7d44);
+}
+.jf-upgrade .jf-up-ok-k::after {
+  content: " ·";
 }
 .jf-upgrade .jf-up-ok b {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-decoration-thickness: 2px;
-}
-.jf-upgrade .jf-up-ok::before {
-  content: "✓";
-  display: inline-grid;
-  place-items: center;
-  width: 24px; height: 24px;
-  margin-right: 12px;
-  border: 2px solid #fff;
-  border-radius: var(--radius, 2px);
-  font-size: 14px;
-  vertical-align: -5px;
+  font-family: var(--font, var(--font-sans, system-ui));
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
 }
 
 /* ── FOUR IN A ROW, WHITE (owner, 2026-09-02) ───────────────────────── */

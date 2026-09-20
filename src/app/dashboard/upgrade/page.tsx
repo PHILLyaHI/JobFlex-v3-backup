@@ -102,7 +102,7 @@ async function verifyReturn(organizationId: string, sessionId: string): Promise<
 export default async function UpgradePage({
   searchParams,
 }: {
-  searchParams: Promise<{ session_id?: string; checkout?: string; simulated?: string }>;
+  searchParams: Promise<{ session_id?: string; checkout?: string; simulated?: string; dir?: string }>;
 }) {
   let ctx: Awaited<ReturnType<typeof requireOrg>>;
   try {
@@ -112,14 +112,16 @@ export default async function UpgradePage({
   }
 
   const params = await searchParams;
-  // TEMP (2026-09-19): ?simulated= is the dev simulator's return leg — read
-  // ONLY behind the server gate, so on Vercel the parameter is inert.
+  // TEMP (2026-09-19): ?simulated=&dir= is the dev simulator's return leg —
+  // read ONLY behind the server gate, so on Vercel both parameters are inert.
   const devSim = isDevSimulationEnabled();
   const upgradedTo = params.session_id
     ? await verifyReturn(ctx.organizationId, params.session_id)
     : devSim && params.simulated
       ? params.simulated
       : null;
+  // A checkout return is always a step up; only the simulator can say "down".
+  const upgradedDirection: "up" | "down" = !params.session_id && devSim && params.dir === "down" ? "down" : "up";
 
   const [catalog, sub, mode] = await Promise.all([
     getPlanCatalog(),
@@ -157,9 +159,6 @@ export default async function UpgradePage({
     }));
 
   return (
-    <>
-      {/* TEMP (2026-09-19): not rendered at all unless the server gate is open. */}
-      {devSim ? <DevPlanSimulator currentPlan={sub?.plan ?? null} /> : null}
     <UpgradeResponsive
       plans={plans}
       currentPlan={sub?.plan ?? null}
@@ -168,8 +167,12 @@ export default async function UpgradePage({
       checkoutReady={isStripeEnabled()}
       sandbox={mode === "test"}
       upgradedTo={upgradedTo}
+      upgradedDirection={upgradedDirection}
       cancelled={params.checkout === "cancelled"}
+      /* TEMP (2026-09-19): the DEV ONLY block — not rendered at all unless the
+         server gate is open; handed to the content so it sits inside both
+         builds (above the handheld shell it fell under the fixed header). */
+      devTools={devSim ? <DevPlanSimulator currentPlan={sub?.plan ?? null} /> : undefined}
     />
-    </>
   );
 }

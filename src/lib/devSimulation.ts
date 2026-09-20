@@ -13,3 +13,16 @@
 export function isDevSimulationEnabled(): boolean {
   return process.env.NODE_ENV === "development" && !process.env.VERCEL_ENV;
 }
+
+/* TEMP (2026-09-19): the one window event the DEV ONLY block on
+   /dashboard/upgrade speaks through. The block itself knows nothing about the
+   page; it dispatches, and the upgrade content listens only when the page
+   handed it `devTools` — which the server does only behind the gate above, so
+   on Vercel there is neither a speaker nor a listener. */
+export const DEV_EVENT = "jf-dev-upgrade";
+
+export type DevUpgradeEvent =
+  /** Play the activation confetti again, at one of the three presets. */
+  | { type: "replay"; preset: "light" | "medium" | "heavy" }
+  /** Open the plan dialog for one rung up or down, without changing anything. */
+  | { type: "preview-dialog"; direction: "up" | "down" };
