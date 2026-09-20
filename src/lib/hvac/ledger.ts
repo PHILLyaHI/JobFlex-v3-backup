@@ -447,7 +447,14 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
       // the rate card's multi-zone default until the shop's multi-zone rows are in.
       mat.push({ id: "eq-main", name: `${heads}-zone ductless outdoor unit, ${tons} t (${heads} ports) — rated like ${item.brand} ${item.model}`, quantity: 1, unitPrice: markup(tons * card.equipmentDefaults.ductlessPerTon, card.equipmentMarkupPct), unit: "each", basis: "estimated", note: "Rate-card multi-zone default — import your multi-zone rows or edit" });
       mat.push({ id: "eq-heads", name: `Indoor head${heads === 1 ? "" : "s"} (wall-mount)`, quantity: heads, unitPrice: markup(card.equipmentDefaults.ductlessHeadEach, card.equipmentMarkupPct), unit: "each", basis: opts.input?.heads ? "entered" : "estimated", note: opts.input?.heads ? "Heads entered" : "One head assumed — set the count" });
-    } else mat.push(equipmentLine("eq-main", item, card, job === "ductless" ? 1 : n, sysNote));
+    } else {
+      const line = equipmentLine("eq-main", item, card, job === "ductless" ? 1 : n, sysNote);
+      // An electric furnace IS an air handler carrying a heat kit. Saying only
+      // "air handler" on a furnace job reads as the wrong machine (owner,
+      // 2026-09-20: "i estimate furnace replace but looks like its estimate
+      // heat pump brand").
+      mat.push(item.kind === "air-handler" && job === "replace-furnace" ? { ...line, name: `${line.name} — electric furnace (cabinet + heat kit)` } : line);
+    }
     if (job === "ductless") {
       // One head: the catalog pair (wall head + outdoor unit) is the whole system.
     } else if (item.kind === "air-conditioner" || item.kind === "heat-pump") {

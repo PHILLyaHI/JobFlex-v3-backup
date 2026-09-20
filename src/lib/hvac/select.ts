@@ -13,6 +13,8 @@ import { heatingLoadAt } from "./load";
 import { efficiencyFloor, refrigerantRule, ultraLowNoxNeeded } from "./data/rules";
 
 const BTU_PER_KW = 3412;
+/** A heat kit's minimum airflow, the makers' tables: about 60 CFM per kW (a 53 °F rise). */
+const CFM_PER_KW = 60;
 
 /** Rated cooling capacity of a cooling product, BTU/h. */
 export function ratedCoolingBtuh(item: CatalogItem): number {
@@ -251,14 +253,24 @@ export function selectSystem(catalog: CatalogItem[], load: LoadResult, c: Design
   const model = m;
   const scorer = { wantsHeatPump: opts.wantsHeatPump, keepsIndoor: opts.keepsIndoor };
   const candidates = pool.map((item) => evaluateItem(item, load, c, model, scorer)).sort((a, b) => b.score - a.score);
-  // An electric furnace is an air handler with a heat kit: the cabinet is
-  // picked for the coil it carries, and the kit covers the heating load.
+  // An electric furnace is an air handler with a heat kit: the cabinet must
+  // carry the coil it serves AND move the kit's air. A kit is rated at a
+  // minimum airflow — about 60 CFM per kW, a 53 °F rise, as the makers'
+  // tables have it — so a 20 kW kit needs about 1,200 CFM, which a 1.5-ton
+  // cabinet cannot move (2026-09-20: an electric furnace in Seattle came back
+  // as a 1.5-ton air handler with 20 kW on it, a 105 °F rise).
   if (allowed && allowed.has("air-handler") && allowed.size === 1) {
-    const need = opts.coilTons ?? targetTons;
+    const kw = Math.round((load.heatingBtuh / 3412) * 10) / 10;
+    const kitKw = Math.max(5, Math.ceil(kw / 5) * 5);
+    const kitTons = Math.ceil(((kitKw * CFM_PER_KW) / (load.cfmPerTon || 400)) * 2) / 2;
+    const coilNeed = opts.coilTons ?? targetTons;
+    const need = Math.max(coilNeed, kitTons);
     const fits = candidates.filter((x) => !x.disqualified && x.item.kind === "air-handler" && (x.item.maxTons ?? x.item.tons ?? 99) >= need).sort((a, b) => (a.item.tons ?? 99) - (b.item.tons ?? 99));
     const pool2 = fits.length ? fits : candidates.filter((x) => x.item.kind === "air-handler").sort((a, b) => (b.item.tons ?? 0) - (a.item.tons ?? 0));
-    const kw = Math.round((load.heatingBtuh / 3412) * 10) / 10;
-    const withReason = pool2.map((x) => ({ ...x, disqualified: undefined, backupKw: kw, reasons: [...x.reasons.filter((r) => !/SEER2|cold-climate/i.test(r)), `Electric furnace: this cabinet carries the ${need}-ton coil, with a ${Math.max(5, Math.ceil(kw / 5) * 5)} kW heat kit for the ${Math.round(load.heatingBtuh / 1000)}k BTU/h heating load.`] }));
+    const why = kitTons > coilNeed
+      ? `Electric furnace: the ${kitKw} kW heat kit for the ${Math.round(load.heatingBtuh / 1000)}k BTU/h heating load needs about ${Math.round(kitKw * CFM_PER_KW).toLocaleString("en-US")} CFM, so the cabinet is sized ${need} ton for the blower, not the ${coilNeed}-ton coil.`
+      : `Electric furnace: this cabinet carries the ${coilNeed}-ton coil and the ${kitKw} kW heat kit's air for the ${Math.round(load.heatingBtuh / 1000)}k BTU/h heating load.`;
+    const withReason = pool2.map((x) => ({ ...x, disqualified: undefined, backupKw: kw, reasons: [...x.reasons.filter((r) => !/SEER2|cold-climate/i.test(r)), why] }));
     return { chosen: withReason[0] ?? null, runnerUp: withReason[1] ?? null, candidates, targetTons, systems: 1 };
   }
   // Furnace-only jobs pick a furnace; everything else picks an outdoor unit.

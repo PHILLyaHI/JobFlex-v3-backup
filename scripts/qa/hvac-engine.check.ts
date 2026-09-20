@@ -42,6 +42,23 @@ function house(over: Partial<BuildingModel> = {}): BuildingModel {
   };
 }
 
+// ── an electric furnace's cabinet must move the heat kit's air ──
+// 2026-09-20: an electric furnace replacement in Seattle came back as a
+// 1.5-ton air handler with a 20 kW kit on it — a 105 °F rise. The kit's
+// minimum airflow (about 60 CFM per kW) now sizes the cabinet.
+{
+  const ah = (tons: number): CatalogItem => ({ id: `ah-${tons}`, kind: "air-handler", brand: "Carrier", model: `FJ5ANX-${String(tons * 12).padStart(3, "0")}`, tons, maxTons: tons });
+  const cabinets = [ah(1.5), ah(2), ah(2.5), ah(3), ah(3.5), ah(4), ah(5)];
+  const base = computeBlockLoad(house({ state: "WA", county: "King" }), seattle);
+  const load = { ...base, heatingBtuh: 68000, coolingTotalBtuh: 18000 };
+  const sel = selectSystem(cabinets, load, seattle, house({ state: "WA", county: "King", gas: { available: false }, existing: { kind: "furnace-only", fuel: "electric" } }), { kinds: ["air-handler"] });
+  const why = sel.chosen?.reasons.join(" ") ?? "";
+  ok("a 68k BTU/h electric furnace (20 kW kit) gets a cabinet that moves its air, not a 1.5-ton", (sel.chosen?.item.tons ?? 0) >= 3, `${sel.chosen?.item.model} ${sel.chosen?.item.tons} ton · ${sel.chosen?.backupKw} kW`);
+  ok("…and says why: the kit's airflow, not the coil", /heat kit .* needs about 1,200 CFM/.test(why), why.slice(0, 120));
+  const small = selectSystem(cabinets, { ...base, heatingBtuh: 17000, coolingTotalBtuh: 18000 }, seattle, house({ state: "WA", county: "King", gas: { available: false }, existing: { kind: "furnace-only", fuel: "electric" } }), { kinds: ["air-handler"] });
+  ok("a 17k BTU/h load (5 kW kit) still takes the small cabinet the coil needs", (small.chosen?.item.tons ?? 9) <= 2, `${small.chosen?.item.tons} ton · ${small.chosen?.backupKw} kW`);
+}
+
 // ── the block load lands in estimator bands ──
 {
   const l = computeBlockLoad(house(), dallas);
