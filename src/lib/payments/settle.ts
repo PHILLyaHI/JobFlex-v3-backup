@@ -462,6 +462,11 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
 
 export interface RefundInput {
   provider: "STRIPE" | "SQUARE" | "STAX";
+  /** The org the delivering endpoint belongs to. A refund is only ever
+   *  recorded against that org's payment: a contractor holds the signing
+   *  secret of the endpoint on their own account and could otherwise name
+   *  another org's payment intent (audit, 2026-09-20). */
+  organizationId: string;
   /** payment_intent (Stripe) / payment id (Square). */
   externalPaymentId: string;
   refundedMinor: number;
@@ -472,7 +477,7 @@ export interface RefundInput {
 export async function recordRefund(input: RefundInput): Promise<"not_found" | "recorded"> {
   const outcome = await db.$transaction(async (tx) => {
     const payment = await tx.payment.findFirst({
-      where: { provider: input.provider, externalPaymentId: input.externalPaymentId },
+      where: { provider: input.provider, externalPaymentId: input.externalPaymentId, organizationId: input.organizationId },
       include: { installments: true, proposal: { select: { id: true, status: true, total: true, currency: true } } },
     });
     if (!payment) return null;
