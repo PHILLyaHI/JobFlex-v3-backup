@@ -4,7 +4,7 @@
 // follow-ups (and future senders) share one code path.
 import { sendEmail } from "@/lib/sdk/resend";
 import { parseGmailSettings } from "@/lib/settings";
-import { isGmailOAuthConfigured, sendViaGmail, type GmailTokens } from "@/lib/sdk/gmail";
+import { gmailErrorText, isGmailOAuthConfigured, openGmailTokens, sendViaGmail } from "@/lib/sdk/gmail";
 
 export interface OrgEmailSender {
   name: string | null;
@@ -32,8 +32,8 @@ export async function sendOrgEmail(
   // Prefer the org's own Gmail when connected + opted in + OAuth configured.
   if (settings.connected && settings.sendFromUser && isGmailOAuthConfigured() && org.gmailTokensJson) {
     try {
-      const tokens = JSON.parse(org.gmailTokensJson) as GmailTokens;
-      if (tokens.refreshToken && tokens.email) {
+      const tokens = openGmailTokens(org.gmailTokensJson);
+      if (tokens && tokens.refreshToken && tokens.email) {
         const to = Array.isArray(opts.to) ? opts.to.join(", ") : opts.to;
         await sendViaGmail(tokens, {
           to,
@@ -46,7 +46,7 @@ export async function sendOrgEmail(
       }
     } catch (err) {
       // Never let a Gmail hiccup drop the email — fall through to the platform.
-      console.warn("[sendOrgEmail] Gmail send failed, falling back to Resend:", err);
+      console.warn("[sendOrgEmail] Gmail send failed, falling back to Resend:", gmailErrorText(err));
     }
   }
 

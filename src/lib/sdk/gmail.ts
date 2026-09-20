@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { IntegrationDisabledError } from "./base";
 import { withEmailRetry, recipientLabel } from "./emailRetry";
+import { decryptSecret, encryptSecret, isSecretBoxConfigured } from "@/lib/crypto/secretBox";
 
 // Scopes: send mail on the user's behalf + read their email address (to show
 // "connected as x@gmail.com" and set the From).
@@ -14,6 +15,76 @@ export interface GmailTokens {
   refreshToken: string;
   expiryDate: number | null;
   email: string;
+}
+
+/* ── Tokens at rest ──────────────────────────────────────────────────────
+   Organization.gmailTokensJson holds a refresh token to a customer's real
+   inbox. It is sealed with the same AES-GCM box that keeps Stripe and Square
+   secrets (lib/crypto/secretBox), never written as JSON any more. Rows from
+   before 2026-09-20 are plain JSON; `openGmailTokens` still reads them so
+   nothing breaks mid-migration, and scripts/gmail-tokens-encrypt.ts reseals
+   them. */
+
+/** The stored form of a token set — always sealed. Throws without the box. */
+export function sealGmailTokens(tokens: GmailTokens): string {
+  return encryptSecret(JSON.stringify(tokens));
+}
+
+/** Reads a stored token set, sealed or (legacy) plain. Null when unreadable. */
+export function openGmailTokens(stored: string | null | undefined): GmailTokens | null {
+  if (!stored) return null;
+  try {
+    const raw = stored.trimStart().startsWith("{") ? stored : decryptSecret(stored);
+    const t = JSON.parse(raw) as Partial<GmailTokens>;
+    if (typeof t.refreshToken !== "string" || typeof t.email !== "string") return null;
+    return { accessToken: t.accessToken ?? "", refreshToken: t.refreshToken, expiryDate: t.expiryDate ?? null, email: t.email };
+  } catch {
+    return null;
+  }
+}
+
+/** Whether a stored token set is still the legacy plain JSON. */
+export function isLegacyPlainTokens(stored: string | null | undefined): boolean {
+  return Boolean(stored && stored.trimStart().startsWith("{"));
+}
+
+/** Storing a Gmail grant needs the secret box; connecting without it is refused. */
+export function canStoreGmailTokens(): boolean {
+  return isSecretBoxConfigured();
+}
+
+/** One line about a Google/gaxios error for a log: status, code and message,
+ *  never the request config (which carries the Authorization header). */
+export function gmailErrorText(err: unknown): string {
+  if (!(err instanceof Error)) return String(err).slice(0, 160);
+  const e = err as Error & { code?: unknown; status?: unknown; response?: { status?: unknown; data?: { error?: unknown } } };
+  const status = e.response?.status ?? e.status ?? e.code;
+  const data = e.response?.data?.error;
+  const inner = typeof data === "string" ? data : data && typeof data === "object" && "message" in data ? String((data as { message: unknown }).message) : "";
+  return [status ? `status ${String(status)}` : "", e.message, inner && inner !== e.message ? inner : ""]
+    .filter(Boolean)
+    .join(" · ")
+    .replace(/\s+/g, " ")
+    .slice(0, 200);
+}
+
+/** True when Google says the grant is gone for good — an expired or revoked
+ *  refresh token (invalid_grant), or a 401/403 on the send itself. */
+export function isGmailGrantDead(err: unknown): boolean {
+  const text = gmailErrorText(err).toLowerCase();
+  return /invalid_grant|token has been expired or revoked|status 401|status 403|insufficient permission|unauthorized_client/.test(text);
+}
+
+/** Best-effort: tell Google the grant is no longer wanted. */
+export async function revokeGmailToken(refreshToken: string): Promise<boolean> {
+  try {
+    const { oauth2 } = await loadOAuth();
+    await oauth2.revokeToken(refreshToken);
+    return true;
+  } catch (err) {
+    console.warn("[gmail] revoke at Google failed:", gmailErrorText(err));
+    return false;
+  }
 }
 
 export function isGmailOAuthConfigured() {
