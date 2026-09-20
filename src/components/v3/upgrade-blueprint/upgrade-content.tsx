@@ -449,6 +449,19 @@ export function UpgradeContent({
 
       <ConfirmPlanChange
         open={confirm !== null}
+        compare={
+          confirm && (confirm.kind === "up" || confirm.kind === "down")
+            ? {
+                plans,
+                from:
+                  plans.find((p) => p.slug === cur) ??
+                  (onCustom ? { slug: cur, name: "Custom plan", priceCents: customPriceCents(owned), features: [] } : null),
+                to: confirm.plan,
+                direction: confirm.kind,
+                how: confirm.kind === "up" ? "checkout" : "switch",
+              }
+            : undefined
+        }
         kicker={
           confirm?.kind === "down"
             ? "Downgrade"

@@ -35,6 +35,7 @@
 // the sidebar's locks and quota pills redraw.
 
 import { PlanActivated } from "@/components/billing/PlanActivated";
+import { ConfirmPlanChange } from "@/components/billing/ConfirmPlanChange";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -608,6 +609,42 @@ export function MobileUpgradeContent({
         )
       : null;
 
+  /* Up and down go through the one plan dialog the desktop build uses (the
+     comparison is read from the catalog there); the custom-plan sheets stay. */
+  const planDialog = (
+    <ConfirmPlanChange
+      open={confirm?.kind === "up" || confirm?.kind === "down"}
+      kicker={confirm?.kind === "down" ? "Downgrade" : "Upgrade"}
+      title={
+        confirm?.kind === "down"
+          ? `Downgrade to ${confirm.plan.name}?`
+          : confirm?.kind === "up"
+            ? `Upgrade to ${confirm.plan.name}?`
+            : ""
+      }
+      confirmLabel={confirm?.kind === "down" ? `Downgrade to ${confirm.plan.name}` : "Continue to payment"}
+      busy={Boolean(busy)}
+      onCancel={() => closeConfirm()}
+      onConfirm={() => {
+        if (confirm?.kind === "down") void switchDown(confirm.plan);
+        else if (confirm?.kind === "up") void payFor(confirm.plan.slug);
+      }}
+      compare={
+        confirm && (confirm.kind === "up" || confirm.kind === "down")
+          ? {
+              plans,
+              from:
+                plans.find((p) => p.slug === cur) ??
+                (onCustom ? { slug: cur, name: "Custom plan", priceCents: customPriceCents(owned), features: [] } : null),
+              to: confirm.plan,
+              direction: confirm.kind,
+              how: confirm.kind === "up" ? "checkout" : "switch",
+            }
+          : undefined
+      }
+    />
+  );
+
   const pickerSheet =
     pickerOpen && typeof document !== "undefined"
       ? createPortal(
@@ -838,7 +875,7 @@ export function MobileUpgradeContent({
         {!isOwner ? (
           <p className="mu-fine">Plan changes are owner-only — ask the account owner.</p>
         ) : null}
-        {confirmSheet}
+        {confirm?.kind === "custom" || confirm?.kind === "remove" ? confirmSheet : planDialog}
         {pickerSheet}
       </div>
     );
@@ -927,7 +964,7 @@ export function MobileUpgradeContent({
         </div>
       </main>
 
-      {confirmSheet}
+      {confirm?.kind === "custom" || confirm?.kind === "remove" ? confirmSheet : planDialog}
       {pickerSheet}
     </div>
   );
