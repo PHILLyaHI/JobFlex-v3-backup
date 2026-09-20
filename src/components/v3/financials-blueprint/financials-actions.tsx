@@ -84,18 +84,28 @@ export function FinancialsActions({ jobs, invoiceTargets }: { jobs: FinancialsJo
     }
   }
 
-  /** The receipt-capture card is already on this page — go to it and open its file picker. */
+  /** The receipt-capture card is already on this page — go to it and open its file picker.
+   *
+   *  The card, its progress line and its staged result all live in ONE panel,
+   *  and the tab to open is read off that panel — not assumed. This used to
+   *  switch to the Expenses tab, where the card is not: the scan ran and
+   *  succeeded in the hidden Overview panel while the owner looked at a
+   *  ledger, with nothing on screen to say a receipt had been read (his real
+   *  photo, 2026-09-19). */
   function scanReceipt() {
-    // The card lives on the Expenses tab: switch to it through the page's own
-    // tab control, then open its file picker.
-    const tab = document.querySelector<HTMLButtonElement>('#fiTabs [data-tab="expenses"]');
-    if (tab && !tab.classList.contains("active")) tab.click();
+    const drop = document.getElementById("rcDrop");
+    const panel = drop?.closest<HTMLElement>("[data-panel]");
+    const tab = panel ? document.querySelector<HTMLButtonElement>(`#fiTabs [data-tab="${panel.dataset.panel}"]`) : null;
+    if (!drop || !tab) {
+      toast.error("Receipt capture isn't on this page", "Reload Financials and try again.");
+      return;
+    }
+    if (!tab.classList.contains("active")) tab.click();
     window.setTimeout(() => {
-      const card = document.getElementById("rcDrop");
-      card?.scrollIntoView({ behavior: "smooth", block: "center" });
+      drop.scrollIntoView({ behavior: "smooth", block: "center" });
       const input = document.getElementById("rcFile") as HTMLInputElement | null;
       if (!input) {
-        toast.error("Receipt capture is on the Expenses tab", "Open Expenses to scan a receipt.");
+        toast.error("Receipt capture isn't on this page", "Reload Financials and try again.");
         return;
       }
       window.setTimeout(() => input.click(), 280);

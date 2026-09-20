@@ -1009,6 +1009,17 @@ export function initFinancialsContent(
     el.classList.toggle("rc-note--bad", tone === "bad");
   }
 
+  /** Put the receipt card's panel on screen: its tab, read off the panel the
+   *  card sits in, then the card itself. The note and the staged result are
+   *  children of that card, so nothing the capture says can land out of sight. */
+  function revealReceiptCard() {
+    const drop = $("#rcDrop");
+    const panel = drop?.closest<HTMLElement>("[data-panel]");
+    const tab = panel ? root.querySelector<HTMLButtonElement>(`#fiTabs [data-tab="${panel.dataset.panel}"]`) : null;
+    if (tab && !tab.classList.contains("active")) tab.click();
+    if (drop && drop.getBoundingClientRect().height > 0) drop.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   /** Read the picked file, run it past the OCR, and stage the result for review.
    *
    *  The file is made sendable in the browser first (lib/receiptImage): turned
@@ -1023,6 +1034,11 @@ export function initFinancialsContent(
       return;
     }
 
+    // Whatever opened the picker, the progress line and the result paint in
+    // the card's own panel — so that panel is on screen first. A caller that
+    // switched tabs before opening the picker (the page head's Scan receipt
+    // once did) otherwise leaves the whole read invisible.
+    revealReceiptCard();
     rcNote("Preparing the photo…");
     $("#rcDrop")?.classList.add("is-busy");
 
@@ -1115,6 +1131,9 @@ export function initFinancialsContent(
       '<button class="btn btn-primary btn--sm" type="button" data-act="save-exp"><svg class="ic"><use href="#i-check"/></svg><span data-save-lbl>Save expense</span></button>' +
       '<button class="btn btn-ghost btn--sm" type="button" data-act="discard-exp">Discard</button>' +
       "</div>";
+    // The result is the whole point: bring it into the viewport, not just the
+    // drop zone above it, so the read is seen the moment it lands.
+    box.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
   /**

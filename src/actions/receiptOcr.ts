@@ -84,6 +84,11 @@ export async function scanReceipt(input: {
         'You are an expense clerk reading a receipt photo. Return strictly JSON: {vendor: string, total: number, category: one of [Materials, Labor, Fuel, Tools, Subcontractor, Other], note: string, lineItems: [{name: string, amount: number}] (up to 10)}. Do your best to infer the total even if torn or faded. If it is not a receipt, return {vendor: "", total: 0, category: "Other", note: "not a receipt", lineItems: []}.',
       userPrompt: "Extract the fields from this receipt.",
       imageUrl: dataUrl,
+      // A receipt is a tall strip of small print: at "auto" the model may
+      // take one 512px glance at it. "high" tiles it at full resolution, so
+      // the long edge the browser keeps (2000px, under the model's own 2048)
+      // is actually read.
+      detail: "high",
     });
     if (!result) {
       return { ok: false, error: "The reader answered with nothing usable from that photo — try a sharper, straighter shot of the whole receipt." };
