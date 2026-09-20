@@ -204,7 +204,10 @@ export async function loadSettingsData(ctx: SettingsOrgContext): Promise<Setting
         // There is no Meta OAuth in the app: the switch is this org's own
         // forwarding flag, so the integration is not live for anyone yet.
         comingSoon: true,
-        connected: org.metaSettingsJson ? meta.connected : false,
+        // Never "connected": the stored flag was a button that wrote
+        // connected:true with no OAuth behind it (audit, 2026-09-20). Until a
+        // real connection exists the card cannot show a green badge.
+        connected: false,
         orgName: org.name,
         // Round-tripped untouched through updateMetaSettings; the Default
         // lead handling card that edited these is gone.

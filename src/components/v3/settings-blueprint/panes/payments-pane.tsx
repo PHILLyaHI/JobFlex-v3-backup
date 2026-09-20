@@ -332,7 +332,10 @@ export function PaymentsPane({ data, navigate, notice }: PaneProps) {
             ) : null}
           </div>
 
-          {/* Stax — key only; no deep view under Integrations */}
+          {/* Stax — key only; no deep view under Integrations. Held off the
+              page until the rail is proven live (lib/payments/rails); a row
+              that already exists stays so it can be disconnected. */}
+          {c.stax.keyOffered || staxHasRow ? (
           <div className="prow-grp">
             <ProcessorRow
               row={staxRow}
@@ -358,6 +361,7 @@ export function PaymentsPane({ data, navigate, notice }: PaneProps) {
               </div>
             ) : null}
           </div>
+          ) : null}
 
           {/* Bank transfer — manual path */}
           <div className="prow-grp">

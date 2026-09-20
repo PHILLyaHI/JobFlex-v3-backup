@@ -418,7 +418,7 @@ export function IntegrationsPane({ data, sub: wanted, notice }: PaneProps) {
         <section className="sc">
           <CardHeader
             card={META_CONNECTION_CARD}
-            badge={metaConnected ? CONNECTED_BADGE : NOT_CONNECTED_BADGE}
+            badge={metaConnected ? CONNECTED_BADGE : meta.comingSoon ? COMING_SOON_BADGE : NOT_CONNECTED_BADGE}
           />
           <div className={metaConnected ? "sc-b sc-b--rows" : "sc-b"}>
             {metaConnected ? (
@@ -446,16 +446,19 @@ export function IntegrationsPane({ data, sub: wanted, notice }: PaneProps) {
             ) : (
               /* Same shape as the Gmail Connect button: one primary action,
                  nothing else in the body. */
+              /* Disarmed while there is no Meta OAuth (audit, 2026-09-20): the
+                 button used to write connected:true and paint the badge green
+                 with nothing behind it. */
               <button
                 className="btn btn-primary"
                 type="button"
-                disabled={metaBusy}
-                onClick={() => void setMeta(true)}
+                disabled={metaBusy || meta.comingSoon}
+                onClick={() => (meta.comingSoon ? undefined : void setMeta(true))}
               >
                 <svg className="ic">
                   <use href={`#${META_CONNECTION_ICON}`} />
                 </svg>
-                {metaBusy ? "Connecting…" : META_CONNECT_ACTION.label}
+                {metaBusy ? "Connecting…" : meta.comingSoon ? "Coming soon" : META_CONNECT_ACTION.label}
               </button>
             )}
           </div>

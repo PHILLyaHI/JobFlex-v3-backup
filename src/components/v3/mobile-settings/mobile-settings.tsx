@@ -92,6 +92,7 @@ import {
   BILLING_CONTACT_LABELS,
   BUSINESS_CARD,
   BUSINESS_LABELS,
+  COMING_SOON_BADGE,
   CONNECTED_BADGE,
   CONNECT_ACTION,
   CURRENCY_SELECT,
@@ -790,7 +791,9 @@ function PaymentsPane({
             ) : null}
           </div>
 
-          {/* Stax — key only; no deep view under Integrations */}
+          {/* Stax — key only; held off the page until the rail is proven live
+              (lib/payments/rails); an existing row stays so it can be disconnected. */}
+          {c.stax.keyOffered || staxHasRow ? (
           <div className="mst-grp">
             <ProcessorRow
               row={staxRow}
@@ -817,6 +820,7 @@ function PaymentsPane({
               </div>
             ) : null}
           </div>
+          ) : null}
 
           <div className="mst-grp">
             <div className="mst-row">
@@ -1457,7 +1461,7 @@ function IntegrationsPane({
         <section className="mst-card">
           <CardHeader
             card={META_CONNECTION_CARD}
-            badge={metaConnected ? CONNECTED_BADGE : NOT_CONNECTED_BADGE}
+            badge={metaConnected ? CONNECTED_BADGE : meta.comingSoon ? COMING_SOON_BADGE : NOT_CONNECTED_BADGE}
           />
           <div className={metaConnected ? "mst-cardB mst-cardB--rows" : "mst-cardB"}>
             {metaConnected ? (
@@ -1483,14 +1487,15 @@ function IntegrationsPane({
                 </div>
               </div>
             ) : (
+              /* Disarmed while there is no Meta OAuth (audit, 2026-09-20). */
               <button
                 className="mst-btn mst-btn--primary mst-btn--wide"
                 type="button"
-                disabled={metaBusy}
-                onClick={() => void setMetaConn(true)}
+                disabled={metaBusy || meta.comingSoon}
+                onClick={() => (meta.comingSoon ? undefined : void setMetaConn(true))}
               >
                 <Ic name={META_CONNECTION_ICON} />
-                {metaBusy ? "Connecting…" : META_CONNECT_ACTION.label}
+                {metaBusy ? "Connecting…" : meta.comingSoon ? "Coming soon" : META_CONNECT_ACTION.label}
               </button>
             )}
           </div>

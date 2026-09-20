@@ -8,6 +8,7 @@ import { parsePaymentSettings } from "@/lib/settings";
 import { getStripeMode } from "@/lib/stripeMode";
 import { isSquareEnabled, squareEnv } from "@/lib/sdk/square";
 import { isSecretBoxConfigured } from "@/lib/crypto/secretBox";
+import { isStaxRailLive } from "./rails";
 import { platformFeeBps } from "./fees";
 import { connectClientIdFor, deauthorizeConnection } from "./stripeConnect";
 import { removeSquareWebhook, revokeSquareToken, SQUARE_SCOPES, SQUARE_TOKEN_PERMISSIONS } from "./squareConnect";
@@ -183,8 +184,11 @@ export async function getPaymentConnectionStatus(
     else squareState = "connected";
   }
 
-  // Stax — one way in: a pasted merchant API key.
-  let staxState: StaxConnState = box ? "disconnected" : "not_configured";
+  // Stax — one way in: a pasted merchant API key — and only once the rail
+  // has been proven live (lib/payments/rails). An existing row is still
+  // described so it can be disconnected.
+  const staxOffered = box && isStaxRailLive();
+  let staxState: StaxConnState = staxOffered ? "disconnected" : "not_configured";
   const x = conns.stax;
   if (x) {
     if (x.status === PaymentConnectionStatus.REVOKED) staxState = "revoked";
@@ -246,7 +250,7 @@ export async function getPaymentConnectionStatus(
       offered: settings.stax,
       scopes: x ? [...STAX_KEY_PERMISSIONS] : [],
       webhookRegistered: staxWebhookIdsOf({ staxWebhookIds: x?.staxWebhookIds ?? null }).length > 0,
-      keyOffered: box,
+      keyOffered: staxOffered,
     },
     bankTransfer: {
       enabled: settings.bankTransfer,

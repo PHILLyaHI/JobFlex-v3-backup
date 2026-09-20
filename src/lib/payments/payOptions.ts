@@ -8,6 +8,7 @@ import type { StripeMode } from "@/lib/stripeMode";
 import { stripeKeyFor } from "@/lib/stripeMode";
 import { connectClientIdFor } from "./stripeConnect";
 import { isSecretBoxConfigured } from "@/lib/crypto/secretBox";
+import { isStaxRailLive } from "./rails";
 
 export type PayBlockReason =
   | "not_connected"
@@ -81,7 +82,10 @@ export function resolvePayOptions(input: {
   // ── Stax ──────────────────────────────────────────────────────────────
   let stax: PayOptions["stax"] = { ok: false };
   const x = input.staxConn ?? null;
-  if (!input.settings.stax) stax = { ok: false, reason: "disabled" };
+  // The rail is held off the portal until a live payment has proven it
+  // (lib/payments/rails), whatever the org has connected.
+  if (!isStaxRailLive()) stax = { ok: false, reason: "not_configured" };
+  else if (!input.settings.stax) stax = { ok: false, reason: "disabled" };
   else if (!x) stax = { ok: false, reason: "not_connected" };
   else if (!isSecretBoxConfigured() || !x.staxApiKeyEnc) stax = { ok: false, reason: "not_configured" };
   else if (x.status === PaymentConnectionStatus.REVOKED) stax = { ok: false, reason: "revoked" };
