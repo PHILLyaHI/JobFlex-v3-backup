@@ -12,12 +12,17 @@
  * It bills the balance still owing (`installmentId: null`), which is what
  * `sendInstallmentInvoice` does with no stage named, and it only offers a rail
  * the shop can actually take money on (`getInvoiceOptions`).
+ *
+ * Drawn as a BlueprintSheet (2026-09-19): the Financials page's own "Add an
+ * expense" dialog — caps title, mono kickers, ink fields, CANCEL / SEND
+ * INVOICE. It used to be the Tailwind side panel, rendered in place, and the
+ * blueprint page's `.content` resets stripped it to bare selects and text
+ * buttons; the sheet now portals out of that scope and carries its own
+ * stylesheet. Same state, same actions, same two questions.
  */
 
 import * as React from "react";
-import { Send } from "lucide-react";
-import { Sheet } from "@/components/ui/Sheet";
-import { Button } from "@/components/ui/Button";
+import { BlueprintSheet } from "@/components/ui/BlueprintSheet";
 import { toast } from "@/components/ui/Toast";
 import { getInvoiceOptions, sendInstallmentInvoice } from "@/actions/notify";
 
@@ -110,37 +115,38 @@ export function InvoiceSheet({
     }
   }
 
-  const field = "h-10 w-full rounded-[var(--r-md)] hairline bg-white/70 px-3 text-[14px]";
-  const label = "quiet-caps text-[color:var(--ink-muted)]";
-
   return (
-    <Sheet
+    <BlueprintSheet
       open={open}
       onClose={close}
       title="Send an invoice"
-      description="Bills the balance still owing on the proposal, on the rail you pick."
+      description="Bills the balance still owing on the proposal, on the rail you pick"
+      width="min(420px, 100%)"
       footer={
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" onClick={close} disabled={busy}>
+        <>
+          <button className="bps-btn bps-btn--ghost" type="button" onClick={close} disabled={busy}>
             Cancel
-          </Button>
-          <Button onClick={() => void send()} disabled={busy || !proposalId} className="flex-1">
-            <Send className="h-4 w-4" />
-            {busy ? "Sending…" : "Send invoice"}
-          </Button>
-        </div>
+          </button>
+          <button className="bps-btn bps-btn--primary" type="button" onClick={() => void send()} disabled={busy || !proposalId}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M22 2L11 13" />
+              <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+            </svg>
+            <span>{busy ? "Sending…" : "Send invoice"}</span>
+          </button>
+        </>
       }
     >
       {targets.length === 0 ? (
-        <p className="text-[13px] text-[color:var(--ink-soft)]">
+        <p className="bps-note">
           Nothing to bill: no accepted contract has a balance owing. Accept a proposal first, and it
           appears here.
         </p>
       ) : (
-        <div className="space-y-4">
-          <label className="block space-y-1.5">
-            <span className={label}>Proposal</span>
-            <select className={field} value={proposalId} onChange={(e) => setPicked(e.target.value)} disabled={busy}>
+        <div className="bps-form">
+          <label className="bps-fld bps-fld--wide">
+            <span>Proposal</span>
+            <select className="bps-in" value={proposalId} onChange={(e) => setPicked(e.target.value)} disabled={busy}>
               {targets.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.label}
@@ -148,15 +154,15 @@ export function InvoiceSheet({
               ))}
             </select>
             {owed != null ? (
-              <span className="block text-[12px] text-[color:var(--ink-soft)]">
+              <span className="bps-hint">
                 Balance owing: ${owed.toLocaleString("en-US", { maximumFractionDigits: 2 })}
               </span>
             ) : null}
           </label>
 
-          <label className="block space-y-1.5">
-            <span className={label}>Pay by</span>
-            <select className={field} value={method} onChange={(e) => setMethod(e.target.value as Method)} disabled={busy}>
+          <label className="bps-fld bps-fld--wide">
+            <span>Pay by</span>
+            <select className="bps-in" value={method} onChange={(e) => setMethod(e.target.value as Method)} disabled={busy}>
               {rails?.card !== false && <option value="card">Card</option>}
               {rails?.bank !== false && <option value="bank">Bank transfer</option>}
               <option value="any">Let the client choose</option>
@@ -164,12 +170,12 @@ export function InvoiceSheet({
           </label>
 
           {err ? (
-            <p className="text-[13px] text-[color:var(--rose)]" role="alert">
+            <p className="bps-err" role="alert">
               {err}
             </p>
           ) : null}
         </div>
       )}
-    </Sheet>
+    </BlueprintSheet>
   );
 }
