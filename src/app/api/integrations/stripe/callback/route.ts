@@ -4,7 +4,7 @@ import { requireOwner } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { consumeOAuthNonceCookie, verifyOAuthState } from "@/lib/oauthState";
-import { exchangeConnectCode, stripeConnectReady } from "@/lib/payments/stripeConnect";
+import { exchangeConnectCode, stripeAccountHeldElsewhere, stripeConnectReady } from "@/lib/payments/stripeConnect";
 import { parsePaymentSettings } from "@/lib/settings";
 import { ActivityKind, PaymentConnectionStatus } from "@/lib/prismaEnums";
 
@@ -41,6 +41,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const acct = await exchangeConnectCode(code, ready.mode);
+    // Another workspace already holds this account: say so, store nothing.
+    if (await stripeAccountHeldElsewhere(acct.accountId, ctx.organizationId)) return back("taken");
     // A test-mode client id can only ever return a test account and vice
     // versa; record what Stripe says rather than what we asked for.
     await db.paymentConnection.upsert({

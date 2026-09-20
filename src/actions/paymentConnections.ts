@@ -23,6 +23,8 @@ import {
   deauthorizeConnection,
   registerKeyWebhook,
   stripeKeyPathReady,
+  STRIPE_ACCOUNT_TAKEN,
+  stripeAccountHeldElsewhere,
   validateStripeKey,
 } from "@/lib/payments/stripeConnect";
 import {
@@ -67,6 +69,7 @@ export async function connectStripeWithKey(raw: unknown): Promise<KeyConnectResu
   const v = await validateStripeKey(parsed.data);
   if (!v.ok) return v;
   const a = v.account;
+  if (await stripeAccountHeldElsewhere(a.accountId, ctx.organizationId)) return { ok: false, message: STRIPE_ACCOUNT_TAKEN };
 
   // One Stripe row per org: an earlier join (the OAuth app link, or a
   // previous key's webhook) is undone first.

@@ -904,7 +904,11 @@ model PaymentConnection {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, provider])
-  @@index([stripeAccountId])
+  // One Stripe account, one workspace (audit, 2026-09-20): the webhook
+  // handlers resolve the org from acct_… and a second row on the same
+  // account would make that lookup arbitrary. Nulls are distinct, so rows
+  // without an account id (Square, Stax) are unaffected.
+  @@unique([stripeAccountId, provider])
   @@index([squareMerchantId])
 }
 

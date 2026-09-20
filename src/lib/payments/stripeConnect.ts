@@ -9,6 +9,7 @@
 // Either way the contractor's Stripe stays theirs: their fees, their
 // disputes, their payouts.
 import type Stripe from "stripe";
+import { db } from "@/lib/db";
 import { getStripeMode, stripeKeyFor, type StripeMode } from "@/lib/stripeMode";
 import { stripeClientForKey, stripeClientForMode } from "@/lib/sdk/stripe";
 import { decryptSecret, isSecretBoxConfigured } from "@/lib/crypto/secretBox";
@@ -39,6 +40,20 @@ export async function stripeConnectReady(): Promise<{
   if (!stripeKeyFor(mode)) return { ok: false, mode, reason: "no_key" };
   if (!connectClientIdFor(mode)) return { ok: false, mode, reason: "no_client_id" };
   return { ok: true, mode };
+}
+
+/** Shown when the account is already joined to another workspace. */
+export const STRIPE_ACCOUNT_TAKEN =
+  "This Stripe account is already connected to another JobFlex workspace. Disconnect it there first, or connect a different account.";
+
+/** Another org's row on this acct_…? (The schema's unique index is the
+ *  backstop; this gives the user a sentence instead of a database error.) */
+export async function stripeAccountHeldElsewhere(accountId: string, organizationId: string): Promise<boolean> {
+  const other = await db.paymentConnection.findFirst({
+    where: { provider: "STRIPE", stripeAccountId: accountId, organizationId: { not: organizationId } },
+    select: { id: true },
+  });
+  return Boolean(other);
 }
 
 /** The paste-a-key path needs only somewhere safe to keep the key. */

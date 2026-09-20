@@ -147,6 +147,7 @@ import {
   PREF_EVENTS,
   PROCESSORS,
   PROCESSORS_CARD,
+  PROCESSOR_OAUTH_NOTICE,
   PROCESSOR_BEHAVIOR_CARD,
   PROCESSOR_CONNECTION_CARD,
   PROCESSOR_LAST_EVENT_PREFIX,
@@ -646,14 +647,21 @@ function PaymentsPane({
   data,
   navigate,
   openPicker,
+  notice,
 }: {
   data: SettingsData;
   navigate: (rail: RailKey, sub?: SubTabKey) => void;
   openPicker: (p: PickerSpec) => void;
+  notice?: OAuthNotice;
 }) {
   const p = data.payments;
   const c = p.connections;
   const router = useRouter();
+  const oauth = notice?.stripe
+    ? { name: "Stripe", ...PROCESSOR_OAUTH_NOTICE[notice.stripe] }
+    : notice?.square
+      ? { name: "Square", ...PROCESSOR_OAUTH_NOTICE[notice.square] }
+      : null;
 
   const [currency, setCurrency] = useState<string>(currencyOptionFor(p.currency));
   const [depositPct, setDepositPct] = useState<string>(p.depositPct);
@@ -699,6 +707,12 @@ function PaymentsPane({
 
   return (
     <>
+      {oauth && oauth.title ? (
+        <div className="mst-note" role="status">
+          <span className={oauth.tone === "ok" ? "mst-noteK" : "mst-noteK is-warn"}>{`${oauth.name} — ${oauth.title}`}</span>
+          <span>{oauth.sub}</span>
+        </div>
+      ) : null}
       {/* ── Get paid ── */}
       <section className="mst-card">
         <CardHeader card={PROCESSORS_CARD} />
@@ -1915,7 +1929,7 @@ export function MobileSettings({
               <AccountPane data={data} />
             </div>
             <div className={active === "payments" ? "mst-pane is-on" : "mst-pane"}>
-              <PaymentsPane data={data} navigate={navigate} openPicker={openPicker} />
+              <PaymentsPane data={data} navigate={navigate} openPicker={openPicker} notice={notice} />
             </div>
             <div className={active === "billing" ? "mst-pane is-on" : "mst-pane"}>
               <BillingPane data={data} />

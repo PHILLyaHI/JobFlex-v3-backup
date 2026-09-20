@@ -53,6 +53,7 @@ import {
   PAYOUT_NOTE_KICKER,
   PROCESSORS,
   PROCESSORS_CARD,
+  PROCESSOR_OAUTH_NOTICE,
   PROCESSOR_STATE_COPY,
   PROCESSOR_UNAVAILABLE_BADGE,
   RECONNECT_ACTION,
@@ -181,10 +182,15 @@ function ProcessorRow({
   );
 }
 
-export function PaymentsPane({ data, navigate }: PaneProps) {
+export function PaymentsPane({ data, navigate, notice }: PaneProps) {
   const p = data.payments;
   const c = p.connections;
   const router = useRouter();
+  const oauth = notice?.stripe
+    ? { name: "Stripe", ...PROCESSOR_OAUTH_NOTICE[notice.stripe] }
+    : notice?.square
+      ? { name: "Square", ...PROCESSOR_OAUTH_NOTICE[notice.square] }
+      : null;
 
   const [currency, setCurrency] = useState<string>(currencyOptionFor(p.currency));
   const [depositPct, setDepositPct] = useState<string>(p.depositPct);
@@ -232,6 +238,18 @@ export function PaymentsPane({ data, navigate }: PaneProps) {
 
   return (
     <>
+      {/* What the last OAuth round trip came back with — once, on this load. */}
+      {oauth && oauth.title ? (
+        <div className={oauth.tone === "ok" ? "note note--ok" : "note"} role="status" style={{ marginBottom: "14px" }}>
+          <svg className="ic">
+            <use href="#i-bell" />
+          </svg>
+          <div>
+            <b>{`${oauth.name} — ${oauth.title}`}</b>
+            <span>{oauth.sub}</span>
+          </div>
+        </div>
+      ) : null}
       {/* ── Get paid ─────────────────────────────────────────────────── */}
       <section className="sc">
         <div className="sc-h">

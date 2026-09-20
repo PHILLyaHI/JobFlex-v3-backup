@@ -932,6 +932,20 @@ export const GMAIL_OAUTH_NOTICE: Record<string, { title: string; sub: string; to
   error: { title: 'Gmail was not connected', sub: 'Google did not complete the exchange. Try again in a minute.', tone: 'warn' },
 };
 
+/** The Stripe / Square round trips, in the user's words. Both routes redirect
+ *  to ?tab=payments&stripe=… / &square=…; nothing read them before. */
+export const PROCESSOR_OAUTH_NOTICE: Record<string, { title: string; sub: string; tone: 'ok' | 'warn' }> = {
+  connected: { title: 'Connected', sub: 'Clients can now pay each stage of an accepted proposal straight to your account.', tone: 'ok' },
+  denied: { title: 'Not connected', sub: 'The provider reported that access was declined. Nothing changed.', tone: 'warn' },
+  badstate: { title: 'Not connected', sub: 'The sign-in took too long or was opened from another tab. Try again from this page.', tone: 'warn' },
+  mismatch: { title: 'Not connected', sub: 'The sign-in was started for a different workspace or user. Try again from this page.', tone: 'warn' },
+  unconfigured: { title: 'Not available here', sub: 'This deployment has no platform credentials for this provider.', tone: 'warn' },
+  taken: { title: 'That account is already in use', sub: 'It is connected to another JobFlex workspace. Disconnect it there first, or connect a different account.', tone: 'warn' },
+  country: { title: 'Not connected', sub: 'Square requires the seller and the platform to be in the same country.', tone: 'warn' },
+  nolocation: { title: 'Not connected', sub: 'The Square account has no location that can take payments.', tone: 'warn' },
+  error: { title: 'Not connected', sub: 'The provider did not complete the exchange. Try again in a minute.', tone: 'warn' },
+};
+
 export const GMAIL_REVOKED_NOTE = {
   title: 'Gmail disconnected — emails are going from the JobFlex address',
   sub: 'Google no longer accepts the connection (the permission was removed or expired). Reconnect to send from your own address again.',
