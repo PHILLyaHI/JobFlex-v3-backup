@@ -83,6 +83,10 @@ export const PREF_KEYS = [
   "chimneySizeId", "chimneyEach", "chimneyLabor", "curbEach", "curbLabor", "ventBalanced",
   "tearOffPerSqLayer", "disposalPerSqLayer", "plywoodEach", "plywoodLabor",
   "nailsPerSq", "sealantPerSq", "cleanupLump", "safetyLump", "permitLump", "deliveryLump",
+  // Fascia & gutters (2026-09-19): the board this shop fits and its rates,
+  // and what they do with the gutters. The LENGTHS are per roof, never saved.
+  "fasciaOn", "fasciaOptionId", "fasciaRun", "fasciaPerFt", "fasciaLaborPerFt",
+  "gutterPlan", "gutterResetPerFt", "gutterPerFt", "gutterLaborPerFt",
 ] as const satisfies ReadonlyArray<keyof RoofPackageSpec>;
 
 export type Prefs = Partial<Pick<RoofPackageSpec, (typeof PREF_KEYS)[number]>> & {
@@ -126,6 +130,10 @@ const STEEP_ONLY: ReadonlyArray<(typeof PREF_KEYS)[number]> = [
   "apronPerFt", "apronLaborPerFt", "counterPerFt", "counterLaborPerFt", "pipeBootPrices",
   "chimneySizeId", "chimneyEach", "chimneyLabor", "curbEach", "curbLabor", "ventBalanced",
   "tearOffPerSqLayer", "disposalPerSqLayer", "nailsPerSq", "sealantPerSq", "safetyLump", "deliveryLump",
+  // A flat roof's edge metal carries its own fascia, so a flat job neither
+  // saves nor takes the steep fascia habit.
+  "fasciaOn", "fasciaOptionId", "fasciaRun", "fasciaPerFt", "fasciaLaborPerFt",
+  "gutterPlan", "gutterResetPerFt", "gutterPerFt", "gutterLaborPerFt",
 ];
 
 /**

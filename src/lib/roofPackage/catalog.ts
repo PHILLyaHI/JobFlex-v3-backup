@@ -243,6 +243,40 @@ export const CHIMNEY_SIZES: ChimneySize[] = [
   { id: "medium", label: "Medium (to 36 in)", each: 260, labor: 350 },
   { id: "large", label: "Large (over 36 in) / cricket", each: 380, labor: 450 },
 ];
+// ── Fascia & gutters (owner, 2026-09-19: "most of the time when roof getting
+// replaced facia gets replaced as well") ────────────────────────────────────
+// The fascia is the board the gutter hangs on, behind the drip edge. It is
+// open once the roof is off, which is the only cheap time to change it — so a
+// tear-off opens with it ON, priced along the eaves, and the contractor turns
+// it off for a roof whose trim is sound.
+export interface FasciaOption extends CatalogOption {
+  /** Board (or wrap) per foot. */
+  perFt: number;
+  /** Tear off the old board and hang the new one, per foot. */
+  laborPerFt: number;
+  /** True where the existing board stays and is covered rather than replaced. */
+  wrap?: boolean;
+}
+export const FASCIA_OPTIONS: FasciaOption[] = [
+  { id: "pine", label: "Primed pine 1×6", perFt: 3.2, laborPerFt: 4.5 },
+  { id: "cedar", label: "Cedar 1×6", perFt: 5.4, laborPerFt: 4.5 },
+  { id: "pvc", label: "PVC / composite 1×6", perFt: 6.5, laborPerFt: 5 },
+  { id: "subfascia", label: "2× sub-fascia + 1×6 face", perFt: 5.8, laborPerFt: 6 },
+  { id: "wrap", label: "Aluminum wrap over existing", perFt: 3, laborPerFt: 4, wrap: true },
+];
+/** Which lengths the fascia runs: the eaves alone, the whole perimeter, or a figure typed in. */
+export type FasciaRun = "eaves" | "eaves_rakes" | "custom";
+/** The gutters have to come off to change the fascia — this is what happens to them. */
+export type GutterPlan = "none" | "reset" | "replace";
+export const GUTTER_PLANS: Array<CatalogOption & { id: GutterPlan }> = [
+  { id: "reset", label: "Detach & reset" },
+  { id: "replace", label: "Replace · 6 in seamless" },
+  { id: "none", label: "No gutters on the house" },
+];
+export const GUTTER_RESET_LABOR_PER_FT = 2.5;
+export const GUTTER_NEW_PER_FT = 7;
+export const GUTTER_NEW_LABOR_PER_FT = 5;
+
 export const CURB_EACH = 120;
 export const CURB_LABOR = 150;
 

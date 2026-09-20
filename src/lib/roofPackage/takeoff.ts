@@ -36,6 +36,12 @@ import {
   PLYWOOD_SHEET_LABOR,
   SEALANT_PER_SQ,
   STARTER_PER_FT,
+  FASCIA_OPTIONS,
+  GUTTER_RESET_LABOR_PER_FT,
+  GUTTER_NEW_PER_FT,
+  GUTTER_NEW_LABOR_PER_FT,
+  type FasciaRun,
+  type GutterPlan,
   STEEP_PITCH,
   STEEP_SAFETY_LUMP,
   STEP_FLASHING_LABOR_PER_FT,
@@ -185,6 +191,21 @@ export interface RoofPackageSpec {
   dripPerFt: number;
   starterOn: boolean;
   starterPerFt: number;
+  /** Replace the fascia behind the drip edge (2026-09-19). On for a tear-off. */
+  fasciaOn: boolean;
+  fasciaOptionId: string;
+  fasciaRun: FasciaRun;
+  /** Used only when `fasciaRun` is "custom". */
+  fasciaFt: number;
+  fasciaPerFt: number;
+  fasciaLaborPerFt: number;
+  /** What happens to the gutters while the fascia is off. */
+  gutterPlan: GutterPlan;
+  /** Gutter length; follows the fascia run unless typed over. */
+  gutterFt: number;
+  gutterResetPerFt: number;
+  gutterPerFt: number;
+  gutterLaborPerFt: number;
   valleyTypeId: string;
   valleyCount: number;
   valleyFtEach: number;
@@ -480,6 +501,20 @@ export function defaultSpecWith(facts: RoofFacts, lists: CatalogLists, sys: Roof
     dripPerFt: drip.perFt,
     starterOn: true,
     starterPerFt: STARTER_PER_FT,
+    // A replacement opens with the fascia in: the board is only reachable
+    // while the roof is off, and most replacements change it (owner,
+    // 2026-09-19). An overlay leaves it alone — nothing is opened up.
+    fasciaOn: true,
+    fasciaOptionId: FASCIA_OPTIONS[0].id,
+    fasciaRun: "eaves",
+    fasciaFt: 0,
+    fasciaPerFt: FASCIA_OPTIONS[0].perFt,
+    fasciaLaborPerFt: FASCIA_OPTIONS[0].laborPerFt,
+    gutterPlan: "reset",
+    gutterFt: 0,
+    gutterResetPerFt: GUTTER_RESET_LABOR_PER_FT,
+    gutterPerFt: GUTTER_NEW_PER_FT,
+    gutterLaborPerFt: GUTTER_NEW_LABOR_PER_FT,
     valleyTypeId: valley.id,
     valleyCount: m ? (m.valleyFt > 0 ? 1 : 0) : est?.count ?? 0,
     valleyFtEach: m ? (m.valleyFt > 0 ? r1(m.valleyFt) : 12) : est && est.count > 0 ? est.ftEach : 12,
@@ -731,6 +766,8 @@ export function flattenForLowSlope(spec: RoofPackageSpec): RoofPackageSpec {
     hipFt: 0,
     dripEdgeOn: false,
     starterOn: false,
+    // A flat roof's edge metal already carries the fascia (lowSlope.ts).
+    fasciaOn: false,
     valleyCount: 0,
     valleyBasis: "entered",
     stepWallCount: 0,
@@ -903,6 +940,17 @@ interface BuiltPackage {
 const BASIS_RANK: Record<Basis, number> = { entered: 0, estimated: 1, measured: 2 };
 const weaker = (a: Basis, b: Basis): Basis => (BASIS_RANK[a] <= BASIS_RANK[b] ? a : b);
 
+/** The feet the fascia runs: the eaves, the whole perimeter, or what was typed. */
+export function fasciaFeet(spec: RoofPackageSpec): number {
+  if (!spec.fasciaOn) return 0;
+  if (spec.fasciaRun === "custom") return Math.max(0, spec.fasciaFt);
+  return spec.fasciaRun === "eaves_rakes" ? Math.max(0, spec.eaveFt + spec.rakeFt) : Math.max(0, spec.eaveFt);
+}
+/** Gutter feet: what was typed, else the eaves (gutters hang on the eaves, not the rakes). */
+export function gutterFeet(spec: RoofPackageSpec): number {
+  return spec.gutterFt > 0 ? spec.gutterFt : Math.max(0, spec.eaveFt);
+}
+
 function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
   const materials: PkgLine[] = [];
   const labor: PkgLine[] = [];
@@ -944,6 +992,25 @@ function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
   }
   if (spec.eaveFt > 0 && family === "metal") {
     materials.push({ name: "Eave trim & closures · metal", quantity: r1(spec.eaveFt), unit: "linear ft", unitPrice: spec.starterPerFt, kind: "material", basis: edgeB });
+  }
+  // ── Fascia (2026-09-19) — the board behind the drip edge, open while the
+  // roof is off. A wrap covers the existing board instead of replacing it.
+  const fasciaFt = fasciaFeet(spec);
+  const fascia = FASCIA_OPTIONS.find((f) => f.id === spec.fasciaOptionId) ?? null;
+  const gutterFt = spec.fasciaOn && spec.gutterPlan !== "none" ? gutterFeet(spec) : 0;
+  if (fasciaFt > 0 && spec.fasciaPerFt > 0) {
+    const where = spec.fasciaRun === "eaves_rakes" ? "eaves + rakes" : spec.fasciaRun === "custom" ? "as measured" : "eaves";
+    materials.push({
+      name: `Fascia · ${fascia?.label ?? "board"} · ${where}`,
+      quantity: r1(fasciaFt),
+      unit: "linear ft",
+      unitPrice: spec.fasciaPerFt,
+      kind: "material",
+      basis: spec.fasciaRun === "custom" ? "entered" : edgeB,
+    });
+  }
+  if (gutterFt > 0 && spec.gutterPlan === "replace" && spec.gutterPerFt > 0) {
+    materials.push({ name: "Gutter · 6 in seamless", quantity: r1(gutterFt), unit: "linear ft", unitPrice: spec.gutterPerFt, kind: "material", basis: spec.gutterFt > 0 ? "entered" : edgeB });
   }
   const capFt = spec.ridgeFt + spec.hipFt;
   if (capFt > 0 && spec.capPerFt > 0) {
@@ -1044,6 +1111,23 @@ function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
   }
   if (spec.plywoodSheets > 0) labor.push({ name: "Roof deck replacement · install", quantity: spec.plywoodSheets, unit: "each", unitPrice: spec.plywoodLabor, kind: "labor", basis: "entered" });
   const steep = families.some((f) => displayPitch12(f.pitch12) >= STEEP_PITCH);
+  // Fascia and the gutters that hang on it (2026-09-19).
+  if (fasciaFt > 0 && spec.fasciaLaborPerFt > 0) {
+    labor.push({
+      name: fascia?.wrap ? "Fascia · wrap over existing" : "Fascia · tear off & replace",
+      quantity: r1(fasciaFt),
+      unit: "linear ft",
+      unitPrice: spec.fasciaLaborPerFt,
+      kind: "labor",
+      basis: spec.fasciaRun === "custom" ? "entered" : edgeB,
+    });
+  }
+  if (gutterFt > 0 && spec.gutterPlan === "reset" && spec.gutterResetPerFt > 0) {
+    labor.push({ name: "Gutters · detach & reset", quantity: r1(gutterFt), unit: "linear ft", unitPrice: spec.gutterResetPerFt, kind: "labor", basis: spec.gutterFt > 0 ? "entered" : edgeB });
+  }
+  if (gutterFt > 0 && spec.gutterPlan === "replace" && spec.gutterLaborPerFt > 0) {
+    labor.push({ name: "Gutters · remove old & hang new", quantity: r1(gutterFt), unit: "linear ft", unitPrice: spec.gutterLaborPerFt, kind: "labor", basis: spec.gutterFt > 0 ? "entered" : edgeB });
+  }
   if (steep && spec.safetyLump > 0) labor.push({ name: "Steep-slope safety · harnesses, anchors & staging", quantity: 1, unit: "lot", unitPrice: spec.safetyLump, kind: "labor", basis: facts.pitchBasis ?? "entered" });
   if (spec.cleanupLump > 0) labor.push({ name: "Cleanup & magnetic nail sweep", quantity: 1, unit: "lot", unitPrice: spec.cleanupLump, kind: "labor", basis: "entered" });
   if (spec.permitLump > 0) labor.push({ name: "Permit & inspection", quantity: 1, unit: "lot", unitPrice: spec.permitLump, kind: "labor", basis: "entered" });
@@ -1057,6 +1141,24 @@ function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
     `Roof system: ${sysName}; underlayment: ${spec.underlaymentName.trim() || "none"}; waste ${spec.wastePct}%.`,
     `Roof size: ${sq.toFixed(1)} squares (${fmt(sq * 100)} sq ft) — ${facts.squaresBasis === "measured" ? "aerial data, calibrated" : "contractor's takeoff"}.`,
   );
+  if (fasciaFt > 0) {
+    assumptions.push(
+      fascia?.wrap
+        ? `Fascia: the existing board stays and is wrapped in aluminum along the ${spec.fasciaRun === "eaves_rakes" ? "eaves and rakes" : "eaves"} (${r1(fasciaFt)} ft). Rotten board found underneath is replaced and priced as found.`
+        : `Fascia: ${(fascia?.label ?? "board").toLowerCase()} along the ${spec.fasciaRun === "eaves_rakes" ? "eaves and rakes" : "eaves"} (${r1(fasciaFt)} ft) — replaced while the roof is open. Rotten rafter tails behind it are priced as found.`,
+    );
+    if (gutterFt > 0) {
+      assumptions.push(
+        spec.gutterPlan === "replace"
+          ? `Gutters: ${r1(gutterFt)} ft of 6 in seamless gutter, the old gutters taken down and hauled away. Downspouts are quoted separately.`
+          : `Gutters: ${r1(gutterFt)} ft detached and reset on the new fascia. A gutter that is rusted or bent is quoted as a replacement instead.`,
+      );
+    } else if (spec.fasciaOn && spec.gutterPlan === "none") {
+      assumptions.push("Fascia priced with no gutters on the house — nothing to take down or rehang.");
+    }
+  } else if (!spec.fasciaOn && spec.tearOffLayers > 0) {
+    assumptions.push("Fascia is not included — the existing board stays. Ask for it if the trim is soft or split; it is only reachable while the roof is off.");
+  }
   if (families.length) {
     assumptions.push(
       families.length > 1
@@ -1116,6 +1218,14 @@ function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
   scope.push(`Install ${sysName}${und ? ` over ${und}` : ""}${spec.iceWater !== "none" && spec.underlaymentId !== "peel_stick" ? `, with ice & water shield at the ${spec.iceWater === "full" ? "full deck" : spec.iceWater === "eaves" ? "eaves" : "eaves and valleys"}` : ""}.`);
   const edgeWork = [spec.dripEdgeOn && perimeter > 0 ? "drip edge" : null, spec.starterOn && takesStarter(family) && perimeter > 0 ? "starter" : null, spec.eaveFt > 0 && (family === "tile" || family === "slate") ? "eave riser" : null, spec.eaveFt > 0 && family === "metal" ? "eave trim" : null, capFt > 0 && spec.capPerFt > 0 ? (family === "metal" ? "ridge and hip trim" : "hip and ridge cap") : null].filter(Boolean);
   if (edgeWork.length) scope.push(`Install new ${edgeWork.join(", ")}.`);
+  if (fasciaFt > 0) {
+    const gut = gutterFt > 0 ? (spec.gutterPlan === "replace" ? ", hang new seamless gutters" : ", and reset the gutters on it") : "";
+    scope.push(
+      fascia?.wrap
+        ? `Wrap the fascia in aluminum along the ${spec.fasciaRun === "eaves_rakes" ? "eaves and rakes" : "eaves"}${gut}.`
+        : `Replace the fascia board along the ${spec.fasciaRun === "eaves_rakes" ? "eaves and rakes" : "eaves"}${gut}.`,
+    );
+  }
   const flashWork = [valleyFtTotal > 0 ? "valleys" : null, stepFt > 0 ? "sidewalls" : null, spec.apronFt > 0 || spec.counterFt > 0 ? "headwalls" : null, PIPE_BOOT_SIZES.some((z) => (spec.pipeBoots[z.id] ?? 0) > 0) ? "pipes" : null, spec.chimneyCount > 0 ? "the chimney" : null, spec.curbCount > 0 ? "curbs and skylights" : null].filter(Boolean);
   if (flashWork.length) scope.push(`Flash the ${flashWork.join(", ").replace(/, ([^,]*)$/, " and $1")}.`);
   if (spec.vents.some((v) => v.qty > 0)) scope.push("Install roof ventilation.");

@@ -13,7 +13,7 @@
 //     trade we route. routeDecision() below turns that into MANUAL_QUEUE too.
 // The old behaviour — a silent {Other, 0.3} fallback for every failure mode —
 // made "the AI was down" indistinguishable from "the request is junk".
-import { getOpenAI, isOpenAIEnabled, resolveOpenAIModel } from "@/lib/sdk/openai";
+import { getOpenAI, isOpenAIEnabled, samplingOptions, resolveOpenAIModel } from "@/lib/sdk/openai";
 import { TRADE_TYPES, isTradeType, type TradeType } from "@/lib/tradeTypes";
 
 export interface DetectedTrade {
@@ -57,7 +57,7 @@ export async function detectTrade(text: string): Promise<DetectedTrade | null> {
     const client = getOpenAI();
     const completion = await client.chat.completions.create({
       model,
-      temperature: 0.1,
+      ...(await samplingOptions(0.1)),
       messages: [
         {
           role: "system",

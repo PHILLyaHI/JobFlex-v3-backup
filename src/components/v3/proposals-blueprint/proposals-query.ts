@@ -151,6 +151,10 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
       total: p.total,
       updated: agoLabel(p.updatedAt),
       views: p.viewCount,
+      // When the client last had it open, and when it went out — the list
+      // says "opened 2h ago" or "sent 3d ago · not opened" (2026-09-20).
+      lastViewed: p.viewedAt ? agoLabel(p.viewedAt) : null,
+      sentAgo: p.sentAt ? agoLabel(p.sentAt) : null,
       // PAID is the office's word that the money landed, even when it was never
       // recorded stage by stage (the old "Mark completed" set PAID outright).
       owed: p.status === "PAID" ? 0 : schedule.remainingMinor / 100,

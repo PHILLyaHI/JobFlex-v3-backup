@@ -268,6 +268,34 @@ export function initProposalsContent(
     return '<div class="ppay' + (full ? " ppay--full" : "") + '">' + blocks + payBarHtml(p) + "</div>";
   }
   /** "2 change orders · +$1,080 approved · 1 awaiting approval" — or nothing. */
+  /**
+   * VIEWS — the thing a contractor checks after sending (owner, 2026-09-20:
+   * "check if viewed proposals count working and make more accent it"). A
+   * draft has nobody to open it; a sent proposal nobody has opened is worth
+   * seeing at a glance; an opened one says how many times and how long ago.
+   */
+  function viewsCellHtml(p: ProposalRow): string {
+    if (p.status === "DRAFT") return '<span class="pt-views pt-views--na" title="A draft has not gone out yet">—</span>';
+    const eye = '<svg class="ic" aria-hidden="true"><use href="#i-eye"/></svg>';
+    if (p.views <= 0) {
+      // Amber is for a proposal still WAITING on the client. One that is
+      // already accepted, paid or declined was settled another way (signed at
+      // the table, agreed on the phone), and a warning on it is noise.
+      const waiting = p.status === "SENT" || p.status === "VIEWED";
+      return (
+        '<span class="pt-views ' + (waiting ? "pt-views--none" : "pt-views--quiet") + '" title="Not opened online' +
+        (p.sentAgo ? esc(" — sent " + p.sentAgo) : "") +
+        '">' + eye + "<b>0</b><i>not opened</i></span>"
+      );
+    }
+    return (
+      '<span class="pt-views pt-views--seen" title="' +
+      (p.lastViewed ? esc("Last opened " + p.lastViewed) : "Opened by the client") +
+      '">' + eye + "<b>" + p.views + "</b><i>" +
+      (p.lastViewed ? esc(p.lastViewed) : p.views === 1 ? "view" : "views") +
+      "</i></span>"
+    );
+  }
   function coChipHtml(p: ProposalRow): string {
     const co = p.co;
     if (!co || !co.count) return "";
@@ -559,9 +587,9 @@ export function initProposalsContent(
       '<td><span class="pt-mono">' +
       esc(p.updated) +
       "</span></td>" +
-      '<td class="num"><span class="pt-mono">' +
-      p.views +
-      "</span></td>" +
+      '<td class="num">' +
+      viewsCellHtml(p) +
+      "</td>" +
       '<td><span class="pt-mono">' +
       esc(p.owner) +
       "</span></td>" +

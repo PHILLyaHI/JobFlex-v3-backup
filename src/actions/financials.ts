@@ -24,7 +24,7 @@ export async function getMonthlyRollup(
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
 
-  const [payments, expenses] = await Promise.all([
+  const [payments, expenses, crewPaid] = await Promise.all([
     db.payment.findMany({
       where: { organizationId, status: "PAID", paidAt: { gte: start } },
       select: { amount: true, paidAt: true },
@@ -32,6 +32,11 @@ export async function getMonthlyRollup(
     db.jobExpense.findMany({
       where: { job: { organizationId }, createdAt: { gte: start } },
       select: { amount: true, createdAt: true },
+    }),
+    // The crew's pay lands in the month it was handed over.
+    db.jobAssignment.findMany({
+      where: { job: { organizationId }, paidAt: { gte: start } },
+      select: { pay: true, paidAt: true },
     }),
   ]);
 
@@ -53,6 +58,11 @@ export async function getMonthlyRollup(
     const b = buckets.get(k);
     if (b) b.expenses += e.amount;
   }
+  for (const c of crewPaid) {
+    if (!c.paidAt) continue;
+    const b = buckets.get(monthKey(c.paidAt));
+    if (b) b.expenses += c.pay;
+  }
   for (const b of buckets.values()) b.profit = b.revenue - b.expenses;
   return Array.from(buckets.values());
 }
@@ -72,7 +82,7 @@ export async function getFinancialsRollup(organizationId: string): Promise<Finan
   const since = new Date();
   since.setDate(since.getDate() - 30);
 
-  const [paid, expenses, openProposals, invoices, changeOrders] = await Promise.all([
+  const [paid, expenses, crewPaid, openProposals, invoices, changeOrders] = await Promise.all([
     db.payment.findMany({
       where: { organizationId, status: "PAID", paidAt: { gte: since } },
       select: { amount: true },
@@ -80,6 +90,12 @@ export async function getFinancialsRollup(organizationId: string): Promise<Finan
     db.jobExpense.findMany({
       where: { job: { organizationId }, createdAt: { gte: since } },
       select: { amount: true },
+    }),
+    // The crew's pay is money out too (2026-09-20): it counts on the day the
+    // office marks it handed over, the same rule a receipt follows.
+    db.jobAssignment.findMany({
+      where: { job: { organizationId }, paidAt: { gte: since } },
+      select: { pay: true },
     }),
     db.proposal.findMany({
       where: { organizationId, status: { in: ["SENT", "VIEWED", "DRAFT"] } },
@@ -96,7 +112,7 @@ export async function getFinancialsRollup(organizationId: string): Promise<Finan
   ]);
 
   const revenue30d = paid.reduce((a, p) => a + p.amount, 0);
-  const expenses30d = expenses.reduce((a, e) => a + e.amount, 0);
+  const expenses30d = expenses.reduce((a, e) => a + e.amount, 0) + crewPaid.reduce((a, c) => a + c.pay, 0);
   const profit30d = revenue30d - expenses30d;
   const marginPct = revenue30d > 0 ? (profit30d / revenue30d) * 100 : 0;
   const pipelineValue = openProposals.reduce((a, p) => a + p.total, 0);

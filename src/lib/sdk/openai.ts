@@ -92,6 +92,18 @@ export async function resolveOpenAIModel(): Promise<string> {
 export const isReasoningModelName = (model: string) => /^(gpt-5|o[1-9])/.test(model);
 
 /**
+ * The sampling options a call may send: none to a reasoning model (gpt-5,
+ * the o-series), which rejects a temperature and a seed and sets its own.
+ * Every chat call passes its temperature through here, so moving
+ * OPENAI_MODEL to gpt-5 never breaks a feature (2026-09-19).
+ */
+export async function samplingOptions(temperature: number, seed?: number): Promise<{ temperature?: number; seed?: number }> {
+  const model = await resolveOpenAIModel();
+  if (isReasoningModelName(model)) return {};
+  return seed === undefined ? { temperature } : { temperature, seed };
+}
+
+/**
  * The model that reads photos and video frames: its own setting when one is
  * given (OPENAI_VISION_MODEL), else the model the estimators run on — the
  * owner moved them to gpt-4.1 and wanted pictures read by it too

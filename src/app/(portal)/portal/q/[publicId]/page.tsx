@@ -29,6 +29,7 @@
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { clientSplit, splitCaption } from "@/lib/pricing/markup";
 import { contractTotal } from "@/lib/contractTotal";
@@ -121,22 +122,47 @@ export default async function PublicProposalPortal({
     sitePhoto = false;
   }
 
-  // Track view. EVERY open counts and stamps `viewedAt` — a declined or
+  // THE SHOP'S OWN OPENS DO NOT COUNT (2026-09-20). The contractor checking
+  // their own link — the preview from the proposals list, a reread before a
+  // follow-up call — used to land in the client's view count, so "3 views"
+  // could be three of their own. A signed-in member of the proposal's own
+  // organization is skipped; everybody else counts, and a client who is not
+  // signed in (which is every client) is unaffected.
+  let ownSide = false;
+  try {
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (userId) {
+      ownSide = Boolean(
+        await db.membership.findFirst({
+          where: { userId, organizationId: proposal.organizationId },
+          select: { id: true },
+        }),
+      );
+    }
+  } catch {
+    // No session to read — treat it as a client, which is the safe default.
+    ownSide = false;
+  }
+
+  // Track view. EVERY client open counts and stamps `viewedAt` — a declined or
   // accepted proposal being re-read is still a fact the office wants (owner,
   // 2026-09-02: the count sat frozen once a proposal settled). Only the STATUS
   // is guarded: SENT becomes VIEWED on the first open, and nothing else moves —
   // a decline stays a decline however many times the page is reloaded.
-  await db.proposal.update({
-    where: { id: proposal.id },
-    data: {
-      viewCount: { increment: 1 },
-      viewedAt: new Date(),
-      ...(proposal.status === "SENT" ? { status: "VIEWED" as const } : {}),
-    },
-  });
+  if (!ownSide) {
+    await db.proposal.update({
+      where: { id: proposal.id },
+      data: {
+        viewCount: { increment: 1 },
+        viewedAt: new Date(),
+        ...(proposal.status === "SENT" ? { status: "VIEWED" as const } : {}),
+      },
+    });
+  }
   // The activity line is for the FIRST reading, not every reload — a feed
   // entry per refresh would bury the events that matter.
-  if (proposal.status === "SENT" || proposal.status === "DRAFT") {
+  if (!ownSide && (proposal.status === "SENT" || proposal.status === "DRAFT")) {
     await db.activityEvent.create({
       data: {
         organizationId: proposal.organizationId,

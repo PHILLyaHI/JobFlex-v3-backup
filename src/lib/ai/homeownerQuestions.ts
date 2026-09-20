@@ -13,7 +13,7 @@
 //
 // NEVER BLOCKS. No key, a refusal, a malformed answer — every path returns
 // null, and the caller falls back to the static question set it already ships.
-import { getOpenAI, isOpenAIEnabled, resolveOpenAIModel } from "@/lib/sdk/openai";
+import { getOpenAI, isOpenAIEnabled, samplingOptions, resolveOpenAIModel } from "@/lib/sdk/openai";
 
 /** The wizard's question shape (mirrors `Question` in the two wizard data
  *  files, which are client modules — this one may not import them). */
@@ -76,7 +76,7 @@ export async function suggestIntakeQuestions(
     const client = getOpenAI();
     const completion = await client.chat.completions.create({
       model,
-      temperature: 0.4,
+      ...(await samplingOptions(0.4)),
       messages: [
         {
           role: "system",

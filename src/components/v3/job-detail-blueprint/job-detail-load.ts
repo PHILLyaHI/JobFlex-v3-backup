@@ -21,6 +21,8 @@
 
 import { db } from "@/lib/db";
 import { isOwnerOrManager, isWorkerRole } from "@/lib/orgContext";
+import { contractTotal } from "@/lib/contractTotal";
+import { crewTotals, jobMoney } from "@/lib/jobCosting";
 import {
   STATUS_TO_KEY,
   type JdAssignState,
@@ -29,6 +31,7 @@ import {
   type JdCrew,
   type JdEvent,
   type JdExpense,
+  type JdMoney,
   type JdPhoto,
   type JdWorkerOption,
   type JobDetailRecord,
@@ -223,7 +226,18 @@ export async function loadJobDetail(
     where: { id },
     include: {
       client: true,
-      proposal: { select: { id: true, title: true, total: true, changeOrders: { orderBy: { createdAt: "asc" } } } },
+      proposal: {
+        select: {
+          id: true,
+          title: true,
+          total: true,
+          // The job's money card: the estimate's own cost side and what the
+          // client has actually paid (lib/jobCosting).
+          lineItems: { select: { quantity: true, materialCost: true, laborCost: true } },
+          payments: { where: { status: "PAID" }, select: { amount: true } },
+          changeOrders: { orderBy: { createdAt: "asc" } },
+        },
+      },
       events: { orderBy: { startsAt: "asc" } },
       assignments: {
         include: {
@@ -269,6 +283,8 @@ export async function loadJobDetail(
     assignmentId: a.id,
     workerId: a.workerId,
     name: a.worker.displayName,
+    pay: a.pay,
+    paidAt: a.paidAt ? a.paidAt.toISOString() : null,
     meta:
       [firstSpecialty(a.worker.specialties) ?? "Crew", a.worker.phone]
         .filter(Boolean)
@@ -277,6 +293,33 @@ export async function loadJobDetail(
     // The office is not on the crew list; nothing to mark.
     me: false,
   }));
+
+  // THE JOB'S OWN MONEY (2026-09-20). Every figure is already on this record:
+  // the contract is the proposal plus its approved change orders, the planned
+  // cost is the estimate's material and labor COST columns, and the actual
+  // cost is the crew's pay plus the booked receipts (lib/jobCosting).
+  const m = jobMoney({
+    contract: job.proposal ? contractTotal(job.proposal.total, job.proposal.changeOrders) : 0,
+    collected: job.proposal ? job.proposal.payments.reduce((a, p) => a + p.amount, 0) : 0,
+    lines: job.proposal?.lineItems ?? [],
+    crewPay: job.assignments.map((a) => a.pay),
+    expenses: job.expenses.map((e) => e.amount),
+  });
+  const money: JdMoney = {
+    contract: m.contract,
+    collected: m.collected,
+    outstanding: m.outstanding,
+    plannedCost: m.planned.total,
+    crew: m.crew,
+    crewUnpaid: crewTotals(job.assignments.map((a) => ({ assignmentId: a.id, workerId: a.workerId, name: a.worker.displayName, pay: a.pay, paidAt: a.paidAt ? a.paidAt.toISOString() : null }))).unpaid,
+    expenses: m.expenses,
+    cost: m.cost,
+    costIsPlanned: m.costIsPlanned,
+    profit: m.profit,
+    marginPct: m.marginPct,
+    plannedProfit: m.plannedProfit,
+    costVariance: m.costVariance,
+  };
 
   // A change order amends the proposal (the contract) or, legacy, the job
   // itself; the job page shows both sets as one list, oldest first.
@@ -350,6 +393,7 @@ export async function loadJobDetail(
     changes,
     photos,
     expenses,
+    money,
     roster,
     booking: bookingWindow(job.startsAt, job.endsAt),
     canWrite: isOwnerOrManager(role),
@@ -421,6 +465,10 @@ async function loadWorkerScoped(
     assignmentId: a.id,
     workerId: a.workerId,
     name: a.worker.displayName,
+    // A worker sees their OWN pay and nobody else's — the one money fact
+    // this record carries (2026-09-20).
+    pay: a.workerId === wp.id ? a.pay : 0,
+    paidAt: a.workerId === wp.id && a.paidAt ? a.paidAt.toISOString() : null,
     meta: firstSpecialty(a.worker.specialties) ?? "Crew",
     state: ASSIGNMENT_STATE[a.status] ?? "wait",
     me: a.workerId === wp.id,
@@ -464,6 +512,7 @@ async function loadWorkerScoped(
     changes: [],
     photos,
     expenses: [],
+    money: null,
     roster: [],
     // Never read — `canWrite` is false, so nothing on this edition books
     // anything — but the shape is the shape.

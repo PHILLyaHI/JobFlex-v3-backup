@@ -66,6 +66,10 @@ export type ProposalRow = {
   /** Ready-to-print relative label, e.g. "25m ago". */
   updated: string;
   views: number;
+  /** When the client last opened it ("2h ago"), or null if never. */
+  lastViewed?: string | null;
+  /** When it was sent ("3d ago"), or null for a draft. */
+  sentAgo?: string | null;
   owner: string;
   /** Count of shoppable material lines — the menu's "N items" hint. */
   mat: number;

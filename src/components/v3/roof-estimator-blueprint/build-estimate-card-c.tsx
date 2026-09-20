@@ -54,12 +54,18 @@ import {
   type RoofSystem,
   type Underlayment,
   displayPitch12,
+  FASCIA_OPTIONS,
+  GUTTER_PLANS,
+  type FasciaRun,
+  type GutterPlan,
 } from "@/lib/roofPackage/catalog";
 import {
   buildRoofPackage,
   checkVentilation,
   defaultSpec,
   estimateEdges,
+  fasciaFeet,
+  gutterFeet,
   likeForLikeFamily,
   withJobClass,
   withMeasured,
@@ -244,6 +250,13 @@ function Sel<T extends string>({
 }
 
 /** A drawn checkbox: the square ink box and the checklist mark, the native input kept for keyboard and screen readers. */
+/** Where the fascia runs. Gutters hang on the eaves, so that is the default. */
+const FASCIA_RUNS = [
+  { id: "eaves" as const, label: "Eaves" },
+  { id: "eaves_rakes" as const, label: "Eaves + rakes" },
+  { id: "custom" as const, label: "A length I enter" },
+];
+
 function Check({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <label className={"bec-check" + (checked ? " is-on" : "") + (disabled ? " is-off" : "")}>
@@ -450,6 +463,14 @@ function PackageLedger({
   const setEdge = (k: "eaveFt" | "rakeFt" | "ridgeFt" | "hipFt", v: number) => setSpec((s) => ({ ...s, [k]: v, edgesBasis: "entered" }));
   const setValleyField = (k: "valleyCount" | "valleyFtEach", v: number) => setSpec((s) => ({ ...s, [k]: v, valleyBasis: "entered" }));
   const setStepField = (k: "stepWallCount" | "stepWallFtEach", v: number) => setSpec((s) => ({ ...s, [k]: v, stepBasis: "entered" }));
+  /** A fascia board carries its own two rates; picking one seeds both. */
+  const pickFascia = (id: string) => {
+    const f = FASCIA_OPTIONS.find((x) => x.id === id);
+    if (!f) return;
+    set("fasciaOptionId", f.id);
+    set("fasciaPerFt", f.perFt);
+    set("fasciaLaborPerFt", f.laborPerFt);
+  };
   const resetEdges = () => {
     const e = estimateEdges(facts);
     if (e) setSpec((s) => ({ ...s, ...e, edgesBasis: "estimated" }));
@@ -726,6 +747,8 @@ function PackageLedger({
       : `Eave ${fmt(spec.eaveFt)} · rake ${fmt(spec.rakeFt)} · ridge ${fmt(spec.ridgeFt)}${spec.hipFt > 0 ? ` · hip ${fmt(spec.hipFt)}` : ""} ft`,
     spec.dripEdgeOn ? "drip edge" : null,
     !noStarter && spec.starterOn ? "starter" : null,
+    spec.fasciaOn ? `fascia ${fmt(fasciaFeet(spec))} ft` : null,
+    spec.fasciaOn && spec.gutterPlan !== "none" ? (spec.gutterPlan === "replace" ? "new gutters" : "gutters reset") : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -1104,7 +1127,65 @@ function PackageLedger({
                 {spec.starterOn && <Num label="Rate" aria="Starter rate" unit="$/ft" value={spec.starterPerFt} onChange={(v) => set("starterPerFt", v)} disabled={disabled} />}
               </div>
             )}
+            {/* FASCIA (owner, 2026-09-19) — the board the gutter hangs on,
+                open only while the roof is off, so a tear-off opens with it
+                in. The gutters have to come down either way, which is what
+                the third control is about. */}
+            <div className="bec-edge-option bec-edge-option--fascia">
+              <Check label="Replace fascia" checked={spec.fasciaOn} onChange={(v) => set("fasciaOn", v)} disabled={disabled} />
+              {spec.fasciaOn && (
+                <>
+                  <Sel
+                    label="Board"
+                    value={spec.fasciaOptionId}
+                    options={FASCIA_OPTIONS}
+                    onChange={pickFascia}
+                    disabled={disabled}
+                    wide
+                  />
+                  <Sel
+                    label="Runs"
+                    value={spec.fasciaRun}
+                    options={FASCIA_RUNS}
+                    onChange={(v) => set("fasciaRun", v as FasciaRun)}
+                    disabled={disabled}
+                  />
+                  {spec.fasciaRun === "custom" && (
+                    <Num label="Length" aria="Fascia length" unit="ft" value={spec.fasciaFt} onChange={(v) => set("fasciaFt", v)} disabled={disabled} />
+                  )}
+                  <Num label="Board" aria="Fascia rate" unit="$/ft" value={spec.fasciaPerFt} onChange={(v) => set("fasciaPerFt", v)} disabled={disabled} />
+                  <Num label="Labor" aria="Fascia labor rate" unit="$/ft" value={spec.fasciaLaborPerFt} onChange={(v) => set("fasciaLaborPerFt", v)} disabled={disabled} />
+                  <Sel
+                    label="Gutters"
+                    value={spec.gutterPlan}
+                    options={GUTTER_PLANS}
+                    onChange={(v) => set("gutterPlan", v as GutterPlan)}
+                    disabled={disabled}
+                    wide
+                  />
+                  {spec.gutterPlan !== "none" && (
+                    <>
+                      <Num label="Gutter" aria="Gutter length" unit="ft" value={spec.gutterFt > 0 ? spec.gutterFt : Math.round(gutterFeet(spec))} onChange={(v) => set("gutterFt", v)} disabled={disabled} />
+                      <Num
+                        label={spec.gutterPlan === "replace" ? "New" : "Reset"}
+                        aria="Gutter rate"
+                        unit="$/ft"
+                        value={spec.gutterPlan === "replace" ? spec.gutterPerFt : spec.gutterResetPerFt}
+                        onChange={(v) => set(spec.gutterPlan === "replace" ? "gutterPerFt" : "gutterResetPerFt", v)}
+                        disabled={disabled}
+                      />
+                    </>
+                  )}
+                </>
+              )}
+            </div>
           </div>
+          {spec.fasciaOn && fasciaFeet(spec) <= 0 && (
+            <p className="bec-note">Fascia is on, but there is no length to price it — enter the eave, or set the run to a figure of your own.</p>
+          )}
+          {!spec.fasciaOn && spec.tearOffLayers > 0 && (
+            <p className="bec-note">The fascia stays. It is only reachable while the roof is off, so it is worth a look before the tear-off.</p>
+          )}
           <details className="bec-details">
             <summary>Measurement source & report</summary>
             <div className="bec-details-body">

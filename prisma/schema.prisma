@@ -1005,6 +1005,12 @@ model JobAssignment {
   status     String    @default("PENDING")
   assignedAt DateTime  @default(now())
   pingedAt   DateTime?
+  // What this worker is paid for this job — the office sets it when the job
+  // is handed over (2026-09-20). It is the crew cost of the job, never the
+  // client's price, and it is what the worker sees on their own card.
+  pay        Float     @default(0)
+  // Marked by the office when the pay has actually been handed over.
+  paidAt     DateTime?
 
   job    Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
   worker WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)

@@ -432,7 +432,13 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                       {w.name}
                       {w.me ? " (you)" : ""}
                     </div>
-                    <div className={cx("jd-row-m")}>{w.meta}</div>
+                    <div className={cx("jd-row-m")}>
+                      {w.meta}
+                      {/* What this worker is paid for this job. The office sees
+                          every row and can set it; a field worker sees only
+                          their own figure (the loader gives them no other). */}
+                      {record.canWrite ? null : w.me && w.pay > 0 ? ` · your pay ${fmt(w.pay)}${w.paidAt ? " (paid)" : ""}` : ""}
+                    </div>
                   </div>
                   <div className={cx("jd-row-act")}>
                     <span
@@ -443,6 +449,37 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                     >
                       {w.state === "ok" ? "Confirmed" : w.state === "no" ? "Declined" : "Pending"}
                     </span>
+                    {record.canWrite && (
+                      <>
+                        <label className={cx("jd-row-m")} htmlFor={`pay-${w.assignmentId}`}>
+                          Pay
+                        </label>
+                        <input
+                          id={`pay-${w.assignmentId}`}
+                          className="pinput"
+                          style={{ width: 96 }}
+                          type="number"
+                          min={0}
+                          step={25}
+                          defaultValue={w.pay || ""}
+                          placeholder="0"
+                          aria-label={`What ${w.name} is paid for this job`}
+                          onBlur={(e) => {
+                            const next = Number(e.currentTarget.value) || 0;
+                            if (next !== w.pay) void a.setPay(w.assignmentId, next);
+                          }}
+                        />
+                        <button
+                          className={cx("btn", "btn-ghost")}
+                          type="button"
+                          disabled={w.pay <= 0}
+                          aria-pressed={!!w.paidAt}
+                          onClick={() => void a.markPaid(w.assignmentId, !w.paidAt)}
+                        >
+                          {w.paidAt ? "Paid" : "Mark paid"}
+                        </button>
+                      </>
+                    )}
                     {record.canWrite && (
                       <button
                         className={cx("btn", "btn-ghost", "jd-x")}
@@ -657,6 +694,55 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
           </section>
         )}
 
+        {tab === "expenses" && record.money && (
+          <section className={cx("card")}>
+            <div className={cx("jd-h")}>
+              <h2 className={cx("jd-t")}>What this job makes</h2>
+              <span className={cx("jd-s")}>
+                {record.money.costIsPlanned ? "costed from the estimate — nothing booked yet" : "contract against what it has cost"}
+              </span>
+            </div>
+            {/* The job's own money (lib/jobCosting): the contract with its
+                approved change orders, what the client has paid, and the cost
+                — the crew's pay plus the receipts, or the estimate's own cost
+                side until one is booked. */}
+            <div className={cx("jd-row")}>
+              <div>
+                <div className={cx("jd-row-n")}>Contract</div>
+                <div className={cx("jd-row-m")}>
+                  {fmt(record.money.collected)} collected · {fmt(record.money.outstanding)} to come
+                </div>
+              </div>
+              <div className={cx("jd-row-act")}>
+                <b>{fmt(record.money.contract)}</b>
+              </div>
+            </div>
+            <div className={cx("jd-row")}>
+              <div>
+                <div className={cx("jd-row-n")}>Cost</div>
+                <div className={cx("jd-row-m")}>
+                  crew {fmt(record.money.crew)}
+                  {record.money.crewUnpaid > 0 ? ` (${fmt(record.money.crewUnpaid)} unpaid)` : ""} · receipts {fmt(record.money.expenses)} · estimate said {fmt(record.money.plannedCost)}
+                </div>
+              </div>
+              <div className={cx("jd-row-act")}>
+                <b>{fmt(record.money.cost)}</b>
+              </div>
+            </div>
+            <div className={cx("jd-row")}>
+              <div>
+                <div className={cx("jd-row-n")}>Profit</div>
+                <div className={cx("jd-row-m")}>
+                  {record.money.marginPct}% margin · estimate said {fmt(record.money.plannedProfit)}
+                  {record.money.costVariance > 0 ? ` · ${fmt(record.money.costVariance)} over the estimate` : record.money.costVariance < 0 ? ` · ${fmt(-record.money.costVariance)} under the estimate` : ""}
+                </div>
+              </div>
+              <div className={cx("jd-row-act")}>
+                <b>{fmt(record.money.profit)}</b>
+              </div>
+            </div>
+          </section>
+        )}
         {tab === "expenses" && (
           <section className={cx("card")}>
             <div className={cx("jd-h")}>

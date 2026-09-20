@@ -33,6 +33,7 @@ import { useCallback, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { updateJob, createJobEvent, setJobProgress } from "@/actions/jobs";
 import { assignWorker, unassignAssignment } from "@/actions/workers";
+import { setAssignmentPaid, setAssignmentPay } from "@/actions/jobPay";
 import { uploadJobPhoto } from "@/actions/jobMedia";
 import { sendChangeOrder, markChangeOrderApproved } from "@/actions/changeOrders";
 import { KEY_TO_STATUS, type JdBooking, type StatusKey } from "./job-detail-data";
@@ -51,6 +52,7 @@ export type JobBusy =
   | { kind: "schedule" }
   | { kind: "assign"; id: string }
   | { kind: "unassign"; id: string }
+  | { kind: "pay"; id: string }
   | { kind: "upload" }
   | { kind: "change"; id: string };
 
@@ -160,6 +162,26 @@ export function useJobDetailActions(
     [run],
   );
 
+  // What the crew is paid for this job (2026-09-20). Manager-only writes; the
+  // action refuses anything else, so the buttons only render where canWrite.
+  const setPay = useCallback(
+    (assignmentId: string, pay: number) =>
+      run({ kind: "pay", id: assignmentId }, "Could not save that pay.", async () => {
+        const res = await setAssignmentPay(assignmentId, pay);
+        if (!res.ok) throw new Error(res.error);
+      }),
+    [run],
+  );
+
+  const markPaid = useCallback(
+    (assignmentId: string, paid: boolean) =>
+      run({ kind: "pay", id: assignmentId }, "Could not mark that pay.", async () => {
+        const res = await setAssignmentPaid(assignmentId, paid);
+        if (!res.ok) throw new Error(res.error);
+      }),
+    [run],
+  );
+
   const upload = useCallback(
     async (file: File, kind: PhotoKind) => {
       if (file.size > MAX_PHOTO_BYTES) {
@@ -210,6 +232,8 @@ export function useJobDetailActions(
     addToSchedule,
     assign,
     unassign,
+    setPay,
+    markPaid,
     upload,
     sendChange,
     approveChange,

@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
 import { sellUnitPrice, resolveMarkupRates } from "@/lib/pricing/markup";
 import { uploadBlob, isBlobEnabled } from "@/lib/sdk/blob";
-import { getOpenAI, isOpenAIEnabled, resolveOpenAIModel } from "@/lib/sdk/openai";
+import { getOpenAI, isOpenAIEnabled, samplingOptions, resolveOpenAIModel } from "@/lib/sdk/openai";
 import { estimateSchema, type GeneratedEstimate } from "@/lib/estimatorSchema";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
@@ -75,7 +75,7 @@ await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
     const client = getOpenAI();
     const completion = await client.chat.completions.create({
       model,
-      temperature: 0.4,
+      ...(await samplingOptions(0.4)),
       response_format: { type: "json_object" },
       messages: [
         {
