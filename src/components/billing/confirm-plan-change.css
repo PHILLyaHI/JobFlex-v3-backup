@@ -146,9 +146,7 @@
 }
 .jf-confirm.jf-confirm .jf-confirm-arrow {
   display: grid;
-  justify-items: center;
-  align-content: center;
-  gap: 6px;
+  place-items: center;
   min-width: 64px;
 }
 .jf-confirm.jf-confirm .jf-confirm-arrow svg {
@@ -160,19 +158,6 @@
   stroke-linecap: square;
   stroke-linejoin: miter;
 }
-.jf-confirm.jf-confirm .jf-confirm-delta {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-  color: var(--blueprint, #1854a0);
-  font-variant-numeric: tabular-nums;
-}
-.jf-confirm.jf-confirm .jf-confirm-delta.is-down {
-  color: var(--muted, #555);
-}
-
 /* What opens / closes. */
 .jf-confirm.jf-confirm .jf-confirm-lines {
   list-style: none;
@@ -308,8 +293,6 @@
     grid-template-columns: 1fr;
   }
   .jf-confirm.jf-confirm .jf-confirm-arrow {
-    grid-auto-flow: column;
-    gap: 10px;
     padding: 2px 0;
   }
   .jf-confirm.jf-confirm .jf-confirm-arrow svg {

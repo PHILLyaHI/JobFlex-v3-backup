@@ -1,6 +1,6 @@
 // WHAT CHANGES BETWEEN TWO PLANS — one answer for every surface that has to
 // say it: the confirmation dialog lists what opens on an upgrade and what
-// closes on a downgrade, and prices the difference. Computed from the catalog
+// closes on a downgrade. Computed from the catalog
 // rows themselves — the features an admin typed on /admin/plans — never from
 // copy written into a component, so a plan edited in the console changes what
 // the dialog promises the same day.
@@ -24,8 +24,6 @@ export interface PlanDiff {
   opens: string[];
   /** Feature lines the source has and the target does not. */
   closes: string[];
-  /** Target minus source, monthly cents. Positive on an upgrade. */
-  deltaCents: number;
 }
 
 const has = (set: Set<string> | undefined, label: string) => Boolean(set?.has(label.toLowerCase()));
@@ -44,15 +42,8 @@ export function planDiff(plans: PlanLike[], fromSlug: string | null, toSlug: str
   return {
     opens: rows.filter((r) => has(toSet, r) && !has(fromSet, r)),
     closes: rows.filter((r) => has(fromSet, r) && !has(toSet, r)),
-    deltaCents: (to?.priceCents ?? 0) - (from?.priceCents ?? 0),
   };
 }
 
 /** "$79" — whole dollars, the way every plan surface prints a price. */
 export const dollars = (cents: number) => `$${Math.round(cents / 100)}`;
-
-/** "+$120/mo", "−$50/mo", "$0/mo". */
-export function deltaLabel(cents: number): string {
-  const sign = cents > 0 ? "+" : cents < 0 ? "−" : "";
-  return `${sign}${dollars(Math.abs(cents))}/mo`;
-}

@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { deltaLabel, dollars, planDiff, type PlanLike } from "@/lib/planDiff";
+import { dollars, planDiff, type PlanLike } from "@/lib/planDiff";
 import "./confirm-plan-change.css";
 
 /**
@@ -9,9 +9,10 @@ import "./confirm-plan-change.css";
  * gate, and for the desktop and handheld builds alike (2026-09-19).
  *
  * The content is "was → now" (the owner's pick, 2026-09-19, over a
- * specification table): the current plan and the new one as two tiles with
- * the difference in price between them, then what opens (or closes), then
- * the one line that says what the money does.
+ * specification table): the current plan and the new one as two tiles, an
+ * arrow between them and nothing else — no price difference, the prices
+ * themselves are on the tiles (owner, 2026-09-19) — then what opens (or
+ * closes), then the one line that says what the money does.
  *
  * Everything in it is read from the catalog rows (lib/planDiff): prices and
  * entitlements. Nothing is typed in here that /admin/plans could later
@@ -88,7 +89,6 @@ function Compare({ c }: { c: NonNullable<ConfirmPlanChangeProps["compare"]> }) {
         </div>
         <div className="jf-confirm-arrow" aria-hidden="true">
           {ARROW}
-          <span className={"jf-confirm-delta" + (d.deltaCents < 0 ? " is-down" : "")}>{deltaLabel(d.deltaCents)}</span>
         </div>
         <div className="jf-confirm-tile is-after">
           <span className="jf-confirm-tile-k">After</span>
