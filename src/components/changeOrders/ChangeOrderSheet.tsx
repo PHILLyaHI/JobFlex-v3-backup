@@ -16,7 +16,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { Camera, Check, ChevronDown, Copy, ExternalLink, Link2, Pencil, Plus, Send, Trash2, Undo2 } from "lucide-react";
-import { Sheet } from "@/components/ui/Sheet";
+import { BlueprintSheet } from "@/components/ui/BlueprintSheet";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
@@ -354,16 +354,16 @@ export function ChangeOrderSheet({
                 {free.map((l) => {
                   const lineTotal = Math.round(num(l.quantity) * num(l.unitPrice) * 100) / 100;
                   return (
-                    <div key={l.id} className="hairline rounded-[var(--r-md)] p-2 bg-white/50 space-y-1.5">
+                    <div key={l.id} className="bps-plate space-y-1.5">
                       <div className="flex items-center gap-1.5">
                         <Input value={l.name} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, name: e.target.value } : r)))} placeholder={l.kind === "labor" ? "Extra labor — e.g. demo old fence" : "Item — e.g. 6 ft cedar panel"} />
-                        <div className="inline-flex rounded-[var(--r-sm)] hairline p-0.5 bg-white/60 shrink-0">
+                        <div className="bps-seg">
                           {(["material", "labor"] as const).map((k) => (
                             <button
                               key={k}
                               type="button"
                               onClick={() => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, kind: k } : r)))}
-                              className={cn("h-8 px-2 rounded-[var(--r-sm)] text-[11px] font-semibold capitalize", l.kind === k ? "bg-[color:var(--ink)] text-white" : "text-[color:var(--ink-muted)]")}
+                              className={cn("capitalize", l.kind === k && "is-on")}
                             >
                               {k}
                             </button>
@@ -444,7 +444,7 @@ export function ChangeOrderSheet({
 
   if (!mounted) return null;
   return createPortal(
-    <Sheet
+    <BlueprintSheet
       open={open}
       onClose={() => {
         reset();
@@ -499,7 +499,7 @@ export function ChangeOrderSheet({
             const st = STATUS[o.status] ?? STATUS.DRAFT;
             const working = rowBusy === o.id;
             return (
-              <div key={o.id} className="hairline rounded-[var(--r-md)] p-3 bg-white/60 space-y-2">
+              <div key={o.id} className="bps-plate space-y-2">
                 <button type="button" className="w-full text-left flex items-start justify-between gap-3" onClick={() => toggleRow(o.id)} aria-expanded={expanded.has(o.id)}>
                   <div className="min-w-0">
                     <div className="text-[14px] font-medium truncate flex items-center gap-1.5">
@@ -515,7 +515,7 @@ export function ChangeOrderSheet({
                   </div>
                   <div className="text-right shrink-0">
                     <div className="tabular text-[15px]">{o.total >= 0 ? "+" : "−"}{money(Math.abs(o.total))}</div>
-                    <span className={cn("inline-block mt-1 rounded-full px-2 py-0.5 text-[10px] font-semibold", st.cls)}>{st.label}</span>
+                    <span className={cn("bps-badge mt-1", st.cls)}>{st.label}</span>
                   </div>
                 </button>
                 {expanded.has(o.id) && (
@@ -651,10 +651,7 @@ export function ChangeOrderSheet({
                   key={t.key}
                   type="button"
                   onClick={() => pickType(t)}
-                  className={cn(
-                    "h-9 px-3 rounded-full text-[12px] font-semibold hairline transition-colors",
-                    type.key === t.key ? "bg-[color:var(--ink)] text-white" : "bg-white/60 text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]",
-                  )}
+                  className={cn("bps-chip", type.key === t.key && "is-on")}
                 >
                   {t.label}
                 </button>
@@ -710,16 +707,16 @@ export function ChangeOrderSheet({
                 <div className="quiet-caps mb-1.5">Areas to replace</div>
                 <div className="space-y-2">
                   {areas.map((a, i) => (
-                    <div key={a.id} className="hairline rounded-[var(--r-md)] p-2.5 bg-white/50 space-y-2">
+                    <div key={a.id} className="bps-plate space-y-2">
                       <div className="flex items-center gap-2">
                         <Input value={a.label} onChange={(e) => setAreas((rows) => rows.map((r) => (r.id === a.id ? { ...r, label: e.target.value } : r)))} placeholder={i === 0 ? "North slope" : "Around chimney"} />
-                        <div className="inline-flex rounded-[var(--r-sm)] hairline p-0.5 bg-white/60 shrink-0">
+                        <div className="bps-seg">
                           {(["sheets", "lw", "sqft"] as AreaMode[]).map((m) => (
                             <button
                               key={m}
                               type="button"
                               onClick={() => setAreas((rows) => rows.map((r) => (r.id === a.id ? { ...r, mode: m } : r)))}
-                              className={cn("h-8 px-2 rounded-[var(--r-sm)] text-[11px] font-semibold", a.mode === m ? "bg-[color:var(--ink)] text-white" : "text-[color:var(--ink-muted)]")}
+                              className={cn(a.mode === m && "is-on")}
                             >
                               {m === "sheets" ? "Sheets" : m === "lw" ? "L × W" : "Sq ft"}
                             </button>
@@ -802,7 +799,7 @@ export function ChangeOrderSheet({
           {type.pricingNote && <p className="text-[11px] text-[color:var(--ink-muted)]">{type.pricingNote}</p>}
         </div>
       )}
-    </Sheet>,
+    </BlueprintSheet>,
     document.body,
   );
 }
