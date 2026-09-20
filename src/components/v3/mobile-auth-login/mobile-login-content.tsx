@@ -173,11 +173,15 @@ export function MobileLoginContent() {
         return;
       }
       if (res.error) {
+        // `throttled-<minutes>`: the sign-in brake, not a wrong password (lib/auth).
+        const throttledFor = /^throttled-(\d+)$/.exec(res.code ?? "")?.[1];
         const msg =
           res.error === "CredentialsSignin"
             ? res.code === "db"
               ? "Couldn't reach the database just now. Try again."
-              : "Email or password is wrong."
+              : throttledFor
+                ? `Too many attempts — try again in ${throttledFor} minute${throttledFor === "1" ? "" : "s"}.`
+                : "Email or password is wrong."
             : `Sign-in hit a temporary error (${res.error}). Try once more.`;
         setInlineError(msg);
         toast.error("Sign in failed", msg);
