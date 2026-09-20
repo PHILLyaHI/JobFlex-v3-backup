@@ -75,6 +75,12 @@ export type JdCrew = {
   assignmentId: string;
   workerId: string;
   name: string;
+  /** What this worker is paid for this job. The office sees every row; a
+   *  field worker sees their own figure and 0 on everyone else's (the
+   *  loader never selects the others). */
+  pay: number;
+  /** ISO time the office marked the pay handed over, else null. */
+  paidAt: string | null;
   /** "Crew · (425) 555-0134" — role/specialty and phone where known. On the
    *  worker edition the phone is dropped: specialty only (see the loader). */
   meta: string;
@@ -168,6 +174,28 @@ export type JdPhoto = {
 };
 
 /** One JobExpense row. */
+/**
+ * THE JOB'S OWN MONEY (2026-09-20) — office editions only, null for a field
+ * worker. Worked out by lib/jobCosting from figures the app already holds:
+ * the contract (proposal + approved change orders), what has been collected,
+ * the estimate's own cost side, the crew's pay and the booked receipts.
+ */
+export type JdMoney = {
+  contract: number;
+  collected: number;
+  outstanding: number;
+  plannedCost: number;
+  crew: number;
+  crewUnpaid: number;
+  expenses: number;
+  cost: number;
+  costIsPlanned: boolean;
+  profit: number;
+  marginPct: number;
+  plannedProfit: number;
+  costVariance: number;
+};
+
 export type JdExpense = {
   id: string;
   vendor: string;
@@ -226,6 +254,8 @@ export type JobDetailRecord = {
   changes: JdChange[];
   photos: JdPhoto[];
   expenses: JdExpense[];
+  /** The job's own money — null on a field worker's record. */
+  money: JdMoney | null;
   /** Roster minus the workers already on the job. */
   roster: JdWorkerOption[];
   booking: JdBooking;
