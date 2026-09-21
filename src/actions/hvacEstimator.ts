@@ -739,6 +739,7 @@ const convertSchema = z.object({
   materials: z.array(lineSchema).max(80),
   labor: z.array(lineSchema).max(80),
   clientId: z.string().optional().nullable(),
+  inventoryLinked: z.boolean().optional().nullable(),
 });
 
 /** The roof estimator's convert, line for line: proposal + line items + the
@@ -779,6 +780,8 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
     data: {
       // The trade board lists it and its materials count against the hvac stock (2026-09-20).
       trade: "hvac",
+      // Connected to the warehouse or an estimate only (null = the company's default).
+      inventoryLinked: data.inventoryLinked ?? null,
       publicId: randomUUID(),
       organizationId,
       ownerId: user.id,

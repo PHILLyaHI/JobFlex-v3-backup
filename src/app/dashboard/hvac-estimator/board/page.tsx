@@ -27,6 +27,10 @@ export default async function Page() {
   const data = await loadTradeBoard(organizationId, "hvac");
   if (!data) redirect("/dashboard/hvac-estimator");
   // The dashboard's extra facts — value, pace, history, the next loads (2026-09-20).
-  const facts = await loadStockFacts(organizationId, "hvac");
+  const facts = await loadStockFacts(
+    organizationId,
+    "hvac",
+    data.proposals.filter((p) => p.linked && p.status === "ACCEPTED" && !p.loaded).map((p) => p.id),
+  );
   return <TradeBoard data={data} facts={facts} canWrite={!isLimitedRole(role)} />;
 }

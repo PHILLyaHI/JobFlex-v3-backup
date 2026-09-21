@@ -1420,6 +1420,7 @@ const convertInput = z.object({
   assumptions: z.array(z.string()).default([]),
   // Pre-links the proposal to a client when converted from a client's page.
   clientId: z.string().optional().nullable(),
+  inventoryLinked: z.boolean().optional().nullable(),
   // The estimate's job location ("City, ST") — becomes the proposal's job
   // address and, when its state resolves, seeds the tax rate for that market.
   location: z.string().optional().nullable(),
@@ -1566,6 +1567,8 @@ export async function convertEstimateToProposal(raw: unknown) {
       // A Smart Proposal for a fence, a roof or HVAC belongs to that trade's
       // board and its stock (2026-09-20); anything else has no trade.
       trade: isTradeId(data.projectType) ? data.projectType : null,
+      // Connected to the warehouse or an estimate only (null = the company's default).
+      inventoryLinked: data.inventoryLinked ?? null,
       subtotal,
       discountTotal,
       taxRate,

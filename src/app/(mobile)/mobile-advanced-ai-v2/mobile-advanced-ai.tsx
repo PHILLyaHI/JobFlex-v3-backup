@@ -101,6 +101,8 @@ import {
   saveEstimate,
 } from "@/actions/advancedEstimator";
 import type { ClarifyQuestion, GeneratedEstimate } from "@/lib/estimatorSchema";
+import { InventoryLinkChoice } from "@/components/v3/inventory-link/inventory-link-choice";
+import { isTradeId } from "@/lib/inventory";
 
 /** "material live · Home Depot" out of a computed line's note, for the meta
  *  row. A phone has no hover, so the source is printed rather than hidden. */
@@ -355,6 +357,8 @@ export function MobileSmartProposal() {
 
   /* ---------- request state --------------------------------------------- */
   const [saveBusy, setSaveBusy] = useState(false);
+  // Connected to the warehouse or an estimate only — null until the choice decides its default (2026-09-20).
+  const [invLink, setInvLink] = useState<boolean | null>(null);
   const [banner, setBanner] = useState<Banner | null>(null);
 
   /* ---------- transient confirmations ----------------------------------- */
@@ -937,6 +941,7 @@ export function MobileSmartProposal() {
       });
       const res = await convertEstimateToProposal({
         projectType: typeLabel,
+        inventoryLinked: invLink,
         title: payload.title,
         scope: payload.scope,
         materials: payload.materials,
@@ -1925,6 +1930,11 @@ export function MobileSmartProposal() {
       <div className={styles.wfoot}>
         {phase === "studio" ? (
           <>
+            {isTradeId(typeLabel) && (
+              <div style={{ flexBasis: "100%", width: "100%" }}>
+                <InventoryLinkChoice trade={typeLabel} value={invLink} onChange={setInvLink} />
+              </div>
+            )}
             <button
               className={`${styles.btn} ${styles.btnDanger} ${confirmReset ? styles.isArmed : ""}`}
               type="button"

@@ -27,6 +27,10 @@ export default async function Page() {
   const data = await loadTradeBoard(organizationId, "roof");
   if (!data) redirect("/dashboard/roof-estimator");
   // The dashboard's extra facts — value, pace, history, the next loads (2026-09-20).
-  const facts = await loadStockFacts(organizationId, "roof");
+  const facts = await loadStockFacts(
+    organizationId,
+    "roof",
+    data.proposals.filter((p) => p.linked && p.status === "ACCEPTED" && !p.loaded).map((p) => p.id),
+  );
   return <TradeBoard data={data} facts={facts} canWrite={!isLimitedRole(role)} />;
 }

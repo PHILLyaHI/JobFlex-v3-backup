@@ -62,6 +62,7 @@ import { US_CATALOG } from "@/lib/hvac/data/usCatalog";
 import { ultraLowNoxNeeded } from "@/lib/hvac/data/rules";
 import { CapacityChart } from "./capacity-chart";
 import s from "./hvac-estimator.module.css";
+import { InventoryLinkChoice } from "@/components/v3/inventory-link/inventory-link-choice";
 
 function cx(...names: Array<string | false | null | undefined>): string {
   return names.filter(Boolean).map((n) => (s as Record<string, string>)[n as string] ?? (n as string)).join(" ");
@@ -327,6 +328,8 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
   const [savedId, setSavedId] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [converting, setConverting] = React.useState(false);
+  // Connected to the warehouse or an estimate only — null until the choice decides its default (2026-09-20).
+  const [invLink, setInvLink] = React.useState<boolean | null>(null);
   const [recent, setRecent] = React.useState<HvacEstimateSummary[]>([]);
   const [calib, setCalib] = React.useState<CalibrationStats | null>(null);
   const [actualFor, setActualFor] = React.useState<string | null>(null);
@@ -810,7 +813,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     try {
       const id = savedId ?? (await save());
       const d = draft();
-      const res = await convertHvacEstimateToProposal({ estimateId: id, title: d.title, scope: d.scope, materials: d.materials, labor: d.labor, permitNote: reportUrl && def.needs.load ? `Manual J load calculation: ACCA-approved report attached (Cool Calc${permit ? ` project ${permit.projectId}` : ""}).` : undefined });
+      const res = await convertHvacEstimateToProposal({ estimateId: id, title: d.title, scope: d.scope, materials: d.materials, labor: d.labor, inventoryLinked: invLink, permitNote: reportUrl && def.needs.load ? `Manual J load calculation: ACCA-approved report attached (Cool Calc${permit ? ` project ${permit.projectId}` : ""}).` : undefined });
       router.push(`/dashboard/manual-blueprint?proposal=${res.id}`);
     } catch (err) {
       if (!reportPlanLimit(err)) toast.error("Couldn't convert", errMsg(err));
@@ -1594,6 +1597,9 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
           </div>
           <LinesTable title="Equipment & materials" rows={lines.materials} onChange={(rows) => setLines({ ...lines, materials: rows })} />
           <LinesTable title="Labor · permit · disposal" rows={lines.labor} onChange={(rows) => setLines({ ...lines, labor: rows })} />
+          <div className={cx("body")} style={{ paddingTop: 0 }}>
+            <InventoryLinkChoice trade="hvac" value={invLink} onChange={setInvLink} />
+          </div>
           <div className={cx("bo-total", "bo-total--acts")}>
             <span><span className={cx("kpi-lbl")}>Subtotal</span><span className={cx("bo-total-v")} style={{ marginLeft: 12 }}>{money(subtotal)}</span></span>
             <span className={cx("head-acts")}>

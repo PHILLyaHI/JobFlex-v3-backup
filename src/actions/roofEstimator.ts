@@ -177,6 +177,7 @@ const convertSchema = z.object({
   assumptions: z.array(z.string()),
   // Pre-links the proposal to a client when converted from a client's page.
   clientId: z.string().optional().nullable(),
+  inventoryLinked: z.boolean().optional().nullable(),
   // The measurement this estimate was priced from: its satellite photo is
   // what the client sees on the proposal (ProposalSitePhoto).
   measurementId: z.string().optional().nullable(),
@@ -254,6 +255,8 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
     data: {
       // The trade board lists it and its materials count against the roof stock (2026-09-20).
       trade: "roof",
+      // Connected to the warehouse or an estimate only (null = the company's default).
+      inventoryLinked: data.inventoryLinked ?? null,
       publicId: randomUUID(),
       organizationId,
       ownerId: user.id,

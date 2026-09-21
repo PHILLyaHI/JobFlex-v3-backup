@@ -67,6 +67,7 @@ const proposalInput = z.object({
   id: z.string().optional(),
   title: z.string().min(1),
   clientId: z.string().optional().nullable(),
+  inventoryLinked: z.boolean().optional().nullable(),
   // The project the proposal belongs to. Absent leaves it as it was (callers
   // that know nothing of projects — the estimators — never move one); null
   // takes it out of its project.
@@ -398,6 +399,7 @@ export async function saveProposal(raw: unknown) {
       ownerId: user.id,
       clientId: data.clientId ?? null,
       projectId: data.projectId ?? null,
+      inventoryLinked: data.inventoryLinked ?? null,
       title: data.title,
       description: data.description,
       scopeOfWork: data.scopeOfWork,

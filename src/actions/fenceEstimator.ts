@@ -146,6 +146,7 @@ const convertSchema = z.object({
   previewDataUrl: z.string().optional(),
   // Pre-links the proposal to a client when converted from a client's page.
   clientId: z.string().optional().nullable(),
+  inventoryLinked: z.boolean().optional().nullable(),
 });
 
 export async function convertFenceEstimateToProposal(raw: unknown) {
@@ -242,6 +243,8 @@ export async function convertFenceEstimateToProposal(raw: unknown) {
     data: {
       // The trade board lists it and its materials count against the fence stock (2026-09-20).
       trade: "fence",
+      // Connected to the warehouse or an estimate only (null = the company's default).
+      inventoryLinked: data.inventoryLinked ?? null,
       publicId: randomUUID(),
       organizationId,
       ownerId: user.id,

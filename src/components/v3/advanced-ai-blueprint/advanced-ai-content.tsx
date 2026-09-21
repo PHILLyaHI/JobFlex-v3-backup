@@ -98,6 +98,8 @@ import {
   moneySigned,
   moneyU,
 } from "./advanced-ai-data";
+import { InventoryLinkChoice } from "@/components/v3/inventory-link/inventory-link-choice";
+import { isTradeId } from "@/lib/inventory";
 
 /** Hashed module class, or the literal name when the module has none — which is
  *  how the fleet's global `rv` / `rv-in` / `pressed` pass through. */
@@ -221,6 +223,8 @@ export function AdvancedAiContent() {
   // exactly how it was reported. "opening" holds until the new page takes over
   // and unmounts this one.
   const [saveBusy, setSaveBusy] = useState<null | "saving" | "opening">(null);
+  // Connected to the warehouse or an estimate only — null until the choice decides its default (2026-09-20).
+  const [invLink, setInvLink] = useState<boolean | null>(null);
 
   /** The one cell currently being typed into — see the header note. */
   const [field, setField] = useState<{ key: string; text: string } | null>(null);
@@ -508,6 +512,7 @@ export function AdvancedAiContent() {
       });
       const res = await convertEstimateToProposal({
         projectType: typeUsed || projectType,
+        inventoryLinked: invLink,
         title: data.title,
         scope: data.scope,
         materials: data.materials,
@@ -975,6 +980,9 @@ export function AdvancedAiContent() {
           </button>
         </div>
       </div>
+
+      {/* A roofing, fence or HVAC job can draw on that trade's warehouse (2026-09-20). */}
+      {isTradeId(typeUsed || projectType) && <InventoryLinkChoice trade={typeUsed || projectType} value={invLink} onChange={setInvLink} compact />}
 
       {demoMode && (
         <div className={cx("sp-flag")} role="status">

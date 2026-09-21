@@ -66,7 +66,12 @@ const WINDOW_DAYS = 90;
 const MIN_PACE_DAYS = 14;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-export async function loadStockFacts(organizationId: string, trade: string): Promise<StockFacts> {
+/**
+ * @param soldProposalIds the board's sold-and-not-loaded proposals (lib/inventoryBoard
+ *   decides which proposals belong to the trade, stamped or recognized), so the
+ *   next loads are exactly the trucks the board is reserving stock for.
+ */
+export async function loadStockFacts(organizationId: string, trade: string, soldProposalIds: readonly string[]): Promise<StockFacts> {
   const since = new Date(Date.now() - WINDOW_DAYS * 24 * 3600 * 1000);
   const [items, moves, loads] = await Promise.all([
     db.inventoryItem.findMany({ where: { organizationId, trade }, select: { id: true, name: true, unit: true, onHand: true, lastCost: true } }),
@@ -76,12 +81,14 @@ export async function loadStockFacts(organizationId: string, trade: string): Pro
       take: 2000,
       select: { id: true, itemId: true, kind: true, quantity: true, note: true, actorId: true, jobId: true, createdAt: true },
     }),
-    db.job.findMany({
-      where: { organizationId, materialsLoadedAt: null, proposal: { trade, status: "ACCEPTED" } },
-      orderBy: [{ startsAt: "asc" }, { createdAt: "asc" }],
-      take: 10,
-      select: { id: true, title: true, startsAt: true, proposalId: true },
-    }),
+    soldProposalIds.length
+      ? db.job.findMany({
+          where: { organizationId, materialsLoadedAt: null, proposalId: { in: [...soldProposalIds] } },
+          orderBy: [{ startsAt: "asc" }, { createdAt: "asc" }],
+          take: 10,
+          select: { id: true, title: true, startsAt: true, proposalId: true },
+        })
+      : Promise.resolve([]),
   ]);
 
   const actorIds = [...new Set(moves.map((m) => m.actorId).filter((x): x is string => !!x))];

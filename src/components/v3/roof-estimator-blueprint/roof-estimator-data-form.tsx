@@ -52,6 +52,7 @@ import { AERIAL } from "@/lib/vendorLabels";
 import { familyOfMaterial, WASTE_OPTIONS } from "@/lib/roofPackage/catalog";
 import { isFlatRoof } from "@/lib/roofPackage/flatRule";
 import { joinClauses, readBuilding } from "@/lib/roofPackage/commercial";
+import { InventoryLinkChoice } from "@/components/v3/inventory-link/inventory-link-choice";
 
 /** How the contractor said each measured building is used, by measurement id.
  *  Browser-local on purpose: it is a pricing choice for this contractor, it
@@ -532,6 +533,8 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
   // from, what to confirm) and never reach the client (owner, 2026-09-14).
   const [scopeText, setScopeText] = React.useState("");
   const [convertBusy, setConvertBusy] = React.useState(false);
+  // Connected to the warehouse or an estimate only — null until the choice decides its default (2026-09-20).
+  const [invLink, setInvLink] = React.useState<boolean | null>(null);
   // The tables hold the SAMPLE the server returns when no AI key is set: it
   // looks like an estimate and is not one, so it never becomes a proposal.
   const [sampleEstimate, setSampleEstimate] = React.useState(false);
@@ -1158,6 +1161,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
         labor: input.labor.map(stripId),
         assumptions: input.assumptions,
         measurementId: savedId,
+        inventoryLinked: invLink,
         // The job address rides with the proposal (and sets the state's sales
         // tax); the server prefers the saved measurement's own when there is one.
         address: siteAddress ?? undefined,
@@ -1970,6 +1974,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
                     <>
                       <EstimateLinesTable title="Materials" rows={materials} onChange={(rows) => { setMaterials(rows); setTablesEdited(true); }} disabled={convertBusy} addLabel="Add material" />
                       <EstimateLinesTable title="Labor" rows={labor} onChange={(rows) => { setLabor(rows); setTablesEdited(true); }} disabled={convertBusy} addLabel="Add labor" />
+                      <InventoryLinkChoice trade="roof" value={invLink} onChange={setInvLink} />
                       {sampleEstimate && (
                         <p className="bo-sample" role="note">
                           Sample lines — AI is off on this server, so these are placeholder figures. Build the package above for a priced estimate; sample lines can’t become a proposal.

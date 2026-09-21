@@ -5,32 +5,38 @@
 // Owner, first: "under each estimator … a board showing the proposals that
 // belong to it and the inventory, what's been used, what's not, a warning
 // that you need to add some inventory, who's your supplier, send them a PO."
-// Then, looking at the first cut: "make kind of dashboard for inventory,
-// smart."
+// Then: "make kind of dashboard for inventory, smart." Then, later the same
+// day: every proposal of the estimator on its board, and "more organized and
+// understandable and friendly … with the highlights."
 //
 // The reads are lib/inventoryBoard (the shelf with the work counted against
-// it) and lib/inventoryDashboard (value, pace, history, the next loads);
-// every write is a server action in actions/inventory and the page refreshes
-// from the database after each one. Top to bottom the page answers:
+// it, every proposal of the trade — stamped or recognized) and
+// lib/inventoryDashboard (value, pace, history, the next loads); every write
+// is a server action in actions/inventory and the page refreshes from the
+// database after each one. Top to bottom the page answers:
 //   · the four numbers — what is on the shelf and what it is worth, what
 //     needs ordering, what is on the way, what is waiting to load and
 //     whether the shelf covers the next truck;
+//   · the highlights — up to four things to do now, each with its one
+//     button: the next truck short, an order ready, a delivery to receive,
+//     proposal lines not tracked, stock sitting idle;
 //   · what to order now, by supplier, one tap to email it; items with no
 //     supplier get one picked right there;
-//   · the ledger — one row per item sorted by urgency, a stock bar (reserved,
-//     free and forecast drawn against the reorder line), the pace ("≈11
-//     days"), receive / count / edit in the row. Items with nothing on hand
-//     and no work against them fold away, so ninety-seven standard items
-//     read as the dozen that matter;
-//   · what happened lately, the suppliers, and the trade's proposals.
+//   · the ledger — one row per item by urgency or by shelf (category), a
+//     stock bar explained by a legend, the pace, receive / count / edit in
+//     the row; untouched standard items fold under one line;
+//   · what happened lately, the suppliers, and the trade's proposals — open,
+//     sold and done — each saying whether the shelf covers it.
 
 import { useRouter } from "next/navigation";
 import { Fragment, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { countStock, deleteInventoryItem, receivePurchaseOrder, receiveStock, seedTradeItems, sendPurchaseOrder, upsertInventoryItem, upsertSupplier } from "@/actions/inventory";
-import type { TradeBoardData } from "@/lib/inventoryBoard";
+import { setProposalInventoryLink } from "@/actions/inventoryLink";
+import type { BoardProposal, TradeBoardData } from "@/lib/inventoryBoard";
 import type { ItemFacts, StockFacts, StockMove } from "@/lib/inventoryDashboard";
+import { groupByCategory } from "@/lib/inventoryCategories";
 import { pickList, TRADES, type StockRow } from "@/lib/inventory";
 import s from "./trade-board.module.css";
 
@@ -47,7 +53,8 @@ function ago(iso: string): string {
   return `${Math.round(m / 60 / 24 / 30)}mo ago`;
 }
 const dayOf = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-const STATUS: Record<string, string> = { DRAFT: "Draft", SENT: "Sent", VIEWED: "Viewed", ACCEPTED: "Sold" };
+const STATUS: Record<string, string> = { DRAFT: "Draft", SENT: "Sent", VIEWED: "Viewed", ACCEPTED: "Sold", COMPLETED: "Completed", PAID: "Paid", DECLINED: "Declined" };
+const OPEN = new Set(["DRAFT", "SENT", "VIEWED"]);
 
 /** Where a row stands, most urgent first. */
 type RowState = "soldshort" | "low" | "short" | "reserved" | "stocked" | "empty";
@@ -61,7 +68,10 @@ function stateOf(r: StockRow): RowState {
   if (r.onHand > 0) return "stocked";
   return "empty";
 }
-type Filter = "ALL" | "ORDER" | "RESERVED" | "STOCKED" | "EMPTY";
+type Filter = "ALL" | "ORDER" | "RESERVED" | "STOCKED" | "IDLE" | "EMPTY";
+type View = "urgency" | "category";
+type PTab = "ALL" | "OPEN" | "SOLD" | "DONE" | "OFF";
+type Row = { r: StockRow; st: RowState; idle: boolean };
 
 function moveKind(m: StockMove): { label: string; cls: string; sign: string } {
   const sign = m.quantity > 0 ? "+" : m.quantity < 0 ? "−" : "";
@@ -213,12 +223,36 @@ function ItemEditor({ r, fact, suppliers, windowDays, pending, onSave, onDelete,
   );
 }
 
+/** What the shelf says about one proposal's materials. */
+function materialsOf(p: BoardProposal, rows: readonly StockRow[]): { text: string; cls: string } {
+  if (!p.linked) return { text: "estimate only — nothing reserved", cls: s.matNone };
+  if (p.status === "ACCEPTED" && p.loaded) return { text: "Loaded", cls: s.matOk };
+  if (!OPEN.has(p.status) && p.status !== "ACCEPTED") return { text: "—", cls: s.matNone };
+  const pick = pickList(rows, p.lines);
+  if (!pick.length) return { text: "no material lines", cls: s.matNone };
+  const tracked = pick.filter((x) => x.itemId);
+  const short = tracked.filter((x) => !x.enough).length;
+  const untracked = pick.length - tracked.length;
+  if (!tracked.length) return { text: `${plural(pick.length, "line")} · none tracked yet`, cls: s.matNone };
+  if (p.status === "ACCEPTED") {
+    if (short) return { text: `${short} of ${plural(pick.length, "line")} short`, cls: s.matBad };
+    return { text: `${plural(pick.length, "line")} on the shelf${untracked ? ` · ${untracked} untracked` : ""}`, cls: s.matOk };
+  }
+  if (short) return { text: `${plural(pick.length, "line")} · ${short} short if it sells`, cls: s.matWarn };
+  return { text: `${plural(pick.length, "line")} · shelf covers it`, cls: s.matOk };
+}
+
+type Anchor = "order" | "ledger";
+type Highlight = { tone: "bad" | "warn" | "ok" | "info"; icon: string; label: string; title: string; text: string; action?: { label: string; run?: () => void; scroll?: Anchor; primary?: boolean }; link?: { label: string; href: Route } };
+
 export function TradeBoard({ data, facts, canWrite }: { data: TradeBoardData; facts: StockFacts; canWrite: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("ALL");
+  const [view, setView] = useState<View>("urgency");
+  const [ptab, setPtab] = useState<PTab>("ALL");
   const [q, setQ] = useState("");
   const [showEmpty, setShowEmpty] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -240,7 +274,13 @@ export function TradeBoard({ data, facts, canWrite }: { data: TradeBoardData; fa
     });
 
   // ── the rows, most urgent first ──
-  const rows = useMemo(() => data.rows.map((r) => ({ r, st: stateOf(r) })).sort((a, b) => ORDER[a.st] - ORDER[b.st] || a.r.name.localeCompare(b.r.name)), [data.rows]);
+  const rows = useMemo<Row[]>(
+    () =>
+      data.rows
+        .map((r) => ({ r, st: stateOf(r), idle: r.onHand > 0 && r.reserved === 0 && r.forecast === 0 && !((facts.items[r.id]?.used ?? 0) > 0) }))
+        .sort((a, b) => ORDER[a.st] - ORDER[b.st] || a.r.name.localeCompare(b.r.name)),
+    [data.rows, facts.items],
+  );
   const needs = rows.filter((x) => NEEDS.has(x.st)).map((x) => x.r);
   const soldShort = rows.filter((x) => x.st === "soldshort").length;
   const lowCount = rows.filter((x) => x.st === "low").length;
@@ -248,17 +288,22 @@ export function TradeBoard({ data, facts, canWrite }: { data: TradeBoardData; fa
   const stocked = rows.filter((x) => x.r.onHand > 0).length;
   const reservedCount = rows.filter((x) => x.r.reserved > 0).length;
   const emptyCount = rows.filter((x) => x.st === "empty").length;
+  const idle = rows.filter((x) => x.idle);
+  const idleValue = idle.reduce((n, x) => n + x.r.onHand * (facts.items[x.r.id]?.lastCost ?? 0), 0);
   const supName = (id: string | null) => data.suppliers.find((x) => x.id === id)?.name ?? "Supplier";
 
   const needle = q.trim().toLowerCase();
-  const inFilter = (x: { r: StockRow; st: RowState }) =>
-    filter === "ALL" ? true : filter === "ORDER" ? NEEDS.has(x.st) : filter === "RESERVED" ? x.r.reserved > 0 : filter === "STOCKED" ? x.r.onHand > 0 : x.st === "empty";
-  const matches = (x: { r: StockRow }) => !needle || x.r.name.toLowerCase().includes(needle) || (x.r.supplierName ?? "").toLowerCase().includes(needle);
+  const inFilter = (x: Row) =>
+    filter === "ALL" ? true : filter === "ORDER" ? NEEDS.has(x.st) : filter === "RESERVED" ? x.r.reserved > 0 : filter === "STOCKED" ? x.r.onHand > 0 : filter === "IDLE" ? x.idle : x.st === "empty";
+  const matches = (x: Row) => !needle || x.r.name.toLowerCase().includes(needle) || (x.r.supplierName ?? "").toLowerCase().includes(needle);
   const listed = rows.filter((x) => inFilter(x) && matches(x));
   // In the plain list the untouched standard items fold under one line.
   const folding = filter === "ALL" && !needle && !showEmpty;
   const folded = folding ? listed.filter((x) => x.st === "empty") : [];
   const shown = folding ? listed.filter((x) => x.st !== "empty") : listed;
+  // By shelf: the same rows under category headers, urgency kept within each.
+  const sections: Array<{ label: string | null; items: Row[]; needs: number }> =
+    view === "category" ? groupByCategory(data.trade, shown, (x) => x.r.name).map((g) => ({ label: g.label, items: g.items, needs: g.items.filter((x) => NEEDS.has(x.st)).length })) : [{ label: null, items: shown, needs: 0 }];
 
   // ── the purchase order, by supplier ──
   const bySupplier = new Map<string, StockRow[]>();
@@ -270,12 +315,109 @@ export function TradeBoard({ data, facts, canWrite }: { data: TradeBoardData; fa
   }
   const orderCost = needs.reduce((n, r) => n + r.suggestedOrder * (facts.items[r.id]?.lastCost ?? 0), 0);
   const orderLines = data.orders.reduce((n, o) => n + o.lines.length, 0);
+  const readyOrders = [...bySupplier.entries()].filter(([id]) => data.suppliers.find((x) => x.id === id)?.email);
 
   // ── the next truck against the shelf ──
   const next = facts.nextLoads[0];
   const nextProposal = next ? data.proposals.find((p) => p.id === next.proposalId) : undefined;
   const nextPick = nextProposal ? pickList(data.rows, nextProposal.lines) : [];
-  const nextShort = nextPick.filter((p) => p.itemId && !p.enough).length;
+  const nextShortRows = nextPick.filter((p) => p.itemId && !p.enough);
+  const nextShort = nextShortRows.length;
+
+  // ── the highlights: what to do now, most pressing first, at most four ──
+  const highlights: Highlight[] = [];
+  if (next) {
+    const when = next.startsAt ? dayOf(next.startsAt) : "no date yet";
+    if (nextShort)
+      highlights.push({
+        tone: "bad",
+        icon: "i-hardhat",
+        label: "Next truck",
+        title: "Next truck is short",
+        text: `${next.title} · ${when} · short: ${nextShortRows
+          .slice(0, 2)
+          .map((x) => `${x.name} (need ${qty(x.quantity)}, have ${qty(x.onHand ?? 0)})`)
+          .join(", ")}${nextShort > 2 ? ` and ${nextShort - 2} more` : ""}`,
+        action: { label: "Order what's short", scroll: "order", primary: true },
+        link: { label: "Open job", href: `/dashboard/jobs/${next.jobId}` as Route },
+      });
+    else
+      highlights.push({
+        tone: "ok",
+        icon: "i-hardhat",
+        label: "Next truck",
+        title: "Next truck is covered",
+        text: `${next.title} · ${when} · ${nextPick.length ? `${plural(nextPick.filter((x) => x.itemId).length, "line")} on the shelf` : "no material lines"}`,
+        link: { label: "Open job", href: `/dashboard/jobs/${next.jobId}` as Route },
+      });
+  }
+  if (readyOrders.length)
+    highlights.push({
+      tone: "warn",
+      icon: "i-send",
+      label: "Order",
+      title: "Order ready to send",
+      text: `${readyOrders.map(([id, list]) => `${supName(id)} · ${plural(list.length, "line")}`).join(" · ")}${orderCost > 0 ? ` · about ${usdShort(orderCost)} at last cost` : ""}`,
+      action: { label: "Review and send", scroll: "order", primary: true },
+    });
+  if (unassigned.length)
+    highlights.push({
+      tone: "warn",
+      icon: "i-box",
+      label: "Order",
+      title: `${plural(unassigned.length, "item")} to order, no supplier`,
+      text: unassigned.map((r) => r.name).slice(0, 3).join(", ") + (unassigned.length > 3 ? ` and ${unassigned.length - 3} more` : ""),
+      action: { label: "Pick suppliers", scroll: "order" },
+    });
+  if (data.orders.length)
+    highlights.push({
+      tone: "info",
+      icon: "i-clock",
+      label: "Delivery",
+      title: data.orders.length === 1 ? "On the way" : `${data.orders.length} orders on the way`,
+      text: data.orders
+        .slice(0, 2)
+        .map((o) => `${o.supplier} · sent ${ago(o.sentAt)} · ${plural(o.lines.length, "line")}`)
+        .join(" · "),
+      action: canWrite && data.orders.length === 1 ? { label: "Received", run: () => run(() => receivePurchaseOrder(data.orders[0].id), (r) => `${plural(Number(r.received), "line")} received onto the shelf.`) } : undefined,
+    });
+  if (idle.length)
+    highlights.push({
+      tone: "info",
+      icon: "i-hourglass",
+      label: "Idle stock",
+      title: idleValue > 0 ? `${usd(idleValue)} sitting idle` : `${plural(idle.length, "item")} sitting idle`,
+      text: `${idle.map((x) => x.r.name).slice(0, 3).join(", ")}${idle.length > 3 ? ` and ${idle.length - 3} more` : ""} — no job against ${idle.length === 1 ? "it" : "them"}, nothing taken out in ${facts.windowDays} days`,
+      action: { label: "Show idle", run: () => setFilter("IDLE"), scroll: "ledger" },
+    });
+  if (canWrite && data.untracked.length)
+    highlights.push({
+      tone: "info",
+      icon: "i-file",
+      label: "Proposals",
+      title: `${plural(data.untracked.length, "proposal line")} not tracked`,
+      text: data.untracked
+        .slice(0, 3)
+        .map((l) => l.name)
+        .join(", ") + (data.untracked.length > 3 ? ` and ${data.untracked.length - 3} more` : ""),
+      action: {
+        label: `Add all ${data.untracked.length}`,
+        run: () =>
+          run(
+            async () => {
+              let added = 0;
+              for (const l of data.untracked) {
+                const r = await upsertInventoryItem({ trade: data.trade, name: l.name, unit: l.unit ?? "each" });
+                if (!r.ok) return r;
+                added++;
+              }
+              return { ok: true, added };
+            },
+            (r) => `${plural(Number(r.added), "item")} now tracked at zero — receive what is on the shelf.`,
+          ),
+      },
+    });
+  const shownHighlights = highlights.slice(0, 4);
 
   const colSpan = canWrite ? 8 : 7;
   const chips: Array<{ id: Filter; label: string; n: number }> = [
@@ -283,10 +425,129 @@ export function TradeBoard({ data, facts, canWrite }: { data: TradeBoardData; fa
     { id: "ORDER", label: "Needs ordering", n: needs.length },
     { id: "RESERVED", label: "On sold jobs", n: reservedCount },
     { id: "STOCKED", label: "In stock", n: stocked },
+    { id: "IDLE", label: "Idle", n: idle.length },
     { id: "EMPTY", label: "Not stocked", n: emptyCount },
   ];
 
-  const proposals = [...data.proposals].sort((a, b) => (a.status === "ACCEPTED" ? 0 : 1) - (b.status === "ACCEPTED" ? 0 : 1));
+  // ── the trade's proposals: sold first, then open, then done ──
+  const rank = (p: BoardProposal) => (!p.linked ? 3 : p.status === "ACCEPTED" ? 0 : OPEN.has(p.status) ? 1 : 2);
+  const proposals = [...data.proposals].sort((a, b) => rank(a) - rank(b));
+  const ptabs: Array<{ id: PTab; label: string; n: number }> = [
+    { id: "ALL", label: "All", n: proposals.length },
+    { id: "OPEN", label: "Open", n: proposals.filter((p) => p.linked && OPEN.has(p.status)).length },
+    { id: "SOLD", label: "Sold", n: proposals.filter((p) => p.linked && p.status === "ACCEPTED").length },
+    { id: "DONE", label: "Done", n: proposals.filter((p) => rank(p) === 2).length },
+    { id: "OFF", label: "Not connected", n: proposals.filter((p) => !p.linked).length },
+  ];
+  const listedProposals = proposals.filter((p) => (ptab === "ALL" ? true : ptab === "OPEN" ? p.linked && OPEN.has(p.status) : ptab === "SOLD" ? p.linked && p.status === "ACCEPTED" : ptab === "DONE" ? rank(p) === 2 : !p.linked));
+  const link = (p: BoardProposal, linked: boolean) => run(() => setProposalInventoryLink({ proposalId: p.id, linked, trade: data.trade }), () => (linked ? `${p.title} is connected to the inventory again.` : `${p.title} is an estimate only now — nothing reserved for it.`));
+
+  const renderRow = ({ r, st }: Row) => {
+    const fact = facts.items[r.id];
+    const days = fact && fact.usedPerDay > 0 && r.available > 0 ? Math.round(r.available / fact.usedPerDay) : null;
+    const counting = countingId === r.id;
+    return (
+      <Fragment key={r.id}>
+        <tr className={st === "soldshort" ? s.rowShort : st === "low" || st === "short" ? s.rowLow : st === "empty" ? s.rowEmpty : undefined} data-stock-row={r.id} data-state={st}>
+          <td>
+            <span className={s.itemName}>{r.name}</span>
+            <div className={s.itemSub}>
+              per {r.unit}
+              {days != null ? (
+                <>
+                  {" · "}
+                  <span className={s.pace}>≈{days > 999 ? "a year+" : `${days} days`} at this pace</span>
+                </>
+              ) : null}
+              {r.supplierName ? ` · ${r.supplierName}${r.supplierSku ? ` ${r.supplierSku}` : ""}` : " · no supplier"}
+              {r.threshold > 0 ? ` · reorder at ${qty(r.threshold)}` : ""}
+            </div>
+          </td>
+          <td className={s.tdStock}>
+            <StockBar r={r} st={st} />
+          </td>
+          <td className={`num ${s.num}`} data-l="On hand">
+            {r.onHand > 0 ? qty(r.onHand) : <span className={s.none}>0</span>}
+          </td>
+          <td className={`num ${s.num}`} data-l="Reserved">
+            {r.reserved > 0 ? qty(r.reserved) : <span className={s.none}>—</span>}
+          </td>
+          <td className={`num ${s.num}`} data-l="Available">
+            <b className={r.available < 0 ? s.neg : undefined}>{qty(r.available)}</b>
+          </td>
+          <td className={`num ${s.num}`} data-l="Forecast">
+            {r.forecast > 0 ? qty(r.forecast) : <span className={s.none}>—</span>}
+          </td>
+          <td className={s.tdStatus}>
+            <Plate r={r} st={st} />
+          </td>
+          {canWrite && (
+            <td>
+              <div className={s.acts}>
+                <form
+                  className={s.actForm}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const f = e.currentTarget;
+                    const v = (f.elements.namedItem("qty") as HTMLInputElement).value;
+                    if (v === "") return;
+                    const n = Number(v);
+                    if (counting) {
+                      run(() => countStock(r.id, n), () => `${r.name} set to ${qty(n)} ${r.unit}.`);
+                      setCountingId(null);
+                    } else {
+                      if (!n) return;
+                      run(() => receiveStock(r.id, n), () => `${qty(n)} ${r.unit} of ${r.name} received.`);
+                    }
+                    f.reset();
+                  }}
+                >
+                  <input name="qty" className={`${s.in} ${s.qty}`} type="number" step="any" min="0" placeholder={counting ? "on the shelf" : "+ qty"} aria-label={counting ? `Counted on the shelf, ${r.name}` : `Quantity of ${r.name} received`} />
+                  <button className={`btn ${s.sm}`} type="submit" disabled={pending}>
+                    {counting ? "Set count" : "Receive"}
+                  </button>
+                </form>
+                {counting ? (
+                  <button className={s.cancel} type="button" onClick={() => setCountingId(null)}>
+                    cancel
+                  </button>
+                ) : (
+                  <button className={s.ghost} type="button" onClick={() => setCountingId(r.id)}>
+                    Count
+                  </button>
+                )}
+                <button className={`${s.ghost}${openId === r.id ? ` ${s.on}` : ""}`} type="button" aria-expanded={openId === r.id} onClick={() => setOpenId(openId === r.id ? null : r.id)}>
+                  Edit
+                </button>
+              </div>
+            </td>
+          )}
+        </tr>
+        {openId === r.id && (
+          <tr>
+            <td colSpan={colSpan} className={s.editorCell}>
+              <ItemEditor
+                r={r}
+                fact={fact}
+                suppliers={data.suppliers}
+                windowDays={facts.windowDays}
+                pending={pending}
+                onClose={() => setOpenId(null)}
+                onSave={(p) => {
+                  run(() => upsertInventoryItem({ trade: data.trade, name: r.name, ...p }), () => `${r.name} saved.`);
+                  setOpenId(null);
+                }}
+                onDelete={() => {
+                  run(() => deleteInventoryItem(r.id), () => `${r.name} removed.`);
+                  setOpenId(null);
+                }}
+              />
+            </td>
+          </tr>
+        )}
+      </Fragment>
+    );
+  };
 
   return (
     <div className={s.w}>
@@ -317,6 +578,9 @@ export function TradeBoard({ data, facts, canWrite }: { data: TradeBoardData; fa
           </div>
         )}
       </div>
+      <p className={s.lede} data-lede>
+        Stock for the {trade.label} estimator&apos;s proposals: what is on the shelf, what the sold jobs take, what the open ones would take, and what to order from whom. Every {trade.noun} proposal is here — open, sold and done.
+      </p>
 
       {error && (
         <div role="alert" className={`${s.strip} ${s.stripErr}`}>
@@ -384,9 +648,60 @@ export function TradeBoard({ data, facts, canWrite }: { data: TradeBoardData; fa
         </div>
       </div>
 
+      {/* THE HIGHLIGHTS */}
+      <div className={s.hi} data-highlights>
+        {shownHighlights.length === 0 ? (
+          <div className={`${s.hiCard} ${s.hiOk}`}>
+            <div className={s.hiHead}>
+              <svg className="ic">
+                <use href="#i-check" />
+              </svg>
+              All clear
+            </div>
+            <div className={s.hiTitle}>Nothing to do right now</div>
+            <div className={s.hiText}>The shelf covers the sold work, nothing is on order and nothing is waiting to load.</div>
+          </div>
+        ) : (
+          shownHighlights.map((h, i) => (
+            <div key={i} className={`${s.hiCard} ${h.tone === "bad" ? s.hiBad : h.tone === "warn" ? s.hiWarn : h.tone === "ok" ? s.hiOk : s.hiInfo}`}>
+              <div className={s.hiHead}>
+                <svg className="ic">
+                  <use href={`#${h.icon}`} />
+                </svg>
+                {h.label}
+              </div>
+              <div className={s.hiTitle}>{h.title}</div>
+              <div className={s.hiText}>{h.text}</div>
+              {(h.action || h.link) && (
+                <div className={s.hiAct}>
+                  {h.action && (
+                    <button
+                      className={`btn${h.action.primary ? " btn-primary" : ""}`}
+                      type="button"
+                      disabled={pending}
+                      onClick={() => {
+                        h.action?.run?.();
+                        if (h.action?.scroll) document.getElementById(h.action.scroll === "order" ? "tb-order" : "tb-ledger")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }}
+                    >
+                      {h.action.label}
+                    </button>
+                  )}
+                  {h.link && (
+                    <Link className={s.hiLink} href={h.link.href}>
+                      {h.link.label} →
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
       {/* ORDER NOW */}
       {needs.length > 0 && (
-        <section className={`card ${s.panel}`} data-stock-alert data-po>
+        <section className={`card ${s.panel}`} data-stock-alert data-po id="tb-order">
           <div className={s.panelHead}>
             <h2>Order now</h2>
             <span className={s.panelHint}>
@@ -503,7 +818,7 @@ export function TradeBoard({ data, facts, canWrite }: { data: TradeBoardData; fa
       )}
 
       {/* THE LEDGER */}
-      <section className={`card ${s.ledger}`}>
+      <section className={`card ${s.ledger}`} id="tb-ledger">
         <div className={s.toolbar}>
           <label className={s.search}>
             <svg className="ic">
@@ -518,6 +833,32 @@ export function TradeBoard({ data, facts, canWrite }: { data: TradeBoardData; fa
               </button>
             ))}
           </div>
+          <div className={s.seg} role="group" aria-label="Order the list">
+            <button type="button" className={view === "urgency" ? s.on : undefined} data-view="urgency" aria-pressed={view === "urgency"} onClick={() => setView("urgency")}>
+              By urgency
+            </button>
+            <button type="button" className={view === "category" ? s.on : undefined} data-view="category" aria-pressed={view === "category"} onClick={() => setView("category")}>
+              By shelf
+            </button>
+          </div>
+        </div>
+        <div className={s.legend} data-legend>
+          <span>
+            <i className={s.lgRes} />
+            reserved for sold jobs
+          </span>
+          <span>
+            <i className={s.lgFree} />
+            free
+          </span>
+          <span>
+            <i className={s.lgFc} />
+            forecast if the open proposals sell
+          </span>
+          <span>
+            <i className={s.lgTick} />
+            reorder line
+          </span>
         </div>
 
         {canWrite && addOpen && (
@@ -612,112 +953,22 @@ export function TradeBoard({ data, facts, canWrite }: { data: TradeBoardData; fa
                 </tr>
               </thead>
               <tbody>
-                {shown.map(({ r, st }) => {
-                  const fact = facts.items[r.id];
-                  const days = fact && fact.usedPerDay > 0 && r.available > 0 ? Math.round(r.available / fact.usedPerDay) : null;
-                  const counting = countingId === r.id;
-                  return (
-                    <Fragment key={r.id}>
-                      <tr className={st === "soldshort" ? s.rowShort : st === "low" || st === "short" ? s.rowLow : st === "empty" ? s.rowEmpty : undefined} data-stock-row={r.id} data-state={st}>
-                        <td>
-                          <span className={s.itemName}>{r.name}</span>
-                          <div className={s.itemSub}>
-                            per {r.unit}
-                            {days != null ? (
-                              <>
-                                {" · "}
-                                <span className={s.pace}>≈{days > 999 ? "a year+" : `${days} days`} at this pace</span>
-                              </>
-                            ) : null}
-                            {r.supplierName ? ` · ${r.supplierName}${r.supplierSku ? ` ${r.supplierSku}` : ""}` : " · no supplier"}
-                            {r.threshold > 0 ? ` · reorder at ${qty(r.threshold)}` : ""}
-                          </div>
+                {sections.map((sec) => (
+                  <Fragment key={sec.label ?? "all"}>
+                    {sec.label && (
+                      <tr className={s.grpRow} data-group={sec.label}>
+                        <td colSpan={colSpan}>
+                          {sec.label}
+                          <span>
+                            {plural(sec.items.length, "item")}
+                            {sec.needs ? ` · ${sec.needs} to order` : ""}
+                          </span>
                         </td>
-                        <td className={s.tdStock}>
-                          <StockBar r={r} st={st} />
-                        </td>
-                        <td className={`num ${s.num}`} data-l="On hand">
-                          {r.onHand > 0 ? qty(r.onHand) : <span className={s.none}>0</span>}
-                        </td>
-                        <td className={`num ${s.num}`} data-l="Reserved">
-                          {r.reserved > 0 ? qty(r.reserved) : <span className={s.none}>—</span>}
-                        </td>
-                        <td className={`num ${s.num}`} data-l="Available">
-                          <b className={r.available < 0 ? s.neg : undefined}>{qty(r.available)}</b>
-                        </td>
-                        <td className={`num ${s.num}`} data-l="Forecast">
-                          {r.forecast > 0 ? qty(r.forecast) : <span className={s.none}>—</span>}
-                        </td>
-                        <td className={s.tdStatus}>
-                          <Plate r={r} st={st} />
-                        </td>
-                        {canWrite && (
-                          <td>
-                            <div className={s.acts}>
-                              <form
-                                className={s.actForm}
-                                onSubmit={(e) => {
-                                  e.preventDefault();
-                                  const f = e.currentTarget;
-                                  const v = (f.elements.namedItem("qty") as HTMLInputElement).value;
-                                  if (v === "") return;
-                                  const n = Number(v);
-                                  if (counting) {
-                                    run(() => countStock(r.id, n), () => `${r.name} set to ${qty(n)} ${r.unit}.`);
-                                    setCountingId(null);
-                                  } else {
-                                    if (!n) return;
-                                    run(() => receiveStock(r.id, n), () => `${qty(n)} ${r.unit} of ${r.name} received.`);
-                                  }
-                                  f.reset();
-                                }}
-                              >
-                                <input name="qty" className={`${s.in} ${s.qty}`} type="number" step="any" min="0" placeholder={counting ? "on the shelf" : "+ qty"} aria-label={counting ? `Counted on the shelf, ${r.name}` : `Quantity of ${r.name} received`} />
-                                <button className={`btn ${s.sm}`} type="submit" disabled={pending}>
-                                  {counting ? "Set count" : "Receive"}
-                                </button>
-                              </form>
-                              {counting ? (
-                                <button className={s.cancel} type="button" onClick={() => setCountingId(null)}>
-                                  cancel
-                                </button>
-                              ) : (
-                                <button className={s.ghost} type="button" onClick={() => setCountingId(r.id)}>
-                                  Count
-                                </button>
-                              )}
-                              <button className={`${s.ghost}${openId === r.id ? ` ${s.on}` : ""}`} type="button" aria-expanded={openId === r.id} onClick={() => setOpenId(openId === r.id ? null : r.id)}>
-                                Edit
-                              </button>
-                            </div>
-                          </td>
-                        )}
                       </tr>
-                      {openId === r.id && (
-                        <tr>
-                          <td colSpan={colSpan} className={s.editorCell}>
-                            <ItemEditor
-                              r={r}
-                              fact={fact}
-                              suppliers={data.suppliers}
-                              windowDays={facts.windowDays}
-                              pending={pending}
-                              onClose={() => setOpenId(null)}
-                              onSave={(p) => {
-                                run(() => upsertInventoryItem({ trade: data.trade, name: r.name, ...p }), () => `${r.name} saved.`);
-                                setOpenId(null);
-                              }}
-                              onDelete={() => {
-                                run(() => deleteInventoryItem(r.id), () => `${r.name} removed.`);
-                                setOpenId(null);
-                              }}
-                            />
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
+                    )}
+                    {sec.items.map(renderRow)}
+                  </Fragment>
+                ))}
                 {folded.length > 0 && (
                   <tr>
                     <td colSpan={colSpan} className={s.foldCell}>
@@ -886,39 +1137,68 @@ export function TradeBoard({ data, facts, canWrite }: { data: TradeBoardData; fa
       <section className={`card ${s.props}`}>
         <div className={s.cardHead}>
           <h2>{trade.label} proposals</h2>
-          <span>open and sold · the Proposals page still lists every proposal</span>
+          <span>every proposal from the {trade.label} estimator · the Proposals page lists them all together</span>
+          <div className="pchips" role="tablist" aria-label="Proposals">
+            {ptabs.map((t) => (
+              <button key={t.id} type="button" role="tab" aria-selected={ptab === t.id} className={`pchip${ptab === t.id ? " active" : ""}`} data-ptab={t.id} onClick={() => setPtab(t.id)}>
+                {t.label} <b>{t.n}</b>
+              </button>
+            ))}
+          </div>
         </div>
         {proposals.length === 0 ? (
           <div className={s.empty}>No {trade.noun} proposals yet — make one with the {trade.label} estimator.</div>
+        ) : listedProposals.length === 0 ? (
+          <div className={s.empty}>Nothing here.</div>
         ) : (
           <table className={`ptable ${s.propTbl}`} data-trade-proposals>
             <thead>
               <tr>
                 <th>Proposal</th>
                 <th className={s.cStatus}>Status</th>
+                <th className={s.cMat}>Materials</th>
                 <th className={`num ${s.cMoney}`}>Total</th>
               </tr>
             </thead>
             <tbody>
-              {proposals.map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    <Link className="pt-title pt-link" href={`/dashboard/manual-blueprint?proposal=${p.id}` as Route}>
-                      {p.title}
-                    </Link>
-                    <div className="pt-sub">
-                      {p.client ?? "No client"} · {dayOf(p.createdAt)} · {plural(p.lines.length, "material line")}
-                    </div>
-                  </td>
-                  <td>
-                    <span className={`pstatus pstatus--${p.status.toLowerCase()}`}>{STATUS[p.status] ?? p.status}</span>{" "}
-                    {p.status === "ACCEPTED" ? <span className={`${s.plate} ${p.loaded ? s.pOk : s.pBlue}`}>{p.loaded ? "Loaded" : "Reserved in stock"}</span> : null}
-                  </td>
-                  <td className="num">
-                    <span className="pt-money">{usd(p.total)}</span>
-                  </td>
-                </tr>
-              ))}
+              {listedProposals.map((p) => {
+                const m = materialsOf(p, data.rows);
+                return (
+                  <tr key={p.id} data-inferred={p.inferred ? "true" : "false"}>
+                    <td>
+                      <Link className="pt-title pt-link" href={`/dashboard/manual-blueprint?proposal=${p.id}` as Route}>
+                        {p.title}
+                      </Link>
+                      <div className="pt-sub">
+                        {p.client ?? "No client"} · {dayOf(p.createdAt)} · {plural(p.lines.length, "material line")}
+                        {p.inferred ? <span className={s.tag}>by its materials</span> : null}
+                        {!p.linked ? <span className={s.tag}>not connected</span> : null}
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`pstatus pstatus--${p.status.toLowerCase()}`}>{STATUS[p.status] ?? p.status}</span>{" "}
+                      {p.linked && p.status === "ACCEPTED" ? <span className={`${s.plate} ${p.loaded ? s.pOk : s.pBlue}`}>{p.loaded ? "Loaded" : "Reserved in stock"}</span> : null}
+                      {canWrite && (
+                        <button className={`${s.ghost} ${s.linkBtn}`} type="button" disabled={pending} data-link={p.linked ? "off" : "on"} onClick={() => link(p, !p.linked)}>
+                          {p.linked ? "Disconnect" : "Connect"}
+                        </button>
+                      )}
+                    </td>
+                    <td className={s.mat}>
+                      <span className={m.cls}>{m.text}</span>
+                      {p.linked && p.jobId && (p.status === "ACCEPTED" || p.status === "COMPLETED") ? (
+                        <span className={s.matSub}>
+                          {p.jobStartsAt ? `starts ${dayOf(p.jobStartsAt)} · ` : ""}
+                          <Link href={`/dashboard/jobs/${p.jobId}` as Route}>Pick list →</Link>
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="num">
+                      <span className="pt-money">{usd(p.total)}</span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

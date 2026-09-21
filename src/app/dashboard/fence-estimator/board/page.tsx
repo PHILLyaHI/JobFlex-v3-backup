@@ -27,6 +27,10 @@ export default async function Page() {
   const data = await loadTradeBoard(organizationId, "fence");
   if (!data) redirect("/dashboard/fence-estimator");
   // The dashboard's extra facts — value, pace, history, the next loads (2026-09-20).
-  const facts = await loadStockFacts(organizationId, "fence");
+  const facts = await loadStockFacts(
+    organizationId,
+    "fence",
+    data.proposals.filter((p) => p.linked && p.status === "ACCEPTED" && !p.loaded).map((p) => p.id),
+  );
   return <TradeBoard data={data} facts={facts} canWrite={!isLimitedRole(role)} />;
 }
