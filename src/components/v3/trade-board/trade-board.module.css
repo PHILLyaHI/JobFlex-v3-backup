@@ -1,0 +1,256 @@
+/* THE INVENTORY DASHBOARD — blueprint voice, the shell's tokens only.
+   Every rule sits under `.w.w` (0,3,0) so it outranks the shell's blanket
+   `.content *` reset and `.content button` (0,2,0 / 0,2,1) without touching
+   them. The global vocabulary is reused where it exists — .page-head,
+   .kicker, .kpi-grid/.kpi, .card, :global(.btn), .pchips/.pchip, .ptable — and this
+   file only adds what an inventory page needs on top. */
+
+.w { display: block; padding-bottom: 48px; }
+.w.w .headActs { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* strips: a note after a write, an error, the presets offer */
+.w.w .strip { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; padding: 11px 14px; border: 1.5px solid var(--ink); border-left-width: 5px; background: #fff; font-size: 13.5px; line-height: 1.5; }
+.w.w .strip b { font-weight: 800; }
+.w.w .stripOk { border-color: var(--success); }
+.w.w .stripErr { border-color: var(--danger); color: var(--danger); }
+.w.w .stripInfo { border-color: var(--blueprint); }
+.w.w .strip :global(.btn) { margin-left: auto; }
+.w.w .stripX { margin-left: auto; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid transparent; border-radius: var(--radius); color: var(--muted); font-size: 18px; line-height: 1; }
+.w.w .stripX:hover { border-color: var(--ink); color: var(--ink); }
+
+/* masthead */
+.w.w .mast { margin-bottom: 18px; }
+.w.w .kpiSub { margin-top: 4px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w.w .kpiBad { color: var(--danger); }
+.w.w .kpiWarn { color: var(--warning-dark); }
+.w.w .kpiOk { color: var(--success); }
+
+/* the order panel */
+.w.w .panel { margin-bottom: 18px; }
+.w.w .panelHead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.w.w .panelHead h2 { margin: 0; font-size: 16px; font-weight: 900; letter-spacing: -0.01em; }
+.w.w .panelHint { font-size: 13px; line-height: 1.5; color: var(--muted); }
+.w.w .panelHint b { color: var(--ink); font-weight: 800; }
+.w.w .grp { margin-top: 14px; padding-top: 12px; border-top: 1.5px solid var(--hair); }
+.w.w .grpHead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.w.w .grpHead b { font-size: 14px; font-weight: 800; }
+.w.w .grpHead span { font-size: 12.5px; color: var(--muted); }
+.w.w .grpHead :global(.btn) { margin-left: auto; }
+.w.w .lines { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 4px 20px; }
+.w.w .line { display: flex; align-items: baseline; gap: 8px; font-size: 13px; padding: 3px 0; border-bottom: 1px dashed var(--hair-soft); }
+.w.w .line b { font-family: var(--font-mono); font-size: 12px; font-weight: 700; min-width: 74px; }
+.w.w .line span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w.w .line i { font-style: normal; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+.w.w .noMail { color: var(--danger); font-weight: 700; }
+.w.w .assign { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.w.w .assign .sel { height: 32px; font-size: 12px; }
+
+/* orders on the way */
+.w.w .orderRow { display: flex; align-items: center; gap: 14px; padding: 10px 0; border-top: 1px dashed var(--hair); }
+.w.w .orderRow:first-of-type { border-top: none; }
+.w.w .orderMain { flex: 1; min-width: 0; }
+.w.w .orderMain b { font-size: 14px; font-weight: 800; }
+.w.w .orderMain span { font-size: 12.5px; color: var(--muted); }
+.w.w .orderLines { margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+
+/* the ledger */
+.w.w .ledger { padding: 0; overflow: hidden; margin-bottom: 18px; }
+.w.w .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1.5px solid var(--ink); }
+.w.w .toolbar :global(.pchips) { margin: 0; }
+.w.w .search { position: relative; flex: 0 1 260px; min-width: 180px; }
+.w.w .search .ic { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--muted); pointer-events: none; }
+.w.w .search input { width: 100%; height: 36px; padding: 0 10px 0 32px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); }
+.w.w .search input::placeholder { color: var(--muted-light); font-weight: 500; }
+.w.w .search input:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 1px; }
+.w.w .scroll { overflow-x: auto; }
+.w.w .tbl { width: 100%; min-width: 0; table-layout: fixed; border-collapse: collapse; }
+.w.w .tbl th { padding-left: 10px; padding-right: 10px; }
+/* The proposals table gives its first column a share of the width; here the
+   item column takes what the sized columns leave. */
+.w.w .tbl th:first-child { width: auto; }
+.w.w .tbl th.cStock { width: 140px; }
+.w.w .tbl th.cNum { width: 88px; }
+.w.w .tbl th.cStatus { width: 150px; }
+.w.w .tbl th.cActs { width: 288px; }
+.w.w :global(.btn):disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+.w.w .mast :global(.kpi) { min-width: 0; }
+.w.w .tbl td, .w.w .tbl th { overflow: hidden; }
+.w.w .tbl td { vertical-align: middle; padding: 10px 12px; }
+.w.w .rowLow td { background: rgba(184, 132, 32, 0.05); }
+.w.w .rowShort td { background: var(--danger-soft); }
+.w.w .rowEmpty td { color: var(--muted); }
+.w.w .itemName { display: block; font-size: 14px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+.w.w .itemSub { margin-top: 2px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w.w .itemSub b { font-weight: 700; color: var(--ink); }
+.w.w .pace { color: var(--blueprint); font-weight: 700; }
+
+/* the stock bar: on hand split into reserved and free, the forecast and the
+   reorder line drawn against it */
+.w.w .bar { position: relative; height: 12px; border: 1.5px solid var(--ink); background: #fff; }
+.w.w .bar i { position: absolute; top: 0; bottom: 0; }
+.w.w .bRes { background: repeating-linear-gradient(135deg, var(--muted-light) 0 3px, transparent 3px 6px); }
+.w.w .bFree { background: var(--blueprint); }
+.w.w .bFree.warn { background: var(--warning); }
+.w.w .bDeficit { border: 1.5px dashed var(--danger); background: var(--danger-soft); top: -1.5px; bottom: -1.5px; }
+.w.w .bFc { border: 1.5px dashed var(--warning-dark); top: -1.5px; bottom: -1.5px; }
+.w.w .bar b { position: absolute; top: -5px; bottom: -5px; width: 2px; background: var(--ink); }
+.w.w .barCap { display: none; margin-top: 6px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+.w.w .barCap b { color: var(--ink); font-weight: 700; }
+
+.w.w .num { font-variant-numeric: tabular-nums; font-size: 13.5px; text-align: right; }
+.w.w .num b { font-size: 14.5px; font-weight: 800; }
+.w.w .num .neg { color: var(--danger); }
+.w.w .num .none { color: var(--muted-faint); }
+
+.w.w .plate { display: inline-block; max-width: 100%; padding: 3px 8px; border: 1.5px solid; border-radius: var(--radius); font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w.w .pShort { border-color: var(--danger); background: var(--danger); color: #fff; }
+.w.w .pLow { border-color: var(--warning-dark); background: var(--warning-dark); color: #fff; }
+.w.w .pIf { border-color: var(--warning-dark); color: var(--warning-dark); background: var(--warning-soft); }
+.w.w .pOk { border-color: var(--success); color: var(--success); background: var(--success-soft); }
+.w.w .pNone { border-color: var(--hair); color: var(--muted-light); }
+.w.w .pInk { border-color: var(--ink); color: var(--ink); }
+.w.w .pBlue { border-color: var(--sky); color: var(--blueprint); background: rgba(74, 158, 255, 0.13); }
+
+/* row actions */
+.w.w .acts { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; }
+.w.w .actForm { display: inline-flex; align-items: center; gap: 6px; }
+.w.w .in { height: 34px; padding: 0 10px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.w.w .in::placeholder { color: var(--muted-light); font-weight: 500; }
+.w.w .in:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 1px; }
+.w.w .qty { width: 72px; }
+.w.w .sel { height: 34px; padding: 0 8px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); }
+.w.w .sm { height: 34px; padding: 0 11px; font-size: 10.5px; letter-spacing: 0.08em; }
+.w.w .ghost { height: 34px; padding: 0 9px; border: 1.5px solid transparent; border-radius: var(--radius); background: none; font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.w.w .ghost:hover { border-color: var(--ink); color: var(--ink); }
+.w.w .ghost.on { border-color: var(--ink); color: var(--ink); background: var(--paper); }
+.w.w .ghost:disabled, .w.w .sm:disabled { opacity: 0.5; cursor: default; }
+.w.w .cancel { font-size: 12px; color: var(--muted); text-decoration: underline; cursor: pointer; background: none; border: 0; padding: 0 4px; }
+
+/* the row editor */
+.w.w .editorCell { padding: 0 16px 16px !important; background: var(--paper); }
+.w.w .editor { border: 1.5px solid var(--ink); background: #fff; padding: 14px; }
+.w.w .editorGrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 12px; }
+.w.w .fld { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.w.w .fld .in, .w.w .fld .sel { width: 100%; }
+.w.w .lbl { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.w.w .editorFoot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.w.w .editorFoot .spacer { flex: 1; }
+.w.w .hist { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--hair); font-size: 12.5px; color: var(--muted); display: flex; gap: 6px 18px; flex-wrap: wrap; }
+.w.w .hist b { color: var(--ink); font-weight: 700; }
+
+.w.w .foldCell { padding: 0 !important; }
+.w.w .fold { display: block; width: 100%; padding: 12px 16px; text-align: left; font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); background: var(--paper); cursor: pointer; }
+.w.w .fold:hover { color: var(--ink); }
+.w.w .fold b { color: var(--ink); }
+
+.w.w .untracked { padding: 12px 16px 14px; border-top: 1.5px solid var(--hair); font-size: 13px; }
+.w.w .untracked b { font-weight: 800; }
+.w.w .chipsRow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.w.w .addForm { padding: 14px 16px; border-bottom: 1.5px solid var(--ink); background: var(--paper); }
+.w.w .formGrid { display: grid; grid-template-columns: minmax(200px, 2fr) repeat(4, minmax(0, 1fr)) minmax(120px, 1fr); gap: 10px 12px; align-items: end; }
+.w.w .formGrid :global(.btn) { height: 34px; }
+.w.w .empty { padding: 26px 16px; text-align: center; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+.w.w .empty b { color: var(--ink); }
+
+/* two columns: what happened · suppliers */
+.w.w .cols { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; margin-bottom: 18px; }
+.w.w .cols :global(.card) { margin: 0; }
+.w.w .cardHead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.w.w .cardHead h2 { margin: 0; font-size: 16px; font-weight: 900; letter-spacing: -0.01em; }
+.w.w .cardHead span { font-size: 12.5px; color: var(--muted); }
+.w.w .cardHead .ghost, .w.w .cardHead :global(.btn) { margin-left: auto; }
+.w.w .feed { list-style: none; margin: 8px 0 0; padding: 0; }
+.w.w .feedRow { display: grid; grid-template-columns: 84px minmax(0, 1fr) 62px; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--hair-soft); }
+.w.w .feedRow:last-child { border-bottom: none; }
+.w.w .feedMain { min-width: 0; }
+.w.w .feedMain b { display: block; font-size: 13.5px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w.w .feedMain span { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w.w .feedMain a { color: var(--blueprint); font-weight: 700; }
+.w.w .feedAgo { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); text-align: right; }
+.w.w .quiet { padding: 14px 0 4px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+
+.w.w .sups { list-style: none; margin: 8px 0 0; padding: 0; }
+.w.w .supRow { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px dashed var(--hair-soft); }
+.w.w .supRow:last-child { border-bottom: none; }
+.w.w .supMain { flex: 1; min-width: 0; }
+.w.w .supMain b { display: block; font-size: 13.5px; font-weight: 800; }
+.w.w .supMain span { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w.w .supMain a { color: var(--blueprint); font-weight: 700; }
+.w.w .supCount { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.w.w .supForm { margin-top: 12px; padding-top: 12px; border-top: 1.5px solid var(--hair); display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.w.w .supForm .wide { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end; }
+
+/* the trade's proposals */
+.w.w .props { padding: 0; overflow: hidden; }
+.w.w .props .cardHead { padding: 16px 16px 12px; margin: 0; border-bottom: 1.5px solid var(--ink); }
+.w.w .propTbl { width: 100%; }
+.w.w .propTbl th.cStatus { width: 260px; }
+.w.w .propTbl th.cMoney { width: 120px; }
+
+@media (max-width: 1280px) {
+  /* Reserved and Forecast step out; the bar's caption says them instead.
+     A 1px column rather than display:none, so the fold and editor rows' eight-
+     column span still matches the table and no empty columns appear (a fixed
+     layout reads width:0 as auto). */
+  .w.w .barCap { display: block; }
+  .w.w .tbl th.cStock { width: 130px; }
+  .w.w .tbl th.cNum { width: 88px; }
+  .w.w .tbl th.cStatus { width: 140px; }
+  /* Count and Edit drop under the receive form, so the name keeps its room. */
+  .w.w .tbl th.cActs { width: 176px; }
+  .w.w .acts { flex-wrap: wrap; row-gap: 6px; }
+  /* after the width rules above: same specificity, the later one wins */
+  .w.w .tbl th:nth-child(4), .w.w .tbl td:nth-child(4), .w.w .tbl th:nth-child(6), .w.w .tbl td:nth-child(6) { width: 1px; padding: 0; border: 0; overflow: hidden; font-size: 0; }
+  .w.w .editorGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .w.w .formGrid { grid-template-columns: 1fr 1fr 1fr; }
+  .w.w .cols { grid-template-columns: 1fr; }
+}
+
+/* ── HANDHELD (≤768px): one column, rows become cards, 44px targets ── */
+@media (max-width: 768px) {
+  .w.w .mast { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .w.w .mast :global(.kpi) { padding: 14px 14px 16px; }
+  .w.w .headActs { width: 100%; }
+  .w.w .headActs :global(.btn) { flex: 1; justify-content: center; }
+  .w.w .toolbar { padding: 12px; }
+  .w.w .search { flex-basis: 100%; }
+  .w.w .search input { height: 44px; }
+  .w.w .scroll { overflow: visible; }
+  .w.w .tbl { min-width: 0; table-layout: auto; display: block; }
+  .w.w .tbl thead { display: none; }
+  .w.w .tbl tbody, .w.w .tbl tr { display: block; }
+  .w.w .tbl tr { padding: 12px 12px 14px; border-bottom: 1.5px solid var(--hair); }
+  .w.w .tbl tr:last-child { border-bottom: none; }
+  .w.w .tbl td { display: block; padding: 0; border: 0; overflow: visible; }
+  .w.w .itemName, .w.w .itemSub { white-space: normal; }
+  .w.w .tdStock { margin: 10px 0 8px; }
+  .w.w .barCap { display: block; }
+  .w.w .tbl td:global(.num) { display: inline-block; width: 24%; text-align: left; padding: 4px 0; }
+  .w.w .tbl td:global(.num)::before { content: attr(data-l); display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  /* the two columns the laptop rule zeroed come back as labelled numbers */
+  .w.w .tbl td:nth-child(4), .w.w .tbl td:nth-child(6) { width: 24%; padding: 4px 0; border: 0; overflow: visible; font-size: 13.5px; }
+  .w.w .tdStatus { margin-top: 8px; }
+  .w.w .acts { flex-wrap: wrap; margin-top: 10px; gap: 8px; }
+  .w.w .actForm { flex: 1 1 100%; }
+  .w.w .actForm .qty { flex: 1; width: auto; }
+  .w.w .in, .w.w .sel, .w.w .sm, .w.w .ghost { height: 44px; }
+  .w.w .ghost { border-color: var(--hair); flex: 1; }
+  .w.w .editorCell { padding: 0 0 12px !important; }
+  .w.w .editorGrid { grid-template-columns: 1fr 1fr; }
+  .w.w .fold { padding: 14px 12px; min-height: 44px; }
+  .w.w .formGrid { grid-template-columns: 1fr 1fr; }
+  .w.w .formGrid :global(.btn) { height: 44px; grid-column: 1 / -1; }
+  .w.w .lines { grid-template-columns: 1fr; }
+  .w.w .grpHead :global(.btn) { margin-left: 0; width: 100%; justify-content: center; }
+  .w.w .orderRow { flex-wrap: wrap; }
+  .w.w .orderRow :global(.btn) { width: 100%; justify-content: center; }
+  .w.w .feedRow { grid-template-columns: 78px minmax(0, 1fr); }
+  .w.w .feedAgo { grid-column: 1 / -1; text-align: left; }
+  .w.w .supForm { grid-template-columns: 1fr; }
+  .w.w .propTbl { table-layout: auto; }
+  .w.w .propTbl th.cStatus, .w.w .propTbl th.cMoney { width: auto; }
+  .w.w .strip :global(.btn), .w.w .presetsBtn { margin-left: 0; width: 100%; justify-content: center; }
+}
+
+/* the remove confirmation inside the editor foot */
+.w.w .sure { font-size: 12.5px; font-weight: 700; color: var(--danger); }
