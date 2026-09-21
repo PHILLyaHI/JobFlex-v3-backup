@@ -6,7 +6,9 @@
 // "use server" action: the pages call it with a trusted organizationId.
 
 import { db } from "@/lib/db";
-import { isTradeId, stockRows, untrackedLines, type StockItem, type StockLine, type StockRow, type TradeId } from "@/lib/inventory";
+import { isTradeId, stockKey, stockRows, untrackedLines, type StockItem, type StockLine, type StockRow, type TradeId } from "@/lib/inventory";
+import { presetItems } from "@/lib/inventoryPresets";
+import { explodeLines } from "@/lib/inventoryBom";
 
 export type BoardProposal = {
   id: string;
@@ -34,6 +36,8 @@ export type TradeBoardData = {
   suppliers: BoardSupplier[];
   /** Material lines on this trade's proposals the warehouse does not track yet. */
   untracked: StockLine[];
+  /** The estimator's standard items not on the shelf list yet, and how many there are in all. */
+  presets: { missing: number; total: number };
   pipeline: { open: number; openTotal: number; sold: number; soldTotal: number; low: number; short: number };
 };
 
@@ -77,7 +81,8 @@ export async function loadTradeBoard(organizationId: string, trade: string): Pro
     createdAt: p.createdAt.toISOString(),
     jobId: p.jobs[0]?.id ?? null,
     loaded: !!p.jobs[0]?.materialsLoadedAt,
-    lines: p.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType })),
+    // A fence package line becomes the posts, rails and pickets it was priced from.
+    lines: explodeLines(trade, p.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType }))),
   }));
   const stock: StockItem[] = items.map((i) => ({
     id: i.id,
@@ -95,6 +100,9 @@ export async function loadTradeBoard(organizationId: string, trade: string): Pro
   const open = list.filter((p) => OPEN.includes(p.status));
   const rows = stockRows(stock, sold, open);
   const untracked = untrackedLines(stock, [...sold, ...open].flatMap((p) => p.lines));
+  const have = new Set(stock.map((i) => i.key));
+  const standard = presetItems(trade);
+  const presets = { missing: standard.filter((p) => !have.has(stockKey(p.name))).length, total: standard.length };
   return {
     trade,
     orders,
@@ -102,6 +110,7 @@ export async function loadTradeBoard(organizationId: string, trade: string): Pro
     rows,
     suppliers: suppliers.map((s) => ({ id: s.id, name: s.name, email: s.email, phone: s.phone, website: s.website, itemCount: s._count.items })),
     untracked,
+    presets,
     pipeline: {
       open: open.length,
       openTotal: open.reduce((a, p) => a + p.total, 0),
@@ -126,8 +135,8 @@ export async function lowStockCounts(organizationId: string): Promise<Record<Tra
     const stock = items.filter((i) => i.trade === trade);
     if (!stock.length) continue;
     const ofTrade = proposals.filter((p) => p.trade === trade);
-    const sold = ofTrade.filter((p) => p.status === "ACCEPTED" && !p.jobs[0]?.materialsLoadedAt).map((p) => ({ lines: p.lineItems }));
-    const open = ofTrade.filter((p) => OPEN.includes(p.status)).map((p) => ({ lines: p.lineItems }));
+    const sold = ofTrade.filter((p) => p.status === "ACCEPTED" && !p.jobs[0]?.materialsLoadedAt).map((p) => ({ lines: explodeLines(trade, p.lineItems) }));
+    const open = ofTrade.filter((p) => OPEN.includes(p.status)).map((p) => ({ lines: explodeLines(trade, p.lineItems) }));
     out[trade] = stockRows(stock, sold, open).filter((r) => r.low).length;
   }
   return out;

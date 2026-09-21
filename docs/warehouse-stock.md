@@ -61,6 +61,28 @@ on the installer dashboard in SmartSpace Pro, adapted to what JobFlex holds.
 - **Workers page:** each worker's earnings on their jobs and what is still
   owed, from the pay on their assignments.
 
+## The standard items come off the estimators (2026-09-20, later)
+
+Owner: "look into the material package and estimator … use all those
+materials as items already preset — fence boards, two by fours, pressure
+treated or cedar boards and posts … same for roofing and HVAC."
+
+- `lib/inventoryPresets` runs each trade's estimator over its own catalog
+  — every fence type at 4, 6 and 8 ft with gates; every roof system on a
+  hip house and a flat roof; the HVAC jobs on a gas and an all-electric
+  house — and every material line it prices becomes a standard item.
+  Nothing is typed by hand, so the names match the proposals' lines by
+  construction. Fence 88 items, roofing 97, HVAC 37.
+- The fence list is the takeoff's bill of materials, not the "package"
+  line: line, corner, end and gate posts by length, concrete by the bag,
+  rails, pickets, nails, post caps, gate kits and hinge sets.
+- `lib/inventoryBom` reads a fence proposal's package and gate lines back
+  through the takeoff, so stock, forecasts, the pick list and the daily
+  check count the components a job was priced from. Roof and HVAC lines
+  are already components and pass through.
+- The board offers "Add the N standard items" until they are all on the
+  list; they start at zero on hand, then the office receives what it has.
+
 ## Data layer
 
 New tables `Supplier`, `InventoryItem`, `InventoryMovement`; new columns
