@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { TradeBoard } from "@/components/v3/trade-board/trade-board";
 import { loadTradeBoard } from "@/lib/inventoryBoard";
+import { loadStockFacts } from "@/lib/inventoryDashboard";
 import { isLimitedRole, NoOrgError, requireOrg, UnauthorizedError } from "@/lib/orgContext";
 
 export const dynamic = "force-dynamic";
@@ -25,5 +26,7 @@ export default async function Page() {
   }
   const data = await loadTradeBoard(organizationId, "roof");
   if (!data) redirect("/dashboard/roof-estimator");
-  return <TradeBoard data={data} canWrite={!isLimitedRole(role)} />;
+  // The dashboard's extra facts — value, pace, history, the next loads (2026-09-20).
+  const facts = await loadStockFacts(organizationId, "roof");
+  return <TradeBoard data={data} facts={facts} canWrite={!isLimitedRole(role)} />;
 }

@@ -283,7 +283,15 @@ const getServerSnapshot = () => false;
  *  out of with a thumb. There is no mobile-manual-builder BLUEPRINT page yet;
  *  the /mobile-manual-builder-v2 build is the older design. When a real
  *  handheld build lands, move the route to HANDHELD_SURFACES above. */
-const BLUEPRINT_HANDHELD = new Set(["/dashboard/manual-blueprint"]);
+const BLUEPRINT_HANDHELD = new Set([
+  "/dashboard/manual-blueprint",
+  // The three inventory dashboards (2026-09-20): one responsive component
+  // (trade-board) whose stylesheet collapses to a single column at ≤768px, so
+  // a phone keeps the page and gets the handheld nav around it.
+  "/dashboard/roof-estimator/board",
+  "/dashboard/fence-estimator/board",
+  "/dashboard/hvac-estimator/board",
+]);
 
 export function ResponsiveDashboardShell({
   children,
