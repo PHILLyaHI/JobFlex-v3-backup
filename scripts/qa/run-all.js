@@ -13,13 +13,24 @@ const only = process.argv.includes("--checks") ? "checks" : process.argv.include
 
 const CHECKS = fs.readdirSync(__dirname).filter((f) => f.endsWith(".check.ts")).sort()
   .concat(["fence-terrain-check.ts", "lead-reroute-test.ts", "pitch-audit.ts"]);
+const GUARD_CHECK = "qa-guard.check.js"; // plain node: it drives this folder's own guard
 const PAGES = [
   ["fin-test.js"], ["messages-test.js"], ["phone-test.js", "seed-phone.js"], ["reviews-test.js"], ["reviews-chips.js"],
   ["ref-test.js"], ["reports-test.js"], ["trade-test.js"], ["trade-tail.js"], ["fixpass-smoke.js"],
-  ["ann-test.js"], ["settings-test.js"], ["sub-test.js"], ["fence-test.js"], ["roof-test.js"],
+  ["ann-test.js"], ["sub-test.js"], ["fence-test.js"], ["roof-test.js"],
 ];
 const run = (cmd, args, cwd) => spawnSync(cmd, args, { cwd, encoding: "utf8", shell: process.platform === "win32", timeout: 300000 });
 const rows = [];
+
+// Before anything runs — a check, a seed, a browser: a local dev database, and qa@acme.test in
+// QA Co with no seat anywhere people work (./_world assertSafe). Failing that, nothing runs.
+{
+  const guard = run("node", ["scripts/qa/_world.js", "guard"], ROOT);
+  if (guard.status !== 0) {
+    console.error(((guard.stderr || "") + (guard.stdout || "")).trim() || "QA guard failed");
+    process.exit(1);
+  }
+}
 
 if (only !== "pages") {
   for (const f of CHECKS) {
@@ -27,6 +38,11 @@ if (only !== "pages") {
     rows.push({ kind: "check", name: f, verdict: r.status === 0 ? "PASS" : "FAIL", detail: (r.stdout || "").trim().split("\n").pop().slice(0, 70) });
     console.log(`${rows.at(-1).verdict}  ${f}  · ${rows.at(-1).detail}`);
   }
+}
+if (only !== "pages") {
+  const r = run("node", ["scripts/qa/" + GUARD_CHECK], ROOT);
+  rows.push({ kind: "check", name: GUARD_CHECK, verdict: r.status === 0 ? "PASS" : "FAIL", detail: (r.stdout || "").trim().split("\n").pop().slice(0, 70) });
+  console.log(`${rows.at(-1).verdict}  ${GUARD_CHECK}  · ${rows.at(-1).detail}`);
 }
 if (only !== "checks") {
   for (const [f, seed] of PAGES) {

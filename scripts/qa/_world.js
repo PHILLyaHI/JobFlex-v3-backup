@@ -1,5 +1,5 @@
 // The records the page scripts need, made in QA Co and removed afterwards.
-//   node scripts/qa/_world.js up | down | status      (from the project root)
+//   node scripts/qa/_world.js up | down | status | guard      (from the project root)
 // or, inside a script:   const world = require("./_world"); await world.up(); … await world.down();
 //
 // QA Co is a test-only organisation (CLAUDE.md, Test accounts): nothing here
@@ -7,7 +7,83 @@
 // row this file made — by organisation id, and the two teammates by address.
 const bcrypt = require("bcryptjs");
 const { PrismaClient } = require("@prisma/client");
-const { qaOrg, EMAIL } = require("./_qa");
+const { qaOrg, EMAIL, QA_ORG_SLUG } = require("./_qa");
+
+// ── Safety ──────────────────────────────────────────────────────────────────
+// Three things no script in this folder may ever do, enforced here rather than
+// trusted to each script (settings-test once clicked "Delete account" on a page
+// that had become real; it is gone from the repository).
+
+/** 1. WHERE. Only a local development database: an SQLite file, or a server on
+ *  this machine. Both the URL these scripts get (.env, or the process) and the
+ *  one the dev server gets (.env.local wins there) are checked. Values are
+ *  never printed — only which source failed. */
+function databaseUrls() {
+  const fs = require("fs");
+  const path = require("path");
+  const root = path.resolve(__dirname, "..", "..");
+  const fromFile = (name) => {
+    try {
+      const m = fs.readFileSync(path.join(root, name), "utf8").match(/^\s*DATABASE_URL\s*=\s*"?([^"\r\n]*)"?/m);
+      return m ? m[1].trim() : null;
+    } catch { return null; }
+  };
+  return [["the process environment", process.env.DATABASE_URL || null], [".env", fromFile(".env")], [".env.local", fromFile(".env.local")]];
+}
+function isLocalDatabase(url) {
+  if (/^file:/i.test(url)) return true;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  } catch { return false; }
+}
+function assertLocalDatabase() {
+  const seen = databaseUrls().filter(([, url]) => url);
+  if (!seen.length) throw new Error("QA guard: no DATABASE_URL found — refusing to guess which database this is");
+  for (const [where, url] of seen) {
+    if (!isLocalDatabase(url)) throw new Error(`QA guard: DATABASE_URL from ${where} is not a local development database — nothing was run`);
+  }
+}
+
+/** 2. WHO. The automation account, and only in QA Co or an organisation this
+ *  set made for itself (the throwaway ones the data-level checks create). */
+const THROWAWAY_SLUG = /^(qa-|qa_|stamp-check|gmail-fallback|refund-iso|reroute)/i;
+async function assertQaIdentity(prisma) {
+  const user = await prisma.user.findUnique({ where: { email: EMAIL }, include: { memberships: { include: { organization: { select: { id: true, slug: true, name: true } } } } } });
+  if (!user) throw new Error(`QA guard: ${EMAIL} does not exist in this database — run the seed; nothing was run`);
+  const active = user.memberships.find((m) => m.organizationId === user.activeOrgId)?.organization;
+  if (!active || active.slug !== QA_ORG_SLUG) throw new Error(`QA guard: ${EMAIL} is working in "${active ? active.name : "no organisation"}", not QA Co — nothing was run`);
+  const foreign = user.memberships.map((m) => m.organization).filter((o) => o.slug !== QA_ORG_SLUG && !THROWAWAY_SLUG.test(o.slug));
+  if (foreign.length) throw new Error(`QA guard: ${EMAIL} has a seat in ${foreign.map((o) => '"' + o.name + '"').join(", ")} — an organisation people work in. Remove the seat; nothing was run`);
+}
+/** Both, in the order that writes nothing on failure. Call before anything else. */
+async function assertSafe(prisma) {
+  assertLocalDatabase();
+  await assertQaIdentity(prisma);
+}
+
+/** 3. WHAT. Controls no script may press. `_qa.js` installs this list in every
+ *  page before the first navigation: a click (or Enter/Space) on a match is
+ *  swallowed in the page and the script dies on the spot, exit 1. */
+const FORBIDDEN_CONTROLS = {
+  selectors: [
+    // deleting an account or an organisation
+    '[data-act="delete-account"]', '[data-act="delete-org"]', '[data-act="delete-organization"]', "#deleteAccountBtn", "#deleteOrgBtn",
+    // cancelling a subscription
+    '[data-act="cancel-subscription"]', "#cancelSubBtn", '[data-mdl-ok="cancel-plan"]',
+    // paid lookups: an EagleView order
+    '[data-act="ev-order"]', '[data-act="order-report"]', "#orderReportBtn",
+  ],
+  // matched against the control's own visible text and its aria-label, from the start, case-insensitive
+  labels: [
+    /^(permanently )?delete (my |this |the )?(account|organi[sz]ation|workspace|company)\b/i,
+    /^(yes, )?(cancel|end) (my |the )?(subscription|plan|membership)\b/i,
+    /^send (the )?(e-?mail|proposal|invoice|contract|estimate|reminder|campaign)\b/i,
+    /^(e-?mail|send) (it )?to (the )?(client|customer|homeowner)\b/i,
+    /^(order|buy|purchase) (a |the )?(roof |eagleview |measurement )?(report|measurement)\b/i,
+    /^measure (this |the )?roof\b/i,
+  ],
+};
 
 const TEAM = [
   { email: "qa-morgan@qa.test", name: "Morgan Lane", role: "SALES", says: "Morning — the Hartley estimate is ready for your review." },
@@ -23,6 +99,7 @@ const CONVERSIONS = [
 const SHAPE = { conversations: TEAM.length, jobs: JOBS.length, conversions: CONVERSIONS.length, converted: 1, pending: 1 };
 
 async function down(prisma = new PrismaClient()) {
+  await assertSafe(prisma);
   const org = await qaOrg(prisma);
   const where = { organizationId: org.id };
   await prisma.reviewRequest.deleteMany({ where });
@@ -37,6 +114,7 @@ async function down(prisma = new PrismaClient()) {
 }
 
 async function up(prisma = new PrismaClient(), opts = {}) {
+  await assertSafe(prisma);
   await down(prisma);
   const org = await qaOrg(prisma);
   const qa = await prisma.user.findUniqueOrThrow({ where: { email: EMAIL } });
@@ -73,17 +151,18 @@ async function up(prisma = new PrismaClient(), opts = {}) {
 }
 
 async function status(prisma = new PrismaClient()) {
+  await assertSafe(prisma);
   const org = await qaOrg(prisma);
   const where = { organizationId: org.id };
   return { org: org.name, conversations: await prisma.conversation.count({ where }), jobs: await prisma.job.count({ where }), clients: await prisma.client.count({ where }), referralCodes: await prisma.referralCode.count({ where }), teammates: await prisma.user.count({ where: { email: { in: TEAM.map((t) => t.email) } } }) };
 }
 
-module.exports = { up, down, status, SHAPE, TEAM, JOBS };
+module.exports = { up, down, status, assertSafe, assertLocalDatabase, isLocalDatabase, FORBIDDEN_CONTROLS, SHAPE, TEAM, JOBS };
 
 if (require.main === module) {
   const prisma = new PrismaClient();
   const mode = process.argv[2];
-  const run = mode === "up" ? up : mode === "down" ? down : mode === "status" ? status : null;
-  if (!run) { console.log("usage: up | down | status"); process.exit(1); }
+  const run = mode === "up" ? up : mode === "down" ? down : mode === "status" ? status : mode === "guard" ? assertSafe : null;
+  if (!run) { console.log("usage: up | down | status | guard"); process.exit(1); }
   run(prisma).then((r) => { console.log(mode, "→", JSON.stringify(r ?? "done")); return prisma.$disconnect(); }).catch((e) => { console.error(e.message); process.exit(1); });
 }
