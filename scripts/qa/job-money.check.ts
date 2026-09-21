@@ -33,6 +33,9 @@ check("what is still to collect", running.collected === 11400 && running.outstan
 const over = jobMoney({ contract, collected: contract, lines, crewPay: [9000], expenses: [14_000] });
 check("a job that ran over shows it: cost above plan, margin down", over.costVariance === 3000 && over.profit === 15000 && over.outstanding === 0, `${over.costVariance} ${over.profit}`);
 
+const withStock = jobMoney({ contract, collected: 0, lines, crewPay: [6000], expenses: [500], stock: 1200 });
+check("materials taken from the warehouse count as cost at the items' last cost", withStock.stock === 1200 && withStock.cost === 7700 && withStock.profit === 30300, `${withStock.cost} ${withStock.profit}`);
+
 const bare = jobMoney({ contract: 0, collected: 0, lines: [], crewPay: [], expenses: [] });
 check("no contract, no lines: zeros, no division by zero", bare.cost === 0 && bare.profit === 0 && bare.marginPct === 0 && !bare.costIsPlanned);
 const junk = jobMoney({ contract: -5, collected: -2, lines: [{ quantity: -3, materialCost: 10, laborCost: 10 }], crewPay: [-100, 50], expenses: [Number.NaN, 25] });

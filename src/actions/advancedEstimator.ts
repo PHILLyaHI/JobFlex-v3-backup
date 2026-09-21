@@ -27,6 +27,7 @@ import { priceMaterial } from "@/lib/estimate/material-price";
 import { detectTrade } from "@/lib/estimate/trade-knowledge";
 import { buildLegacyEstimatePrompt, legacyEstimateFromText, LEGACY_SYSTEM_MESSAGE, specialtyFor } from "@/lib/estimate/legacy-estimate";
 import { costQuestionBlock, costQuestions } from "@/lib/estimate/intake-questions";
+import { isTradeId } from "@/lib/inventory";
 import { procedureFor } from "@/lib/estimate/procedures";
 import { loadPromptOverrides } from "@/lib/estimate/promptOverrides";
 import { floorNote, floorToRange, fullerAnswer, linesTotal, retryReasons } from "@/lib/estimate/remodel-sanity";
@@ -1562,6 +1563,9 @@ export async function convertEstimateToProposal(raw: unknown) {
       scopeOfWork: scope || null,
       address,
       status: ProposalStatus.DRAFT,
+      // A Smart Proposal for a fence, a roof or HVAC belongs to that trade's
+      // board and its stock (2026-09-20); anything else has no trade.
+      trade: isTradeId(data.projectType) ? data.projectType : null,
       subtotal,
       discountTotal,
       taxRate,

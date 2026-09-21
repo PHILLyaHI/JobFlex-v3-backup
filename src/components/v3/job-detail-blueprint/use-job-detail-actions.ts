@@ -34,6 +34,7 @@ import { useRouter } from "next/navigation";
 import { updateJob, createJobEvent, setJobProgress } from "@/actions/jobs";
 import { assignWorker, unassignAssignment } from "@/actions/workers";
 import { setAssignmentPaid, setAssignmentPay } from "@/actions/jobPay";
+import { loadJobMaterials, returnJobMaterials } from "@/actions/inventory";
 import { uploadJobPhoto } from "@/actions/jobMedia";
 import { sendChangeOrder, markChangeOrderApproved } from "@/actions/changeOrders";
 import { KEY_TO_STATUS, type JdBooking, type StatusKey } from "./job-detail-data";
@@ -53,6 +54,8 @@ export type JobBusy =
   | { kind: "assign"; id: string }
   | { kind: "unassign"; id: string }
   | { kind: "pay"; id: string }
+  | { kind: "load"; id: string }
+  | { kind: "return"; id: string }
   | { kind: "upload" }
   | { kind: "change"; id: string };
 
@@ -182,6 +185,26 @@ export function useJobDetailActions(
     [run],
   );
 
+  // The truck is loaded: the pick list leaves the warehouse (actions/inventory).
+  const loadMaterials = useCallback(
+    () =>
+      run({ kind: "load", id: jobId }, "Could not mark the materials loaded.", async () => {
+        const res = await loadJobMaterials(jobId);
+        if (!res.ok) throw new Error(res.error);
+      }),
+    [jobId, run],
+  );
+
+  // Leftovers back on the shelf after the job (actions/inventory).
+  const returnMaterials = useCallback(
+    (lines: Array<{ itemId: string; quantity: number }>) =>
+      run({ kind: "return", id: jobId }, "Could not book the leftovers.", async () => {
+        const res = await returnJobMaterials(jobId, lines);
+        if (!res.ok) throw new Error(res.error);
+      }),
+    [jobId, run],
+  );
+
   const upload = useCallback(
     async (file: File, kind: PhotoKind) => {
       if (file.size > MAX_PHOTO_BYTES) {
@@ -234,6 +257,8 @@ export function useJobDetailActions(
     unassign,
     setPay,
     markPaid,
+    loadMaterials,
+    returnMaterials,
     upload,
     sendChange,
     approveChange,

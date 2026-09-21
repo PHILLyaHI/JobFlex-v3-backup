@@ -60,9 +60,10 @@ export default async function WorkersPage() {
     orderBy: { displayName: "asc" },
     include: {
       user: { select: { email: true } },
+      // Every assignment: the active ones list as jobs, all of them carry the
+      // pay that the earnings columns add up (2026-09-20).
       assignments: {
-        where: { job: { status: { in: ["SCHEDULED", "IN_PROGRESS"] } } },
-        select: { job: { select: { id: true, title: true } } },
+        select: { pay: true, paidAt: true, job: { select: { id: true, title: true, status: true } } },
       },
     },
   });
@@ -86,7 +87,9 @@ export default async function WorkersPage() {
     invite: w.inviteStatus as InviteStatus,
     role: roleByUser.get(w.userId) ?? "INSTALLER",
     joined: joinedLabel(w.createdAt),
-    jobs: w.assignments.map((a) => ({ id: a.job.id, title: a.job.title })),
+    jobs: w.assignments.filter((a) => a.job.status === "SCHEDULED" || a.job.status === "IN_PROGRESS").map((a) => ({ id: a.job.id, title: a.job.title })),
+    earned: Math.round(w.assignments.reduce((sum, a) => sum + a.pay, 0) * 100) / 100,
+    unpaid: Math.round(w.assignments.filter((a) => !a.paidAt).reduce((sum, a) => sum + a.pay, 0) * 100) / 100,
   }));
 
   return (

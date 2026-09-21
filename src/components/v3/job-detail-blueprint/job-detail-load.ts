@@ -23,6 +23,7 @@ import { db } from "@/lib/db";
 import { isOwnerOrManager, isWorkerRole } from "@/lib/orgContext";
 import { contractTotal } from "@/lib/contractTotal";
 import { crewTotals, jobMoney } from "@/lib/jobCosting";
+import { isTradeId, pickList, type StockItem } from "@/lib/inventory";
 import {
   STATUS_TO_KEY,
   type JdAssignState,
@@ -33,6 +34,8 @@ import {
   type JdExpense,
   type JdMoney,
   type JdPhoto,
+  type JdPick,
+  type JdPicked,
   type JdWorkerOption,
   type JobDetailRecord,
 } from "./job-detail-data";
@@ -233,7 +236,8 @@ export async function loadJobDetail(
           total: true,
           // The job's money card: the estimate's own cost side and what the
           // client has actually paid (lib/jobCosting).
-          lineItems: { select: { quantity: true, materialCost: true, laborCost: true } },
+          trade: true,
+          lineItems: { select: { name: true, measurementType: true, quantity: true, materialCost: true, laborCost: true } },
           payments: { where: { status: "PAID" }, select: { amount: true } },
           changeOrders: { orderBy: { createdAt: "asc" } },
         },
@@ -298,12 +302,14 @@ export async function loadJobDetail(
   // the contract is the proposal plus its approved change orders, the planned
   // cost is the estimate's material and labor COST columns, and the actual
   // cost is the crew's pay plus the booked receipts (lib/jobCosting).
+  const out = await pickedFor(job.id);
   const m = jobMoney({
     contract: job.proposal ? contractTotal(job.proposal.total, job.proposal.changeOrders) : 0,
     collected: job.proposal ? job.proposal.payments.reduce((a, p) => a + p.amount, 0) : 0,
     lines: job.proposal?.lineItems ?? [],
     crewPay: job.assignments.map((a) => a.pay),
     expenses: job.expenses.map((e) => e.amount),
+    stock: out.cost,
   });
   const money: JdMoney = {
     contract: m.contract,
@@ -313,6 +319,7 @@ export async function loadJobDetail(
     crew: m.crew,
     crewUnpaid: crewTotals(job.assignments.map((a) => ({ assignmentId: a.id, workerId: a.workerId, name: a.worker.displayName, pay: a.pay, paidAt: a.paidAt ? a.paidAt.toISOString() : null }))).unpaid,
     expenses: m.expenses,
+    stock: m.stock,
     cost: m.cost,
     costIsPlanned: m.costIsPlanned,
     profit: m.profit,
@@ -320,6 +327,7 @@ export async function loadJobDetail(
     plannedProfit: m.plannedProfit,
     costVariance: m.costVariance,
   };
+  const pick = await pickFor(organizationId, job.proposal?.trade ?? null, job.proposal?.lineItems.filter((l) => l.materialCost > 0) ?? []);
 
   // A change order amends the proposal (the contract) or, legacy, the job
   // itself; the job page shows both sets as one list, oldest first.
@@ -394,6 +402,9 @@ export async function loadJobDetail(
     photos,
     expenses,
     money,
+    pick,
+    loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
+    picked: out.rows,
     roster,
     booking: bookingWindow(job.startsAt, job.endsAt),
     canWrite: isOwnerOrManager(role),
@@ -436,6 +447,9 @@ async function loadWorkerScoped(
     include: {
       // Name and address only — see the header's disclosure note.
       client: { select: { name: true, address: true, city: true, state: true, zip: true } },
+      // The pick list only: material lines by name and count — no price
+      // column is selected, so the worker's record still carries no money.
+      proposal: { select: { trade: true, lineItems: { where: { materialCost: { gt: 0 } }, select: { name: true, measurementType: true, quantity: true } } } },
       events: { orderBy: { startsAt: "asc" } },
       photos: { orderBy: { createdAt: "desc" } },
       assignments: {
@@ -513,6 +527,9 @@ async function loadWorkerScoped(
     photos,
     expenses: [],
     money: null,
+    pick: await pickFor(organizationId, job.proposal?.trade ?? null, job.proposal?.lineItems ?? []),
+    loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
+    picked: (await pickedFor(job.id)).rows,
     roster: [],
     // Never read — `canWrite` is false, so nothing on this edition books
     // anything — but the shape is the shape.
@@ -525,4 +542,47 @@ async function loadWorkerScoped(
     viewer: "worker",
     assignment: OWN_ASSIGNMENT_STATE[own] ?? "wait",
   };
+}
+
+/**
+ * The crew's pick list for a job: the proposal's material lines against the
+ * warehouse's items for that trade. A job with no trade still lists its
+ * materials — the crew still brings them — with nothing on the shelf to check.
+ */
+async function pickFor(organizationId: string, trade: string | null, lines: Array<{ name: string; measurementType: string; quantity: number }>): Promise<JdPick[]> {
+  if (!lines.length) return [];
+  const items: StockItem[] = isTradeId(trade)
+    ? (await db.inventoryItem.findMany({ where: { organizationId, trade } })).map((i) => ({ id: i.id, name: i.name, key: i.key, unit: i.unit, onHand: i.onHand, reorderPoint: i.reorderPoint, supplierId: i.supplierId }))
+    : [];
+  return pickList(items, lines.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType.toLowerCase().replace("_", " ") }))).map((r) => ({
+    name: r.name,
+    unit: r.unit,
+    quantity: r.quantity,
+    tracked: r.itemId !== null,
+    enough: r.enough,
+    onHand: r.onHand,
+  }));
+}
+
+/**
+ * What is out on the job from the warehouse: the PICKED rows (stored
+ * negative) less the RETURNED rows, per item, and their cost at the item's
+ * last known price — the job's "materials from stock" line.
+ */
+async function pickedFor(jobId: string): Promise<{ rows: JdPicked[]; cost: number }> {
+  const moves = await db.inventoryMovement.findMany({
+    where: { jobId, kind: { in: ["PICKED", "RETURNED"] } },
+    select: { itemId: true, kind: true, quantity: true, item: { select: { name: true, unit: true, lastCost: true } } },
+  });
+  if (!moves.length) return { rows: [], cost: 0 };
+  const byItem = new Map<string, JdPicked & { lastCost: number }>();
+  for (const mv of moves) {
+    const row = byItem.get(mv.itemId) ?? { itemId: mv.itemId, name: mv.item.name, unit: mv.item.unit, taken: 0, returned: 0, lastCost: mv.item.lastCost ?? 0 };
+    if (mv.kind === "PICKED") row.taken += -mv.quantity;
+    else row.returned += mv.quantity;
+    byItem.set(mv.itemId, row);
+  }
+  const rows = [...byItem.values()];
+  const cost = Math.round(rows.reduce((a, r) => a + Math.max(0, r.taken - r.returned) * r.lastCost, 0) * 100) / 100;
+  return { rows: rows.map((r) => ({ itemId: r.itemId, name: r.name, unit: r.unit, taken: r.taken, returned: r.returned })), cost };
 }

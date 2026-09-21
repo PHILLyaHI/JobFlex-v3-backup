@@ -413,6 +413,79 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
           </section>
         )}
 
+        {tab === "overview" && record.pick.length > 0 && (
+          <section className={cx("card")} data-pick-list>
+            <div className={cx("jd-h")}>
+              <h2 className={cx("jd-t")}>Take from the warehouse</h2>
+              <span className={cx("jd-s")}>{record.loadedAt ? `loaded ${new Date(record.loadedAt).toLocaleDateString("en-US")}` : "what this job needs on the truck"}</span>
+            </div>
+            {/* The crew's list (lib/inventory pickList): every material line of
+                the proposal in whole units, and whether the shelf has it. "Loaded"
+                takes the tracked lines out of the warehouse, once. */}
+            {record.pick.map((p) => (
+              <div className={cx("jd-row")} key={p.name}>
+                <div>
+                  <div className={cx("jd-row-n")}>
+                    {p.quantity} {p.unit} — {p.name}
+                  </div>
+                  <div className={cx("jd-row-m")}>
+                    {!p.tracked ? "not tracked in the warehouse — bring it anyway" : p.enough ? `on the shelf (${p.onHand})` : `short on the shelf — only ${p.onHand} there`}
+                  </div>
+                </div>
+                {p.tracked && !p.enough && !record.loadedAt ? (
+                  <div className={cx("jd-row-act")}>
+                    <span className={cx("jd-b", "jd-b--wait")}>Short</span>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+            {record.loadedAt && record.picked.some((p) => p.taken > p.returned) && (
+              <form
+                className={cx("jd-row")}
+                data-leftovers
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const f = e.currentTarget;
+                  const lines = record.picked
+                    .map((p) => ({ itemId: p.itemId, quantity: Number((f.elements.namedItem(`back-${p.itemId}`) as HTMLInputElement | null)?.value) || 0 }))
+                    .filter((l) => l.quantity > 0);
+                  if (lines.length) void a.returnMaterials(lines);
+                  f.reset();
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div className={cx("jd-row-n")}>Leftovers back to the warehouse</div>
+                  {record.picked
+                    .filter((p) => p.taken > p.returned)
+                    .map((p) => (
+                      <div className={cx("jd-row-m")} key={p.itemId} style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
+                        <input name={`back-${p.itemId}`} className="pinput" type="number" min={0} max={p.taken - p.returned} step="any" placeholder="0" style={{ width: 80 }} aria-label={`${p.name} returned`} />
+                        <span>
+                          of {p.taken - p.returned} {p.unit} — {p.name}
+                          {p.returned > 0 ? ` (${p.returned} already back)` : ""}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+                <div className={cx("jd-row-act")}>
+                  <button className={cx("btn")} type="submit" disabled={a.busy?.kind === "return"}>
+                    Return
+                  </button>
+                </div>
+              </form>
+            )}
+            {!record.loadedAt && (
+              <div className={cx("jd-row")}>
+                <div className={cx("jd-row-m")}>Tap when the truck is loaded — the warehouse count comes down and the office sees it.</div>
+                <div className={cx("jd-row-act")}>
+                  <button className={cx("btn")} type="button" disabled={a.busy?.kind === "load"} onClick={() => void a.loadMaterials()}>
+                    Loaded
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
         {tab === "crew" && (
           <section className={cx("card")}>
             <div className={cx("jd-h")}>
@@ -722,7 +795,8 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                 <div className={cx("jd-row-n")}>Cost</div>
                 <div className={cx("jd-row-m")}>
                   crew {fmt(record.money.crew)}
-                  {record.money.crewUnpaid > 0 ? ` (${fmt(record.money.crewUnpaid)} unpaid)` : ""} · receipts {fmt(record.money.expenses)} · estimate said {fmt(record.money.plannedCost)}
+                  {record.money.crewUnpaid > 0 ? ` (${fmt(record.money.crewUnpaid)} unpaid)` : ""} · receipts {fmt(record.money.expenses)}
+                  {record.money.stock > 0 ? ` · from the warehouse ${fmt(record.money.stock)}` : ""} · estimate said {fmt(record.money.plannedCost)}
                 </div>
               </div>
               <div className={cx("jd-row-act")}>

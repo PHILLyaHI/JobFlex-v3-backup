@@ -39,6 +39,8 @@ export type JobCostingInput = {
   crewPay: readonly number[];
   /** Expenses booked against the job. */
   expenses: readonly number[];
+  /** Materials taken from the warehouse for the job, at the items' last cost (2026-09-20). */
+  stock?: number;
 };
 
 export type JobMoney = {
@@ -49,7 +51,9 @@ export type JobMoney = {
   planned: { material: number; labor: number; total: number };
   crew: number;
   expenses: number;
-  /** What the job has cost: crew + expenses, or the planned cost until one is booked. */
+  /** Warehouse materials on the job, at cost. */
+  stock: number;
+  /** What the job has cost: crew + expenses + stock, or the planned cost until one is booked. */
   cost: number;
   /** True while the cost is the estimate's, because nothing is booked yet. */
   costIsPlanned: boolean;
@@ -74,7 +78,8 @@ export function jobMoney(input: JobCostingInput): JobMoney {
   const plannedTotal = money(material + labor);
   const crew = money(sum(input.crewPay.map((p) => Math.max(0, p))));
   const expenses = money(sum(input.expenses.map((e) => Math.max(0, e))));
-  const booked = money(crew + expenses);
+  const stock = money(Math.max(0, input.stock ?? 0));
+  const booked = money(crew + expenses + stock);
   const costIsPlanned = booked <= 0 && plannedTotal > 0;
   const cost = costIsPlanned ? plannedTotal : booked;
   const profit = money(contract - cost);
@@ -86,6 +91,7 @@ export function jobMoney(input: JobCostingInput): JobMoney {
     planned: { material, labor, total: plannedTotal },
     crew,
     expenses,
+    stock,
     cost,
     costIsPlanned,
     profit,

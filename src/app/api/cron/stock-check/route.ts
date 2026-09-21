@@ -1,0 +1,67 @@
+import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { isCronAuthorized } from "@/lib/cronAuth";
+import { lowStockCounts } from "@/lib/inventoryBoard";
+import { isTradeId, pickList, type StockItem } from "@/lib/inventory";
+
+export const runtime = "nodejs";
+
+// THE DAILY STOCK CHECK (2026-09-20). Two looks at every company's warehouse,
+// each becoming a bell notification (an ActivityEvent the feed already reads):
+//   STOCK_LOW        — a trade board has items low for the next job.
+//   STOCK_SHORT_JOB  — a job starting within two days needs more than the
+//                      shelf holds. Said once per job.
+// Fail-closed cron auth, like the other cron routes. Never throws past one
+// company: a bad org is logged and the rest still run.
+const BOARD: Record<string, string> = { fence: "/dashboard/fence-estimator/board", roof: "/dashboard/roof-estimator/board", hvac: "/dashboard/hvac-estimator/board" };
+const LABEL: Record<string, string> = { fence: "Fence", roof: "Roofing", hvac: "HVAC" };
+
+export async function GET(req: Request) {
+  if (!isCronAuthorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const dayAgo = new Date(Date.now() - 24 * 3600 * 1000);
+  const soon = new Date(Date.now() + 2 * 24 * 3600 * 1000);
+  const orgs = await db.inventoryItem.findMany({ distinct: ["organizationId"], select: { organizationId: true } });
+  let lowNotices = 0;
+  let jobNotices = 0;
+  for (const { organizationId } of orgs) {
+    try {
+      // 1) Low stock per board, once a day.
+      const low = await lowStockCounts(organizationId);
+      for (const trade of ["fence", "roof", "hvac"] as const) {
+        if (!low[trade]) continue;
+        const said = await db.activityEvent.findFirst({ where: { organizationId, kind: "STOCK_LOW", createdAt: { gte: dayAgo }, meta: { contains: `"trade":"${trade}"` } }, select: { id: true } });
+        if (said) continue;
+        await db.activityEvent.create({
+          data: { organizationId, kind: "STOCK_LOW", summary: `${LABEL[trade]} stock: ${low[trade]} item${low[trade] === 1 ? " is" : "s are"} low for the next job — the purchase order is ready on the ${LABEL[trade]} board`, meta: JSON.stringify({ trade, href: BOARD[trade], count: low[trade] }) },
+        });
+        lowNotices++;
+      }
+      // 2) Jobs starting within two days whose pick list is short on the shelf.
+      const jobs = await db.job.findMany({
+        where: { organizationId, materialsLoadedAt: null, startsAt: { gte: new Date(), lte: soon }, proposal: { trade: { in: ["fence", "roof", "hvac"] } } },
+        select: { id: true, title: true, startsAt: true, proposal: { select: { trade: true, lineItems: { where: { materialCost: { gt: 0 } }, select: { name: true, quantity: true, measurementType: true } } } } },
+      });
+      for (const job of jobs) {
+        const trade = job.proposal?.trade;
+        if (!isTradeId(trade) || !job.proposal) continue;
+        const items: StockItem[] = (await db.inventoryItem.findMany({ where: { organizationId, trade } })).map((i) => ({ id: i.id, name: i.name, key: i.key, unit: i.unit, onHand: i.onHand, reorderPoint: i.reorderPoint, supplierId: i.supplierId }));
+        const short = pickList(items, job.proposal.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType }))).filter((r) => r.itemId && !r.enough);
+        if (!short.length) continue;
+        const said = await db.activityEvent.findFirst({ where: { organizationId, kind: "STOCK_SHORT_JOB", meta: { contains: `"jobId":"${job.id}"` } }, select: { id: true } });
+        if (said) continue;
+        await db.activityEvent.create({
+          data: {
+            organizationId,
+            kind: "STOCK_SHORT_JOB",
+            summary: `${job.title} starts ${job.startsAt?.toLocaleDateString("en-US", { month: "short", day: "numeric" }) ?? "soon"} and the warehouse is short: ${short.map((s) => `${s.name} (${s.quantity} needed, ${s.onHand} there)`).join(", ")}`,
+            meta: JSON.stringify({ jobId: job.id, trade, href: `/dashboard/jobs/${job.id}` }),
+          },
+        });
+        jobNotices++;
+      }
+    } catch (err) {
+      console.error(`[stock-check] org ${organizationId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return NextResponse.json({ ok: true, orgs: orgs.length, lowNotices, jobNotices });
+}
