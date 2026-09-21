@@ -108,8 +108,10 @@ async function qaOrg(prisma) {
 /** Run a script against the QA Co fixtures (./_world): made first, removed last — pass or fail. */
 async function withWorld(run, opts = {}) {
   const world = require("./_world");
-  const made = await world.up(undefined, opts);
   try {
+    // inside the try: an `up` that fails halfway (a schema the database has not caught up with)
+    // must not leave its first rows behind
+    const made = await world.up(undefined, opts);
     await run(made);
   } finally {
     await world.down();
