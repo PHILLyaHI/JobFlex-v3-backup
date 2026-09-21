@@ -23,6 +23,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { recordInventoryLink } from "@/lib/inventoryPick";
 import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
@@ -780,8 +781,6 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
     data: {
       // The trade board lists it and its materials count against the hvac stock (2026-09-20).
       trade: "hvac",
-      // Connected to the warehouse or an estimate only (null = the company's default).
-      inventoryLinked: data.inventoryLinked ?? null,
       publicId: randomUUID(),
       organizationId,
       ownerId: user.id,
@@ -805,6 +804,8 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
       },
     },
   });
+  // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
+  await recordInventoryLink(organizationId, proposal.id, data.inventoryLinked, user.id);
 
   if (data.estimateId) {
     try {

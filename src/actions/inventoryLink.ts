@@ -16,7 +16,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { isTradeId, type TradeId } from "@/lib/inventory";
-import { pickForProposal } from "@/lib/inventoryPick";
+import { inventoryLinkOf, pickForProposal, recordInventoryLink } from "@/lib/inventoryPick";
 import { NoOrgError, requireEstimatorOrManager, requireOrg, UnauthorizedError } from "@/lib/orgContext";
 
 type Fail = { ok: false; error: string };
@@ -37,11 +37,12 @@ export async function inventoryLinkDefault(trade?: string | null): Promise<{ lin
 
 export async function setProposalInventoryLink(input: { proposalId: string; linked: boolean; trade?: string | null }): Promise<{ ok: true; linked: boolean } | Fail> {
   try {
-    const { organizationId } = await requireEstimatorOrManager();
+    const { organizationId, user } = await requireEstimatorOrManager();
     const p = await db.proposal.findFirst({ where: { id: input.proposalId, organizationId }, select: { id: true, trade: true } });
     if (!p) return { ok: false, error: "Proposal not found" };
     const trade = isTradeId(input.trade) ? input.trade : null;
-    await db.proposal.update({ where: { id: p.id }, data: { inventoryLinked: input.linked, ...(trade ? { trade } : {}) } });
+    await recordInventoryLink(organizationId, p.id, input.linked, user.id);
+    if (trade && !p.trade) await db.proposal.update({ where: { id: p.id }, data: { trade } });
     for (const t of Object.keys(BOARDS) as TradeId[]) revalidatePath(BOARDS[t]);
     revalidatePath("/dashboard/manual-blueprint");
     revalidatePath("/dashboard/jobs");
@@ -58,11 +59,12 @@ export async function proposalPickList(proposalId: string): Promise<{ ok: true; 
     const { organizationId } = await requireOrg();
     const p = await db.proposal.findFirst({
       where: { id: proposalId, organizationId },
-      select: { title: true, description: true, trade: true, inventoryLinked: true, lineItems: { where: { materialCost: { gt: 0 } }, select: { name: true, quantity: true, measurementType: true } } },
+      select: { title: true, description: true, trade: true, lineItems: { where: { materialCost: { gt: 0 } }, select: { name: true, quantity: true, measurementType: true } } },
     });
     if (!p) return { ok: false, error: "Proposal not found" };
-    const { trade, rows } = await pickForProposal(organizationId, p);
-    return { ok: true, linked: !!trade, trade, explicit: p.inventoryLinked, rows: rows.map((r) => ({ name: r.name, unit: r.unit, quantity: r.quantity, tracked: !!r.itemId, onHand: r.onHand, enough: r.enough })) };
+    const explicit = (await inventoryLinkOf(organizationId, [proposalId])).get(proposalId) ?? null;
+    const { trade, rows } = await pickForProposal(organizationId, { ...p, inventoryLinked: explicit });
+    return { ok: true, linked: !!trade, trade, explicit, rows: rows.map((r) => ({ name: r.name, unit: r.unit, quantity: r.quantity, tracked: !!r.itemId, onHand: r.onHand, enough: r.enough })) };
   } catch (err) {
     return fail(err);
   }

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { recordInventoryLink } from "@/lib/inventoryPick";
 import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
 import { sellUnitPrice, resolveMarkupRates } from "@/lib/pricing/markup";
 import { uploadBlob, isBlobEnabled } from "@/lib/sdk/blob";
@@ -243,8 +244,6 @@ export async function convertFenceEstimateToProposal(raw: unknown) {
     data: {
       // The trade board lists it and its materials count against the fence stock (2026-09-20).
       trade: "fence",
-      // Connected to the warehouse or an estimate only (null = the company's default).
-      inventoryLinked: data.inventoryLinked ?? null,
       publicId: randomUUID(),
       organizationId,
       ownerId: user.id,
@@ -275,6 +274,8 @@ export async function convertFenceEstimateToProposal(raw: unknown) {
       },
     },
   });
+  // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
+  await recordInventoryLink(organizationId, proposal.id, data.inventoryLinked, user.id);
 
   if (filing) await clearFilingContext();
   if (projectId) revalidatePath(`/dashboard/projects/${projectId}`);

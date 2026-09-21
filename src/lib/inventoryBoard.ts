@@ -17,6 +17,7 @@ import { isTradeId, stockKey, stockRows, untrackedLines, type StockItem, type St
 import { presetItems } from "@/lib/inventoryPresets";
 import { explodeLines } from "@/lib/inventoryBom";
 import { proposalTrade } from "@/lib/inventoryTrade";
+import { inventoryLinkOf } from "@/lib/inventoryPick";
 
 export type BoardProposal = {
   id: string;
@@ -73,7 +74,6 @@ async function tradeProposals(organizationId: string, wanted: readonly TradeId[]
       title: true,
       description: true,
       trade: true,
-      inventoryLinked: true,
       status: true,
       total: true,
       createdAt: true,
@@ -92,7 +92,9 @@ async function tradeProposals(organizationId: string, wanted: readonly TradeId[]
     : [none, none];
   const hvac = new Set(hvacLinks.map((h) => h.proposalId));
   const roof = new Set(roofLinks.map((r) => r.proposalId));
-  const out: Array<{ row: (typeof rows)[number]; trade: TradeId; inferred: boolean }> = [];
+  // The connect-or-not choice, an event per proposal; absent = connected.
+  const links = await inventoryLinkOf(organizationId, rows.map((r) => r.id));
+  const out: Array<{ row: (typeof rows)[number]; trade: TradeId; inferred: boolean; linked: boolean }> = [];
   for (const r of rows) {
     const t = proposalTrade({
       trade: r.trade,
@@ -102,7 +104,7 @@ async function tradeProposals(organizationId: string, wanted: readonly TradeId[]
       hvacEstimate: hvac.has(r.id),
       roofMeasurement: roof.has(r.id),
     });
-    if (t && wanted.includes(t)) out.push({ row: r, trade: t, inferred: !r.trade });
+    if (t && wanted.includes(t)) out.push({ row: r, trade: t, inferred: !r.trade, linked: links.get(r.id) !== false });
   }
   return out;
 }
@@ -122,7 +124,7 @@ export async function loadTradeBoard(organizationId: string, trade: string): Pro
       return { id: e.id, supplier: suppliers.find((s) => s.id === meta.supplierId)?.name ?? "Supplier", sentAt: e.createdAt.toISOString(), lines: meta.lines ?? [] };
     })
     .filter((o): o is BoardOrder => !!o);
-  const list: BoardProposal[] = proposals.map(({ row: p, inferred }) => ({
+  const list: BoardProposal[] = proposals.map(({ row: p, inferred, linked }) => ({
     id: p.id,
     title: p.title,
     client: p.client?.name ?? null,
@@ -133,7 +135,7 @@ export async function loadTradeBoard(organizationId: string, trade: string): Pro
     loaded: !!p.jobs[0]?.materialsLoadedAt,
     jobStartsAt: p.jobs[0]?.startsAt ? p.jobs[0].startsAt.toISOString() : null,
     inferred,
-    linked: p.inventoryLinked !== false,
+    linked,
     // A fence package line becomes the posts, rails and pickets it was priced from.
     lines: explodeLines(trade, p.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType }))),
   }));
@@ -185,7 +187,7 @@ export async function lowStockCounts(organizationId: string): Promise<Record<Tra
   for (const trade of ALL_TRADES) {
     const stock = items.filter((i) => i.trade === trade);
     if (!stock.length) continue;
-    const ofTrade = proposals.filter((p) => p.trade === trade && p.row.inventoryLinked !== false).map((p) => p.row);
+    const ofTrade = proposals.filter((p) => p.trade === trade && p.linked).map((p) => p.row);
     const sold = ofTrade.filter((p) => p.status === "ACCEPTED" && !p.jobs[0]?.materialsLoadedAt).map((p) => ({ lines: explodeLines(trade, p.lineItems) }));
     const open = ofTrade.filter((p) => OPEN.includes(p.status)).map((p) => ({ lines: explodeLines(trade, p.lineItems) }));
     out[trade] = stockRows(stock, sold, open).filter((r) => r.low).length;

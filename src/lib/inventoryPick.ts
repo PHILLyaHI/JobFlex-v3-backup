@@ -13,6 +13,41 @@ import { pickList, type PickRow, type StockItem, type TradeId } from "@/lib/inve
 import { explodeLines } from "@/lib/inventoryBom";
 import { proposalTrade } from "@/lib/inventoryTrade";
 
+// The choice itself is an ActivityEvent (kind INVENTORY_LINK, meta {linked}),
+// the latest one per proposal, so it needs no schema change: production
+// deploys stopped pushing the schema (vercel.json, 2026-09-20) and a new
+// column would have to be pushed by hand before it could be read.
+export const INVENTORY_LINK_EVENT = "INVENTORY_LINK";
+
+/** The explicit choice per proposal: true, false, or absent when never chosen. */
+export async function inventoryLinkOf(organizationId: string, proposalIds: readonly string[]): Promise<Map<string, boolean>> {
+  const out = new Map<string, boolean>();
+  if (!proposalIds.length) return out;
+  const events = await db.activityEvent.findMany({
+    where: { organizationId, kind: INVENTORY_LINK_EVENT, proposalId: { in: [...proposalIds] } },
+    orderBy: { createdAt: "desc" },
+    select: { proposalId: true, meta: true },
+  });
+  for (const e of events) {
+    if (!e.proposalId || out.has(e.proposalId)) continue; // newest first: the first seen wins
+    try {
+      const meta = JSON.parse(e.meta ?? "{}") as { linked?: boolean };
+      if (typeof meta.linked === "boolean") out.set(e.proposalId, meta.linked);
+    } catch {
+      /* an unreadable event decides nothing */
+    }
+  }
+  return out;
+}
+
+/** Record the choice for a proposal. Null means "the company's default" and records nothing. */
+export async function recordInventoryLink(organizationId: string, proposalId: string, linked: boolean | null | undefined, actorId?: string | null): Promise<void> {
+  if (linked == null) return;
+  await db.activityEvent.create({
+    data: { organizationId, actorId: actorId ?? null, proposalId, kind: INVENTORY_LINK_EVENT, summary: linked ? "Connected to the inventory" : "Estimate only — not connected to the inventory", meta: JSON.stringify({ linked }) },
+  });
+}
+
 export type LinkedProposal = {
   trade: string | null;
   inventoryLinked: boolean | null;

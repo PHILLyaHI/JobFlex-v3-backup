@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 // AND-ed into every lookup so they can only touch proposals they own.
 import { requireProposalStaff } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { recordInventoryLink } from "@/lib/inventoryPick";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { assertLinksInOrg } from "@/lib/assertLinksInOrg";
@@ -399,7 +400,6 @@ export async function saveProposal(raw: unknown) {
       ownerId: user.id,
       clientId: data.clientId ?? null,
       projectId: data.projectId ?? null,
-      inventoryLinked: data.inventoryLinked ?? null,
       title: data.title,
       description: data.description,
       scopeOfWork: data.scopeOfWork,
@@ -441,6 +441,8 @@ export async function saveProposal(raw: unknown) {
         : {}),
     },
   });
+  // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
+  await recordInventoryLink(organizationId, created.id, data.inventoryLinked, user.id);
 
   await db.activityEvent.create({
     data: {

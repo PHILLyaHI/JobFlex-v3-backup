@@ -5,6 +5,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { recordInventoryLink } from "@/lib/inventoryPick";
 import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
 import {
   friendlyAIError,
@@ -1567,8 +1568,6 @@ export async function convertEstimateToProposal(raw: unknown) {
       // A Smart Proposal for a fence, a roof or HVAC belongs to that trade's
       // board and its stock (2026-09-20); anything else has no trade.
       trade: isTradeId(data.projectType) ? data.projectType : null,
-      // Connected to the warehouse or an estimate only (null = the company's default).
-      inventoryLinked: data.inventoryLinked ?? null,
       subtotal,
       discountTotal,
       taxRate,
@@ -1599,6 +1598,8 @@ export async function convertEstimateToProposal(raw: unknown) {
       },
     },
   });
+  // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
+  await recordInventoryLink(organizationId, proposal.id, data.inventoryLinked, user.id);
 
   await db.activityEvent.create({
     data: {

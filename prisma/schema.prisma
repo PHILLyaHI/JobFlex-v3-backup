@@ -579,11 +579,6 @@ model Proposal {
   // Which estimator made it — "fence", "roof", "hvac" — so the trade boards
   // (2026-09-20) list it and its materials count against that trade's stock.
   trade          String?
-  // Whether it draws on the warehouse (2026-09-20, later): true = its
-  // materials are reserved when it sells and go on the crew's pick list;
-  // false = an estimate only, the contractor orders on their own; null =
-  // decided by whether the company keeps stock for the trade.
-  inventoryLinked Boolean?
   organizationId String
   ownerId        String?
   clientId       String?

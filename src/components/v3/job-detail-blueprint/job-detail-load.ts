@@ -24,7 +24,7 @@ import { isOwnerOrManager, isWorkerRole } from "@/lib/orgContext";
 import { contractTotal } from "@/lib/contractTotal";
 import { crewTotals, jobMoney } from "@/lib/jobCosting";
 import { isTradeId, pickList, type StockItem } from "@/lib/inventory";
-import { linkedTradeOf } from "@/lib/inventoryPick";
+import { inventoryLinkOf, linkedTradeOf } from "@/lib/inventoryPick";
 import { explodeLines } from "@/lib/inventoryBom";
 import {
   STATUS_TO_KEY,
@@ -239,7 +239,6 @@ export async function loadJobDetail(
           // The job's money card: the estimate's own cost side and what the
           // client has actually paid (lib/jobCosting).
           trade: true,
-          inventoryLinked: true,
           description: true,
           lineItems: { select: { name: true, measurementType: true, quantity: true, materialCost: true, laborCost: true } },
           payments: { where: { status: "PAID" }, select: { amount: true } },
@@ -333,7 +332,8 @@ export async function loadJobDetail(
   };
   // An estimate only (inventoryLinked false) has no pick list; an unstamped
   // proposal is placed by its materials or title (lib/inventoryPick).
-  const pick = await pickFor(organizationId, job.proposal ? linkedTradeOf({ ...job.proposal, lineItems: job.proposal.lineItems.filter((l) => l.materialCost > 0) }) : null, job.proposal?.lineItems.filter((l) => l.materialCost > 0) ?? []);
+  const linkChoice = job.proposalId ? ((await inventoryLinkOf(organizationId, [job.proposalId])).get(job.proposalId) ?? null) : null;
+  const pick = await pickFor(organizationId, job.proposal ? linkedTradeOf({ ...job.proposal, inventoryLinked: linkChoice, lineItems: job.proposal.lineItems.filter((l) => l.materialCost > 0) }) : null, job.proposal?.lineItems.filter((l) => l.materialCost > 0) ?? []);
 
   // A change order amends the proposal (the contract) or, legacy, the job
   // itself; the job page shows both sets as one list, oldest first.
@@ -455,7 +455,7 @@ async function loadWorkerScoped(
       client: { select: { name: true, address: true, city: true, state: true, zip: true } },
       // The pick list only: material lines by name and count — no price
       // column is selected, so the worker's record still carries no money.
-      proposal: { select: { trade: true, inventoryLinked: true, title: true, description: true, lineItems: { where: { materialCost: { gt: 0 } }, select: { name: true, measurementType: true, quantity: true } } } },
+      proposal: { select: { trade: true, title: true, description: true, lineItems: { where: { materialCost: { gt: 0 } }, select: { name: true, measurementType: true, quantity: true } } } },
       events: { orderBy: { startsAt: "asc" } },
       photos: { orderBy: { createdAt: "desc" } },
       assignments: {
@@ -533,7 +533,7 @@ async function loadWorkerScoped(
     photos,
     expenses: [],
     money: null,
-    pick: await pickFor(organizationId, job.proposal ? linkedTradeOf(job.proposal) : null, job.proposal?.lineItems ?? []),
+    pick: await pickFor(organizationId, job.proposal ? linkedTradeOf({ ...job.proposal, inventoryLinked: job.proposalId ? ((await inventoryLinkOf(organizationId, [job.proposalId])).get(job.proposalId) ?? null) : null }) : null, job.proposal?.lineItems ?? []),
     loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
     picked: (await pickedFor(job.id)).rows,
     roster: [],

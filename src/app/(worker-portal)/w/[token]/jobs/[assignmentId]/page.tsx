@@ -17,7 +17,7 @@ import {
   Package,
   Users,
 } from "lucide-react";
-import { pickForProposal } from "@/lib/inventoryPick";
+import { inventoryLinkOf, pickForProposal } from "@/lib/inventoryPick";
 
 export default async function WorkerAssignmentPage({
   params,
@@ -41,7 +41,7 @@ export default async function WorkerAssignmentPage({
           },
           // The pick-up list only: material lines by name and count — no price
           // is selected, so the worker's page still carries no money (2026-09-20).
-          proposal: { select: { title: true, description: true, trade: true, inventoryLinked: true, lineItems: { where: { materialCost: { gt: 0 } }, select: { name: true, quantity: true, measurementType: true } } } },
+          proposal: { select: { title: true, description: true, trade: true, lineItems: { where: { materialCost: { gt: 0 } }, select: { name: true, quantity: true, measurementType: true } } } },
         },
       },
     },
@@ -68,7 +68,8 @@ export default async function WorkerAssignmentPage({
 
   // What to take from the warehouse: the proposal's materials against the
   // shelf, when the proposal is connected to the inventory (lib/inventoryPick).
-  const pick = job.proposal ? (await pickForProposal(worker.organizationId, job.proposal)).rows : [];
+  const linkChoice = job.proposalId ? ((await inventoryLinkOf(worker.organizationId, [job.proposalId])).get(job.proposalId) ?? null) : null;
+  const pick = job.proposal ? (await pickForProposal(worker.organizationId, { ...job.proposal, inventoryLinked: linkChoice })).rows : [];
 
   const address =
     [job.client?.address, job.client?.city, job.client?.state].filter(Boolean).join(", ") || null;
