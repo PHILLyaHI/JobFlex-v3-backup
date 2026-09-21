@@ -126,6 +126,7 @@ export function FenceEstimatorContent() {
 
       <div className="fs-grid">
         {/* CANVAS: map (Google Maps slot) / 3D */}
+        <div className="fs-main">
         <div className="card fs-stage">
           <div className="stage-tools">
             <div className="tool-group">
@@ -311,6 +312,99 @@ export function FenceEstimatorContent() {
           </div>
         </div>
 
+          {/* SETTINGS — under the lot's sides, a grid of cards (3 across at 1440, 2 at
+              1280, 1 on a phone). They used to hang under the type list in the
+              rail, which ran several screens down beside an empty centre. */}
+          <div className="fs-settings" id="fsSettings">
+            <div className="card fs-card fs-set fs-set--height">
+              <div className="ledger-head">Height</div>
+              <div className="seg" id="heights"></div>
+            </div>
+            <div className="card fs-card fs-set">
+              <div className="ledger-head">Site</div>
+              <div className="site-row">
+                <div>
+                  <div className="tg-t">Remove existing fence</div>
+                  <div className="tg-h">
+                    Tear-out and haul-away, at{" "}
+                    <span className="site-rate"><span className="mat-cur">$</span><input className="mat-new-in" id="removalRate" type="number" min="0" step="0.5" inputMode="decimal" aria-label="Tear-out rate, dollars per linear foot" defaultValue="6" /></span>
+                    {" "}per linear foot.
+                  </div>
+                </div>
+                <button className="tgl" type="button" id="demoTgl" aria-label="Remove existing fence"></button>
+              </div>
+              <div className="site-row is-hidden" id="stainRow">
+                <div>
+                  <div className="tg-t">Stain &amp; seal after install</div>
+                  <div className="tg-h">Two coats, both faces — wood fences only.</div>
+                </div>
+                <button className="tgl" type="button" id="stainTgl" aria-label="Stain and seal after install"></button>
+              </div>
+            </div>
+            <div className="card fs-card fs-set">
+              <div className="ledger-head">Posts</div>
+              <div className="site-row site-row--stack is-hidden" id="upgradeRow">
+                <div>
+                  <div className="tg-t">Posts</div>
+                  <div className="tg-h">Galvanized steel never rots or leans; 6×6 is heavy stock at every post.</div>
+                </div>
+                <div className="site-seg" role="group" aria-label="Post upgrade"></div>
+              </div>
+              <div className="site-row site-row--stack" id="spacingRow">
+                <div>
+                  <div className="tg-t">Post spacing</div>
+                  <div className="tg-h"></div>
+                </div>
+                <div className="site-seg" role="group" aria-label="Post spacing"></div>
+              </div>
+            </div>
+            <div className="card fs-card fs-set">
+              <div className="ledger-head">Ground</div>
+              <div className="site-row site-row--stack" id="groundRow">
+                <div>
+                  <div className="tg-t">Ground</div>
+                  <div className="tg-h"></div>
+                </div>
+                <div className="site-seg" role="group" aria-label="Ground difficulty"></div>
+              </div>
+            </div>
+          </div>
+          <div className="fs-ledgers">
+            <div className="card fs-card">
+              <div className="stat-strip" id="statStrip"></div>
+              <div className="ledger-head">Runs</div>
+              <ul className="runs" id="runsList"></ul>
+              {/* Same empty-state idiom as #openEmpty below. The page opens with
+                  NO runs: every foot in the ledger is either traced on the map or
+                  typed by the user, so nothing on the ticket is invented. */}
+              <div className="open-empty" id="runsEmpty">Enter the address above and trace the fence on the map, or add a run and type its length.</div>
+              <div className="runs-add">
+                <button className="btn btn-ghost btn--sm" type="button" data-act="add-run">
+                  <svg className="ic">
+                    <use href="#i-plus" />
+                  </svg>
+                  Add run
+                </button>
+              </div>
+              <div className="ledger-head">Gates &amp; doors</div>
+              <ul className="openings" id="openList"></ul>
+              <div className="open-empty is-hidden" id="openEmpty">No openings yet — add a gate or door above.</div>
+            </div>
+              {/* MATERIAL TAKEOFF — the bill of materials the same engine prices:
+                posts by kind, rails / pickets / panels / mesh, concrete from the
+                holes actually dug, hardware, gate kits, stain, tear-out. Hidden
+                until there is fence to take off. */}
+            <div className="card fs-card takeoff is-hidden" id="takeoffCard">
+              <div className="ledger-head takeoff-head">
+                <span>Material takeoff</span>
+                <span className="takeoff-meta" id="takeoffMeta"></span>
+              </div>
+              <ul className="bom" id="bomList"></ul>
+              <div className="takeoff-foot" id="takeoffFoot"></div>
+            </div>
+            </div>
+        </div>
+
         {/* RIGHT RAIL */}
         <aside className="fs-rail">
           <div className="card tk">
@@ -335,104 +429,32 @@ export function FenceEstimatorContent() {
             </div>
           </div>
 
-          <div className="card fs-card">
-            <div className="stat-strip" id="statStrip"></div>
-            <div className="ledger-head">Runs</div>
-            <ul className="runs" id="runsList"></ul>
-            {/* Same empty-state idiom as #openEmpty below. The page opens with
-                NO runs: every foot in the ledger is either traced on the map or
-                typed by the user, so nothing on the ticket is invented. */}
-            <div className="open-empty" id="runsEmpty">Enter the address above and trace the fence on the map, or add a run and type its length.</div>
-            <div className="runs-add">
-              <button className="btn btn-ghost btn--sm" type="button" data-act="add-run">
-                <svg className="ic">
-                  <use href="#i-plus" />
-                </svg>
-                Add run
-              </button>
-            </div>
-            <div className="ledger-head">Gates &amp; doors</div>
-            <ul className="openings" id="openList"></ul>
-            <div className="open-empty is-hidden" id="openEmpty">No openings yet — add a gate or door above.</div>
-          </div>
 
-          {/* MATERIAL TAKEOFF — the bill of materials the same engine prices:
-              posts by kind, rails / pickets / panels / mesh, concrete from the
-              holes actually dug, hardware, gate kits, stain, tear-out. Hidden
-              until there is fence to take off. */}
-          <div className="card fs-card takeoff is-hidden" id="takeoffCard">
-            <div className="ledger-head takeoff-head">
-              <span>Material takeoff</span>
-              <span className="takeoff-meta" id="takeoffMeta"></span>
-            </div>
-            <ul className="bom" id="bomList"></ul>
-            <div className="takeoff-foot" id="takeoffFoot"></div>
-          </div>
 
-          <div className="card fs-card">
+          <div className="card fs-card fs-types">
             {/* The catalog's rates are a starting point, not a quote: a
                 contractor who charges $26 for cedar says so BY EDITING CEDAR —
                 click the figure on the row and type the material, labor and
                 walk-gate rates. Types of your own are added here too, built
                 like one of the catalog's so the takeoff still counts. */}
-            <div className="ledger-head">Fence type</div>
+            <div className="ledger-head ledger-head--acts">
+              <span>Fence type</span>
+              <div className="mats-add mats-add--head">
+                <button className="btn btn-ghost btn--sm" type="button" id="matAdd" title="Add a type of your own" aria-label="Add a type of your own">
+                  <svg className="ic">
+                    <use href="#i-plus" />
+                  </svg>
+                  Add type
+                </button>
+                <button className="btn btn-ghost btn--sm" type="button" id="saveBook" aria-label="Save as company defaults" title="Your rates and types become the company's defaults for every estimator on this account">
+                  <svg className="ic">
+                    <use href="#i-check" />
+                  </svg>
+                  Save defaults
+                </button>
+              </div>
+              </div>
             <ul className="mats" id="matList"></ul>
-            <div className="mats-add">
-              <button className="btn btn-ghost btn--sm" type="button" id="matAdd">
-                <svg className="ic">
-                  <use href="#i-plus" />
-                </svg>
-                Add a type of your own
-              </button>
-              <button className="btn btn-ghost btn--sm" type="button" id="saveBook" title="Your rates and types become the company's defaults for every estimator on this account">
-                <svg className="ic">
-                  <use href="#i-check" />
-                </svg>
-                Save as company defaults
-              </button>
-            </div>
-            <div className="ledger-head">Height</div>
-            <div className="seg" id="heights"></div>
-            <div className="ledger-head">Site</div>
-            <div className="site-row">
-              <div>
-                <div className="tg-t">Remove existing fence</div>
-                <div className="tg-h">
-                  Tear-out and haul-away, at{" "}
-                  <span className="site-rate"><span className="mat-cur">$</span><input className="mat-new-in" id="removalRate" type="number" min="0" step="0.5" inputMode="decimal" aria-label="Tear-out rate, dollars per linear foot" defaultValue="6" /></span>
-                  {" "}per linear foot.
-                </div>
-              </div>
-              <button className="tgl" type="button" id="demoTgl" aria-label="Remove existing fence"></button>
-            </div>
-            <div className="site-row is-hidden" id="stainRow">
-              <div>
-                <div className="tg-t">Stain &amp; seal after install</div>
-                <div className="tg-h">Two coats, both faces — wood fences only.</div>
-              </div>
-              <button className="tgl" type="button" id="stainTgl" aria-label="Stain and seal after install"></button>
-            </div>
-            <div className="site-row site-row--stack is-hidden" id="upgradeRow">
-              <div>
-                <div className="tg-t">Posts</div>
-                <div className="tg-h">Galvanized steel never rots or leans; 6×6 is heavy stock at every post.</div>
-              </div>
-              <div className="site-seg" role="group" aria-label="Post upgrade"></div>
-            </div>
-            <div className="site-row site-row--stack" id="spacingRow">
-              <div>
-                <div className="tg-t">Post spacing</div>
-                <div className="tg-h"></div>
-              </div>
-              <div className="site-seg" role="group" aria-label="Post spacing"></div>
-            </div>
-            <div className="site-row site-row--stack" id="groundRow">
-              <div>
-                <div className="tg-t">Ground</div>
-                <div className="tg-h"></div>
-              </div>
-              <div className="site-seg" role="group" aria-label="Ground difficulty"></div>
-            </div>
           </div>
         </aside>
       </div>

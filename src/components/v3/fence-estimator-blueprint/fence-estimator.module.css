@@ -2070,3 +2070,70 @@
   .bp :global(.content .hs-edit) { min-height: 44px; }
 }
 
+/* ============================================================
+   DESKTOP BALANCE (2026-09-21, owner: the rail ran several screens down
+   beside an empty centre). Reading order: map → the lot's sides → settings →
+   runs and takeoff, with the price and the type list held beside them.
+   Markup and styles only — no figure on the page is computed here.
+   ============================================================ */
+.bp :global(.content .fs-main) { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+/* Settings: cards under the sides — 3 across, 2 on a narrower desk. */
+/* Height is a short card and Ground a short one: they share the first column,
+   Site and Posts stand two rows tall beside them — no hole under a short card. */
+.bp :global(.content .fs-settings) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto 1fr; gap: 16px; align-items: start; }
+.bp :global(.content .fs-settings > .fs-set:nth-child(2)), .bp :global(.content .fs-settings > .fs-set:nth-child(3)) { grid-row: span 2; }
+@media (min-width: 1101px) and (max-width: 1399px) {
+  /* two across: Height over Ground | Site, and Posts across the row under them with its two groups side by side */
+  .bp :global(.content .fs-settings) { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto 1fr auto; }
+  .bp :global(.content .fs-settings > .fs-set:nth-child(1)) { order: 1; }
+  .bp :global(.content .fs-settings > .fs-set:nth-child(2)) { order: 2; }
+  .bp :global(.content .fs-settings > .fs-set:nth-child(4)) { order: 3; }
+  .bp :global(.content .fs-settings > .fs-set:nth-child(3)) { order: 4; grid-row: auto; grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bp :global(.content .fs-settings > .fs-set:nth-child(3) > .ledger-head) { grid-column: 1 / -1; }
+  .bp :global(.content .fs-settings > .fs-set:nth-child(3) > .site-row + .site-row) { border-top: none; border-left: 1.5px solid var(--hair-soft); }
+}
+.bp :global(.content .fs-set .seg) { border-bottom: none; flex-wrap: wrap; }
+/* one segment height on the page */
+.bp :global(.content .fs-set .seg-btn), .bp :global(.content .fs-set .site-seg .seg-btn) { height: 34px; font-size: 12.5px; }
+.bp :global(.content .fs-set .seg .seg-btn) { min-width: 52px; }
+
+/* Runs & gates beside the material takeoff; alone, the ledger takes the row. */
+.bp :global(.content .fs-ledgers) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.bp :global(.content .fs-ledgers:has(> .takeoff.is-hidden)) { grid-template-columns: minmax(0, 1fr); }
+
+/* The rail: what has to stay in view — the price with its tiers, and the type
+   list. It sticks, it is never taller than the window, and the list scrolls
+   inside itself instead of stretching the page. */
+/* `.main` scrolls UNDER the shell's top bar, so "the top" for a sticky child is
+   the bar's lower edge plus a breath — not 0 (the price slid under the bar). */
+.bp :global(.content .fs-rail) { --fs-rail-top: 76px; top: var(--fs-rail-top); /* less the page's own bottom padding: at the end of the scroll the grid's bottom edge stops short of the window's, and a taller rail would be pushed back up under the bar */
+  height: calc(var(--app-h, 100dvh) - var(--fs-rail-top) - 92px); min-height: 0; }
+.bp :global(.content .fs-rail > .tk) { flex: 0 1 auto; min-height: 0; max-height: 62%; overflow-y: auto; overscroll-behavior: contain; }
+.bp :global(.content .fs-types) { flex: 1 1 0; min-height: 230px; display: flex; flex-direction: column; }
+.bp :global(.content .fs-types .mats) { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.bp :global(.content .fs-types .mats li:last-child) { border-bottom: none; }
+.bp :global(.content .ledger-head--acts) { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; padding-top: 6px; padding-bottom: 6px; flex: 0 0 auto; }
+.bp :global(.content .mats-add--head) { display: flex; flex-wrap: nowrap; gap: 6px; padding: 0; border-bottom: none; }
+.bp :global(.content .mats-add--head .btn.btn--sm) { letter-spacing: 0.02em; white-space: nowrap; padding: 4px 7px; gap: 4px; }
+.bp :global(.content .mats-add--head .btn.btn--sm .ic) { width: 12px; height: 12px; }
+.bp :global(.content .ledger-head--acts > span) { white-space: nowrap; }
+
+/* One column (the rail already drops under the centre at 1100px): the order a
+   phone had before — stage, price, runs, takeoff, types, then the settings. */
+@media (max-width: 1100px) {
+  .bp :global(.content .fs-grid) { display: flex; flex-direction: column; align-items: stretch; }
+  .bp :global(.content .fs-grid) > :global(*), .bp :global(.content .fs-main) > :global(*), .bp :global(.content .fs-rail) > :global(*), .bp :global(.content .fs-ledgers) > :global(*), .bp :global(.content .fs-settings) > :global(*) { min-width: 0; }
+  .bp :global(.content .fs-main), .bp :global(.content .fs-rail), .bp :global(.content .fs-ledgers), .bp :global(.content .fs-settings) { display: contents; }
+  .bp :global(.content .fs-stage) { order: 1; }
+  .bp :global(.content .fs-rail > .tk) { order: 2; flex: 0 0 auto; max-height: none; overflow: visible; }
+  .bp :global(.content .fs-ledgers > .fs-card) { order: 3; }
+  .bp :global(.content .fs-ledgers > .takeoff) { order: 4; }
+  /* flex: 0 0 auto — in the one-column flex the desk's `flex: 1 1 0` would collapse the card and spill its list over its neighbours */
+  .bp :global(.content .fs-types) { order: 5; flex: 0 0 auto; min-height: 0; display: block; }
+  .bp :global(.content .fs-types .mats) { overflow: visible; }
+  .bp :global(.content .fs-settings > .fs-set:nth-child(n)) { order: 6; grid-row: auto; grid-column: auto; display: block; }
+  .bp :global(.content .fs-rail) { height: auto; }
+  .bp :global(.content .ledger-head--acts) { flex-wrap: wrap; }
+}
+
