@@ -10,6 +10,19 @@ import { clientIp, rateLimitShared, MINUTE } from "@/lib/rateLimit";
 class DbUnavailable extends CredentialsSignin {
   code = "db";
 }
+/** The sign-in brake fired (too many attempts for this address or from this
+ *  IP). It used to answer `null` — "Email or password is wrong" — so a person
+ *  locked out by an automated run kept retyping a password that was right
+ *  (2026-09-20). Reaches the client as `code=throttled-<minutes>`; the limit
+ *  itself is unchanged, and it fires the same for any address, existing or
+ *  not, so the message never says whether an account is there. */
+class Throttled extends CredentialsSignin {
+  code: string;
+  constructor(retryAfterMs: number) {
+    super();
+    this.code = `throttled-${Math.max(1, Math.ceil(retryAfterMs / 60_000))}`;
+  }
+}
 
 declare module "next-auth" {
   interface Session {
@@ -62,7 +75,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           rateLimitShared(`login:ip:${ip}`, 30, MINUTE),
           rateLimitShared(`login:email:${email}`, 8, 15 * MINUTE),
         ]);
-        if (!byIp.ok || !byEmail.ok) return null;
+        if (!byIp.ok || !byEmail.ok) throw new Throttled(Math.max(byIp.retryAfterMs, byEmail.retryAfterMs));
         let user: { id: string; email: string; name: string | null; image: string | null; hashedPassword: string | null } | null;
         try {
           user = await db.user.findUnique({

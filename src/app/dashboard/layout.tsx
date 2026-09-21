@@ -48,6 +48,7 @@ import { ResponsiveDashboardShell } from "@/components/v3/responsive-shell/respo
 import { SIDEBAR_FOLD_COOKIE } from "@/components/v3/blueprint-shell/sidebar-fold";
 import { LeadOfferPopup } from "@/components/leads/LeadOfferPopup";
 import { DashboardAnnouncementDismiss } from "@/app/(dashboard)/announcement-dismiss";
+import { TrafficContext } from "@/components/providers/traffic-context";
 
 /** Membership.role is a raw enum-ish string ("OWNER", "INSTALLER"). The
  *  sidebar shows it to a human, so title-case it. */
@@ -92,9 +93,14 @@ export default async function DashboardBlueprintLayout({
   // Decided inside the try, acted on OUTSIDE it: redirect() throws, and the
   // catch below would swallow it.
   let needsSetup = false;
+  // For the error reporter ($exception): which org and plan hit the error.
+  // The plan slug as stored; a failed read costs the label, never the page.
+  let organizationId: string | null = null;
+  let plan: string | null = null;
   try {
     const ctx = await requireOrg();
     role = ctx.role;
+    organizationId = ctx.organizationId;
     name = ctx.user.name || ctx.user.email || "Account";
     // A Google signup lands here with a placeholder org. The owner finishes
     // the company step (address + trades) before the app opens — the same
@@ -132,6 +138,10 @@ export default async function DashboardBlueprintLayout({
       })
       .catch(() => []);
     navLimits = await getNavLimitCounters(ctx.organizationId).catch(() => undefined);
+    plan = await db.subscription
+      .findUnique({ where: { organizationId: ctx.organizationId }, select: { plan: true } })
+      .then((sub) => sub?.plan ?? "FREE")
+      .catch(() => null);
   } catch {
     // Signed out, or no membership yet. The page decides what happens next.
   }
@@ -188,6 +198,7 @@ export default async function DashboardBlueprintLayout({
       locked={lockedPages ?? undefined}
       limits={navLimits}
     >
+      <TrafficContext role={role} plan={plan} organizationId={organizationId} />
       {announcements.length > 0 && <DashboardAnnouncementDismiss announcements={announcements} />}
       {customGate ?? children}
       {canHandleLeads ? <LeadOfferPopup /> : null}

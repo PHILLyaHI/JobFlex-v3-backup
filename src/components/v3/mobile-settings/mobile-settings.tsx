@@ -56,10 +56,12 @@ import { logOutEverywhere } from "@/components/v3/blueprint-shell/sign-out";
 import { updateBusiness, updateNotificationPrefs, updateProfile } from "@/actions/accountSettings";
 import {
   disconnectGmail,
+  sendGmailTestEmail,
   updateGmailSettings,
   updateMetaSettings,
   updatePaymentSettings,
 } from "@/actions/settings";
+import { toast } from "@/components/ui/Toast";
 import {
   disconnectSquare,
   disconnectStax,
@@ -76,6 +78,7 @@ import type {
   IconName,
   KeyProvider,
   MatrixAction,
+  OAuthNotice,
   PrefKey,
   ProcessorIntegrationData,
   Processor,
@@ -89,6 +92,7 @@ import {
   BILLING_CONTACT_LABELS,
   BUSINESS_CARD,
   BUSINESS_LABELS,
+  COMING_SOON_BADGE,
   CONNECTED_BADGE,
   CONNECT_ACTION,
   CURRENCY_SELECT,
@@ -108,6 +112,10 @@ import {
   GMAIL_CONNECT_ACTION,
   GMAIL_FROM_CARD,
   GMAIL_FROM_LABELS,
+  GMAIL_OAUTH_NOTICE,
+  GMAIL_RECONNECT_ACTION,
+  GMAIL_REVOKED_NOTE,
+  GMAIL_TEST_ACTION,
   GMAIL_PERMISSIONS_CARD,
   GMAIL_SCOPES_EMPTY,
   MANAGE_ACTION,
@@ -140,6 +148,7 @@ import {
   PREF_EVENTS,
   PROCESSORS,
   PROCESSORS_CARD,
+  PROCESSOR_OAUTH_NOTICE,
   PROCESSOR_BEHAVIOR_CARD,
   PROCESSOR_CONNECTION_CARD,
   PROCESSOR_LAST_EVENT_PREFIX,
@@ -157,7 +166,6 @@ import {
   SCOPE_CHECK,
   SECURITY_CARD,
   SECURITY_ITEMS,
-  SIGNATURE_SELECT,
   SIGN_OUT_LABEL,
   KEY_FORMS,
   KEY_WEBHOOK_REGISTERED,
@@ -169,8 +177,6 @@ import {
   currencyCodeFor,
   currencyOptionFor,
   platformFeeLine,
-  signatureKeyFor,
-  signatureOptionFor,
   squareConnLine,
   staxConnLine,
   stripeConnLine,
@@ -642,14 +648,21 @@ function PaymentsPane({
   data,
   navigate,
   openPicker,
+  notice,
 }: {
   data: SettingsData;
   navigate: (rail: RailKey, sub?: SubTabKey) => void;
   openPicker: (p: PickerSpec) => void;
+  notice?: OAuthNotice;
 }) {
   const p = data.payments;
   const c = p.connections;
   const router = useRouter();
+  const oauth = notice?.stripe
+    ? { name: "Stripe", ...PROCESSOR_OAUTH_NOTICE[notice.stripe] }
+    : notice?.square
+      ? { name: "Square", ...PROCESSOR_OAUTH_NOTICE[notice.square] }
+      : null;
 
   const [currency, setCurrency] = useState<string>(currencyOptionFor(p.currency));
   const [depositPct, setDepositPct] = useState<string>(p.depositPct);
@@ -695,6 +708,12 @@ function PaymentsPane({
 
   return (
     <>
+      {oauth && oauth.title ? (
+        <div className="mst-note" role="status">
+          <span className={oauth.tone === "ok" ? "mst-noteK" : "mst-noteK is-warn"}>{`${oauth.name} — ${oauth.title}`}</span>
+          <span>{oauth.sub}</span>
+        </div>
+      ) : null}
       {/* ── Get paid ── */}
       <section className="mst-card">
         <CardHeader card={PROCESSORS_CARD} />
@@ -772,7 +791,9 @@ function PaymentsPane({
             ) : null}
           </div>
 
-          {/* Stax — key only; no deep view under Integrations */}
+          {/* Stax — key only; held off the page until the rail is proven live
+              (lib/payments/rails); an existing row stays so it can be disconnected. */}
+          {c.stax.keyOffered || staxHasRow ? (
           <div className="mst-grp">
             <ProcessorRow
               row={staxRow}
@@ -799,6 +820,7 @@ function PaymentsPane({
               </div>
             ) : null}
           </div>
+          ) : null}
 
           <div className="mst-grp">
             <div className="mst-row">
@@ -1212,16 +1234,17 @@ function ProcessorSubpane({
 function IntegrationsPane({
   data,
   sub: wanted,
-  openPicker,
+  notice,
 }: {
   data: SettingsData;
   sub?: SubTabKey;
-  openPicker: (p: PickerSpec) => void;
+  notice?: OAuthNotice;
 }) {
   const { gmail, meta, stripe, square, connections } = data.integrations;
 
-  // Gmail joins the bar only for viewers it is switched on for (or once connected).
-  const tabs = integrationSubTabs({ gmail: !gmail.comingSoon || gmail.connected });
+  // Gmail joins the bar only for viewers it is switched on for, once
+  // connected, or while a dropped grant is waiting to be reconnected.
+  const tabs = integrationSubTabs({ gmail: !gmail.comingSoon || gmail.connected || Boolean(gmail.revokedAt) });
   const [sub, setSub] = useState<SubTabKey>(isVisibleSubTab(wanted, tabs) ? (wanted as SubTabKey) : DEFAULT_SUBTAB);
   // The page can steer the subtab (Payments → Manage, or ?sub= after OAuth):
   // derive from the prop when it changes, without an effect.
@@ -1233,15 +1256,10 @@ function IntegrationsPane({
 
   const [displayName, setDisplayName] = useState(gmail.displayName);
   const [replyTo, setReplyTo] = useState(gmail.replyTo);
-  const [signature, setSignature] = useState<string>(signatureOptionFor(gmail.signature));
   const [sendFromUser, setSendFromUser] = useState(gmail.sendFromUser);
-  const [trackOpens, setTrackOpens] = useState(gmail.trackOpens);
-  const [autoSync, setAutoSync] = useState(gmail.autoSync);
 
   const gmailToggle: Record<string, [boolean, (next: boolean) => void]> = {
     sendFromUser: [sendFromUser, setSendFromUser],
-    trackOpens: [trackOpens, setTrackOpens],
-    autoSync: [autoSync, setAutoSync],
   };
 
   const saveGmail = () =>
@@ -1250,12 +1268,34 @@ function IntegrationsPane({
       // stored value and ignores whatever is passed here.
       connected: gmail.connected,
       sendFromUser,
-      trackOpens,
-      autoSync,
       displayName,
       replyTo,
-      signature: signatureKeyFor(signature),
     });
+
+  const [gmailBusy, setGmailBusy] = useState(false);
+  const gmailNotice = notice?.gmail ? GMAIL_OAUTH_NOTICE[notice.gmail] : undefined;
+  async function testGmail() {
+    setGmailBusy(true);
+    try {
+      const r = await sendGmailTestEmail();
+      toast.success("Test email sent", `To ${r.to}, ${r.via === "gmail" ? "from your Gmail" : "from the JobFlex address"}.`);
+    } catch (e) {
+      toast.error("Test email failed", e instanceof Error ? e.message : "Try again in a minute.");
+    } finally {
+      setGmailBusy(false);
+    }
+  }
+  async function dropGmail() {
+    setGmailBusy(true);
+    try {
+      await disconnectGmail();
+      toast.success("Gmail disconnected", "Mail now leaves from the JobFlex address with you as reply-to.");
+    } catch (e) {
+      toast.error("Couldn't disconnect", e instanceof Error ? e.message : "Try again in a minute.");
+    } finally {
+      setGmailBusy(false);
+    }
+  }
 
   const [metaConnected, setMetaConnected] = useState(meta.connected);
   const [metaBusy, setMetaBusy] = useState(false);
@@ -1298,6 +1338,21 @@ function IntegrationsPane({
 
       {/* ── Gmail ── */}
       <div className={sub === "gmail" ? "mst-subpane is-on" : "mst-subpane"}>
+        {gmailNotice ? (
+          <div className="mst-note" role="status">
+            <span className={gmailNotice.tone === "ok" ? "mst-noteK" : "mst-noteK is-warn"}>{gmailNotice.title}</span>
+            <span>{gmailNotice.sub}</span>
+          </div>
+        ) : null}
+        {!gmail.connected && gmail.revokedAt ? (
+          <div className="mst-note" role="alert">
+            <span className="mst-noteK is-warn">{GMAIL_REVOKED_NOTE.title}</span>
+            <span>{GMAIL_REVOKED_NOTE.sub}</span>
+            <a className="mst-btn mst-btn--primary mst-btn--wide" href={gmail.connectHref}>
+              {GMAIL_RECONNECT_ACTION.label}
+            </a>
+          </div>
+        ) : null}
         <section className="mst-card">
           <CardHeader
             card={GMAIL_CONNECTION_CARD}
@@ -1316,10 +1371,14 @@ function IntegrationsPane({
                   </span>
                 </div>
                 <div className="mst-rowAct">
+                  <button className="mst-btn mst-btn--ghost" type="button" disabled={gmailBusy} onClick={() => void testGmail()}>
+                    {GMAIL_TEST_ACTION.label}
+                  </button>
                   <button
                     className={`mst-btn mst-btn--ghost ${DISCONNECT_ACTION.state}`}
                     type="button"
-                    onClick={() => void disconnectGmail()}
+                    disabled={gmailBusy}
+                    onClick={() => void dropGmail()}
                   >
                     {DISCONNECT_ACTION.icon ? <Ic name={DISCONNECT_ACTION.icon} /> : null}
                     {DISCONNECT_ACTION.label}
@@ -1352,13 +1411,6 @@ function IntegrationsPane({
               placeholder={gmail.replyToPlaceholder}
               onChange={setReplyTo}
               inputMode="email"
-            />
-            <SelectField
-              label={SIGNATURE_SELECT.label}
-              value={signature}
-              options={SIGNATURE_SELECT.options}
-              onPick={setSignature}
-              openPicker={openPicker}
             />
           </div>
         </section>
@@ -1409,7 +1461,7 @@ function IntegrationsPane({
         <section className="mst-card">
           <CardHeader
             card={META_CONNECTION_CARD}
-            badge={metaConnected ? CONNECTED_BADGE : NOT_CONNECTED_BADGE}
+            badge={metaConnected ? CONNECTED_BADGE : meta.comingSoon ? COMING_SOON_BADGE : NOT_CONNECTED_BADGE}
           />
           <div className={metaConnected ? "mst-cardB mst-cardB--rows" : "mst-cardB"}>
             {metaConnected ? (
@@ -1435,14 +1487,15 @@ function IntegrationsPane({
                 </div>
               </div>
             ) : (
+              /* Disarmed while there is no Meta OAuth (audit, 2026-09-20). */
               <button
                 className="mst-btn mst-btn--primary mst-btn--wide"
                 type="button"
-                disabled={metaBusy}
-                onClick={() => void setMetaConn(true)}
+                disabled={metaBusy || meta.comingSoon}
+                onClick={() => (meta.comingSoon ? undefined : void setMetaConn(true))}
               >
                 <Ic name={META_CONNECTION_ICON} />
-                {metaBusy ? "Connecting…" : META_CONNECT_ACTION.label}
+                {metaBusy ? "Connecting…" : meta.comingSoon ? "Coming soon" : META_CONNECT_ACTION.label}
               </button>
             )}
           </div>
@@ -1672,6 +1725,11 @@ export function MobileSettings({
   const params = useSearchParams();
   const tabParam = params.get("tab");
   const subParam = params.get("sub");
+  const notice: OAuthNotice = {
+    gmail: params.get("gmail") ?? undefined,
+    stripe: params.get("stripe") ?? undefined,
+    square: params.get("square") ?? undefined,
+  };
 
   const [active, setActive] = useState<RailKey>(
     tabParam && RAIL_KEYS.has(tabParam) ? (tabParam as RailKey) : (initialPane ?? DEFAULT_RAIL),
@@ -1876,13 +1934,13 @@ export function MobileSettings({
               <AccountPane data={data} />
             </div>
             <div className={active === "payments" ? "mst-pane is-on" : "mst-pane"}>
-              <PaymentsPane data={data} navigate={navigate} openPicker={openPicker} />
+              <PaymentsPane data={data} navigate={navigate} openPicker={openPicker} notice={notice} />
             </div>
             <div className={active === "billing" ? "mst-pane is-on" : "mst-pane"}>
               <BillingPane data={data} />
             </div>
             <div className={active === "integrations" ? "mst-pane is-on" : "mst-pane"}>
-              <IntegrationsPane data={data} sub={sub} openPicker={openPicker} />
+              <IntegrationsPane data={data} sub={sub} notice={notice} />
             </div>
             <div className={active === "notifications" ? "mst-pane is-on" : "mst-pane"}>
               <NotificationsPane data={data} />

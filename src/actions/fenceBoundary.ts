@@ -36,6 +36,8 @@ import { lookupParcelByPoint } from "@/lib/parcelLookup";
 // geometry lib, which owns the type.
 import type { RoadLine } from "@/lib/parcels";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
+import { readOsmPoint, writeOsmPoint } from "@/lib/overpassStore";
+import { askOverpass } from "@/lib/overpass";
 
 export type { LatLngPoint };
 
@@ -126,32 +128,27 @@ function isStreet(tags: Record<string, unknown> | undefined): boolean {
 
 const MAX_ROADS = 40;
 
-// Best-effort — public Overpass mirrors can be slow or down, so this fails soft
-// to empty and never blocks the parcel result for long.
+// Best-effort — it fails soft to empty and never blocks the parcel result for
+// long. An answer is remembered for the point (lib/overpassStore): the same
+// address asked again reads it back and nothing leaves the server.
 async function fetchOsmContext(
   lat: number,
   lng: number,
 ): Promise<{ buildings: BuildingRing[]; roads: RoadLine[] }> {
   const empty = { buildings: [] as BuildingRing[], roads: [] as RoadLine[] };
   try {
+    const kept = await readOsmPoint<{ buildings: BuildingRing[]; roads: RoadLine[] }>(lat, lng);
+    if (kept && Array.isArray(kept.buildings) && Array.isArray(kept.roads)) return kept;
     // One union query: footprints AND street centrelines in the same bbox.
     const q =
+      // the server-side cap; how long WE wait is lib/overpass's budget
       `[out:json][timeout:10];(` +
       `way["building"](around:${OSM_RADIUS_M},${lat},${lng});` +
       `way["highway"](around:${OSM_RADIUS_M},${lat},${lng});` +
       `);out geom ${(MAX_BUILDINGS + MAX_ROADS) * 2};`;
-    const res = await fetch("https://overpass-api.de/api/interpreter", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        // Overpass mirrors 406/429 requests without a meaningful UA — required.
-        "User-Agent": "JobFlex/3.0 (fence estimator; contact: support@jobflex.app)",
-      },
-      body: `data=${encodeURIComponent(q)}`,
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return empty;
-    const data = (await res.json()) as { elements?: OverpassElement[] };
+    // The main host, then the fallbacks, inside one 12 s budget — see lib/overpass.
+    const { data } = await askOverpass<{ elements?: OverpassElement[] }>(q);
+    if (!data) return empty;
     const buildings: BuildingRing[] = [];
     const roads: RoadLine[] = [];
     for (const el of data.elements ?? []) {
@@ -177,6 +174,9 @@ async function fetchOsmContext(
         });
       }
     }
+    // A place with neither a building nor a street within 130 m is a lookup
+    // that went wrong more often than it is a real place: not remembered.
+    if (buildings.length || roads.length) await writeOsmPoint(lat, lng, { buildings, roads });
     return { buildings, roads };
   } catch {
     return empty;

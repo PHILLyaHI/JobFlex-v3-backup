@@ -46,6 +46,40 @@ async function main() {
     },
   });
 
+  // The automation account (2026-09-20): every script and Playwright run signs
+  // in as this one, so the owner's own login is never spent on the sign-in
+  // brake (8 attempts per address per 15 minutes) by a test.
+  //
+  // In its OWN organisation, "QA Co" (same day, later): limits here are per
+  // organisation — 30 property lookups an hour, for one — and a screenshot
+  // matrix run inside Acme spent the owner's allowance and left his phone
+  // without house outlines for an hour. Nothing a test does may be charged to
+  // the organisation a person works in.
+  const qaOrg = await prisma.organization.upsert({
+    where: { slug: "qa-co" },
+    update: {},
+    create: {
+      slug: "qa-co",
+      name: "QA Co",
+      billingEmail: "qa@acme.test",
+      phone: "(555) 010-0199",
+      address: "12618 NE 100th St, Kirkland, WA",
+      defaultTaxRate: 0.06,
+      primaryColor: "#111113",
+    },
+  });
+  const qaPassword = await bcrypt.hash("qa-pass-2026", 10);
+  const qa = await prisma.user.upsert({
+    where: { email: "qa@acme.test" },
+    update: { hashedPassword: qaPassword, activeOrgId: qaOrg.id, name: "QA Robot" },
+    create: {
+      email: "qa@acme.test",
+      name: "QA Robot",
+      hashedPassword: qaPassword,
+      activeOrgId: qaOrg.id,
+    },
+  });
+
   const installer = await prisma.user.upsert({
     where: { email: "installer@acme.test" },
     update: { hashedPassword: password, activeOrgId: org.id, name: "Casey Stone" },
@@ -62,6 +96,13 @@ async function main() {
     update: { role: Role.OWNER },
     create: { userId: owner.id, organizationId: org.id, role: Role.OWNER },
   });
+  await prisma.membership.upsert({
+    where: { userId_organizationId: { userId: qa.id, organizationId: qaOrg.id } },
+    update: { role: Role.OWNER },
+    create: { userId: qa.id, organizationId: qaOrg.id, role: Role.OWNER },
+  });
+  // It used to be an OWNER of Acme; that seat is given up.
+  await prisma.membership.deleteMany({ where: { userId: qa.id, organizationId: org.id } });
   await prisma.membership.upsert({
     where: { userId_organizationId: { userId: sales.id, organizationId: org.id } },
     update: { role: Role.SALES },

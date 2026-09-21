@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
-import { canOpen, navSectionsFor } from "./nav-map";
+import { canOpen, navSectionsFor, flattenNavItems } from "./nav-map";
 import { useNavLocked, useNavRole } from "./nav-role";
 
 type Item = {
@@ -59,7 +59,7 @@ const CREATE: Item[] = [
 function buildItems(role: string | null, locked: readonly string[]): Item[] {
   const go: Item[] = [];
   for (const section of navSectionsFor(role, locked)) {
-    for (const item of section.items) {
+    for (const item of flattenNavItems(section.items)) {
       if (item.href === "#") continue; // surfaces with no page yet stay unlisted
       go.push({
         key: "go-" + item.href,

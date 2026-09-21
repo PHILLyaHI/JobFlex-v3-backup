@@ -1,18 +1,16 @@
 // Continuation: verify closed state, thread lock, then delete (cleanup).
 const { chromium } = require("playwright");
+const { launch, signIn, withWorld } = require("./_qa");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
 
-(async () => {
-  const browser = await chromium.launch();
+withWorld(async () => {
+  const browser = await launch();
   const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
   const errors = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
-  await page.goto("http://localhost:3000/auth/login", { waitUntil: "domcontentloaded" });
-  await page.fill('input[type="email"]', "owner@acme.test");
-  await page.fill('input[type="password"]', "password123");
-  await Promise.all([page.waitForURL(/dashboard/, { timeout: 30000 }).catch(() => {}), page.click('button[type="submit"]')]);
+  await signIn(page);
   await page.goto("http://localhost:3000/dashboard/trade", { waitUntil: "networkidle" });
   await page.waitForTimeout(1800);
 
@@ -30,7 +28,8 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   await page.locator(".pmenu .pmenu-item", { hasText: /Open thread/i }).click();
   await page.waitForURL(/\/dashboard\/trade\/[a-z0-9]+/i, { timeout: 15000 });
   await page.waitForTimeout(1200);
-  log((await page.locator("textarea").count()) === 0, "thread: closed post hides reply form");
+  // the support widget keeps a textarea of its own on every page — it is not the reply form
+  log((await page.locator("textarea:not([class*=jfsup]):not(.jfsup *)").count()) === 0, "thread: closed post hides reply form");
   log((await page.locator("text=First reply from QA run.").count()) > 0, "thread: existing reply still visible");
 
   await page.goto("http://localhost:3000/dashboard/trade", { waitUntil: "networkidle" });
@@ -43,4 +42,4 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
 
   console.log("CONSOLE ERRORS: " + (errors.length ? "\n  " + errors.join("\n  ") : "none"));
   await browser.close();
-})().catch((e) => { console.error("HARNESS FAIL:", e.message); process.exit(1); });
+}, { closedTradePost: true }).catch((e) => { console.error("HARNESS FAIL:", e.message); process.exit(1); });

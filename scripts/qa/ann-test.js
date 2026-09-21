@@ -1,18 +1,17 @@
 // Functional pass over /dashboard/announcements.
 const { chromium } = require("playwright");
+const { launch, signIn, stale } = require("./_qa");
+stale("announcements left the contractor dashboard for the platform console (9fa8b94): /dashboard/announcements is a 404, and the console's announcements reach every organisation — not something a test publishes");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await launch();
   const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
   const errors = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
-  await page.goto("http://localhost:3000/auth/login", { waitUntil: "domcontentloaded" });
-  await page.fill('input[type="email"]', "owner@acme.test");
-  await page.fill('input[type="password"]', "password123");
-  await Promise.all([page.waitForURL(/dashboard/, { timeout: 30000 }).catch(() => {}), page.click('button[type="submit"]')]);
+  await signIn(page);
   await page.goto("http://localhost:3000/dashboard/announcements", { waitUntil: "networkidle" });
   await page.waitForTimeout(1800);
 

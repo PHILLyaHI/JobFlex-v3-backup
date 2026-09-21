@@ -2,7 +2,8 @@
 // node seed-phone.js up | down
 const { PrismaClient } = require("@prisma/client");
 const p = new PrismaClient();
-const ORG = "cmsqki9wh000064ob31rdspel";
+// QA Co, resolved by slug at run time — never an organisation a person works in.
+let ORG = "";
 const SIL_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
 const NUMS = ["+15550100001", "+15550100002", "+15550100003"];
 
@@ -10,6 +11,7 @@ const tr = (lines) => lines.join("\n");
 const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000);
 
 (async () => {
+  ORG = (await p.organization.findUniqueOrThrow({ where: { slug: "qa-co" } })).id;
   const mode = process.argv[2];
   if (mode === "up") {
     await p.aiPhoneCall.createMany({

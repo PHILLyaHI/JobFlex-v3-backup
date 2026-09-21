@@ -1,17 +1,15 @@
 // Live smoke test of the button fix-pass.
 const { chromium } = require("playwright");
+const { launch, signIn, withWorld } = require("./_qa");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
 
-(async () => {
-  const browser = await chromium.launch();
+withWorld(async (world) => {
+  const browser = await launch();
   const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 150)));
 
-  await page.goto("http://localhost:3000/auth/login", { waitUntil: "domcontentloaded" });
-  await page.fill('input[type="email"]', "owner@acme.test");
-  await page.fill('input[type="password"]', "password123");
-  await Promise.all([page.waitForURL(/dashboard/, { timeout: 30000 }).catch(() => {}), page.click('button[type="submit"]')]);
+  await signIn(page);
   await page.waitForTimeout(1500);
 
   // 1. Dashboard: dd-btn hover now tints accent-soft
@@ -79,4 +77,4 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
 
   console.log("PAGEERRORS: " + (errors.length ? errors.join(" | ") : "none"));
   await browser.close();
-})().catch((e) => { console.error("HARNESS FAIL:", e.message); process.exit(1); });
+}).catch((e) => { console.error("HARNESS FAIL:", e.message); process.exit(1); });

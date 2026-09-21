@@ -1,19 +1,17 @@
 // Functional pass over /dashboard/messages.
 const { chromium } = require("playwright");
+const { launch, signIn, withWorld } = require("./_qa");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
 
-(async () => {
-  const browser = await chromium.launch();
+withWorld(async (world) => {
+  const browser = await launch();
   const ctx = await browser.newContext({ viewport: { width: 1728, height: 1000 }, permissions: ["clipboard-read", "clipboard-write"] });
   const page = await ctx.newPage();
   const errors = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
-  await page.goto("http://localhost:3000/auth/login", { waitUntil: "domcontentloaded" });
-  await page.fill('input[type="email"]', "owner@acme.test");
-  await page.fill('input[type="password"]', "password123");
-  await Promise.all([page.waitForURL(/dashboard/, { timeout: 30000 }).catch(() => {}), page.click('button[type="submit"]')]);
+  await signIn(page);
   await page.goto("http://localhost:3000/dashboard/messages", { waitUntil: "networkidle" });
   await page.waitForTimeout(1800);
 
@@ -111,4 +109,4 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   console.log("CONSOLE ERRORS: " + (errors.length ? "\n  " + errors.join("\n  ") : "none"));
   await page.screenshot({ path: "messages_final.png", fullPage: false });
   await browser.close();
-})().catch((e) => { console.error("HARNESS FAIL:", e.message); process.exit(1); });
+}).catch((e) => { console.error("HARNESS FAIL:", e.message); process.exit(1); });

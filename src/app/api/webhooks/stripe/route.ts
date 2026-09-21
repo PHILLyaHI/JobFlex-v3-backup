@@ -14,6 +14,7 @@ import {
 } from "@/lib/stripeSync";
 import { processReferralEffectsForInvoice } from "@/lib/referralRewards";
 import { metaOnCheckoutCompleted, metaOnInvoicePaid } from "@/lib/metaSignupEvents";
+import { trackActivation } from "@/lib/activation-events";
 
 export const runtime = "nodejs";
 
@@ -145,6 +146,7 @@ async function handleProposalPayment(session: Stripe.Checkout.Session) {
       paidAt: new Date(),
     },
   });
+  trackActivation("payment_recorded", proposal.organizationId, { provider: "STRIPE", online: true });
 
   if (fullyPaid) {
     await db.proposal.update({

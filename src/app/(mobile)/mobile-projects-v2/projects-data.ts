@@ -9,20 +9,10 @@
 // record-shaped: types, the status vocabulary, the filter option list and four
 // pure functions.
 
-export type Project = {
-  id: string;
-  name: string;
-  description: string | null;
-  status: string;
-  /** The card's short "Jul 08" plate, formatted server-side in UTC. */
-  startsAt: string | null;
-  endsAt: string | null;
-  budget: number;
-  jobCount: number;
-  completedJobs: number;
-  /** Whose project it is (2026-09-18), or null. */
-  clientName?: string | null;
-};
+// One row shape for both editions (2026-09-20): the desktop ledger's, which
+// carries the sold / spent / open facts this list prints too.
+import type { Project } from "@/components/v3/projects-blueprint/projects-data";
+export type { Project };
 
 /** The desktop statuses, verbatim and in the desktop's order. */
 export const STATUSES = ['ACTIVE', 'ON_HOLD', 'COMPLETED'];

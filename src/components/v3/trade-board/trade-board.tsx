@@ -16,7 +16,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import { countStock, deleteInventoryItem, receivePurchaseOrder, receiveStock, sendPurchaseOrder, upsertInventoryItem, upsertSupplier } from "@/actions/inventory";
+import { countStock, deleteInventoryItem, receivePurchaseOrder, receiveStock, seedTradeItems, sendPurchaseOrder, upsertInventoryItem, upsertSupplier } from "@/actions/inventory";
 import type { TradeBoardData } from "@/lib/inventoryBoard";
 import { TRADES } from "@/lib/inventory";
 
@@ -84,8 +84,17 @@ export function TradeBoard({ data, canWrite }: { data: TradeBoardData; canWrite:
         <p style={{ margin: "4px 0 12px", opacity: 0.75 }}>
           On hand is the shelf. Reserved is what sold jobs still take. Forecast is what the open proposals would take if they sell.
         </p>
+        {canWrite && data.presets.missing > 0 && (
+          <div className="paper-card" style={{ padding: "12px 16px", margin: "0 0 12px", background: "#f0f9ff", borderLeft: "6px solid #0369a1" }} data-presets>
+            <b>{data.rows.length === 0 ? `Start with the ${trade.label.toLowerCase()} estimator's own materials.` : `${data.presets.missing} of the estimator's standard items are not on the list.`}</b>{" "}
+            Every material the {trade.label} estimator prices — read off the estimator itself, {data.presets.total} items — goes on the shelf list at zero, so proposals match by name. Then receive what you have.{" "}
+            <button className="btn btn-sm" type="button" disabled={pending} style={{ marginLeft: 8 }} onClick={() => run(() => seedTradeItems(data.trade), (r) => `${String(r.added)} standard ${trade.noun} items added — receive what is on the shelf.`)}>
+              Add the {data.presets.missing} standard items
+            </button>
+          </div>
+        )}
         {data.rows.length === 0 ? (
-          <p>No {trade.noun} items yet. Add the first below, or pick from the lines your proposals already use.</p>
+          <p>No {trade.noun} items yet. Add the estimator&apos;s standard items above, type one below, or pick from the lines your proposals already use.</p>
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums" }} data-stock-table>

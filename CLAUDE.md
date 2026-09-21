@@ -54,6 +54,9 @@
 - Commit only when asked. Never push, branch, or open a PR without explicit instruction.
 - Conventional Commits: `feat:` / `fix:` / `chore:` / `refactor:` / `style:`.
 
+## Test accounts
+- Automated tests and every agent's Playwright run sign in **only** as `qa@acme.test`, in its own organisation **QA Co** (slug `qa-co`, seeded; the account is its OWNER and has no seat in Acme). Limits are per organisation — 30 property lookups an hour, among others — so a test run inside Acme spends the owner's allowance; nothing a test does may be charged to an organisation a person works in. `owner@acme.test` is the owner's own account for manual checks — never use it from a script: the sign-in brake allows 8 attempts per address per 15 minutes, and a script would lock the owner out.
+
 ## Commands
 - `npm run dev` · `npm run build` · `npm run typecheck` · `npm run lint`
 - `npm run prisma:migrate` / `prisma:push` / `prisma:seed` — require approval.

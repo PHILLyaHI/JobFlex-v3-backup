@@ -3,6 +3,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { openGmailTokens, revokeGmailToken } from "@/lib/sdk/gmail";
 import { parseGmailSettings, parsePaymentSettings } from "@/lib/settings";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { buildTestEmail } from "@/lib/email/build/platform";
@@ -63,14 +64,17 @@ export async function updateLeadsSettings(raw: unknown) {
   return { ok: true };
 }
 
+// Track-opens, two-way sync and the signature were decorative — stored, read
+// by nothing — and left the UI on 2026-09-20. Older clients may still send
+// them; they are accepted and ignored.
 const gmailSchema = z.object({
   connected: z.boolean(),
   sendFromUser: z.boolean(),
-  trackOpens: z.boolean(),
-  autoSync: z.boolean(),
+  trackOpens: z.boolean().optional(),
+  autoSync: z.boolean().optional(),
   displayName: z.string(),
   replyTo: z.string(),
-  signature: z.string(),
+  signature: z.string().optional(),
 });
 
 export async function updateGmailSettings(raw: unknown) {
@@ -85,7 +89,9 @@ export async function updateGmailSettings(raw: unknown) {
   // settings form only edits preferences and must never flip it.
   const merged = {
     ...current,
-    ...data,
+    sendFromUser: data.sendFromUser,
+    displayName: data.displayName,
+    replyTo: data.replyTo,
     connected: current.connected,
     connectedEmail: current.connectedEmail,
   };
@@ -122,20 +128,23 @@ export async function sendGmailTestEmail() {
   return { ok: true, via: res.via, to };
 }
 
-// Revokes the org's Gmail connection: drops the stored tokens and flips the
-// settings back to disconnected. New sends fall back to Resend + reply-to.
+// Revokes the org's Gmail connection: tells Google the grant is no longer
+// wanted (best effort), drops the stored tokens and flips the settings back
+// to disconnected. New sends fall back to Resend + reply-to.
 export async function disconnectGmail() {
   const { organizationId } = await requireManager();
   const org = await db.organization.findUnique({
     where: { id: organizationId },
-    select: { gmailSettingsJson: true },
+    select: { gmailSettingsJson: true, gmailTokensJson: true },
   });
   const current = parseGmailSettings(org?.gmailSettingsJson);
+  const tokens = openGmailTokens(org?.gmailTokensJson);
+  if (tokens?.refreshToken) await revokeGmailToken(tokens.refreshToken);
   await db.organization.update({
     where: { id: organizationId },
     data: {
       gmailTokensJson: null,
-      gmailSettingsJson: JSON.stringify({ ...current, connected: false, connectedEmail: "" }),
+      gmailSettingsJson: JSON.stringify({ ...current, connected: false, connectedEmail: "", revokedAt: "", revokedReason: "" }),
     },
   });
   revalidatePath("/dashboard/settings");

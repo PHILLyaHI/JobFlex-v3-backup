@@ -12,6 +12,8 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { sendOrgEmail } from "@/lib/email/orgSend";
 import { isTradeId, pickList, purchaseOrderText, stockKey, type StockItem } from "@/lib/inventory";
+import { presetItems } from "@/lib/inventoryPresets";
+import { explodeLines } from "@/lib/inventoryBom";
 import { NoOrgError, requireManager, requireOrg, UnauthorizedError, isWorkerRole } from "@/lib/orgContext";
 
 type Fail = { ok: false; error: string };
@@ -213,7 +215,7 @@ export async function loadJobMaterials(jobId: string): Promise<{ ok: true; taken
     }
     const items = await db.inventoryItem.findMany({ where: { organizationId, trade: job.proposal.trade } });
     const stock: StockItem[] = items.map((i) => ({ id: i.id, name: i.name, key: i.key, unit: i.unit, onHand: i.onHand, reorderPoint: i.reorderPoint, supplierId: i.supplierId }));
-    const rows = pickList(stock, job.proposal.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType })));
+    const rows = pickList(stock, explodeLines(job.proposal.trade, job.proposal.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType }))));
     const tracked = rows.filter((r) => r.itemId);
     await db.$transaction([
       ...tracked.flatMap((r) => [
@@ -287,6 +289,28 @@ export async function receivePurchaseOrder(eventId: string): Promise<{ ok: true;
     await db.$transaction([...writes, db.activityEvent.update({ where: { id: ev.id }, data: { meta: JSON.stringify({ ...meta, receivedAt: new Date().toISOString() }) } })]);
     if (meta.trade) revalidatePath(boardPath(meta.trade));
     return { ok: true, received: writes.length / 2 };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Put the trade's standard items on the shelf list: every material its
+ * estimator prices, read off the estimator itself (lib/inventoryPresets).
+ * Items already there are left alone; the rest start at zero on hand.
+ */
+export async function seedTradeItems(trade: string): Promise<{ ok: true; added: number; total: number } | Fail> {
+  try {
+    const { organizationId } = await requireManager();
+    if (!isTradeId(trade)) return { ok: false, error: "Unknown trade" };
+    const presets = presetItems(trade);
+    const have = new Set((await db.inventoryItem.findMany({ where: { organizationId, trade }, select: { key: true } })).map((i) => i.key));
+    const missing = presets.filter((p) => !have.has(stockKey(p.name)));
+    if (missing.length) {
+      await db.inventoryItem.createMany({ data: missing.map((p) => ({ organizationId, trade, name: p.name, key: stockKey(p.name), unit: p.unit })) });
+    }
+    revalidatePath(boardPath(trade));
+    return { ok: true, added: missing.length, total: presets.length };
   } catch (err) {
     return fail(err);
   }

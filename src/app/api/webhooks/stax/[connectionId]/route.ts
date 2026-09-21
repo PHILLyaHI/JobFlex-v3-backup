@@ -73,6 +73,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ connectionId: 
       const refundedMinor = Math.round(Number(parent.total_refunded ?? refund.total ?? 0) * 100);
       await recordRefund({
         provider: "STAX",
+        organizationId: conn.organizationId,
         externalPaymentId: refund.reference_id,
         refundedMinor,
         full: Number(parent.total_refunded ?? 0) >= Number(parent.total ?? Number.POSITIVE_INFINITY),

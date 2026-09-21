@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { isCronAuthorized } from "@/lib/cronAuth";
 import { lowStockCounts } from "@/lib/inventoryBoard";
 import { isTradeId, pickList, type StockItem } from "@/lib/inventory";
+import { explodeLines } from "@/lib/inventoryBom";
 
 export const runtime = "nodejs";
 
@@ -45,7 +46,7 @@ export async function GET(req: Request) {
         const trade = job.proposal?.trade;
         if (!isTradeId(trade) || !job.proposal) continue;
         const items: StockItem[] = (await db.inventoryItem.findMany({ where: { organizationId, trade } })).map((i) => ({ id: i.id, name: i.name, key: i.key, unit: i.unit, onHand: i.onHand, reorderPoint: i.reorderPoint, supplierId: i.supplierId }));
-        const short = pickList(items, job.proposal.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType }))).filter((r) => r.itemId && !r.enough);
+        const short = pickList(items, explodeLines(trade, job.proposal.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType })))).filter((r) => r.itemId && !r.enough);
         if (!short.length) continue;
         const said = await db.activityEvent.findFirst({ where: { organizationId, kind: "STOCK_SHORT_JOB", meta: { contains: `"jobId":"${job.id}"` } }, select: { id: true } });
         if (said) continue;

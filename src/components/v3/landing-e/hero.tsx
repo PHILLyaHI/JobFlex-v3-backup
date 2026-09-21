@@ -8,6 +8,7 @@ import { Reveal } from "./reveal";
 import { GoogleSignupButton } from "./google-signup-button";
 import { CtaNote } from "./cta-note";
 import { HeroEntrance } from "./hero-entrance";
+import { HeroExperiment } from "./hero-experiment";
 
 /* The first screen, and the one screen a trade variant may replace. The
    headline, the line under it, the solid button's words and the product shot
@@ -60,6 +61,10 @@ export function Hero({
             motion, and <noscript> lifts it with no JavaScript at all. */}
         <noscript><style>{`.jf-lp .lp-enter{visibility:visible}`}</style></noscript>
         <HeroEntrance>
+        {/* A/B landing_hero_v1 (scaffold, not running): the headline block
+            is the experiment's slot, on the default hero only — a trade
+            variant is its own page and is never bucketed. */}
+        <HeroExperiment enabled={!variantKey}>
         <h1 className="lp-enter text-[clamp(38px,6.7vw,96px)] font-bold leading-[1.02] tracking-[-0.025em] text-ink" data-entrance="h1">
           {variant.h1[0]}
           <br />
@@ -70,6 +75,7 @@ export function Hero({
         {variant.sub && (
           <p className="lp-enter mx-auto max-w-[38rem] text-[15px] leading-[1.5] text-white/70 sm:text-[17px] lg:max-w-[46rem]" data-entrance="sub">{variant.sub}</p>
         )}
+        </HeroExperiment>
         <div className="lp-enter w-full sm:w-auto" data-entrance="cta">
           <div className="mx-auto mt-4 flex w-full max-w-[22rem] flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:items-center sm:justify-center">
             <a href={registerHref} className="lp-btn-dark lp-cta lp-cta--solid" data-cta="hero">

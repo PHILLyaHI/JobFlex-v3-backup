@@ -41,6 +41,7 @@ import {
   type GeneratedEstimate,
   type PromptAnalysis,
 } from "@/lib/estimatorSchema";
+import { trackActivation, trackProposalCreated } from "@/lib/activation-events";
 
 /**
  * Quota gate for the AI *run* functions. Returned (not thrown) because these
@@ -1404,6 +1405,7 @@ export async function saveEstimate(raw: {
       total,
     },
   });
+  trackActivation("estimator_used", organizationId, { estimator: "smart" });
   revalidatePath("/dashboard/advanced-ai");
   return { id: est.id };
 }
@@ -1604,6 +1606,7 @@ export async function convertEstimateToProposal(raw: unknown) {
       summary: `Converted "${data.projectType}" AI estimate to proposal "${proposal.title}"`,
     },
   });
+  trackProposalCreated(organizationId, "smart");
 
   if (filing) await clearFilingContext();
   if (projectId) revalidatePath(`/dashboard/projects/${projectId}`);

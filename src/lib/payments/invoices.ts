@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { buildInvoice } from "@/lib/email/build/client";
-import { sendOrgEmail } from "@/lib/email/orgSend";
+import { noteGmailFallback, sendOrgEmail } from "@/lib/email/orgSend";
 import { isTwilioEnabled, sendSMS } from "@/lib/sdk/twilio";
 import { toE164 } from "@/lib/phone";
 import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
@@ -19,6 +19,7 @@ import { getConnections } from "@/lib/payments/connections";
 import { getStripeMode } from "@/lib/stripeMode";
 import { resolvePayOptions } from "@/lib/payments/payOptions";
 import { recordInvoiceSent } from "@/lib/payments/invoiceRecord";
+import { trackActivation } from "@/lib/activation-events";
 
 export type InvoiceMethod = "card" | "bank" | "any";
 
@@ -128,8 +129,9 @@ export async function sendInvoice(input: { proposalId: string; installmentId: st
           bankInstructions: input.method === "bank" ? settings.bankTransferInstructions : null,
         }),
       );
-      await sendOrgEmail(org, { to: proposal.client.email, subject, html });
+      const sent = await sendOrgEmail(org, { to: proposal.client.email, subject, html });
       report.email = "sent";
+      await noteGmailFallback(sent, { organizationId: org.id, proposalId: proposal.id, clientId: proposal.clientId, what: "The invoice email" });
     } catch (err) {
       console.warn("[invoices] email failed:", err);
       report.email = "failed";
@@ -151,6 +153,8 @@ export async function sendInvoice(input: { proposalId: string; installmentId: st
   }
   const sent = report.email === "sent" || report.sms === "sent";
   if (!sent) return { ...report, ok: false, error: "Nothing could be sent — no working email or phone." };
+  // It reached the client by at least one channel. The method is the label; never the amount.
+  trackActivation("invoice_sent", proposal.organizationId, { method: input.method, by_email: report.email === "sent", by_sms: report.sms === "sent" });
   if (stageRow) {
     await db.installment.update({ where: { id: stageRow.id }, data: { invoiceMethod: input.method, invoiceSentAt: new Date() } }).catch(() => {});
   }

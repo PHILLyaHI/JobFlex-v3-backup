@@ -19,7 +19,7 @@ import { usePathname } from "next/navigation";
 // The nav map and the active-item resolver moved to ./nav-map.ts on 2026-07-29
 // so the mobile hamburger drawers could share them instead of carrying a
 // second, href-less copy. Re-exported here for existing importers.
-import { NAV_SECTIONS, activeHref, canOpen, isLimitedRole, navSectionsFor } from "./nav-map";
+import { NAV_SECTIONS, activeHref, canOpen, isLimitedRole, navSectionsFor, type NavItem } from "./nav-map";
 import { useNavBadges, useNavLimits, type NavLimit, useNavLocked, useNavRole } from "./nav-role";
 import { SignOutButton } from "./sign-out";
 import { foldShortcutLabel } from "./sidebar-fold";
@@ -115,34 +115,12 @@ export function Sidebar({
   // settings would otherwise be handed a gear that bounces it back to Jobs.
   const canOpenSettings = canOpen(navRole, "/dashboard/settings", navLocked);
   const canOpenAccount = canOpen(navRole, "/dashboard/settings/account", navLocked);
-
-  return (
-    <aside className="sb" ref={sbRef}>
-      <div className="sb-head">
-        {/* The real product mark, not the drawn `i-logo` sketch J (owner's
-            call, 2026-07-30) — desktop now shows the same logo as the handheld
-            shell. The asset is mostly transparent margin, so it renders larger
-            than its box and the box clips it; see .sb-mark-img in
-            dashboard-blueprint/blueprint.module.css. The i-logo symbol stays in
-            the sprite: /v3/proposals-v2 and /v3/proposals-v3 still draw it. */}
-        <span className="sb-mark-box">
-          <Image className="sb-mark-img" src="/jobflex-mark.png" alt="" width={108} height={108} priority />
-        </span>
-        <div className="sb-head-txt">
-          <div className="sb-head-name">JOBFLEX</div>
-          <div className="sb-head-sub">Contractor OS</div>
-        </div>
-      </div>
-
-      <nav className="sb-scroll" onScroll={hideTip}>
-        <div className="sb-indicator" id="sbIndicator"></div>
-        {/* Fragments, not wrapper elements: the donor keeps labels and links as
-            direct children of .sb-scroll, and the indicator measures
-            link.offsetTop against it. */}
-        {sections.map((section) => (
-          <Fragment key={section.label}>
-            <div className="sb-sec-label">{section.label}</div>
-            {section.items.map((item) =>
+  // Which trees are folded. Unset means "open when its page is the one shown".
+  const [folds, setFolds] = useState<Record<string, boolean>>({});
+  const isOpen = (item: NavItem) => folds[item.href] ?? (active === item.href || !!item.children?.some((c) => c.href === active));
+  // One row, as the donor drew it; the tree below draws the same row for a
+  // parent and for each of its children.
+  const renderRow = (item: NavItem) =>
               item.href === "#" ? (
                 <a key={item.label} className="sb-link" href="#" {...tipProps(item.label)}>
                   <svg className="ic">
@@ -198,6 +176,58 @@ export function Sidebar({
                     </>
                   )}
                 </Link>
+              );
+
+  return (
+    <aside className="sb" ref={sbRef}>
+      <div className="sb-head">
+        {/* The real product mark, not the drawn `i-logo` sketch J (owner's
+            call, 2026-07-30) — desktop now shows the same logo as the handheld
+            shell. The asset is mostly transparent margin, so it renders larger
+            than its box and the box clips it; see .sb-mark-img in
+            dashboard-blueprint/blueprint.module.css. The i-logo symbol stays in
+            the sprite: /v3/proposals-v2 and /v3/proposals-v3 still draw it. */}
+        <span className="sb-mark-box">
+          <Image className="sb-mark-img" src="/jobflex-mark.png" alt="" width={108} height={108} priority />
+        </span>
+        <div className="sb-head-txt">
+          <div className="sb-head-name">JOBFLEX</div>
+          <div className="sb-head-sub">Contractor OS</div>
+        </div>
+      </div>
+
+      <nav className="sb-scroll" onScroll={hideTip}>
+        <div className="sb-indicator" id="sbIndicator"></div>
+        {/* Fragments, not wrapper elements: the donor keeps labels and links as
+            direct children of .sb-scroll, and the indicator measures
+            link.offsetTop against it. */}
+        {sections.map((section) => (
+          <Fragment key={section.label}>
+            <div className="sb-sec-label">{section.label}</div>
+            {section.items.map((item) =>
+              item.children?.length ? (
+                <div key={item.label} className={`sb-tree${isOpen(item) ? " is-open" : ""}`}>
+                  <div className="sb-parent">
+                    {renderRow(item)}
+                    {/* The fold (owner, 2026-09-20): a chevron beside the
+                        estimator's row. Open on its own when the estimator or
+                        its inventory is the page; the click remembers the choice. */}
+                    <button
+                      type="button"
+                      className="sb-fold-btn"
+                      aria-expanded={isOpen(item)}
+                      aria-label={`${isOpen(item) ? "Fold" : "Unfold"} ${item.label}`}
+                      onClick={() => setFolds((f) => ({ ...f, [item.href]: !isOpen(item) }))}
+                    >
+                      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                        <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                  </div>
+                  {isOpen(item) && <div className="sb-sub">{item.children.map((child) => renderRow(child))}</div>}
+                </div>
+              ) : (
+                renderRow(item)
               ),
             )}
           </Fragment>

@@ -19,6 +19,7 @@ import { SessionProvider } from "@/components/providers/SessionProvider";
 import { getBadgeCounts } from "@/lib/badgeCounts";
 import { getNavLimitCounters } from "@/lib/navLimits";
 import { DashboardAnnouncementDismiss } from "./announcement-dismiss";
+import { TrafficContext } from "@/components/providers/traffic-context";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -122,6 +123,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <SessionProvider>
+      {/* Role, plan and org id for the error reporter ($exception) — nothing personal. */}
+      <TrafficContext role={activeRole} plan={subscription?.plan ?? null} organizationId={activeOrgId} />
       <div className="flex">
         <Sidebar
           role={activeRole}

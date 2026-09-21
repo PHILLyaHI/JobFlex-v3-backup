@@ -20,7 +20,7 @@ import type { Metadata } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { ProjectsContent } from "@/components/v3/projects-blueprint/projects-content";
-import type { Project } from "@/components/v3/projects-blueprint/projects-data";
+import { loadProjectBook } from "@/components/v3/projects-blueprint/project-book-load";
 
 export const dynamic = "force-dynamic";
 
@@ -28,15 +28,6 @@ export const metadata: Metadata = {
   title: "JobFlex · Projects",
   description: "Projects — status filters and the full project book on one sheet.",
 };
-
-/** The card's Window/due plates are short "Jul 08" labels, not full dates.
- *  Formatted in UTC on purpose: project dates are stored as UTC midnight (the
- *  action coerces a "YYYY-MM-DD" string), and a local-time format renders the
- *  previous day in every negative-offset timezone. */
-function shortDate(d: Date | null): string | null {
-  if (!d) return null;
-  return d.toLocaleDateString("en-US", { month: "short", day: "2-digit", timeZone: "UTC" });
-}
 
 export default async function ProjectsPage() {
   let organizationId: string;
@@ -49,12 +40,8 @@ export default async function ProjectsPage() {
     throw err;
   }
 
-  const [projects, clientRows] = await Promise.all([
-    db.project.findMany({
-      where: { organizationId, status: { not: "ARCHIVED" } },
-      orderBy: { updatedAt: "desc" },
-      include: { jobs: { select: { id: true, status: true } }, client: { select: { name: true } } },
-    }),
+  const [rows, clientRows] = await Promise.all([
+    loadProjectBook(organizationId),
     // For the New Project dialog's client field (2026-09-18).
     db.client.findMany({
       where: { organizationId, deletedAt: null },
@@ -63,19 +50,6 @@ export default async function ProjectsPage() {
       take: 1000,
     }),
   ]);
-
-  const rows: Project[] = projects.map((p) => ({
-    id: p.id,
-    name: p.name,
-    description: p.description,
-    status: p.status,
-    startsAt: shortDate(p.startsAt),
-    endsAt: shortDate(p.endsAt),
-    budget: p.budget,
-    jobCount: p.jobs.length,
-    completedJobs: p.jobs.filter((j) => j.status === "COMPLETED").length,
-    clientName: p.client?.name ?? null,
-  }));
   const clients = clientRows.map((c) => ({ id: c.id, name: c.name, street: (c.address ?? "").split("\n")[0]?.trim() ?? "" }));
 
   return <ProjectsContent projects={rows} clients={clients} />;

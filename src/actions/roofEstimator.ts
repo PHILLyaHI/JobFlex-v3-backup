@@ -12,6 +12,8 @@ import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
+import { trackActivation, trackProposalCreated } from "@/lib/activation-events";
+import { logServerError } from "@/lib/server-events";
 
 /**
  * The sample shown when no OpenAI key is set. Scaled from the REAL squares
@@ -145,8 +147,10 @@ Waste factor: ${input.wastePct}%${input.roofKind === "low-slope" ? "\nRoof kind:
     });
     const text = completion.choices[0]?.message?.content ?? "{}";
     const parsed = estimateSchema.parse(JSON.parse(text));
+    trackActivation("estimator_used", organizationId, { estimator: "roof" });
     return { ok: true, data: parsed };
   } catch (err: unknown) {
+    logServerError("roofEstimator.estimateRoof", err, { kind: "action", organizationId });
     return { ok: false, error: err instanceof Error ? err.message : "Generation failed" };
   }
 }
@@ -298,6 +302,7 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
       summary: `Converted roof estimate to proposal "${proposal.title}"`,
     },
   });
+  trackProposalCreated(organizationId, "roof");
 
   if (filing) await clearFilingContext();
   if (projectId) revalidatePath(`/dashboard/projects/${projectId}`);

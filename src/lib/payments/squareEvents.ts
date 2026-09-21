@@ -125,6 +125,7 @@ export async function dispatchSquareEvent(event: SquareEvent, ctx: SquareEventCo
       const refundedMinor = Number(r.amount_money?.amount ?? 0);
       await recordRefund({
         provider: "SQUARE",
+        organizationId: conn.organizationId,
         externalPaymentId: r.payment_id,
         refundedMinor,
         full: refundedMinor >= Math.round(payment.amount * 100),

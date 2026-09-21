@@ -88,9 +88,8 @@ export async function GET(req: Request) {
   // ReportAll's quota is ALLTIME — one account must not be able to drain it.
   const gate = await rateLimitShared(`parcels:${session.user.id}`, 30, HOUR);
   if (!gate.ok) return NextResponse.json({ error: "Too many requests — try again later." }, { status: 429 });
-  if (!isReportAllEnabled()) {
-    return NextResponse.json({ error: "REPORTALL_CLIENT_KEY is not configured" }, { status: 503 });
-  }
+  // No key gate here (2026-09-20): a saved parcel is served without the
+  // provider; the lookup answers `disabled` only once the cache has nothing.
 
   const url = new URL(req.url);
   const latStr = url.searchParams.get("lat");
@@ -151,6 +150,9 @@ export async function GET(req: Request) {
           parcels: all,
         });
       }
+      if (found.reason === "disabled") {
+        return NextResponse.json({ error: found.error }, { status: 503 });
+      }
       if (found.reason === "error") {
         return NextResponse.json({ error: found.error }, { status: 502 });
       }
@@ -164,6 +166,12 @@ export async function GET(req: Request) {
       where: { addressKey: addressKeyOf(address) },
     });
     if (cachedByAddr) return NextResponse.json(payload(cachedByAddr, true));
+    if (!isReportAllEnabled()) {
+      return NextResponse.json(
+        { error: "No saved property line for this address, and REPORTALL_CLIENT_KEY is not configured to look one up." },
+        { status: 503 },
+      );
+    }
 
     const parcel = await fetchParcelByAddress(address as string, region as string);
     if (parcel) {

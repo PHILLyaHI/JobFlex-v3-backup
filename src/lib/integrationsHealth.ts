@@ -20,6 +20,7 @@
 // last known answer instantly and nothing is checked on page load.
 
 import { db } from "@/lib/db";
+import { readOverpassDay } from "@/lib/overpassStore";
 import { QUOTA_KEY as PARCEL_QUOTA_KEY, QUOTA_FLOOR } from "@/lib/parcelLookup";
 import { QUOTA_ALLTIME } from "@/lib/reportall";
 import { isReportAllEnabled } from "@/lib/reportall";
@@ -29,6 +30,10 @@ import { isOpenAIEnabled, getOpenAI, getOpenAIModel } from "@/lib/sdk/openai";
 import { isResendEnabled, isEmailEnabled } from "@/lib/sdk/resend";
 import { isSmtpEnabled } from "@/lib/sdk/smtp";
 import { isTwilioEnabled } from "@/lib/sdk/twilio";
+import { isStripeEnabled } from "@/lib/sdk/stripe";
+import { isSquareEnabled, isSquareWebhookConfigured } from "@/lib/sdk/square";
+import { isGmailOAuthConfigured } from "@/lib/sdk/gmail";
+import { isSecretBoxConfigured } from "@/lib/crypto/secretBox";
 
 /** Where the report is kept, and the keys the checks read. */
 export const HEALTH_KEY = "integrations:health";
@@ -215,6 +220,26 @@ async function checkRegrid(now: string): Promise<ServiceHealth> {
   return { ...base, level: "degraded", asOf, reason: `last answer ${row.cursor}, ${when}` };
 }
 
+/* ── Overpass (OpenStreetMap) ──────────────────────────────────────────────
+   House footprints and street centrelines for the fence studio. Free, public,
+   and flaky by nature — so the row is the share of OUR OWN lookups that got an
+   answer in the last 24 hours (lib/overpassStore writes one tally per lookup).
+   Nothing is called here. Optional: without it the contractor traces the house
+   by hand, and nothing is priced off it. */
+async function checkOverpass(now: string): Promise<ServiceHealth> {
+  const base = { key: "overpass", name: "Overpass (OSM)", checkedAt: now, optional: true, note: "optional · house outlines" };
+  const day = await readOverpassDay();
+  const total = day.ok + day.failed;
+  if (!total) return { ...base, level: "off", reason: "no lookups in the last 24 hours" };
+  const share = Math.round((day.ok / total) * 100);
+  const asOf = iso(day.lastAt);
+  const via = day.viaFallback ? `, ${day.viaFallback} via the second host` : "";
+  const reason = `${share}% answered in 24 h — ${day.ok} of ${total}${via}`;
+  if (share >= 80) return { ...base, level: "ok", asOf, reason };
+  if (share >= 40) return { ...base, level: "degraded", asOf, reason };
+  return { ...base, level: "down", asOf, reason };
+}
+
 /* ── Mail ──────────────────────────────────────────────────────────────────
    Which transport is configured, and when one of them last got something out.
    Nothing is sent: a health check that emails to prove email works would put a
@@ -246,6 +271,95 @@ async function checkTwilio(now: string): Promise<ServiceHealth> {
   return { ...base, level: quiet ? "degraded" : "ok", asOf, reason: quiet ? `${read} — quiet for a month` : read };
 }
 
+/* ── The contractor-facing joins (2026-09-20) ──────────────────────────────
+   None of these is load-bearing for an estimate, so all four are optional:
+   reported on the panel, never in the night's alert. Nothing is called —
+   each reads the environment and the rows this deployment already has. */
+
+/** Stripe Connect: the platform key, a client id and a Connect webhook secret,
+ *  per mode. Without the client id a contractor can still paste a key (that
+ *  needs only the secret box). */
+async function checkStripeConnect(now: string): Promise<ServiceHealth> {
+  const base = { key: "stripe-connect", name: "Stripe Connect", checkedAt: now, optional: true, note: "optional · contractor payments" };
+  if (!isStripeEnabled()) return { ...base, level: "off", reason: "STRIPE_SECRET_KEY is not set" };
+  const modes = (["live", "test"] as const).filter((m) =>
+    m === "live" ? Boolean(process.env.STRIPE_CONNECT_CLIENT_ID) : Boolean(process.env.STRIPE_CONNECT_CLIENT_ID_TEST),
+  );
+  const box = isSecretBoxConfigured();
+  if (modes.length === 0) {
+    return {
+      ...base,
+      level: box ? "degraded" : "off",
+      reason: box
+        ? "no STRIPE_CONNECT_CLIENT_ID — OAuth joins are off; pasted keys work"
+        : "STRIPE_CONNECT_CLIENT_ID and TOKEN_ENCRYPTION_KEY not set — no way to connect an account",
+    };
+  }
+  const missingSecret = modes.filter((m) =>
+    m === "live" ? !process.env.STRIPE_CONNECT_WEBHOOK_SECRET : !process.env.STRIPE_CONNECT_WEBHOOK_SECRET_TEST,
+  );
+  if (missingSecret.length) {
+    return {
+      ...base,
+      level: "degraded",
+      reason: `client id set (${modes.join(", ")}) but no Connect webhook secret for ${missingSecret.join(", ")} — payments confirm only on return and by the reconcile cron`,
+    };
+  }
+  return { ...base, level: "ok", reason: `client id + Connect webhook secret set (${modes.join(", ")})${box ? "" : " · pasted keys off: no TOKEN_ENCRYPTION_KEY"}` };
+}
+
+/** Square: the platform app for OAuth joins and its webhook signature key. A
+ *  pasted access token needs only the secret box. */
+async function checkSquareApp(now: string): Promise<ServiceHealth> {
+  const base = { key: "square-app", name: "Square", checkedAt: now, optional: true, note: "optional · contractor payments" };
+  const box = isSecretBoxConfigured();
+  if (!isSquareEnabled()) {
+    return {
+      ...base,
+      level: box ? "degraded" : "off",
+      reason: box
+        ? "SQUARE_APPLICATION_ID/SECRET not set — OAuth joins off; pasted tokens work"
+        : "SQUARE_APPLICATION_ID/SECRET and TOKEN_ENCRYPTION_KEY not set",
+    };
+  }
+  if (!isSquareWebhookConfigured()) {
+    return { ...base, level: "degraded", reason: `app credentials set (${process.env.SQUARE_ENV === "production" ? "production" : "sandbox"}) but SQUARE_WEBHOOK_SIGNATURE_KEY is not — payments confirm only on return and by the reconcile cron` };
+  }
+  return { ...base, level: "ok", reason: `app credentials + webhook signature key set (${process.env.SQUARE_ENV === "production" ? "production" : "sandbox"})${box ? "" : " · pasted tokens off: no TOKEN_ENCRYPTION_KEY"}` };
+}
+
+/** Gmail OAuth: the client is configured, who may use it, and how many orgs
+ *  hold a grant or lost one. */
+async function checkGmailOAuth(now: string): Promise<ServiceHealth> {
+  const base = { key: "gmail-oauth", name: "Gmail OAuth", checkedAt: now, optional: true, note: "optional · send from own address" };
+  if (!isGmailOAuthConfigured()) return { ...base, level: "off", reason: "GMAIL_OAUTH_CLIENT_ID / SECRET / REDIRECT_URI not set" };
+  const [connected, revoked] = await Promise.all([
+    db.organization.count({ where: { gmailTokensJson: { not: null } } }).catch(() => 0),
+    db.organization.count({ where: { gmailTokensJson: null, gmailSettingsJson: { contains: '"revokedAt":"20' } } }).catch(() => 0),
+  ]);
+  const audience =
+    process.env.GMAIL_OAUTH_PUBLIC === "true"
+      ? "open to everyone (app verified)"
+      : `Testing — ${(process.env.GMAIL_OAUTH_TEST_USERS ?? "").split(",").filter((e) => e.trim()).length} allow-listed user(s)`;
+  const grants = `${connected} org(s) connected, ${revoked} revoked by Google`;
+  if (!isSecretBoxConfigured()) return { ...base, level: "down", reason: `configured but TOKEN_ENCRYPTION_KEY is not set — grants cannot be stored · ${grants}` };
+  return { ...base, level: revoked > 0 ? "degraded" : "ok", reason: `${audience} · ${grants}` };
+}
+
+/** Contractor processor rows that need a human: REVOKED (the provider removed
+ *  the app) or RESTRICTED (charges paused). */
+async function checkPaymentConnections(now: string): Promise<ServiceHealth> {
+  const base = { key: "payment-connections", name: "Processor links", checkedAt: now, optional: true, note: "optional · contractor payments" };
+  const rows = await db.paymentConnection.groupBy({ by: ["status"], _count: { _all: true } }).catch(() => []);
+  const count = (status: string) => rows.find((r) => r.status === status)?._count._all ?? 0;
+  const active = count("ACTIVE");
+  const restricted = count("RESTRICTED");
+  const revoked = count("REVOKED");
+  if (active + restricted + revoked === 0) return { ...base, level: "ok", reason: "no contractor has connected a processor yet" };
+  const read = `${active} active · ${restricted} restricted · ${revoked} revoked`;
+  return { ...base, level: restricted + revoked > 0 ? "degraded" : "ok", reason: restricted + revoked > 0 ? `${read} — the owners were told; nothing to do platform-side` : read };
+}
+
 function short(err: unknown): string {
   return (err instanceof Error ? err.message : String(err)).replace(/\s+/g, " ").slice(0, 80);
 }
@@ -256,7 +370,20 @@ export async function runIntegrationsHealth(): Promise<HealthReport> {
   const started = Date.now();
   const now = new Date().toISOString();
   const settled = await Promise.all(
-    [checkOpenAI, checkSerpApi, checkReportAll, checkEagleView, checkRegrid, checkMail, checkTwilio].map((fn) =>
+    [
+      checkOpenAI,
+      checkSerpApi,
+      checkReportAll,
+      checkEagleView,
+      checkRegrid,
+      checkOverpass,
+      checkMail,
+      checkTwilio,
+      checkStripeConnect,
+      checkSquareApp,
+      checkGmailOAuth,
+      checkPaymentConnections,
+    ].map((fn) =>
       fn(now).catch(
         (err): ServiceHealth => ({
           key: fn.name,

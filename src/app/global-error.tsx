@@ -6,6 +6,7 @@
 // not have loaded either.
 
 import { useEffect } from "react";
+import { trackException } from "@/lib/traffic-client";
 
 export default function GlobalError({
   error,
@@ -16,6 +17,8 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     console.error("[global-error]", error.digest ?? "", error);
+    // $exception to PostHog: scrubbed message, digest, route, role, plan — see lib/traffic-client.
+    trackException(error, "global");
   }, [error]);
 
   return (

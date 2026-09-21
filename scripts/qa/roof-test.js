@@ -1,18 +1,17 @@
 // Functional pass over /dashboard/roof-estimator (full flow incl. convert + cleanup).
 const { chromium } = require("playwright");
+const { launch, signIn, stale } = require("./_qa");
+stale('needs a stand with STUB EagleView credentials (README). With the live keys in .env.local it must not run: measuring a roof there is a purchase');
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await launch();
   const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
   const errors = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
-  await page.goto("http://localhost:3000/auth/login", { waitUntil: "domcontentloaded" });
-  await page.fill('input[type="email"]', "owner@acme.test");
-  await page.fill('input[type="password"]', "password123");
-  await Promise.all([page.waitForURL(/dashboard/, { timeout: 30000 }).catch(() => {}), page.click('button[type="submit"]')]);
+  await signIn(page);
 
   await page.goto("http://localhost:3000/dashboard/roof-estimator", { waitUntil: "networkidle" });
   await page.waitForTimeout(1500);

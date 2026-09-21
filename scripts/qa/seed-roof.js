@@ -4,7 +4,8 @@
 const { PrismaClient } = require("@prisma/client");
 const p = new PrismaClient();
 
-const ORG = "cmsqki9wh000064ob31rdspel";
+// QA Co, resolved by slug at run time — never an organisation a person works in.
+let ORG = "";
 const REPORT_ID = 69153261;
 
 // A clean 40x30ft gable: 2 facets @ 6/12, ridge along X. All numbers consistent.
@@ -45,6 +46,7 @@ const model = {
 };
 
 (async () => {
+  ORG = (await p.organization.findUniqueOrThrow({ where: { slug: "qa-co" } })).id;
   const mode = process.argv[2];
   if (mode === "up") {
     await p.eagleViewReport.upsert({

@@ -1285,7 +1285,12 @@ export function FenceDrawMap({
 
         const stopTrace = () => {
           drawing = false;
-          previewLine.setPath([]);
+          // Everything that trailed the pointer goes with the trace — the
+          // rubber band, the snap ring and the length chip. They used to wait
+          // for the next mousemove, so a run finished with Enter, Escape or a
+          // right-click kept "+65 ft · click to close" and the ring on screen
+          // until the hand moved (2026-09-20).
+          hideMeasure();
           notifyDraft();
         };
 

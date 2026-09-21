@@ -20,6 +20,7 @@ import {
 import { notifyPaymentIssue, notifyPaymentReceived } from "@/lib/notify";
 import { billPlatformFee } from "./feeBilling";
 import { reopenInvoicesForPayment, repriceOpenInvoices, settleInvoicesForPayment } from "./invoiceRecord";
+import { trackActivation } from "@/lib/activation-events";
 
 type Tx = Prisma.TransactionClient;
 
@@ -415,6 +416,8 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
     return { outcome: "orphan", paymentId: result.paymentId };
   }
   if (result.outcome === "settled") {
+    // Every door — Stripe, Square, Stax, a cheque entered by hand — settles here.
+    trackActivation("payment_recorded", input.organizationId, { provider: input.provider, online: input.provider !== "MANUAL" });
     await notifyPaymentReceived({ paymentId: result.paymentId }).catch((err) =>
       console.warn("[settle] notify failed", err),
     );
@@ -462,6 +465,11 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
 
 export interface RefundInput {
   provider: "STRIPE" | "SQUARE" | "STAX";
+  /** The org the delivering endpoint belongs to. A refund is only ever
+   *  recorded against that org's payment: a contractor holds the signing
+   *  secret of the endpoint on their own account and could otherwise name
+   *  another org's payment intent (audit, 2026-09-20). */
+  organizationId: string;
   /** payment_intent (Stripe) / payment id (Square). */
   externalPaymentId: string;
   refundedMinor: number;
@@ -472,7 +480,7 @@ export interface RefundInput {
 export async function recordRefund(input: RefundInput): Promise<"not_found" | "recorded"> {
   const outcome = await db.$transaction(async (tx) => {
     const payment = await tx.payment.findFirst({
-      where: { provider: input.provider, externalPaymentId: input.externalPaymentId },
+      where: { provider: input.provider, externalPaymentId: input.externalPaymentId, organizationId: input.organizationId },
       include: { installments: true, proposal: { select: { id: true, status: true, total: true, currency: true } } },
     });
     if (!payment) return null;

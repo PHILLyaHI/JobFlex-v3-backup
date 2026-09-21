@@ -33,9 +33,11 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { ProcessorSubpane } from "./processor-subpane";
+import { toast } from "@/components/ui/Toast";
 
 import {
   disconnectGmail,
+  sendGmailTestEmail,
   updateGmailSettings,
   updateMetaSettings,
 } from "@/actions/settings";
@@ -52,8 +54,12 @@ import {
   GMAIL_CONNECT_ACTION,
   GMAIL_FROM_CARD,
   GMAIL_FROM_LABELS,
+  GMAIL_OAUTH_NOTICE,
   GMAIL_PERMISSIONS_CARD,
+  GMAIL_RECONNECT_ACTION,
+  GMAIL_REVOKED_NOTE,
   GMAIL_SCOPES_EMPTY,
+  GMAIL_TEST_ACTION,
   COMING_SOON_BADGE,
   COMING_SOON_TAB,
   comingSoonNote,
@@ -64,11 +70,8 @@ import {
   META_DISCONNECT_ACTION,
   NOT_CONNECTED_BADGE,
   SCOPE_CHECK,
-  SIGNATURE_SELECT,
-  signatureKeyFor,
-  signatureOptionFor,
 } from "../settings-data";
-import { Field, SaveBar, Sel, Toggle } from "../ui";
+import { Field, SaveBar, Toggle } from "../ui";
 
 /* ─────────────────────────── local helpers ─────────────────────────── */
 
@@ -125,11 +128,12 @@ function ToggleRowItem({
 
 /* ──────────────────────────────── pane ─────────────────────────────── */
 
-export function IntegrationsPane({ data, sub: wanted }: PaneProps) {
+export function IntegrationsPane({ data, sub: wanted, notice }: PaneProps) {
   const { gmail, meta, stripe, square, connections } = data.integrations;
 
-  // Gmail joins the bar only for viewers it is switched on for (or once connected).
-  const tabs = integrationSubTabs({ gmail: !gmail.comingSoon || gmail.connected });
+  // Gmail joins the bar only for viewers it is switched on for, once
+  // connected, or while a dropped grant is waiting to be reconnected.
+  const tabs = integrationSubTabs({ gmail: !gmail.comingSoon || gmail.connected || Boolean(gmail.revokedAt) });
   const [sub, setSub] = useState<SubTabKey>(isVisibleSubTab(wanted, tabs) ? (wanted as SubTabKey) : DEFAULT_SUBTAB);
   // The page can steer the subtab (Payments → Manage, or ?sub= after OAuth):
   // derive from the prop when it changes, without an effect.
@@ -141,15 +145,10 @@ export function IntegrationsPane({ data, sub: wanted }: PaneProps) {
 
   const [displayName, setDisplayName] = useState(gmail.displayName);
   const [replyTo, setReplyTo] = useState(gmail.replyTo);
-  const [signature, setSignature] = useState<string>(signatureOptionFor(gmail.signature));
   const [sendFromUser, setSendFromUser] = useState(gmail.sendFromUser);
-  const [trackOpens, setTrackOpens] = useState(gmail.trackOpens);
-  const [autoSync, setAutoSync] = useState(gmail.autoSync);
 
   const gmailToggle: Record<string, [boolean, (next: boolean) => void]> = {
     sendFromUser: [sendFromUser, setSendFromUser],
-    trackOpens: [trackOpens, setTrackOpens],
-    autoSync: [autoSync, setAutoSync],
   };
 
   const saveGmail = () =>
@@ -158,12 +157,34 @@ export function IntegrationsPane({ data, sub: wanted }: PaneProps) {
       // stored value and ignores whatever is passed here.
       connected: gmail.connected,
       sendFromUser,
-      trackOpens,
-      autoSync,
       displayName,
       replyTo,
-      signature: signatureKeyFor(signature),
     });
+
+  const [gmailBusy, setGmailBusy] = useState(false);
+  const gmailNotice = notice?.gmail ? GMAIL_OAUTH_NOTICE[notice.gmail] : undefined;
+  async function testGmail() {
+    setGmailBusy(true);
+    try {
+      const r = await sendGmailTestEmail();
+      toast.success("Test email sent", `To ${r.to}, ${r.via === "gmail" ? "from your Gmail" : "from the JobFlex address"}.`);
+    } catch (e) {
+      toast.error("Test email failed", e instanceof Error ? e.message : "Try again in a minute.");
+    } finally {
+      setGmailBusy(false);
+    }
+  }
+  async function dropGmail() {
+    setGmailBusy(true);
+    try {
+      await disconnectGmail();
+      toast.success("Gmail disconnected", "Mail now leaves from the JobFlex address with you as reply-to.");
+    } catch (e) {
+      toast.error("Couldn't disconnect", e instanceof Error ? e.message : "Try again in a minute.");
+    } finally {
+      setGmailBusy(false);
+    }
+  }
 
   const [metaConnected, setMetaConnected] = useState(meta.connected);
   const [metaBusy, setMetaBusy] = useState(false);
@@ -237,12 +258,41 @@ export function IntegrationsPane({ data, sub: wanted }: PaneProps) {
 
       {/* ══════════════════════════ Gmail ══════════════════════════ */}
       <div className={sub === "gmail" ? "subpane on" : "subpane"}>
+        {/* What the last OAuth round trip came back with — once, on this load. */}
+        {gmailNotice ? (
+          <div className={gmailNotice.tone === "ok" ? "note note--ok" : "note"} role="status" style={{ marginBottom: "14px" }}>
+            <svg className="ic">
+              <use href="#i-bell" />
+            </svg>
+            <div>
+              <b>{gmailNotice.title}</b>
+              <span>{gmailNotice.sub}</span>
+            </div>
+          </div>
+        ) : null}
+        {/* Google refused the grant: say so, and offer the way back. */}
+        {!gmail.connected && gmail.revokedAt ? (
+          <div className="note" role="alert" style={{ marginBottom: "14px" }}>
+            <svg className="ic">
+              <use href="#i-bell" />
+            </svg>
+            <div>
+              <b>{GMAIL_REVOKED_NOTE.title}</b>
+              <span>{GMAIL_REVOKED_NOTE.sub}</span>
+              <span>
+                <a className="btn btn-primary btn-sm" href={gmail.connectHref} style={{ marginTop: "8px" }}>
+                  {GMAIL_RECONNECT_ACTION.label}
+                </a>
+              </span>
+            </div>
+          </div>
+        ) : null}
         {/* ── Connection ── */}
         <section className="sc">
           <CardHeader
             card={GMAIL_CONNECTION_CARD}
             badge={
-              gmail.comingSoon && !gmail.connected
+              gmail.comingSoon && !gmail.connected && !gmail.revokedAt
                 ? COMING_SOON_BADGE
                 : gmail.connected
                   ? CONNECTED_BADGE
@@ -263,11 +313,15 @@ export function IntegrationsPane({ data, sub: wanted }: PaneProps) {
                   </span>
                   <span className="prow-d">{GMAIL_CONNECTION_CARD.sub}</span>
                 </span>
-                <span className="prow-act">
+                <span className="prow-act prow-act--pair">
+                  <button className="btn btn-ghost btn-sm" type="button" disabled={gmailBusy} onClick={() => void testGmail()}>
+                    {GMAIL_TEST_ACTION.label}
+                  </button>
                   <button
                     className={`btn btn-ghost btn-sm ${DISCONNECT_ACTION.state}`}
                     type="button"
-                    onClick={() => void disconnectGmail()}
+                    disabled={gmailBusy}
+                    onClick={() => void dropGmail()}
                   >
                     {DISCONNECT_ACTION.icon ? (
                       <svg className="ic">
@@ -310,15 +364,6 @@ export function IntegrationsPane({ data, sub: wanted }: PaneProps) {
                 value={replyTo}
                 placeholder={gmail.replyToPlaceholder}
                 onChange={setReplyTo}
-              />
-            </div>
-            <div style={{ marginTop: "14px" }}>
-              {/* F10 — donor `<select class="fin">` */}
-              <Sel
-                label={SIGNATURE_SELECT.label}
-                value={signature}
-                options={SIGNATURE_SELECT.options}
-                onChange={setSignature}
               />
             </div>
           </div>
@@ -373,7 +418,7 @@ export function IntegrationsPane({ data, sub: wanted }: PaneProps) {
         <section className="sc">
           <CardHeader
             card={META_CONNECTION_CARD}
-            badge={metaConnected ? CONNECTED_BADGE : NOT_CONNECTED_BADGE}
+            badge={metaConnected ? CONNECTED_BADGE : meta.comingSoon ? COMING_SOON_BADGE : NOT_CONNECTED_BADGE}
           />
           <div className={metaConnected ? "sc-b sc-b--rows" : "sc-b"}>
             {metaConnected ? (
@@ -401,16 +446,19 @@ export function IntegrationsPane({ data, sub: wanted }: PaneProps) {
             ) : (
               /* Same shape as the Gmail Connect button: one primary action,
                  nothing else in the body. */
+              /* Disarmed while there is no Meta OAuth (audit, 2026-09-20): the
+                 button used to write connected:true and paint the badge green
+                 with nothing behind it. */
               <button
                 className="btn btn-primary"
                 type="button"
-                disabled={metaBusy}
-                onClick={() => void setMeta(true)}
+                disabled={metaBusy || meta.comingSoon}
+                onClick={() => (meta.comingSoon ? undefined : void setMeta(true))}
               >
                 <svg className="ic">
                   <use href={`#${META_CONNECTION_ICON}`} />
                 </svg>
-                {metaBusy ? "Connecting…" : META_CONNECT_ACTION.label}
+                {metaBusy ? "Connecting…" : meta.comingSoon ? "Coming soon" : META_CONNECT_ACTION.label}
               </button>
             )}
           </div>

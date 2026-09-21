@@ -134,6 +134,11 @@ export interface GmailSettings {
   displayName: string;
   replyTo: string;
   signature: string;
+  /** Set when Google refused the grant (invalid_grant, 401/403) and the
+   *  tokens were dropped: Settings shows "disconnected" with Reconnect.
+   *  ISO date, or "". Cleared by a fresh connect or an explicit disconnect. */
+  revokedAt: string;
+  revokedReason: string;
 }
 export const GMAIL_DEFAULTS: GmailSettings = {
   connected: false,
@@ -144,6 +149,8 @@ export const GMAIL_DEFAULTS: GmailSettings = {
   displayName: "",
   replyTo: "",
   signature: "brand",
+  revokedAt: "",
+  revokedReason: "",
 };
 export function parseGmailSettings(json: string | null | undefined): GmailSettings {
   return { ...GMAIL_DEFAULTS, ...safeParse(json) };

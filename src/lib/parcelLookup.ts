@@ -476,15 +476,10 @@ export async function lookupParcelByPoint(
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
     return { ok: false, reason: "error", error: "lat/lon must be numbers" };
   }
-  if (!isReportAllEnabled()) {
-    return {
-      ok: false,
-      reason: "disabled",
-      error: "Set REPORTALL_CLIENT_KEY in .env.local to load property lines.",
-    };
-  }
 
-  // 1 — cache
+  // 1 — cache. Before the key check on purpose (2026-09-20): a parcel this
+  // deployment already paid for is served whether or not the provider is
+  // configured right now — the key gates SPENDING, not reading.
   try {
     const candidates = await db.parcelCache.findMany({
       where: {
@@ -519,6 +514,15 @@ export async function lookupParcelByPoint(
     // reason to say so: silently falling through would spend quota on every
     // request for as long as the table is unreadable.
     console.warn("[parcelLookup] cache read failed:", err);
+  }
+
+  // No provider: the cache was the only answer there could be.
+  if (!isReportAllEnabled()) {
+    return {
+      ok: false,
+      reason: "disabled",
+      error: "No saved property line here, and REPORTALL_CLIENT_KEY is not configured to look one up.",
+    };
   }
 
   // 2 — negative cache

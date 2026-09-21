@@ -1,9 +1,10 @@
-// Functional pass over /dashboard/referrals (3 conversions pre-seeded by runner).
+// Functional pass over /dashboard/referrals. The code and its 3 conversions are QA Co fixtures (./_world).
 const { chromium } = require("playwright");
+const { launch, signIn, withWorld } = require("./_qa");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
 
-(async () => {
-  const browser = await chromium.launch();
+withWorld(async (world) => {
+  const browser = await launch();
   const ctx = await browser.newContext({ viewport: { width: 1728, height: 1000 }, permissions: ["clipboard-read", "clipboard-write"] });
   const page = await ctx.newPage();
   const errors = [];
@@ -11,47 +12,37 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
   const clip = async () => { try { return await page.evaluate(() => navigator.clipboard.readText()); } catch { return ""; } };
 
-  await page.goto("http://localhost:3000/auth/login", { waitUntil: "domcontentloaded" });
-  await page.fill('input[type="email"]', "owner@acme.test");
-  await page.fill('input[type="password"]', "password123");
-  await Promise.all([page.waitForURL(/dashboard/, { timeout: 30000 }).catch(() => {}), page.click('button[type="submit"]')]);
+  await signIn(page);
   await page.goto("http://localhost:3000/dashboard/referrals", { waitUntil: "networkidle" });
   await page.waitForTimeout(1800);
 
   // ---- 1. Hero: real code + copy paths ----
   const code = ((await page.locator(".code-val, #codeVal").first().textContent()) || "").trim();
-  log(code === "JAM-9NWYB", "hero: real referral code renders", code);
+  log(code === world.referralCode, "hero: real referral code renders", code);
   await page.locator(".code-val, #codeVal").first().click();
   await page.waitForTimeout(400);
-  log((await clip()) === "JAM-9NWYB", "hero: clicking the code copies it", await clip());
+  log((await clip()) === world.referralCode, "hero: clicking the code copies it", await clip());
+  await page.waitForTimeout(1800); // the code's own "copied" state has to clear first
   await page.evaluate(() => navigator.clipboard.writeText(""));
   await page.locator(".code-copy").click();
   await page.waitForTimeout(500);
-  log((await clip()) === "JAM-9NWYB", "hero: Copy button copies the code");
+  const copied = await clip();
+  log(copied.includes(world.referralCode), "hero: Copy button copies the code", copied.slice(0, 60));
   const doneState = await page.locator(".code-copy.done").count();
   log(doneState === 1, "hero: Copy button shows done state");
 
-  // ---- 2. Link chips: signup + homeowner URLs ----
-  const chipCopies = page.locator(".chip-copy");
-  const nChips = await chipCopies.count();
-  log(nChips === 2, "links: two copyable link chips", String(nChips));
-  await page.evaluate(() => navigator.clipboard.writeText(""));
-  await chipCopies.nth(0).click();
-  await page.waitForTimeout(400);
-  const url1 = await clip();
-  log(/JAM-9NWYB/.test(url1) && /^http/.test(url1), "links: chip 1 copies a URL with the code", url1.slice(0, 60));
-  await page.evaluate(() => navigator.clipboard.writeText(""));
-  await chipCopies.nth(1).click();
-  await page.waitForTimeout(400);
-  const url2 = await clip();
-  log(/JAM-9NWYB/.test(url2) && url2 !== url1, "links: chip 2 copies a different URL", url2.slice(0, 60));
+  // (2. The two link chips left the page with the 2026-09 redesign: the code and Share are the ways out.)
 
   // ---- 3. Share button (headless: clipboard fallback) ----
   await page.evaluate(() => navigator.clipboard.writeText(""));
+  // The system Chrome has navigator.share (a sheet nobody can answer in headless); without it the
+  // button falls back to copying — that fallback is what is under test.
+  await page.evaluate(() => { Object.defineProperty(navigator, "share", { value: undefined, configurable: true }); });
+  await page.waitForTimeout(1800);
   await page.click("#shareBtn");
   await page.waitForTimeout(600);
   const shared = await clip();
-  log(/JAM-9NWYB/.test(shared), "share: falls back to copying the signup link", shared.slice(0, 60));
+  log(shared.includes(world.referralCode), "share: falls back to copying the code", shared.slice(0, 60));
 
   // ---- 4. KPIs reflect seeded conversions ----
   const kpiText = (await page.locator(".content").innerText()).replace(/\s+/g, " ");
@@ -60,7 +51,7 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   log(/Pending[^0-9]*1/i.test(kpiText), "kpi: Pending = 1");
 
   // ---- 5. Conversions table + rf-chip filters ----
-  const rows = () => page.locator(".ptable tbody tr:visible, [class*=conv-row]:visible").count();
+  const rows = () => page.locator("#convList > li:visible").count();
   log(await rows() === 3, "table: 3 conversion rows render", String(await rows()));
   const chips = page.locator(".rf-chip");
   const chipTexts = (await chips.allTextContents()).map(t => t.trim());
@@ -78,4 +69,4 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   console.log("CONSOLE ERRORS: " + (errors.length ? "\n  " + errors.join("\n  ") : "none"));
   await page.screenshot({ path: "referrals_final.png", fullPage: true });
   await browser.close();
-})().catch((e) => { console.error("HARNESS FAIL:", e.message); process.exit(1); });
+}).catch((e) => { console.error("HARNESS FAIL:", e.message); process.exit(1); });

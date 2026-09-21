@@ -570,3 +570,19 @@ body:has(.jf-blueprint) {
   .jf-blueprint .layout, .jf-blueprint .main::before, .jf-blueprint .sb-fold .ic { transition: none; }
   .jf-blueprint .sb-tip { animation: none; }
 }
+
+/* A row with rows folded under it — an estimator and its inventory (2026-09-20). */
+.jf-blueprint .sb-parent { position: relative; }
+.jf-blueprint .sb-fold-btn {
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent;
+  color: inherit; opacity: 0.55; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  z-index: 2;
+}
+.jf-blueprint .sb-fold-btn:hover, .jf-blueprint .sb-fold-btn:focus-visible { opacity: 1; background: rgba(0, 0, 0, 0.06); outline: none; }
+.jf-blueprint .sb-fold-btn svg { transition: transform 160ms ease; }
+.jf-blueprint .sb-tree.is-open .sb-fold-btn svg { transform: rotate(90deg); }
+.jf-blueprint .sb-sub .sb-link { padding-left: 40px; font-size: 0.94em; }
+.jf-blueprint .sb-sub .sb-link .ic { width: 15px; height: 15px; opacity: 0.8; }
+/* The folded rail keeps only icons: no chevron, no children. */
+.jf-blueprint[data-sb="fold"] .sb-fold-btn, .jf-blueprint[data-sb="fold"] .sb-sub { display: none; }

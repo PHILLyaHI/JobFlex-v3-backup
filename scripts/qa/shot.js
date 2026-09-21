@@ -1,20 +1,15 @@
 // Screenshot harness: logs into the local JobFlex dev server and captures
 // full-page shots of the given routes. Usage: node shot.js /dashboard [/more...]
 const { chromium } = require("playwright");
+const { launch, signIn } = require("./_qa");
 
 (async () => {
   const routes = process.argv.slice(2);
-  const browser = await chromium.launch();
+  const browser = await launch();
   const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
 
   // Login once (session cookie persists in the context).
-  await page.goto("http://localhost:3000/auth/login", { waitUntil: "domcontentloaded" });
-  await page.fill('input[type="email"]', "owner@acme.test");
-  await page.fill('input[type="password"]', "password123");
-  await Promise.all([
-    page.waitForURL(/dashboard|overview|\/$/, { timeout: 30000 }).catch(() => {}),
-    page.click('button[type="submit"]'),
-  ]);
+  await signIn(page);
   await page.waitForTimeout(1500);
 
   for (const r of routes) {

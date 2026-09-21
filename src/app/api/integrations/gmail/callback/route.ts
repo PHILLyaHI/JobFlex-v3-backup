@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { exchangeGmailCode, verifyGmailState } from "@/lib/sdk/gmail";
+import { canStoreGmailTokens, exchangeGmailCode, gmailErrorText, sealGmailTokens, verifyGmailState } from "@/lib/sdk/gmail";
 import { parseGmailSettings } from "@/lib/settings";
 
 // Handles the Google redirect: verifies the signed state, exchanges the code for
@@ -29,6 +29,9 @@ export async function GET(req: NextRequest) {
   }
   // The signed state must match the acting org (defense against cross-org replay).
   if (parsed.organizationId !== organizationId) return back("mismatch");
+  // The grant is a refresh token to a real inbox: without the secret box it
+  // is not stored at all (same rule as a pasted Stripe key).
+  if (!canStoreGmailTokens()) return back("nobox");
 
   try {
     const tokens = await exchangeGmailCode(code);
@@ -44,7 +47,7 @@ export async function GET(req: NextRequest) {
     await db.organization.update({
       where: { id: organizationId },
       data: {
-        gmailTokensJson: JSON.stringify(tokens),
+        gmailTokensJson: sealGmailTokens(tokens),
         gmailSettingsJson: JSON.stringify({
           ...settings,
           connected: true,
@@ -56,7 +59,9 @@ export async function GET(req: NextRequest) {
     });
     return back("connected");
   } catch (err) {
-    console.error("[gmail callback] token exchange failed:", err);
+    // Message and status only — a gaxios error object carries the request
+    // config, Authorization header included.
+    console.error("[gmail callback] token exchange failed:", gmailErrorText(err));
     return back("error");
   }
 }

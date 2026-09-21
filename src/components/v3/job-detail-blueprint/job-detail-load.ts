@@ -24,6 +24,7 @@ import { isOwnerOrManager, isWorkerRole } from "@/lib/orgContext";
 import { contractTotal } from "@/lib/contractTotal";
 import { crewTotals, jobMoney } from "@/lib/jobCosting";
 import { isTradeId, pickList, type StockItem } from "@/lib/inventory";
+import { explodeLines } from "@/lib/inventoryBom";
 import {
   STATUS_TO_KEY,
   type JdAssignState,
@@ -554,7 +555,7 @@ async function pickFor(organizationId: string, trade: string | null, lines: Arra
   const items: StockItem[] = isTradeId(trade)
     ? (await db.inventoryItem.findMany({ where: { organizationId, trade } })).map((i) => ({ id: i.id, name: i.name, key: i.key, unit: i.unit, onHand: i.onHand, reorderPoint: i.reorderPoint, supplierId: i.supplierId }))
     : [];
-  return pickList(items, lines.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType.toLowerCase().replace("_", " ") }))).map((r) => ({
+  return pickList(items, explodeLines(trade, lines.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType.toLowerCase().replace("_", " ") })))).map((r) => ({
     name: r.name,
     unit: r.unit,
     quantity: r.quantity,

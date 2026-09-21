@@ -118,8 +118,14 @@ export async function dispatchStripeEvent(event: Stripe.Event, ctx: StripeEventC
       const charge = event.data.object as Stripe.Charge;
       const pi = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
       if (!pi) return;
+      // Only this endpoint's org — the same rule Square and Stax apply.
+      if (!expectedOrg) {
+        console.warn(`[stripe-${ctx.via}] refund on ${pi} arrived with no known org — ignored`);
+        return;
+      }
       await recordRefund({
         provider: "STRIPE",
+        organizationId: expectedOrg,
         externalPaymentId: pi,
         refundedMinor: charge.amount_refunded,
         full: Boolean(charge.refunded),
