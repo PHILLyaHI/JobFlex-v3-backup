@@ -122,7 +122,8 @@
 /* The nav mark, bigger (owner, 2026-09-10): the "J" alone — ×1.5 from
    1024px, ×1.25 on a phone; the wordmark and kicker keep their size. The
    lockup is a centred flex row, so the taller mark stays on the text's
-   axis; the bar keeps its height (94 / 72 px). */
+   axis. The bar itself came down to 80 / 64px on 2026-09-20; the mark box
+   is 67px at lg, which is what sets that floor. */
 @media (min-width: 1024px) {
   .jf-lp .lp-nav .lp-brand--lg .lp-mark-box { --lp-mark-size: 156px; }
 }
@@ -873,7 +874,93 @@
    viewport (CRO stage 2, 2026-09-09). The intrinsic size keeps the scrollbar
    honest before a section has been laid out; once it has, its real height
    is remembered (`auto`). */
-.jf-lp .lp-cv { content-visibility: auto; contain-intrinsic-size: auto 900px; }
+.jf-lp .lp-cv { content-visibility: auto; contain-intrinsic-size: auto var(--lp-cv, 900px); }
+
+/* ONE ESTIMATE PER SECTION, NOT ONE FOR ALL TEN (2026-09-20). The flat 900px
+   guess was wrong by up to 2,000px — the pricing block is 2,920px on a phone,
+   the proposals block 1,842px on a desktop — so the document grew about
+   2,800px as the reader scrolled it, and every section that laid itself out
+   shoved the rest of the page around beneath their cursor. The wheel then
+   landed somewhere other than where it was aimed, and an anchor clicked from
+   the top stopped short of its heading. With these numbers the same scroll
+   moves the page by about 100px in total.
+
+   Each value is that section's MEASURED height in that band, and the bands
+   are where the sections actually reflow: the container stops widening at
+   1280, the pricing table stacks at 768, the phone layout takes over at 640.
+   They only have to be close — a section that has been laid out once
+   remembers its real height (`auto`). Re-measure with
+   scratchpad/section-heights.js when a section's content changes materially,
+   and never collapse them back to one shared number. */
+.jf-lp .lp-cv--showcase { --lp-cv: 915px; }
+.jf-lp .lp-cv--montage { --lp-cv: 1280px; }
+.jf-lp .lp-cv--proposals { --lp-cv: 1740px; }
+.jf-lp .lp-cv--portal { --lp-cv: 772px; }
+.jf-lp .lp-cv--crew { --lp-cv: 1655px; }
+.jf-lp .lp-cv--integrations { --lp-cv: 546px; }
+.jf-lp .lp-cv--stats { --lp-cv: 1495px; }
+.jf-lp .lp-cv--built { --lp-cv: 1260px; }
+.jf-lp .lp-cv--pricing { --lp-cv: 1253px; }
+.jf-lp .lp-cv--faq { --lp-cv: 975px; }
+
+@media (min-width: 1280px) { /* the container has reached its width; the montage strip loses a row */
+  .jf-lp .lp-cv--showcase { --lp-cv: 927px; }
+  .jf-lp .lp-cv--montage { --lp-cv: 987px; }
+  .jf-lp .lp-cv--proposals { --lp-cv: 1842px; }
+  .jf-lp .lp-cv--portal { --lp-cv: 772px; }
+  .jf-lp .lp-cv--crew { --lp-cv: 1672px; }
+  .jf-lp .lp-cv--integrations { --lp-cv: 546px; }
+  .jf-lp .lp-cv--stats { --lp-cv: 1541px; }
+  .jf-lp .lp-cv--built { --lp-cv: 1284px; }
+  .jf-lp .lp-cv--pricing { --lp-cv: 1310px; }
+  .jf-lp .lp-cv--faq { --lp-cv: 950px; }
+}
+
+@media (max-width: 1023px) { /* 768 … 1023 */
+  .jf-lp .lp-cv--showcase { --lp-cv: 890px; }
+  .jf-lp .lp-cv--montage { --lp-cv: 1195px; }
+  .jf-lp .lp-cv--proposals { --lp-cv: 1990px; }
+  .jf-lp .lp-cv--portal { --lp-cv: 920px; }
+  .jf-lp .lp-cv--crew { --lp-cv: 1890px; }
+  .jf-lp .lp-cv--integrations { --lp-cv: 466px; }
+  .jf-lp .lp-cv--stats { --lp-cv: 2530px; }
+  .jf-lp .lp-cv--built { --lp-cv: 1185px; }
+  .jf-lp .lp-cv--pricing { --lp-cv: 1305px; }
+  .jf-lp .lp-cv--faq { --lp-cv: 1300px; }
+}
+
+@media (max-width: 767px) { /* 640 … 767 — the pricing table stacks here */
+  .jf-lp .lp-cv--showcase { --lp-cv: 870px; }
+  .jf-lp .lp-cv--montage { --lp-cv: 1145px; }
+  .jf-lp .lp-cv--proposals { --lp-cv: 1935px; }
+  .jf-lp .lp-cv--portal { --lp-cv: 892px; }
+  .jf-lp .lp-cv--crew { --lp-cv: 1830px; }
+  .jf-lp .lp-cv--integrations { --lp-cv: 442px; }
+  .jf-lp .lp-cv--stats { --lp-cv: 2100px; }
+  .jf-lp .lp-cv--built { --lp-cv: 1165px; }
+  .jf-lp .lp-cv--pricing { --lp-cv: 2810px; }
+  .jf-lp .lp-cv--faq { --lp-cv: 700px; }
+}
+
+@media (max-width: 639px) { /* phones */
+  .jf-lp .lp-cv--showcase { --lp-cv: 868px; }
+  .jf-lp .lp-cv--montage { --lp-cv: 628px; }
+  .jf-lp .lp-cv--proposals { --lp-cv: 1930px; }
+  .jf-lp .lp-cv--portal { --lp-cv: 770px; }
+  .jf-lp .lp-cv--crew { --lp-cv: 1480px; }
+  .jf-lp .lp-cv--integrations { --lp-cv: 465px; }
+  .jf-lp .lp-cv--stats { --lp-cv: 1294px; }
+  .jf-lp .lp-cv--built { --lp-cv: 833px; }
+  .jf-lp .lp-cv--pricing { --lp-cv: 2928px; }
+  .jf-lp .lp-cv--faq { --lp-cv: 706px; }
+}
+
+/* Anchor jumps (#pricing, #faq, the nav's own links) glide rather than
+   teleport, and stop clear of the nav where it is sticky. nav.tsx owns the
+   bar's height (lg: 80px); this follows it. */
+html:has(.jf-lp) { scroll-behavior: smooth; scroll-padding-top: 80px; }
+@media (max-width: 1023px) { html:has(.jf-lp) { scroll-padding-top: 16px; } }
+@media (prefers-reduced-motion: reduce) { html:has(.jf-lp) { scroll-behavior: auto; } }
 
 /* The three plates under the fold load lazily (lazy-bg.tsx). */
 .jf-lp .lp-bg--truck.is-near { background-image: url("/landing-d/bg-intro-truck-1600.webp"); }

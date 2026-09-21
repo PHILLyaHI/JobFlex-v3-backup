@@ -54,6 +54,9 @@ export interface SubscriptionViewProps {
   status: string;
   nextBill: string | null;
   trialEndsAt: string | null;
+  /** A cancellation is booked for the end of this cycle (billing.ts's
+   *  cancelSubscription mirrors Stripe's cancel_at_period_end here). */
+  cancelAtPeriodEnd: boolean;
   /** The limits engine's enforced caps for this org (unlimited keys omitted). */
   usage: UsageRow[];
   /** What the org has used on keys the plan does not cap — shown as counts. */
@@ -263,6 +266,7 @@ export async function loadSubscriptionData(
     status,
     nextBill: sub?.currentPeriodEnd ? sub.currentPeriodEnd.toISOString() : null,
     trialEndsAt: sub?.trialEndsAt ? sub.trialEndsAt.toISOString() : null,
+    cancelAtPeriodEnd: Boolean(sub?.canceledAt),
     usage,
     usageUnlimited,
     invoices: invoiceResult,

@@ -1181,9 +1181,37 @@ export function initProposalsContent(
     left = Math.max(12, left);
     pMenu.style.left = left + "px";
     pMenu.style.top = "0px";
+    // The menu has grown to nine rows (Send invoice, Change order, Order
+    // materials, Zillow), ~600px tall, and on a short window it fit neither
+    // below the button nor above it: the flip clamped to 12px, straight under
+    // the sticky topbar (which sits in a higher stacking layer than this
+    // menu), and the tail ran off the bottom. So: keep clear of the topbar,
+    // take whichever side holds the whole menu, and when neither does cap the
+    // height and let the menu scroll inside itself.
+    pMenu.style.maxHeight = "";
     const mh = pMenu.offsetHeight;
-    let top = rBottom + 6;
-    if (top + mh > vh - 12) top = Math.max(12, rTop - mh - 6);
+    const bar = document.querySelector<HTMLElement>("header.topbar");
+    const minTop = Math.max(12, (bar ? bar.getBoundingClientRect().bottom / z : 0) + 8);
+    const maxBottom = vh - 12;
+    const roomBelow = maxBottom - (rBottom + 6);
+    const roomAbove = rTop - 6 - minTop;
+    const column = maxBottom - minTop;
+    let top: number;
+    if (mh <= roomBelow) {
+      top = rBottom + 6;
+    } else if (mh <= roomAbove) {
+      top = rTop - 6 - mh;
+    } else if (mh <= column) {
+      // Neither side holds it whole, but the window does: slide it along the
+      // roomier side just far enough to fit, over the button's edge, rather
+      // than hand the reader a scrollbar for the last few pixels.
+      top = roomBelow >= roomAbove ? rBottom + 6 : rTop - 6 - mh;
+      top = Math.min(Math.max(top, minTop), maxBottom - mh);
+    } else {
+      // Taller than the whole window: fill the column and scroll inside it.
+      top = minTop;
+      pMenu.style.maxHeight = Math.floor(column) + "px";
+    }
     pMenu.style.top = top + "px";
   }
   function closeMenu() {

@@ -175,6 +175,84 @@ export async function listSubscriptionInvoices(): Promise<{
   }
 }
 
+/* ── CANCEL AT THE END OF THE CYCLE ──────────────────────────────────────
+   (owner, 2026-09-20) The subscription page's last row. Cancelling is booked,
+   not immediate: Stripe keeps `cancel_at_period_end`, the shop keeps every
+   paid day it already has, and nothing is refunded — the same money rule the
+   plan dialog states for a downgrade. The booking is mirrored locally on
+   `Subscription.canceledAt` (an existing column; no schema change), which is
+   what the page reads to show "cancelling on <date>" and offer the undo.
+
+   Resuming clears the booking on both sides while the cycle is still running.
+   Once the period has actually ended Stripe has cancelled for real and there
+   is nothing here to resume — that shop checks out again. */
+export type CancelSubscriptionResult =
+  | { ok: true; endsAt: string | null }
+  | { ok: false; error: string };
+
+export async function cancelSubscription(): Promise<CancelSubscriptionResult> {
+  const { organizationId } = await requireOwner();
+  const sub = await db.subscription.findUnique({ where: { organizationId } });
+  if (!sub) return { ok: false, error: "There's no subscription to cancel." };
+  if (sub.canceledAt) return { ok: false, error: "This subscription is already set to cancel." };
+
+  let endsAt: Date | null = sub.currentPeriodEnd ?? sub.trialEndsAt ?? null;
+  if (sub.externalSubId && isStripeEnabled()) {
+    const { stripe } = await getStripeClient();
+    try {
+      const updated = await stripe.subscriptions.update(sub.externalSubId, {
+        cancel_at_period_end: true,
+      });
+      if (updated.current_period_end) endsAt = new Date(updated.current_period_end * 1000);
+    } catch (err) {
+      console.warn("[billing] cancelSubscription failed:", err);
+      return { ok: false, error: "Couldn't cancel the subscription. Try again." };
+    }
+  }
+
+  await db.subscription.update({
+    where: { organizationId },
+    data: { canceledAt: new Date(), ...(endsAt ? { currentPeriodEnd: endsAt } : {}) },
+  });
+  revalidatePlanSurfaces();
+  revalidatePath("/dashboard/subscription");
+  return { ok: true, endsAt: endsAt ? endsAt.toISOString() : null };
+}
+
+export async function resumeSubscription(): Promise<CancelSubscriptionResult> {
+  const { organizationId } = await requireOwner();
+  const sub = await db.subscription.findUnique({ where: { organizationId } });
+  if (!sub) return { ok: false, error: "There's no subscription to resume." };
+  if (!sub.canceledAt) return { ok: false, error: "This subscription isn't cancelling." };
+
+  let endsAt: Date | null = sub.currentPeriodEnd ?? null;
+  if (sub.externalSubId && isStripeEnabled()) {
+    const { stripe } = await getStripeClient();
+    try {
+      const current = await stripe.subscriptions.retrieve(sub.externalSubId);
+      // Already over: Stripe cancelled for real and nothing can be resumed.
+      if (current.status === "canceled" || current.status === "incomplete_expired") {
+        return { ok: false, error: "This subscription has already ended. Choose a plan to start again." };
+      }
+      const updated = await stripe.subscriptions.update(sub.externalSubId, {
+        cancel_at_period_end: false,
+      });
+      if (updated.current_period_end) endsAt = new Date(updated.current_period_end * 1000);
+    } catch (err) {
+      console.warn("[billing] resumeSubscription failed:", err);
+      return { ok: false, error: "Couldn't resume the subscription. Try again." };
+    }
+  }
+
+  await db.subscription.update({
+    where: { organizationId },
+    data: { canceledAt: null, ...(endsAt ? { currentPeriodEnd: endsAt } : {}) },
+  });
+  revalidatePlanSurfaces();
+  revalidatePath("/dashboard/subscription");
+  return { ok: true, endsAt: endsAt ? endsAt.toISOString() : null };
+}
+
 /* ── CHANGE PLAN IN PLACE ────────────────────────────────────────────────
    Until 2026-09-02 every plan button led to /dashboard/upgrade, whose only
    move was a NEW Checkout session — a second subscription beside the first,

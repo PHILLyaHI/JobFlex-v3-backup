@@ -84,6 +84,7 @@ import {
 import type { SubscriptionInvoice } from "@/actions/billing";
 import type { SubscriptionViewProps } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
 import { nextChargeLines, usd } from "@/app/(dashboard)/dashboard/subscription/next-charge-lines";
+import { CancelSubscription } from "@/components/billing/CancelSubscription";
 import { MobileUpgradeContent } from "@/components/v3/mobile-upgrade/mobile-upgrade";
 import type { UpgradePlan } from "@/components/v3/upgrade-blueprint/upgrade-content";
 import "./mobile-subscription.css";
@@ -165,6 +166,7 @@ export function MobileSubscription({
   status,
   nextBill,
   trialEndsAt,
+  cancelAtPeriodEnd,
   usage,
   invoices,
   nextCharge,
@@ -576,6 +578,16 @@ export function MobileSubscription({
               </div>
             </div>
           </section>
+
+          {/* ============ CANCEL ============
+              The desktop page's last row, the same component and the same
+              money rule. Renders nothing without a live subscription. */}
+          <CancelSubscription
+            status={status}
+            planName={planName}
+            endsAt={nextBill ?? trialEndsAt}
+            cancelAtPeriodEnd={cancelAtPeriodEnd}
+          />
         </div>
       </main>
 

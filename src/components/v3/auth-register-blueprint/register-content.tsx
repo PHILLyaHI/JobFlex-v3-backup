@@ -1183,6 +1183,12 @@ export function RegisterContent({
               <div className={err2 ? "err" : "err is-hidden"} id="err2">
                 {err2}
               </div>
+              <p className="step-note">
+                By creating an account, you agree to our{" "}
+                <Link href="/terms" target="_blank" rel="noopener noreferrer"><u>Terms of service</u></Link>
+                {" "}and acknowledge our{" "}
+                <Link href="/privacy" target="_blank" rel="noopener noreferrer"><u>Privacy policy</u></Link>.
+              </p>
             </form>
 
           </div>
@@ -1292,6 +1298,10 @@ export function RegisterContent({
             {/* The card terms, once more, where the card is asked for (pass A). */}
             <p className="pw-terms" id="pwTerms">
               Your card won&apos;t be charged until day 15. Cancel anytime from Subscription.
+              {" "}By starting a trial, you agree to our{" "}
+              <Link href="/terms" target="_blank" rel="noopener noreferrer"><u>Terms of service</u></Link>
+              {" "}and acknowledge our{" "}
+              <Link href="/privacy" target="_blank" rel="noopener noreferrer"><u>Privacy policy</u></Link>.
             </p>
 
             {plansErr ? (

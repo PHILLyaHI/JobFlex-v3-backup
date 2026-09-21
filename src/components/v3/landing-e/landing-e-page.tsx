@@ -93,6 +93,10 @@ export async function LandingE({ variant, explicitVariant = false, utm = {} }: L
   // scenario, or the roofing / fencing scenarios written for the pages whose
   // hero is the roof or fence shot (smart-scenarios.ts).
   const smart = v.scenario ?? (variant === "roofing" || variant === "fencing" ? variant : undefined);
+  // Below the intro every section is wrapped in `.lp-cv` plus its own name,
+  // which is what the stylesheet hangs that section's intrinsic height on
+  // (landing-e.css, `--lp-cv`) — a shared guess made the page grow ~2,800px
+  // under the reader as they scrolled.
   // Below the intro every section is wrapped in `.lp-cv`
   // (content-visibility: auto): the browser skips its style and layout until
   // it is near the viewport — the mobile LCP's render delay was style/layout
@@ -103,23 +107,23 @@ export async function LandingE({ variant, explicitVariant = false, utm = {} }: L
       <main>
         <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} cta={top} />
         <Intro />
-        <div className="lp-cv"><EstimatorsShowcase ownSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} scenario={smart} registerHref={register} cta={top} /></div>
-        {(g?.montage ?? true) && <div className="lp-cv"><Montage /></div>}
-        <div className="lp-cv"><ProposalsSection proposal={g?.proposal} registerHref={register} cta={low} /></div>
-        <div className="lp-cv"><PortalSection portal={g?.portal} /></div>
+        <div className="lp-cv lp-cv--showcase"><EstimatorsShowcase ownSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} scenario={smart} registerHref={register} cta={top} /></div>
+        {(g?.montage ?? true) && <div className="lp-cv lp-cv--montage"><Montage /></div>}
+        <div className="lp-cv lp-cv--proposals"><ProposalsSection proposal={g?.proposal} registerHref={register} cta={low} /></div>
+        <div className="lp-cv lp-cv--portal"><PortalSection portal={g?.portal} /></div>
         {/* One content-visibility box for the two sections the guide line runs
             through, so both are laid out together and the line can be measured. */}
-        <div className="lp-cv">
+        <div className="lp-cv lp-cv--crew">
           <CrewGuide>
             <JobsSection crew={g?.crew} phoneLanes={g?.phoneLanes} />
             <FlowFeatures />
           </CrewGuide>
         </div>
-        <div className="lp-cv"><Integrations /></div>
-        <div className="lp-cv"><StatsSection rows={g?.stats} /></div>
-        <div className="lp-cv"><BuiltSection jobs={g?.jobs} phoneJobs={g?.phoneJobs} /></div>
-        <div className="lp-cv"><LandingPricing plans={plans} registerHref={register} cta={low} /></div>
-        <div className="lp-cv"><LandingFaq variant={variant} registerHref={register} cta={low} /></div>
+        <div className="lp-cv lp-cv--integrations"><Integrations /></div>
+        <div className="lp-cv lp-cv--stats"><StatsSection rows={g?.stats} /></div>
+        <div className="lp-cv lp-cv--built"><BuiltSection jobs={g?.jobs} phoneJobs={g?.phoneJobs} /></div>
+        <div className="lp-cv lp-cv--pricing"><LandingPricing plans={plans} registerHref={register} cta={low} /></div>
+        <div className="lp-cv lp-cv--faq"><LandingFaq variant={variant} registerHref={register} cta={low} /></div>
         <CtaFooter registerHref={register} cta={low} />
       </main>
       <MobileCta registerHref={register} cta={top} />

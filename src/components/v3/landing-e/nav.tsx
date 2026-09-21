@@ -24,7 +24,11 @@ export function Nav({ registerHref = REGISTER, cta }: { registerHref?: string; c
     // eats a chunk of a short viewport for a two-item nav. The bar sits on the
     // same ink ground the hero paints, so pinned or not it reads as one field.
     <header className="lp-nav relative z-50 lg:sticky lg:top-0">
-      <div className="mx-auto flex h-[72px] max-w-[86rem] items-center justify-between px-5 sm:px-6 lg:h-[94px]">
+      {/* 80 / 64px (owner, 2026-09-20): the bar was 94 / 72 and took more of
+          the fold than a five-item row needs. The mark is 67px tall at lg,
+          which is what sets 80px as the floor. `scroll-padding-top` in
+          landing-e.css follows this number — move them together. */}
+      <div className="mx-auto flex h-[64px] max-w-[86rem] items-center justify-between px-5 sm:px-6 lg:h-[80px]">
         <div className="flex items-center gap-10">
           <Link href="/" aria-label="JobFlex home">
             <Logo className="lp-brand--lg" />
