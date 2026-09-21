@@ -7,6 +7,7 @@
 // carry internal detail), only a digest the operator can grep in the logs.
 
 import { useEffect } from "react";
+import { trackException } from "@/lib/traffic-client";
 
 export default function RouteError({
   error,
@@ -17,6 +18,8 @@ export default function RouteError({
 }) {
   useEffect(() => {
     console.error("[route-error]", error.digest ?? "", error);
+    // $exception to PostHog: scrubbed message, digest, route, role, plan — see lib/traffic-client.
+    trackException(error, "route");
   }, [error]);
 
   return (

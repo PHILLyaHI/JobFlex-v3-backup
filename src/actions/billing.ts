@@ -14,6 +14,7 @@ import {
   customPriceCents,
   normalizeCustomPages,
 } from "@/lib/customPlan";
+import { logServerError } from "@/lib/server-events";
 
 /**
  * Directly assign the org a plan from the catalog. One legitimate use since
@@ -269,7 +270,7 @@ export async function changePlan(
       },
     });
   } catch (err) {
-    console.warn("[billing] changePlan failed:", err);
+    logServerError("billing.changePlan", err, { kind: "action", organizationId });
     const msg = err instanceof Error ? err.message : "";
     return {
       ok: false,

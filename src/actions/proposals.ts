@@ -20,6 +20,7 @@ import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 import { priceLinesForClient } from "@/lib/pricing/markup";
 import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
+import { logServerError } from "@/lib/server-events";
 
 const lineItemSchema = z.object({
   name: z.string().min(1),
@@ -473,7 +474,8 @@ export async function sendProposal(id: string) {
     const { notifyProposalSent } = await import("@/lib/notify");
     await notifyProposalSent({ proposalId: id });
   } catch (err) {
-    console.error("[sendProposal] proposal email failed — not marking SENT:", err);
+    // Not marking SENT. The contractor gets the friendly line; the cause goes to the log.
+    logServerError("proposals.sendProposal:email", err, { kind: "action", organizationId });
     throw new Error(
       "Couldn't send the proposal email. Please check the client's email address and try again.",
     );

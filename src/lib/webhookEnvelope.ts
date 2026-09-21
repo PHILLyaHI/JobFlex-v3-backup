@@ -6,6 +6,7 @@
 // turn the retry into a "duplicate" 200 and the event would be lost.
 import { db } from "@/lib/db";
 import { WebhookEventStatus } from "@/lib/prismaEnums";
+import { logServerError } from "@/lib/server-events";
 
 export type EnvelopeResult =
   | { outcome: "duplicate" }
@@ -41,6 +42,9 @@ export async function runWebhookEnvelope(
     return { outcome: "processed" };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "handler error";
+    // The route answers 500 and the provider retries; this is where the
+    // failure is seen — `server_error`, scoped to provider and event type.
+    logServerError(`webhooks/${meta.provider.toLowerCase()}:${meta.type}`, err, { kind: "webhook" });
     await db.webhookEvent.update({
       where,
       data: { status: WebhookEventStatus.FAILED, error: msg.slice(0, 1000) },

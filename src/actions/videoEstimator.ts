@@ -40,6 +40,7 @@ import {
   walkthroughInputSchema,
   type WalkthroughAnalysis,
 } from "@/lib/estimate/video-schema";
+import { logServerError } from "@/lib/server-events";
 
 /** Vision quality matters more here than on the text-only planner: reading a
  *  fence run off a frame against a door for scale is spatial reasoning, which
@@ -193,6 +194,7 @@ export async function analyzeWalkthrough(
     );
     return { ok: true, data };
   } catch (err) {
+    logServerError("videoEstimator.analyzeWalkthrough", err, { kind: "action", organizationId });
     const msg = err instanceof Error ? err.message : "Could not read the walkthrough";
     console.error(`[videoEstimator] reading failed: ${msg}`);
     return { ok: false, error: msg };

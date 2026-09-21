@@ -2,6 +2,7 @@
 
 import type { PostHog } from "posthog-js";
 import { TRAFFIC_EVENTS } from "./traffic-contract";
+import { readConsent } from "./consent";
 
 /* posthog-js is NOT imported here (landing-e pass C, 2026-09-11): it is a
    259 KB script, and a static import from this module put it in every page
@@ -11,7 +12,10 @@ import { TRAFFIC_EVENTS } from "./traffic-contract";
 
 type EventName = typeof TRAFFIC_EVENTS[keyof typeof TRAFFIC_EVENTS];
 type Properties = Record<string, string | number | boolean>;
-const queued: { event: EventName; properties: Properties }[] = [];
+/* `error` rides along only for "$exception": once the library is in, the
+   instance builds the stack frames from it; the beacon path sends without. */
+type Queued = { event: EventName | "$exception"; properties: Record<string, unknown>; error?: Error };
+const queued: Queued[] = [];
 let available = false;
 let client: PostHog | null = null;
 const readyListeners = new Set<() => void>();
@@ -30,16 +34,21 @@ export function trafficReady(instance?: PostHog) {
   if (!client) return;
   const first = !available;
   available = true;
-  for (const item of queued.splice(0)) trackTraffic(item.event, item.properties);
+  for (const item of queued.splice(0)) deliver(item);
   if (first) for (const callback of readyListeners) callback();
 }
 
 export function trackTraffic(event: EventName, properties: Properties = {}) {
+  deliver({ event, properties });
+}
+
+function deliver(item: Queued) {
   if (!process.env.NEXT_PUBLIC_POSTHOG_KEY || typeof window === "undefined") return;
-  if (!available || !client) { if (queued.length < 30) queued.push({ event, properties }); return; }
+  if (!available || !client) { if (queued.length < 30) queued.push(item); return; }
   if (window.location.pathname === "/admin" || window.location.pathname.startsWith("/admin/")) return;
   try {
-    client.capture(event, { ...properties, $pathname: window.location.pathname }, { transport: "sendBeacon", send_instantly: true });
+    if (item.event === "$exception" && item.error) { client.captureException(item.error, item.properties); return; }
+    client.capture(item.event, { ...item.properties, $pathname: window.location.pathname }, { transport: "sendBeacon", send_instantly: true });
   } catch { /* Analytics must never interrupt signup or checkout. */ }
 }
 
@@ -83,7 +92,8 @@ function flushByBeacon() {
   const now = new Date().toISOString();
   const batch = queued.splice(0).map((q) => ({
     event: q.event,
-    properties: { ...q.properties, $pathname: path, $current_url: window.location.href.split("#")[0], $lib: "web", $lib_version: "beacon", distinct_id: id, jf_hostname: window.location.hostname },
+    // No instance, so no parsed frames: type and message are what the beacon carries.
+    properties: { ...(q.error ? { $exception_list: [{ type: q.error.name, value: q.error.message, mechanism: { handled: true, synthetic: false } }], $exception_level: "error" } : {}), ...q.properties, $pathname: path, $current_url: window.location.href.split("#")[0], $lib: "web", $lib_version: "beacon", distinct_id: id, jf_hostname: window.location.hostname },
     timestamp: now,
   }));
   try {
@@ -107,4 +117,46 @@ export function trafficIdentity(): { distinctId: string; sessionId: string; host
 export function trackTrafficExperiment(experiment: string, variant: string) {
   if (!/^[a-zA-Z0-9_-]{1,80}$/.test(experiment) || !/^[a-zA-Z0-9_-]{1,80}$/.test(variant)) return;
   trackTraffic(TRAFFIC_EVENTS.exposure, { experiment, variant });
+}
+
+/* ERRORS THE VISITOR SAW (2026-09-20). app/error.tsx and app/global-error.tsx
+   report here. What goes out: the message (emails and long digit runs struck,
+   300 chars), Next's digest, the route with ids folded to [id], and who hit
+   it in the coarsest terms — role, plan, organization id. Never field text,
+   names or addresses. The signed-in layouts set that context through
+   <TrafficContext>; module state, so it outlives the layout the error
+   boundary has just replaced. */
+type ErrorContext = { role: string | null; plan: string | null; organizationId: string | null };
+let errorContext: ErrorContext = { role: null, plan: null, organizationId: null };
+export function setTrafficContext(next: ErrorContext) { errorContext = next; }
+
+/** /dashboard/proposals/cmf3k2… → /dashboard/proposals/[id]; portal tokens fold the same way. */
+export function trafficRoute(pathname: string): string {
+  return pathname.split("/").map((seg) =>
+    /^\d+$/.test(seg) || (seg.length >= 16 && /\d/.test(seg) && /^[A-Za-z0-9_-]+$/.test(seg)) || /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(seg) ? "[id]" : seg).join("/");
+}
+const scrubMessage = (message: string) =>
+  message.replace(/[^\s@"'<>]+@[^\s@"'<>]+\.[^\s@"'<>]+/g, "[email]").replace(/\d{6,}/g, "[n]").slice(0, 300);
+
+const reported = new WeakSet<object>();
+/** `boundary: "global"` means the root layout is gone and the library with it: send now, by beacon. */
+export function trackException(error: Error & { digest?: string }, boundary: "route" | "global") {
+  if (!KEY || typeof window === "undefined" || reported.has(error)) return;
+  // The same choice the capture provider applies; a queued event never outruns it.
+  if (readConsent()?.analytics === false) return;
+  reported.add(error);
+  const message = scrubMessage(String(error.message ?? ""));
+  // The instance reads the message off the error itself — hand it the scrubbed one.
+  const safe = new Error(message);
+  safe.name = error.name || "Error";
+  if (error.stack) { const [head, ...frames] = error.stack.split("\n"); safe.stack = [scrubMessage(head), ...frames].join("\n"); }
+  deliver({
+    event: "$exception", error: safe,
+    properties: {
+      message, boundary, digest: error.digest ?? "", route: trafficRoute(window.location.pathname),
+      role: errorContext.role ?? "none", plan: errorContext.plan ?? "none",
+      organizationId: errorContext.organizationId ?? "",
+    },
+  });
+  if (boundary === "global") flushByBeacon();
 }
