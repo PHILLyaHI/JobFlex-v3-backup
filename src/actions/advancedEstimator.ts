@@ -5,6 +5,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { recordInventoryLink } from "@/lib/inventoryPick";
 import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
 import {
   friendlyAIError,
@@ -1420,6 +1421,7 @@ const convertInput = z.object({
   assumptions: z.array(z.string()).default([]),
   // Pre-links the proposal to a client when converted from a client's page.
   clientId: z.string().optional().nullable(),
+  inventoryLinked: z.boolean().optional().nullable(),
   // The estimate's job location ("City, ST") — becomes the proposal's job
   // address and, when its state resolves, seeds the tax rate for that market.
   location: z.string().optional().nullable(),
@@ -1596,6 +1598,8 @@ export async function convertEstimateToProposal(raw: unknown) {
       },
     },
   });
+  // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
+  await recordInventoryLink(organizationId, proposal.id, data.inventoryLinked, user.id);
 
   await db.activityEvent.create({
     data: {

@@ -56,6 +56,7 @@ import { SubscriptionSprite } from "./subscription-sprite";
 // Type-only: erased at compile, so the loader's server imports never reach
 // this client bundle.
 import type { SubscriptionViewProps } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
+import { CancelSubscription } from "@/components/billing/CancelSubscription";
 import { nextChargeLines, usd } from "@/app/(dashboard)/dashboard/subscription/next-charge-lines";
 import { expandPlanFeatures } from "@/lib/planCatalog";
 import styles from "./subscription.module.css";
@@ -506,6 +507,17 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
             : "Build your plan — base rows included, marked rows are $10/mo each"}
         </div>
       </section>
+
+      {/* CANCEL — the page's last row (owner, 2026-09-20). Shared with the
+          handheld build; renders nothing when there is no live subscription. */}
+      <div className={cx(RV)}>
+        <CancelSubscription
+          status={props.status}
+          planName={props.planName}
+          endsAt={props.nextBill ?? props.trialEndsAt}
+          cancelAtPeriodEnd={props.cancelAtPeriodEnd}
+        />
+      </div>
 
       {/* Out of flow, so it is not a flex item and adds no gap. Last, so it
           cannot shift the reveal cascade's stagger indices. */}

@@ -1,0 +1,31 @@
+# Project MCP configuration. Codex loads this from a trusted project.
+# No credentials belong in this file. See README.md for account logins.
+
+[mcp_servers.context7]
+url = "https://mcp.context7.com/mcp"
+
+[mcp_servers.playwright]
+command = "cmd.exe"
+args = ["/d", "/c", "npx.cmd", "-y", "@playwright/mcp@0.0.80"]
+startup_timeout_sec = 120
+
+[mcp_servers.chrome-devtools]
+command = "cmd.exe"
+args = ["/d", "/c", "npx.cmd", "-y", "chrome-devtools-mcp@1.9.0"]
+startup_timeout_sec = 120
+
+[mcp_servers.context-mode]
+# Disabled until its first-time installation is explicitly approved and verified.
+enabled = false
+command = "cmd.exe"
+args = ["/d", "/c", "npx.cmd", "-y", "context-mode@1.0.151"]
+startup_timeout_sec = 120
+
+[mcp_servers.exa]
+url = "https://mcp.exa.ai/mcp"
+
+[mcp_servers.vercel]
+url = "https://mcp.vercel.com"
+
+[mcp_servers.posthog]
+url = "https://mcp.posthog.com/mcp"

@@ -20,6 +20,8 @@ import { fileSize, newId } from "../manual-focus/manual-focus-math";
 import styles from "./manual-blueprint.module.css";
 import { Btn, Ic, IconBtn, Segmented, ToggleCell, cx } from "./bp-ui";
 import { useRef } from "react";
+import { useSearchParams } from "next/navigation";
+import { ProposalWarehouseCard } from "@/components/v3/inventory-link/proposal-warehouse-card";
 
 /* ============================================================
    06 — SHOW TO CLIENT
@@ -35,6 +37,10 @@ export function PrintOptions({
   onPatch: (patch: Partial<ProposalOptions>) => void;
 }) {
   const view: PriceView = options.hideBreakdown ? "totals" : "split";
+  // The proposal this document belongs to — the builder's URL carries it once
+  // saved — for the Warehouse card (connected to the inventory or an estimate
+  // only, and the materials to pick up; 2026-09-20).
+  const proposalId = useSearchParams().get("proposal");
   return (
     <div className={cx(styles.toggles, styles.printOptions)}>
       {/* The one real choice: how each line's price reads. Both print the
@@ -60,6 +66,7 @@ export function PrintOptions({
           onChange={(on) => onPatch({ showSignature: on })}
         />
       </div>
+      <ProposalWarehouseCard proposalId={proposalId} />
     </div>
   );
 }

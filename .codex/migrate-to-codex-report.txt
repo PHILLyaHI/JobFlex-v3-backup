@@ -1,0 +1,41 @@
+JobFlex v3 Codex setup — 2026-09-12
+Source: C:\joblfex-v3 (CLAUDE.md, .claude, .mcp.json)
+Target: C:\joblfex-v3 (AGENTS.md, .agents/skills, .codex)
+Mode: Additive project adaptation; source Claude files preserved.
+
+Completed:
+- AGENTS.md: independent Codex instruction file; preserved project rules and Next.js generated block; adapted skill invocation and discovery guidance.
+- frontend-design: converted skill, added project-rule precedence, preserved source license notice in prose.
+- jobflex-page-styler: converted skill, adapted shell/file-tool instructions, corrected stale verification and route assumptions. Reference files and asset preserved byte-for-byte.
+- mobile-app-ui-design: converted skill with JobFlex design/mobile precedence. Reference preserved byte-for-byte.
+- source-command-fleet: converted slash command into an explicit Codex skill. It displays Claude workflow logs, not Codex agents.
+- config.toml: seven MCP entries, six enabled, context-mode disabled pending installation approval.
+- README.md: project activation, login steps, verified service status, global tooling, limitations.
+
+Validation:
+- Migration target validator passed TOML, command discovery, four skill headers, instruction size checks.
+- Follow-up dry-run found no orphan skills or agents. It would overwrite the reviewed adapters with original source semantics; it was not applied again.
+- Resolved all generated manual-review markers in instruction and skill artifacts.
+- No custom project subagents or hooks existed to migrate.
+- No application dependencies, app code, database schema, source Claude configuration, or credentials intentionally changed by this setup.
+
+MCP handshakes:
+- Context7: PASS, 2 tools.
+- Exa: PASS, 2 tools.
+- Playwright 0.0.80: PASS, 24 tools.
+- Chrome DevTools 1.9.0: PASS, 29 tools.
+- Vercel: HTTP 401 without credentials; account login required.
+- PostHog: HTTP 401 without credentials; account login required.
+- context-mode 1.0.151: NOT VERIFIED. Initial npm ECOMPROMISED cache-lock error; approved retry timed out during postinstall. Further execution was rejected by automatic approval review because the installer can modify global Claude settings. Config entry is disabled pending explicit approval and successful verification.
+
+User-scope inventory:
+- Installed/enabled: Superpowers, Build Web Apps, GitHub, Vercel, PostHog, Compound Engineering, Caveman, claude-mem.
+- Present: Impeccable, Visual Architect.
+- Global installations are reused, not copied into the project.
+- Other Claude account connectors and their credentials were not migrated.
+
+Activation:
+Open C:\joblfex-v3 as a trusted project in Codex and start a new task.
+This task is still attached to its original projectless workspace.
+No persistent project-trust setting was changed.
+Log into Vercel/PostHog in Codex when using those services.

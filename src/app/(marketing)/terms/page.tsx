@@ -1,128 +1,171 @@
-import { LEGAL_CONTACT_EMAIL, LEGAL_EFFECTIVE_DATE } from "@/lib/legal";
+import type { Metadata } from "next";
+import Link from "next/link";
+import { LegalContact, LegalPage } from "@/components/legal/legal-page";
+import { LEGAL_OPERATOR_NAME } from "@/lib/legal";
 
-// B2B-SaaS terms. Section 5 (estimates are estimates, verify on site) is the
-// load-bearing clause for this product — keep it when editing.
-export const metadata = { title: "JobFlex · Terms of service" };
+export const metadata: Metadata = {
+  title: "JobFlex · Terms of service",
+  description: "Terms for JobFlex accounts, subscriptions, estimating tools, proposals, and connected email.",
+  alternates: { canonical: "/terms" },
+};
 
 export default function TermsPage() {
   return (
-    <main className="mx-auto max-w-3xl px-6 lg:px-10 py-20 prose-editorial">
-      <div className="quiet-caps mb-3">Terms</div>
-      <h1 className="font-display text-[42px] leading-[1.05] tracking-[-0.025em]">Terms of service</h1>
-      <p className="mt-2 text-[14px] text-[color:var(--ink-muted)]">Effective date: {LEGAL_EFFECTIVE_DATE}</p>
-
+    <LegalPage title="Terms of service" number="02" summary="The agreement for your workspace, subscriptions, business documents, and connected services.">
       <p>
-        These terms are an agreement between you and JobFlex (&ldquo;we&rdquo;) for use of the JobFlex
-        platform — estimating, proposals, scheduling, and client management software for contractors. By
-        creating an account or using the service you accept them. If you use JobFlex on behalf of a
-        company, you accept them for that company.
+        These terms govern JobFlex, operated by {LEGAL_OPERATOR_NAME}, operating as JobFlex in
+        Washington, United States (&ldquo;we,&rdquo; &ldquo;us&rdquo;). By creating an account or otherwise
+        agreeing to these terms, you enter this agreement. If acting for a business, you represent that
+        you can bind it. Our <Link href="/privacy">Privacy policy</Link> explains information handling.
+        Accepting these terms is not consent to every optional tracker or integration.
       </p>
-
-      <h2>1. Accounts</h2>
+      <h2>1. Eligibility and accounts</h2>
       <p>
-        You are responsible for the accuracy of your account information and for everything done under
-        your credentials. Keep them safe, and tell us promptly at <strong>{LEGAL_CONTACT_EMAIL}</strong>{" "}
-        if you suspect unauthorized access. The organization owner controls who has access to the
-        organization&rsquo;s workspace.
+        You must be at least 18 and legally able to enter this agreement to create a business account.
+        Provide accurate details, protect credentials, and promptly report suspected unauthorized access
+        to <LegalContact />. You are responsible for users you authorize and their use of the workspace,
+        subject to applicable law. Administrators control access and integrations; removing a member does
+        not necessarily remove shared business records.
       </p>
-
-      <h2>2. Subscription and billing</h2>
+      <h2>2. Subscriptions, trials, and cancellation</h2>
       <p>
-        Paid plans are billed through Stripe on a recurring basis until cancelled. You can cancel at any
-        time; cancellation takes effect at the end of the current billing period. Amounts already billed
-        are not refunded — except that within 14 days of your first charge you can request a full refund
-        of it, no questions asked. We may change prices with at least 30 days&rsquo; notice before your
-        next renewal.
+        Your plan and checkout specify pricing, billing intervals, features, limits, applicable taxes,
+        and any trial. An authorized recurring subscription renews at the disclosed interval until
+        canceled. When a 14-day free trial is offered with a payment method, the first charge occurs
+        after the trial unless canceled beforehand. Review the specific offer at checkout.
       </p>
-
-      <h2>3. Acceptable use</h2>
       <p>
-        Don&rsquo;t use JobFlex to break the law, to send spam, to upload malicious code, to probe or
-        disrupt the service, or to infringe anyone&rsquo;s rights. Don&rsquo;t resell access or scrape the
-        platform. We may suspend accounts that put the service or other customers at risk.
+        Cancel through Subscription settings or contact <LegalContact /> for help. Cancellation normally
+        stops the next renewal and leaves access through the paid period, as shown in the cancellation
+        confirmation. Canceling a subscription and deleting an account are separate actions. Save needed
+        records before closing your account.
       </p>
-
-      <h2>4. Your clients&rsquo; data</h2>
       <p>
-        You control the client information you put into JobFlex — you are the data controller for your
-        clients and homeowner leads; we process that data on your behalf to run the service. You are
-        responsible for having the right to enter it and for honoring your own obligations to your clients
-        (including privacy notices and deletion requests). If your client asks us directly about data you
-        hold on them, we will refer them to you.
+        You can request a full refund within 14 days of your first subscription charge. Otherwise,
+        charges are non-refundable except as required by law or expressly offered by us. Mandatory
+        cancellation, refund, and renewal-notice rights remain in effect. We will give at least 30
+        days&apos; notice of a subscription price increase before it applies to your next renewal and
+        obtain additional agreement where required by law.
       </p>
-
-      <h2>5. Estimates and measurements are estimates</h2>
+      <h2>3. Contractor payments and providers</h2>
       <p>
-        Roof, fence, and other measurements and estimates produced by JobFlex are derived from aerial
-        imagery, elevation data, parcel records, and other third-party sources, and from inputs you
-        provide. <strong>They are estimates, not guarantees.</strong> Data sources can be outdated,
-        occluded, or wrong, and automated measurement has inherent error.{" "}
-        <strong>
-          You must verify measurements, quantities, and site conditions on site before signing contracts,
-          ordering materials, or committing to prices.
-        </strong>{" "}
-        We are not liable for losses that result from relying on an estimate without verification.
+        Payments for contractor work are separate from your JobFlex subscription. The contractor is
+        responsible for pricing, taxes, work, refunds, disputes, licenses, and its customer agreement.
+        Processors may charge their fees and any platform fee disclosed for the transaction or
+        integration. Their terms, verification requirements, and availability apply. JobFlex does not
+        guarantee merchant-account approval, payment settlement, or recovery of funds.
       </p>
-
-      <h2>6. Homeowner requests</h2>
+      <h2>4. Connected Gmail and communications</h2>
       <p>
-        Where JobFlex routes homeowner project requests to contractors, we act only as a conduit. Any
-        contract for work is between the contractor and the homeowner; we are not a party to it and
-        don&rsquo;t guarantee either side&rsquo;s performance.
+        Connect only an account you may lawfully use. Google authorization allows JobFlex to send email
+        through that account and identify its address; this integration does not request inbox-reading or
+        contact-import permissions. The connection serves the organization&apos;s workspace. Authorized
+        actions and configured workflows may send proposals, invoices, reminders, follow-ups, review
+        requests, and related messages. Review recipients, content, workspace permissions, and automation settings.
       </p>
-
-      <h2>7. Your content and our software</h2>
       <p>
-        Your data stays yours. You give us the limited license needed to host, process, and display it in
-        order to run the service. The JobFlex software, design, and branding are ours; these terms
-        don&rsquo;t transfer any rights in them.
+        Supported workflows may fall back to JobFlex&apos;s email provider when Gmail is unavailable,
+        disconnected, or a send fails. Delivery, timing, inbox placement, and freedom from duplicate
+        messages are not guaranteed. Google or other providers may limit sending or suspend access.
+        Disconnect in Settings → Integrations → Gmail to remove the stored connection; separately revoke
+        authorization through your Google Account. Previously delivered messages remain with recipients.
       </p>
-
-      <h2>8. Service changes and availability</h2>
       <p>
-        We improve the service continuously and may add, change, or retire features. We aim for high
-        availability but do not promise uninterrupted service.
+        Do not send spam, impersonate senders, or use unlawfully obtained contact lists. Obtain required
+        permissions and provide required identification, notices, and unsubscribe options. Comply with
+        applicable email, SMS, telemarketing, privacy, and call-recording laws, including CAN-SPAM and
+        applicable telephone-consumer-protection rules. Proposals and follow-ups are not automatically
+        exempt from marketing rules. Communications to Canada may also be subject to CASL. Use recording
+        features only after required notices and consents; these terms do not obtain consent from recipients.
       </p>
-
-      <h2>9. Disclaimer</h2>
+      <h2>5. Your content and other people&apos;s data</h2>
       <p>
-        The service is provided <strong>&ldquo;as is&rdquo; and &ldquo;as available&rdquo;</strong>,
-        without warranties of any kind, express or implied, including fitness for a particular purpose and
-        non-infringement.
+        You retain your content rights and grant us the limited permission needed to host, process,
+        transmit, and display content to provide the service and follow your instructions. You must have
+        the rights and lawful basis to upload other people&apos;s information, invite workers, publish
+        photos or reviews, and share documents. Provide appropriate notices and permissions, minimize
+        personal information, and respond to requests about data you control.
       </p>
-
-      <h2>10. Limitation of liability</h2>
       <p>
-        To the fullest extent allowed by law, we are not liable for indirect, incidental, special, or
-        consequential damages, or lost profits. Our total liability for any claim is limited to the
-        amounts you paid us in the 12 months before the claim arose.
+        Where we process personal information for your business, each party must meet its applicable
+        controller, processor, business, or service-provider obligations. These terms do not replace a
+        data-processing agreement where one is required. Contact us before processing that requires
+        additional contractual safeguards. Do not put passwords, full card details, Social Security
+        numbers, or regulated medical information into general project, message, or AI-input fields.
       </p>
-
-      <h2>11. Termination</h2>
+      <h2>6. Estimates, automated outputs, and contracts</h2>
       <p>
-        You can stop using JobFlex and delete your account at any time. We may suspend or terminate
-        accounts that materially breach these terms, after notice where practical. Sections that by their
-        nature should survive (4, 5, 7, 9, 10, 12) survive termination.
+        Estimates, aerial measurements, parcel boundaries, AI-generated content, suggested prices, tax
+        calculations, and schedules are aids for your review. Data may be incomplete or outdated and
+        automated outputs can be wrong. <strong>Verify measurements, quantities, site conditions,
+        prices, taxes, and requirements before signing contracts, ordering materials, or committing to
+        work.</strong> Property imagery and generated boundaries are not legal surveys.
       </p>
-
-      <h2>12. Governing law</h2>
       <p>
-        These terms are governed by the laws of the State of Washington, USA, and disputes will be
-        resolved in the state or federal courts located in Washington. If part of these terms is found
-        unenforceable, the rest remains in effect.
+        JobFlex does not provide engineering, surveying, legal, tax, or other licensed professional
+        advice. You are responsible for documents you approve or send, permits and consumer notices,
+        and the enforceability of your contracts. Proposal-acceptance tools do not guarantee compliance
+        with every jurisdiction&apos;s signature, disclosure, or cancellation requirements.
       </p>
-
-      <h2>13. Changes to these terms</h2>
+      <h2>7. Homeowner requests and public content</h2>
       <p>
-        We may update these terms; for material changes we will notify account holders by email or an
-        in-app announcement at least 14 days before they take effect. Continuing to use the service after
-        that means you accept the new terms.
+        Contracts for work are between contractors and their customers. JobFlex is not their contractor,
+        employer, insurer, or guarantor. Reviews, trade-network posts, and other shared content must be
+        lawful, truthful, and respect others&apos; rights. We may remove content or restrict access for
+        violations or security reasons, consistent with applicable law. Do not publish information you
+        lack permission to make public.
       </p>
-
-      <h2>Contact</h2>
+      <h2>8. Acceptable use and software rights</h2>
       <p>
-        <strong>{LEGAL_CONTACT_EMAIL}</strong> · See also our <a href="/privacy">Privacy policy</a>.
+        Do not misuse accounts, evade access or plan limits, distribute malware, disrupt the service,
+        unlawfully scrape information, infringe rights, or engage in illegal or deceptive conduct. Do not
+        resell access without our agreement. You may use JobFlex for its intended business purposes,
+        subject to these terms. JobFlex and its licensors retain rights to the software, design, and
+        branding; you retain rights to your content.
       </p>
-    </main>
+      <h2>9. Availability and termination</h2>
+      <p>
+        Features depend on your plan, configuration, and external providers. We may update features or
+        perform maintenance and do not promise uninterrupted service. We may suspend or terminate access
+        for material violations, nonpayment, security threats, or legal requirements. Where practical
+        and legally permitted, we will provide notice and an opportunity to address the issue.
+        Mandatory rights concerning paid access, changes, and refunds remain in effect.
+      </p>
+      <p>
+        You can stop using JobFlex and close your account. Deletion may be irreversible, affect an
+        organization where you are the only member, and leave records independently held by others.
+        The Privacy policy explains retention. Terms concerning accrued payments, permissions needed
+        for retained records, disclaimers, liability, and disputes survive where necessary to give them effect.
+      </p>
+      <h2>10. Warranties and liability</h2>
+      <p>
+        To the extent permitted by law, JobFlex is provided &ldquo;as is&rdquo; and &ldquo;as available,&rdquo;
+        without implied warranties of merchantability, fitness for a particular purpose, or
+        non-infringement. We do not warrant estimates or third-party information.
+      </p>
+      <p>
+        To the extent permitted by law, JobFlex and its suppliers are not liable for indirect, incidental,
+        special, or consequential damages or lost profits arising from the service. Our aggregate
+        liability is limited to the amounts you paid JobFlex for the service during the 12 months before
+        the event giving rise to the claim. These limits do not apply to fraud, willful misconduct, or
+        liability that law does not allow us to exclude or limit. Nothing waives non-waivable consumer
+        or privacy rights.
+      </p>
+      <h2>11. Governing law and disputes</h2>
+      <p>
+        Washington law governs, excluding its conflict-of-laws rules, except where mandatory law requires
+        otherwise. Subject to non-waivable rights to another forum, disputes may be brought in Washington
+        state or federal courts with jurisdiction. Contact <LegalContact /> to try to resolve concerns;
+        doing so is not a condition on statutory rights. These terms do not impose mandatory arbitration
+        or a class-action waiver. If a provision is unenforceable, the remainder continues to apply.
+      </p>
+      <h2>12. Changes and contact</h2>
+      <p>
+        We will notify account holders of material changes by email or in the product at least 14 days
+        before they take effect, or longer where required. Urgent security or legally required changes
+        may take effect sooner. We will obtain affirmative agreement when law requires; continued use
+        does not replace legally required consent. Questions: <LegalContact />.
+      </p>
+    </LegalPage>
   );
 }

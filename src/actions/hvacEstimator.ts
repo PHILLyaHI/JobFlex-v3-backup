@@ -23,6 +23,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { recordInventoryLink } from "@/lib/inventoryPick";
 import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
@@ -739,6 +740,7 @@ const convertSchema = z.object({
   materials: z.array(lineSchema).max(80),
   labor: z.array(lineSchema).max(80),
   clientId: z.string().optional().nullable(),
+  inventoryLinked: z.boolean().optional().nullable(),
 });
 
 /** The roof estimator's convert, line for line: proposal + line items + the
@@ -802,6 +804,8 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
       },
     },
   });
+  // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
+  await recordInventoryLink(organizationId, proposal.id, data.inventoryLinked, user.id);
 
   if (data.estimateId) {
     try {

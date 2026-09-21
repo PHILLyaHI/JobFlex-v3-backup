@@ -1,0 +1,71 @@
+"use server";
+
+// THE INVENTORY LINK (2026-09-20). Owner: "some bigger contractors keep the
+// inventory and some just do the estimate and order everything on their own
+// … make the visual option: connect to the inventory or not, make it smart
+// … any time I can connect it and disconnect it."
+//
+//   inventoryLinkDefault     what the choice should start as: connected when
+//                            the company keeps stock for the trade (any stock
+//                            at all when the trade is not known yet);
+//   setProposalInventoryLink connect or disconnect a proposal, any time;
+//   proposalPickList         the proposal's materials to pick up, against
+//                            the shelf, for the builder's Warehouse card.
+// Estimators and managers write; anyone in the organization reads.
+
+import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
+import { isTradeId, type TradeId } from "@/lib/inventory";
+import { inventoryLinkOf, pickForProposal, recordInventoryLink } from "@/lib/inventoryPick";
+import { NoOrgError, requireEstimatorOrManager, requireOrg, UnauthorizedError } from "@/lib/orgContext";
+
+type Fail = { ok: false; error: string };
+const fail = (err: unknown): Fail =>
+  err instanceof UnauthorizedError ? { ok: false, error: "Estimator or manager access required" } : err instanceof NoOrgError ? { ok: false, error: "No organization" } : { ok: false, error: err instanceof Error ? err.message : "Could not save" };
+
+const BOARDS: Record<TradeId, string> = { fence: "/dashboard/fence-estimator/board", roof: "/dashboard/roof-estimator/board", hvac: "/dashboard/hvac-estimator/board" };
+
+export async function inventoryLinkDefault(trade?: string | null): Promise<{ linked: boolean; items: number }> {
+  try {
+    const { organizationId } = await requireOrg();
+    const items = await db.inventoryItem.count({ where: { organizationId, ...(isTradeId(trade) ? { trade } : {}) } });
+    return { linked: items > 0, items };
+  } catch {
+    return { linked: false, items: 0 };
+  }
+}
+
+export async function setProposalInventoryLink(input: { proposalId: string; linked: boolean; trade?: string | null }): Promise<{ ok: true; linked: boolean } | Fail> {
+  try {
+    const { organizationId, user } = await requireEstimatorOrManager();
+    const p = await db.proposal.findFirst({ where: { id: input.proposalId, organizationId }, select: { id: true, trade: true } });
+    if (!p) return { ok: false, error: "Proposal not found" };
+    const trade = isTradeId(input.trade) ? input.trade : null;
+    await recordInventoryLink(organizationId, p.id, input.linked, user.id);
+    if (trade && !p.trade) await db.proposal.update({ where: { id: p.id }, data: { trade } });
+    for (const t of Object.keys(BOARDS) as TradeId[]) revalidatePath(BOARDS[t]);
+    revalidatePath("/dashboard/manual-blueprint");
+    revalidatePath("/dashboard/jobs");
+    return { ok: true, linked: input.linked };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export type PickLine = { name: string; unit: string; quantity: number; tracked: boolean; onHand: number | null; enough: boolean };
+
+export async function proposalPickList(proposalId: string): Promise<{ ok: true; linked: boolean; trade: TradeId | null; explicit: boolean | null; rows: PickLine[] } | Fail> {
+  try {
+    const { organizationId } = await requireOrg();
+    const p = await db.proposal.findFirst({
+      where: { id: proposalId, organizationId },
+      select: { title: true, description: true, trade: true, lineItems: { where: { materialCost: { gt: 0 } }, select: { name: true, quantity: true, measurementType: true } } },
+    });
+    if (!p) return { ok: false, error: "Proposal not found" };
+    const explicit = (await inventoryLinkOf(organizationId, [proposalId])).get(proposalId) ?? null;
+    const { trade, rows } = await pickForProposal(organizationId, { ...p, inventoryLinked: explicit });
+    return { ok: true, linked: !!trade, trade, explicit, rows: rows.map((r) => ({ name: r.name, unit: r.unit, quantity: r.quantity, tracked: !!r.itemId, onHand: r.onHand, enough: r.enough })) };
+  } catch (err) {
+    return fail(err);
+  }
+}

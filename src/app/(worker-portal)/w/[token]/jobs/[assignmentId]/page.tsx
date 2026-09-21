@@ -14,8 +14,10 @@ import {
   Navigation,
   CalendarPlus,
   ClipboardList,
+  Package,
   Users,
 } from "lucide-react";
+import { inventoryLinkOf, pickForProposal } from "@/lib/inventoryPick";
 
 export default async function WorkerAssignmentPage({
   params,
@@ -37,6 +39,9 @@ export default async function WorkerAssignmentPage({
           assignments: {
             include: { worker: { select: { id: true, userId: true, displayName: true } } },
           },
+          // The pick-up list only: material lines by name and count — no price
+          // is selected, so the worker's page still carries no money (2026-09-20).
+          proposal: { select: { title: true, description: true, trade: true, lineItems: { where: { materialCost: { gt: 0 } }, select: { name: true, quantity: true, measurementType: true } } } },
         },
       },
     },
@@ -60,6 +65,11 @@ export default async function WorkerAssignmentPage({
     role: prettyRole(roleByUser.get(a.worker.userId) ?? "INSTALLER"),
     isMe: a.worker.id === worker.id,
   }));
+
+  // What to take from the warehouse: the proposal's materials against the
+  // shelf, when the proposal is connected to the inventory (lib/inventoryPick).
+  const linkChoice = job.proposalId ? ((await inventoryLinkOf(worker.organizationId, [job.proposalId])).get(job.proposalId) ?? null) : null;
+  const pick = job.proposal ? (await pickForProposal(worker.organizationId, { ...job.proposal, inventoryLinked: linkChoice })).rows : [];
 
   const address =
     [job.client?.address, job.client?.city, job.client?.state].filter(Boolean).join(", ") || null;
@@ -156,6 +166,31 @@ export default async function WorkerAssignmentPage({
           <p className="mt-3 whitespace-pre-wrap text-[14px] leading-[1.65] text-[color:var(--ink-soft)]">
             {scope}
           </p>
+        </section>
+      )}
+
+      {/* Take from the warehouse — the proposal's materials, whole units, and
+          whether the shelf has each; a worker sees no price on it. */}
+      {pick.length > 0 && (
+        <section className="mt-4 paper-card p-5" data-pick-list>
+          <div className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-faint)]">
+            <Package className="h-3.5 w-3.5" /> Take from the warehouse{" "}
+            <span className="tabular text-[color:var(--ink-faint)]">{pick.length}</span>
+          </div>
+          {job.materialsLoadedAt ? <p className="mt-2 text-[12.5px] text-[color:var(--ink-muted)]">Loaded {longDate(job.materialsLoadedAt)}.</p> : null}
+          <ul className="mt-3 divide-y divide-black/[0.06]">
+            {pick.map((r) => (
+              <li key={r.name} className="flex items-center gap-3 py-2.5">
+                <span className="min-w-[72px] tabular text-[14px] font-semibold text-[color:var(--ink)]">
+                  {r.quantity} {r.unit}
+                </span>
+                <span className="min-w-0 flex-1 text-[13.5px] text-[color:var(--ink-soft)]">{r.name}</span>
+                <span className={`text-[11px] font-semibold uppercase tracking-[0.08em] ${r.itemId ? (r.enough ? "text-[color:var(--emerald)]" : "text-[color:var(--rose)]") : "text-[color:var(--ink-faint)]"}`}>
+                  {r.itemId ? (r.enough ? "on the shelf" : `short · ${r.onHand ?? 0} there`) : "not stocked"}
+                </span>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 

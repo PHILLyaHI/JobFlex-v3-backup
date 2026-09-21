@@ -1,186 +1,210 @@
-import { LEGAL_CONTACT_EMAIL, LEGAL_EFFECTIVE_DATE } from "@/lib/legal";
+import type { Metadata } from "next";
+import Link from "next/link";
+import { LegalContact, LegalPage } from "@/components/legal/legal-page";
+import { LEGAL_OPERATOR_NAME } from "@/lib/legal";
 
-// The real policy, written against the app's ACTUAL cookie/tracking inventory
-// (2026-09-03 audit, updated 2026-09-09): first-party PostHog analytics with
-// session replay on public pages, the promo and landing attribution cookies,
-// auth cookies, the cookie banner with its analytics and marketing choices,
-// the Meta Pixel and Conversions API behind the marketing choice, payment
-// processors, measurement providers. It promises nothing the app does not do
-// — keep it in step with reality when the stack changes.
-export const metadata = { title: "JobFlex · Privacy policy" };
+export const metadata: Metadata = {
+  title: "JobFlex · Privacy policy",
+  description: "How JobFlex handles personal information, connected Gmail, and your privacy choices.",
+  alternates: { canonical: "/privacy" },
+};
 
 export default function PrivacyPage() {
   return (
-    <main className="mx-auto max-w-3xl px-6 lg:px-10 py-20 prose-editorial">
-      <div className="quiet-caps mb-3">Privacy</div>
-      <h1 className="font-display text-[42px] leading-[1.05] tracking-[-0.025em]">Privacy policy</h1>
-      <p className="mt-2 text-[14px] text-[color:var(--ink-muted)]">Effective date: {LEGAL_EFFECTIVE_DATE}</p>
-
+    <LegalPage title="Privacy policy" number="01" summary="What we collect, how connected services work, and the choices you have about your information.">
       <p>
-        JobFlex is software for contractors — estimates, proposals, scheduling, and client management —
-        operated from Washington State, USA. This policy explains what we collect, why, and what your
-        choices are. It covers the JobFlex app, our marketing pages, and the homeowner request portal.
+        {LEGAL_OPERATOR_NAME}, operating as JobFlex in Washington, United States (&ldquo;we,&rdquo;
+        &ldquo;us&rdquo;), provides business software for contractors. This policy covers our website,
+        accounts, estimating, proposals, scheduling, communications, and customer and worker portals.
+        It applies to visitors, account users, contractors&apos; clients, workers, and people who contact us.
       </p>
-
-      <h2>What we collect</h2>
-      <ul className="list-disc pl-6 space-y-2 my-3 leading-[1.65] text-[color:var(--ink-soft)]">
-        <li>
-          <strong>Account information.</strong> Name, email, phone, and company details you provide when
-          you sign up or edit your profile.
-        </li>
-        <li>
-          <strong>Business data you enter.</strong> Your clients, proposals, jobs, schedules, and the
-          property addresses and project details you enter to build estimates. This is your data; we store
-          and process it to run the service for you.
-        </li>
-        <li>
-          <strong>Property measurement data.</strong> When you run a roof or fence estimate, we send the
-          property address or map location to our measurement providers (EagleView, Google Maps Platform)
-          and store the returned measurements, imagery, and elevation data with your account.
-        </li>
-        <li>
-          <strong>Homeowner requests.</strong> If you submit a project request through the homeowner
-          portal, we collect your name, contact details, property address, and project description — see
-          &ldquo;Homeowner requests&rdquo; below for who receives it.
-        </li>
-        <li>
-          <strong>Payments.</strong> Subscriptions and payments are handled by our payment processors
-          (Stripe, and where offered PayPal and Square). We never see or store your full card number. We
-          keep records of transactions (amount, date, status, last four digits as reported by the
-          processor).
-        </li>
-        <li>
-          <strong>Usage and device data.</strong> We use PostHog, a first-party analytics service (hosted
-          in PostHog&rsquo;s US Cloud), to count visitors and page views: IP address, browser and device
-          type, and pages visited. On our public pages (marketing pages, sign-up, sign-in, the homeowner
-          portal) PostHog also records session replays with every input masked; the signed-in app is never
-          recorded. You can turn analytics off in the cookie banner.
-        </li>
-        <li>
-          <strong>Advertising measurement.</strong> If you accept marketing cookies in the cookie banner, the
-          Meta Pixel runs on our marketing and sign-up pages and sets the <code>_fbp</code> and{" "}
-          <code>_fbc</code> cookies so Meta can tell which of our ads led to a sign-up. When you sign up we
-          also send Meta a server-side conversion record (Conversions API) with a hashed email and, with
-          your marketing consent, the pixel cookies, your IP address and browser type. Without that consent
-          no pixel loads, no Meta cookie is set, and the server record carries the hashed email only.
-        </li>
-        <li>
-          <strong>Promo attribution.</strong> If you arrive through a promo or referral link, we store the
-          code in a cookie (<code>jf_attr</code>) and browser storage for 30 days so the discount or
-          referral credit can be applied at signup.
-        </li>
+      <p>
+        We determine how information is used for our own accounts, billing, security, and website
+        operations. For client and worker information entered into a contractor&apos;s workspace, we
+        generally process information to provide that contractor&apos;s service. The contractor has its
+        own privacy obligations and may have a separate privacy notice.
+      </p>
+      <h2 id="information">1. Information we collect</h2>
+      <ul>
+        <li><strong>Accounts:</strong> names, email addresses, phone numbers, business and trade details,
+          profile information, sign-in credentials or identity-provider identifiers, memberships,
+          permissions, and subscription records.</li>
+        <li><strong>Business content:</strong> client and worker details, property addresses, estimates,
+          proposals, invoices, schedules, assignments, expenses, receipts, photos, messages, support
+          requests, reviews, and proposal acceptance and activity records.</li>
+        <li><strong>Property and automated tools:</strong> addresses, map coordinates, imagery,
+          measurements, project descriptions, and images or documents submitted to enabled estimating,
+          photo-analysis, and receipt-reading features, together with their results.</li>
+        <li><strong>Payments and integrations:</strong> payment-provider identifiers, transaction amounts
+          and status, limited payment-method details, connected-account identifiers, authorization tokens,
+          and integration settings. Payment providers collect payment credentials through their interfaces.</li>
+        <li><strong>Phone features:</strong> where enabled, caller details, call timing, voicemail
+          recordings, transcripts, and associated lead or project records.</li>
+        <li><strong>Technical information:</strong> IP addresses, browser and device details, visited pages,
+          interactions, referral and campaign information, cookies, and diagnostic and security logs.
+          Some information comes from providers and public property sources.</li>
       </ul>
-
-      <h2>Cookies and browser storage</h2>
+      <h2 id="gmail">2. Your Google and Gmail connection</h2>
       <p>
-        Essential cookies are always set. Analytics and marketing cookies depend on where you are:
+        Gmail is optional. With your authorization, JobFlex requests <code>gmail.send</code> to send
+        email and <code>userinfo.email</code> to identify the connected address. We store that address,
+        access and refresh tokens, and token-expiration information. New connection tokens are encrypted
+        before storage. We do not receive your Google
+        password. This integration does not request permission to read your inbox, import your contacts,
+        or delete messages.
       </p>
-      <ul className="list-disc pl-6 space-y-1 my-3 leading-[1.65] text-[color:var(--ink-soft)]">
-        <li>
-          <strong>United States and Canada.</strong> Analytics and marketing cookies are on by default and a
-          notice at the bottom of the page tells you so. You can turn either off at any time from
-          &ldquo;Cookie settings&rdquo; in the footer, and &ldquo;Do not sell or share my personal
-          information&rdquo; in the footer turns marketing cookies off in one click (your opt-out under the
-          California Consumer Privacy Act and similar state laws).
-        </li>
-        <li>
-          <strong>Everywhere else.</strong> Analytics and marketing cookies are set only after you accept them
-          in the cookie banner; until then only essential cookies run. You can change your choice any time
-          from &ldquo;Cookie settings&rdquo; in the footer.
-        </li>
+      <p>
+        The Gmail connection is associated with your organization&apos;s workspace. When sending from Gmail
+        is enabled, authorized workspace actions and configured workflows can send proposals, invoices,
+        reminders, follow-ups, review requests, and other business messages through that account. Workspace
+        roles and settings govern who can initiate communications; access is not limited to the person
+        who connected Gmail. We transmit recipient addresses, subjects, message content, and sender
+        details to Google for delivery.
+      </p>
+      <p>
+        Supported workflows can fall back to JobFlex&apos;s email provider if Gmail is disconnected,
+        unavailable, or a send fails. That provider receives the recipient and message content needed
+        to deliver the email with the configured reply-to address.
+      </p>
+      <p>
+        We use Gmail authorization information to operate connected email, not for advertising, sale
+        to data brokers, credit decisions, or training generalized AI models. Our estimating tools do not
+        receive Gmail tokens or retrieve inbox messages. Google user data is shared only for the disclosed
+        feature, security, legal obligations, or other transfers Google&apos;s policies permit. Human
+        access is limited to circumstances those policies allow, such as your specific consent,
+        security investigations, or legal requirements.
+      </p>
+      <p>
+        JobFlex&apos;s use and transfer of information received from Google APIs will adhere to the{" "}
+        <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
+        including its Limited Use requirements, and the applicable{" "}
+        <a href="https://developers.google.com/workspace/workspace-api-user-data-developer-policy">Google Workspace user data policy</a>.
+      </p>
+      <p>
+        A workspace manager can disconnect Gmail in Settings → Integrations → Gmail. This removes
+        stored connection tokens and the connected-account label from the active organization record,
+        and attempts to revoke the authorization with Google. You can also revoke authorization through your{" "}
+        <a href="https://myaccount.google.com/connections">Google Account connections</a>.
+        Disconnecting does not delete sent email, proposals, business records, or a separately saved
+        reply-to address. Request deletion of retained personal information through <LegalContact />.
+        Google and recipients maintain their own copies under their policies.
+      </p>
+      <h2 id="purposes">3. How we use information</h2>
+      <p>
+        We use information to provide accounts and workspaces, run requested features, prepare and deliver
+        documents and communications, process subscriptions and payments, support users, protect the
+        service, investigate abuse, meet legal obligations, and understand and improve usage. Where
+        configured, we measure advertising and referrals as described below. Connecting Gmail is not
+        permission to send unrelated marketing on your behalf.
+      </p>
+      <h2 id="sharing">4. Who receives information</h2>
+      <ul>
+        <li><strong>Workspace members and recipients:</strong> authorized team members, people you send
+          documents or messages to, and contractors receiving homeowner requests. Public reviews and
+          trade-network posts can expose their content and associated display information to others.</li>
+        <li><strong>Hosting and storage:</strong> providers including Vercel and the deployment&apos;s
+          database services process content and technical information to operate JobFlex.</li>
+        <li><strong>Communications:</strong> Google for connected Gmail, Resend or a configured SMTP
+          provider for platform email, and Twilio for enabled SMS, calling, voicemail, and transcription.</li>
+        <li><strong>Payments:</strong> Stripe and, where offered or connected, Square, Stax, or PayPal
+          process payment and merchant information under their applicable terms and privacy notices.</li>
+        <li><strong>Property and AI services:</strong> enabled providers such as Google Maps Platform,
+          EagleView, Regrid, ReportAll, OpenAI, and FAL receive the locations, imagery, project text, or
+          uploads needed for requested features. Avoid submitting unnecessary personal or sensitive data.</li>
+        <li><strong>Analytics and advertising:</strong> PostHog and Meta receive information described
+          below when their integrations are configured.</li>
       </ul>
       <p>
-        Your region comes from our hosting provider&rsquo;s country lookup on the request; when it is
-        unknown we use the opt-in model. We also use browser storage for conveniences like draft proposals,
-        view settings, and dismissed banners — this stays on your device.
+        We may disclose information when required by law, to protect people or the service, or for a
+        business reorganization or sale subject to applicable protections. The stricter Google-data
+        restrictions above continue to apply. Connected providers and contractors may operate as
+        independent businesses for their own services; their privacy notices also apply.
       </p>
-      <table className="my-4 w-full text-[14px] leading-[1.5]">
-        <thead>
-          <tr className="text-left text-[12px] uppercase tracking-[0.08em] text-[color:var(--ink-muted)]">
-            <th className="py-1.5 pr-3 font-semibold">Cookie</th>
-            <th className="py-1.5 pr-3 font-semibold">Category</th>
-            <th className="py-1.5 pr-3 font-semibold">Purpose</th>
-            <th className="py-1.5 font-semibold">Duration</th>
-          </tr>
-        </thead>
-        <tbody className="text-[color:var(--ink-soft)]">
-          <tr><td className="py-1.5 pr-3"><code>authjs.*</code></td><td className="py-1.5 pr-3">Essential</td><td className="py-1.5 pr-3">Sign-in session and CSRF protection</td><td className="py-1.5">7 days or less</td></tr>
-          <tr><td className="py-1.5 pr-3"><code>jf_consent</code></td><td className="py-1.5 pr-3">Essential</td><td className="py-1.5 pr-3">Your cookie choices</td><td className="py-1.5">180 days</td></tr>
-          <tr><td className="py-1.5 pr-3"><code>jf_attr</code></td><td className="py-1.5 pr-3">Essential</td><td className="py-1.5 pr-3">Promo or referral code to apply at sign-up</td><td className="py-1.5">30 days</td></tr>
-          <tr><td className="py-1.5 pr-3"><code>jf_industry</code>, <code>jf_utm</code></td><td className="py-1.5 pr-3">Essential</td><td className="py-1.5 pr-3">The trade page and campaign you arrived from, so sign-up pre-fills your trade</td><td className="py-1.5">30 days</td></tr>
-          <tr><td className="py-1.5 pr-3"><code>ph_*</code></td><td className="py-1.5 pr-3">Analytics</td><td className="py-1.5 pr-3">PostHog visitor and page-view counting, session replay on public pages</td><td className="py-1.5">1 year</td></tr>
-          <tr><td className="py-1.5 pr-3"><code>_fbp</code>, <code>_fbc</code></td><td className="py-1.5 pr-3">Marketing</td><td className="py-1.5 pr-3">Meta Pixel — advertising measurement (which ad led to a sign-up)</td><td className="py-1.5">90 days</td></tr>
-        </tbody>
-      </table>
-
-      <h2>How we use information</h2>
+      <h2 id="tracking">5. Cookies, analytics, and advertising</h2>
       <p>
-        To provide and operate the service; to produce measurements and estimates you request; to bill
-        subscriptions; to respond to support requests; to understand aggregate usage of our pages; and to
-        protect the service against fraud and abuse.
+        Essential cookies support sign-in and security. Cookies and browser storage also remember privacy
+        choices, promo and referral codes, trade and campaign attribution, drafts, and interface settings.
+        Configured durations include 180 days for privacy choices and 30 days for attribution cookies;
+        session and provider cookies have their own lifetimes. Clearing storage may remove preferences
+        and require you to sign in again.
       </p>
       <p>
-        <strong>Selling and sharing.</strong> Except for advertising measurement through the Meta Pixel,
-        which the California Consumer Privacy Act may treat as &ldquo;sharing&rdquo; for cross-context
-        behavioral advertising, we do not sell or share personal information. You can opt out of that
-        sharing at any time with &ldquo;Do not sell or share my personal information&rdquo; in the page
-        footer. We disclose information only to the service providers below, acting on our instructions.
+        When configured, PostHog collects page views and interaction information and can record sessions
+        on public routes, including public portals. Input fields are masked, but other visible page
+        content can appear in replays. Dashboard and other designated private routes are excluded from
+        replay. Browser analytics can begin when no stored analytics choice exists; a stored analytics
+        opt-out disables browser capture. Separately, server-side operational and feature-usage events
+        can include organization identifiers, plan and trade information, feature actions, and diagnostic
+        codes. These server events are not controlled by the browser analytics preference.
       </p>
-
-      <h2>Service providers</h2>
-      <ul className="list-disc pl-6 space-y-1 my-3 leading-[1.65] text-[color:var(--ink-soft)]">
-        <li>Stripe, PayPal, Square — payment processing</li>
-        <li>PostHog (US Cloud) — first-party analytics and session replay on public pages</li>
-        <li>Meta Platforms — advertising measurement (Meta Pixel and Conversions API), only with your marketing consent; server records carry a hashed email</li>
-        <li>Google Maps Platform — geocoding, mapping, imagery, ground elevation</li>
-        <li>EagleView — aerial property measurements</li>
-        <li>Vercel — hosting and file storage</li>
-      </ul>
-
-      <h2>Homeowner requests</h2>
       <p>
-        When you request quotes through the homeowner portal, your name, contact details, property
-        address, and project description are sent to the contractor (or contractors) your request is
-        routed to. Contractors use that information under their own privacy practices to contact you and
-        prepare a quote. If you ask to be matched with a different contractor, the new contractor receives
-        the same request details.
+        When configured, Meta Pixel uses a saved marketing-enabled choice for advertising events and
+        cookie identifiers. Separately, server-side Meta Conversions API events can include registration,
+        trial, or purchase information and hashed contact details and identifiers even when browser
+        marketing tracking is disabled. Hashing does not make these identifiers anonymous. Additional
+        browser identifiers, IP address, and browser details accompany events when the saved marketing
+        choice allows them. Later billing events may use the choice saved at registration.
       </p>
-
-      <h2>Retention</h2>
       <p>
-        We keep your account and business data while your account is active and as needed to meet legal
-        and accounting obligations. Homeowner request records are retained up to 24 months, then deleted
-        or anonymized. You can ask us to delete your account and associated personal information at any
-        time.
+        We do not sell personal information for money. Disclosures to Meta may count as sale, sharing,
+        or targeted advertising under state privacy laws. The footer marketing opt-out affects browser
+        tracking but does not by itself stop all server-side disclosures. The cookie-settings panel is
+        currently unavailable. Contact <LegalContact /> to request an advertising opt-out, including
+        server-side disclosures. Our current implementation does not automatically apply Global Privacy
+        Control or Do Not Track signals. These limitations do not remove rights you have under applicable law.
       </p>
-
-      <h2>Your rights</h2>
+      <h2 id="retention">6. Retention, deletion, and security</h2>
       <p>
-        You may request access to, correction of, or deletion of your personal information by emailing{" "}
-        <strong>{LEGAL_CONTACT_EMAIL}</strong>. We will verify your request and respond within the time
-        required by applicable law (for California residents, the CCPA). We do not discriminate against
-        you for exercising these rights. If a contractor holds information about you as their client,
-        direct your request to that contractor — see &ldquo;Your clients&rsquo; data&rdquo; in our{" "}
-        <a href="/terms">Terms of service</a>.
+        Retention depends on the information&apos;s purpose, workspace status and instructions, legal and
+        accounting obligations, and security or dispute needs. There is no single automatic deletion
+        period for every record. Account deletion does not necessarily remove shared-organization
+        records, recipients&apos; copies, processor records, or backups. Organization closure and
+        personal-account deletion have different effects; review the confirmation in settings and
+        contact us about records that remain.
       </p>
-
-      <h2>Children</h2>
       <p>
-        JobFlex is a business tool and is not directed to children under 16. We do not knowingly collect
-        their information.
+        We use access controls and authenticated connections to help protect information, but no system
+        is completely secure. Protect your credentials and workspace permissions. We will provide
+        security-incident notices when applicable law requires them. JobFlex and its providers may
+        process information in the United States and other locations where they operate, with privacy
+        laws that differ from your own.
       </p>
-
-      <h2>Changes</h2>
+      <h2 id="rights">7. Your choices and privacy rights</h2>
       <p>
-        If we change this policy, we will update the date above and, for material changes, notify account
-        holders by email or an in-app announcement.
+        You can edit account details, manage workspace permissions, disconnect integrations, and use
+        available account-deletion controls. Depending on your residence and applicable law, you may
+        have rights to access or know about information, obtain a portable copy, correct inaccuracies,
+        request deletion, opt out of sale, sharing, or targeted advertising, and limit certain sensitive
+        information uses. We do not use personal information for profiling that produces legal or
+        similarly significant decisions about individuals.
       </p>
-
-      <h2>Contact</h2>
       <p>
-        Questions or requests: <strong>{LEGAL_CONTACT_EMAIL}</strong>. JobFlex operates under the laws of
-        the State of Washington, USA.
+        Send requests to <LegalContact /> with the subject &ldquo;Privacy request.&rdquo; Provide enough
+        information to locate the record, without passwords or full payment details. We may verify
+        identity and an authorized agent&apos;s authority, except where verification is prohibited for
+        opt-outs. We will respond within applicable legal deadlines, explain lawful exceptions, and
+        not unlawfully discriminate against you for exercising rights. Where an appeal right applies,
+        reply with &ldquo;Privacy appeal&rdquo; for review. You may also contact your state attorney general
+        or privacy regulator.
       </p>
-    </main>
+      <p>
+        For information controlled by a contractor, contact that contractor first; we can help route
+        requests to the workspace. A request to us does not automatically remove copies independently
+        held by contractors or recipients.
+      </p>
+      <h2 id="children">8. Children</h2>
+      <p>
+        JobFlex is intended for adult business users and is not directed to children under 16. We do not
+        knowingly collect their personal information. Contact us if you believe a child has provided
+        information so we can investigate and address it.
+      </p>
+      <h2 id="updates">9. Changes and contact</h2>
+      <p>
+        We update the date on this page when the policy changes and provide notice of material changes
+        by email or in the product as appropriate. Where law requires consent for a new use, we will
+        request it before that use. Contact <LegalContact /> with questions. See also our{" "}
+        <Link href="/terms">Terms of service</Link>.
+      </p>
+    </LegalPage>
   );
 }

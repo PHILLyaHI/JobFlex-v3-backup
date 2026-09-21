@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 // AND-ed into every lookup so they can only touch proposals they own.
 import { requireProposalStaff } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { recordInventoryLink } from "@/lib/inventoryPick";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { assertLinksInOrg } from "@/lib/assertLinksInOrg";
@@ -67,6 +68,7 @@ const proposalInput = z.object({
   id: z.string().optional(),
   title: z.string().min(1),
   clientId: z.string().optional().nullable(),
+  inventoryLinked: z.boolean().optional().nullable(),
   // The project the proposal belongs to. Absent leaves it as it was (callers
   // that know nothing of projects — the estimators — never move one); null
   // takes it out of its project.
@@ -439,6 +441,8 @@ export async function saveProposal(raw: unknown) {
         : {}),
     },
   });
+  // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
+  await recordInventoryLink(organizationId, created.id, data.inventoryLinked, user.id);
 
   await db.activityEvent.create({
     data: {

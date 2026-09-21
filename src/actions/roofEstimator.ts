@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { recordInventoryLink } from "@/lib/inventoryPick";
 import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
 import { getOpenAI, isOpenAIEnabled, samplingOptions, resolveOpenAIModel } from "@/lib/sdk/openai";
 import { estimateSchema, type GeneratedEstimate } from "@/lib/estimatorSchema";
@@ -177,6 +178,7 @@ const convertSchema = z.object({
   assumptions: z.array(z.string()),
   // Pre-links the proposal to a client when converted from a client's page.
   clientId: z.string().optional().nullable(),
+  inventoryLinked: z.boolean().optional().nullable(),
   // The measurement this estimate was priced from: its satellite photo is
   // what the client sees on the proposal (ProposalSitePhoto).
   measurementId: z.string().optional().nullable(),
@@ -281,6 +283,8 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
       },
     },
   });
+  // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
+  await recordInventoryLink(organizationId, proposal.id, data.inventoryLinked, user.id);
 
   // The house photo for the client: link the measurement, never trusting the
   // id from the browser past this org. A missing link table (not pushed yet)

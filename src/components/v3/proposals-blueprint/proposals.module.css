@@ -1262,6 +1262,10 @@
   box-shadow: 4px 4px 0 var(--ink);
   padding: 6px;
   display: none;
+  /* max-height is written by openMenu when the menu cannot fit the window;
+     it then scrolls inside itself instead of running off the screen. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .bp :global(.pmenu.open) { display: block; }
 .bp :global(.pmenu-head) { padding: 8px 10px 9px; border-bottom: 1.5px solid var(--hair-soft); margin-bottom: 5px; }
