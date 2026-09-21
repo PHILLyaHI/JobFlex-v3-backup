@@ -4,7 +4,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import type { PostHog } from "posthog-js";
 import { trafficReady } from "@/lib/traffic-client";
 import { onConsent, readConsent } from "@/lib/consent";
-import { TRAFFIC_EXPERIMENTS } from "@/lib/traffic-experiments";
+import { TRAFFIC_EXPERIMENTS_ACTIVE } from "@/lib/traffic-experiments";
 
 const KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
 const HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
@@ -36,7 +36,7 @@ function loadPostHog(): Promise<PostHog | null> {
       posthog.init(KEY, {
         api_host: HOST, capture_pageview: false, person_profiles: "identified_only",
         capture_pageleave: true, autocapture: false,
-        advanced_disable_feature_flags: TRAFFIC_EXPERIMENTS.length === 0,
+        advanced_disable_feature_flags: !TRAFFIC_EXPERIMENTS_ACTIVE,
         // Off at init; the route effect below starts it on public paths only.
         disable_session_recording: true,
         session_recording: { maskAllInputs: true, maskTextSelector: "[data-ph-mask]" },

@@ -21,7 +21,7 @@ function subscribe(callback: () => void) {
 /** Null means loading. On timeout, render the first variant without exposure. */
 export function useTrafficExperiment(key: string): string | null {
   const pathname = usePathname();
-  const definition = TRAFFIC_EXPERIMENTS.find(e => e.key === key && e.path === pathname);
+  const definition = TRAFFIC_EXPERIMENTS.find(e => e.active && e.key === key && e.path === pathname);
   const [fallbackKey, setFallbackKey] = useState("");
   const variant = useSyncExternalStore(subscribe, () => {
     const posthog = getPostHog();
