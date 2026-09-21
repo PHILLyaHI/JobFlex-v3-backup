@@ -20,6 +20,7 @@
 // last known answer instantly and nothing is checked on page load.
 
 import { db } from "@/lib/db";
+import { readOverpassDay } from "@/lib/overpassStore";
 import { QUOTA_KEY as PARCEL_QUOTA_KEY, QUOTA_FLOOR } from "@/lib/parcelLookup";
 import { QUOTA_ALLTIME } from "@/lib/reportall";
 import { isReportAllEnabled } from "@/lib/reportall";
@@ -219,6 +220,26 @@ async function checkRegrid(now: string): Promise<ServiceHealth> {
   return { ...base, level: "degraded", asOf, reason: `last answer ${row.cursor}, ${when}` };
 }
 
+/* ── Overpass (OpenStreetMap) ──────────────────────────────────────────────
+   House footprints and street centrelines for the fence studio. Free, public,
+   and flaky by nature — so the row is the share of OUR OWN lookups that got an
+   answer in the last 24 hours (lib/overpassStore writes one tally per lookup).
+   Nothing is called here. Optional: without it the contractor traces the house
+   by hand, and nothing is priced off it. */
+async function checkOverpass(now: string): Promise<ServiceHealth> {
+  const base = { key: "overpass", name: "Overpass (OSM)", checkedAt: now, optional: true, note: "optional · house outlines" };
+  const day = await readOverpassDay();
+  const total = day.ok + day.failed;
+  if (!total) return { ...base, level: "off", reason: "no lookups in the last 24 hours" };
+  const share = Math.round((day.ok / total) * 100);
+  const asOf = iso(day.lastAt);
+  const via = day.viaFallback ? `, ${day.viaFallback} via the second host` : "";
+  const reason = `${share}% answered in 24 h — ${day.ok} of ${total}${via}`;
+  if (share >= 80) return { ...base, level: "ok", asOf, reason };
+  if (share >= 40) return { ...base, level: "degraded", asOf, reason };
+  return { ...base, level: "down", asOf, reason };
+}
+
 /* ── Mail ──────────────────────────────────────────────────────────────────
    Which transport is configured, and when one of them last got something out.
    Nothing is sent: a health check that emails to prove email works would put a
@@ -355,6 +376,7 @@ export async function runIntegrationsHealth(): Promise<HealthReport> {
       checkReportAll,
       checkEagleView,
       checkRegrid,
+      checkOverpass,
       checkMail,
       checkTwilio,
       checkStripeConnect,
