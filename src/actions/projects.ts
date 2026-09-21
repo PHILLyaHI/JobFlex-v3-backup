@@ -6,6 +6,8 @@ import { z } from "zod";
 import { requireEstimatorOrManager, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
+import { loadProjectBook } from "@/components/v3/projects-blueprint/project-book-load";
+import type { Project } from "@/components/v3/projects-blueprint/projects-data";
 
 const projectInput = z.object({
   name: z.string().min(1),
@@ -26,65 +28,22 @@ async function clientInOrg(organizationId: string, clientId: string | null | und
   return c.id;
 }
 
-/** One row of the project book, as both editions of /dashboard/projects render
- *  it. The two date fields are the card's short "Jul 08" plates rather than
- *  Date objects, which is what the desktop page already computes server-side —
- *  the shape is shared so the two surfaces cannot describe the same book
- *  differently. */
-export type ProjectBookRow = {
-  id: string;
-  name: string;
-  description: string | null;
-  status: string;
-  startsAt: string | null;
-  endsAt: string | null;
-  budget: number;
-  jobCount: number;
-  completedJobs: number;
-  /** Whose project it is (2026-09-18), or null. */
-  clientName?: string | null;
-};
-
-/** Formatted in UTC on purpose: project dates are stored as UTC midnight (the
- *  action coerces a "YYYY-MM-DD" string), and a local-time format renders the
- *  previous day in every negative-offset timezone. Same helper the desktop
- *  page's server component uses. */
-function shortPlate(d: Date | null): string | null {
-  if (!d) return null;
-  return d.toLocaleDateString("en-US", { month: "short", day: "2-digit", timeZone: "UTC" });
-}
+/** One row of the project book — the data module's own shape, so the two
+ *  editions of /dashboard/projects read one definition. */
+export type ProjectBookRow = Project;
 
 /**
  * The org's project book, for surfaces that cannot be handed the server
  * component's rows as props — the handheld build of /dashboard/projects is
  * mounted by the responsive shell with no props, so it reads the book itself
- * and re-reads it after every write.
- *
- * READ ONLY, and scoped exactly like the desktop page's own query: same
- * organization, same ARCHIVED exclusion, same ordering, same job roll-up.
- * `requireOrg` rather than `requireEstimatorOrManager` for the same reason the
- * page uses it — every role that can open the sheet may read it; the writes
+ * and re-reads it after every write. One loader with the desktop page
+ * (projects-blueprint/project-book-load), so the two never disagree.
+ * `requireOrg`: every role that can open the page may read it; the writes
  * below keep their stricter guard.
  */
 export async function listProjects(): Promise<ProjectBookRow[]> {
   const { organizationId } = await requireOrg();
-  const projects = await db.project.findMany({
-    where: { organizationId, status: { not: "ARCHIVED" } },
-    orderBy: { updatedAt: "desc" },
-    include: { jobs: { select: { id: true, status: true } }, client: { select: { name: true } } },
-  });
-  return projects.map((p) => ({
-    id: p.id,
-    name: p.name,
-    description: p.description,
-    status: p.status,
-    startsAt: shortPlate(p.startsAt),
-    endsAt: shortPlate(p.endsAt),
-    budget: p.budget,
-    jobCount: p.jobs.length,
-    completedJobs: p.jobs.filter((j) => j.status === "COMPLETED").length,
-    clientName: p.client?.name ?? null,
-  }));
+  return loadProjectBook(organizationId);
 }
 
 /** The org's clients for a New Project form that loads its own data (the

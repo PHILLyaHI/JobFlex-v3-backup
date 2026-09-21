@@ -57,15 +57,67 @@ export function ProjectsContent({ projects, clients = [] }: { projects: Project[
         </div>
       </div>
 
-      {/* Project status filter (ACTIVE | ON_HOLD | COMPLETED) */}
+      {/* MASTHEAD (2026-09-20) — the book's four numbers, painted by the
+          behavior: what is being worked, what is sold, spend against budget,
+          and how many rows need a look. The proposals page's own kpi tiles. */}
+      <div className="kpi-grid pj-mast" id="pjMast">
+        <div className="kpi">
+          <div className="kpi-lbl">Active projects</div>
+          <div className="kpi-val" id="pjKActive">0</div>
+          <div className="kpi-sub" id="pjKActiveSub">&nbsp;</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-lbl">Sold</div>
+          <div className="kpi-val accent" id="pjKSold">$0</div>
+          <div className="kpi-sub" id="pjKSoldSub">&nbsp;</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-lbl">Spent of budget</div>
+          <div className="kpi-val" id="pjKSpent">$0</div>
+          <div className="kpi-sub" id="pjKSpentSub">&nbsp;</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-lbl">Needs a look</div>
+          <div className="kpi-val" id="pjKAttn">0</div>
+          <div className="kpi-sub" id="pjKAttnSub">&nbsp;</div>
+        </div>
+      </div>
+
+      {/* Filter rail: status, plus the rows that need a look */}
       <div className="pchips" id="pjChips"></div>
 
-      <div className="pj-grid" id="pjGrid"></div>
+      {/* THE LEDGER (2026-09-20) — one row per project, the proposals page's
+          own table vocabulary (.ptable / .prow / .pt-title), so twenty
+          projects read on one screen. Squares of four numbers each did not
+          say what a project was, and a wall of them would not have scaled. */}
+      <div className="card pj-ledger-card" id="pjLedgerCard">
+        <div className="pj-ledger-scroll">
+          <table className="ptable pj-ledger" aria-label="Projects">
+            <thead>
+              <tr>
+                {/* Fixed table layout: these header widths size the columns, and
+                    the project name takes whatever is left. Window and Updated
+                    step out on narrower screens so the rest keeps its room. */}
+                <th>Project</th>
+                <th className="pjc-status">Status</th>
+                <th className="num pjc-sold">Sold</th>
+                <th className="pjc-budget">Budget</th>
+                <th className="pjc-jobs">Jobs</th>
+                <th className="pjc-window">Window</th>
+                <th className="pjc-updated">Updated</th>
+                <th className="th-open pjc-open"></th>
+              </tr>
+            </thead>
+            <tbody id="pjGrid"></tbody>
+          </table>
+        </div>
+      </div>
 
       <div className="pempty is-hidden" id="pjEmpty">
         <b>No projects yet</b>
         <br />
-        Bundle related jobs together to track multi-phase builds and shared budgets.
+        A project holds one client&apos;s proposals, the jobs they become and the budget they are built against. Start one
+        with New project, or add a client to one from the Clients page.
       </div>
 
       {/* CREATE DIALOG — opened by #newProjectBtn, wired in projects-behavior.

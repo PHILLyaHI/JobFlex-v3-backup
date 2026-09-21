@@ -1440,3 +1440,72 @@
 /* The client a project is for (2026-09-18), above its scope line. */
 .bp :global(.pjc-client) { margin-top: 5px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--blueprint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bp :global(select.pinput) { appearance: auto; cursor: pointer; }
+
+/* ============================================================
+   THE LEDGER (2026-09-20) — rows, not squares. The table furniture is the
+   proposals page's (.ptable / .prow / .pt-*), published by the always-on
+   proposals module; only what a project row adds is drawn here.
+   ============================================================ */
+.bp :global(.content .pj-mast) { margin-bottom: 18px; }
+.bp :global(.content .pj-mast .kpi-sub) { margin-top: 4px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bp :global(.content .pj-k--bad) { color: var(--danger); }
+.bp :global(.content .pchip.active[data-f="ATTENTION"]) { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
+.bp :global(.content .pchip--attn) { margin-left: auto; }
+
+.bp :global(.content .pj-ledger-card) { padding: 0; overflow: hidden; }
+.bp :global(.content .pj-ledger-scroll) { overflow-x: auto; }
+.bp :global(.content .pj-ledger) { width: 100%; min-width: 820px; table-layout: fixed; }
+.bp :global(.content .pj-ledger td), .bp :global(.content .pj-ledger th) { overflow: hidden; }
+.bp :global(.content .pj-ledger td:last-child) { padding-right: 14px; }
+.bp :global(.content .pj-ledger th.pjc-status) { width: 176px; }
+.bp :global(.content .pj-ledger th.pjc-sold) { width: 176px; }
+.bp :global(.content .pj-ledger th.pjc-budget) { width: 166px; }
+.bp :global(.content .pj-ledger th.pjc-jobs) { width: 148px; }
+.bp :global(.content .pj-ledger th.pjc-window) { width: 104px; }
+.bp :global(.content .pj-ledger th.pjc-updated) { width: 82px; }
+.bp :global(.content .pj-ledger th.pjc-open) { width: 52px; }
+.bp :global(.content .pj-ledger th) { white-space: nowrap; }
+.bp :global(.content .pj-row) { cursor: pointer; }
+.bp :global(.content .pj-row td) { vertical-align: middle; }
+.bp :global(.content .pj-row .pt-title) { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bp :global(.content .pj-row .pt-sub) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bp :global(.content .pj-row .pt-money) { white-space: nowrap; }
+.bp :global(.content .pj-sub--none) { color: var(--muted-light); }
+.bp :global(.content .pj-zero) { color: var(--muted-light); font-weight: 700; }
+
+/* what needs a look — small plates under the status */
+.bp :global(.content .pj-flags) { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.bp :global(.content .pj-flag) { display: inline-block; max-width: 100%; padding: 2px 6px; border: 1px solid; border-radius: var(--radius); font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bp :global(.content .pj-flag--over) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+.bp :global(.content .pj-flag--warn) { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
+.bp :global(.content .pj-flag--waiting) { border-color: var(--sky); color: var(--blueprint); background: rgba(74, 158, 255, 0.13); }
+.bp :global(.content .pj-flag--unbudgeted) { border-color: var(--hair); color: var(--muted); }
+
+/* budget and jobs cells: a figure, a word, and a track under both */
+.bp :global(.content .pj-budget), .bp :global(.content .pj-jobs) { min-width: 150px; }
+.bp :global(.content .pj-budget-top), .bp :global(.content .pj-jobs) { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.bp :global(.content .pj-jobs) { flex-wrap: wrap; }
+.bp :global(.content .pj-budget-top b), .bp :global(.content .pj-jobs b) { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ink); }
+.bp :global(.content .pj-budget-top b.warn) { color: var(--warning-dark); }
+.bp :global(.content .pj-budget-top b.over) { color: var(--danger); }
+.bp :global(.content .pj-jobs b.done) { color: var(--success-dark); }
+.bp :global(.content .pj-budget-top span), .bp :global(.content .pj-jobs span) { font-size: 12px; color: var(--muted); }
+.bp :global(.content .pj-budget-top i) { margin-left: auto; font-style: normal; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: var(--muted); }
+.bp :global(.content .pj-track) { flex-basis: 100%; height: 6px; margin-top: 6px; border-width: 1px; }
+.bp :global(.content .pj-fill.warn) { background: var(--warning); }
+.bp :global(.content .pj-fill.over) { background: var(--danger); }
+
+/* the open arrow — the proposals ledger's own plate */
+.bp :global(.content a.pj-open) { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1.5px solid var(--ink); border-radius: var(--radius); color: var(--ink); background: #fff; }
+.bp :global(.content a.pj-open:hover) { background: var(--ink); color: var(--paper); }
+.bp :global(.content a.pj-open .ic) { width: 14px; height: 14px; }
+
+@media (max-width: 1280px) {
+  .bp :global(.content .pj-mast) { grid-template-columns: repeat(2, 1fr); }
+  .bp :global(.content .pj-mast .kpi:nth-child(2)) { border-right: none; }
+  .bp :global(.content .pj-mast .kpi:nth-child(-n + 2)) { border-bottom: 1.5px solid var(--ink); }
+  .bp :global(.content .pj-ledger .pjc-window) { display: none; }
+}
+@media (max-width: 1140px) {
+  .bp :global(.content .pj-ledger .pjc-updated) { display: none; }
+}
