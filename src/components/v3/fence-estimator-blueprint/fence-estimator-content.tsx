@@ -87,13 +87,18 @@ export function FenceEstimatorContent() {
               <svg className="ic">
                 <use href="#i-pen" />
               </svg>
-              Put down the fence
+              {/* On a phone the three top buttons share one row: the short
+                  word is what is drawn, the full sentence is still what is read
+                  out (`.lbl-full` is clipped there, not removed). */}
+              <span className="lbl-full">Put down the fence</span>
+              <span className="lbl-short" aria-hidden="true">Fence</span>
             </span>
             <span className="fb-done" aria-hidden="true">
               <svg className="ic">
                 <use href="#i-check" />
               </svg>
-              Fence down
+              <span className="lbl-full">Fence down</span>
+              <span className="lbl-short" aria-hidden="true">Laid</span>
             </span>
           </button>
           <div className="vsw" id="modeSwitch">
@@ -161,8 +166,11 @@ export function FenceEstimatorContent() {
               </button>
               {/* Contours on the land (USGS lidar where it exists) — ON by
                   default: the ground is part of the site, not an extra. */}
-              {/* House tool — trace the house outline; it stands up in 3D and a
-                  run that ends on its wall becomes a wall mount. */}
+              {/* House — the house LAYER: outline, hatch and area label on the
+                  map, and the walls a fence dot snaps to. The behavior turns
+                  it on when the site has an outline. Tracing and moving an
+                  outline live inside the layer (Buildings panel, click on
+                  the outline). */}
               <button className="tool" type="button" data-act="house" aria-pressed="false">
                 <svg className="ic">
                   <use href="#i-roof" />

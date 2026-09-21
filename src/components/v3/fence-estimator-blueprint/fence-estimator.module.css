@@ -83,9 +83,20 @@
   --topo-paper: rgba(242, 240, 235, 0.94);
   /* Property line on the satellite map — FenceScan's survey style, by the
      owner's call: a dashed emerald core on a heavy dark casing, corner dots. */
-  --parcel-line: #4ade80;
-  --parcel-casing: #06120a;
-  --parcel-dot: #0d1b12;
+  /* The property line (owner's pick, 2026-09-20): a sky core on a 1 px ink
+     edge either side, paper corner squares, the active side in blueprint. */
+  --parcel-line: var(--sky);
+  /* The white candidate, kept only while the owner compares pairings (?line=2). */
+  --parcel-line-2: var(--paper-deep);
+  --parcel-casing: var(--ink);
+  --parcel-vertex: var(--paper-deep);
+  --parcel-active: var(--blueprint);
+  /* House outlines and detected footprints (2026-09-20): an ink core on a
+     paper edge, the wall a dot snaps to in blueprint; the hatch is the core
+     colour at 11 %. */
+  --house-line: var(--ink);
+  --house-edge: var(--paper-deep);
+  --house-active: var(--blueprint);
   /* Slope classes — the same amber / red the map's slope overlay draws. */
   --slope-racked: #c47f17;
   --slope-stepped: #b3261e;
@@ -1956,3 +1967,106 @@
   .bp :global(.content #fenceBtn.is-done:hover .fb-done) { display: none; }
   .bp :global(.content #fenceBtn.is-done:hover .fb-idle) { display: inline-flex; }
 }
+
+/* ============================================================
+   FENCE STUDIO ON A PHONE (2026-09-20, owner's screenshot at 390: the top
+   row ran off the screen, "Draw" was cut, the toolbar wrapped raggedly).
+   Layout only — nothing here knows what a fence is.
+   ============================================================ */
+.bp :global(.content .lbl-short) { display: none; }
+@media (max-width: 600px) {
+  /* Nothing is wider than the screen: the bar's children may shrink, and the
+     search field takes the row whole instead of asking for 260px. */
+  .bp :global(.content .fs-bar) { gap: 8px; }
+  .bp :global(.content .fs-bar) > :global(*) { min-width: 0; }
+  .bp :global(.content .fs-search) { flex: 1 1 100%; min-width: 0; max-width: 100%; height: 48px; padding-right: 5px; box-sizing: border-box; }
+  .bp :global(.content .fs-search input) { font-size: 16px; } /* under 16px iOS zooms the page on focus */
+  .bp :global(.content .fs-find) { height: 36px; flex: 0 0 auto; }
+
+  /* Fence · Draw|3D · Reset — one row, shared out, 44px, no clipped word. */
+  .bp :global(.content .fs-bar-r) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 1fr); gap: 8px; width: 100%; flex-wrap: nowrap; }
+  .bp :global(.content .fs-bar-r .btn), .bp :global(.content .fs-bar-r .btn.btn--sm) { height: 44px; min-width: 0; padding: 0 6px; gap: 6px; justify-content: center; font-size: 11px; letter-spacing: 0.04em; white-space: nowrap; }
+  .bp :global(.content .vsw) { display: flex; height: 44px; min-width: 0; }
+  .bp :global(.content .vsw-btn) { flex: 1 1 0; min-width: 0; justify-content: center; padding: 0 4px; gap: 5px; white-space: nowrap; }
+  .bp :global(.content #fenceBtn .fb-idle), .bp :global(.content #fenceBtn .fb-done) { gap: 6px; min-width: 0; }
+  .bp :global(.content .lbl-short) { display: inline; }
+  .bp :global(.content .lbl-full) { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  /* The toolbar: an even grid, three to a row — nine tools, three rows. */
+  .bp :global(.content .stage-tools) { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 8px; }
+  .bp :global(.content .tool-group) { display: contents; }
+  .bp :global(.content .tool-menu) { position: static; min-width: 0; }
+  .bp :global(.content .stage-tools .tool) { width: 100%; min-width: 0; height: 44px; padding: 0 6px; gap: 6px; justify-content: center; font-size: 12px; white-space: nowrap; }
+  .bp :global(.content .stage-tools .tool .caret) { margin-left: -2px; }
+  /* A switch is not an action: Lot lines, House and Topo carry a state lamp —
+     hollow while off, filled while on (the on-colour alone was the only tell). */
+  .bp :global(.content .stage-tools .tool[aria-pressed])::after { content: ""; flex: 0 0 auto; width: 7px; height: 7px; border: 1.5px solid currentColor; border-radius: 1px; box-sizing: border-box; }
+  .bp :global(.content .stage-tools .tool[aria-pressed="true"]) { background: var(--blueprint); border-color: var(--blueprint-dark); color: var(--paper); }
+  .bp :global(.content .stage-tools .tool[aria-pressed="true"])::after { background: currentColor; }
+  /* Gate / Door menus open across the toolbar, not off the side of the screen. */
+  .bp :global(.content .stage-tools .tool-pop) { left: 8px; right: 8px; top: calc(100% - 2px); min-width: 0; }
+
+  /* The map gets most of the screen while tracing. */
+  .bp :global(.content .stage-canvas) { height: clamp(320px, calc(var(--app-h, 100dvh) * 0.62), 640px); }
+  .bp :global(.content .draw-ctl) { gap: 8px; }
+  .bp :global(.content .draw-ctl .tool) { flex: 1 1 0; justify-content: center; min-width: 0; }
+  .bp :global(.content .house-tools) { display: flex; flex-wrap: wrap; gap: 6px; }
+  .bp :global(.content .house-tools .tool) { min-height: 44px; }
+  .bp :global(.content .parcel-head) { flex-wrap: wrap; }
+  /* Property sides: one column. The street row's `span 2` made a second,
+     off-screen column here and pushed Side 3 out of the card. */
+  .bp :global(.content .parcel-sides) { grid-template-columns: minmax(0, 1fr); }
+  .bp :global(.content .ps-row:has(.ps-street)) { grid-column: auto; }
+  .bp :global(.content .ps-row) { min-width: 0; }
+  .bp :global(.content .ps-label) { min-height: 44px; min-width: 0; box-sizing: border-box; }
+  .bp :global(.content .ps-street) { flex: 1 1 0; min-width: 0; max-width: none; }
+}
+/* The support launcher is parked in the corner the map's own controls use.
+   While the stage is on a phone's screen it steps aside; scroll to the price
+   and it is back. (The class is set by the behavior module.) */
+@media (max-width: 768px) {
+  :global(html.jf-fence-stage-onscreen) :global(.jfsup-fab.jfsup-fab) { display: none; }
+}
+
+/* ── Touch reticle (FenceDrawMap's `data-fdm="aim"` / `"flash"` hooks) ──────
+   The anchor is a zero-size point the map moves with a transform; everything
+   is centred on it. Free: a paper ring and an ink cross. Caught: the ring
+   fills blueprint and names what it caught. */
+.bp :global(.content [data-fdm="aim"]), .bp :global(.content [data-fdm="flash"]) { width: 0; height: 0; }
+.bp :global(.content [data-fdm="aim"] [data-fdm-ring]), .bp :global(.content [data-fdm="flash"] [data-fdm-ring]) {
+  position: absolute; left: 0; top: 0; width: 26px; height: 26px; border-radius: 50%; box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--paper); box-shadow: 0 0 0 1.5px var(--ink), inset 0 0 0 1.5px var(--ink);
+}
+.bp :global(.content [data-fdm-cross]) { position: absolute; left: 0; top: 0; background: var(--ink); box-shadow: 0 0 0 1px var(--paper); transform: translate(-50%, -50%); }
+.bp :global(.content [data-fdm-cross="h"]) { width: 44px; height: 1.5px; }
+.bp :global(.content [data-fdm-cross="v"]) { width: 1.5px; height: 44px; }
+.bp :global(.content [data-snapped="true"] [data-fdm-ring]) { background: var(--blueprint); border-color: var(--paper); box-shadow: 0 0 0 1.5px var(--blueprint-dark); }
+.bp :global(.content [data-snapped="true"] [data-fdm-cross]) { display: none; }
+.bp :global(.content [data-fdm-label]) {
+  position: absolute; left: 18px; top: -30px; padding: 2px 6px; border-radius: 2px;
+  background: var(--blueprint); color: var(--paper);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
+}
+.bp :global(.content [data-fdm-label]:empty) { display: none; }
+/* The one-time aiming tip reads as a tip, not as the standing instruction. */
+.bp :global(.content .stage-hint.is-tip) { color: var(--ink); font-weight: 700; border-top-color: var(--blueprint); }
+
+/* ── House button: what the outline lookup is doing ─────────────────────────
+   loading — the lamp breathes (still under reduced motion); none / failed —
+   a dashed frame: there is nothing to show yet, the panel says "draw it". */
+@keyframes jfHouseLamp { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+.bp :global(.content .tool[data-act="house"][data-state="loading"]) { border-style: dashed; }
+.bp :global(.content .tool[data-act="house"][data-state="loading"])::after { animation: jfHouseLamp 1.1s ease-in-out infinite; }
+.bp :global(.content .tool[data-act="house"][data-state="loading"] .ic) { animation: jfHouseLamp 1.1s ease-in-out infinite; }
+.bp :global(.content .tool[data-act="house"][data-state="none"]), .bp :global(.content .tool[data-act="house"][data-state="failed"]) { border-style: dashed; }
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.content .tool[data-act="house"][data-state="loading"])::after, .bp :global(.content .tool[data-act="house"][data-state="loading"] .ic) { animation: none; opacity: 0.6; }
+}
+.bp :global(.content .hs-edit) { flex: 0 0 auto; }
+.bp :global(.content [data-fdm="flash"][data-press="true"] [data-fdm-ring]) { background: transparent; border-color: var(--blueprint); box-shadow: 0 0 0 1.5px var(--paper); }
+@media (max-width: 600px) {
+  .bp :global(.content .hs-row) { flex-wrap: wrap; row-gap: 6px; }
+  .bp :global(.content .hs-edit) { min-height: 44px; }
+}
+

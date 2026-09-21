@@ -60,6 +60,7 @@ import {
   buildingsToFootprints,
   latLngToLocalFeet,
   localFeetToLatLng,
+  pointInRingFt,
 } from "@/components/estimator/fence/mapProjection";
 import type {
   BuildingFootprint,
@@ -1357,9 +1358,11 @@ export function initFenceEstimatorContent(
       // Contours on the land — on by default, a MODE like Lot lines. Turning it
       // off hides the lines, labels, legend and side grades; turning it back on
       // reads the ground if it has not been read for this lot yet.
-      // House tool — a MODE: clicks trace a house outline; its corners drag.
+      // House — the house LAYER's visibility (outline, hatch, area label).
+      // Editing lives inside the visible layer: click an outline to pick it
+      // up; "Trace outline" in the Buildings panel draws a new one.
       if (kind === 'house') {
-        setHouseMode(!houseMode);
+        setHouseLayer(!houseLayer, true);
         return;
       }
       if (kind === 'topo') {
@@ -1381,25 +1384,34 @@ export function initFenceEstimatorContent(
     }
     const delHouse = target.closest<HTMLElement>('[data-del-house]');
     if (delHouse) {
+      if (houseSel === delHouse.dataset.delHouse) houseSel = null;
       houses = houses.filter(function (h) { return h.id !== delHouse.dataset.delHouse; });
       afterHousesChanged();
       return;
     }
+    if (target.closest('[data-house-trace]')) {
+      setHouseMode(!houseMode);
+      return;
+    }
+    if (target.closest('[data-house-shift-reset]')) {
+      setSiteShift({ x: 0, y: 0 });
+      return;
+    }
     if (target.closest('[data-house-detect]')) {
-      const b = detectedSubject();
+      const b = pickSubject();
       if (b) {
-        houseSeq += 1;
-        houses = houses.concat([{
-          id: 'h' + houseSeq,
-          ring: b.ring
-            .filter(function (q, i, arr) {
-              return !(i === arr.length - 1 && arr.length > 3 && Math.hypot(q.x - arr[0].x, q.y - arr[0].y) < 0.01);
-            })
-            .map(function (q) { return { x: q.x, y: q.y }; }),
-          stories: b.heightFt >= 30 ? 3 : b.heightFt >= 20 ? 2 : 1,
-        }]);
+        houseFromFootprint(b, true);
         afterHousesChanged();
       }
+      return;
+    }
+    const editHouse = target.closest<HTMLElement>('[data-edit-house]');
+    if (editHouse) {
+      onHouseSelect(houseSel === editHouse.dataset.editHouse ? null : editHouse.dataset.editHouse ?? null);
+      return;
+    }
+    if (target.closest('[data-house-done]')) {
+      onHouseSelect(null);
       return;
     }
     if (target.closest('[data-topo-retry]')) {
@@ -1453,9 +1465,12 @@ export function initFenceEstimatorContent(
       playStagger?.();
       mapOwnsRuns = false;
       mapPoints = [];
-      siteBuildings = [];
+      setSiteBuildings([]);
       houses = [];
+      resetHouseLookup();
       setHouseMode(false);
+      houseLayerTouched = false;
+      setHouseLayer(false);
       renderHousePanel();
       // Takes the 3D scene down with it — there is no longer a fence to show.
       syncStage();
@@ -1903,11 +1918,44 @@ export function initFenceEstimatorContent(
     return lot;
   }
 
+  /** The property line's look (owner's pick, 2026-09-20, over a white
+   *  "geodetic" line): a sky core on a thin ink edge — the map sets the
+   *  widths by zoom, 3 px at the most; paper corner squares; the active side and the corner under the cursor
+   *  in blueprint. Every colour is a token off `.content`; the map only ever
+   *  sees the resolved string. */
+  /** A candidate switch on the URL while the owner is choosing: ?line=2 is
+   *  the white property line, ?house=2 the hatched house (2026-09-20). */
+  function candidate(name: string): 1 | 2 {
+    try {
+      return new URLSearchParams(window.location.search).get(name) === '2' ? 2 : 1;
+    } catch {
+      return 1;
+    }
+  }
   function parcelPalette(): FenceDrawMapProps['parcelPalette'] {
+    const white = candidate('line') === 2;
     const out: Record<string, string> = {};
-    const pick: Array<[string, string]> = [['line', '--parcel-line'], ['casing', '--parcel-casing'], ['dot', '--parcel-dot']];
-    pick.forEach(function (p) { const v = token(p[1]); if (v) out[p[0]] = v; });
-    return out;
+    const pick: Array<[string, string]> = [
+      ['line', white ? '--parcel-line-2' : '--parcel-line'],
+      ['casing', '--parcel-casing'],
+      ['dot', '--parcel-vertex'],
+      ['active', '--parcel-active'],
+    ];
+    pick.forEach(function (p) { const c = token(p[1]); if (c) out[p[0]] = c; });
+    return out as FenceDrawMapProps['parcelPalette'];
+  }
+
+  /** The house outline: an ink core on a paper edge, the snapped wall in
+   *  blueprint; ?house=2 hatches the inside. Tokens off `.content`. */
+  function housePalette(): FenceDrawMapProps['housePalette'] {
+    const out: Record<string, string | boolean> = { hatched: candidate('house') === 2 };
+    const pick: Array<[string, string]> = [
+      ['line', '--house-line'],
+      ['edge', '--house-edge'],
+      ['active', '--house-active'],
+    ];
+    pick.forEach(function (p) { const c = token(p[1]); if (c) out[p[0]] = c; });
+    return out as FenceDrawMapProps['housePalette'];
   }
 
   function topoPalette(): FenceDrawMapProps['topoPalette'] {
@@ -2107,7 +2155,26 @@ export function initFenceEstimatorContent(
   }
 
   const hintEl = $('.stage-hint');
-  const hintIdle = hintEl?.textContent ?? '';
+  const hintMouse = hintEl?.textContent ?? '';
+  // A phone has no double-click, Enter or right-click to be told about.
+  const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+  const hintIdle = coarse
+    ? 'Tap to place a dot · hold and drag to aim — it snaps to corners, lot lines and house walls · double-tap or Finish to end · two fingers move the map'
+    : hintMouse;
+  // The aiming tip, once: shown in place of the idle line on a touch screen
+  // until the first dot is placed with the reticle; never again after a visit
+  // that showed it.
+  const AIM_TIP = 'Hold and drag to aim — the dot snaps to corners and lines';
+  const AIM_TIP_KEY = 'jf.fence.aimTip';
+  let aimTip = false;
+  if (coarse) {
+    try { aimTip = window.localStorage.getItem(AIM_TIP_KEY) !== '1'; } catch { aimTip = true; }
+  }
+  function onTouchAim() {
+    if (!aimTip) return;
+    aimTip = false;
+    syncHint();
+  }
 
   /** Resolve a design token off `.content`, where the page declares them —
    *  the Maps SDK needs a concrete colour string and must not be handed a
@@ -2181,10 +2248,250 @@ export function initFenceEstimatorContent(
   let houses: DrawnHouse[] = [];
   let houseSeq = 0;
   let draftState: DraftState = { fence: false, houseCorners: 0 };
+  // The house LAYER (the House button): outline, hatch and area label on the
+  // map, and the walls a fence dot snaps to. On by itself as soon as the site
+  // has an outline — until the contractor has used the button, after which it
+  // is theirs. Hiding it changes nothing that is already measured or priced.
+  let houseLayer = false;
+  let houseLayerTouched = false;
+  /** The outline picked up on the map (a traced house's id, or "det:<n>"). */
+  let houseSel: string | null = null;
+  const NO_RINGS: Array<Array<{ lat: number; lng: number }>> = [];
+  const NO_HOUSES: NonNullable<FenceDrawMapProps['houses']> = [];
+
+  // The house outline finds itself (owner, 2026-09-20: "on the phone the
+  // outline never appears" — it sat behind a "Use detected outline" button in
+  // a panel under the map, and the House button, tapped to reveal it, turned
+  // the layer it had just switched on back OFF). Now: the footprint the
+  // address sits in becomes the house the moment it arrives, however late;
+  // the House button only shows and hides the layer, and says what the lookup
+  // is doing while there is nothing to show.
+  type HouseLookup = 'idle' | 'loading' | 'found' | 'none' | 'failed';
+  let houseLookup: HouseLookup = 'idle';
+  /** The lookup's raw answer, kept so the subject can be re-picked when the
+   *  lot arrives after the buildings did. */
+  let osmRaw: Array<{ ring: Array<{ lat: number; lng: number }>; heightFt: number }> | null = null;
+  /** The address the automatic house was made for — once per address, so a
+   *  house the contractor removed stays removed. */
+  let autoHouseFor: string | null = null;
+  /** Houses that came from the lookup (not traced by hand): moved whole, they
+   *  carry the site's footprints with them and the offset is remembered. */
+  const autoHouseIds = new Set<string>();
+  const HOUSE_STATE_TEXT: Record<HouseLookup, string> = {
+    idle: 'House layer',
+    loading: 'House layer — looking for the house outline…',
+    found: 'House layer',
+    none: 'No outline found · draw it',
+    failed: 'Outline lookup failed · draw it',
+  };
+  function syncHouseButton() {
+    $$('[data-act="house"]').forEach(function (b) {
+      b.classList.toggle('on', houseLayer);
+      b.setAttribute('aria-pressed', String(houseLayer));
+      b.dataset.state = houseLookup;
+      if (houseLookup === 'loading') b.setAttribute('aria-busy', 'true');
+      else b.removeAttribute('aria-busy');
+      b.title = HOUSE_STATE_TEXT[houseLookup];
+    });
+  }
+  function setHouseLookup(next: HouseLookup) {
+    if (houseLookup === next) return;
+    houseLookup = next;
+    syncHouseButton();
+    renderHousePanel();
+  }
+  function setHouseLayer(on: boolean, byHand?: boolean) {
+    if (byHand) houseLayerTouched = true;
+    if (houseLayer === on) return;
+    houseLayer = on;
+    if (!on && houseMode) setHouseMode(false);
+    if (!on && houseSel) { houseSel = null; renderDraftControls(); }
+    syncHouseButton();
+    syncHint();
+    renderHousePanel();
+    pushMap();
+  }
+  /** The site has an outline now: show the layer unless the button was used. */
+  function autoShowHouseLayer() {
+    if (!houseLayerTouched && !houseLayer && (houses.length || siteBuildings.length)) setHouseLayer(true);
+  }
+
+  // The detected footprints come from OpenStreetMap / Regrid, traced off a
+  // different aerial than the one on screen, and sit a few feet off the roof —
+  // a different few feet at every address (measured 2026-09-20: 2–5 ft, no
+  // common direction), so there is nothing to correct in code and nothing to
+  // guess. The contractor drags a footprint onto the roof; every footprint of
+  // the site moves with it, the snapping follows, and the offset is remembered
+  // for the address in this browser.
+  let siteBuildingsRaw: BuildingFootprint[] = [];
+  let siteShift: PathPoint = { x: 0, y: 0 };
+  function shiftKey(): string | null {
+    return mapOrigin ? 'jf.fence.houseShift:' + mapOrigin.lat.toFixed(5) + ',' + mapOrigin.lng.toFixed(5) : null;
+  }
+  function savedShift(): PathPoint {
+    try {
+      const k = shiftKey();
+      const raw = k ? window.localStorage.getItem(k) : null;
+      const v = raw ? JSON.parse(raw) : null;
+      if (v && Number.isFinite(v.x) && Number.isFinite(v.y) && Math.hypot(v.x, v.y) <= 200) return { x: v.x, y: v.y };
+    } catch { /* private window, blocked storage: the offset lives for the visit */ }
+    return { x: 0, y: 0 };
+  }
+  function applySiteShift() {
+    const d = siteShift;
+    siteBuildings = d.x || d.y
+      ? siteBuildingsRaw.map(function (b) {
+          return { ring: b.ring.map(function (q) { return { x: q.x + d.x, y: q.y + d.y }; }), heightFt: b.heightFt, role: b.role };
+        })
+      : siteBuildingsRaw;
+  }
+  function setSiteBuildings(raw: BuildingFootprint[]) {
+    siteBuildingsRaw = raw;
+    siteShift = raw.length ? savedShift() : { x: 0, y: 0 };
+    applySiteShift();
+  }
+  function setSiteShift(next: PathPoint, housesAlreadyMoved?: boolean) {
+    const dx = next.x - siteShift.x;
+    const dy = next.y - siteShift.y;
+    if (!housesAlreadyMoved && (dx || dy) && autoHouseIds.size) {
+      houses = houses.map(function (h) {
+        return autoHouseIds.has(h.id)
+          ? { id: h.id, ring: h.ring.map(function (q) { return { x: q.x + dx, y: q.y + dy }; }), stories: h.stories }
+          : h;
+      });
+    }
+    siteShift = next;
+    try {
+      const k = shiftKey();
+      if (k) {
+        if (next.x || next.y) window.localStorage.setItem(k, JSON.stringify(next));
+        else window.localStorage.removeItem(k);
+      }
+    } catch { /* see savedShift */ }
+    applySiteShift();
+    afterHousesChanged();
+  }
+  function onDetectedShift(dx: number, dy: number) {
+    setSiteShift({ x: siteShift.x + dx, y: siteShift.y + dy });
+  }
+  /** The outline being edited — set by "Edit house" or a long press on the
+   *  outline, cleared by Done (or Escape). Never by a plain tap. */
+  function onHouseSelect(key: string | null) {
+    if (houseSel === key) return;
+    houseSel = key;
+    if (key && !houseLayer) setHouseLayer(true, true);
+    if (key && houseMode) setHouseMode(false);
+    if (key && armed) setArmed(null);
+    syncHint();
+    renderDraftControls();
+    renderHousePanel();
+    pushMap();
+  }
+
+  /** Which footprint is THE house: the one the address point falls in, else
+   *  the largest on the lot. Everything else stays faint context. */
+  function pickSubject(): BuildingFootprint | null {
+    const free = mergeBuildings(houses, siteBuildings).slice(houses.length);
+    const at = { x: siteShift.x, y: siteShift.y }; // the address point, in the shifted frame
+    let best: BuildingFootprint | null = null;
+    let bestA = 0;
+    for (const b of free) {
+      if (pointInRingFt(at, b.ring)) return b;
+      if (b.role !== 'subject') continue;
+      const a = ringAreaSqFt(b.ring);
+      if (a > bestA) { best = b; bestA = a; }
+    }
+    return best;
+  }
+  function houseFromFootprint(b: BuildingFootprint, auto: boolean) {
+    houseSeq += 1;
+    const id = 'h' + houseSeq;
+    houses = houses.concat([{
+      id: id,
+      ring: b.ring
+        .filter(function (q, i, arr) {
+          return !(i === arr.length - 1 && arr.length > 3 && Math.hypot(q.x - arr[0].x, q.y - arr[0].y) < 0.01);
+        })
+        .map(function (q) { return { x: q.x, y: q.y }; }),
+      stories: b.heightFt >= 30 ? 3 : b.heightFt >= 20 ? 2 : 1,
+    }]);
+    if (auto) autoHouseIds.add(id);
+  }
+  /** The lookup's answer (or the lot) just landed: roles, the automatic house,
+   *  the button's state. Safe to call again — it adopts once per address. */
+  function settleHouseLookup(o: { lat: number; lng: number }) {
+    if (!osmRaw || !sameOrigin(mapOrigin, o)) return;
+    const ringPts = parcelLots.length && sameOrigin(parcelOrigin, o)
+      ? parcelLots[0].ring.map(function (ll) { return latLngToLocalFeet(o, ll); })
+      : null;
+    setSiteBuildings(buildingsToFootprints(osmRaw, o, ringPts));
+    const key = o.lat.toFixed(6) + ',' + o.lng.toFixed(6);
+    if (autoHouseFor !== key && !houses.length) {
+      const b = pickSubject();
+      if (b) {
+        autoHouseFor = key;
+        houseFromFootprint(b, true);
+      }
+    }
+    const found = houses.length > 0 || !!pickSubject();
+    houseLookup = found ? 'found' : 'none';
+    if (found) autoShowHouseLayer();
+    else if (!houseLayerTouched && !houseLayer) setHouseLayer(true); // the panel is where "draw it" lives
+    syncHouseButton();
+    afterHousesChanged();
+    if (!found) sayHint('No house outline found for this address · draw it: Trace outline, in Buildings under the map.');
+  }
+  /** Ask for the footprints. Buildings and streets come from ONE Overpass
+   *  query, and the server swallows its failure into two empty lists (one host,
+   *  a 10 s timeout, no retry — measured 2026-09-20: answers take 1–14 s and a
+   *  fair share time out). So an answer with no building AND no street is a
+   *  lookup that did not happen, and is asked again (twice, spaced out); an
+   *  answer with streets and no building is a real "no outline here" and is
+   *  not — every ask spends the organisation's hourly lookup allowance. */
+  function lookupHouse(
+    o: { lat: number; lng: number },
+    first: Promise<{ buildings: Array<{ ring: Array<{ lat: number; lng: number }>; heightFt: number }>; roads: unknown[] }>,
+  ) {
+    setHouseLookup('loading');
+    const giveUp = function () {
+      setHouseLookup('failed');
+      if (!houseLayerTouched && !houseLayer) setHouseLayer(true); // the panel is where "draw it" lives
+      sayHint('The house outline could not be loaded · draw it: Trace outline, in Buildings under the map.');
+    };
+    const again = function (attempt: number, p: typeof first) {
+      const retry = function () {
+        after(function () {
+          if (sameOrigin(mapOrigin, o)) again(attempt + 1, fetchPropertyBoundary(o.lat, o.lng));
+        }, attempt === 0 ? 4000 : 9000);
+      };
+      p.then(function (res) {
+        if (!sameOrigin(mapOrigin, o)) return;
+        const dead = !res.buildings.length && !res.roads.length;
+        if (dead && attempt < 2) return retry();
+        if (dead) return giveUp();
+        osmRaw = res.buildings;
+        settleHouseLookup(o);
+      }).catch(function () {
+        if (!sameOrigin(mapOrigin, o)) return;
+        if (attempt === 0) return retry();
+        giveUp();
+      });
+    };
+    again(0, first);
+  }
+  function resetHouseLookup() {
+    osmRaw = null;
+    autoHouseFor = null;
+    autoHouseIds.clear();
+    houseSel = null;
+    houseLookup = 'idle';
+    syncHouseButton();
+  }
 
   function setHouseMode(on: boolean) {
     if (houseMode === on) return;
     houseMode = on;
+    if (on && !houseLayer) setHouseLayer(true, true);
     if (on) {
       if (armed) setArmed(null);
       if (aligning && mapApi) {
@@ -2193,10 +2500,6 @@ export function initFenceEstimatorContent(
         $$('[data-act="align"]').forEach(function (b) { b.classList.remove('on'); });
       }
     }
-    $$('[data-act="house"]').forEach(function (b) {
-      b.classList.toggle('on', on);
-      b.setAttribute('aria-pressed', String(on));
-    });
     syncHint();
     renderHousePanel();
     pushMap();
@@ -2205,15 +2508,34 @@ export function initFenceEstimatorContent(
   function onHouseAdd(ring: PathPoint[]) {
     houseSeq += 1;
     houses = houses.concat([{ id: 'h' + houseSeq, ring: ring, stories: 1 }]);
+    // The outline is drawn: the tool goes back in the drawer, the house stays.
+    houseMode = false;
     afterHousesChanged();
+    syncHint();
   }
   function onHouseChange(id: string, ring: PathPoint[]) {
+    const was = houses.find(function (h) { return h.id === id; });
     houses = houses.map(function (h) { return h.id === id ? { id: h.id, ring: ring, stories: h.stories } : h; });
+    // An automatic house dragged WHOLE (every corner moved by the same amount)
+    // is the contractor lining the source data up with the photo: the other
+    // footprints go with it and the offset is remembered for the address.
+    if (was && autoHouseIds.has(id) && was.ring.length === ring.length && ring.length) {
+      const dx = ring[0].x - was.ring[0].x;
+      const dy = ring[0].y - was.ring[0].y;
+      const rigid = Math.hypot(dx, dy) > 0.05 && ring.every(function (q, i) {
+        return Math.abs(q.x - was.ring[i].x - dx) < 0.05 && Math.abs(q.y - was.ring[i].y - dy) < 0.05;
+      });
+      if (rigid) {
+        setSiteShift({ x: siteShift.x + dx, y: siteShift.y + dy }, true);
+        return;
+      }
+    }
     afterHousesChanged(true);
   }
   /** `quiet`: an in-place edit (a dragged corner, a storey change) — the
    *  panel rows are patched, not re-listed. */
   function afterHousesChanged(quiet?: boolean) {
+    autoShowHouseLayer();
     if (quiet) paintHouseRows();
     else renderHousePanel();
     pushMap();
@@ -2228,15 +2550,7 @@ export function initFenceEstimatorContent(
   /** The largest detected footprint on the lot, if the page has one that no
    *  traced house already covers — offered as a starting outline. */
   function detectedSubject(): BuildingFootprint | null {
-    const merged = mergeBuildings(houses, siteBuildings);
-    let best: BuildingFootprint | null = null;
-    let bestA = 0;
-    for (const b of merged.slice(houses.length)) {
-      if (b.role !== 'subject') continue;
-      const a = ringAreaSqFt(b.ring);
-      if (a > bestA) { best = b; bestA = a; }
-    }
-    return best;
+    return pickSubject();
   }
 
   // Identity-stable views: the map and the scene rebuild on a NEW object, and
@@ -2301,6 +2615,11 @@ export function initFenceEstimatorContent(
     const focused = (document.activeElement as HTMLElement | null)?.closest?.('[data-draft]') as HTMLElement | null;
     const refocus = focused && box.contains(focused) ? focused.dataset.draft : null;
     const house = draftState.houseCorners > 0;
+    if (houseSel && !draftState.fence && !house) {
+      box.classList.remove('is-hidden');
+      box.innerHTML = '<button class="tool tool-primary" type="button" data-house-done><svg class="ic"><use href="#i-check"/></svg>Done</button>';
+      return;
+    }
     if (!draftState.fence && !house) {
       box.classList.add('is-hidden');
       box.innerHTML = '';
@@ -2327,6 +2646,8 @@ export function initFenceEstimatorContent(
         return '<option value="' + n + '"' + (h.stories === n ? ' selected' : '') + '>' + n + (n === 1 ? ' story' : ' stories') + '</option>';
       }).join('') +
       '</select></span>' +
+      '<button class="tool hs-edit' + (houseSel === h.id ? ' on' : '') + '" type="button" data-edit-house="' + h.id + '" aria-pressed="' + String(houseSel === h.id) + '">' +
+      (houseSel === h.id ? 'Done' : 'Edit house') + '</button>' +
       '<button class="row-x" type="button" data-del-house="' + h.id + '" aria-label="Remove ' + name + '">×</button></li>';
   }
   function paintHouseRows() {
@@ -2346,21 +2667,35 @@ export function initFenceEstimatorContent(
     const list = $('#houseList');
     if (!panel || !list) return;
     const detected = detectedSubject();
-    if (!houseMode && !houses.length) {
+    if (!houseLayer) {
       panel.classList.add('is-hidden');
       list.innerHTML = '';
       return;
     }
     let html = houses.map(houseRowHtml).join('');
     if (!houses.length) {
-      html = '<li class="hs-empty">Click each corner of the house on the map, then click the first corner again to close the outline.</li>';
+      html = houseMode
+        ? '<li class="hs-empty">' + (coarse ? 'Tap' : 'Click') + ' each corner of the house on the map, then ' + (coarse ? 'tap' : 'click') + ' the first corner again to close the outline.</li>'
+        : houseLookup === 'loading'
+          ? '<li class="hs-empty">Looking for the house outline…</li>'
+          : detected
+            ? '<li class="hs-empty">A footprint was found for this lot — Use detected outline puts it back as the house.</li>'
+            : houseLookup === 'failed'
+              ? '<li class="hs-empty">Outline lookup failed · draw it — Trace outline, then tap each corner of the house.</li>'
+              : '<li class="hs-empty">No outline found · draw it — Trace outline, then tap each corner of the house.</li>';
     }
     list.innerHTML = html;
     const tools = $('#houseTools');
     if (tools) {
-      tools.innerHTML = detected
-        ? '<button class="tool" type="button" data-house-detect><svg class="ic"><use href="#i-building"/></svg>Use detected outline</button>'
-        : '';
+      const moved = Math.hypot(siteShift.x, siteShift.y);
+      tools.innerHTML =
+        '<button class="tool' + (houseMode ? ' on' : '') + '" type="button" data-house-trace aria-pressed="' + String(houseMode) + '"><svg class="ic"><use href="#i-building"/></svg>Trace outline</button>' +
+        (detected
+          ? '<button class="tool" type="button" data-house-detect><svg class="ic"><use href="#i-building"/></svg>Use detected outline</button>'
+          : '') +
+        (moved >= 0.05
+          ? '<button class="tool" type="button" data-house-shift-reset>Detected outline moved ' + (moved < 10 ? moved.toFixed(1) : String(Math.round(moved))) + ' ft — reset</button>'
+          : '');
     }
     const mounts = $('#houseMounts');
     if (mounts) mounts.textContent = mountsText();
@@ -2392,14 +2727,21 @@ export function initFenceEstimatorContent(
       doorColor: token('--muted'),
       parcel: parcelView(),
       parcelTiles: lotLines,
-      detectedBuildings: detectedView(),
-      houses: houseView(),
+      // A hidden layer is not drawn and is not snapped to; the 3D model, the
+      // wall mounts and every saved length keep using the same houses.
+      detectedBuildings: houseLayer ? detectedView() : NO_RINGS,
+      houses: houseLayer ? houseView() : NO_HOUSES,
       houseMode: houseMode,
       onHouseAdd: onHouseAdd,
       onHouseChange: onHouseChange,
+      onDetectedShift: onDetectedShift,
+      houseEdit: houseLayer ? houseSel : null,
+      onHouseSelect: onHouseSelect,
       wallMounts: wallMountView(),
       onDraftChange: onDraftChange,
+      onTouchAim: onTouchAim,
       parcelPalette: parcelPalette(),
+      housePalette: housePalette(),
       terrain: terrainOverlay(),
       topo: topoOn ? currentLotTopo()?.overlay ?? null : null,
       topoPalette: topoPalette(),
@@ -2425,6 +2767,13 @@ export function initFenceEstimatorContent(
   let hintNote: string | null = null;
   function syncHint() {
     if (!hintEl) return;
+    const tip = aimTip && !!mapOrigin && !hintNote && !armed && !aligning && !houseMode && !houseSel;
+    hintEl.classList.toggle('is-tip', tip);
+    if (tip) {
+      try { window.localStorage.setItem(AIM_TIP_KEY, '1'); } catch { /* shown for this visit only */ }
+      hintEl.textContent = AIM_TIP;
+      return;
+    }
     hintEl.textContent = hintNote
       ? hintNote
       : armed
@@ -2433,8 +2782,15 @@ export function initFenceEstimatorContent(
         : aligning
           ? 'Drag the whole outline to line it up with the lot — shape and size stay locked'
           : houseMode
-            ? 'Trace the house: click each corner — click the first corner, double-click or press Enter to close · drag a corner to adjust · Esc cancels'
-            : hintIdle;
+            ? (coarse
+                ? 'Trace the house: tap each corner — tap the first corner or Finish to close · hold and drag to aim · Cancel drops it'
+                : 'Trace the house: click each corner — click the first corner, double-click or press Enter to close · drag a corner to adjust · Esc cancels')
+            : houseSel
+              ? 'Editing the house: drag it onto the roof, drag a corner to reshape it — fence dots snap to where you leave it · Done when finished'
+
+              : !houseLayer && (houses.length || siteBuildings.length)
+                ? hintIdle + ' · House layer is hidden — dots do not snap to house walls'
+                : hintIdle;
   }
   /** Say something sentence-length under the stage. A button label cannot carry
    *  "Regrid rejected the key — the token is likely expired", and swallowing it
@@ -2853,6 +3209,22 @@ export function initFenceEstimatorContent(
     unmountModel();
   });
 
+  // The support launcher sits in the corner the map's zoom buttons use. While
+  // the stage is on screen the page says so on <html>; the stylesheet hides
+  // the launcher there on a phone (it is back by the time the price is).
+  const stageCanvasEl = root.querySelector<HTMLElement>("#stageCanvas");
+  if (stageCanvasEl && typeof IntersectionObserver === 'function') {
+    const io = new IntersectionObserver(function (entries) {
+      const on = entries.some(function (e) { return e.isIntersecting && e.intersectionRatio >= 0.2; });
+      document.documentElement.classList.toggle('jf-fence-stage-onscreen', on);
+    }, { threshold: [0, 0.2, 0.5] });
+    io.observe(stageCanvasEl);
+    disposers.push(function () {
+      io.disconnect();
+      document.documentElement.classList.remove('jf-fence-stage-onscreen');
+    });
+  }
+
   // ================= ADDRESS SEARCH =================
   // Real Places suggestions on the studio's address bar. The browser key
   // (NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY) was already configured and already in
@@ -2899,8 +3271,11 @@ export function initFenceEstimatorContent(
       mapOrigin = { lat: p.lat, lng: p.lng };
       // Traced houses and detected buildings belong to the old address.
       houses = [];
-      siteBuildings = [];
+      setSiteBuildings([]);
+      resetHouseLookup();
       setHouseMode(false);
+      houseLayerTouched = false;
+      setHouseLayer(false);
       renderHousePanel();
       // First resolved address is what brings the surface into existence.
       mountMap();
@@ -3084,23 +3459,7 @@ export function initFenceEstimatorContent(
       // building footprints AND the OSM street centrelines the front-side
       // decision reads. Fail-soft on both counts.
       const osmPromise = fetchPropertyBoundary(o.lat, o.lng);
-      osmPromise
-        .then(function (res) {
-          // An answer for an address the contractor has already left is not
-          // this site's buildings: its rings are in the OLD origin's feet.
-          if (!sameOrigin(mapOrigin, o)) return;
-          const ringPts = parcelLots.length && sameOrigin(parcelOrigin, o)
-            ? parcelLots[0].ring.map(function (ll) { return latLngToLocalFeet(o, ll); })
-            : null;
-          siteBuildings = buildingsToFootprints(res.buildings, o, ringPts);
-          // Footprints are snap targets and walls on the map, the "Use detected
-          // outline" offer, and buildings in 3D — all of them follow.
-          pushMap();
-          pushModel();
-          renderHousePanel();
-          renderModelNote();
-        })
-        .catch(function () {});
+      lookupHouse(o, osmPromise);
 
       const res = await fetch(
         '/api/parcels?lat=' + encodeURIComponent(o.lat) + '&lon=' + encodeURIComponent(o.lng),
@@ -3152,6 +3511,9 @@ export function initFenceEstimatorContent(
         return;
       }
       pushMap();
+      // The buildings may have beaten the lot here: which one is "on the lot"
+      // can only be said now.
+      settleHouseLookup(o);
       // The lot is known: size the contour lattice to it now, without waiting
       // for the street data below.
       if (sameOrigin(mapOrigin, o)) scheduleTopo(0);
