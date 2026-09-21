@@ -136,6 +136,8 @@ model Organization {
   eagleViewReports     EagleViewReport[]
   roofMeasurements     RoofMeasurement[]
   overheads            MonthlyOverhead[]
+  suppliers            Supplier[]
+  inventoryItems       InventoryItem[]
   signupPromo          PromoCode?            @relation("OrgSignupPromo", fields: [signupPromoCodeId], references: [id], onDelete: SetNull)
 
   @@index([slug])
@@ -574,6 +576,9 @@ model LeadOffer {
 model Proposal {
   id             String  @id @default(cuid())
   publicId       String  @unique
+  // Which estimator made it — "fence", "roof", "hvac" — so the trade boards
+  // (2026-09-20) list it and its materials count against that trade's stock.
+  trade          String?
   organizationId String
   ownerId        String?
   clientId       String?
@@ -921,6 +926,8 @@ model Job {
   title          String
   status         String    @default("SCHEDULED")
   scopeOfWork    String? // seeded from the linked proposal's scope; shown above notes on the job
+  // When the crew marked the pick list loaded from the warehouse (2026-09-20).
+  materialsLoadedAt DateTime?
   notes          String?
   startsAt       DateTime?
   endsAt         DateTime?
@@ -2332,4 +2339,72 @@ model HvacSettings {
   rateCardJson   String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+}
+
+// ── WAREHOUSE STOCK (2026-09-20) ─────────────────────────────────────────────
+// Owner: the fence, roof and HVAC companies keep their own stock — posts,
+// concrete, boards, shingles, underlayment, equipment — and the proposals
+// should draw on it: forecast while open, reserved once sold, taken out when
+// the crew loads the truck, with a warning before it runs short and a
+// purchase order to the supplier. One warehouse per company.
+
+model Supplier {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  email          String?
+  phone          String?
+  website        String?
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items        InventoryItem[]
+
+  @@index([organizationId])
+}
+
+model InventoryItem {
+  id             String   @id @default(cuid())
+  organizationId String
+  /// "fence" | "roof" | "hvac"
+  trade          String
+  name           String
+  /// The name normalized for matching a proposal line to this item.
+  key            String
+  unit           String   @default("each")
+  onHand         Float    @default(0)
+  /// Warn when available stock falls under this; null = the next job's need.
+  reorderPoint   Float?
+  supplierId     String?
+  supplierSku    String?
+  lastCost       Float?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier     Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  movements    InventoryMovement[]
+
+  @@unique([organizationId, trade, key])
+  @@index([organizationId, trade])
+}
+
+model InventoryMovement {
+  id         String   @id @default(cuid())
+  itemId     String
+  /// RECEIVED | PICKED | USED | RETURNED | ADJUST
+  kind       String
+  /// Signed: received and returned add, picked and used take away.
+  quantity   Float
+  jobId      String?
+  proposalId String?
+  note       String?
+  actorId    String?
+  createdAt  DateTime @default(now())
+
+  item InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, createdAt])
+  @@index([jobId])
 }

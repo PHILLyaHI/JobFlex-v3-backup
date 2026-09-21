@@ -80,7 +80,11 @@ export const NAV_SECTIONS: NavSection[] = [
       // keep their items below.
       { label: "Smart Proposal", icon: "i-bulb", href: "/dashboard/advanced-ai" },
       { label: "Roof estimator", icon: "i-roof", href: "/dashboard/roof-estimator" },
+      // The trade boards (2026-09-20): each estimator's proposals, its
+      // warehouse stock and its suppliers, right under the estimator.
+      { label: "Roofing board", icon: "i-roof", href: "/dashboard/roof-estimator/board" },
       { label: "Fence estimator", icon: "i-fence", href: "/dashboard/fence-estimator" },
+      { label: "Fence board", icon: "i-fence", href: "/dashboard/fence-estimator/board" },
       // Added 2026-08-22 with the Video estimator port. Its position — directly
       // after the other two engines — is the donor's own
       // (jobflex-videoestimator-blueprint.html sidebar). Not in ESTIMATOR's
@@ -92,6 +96,7 @@ export const NAV_SECTIONS: NavSection[] = [
       // item asked for `i-bolt`, which only the Financials sprite carries, so
       // the sidebar drew a blank beside it on every other page).
       { label: "HVAC estimator", icon: "i-heatpump", href: "/dashboard/hvac-estimator" },
+      { label: "HVAC board", icon: "i-heatpump", href: "/dashboard/hvac-estimator/board" },
       { label: "Phone", icon: "i-phone", href: "/dashboard/phone" },
       { label: "Messages", icon: "i-msg", href: "/dashboard/messages" },
       { label: "Reviews", icon: "i-thumb", href: "/dashboard/reviews" },

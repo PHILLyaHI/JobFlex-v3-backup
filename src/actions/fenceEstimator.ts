@@ -240,6 +240,8 @@ export async function convertFenceEstimateToProposal(raw: unknown) {
 
   const proposal = await db.proposal.create({
     data: {
+      // The trade board lists it and its materials count against the fence stock (2026-09-20).
+      trade: "fence",
       publicId: randomUUID(),
       organizationId,
       ownerId: user.id,

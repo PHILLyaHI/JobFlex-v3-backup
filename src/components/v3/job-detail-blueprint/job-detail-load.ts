@@ -23,6 +23,7 @@ import { db } from "@/lib/db";
 import { isOwnerOrManager, isWorkerRole } from "@/lib/orgContext";
 import { contractTotal } from "@/lib/contractTotal";
 import { crewTotals, jobMoney } from "@/lib/jobCosting";
+import { isTradeId, pickList, type StockItem } from "@/lib/inventory";
 import {
   STATUS_TO_KEY,
   type JdAssignState,
@@ -33,6 +34,7 @@ import {
   type JdExpense,
   type JdMoney,
   type JdPhoto,
+  type JdPick,
   type JdWorkerOption,
   type JobDetailRecord,
 } from "./job-detail-data";
@@ -233,7 +235,8 @@ export async function loadJobDetail(
           total: true,
           // The job's money card: the estimate's own cost side and what the
           // client has actually paid (lib/jobCosting).
-          lineItems: { select: { quantity: true, materialCost: true, laborCost: true } },
+          trade: true,
+          lineItems: { select: { name: true, measurementType: true, quantity: true, materialCost: true, laborCost: true } },
           payments: { where: { status: "PAID" }, select: { amount: true } },
           changeOrders: { orderBy: { createdAt: "asc" } },
         },
@@ -320,6 +323,7 @@ export async function loadJobDetail(
     plannedProfit: m.plannedProfit,
     costVariance: m.costVariance,
   };
+  const pick = await pickFor(organizationId, job.proposal?.trade ?? null, job.proposal?.lineItems.filter((l) => l.materialCost > 0) ?? []);
 
   // A change order amends the proposal (the contract) or, legacy, the job
   // itself; the job page shows both sets as one list, oldest first.
@@ -394,6 +398,8 @@ export async function loadJobDetail(
     photos,
     expenses,
     money,
+    pick,
+    loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
     roster,
     booking: bookingWindow(job.startsAt, job.endsAt),
     canWrite: isOwnerOrManager(role),
@@ -436,6 +442,9 @@ async function loadWorkerScoped(
     include: {
       // Name and address only — see the header's disclosure note.
       client: { select: { name: true, address: true, city: true, state: true, zip: true } },
+      // The pick list only: material lines by name and count — no price
+      // column is selected, so the worker's record still carries no money.
+      proposal: { select: { trade: true, lineItems: { where: { materialCost: { gt: 0 } }, select: { name: true, measurementType: true, quantity: true } } } },
       events: { orderBy: { startsAt: "asc" } },
       photos: { orderBy: { createdAt: "desc" } },
       assignments: {
@@ -513,6 +522,8 @@ async function loadWorkerScoped(
     photos,
     expenses: [],
     money: null,
+    pick: await pickFor(organizationId, job.proposal?.trade ?? null, job.proposal?.lineItems ?? []),
+    loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
     roster: [],
     // Never read — `canWrite` is false, so nothing on this edition books
     // anything — but the shape is the shape.
@@ -525,4 +536,24 @@ async function loadWorkerScoped(
     viewer: "worker",
     assignment: OWN_ASSIGNMENT_STATE[own] ?? "wait",
   };
+}
+
+/**
+ * The crew's pick list for a job: the proposal's material lines against the
+ * warehouse's items for that trade. A job with no trade still lists its
+ * materials — the crew still brings them — with nothing on the shelf to check.
+ */
+async function pickFor(organizationId: string, trade: string | null, lines: Array<{ name: string; measurementType: string; quantity: number }>): Promise<JdPick[]> {
+  if (!lines.length) return [];
+  const items: StockItem[] = isTradeId(trade)
+    ? (await db.inventoryItem.findMany({ where: { organizationId, trade } })).map((i) => ({ id: i.id, name: i.name, key: i.key, unit: i.unit, onHand: i.onHand, reorderPoint: i.reorderPoint, supplierId: i.supplierId }))
+    : [];
+  return pickList(items, lines.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType.toLowerCase().replace("_", " ") }))).map((r) => ({
+    name: r.name,
+    unit: r.unit,
+    quantity: r.quantity,
+    tracked: r.itemId !== null,
+    enough: r.enough,
+    onHand: r.onHand,
+  }));
 }

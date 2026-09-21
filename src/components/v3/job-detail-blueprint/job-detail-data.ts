@@ -196,6 +196,8 @@ export type JdMoney = {
   costVariance: number;
 };
 
+export type JdPick = { name: string; unit: string; quantity: number; tracked: boolean; enough: boolean; onHand: number | null };
+
 export type JdExpense = {
   id: string;
   vendor: string;
@@ -256,6 +258,12 @@ export type JobDetailRecord = {
   expenses: JdExpense[];
   /** The job's own money — null on a field worker's record. */
   money: JdMoney | null;
+  /** What to take from the warehouse for this job (lib/inventory pickList):
+   *  every material line of the proposal in whole units, with whether the
+   *  shelf has it. Both audiences see it — the crew is who loads the truck. */
+  pick: JdPick[];
+  /** ISO time the truck was marked loaded, else null. */
+  loadedAt: string | null;
   /** Roster minus the workers already on the job. */
   roster: JdWorkerOption[];
   booking: JdBooking;

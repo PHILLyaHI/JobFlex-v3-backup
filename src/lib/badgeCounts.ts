@@ -3,6 +3,7 @@
 // (organizationId, userId, role) and must never be client-invokable, or any
 // caller could read another tenant's counts. The layout calls them directly.
 import { db } from "@/lib/db";
+import { lowStockCounts } from "@/lib/inventoryBoard";
 
 // Nav surfaces whose badge clears on view. `key` is the NavSeen row key; `href`
 // is the badge key the sidebar/tab bar reads. Kept together so the two can't drift.
@@ -144,6 +145,7 @@ export async function getBadgeCounts(
     countNewForSurface("phone", organizationId, seenAt("phone")),
   ]);
 
+  const low = await lowStockCounts(organizationId).catch(() => ({ fence: 0, roof: 0, hvac: 0 }));
   return {
     "/dashboard/messages": messagesUnread,
     "/dashboard/leads": leads,
@@ -160,6 +162,11 @@ export async function getBadgeCounts(
     "/dashboard/workers": workersNew,
     "/dashboard/trade": tradeNew,
     "/dashboard/phone": phoneMissed,
+    // Warehouse stock low for the next job, per trade board (2026-09-20).
+    // Cosmetic like every badge: a failure here is a zero, never an error.
+    "/dashboard/fence-estimator/board": low.fence,
+    "/dashboard/roof-estimator/board": low.roof,
+    "/dashboard/hvac-estimator/board": low.hvac,
   };
 }
 

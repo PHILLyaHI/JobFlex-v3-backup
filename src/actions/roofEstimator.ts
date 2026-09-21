@@ -248,6 +248,8 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
 
   const proposal = await db.proposal.create({
     data: {
+      // The trade board lists it and its materials count against the roof stock (2026-09-20).
+      trade: "roof",
       publicId: randomUUID(),
       organizationId,
       ownerId: user.id,
