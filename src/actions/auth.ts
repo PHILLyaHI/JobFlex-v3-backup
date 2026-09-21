@@ -9,6 +9,7 @@ import { TRADE_TYPES } from "@/lib/tradeTypes";
 import { enforceRateLimit, clientIp, rateLimitShared, HOUR, MINUTE } from "@/lib/rateLimit";
 import { requireOwner } from "@/lib/orgContext";
 import { isPlaceholderOrgName } from "@/lib/orgSetup";
+import { trackActivation } from "@/lib/activation-events";
 
 // Public, unauthenticated auth actions: self-serve registration and the
 // forgot/reset-password flow. These run BEFORE the caller has a session, so they
@@ -134,6 +135,8 @@ export async function registerAccount(raw: unknown): Promise<{ ok: true }> {
     }
     throw e;
   }
+
+  trackActivation("organization_created", orgId, { flow: "password" });
 
   // Best-effort attribution bind — permanently links the new org to a captured
   // ?promo/?ref code (explicit pill value first, 30-day capture cookie as

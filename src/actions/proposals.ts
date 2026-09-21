@@ -20,6 +20,7 @@ import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 import { priceLinesForClient } from "@/lib/pricing/markup";
 import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
+import { trackActivation, trackProposalCreated } from "@/lib/activation-events";
 import { logServerError } from "@/lib/server-events";
 
 const lineItemSchema = z.object({
@@ -450,6 +451,8 @@ export async function saveProposal(raw: unknown) {
     },
   });
 
+  trackProposalCreated(organizationId, "editor");
+
   revalidatePath("/dashboard/proposals");
   if (created.projectId) revalidatePath(`/dashboard/projects/${created.projectId}`);
   return { id: created.id, publicId: created.publicId };
@@ -486,6 +489,8 @@ export async function sendProposal(id: string) {
     data: { status: "SENT", sentAt: new Date() },
   });
   await snapshotProposal(id, "sent");
+  // A re-send of an already sent proposal is not a second activation.
+  if (!p.sentAt) trackActivation("proposal_sent", organizationId);
   await db.activityEvent.create({
     data: {
       organizationId,
@@ -560,6 +565,12 @@ export async function updateProposalStatus(id: string, status: ProposalStatus): 
   });
   if (status === "ACCEPTED" || status === "PAID") {
     await snapshotProposal(id, status === "ACCEPTED" ? "accepted" : "manual");
+  }
+  // The office marking it accepted (a signature on paper); the client's own
+  // click reports from api/public-quote/[publicId]/accept. Un-marking PAID or
+  // COMPLETED back to ACCEPTED is not an approval.
+  if (status === "ACCEPTED" && (p.status === "DRAFT" || p.status === "SENT" || p.status === "VIEWED" || p.status === "DECLINED")) {
+    trackActivation("proposal_approved", organizationId, { via: "office" });
   }
   // Work is done → the client gets their review link (once per proposal,
   // whichever door completed it — see lib/reviews/requestForProposal.ts).

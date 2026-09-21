@@ -14,6 +14,7 @@ import {
   customPriceCents,
   normalizeCustomPages,
 } from "@/lib/customPlan";
+import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
 import { logServerError } from "@/lib/server-events";
 
 /**
@@ -36,6 +37,7 @@ export async function setOrgPlan(planSlug: string) {
   const periodEnd = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 30);
   const stored = plan.slug.toUpperCase();
 
+  const planWas = await planSnapshot(organizationId);
   await db.subscription.upsert({
     where: { organizationId },
     update: {
@@ -51,6 +53,7 @@ export async function setOrgPlan(planSlug: string) {
       currentPeriodEnd: plan.isFree ? null : periodEnd,
     },
   });
+  reportPlanChange(organizationId, "self_serve", planWas);
   revalidatePath("/dashboard/settings/account");
   revalidatePath("/dashboard/subscription");
   // The responsive staging build still serves this surface too; both refresh.
@@ -259,6 +262,7 @@ export async function changePlan(
     const periodEnd = updated.current_period_end
       ? new Date(updated.current_period_end * 1000)
       : null;
+    const planWas = await planSnapshot(organizationId);
     await db.subscription.update({
       where: { organizationId },
       data: {
@@ -269,6 +273,7 @@ export async function changePlan(
         currentPeriodEnd: periodEnd,
       },
     });
+    reportPlanChange(organizationId, "self_serve", planWas);
   } catch (err) {
     logServerError("billing.changePlan", err, { kind: "action", organizationId });
     const msg = err instanceof Error ? err.message : "";

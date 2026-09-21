@@ -12,6 +12,7 @@ import {
   STRIPE_MAX_PAGES,
   STRIPE_PAGE_SIZE,
 } from "@/components/v3/admin-subscribers/billing-metrics";
+import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
 
 export interface AdminUserRow {
   id: string;
@@ -426,11 +427,13 @@ export async function updateAdminUser(raw: unknown) {
       canceledAt: null,
       ...DETACH_FROM_STRIPE,
     };
+    const planWas = await planSnapshot(org.id);
     await db.subscription.upsert({
       where: { organizationId: org.id },
       update: grant,
       create: { organizationId: org.id, ...grant },
     });
+    reportPlanChange(org.id, "admin", planWas);
   }
 
   revalidateAdminBilling();
@@ -509,11 +512,13 @@ export async function updateAdminSubscription(raw: unknown) {
     canceledAt: data.canceledAt,
     ...DETACH_FROM_STRIPE,
   };
+  const planWas = await planSnapshot(org.id);
   await db.subscription.upsert({
     where: { organizationId: org.id },
     update: fields,
     create: { organizationId: org.id, ...fields },
   });
+  reportPlanChange(org.id, "admin", planWas);
 
   revalidateAdminBilling();
 }
@@ -841,11 +846,13 @@ export async function syncSubscriptionsFromStripe(): Promise<StripeSyncResult> {
       continue;
     }
 
+    const planWas = await planSnapshot(organizationId);
     await db.subscription.upsert({
       where: { organizationId },
       update: next,
       create: { organizationId, ...next },
     });
+    reportPlanChange(organizationId, "admin", planWas);
     result.written += 1;
   }
 

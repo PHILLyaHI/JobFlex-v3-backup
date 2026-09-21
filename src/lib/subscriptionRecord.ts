@@ -10,6 +10,7 @@
 
 import { db } from "@/lib/db";
 import type { SubscriptionStatus } from "@/lib/prismaEnums";
+import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
 
 export interface PlanChangeRecord {
   organizationId: string;
@@ -27,6 +28,7 @@ export interface PlanChangeRecord {
  *  the slug it recorded, so callers can hand it straight to the page. */
 export async function recordPlanChange(rec: PlanChangeRecord): Promise<string> {
   const { organizationId, planSlug, status, customerId, subId, trialEnd, periodEnd } = rec;
+  const planWas = await planSnapshot(organizationId);
   await db.subscription.upsert({
     where: { organizationId },
     update: {
@@ -49,5 +51,6 @@ export async function recordPlanChange(rec: PlanChangeRecord): Promise<string> {
       currentPeriodEnd: periodEnd,
     },
   });
+  reportPlanChange(organizationId, "checkout", planWas);
   return planSlug;
 }

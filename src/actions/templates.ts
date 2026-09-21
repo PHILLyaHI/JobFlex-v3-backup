@@ -9,6 +9,7 @@ import { requireManager, requireProposalStaff } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
+import { trackProposalCreated } from "@/lib/activation-events";
 
 interface TemplateBody {
   description?: string | null;
@@ -198,6 +199,7 @@ export async function createProposalFromTemplate(templateId: string) {
       summary: `Created proposal "${proposal.title}" from template "${t.name}"`,
     },
   });
+  trackProposalCreated(organizationId, "template");
 
   revalidatePath("/dashboard/proposals");
   return { id: proposal.id };

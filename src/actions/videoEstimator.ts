@@ -40,6 +40,7 @@ import {
   walkthroughInputSchema,
   type WalkthroughAnalysis,
 } from "@/lib/estimate/video-schema";
+import { trackActivation } from "@/lib/activation-events";
 import { logServerError } from "@/lib/server-events";
 
 /** Vision quality matters more here than on the text-only planner: reading a
@@ -192,6 +193,7 @@ export async function analyzeWalkthrough(
     console.info(
       `[videoEstimator] read "${data.title}" · type=${data.projectType} · ${data.measurements.length} measurements · ${data.questions.length} questions · confidence ${data.confidence}`,
     );
+    trackActivation("estimator_used", organizationId, { estimator: "video" });
     return { ok: true, data };
   } catch (err) {
     logServerError("videoEstimator.analyzeWalkthrough", err, { kind: "action", organizationId });

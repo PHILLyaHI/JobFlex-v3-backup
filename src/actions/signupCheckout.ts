@@ -42,6 +42,7 @@ import { after } from "next/server";
 import { captureSignupOutcome, trafficIdentitySchema } from "@/lib/traffic-capture-server";
 import { sendMetaEvent, type MetaSignupContext } from "@/lib/metaCapi";
 import { sendWelcomeFirstEstimate } from "@/lib/email/welcome";
+import { trackActivation } from "@/lib/activation-events";
 
 /** How long an unpaid intent is honoured. Long enough to pay, short enough
  *  that an abandoned card never becomes an account a week later. */
@@ -453,6 +454,9 @@ export async function completePendingSignup(
     }
     throw e;
   }
+
+  // Sent after the response, so it reads the subscription row written below.
+  trackActivation("organization_created", orgId, { flow: "checkout" });
 
   // The subscription row, written here rather than by the webhook: at session
   // creation there was no organization for the webhook's metadata to name.

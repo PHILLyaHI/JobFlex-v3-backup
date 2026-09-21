@@ -20,6 +20,7 @@ import {
 import { notifyPaymentIssue, notifyPaymentReceived } from "@/lib/notify";
 import { billPlatformFee } from "./feeBilling";
 import { reopenInvoicesForPayment, repriceOpenInvoices, settleInvoicesForPayment } from "./invoiceRecord";
+import { trackActivation } from "@/lib/activation-events";
 
 type Tx = Prisma.TransactionClient;
 
@@ -415,6 +416,8 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
     return { outcome: "orphan", paymentId: result.paymentId };
   }
   if (result.outcome === "settled") {
+    // Every door — Stripe, Square, Stax, a cheque entered by hand — settles here.
+    trackActivation("payment_recorded", input.organizationId, { provider: input.provider, online: input.provider !== "MANUAL" });
     await notifyPaymentReceived({ paymentId: result.paymentId }).catch((err) =>
       console.warn("[settle] notify failed", err),
     );

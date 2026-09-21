@@ -18,6 +18,7 @@ import {
   commissionBasisCents,
   isWithinCommissionWindow,
 } from "@/lib/commission";
+import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
 
 // ── small helpers ─────────────────────────────────────
 function idOf(v: string | { id: string } | null | undefined): string | null {
@@ -88,6 +89,7 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
   const promo = await resolvePromoCode(sub.discount);
   const status = mapStripeStatus(sub.status);
 
+  const planWas = await planSnapshot(organizationId);
   await db.subscription.upsert({
     where: { organizationId },
     update: {
@@ -115,6 +117,7 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
       appliedCouponId: sub.discount?.coupon?.id ?? null,
     },
   });
+  reportPlanChange(organizationId, "stripe", planWas);
 
   if (promo && customerId) {
     // Confirm/create the attribution off the Stripe-issued subscription discount.
@@ -147,10 +150,14 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
 
 export async function markSubscriptionCanceled(sub: Stripe.Subscription) {
   const externalSubId = sub.id;
+  // plan_changed → "CANCELED" is per organization; a subscription never mirrored has none.
+  const mirror = await db.subscription.findFirst({ where: { externalSubId }, select: { organizationId: true } });
+  const planWas = mirror ? await planSnapshot(mirror.organizationId) : undefined;
   await db.subscription.updateMany({
     where: { externalSubId },
     data: { status: SubscriptionStatus.CANCELED, canceledAt: new Date() },
   });
+  if (mirror) reportPlanChange(mirror.organizationId, "stripe", planWas);
   await db.attribution.updateMany({
     where: { stripeSubscriptionId: externalSubId, status: AttributionStatus.ACTIVE },
     data: { status: AttributionStatus.ENDED, endedAt: new Date() },

@@ -19,6 +19,7 @@ import { getConnections } from "@/lib/payments/connections";
 import { getStripeMode } from "@/lib/stripeMode";
 import { resolvePayOptions } from "@/lib/payments/payOptions";
 import { recordInvoiceSent } from "@/lib/payments/invoiceRecord";
+import { trackActivation } from "@/lib/activation-events";
 
 export type InvoiceMethod = "card" | "bank" | "any";
 
@@ -152,6 +153,8 @@ export async function sendInvoice(input: { proposalId: string; installmentId: st
   }
   const sent = report.email === "sent" || report.sms === "sent";
   if (!sent) return { ...report, ok: false, error: "Nothing could be sent — no working email or phone." };
+  // It reached the client by at least one channel. The method is the label; never the amount.
+  trackActivation("invoice_sent", proposal.organizationId, { method: input.method, by_email: report.email === "sent", by_sms: report.sms === "sent" });
   if (stageRow) {
     await db.installment.update({ where: { id: stageRow.id }, data: { invoiceMethod: input.method, invoiceSentAt: new Date() } }).catch(() => {});
   }

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { createJobFromProposalInternal } from "@/lib/jobFromProposal";
 import { rateLimitShared, ipFromRequest, HOUR } from "@/lib/rateLimit";
 import { signRevert } from "@/lib/quoteRevert";
+import { trackActivation } from "@/lib/activation-events";
 
 export async function POST(
   req: Request,
@@ -57,6 +58,7 @@ export async function POST(
       meta: JSON.stringify({ ip }),
     },
   });
+  trackActivation("proposal_approved", proposal.organizationId, { via: "client" });
 
   // Auto-create a Job + JobEvent so the new work shows up on calendar + jobs list immediately.
   let jobId: string | null = null;
