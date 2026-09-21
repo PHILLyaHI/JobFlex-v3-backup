@@ -16,7 +16,7 @@ const CHECKS = fs.readdirSync(__dirname).filter((f) => f.endsWith(".check.ts")).
 const GUARD_CHECK = "qa-guard.check.js"; // plain node: it drives this folder's own guard
 const PAGES = [
   ["fin-test.js"], ["messages-test.js"], ["phone-test.js", "seed-phone.js"], ["reviews-test.js"], ["reviews-chips.js"],
-  ["ref-test.js"], ["reports-test.js"], ["trade-test.js"], ["trade-tail.js"], ["fixpass-smoke.js"],
+  ["ref-test.js"], ["reports-test.js"], ["trade-test.js"], ["trade-tail.js"], ["fixpass-smoke.js"], ["fence-tiers-test.js"],
   ["ann-test.js"], ["sub-test.js"], ["fence-test.js"], ["roof-test.js"],
 ];
 const run = (cmd, args, cwd) => spawnSync(cmd, args, { cwd, encoding: "utf8", shell: process.platform === "win32", timeout: 300000 });

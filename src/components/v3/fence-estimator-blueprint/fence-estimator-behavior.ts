@@ -177,6 +177,13 @@ type FenceState = {
    *  tier click prices its own type without moving the ladder, so Better
    *  always brings the designed fence back. */
   tierBase: string;
+  /** Which of Good / Better / Best is picked — by its ID. It used to be worked
+   *  out from "does this tier's type and stain match what is being priced",
+   *  and two tiers can match at once: Better had no stain test, so with stain
+   *  on it lit beside Best; and where Best (or Good) is the SAME type as the
+   *  base — composite, black chain-link, steel, 3-rail — every such tier lit
+   *  together (2026-09-21). One id, one tier. */
+  tier: 'good' | 'better' | 'best';
   /** The shop's price book: what it charges per type, where it differs from the catalog. */
   rates: RateBook;
   /** The shop's own fence types, each built like a catalog type. */
@@ -265,6 +272,7 @@ export function initFenceEstimatorContent(
     terrain: 'auto',
     wastePct: 10,
     tierBase: DEFAULT_FENCE_TYPE,
+    tier: 'better',
     rates: {},
     customs: [],
     runs: [],
@@ -420,6 +428,30 @@ export function initFenceEstimatorContent(
     const w = Number(data.wastePct);
     if (Number.isFinite(w) && w >= 0 && w <= 30) fs.wastePct = w;
   }
+  // The picked tier (with the type the ladder stands on) survives a reload and
+  // the round trip to the proposal: this tab's storage, like the rate book.
+  const TIER_KEY = 'jf.fence.tier';
+  function rememberTier() {
+    try {
+      window.sessionStorage.setItem(TIER_KEY, JSON.stringify({ tier: fs.tier, base: fs.tierBase, stain: fs.stain }));
+    } catch { /* no storage: the pick lives for the visit */ }
+  }
+  function restoreTier() {
+    try {
+      const raw = window.sessionStorage.getItem(TIER_KEY);
+      const v = raw ? JSON.parse(raw) : null;
+      if (!v || !['good', 'better', 'best'].includes(v.tier)) return;
+      if (!typeRows().some(function (r) { return r.id === v.base; })) return;
+      const base = resolveFenceType(v.base, fs.customs);
+      if (base.custom) return;
+      const picked = fenceTiers(base.type.id, fs.height).find(function (t) { return t.id === v.tier; });
+      if (!picked) return;
+      fs.tierBase = v.base;
+      fs.tier = picked.id;
+      fs.material = picked.type;
+      fs.stain = base.type.stainable || picked.stain ? picked.stain : !!v.stain;
+    } catch { /* a corrupt value: the defaults stand */ }
+  }
   function restoreRate() {
     try {
       const raw = window.sessionStorage.getItem(RATE_KEY);
@@ -437,7 +469,7 @@ export function initFenceEstimatorContent(
       const hasLocal = !!window.sessionStorage.getItem(RATE_KEY);
       if (!hasLocal) {
         applyBook(doc);
-        if (!typeRows().some(function (r) { return r.id === fs.material; })) { fs.material = DEFAULT_FENCE_TYPE; fs.tierBase = DEFAULT_FENCE_TYPE; }
+        if (!typeRows().some(function (r) { return r.id === fs.material; })) { fs.material = DEFAULT_FENCE_TYPE; fs.tierBase = DEFAULT_FENCE_TYPE; fs.tier = 'better'; }
         renderStudio();
       }
     } catch {
@@ -517,10 +549,15 @@ export function initFenceEstimatorContent(
     const layout = layoutInput();
     const tiers = fenceTiers(base.type.id, fs.height);
     const html = tiers.map(function (tier) {
-      const total = priceFencePackage({ ...layout, type: tier.type, stain: tier.stain || (layout.stain && tier.id !== 'good') }, priceOpts()).subtotal;
-      const on = tier.type === fs.material && (tier.id !== 'best' || fs.stain === tier.stain || !base.type.stainable);
+      // The card shows what a click on it will price — the click sets stain to
+      // the tier's own on a stainable base (or a stained tier) and leaves it be
+      // otherwise. Better used to carry the stain switch's price while a click
+      // on it took the stain off: two cards, one number, a different total.
+      const stainFor = base.type.stainable || tier.stain ? tier.stain : layout.stain;
+      const total = priceFencePackage({ ...layout, type: tier.type, stain: stainFor }, priceOpts()).subtotal;
+      const on = tier.id === fs.tier;
       const t = typeRow(tier.type);
-      return '<button class="tier' + (on ? ' on' : '') + '" type="button" data-tier="' + tier.id + '" title="' + esc(tier.tagline) + '">' +
+      return '<button class="tier' + (on ? ' on' : '') + '" type="button" data-tier="' + tier.id + '" aria-pressed="' + String(on) + '" title="' + esc(tier.tagline) + '">' +
         '<span class="tier-n">' + tier.name + '</span>' +
         '<span class="tier-t">' + esc(t.label) + (tier.stain ? ' · stained' : '') + '</span>' +
         '<span class="tier-v">' + money(total) + '</span></button>';
@@ -845,6 +882,10 @@ export function initFenceEstimatorContent(
   function pickMaterial(m: HTMLElement) {
     fs.material = m.dataset.mat || '';
     fs.tierBase = fs.material;
+    // A type picked from the list is "the fence as designed": Better — or Best,
+    // when the stain that makes it Best is already switched on.
+    fs.tier = fs.stain && resolveFenceType(fs.material, fs.customs).type.stainable ? 'best' : 'better';
+    rememberTier();
     $$('#matList [data-mat]').forEach(function (li) {
       const picked = li === m;
       li.classList.toggle('on', picked);
@@ -1168,8 +1209,10 @@ export function initFenceEstimatorContent(
       const picked = fenceTiers(base.type.id, fs.height).find(function (t) { return t.id === tier.dataset.tier; });
       if (!picked) return;
       // Price the tier's type; the ladder stays on the designed fence.
+      fs.tier = picked.id;
       fs.material = picked.type;
       if (base.type.stainable || picked.stain) fs.stain = picked.stain;
+      rememberTier();
       $$('#matList [data-mat]').forEach(function (li) {
         const on = li.dataset.mat === fs.material;
         li.classList.toggle('on', on);
@@ -1218,6 +1261,9 @@ export function initFenceEstimatorContent(
     if (target.closest('#stainTgl')) {
       fs.stain = !fs.stain;
       $('#stainTgl')?.classList.toggle('on', fs.stain);
+      // Stain IS the difference between Better and Best on a wood fence.
+      if (fs.material === fs.tierBase && resolveFenceType(fs.tierBase, fs.customs).type.stainable) fs.tier = fs.stain ? 'best' : 'better';
+      rememberTier();
       renderFigures();
       return;
     }
@@ -1457,6 +1503,8 @@ export function initFenceEstimatorContent(
       fs.terrain = 'auto';
       fs.material = DEFAULT_FENCE_TYPE;
       fs.tierBase = DEFAULT_FENCE_TYPE;
+      fs.tier = 'better';
+      rememberTier();
       fs.height = 6;
       clearFenceDone();
       // The rate card and any materials the shop added SURVIVE: they are the
@@ -3896,6 +3944,7 @@ export function initFenceEstimatorContent(
   // The rate override is read BEFORE the first paint: restoring it afterwards
   // would render the card price and then swap it, which reads as a glitch.
   restoreRate();
+  restoreTier();
   renderStudio();
   // The organization's saved book lands after the first paint; a tab with
   // its own edits keeps them (they are newer than the saved copy).
