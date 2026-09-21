@@ -551,3 +551,712 @@
   :global(.jf-blueprint .content) .bo-table td input[aria-label="Unit"] { width: 100% !important; }
   :global(.jf-blueprint .content) .bo-note { font-size: 10.5px; }
 }
+
+/* ============================================================
+   THE STEPPER (2026-09-20) — the owner's rework of the page's chrome.
+   The five cards became five STEPS of one stepper, with a summary beside
+   them; the job picker became a grouped grid; the address field took the
+   shell's search-field frame; the lookup shows what each source found.
+   Everything below is layout and skin — tokens from the dashboard module's
+   `.content` block, no literals that a token already names. Later in the
+   file than the rules it replaces, so it wins at equal specificity.
+   ============================================================ */
+
+/* Two columns: the steps, and the summary rail (sticky). */
+:global(.jf-blueprint .content) .hv { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; margin-bottom: 16px; }
+:global(.jf-blueprint .content) .hv-main { min-width: 0; display: grid; gap: 12px; }
+:global(.jf-blueprint .content) .hv-l2 { grid-template-areas: "rail rail" "main sum"; }
+:global(.jf-blueprint .content) .hv-l2 > .rail { grid-area: rail; }
+:global(.jf-blueprint .content) .hv-l2 > .hv-main { grid-area: main; }
+:global(.jf-blueprint .content) .hv-l2 > .sum { grid-area: sum; }
+
+/* ── A step ───────────────────────────────────────────────────── */
+:global(.jf-blueprint .content) .st { background: #fff; border: var(--border); border-radius: var(--radius); box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
+:global(.jf-blueprint .content) .st-locked { border-style: dashed; border-color: var(--muted-faint); background: var(--paper); }
+:global(.jf-blueprint .content) .st-h {
+  display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  width: 100%; padding: 13px 16px; text-align: left;
+  border: 0; background: none; color: var(--ink); font-family: var(--font); cursor: pointer;
+}
+:global(.jf-blueprint .content) .st-h:disabled { cursor: default; }
+:global(.jf-blueprint .content) .st-h:not(:disabled):hover { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .st-h:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+:global(.jf-blueprint .content) .st-open > .st-h { border-bottom: 1.5px solid var(--hair-soft); cursor: default; }
+/* ONE number style for every step: a 26px square, mono figure, ink line.
+   Open — ink fill; done and folded — blueprint fill with the tick; locked —
+   dashed, muted. */
+:global(.jf-blueprint .content) .st-n {
+  display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; flex: none;
+  border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; color: var(--ink);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+}
+:global(.jf-blueprint .content) .st-n .ic { width: 14px; height: 14px; stroke-width: 2.5; }
+:global(.jf-blueprint .content) .st-open .st-n { background: var(--ink); color: var(--paper); }
+:global(.jf-blueprint .content) .st-done:not(.st-open) .st-n { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .st-locked .st-n { border-style: dashed; border-color: var(--muted-light); color: var(--muted-light); background: transparent; }
+:global(.jf-blueprint .content) .st-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+:global(.jf-blueprint .content) .st-title { font-size: 14px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .st-locked .st-title { color: var(--muted); }
+:global(.jf-blueprint .content) .st-lead { font-size: 13px; line-height: 1.45; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .st-sum { font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content) .st-why { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content) .st-edit { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--blueprint); padding: 6px 9px; border: 1.5px solid var(--blueprint); border-radius: var(--radius); }
+:global(.jf-blueprint .content) .st-h:not(:disabled):hover .st-edit { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .st-b[hidden] { display: none; }
+/* The step's own "next" row: one primary action and what it leads to. */
+:global(.jf-blueprint .content) .st-next { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; padding-top: 14px; border-top: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .st-next .btn .ic { width: 14px; height: 14px; }
+:global(.jf-blueprint .content) .st-next--pad { margin: 0; padding: 14px 18px 16px; }
+/* Motion: the open body reveals the sheet's way — settle in, once. */
+:global(.jf-blueprint .content) .st-b { animation: hvIn 0.42s var(--ease) both; }
+@keyframes hvIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { :global(.jf-blueprint .content) .st-b { animation: none; } }
+
+/* "How this is calculated" — the detail folded under one line. */
+:global(.jf-blueprint .content) .how { margin-top: 12px; }
+:global(.jf-blueprint .content) .how-top { margin: 0; padding: 10px 18px 0; }
+:global(.jf-blueprint .content) .how > summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--blueprint); }
+:global(.jf-blueprint .content) .how > summary::-webkit-details-marker { display: none; }
+:global(.jf-blueprint .content) .how > summary::before { content: "+"; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid currentColor; border-radius: var(--radius); font-size: 12px; }
+:global(.jf-blueprint .content) .how[open] > summary::before { content: "−"; }
+:global(.jf-blueprint .content) .how-b { margin-top: 8px; max-width: 70ch; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+:global(.jf-blueprint .content) .how-b b { color: var(--ink); }
+
+/* ── Layout 2: the rail ──────────────────────────────────────── */
+:global(.jf-blueprint .content) .rail {
+  position: sticky; top: 0; z-index: 4;
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0;
+  margin: 0; padding: 0; list-style: none;
+  background: #fff; border: var(--border); border-radius: var(--radius); box-shadow: 3px 3px 0 var(--shadow);
+}
+:global(.jf-blueprint .content) .rail-i { min-width: 0; border-right: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .rail-i:last-child { border-right: 0; }
+:global(.jf-blueprint .content) .rail-b { display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: center; gap: 10px; width: 100%; padding: 11px 12px; text-align: left; border: 0; background: none; color: var(--ink); font-family: var(--font); cursor: pointer; }
+:global(.jf-blueprint .content) .rail-b:disabled { cursor: default; color: var(--muted); }
+:global(.jf-blueprint .content) .rail-b:not(:disabled):hover { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .rail-b:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+:global(.jf-blueprint .content) .rail-i.on .rail-b { box-shadow: inset 0 -3px 0 var(--blueprint); }
+:global(.jf-blueprint .content) .rail-i.on .st-n { background: var(--ink); color: var(--paper); }
+:global(.jf-blueprint .content) .rail-i.done:not(.on) .st-n { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .rail-i.locked .st-n { border-style: dashed; border-color: var(--muted-light); color: var(--muted-light); background: transparent; }
+:global(.jf-blueprint .content) .rail-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+:global(.jf-blueprint .content) .rail-title { font-size: 11.5px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .rail-s { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content) .rail-i.on .rail-s { color: var(--blueprint); text-transform: uppercase; letter-spacing: 0.1em; }
+
+/* ── The job picker: three columns, grouped ──────────────────── */
+:global(.jf-blueprint .content) .jg + .jg { margin-top: 14px; }
+:global(.jf-blueprint .content) .jg-k { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+:global(.jf-blueprint .content) .jobs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+:global(.jf-blueprint .content) .job {
+  position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 12px; row-gap: 3px; align-items: start; text-align: left;
+  min-height: 74px; padding: 12px 40px 12px 12px; cursor: pointer;
+  border: var(--border); border-radius: var(--radius); background: #fff; color: var(--ink);
+  box-shadow: 3px 3px 0 var(--shadow); font-family: var(--font);
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), border-color 0.12s;
+}
+:global(.jf-blueprint .content) .job:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint .content) .job:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+:global(.jf-blueprint .content) .job.on { border-color: var(--blueprint); box-shadow: 3px 3px 0 var(--blueprint); background: #fff; color: var(--ink); }
+:global(.jf-blueprint .content) .job-ic { grid-row: 1 / 3; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--ink); border-radius: var(--radius); color: var(--ink); }
+:global(.jf-blueprint .content) .job-ic .ic { width: 18px; height: 18px; }
+:global(.jf-blueprint .content) .job.on .job-ic { border-color: var(--blueprint); color: var(--blueprint); }
+:global(.jf-blueprint .content) .job-t { font-size: 13px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .job-s { font-size: 11.5px; line-height: 1.4; color: var(--muted); }
+:global(.jf-blueprint .content) .job.on .job-s { color: var(--muted); }
+/* The pick is a stamp: a blueprint square with the tick, landing 1.15 → 1. */
+:global(.jf-blueprint .content) .job-stamp { position: absolute; top: 10px; right: 10px; width: 22px; height: 22px; display: none; align-items: center; justify-content: center; background: var(--blueprint); color: #fff; border-radius: var(--radius); }
+:global(.jf-blueprint .content) .job-stamp .ic { width: 13px; height: 13px; stroke-width: 2.5; }
+:global(.jf-blueprint .content) .job.on .job-stamp { display: inline-flex; animation: hvStamp 0.3s var(--ease) both; }
+@keyframes hvStamp { from { opacity: 0; transform: scale(1.15); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { :global(.jf-blueprint .content) .job.on .job-stamp { animation: none; } }
+
+/* ── The address field: the shell's search frame ─────────────── */
+:global(.jf-blueprint .content) .addr {
+  display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px;
+  border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 3px 3px 0 var(--shadow);
+  transition: box-shadow 0.12s var(--ease);
+}
+:global(.jf-blueprint .content) .addr:focus-within { box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint .content) .addr > .ic { width: 15px; height: 15px; color: var(--muted-light); flex: none; }
+:global(.jf-blueprint .content) .addr-in { flex: 1; min-width: 0; height: 100%; border: 0; background: none; outline: none; font-family: var(--font); font-size: 14px; font-weight: 600; color: var(--ink); }
+/* The placeholder is an example, and it must never read as a value. */
+:global(.jf-blueprint .content) .addr-in::placeholder { color: var(--muted-faint); font-weight: 400; font-style: italic; }
+:global(.jf-blueprint .content) .lbl .chip { margin-left: 8px; }
+
+/* What the lookup found: four sources, found or defaulted. */
+:global(.jf-blueprint .content) .src { list-style: none; margin: 12px 0 0; padding: 0; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); }
+:global(.jf-blueprint .content) .src-r { display: grid; grid-template-columns: 22px 150px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1.5px solid var(--hair-soft); font-size: 12.5px; }
+:global(.jf-blueprint .content) .src-r:first-child { border-top: 0; }
+:global(.jf-blueprint .content) .src-i { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--muted-light); border-radius: var(--radius); font-family: var(--font-mono); font-size: 11px; color: var(--muted-light); background: #fff; }
+:global(.jf-blueprint .content) .src-i .ic { width: 12px; height: 12px; stroke-width: 2.5; }
+:global(.jf-blueprint .content) .src-found .src-i { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .src-busy .src-i { border-style: dashed; animation: hvPulse 1s ease-in-out infinite alternate; }
+@keyframes hvPulse { from { opacity: 0.35; } to { opacity: 1; } }
+:global(.jf-blueprint .content) .src-k { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); }
+:global(.jf-blueprint .content) .src-v { color: var(--ink-soft); line-height: 1.4; min-width: 0; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .src-default .src-v { color: var(--muted); }
+:global(.jf-blueprint .content) .src-s { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-light); }
+:global(.jf-blueprint .content) .src-found .src-s { color: var(--blueprint); }
+
+/* ── The summary rail ────────────────────────────────────────── */
+:global(.jf-blueprint .content) .sum { position: sticky; top: 0; background: #fff; border: var(--border); border-radius: var(--radius); box-shadow: 3px 3px 0 var(--shadow); padding: 14px 16px 16px; }
+:global(.jf-blueprint .content) .hv-l2 > .sum { top: 76px; }
+:global(.jf-blueprint .content) .sum-k { font-size: 12px; font-weight: 900; letter-spacing: 0.14em; text-transform: uppercase; padding-bottom: 10px; border-bottom: 2px solid var(--ink); }
+:global(.jf-blueprint .content) .sum-l { margin: 0; display: grid; }
+:global(.jf-blueprint .content) .sum-r { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 10px 0; border-bottom: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .sum-r dt { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content) .sum-r dd { margin: 0; font-size: 13px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .sum-p dd { font-size: 22px; font-weight: 900; color: var(--blueprint); font-variant-numeric: tabular-nums; letter-spacing: -0.005em; }
+:global(.jf-blueprint .content) .sum-a { display: grid; gap: 8px; margin-top: 14px; }
+:global(.jf-blueprint .content) .sum-a .btn { width: 100%; }
+
+/* ── Recent ──────────────────────────────────────────────────── */
+:global(.jf-blueprint .content) .rec-fit { margin-top: 8px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; color: var(--muted); line-height: 1.5; }
+/* The whole row is the button that reopens; "Record actual" sits at its end.
+   Row flex, not the old column: the title and the price share the first
+   line, the meta takes the second. */
+:global(.jf-blueprint .content) .rrow-wrap .rrow { display: flex; align-items: center; gap: 12px; padding: 0 18px 0 0; border: 0; cursor: default; }
+:global(.jf-blueprint .content) .rrow-wrap:hover { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .rrow-open { flex: 1; min-width: 0; display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 3px 12px; padding: 11px 18px; text-align: left; cursor: pointer; }
+:global(.jf-blueprint .content) .rrow-open > .rrow-a { order: 0; flex: 1 1 auto; min-width: 0; }
+:global(.jf-blueprint .content) .rrow-open > .rrow-v { order: 1; flex: none; margin-left: auto; }
+:global(.jf-blueprint .content) .rrow-open > .rrow-m { order: 2; flex-basis: 100%; }
+:global(.jf-blueprint .content) .rrow-open:hover .rrow-a { color: var(--blueprint); }
+:global(.jf-blueprint .content) .rrow-open:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+:global(.jf-blueprint .content) .rrow-act { flex: none; white-space: nowrap; }
+
+/* The ledger's subtotal row no longer sticks on a phone: the summary bar does. */
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .bo-total--acts { position: static; box-shadow: none; }
+}
+
+/* ── Narrow: one column, the summary as a bottom bar ─────────── */
+@media (max-width: 1100px) {
+  :global(.jf-blueprint .content) .hv { grid-template-columns: minmax(0, 1fr); padding-bottom: 96px; }
+  :global(.jf-blueprint .content) .hv-l2 { grid-template-areas: "rail" "main"; }
+  :global(.jf-blueprint .content) .sum {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 6;
+    border-width: 2px 0 0; border-radius: 0; box-shadow: none; padding: 8px 14px calc(8px + env(safe-area-inset-bottom, 0px));
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: center;
+  }
+  :global(.jf-blueprint .content) .hv-l2 > .sum { top: auto; }
+  :global(.jf-blueprint .content) .sum-k { display: none; }
+  :global(.jf-blueprint .content) .sum-l { display: flex; flex-wrap: wrap; gap: 2px 14px; min-width: 0; }
+  :global(.jf-blueprint .content) .sum-r { display: inline-flex; gap: 6px; padding: 0; border: 0; align-items: baseline; }
+  :global(.jf-blueprint .content) .sum-r dd { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 44vw; }
+  :global(.jf-blueprint .content) .sum-p dd { font-size: 16px; }
+  :global(.jf-blueprint .content) .sum-a { margin: 0; display: flex; gap: 8px; }
+  :global(.jf-blueprint .content) .sum-a .btn { width: auto; height: 40px; min-height: 40px; padding: 0 12px; }
+  :global(.jf-blueprint .content) .sum-a .btn-ghost { display: none; }
+  :global(.jf-blueprint .content) .rail { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  :global(.jf-blueprint .content) .rail-b { grid-template-columns: 1fr; justify-items: center; gap: 6px; padding: 9px 4px; }
+  :global(.jf-blueprint .content) .rail-t { align-items: center; }
+  :global(.jf-blueprint .content) .rail-title { font-size: 9.5px; letter-spacing: 0.04em; text-align: center; }
+  :global(.jf-blueprint .content) .rail-s { display: none; }
+}
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .jobs { grid-template-columns: 1fr 1fr; }
+  :global(.jf-blueprint .content) .job { min-height: 44px; }
+  :global(.jf-blueprint .content) .src-r { grid-template-columns: 22px minmax(0, 1fr); }
+  :global(.jf-blueprint .content) .src-v { grid-column: 2; }
+  :global(.jf-blueprint .content) .src-s { grid-column: 2; }
+  :global(.jf-blueprint .content) .st-h { grid-template-columns: 26px minmax(0, 1fr) auto; padding: 12px 12px; gap: 10px; }
+  :global(.jf-blueprint .content) .st-sum { white-space: normal; }
+  :global(.jf-blueprint .content) .st-next { flex-direction: column; align-items: stretch; }
+  :global(.jf-blueprint .content) .st-next .btn { width: 100%; height: 44px; }
+  :global(.jf-blueprint .content) .rrow-wrap .rrow { flex-wrap: wrap; padding-right: 12px; }
+  :global(.jf-blueprint .content) .rrow-act { padding: 0 0 10px 18px; }
+}
+@media (max-width: 520px) {
+  :global(.jf-blueprint .content) .jobs { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   SECOND PASS (2026-09-20) — the owner's notes on the first rework: too
+   dense, buttons the size of cards, steps 4–5 saying too much, steps 3 and
+   5 off the house style. Rail layout only. Everything below overrides the
+   block above it at equal specificity by coming later in the file.
+   ============================================================ */
+
+/* ── Rhythm: 24–32 between cards, 20–24 inside ───────────────── */
+:global(.jf-blueprint .content) .hv { gap: 24px; }
+:global(.jf-blueprint .content) .hv-main { gap: 24px; }
+:global(.jf-blueprint .content) .hv { grid-template-areas: "rail rail" "main sum"; }
+:global(.jf-blueprint .content) .hv > .rail { grid-area: rail; }
+:global(.jf-blueprint .content) .hv > .hv-main { grid-area: main; }
+:global(.jf-blueprint .content) .hv > .sum { grid-area: sum; top: 76px; }
+:global(.jf-blueprint .content) .st-h { padding: 18px 22px 16px; cursor: default; background: none; }
+:global(.jf-blueprint .content) .st-open > .st-h { cursor: default; }
+:global(.jf-blueprint .content) .body { padding: 20px 22px 22px; }
+:global(.jf-blueprint .content) .confirm { padding: 20px 22px 22px; }
+:global(.jf-blueprint .content) .st-next { margin-top: 20px; padding-top: 16px; }
+:global(.jf-blueprint .content) .st-next--pad { margin: 0; padding: 16px 22px 20px; }
+:global(.jf-blueprint .content) .fs { margin-top: 20px; }
+:global(.jf-blueprint .content) .grid-f { gap: 12px; }
+
+/* ── Fields: an ink line, not a grey one; the published select ─ */
+:global(.jf-blueprint .content) .in,
+:global(.jf-blueprint .content) .ta,
+:global(.jf-blueprint .content) .bo-in { border: 1.5px solid var(--ink); }
+:global(.jf-blueprint .content) .in:focus,
+:global(.jf-blueprint .content) .ta:focus,
+:global(.jf-blueprint .content) .bo-in:focus { outline: 2px solid var(--blueprint); outline-offset: 1px; }
+/* The select is `.bp-sel > .bp-sel-in` from blueprint-global.css; the old
+   page caret is switched off and only the fit to the 38px row is set here. */
+:global(.jf-blueprint .content) .sel { background-image: none; appearance: none; padding-right: 30px; }
+:global(.jf-blueprint .content) .hvsel { display: block; }
+:global(.jf-blueprint .content) .hvsel :global(.bp-sel-in) { height: 38px; padding: 0 30px 0 11px; border: 1.5px solid var(--ink); border-radius: var(--radius); font-family: var(--font); font-size: 13px; font-weight: 500; letter-spacing: 0; }
+:global(.jf-blueprint .content) .chk input { accent-color: var(--blueprint); border-radius: 0; }
+
+/* ── Step 1: compact tiles, three group columns ──────────────── */
+:global(.jf-blueprint .content) .jgs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: start; }
+:global(.jf-blueprint .content) .jg + .jg { margin-top: 0; }
+:global(.jf-blueprint .content) .jobs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+:global(.jf-blueprint .content) .job {
+  grid-template-columns: 24px minmax(0, 1fr); grid-template-rows: auto; column-gap: 10px; row-gap: 0; align-items: center;
+  min-height: 46px; padding: 0 40px 0 12px; box-shadow: 3px 3px 0 var(--shadow);
+}
+:global(.jf-blueprint .content) .job-ic { grid-row: auto; width: 24px; height: 24px; border: 0; }
+:global(.jf-blueprint .content) .job-ic .ic { width: 17px; height: 17px; }
+:global(.jf-blueprint .content) .job-t { font-size: 12.5px; }
+:global(.jf-blueprint .content) .job-stamp { top: 50%; transform: translateY(-50%); }
+:global(.jf-blueprint .content) .job.on .job-stamp { animation: none; }
+
+/* ── One selection language: tiers and system kinds ─────────── */
+:global(.jf-blueprint .content) .tier, :global(.jf-blueprint .content) .kind { position: relative; }
+:global(.jf-blueprint .content) .tier .job-stamp, :global(.jf-blueprint .content) .kind .job-stamp { display: none; position: absolute; top: 10px; right: 10px; width: 22px; height: 22px; align-items: center; justify-content: center; background: var(--blueprint); color: #fff; border-radius: var(--radius); }
+:global(.jf-blueprint .content) .tier .job-stamp .ic, :global(.jf-blueprint .content) .kind .job-stamp .ic { width: 13px; height: 13px; stroke-width: 2.5; }
+:global(.jf-blueprint .content) .tier.on { background: #fff; color: var(--ink); box-shadow: inset 0 0 0 2px var(--blueprint); }
+:global(.jf-blueprint .content) .tier.on .tier-k, :global(.jf-blueprint .content) .tier.on .tier-m { color: var(--muted); }
+:global(.jf-blueprint .content) .tier.on .tier-v { color: var(--blueprint); }
+:global(.jf-blueprint .content) .tier.on .job-stamp { display: inline-flex; }
+:global(.jf-blueprint .content) .tier { padding-right: 40px; }
+:global(.jf-blueprint .content) .kind.on { background: #fff; color: var(--ink); box-shadow: inset 0 0 0 2px var(--blueprint); }
+:global(.jf-blueprint .content) .kind.on .kind-v { color: var(--blueprint); }
+:global(.jf-blueprint .content) .kind.on .job-stamp { display: inline-flex; }
+:global(.jf-blueprint .content) .kind { padding-right: 40px; }
+
+/* ── Step 3: the segmented way in ────────────────────────────── */
+:global(.jf-blueprint .content) .seg { display: flex; gap: 8px; padding: 0; border: 0; }
+:global(.jf-blueprint .content) .seg-btn {
+  position: relative; flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 40px; padding: 0 12px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff;
+  font-family: var(--font); font-size: 12.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); cursor: pointer;
+  transition: box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+:global(.jf-blueprint .content) .seg-btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint .content) .seg-btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+:global(.jf-blueprint .content) .seg-btn.on { border-color: var(--blueprint); color: var(--blueprint); box-shadow: 3px 3px 0 var(--blueprint); transform: none; }
+:global(.jf-blueprint .content) .seg-ic { width: 15px; height: 15px; }
+:global(.jf-blueprint .content) .seg-stamp { display: none; width: 18px; height: 18px; align-items: center; justify-content: center; background: var(--blueprint); color: #fff; border-radius: var(--radius); }
+:global(.jf-blueprint .content) .seg-stamp .ic { width: 11px; height: 11px; stroke-width: 2.5; }
+:global(.jf-blueprint .content) .seg-btn.on .seg-stamp { display: inline-flex; animation: hvStamp 0.3s var(--ease) both; }
+:global(.jf-blueprint .content) .seg-btn.on .seg-ic { display: none; }
+:global(.jf-blueprint .content) .mode { margin-top: 16px; }
+:global(.jf-blueprint .content) .mode-type { padding: 12px 0 0; }
+
+/* The zones, the way Financials captures a receipt: white, a 1.5px dashed
+   ink line, one line and a mono line of formats. */
+:global(.jf-blueprint .content) .zone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; text-align: center;
+  min-height: 124px; padding: 16px; cursor: pointer;
+  border: 1.5px dashed var(--ink); border-radius: var(--radius); background: #fff;
+  transition: background 0.12s, border-color 0.12s;
+}
+:global(.jf-blueprint .content) .zone:hover { background: var(--paper); }
+:global(.jf-blueprint .content) .zone input { display: none; }
+:global(.jf-blueprint .content) .zone > .ic { width: 20px; height: 20px; color: var(--muted); }
+:global(.jf-blueprint .content) .zone-t { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 700; }
+:global(.jf-blueprint .content) .zone-h { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; color: var(--muted); max-width: 44ch; line-height: 1.5; }
+:global(.jf-blueprint .content) .zones { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
+:global(.jf-blueprint .content) .zone-plate { min-height: 132px; }
+:global(.jf-blueprint .content) .zone-plate img { width: 100%; max-height: 96px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius); background: var(--ink); }
+:global(.jf-blueprint .content) .zone.has { border-style: solid; border-color: var(--blueprint); }
+:global(.jf-blueprint .content) .guide { margin-top: 16px; }
+
+/* What was caught: a progress line, the rows under it. */
+/* `.cov` was the old coverage TILE (a flex box with a frame); the progress
+   disclosure took the name, so the tile's box is undone here — without this
+   the open list sat beside its own summary instead of under it. */
+:global(.jf-blueprint .content) .cov { display: block; margin-top: 16px; padding: 0; border: 0; border-radius: 0; background: none; font-size: inherit; line-height: inherit; }
+:global(.jf-blueprint .content) .cov > summary { display: grid; grid-template-columns: minmax(120px, 1fr) auto auto; align-items: center; gap: 14px; cursor: pointer; list-style: none; padding: 8px 0; }
+:global(.jf-blueprint .content) .cov > summary::-webkit-details-marker { display: none; }
+:global(.jf-blueprint .content) .cov-bar { display: block; height: 8px; border: 1.5px solid var(--ink); background: #fff; }
+:global(.jf-blueprint .content) .cov-bar i { display: block; height: 100%; background: var(--blueprint); transition: width 0.3s var(--ease); }
+:global(.jf-blueprint .content) .cov-t { font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
+:global(.jf-blueprint .content) .cov-x { color: var(--blueprint); }
+:global(.jf-blueprint .content) .cov[open] .cov-x { font-size: 0; }
+:global(.jf-blueprint .content) .cov[open] .cov-x::after { content: "hide"; font-size: 10.5px; }
+:global(.jf-blueprint .content) .cov-l { list-style: none; margin: 4px 0 0; padding: 0; }
+:global(.jf-blueprint .content) .cov-r button { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 7px 0; border: 0; border-top: 1px solid var(--hair-soft); background: none; text-align: left; font-family: var(--font); font-size: 12.5px; color: var(--ink); cursor: pointer; }
+:global(.jf-blueprint .content) .cov-r:first-child button { border-top: 0; }
+:global(.jf-blueprint .content) .cov-r button:hover .cov-n { color: var(--blueprint); }
+:global(.jf-blueprint .content) .cov-i { width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; color: #fff; }
+:global(.jf-blueprint .content) .cov-i .ic { width: 11px; height: 11px; stroke-width: 2.5; }
+:global(.jf-blueprint .content) .cov-r.got .cov-i { background: var(--blueprint); border-color: var(--blueprint); }
+:global(.jf-blueprint .content) .cov-n { font-weight: 600; }
+:global(.jf-blueprint .content) .cov-s { text-transform: none; letter-spacing: 0.02em; }
+:global(.jf-blueprint .content) .cov-r.got .cov-s { color: var(--blueprint); }
+
+/* Confirm: the folded groups are rows in the house style, not framed plates. */
+:global(.jf-blueprint .content) .folds { margin-top: 18px; border-top: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .fold2 > summary { display: grid; grid-template-columns: auto minmax(0, 1fr) 18px; align-items: center; gap: 14px; padding: 13px 0; cursor: pointer; list-style: none; border-bottom: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .fold2 > summary::-webkit-details-marker { display: none; }
+:global(.jf-blueprint .content) .fold2 > summary:hover .fold2-t { color: var(--blueprint); }
+:global(.jf-blueprint .content) .fold2-t { font-size: 12.5px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+:global(.jf-blueprint .content) .fold2-s { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.03em; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+:global(.jf-blueprint .content) .fold2-c { width: 16px; height: 16px; color: var(--muted); transition: transform 0.2s var(--ease); }
+:global(.jf-blueprint .content) .fold2[open] > summary .fold2-c { transform: rotate(180deg); }
+:global(.jf-blueprint .content) .fold2-b { padding: 12px 0 16px; border-bottom: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .fold2 .fs { margin-top: 0; }
+:global(.jf-blueprint .content) .putin { margin-top: 22px; }
+:global(.jf-blueprint .content) .putin .sec-sub { margin-bottom: 4px; }
+:global(.jf-blueprint .content) .putin > .fs:first-of-type { margin-top: 12px; }
+/* the old framed groups, retired */
+:global(.jf-blueprint .content) .grp { border: 0; padding: 0; background: none; }
+
+/* The service menu: compact rows, a filter, the picked task open. */
+:global(.jf-blueprint .content) .svc-top { margin: 6px 0 12px; }
+:global(.jf-blueprint .content) .addr-sm { height: 36px; box-shadow: none; }
+:global(.jf-blueprint .content) .addr-sm .addr-in { font-size: 13px; font-weight: 500; }
+:global(.jf-blueprint .content) .svc-g { margin-top: 0; }
+:global(.jf-blueprint .content) .svc-g > summary { padding: 11px 0; }
+:global(.jf-blueprint .content) .svc-g .svc-rows { border-top: 0; }
+:global(.jf-blueprint .content) .svc-g .fold2-b { padding: 0; }
+:global(.jf-blueprint .content) .svc-rows { list-style: none; margin: 0; padding: 0; border-top: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .svc-r { border-bottom: 1px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .svc-rb { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; min-height: 36px; padding: 4px 0 4px 6px; border: 0; background: none; text-align: left; font-family: var(--font); color: var(--ink); cursor: pointer; }
+:global(.jf-blueprint .content) .svc-rb:hover .svc-n { color: var(--blueprint); }
+:global(.jf-blueprint .content) .svc-rb:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+:global(.jf-blueprint .content) .svc-box { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; color: #fff; }
+:global(.jf-blueprint .content) .svc-box .ic { width: 12px; height: 12px; stroke-width: 2.5; }
+:global(.jf-blueprint .content) .svc-r.on .svc-box { background: var(--blueprint); border-color: var(--blueprint); }
+:global(.jf-blueprint .content) .svc-n { font-size: 13px; font-weight: 700; }
+/* the old tile's drawn checkbox is retired; the row has its own square */
+:global(.jf-blueprint .content) .svc-n::before { display: none; }
+:global(.jf-blueprint .content) .svc-r.on .svc-n { color: var(--blueprint); }
+:global(.jf-blueprint .content) .svc-p { font-size: 11px; letter-spacing: 0.03em; color: var(--muted); white-space: nowrap; }
+:global(.jf-blueprint .content) .svc-r.on .svc-p { color: var(--ink); }
+:global(.jf-blueprint .content) .svc-x { display: grid; gap: 8px; padding: 0 0 12px 30px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+:global(.jf-blueprint .content) .svc-list { margin-top: 12px; }
+
+/* ── Step 4: checks as rows; the detail folded ───────────────── */
+:global(.jf-blueprint .content) .design > * { padding: 20px 22px 22px; }
+:global(.jf-blueprint .content) .chk-sum { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+:global(.jf-blueprint .content) .chk-n { text-transform: none; letter-spacing: 0.03em; color: var(--ink); }
+:global(.jf-blueprint .content) .chk-l { list-style: none; margin: 0; padding: 0; border-top: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .chk-r { border-bottom: 1px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .chk-b { display: grid; grid-template-columns: 62px minmax(0, 1fr) 16px; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 6px 0; border: 0; background: none; text-align: left; font-family: var(--font); color: var(--ink); cursor: pointer; }
+:global(.jf-blueprint .content) .chk-b:hover .chk-t { color: var(--blueprint); }
+:global(.jf-blueprint .content) .chk-b:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+:global(.jf-blueprint .content) .chk-t { font-size: 13px; font-weight: 700; min-width: 0; }
+:global(.jf-blueprint .content) .chk-c { width: 16px; height: 16px; color: var(--muted); transition: transform 0.2s var(--ease); }
+:global(.jf-blueprint .content) .chk-r.open .chk-c { transform: rotate(180deg); }
+:global(.jf-blueprint .content) .chk-d { padding: 0 0 12px 72px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+:global(.jf-blueprint .content) .chk-pass { margin-top: 2px; }
+:global(.jf-blueprint .content) .chk-pass > summary { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 40px; padding: 6px 0; cursor: pointer; list-style: none; border-bottom: 1px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .chk-pass > summary::-webkit-details-marker { display: none; }
+:global(.jf-blueprint .content) .chk-pass > summary .mono { color: var(--blueprint); }
+:global(.jf-blueprint .content) .chk-pass[open] > summary .mono::after { content: " · hide"; }
+:global(.jf-blueprint .content) .chk-pass[open] > summary .mono { font-size: 0; }
+:global(.jf-blueprint .content) .chk-pass[open] > summary .mono::after { font-size: 10.5px; content: "hide"; }
+:global(.jf-blueprint .content) .how-wide { margin: 0; padding: 14px 22px 18px; border-top: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .how-wide .how-b { max-width: none; }
+:global(.jf-blueprint .content) .how-wide .how-b p { margin: 0 0 4px; max-width: 76ch; }
+:global(.jf-blueprint .content) .comp { max-width: 640px; }
+
+/* ── Step 5: the builder's rows, text at rest ─────────────────── */
+:global(.jf-blueprint .content) .lines { --v2-cols: minmax(200px, 1fr) 72px 90px 124px 132px 32px; padding: 0 22px 6px; }
+:global(.jf-blueprint .content) .lines-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 18px 0 8px; }
+:global(.jf-blueprint .content) .lines-sum { font-family: var(--font-mono); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .lines-grid { display: grid; grid-template-columns: var(--v2-cols); column-gap: var(--v2-gap, 12px); align-items: center; }
+:global(.jf-blueprint .content) .line-txt { min-height: 42px; padding: 6px 0; border-top: 1.5px solid var(--hair-soft); cursor: pointer; }
+:global(.jf-blueprint .content) .line-txt:hover { background: var(--paper); }
+:global(.jf-blueprint .content) .line-txt:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+:global(.jf-blueprint .content) .line-edit { padding: 6px 0; border-top: 1.5px solid var(--hair-soft); row-gap: 0; }
+:global(.jf-blueprint .content) .line-name { padding: 0 6px; font-size: 13.5px; font-weight: 600; line-height: 1.35; color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
+:global(.jf-blueprint .content) .line-name i { color: var(--muted); font-style: normal; }
+:global(.jf-blueprint .content) .line-num { padding: 0 6px; font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .line-unit { padding: 0 6px; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; color: var(--muted); }
+:global(.jf-blueprint .content) .line-total { padding: 0 6px; font-family: var(--font-mono); font-size: 13px; font-weight: 700; text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+:global(.jf-blueprint .content) .line-kill { opacity: 0; }
+:global(.jf-blueprint .content) .line-txt:hover .line-kill, :global(.jf-blueprint .content) .line-txt:focus-within .line-kill, :global(.jf-blueprint .content) .line-edit .line-kill, :global(.jf-blueprint .content) .line-kill:focus-visible { opacity: 1; }
+:global(.jf-blueprint .content) .line-add { border-top: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .lines-legend { padding: 4px 6px 10px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.03em; color: var(--muted); }
+:global(.jf-blueprint .content) .bo-total { padding: 16px 22px; }
+:global(.jf-blueprint .content) .assump-l { margin: 0; padding-left: 16px; display: grid; gap: 3px; list-style: disc; font-size: 12px; line-height: 1.45; color: var(--muted); }
+:global(.jf-blueprint .content) .fold2-title { padding: 0 22px; }
+:global(.jf-blueprint .content) .fold2-title > summary { grid-template-columns: minmax(0, 1fr) auto auto; }
+:global(.jf-blueprint .content) .fold2-title .fold2-t { font-size: 14px; letter-spacing: 0.04em; text-transform: none; white-space: normal; }
+:global(.jf-blueprint .content) .fold2-title .st-edit { padding: 5px 9px; }
+:global(.jf-blueprint .content) .panel > summary { padding: 13px 22px; }
+
+/* ── Narrow ───────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  :global(.jf-blueprint .content) .hv { grid-template-areas: "rail" "main"; }
+  :global(.jf-blueprint .content) .hv > .sum { top: auto; }
+}
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .jgs { grid-template-columns: 1fr; gap: 16px; }
+  :global(.jf-blueprint .content) .jobs { grid-template-columns: 1fr; }
+  :global(.jf-blueprint .content) .seg { flex-direction: column; }
+  :global(.jf-blueprint .content) .seg-btn { height: 44px; }
+  :global(.jf-blueprint .content) .zones { grid-template-columns: 1fr; }
+  :global(.jf-blueprint .content) .body, :global(.jf-blueprint .content) .confirm { padding: 16px 14px 18px; }
+  :global(.jf-blueprint .content) .st-h { padding: 16px 14px 14px; }
+  :global(.jf-blueprint .content) .design > * { padding: 16px 14px 18px; }
+  :global(.jf-blueprint .content) .how-wide { padding: 12px 14px 16px; }
+  :global(.jf-blueprint .content) .chk-b { grid-template-columns: 56px minmax(0, 1fr) 16px; }
+  :global(.jf-blueprint .content) .chk-d { padding-left: 0; }
+  :global(.jf-blueprint .content) .lines { padding: 0 14px 6px; }
+  :global(.jf-blueprint .content) .lines-grid { grid-template-columns: minmax(0, 1fr) auto auto auto 28px; column-gap: 8px; }
+  :global(.jf-blueprint .content) .lines-grid > .line-name, :global(.jf-blueprint .content) .line-edit > input:first-child { grid-column: 1 / -1; }
+  :global(.jf-blueprint .content) .lines-grid > .line-unit { grid-column: 2; }
+  :global(.jf-blueprint .content) .lines-h + .lines-grid { display: none; }
+  :global(.jf-blueprint .content) .line-kill { opacity: 1; }
+  :global(.jf-blueprint .content) .bo-total { padding: 14px 14px; }
+  :global(.jf-blueprint .content) .fold2-title { padding: 0 14px; }
+  :global(.jf-blueprint .content) .fold2 > summary { grid-template-columns: auto minmax(0, 1fr) 18px; }
+  :global(.jf-blueprint .content) .fold2-title > summary { grid-template-columns: minmax(0, 1fr) auto; }
+  :global(.jf-blueprint .content) .fold2-title .fold2-s { display: none; }
+  :global(.jf-blueprint .content) .fold2-s { white-space: normal; }
+  :global(.jf-blueprint .content) .svc-rb { grid-template-columns: 18px minmax(0, 1fr); }
+  :global(.jf-blueprint .content) .svc-p { grid-column: 2; }
+}
+
+/* ============================================================
+   THIRD PASS (2026-09-20) — the owner's notes after the second.
+   ============================================================ */
+
+/* Step 3's fields sat at different heights: a label that wraps to two lines
+   (CONDITIONED SQ FT + its badge, WALL INSULATION, GAS AT THE HOUSE) pushed
+   its own control down and the row went ragged. The control now sits on the
+   cell's floor — every field is a column whose label takes the slack — so a
+   row of fields is one line whatever its labels do. */
+:global(.jf-blueprint .content) .field { display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; }
+:global(.jf-blueprint .content) .grid-f,
+:global(.jf-blueprint .content) .grid-rc,
+:global(.jf-blueprint .content) .grid-addr { align-items: end; }
+:global(.jf-blueprint .content) .grid-f { grid-template-columns: repeat(auto-fill, minmax(172px, 1fr)); }
+:global(.jf-blueprint .content) .lbl { align-items: flex-end; min-height: 18px; }
+:global(.jf-blueprint .content) .lbl > span:first-child { min-width: 0; }
+
+/* The panels (Change the unit, Rate card, Catalog) read as controls: a white
+   row, an outlined word that says what pressing does, a chevron. */
+:global(.jf-blueprint .content) .panel > summary { background: #fff; color: var(--ink); transition: background 0.12s; }
+:global(.jf-blueprint .content) .panel > summary:hover { background: var(--paper); }
+:global(.jf-blueprint .content) .panel > summary:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+:global(.jf-blueprint .content) .panel > summary .mono { color: var(--muted); }
+:global(.jf-blueprint .content) .panel-go { display: inline-flex; align-items: center; gap: 10px; margin-left: 14px; flex: none; }
+:global(.jf-blueprint .content) .panel > summary:hover .st-edit { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .go-close { display: none; }
+:global(.jf-blueprint .content) .panel[open] .go-open { display: none; }
+:global(.jf-blueprint .content) .panel[open] .go-close { display: inline-block; }
+:global(.jf-blueprint .content) .panel[open] > summary .fold2-c { transform: rotate(180deg); }
+:global(.jf-blueprint .content) .panel[open] > summary { border-bottom: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .panel-body { padding: 18px 22px 20px; }
+:global(.jf-blueprint .content) .panel-body > .note { max-width: none; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .panel-body > .how { margin: 8px 0 14px; }
+
+/* The unit rows: white, ink text at full strength, the one in use framed in
+   blueprint with the stamp — no black row, no beige row, no faded type. */
+:global(.jf-blueprint .content) .swap-row { background: #fff; border: 1.5px solid var(--hair); border-radius: var(--radius); padding: 10px 14px; color: var(--ink); }
+:global(.jf-blueprint .content) .swap-row:hover { background: var(--paper); border-color: var(--ink); }
+:global(.jf-blueprint .content) .swap-row.on { background: #fff; color: var(--ink); border-color: var(--blueprint); box-shadow: inset 0 0 0 1px var(--blueprint); }
+:global(.jf-blueprint .content) .swap-row.out, :global(.jf-blueprint .content) .swap-row.out.on { border-left-width: 1.5px; }
+:global(.jf-blueprint .content) .swap-row.out { border-left-color: var(--hair); }
+:global(.jf-blueprint .content) .swap-row.out.on { border-left-color: var(--blueprint); }
+:global(.jf-blueprint .content) .swap-t { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+:global(.jf-blueprint .content) .swap-m { opacity: 1; font-size: 11px; color: var(--muted); }
+:global(.jf-blueprint .content) .swap-w { opacity: 1; font-size: 12.5px; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .swap-a { display: inline-flex; align-items: center; gap: 8px; color: var(--blueprint); }
+:global(.jf-blueprint .content) .swap-stamp { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; background: var(--blueprint); color: #fff; border-radius: var(--radius); }
+:global(.jf-blueprint .content) .swap-stamp .ic { width: 11px; height: 11px; stroke-width: 2.5; }
+:global(.jf-blueprint .content) .swap-msg { margin-top: 10px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.03em; line-height: 1.5; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .fold2-in { margin-top: 16px; border-top: 1.5px solid var(--hair-soft); }
+
+/* The estimate's lines say they can be edited: a hint in the section head, a
+   pencil at the end of every row, the whole row lifting on hover. */
+:global(.jf-blueprint .content) .lines { --v2-cols: minmax(200px, 1fr) 72px 90px 124px 132px 72px; }
+:global(.jf-blueprint .content) .lines-h { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; }
+:global(.jf-blueprint .content) .lines-hint { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--blueprint); }
+:global(.jf-blueprint .content) .lines-hint .ic { width: 12px; height: 12px; }
+:global(.jf-blueprint .content) .line-txt { transition: background 0.12s, box-shadow 0.12s; }
+:global(.jf-blueprint .content) .line-txt:hover { background: var(--paper); box-shadow: inset 3px 0 0 var(--blueprint); }
+:global(.jf-blueprint .content) .line-txt:hover .line-name { color: var(--blueprint); }
+:global(.jf-blueprint .content) .line-acts { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; }
+:global(.jf-blueprint .content) .line-pen { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--hair); border-radius: var(--radius); color: var(--muted); background: #fff; }
+:global(.jf-blueprint .content) .line-pen .ic { width: 13px; height: 13px; }
+:global(.jf-blueprint .content) .line-txt:hover .line-pen { border-color: var(--blueprint); color: var(--blueprint); }
+:global(.jf-blueprint .content) .line-done { height: 28px; padding: 0 8px; border: 1.5px solid var(--blueprint); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--blueprint); cursor: pointer; }
+:global(.jf-blueprint .content) .line-done:hover { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .line-edit { background: var(--paper); box-shadow: inset 3px 0 0 var(--blueprint); }
+
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .panel > summary { flex-wrap: wrap; row-gap: 6px; }
+  :global(.jf-blueprint .content) .panel-go { margin-left: auto; }
+  :global(.jf-blueprint .content) .panel-body { padding: 14px 14px 16px; }
+  :global(.jf-blueprint .content) .lines-h { grid-template-columns: minmax(0, 1fr) auto; }
+  :global(.jf-blueprint .content) .lines-hint { grid-column: 1 / -1; grid-row: 2; }
+  :global(.jf-blueprint .content) .lines-grid { grid-template-columns: minmax(0, 1fr) auto auto auto auto; }
+  :global(.jf-blueprint .content) .grid-f { grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); }
+  /* the select matches the 44px touch height the text fields take on a phone — it was 38 and sat 6px lower in its row */
+  :global(.jf-blueprint .content) .hvsel :global(.bp-sel-in) { height: 44px; }
+}
+
+/* THE SEAM UNDER THE UNIT CARD (2026-09-20). Whatever follows the card in the
+   design column — badge rows, the fit bar, the capacity chart, a notice —
+   starts 16px below it, the step's own rhythm; the badge rows had no margin
+   at all and sat 2px under the card's border. A badge sits on the first
+   line of its text (baseline, not the top of the box), and the list starts
+   at the card's left edge. */
+:global(.jf-blueprint .content) .design .unit + * { margin-top: 16px; }
+:global(.jf-blueprint .content) .notes { margin: 0; padding-left: 0; }
+:global(.jf-blueprint .content) .design .unit + .notes { margin-top: 16px; }
+:global(.jf-blueprint .content) .notes li { align-items: baseline; }
+:global(.jf-blueprint .content) .notes .chip { margin-top: 0; flex: none; }
+
+/* ============================================================
+   FOURTH PASS (2026-09-20) — the top of "The design" was one table: the
+   figures, the System choice and Good/Better/Best shared hairlines, the
+   selected frame lay over its neighbours' dividers, the stamp sat on the
+   price and every price was blue. Three blocks now, each with air.
+   ============================================================ */
+
+/* 1 · The figures: a ribbon on its own. The thin verticals stay; there is no
+   rule under it to share with the block below — 24px of air instead. */
+:global(.jf-blueprint .content) .hero-d { border-bottom: 0; margin-bottom: 24px; }
+
+/* A block with its kicker above it. */
+:global(.jf-blueprint .content) .dsec { padding: 0 22px; margin-bottom: 20px; }
+:global(.jf-blueprint .content) .dsec-k { display: block; margin-bottom: 10px; }
+
+/* 2 · System: two tiles, 12px apart. 1px ink at rest; the pick is a 2px
+   blueprint line drawn INSIDE the tile (outline, negative offset), so the tile
+   never changes size and never lies over a neighbour. 40px on the right is the
+   stamp's own room — the price stops short of it. */
+:global(.jf-blueprint .content) .kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; border: 0; }
+:global(.jf-blueprint .content) .kind {
+  position: relative; display: flex; flex-direction: column; justify-content: center; gap: 3px;
+  min-height: 56px; padding: 10px 44px 10px 16px; text-align: left;
+  border: 1px solid var(--ink); border-radius: var(--radius); background: #fff; color: var(--ink);
+  box-shadow: none; outline: 2px solid transparent; outline-offset: -2px; cursor: pointer;
+  transition: background 0.12s, outline-color 0.12s;
+}
+:global(.jf-blueprint .content) .kind:last-child { border-right: 1px solid var(--ink); }
+:global(.jf-blueprint .content) .kind:hover { background: var(--paper); }
+:global(.jf-blueprint .content) .kind:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+:global(.jf-blueprint .content) .kind.on { background: #fff; color: var(--ink); border-color: var(--blueprint); outline-color: var(--blueprint); box-shadow: none; }
+:global(.jf-blueprint .content) .kind-t { gap: 16px; font-size: 14px; }
+:global(.jf-blueprint .content) .kind-v { font-family: var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .kind.on .kind-v { color: var(--blueprint); }
+:global(.jf-blueprint .content) .kind-s { font-family: var(--font-mono); font-size: 11px; opacity: 1; color: var(--muted); }
+
+/* 3 · Equipment: cards, not cells. auto-fit so two or four tanks fill the
+   row as well as three tiers do — no empty track. The price sits at the foot. */
+:global(.jf-blueprint .content) .tiers,
+:global(.jf-blueprint .content) .tiers-wh { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; border: 0; }
+:global(.jf-blueprint .content) .tier {
+  position: relative; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; min-width: 0; min-height: 112px;
+  padding: 14px 44px 14px 16px; text-align: left;
+  border: 1px solid var(--ink); border-radius: var(--radius); background: #fff; color: var(--ink);
+  box-shadow: none; outline: 2px solid transparent; outline-offset: -2px; cursor: pointer;
+  transition: background 0.12s, outline-color 0.12s;
+}
+:global(.jf-blueprint .content) .tier:last-child { border-right: 1px solid var(--ink); }
+:global(.jf-blueprint .content) .tier:hover { background: var(--paper); }
+:global(.jf-blueprint .content) .tier:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+:global(.jf-blueprint .content) .tier.on { background: #fff; color: var(--ink); border-color: var(--blueprint); outline-color: var(--blueprint); box-shadow: none; }
+:global(.jf-blueprint .content) .tier-t { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .tier-v { margin-top: auto; padding-top: 8px; color: var(--ink); }
+:global(.jf-blueprint .content) .tier.on .tier-v { color: var(--blueprint); }
+:global(.jf-blueprint .content) .tier.on .tier-k, :global(.jf-blueprint .content) .tier.on .tier-m { color: var(--muted); }
+
+/* The stamp: top right, inside the card, in the room reserved for it. */
+:global(.jf-blueprint .content) .tier .job-stamp,
+:global(.jf-blueprint .content) .kind .job-stamp { top: 10px; right: 10px; transform: none; }
+
+/* 5 · The unit card and the checks start 24px lower, on no shared rule. */
+:global(.jf-blueprint .content) .hero-d ~ .design,
+:global(.jf-blueprint .content) .dsec ~ .design { margin-top: 24px; border-top: 1.5px solid var(--hair-soft); }
+
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .dsec { padding: 0 14px; }
+  :global(.jf-blueprint .content) .kinds { grid-template-columns: 1fr; gap: 8px; }
+  :global(.jf-blueprint .content) .tiers, :global(.jf-blueprint .content) .tiers-wh { grid-template-columns: 1fr; gap: 8px; }
+  :global(.jf-blueprint .content) .tier { min-height: 0; border-bottom: 1px solid var(--ink); }
+  :global(.jf-blueprint .content) .tier.on { border-bottom-color: var(--blueprint); }
+  :global(.jf-blueprint .content) .kind { border-bottom: 1px solid var(--ink); }
+  :global(.jf-blueprint .content) .kind.on { border-bottom-color: var(--blueprint); }
+  /* the old phone rules took the last tile's bottom border away (they were cells then) */
+  :global(.jf-blueprint .content) .kind:last-child, :global(.jf-blueprint .content) .tier:last-child { border-bottom: 1px solid var(--ink); }
+  :global(.jf-blueprint .content) .kind.on:last-child, :global(.jf-blueprint .content) .tier.on:last-child { border-bottom-color: var(--blueprint); }
+  :global(.jf-blueprint .content) .hero-d { margin-bottom: 20px; }
+}
+
+/* ============================================================
+   FIFTH PASS (2026-09-20) — the phone (390 / 360).
+   ============================================================ */
+
+/* The desktop keeps the one-line label; the two halves only stack on a phone. */
+:global(.jf-blueprint .content) .seg-l > span { display: inline; }
+:global(.jf-blueprint .content) .rrow-more { display: none; }
+
+/* The sheets are portalled to <body>, outside `.content`: their few own
+   rules are scoped to the sheet's root instead. */
+:global(.bps) .ls-ta { height: auto; min-height: 76px; padding: 9px 10px; line-height: 1.4; resize: vertical; font-family: inherit; }
+:global(.bps) :global(.bps-fld).ls-half { flex: 1 1 calc(50% - 6px); min-width: 0; }
+:global(.bps) .ls-num { text-align: right; font-variant-numeric: tabular-nums; }
+:global(.bps) .ls-total { flex: 1 1 100%; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 2px solid #0a0a0a; font-family: var(--bps-mono, ui-monospace, monospace); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #555; }
+:global(.bps) .ls-total b { font-size: 16px; letter-spacing: 0; color: #0a0a0a; font-variant-numeric: tabular-nums; }
+:global(.bps) .ls-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; }
+:global(.bps) .ls-foot-r { display: inline-flex; gap: 8px; }
+:global(.bps) .ls-foot :global(.bps-btn) { height: 44px; }
+:global(.bps) .ls-remove { height: 44px; padding: 0 4px; border: 0; background: none; font-family: inherit; font-size: 12px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #a83232; cursor: pointer; }
+:global(.bps) .ls-remove:hover { text-decoration: underline; }
+:global(.bps) .rs-acts { display: grid; gap: 10px; }
+:global(.bps) .rs-acts :global(.bps-btn) { height: 48px; width: 100%; }
+
+@media (max-width: 1100px) {
+  /* The summary bar is fixed to the bottom; the room for it belongs under the
+     LAST block (Recent), not under the steps — it sat under the steps, so the
+     bar lay over the end of the Recent card. */
+  :global(.jf-blueprint .content) .hv { padding-bottom: 0; }
+  :global(.jf-blueprint .content) .recent-card { margin-bottom: calc(24px + 104px + env(safe-area-inset-bottom, 0px)); }
+}
+
+@media (max-width: 860px) {
+  /* ── Recent: two lines a row, the whole row the tap target ─── */
+  :global(.jf-blueprint .content) .rrow-wrap .rrow { padding: 0; flex-wrap: nowrap; }
+  :global(.jf-blueprint .content) .rrow-open { min-height: 56px; padding: 10px 14px; gap: 2px 12px; align-items: baseline; }
+  :global(.jf-blueprint .content) .rrow-open > .rrow-a { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  :global(.jf-blueprint .content) .rrow-open > .rrow-v { font-size: 13px; white-space: nowrap; }
+  :global(.jf-blueprint .content) .rrow-open > .rrow-m { flex: 0 0 100%; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: none; letter-spacing: 0.02em; }
+  :global(.jf-blueprint .content) .rrow-open > .rrow-m ~ .rrow-m { display: none; }
+  :global(.jf-blueprint .content) .rrow-act { display: none; }
+  :global(.jf-blueprint .content) .rrow-more { display: block; width: 100%; min-height: 48px; border: 0; border-top: 1.5px solid var(--hair-soft); background: none; font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--blueprint); cursor: pointer; }
+  :global(.jf-blueprint .content) .actual { padding: 4px 14px 14px; }
+
+  /* ── Step 3: one row of three tiles ─────────────────────────── */
+  :global(.jf-blueprint .content) .seg { flex-direction: row; gap: 8px; }
+  :global(.jf-blueprint .content) .seg-btn {
+    flex: 1 1 0; min-width: 0; height: 88px; flex-direction: column; gap: 8px; padding: 10px 4px 8px;
+    border: 1px solid var(--ink); box-shadow: none; transform: none;
+    outline: 2px solid transparent; outline-offset: -2px;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; line-height: 1.25; text-align: center;
+  }
+  :global(.jf-blueprint .content) .seg-btn:hover { transform: none; box-shadow: none; }
+  :global(.jf-blueprint .content) .seg-btn.on { border-color: var(--blueprint); outline-color: var(--blueprint); box-shadow: none; transform: none; }
+  :global(.jf-blueprint .content) .seg-ic, :global(.jf-blueprint .content) .seg-btn.on .seg-ic { display: block; width: 24px; height: 24px; }
+  :global(.jf-blueprint .content) .seg-l > span { display: block; }
+  :global(.jf-blueprint .content) .seg-stamp { position: absolute; top: 5px; right: 5px; width: 16px; height: 16px; }
+  :global(.jf-blueprint .content) .seg-stamp .ic { width: 10px; height: 10px; }
+  :global(.jf-blueprint .content) .seg-btn.on .seg-stamp { animation: none; }
+
+  /* ── Step 5: the row opens the sheet; no indicator bar on a touch screen */
+  :global(.jf-blueprint .content) .line-txt:hover { box-shadow: none; background: none; }
+  :global(.jf-blueprint .content) .line-txt:hover .line-name { color: var(--ink); }
+  :global(.jf-blueprint .content) .line-txt { min-height: 56px; }
+  :global(.jf-blueprint .content) .line-txt .line-kill { display: none; }
+}

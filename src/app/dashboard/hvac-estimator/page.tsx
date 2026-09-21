@@ -11,6 +11,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { HvacEstimatorContent } from "@/components/v3/hvac-estimator-blueprint/hvac-estimator-content";
 
@@ -26,10 +27,25 @@ export const metadata: Metadata = {
   description: "HVAC estimator — walk the house on video, read the plates, size the system and price the replacement.",
 };
 
-export default async function HvacEstimatorPage() {
+export default async function HvacEstimatorPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await auth();
   if (!session?.user?.id) {
     redirect("/auth/login?next=%2Fdashboard%2Fhvac-estimator");
   }
-  return <HvacEstimatorContent aiEnabled={isOpenAIEnabled()} />;
+  const params = await searchParams;
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  // Opened from a client's record (the estimator picker adds `?client=`): the
+  // client's address is already in the field. Read from this org only.
+  let initialAddress: string | undefined;
+  const clientId = one(params.client);
+  if (clientId) {
+    const orgId = (await db.user.findUnique({ where: { id: session.user.id }, select: { activeOrgId: true } }))?.activeOrgId;
+    const client = orgId ? await db.client.findFirst({ where: { id: clientId, organizationId: orgId, deletedAt: null }, select: { address: true, city: true, state: true, zip: true } }) : null;
+    if (client?.address) initialAddress = [client.address, client.city, [client.state, client.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  }
+  return <HvacEstimatorContent aiEnabled={isOpenAIEnabled()} initialAddress={initialAddress} />;
 }

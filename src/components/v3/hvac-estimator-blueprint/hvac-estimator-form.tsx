@@ -1,15 +1,25 @@
 "use client";
 
-// HVAC estimator — the page's one flow, in five cards:
+// HVAC estimator — the page's one flow, as five STEPS in one stepper
+// (2026-09-20, the owner's rework of the layout — the engine, the ledger and
+// the actions are untouched; only the markup and the styles moved):
 //
-//   1 SITE     address → county design day, footprint, storeys, elevation
-//   2 INTAKE   the video walk (with the filming guide), nameplate photos,
+//   1 JOB      what is being priced, grouped REPLACE · ADD · FIX
+//   2 HOUSE    address → county design day, footprint, storeys, elevation,
+//              with a list of what each source found and what defaulted
+//   3 INTAKE   the video walk (with the filming guide), nameplate photos,
 //              and the typed confirmations — each fact badged by its source
-//   3 DESIGN   block load, the unit the catalog fits, the capacity chart,
+//   4 DESIGN   block load, the unit the catalog fits, the capacity chart,
 //              the code / duct / electrical / gas checks, every assumption
-//   4 LEDGER   priced lines from the shop's rate card, editable, then
+//   5 ESTIMATE priced lines from the shop's rate card, editable, then
 //              Save / Convert to proposal
-//   5 RECENT   the org's last estimates, to reopen
+//   + RECENT   the org's last estimates, to reopen (after the stepper)
+//
+// One step is open at a time under a sticky rail of all five (the owner's
+// pick of two layouts, second pass 2026-09-20): a finished step shows its
+// one-line summary in the rail, the next stays locked, with its reason, until
+// the current one is filled. A summary of job · house · size · price sits
+// beside the steps (a bar under them on a phone).
 //
 // The building model is DERIVED, never stored as state: site facts → era
 // defaults → the walk's reading → each plate → the typed answers, in that
@@ -61,7 +71,13 @@ import { serviceMenuFor } from "@/lib/hvac/serviceMenu";
 import { US_CATALOG } from "@/lib/hvac/data/usCatalog";
 import { ultraLowNoxNeeded } from "@/lib/hvac/data/rules";
 import { CapacityChart } from "./capacity-chart";
+import { BlueprintSheet } from "@/components/ui/BlueprintSheet";
 import s from "./hvac-estimator.module.css";
+// The estimate rows ride on the manual builder's line block — its grid, its
+// 36px fields, its column heads, its kill and add controls — so the two
+// sheets read as one. Only the column set (no material/labor split here) and
+// the text-at-rest cells are this page's own.
+import lv from "@/components/v3/manual-card-lab/lines-v2/lines-v2.module.css";
 
 function cx(...names: Array<string | false | null | undefined>): string {
   return names.filter(Boolean).map((n) => (s as Record<string, string>)[n as string] ?? (n as string)).join(" ");
@@ -70,6 +86,8 @@ function cx(...names: Array<string | false | null | undefined>): string {
 const STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
 const num = (n: number, d = 0) => Number(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
+/** The estimate's own format: two places and separators, everywhere on the sheet. */
+const money2 = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const dateShort = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 const RATE_CARD_KEY = "jf.hvac.rateCard.v1";
@@ -107,6 +125,133 @@ async function fileToJpegDataUrl(file: File, max = 1600): Promise<string> {
   }
 }
 
+// ── the phone ───────────────────────────────────────────────────────────────
+
+/** True at the handheld width (the stylesheet's own 860px break). A media
+ *  query, not the user agent; false on the server and until the client is up. */
+function usePhone(): boolean {
+  return React.useSyncExternalStore(
+    (cb) => { const m = window.matchMedia("(max-width: 860px)"); m.addEventListener("change", cb); return () => m.removeEventListener("change", cb); },
+    () => window.matchMedia("(max-width: 860px)").matches,
+    () => false,
+  );
+}
+
+/* A Recent row on a phone is two lines, so both are cut to what a line can
+   hold: the title loses the address it repeats ("… — 4518 Bluestem Hollow
+   Dr"), and the meta says the town, not the street, the day without the
+   year, the status and the size — the job is already in the title. */
+const shortTitle = (r: HvacEstimateSummary) => (r.title || r.address).split(" — ")[0];
+function shortMeta(r: HvacEstimateSummary): string {
+  const parts = r.address.split(",").map((x) => x.trim()).filter((x) => x && !/^(usa|united states)$/i.test(x));
+  const town = parts.length >= 3 ? `${parts[parts.length - 2]}, ${(parts[parts.length - 1] ?? "").split(" ")[0]}` : parts[0];
+  const day = new Date(r.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const status = r.status ? r.status.charAt(0).toUpperCase() + r.status.slice(1).toLowerCase() : "";
+  return [town, day, status, r.sizedTons ? `${r.sizedTons} T` : ""].filter(Boolean).join(" · ");
+}
+
+/* The estimate line, edited in the sheet Financials uses for its forms — the
+   phone's way; the desktop keeps the inline row. The draft is the sheet's
+   own: Cancel leaves the estimate exactly as it was, Done writes it once. */
+function LineSheet({ line, isNew, onDone, onRemove, onClose }: { line: LedgerLine; isNew?: boolean; onDone: (p: Pick<LedgerLine, "name" | "quantity" | "unit" | "unitPrice">) => void; onRemove?: () => void; onClose: () => void }) {
+  const [name, setName] = React.useState(line.name);
+  const [qty, setQty] = React.useState(isNew ? "1" : String(line.quantity));
+  const [unit, setUnit] = React.useState(line.unit);
+  const [price, setPrice] = React.useState(isNew ? "" : line.unitPrice.toFixed(2));
+  const q = Number(qty.replace(/,/g, ""));
+  const p = Number(price.replace(/[$,]/g, ""));
+  const ok = name.trim() !== "" && qty.trim() !== "" && Number.isFinite(q) && q >= 0 && Number.isFinite(p) && p >= 0;
+  return (
+    <BlueprintSheet
+      open
+      onClose={onClose}
+      title={isNew ? "Add line" : "Edit line"}
+      footer={
+        <div className={cx("ls-foot")}>
+          {onRemove ? <button type="button" className={cx("ls-remove")} onClick={onRemove}>Remove line</button> : <span />}
+          <span className={cx("ls-foot-r")}>
+            <button type="button" className="bps-btn bps-btn--ghost" onClick={onClose}>Cancel</button>
+            <button type="button" className="bps-btn bps-btn--primary" disabled={!ok} onClick={() => onDone({ name: name.trim(), quantity: q, unit: unit.trim() || "each", unitPrice: Math.round(p * 100) / 100 })}>Done</button>
+          </span>
+        </div>
+      }
+    >
+      <div className="bps-form">
+        <label className="bps-fld bps-fld--wide"><span>Item</span><textarea className={`bps-in ${cx("ls-ta")}`} rows={3} value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <label className={`bps-fld ${cx("ls-half")}`}><span>Qty</span><input className={`bps-in ${cx("ls-num")}`} inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} /></label>
+        <label className={`bps-fld ${cx("ls-half")}`}><span>Unit</span><input className="bps-in" value={unit} onChange={(e) => setUnit(e.target.value)} /></label>
+        <label className="bps-fld bps-fld--wide"><span>Unit price</span><input className={`bps-in ${cx("ls-num")}`} inputMode="decimal" placeholder="0.00" value={price} onChange={(e) => setPrice(e.target.value)} onBlur={() => { if (price.trim() !== "" && Number.isFinite(p)) setPrice(p.toFixed(2)); }} /></label>
+        <div className={cx("ls-total")}><span>Line total</span><b>{money2(Number.isFinite(q) && Number.isFinite(p) ? q * p : 0)}</b></div>
+      </div>
+    </BlueprintSheet>
+  );
+}
+
+// ── the stepper ─────────────────────────────────────────────────────────────
+
+type StepKey = "job" | "house" | "intake" | "design" | "estimate";
+type IntakeMode = "walk" | "plates" | "type";
+/** The quickest way in for a job: the walk where the whole house has to be
+ *  read, the plates where only the equipment does, typing where the job asks
+ *  for two or three facts. */
+function defaultModeFor(def: ReturnType<typeof jobDef>): IntakeMode {
+  if (def.needs.load && def.shots.length >= 4) return "walk";
+  if (def.needs.existing) return "plates";
+  return "type";
+}
+const STEP_IDS: Record<StepKey, string> = { job: "hv-job", house: "hv-site", intake: "hv-intake", design: "hv-design", estimate: "hv-ledger" };
+interface StepMeta { n: number; title: string; lead: string; summary: string; done: boolean; locked: boolean; reason: string }
+
+/* The job tiles, grouped by what the visit does. Icons are the shell sprite's
+   own symbols — the page adds none of its own. */
+const JOB_GROUPS: Array<{ k: string; ids: JobKind[] }> = [
+  { k: "Replace", ids: ["replace-system", "replace-outdoor", "replace-furnace", "heat-pump-conversion", "water-heater"] },
+  { k: "Add", ids: ["add-ac", "ductless"] },
+  { k: "Fix", ids: ["ducts", "service"] },
+];
+const JOB_ICONS: Record<JobKind, string> = {
+  "replace-system": "i-heatpump", "replace-outdoor": "i-box", "replace-furnace": "i-target", "heat-pump-conversion": "i-heatpump", "water-heater": "i-hourglass",
+  "add-ac": "i-plus", ductless: "i-grid", ducts: "i-link", service: "i-gear",
+};
+
+/* One step of the stepper: only the open one is on the page; the rail above
+   carries the rest. The body stays mounted — the address field's suggestions
+   and the walk's clip live in it — and is hidden, not removed. */
+function Step({ k, meta, open, children }: { k: StepKey; meta: StepMeta; open: boolean; children: React.ReactNode }) {
+  return (
+    <section className={cx("st", open && "st-open")} id={STEP_IDS[k]} hidden={!open} aria-current={open ? "step" : undefined}>
+      <div className={cx("st-h")}>
+        <span className={cx("st-n")} aria-hidden="true">{meta.n}</span>
+        <span className={cx("st-t")}>
+          <span className={cx("st-title")}>{meta.title}</span>
+          <span className={cx("st-lead")}>{meta.lead}</span>
+        </span>
+      </div>
+      <div className={cx("st-b")}>{children}</div>
+    </section>
+  );
+}
+
+/* The rail: all five steps in one sticky strip, the open one marked, finished
+   ones with their summary, locked ones greyed with the reason. */
+function Rail({ steps, cur, onGo }: { steps: Array<[StepKey, StepMeta]>; cur: StepKey; onGo: (k: StepKey) => void }) {
+  return (
+    <ol className={cx("rail")} aria-label="Steps">
+      {steps.map(([k, m]) => (
+        <li key={k} className={cx("rail-i", cur === k && "on", m.done && "done", m.locked && "locked")}>
+          <button type="button" className={cx("rail-b")} disabled={m.locked} onClick={() => onGo(k)} aria-current={cur === k ? "step" : undefined} title={m.locked ? m.reason : undefined}>
+            <span className={cx("st-n")} aria-hidden="true">{m.done && cur !== k ? <svg className={cx("ic")}><use href="#i-check" /></svg> : m.n}</span>
+            <span className={cx("rail-t")}>
+              <span className={cx("rail-title")}>{m.title}</span>
+              <span className={cx("rail-s")}>{cur === k ? "Now" : m.locked ? m.reason : m.done ? m.summary : "Next"}</span>
+            </span>
+          </button>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 // ── small parts ─────────────────────────────────────────────────────────────
 
 function Chip({ p }: { p?: Provenance }) {
@@ -126,11 +271,11 @@ function Field({ label, path, model, kind, options, onChange, placeholder, step 
     return (
       <label className={cx("field")} htmlFor={id}>
         <span className={cx("lbl")}><span>{label}</span><Chip p={p} /></span>
-        <select id={id} className={cx("sel")} value={raw === true ? "yes" : raw === false ? "no" : ""} onChange={(e) => onChange(path, e.target.value === "yes" ? true : e.target.value === "no" ? false : undefined)}>
+        <span className={cx("bp-sel", "hvsel")}><select id={id} className={cx("bp-sel-in", "sel")} value={raw === true ? "yes" : raw === false ? "no" : ""} onChange={(e) => onChange(path, e.target.value === "yes" ? true : e.target.value === "no" ? false : undefined)}>
           <option value="">not seen</option>
           <option value="yes">Yes</option>
           <option value="no">No</option>
-        </select>
+        </select></span>
       </label>
     );
   }
@@ -138,10 +283,10 @@ function Field({ label, path, model, kind, options, onChange, placeholder, step 
     <label className={cx("field")} htmlFor={id}>
       <span className={cx("lbl")}><span>{label}</span><Chip p={p} /></span>
       {kind === "select" ? (
-        <select id={id} className={cx("sel")} value={raw === undefined || raw === null ? "" : String(raw)} onChange={(e) => onChange(path, e.target.value === "" ? undefined : options?.find(([v]) => v === e.target.value)?.[0] ?? e.target.value)}>
+        <span className={cx("bp-sel", "hvsel")}><select id={id} className={cx("bp-sel-in", "sel")} value={raw === undefined || raw === null ? "" : String(raw)} onChange={(e) => onChange(path, e.target.value === "" ? undefined : options?.find(([v]) => v === e.target.value)?.[0] ?? e.target.value)}>
           <option value="">—</option>
           {options?.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        </select></span>
       ) : (
         <input
           id={id}
@@ -167,38 +312,60 @@ function Field({ label, path, model, kind, options, onChange, placeholder, step 
   );
 }
 
-function LinesTable({ title, rows, onChange }: { title: string; rows: LedgerLine[]; onChange: (rows: LedgerLine[]) => void }) {
+/* The estimate's rows, on the manual builder's line block. At rest every row
+   is TEXT — name, qty · unit, unit price and total in mono on the right, a
+   hairline between rows. A click puts that one row into the builder's 36px
+   fields; the kill sits at the row's end and shows on hover or in edit. One
+   legend per section says where the prices came from; the row-by-row basis
+   notes moved to "How this is priced". */
+function LinesBlock({ title, rows, editing, onEdit, onChange, phone, onAddPhone }: { title: string; rows: LedgerLine[]; editing: string | null; onEdit: (id: string | null) => void; onChange: (rows: LedgerLine[]) => void; phone?: boolean; onAddPhone?: () => void }) {
   const sum = rows.reduce((a, r) => a + r.quantity * r.unitPrice, 0);
+  const estimated = rows.some((r) => r.basis === "estimated");
   const patch = (id: string, p: Partial<LedgerLine>) => onChange(rows.map((r) => (r.id === id ? { ...r, ...p } : r)));
   return (
-    <div className={cx("bo-sec")}>
-      <div className={cx("bo-head")}><span className={cx("kpi-lbl")}>{title}</span><span className={cx("bo-sum")}>{money(sum)}</span></div>
-      <div className={cx("tbl-wrap")}>
-        <table className={cx("bo-table")}>
-          <thead><tr><th>Item</th><th className={cx("num")}>Qty</th><th>Unit</th><th className={cx("num")}>Unit price</th><th className={cx("num")}>Total</th><th /></tr></thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id}>
-                <td>
-                  <input className={cx("bo-in")} value={r.name} aria-label="Item" onChange={(e) => patch(r.id, { name: e.target.value })} />
-                  {r.note && <span className={cx("bo-note")}>{r.note}</span>}
-                </td>
-                <td className={cx("num")}><NumCell value={r.quantity} ariaLabel="Quantity" onCommit={(n) => patch(r.id, { quantity: n })} /></td>
-                <td><input className={cx("bo-in")} style={{ width: 84 }} value={r.unit} aria-label="Unit" onChange={(e) => patch(r.id, { unit: e.target.value })} /></td>
-                <td className={cx("num")}><NumCell value={r.unitPrice} ariaLabel="Unit price" onCommit={(n) => patch(r.id, { unitPrice: n })} /></td>
-                <td className={cx("num")}><b>{money(r.quantity * r.unitPrice)}</b><span className={cx("bo-note")}>{r.basis}</span></td>
-                <td><button type="button" className={cx("bo-x")} aria-label="Remove line" onClick={() => onChange(rows.filter((x) => x.id !== r.id))}><svg className={cx("ic")}><use href="#i-x" /></svg></button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className={`${lv.block} ${cx("lines")}`}>
+      <div className={cx("lines-h")}><span className={cx("kpi-lbl")}>{title}</span><span className={cx("lines-hint")}><svg className={cx("ic")}><use href="#i-pen" /></svg>{phone ? "Tap a line to edit it" : "Click a line to edit it"}</span><span className={cx("lines-sum")}>{money2(sum)}</span></div>
+      <div className={`${lv.head} ${cx("lines-grid")}`} aria-hidden="true">
+        <span className={lv.colHead}><span className={lv.colName}>Item</span></span>
+        <span className={`${lv.colHead} ${lv.colHeadEnd}`}><span className={lv.colName}>Qty</span></span>
+        <span className={lv.colHead}><span className={lv.colName}>Unit</span></span>
+        <span className={`${lv.colHead} ${lv.colHeadEnd}`}><span className={lv.colName}>Unit price</span></span>
+        <span className={`${lv.colHead} ${lv.colHeadEnd}`}><span className={lv.colName}>Total</span></span>
+        <span />
       </div>
-      <div className={cx("bo-add")}><button type="button" className={cx("link")} onClick={() => onChange([...rows, { id: nanoid(6), name: "", quantity: 1, unitPrice: 0, unit: "each", basis: "entered" }])}>+ Add line</button></div>
+      {rows.map((r) => {
+        const on = !phone && editing === r.id;
+        const kill = <button type="button" className={`${lv.kill} ${cx("line-kill")}`} aria-label={`Remove ${r.name || "line"}`} onClick={(e) => { e.stopPropagation(); onChange(rows.filter((x) => x.id !== r.id)); if (on) onEdit(null); }}>×</button>;
+        if (on) {
+          return (
+            <div key={r.id} className={`${lv.line} ${cx("lines-grid", "line-edit")}`} role="group" aria-label={r.name || "Line"} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onEdit(null); }} onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") onEdit(null); }}>
+              <input className={`${lv.f} ${lv.fText}`} value={r.name} aria-label="Item" autoFocus onChange={(e) => patch(r.id, { name: e.target.value })} />
+              <NumCell className={`${lv.f} ${lv.fNum}`} value={r.quantity} ariaLabel="Quantity" onCommit={(n) => patch(r.id, { quantity: n })} />
+              <input className={`${lv.f} ${lv.fText}`} value={r.unit} aria-label="Unit" onChange={(e) => patch(r.id, { unit: e.target.value })} />
+              <NumCell className={`${lv.f} ${lv.fNum}`} value={r.unitPrice} ariaLabel="Unit price" onCommit={(n) => patch(r.id, { unitPrice: n })} />
+              <span className={cx("line-total")}>{money2(r.quantity * r.unitPrice)}</span>
+              <span className={cx("line-acts")}><button type="button" className={cx("line-done")} onClick={() => onEdit(null)}>Done</button>{kill}</span>
+            </div>
+          );
+        }
+        return (
+          <div key={r.id} className={cx("lines-grid", "line-txt")} role="button" tabIndex={0} title={r.note ?? undefined} onClick={() => onEdit(r.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onEdit(r.id); } }}>
+            <span className={cx("line-name")}>{r.name || <i>Unnamed line</i>}</span>
+            <span className={cx("line-num")}>{r.quantity.toLocaleString("en-US")}</span>
+            <span className={cx("line-unit")}>{r.unit}</span>
+            <span className={cx("line-num")}>{money2(r.unitPrice)}</span>
+            <span className={cx("line-total")}>{money2(r.quantity * r.unitPrice)}</span>
+            <span className={cx("line-acts")}><span className={cx("line-pen")} aria-hidden="true"><svg className={cx("ic")}><use href="#i-pen" /></svg></span>{kill}</span>
+          </div>
+        );
+      })}
+      <button type="button" className={`${lv.add} ${cx("line-add")}`} onClick={() => { if (phone) { onAddPhone?.(); return; } const id = nanoid(6); onChange([...rows, { id, name: "", quantity: 1, unitPrice: 0, unit: "each", basis: "entered" }]); onEdit(id); }}><span className={lv.addMark} aria-hidden="true">+</span>Add line</button>
+      {estimated && <div className={cx("lines-legend")}>Prices estimated from the rate card — import your catalog for shop costs.</div>}
     </div>
   );
 }
 
-function NumCell({ value, onCommit, ariaLabel }: { value: number; onCommit: (n: number) => void; ariaLabel: string }) {
+function NumCell({ value, onCommit, ariaLabel, className }: { value: number; onCommit: (n: number) => void; ariaLabel: string; className?: string }) {
   const [txt, setTxt] = React.useState(String(value));
   const [seen, setSeen] = React.useState(value);
   if (value !== seen) {
@@ -207,7 +374,7 @@ function NumCell({ value, onCommit, ariaLabel }: { value: number; onCommit: (n: 
   }
   return (
     <input
-      className={cx("bo-in", "num")}
+      className={className ?? cx("bo-in", "num")}
       inputMode="decimal"
       value={txt}
       aria-label={ariaLabel}
@@ -224,13 +391,36 @@ function NumCell({ value, onCommit, ariaLabel }: { value: number; onCommit: (n: 
 
 // ── the form ────────────────────────────────────────────────────────────────
 
-export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
+export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: boolean; initialAddress?: string }) {
   const router = useRouter();
+
+  // The stepper: which step is open. A client's record hands the page an
+  // address, so it opens on the house with the address already in the field.
+  const [cur, setCur] = React.useState<StepKey>(initialAddress ? "house" : "job");
+  // Step 3's way in: one of three at a time. Picked by the job when the job
+  // changes — the walk where the house must be read, the plates where the
+  // equipment must be, typing where there is little to catch.
+  const [mode, setMode] = React.useState<IntakeMode>("walk");
+  // One check open at a time in the design step, one estimate row in edit.
+  const [openCheck, setOpenCheck] = React.useState<string | null>(null);
+  const [editLine, setEditLine] = React.useState<string | null>(null);
+  const [svcQ, setSvcQ] = React.useState("");
+  // The phone: three Recent rows until asked for all, a row's action sheet,
+  // and the estimate line's sheet (an id, or a new line for one section).
+  const phone = usePhone();
+  const [recentAll, setRecentAll] = React.useState(false);
+  const [rowSheet, setRowSheet] = React.useState<string | null>(null);
+  const [newLineFor, setNewLineFor] = React.useState<"materials" | "labor" | null>(null);
+  const go = React.useCallback((k: StepKey) => {
+    setCur(k);
+    setTimeout(() => document.getElementById(STEP_IDS[k])?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+  }, []);
 
   // 0 · the job
   const [job, setJob] = React.useState<JobKind>(DEFAULT_JOB);
   const [jobInput, setJobInput] = React.useState<JobInput>({});
   const def = jobDef(job);
+  React.useEffect(() => { setMode(defaultModeFor(def)); }, [def]);
   const setWh = (patch: Partial<NonNullable<JobInput["wh"]>>) => {
     setJobInput((j) => ({ ...j, wh: { ...(j.wh ?? {}), ...patch } }));
     // A new fuel or type is a different appliance: the maker is picked again.
@@ -610,7 +800,6 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     next.focus();
     next.click();
   };
-  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   // ── 1 · site lookup ───────────────────────────────────────────────────────
   const lookupSite = async () => {
@@ -633,7 +822,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
       setSiteLocal(true);
       setStateCode(st);
       setSiteWarnings([]);
-      setTimeout(() => scrollTo("hv-intake"), 60);
+      setTimeout(() => go("intake"), 60);
       setSiteBusy(true);
       try {
         const res = await hvacSiteFacts({ address: full, state: st, county: countyPicked && county ? county : undefined, lat: picked?.lat, lng: picked?.lng });
@@ -682,7 +871,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
       } else setCounty("");
       setCountyPicked(false);
       setSiteWarnings(res.warnings);
-      setTimeout(() => scrollTo("hv-intake"), 60);
+      setTimeout(() => go("intake"), 60);
     } catch (err) {
       setSiteError(errMsg(err));
     } finally {
@@ -856,7 +1045,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
     setTitle(res.row.draft.title);
     setSiteWarnings([]);
     if (addrRef.current) addrRef.current.value = facts.address;
-    setTimeout(() => scrollTo("hv-design"), 60);
+    setTimeout(() => go("design"), 60);
   };
 
   // ── permit-grade report ──────────────────────────────────────────────────
@@ -913,55 +1102,118 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
   const subtotal = lines ? [...lines.materials, ...lines.labor].reduce((a, l) => a + l.quantity * l.unitPrice, 0) : 0;
   const defaultedCount = engine ? engine.notes.filter((n) => n.kind === "assumption").length : 0;
 
+  // ── the stepper's state, derived every render ─────────────────────────
+  const sizeText = !engine ? "—"
+    : engine.waterHeater ? (engine.waterHeater.type === "tankless" ? "tankless" : `${engine.waterHeater.gallons} gal`)
+    : !def.needs.load ? `${(jobInput.service?.tasks?.length ?? 0) + (jobInput.service?.custom?.length ?? 0)} task${((jobInput.service?.tasks?.length ?? 0) + (jobInput.service?.custom?.length ?? 0)) === 1 ? "" : "s"}`
+    : def.selection === "furnace" ? (chosen?.item.btuInput ? `${Math.round(chosen.item.btuInput / 1000)}k BTU in` : "—")
+    : def.selection === "none" ? `${num(engine.load.coolingCfm)} CFM`
+    : `${engine.selection.systems > 1 ? `${engine.selection.systems} × ` : ""}${chosen?.item.tons ?? engine.selection.targetTons} ton`;
+  const sqftText = model?.conditionedSqft ? `${num(model.conditionedSqft)} sq ft` : def.needs.zone && jobInput.zoneSqft ? `${num(jobInput.zoneSqft)} sq ft zone` : "";
+  const addrShort = site ? site.address.split(",")[0] : "";
+  const needSqft = !!(site && model) && !ready;
+  const S: Record<StepKey, StepMeta> = {
+    job: { n: 1, title: "The job", lead: "Pick the job. It sets what we ask for and what goes on the estimate.", summary: def.title, done: true, locked: false, reason: "" },
+    house: { n: 2, title: "The house", lead: "Tell us the address — we'll pull the house size and the local climate.", summary: site ? [addrShort, sqftText].filter(Boolean).join(" · ") : "", done: !!site, locked: false, reason: "" },
+    intake: { n: 3, title: "What is there", lead: "Walk it on video, photograph the plates, or type what you know — every figure shows where it came from.", summary: site && model ? [analysis ? "walk read" : "no walk", `${Object.keys(plates).length} plate${Object.keys(plates).length === 1 ? "" : "s"}`, `${Object.keys(typed).length} typed`, sqftText].filter(Boolean).join(" · ") : "", done: !!(site && model && ready), locked: !site, reason: "Look up the house first" },
+    design: { n: 4, title: def.needs.load ? "The design" : "The checks", lead: def.needs.load ? "The load on the design day, the unit that fits it, and the checks an inspector would ask about." : engine?.waterHeater ? "The tank sized from the household, and the checks an inspector would ask about." : "What the visit needs, and the rule that applies.", summary: engine ? [def.selection !== "none" ? (chosen ? `${chosen.item.brand} ${chosen.item.model}` : "no catalog fit") : "", sizeText, defaultedCount ? `${defaultedCount} assumption${defaultedCount === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ") : "", done: !!engine, locked: !site || needSqft, reason: !site ? "Look up the house first" : def.needs.zone ? "Type the zone's square footage" : "Type the conditioned square footage" },
+    estimate: { n: 5, title: "The estimate", lead: "Every line is editable. Convert when it reads right.", summary: lines ? money(subtotal) : "", done: !!(engine && ledger && lines), locked: !engine, reason: !site ? "Look up the house first" : needSqft ? (def.needs.zone ? "Type the zone's square footage" : "Type the conditioned square footage") : "Finish the design first" },
+  };
+  const STEP_ORDER: StepKey[] = ["job", "house", "intake", "design", "estimate"];
+  // A link can name a step (#hv-job, #hv-site, #hv-intake, #hv-design,
+  // #hv-ledger): it opens once, as soon as that step is unlocked — at once for
+  // the first two, after a lookup or a reopened estimate for the rest.
+  const hashDone = React.useRef(false);
+  const hashLockKey = STEP_ORDER.map((k) => (S[k].locked ? "1" : "0")).join("");
+  React.useEffect(() => {
+    if (hashDone.current) return;
+    const k = STEP_ORDER.find((x) => "#" + STEP_IDS[x] === window.location.hash);
+    if (!k) { hashDone.current = true; return; }
+    if (S[k].locked) return;
+    hashDone.current = true;
+    setCur(k);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run only when a lock opens
+  }, [hashLockKey]);
+  const sourceRows: Array<{ k: string; v: string; state: "busy" | "found" | "default" }> = site || siteBusy ? [
+    { k: "Parcel", state: siteBusy && (siteLocal || !site) ? "busy" : site && (site.sources.living || site.sources.yearBuilt || site.sources.storeys) ? "found" : "default", v: siteBusy && (siteLocal || !site) ? "looking up the record…" : site && (site.sources.living || site.sources.yearBuilt || site.sources.storeys) ? `${[site.sources.living && "area", site.sources.yearBuilt && "year built", site.sources.storeys && "storeys"].filter(Boolean).join(", ")} — ${site.sources.living ?? site.sources.yearBuilt ?? site.sources.storeys}` : "not on record — era defaults, type over them" },
+    ...(def.needs.load ? [
+      { k: "Footprint", state: siteBusy && !site ? "busy" as const : site?.sources.footprint ? "found" as const : "default" as const, v: siteBusy && !site ? "measuring…" : site?.sources.footprint ? `${site.footprintSqft ? num(site.footprintSqft) + " sq ft — " : ""}${site.sources.footprint}` : "none — the area comes from the record or what you type" },
+      { k: "Elevation", state: siteBusy && !site ? "busy" as const : site?.sources.elevation ? "found" as const : "default" as const, v: siteBusy && !site ? "sampling…" : site?.sources.elevation ? `${site.elevationFt !== undefined ? num(site.elevationFt) + " ft — " : ""}${site.sources.elevation}` : "not sampled — sea level assumed" },
+    ] : []),
+    { k: "County design day", state: siteBusy && !site ? "busy" : conditions && (conditions.match === "county" || conditions.match === "fuzzy") ? "found" : "default", v: siteBusy && !site ? "finding the county…" : conditions && (conditions.match === "county" || conditions.match === "fuzzy") ? `${conditions.conditions.county} County — ${jobInput.designCoolingF ?? conditions.conditions.coolingF}° / ${jobInput.designHeatingF ?? conditions.conditions.heatingF}°` : conditions?.match === "state" ? "state median — pick the county above" : "no table — pick the state and county" },
+  ] : [];
+
+  const summary = (
+    <aside className={cx("sum")} aria-label="Estimate summary">
+      <div className={cx("sum-k")}>Estimate</div>
+      <dl className={cx("sum-l")}>
+        <div className={cx("sum-r")}><dt>Job</dt><dd>{def.title}</dd></div>
+        <div className={cx("sum-r")}><dt>House</dt><dd>{site ? [addrShort, sqftText].filter(Boolean).join(" · ") : "—"}</dd></div>
+        <div className={cx("sum-r")}><dt>{engine?.waterHeater ? "Tank" : !def.needs.load ? "Visit" : "Sized"}</dt><dd>{sizeText}</dd></div>
+        <div className={cx("sum-r", "sum-p")}><dt>Price</dt><dd>{lines ? money(subtotal) : "—"}</dd></div>
+      </dl>
+      <div className={cx("sum-a")}>
+        <button type="button" className={cx("btn", "btn-ghost", "btn-sm")} disabled={!S.estimate.done || saving} onClick={() => void save()}>{saving ? "Saving…" : savedId ? "Saved" : "Save"}</button>
+        <button type="button" className={cx("btn", "btn-primary", "btn-sm")} disabled={!S.estimate.done || converting || !(lines && (lines.materials.length || lines.labor.length))} onClick={() => void convert()}><svg className={cx("ic")}><use href="#i-doc" /></svg>{converting ? "Converting…" : "Convert to proposal"}</button>
+      </div>
+    </aside>
+  );
+
   return (
     <>
-      {/* ── 0 · THE JOB ──────────────────────────────────────────────────── */}
-      <section className={cx("card")} id="hv-job">
-        <div className={cx("head")}>
-          <div className={cx("head-txt")}>
-            <div className={cx("card-title")}><span className={cx("step", "done")}>1</span>The job</div>
-            <div className={cx("card-sub")}>Pick what you are pricing. It decides what the walk needs to catch, what the engine sizes and picks, and which lines land on the estimate.</div>
-          </div>
-        </div>
+      <div className={cx("hv")}>
+      <Rail steps={STEP_ORDER.map((k) => [k, S[k]] as [StepKey, StepMeta])} cur={cur} onGo={go} />
+      <div className={cx("hv-main")}>
+      {/* ── 1 · THE JOB ──────────────────────────────────────────────────── */}
+      <Step k="job" meta={S.job} open={cur === "job"}>
         <div className={cx("body")}>
-          <div className={cx("jobs")} role="radiogroup" aria-label="Job" onKeyDown={radioKeys}>
-            {JOBS.map((j) => (
-              <button key={j.id} type="button" role="radio" aria-checked={job === j.id} className={cx("job", job === j.id && "on")} onClick={() => { setJob(j.id); setTitle(null); setSavedId(null); setPermit(null); setReportUrl(null); setPermitMsg(""); setPickId(null); setOutdoorKind(null); setCustom(null); setSwapMsg(""); if (!site) setTimeout(() => addrRef.current?.focus(), 30); else if (siteLocal && j.needs.load) { setSite(null); setSiteLocal(false); setTimeout(() => { addrRef.current?.focus(); scrollTo("hv-site"); }, 30); } }}>
-                <span className={cx("job-t")}>{j.title}</span>
-                <span className={cx("job-s")}>{j.sub}</span>
-              </button>
+          <div className={cx("jgs")}>
+            {JOB_GROUPS.map((g) => (
+              <div key={g.k} className={cx("jg")}>
+                <div className={cx("jg-k")}>{g.k}</div>
+                <div className={cx("jobs")} role="radiogroup" aria-label={g.k} onKeyDown={radioKeys}>
+                  {g.ids.map((id) => { const j = jobDef(id); return (
+                    <button key={j.id} type="button" role="radio" aria-checked={job === j.id} className={cx("job", job === j.id && "on")} title={j.sub} onClick={() => { setJob(j.id); setTitle(null); setSavedId(null); setPermit(null); setReportUrl(null); setPermitMsg(""); setPickId(null); setOutdoorKind(null); setCustom(null); setSwapMsg(""); if (!site) setTimeout(() => { go("house"); addrRef.current?.focus(); }, 30); else if (siteLocal && j.needs.load) { setSite(null); setSiteLocal(false); setTimeout(() => { go("house"); addrRef.current?.focus(); }, 30); } }}>
+                      <span className={cx("job-ic")} aria-hidden="true"><svg className={cx("ic")}><use href={`#${JOB_ICONS[j.id]}`} /></svg></span>
+                      <span className={cx("job-t")}>{j.title}</span>
+                      <span className={cx("job-stamp")} aria-hidden="true"><svg className={cx("ic")}><use href="#i-check" /></svg></span>
+                    </button>
+                  ); })}
+                </div>
+              </div>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* ── 1 · SITE ─────────────────────────────────────────────────────── */}
-      <section className={cx("card")} id="hv-site">
-        <div className={cx("head")}>
-          <div className={cx("head-txt")}>
-            <div className={cx("card-title")}><span className={cx("step", site && "done")}>2</span>The house</div>
-            <div className={cx("card-sub")}>Type the address. The county sets the design day (ENERGY STAR 2019 table), the footprint sets the area, and the records fill what they can — everything else starts as an era default you can see.</div>
+          <div className={cx("st-next")}>
+            <button type="button" className={cx("btn", "btn-primary")} onClick={() => go("house")}>Continue<svg className={cx("ic")}><use href="#i-arrow" /></svg></button>
+            <span className={cx("acts-note")}>{def.title} · {def.sub}</span>
           </div>
         </div>
+      </Step>
+
+      {/* ── 2 · THE HOUSE ────────────────────────────────────────────────── */}
+      <Step k="house" meta={S.house} open={cur === "house"}>
         <div className={cx("body")}>
           <div className={cx("grid", site ? "grid-addr" : "grid-1")}>
             <label className={cx("field")} htmlFor="hv-addr">
-              <span className={cx("lbl")}>Address</span>
-              <input ref={addrRef} id="hv-addr" className={cx("in")} placeholder="4518 Bluestem Hollow Dr, Frisco, TX 75034" autoComplete="off" onChange={() => setPicked(null)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void lookupSite(); } }} />
+              <span className={cx("lbl")}>Address{initialAddress && <span className={cx("chip", "chip-stated")}>from the client</span>}</span>
+              <span className={cx("addr")}>
+                <svg className={cx("ic")}><use href="#i-pin" /></svg>
+                <input ref={addrRef} id="hv-addr" className={cx("addr-in")} placeholder="e.g. 4518 Bluestem Hollow Dr, Frisco, TX 75034" defaultValue={initialAddress ?? ""} autoComplete="off" onChange={() => setPicked(null)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void lookupSite(); } }} />
+              </span>
             </label>
             {(site || /state/i.test(siteError)) && <label className={cx("field")} htmlFor="hv-state">
               <span className={cx("lbl")}>State</span>
-              <select id="hv-state" className={cx("sel")} value={stateCode} onChange={(e) => { setStateCode(e.target.value); setCounty(""); setCountyPicked(false); }}>
+              <span className={cx("bp-sel", "hvsel")}><select id="hv-state" className={cx("bp-sel-in", "sel")} value={stateCode} onChange={(e) => { setStateCode(e.target.value); setCounty(""); setCountyPicked(false); }}>
                 <option value="">auto</option>
                 {STATES.map((st) => <option key={st} value={st}>{st}</option>)}
-              </select>
+              </select></span>
             </label>}
             {site && def.needs.load && <label className={cx("field")} htmlFor="hv-county">
               <span className={cx("lbl")}>County <span className={cx("mono")} style={{ textTransform: "none", letterSpacing: 0 }}>{site?.sources.county ?? "auto"}</span></span>
-              <select id="hv-county" className={cx("sel")} value={county} onChange={(e) => { setCounty(e.target.value); setCountyPicked(true); }} disabled={!stateCode}>
+              <span className={cx("bp-sel", "hvsel")}><select id="hv-county" className={cx("bp-sel-in", "sel")} value={county} onChange={(e) => { setCounty(e.target.value); setCountyPicked(true); }} disabled={!stateCode}>
                 <option value="">{stateCode ? "auto from the address" : "pick the state first"}</option>
                 {counties.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+              </select></span>
             </label>}
             {site && def.needs.load && <label className={cx("field")} htmlFor="hv-design-cool">
               <span className={cx("lbl")}>Design °F cooling <span className={cx("mono")} style={{ textTransform: "none", letterSpacing: 0 }}>1% · county {conditions?.conditions.coolingF ?? "—"}</span></span>
@@ -978,8 +1230,24 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
             <button type="button" className={cx("btn", "btn-primary")} disabled={siteBusy} onClick={() => void lookupSite()}>
               <svg className={cx("ic")}><use href="#i-pin" /></svg>{siteBusy ? "Looking up…" : site ? "Look up another" : "Look up the house"}
             </button>
-            <span className={cx("acts-note")}>{def.needs.load ? "Parcel · footprint · elevation · county design day" : siteBusy ? "The form is ready — the house record is on its way" : siteLocal ? "Running on the address and the state" : "Parcel · county · year built"}</span>
+            <span className={cx("acts-note")}>{siteBusy ? "Looking up the record" : site ? (siteLocal ? "Running on the address and the state" : sourceRows.some((r) => r.state === "found") ? `${sourceRows.filter((r) => r.state === "found").length} of ${sourceRows.length} sources found` : "Nothing on record — running on defaults") : def.needs.load ? "Parcel · footprint · elevation · county design day" : "Parcel · county · year built"}</span>
           </div>
+          {sourceRows.length > 0 && (
+            <ul className={cx("src")} aria-label="What the lookup found">
+              {sourceRows.map((r) => (
+                <li key={r.k} className={cx("src-r", `src-${r.state}`)}>
+                  <span className={cx("src-i")} aria-hidden="true">{r.state === "found" ? <svg className={cx("ic")}><use href="#i-check" /></svg> : r.state === "busy" ? "" : "—"}</span>
+                  <span className={cx("src-k")}>{r.k}</span>
+                  <span className={cx("src-v")}>{r.v}</span>
+                  <span className={cx("src-s")}>{r.state === "found" ? "found" : r.state === "busy" ? "looking" : "default"}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <details className={cx("how")}>
+            <summary>How this is calculated</summary>
+            <div className={cx("how-b")}>The county sets the design day (the ENERGY STAR 2019 design-temperature table, 1% cooling / 99% heating), the building footprint or the assessor&rsquo;s record sets the area, and the records fill storeys and year built where they can. Everything they cannot fill starts as an era default for that year of construction — each figure carries a badge saying which, and anything you type wins.</div>
+          </details>
         </div>
         {site && model && !def.needs.load && (
           <div className={cx("hero")}>
@@ -1036,138 +1304,149 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
             )}
           </>
         )}
-      </section>
+      </Step>
 
-      {/* ── 2 · INTAKE ───────────────────────────────────────────────────── */}
+      {/* ── 3 · WHAT IS THERE ────────────────────────────────────────────── */}
+      <Step k="intake" meta={S.intake} open={cur === "intake"}>
       {site && model && (
-        <section className={cx("card")} id="hv-intake">
-          <div className={cx("head")}>
-            <div className={cx("head-txt")}>
-              <div className={cx("card-title")}><span className={cx("step", (analysis || Object.keys(plates).length > 0) && "done")}>3</span>What is there</div>
-              <div className={cx("card-sub")}>Walk it on video and the reading fills the model; photograph the plates for the exact numbers; type over anything. Every figure keeps its source badge — <b>measured</b>, <b>read</b>, <b>stated</b> or <b>default</b>.</div>
-            </div>
-          </div>
+        <>
           {!aiEnabled && <div className={cx("body")} style={{ paddingBottom: 0 }}><div className={cx("call", "warn")}><span className={cx("stamp")}>off</span><span>Plate and video reading need OPENAI_API_KEY on the server — type the facts in Confirm below; a typed model number still decodes.</span></div></div>}
-          <div className={cx("intake")}>
-            <div>
-              <div className={cx("sec-title")}>Video walk</div>
-              <div className={cx("sec-sub")}>Two to four minutes, talking as you go. The stills are read for what is there, the audio for what you said.</div>
-              {!walk.file ? (
-                <label className={cx("drop")} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); onWalkFile(e.dataTransfer.files?.[0]); }}>
-                  <input type="file" accept={VIDEO_ACCEPT} onChange={(e) => onWalkFile(e.target.files?.[0])} />
-                  <svg className={cx("ic")}><use href="#i-video" /></svg>
-                  <span className={cx("drop-t")}>Record or choose the walk</span>
-                  <span className={cx("drop-s")}>Film it first, then pick it from the camera roll — or record now. Up to 5 minutes; the video never uploads, only stills and the audio do.</span>
-                </label>
-              ) : (
-                <div className={cx("clip")}>
-                  {walk.previewUrl && <video src={walk.previewUrl} muted playsInline preload="metadata" />}
-                  <div style={{ minWidth: 0 }}>
-                    <div className={cx("clip-t")}>{walk.file.name}</div>
-                    <div className={cx("mono", "clip-m")}>{walk.probe ? `${fmtClock(walk.probe.duration)} · ${walk.probe.width}×${walk.probe.height}` : ""} · {walk.frames.length} stills{walk.audioState !== "pending" ? ` · audio ${walk.audioState}` : ""}</div>
-                  </div>
-                  <button type="button" className={cx("link")} onClick={() => { walk.removeFile(); setAnalysis(null); }}>Remove</button>
-                </div>
-              )}
-              {walk.stage && (
-                <div className={cx("stage")}><div className={cx("stage-bar")}><div className={cx("stage-fill")} style={{ width: `${walk.stagePct}%` }} /></div><span className={cx("stage-t")}>{walk.stageText}</span></div>
-              )}
-              {walk.error && <div className={cx("call", "bad")} style={{ marginTop: 10 }}>{walk.error}</div>}
-              {walk.frames.length > 0 && !analysis && (
-                <div className={cx("frames")}>
-                  {/* Data URLs pulled from the clip in this browser — nothing for next/image to optimise. */}
-                  {stripFrames(walk.frames, 6).map((f) => (
-                    <div key={f.t} className={cx("frame")}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={f.dataUrl} alt="" />
-                      <span>{fmtClock(f.t)}</span>
+          <div className={cx("body")}>
+            <div className={cx("seg")} role="tablist" aria-label="How to tell us about the house">
+              {([["walk", "Walk", "video", "i-video"], ["plates", "Plate", "photos", "i-imgadd"], ["type", "Type", "it in", "i-pen"]] as Array<[IntakeMode, string, string, string]>).map(([m, l1, l2, ic]) => (
+                <button key={m} type="button" role="tab" aria-selected={mode === m} className={cx("seg-btn", mode === m && "on")} onClick={() => setMode(m)}>
+                  <span className={cx("seg-stamp")} aria-hidden="true"><svg className={cx("ic")}><use href="#i-check" /></svg></span>
+                  <svg className={cx("ic", "seg-ic")}><use href={`#${ic}`} /></svg><span className={cx("seg-l")}><span>{l1}</span> <span>{l2}</span></span>
+                </button>
+              ))}
+            </div>
+
+            {mode === "walk" && (
+              <div className={cx("mode")}>
+                {!walk.file ? (
+                  <label className={cx("zone")} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); onWalkFile(e.dataTransfer.files?.[0]); }}>
+                    <input type="file" accept={VIDEO_ACCEPT} onChange={(e) => onWalkFile(e.target.files?.[0])} />
+                    <svg className={cx("ic")}><use href="#i-video" /></svg>
+                    <span className={cx("zone-t")}>Record or choose the walk</span>
+                    <span className={cx("zone-h")}>MP4 · MOV · WEBM · up to 5 min · only stills and audio upload</span>
+                  </label>
+                ) : (
+                  <div className={cx("clip")}>
+                    {walk.previewUrl && <video src={walk.previewUrl} muted playsInline preload="metadata" />}
+                    <div style={{ minWidth: 0 }}>
+                      <div className={cx("clip-t")}>{walk.file.name}</div>
+                      <div className={cx("mono", "clip-m")}>{walk.probe ? `${fmtClock(walk.probe.duration)} · ${walk.probe.width}×${walk.probe.height}` : ""} · {walk.frames.length} stills{walk.audioState !== "pending" ? ` · audio ${walk.audioState}` : ""}</div>
                     </div>
-                  ))}
-                </div>
-              )}
-              {walk.file && !analysis && (
-                <div className={cx("acts")}>
-                  <button type="button" className={cx("btn", "btn-primary")} disabled={!walk.canRead} onClick={() => void readWalk()}>
-                    <svg className={cx("ic")}><use href="#i-eye" /></svg>{walk.busy ? "Reading…" : "Read the walk"}
-                  </button>
-                  <span className={cx("acts-note")}>One estimator run · frames + audio only</span>
-                </div>
-              )}
-              {analysis && (
-                <div className={cx("call", "info")} style={{ marginTop: 12 }}>
-                  <span className={cx("stamp")}>read</span>
-                  <span><b>{analysis.measurements.length} figures, {analysis.observations.length} observations</b> — {analysis.measurements.slice(0, 6).map((m) => `${m.label} ${m.value}${m.unit ? " " + m.unit : ""}`).join(" · ")}{analysis.measurements.length > 6 ? " · …" : ""}{analysis.questions.length ? ` Still asks: ${analysis.questions.map((q) => q.question).join(" ")}` : ""}</span>
-                </div>
-              )}
-              <details className={cx("guide")} open={guideOpen} onToggle={(e) => { const o = (e.target as HTMLDetailsElement).open; setGuideOpen(o); try { window.localStorage.setItem("jf.hvac.guideOpen", o ? "1" : "0"); } catch { /* blocked storage */ } }}>
-                <summary><svg className={cx("ic")}><use href="#i-video" /></svg>How to shoot the walk<span className={cx("mono")}>{def.shots.length} shots · {def.shots.length >= 6 ? "2–4" : "1–2"} min · {guideOpen ? "hide" : "show"}</span></summary>
-                <div className={cx("guide-body")}>
-                  <div className={cx("shots")}>
-                    {SHOTS.filter((sh) => def.shots.includes(sh.n)).map((sh) => (
-                      <div key={sh.n} className={cx("shot")}>
-                        <div className={cx("shot-n")}>{sh.n}</div>
-                        <div>
-                          <div className={cx("shot-t")}>{sh.title}</div>
-                          <div className={cx("shot-d")}>{sh.detail}</div>
-                          <div className={cx("shot-say")}>say: {sh.say}</div>
-                        </div>
+                    <button type="button" className={cx("link")} onClick={() => { walk.removeFile(); setAnalysis(null); }}>Remove</button>
+                  </div>
+                )}
+                {walk.stage && (
+                  <div className={cx("stage")}><div className={cx("stage-bar")}><div className={cx("stage-fill")} style={{ width: `${walk.stagePct}%` }} /></div><span className={cx("stage-t")}>{walk.stageText}</span></div>
+                )}
+                {walk.error && <div className={cx("call", "bad")} style={{ marginTop: 10 }}>{walk.error}</div>}
+                {walk.frames.length > 0 && !analysis && (
+                  <div className={cx("frames")}>
+                    {/* Data URLs pulled from the clip in this browser — nothing for next/image to optimise. */}
+                    {stripFrames(walk.frames, 6).map((f) => (
+                      <div key={f.t} className={cx("frame")}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={f.dataUrl} alt="" />
+                        <span>{fmtClock(f.t)}</span>
                       </div>
                     ))}
                   </div>
-                  <div className={cx("tips")}>{TIPS.map((t) => <span key={t} className={cx("tip")}>{t}</span>)}</div>
-                </div>
-              </details>
-              {(def.needs.load || def.needs.existing) && <div className={cx("cover")}>
-                {cov.filter((c) => (def.needs.load || !["sqft", "year", "windows"].includes(c.key)) && (def.needs.existing || !["outdoor", "indoor"].includes(c.key)) && (def.needs.electrical || c.key !== "panel") && (def.needs.ducts || c.key !== "ducts") && (def.needs.gas || c.key !== "fuel")).map((c) => (
-                  <button key={c.key} type="button" className={cx("cov", c.got && "got")} onClick={() => { const el = document.getElementById(({ outdoor: "hv-existing-model", indoor: "hv-existing-btuInput", panel: "hv-electrical-mainAmps", ducts: "hv-ducts-location", fuel: "hv-gas-available", sqft: "hv-conditionedSqft", year: "hv-yearBuilt", windows: "hv-windowType" } as Record<string, string>)[c.key] ?? ""); el?.closest("details")?.setAttribute("open", "true"); el?.focus(); el?.scrollIntoView({ block: "center", behavior: "smooth" }); }}>
-                    <span className={cx("cov-i")}>{c.got ? "✓" : ""}</span>
-                    <span><span className={cx("cov-t")}>{c.title}</span><br /><span className={cx("cov-s")}>{c.got ? "caught" : c.fix}</span></span>
-                  </button>
-                ))}
-              </div>}
-            </div>
-            <div>
-              <div className={cx("sec-title")}>Nameplate photos</div>
-              <div className={cx("sec-sub")}>Close, straight on, plate filling the frame. The plate is read and the model number is decoded by the rules — a misread capacity never goes unchecked.</div>
-              <div className={cx("slots")}>
-                {SLOTS.map((sl) => {
-                  const p = plates[sl.key];
-                  const r = p?.read;
-                  return (
-                    <label key={sl.key} className={cx("slot", p && "has")}>
-                      <input type="file" accept="image/*" onChange={(e) => void onPlateFile(sl.key, sl.hint, e.target.files?.[0])} />
-                      {r && <span className={cx("chip", r.confidence === "high" ? "chip-pass" : r.confidence === "medium" ? "chip-verify" : "chip-fix")}>{r.confidence}</span>}
-                      <span className={cx("slot-t")}>{sl.title}</span>
-                      {/* eslint-disable-next-line @next/next/no-img-element -- a data URL the browser just rendered */}
-                      {p?.thumb ? <img src={p.thumb} alt={sl.title} /> : <span className={cx("slot-s")}>{sl.sub}</span>}
-                      {p?.busy && <span className={cx("mono")}>Reading…</span>}
-                      {p?.error && <span className={cx("slot-r")} style={{ color: "var(--danger)" }}>{p.error}</span>}
-                      {r && (
-                        <span className={cx("slot-r")}>
-                          {sl.key === "panel"
-                            ? <>{r.mcaAmps ? <><b>{r.mcaAmps} A</b> main</> : "main not read"}{r.notes ? ` · ${r.notes}` : ""}</>
-                            : <>{[r.brand, r.model].filter(Boolean).join(" ") || "model not read"}{r.tons ? <> · <b>{r.tons} t</b></> : ""}{r.btuInput ? <> · <b>{num(r.btuInput / 1000)}k BTU</b></> : ""}{r.refrigerant ? ` · ${r.refrigerant}` : ""}{r.yearMade ? ` · ${r.yearMade}` : ""}{r.seer ? ` · ${r.seer} SEER` : ""}{r.afue ? ` · ${r.afue > 1 ? r.afue : Math.round(r.afue * 100)}% AFUE` : ""}</>}
-                        </span>
-                      )}
-                      {p && !p.busy && <span className={cx("link")}>Retake</span>}
-                    </label>
-                  );
-                })}
+                )}
+                {walk.file && !analysis && (
+                  <div className={cx("acts")}>
+                    <button type="button" className={cx("btn", "btn-primary")} disabled={!walk.canRead} onClick={() => void readWalk()}>
+                      <svg className={cx("ic")}><use href="#i-eye" /></svg>{walk.busy ? "Reading…" : "Read the walk"}
+                    </button>
+                    <span className={cx("acts-note")}>One estimator run · frames + audio only</span>
+                  </div>
+                )}
+                {analysis && (
+                  <div className={cx("call", "info")} style={{ marginTop: 12 }}>
+                    <span className={cx("stamp")}>read</span>
+                    <span><b>{analysis.measurements.length} figures, {analysis.observations.length} observations</b> — {analysis.measurements.slice(0, 6).map((m) => `${m.label} ${m.value}${m.unit ? " " + m.unit : ""}`).join(" · ")}{analysis.measurements.length > 6 ? " · …" : ""}{analysis.questions.length ? ` Still asks: ${analysis.questions.map((q) => q.question).join(" ")}` : ""}</span>
+                  </div>
+                )}
+                <details className={cx("guide")} open={guideOpen} onToggle={(e) => { const o = (e.target as HTMLDetailsElement).open; setGuideOpen(o); try { window.localStorage.setItem("jf.hvac.guideOpen", o ? "1" : "0"); } catch { /* blocked storage */ } }}>
+                  <summary><svg className={cx("ic")}><use href="#i-video" /></svg>How to shoot the walk<span className={cx("mono")}>{def.shots.length} shots · {def.shots.length >= 6 ? "2–4" : "1–2"} min · {guideOpen ? "hide" : "show"}</span></summary>
+                  <div className={cx("guide-body")}>
+                    <div className={cx("shots")}>
+                      {SHOTS.filter((sh) => def.shots.includes(sh.n)).map((sh) => (
+                        <div key={sh.n} className={cx("shot")}>
+                          <div className={cx("shot-n")}>{sh.n}</div>
+                          <div>
+                            <div className={cx("shot-t")}>{sh.title}</div>
+                            <div className={cx("shot-d")}>{sh.detail}</div>
+                            <div className={cx("shot-say")}>say: {sh.say}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className={cx("tips")}>{TIPS.map((t) => <span key={t} className={cx("tip")}>{t}</span>)}</div>
+                  </div>
+                </details>
               </div>
+            )}
 
-            </div>
+            {mode === "plates" && (
+              <div className={cx("mode")}>
+                <div className={cx("zones")}>
+                  {SLOTS.map((sl) => {
+                    const p = plates[sl.key];
+                    const r = p?.read;
+                    return (
+                      <label key={sl.key} className={cx("zone", "zone-plate", p && "has")}>
+                        <input type="file" accept="image/*" onChange={(e) => void onPlateFile(sl.key, sl.hint, e.target.files?.[0])} />
+                        {/* eslint-disable-next-line @next/next/no-img-element -- a data URL the browser just rendered */}
+                        {p?.thumb ? <img src={p.thumb} alt={sl.title} /> : <svg className={cx("ic")}><use href="#i-imgadd" /></svg>}
+                        <span className={cx("zone-t")}>{sl.title}{r && <span className={cx("chip", r.confidence === "high" ? "chip-pass" : r.confidence === "medium" ? "chip-verify" : "chip-fix")}>{r.confidence}</span>}</span>
+                        <span className={cx("zone-h")}>{p?.busy ? "Reading…" : p?.error ? p.error : r ? (sl.key === "panel" ? `${r.mcaAmps ? `${r.mcaAmps} A main` : "main not read"}${r.notes ? ` · ${r.notes}` : ""}` : [[r.brand, r.model].filter(Boolean).join(" ") || "model not read", r.tons ? `${r.tons} t` : "", r.btuInput ? `${num(r.btuInput / 1000)}k BTU` : "", r.refrigerant ?? "", r.seer ? `${r.seer} SEER` : ""].filter(Boolean).join(" · ")) : `${sl.sub} · JPG · PNG · HEIC`}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {mode === "type" && <div className={cx("mode", "mode-type")}><span className={cx("mono")}>Type the facts below — what you type wins over the record and the defaults.</span></div>}
+
+            {(def.needs.load || def.needs.existing) && (() => {
+              const rows = cov.filter((c) => (def.needs.load || !["sqft", "year", "windows"].includes(c.key)) && (def.needs.existing || !["outdoor", "indoor"].includes(c.key)) && (def.needs.electrical || c.key !== "panel") && (def.needs.ducts || c.key !== "ducts") && (def.needs.gas || c.key !== "fuel"));
+              const got = rows.filter((c) => c.got).length;
+              return (
+                <details className={cx("cov")}>
+                  <summary>
+                    <span className={cx("cov-bar")} aria-hidden="true"><i style={{ width: `${rows.length ? Math.round((got / rows.length) * 100) : 0}%` }} /></span>
+                    <span className={cx("cov-t")}>{got} of {rows.length} caught</span>
+                    <span className={cx("mono", "cov-x")}>show</span>
+                  </summary>
+                  <ul className={cx("cov-l")}>
+                    {rows.map((c) => (
+                      <li key={c.key} className={cx("cov-r", c.got && "got")}>
+                        <button type="button" onClick={() => { const el = document.getElementById(({ outdoor: "hv-existing-model", indoor: "hv-existing-btuInput", panel: "hv-electrical-mainAmps", ducts: "hv-ducts-location", fuel: "hv-gas-available", sqft: "hv-conditionedSqft", year: "hv-yearBuilt", windows: "hv-windowType" } as Record<string, string>)[c.key] ?? ""); el?.closest("details")?.setAttribute("open", "true"); el?.focus(); el?.scrollIntoView({ block: "center", behavior: "smooth" }); }}>
+                          <span className={cx("cov-i")} aria-hidden="true">{c.got && <svg className={cx("ic")}><use href="#i-check" /></svg>}</span>
+                          <span className={cx("cov-n")}>{c.title}</span>
+                          <span className={cx("mono", "cov-s")}>{c.got ? "caught" : c.fix}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              );
+            })()}
           </div>
 
           <div className={cx("confirm")}>
             <div className={cx("sec-title")}>Confirm</div>
-            <div className={cx("sec-sub")}>What the engine is using.</div>
+            <div className={cx("sec-sub")}>What we are using — type over anything. <b>stated</b> is yours, <b>read</b> came off a plate or the walk, <b>measured</b> from the records, <b>default</b> is the era&rsquo;s until you say otherwise.</div>
             {def.needs.load && !def.needs.zone && !model.conditionedSqft && <div className={cx("call", "warn")} style={{ marginBottom: 12 }}><span className={cx("stamp")}>needed</span><span>The conditioned square footage — nothing else can stand in for it. <button type="button" className={cx("link")} onClick={() => document.getElementById("hv-conditionedSqft")?.focus()}>Type it</button> or say it on the walk.</span></div>}
             {def.needs.zone && !jobInput.zoneSqft && <div className={cx("call", "warn")} style={{ marginBottom: 12 }}><span className={cx("stamp")}>needed</span><span>The zone’s square footage — the rooms the heads will serve. <button type="button" className={cx("link")} onClick={() => document.getElementById("hv-zone-sqft")?.focus()}>Type it</button>.</span></div>}
 
-            <div className={cx("grp", "grp-house")}>
-              <div className={cx("grp-t")}><span className={cx("grp-k")}>The house as it is</span><span className={cx("grp-s")}>What the records, the walk and the plates found. Type over anything — what you type wins, and the badge shows where each figure came from.</span></div>
             {def.needs.load && !def.needs.zone && <div className={cx("fs")}>
-              <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>House</span><span className={cx("mono")}>{model.yearBuilt ? `era defaults from ${model.yearBuilt}` : "era defaults from 1985 until the year is known"}</span></div>
+              <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>The house</span><span className={cx("mono")}>{model.yearBuilt ? `era defaults from ${model.yearBuilt}` : "era defaults from 1985 until the year is known"}</span></div>
               <div className={cx("grid-f")}>
                 <Field label="Conditioned sq ft" path="conditionedSqft" model={model} kind="num" onChange={onTyped} placeholder="2,400" />
                 <Field label="Storeys" path="storeys" model={model} kind="num" onChange={onTyped} />
@@ -1175,18 +1454,6 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                 <Field label="Windows" path="windowType" model={model} kind="select" onChange={onTyped} options={[["single", "Single pane"], ["double", "Double pane"], ["double-lowe", "Double, low-E"], ["triple", "Triple pane"]]} />
                 <Field label="Foundation" path="foundation" model={model} kind="select" onChange={onTyped} options={[["slab", "Slab"], ["crawl-vented", "Crawlspace, vented"], ["crawl-sealed", "Crawlspace, sealed"], ["basement-unconditioned", "Basement, unconditioned"], ["basement-conditioned", "Basement, conditioned"]]} />
               </div>
-              <details className={cx("more")}>
-                <summary>More about the house <span className={cx("mono")}>ceiling · insulation · tightness · roof · shade · occupants</span></summary>
-                <div className={cx("grid-f")} style={{ marginTop: 10 }}>
-                  <Field label="Ceiling ft" path="ceilingHeightFt" model={model} kind="num" onChange={onTyped} />
-                  <Field label="Occupants" path="occupants" model={model} kind="num" onChange={onTyped} />
-                  <Field label="Wall insulation" path="wallInsulation" model={model} kind="select" onChange={onTyped} options={[["none", "None"], ["r11", "R-11"], ["r13", "R-13"], ["r19", "R-19"], ["r21", "R-21"]]} />
-                  <Field label="Attic insulation" path="ceilingInsulation" model={model} kind="select" onChange={onTyped} options={[["none", "None"], ["r11", "R-11"], ["r19", "R-19"], ["r30", "R-30"], ["r38", "R-38"], ["r49", "R-49"]]} />
-                  <Field label="Air tightness" path="tightness" model={model} kind="select" onChange={onTyped} options={[["leaky", "Leaky"], ["average", "Average"], ["tight", "Tight"], ["very-tight", "Very tight"]]} />
-                  <Field label="Roof colour" path="roofColor" model={model} kind="select" onChange={onTyped} options={[["light", "Light"], ["medium", "Medium"], ["dark", "Dark"]]} />
-                  <Field label="Shading" path="shading" model={model} kind="select" onChange={onTyped} options={[["none", "None — full sun"], ["some", "Some"], ["heavy", "Heavy trees"]]} />
-                </div>
-              </details>
             </div>}
             {def.needs.zone && <div className={cx("fs")}>
               <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>The envelope</span><span className={cx("mono")}>{model.yearBuilt ? `era defaults from ${model.yearBuilt}` : "era defaults from 1985 until the year is known"}</span></div>
@@ -1200,70 +1467,85 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
               </div>
             </div>}
 
-            {def.needs.existing && <details className={cx("fs", "fold")}>
-              <summary className={cx("fs-t")}><span className={cx("kpi-lbl")}>Existing system</span><span className={cx("fold-s")}>{sumExisting}</span></summary>
-              <div className={cx("grid-f")}>
-                <Field label="Kind" path="existing.kind" model={model} kind="select" onChange={onTyped} options={[["split-ac-furnace", "AC + furnace"], ["split-heat-pump", "Heat pump"], ["furnace-only", "Furnace only"], ["package-unit", "Package / rooftop"], ["ductless", "Ductless"], ["none", "None"]]} />
-                <Field label="Tons" path="existing.tons" model={model} kind="num" onChange={onTyped} step="0.5" />
-                <Field label="Furnace BTU input" path="existing.btuInput" model={model} kind="num" onChange={onTyped} placeholder="80,000" />
-                <Field label="Fuel" path="existing.fuel" model={model} kind="select" onChange={onTyped} options={[["gas", "Natural gas"], ["propane", "Propane"], ["electric", "Electric"], ["oil", "Oil"], ["none", "None"]]} />
-                <Field label="Refrigerant" path="existing.refrigerant" model={model} kind="select" onChange={onTyped} options={[["R-22", "R-22"], ["R-410A", "R-410A"], ["R-454B", "R-454B"], ["R-32", "R-32"]]} />
-                <Field label="Year made" path="existing.yearMade" model={model} kind="num" onChange={onTyped} />
-                <Field label="Brand" path="existing.brand" model={model} kind="text" onChange={onTyped} />
-                <Field label="Model number" path="existing.model" model={model} kind="text" onChange={onTyped} placeholder="24ACC636A003" />
-              </div>
-            </details>}
-
-            {def.needs.electrical && <details className={cx("fs", "fold")}>
-              <summary className={cx("fs-t")}><span className={cx("kpi-lbl")} title="The panel count the checks run: NEC 220.83(B)">Electrical</span><span className={cx("fold-s")}>{sumPanel}</span></summary>
-              <div className={cx("grid-f")}>
-                <Field label="Main breaker" path="electrical.mainAmps" model={model} kind="select" onChange={(p, v) => onTyped(p, v === undefined ? undefined : Number(v))} options={[["60", "60 A"], ["100", "100 A"], ["125", "125 A"], ["150", "150 A"], ["200", "200 A"], ["400", "400 A"]]} />
-                <Field label="Open breaker slots" path="electrical.freeSlots" model={model} kind="num" onChange={onTyped} />
-                {job !== "water-heater" && <>
-                  <Field label="Electric range" path="electrical.electricRange" model={model} kind="bool" onChange={onTyped} />
-                  <Field label="Electric dryer" path="electrical.electricDryer" model={model} kind="bool" onChange={onTyped} />
-                  <Field label="Electric water heater" path="electrical.electricWaterHeater" model={model} kind="bool" onChange={onTyped} />
-                  <Field label="EV charger" path="electrical.evCharger" model={model} kind="bool" onChange={onTyped} />
-                </>}
-              </div>
-            </details>}
-
-            {(def.needs.ducts || def.needs.gas) && <details className={cx("fs", "fold")}>
-              <summary className={cx("fs-t")}><span className={cx("kpi-lbl")}>{def.needs.ducts && def.needs.gas ? "Ducts · gas" : def.needs.ducts ? "Ducts" : "Gas supply"}</span><span className={cx("fold-s")}>{sumDucts}</span></summary>
-              <div className={cx("grid-f")}>
-                {def.needs.ducts && <>
-                  <Field label="Ducts are in" path="ducts.location" model={model} kind="select" onChange={onTyped} options={[["conditioned", "Conditioned space"], ["attic", "Attic"], ["crawl", "Crawlspace"], ["basement", "Basement"], ["none", "No ducts"]]} />
-                  <Field label="Duct condition" path="ducts.condition" model={model} kind="select" onChange={onTyped} options={[["good", "Good"], ["fair", "Fair"], ["poor", "Poor"], ["unknown", "Not seen"]]} />
-                  <Field label="Ducts insulated" path="ducts.insulated" model={model} kind="bool" onChange={onTyped} />
-                  <Field label="Supply registers" path="ducts.supplyRegisters" model={model} kind="num" onChange={onTyped} placeholder="8" />
-                  <Field label="Return grille (sq in, W×H)" path="ducts.returnGrilleSqIn" model={model} kind="num" onChange={onTyped} placeholder="20×25 = 500" />
-                  <Field label="Static pressure (in. w.c.)" path="ducts.measuredTespInWc" model={model} kind="num" onChange={onTyped} step="0.05" />
-                </>}
-                {def.needs.gas && <>
-                  <Field label="Gas at the house" path="gas.available" model={model} kind="bool" onChange={onTyped} />
-                  <Field label="Gas pipe" path="gas.pipeIn" model={model} kind="select" onChange={(p, v) => onTyped(p, v === undefined ? undefined : Number(v))} options={[["0.5", "½ in"], ["0.75", "¾ in"], ["1", "1 in"], ["1.25", "1¼ in"]]} />
-                  <Field label="Gas run ft" path="gas.longestRunFt" model={model} kind="num" onChange={onTyped} />
-                </>}
-              </div>
-            </details>}
-                        {def.needs.waterHeater && (
-              <div className={cx("fs")}>
-                <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>The water heater that is there</span></div>
-                <div className={cx("grid-f")}>
-                  <label className={cx("field")} htmlFor="hv-wh-old"><span className={cx("lbl")}>Existing tank</span><select id="hv-wh-old" className={cx("sel")} value={jobInput.wh?.existingFuel ?? ""} onChange={(e) => setWh({ existingFuel: (e.target.value || undefined) as NonNullable<JobInput["wh"]>["existingFuel"] })}><option value="">not seen</option><option value="gas">Gas</option><option value="electric">Electric</option><option value="propane">Propane</option></select></label>
-                  <Field label="Occupants" path="occupants" model={model} kind="num" onChange={onTyped} />
+            <div className={cx("folds")}>
+              {def.needs.load && !def.needs.zone && <details className={cx("fold2")}>
+                <summary><span className={cx("fold2-t")}>More about the house</span><span className={cx("fold2-s")}>ceiling · insulation · tightness · roof · shade · occupants</span><svg className={cx("ic", "fold2-c")}><use href="#i-chev" /></svg></summary>
+                <div className={cx("fold2-b")}>
+                  <div className={cx("grid-f")}>
+                    <Field label="Ceiling ft" path="ceilingHeightFt" model={model} kind="num" onChange={onTyped} />
+                    <Field label="Occupants" path="occupants" model={model} kind="num" onChange={onTyped} />
+                    <Field label="Wall insulation" path="wallInsulation" model={model} kind="select" onChange={onTyped} options={[["none", "None"], ["r11", "R-11"], ["r13", "R-13"], ["r19", "R-19"], ["r21", "R-21"]]} />
+                    <Field label="Attic insulation" path="ceilingInsulation" model={model} kind="select" onChange={onTyped} options={[["none", "None"], ["r11", "R-11"], ["r19", "R-19"], ["r30", "R-30"], ["r38", "R-38"], ["r49", "R-49"]]} />
+                    <Field label="Air tightness" path="tightness" model={model} kind="select" onChange={onTyped} options={[["leaky", "Leaky"], ["average", "Average"], ["tight", "Tight"], ["very-tight", "Very tight"]]} />
+                    <Field label="Roof colour" path="roofColor" model={model} kind="select" onChange={onTyped} options={[["light", "Light"], ["medium", "Medium"], ["dark", "Dark"]]} />
+                    <Field label="Shading" path="shading" model={model} kind="select" onChange={onTyped} options={[["none", "None — full sun"], ["some", "Some"], ["heavy", "Heavy trees"]]} />
+                  </div>
                 </div>
-              </div>
-            )}
+              </details>}
+              {def.needs.existing && <details className={cx("fold2")}>
+                <summary><span className={cx("fold2-t")}>Existing system</span><span className={cx("fold2-s")}>{sumExisting}</span><svg className={cx("ic", "fold2-c")}><use href="#i-chev" /></svg></summary>
+                <div className={cx("fold2-b")}><div className={cx("grid-f")}>
+                  <Field label="Kind" path="existing.kind" model={model} kind="select" onChange={onTyped} options={[["split-ac-furnace", "AC + furnace"], ["split-heat-pump", "Heat pump"], ["furnace-only", "Furnace only"], ["package-unit", "Package / rooftop"], ["ductless", "Ductless"], ["none", "None"]]} />
+                  <Field label="Tons" path="existing.tons" model={model} kind="num" onChange={onTyped} step="0.5" />
+                  <Field label="Furnace BTU input" path="existing.btuInput" model={model} kind="num" onChange={onTyped} placeholder="80,000" />
+                  <Field label="Fuel" path="existing.fuel" model={model} kind="select" onChange={onTyped} options={[["gas", "Natural gas"], ["propane", "Propane"], ["electric", "Electric"], ["oil", "Oil"], ["none", "None"]]} />
+                  <Field label="Refrigerant" path="existing.refrigerant" model={model} kind="select" onChange={onTyped} options={[["R-22", "R-22"], ["R-410A", "R-410A"], ["R-454B", "R-454B"], ["R-32", "R-32"]]} />
+                  <Field label="Year made" path="existing.yearMade" model={model} kind="num" onChange={onTyped} />
+                  <Field label="Brand" path="existing.brand" model={model} kind="text" onChange={onTyped} />
+                  <Field label="Model number" path="existing.model" model={model} kind="text" onChange={onTyped} placeholder="24ACC636A003" />
+                </div></div>
+              </details>}
+              {def.needs.electrical && <details className={cx("fold2")}>
+                <summary><span className={cx("fold2-t")} title="The panel count the checks run: NEC 220.83(B)">Electrical</span><span className={cx("fold2-s")}>{sumPanel}</span><svg className={cx("ic", "fold2-c")}><use href="#i-chev" /></svg></summary>
+                <div className={cx("fold2-b")}><div className={cx("grid-f")}>
+                  <Field label="Main breaker" path="electrical.mainAmps" model={model} kind="select" onChange={(p, v) => onTyped(p, v === undefined ? undefined : Number(v))} options={[["60", "60 A"], ["100", "100 A"], ["125", "125 A"], ["150", "150 A"], ["200", "200 A"], ["400", "400 A"]]} />
+                  <Field label="Open breaker slots" path="electrical.freeSlots" model={model} kind="num" onChange={onTyped} />
+                  {job !== "water-heater" && <>
+                    <Field label="Electric range" path="electrical.electricRange" model={model} kind="bool" onChange={onTyped} />
+                    <Field label="Electric dryer" path="electrical.electricDryer" model={model} kind="bool" onChange={onTyped} />
+                    <Field label="Electric water heater" path="electrical.electricWaterHeater" model={model} kind="bool" onChange={onTyped} />
+                    <Field label="EV charger" path="electrical.evCharger" model={model} kind="bool" onChange={onTyped} />
+                  </>}
+                </div></div>
+              </details>}
+              {(def.needs.ducts || def.needs.gas) && <details className={cx("fold2")}>
+                <summary><span className={cx("fold2-t")}>{def.needs.ducts && def.needs.gas ? "Ducts · gas" : def.needs.ducts ? "Ducts" : "Gas supply"}</span><span className={cx("fold2-s")}>{sumDucts}</span><svg className={cx("ic", "fold2-c")}><use href="#i-chev" /></svg></summary>
+                <div className={cx("fold2-b")}><div className={cx("grid-f")}>
+                  {def.needs.ducts && <>
+                    <Field label="Ducts are in" path="ducts.location" model={model} kind="select" onChange={onTyped} options={[["conditioned", "Conditioned space"], ["attic", "Attic"], ["crawl", "Crawlspace"], ["basement", "Basement"], ["none", "No ducts"]]} />
+                    <Field label="Duct condition" path="ducts.condition" model={model} kind="select" onChange={onTyped} options={[["good", "Good"], ["fair", "Fair"], ["poor", "Poor"], ["unknown", "Not seen"]]} />
+                    <Field label="Ducts insulated" path="ducts.insulated" model={model} kind="bool" onChange={onTyped} />
+                    <Field label="Supply registers" path="ducts.supplyRegisters" model={model} kind="num" onChange={onTyped} placeholder="8" />
+                    <Field label="Return grille (sq in, W×H)" path="ducts.returnGrilleSqIn" model={model} kind="num" onChange={onTyped} placeholder="20×25 = 500" />
+                    <Field label="Static pressure (in. w.c.)" path="ducts.measuredTespInWc" model={model} kind="num" onChange={onTyped} step="0.05" />
+                  </>}
+                  {def.needs.gas && <>
+                    <Field label="Gas at the house" path="gas.available" model={model} kind="bool" onChange={onTyped} />
+                    <Field label="Gas pipe" path="gas.pipeIn" model={model} kind="select" onChange={(p, v) => onTyped(p, v === undefined ? undefined : Number(v))} options={[["0.5", "½ in"], ["0.75", "¾ in"], ["1", "1 in"], ["1.25", "1¼ in"]]} />
+                    <Field label="Gas run ft" path="gas.longestRunFt" model={model} kind="num" onChange={onTyped} />
+                  </>}
+                </div></div>
+              </details>}
+              {def.needs.waterHeater && (
+                <div className={cx("fs")}>
+                  <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>The water heater that is there</span></div>
+                  <div className={cx("grid-f")}>
+                    <label className={cx("field")} htmlFor="hv-wh-old"><span className={cx("lbl")}>Existing tank</span><span className={cx("bp-sel", "hvsel")}><select id="hv-wh-old" className={cx("bp-sel-in", "sel")} value={jobInput.wh?.existingFuel ?? ""} onChange={(e) => setWh({ existingFuel: (e.target.value || undefined) as NonNullable<JobInput["wh"]>["existingFuel"] })}><option value="">not seen</option><option value="gas">Gas</option><option value="electric">Electric</option><option value="propane">Propane</option></select></span></label>
+                    <Field label="Occupants" path="occupants" model={model} kind="num" onChange={onTyped} />
+                  </div>
+                </div>
+              )}
             </div>
-            <div className={cx("grp", "grp-job")}>
-              <div className={cx("grp-t")}><span className={cx("grp-k")}>What we&rsquo;re putting in</span><span className={cx("grp-s")}>The calls for this job. These set the size, the parts and the price.</span></div>
+
+            <div className={cx("putin")}>
+              <div className={cx("sec-title")}>What we&rsquo;re putting in</div>
+              <div className={cx("sec-sub")}>The calls for this job — they set the size, the parts and the price.</div>
             {def.needs.zone && (
               <div className={cx("fs")}>
                 <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>The zone</span><span className={cx("mono")}>the rooms the heads will serve</span></div>
                 <div className={cx("grid-f")}>
                   <label className={cx("field")} htmlFor="hv-zone-sqft"><span className={cx("lbl")}><span>Zone sq ft</span>{jobInput.zoneSqft ? <span className={cx("chip", "chip-stated")}>stated</span> : <span className={cx("chip", "chip-default")}>needed</span>}</span><input id="hv-zone-sqft" className={cx("in", "num")} inputMode="decimal" placeholder="420" defaultValue={jobInput.zoneSqft ?? ""} onBlur={(e) => { const n = Number(e.target.value.replace(/,/g, "")); setJobInput((j) => ({ ...j, zoneSqft: e.target.value.trim() && Number.isFinite(n) && n > 0 ? n : undefined })); }} /></label>
-                  <label className={cx("field")} htmlFor="hv-heads"><span className={cx("lbl")}>Indoor heads</span><select id="hv-heads" className={cx("sel")} value={String(jobInput.heads ?? 1)} onChange={(e) => setJobInput((j) => ({ ...j, heads: Number(e.target.value) }))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
+                  <label className={cx("field")} htmlFor="hv-heads"><span className={cx("lbl")}>Indoor heads</span><span className={cx("bp-sel", "hvsel")}><select id="hv-heads" className={cx("bp-sel-in", "sel")} value={String(jobInput.heads ?? 1)} onChange={(e) => setJobInput((j) => ({ ...j, heads: Number(e.target.value) }))}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}</select></span></label>
                 </div>
               </div>
             )}
@@ -1271,11 +1553,11 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
               <div className={cx("fs")}>
                 <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>The new water heater</span><span className={cx("mono")}>{jobInput.wh?.gallons ? "size entered" : `sized from ${model.occupants} occupants`}</span></div>
                 <div className={cx("grid-f")}>
-                  <label className={cx("field")} htmlFor="hv-wh-fuel"><span className={cx("lbl")}>New fuel</span><select id="hv-wh-fuel" className={cx("sel")} value={jobInput.wh?.fuel ?? ""} onChange={(e) => setWh({ fuel: (e.target.value || undefined) as NonNullable<JobInput["wh"]>["fuel"] })}><option value="">as the house ({model.gas.available === false ? "electric" : "gas"})</option><option value="gas">Natural gas</option><option value="propane">Propane</option><option value="electric">Electric</option></select></label>
-                  <label className={cx("field")} htmlFor="hv-wh-type"><span className={cx("lbl")}>Type</span><select id="hv-wh-type" className={cx("sel")} value={jobInput.wh?.type ?? "tank"} onChange={(e) => { const type = e.target.value as NonNullable<JobInput["wh"]>["type"]; setWh(type === "heat-pump" ? { type, fuel: "electric" } : { type }); }}><option value="tank">Tank</option><option value="heat-pump">Heat-pump tank</option><option value="tankless">Tankless</option></select></label>
+                  <label className={cx("field")} htmlFor="hv-wh-fuel"><span className={cx("lbl")}>New fuel</span><span className={cx("bp-sel", "hvsel")}><select id="hv-wh-fuel" className={cx("bp-sel-in", "sel")} value={jobInput.wh?.fuel ?? ""} onChange={(e) => setWh({ fuel: (e.target.value || undefined) as NonNullable<JobInput["wh"]>["fuel"] })}><option value="">as the house ({model.gas.available === false ? "electric" : "gas"})</option><option value="gas">Natural gas</option><option value="propane">Propane</option><option value="electric">Electric</option></select></span></label>
+                  <label className={cx("field")} htmlFor="hv-wh-type"><span className={cx("lbl")}>Type</span><span className={cx("bp-sel", "hvsel")}><select id="hv-wh-type" className={cx("bp-sel-in", "sel")} value={jobInput.wh?.type ?? "tank"} onChange={(e) => { const type = e.target.value as NonNullable<JobInput["wh"]>["type"]; setWh(type === "heat-pump" ? { type, fuel: "electric" } : { type }); }}><option value="tank">Tank</option><option value="heat-pump">Heat-pump tank</option><option value="tankless">Tankless</option></select></span></label>
                   <label className={cx("field")} htmlFor="hv-wh-gal"><span className={cx("lbl")}>Gallons</span><input id="hv-wh-gal" className={cx("in", "num")} inputMode="decimal" placeholder="auto" defaultValue={jobInput.wh?.gallons ?? ""} onBlur={(e) => { const n = Number(e.target.value); setWh({ gallons: e.target.value.trim() && Number.isFinite(n) && n > 0 ? n : undefined }); }} /></label>
-                  <label className={cx("field")} htmlFor="hv-wh-vent"><span className={cx("lbl")}>Venting</span><select id="hv-wh-vent" className={cx("sel")} value={jobInput.wh?.vent ?? ""} onChange={(e) => setWh({ vent: (e.target.value || undefined) as NonNullable<JobInput["wh"]>["vent"] })}><option value="">as existing</option><option value="atmospheric">Atmospheric (B-vent)</option><option value="power">Power vent</option><option value="direct">Direct vent</option><option value="none">None (electric)</option></select></label>
-                  <label className={cx("field")} htmlFor="hv-wh-loc"><span className={cx("lbl")}>Location</span><select id="hv-wh-loc" className={cx("sel")} value={jobInput.wh?.location ?? "garage"} onChange={(e) => setWh({ location: e.target.value as NonNullable<JobInput["wh"]>["location"] })}><option value="garage">Garage</option><option value="closet">Closet</option><option value="basement">Basement</option><option value="utility">Utility room</option><option value="attic">Attic</option><option value="outdoor">Outdoor</option></select></label>
+                  <label className={cx("field")} htmlFor="hv-wh-vent"><span className={cx("lbl")}>Venting</span><span className={cx("bp-sel", "hvsel")}><select id="hv-wh-vent" className={cx("bp-sel-in", "sel")} value={jobInput.wh?.vent ?? ""} onChange={(e) => setWh({ vent: (e.target.value || undefined) as NonNullable<JobInput["wh"]>["vent"] })}><option value="">as existing</option><option value="atmospheric">Atmospheric (B-vent)</option><option value="power">Power vent</option><option value="direct">Direct vent</option><option value="none">None (electric)</option></select></span></label>
+                  <label className={cx("field")} htmlFor="hv-wh-loc"><span className={cx("lbl")}>Location</span><span className={cx("bp-sel", "hvsel")}><select id="hv-wh-loc" className={cx("bp-sel-in", "sel")} value={jobInput.wh?.location ?? "garage"} onChange={(e) => setWh({ location: e.target.value as NonNullable<JobInput["wh"]>["location"] })}><option value="garage">Garage</option><option value="closet">Closet</option><option value="basement">Basement</option><option value="utility">Utility room</option><option value="attic">Attic</option><option value="outdoor">Outdoor</option></select></span></label>
                 </div>
               </div>
             )}
@@ -1284,62 +1566,84 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
               const sel = new Set(jobInput.service?.tasks ?? []);
               const customOn = jobInput.service?.custom ?? [];
               const rechargeOn = sel.has("recharge");
+              const q = svcQ.trim().toLowerCase();
+              const picked = sel.size + customOn.length;
               return (
                 <div className={cx("fs")}>
-                  <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>The visit</span><span className={cx("mono")}>{sel.size + customOn.length ? `${sel.size + customOn.length} task${sel.size + customOn.length === 1 ? "" : "s"} on the estimate` : "pick what the visit does — the diagnostic is on until a tune-up covers it"}</span></div>
+                  <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>The visit</span><span className={cx("mono")}>{picked ? `${picked} task${picked === 1 ? "" : "s"} on the estimate` : "pick what the visit does — the diagnostic is on until a tune-up covers it"}</span></div>
                   {menu.notes.map((n) => <div key={n} className={cx("call", "info")} style={{ marginBottom: 10 }}><span className={cx("stamp")}>say</span><span>{n}</span></div>)}
-                  {menu.groups.map((g) => (
-                    <div key={g.group} className={cx("svc-g")}>
-                      <div className={cx("svc-gt")}>{g.title}</div>
-                      <div className={cx("svc")}>
-                        {g.tasks.map((t) => {
-                          const on = sel.has(t.id);
-                          const rec = menu.recommended.includes(t.id);
-                          return (
-                            <button key={t.id} type="button" role="checkbox" aria-checked={on} className={cx("svc-t", on && "on", rec && !on && "rec")} onClick={() => toggleTask(t.id)}>
-                              <span className={cx("svc-n")}>{t.title}{rec && !on ? <span className={cx("svc-tag")}>suggested</span> : null}{t.custom ? <span className={cx("svc-tag")}>yours</span> : null}</span>
-                              <span className={cx("svc-i")}>{t.includes}</span>
-                              <span className={cx("mono", "svc-p")}>{t.unit === "lb" ? `$${card.card.labor.refrigerantPerLb}/lb labor + refrigerant` : `$${t.laborUsd.toLocaleString("en-US")} labor${t.part ? ` · part $${t.part.costUsd.toLocaleString("en-US")}` : ""}`}{t.part?.brands?.length ? ` · ${t.part.brands.join(" / ")}` : ""}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {g.group === "refrigerant" && rechargeOn && (
-                        <label className={cx("field")} htmlFor="hv-svc-lb" style={{ maxWidth: 220, marginTop: 8 }}><span className={cx("lbl")}>Refrigerant, lb</span><input id="hv-svc-lb" className={cx("in", "num")} inputMode="decimal" placeholder="3" defaultValue={jobInput.service?.refrigerantLb ?? ""} onBlur={(e) => { const n = Number(e.target.value); setSvc({ refrigerantLb: e.target.value.trim() && Number.isFinite(n) && n > 0 ? n : undefined }); }} /></label>
-                      )}
-                    </div>
-                  ))}
-                  <div className={cx("svc-gt")} style={{ marginTop: 14 }}>Not listed? Add it</div>
-                  <div className={cx("grid", "grid-rc")}>
-                    <label className={cx("field")} htmlFor="hv-cust-name"><span className={cx("lbl")}>Task</span><input id="hv-cust-name" className={cx("in")} placeholder="Replace the zone damper actuator" value={svcDraft.name ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, name: e.target.value }))} /></label>
-                    <label className={cx("field")} htmlFor="hv-cust-labor"><span className={cx("lbl")}>Labor $</span><input id="hv-cust-labor" className={cx("in", "num")} inputMode="decimal" placeholder="180" value={svcDraft.labor ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, labor: e.target.value }))} /></label>
-                    <label className={cx("field")} htmlFor="hv-cust-part"><span className={cx("lbl")}>Part (optional)</span><input id="hv-cust-part" className={cx("in")} placeholder="Damper actuator" value={svcDraft.partName ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, partName: e.target.value }))} /></label>
-                    <label className={cx("field")} htmlFor="hv-cust-cost"><span className={cx("lbl")}>Part cost $</span><input id="hv-cust-cost" className={cx("in", "num")} inputMode="decimal" placeholder="85" value={svcDraft.partCost ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, partCost: e.target.value }))} /></label>
+                  <div className={cx("svc-top")}>
+                    <span className={cx("addr", "addr-sm")}><svg className={cx("ic")}><use href="#i-search" /></svg><input className={cx("addr-in")} placeholder="Filter the tasks" value={svcQ} onChange={(e) => setSvcQ(e.target.value)} aria-label="Filter the tasks" /></span>
                   </div>
-                  <div className={cx("acts")}>
-                    <button type="button" className={cx("btn", "btn-primary")} onClick={addCustomTask}>Add to this estimate</button>
-                    <button type="button" className={cx("btn", "btn-ghost")} onClick={() => void saveCustomTask()}>Save to my menu</button>
-                    <span className={cx("acts-note")}>{svcMsg}</span>
-                  </div>
+                  {menu.groups.map((g) => {
+                    const tasks = g.tasks.filter((t) => !q || t.title.toLowerCase().includes(q) || (t.includes ?? "").toLowerCase().includes(q));
+                    if (!tasks.length) return null;
+                    const openGroup = !!q || tasks.some((t) => sel.has(t.id) || menu.recommended.includes(t.id));
+                    const pickedHere = tasks.filter((t) => sel.has(t.id)).length;
+                    return (
+                      <details key={g.group} className={cx("svc-g", "fold2")} open={openGroup}>
+                        <summary><span className={cx("fold2-t")}>{g.title}</span><span className={cx("fold2-s")}>{pickedHere ? `${pickedHere} picked · ` : ""}{tasks.length} task{tasks.length === 1 ? "" : "s"}</span><svg className={cx("ic", "fold2-c")}><use href="#i-chev" /></svg></summary>
+                        <ul className={cx("svc-rows")}>
+                          {tasks.map((t) => {
+                            const on = sel.has(t.id);
+                            const rec = menu.recommended.includes(t.id);
+                            return (
+                              <li key={t.id} className={cx("svc-r", on && "on")}>
+                                <button type="button" role="checkbox" aria-checked={on} className={cx("svc-rb")} onClick={() => toggleTask(t.id)}>
+                                  <span className={cx("svc-box")} aria-hidden="true">{on && <svg className={cx("ic")}><use href="#i-check" /></svg>}</span>
+                                  <span className={cx("svc-n")}>{t.title}{rec && !on ? <span className={cx("svc-tag")}>suggested</span> : null}{t.custom ? <span className={cx("svc-tag")}>yours</span> : null}</span>
+                                  <span className={cx("mono", "svc-p")}>{t.unit === "lb" ? `$${card.card.labor.refrigerantPerLb}/lb + refrigerant` : `$${t.laborUsd.toLocaleString("en-US")}${t.part ? ` + $${t.part.costUsd.toLocaleString("en-US")} part` : ""}`}</span>
+                                </button>
+                                {on && (
+                                  <div className={cx("svc-x")}>
+                                    <span>{t.includes}{t.part?.brands?.length ? ` · ${t.part.brands.join(" / ")}` : ""}</span>
+                                    {t.id === "recharge" && rechargeOn && (
+                                      <label className={cx("field")} htmlFor="hv-svc-lb" style={{ maxWidth: 200 }}><span className={cx("lbl")}>Refrigerant, lb</span><input id="hv-svc-lb" className={cx("in", "num")} inputMode="decimal" placeholder="3" defaultValue={jobInput.service?.refrigerantLb ?? ""} onBlur={(e) => { const n = Number(e.target.value); setSvc({ refrigerantLb: e.target.value.trim() && Number.isFinite(n) && n > 0 ? n : undefined }); }} /></label>
+                                    )}
+                                  </div>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </details>
+                    );
+                  })}
                   {customOn.length > 0 && (
                     <ul className={cx("svc-list")}>
                       {customOn.map((c, i) => <li key={`${c.name}-${i}`}><span>{c.name} — ${c.laborUsd.toLocaleString("en-US")} labor{c.partName ? ` · ${c.partName}${c.partCost ? ` $${c.partCost.toLocaleString("en-US")}` : ""}` : ""}</span><button type="button" className={cx("link")} onClick={() => setSvc({ custom: customOn.filter((_, k) => k !== i) })}>Remove</button></li>)}
                     </ul>
                   )}
+                  <details className={cx("how")}>
+                    <summary>Not listed? Add it</summary>
+                    <div className={cx("how-b")}>
+                      <div className={cx("grid", "grid-rc")}>
+                        <label className={cx("field")} htmlFor="hv-cust-name"><span className={cx("lbl")}>Task</span><input id="hv-cust-name" className={cx("in")} placeholder="Replace the zone damper actuator" value={svcDraft.name ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, name: e.target.value }))} /></label>
+                        <label className={cx("field")} htmlFor="hv-cust-labor"><span className={cx("lbl")}>Labor $</span><input id="hv-cust-labor" className={cx("in", "num")} inputMode="decimal" placeholder="180" value={svcDraft.labor ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, labor: e.target.value }))} /></label>
+                        <label className={cx("field")} htmlFor="hv-cust-part"><span className={cx("lbl")}>Part (optional)</span><input id="hv-cust-part" className={cx("in")} placeholder="Damper actuator" value={svcDraft.partName ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, partName: e.target.value }))} /></label>
+                        <label className={cx("field")} htmlFor="hv-cust-cost"><span className={cx("lbl")}>Part cost $</span><input id="hv-cust-cost" className={cx("in", "num")} inputMode="decimal" placeholder="85" value={svcDraft.partCost ?? ""} onChange={(e) => setSvcDraft((d) => ({ ...d, partCost: e.target.value }))} /></label>
+                      </div>
+                      <div className={cx("acts")}>
+                        <button type="button" className={cx("btn", "btn-primary", "btn-sm")} onClick={addCustomTask}>Add to this estimate</button>
+                        <button type="button" className={cx("btn", "btn-ghost", "btn-sm")} onClick={() => void saveCustomTask()}>Save to my menu</button>
+                        <span className={cx("acts-note")}>{svcMsg}</span>
+                      </div>
+                    </div>
+                  </details>
                 </div>
               );
             })()}
-{(def.selection !== "none" || def.needs.ducts) && <div className={cx("fs")}>
+            {(def.selection !== "none" || def.needs.ducts) && <div className={cx("fs")}>
               <div className={cx("fs-t")}><span className={cx("kpi-lbl")}>How you want it done</span><span className={cx("mono")}>the calls that are yours, not the house&rsquo;s</span></div>
               <div className={cx("grid-f")}>
                 {(job === "replace-system" || job === "heat-pump-conversion") && (
                   <label className={cx("field")} htmlFor="hv-heatpref">
                     <span className={cx("lbl")}><span>Heat preference</span>{(model.provenance["preferences.keepGas"] || model.provenance["preferences.allElectric"]) && <Chip p={model.provenance["preferences.keepGas"] ?? model.provenance["preferences.allElectric"]} />}</span>
-                    <select id="hv-heatpref" className={cx("sel")} value={model.preferences.allElectric ? "electric" : model.preferences.keepGas ? "gas" : ""} onChange={(e) => { const v = e.target.value; onTyped("preferences.keepGas", v === "gas" ? true : v === "electric" ? false : undefined); onTyped("preferences.allElectric", v === "electric" ? true : v === "gas" ? false : undefined); }}>
+                    <span className={cx("bp-sel", "hvsel")}><select id="hv-heatpref" className={cx("bp-sel-in", "sel")} value={model.preferences.allElectric ? "electric" : model.preferences.keepGas ? "gas" : ""} onChange={(e) => { const v = e.target.value; onTyped("preferences.keepGas", v === "gas" ? true : v === "electric" ? false : undefined); onTyped("preferences.allElectric", v === "electric" ? true : v === "gas" ? false : undefined); }}>
                       <option value="">no preference</option>
                       <option value="gas">Keep gas heat</option>
                       <option value="electric">Go all-electric</option>
-                    </select>
+                    </select></span>
                   </label>
                 )}
                 {def.selection !== "none" && <Field label="Noise sensitive" path="preferences.noiseSensitive" model={model} kind="bool" onChange={onTyped} />}
@@ -1347,38 +1651,31 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                   <span className={cx("lbl")}><span>Line set ft</span>{linesetFt !== undefined && <span className={cx("chip", "chip-stated")}>stated</span>}</span>
                   <input id="hv-lineset" className={cx("in", "num")} inputMode="decimal" placeholder={String(card.card.linesetFtDefault)} defaultValue={linesetFt ?? ""} onBlur={(e) => { const n = Number(e.target.value); setLinesetFt(e.target.value.trim() && Number.isFinite(n) && n > 0 ? n : undefined); }} />
                 </label>}
-          </div>
+              </div>
             </div>}
             </div>
 
-          </div>
-        </section>
-      )}
-
-      {site && model && !engine && (
-        <section className={cx("card")} id="hv-design">
-          <div className={cx("head")}><div className={cx("head-txt")}><div className={cx("card-title")}><span className={cx("step")}>4</span>{def.needs.load ? "The design" : "The checks"}</div><div className={cx("card-sub")}>Waiting on the {def.needs.zone ? "zone’s" : "conditioned"} square footage above — the load, the unit and the price follow the moment it is in.</div></div></div>
-        </section>
-      )}
-
-      {/* ── 3 · DESIGN ───────────────────────────────────────────────────── */}
-      {engine && model && (
-        <section className={cx("card")} id="hv-design">
-          <div className={cx("head")}>
-            <div className={cx("head-txt")}>
-              <div className={cx("card-title")}><span className={cx("step", "done")}>4</span>{def.needs.load ? "The design" : "The checks"}</div>
-              <div className={cx("card-sub")}>{def.needs.load ? `${def.needs.zone ? "Zone load" : "Block load"} at the county’s design day, ${def.selection === "none" ? "the airflow the ducts must carry" : "the unit the catalog fits within Manual S limits"}, and the checks a permit desk or a customer would ask about.` : engine.waterHeater ? `The tank sized from the household, and the gas, circuit and venting checks an inspector asks about.` : "What the visit needs, and the rule that applies."} Engine {engine.engineVersion}{def.needs.load ? ` · ${engine.conditions.source}${engine.conditions.verifiedOn ? ` · verified ${engine.conditions.verifiedOn}` : ""}` : ""}.</div>
+            <div className={cx("st-next")}>
+              <button type="button" className={cx("btn", "btn-primary")} disabled={S.design.locked} onClick={() => go("design")}>Continue to {def.needs.load ? "the design" : "the checks"}<svg className={cx("ic")}><use href="#i-arrow" /></svg></button>
+              <span className={cx("acts-note")}>{S.design.locked ? S.design.reason : engine ? `${sizeText}${lines ? " · " + money(subtotal) : ""}` : ""}</span>
             </div>
-            <div className={cx("head-acts")}>{defaultedCount > 0 && <span className={cx("chip", "chip-default")}>{defaultedCount} assumption{defaultedCount === 1 ? "" : "s"}</span>}</div>
           </div>
+        </>
+      )}
+      </Step>
+
+      {/* ── 4 · THE DESIGN ───────────────────────────────────────────────── */}
+      <Step k="design" meta={S.design} open={cur === "design"}>
+      {engine && model ? (
+        <>
           {engine.waterHeater && (
-            <div className={cx("hero")}>
+            <div className={cx("hero", "hero-d")}>
               <div className={cx("hero-cell")}><div className={cx("kpi-lbl")}>Tank</div><div className={cx("hero-v", "accent")}>{engine.waterHeater.type === "tankless" ? "tankless" : engine.waterHeater.gallons}<small>{engine.waterHeater.type === "tankless" ? "" : "gal"}</small></div><div className={cx("hero-h")}>{engine.waterHeater.sizedFrom}</div></div>
               <div className={cx("hero-cell")}><div className={cx("kpi-lbl")}>Fuel · type</div><div className={cx("hero-v")}>{engine.waterHeater.fuel}</div><div className={cx("hero-h")}>{engine.waterHeater.type === "heat-pump" ? "heat-pump tank" : engine.waterHeater.type} · {engine.waterHeater.vent === "none" ? "no vent" : `${engine.waterHeater.vent} vent`}</div></div>
               <div className={cx("hero-cell")}><div className={cx("kpi-lbl")}>{engine.waterHeater.btuInput ? "Gas input" : "Circuit"}</div><div className={cx("hero-v")}>{engine.waterHeater.btuInput ? num(engine.waterHeater.btuInput) : engine.waterHeater.circuitAmps ? `${engine.waterHeater.circuitAmps}` : "—"}<small>{engine.waterHeater.btuInput ? "BTU/h" : "A · 240 V"}</small></div><div className={cx("hero-h")}>{engine.waterHeater.location}</div></div>
             </div>
           )}
-          {def.needs.load && <div className={cx("hero")}>
+          {def.needs.load && <div className={cx("hero", "hero-d")}>
             <div className={cx("hero-cell")}>
               <div className={cx("kpi-lbl")}>Cooling load</div>
               <div className={cx("hero-v", "accent")}>{num(engine.load.coolingTotalBtuh)}</div>
@@ -1409,20 +1706,24 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
             )}
           </div>}
           {kindQuotes.length === 2 && (
+            <div className={cx("dsec")}>
+            <div className={cx("kpi-lbl", "dsec-k")}>{def.id === "replace-outdoor" ? "What goes outside" : "System"}</div>
             <div className={cx("kinds")} role="radiogroup" aria-label={def.id === "replace-outdoor" ? "What goes outside" : "System type"} onKeyDown={radioKeys}>
-              <span className={cx("kinds-lbl")}>{def.id === "replace-outdoor" ? "What goes outside" : "System"}</span>
               {kindQuotes.map((q) => {
                 const on = engineRaw?.selection.chosen?.item.kind === q.kind;
                 return (
                   <button key={q.kind} type="button" role="radio" aria-checked={on} className={cx("kind", on && "on")} onClick={() => { setOutdoorKind(q.kind); setPickId(null); }}>
                     <span className={cx("kind-t")}>{q.kind === "air-conditioner" ? "Air conditioner" : "Heat pump"}<span className={cx("kind-v")}>{money(on && ledger ? ledger.subtotal : q.subtotal)}</span></span>
-                    <span className={cx("kind-s")}>{q.sub}</span>
+                    <span className={cx("kind-s")}>{q.sub}</span><span className={cx("job-stamp")} aria-hidden="true"><svg className={cx("ic")}><use href="#i-check" /></svg></span>
                   </button>
                 );
               })}
             </div>
+            </div>
           )}
           {whOptions.length > 0 && (
+            <div className={cx("dsec")}>
+            <div className={cx("kpi-lbl", "dsec-k")}>Equipment</div>
             <div className={cx("tiers", "tiers-wh")} role="radiogroup" aria-label="Which tank" onKeyDown={radioKeys}>
               {whOptions.map((o, i) => {
                 const on = (whChosen?.id ?? "") === o.item.id;
@@ -1431,13 +1732,16 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                     <span className={cx("tier-k")}>{i === 0 && !pickId ? "Engine's pick" : o.item.brand}</span>
                     <span className={cx("tier-t")}>{o.item.brand} {o.item.model}</span>
                     <span className={cx("tier-m")}>{[o.item.gallons ? `${o.item.gallons} gal` : o.item.btuInput ? `${Math.round(o.item.btuInput / 1000)}k BTU/h` : "", o.item.uef ? `${o.item.uef} UEF` : "", o.item.vent && o.item.vent !== "none" ? `${o.item.vent} vent` : "", o.item.typed ? "typed in" : ""].filter(Boolean).join(" · ")}</span>
-                    <span className={cx("tier-v")}>{money(o.subtotal)}{!o.item.cost && <small className={cx("tier-m")}> · rate-card price, no cost on the row</small>}</span>
+                    <span className={cx("tier-v")}>{money(o.subtotal)}{!o.item.cost && <small className={cx("tier-m")}> · rate-card price, no cost on the row</small>}</span><span className={cx("job-stamp")} aria-hidden="true"><svg className={cx("ic")}><use href="#i-check" /></svg></span>
                   </button>
                 );
               })}
             </div>
+            </div>
           )}
           {tiers.length > 1 && (
+            <div className={cx("dsec")}>
+            <div className={cx("kpi-lbl", "dsec-k")}>Equipment</div>
             <div className={cx("tiers")} role="radiogroup" aria-label="Good, better, best" onKeyDown={radioKeys}>
               {tiers.map((t) => {
                 const on = (engine?.selection.chosen?.item.id ?? "") === t.candidate.item.id;
@@ -1446,10 +1750,11 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                     <span className={cx("tier-k")}>{t.tier === "value" ? "Good" : t.tier === "mid" ? "Better" : "Best"}</span>
                     <span className={cx("tier-t")}>{t.candidate.item.brand} {t.candidate.item.model}</span>
                     <span className={cx("tier-m")}>{t.candidate.item.seer2 ? `${t.candidate.item.seer2} SEER2` : ""}{t.candidate.item.hspf2 ? ` · ${t.candidate.item.hspf2} HSPF2` : ""}{t.candidate.item.afue ? `${Math.round(t.candidate.item.afue * 100)}% AFUE` : ""}{t.candidate.item.staging ? ` · ${t.candidate.item.staging}` : ""}</span>
-                    <span className={cx("tier-v")}>{money(t.subtotal)}</span>
+                    <span className={cx("tier-v")}>{money(t.subtotal)}</span><span className={cx("job-stamp")} aria-hidden="true"><svg className={cx("ic")}><use href="#i-check" /></svg></span>
                   </button>
                 );
               })}
+            </div>
             </div>
           )}
           <div className={cx("design")}>
@@ -1467,7 +1772,13 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                       </ul>
                     </div>
                   )}
-                  <ul className={cx("notes")}>{engine.notes.filter((n) => n.kind === "contractor").map((n) => <li key={n.text}><span className={cx("chip", "chip-read")}>job</span><span>{n.text}</span></li>)}</ul>
+                  {(() => {
+                    // The engine's water-heater job note is the tank and its sizing again — the
+                    // same two values the card above already prints — so it is not listed twice.
+                    const wh = def.id === "water-heater" ? engine.waterHeater : undefined;
+                    const jobNotes = engine.notes.filter((n) => n.kind === "contractor" && !(wh && n.text.includes(wh.sizedFrom)));
+                    return jobNotes.length ? <ul className={cx("notes")}>{jobNotes.map((n) => <li key={n.text}><span className={cx("chip", "chip-read")}>job</span><span>{n.text}</span></li>)}</ul> : null;
+                  })()}
                 </>
               ) : chosen ? (
                 <div className={cx("unit")}>
@@ -1498,54 +1809,93 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                   <div className={cx("fit-ax")}><span className={cx("mono")}>70%</span><span className={cx("mono")}>{Math.round(chosen.coolingRatio * 100)}% of load</span><span className={cx("mono")}>140%</span></div>
                 </div>
               )}
+            </div>
+            <div>
+              {(() => {
+                const fix = engine.checks.filter((c) => c.status === "fix");
+                const verify = engine.checks.filter((c) => c.status === "verify");
+                const pass = engine.checks.filter((c) => c.status === "pass");
+                const row = (c: (typeof engine.checks)[number]) => {
+                  const id = c.id + c.title;
+                  const open = openCheck === id;
+                  return (
+                    <li key={id} className={cx("chk-r", open && "open")}>
+                      <button type="button" className={cx("chk-b")} aria-expanded={open} onClick={() => setOpenCheck(open ? null : id)}>
+                        <span className={cx("chip", `chip-${c.status}`)}>{c.status}</span>
+                        <span className={cx("chk-t")}>{c.title}</span>
+                        <svg className={cx("ic", "chk-c")}><use href="#i-chev" /></svg>
+                      </button>
+                      {open && <div className={cx("chk-d")}>{c.detail}{c.rule && <div className={cx("check-r")}>{c.rule}</div>}</div>}
+                    </li>
+                  );
+                };
+                return (
+                  <>
+                    <div className={cx("chk-sum")}>
+                      <span className={cx("kpi-lbl")}>Checks</span>
+                      <span className={cx("mono", "chk-n")}>{fix.length} to fix · {verify.length} to verify · {pass.length} pass</span>
+                    </div>
+                    <ul className={cx("chk-l")}>{[...fix, ...verify].map(row)}</ul>
+                    {pass.length > 0 && (
+                      <details className={cx("chk-pass")}>
+                        <summary><span className={cx("chip", "chip-pass")}>pass</span><span className={cx("chk-t")}>{pass.length} passed</span><span className={cx("mono")}>show</span></summary>
+                        <ul className={cx("chk-l")}>{pass.map(row)}</ul>
+                      </details>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+          <details className={cx("how", "how-wide")}>
+            <summary>How this is calculated</summary>
+            <div className={cx("how-b")}>
+              <p>{def.needs.load ? `${def.needs.zone ? "Zone load" : "Block load"} at the county's design day, ${def.selection === "none" ? "the airflow the ducts must carry" : "the unit the catalog fits within Manual S limits"}, and the checks a permit desk or a customer would ask about.` : engine.waterHeater ? "The tank sized from the household, and the gas, circuit and venting checks an inspector asks about." : "What the visit needs, and the rule that applies."} Engine {engine.engineVersion}{def.needs.load ? ` · ${engine.conditions.source}${engine.conditions.verifiedOn ? ` · verified ${engine.conditions.verifiedOn}` : ""}` : ""}.</p>
               {def.needs.load && <table className={cx("comp")}>
                 <thead><tr><th>Component</th><th>Heating</th><th>Cooling sens.</th><th>Latent</th></tr></thead>
                 <tbody>{engine.load.components.map((c) => <tr key={c.name}><td>{c.name}</td><td>{num(c.heatingBtuh)}</td><td>{num(c.coolingSensibleBtuh)}</td><td>{num(c.coolingLatentBtuh)}</td></tr>)}</tbody>
               </table>}
-            </div>
-            <div>
-              <div className={cx("kpi-lbl")} style={{ marginBottom: 8 }}>Checks</div>
-              <div className={cx("checks")}>
-                {engine.checks.map((c) => (
-                  <div key={c.id + c.title} className={cx("check")}>
-                    <span className={cx("chip", `chip-${c.status}`)}>{c.status}</span>
-                    <div><div className={cx("check-t")}>{c.title}</div><div className={cx("check-d")}>{c.detail}</div>{c.rule && <div className={cx("check-r")}>{c.rule}</div>}</div>
-                  </div>
-                ))}
-              </div>
-              <div className={cx("kpi-lbl")} style={{ margin: "16px 0 8px" }}>Assumptions · incentives · code</div>
+              {/* Assumptions and incentives only: the engine's "code" notes repeat the checks above word for word, so they are not shown twice. */}
+              <div className={cx("kpi-lbl")} style={{ margin: "14px 0 8px" }}>Assumptions · incentives</div>
               <ul className={cx("notes")}>
-                {engine.notes.filter((n) => n.kind !== "contractor").map((n) => (
-                  <li key={n.kind + n.text}><span className={cx("chip", n.kind === "assumption" ? "chip-default" : n.kind === "incentive" ? "chip-measured" : "chip-read")}>{n.kind}</span><span>{n.text}</span></li>
+                {engine.notes.filter((n) => n.kind === "assumption" || n.kind === "incentive").map((n) => (
+                  <li key={n.kind + n.text}><span className={cx("chip", n.kind === "assumption" ? "chip-default" : "chip-measured")}>{n.kind}</span><span>{n.text}</span></li>
                 ))}
               </ul>
             </div>
-          </div>
+          </details>
           {(def.selection !== "none" || def.id === "water-heater") && swapRows.length > 0 && (
             <details className={cx("panel")} open={swapOpen} onToggle={(e) => setSwapOpen(e.currentTarget.open)}>
-              <summary><svg className={cx("ic")}><use href="#i-box" /></svg>Change the unit<span className={cx("mono")}>{swapFits.length} fit{swapOut.length ? ` · ${swapOut.length} ruled out` : ""} · or type your own</span></summary>
+              <summary><svg className={cx("ic")}><use href="#i-box" /></svg>Change the unit<span className={cx("mono")}>{swapFits.length} fit{swapOut.length ? ` · ${swapOut.length} ruled out` : ""} · or type your own</span><span className={cx("panel-go")}><span className={cx("st-edit", "go-open")}>Change</span><span className={cx("st-edit", "go-close")}>Close</span><svg className={cx("ic", "fold2-c")}><use href="#i-chev" /></svg></span></summary>
               <div className={cx("panel-body")}>
-                <div className={cx("note")}>The engine ranks what the catalog has and puts the best fit on the estimate. Pick another and the whole estimate re-prices. A unit the engine ruled out can still go on the job — the reason follows it onto the estimate as a check, so the customer and the permit desk see it. Nothing like it in the catalog? Type the unit at the bottom.</div>
+                <div className={cx("note")}>Pick another unit and the whole estimate re-prices.</div>
+                <details className={cx("how")}>
+                  <summary>How the ranking works</summary>
+                  <div className={cx("how-b")}>The engine ranks what the catalog has and puts the best fit on the estimate. Pick another and the whole estimate re-prices. A unit the engine ruled out can still go on the job — the reason follows it onto the estimate as a check, so the customer and the permit desk see it. Nothing like it in the catalog? Type the unit at the bottom.</div>
+                </details>
                 <input id="hv-swap-q" className={cx("in")} placeholder="Filter by brand or model" value={swapQ} onChange={(e) => setSwapQ(e.target.value)} style={{ maxWidth: 320 }} />
                 <div className={cx("swap")}>
                   {swapShown.map((r) => {
                     const on = chosenId === r.item.id;
                     return (
                       <button key={r.item.id} type="button" className={cx("swap-row", on && "on", r.out && "out")} onClick={() => { setPickId(r.item.id); setSwapMsg(on ? "" : `${r.item.brand} ${r.item.model} is on the estimate.${r.out ? " The engine ruled it out — the reason is on the checks." : ""}`); }}>
-                        <span className={cx("swap-t")}>{r.item.brand} {r.item.model}{r.item.typed ? " · typed in" : ""}{!r.item.cost && someCost ? " · no cost" : ""}</span>
+                        <span className={cx("swap-t")}>{r.item.brand} {r.item.model}{r.item.typed ? " · typed in" : ""}{!r.item.cost && someCost ? " · no cost" : ""}{r.out && <span className={cx("chip", "chip-verify")}>ruled out</span>}</span>
                         <span className={cx("mono", "swap-m")}>{[r.item.tons ? `${r.item.tons} t` : "", r.item.btuInput && r.item.kind !== "water-heater" ? `${Math.round(r.item.btuInput / 1000)}k BTU` : "", r.item.seer2 ? `${r.item.seer2} SEER2` : "", r.item.hspf2 ? `${r.item.hspf2} HSPF2` : "", r.item.afue ? `${Math.round(r.item.afue * 100)}% AFUE` : "", r.item.staging ?? "", r.item.refrigerant ?? "", r.item.coldClimate ? "cold climate" : "", r.item.tier ?? ""].filter(Boolean).join(" · ")}</span>
                         <span className={cx("swap-w")}>{r.out ?? r.why}</span>
-                        <span className={cx("swap-a")}>{on ? "on the estimate" : r.out ? "Use anyway" : "Use this"}</span>
+                        <span className={cx("swap-a")}>{on && <span className={cx("swap-stamp")} aria-hidden="true"><svg className={cx("ic")}><use href="#i-check" /></svg></span>}{on ? "On the estimate" : r.out ? "Use anyway" : "Use this"}</span>
                       </button>
                     );
                   })}
                 </div>
                 {swapRows.length > swapShown.length && <div className={cx("note")}>Showing {swapShown.length} of {swapRows.length} — type a brand or a model to narrow it.</div>}
-                <div className={cx("kpi-lbl")} style={{ margin: "16px 0 8px" }}>Not in the catalog — type the unit</div>
+                {swapMsg && <div className={cx("swap-msg")}>{swapMsg}</div>}
+                <details className={cx("fold2", "fold2-in")}>
+                  <summary><span className={cx("fold2-t")}>Not in the catalog? Type the unit</span><span className={cx("fold2-s")}>brand · model · size · ratings · your cost</span><svg className={cx("ic", "fold2-c")}><use href="#i-chev" /></svg></summary>
+                  <div className={cx("fold2-b")}>
                 <div className={cx("grid", "grid-rc")}>
                   <label className={cx("field")} htmlFor="hv-u-brand"><span className={cx("lbl")}>Brand</span><input id="hv-u-brand" className={cx("in")} placeholder="Trane" value={unitDraft.brand ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, brand: e.target.value }))} /></label>
                   <label className={cx("field")} htmlFor="hv-u-model"><span className={cx("lbl")}>Model</span><input id="hv-u-model" className={cx("in")} placeholder="4TWR7048N1000A" value={unitDraft.model ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, model: e.target.value }))} /></label>
-                  <label className={cx("field")} htmlFor="hv-u-kind"><span className={cx("lbl")}>What it is</span><select id="hv-u-kind" className={cx("sel")} value={unitDraft.kind ?? (engine?.selection.chosen?.item.kind ?? (def.id === "water-heater" ? "water-heater" : def.kinds[0] ?? "air-conditioner"))} onChange={(e) => setUnitDraft((u) => ({ ...u, kind: e.target.value }))}><option value="air-conditioner">Condenser (AC)</option><option value="heat-pump">Heat pump</option><option value="furnace">Furnace</option><option value="air-handler">Air handler</option><option value="coil">Coil</option><option value="ductless">Ductless</option><option value="package">Package unit</option><option value="water-heater">Water heater</option></select></label>
+                  <label className={cx("field")} htmlFor="hv-u-kind"><span className={cx("lbl")}>What it is</span><span className={cx("bp-sel", "hvsel")}><select id="hv-u-kind" className={cx("bp-sel-in", "sel")} value={unitDraft.kind ?? (engine?.selection.chosen?.item.kind ?? (def.id === "water-heater" ? "water-heater" : def.kinds[0] ?? "air-conditioner"))} onChange={(e) => setUnitDraft((u) => ({ ...u, kind: e.target.value }))}><option value="air-conditioner">Condenser (AC)</option><option value="heat-pump">Heat pump</option><option value="furnace">Furnace</option><option value="air-handler">Air handler</option><option value="coil">Coil</option><option value="ductless">Ductless</option><option value="package">Package unit</option><option value="water-heater">Water heater</option></select></span></label>
                   <label className={cx("field")} htmlFor="hv-u-tons"><span className={cx("lbl")}>Tons</span><input id="hv-u-tons" className={cx("in", "num")} inputMode="decimal" placeholder="4" value={unitDraft.tons ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, tons: e.target.value }))} /></label>
                   <label className={cx("field")} htmlFor="hv-u-kbtu"><span className={cx("lbl")}>BTU input, thousands</span><input id="hv-u-kbtu" className={cx("in", "num")} inputMode="decimal" placeholder="80" value={unitDraft.kbtu ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, kbtu: e.target.value }))} /></label>
                   <label className={cx("field")} htmlFor="hv-u-seer2"><span className={cx("lbl")}>SEER2</span><input id="hv-u-seer2" className={cx("in", "num")} inputMode="decimal" placeholder="17.2" value={unitDraft.seer2 ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, seer2: e.target.value }))} /></label>
@@ -1553,10 +1903,10 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                   <label className={cx("field")} htmlFor="hv-u-afue"><span className={cx("lbl")}>AFUE %</span><input id="hv-u-afue" className={cx("in", "num")} inputMode="decimal" placeholder="96" value={unitDraft.afue ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, afue: e.target.value }))} /></label>
                   <label className={cx("field")} htmlFor="hv-u-h17"><span className={cx("lbl")}>Heat at 17 °F, thousands</span><input id="hv-u-h17" className={cx("in", "num")} inputMode="decimal" placeholder="34" value={unitDraft.h17 ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, h17: e.target.value }))} /></label>
                   <label className={cx("field")} htmlFor="hv-u-h5"><span className={cx("lbl")}>Heat at 5 °F, thousands</span><input id="hv-u-h5" className={cx("in", "num")} inputMode="decimal" placeholder="27" value={unitDraft.h5 ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, h5: e.target.value }))} /></label>
-                  <label className={cx("field")} htmlFor="hv-u-refr"><span className={cx("lbl")}>Refrigerant</span><select id="hv-u-refr" className={cx("sel")} value={unitDraft.refrigerant ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, refrigerant: e.target.value }))}><option value="">not seen</option><option value="R-454B">R-454B</option><option value="R-32">R-32</option><option value="R-410A">R-410A</option><option value="R-22">R-22</option></select></label>
-                  <label className={cx("field")} htmlFor="hv-u-stg"><span className={cx("lbl")}>Staging</span><select id="hv-u-stg" className={cx("sel")} value={unitDraft.staging ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, staging: e.target.value }))}><option value="">not seen</option><option value="single">single stage</option><option value="two-stage">two stage</option><option value="variable">variable</option></select></label>
-                  <label className={cx("field")} htmlFor="hv-u-nox"><span className={cx("lbl")}>NOx class (gas heat)</span><select id="hv-u-nox" className={cx("sel")} value={unitDraft.nox ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, nox: e.target.value }))}><option value="">standard, 40 ng/J</option><option value="14">ultra-low, 14 ng/J (California districts)</option></select></label>
-                  <label className={cx("field")} htmlFor="hv-u-cold"><span className={cx("lbl")}>Cold-climate rated</span><select id="hv-u-cold" className={cx("sel")} value={unitDraft.coldClimate ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, coldClimate: e.target.value }))}><option value="">no</option><option value="yes">yes</option></select></label>
+                  <label className={cx("field")} htmlFor="hv-u-refr"><span className={cx("lbl")}>Refrigerant</span><span className={cx("bp-sel", "hvsel")}><select id="hv-u-refr" className={cx("bp-sel-in", "sel")} value={unitDraft.refrigerant ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, refrigerant: e.target.value }))}><option value="">not seen</option><option value="R-454B">R-454B</option><option value="R-32">R-32</option><option value="R-410A">R-410A</option><option value="R-22">R-22</option></select></span></label>
+                  <label className={cx("field")} htmlFor="hv-u-stg"><span className={cx("lbl")}>Staging</span><span className={cx("bp-sel", "hvsel")}><select id="hv-u-stg" className={cx("bp-sel-in", "sel")} value={unitDraft.staging ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, staging: e.target.value }))}><option value="">not seen</option><option value="single">single stage</option><option value="two-stage">two stage</option><option value="variable">variable</option></select></span></label>
+                  <label className={cx("field")} htmlFor="hv-u-nox"><span className={cx("lbl")}>NOx class (gas heat)</span><span className={cx("bp-sel", "hvsel")}><select id="hv-u-nox" className={cx("bp-sel-in", "sel")} value={unitDraft.nox ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, nox: e.target.value }))}><option value="">standard, 40 ng/J</option><option value="14">ultra-low, 14 ng/J (California districts)</option></select></span></label>
+                  <label className={cx("field")} htmlFor="hv-u-cold"><span className={cx("lbl")}>Cold-climate rated</span><span className={cx("bp-sel", "hvsel")}><select id="hv-u-cold" className={cx("bp-sel-in", "sel")} value={unitDraft.coldClimate ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, coldClimate: e.target.value }))}><option value="">no</option><option value="yes">yes</option></select></span></label>
                   <label className={cx("field")} htmlFor="hv-u-gal"><span className={cx("lbl")}>Gallons (water heater)</span><input id="hv-u-gal" className={cx("in", "num")} inputMode="decimal" placeholder="50" value={unitDraft.gallons ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, gallons: e.target.value }))} /></label>
                   <label className={cx("field")} htmlFor="hv-u-cost"><span className={cx("lbl")}>Your cost $</span><input id="hv-u-cost" className={cx("in", "num")} inputMode="decimal" placeholder="3200" value={unitDraft.cost ?? ""} onChange={(e) => setUnitDraft((u) => ({ ...u, cost: e.target.value }))} /></label>
                 </div>
@@ -1564,47 +1914,65 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                   <button type="button" className={cx("btn", "btn-primary")} onClick={useTypedUnit}>Use this unit</button>
                   <button type="button" className={cx("btn", "btn-ghost")} onClick={() => void saveTypedUnit()}>Save it to my catalog</button>
                   {(custom || pickId) && <button type="button" className={cx("btn", "btn-ghost")} onClick={() => { setCustom(null); setPickId(null); setSwapMsg("Back to the engine's pick."); }}>Back to the engine&rsquo;s pick</button>}
-                  <span className={cx("acts-note")}>{swapMsg}</span>
                 </div>
+                  </div>
+                </details>
               </div>
             </details>
           )}
-        </section>
+          <div className={cx("st-next", "st-next--pad")}>
+            <button type="button" className={cx("btn", "btn-primary")} disabled={S.estimate.locked || !lines} onClick={() => go("estimate")}>Continue to the estimate<svg className={cx("ic")}><use href="#i-arrow" /></svg></button>
+            <span className={cx("acts-note")}>{lines ? money(subtotal) : S.estimate.reason}</span>
+          </div>
+        </>
+      ) : (
+        <div className={cx("body")}>
+          <div className={cx("call", "info")}><span className={cx("stamp")}>waiting</span><span>{S.design.locked ? S.design.reason : "The load, the unit and the price follow the moment the square footage is in."}</span></div>
+        </div>
       )}
+      </Step>
 
-      {/* ── 4 · LEDGER ───────────────────────────────────────────────────── */}
+      {/* ── 5 · THE ESTIMATE ─────────────────────────────────────────────── */}
+      <Step k="estimate" meta={S.estimate} open={cur === "estimate"}>
       {engine && ledger && lines && (
-        <section className={cx("card")} id="hv-ledger">
-          <div className={cx("head")}>
-            <div className={cx("head-txt")}>
-              <div className={cx("card-title")}><span className={cx("step", savedId && "done")}>5</span>The estimate</div>
-              <div className={cx("card-sub")}>Priced from the shop’s rate card: {catalog?.own ? "your catalog rows" : "rate-card defaults"} plus stock, labor by the task against its measure (per unit, per ln ft, per register), permit and disposal. Edit any line; the assumptions stay on the estimate and never print on the proposal.</div>
+        <>
+          <details className={cx("fold2", "fold2-title")}>
+            <summary><span className={cx("fold2-t")}>{title ?? ledger.title}</span><span className={cx("fold2-s")}>title · scope</span><span className={cx("st-edit")}>Edit</span></summary>
+            <div className={cx("fold2-b")}>
+              <label className={cx("field")} htmlFor="hv-title">
+                <span className={cx("lbl")}>Title</span>
+                <input id="hv-title" className={cx("in")} value={title ?? ledger.title} onChange={(e) => setTitle(e.target.value)} />
+              </label>
+              <div className={cx("note")} style={{ marginTop: 10 }}>{ledger.scope}</div>
             </div>
-            <div className={cx("head-acts")}>
-              <button type="button" className={cx("btn", "btn-ghost", "btn-sm")} disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : savedId ? "Saved · save again" : "Save estimate"}</button>
-              <button type="button" className={cx("btn", "btn-primary", "btn-sm")} disabled={converting || !(lines.materials.length || lines.labor.length)} onClick={() => void convert()}><svg className={cx("ic")}><use href="#i-doc" /></svg>{converting ? "Converting…" : "Convert to proposal"}</button>
-            </div>
-          </div>
-          <div className={cx("body")} style={{ paddingBottom: 12 }}>
-            <label className={cx("field")} htmlFor="hv-title">
-              <span className={cx("lbl")}>Title</span>
-              <input id="hv-title" className={cx("in")} value={title ?? ledger.title} onChange={(e) => setTitle(e.target.value)} />
-            </label>
-            <div className={cx("note")} style={{ marginTop: 10 }}>{ledger.scope}</div>
-          </div>
-          <LinesTable title="Equipment & materials" rows={lines.materials} onChange={(rows) => setLines({ ...lines, materials: rows })} />
-          <LinesTable title="Labor · permit · disposal" rows={lines.labor} onChange={(rows) => setLines({ ...lines, labor: rows })} />
+          </details>
+          <LinesBlock title="Equipment & materials" rows={lines.materials} editing={editLine} onEdit={setEditLine} onChange={(rows) => setLines({ ...lines, materials: rows })} phone={phone} onAddPhone={() => setNewLineFor("materials")} />
+          <LinesBlock title="Labor · permit · disposal" rows={lines.labor} editing={editLine} onEdit={setEditLine} onChange={(rows) => setLines({ ...lines, labor: rows })} phone={phone} onAddPhone={() => setNewLineFor("labor")} />
+          {phone && (() => {
+            if (newLineFor) {
+              const sec = newLineFor;
+              return <LineSheet key={`new-${sec}`} isNew line={{ id: "", name: "", quantity: 1, unitPrice: 0, unit: "each", basis: "entered" }} onClose={() => setNewLineFor(null)} onDone={(p) => { setLines({ ...lines, [sec]: [...lines[sec], { id: nanoid(6), basis: "entered", ...p }] }); setNewLineFor(null); }} />;
+            }
+            const sec = lines.materials.some((l) => l.id === editLine) ? "materials" : lines.labor.some((l) => l.id === editLine) ? "labor" : null;
+            const line = sec ? lines[sec].find((l) => l.id === editLine) : undefined;
+            if (!sec || !line) return null;
+            return <LineSheet key={line.id} line={line} onClose={() => setEditLine(null)} onDone={(p) => { setLines({ ...lines, [sec]: lines[sec].map((r) => (r.id === line.id ? { ...r, ...p } : r)) }); setEditLine(null); }} onRemove={() => { setLines({ ...lines, [sec]: lines[sec].filter((r) => r.id !== line.id) }); setEditLine(null); }} />;
+          })()}
           <div className={cx("bo-total", "bo-total--acts")}>
-            <span><span className={cx("kpi-lbl")}>Subtotal</span><span className={cx("bo-total-v")} style={{ marginLeft: 12 }}>{money(subtotal)}</span></span>
+            <span><span className={cx("kpi-lbl")}>Subtotal</span><span className={cx("bo-total-v")} style={{ marginLeft: 12 }}>{money2(subtotal)}</span></span>
             <span className={cx("head-acts")}>
               <button type="button" className={cx("btn", "btn-ghost", "btn-sm")} disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : savedId ? "Saved · save again" : "Save"}</button>
               <button type="button" className={cx("btn", "btn-primary", "btn-sm")} disabled={converting || !(lines.materials.length || lines.labor.length)} onClick={() => void convert()}>{converting ? "Converting…" : "Convert to proposal"}</button>
             </span>
           </div>
-          <div className={cx("assump")}>
-            <span className={cx("kpi-lbl")}>Assumptions on this estimate</span>
-            <ul>{ledger.assumptions.map((a) => <li key={a}>{a}</li>)}</ul>
-          </div>
+          <details className={cx("how", "how-wide")}>
+            <summary>How this is priced</summary>
+            <div className={cx("how-b")}>
+              <p>From the shop&rsquo;s rate card: {catalog?.own ? "your catalog rows" : "rate-card defaults"} plus stock, labor by the task against its measure (per unit, per ln ft, per register), permit and disposal. A row with no shop cost is priced from the rate card&rsquo;s per-ton or per-BTU default at the tier&rsquo;s markup. The assumptions stay on the estimate and never print on the proposal.</p>
+              <div className={cx("kpi-lbl")} style={{ margin: "12px 0 6px" }}>Assumptions on this estimate</div>
+              <ul className={cx("assump-l")}>{ledger.assumptions.map((a) => <li key={a}>{a}</li>)}</ul>
+            </div>
+          </details>
 
           <div className={cx("permit")} style={def.needs.load ? undefined : { display: "none" }}>
             <div className={cx("permit-txt")}>
@@ -1631,7 +1999,7 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
           </div>
 
           <details className={cx("panel")} onToggle={(e) => { if ((e.target as HTMLDetailsElement).open && !cardDraft) setCardDraft(card.card); }}>
-            <summary><svg className={cx("ic")}><use href="#i-gear" /></svg>Rate card<span className={cx("mono")}>{card.own ? "the shop's" : "defaults — edit once, it sticks"}</span></summary>
+            <summary><svg className={cx("ic")}><use href="#i-gear" /></svg>Rate card<span className={cx("mono")}>{card.own ? "the shop's" : "defaults — edit once, it sticks"}</span><span className={cx("panel-go")}><span className={cx("st-edit", "go-open")}>Edit rates</span><span className={cx("st-edit", "go-close")}>Close</span><svg className={cx("ic", "fold2-c")}><use href="#i-chev" /></svg></span></summary>
             <div className={cx("panel-body")}>
               {cardDraft && (
                 <>
@@ -1671,10 +2039,14 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
           </details>
 
           <details className={cx("panel")}>
-            <summary><svg className={cx("ic")}><use href="#i-file" /></svg>Catalog<span className={cx("mono")}>{catalog?.own ? `${catalog.items.length} rows from the shop${usStale ? " · update available" : ""}` : "starter ladder · import your CSV"}</span></summary>
+            <summary><svg className={cx("ic")}><use href="#i-file" /></svg>Catalog<span className={cx("mono")}>{catalog?.own ? `${catalog.items.length} rows from the shop${usStale ? " · update available" : ""}` : "starter ladder · import your CSV"}</span><span className={cx("panel-go")}><span className={cx("st-edit", "go-open")}>Manage</span><span className={cx("st-edit", "go-close")}>Close</span><svg className={cx("ic", "fold2-c")}><use href="#i-chev" /></svg></span></summary>
             <div className={cx("panel-body")}>
               {usStale && <div className={cx("call", "warn")} style={{ marginBottom: 10 }}><span className={cx("stamp")}>update</span><span>Your catalog came from an older build of the US list: it is missing {usStale.missing} row{usStale.missing === 1 ? "" : "s"}{usStale.uln ? `, ${usStale.uln} of them ultra-low-NOx gas heat for California` : ""}{usStale.noNox ? ", and its gas rows carry no NOx class, so California districts rule them all out" : ""}. Press <b>Load the US catalog</b> to bring it up to date — your own rows and costs on other ids stay.</span></div>}
-              <div className={cx("note")}><b>Load the US catalog</b> puts the most-sold American families on the pick list — Goodman, Carrier, Trane, Lennox, Rheem, Mitsubishi and the water-heater makers — as Good · Better · Best ladders with their published ratings. Download the CSV, put your costs in the <b>cost</b> column, delete what you don’t sell, and import it back with “Replace”. A hyphenated size (GLXT7C-036) is the family plus the nominal size — swap in your distributor’s exact model there. Or bring your own: one row per unit the shop installs. Columns: <b>{CATALOG_CSV_COLUMNS.join(", ")}</b> — kind, brand and model are required; a <b>cost</b> lets the ledger price from your number instead of the rate-card default; heat-pump rows want heat47/17/5 for the capacity curve. <a className={cx("link")} href={templateHref} download="jobflex-hvac-catalog-template.csv">Download the template</a>. An <b>AHRI</b> subscriber export or the <b>NEEP</b> cold-climate list (saved as CSV) imports as is — the columns are read by meaning and the import says which it used.</div>
+              <div className={cx("note")}>Load the US list or import your own CSV — the engine picks from what is here, and your costs price the estimate.</div>
+              <details className={cx("how")}>
+                <summary>How the catalog works</summary>
+                <div className={cx("how-b")}><b>Load the US catalog</b> puts the most-sold American families on the pick list — Goodman, Carrier, Trane, Lennox, Rheem, Mitsubishi and the water-heater makers — as Good · Better · Best ladders with their published ratings. Download the CSV, put your costs in the <b>cost</b> column, delete what you don’t sell, and import it back with “Replace”. A hyphenated size (GLXT7C-036) is the family plus the nominal size — swap in your distributor’s exact model there. Or bring your own: one row per unit the shop installs. Columns: <b>{CATALOG_CSV_COLUMNS.join(", ")}</b> — kind, brand and model are required; a <b>cost</b> lets the ledger price from your number instead of the rate-card default; heat-pump rows want heat47/17/5 for the capacity curve. <a className={cx("link")} href={templateHref} download="jobflex-hvac-catalog-template.csv">Download the template</a>. An <b>AHRI</b> subscriber export or the <b>NEEP</b> cold-climate list (saved as CSV) imports as is — the columns are read by meaning and the import says which it used.</div>
+              </details>
               <div className={cx("acts")}>
                 <button type="button" className={cx("btn", "btn-primary")} onClick={() => void onLoadUs()}><svg className={cx("ic")}><use href="#i-box" /></svg>Load the US catalog</button>
                 <label className={cx("btn", "btn-ghost")} htmlFor="hv-csv"><svg className={cx("ic")}><use href="#i-download" /></svg>Import CSV<input id="hv-csv" type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={(e) => void onCsv(e.target.files?.[0])} /></label>
@@ -1697,29 +2069,34 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
               )}
             </div>
           </details>
-        </section>
+        </>
       )}
+      </Step>
+      </div>
+      {summary}
+      </div>
 
-      {/* ── 5 · RECENT ───────────────────────────────────────────────────── */}
-      <section className={cx("card")}>
+      {/* ── RECENT ───────────────────────────────────────────────────────── */}
+      <section className={cx("card", "recent-card")}>
         <div className={cx("head")}>
           <div className={cx("head-txt")}>
             <div className={cx("card-title")}>Recent estimates</div>
-            <div className={cx("card-sub")}>Reopen one to change the design or convert it. Record what you actually quoted on a job and the fit shows here — {calib ? calibrationLine(calib) : "loading…"}</div>
+            <div className={cx("card-sub")}>Reopen one to change the design or convert it.</div>
+            <div className={cx("rec-fit")}>{calib ? calibrationLine(calib) : "…"}</div>
           </div>
         </div>
         {recent.length ? (
           <div className={cx("recent")}>
-            {recent.map((r) => (
+            {(phone && !recentAll ? recent.slice(0, 3) : recent).map((r) => (
               <div key={r.id} className={cx("rrow-wrap")}>
                 <div className={cx("rrow")}>
-                  <button type="button" className={cx("rrow-open")} onClick={() => void reopen(r.id)}>
-                    <span className={cx("rrow-a")}>{r.title || r.address}</span>
-                    <span className={cx("mono", "rrow-m")}>{r.address} · {dateShort(r.createdAt)} · {r.status}{r.jobKind ? ` · ${jobDef(r.jobKind).title.toLowerCase()}` : ""}{r.sizedTons ? ` · sized ${r.sizedTons} t` : ""}{r.permit === "attached" ? " · report attached" : r.permit === "requested" ? " · Cool Calc requested" : ""}</span>
+                  <button type="button" className={cx("rrow-open")} onClick={() => (phone ? setRowSheet(r.id) : void reopen(r.id))} aria-label={`Open ${r.title || r.address}`}>
+                    <span className={cx("rrow-a")}>{phone ? shortTitle(r) : r.title || r.address}</span>
+                    <span className={cx("mono", "rrow-m")}>{phone ? shortMeta(r) : <>{r.address} · {dateShort(r.createdAt)} · {r.status}{r.jobKind ? ` · ${jobDef(r.jobKind).title.toLowerCase()}` : ""}{r.sizedTons ? ` · sized ${r.sizedTons} t` : ""}{r.permit === "attached" ? " · report attached" : r.permit === "requested" ? " · Cool Calc requested" : ""}</>}</span>
                     {r.actual && <span className={cx("mono", "rrow-m")}>actual: {r.actual.tons ? `${r.actual.tons} t` : "—"} · {r.actual.price ? money(r.actual.price) : "—"}{r.actual.notes ? ` · ${r.actual.notes}` : ""}</span>}
+                    <span className={cx("rrow-v")}>{money(r.subtotal)}</span>
                   </button>
-                  <span className={cx("rrow-v")}>{money(r.subtotal)}</span>
-                  <button type="button" className={cx("link")} onClick={() => { setActualFor(actualFor === r.id ? null : r.id); setActualDraft({ tons: r.actual?.tons ? String(r.actual.tons) : "", price: r.actual?.price ? String(r.actual.price) : "", notes: r.actual?.notes ?? "" }); }}>{r.actual ? "Edit actual" : "Record actual"}</button>
+                  <button type="button" className={cx("link", "rrow-act")} onClick={() => { setActualFor(actualFor === r.id ? null : r.id); setActualDraft({ tons: r.actual?.tons ? String(r.actual.tons) : "", price: r.actual?.price ? String(r.actual.price) : "", notes: r.actual?.notes ?? "" }); }}>{r.actual ? "Edit actual" : "Record actual"}</button>
                 </div>
                 {actualFor === r.id && (
                   <div className={cx("actual")}>
@@ -1731,11 +2108,24 @@ export function HvacEstimatorForm({ aiEnabled }: { aiEnabled: boolean }) {
                 )}
               </div>
             ))}
+            {phone && !recentAll && recent.length > 3 && <button type="button" className={cx("rrow-more")} onClick={() => setRecentAll(true)}>Show all {recent.length}</button>}
           </div>
         ) : (
           <div className={cx("empty")}>Nothing saved yet — the first estimate you save lands here.</div>
         )}
       </section>
+      {phone && rowSheet && (() => {
+        const r = recent.find((x) => x.id === rowSheet);
+        if (!r) return null;
+        return (
+          <BlueprintSheet open onClose={() => setRowSheet(null)} title={shortTitle(r)} description={`${shortMeta(r)} · ${money(r.subtotal)}`}>
+            <div className={cx("rs-acts")}>
+              <button type="button" className="bps-btn bps-btn--primary" onClick={() => { setRowSheet(null); void reopen(r.id); }}>Reopen</button>
+              <button type="button" className="bps-btn bps-btn--ghost" onClick={() => { setRowSheet(null); setActualFor(r.id); setActualDraft({ tons: r.actual?.tons ? String(r.actual.tons) : "", price: r.actual?.price ? String(r.actual.price) : "", notes: r.actual?.notes ?? "" }); }}>{r.actual ? "Edit actual" : "Record actual"}</button>
+            </div>
+          </BlueprintSheet>
+        );
+      })()}
     </>
   );
 }

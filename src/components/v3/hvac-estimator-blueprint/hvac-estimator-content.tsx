@@ -8,17 +8,16 @@
 import { HvacEstimatorForm } from "./hvac-estimator-form";
 import s from "./hvac-estimator.module.css";
 
-export function HvacEstimatorContent({ aiEnabled }: { aiEnabled: boolean }) {
+export function HvacEstimatorContent({ aiEnabled, initialAddress }: { aiEnabled: boolean; initialAddress?: string }) {
   return (
     <>
       <div className={s["page-head"]}>
         <div>
           <div className={s.kicker}>Automation · Replacement</div>
           <h1 className={s["page-title"]}>HVAC estimator</h1>
-          <p className={s["page-sub"]}>Walk the house on video, photograph the plates, confirm what you saw — the load, the unit and the price follow, with every assumption in the open.</p>
         </div>
       </div>
-      <HvacEstimatorForm aiEnabled={aiEnabled} />
+      <HvacEstimatorForm aiEnabled={aiEnabled} initialAddress={initialAddress} />
     </>
   );
 }
