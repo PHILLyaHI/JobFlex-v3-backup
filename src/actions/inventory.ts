@@ -176,7 +176,7 @@ export async function sendPurchaseOrder(input: { trade: string; supplierId: stri
         actorId: user.id,
         kind: "PURCHASE_ORDER_SENT",
         summary: `Purchase order emailed to ${supplier.name} — ${items.length} ${input.trade} item(s)`,
-        meta: JSON.stringify({ supplierId: supplier.id, trade: input.trade, lines: items.map((it) => ({ id: it.id, name: it.name, quantity: wanted.get(it.id) ?? 0 })) }),
+        meta: JSON.stringify({ supplierId: supplier.id, trade: input.trade, href: boardPath(input.trade), lines: items.map((it) => ({ id: it.id, name: it.name, quantity: wanted.get(it.id) ?? 0 })) }),
       },
     });
     revalidatePath(boardPath(input.trade));
@@ -225,6 +225,68 @@ export async function loadJobMaterials(jobId: string): Promise<{ ok: true; taken
     revalidatePath(`/dashboard/jobs/${job.id}`);
     revalidatePath(boardPath(job.proposal.trade));
     return { ok: true, taken: tracked.length, untracked: rows.length - tracked.length };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * Leftovers back on the shelf after the job: each line is what came back,
+ * never more than was taken. The crew on the job or the office.
+ */
+export async function returnJobMaterials(jobId: string, lines: Array<{ itemId: string; quantity: number }>): Promise<{ ok: true; returned: number } | Fail> {
+  try {
+    const ctx = await requireOrg();
+    const job = await db.job.findFirst({ where: { id: jobId, organizationId: ctx.organizationId }, select: { id: true, materialsLoadedAt: true, assignments: { select: { worker: { select: { userId: true } } } } } });
+    if (!job) return { ok: false, error: "Job not found" };
+    if (isWorkerRole(ctx.role) && !job.assignments.some((a) => a.worker.userId === ctx.user.id)) return { ok: false, error: "You are not on this job" };
+    if (!job.materialsLoadedAt) return { ok: false, error: "Nothing was loaded for this job yet" };
+    const moves = await db.inventoryMovement.findMany({ where: { jobId: job.id, kind: { in: ["PICKED", "RETURNED"] } }, select: { itemId: true, kind: true, quantity: true } });
+    const taken = new Map<string, number>();
+    // PICKED rows are stored negative and RETURNED rows positive, so negating
+    // both gives what is still out on the job.
+    for (const m of moves) taken.set(m.itemId, (taken.get(m.itemId) ?? 0) - m.quantity);
+    const writes = [];
+    let returned = 0;
+    for (const l of lines) {
+      const room = taken.get(l.itemId) ?? 0;
+      const qty = Math.min(Math.max(0, money(l.quantity)), Math.max(0, room));
+      if (!qty) continue;
+      writes.push(
+        db.inventoryMovement.create({ data: { itemId: l.itemId, kind: "RETURNED", quantity: qty, jobId: job.id, actorId: ctx.user.id, note: "Leftovers back" } }),
+        db.inventoryItem.update({ where: { id: l.itemId }, data: { onHand: { increment: qty } } }),
+      );
+      returned++;
+    }
+    if (writes.length) await db.$transaction(writes);
+    revalidatePath(`/dashboard/jobs/${job.id}`);
+    for (const t of ["fence", "roof", "hvac"]) revalidatePath(boardPath(t));
+    return { ok: true, returned };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** The order arrived: every line of a sent purchase order is received, and the order is marked. */
+export async function receivePurchaseOrder(eventId: string): Promise<{ ok: true; received: number } | Fail> {
+  try {
+    const { organizationId, user } = await requireManager();
+    const ev = await db.activityEvent.findFirst({ where: { id: eventId, organizationId, kind: "PURCHASE_ORDER_SENT" } });
+    if (!ev) return { ok: false, error: "That order is not on this company" };
+    const meta = JSON.parse(ev.meta ?? "{}") as { trade?: string; lines?: Array<{ id: string; quantity: number }>; receivedAt?: string };
+    if (meta.receivedAt) return { ok: false, error: "Already received" };
+    const lines = (meta.lines ?? []).filter((l) => l.quantity > 0);
+    const items = await db.inventoryItem.findMany({ where: { id: { in: lines.map((l) => l.id) }, organizationId }, select: { id: true } });
+    const known = new Set(items.map((i) => i.id));
+    const writes = lines
+      .filter((l) => known.has(l.id))
+      .flatMap((l) => [
+        db.inventoryMovement.create({ data: { itemId: l.id, kind: "RECEIVED", quantity: l.quantity, note: "Purchase order received", actorId: user.id } }),
+        db.inventoryItem.update({ where: { id: l.id }, data: { onHand: { increment: l.quantity } } }),
+      ]);
+    await db.$transaction([...writes, db.activityEvent.update({ where: { id: ev.id }, data: { meta: JSON.stringify({ ...meta, receivedAt: new Date().toISOString() }) } })]);
+    if (meta.trade) revalidatePath(boardPath(meta.trade));
+    return { ok: true, received: writes.length / 2 };
   } catch (err) {
     return fail(err);
   }

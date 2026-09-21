@@ -188,6 +188,8 @@ export type JdMoney = {
   crew: number;
   crewUnpaid: number;
   expenses: number;
+  /** Warehouse materials on the job at the items' last cost. */
+  stock: number;
   cost: number;
   costIsPlanned: boolean;
   profit: number;
@@ -195,6 +197,9 @@ export type JdMoney = {
   plannedProfit: number;
   costVariance: number;
 };
+
+/** A warehouse item out on this job: taken when the truck was loaded, and what came back. */
+export type JdPicked = { itemId: string; name: string; unit: string; taken: number; returned: number };
 
 export type JdPick = { name: string; unit: string; quantity: number; tracked: boolean; enough: boolean; onHand: number | null };
 
@@ -264,6 +269,8 @@ export type JobDetailRecord = {
   pick: JdPick[];
   /** ISO time the truck was marked loaded, else null. */
   loadedAt: string | null;
+  /** The warehouse items out on this job once loaded (for leftovers back). */
+  picked: JdPicked[];
   /** Roster minus the workers already on the job. */
   roster: JdWorkerOption[];
   booking: JdBooking;

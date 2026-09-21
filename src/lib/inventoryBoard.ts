@@ -23,8 +23,12 @@ export type BoardProposal = {
 
 export type BoardSupplier = { id: string; name: string; email: string | null; phone: string | null; website: string | null; itemCount: number };
 
+export type BoardOrder = { id: string; supplier: string; sentAt: string; lines: Array<{ name: string; quantity: number }> };
+
 export type TradeBoardData = {
   trade: TradeId;
+  /** Purchase orders emailed and not yet received. */
+  orders: BoardOrder[];
   proposals: BoardProposal[];
   rows: StockRow[];
   suppliers: BoardSupplier[];
@@ -37,7 +41,7 @@ const OPEN = ["DRAFT", "SENT", "VIEWED"];
 
 export async function loadTradeBoard(organizationId: string, trade: string): Promise<TradeBoardData | null> {
   if (!isTradeId(trade)) return null;
-  const [proposals, items, suppliers] = await Promise.all([
+  const [proposals, items, suppliers, sent] = await Promise.all([
     db.proposal.findMany({
       where: { organizationId, trade, status: { in: [...OPEN, "ACCEPTED"] } },
       orderBy: { createdAt: "desc" },
@@ -55,7 +59,15 @@ export async function loadTradeBoard(organizationId: string, trade: string): Pro
     }),
     db.inventoryItem.findMany({ where: { organizationId, trade }, orderBy: { name: "asc" }, include: { supplier: { select: { name: true } } } }),
     db.supplier.findMany({ where: { organizationId }, orderBy: { name: "asc" }, include: { _count: { select: { items: true } } } }),
+    db.activityEvent.findMany({ where: { organizationId, kind: "PURCHASE_ORDER_SENT", meta: { contains: `"trade":"${trade}"` } }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, createdAt: true, meta: true } }),
   ]);
+  const orders: BoardOrder[] = sent
+    .map((e) => {
+      const meta = JSON.parse(e.meta ?? "{}") as { supplierId?: string; receivedAt?: string; lines?: Array<{ name: string; quantity: number }> };
+      if (meta.receivedAt) return null;
+      return { id: e.id, supplier: suppliers.find((s) => s.id === meta.supplierId)?.name ?? "Supplier", sentAt: e.createdAt.toISOString(), lines: meta.lines ?? [] };
+    })
+    .filter((o): o is BoardOrder => !!o);
   const list: BoardProposal[] = proposals.map((p) => ({
     id: p.id,
     title: p.title,
@@ -85,6 +97,7 @@ export async function loadTradeBoard(organizationId: string, trade: string): Pro
   const untracked = untrackedLines(stock, [...sold, ...open].flatMap((p) => p.lines));
   return {
     trade,
+    orders,
     proposals: list,
     rows,
     suppliers: suppliers.map((s) => ({ id: s.id, name: s.name, email: s.email, phone: s.phone, website: s.website, itemCount: s._count.items })),

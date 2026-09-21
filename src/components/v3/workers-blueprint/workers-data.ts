@@ -21,6 +21,9 @@ export type WorkerEntry = {
   phone: string | null;
   specialties: string[];
   rate: number | null;
+  /** Pay on this worker's jobs, all of it and the part not yet marked paid (2026-09-20). */
+  earned?: number;
+  unpaid?: number;
   token: string;
   invite: InviteStatus;
   role: string;

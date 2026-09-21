@@ -373,6 +373,11 @@ export function initWorkersContent(
             : '<div class="fld-v none">none set</div>') + '</div>' +
         '<div class="fld-row"><div class="kpi-lbl">Hourly rate</div>' +
           (e.rate ? '<div class="fld-v mono">$' + e.rate + '/hr</div>' : '<div class="fld-v none">not set</div>') + '</div>' +
+        // What the worker's jobs pay them, and what the office still owes (JobAssignment.pay / paidAt).
+        '<div class="fld-row"><div class="kpi-lbl">Earned on jobs</div>' +
+          (e.earned ? '<div class="fld-v mono">$' + e.earned.toLocaleString('en-US') + '</div>' : '<div class="fld-v none">no pay set yet</div>') + '</div>' +
+        '<div class="fld-row"><div class="kpi-lbl">Still owed</div>' +
+          (e.unpaid ? '<div class="fld-v mono">$' + e.unpaid.toLocaleString('en-US') + '</div>' : '<div class="fld-v none">nothing</div>') + '</div>' +
         '<div class="fld-row"><div class="kpi-lbl">Joined</div><div class="fld-v mono">' + escapeText(e.joined) + '</div></div>' +
         '<div class="fld-row"><div class="kpi-lbl">Active jobs (' + e.jobs.length + ')</div>' +
           (e.jobs.length

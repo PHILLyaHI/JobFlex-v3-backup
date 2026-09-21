@@ -35,6 +35,7 @@ import {
   type JdMoney,
   type JdPhoto,
   type JdPick,
+  type JdPicked,
   type JdWorkerOption,
   type JobDetailRecord,
 } from "./job-detail-data";
@@ -301,12 +302,14 @@ export async function loadJobDetail(
   // the contract is the proposal plus its approved change orders, the planned
   // cost is the estimate's material and labor COST columns, and the actual
   // cost is the crew's pay plus the booked receipts (lib/jobCosting).
+  const out = await pickedFor(job.id);
   const m = jobMoney({
     contract: job.proposal ? contractTotal(job.proposal.total, job.proposal.changeOrders) : 0,
     collected: job.proposal ? job.proposal.payments.reduce((a, p) => a + p.amount, 0) : 0,
     lines: job.proposal?.lineItems ?? [],
     crewPay: job.assignments.map((a) => a.pay),
     expenses: job.expenses.map((e) => e.amount),
+    stock: out.cost,
   });
   const money: JdMoney = {
     contract: m.contract,
@@ -316,6 +319,7 @@ export async function loadJobDetail(
     crew: m.crew,
     crewUnpaid: crewTotals(job.assignments.map((a) => ({ assignmentId: a.id, workerId: a.workerId, name: a.worker.displayName, pay: a.pay, paidAt: a.paidAt ? a.paidAt.toISOString() : null }))).unpaid,
     expenses: m.expenses,
+    stock: m.stock,
     cost: m.cost,
     costIsPlanned: m.costIsPlanned,
     profit: m.profit,
@@ -400,6 +404,7 @@ export async function loadJobDetail(
     money,
     pick,
     loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
+    picked: out.rows,
     roster,
     booking: bookingWindow(job.startsAt, job.endsAt),
     canWrite: isOwnerOrManager(role),
@@ -524,6 +529,7 @@ async function loadWorkerScoped(
     money: null,
     pick: await pickFor(organizationId, job.proposal?.trade ?? null, job.proposal?.lineItems ?? []),
     loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
+    picked: (await pickedFor(job.id)).rows,
     roster: [],
     // Never read — `canWrite` is false, so nothing on this edition books
     // anything — but the shape is the shape.
@@ -556,4 +562,27 @@ async function pickFor(organizationId: string, trade: string | null, lines: Arra
     enough: r.enough,
     onHand: r.onHand,
   }));
+}
+
+/**
+ * What is out on the job from the warehouse: the PICKED rows (stored
+ * negative) less the RETURNED rows, per item, and their cost at the item's
+ * last known price — the job's "materials from stock" line.
+ */
+async function pickedFor(jobId: string): Promise<{ rows: JdPicked[]; cost: number }> {
+  const moves = await db.inventoryMovement.findMany({
+    where: { jobId, kind: { in: ["PICKED", "RETURNED"] } },
+    select: { itemId: true, kind: true, quantity: true, item: { select: { name: true, unit: true, lastCost: true } } },
+  });
+  if (!moves.length) return { rows: [], cost: 0 };
+  const byItem = new Map<string, JdPicked & { lastCost: number }>();
+  for (const mv of moves) {
+    const row = byItem.get(mv.itemId) ?? { itemId: mv.itemId, name: mv.item.name, unit: mv.item.unit, taken: 0, returned: 0, lastCost: mv.item.lastCost ?? 0 };
+    if (mv.kind === "PICKED") row.taken += -mv.quantity;
+    else row.returned += mv.quantity;
+    byItem.set(mv.itemId, row);
+  }
+  const rows = [...byItem.values()];
+  const cost = Math.round(rows.reduce((a, r) => a + Math.max(0, r.taken - r.returned) * r.lastCost, 0) * 100) / 100;
+  return { rows: rows.map((r) => ({ itemId: r.itemId, name: r.name, unit: r.unit, taken: r.taken, returned: r.returned })), cost };
 }

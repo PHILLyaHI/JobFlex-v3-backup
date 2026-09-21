@@ -46,6 +46,21 @@ on the installer dashboard in SmartSpace Pro, adapted to what JobFlex holds.
   (`Job.materialsLoadedAt`) and releases the reservation. A worker can
   press it only on a job they are assigned to.
 
+## Later the same day: the loop closes
+
+- **Leftovers back.** Once a job's truck is loaded, its page lists what is
+  out on the job; the crew or the office enters what came back and the
+  shelf corrects itself. What stayed on the job, at each item's last cost,
+  is the job's "from the warehouse" cost on its money card.
+- **Orders on the way.** A purchase order emailed from the board stays on
+  it until "Received" puts every line on the shelf in one tap.
+- **The daily check** (`/api/cron/stock-check`, 6:30 am Pacific): a bell
+  notice per board with items low for the next job, and a notice for any
+  job starting within two days whose materials are short on the shelf.
+  Each notice opens the board or the job.
+- **Workers page:** each worker's earnings on their jobs and what is still
+  owed, from the pay on their assignments.
+
 ## Data layer
 
 New tables `Supplier`, `InventoryItem`, `InventoryMovement`; new columns

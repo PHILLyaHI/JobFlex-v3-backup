@@ -16,7 +16,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import { countStock, deleteInventoryItem, receiveStock, sendPurchaseOrder, upsertInventoryItem, upsertSupplier } from "@/actions/inventory";
+import { countStock, deleteInventoryItem, receivePurchaseOrder, receiveStock, sendPurchaseOrder, upsertInventoryItem, upsertSupplier } from "@/actions/inventory";
 import type { TradeBoardData } from "@/lib/inventoryBoard";
 import { TRADES } from "@/lib/inventory";
 
@@ -290,6 +290,26 @@ export function TradeBoard({ data, canWrite }: { data: TradeBoardData; canWrite:
               </div>
             );
           })}
+        </section>
+      )}
+
+      {data.orders.length > 0 && (
+        <section className="paper-card" style={{ padding: 16 }} data-orders>
+          <h2 style={{ margin: 0 }}>Orders on the way</h2>
+          <p style={{ margin: "4px 0 12px", opacity: 0.75 }}>Purchase orders emailed and not yet received. One tap when the delivery lands puts every line on the shelf.</p>
+          {data.orders.map((o) => (
+            <div key={o.id} style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", borderTop: "1px solid #e5e5e5", padding: "8px 0" }}>
+              <div>
+                <b>{o.supplier}</b> <span style={{ opacity: 0.7 }}>· sent {new Date(o.sentAt).toLocaleDateString("en-US")}</span>
+                <div style={{ fontSize: 12, opacity: 0.75 }}>{o.lines.map((l) => `${l.quantity} × ${l.name}`).join(" · ")}</div>
+              </div>
+              {canWrite && (
+                <button className="btn btn-sm" type="button" disabled={pending} onClick={() => run(() => receivePurchaseOrder(o.id), (r) => `${String(r.received)} line(s) received onto the shelf.`)}>
+                  Received
+                </button>
+              )}
+            </div>
+          ))}
         </section>
       )}
 

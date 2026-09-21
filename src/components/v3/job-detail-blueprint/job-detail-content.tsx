@@ -439,6 +439,41 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                 ) : null}
               </div>
             ))}
+            {record.loadedAt && record.picked.some((p) => p.taken > p.returned) && (
+              <form
+                className={cx("jd-row")}
+                data-leftovers
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const f = e.currentTarget;
+                  const lines = record.picked
+                    .map((p) => ({ itemId: p.itemId, quantity: Number((f.elements.namedItem(`back-${p.itemId}`) as HTMLInputElement | null)?.value) || 0 }))
+                    .filter((l) => l.quantity > 0);
+                  if (lines.length) void a.returnMaterials(lines);
+                  f.reset();
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div className={cx("jd-row-n")}>Leftovers back to the warehouse</div>
+                  {record.picked
+                    .filter((p) => p.taken > p.returned)
+                    .map((p) => (
+                      <div className={cx("jd-row-m")} key={p.itemId} style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
+                        <input name={`back-${p.itemId}`} className="pinput" type="number" min={0} max={p.taken - p.returned} step="any" placeholder="0" style={{ width: 80 }} aria-label={`${p.name} returned`} />
+                        <span>
+                          of {p.taken - p.returned} {p.unit} — {p.name}
+                          {p.returned > 0 ? ` (${p.returned} already back)` : ""}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+                <div className={cx("jd-row-act")}>
+                  <button className={cx("btn")} type="submit" disabled={a.busy?.kind === "return"}>
+                    Return
+                  </button>
+                </div>
+              </form>
+            )}
             {!record.loadedAt && (
               <div className={cx("jd-row")}>
                 <div className={cx("jd-row-m")}>Tap when the truck is loaded — the warehouse count comes down and the office sees it.</div>
@@ -760,7 +795,8 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                 <div className={cx("jd-row-n")}>Cost</div>
                 <div className={cx("jd-row-m")}>
                   crew {fmt(record.money.crew)}
-                  {record.money.crewUnpaid > 0 ? ` (${fmt(record.money.crewUnpaid)} unpaid)` : ""} · receipts {fmt(record.money.expenses)} · estimate said {fmt(record.money.plannedCost)}
+                  {record.money.crewUnpaid > 0 ? ` (${fmt(record.money.crewUnpaid)} unpaid)` : ""} · receipts {fmt(record.money.expenses)}
+                  {record.money.stock > 0 ? ` · from the warehouse ${fmt(record.money.stock)}` : ""} · estimate said {fmt(record.money.plannedCost)}
                 </div>
               </div>
               <div className={cx("jd-row-act")}>

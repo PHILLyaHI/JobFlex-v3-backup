@@ -45,10 +45,21 @@ export interface NotificationItem {
 
 /** Resolve the best in-app destination for an activity row. */
 function hrefFor(e: {
+  kind?: string;
+  meta?: string | null;
   proposalId: string | null;
   clientId: string | null;
   leadId: string | null;
 }): string | null {
+  // A stock notice or a purchase order (2026-09-20) names its own page in meta.
+  if (e.kind && /^(STOCK_|PURCHASE_ORDER_)/.test(e.kind) && e.meta) {
+    try {
+      const href = (JSON.parse(e.meta) as { href?: string }).href;
+      if (href) return href;
+    } catch {
+      /* fall through to the row's own links */
+    }
+  }
   if (e.proposalId) return `/dashboard/proposals/${e.proposalId}`;
   if (e.leadId) return `/dashboard/leads/${e.leadId}`;
   if (e.clientId) return `/dashboard/clients/${e.clientId}`;
