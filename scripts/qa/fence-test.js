@@ -1,9 +1,11 @@
 // Functional pass over /dashboard/fence-estimator (keyless mode: manual runs).
 const { chromium } = require("playwright");
+const { launch, signIn, stale } = require("./_qa");
+stale('Fence Studio was rebuilt after this was written (materials catalogue, run rows, no keyless notice). Its address step now uses a cached lot, the rest needs a rewrite; the studio is covered by the fence-*.check.ts files');
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await launch();
   const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
   const errors = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
@@ -16,10 +18,7 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
     return m ? m[1] : "—";
   };
 
-  await page.goto("http://localhost:3000/auth/login", { waitUntil: "domcontentloaded" });
-  await page.fill('input[type="email"]', "qa@acme.test");
-  await page.fill('input[type="password"]', "qa-pass-2026");
-  await Promise.all([page.waitForURL(/dashboard/, { timeout: 30000 }).catch(() => {}), page.click('button[type="submit"]')]);
+  await signIn(page);
   await page.goto("http://localhost:3000/dashboard/fence-estimator", { waitUntil: "networkidle" });
   await page.waitForTimeout(2000);
 
@@ -98,17 +97,13 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   await page.click('.vsw-btn:has-text("Draw")');
   await page.waitForTimeout(500);
 
-  // ---- 9. Find / Load property lines fail honestly (no keys) ----
-  await page.locator(".fs-search, .content input").first().fill("419 Prairie Ridge Ln, North Aurora IL").catch(() => {});
-  await page.click('button:has-text("Find")');
-  await page.waitForTimeout(2500);
-  const findState = await page.locator('button:has-text("Find"), button:has-text("No match"), button:has-text("Found")').first().textContent();
-  const toasts1 = await page.locator("[class*=toast], [role=status], [role=alert]").allTextContents();
-  log(true, "find: keyless outcome", `btn="${(findState || "").trim()}" toasts=${JSON.stringify(toasts1.slice(0, 2))}`);
-  await page.click('button:has-text("Load property lines")');
-  await page.waitForTimeout(2500);
-  const toasts2 = await page.locator("[class*=toast], [role=status], [role=alert]").allTextContents();
-  log(true, "parcel: keyless outcome", JSON.stringify(toasts2.slice(0, 2)));
+  // ---- 9. Find: an address that is ALREADY in the parcel cache ----
+  // Never an uncached one: with the provider keys present that is a real ReportAll lookup (the
+  // quota is all-time). The lot loads by itself on Find — the old "Load property lines" button is gone.
+  await page.locator("#addrInput").fill("12117 202nd St SE, Snohomish, WA 98296");
+  await page.click("#findBtn");
+  const sides = await page.waitForFunction(() => document.querySelectorAll("#parcelPanel [data-side]").length > 0, null, { timeout: 60000 }).then(() => true).catch(() => false);
+  log(sides, "find: the cached lot loads and lists its sides", String(await page.locator("#parcelPanel [data-side]").count()));
 
   // ---- 10. Convert to proposal + cleanup ----
   const conv = page.locator('button:has-text("Convert to proposal")');

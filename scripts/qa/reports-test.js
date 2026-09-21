@@ -1,19 +1,17 @@
 // Functional pass over /dashboard/reports (last page of the sweep).
 const { chromium } = require("playwright");
+const { launch, signIn } = require("./_qa");
 const fs = require("fs");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await launch();
   const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
   const errors = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
-  await page.goto("http://localhost:3000/auth/login", { waitUntil: "domcontentloaded" });
-  await page.fill('input[type="email"]', "qa@acme.test");
-  await page.fill('input[type="password"]', "qa-pass-2026");
-  await Promise.all([page.waitForURL(/dashboard/, { timeout: 30000 }).catch(() => {}), page.click('button[type="submit"]')]);
+  await signIn(page);
   await page.goto("http://localhost:3000/dashboard/reports", { waitUntil: "networkidle" });
   await page.waitForTimeout(2000);
 

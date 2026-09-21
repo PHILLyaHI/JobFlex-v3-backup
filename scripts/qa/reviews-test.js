@@ -1,19 +1,17 @@
 // Full-cycle functional pass: /dashboard/reviews + public /review/[token].
 const { chromium } = require("playwright");
+const { launch, signIn, withWorld } = require("./_qa");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
 
-(async () => {
-  const browser = await chromium.launch();
+withWorld(async (world) => {
+  const browser = await launch();
   const ctx = await browser.newContext({ viewport: { width: 1728, height: 1000 }, permissions: ["clipboard-read", "clipboard-write"] });
   const page = await ctx.newPage();
   const errors = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
-  await page.goto("http://localhost:3000/auth/login", { waitUntil: "domcontentloaded" });
-  await page.fill('input[type="email"]', "qa@acme.test");
-  await page.fill('input[type="password"]', "qa-pass-2026");
-  await Promise.all([page.waitForURL(/dashboard/, { timeout: 30000 }).catch(() => {}), page.click('button[type="submit"]')]);
+  await signIn(page);
   await page.goto("http://localhost:3000/dashboard/reviews", { waitUntil: "networkidle" });
   await page.waitForTimeout(1800);
 
@@ -28,15 +26,16 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   await page.waitForTimeout(600);
   log(await page.locator(".mdl.open").count() === 1, "dialog: opens");
   const jobOpts = await page.locator("#rvReqJob option").count();
-  log(jobOpts === 7, "dialog: 7 eligible jobs in picker", String(jobOpts));
+  log(jobOpts === world.jobs, "dialog: every fixture job is in the picker", `${jobOpts} of ${world.jobs}`);
   const firstOpt = ((await page.locator("#rvReqJob option").first().textContent()) || "").trim();
-  log(/Foundation pour — Lot A1/.test(firstOpt), "dialog: COMPLETED job leads the list", firstOpt.slice(0, 40));
+  const pickedTitle = world.jobTitles.find((t) => firstOpt.startsWith(t)) || "";
+  log(!!pickedTitle, "dialog: a completed fixture job leads the list", firstOpt.slice(0, 40));
   await page.selectOption("#rvReqJob", { index: 0 });
   await page.waitForTimeout(400);
   await page.click("#rvReqOk");
   await page.waitForTimeout(2500);
   log(await page.locator(".mdl.open").count() === 0, "send: dialog closes");
-  const pendRow = page.locator("text=Foundation pour — Lot A1").first();
+  const pendRow = page.locator(`text=${pickedTitle}`).first();
   log(await pendRow.count() > 0, "send: pending request renders");
 
   // ---- 3. Copy link ----
@@ -50,8 +49,8 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   // ---- 4. Public page: submit a 5-star review ----
   await page.goto(clip, { waitUntil: "networkidle" });
   await page.waitForTimeout(1200);
-  log((await page.locator("text=Acme").count()) > 0, "public: page renders with org name");
-  await page.locator('button[aria-label="5 stars"]').click();
+  log((await page.locator(`text=${world.orgName}`).count()) > 0, "public: page renders with org name");
+  await page.locator('button[aria-label^="5 stars"]').click();
   await page.waitForTimeout(300);
   const ta = page.locator("textarea");
   if (await ta.count()) await ta.fill("Great crew, clean site, on schedule. (QA test)");
@@ -69,21 +68,21 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   await page.goto("http://localhost:3000/dashboard/reviews", { waitUntil: "networkidle" });
   await page.waitForTimeout(1500);
   log((await page.locator("text=Great crew, clean site").count()) > 0, "dashboard: completed review card renders");
-  const chip5 = page.locator(".rv-chip", { hasText: "5" }).first();
-  const chip5Empty = await page.locator(".rv-chip.empty", { hasText: "5" }).count();
+  const chip5 = page.locator('.rv-chip[data-f="5"]');
+  const chip5Empty = await page.locator('.rv-chip.empty[data-f="5"]').count();
   log(chip5Empty === 0, "dashboard: 5-star chip no longer empty");
   await chip5.click();
   await page.waitForTimeout(400);
   log((await page.locator("text=Great crew, clean site").count()) > 0, "chips: 5-star filter keeps the review");
-  const chip1 = page.locator(".rv-chip", { hasText: "1" }).last();
+  const chip1 = page.locator('.rv-chip[data-f="1"]');
   await chip1.click();
   await page.waitForTimeout(400);
   log((await page.locator("text=Great crew, clean site").count()) === 0, "chips: 1-star filter hides it");
-  await page.locator(".rv-chip", { hasText: /All/i }).click();
+  await page.locator('.rv-chip[data-f="ALL"]').click();
   await page.waitForTimeout(300);
 
   console.log("CONSOLE ERRORS: " + (errors.length ? "\n  " + errors.join("\n  ") : "none"));
   console.log("TOKEN_URL=" + clip);
   await page.screenshot({ path: "reviews_final.png", fullPage: true });
   await browser.close();
-})().catch((e) => { console.error("HARNESS FAIL:", e.message); process.exit(1); });
+}).catch((e) => { console.error("HARNESS FAIL:", e.message); process.exit(1); });

@@ -1,19 +1,18 @@
 // Functional pass over /dashboard/subscription.
 const { chromium } = require("playwright");
+const { launch, signIn, stale } = require("./_qa");
+stale("the Subscription page was rebuilt (plan grid, upgrade flow, billing) after this was written: #specGrid and the 'Upgrade plan' anchor no longer exist. Needs a rewrite");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await launch();
   const ctx = await browser.newContext({ viewport: { width: 1728, height: 1000 }, permissions: ["clipboard-read", "clipboard-write"] });
   const page = await ctx.newPage();
   const errors = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
-  await page.goto("http://localhost:3000/auth/login", { waitUntil: "domcontentloaded" });
-  await page.fill('input[type="email"]', "qa@acme.test");
-  await page.fill('input[type="password"]', "qa-pass-2026");
-  await Promise.all([page.waitForURL(/dashboard/, { timeout: 30000 }).catch(() => {}), page.click('button[type="submit"]')]);
+  await signIn(page);
 
   // Sidebar link reaches the page.
   await page.goto("http://localhost:3000/dashboard", { waitUntil: "networkidle" });

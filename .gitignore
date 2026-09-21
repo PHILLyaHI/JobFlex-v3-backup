@@ -76,3 +76,7 @@ scripts/migrate-v2/reports/
 
 .vercel
 .env*.local
+
+# run artefacts of the QA page scripts
+scripts/qa/*.png
+scripts/qa/report-dl.csv

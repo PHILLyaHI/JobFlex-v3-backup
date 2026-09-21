@@ -1,26 +1,24 @@
 // Functional pass over /dashboard/financials: exercises every button.
 const { chromium } = require("playwright");
+const { launch, signIn, withWorld } = require("./_qa");
 const fs = require("fs");
 
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
 
-(async () => {
+withWorld(async (world) => {
   // 1x1 white PNG for the receipt upload path.
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
     "base64");
   fs.writeFileSync("receipt.png", png);
 
-  const browser = await chromium.launch();
+  const browser = await launch();
   const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
   const consoleErrors = [];
   page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text().slice(0, 200)); });
   page.on("pageerror", (e) => consoleErrors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
-  await page.goto("http://localhost:3000/auth/login", { waitUntil: "domcontentloaded" });
-  await page.fill('input[type="email"]', "qa@acme.test");
-  await page.fill('input[type="password"]', "qa-pass-2026");
-  await Promise.all([page.waitForURL(/dashboard/, { timeout: 30000 }).catch(() => {}), page.click('button[type="submit"]')]);
+  await signIn(page);
   await page.goto("http://localhost:3000/dashboard/financials", { waitUntil: "networkidle" });
   await page.waitForTimeout(1500);
 
@@ -55,12 +53,22 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   if (!nOpen) log(true, "attention: no rows to open (empty)", "");
 
   // ---- 4. Receipt capture roundtrip: upload -> staged -> save -> row appears -> delete it ----
+  // Reading a receipt is a PAID vision call (scanReceipt). A test never makes one: the call is cut
+  // off at the network, and what is checked is that the page says the read failed instead of
+  // hanging on "Reading the receipt…" or staging made-up numbers. The save-a-row steps below
+  // therefore run only where something staged without it (vision switched off → placeholders).
+  let scanBlocked = 0;
+  await page.route("**/dashboard/financials*", (route) => {
+    const req = route.request();
+    if (req.method() === "POST" && (req.postData() || "").includes("dataUrl")) { scanBlocked++; return route.abort("failed"); }
+    return route.continue();
+  });
   await page.setInputFiles("#rcFile", "receipt.png");
-  await page.waitForTimeout(400);
+  await page.waitForFunction(() => { const n = document.querySelector("#rcNote"); return !!n && !/Preparing|Reading/.test(n.textContent || ""); }, null, { timeout: 20000 }).catch(() => {});
   const noteTxt = (await page.locator("#rcNote").textContent().catch(() => "")) || "";
-  await page.waitForSelector("#rcStaged:not(.is-hidden)", { timeout: 20000 }).catch(() => {});
   const staged = await page.locator("#rcStaged:not(.is-hidden)").count();
-  log(staged === 1, "receipt: file staged after upload", "note=" + noteTxt.trim().slice(0, 80));
+  log(scanBlocked === 1, "receipt: the paid read was asked for once, and cut off by the test", String(scanBlocked));
+  log(staged === 0 && noteTxt.trim().length > 0 && !/Reading the receipt/.test(noteTxt), "receipt: a read that fails says so and stages nothing", "note=" + noteTxt.trim().slice(0, 80));
 
   let createdVendorNote = null;
   if (staged) {
@@ -142,4 +150,4 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
     await page.waitForTimeout(350);
     return page.locator(sel).count();
   }
-})().catch((e) => { console.error("HARNESS FAIL:", e.message); process.exit(1); });
+}).catch((e) => { console.error("HARNESS FAIL:", e.message); process.exit(1); });
