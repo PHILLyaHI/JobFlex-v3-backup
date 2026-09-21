@@ -26,8 +26,17 @@ export type NavItem = {
    *  renders the upgrade offer at that URL — so the locked state is an ad for
    *  the page, not a hole where it used to be (owner's call, 2026-08-31). */
   locked?: boolean;
+  /** Rows that fold under this one — the estimator's inventory (2026-09-20).
+   *  Drawn indented beneath the parent with a chevron to fold them; the
+   *  handheld drawer and the palette list them flat after the parent. */
+  children?: NavItem[];
 };
 export type NavSection = { label: string; items: NavItem[] };
+
+/** A section's rows in reading order, children after their parent. */
+export function flattenNavItems(items: readonly NavItem[]): NavItem[] {
+  return items.flatMap((it) => [it, ...(it.children ?? [])]);
+}
 
 export const NAV_SECTIONS: NavSection[] = [
   {
@@ -79,12 +88,20 @@ export const NAV_SECTIONS: NavSection[] = [
       // decision you make on your way somewhere else. The engines themselves
       // keep their items below.
       { label: "Smart Proposal", icon: "i-bulb", href: "/dashboard/advanced-ai" },
-      { label: "Roof estimator", icon: "i-roof", href: "/dashboard/roof-estimator" },
-      // The trade boards (2026-09-20): each estimator's proposals, its
-      // warehouse stock and its suppliers, right under the estimator.
-      { label: "Roofing board", icon: "i-roof", href: "/dashboard/roof-estimator/board" },
-      { label: "Fence estimator", icon: "i-fence", href: "/dashboard/fence-estimator" },
-      { label: "Fence board", icon: "i-fence", href: "/dashboard/fence-estimator/board" },
+      // Each estimator folds its inventory under it (2026-09-20): that
+      // trade's proposals, its warehouse stock and its suppliers.
+      {
+        label: "Roof estimator",
+        icon: "i-roof",
+        href: "/dashboard/roof-estimator",
+        children: [{ label: "Roofing inventory", icon: "i-roof", href: "/dashboard/roof-estimator/board" }],
+      },
+      {
+        label: "Fence estimator",
+        icon: "i-fence",
+        href: "/dashboard/fence-estimator",
+        children: [{ label: "Fence inventory", icon: "i-fence", href: "/dashboard/fence-estimator/board" }],
+      },
       // Added 2026-08-22 with the Video estimator port. Its position — directly
       // after the other two engines — is the donor's own
       // (jobflex-videoestimator-blueprint.html sidebar). Not in ESTIMATOR's
@@ -95,8 +112,12 @@ export const NAV_SECTIONS: NavSection[] = [
       // Added 2026-09-15; the heat pump glyph on 2026-09-18 (until then the
       // item asked for `i-bolt`, which only the Financials sprite carries, so
       // the sidebar drew a blank beside it on every other page).
-      { label: "HVAC estimator", icon: "i-heatpump", href: "/dashboard/hvac-estimator" },
-      { label: "HVAC board", icon: "i-heatpump", href: "/dashboard/hvac-estimator/board" },
+      {
+        label: "HVAC estimator",
+        icon: "i-heatpump",
+        href: "/dashboard/hvac-estimator",
+        children: [{ label: "HVAC inventory", icon: "i-heatpump", href: "/dashboard/hvac-estimator/board" }],
+      },
       { label: "Phone", icon: "i-phone", href: "/dashboard/phone" },
       { label: "Messages", icon: "i-msg", href: "/dashboard/messages" },
       { label: "Reviews", icon: "i-thumb", href: "/dashboard/reviews" },
@@ -288,10 +309,11 @@ export function navSectionsFor(
   // custom-plan lock only MARKS it — the page exists, the plan just does not
   // include it yet, and a dimmed padlocked row that opens the upgrade offer
   // sells the add-on where a missing row sells nothing.
-  const mark = (item: NavItem): NavItem =>
-    locked && isCustomBlockedPath(locked, item.href.split("?")[0])
-      ? { ...item, locked: true }
-      : item;
+  const mark = (item: NavItem): NavItem => {
+    const marked = locked && isCustomBlockedPath(locked, item.href.split("?")[0]) ? { ...item, locked: true } : item;
+    // The rows folded under it follow the same rules.
+    return marked.children ? { ...marked, children: marked.children.filter((c) => canOpen(role, c.href, locked)).map((c) => (locked && isCustomBlockedPath(locked, c.href.split("?")[0]) ? { ...c, locked: true } : c)) } : marked;
+  };
 
   const plan = role ? ROLE_NAV[role] : undefined;
   if (plan) {
@@ -329,7 +351,7 @@ export function activeHref(pathname: string): string | null {
   const path = SURFACE_ALIASES[pathname] ?? pathname;
   let best: string | null = null;
   for (const section of NAV_SECTIONS) {
-    for (const item of section.items) {
+    for (const item of flattenNavItems(section.items)) {
       if (item.href === "#") continue;
       const hit = path === item.href || path.startsWith(item.href + "/");
       if (hit && (best === null || item.href.length > best.length)) best = item.href;

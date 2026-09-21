@@ -41,6 +41,7 @@ import {
   navSectionsFor,
   type NavItem,
   type NavSection,
+  flattenNavItems,
 } from "@/components/v3/blueprint-shell/nav-map";
 import {
   useNavBadges,
@@ -346,7 +347,7 @@ export function MobileNav() {
           {sections.map((sec) => (
             <div key={sec.label}>
               <div className={styles.sbSecLabel}>{sec.label}</div>
-              {sec.items.map((item) => {
+              {flattenNavItems(sec.items).map((item) => {
                 const isActive = item.href === active;
                 const cls = `${styles.sbLink} ${isActive ? styles.active : ""}`;
                 const count = badges[item.href] ?? 0;
