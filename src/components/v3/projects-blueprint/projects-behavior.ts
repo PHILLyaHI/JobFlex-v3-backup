@@ -16,6 +16,7 @@ import { closeMdl, openMdl, MDL_EXIT_MS } from "@/components/v3/blueprint-shell/
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { initDatePopovers } from "@/components/v3/shared/date-popover";
 import { STATUSES, type Project } from "./projects-data";
+import { money, moneyShort, projectFlags } from "./projects-data";
 
 export type ProjectsContentOptions = {
   /** The org's real project book, read server-side in
@@ -122,8 +123,8 @@ export function initProjectsContent(
 
   const pjstate = { filter: "ALL" };
 
-  function money(n: number) {
-    return "$" + n.toLocaleString("en-US");
+  function flagsOf(p: Project) {
+    return projectFlags(p);
   }
   function statusLabel(s: string) {
     return s.toLowerCase().replace("_", " ");
@@ -137,12 +138,13 @@ export function initProjectsContent(
 
   // ================= PROJECTS: RENDER =================
   function chipCount(f: string) {
-    return f === "ALL"
-      ? projectsData.length
-      : projectsData.filter(function (p) {
-          return p.status === f;
-        }).length;
+    if (f === "ALL") return projectsData.length;
+    if (f === "ATTENTION") return projectsData.filter((p) => flagsOf(p).length > 0).length;
+    return projectsData.filter(function (p) {
+      return p.status === f;
+    }).length;
   }
+  const CHIP_LABEL: Record<string, string> = { ALL: "All", ATTENTION: "Needs a look" };
 
   /** Built ONCE. A filter click patches the four chips in place (see
    *  `paintChips`) rather than rebuilding the row — rebuilding destroys the
@@ -153,14 +155,16 @@ export function initProjectsContent(
     if (!chips) return;
     chips.innerHTML = ["ALL"]
       .concat(STATUSES)
+      .concat(["ATTENTION"])
       .map(function (f) {
         return (
           '<button class="pchip' +
           (pjstate.filter === f ? " active" : "") +
+          (f === "ATTENTION" ? " pchip--attn" : "") +
           '" type="button" data-f="' +
           f +
           '">' +
-          (f === "ALL" ? "All" : statusLabel(f)) +
+          (CHIP_LABEL[f] ?? statusLabel(f)) +
           " <b>" +
           chipCount(f) +
           "</b></button>"
@@ -178,75 +182,91 @@ export function initProjectsContent(
     });
   }
 
-  /** One card's markup. Shared by the full grid render and the single-card
-   *  insert the create dialog does, so both stay identical by construction.
-   *  The card is a real link into the classic project detail route — the grid
-   *  used to render `href="#"`, so opening a project was a no-op. */
+  /** One ledger row. Shared by the full render and the single-row insert the
+   *  create dialog does, so both stay identical by construction. The title is
+   *  a real link (⌘-click opens a tab); a click anywhere else on the row
+   *  follows it too — see the tbody listener in the events section. */
   function cardHTML(p: Project) {
     const pct = progress(p);
-    const done = pct >= 100;
+    const done = p.jobCount > 0 && pct >= 100;
+    const flags = flagsOf(p);
+    const spent = p.spent ?? 0;
+    const sold = p.sold ?? 0;
+    const open = p.open ?? 0;
+    const openCount = p.openCount ?? 0;
+    const proposals = p.proposalCount ?? 0;
+    const budgetPct = p.budget > 0 ? Math.min(100, Math.round((spent / p.budget) * 100)) : 0;
+    const budgetTone = p.budget > 0 && spent > p.budget ? " over" : p.budget > 0 && spent >= p.budget * 0.8 ? " warn" : "";
+    const href = "/dashboard/projects/" + encodeURIComponent(p.id);
+    const sub = [p.clientName, p.description].filter(Boolean).map((t) => esc(t as string)).join(" · ");
     return (
-      '<a class="pjc" href="/dashboard/projects/' +
-      encodeURIComponent(p.id) +
-      '" data-id="' +
-      esc(p.id) +
-      '" aria-label="Open ' +
-      esc(p.name) +
-      '">' +
-      '<div class="pjc-head">' +
-      '<div style="min-width:0">' +
-      // `title` carries the untruncated name — .pjc-name is clamped to 2 lines.
-      '<div class="pjc-name" title="' +
-      esc(p.name) +
-      '">' +
-      esc(p.name) +
-      "</div>" +
-      // Whose project it is (2026-09-18), above the scope line.
-      (p.clientName ? '<p class="pjc-client">' + esc(p.clientName) + "</p>" : "") +
-      (p.description ? '<p class="pjc-desc">' + esc(p.description) + "</p>" : "") +
-      "</div>" +
-      '<span class="pstatus pjs--' +
-      esc(p.status.toLowerCase()) +
-      '">' +
-      esc(statusLabel(p.status)) +
-      "</span>" +
-      "</div>" +
-      '<div class="pjc-stats">' +
-      '<div class="pjc-cell"><div class="kpi-lbl">Jobs</div>' +
-      '<div class="pjc-val"><svg class="ic"><use href="#i-jobs"/></svg>' +
-      p.jobCount +
-      "</div></div>" +
-      '<div class="pjc-cell"><div class="kpi-lbl">Budget</div>' +
-      '<div class="pjc-val">' +
-      money(p.budget) +
-      "</div></div>" +
-      '<div class="pjc-cell"><div class="kpi-lbl">Window</div>' +
-      '<div class="pjc-val date"><svg class="ic"><use href="#i-cal"/></svg>' +
-      esc(p.startsAt || "—") +
-      "</div></div>" +
-      "</div>" +
-      '<div class="pjc-prog">' +
-      '<div class="pjc-prog-top"><span class="pjc-prog-lbl">Progress</span>' +
-      '<span class="pjc-prog-val' +
-      (done ? " done" : "") +
-      '">' +
-      pct +
-      "%</span></div>" +
-      '<div class="pjc-track"><div class="pjc-fill' +
-      (done ? " done" : "") +
-      '" data-w="' +
-      pct +
-      '"></div></div>' +
-      '<div class="pjc-sub">' +
-      p.completedJobs +
-      " of " +
-      p.jobCount +
-      " jobs complete" +
-      (p.endsAt ? " · due " + esc(p.endsAt) : "") +
-      "</div>" +
-      "</div>" +
-      "</a>"
+      '<tr class="prow pj-row" data-id="' + esc(p.id) + '" data-href="' + href + '">' +
+      // project
+      '<td><a class="pt-title pt-link" href="' + href + '">' + esc(p.name) + "</a>" +
+      (sub ? '<div class="pt-sub">' + sub + "</div>" : '<div class="pt-sub pj-sub--none">No client on this project</div>') +
+      "</td>" +
+      // status + flags
+      '<td><span class="pstatus pjs--' + esc(p.status.toLowerCase()) + '">' + esc(statusLabel(p.status)) + "</span>" +
+      (flags.length
+        ? '<div class="pj-flags">' + flags.map((f) => '<span class="pj-flag pj-flag--' + f.kind + '" title="' + esc(f.text) + '">' + esc(f.text) + "</span>").join("") + "</div>"
+        : "") +
+      "</td>" +
+      // sold
+      '<td class="num"><span class="pt-money' + (sold > 0 ? "" : " pj-zero") + '">' + (sold > 0 ? money(sold) : "—") + "</span>" +
+      '<div class="pt-sub"' + (open > 0 ? ' title="' + money(open) + ' still with the client"' : "") + ">" +
+      (proposals === 0
+        ? "no proposals yet"
+        : proposals + " proposal" + (proposals === 1 ? "" : "s") + (openCount > 0 ? " · " + openCount + " waiting" : "")) +
+      "</div></td>" +
+      // budget
+      '<td><div class="pj-budget">' +
+      (p.budget > 0
+        ? '<div class="pj-budget-top"><b class="' + budgetTone.trim() + '">' + moneyShort(spent) + "</b><span>of " + moneyShort(p.budget) + "</span><i>" + budgetPct + "%</i></div>" +
+          '<div class="pjc-track pj-track"><div class="pjc-fill pj-fill' + budgetTone + '" data-w="' + budgetPct + '"></div></div>'
+        : '<div class="pj-budget-top"><b class="pj-zero">' + (spent > 0 ? moneyShort(spent) + " spent" : "—") + '</b><span>no budget</span></div>') +
+      "</div></td>" +
+      // jobs
+      '<td><div class="pj-jobs">' +
+      (p.jobCount > 0
+        ? '<b class="' + (done ? "done" : "") + '">' + p.completedJobs + " of " + p.jobCount + "</b><span>" +
+          (done ? "done" : (p.inProgressJobs ?? 0) > 0 ? (p.inProgressJobs ?? 0) + " in progress" : "scheduled") + "</span>" +
+          '<div class="pjc-track pj-track"><div class="pjc-fill' + (done ? " done" : "") + '" data-w="' + pct + '"></div></div>'
+        : '<b class="pj-zero">—</b><span>no jobs yet</span>') +
+      "</div></td>" +
+      // window
+      '<td class="pjc-window"><span class="pt-mono">' + (p.startsAt ? esc(p.startsAt) + (p.endsAt ? " → " + esc(p.endsAt) : "") : "—") + "</span></td>" +
+      // updated
+      '<td class="pjc-updated"><span class="pt-mono">' + esc(p.updatedAgo ?? "") + "</span></td>" +
+      // open
+      '<td class="num"><a class="pt-open pj-open" href="' + href + '" aria-label="Open ' + esc(p.name) + '"><svg class="ic"><use href="#i-arrow"/></svg></a></td>' +
+      "</tr>"
     );
+  }
+
+  /** The masthead: the book's four numbers, over every project the page lists. */
+  function paintMast() {
+    const active = projectsData.filter((p) => p.status === "ACTIVE");
+    const onHold = projectsData.filter((p) => p.status === "ON_HOLD").length;
+    const sold = projectsData.reduce((n, p) => n + (p.sold ?? 0), 0);
+    const open = projectsData.reduce((n, p) => n + (p.open ?? 0), 0);
+    const budget = projectsData.filter((p) => p.status !== "COMPLETED").reduce((n, p) => n + p.budget, 0);
+    const spent = projectsData.filter((p) => p.status !== "COMPLETED").reduce((n, p) => n + (p.spent ?? 0), 0);
+    const attn = projectsData.filter((p) => flagsOf(p).length > 0);
+    const over = projectsData.filter((p) => flagsOf(p).some((f) => f.kind === "over")).length;
+    const put = (id: string, text: string) => {
+      const el = $("#" + id);
+      if (el) el.textContent = text;
+    };
+    put("pjKActive", String(active.length));
+    put("pjKActiveSub", onHold ? onHold + " on hold" : projectsData.length + " in the book");
+    put("pjKSold", money(sold));
+    put("pjKSoldSub", open > 0 ? moneyShort(open) + " still with clients" : "accepted, with approved changes");
+    put("pjKSpent", money(spent));
+    put("pjKSpentSub", budget > 0 ? Math.round((spent / budget) * 100) + "% of " + moneyShort(budget) + " budgeted" : "no budgets set yet");
+    put("pjKAttn", String(attn.length));
+    put("pjKAttnSub", over ? over + " over budget" : attn.length ? "waiting or near the line" : "all clear");
+    const attnVal = $("#pjKAttn");
+    if (attnVal) attnVal.classList.toggle("pj-k--bad", over > 0);
   }
 
   /** Progress bars grow from zero on the frame after they land. */
@@ -267,11 +287,11 @@ export function initProjectsContent(
   }
 
   function visibleRows() {
-    return pjstate.filter === "ALL"
-      ? projectsData
-      : projectsData.filter(function (p) {
-          return p.status === pjstate.filter;
-        });
+    if (pjstate.filter === "ALL") return projectsData;
+    if (pjstate.filter === "ATTENTION") return projectsData.filter((p) => flagsOf(p).length > 0);
+    return projectsData.filter(function (p) {
+      return p.status === pjstate.filter;
+    });
   }
 
   function renderGrid() {
@@ -279,7 +299,15 @@ export function initProjectsContent(
     const grid = $("#pjGrid");
     if (grid) grid.innerHTML = rows.map(cardHTML).join("");
     const empty = $("#pjEmpty");
-    if (empty) empty.classList.toggle("is-hidden", rows.length !== 0);
+    // An empty BOOK hides the ledger and shows the note; an empty FILTER keeps
+    // the ledger's frame and says nothing matched.
+    if (empty) {
+      empty.classList.toggle("is-hidden", rows.length !== 0);
+      if (rows.length === 0 && projectsData.length > 0) {
+        empty.innerHTML = "<b>Nothing under this filter</b>";
+      }
+    }
+    $("#pjLedgerCard")?.classList.toggle("is-hidden", rows.length === 0);
     if (grid) paintFills(grid);
   }
 
@@ -289,19 +317,41 @@ export function initProjectsContent(
   function insertCard(p: Project) {
     const grid = $("#pjGrid");
     if (!grid) return;
-    const holder = document.createElement("div");
+    // A <tr> only parses inside a table section, never inside a <div>.
+    const holder = document.createElement("tbody");
     holder.innerHTML = cardHTML(p);
     const node = holder.firstElementChild as HTMLElement | null;
     if (!node) return;
     grid.prepend(node);
     $("#pjEmpty")?.classList.add("is-hidden");
+    $("#pjLedgerCard")?.classList.remove("is-hidden");
     paintFills(node);
     staggerIn([node]);
+    paintMast();
   }
 
   function renderProjects() {
     buildChips();
+    paintMast();
     renderGrid();
+  }
+
+  // A click on a row opens the project, like the proposals ledger: links,
+  // buttons and a text selection keep their own behavior, and ⌘ / Ctrl-click
+  // opens a tab.
+  const ledgerBody = $("#pjGrid");
+  if (ledgerBody) {
+    on(ledgerBody, "click", (e) => {
+      const ev = e as MouseEvent;
+      const target = ev.target as HTMLElement;
+      if (target.closest("a, button, input, select, textarea, label")) return;
+      if ((window.getSelection()?.toString() ?? "").length > 0) return;
+      const row = target.closest<HTMLElement>(".pj-row");
+      const href = row?.dataset.href;
+      if (!href) return;
+      if (ev.metaKey || ev.ctrlKey) window.open(href, "_blank", "noopener");
+      else window.location.assign(href);
+    });
   }
 
   // ================= PROJECTS: EVENTS =================
@@ -545,6 +595,13 @@ export function initProjectsContent(
           jobCount: 0,
           completedJobs: 0,
           clientName,
+          proposalCount: 0,
+          sold: 0,
+          open: 0,
+          openCount: 0,
+          spent: 0,
+          inProgressJobs: 0,
+          updatedAgo: "just now",
         });
         setBusy(false);
         if (pjstate.filter === "ALL") {

@@ -24,7 +24,50 @@ export type Project = {
   completedJobs: number;
   /** Whose project it is (2026-09-18), or null. */
   clientName?: string | null;
+  // ── The ledger's facts (2026-09-20). Every figure is what the project page
+  //    itself shows, so the list never disagrees with the record. ──
+  /** Proposals filed under the project (not archived). */
+  proposalCount?: number;
+  /** Sold: accepted, completed and paid proposals, with approved change orders. */
+  sold?: number;
+  /** Still with the client: sent and viewed proposals, and how many. */
+  open?: number;
+  openCount?: number;
+  /** Spent: costs logged on the project plus its jobs' expenses. */
+  spent?: number;
+  inProgressJobs?: number;
+  /** "2h ago" — when anything on the project last moved. */
+  updatedAgo?: string;
 };
+
+/** What a row is flagged for, most urgent first. */
+export type ProjectFlag = { kind: "over" | "warn" | "waiting" | "unbudgeted"; text: string };
+
+/** "$3,860" — whole dollars. */
+export function money(n: number): string {
+  return "$" + Math.round(n).toLocaleString("en-US");
+}
+/** "$18k" / "$1.2M" past ten thousand, whole dollars below — the compact
+ *  figure the masthead sub-lines, the budget cell and the flags print. */
+export function moneyShort(n: number): string {
+  const a = Math.abs(n);
+  if (a >= 1_000_000) return (n < 0 ? "−" : "") + "$" + (a / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (a >= 10_000) return (n < 0 ? "−" : "") + "$" + Math.round(a / 1000) + "k";
+  return money(n);
+}
+
+/** The attention flags for a row — an overrun, a category near the line, a
+ *  client still to answer, sold work with no budget behind it. */
+export function projectFlags(p: Project): ProjectFlag[] {
+  const flags: ProjectFlag[] = [];
+  const spent = p.spent ?? 0;
+  const sold = p.sold ?? 0;
+  if (p.budget > 0 && spent > p.budget) flags.push({ kind: "over", text: `${moneyShort(spent - p.budget)} over budget` });
+  else if (p.budget > 0 && spent >= p.budget * 0.8) flags.push({ kind: "warn", text: `${Math.round((spent / p.budget) * 100)}% of budget spent` });
+  else if (p.budget <= 0 && (sold > 0 || spent > 0) && p.status !== "COMPLETED") flags.push({ kind: "unbudgeted", text: "No budget set" });
+  if ((p.openCount ?? 0) > 0 && p.status !== "COMPLETED") flags.push({ kind: "waiting", text: `${p.openCount} waiting on client` });
+  return flags;
+}
 
 /** A client the New Project dialog can file the project for. */
 export type ProjectClientChoice = { id: string; name: string; street: string };

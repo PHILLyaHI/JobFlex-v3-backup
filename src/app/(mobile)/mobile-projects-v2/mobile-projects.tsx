@@ -78,6 +78,7 @@ import {
   type FilterKey,
   type Project,
 } from "./projects-data";
+import { projectFlags } from "@/components/v3/projects-blueprint/projects-data";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1094,11 +1095,28 @@ export function MobileProjects() {
                         {statusLabel(p.status)}
                       </span>
                       <span className={styles.pjFigs}>
-                        <span className={`${styles.pjPct} ${done ? styles.isDone : ""}`}>{pct}%</span>
-                        <span className={`${styles.pjMoney} ${p.budget ? "" : styles.isZero}`}>
-                          {p.budget ? money(p.budget) : "—"}
+                        <span className={`${styles.pjPct} ${done ? styles.isDone : ""}`}>{p.jobCount ? `${p.completedJobs}/${p.jobCount} jobs` : "no jobs"}</span>
+                        <span className={`${styles.pjMoney} ${(p.sold ?? 0) > 0 ? "" : styles.isZero}`}>
+                          {(p.sold ?? 0) > 0 ? money(p.sold ?? 0) : "—"}
                         </span>
                       </span>
+                    </div>
+                    {/* Row 3b — the money behind the row (2026-09-20): what is
+                        sold, what is spent against what was budgeted, and any
+                        flag the project page would raise. */}
+                    <div className={styles.pjFacts}>
+                      <span>
+                        {p.budget > 0
+                          ? `Spent ${money(p.spent ?? 0)} of ${money(p.budget)}`
+                          : (p.spent ?? 0) > 0
+                            ? `Spent ${money(p.spent ?? 0)} · no budget`
+                            : "No budget set"}
+                      </span>
+                      {projectFlags(p).map((f) => (
+                        <span key={f.kind} className={`${styles.pjFlag} ${styles["pjFlag_" + f.kind]}`}>
+                          {f.text}
+                        </span>
+                      ))}
                     </div>
                     {/* Row 4 — the progress rule. A drawn line, not a fourth
                         text line: it belongs to the figures above it. */}
