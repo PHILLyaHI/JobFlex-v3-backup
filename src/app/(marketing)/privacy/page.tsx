@@ -48,7 +48,8 @@ export default function PrivacyPage() {
       <p>
         Gmail is optional. With your authorization, JobFlex requests <code>gmail.send</code> to send
         email and <code>userinfo.email</code> to identify the connected address. We store that address,
-        access and refresh tokens, and token-expiration information. We do not receive your Google
+        access and refresh tokens, and token-expiration information. New connection tokens are encrypted
+        before storage. We do not receive your Google
         password. This integration does not request permission to read your inbox, import your contacts,
         or delete messages.
       </p>
@@ -81,8 +82,8 @@ export default function PrivacyPage() {
       </p>
       <p>
         A workspace manager can disconnect Gmail in Settings → Integrations → Gmail. This removes
-        stored connection tokens and the connected-account label from the active organization record.
-        Separately, revoke Google authorization through your{" "}
+        stored connection tokens and the connected-account label from the active organization record,
+        and attempts to revoke the authorization with Google. You can also revoke authorization through your{" "}
         <a href="https://myaccount.google.com/connections">Google Account connections</a>.
         Disconnecting does not delete sent email, proposals, business records, or a separately saved
         reply-to address. Request deletion of retained personal information through <LegalContact />.
@@ -131,8 +132,10 @@ export default function PrivacyPage() {
         When configured, PostHog collects page views and interaction information and can record sessions
         on public routes, including public portals. Input fields are masked, but other visible page
         content can appear in replays. Dashboard and other designated private routes are excluded from
-        replay. Analytics can begin when no stored analytics choice exists; a stored analytics opt-out
-        disables capture.
+        replay. Browser analytics can begin when no stored analytics choice exists; a stored analytics
+        opt-out disables browser capture. Separately, server-side operational and feature-usage events
+        can include organization identifiers, plan and trade information, feature actions, and diagnostic
+        codes. These server events are not controlled by the browser analytics preference.
       </p>
       <p>
         When configured, Meta Pixel uses a saved marketing-enabled choice for advertising events and
