@@ -1517,7 +1517,12 @@
 /* 3D run model */
 
 /* right rail */
-.bp :global(.content .fs-rail) { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 0; }
+/* Flat paper under the rail (owner, 2026-09-21). Sticky inside the .main
+   scroller, the rail is composited as a layer of its own; with the gap
+   between its cards left transparent, Chrome drew the total and the whole
+   materials list with greyscale antialiasing instead of ClearType. An opaque
+   background makes the layer opaque. Flat on purpose — no grid in the gap. */
+.bp :global(.content .fs-rail) { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 0; background: var(--paper); }
 .bp :global(.content .tk) { padding: 0; overflow: hidden; border-color: var(--blueprint); }
 .bp :global(.content .tk-body) { padding: 15px 16px 16px; background: rgba(24, 84, 160, 0.05); }
 .bp :global(.content .tk-total) { margin-top: 8px; font-size: 38px; font-weight: 900; line-height: 1; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; color: var(--blueprint); }
