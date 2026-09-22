@@ -202,11 +202,63 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
     });
     await db.subscription.update({ where: { organizationId }, data: { attributionId: attribution.id } });
   } else {
-    // Discount removed → stop future accrual (keep history).
-    await db.attribution.updateMany({
-      where: { stripeSubscriptionId: externalSubId, status: AttributionStatus.ACTIVE },
-      data: { status: AttributionStatus.ENDED, endedAt: new Date() },
+    /* NO DISCOUNT ON THE SUBSCRIPTION ANY MORE — WHICH IS THE NORMAL CASE.
+     *
+     * The customer's coupon is minted for ONE month (actions/influencers.ts,
+     * "FIRST MONTH ONLY", owner 2026-09-02), so from the second billing cycle
+     * Stripe removes it and every referred subscription arrives here with
+     * `sub.discount === null`. This branch used to read that as "discount
+     * removed → stop future accrual" and ENDED the attribution. The result: a
+     * "20% for 6 months" code paid exactly ONE month — $12.64 instead of $91.64
+     * on a $79 plan, short $79.00 on every single subscriber, with nothing on
+     * either portal to say so. The commission window is documented as DECOUPLED
+     * from the customer's discount (prismaEnums PromoDurationType) and was in
+     * fact killed by it. The reconcile cron re-runs this function over the last
+     * 100 subscriptions every six hours, so it ENDED them even without a webhook.
+     *
+     * A discount that expired on schedule and one an admin removed look exactly
+     * the same in `sub.discount`, so this branch cannot be made clever. The
+     * discount no longer decides anything: an attribution is bounded by the
+     * promo's own window (isWithinCommissionWindow, at accrual) and ended by the
+     * SUBSCRIPTION ending.
+     *
+     * DECIDED, NOT INFERRED: removing a customer's discount no longer stops the
+     * partner's commission. The levers that do are suspending the partner
+     * (accrueForInvoice refuses SUSPENDED/TERMINATED) and the window itself.
+     */
+    const existing = await db.attribution.findUnique({
+      where: { stripeSubscriptionId: externalSubId },
+      select: { id: true, status: true },
     });
+    if (existing) {
+      if (status === SubscriptionStatus.CANCELED) {
+        // A subscription can reach "canceled" through customer.subscription
+        // .updated without markSubscriptionCanceled ever running, so this is the
+        // one place that closes it — the job the old blanket ENDED was doing by
+        // accident.
+        if (existing.status === AttributionStatus.ACTIVE) {
+          await db.attribution.update({
+            where: { id: existing.id },
+            data: { status: AttributionStatus.ENDED, endedAt: new Date() },
+          });
+        }
+      } else if (existing.status === AttributionStatus.ENDED) {
+        // THE REPAIR. Every live referred subscription past its first month is
+        // already ENDED by the old rule, and nothing else would ever lift it: the
+        // only ACTIVE writer is the promo branch above, which cannot fire once the
+        // coupon is gone. Its promoCodeId and qualifyingMonths are intact, and
+        // the money is still gated at accrual by the window, the partner's
+        // status and the self-referral check.
+        //
+        // VOID is deliberately left alone — that is the self-referral verdict,
+        // not an expiry, and lifting it would mislead the admin page even though
+        // the accrual would still refuse it.
+        await db.attribution.update({
+          where: { id: existing.id },
+          data: { status: AttributionStatus.ACTIVE, endedAt: null },
+        });
+      }
+    }
   }
 }
 

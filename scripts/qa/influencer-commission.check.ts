@@ -292,6 +292,66 @@ async function main() {
     ok("an unrelated influencer's attribution is still written ACTIVE",
       stamped2?.status === "ACTIVE",
       String(stamped2?.status));
+
+    // ── THE CUSTOMER COUPON EXPIRING IS NOT THE COMMISSION ENDING. The coupon is
+    //    minted for ONE month, so from cycle two Stripe sends the subscription
+    //    with no discount. The old rule ENDED the attribution there and a
+    //    "20% for 6 months" code paid one month. ──
+    const winPromo = await db.promoCode.create({
+      data: {
+        influencerId: outsider.id,
+        code: "QAINFWINDOW",
+        stripeCouponId: "local_coupon_QAINFWINDOW",
+        stripePromotionCodeId: "local_promo_QAINFWINDOW",
+        commissionType: "PERCENT",
+        commissionRateBps: 2000,
+        commissionBasis: "NET",
+        durationType: "REPEATING",
+        durationMonths: 6,
+        customerPercentOff: 20,
+      },
+    });
+    const WIN = `sub_${P}window`;
+    await syncSubscriptionFromStripe(subscription(WIN, qaOrg.id, winPromo.stripePromotionCodeId));
+    const m1 = (await accrueForInvoice(invoice(`in_${P}w1`, WIN, `ch_${P}w1`, 6320))) as { accruedCents?: number };
+    // Stripe drops the spent one-month coupon:
+    await syncSubscriptionFromStripe(subscription(WIN, qaOrg.id, null));
+    const afterExpiry = await db.attribution.findUnique({ where: { stripeSubscriptionId: WIN } });
+    ok("the attribution survives the customer coupon expiring",
+      afterExpiry?.status === "ACTIVE", `status ${afterExpiry?.status}`);
+    const later: (number | string)[] = [];
+    for (let m = 2; m <= 7; m++) {
+      const r = (await accrueForInvoice(invoice(`in_${P}w${m}`, WIN, `ch_${P}w${m}`, 7900))) as {
+        accruedCents?: number;
+        skipped?: string;
+      };
+      later.push(r.accruedCents ?? r.skipped ?? "?");
+    }
+    const winRows = await db.commissionLedger.findMany({
+      where: { stripeInvoiceId: { startsWith: `in_${P}w` } },
+      select: { amountCents: true },
+    });
+    const winTotal = winRows.reduce((n, r) => n + r.amountCents, 0);
+    ok("a 6-month window pays all six months: 1264 + 5 × 1580 = 9164¢",
+      winTotal === 9164 && m1.accruedCents === 1264,
+      `${cents(winTotal)} — months 2..7: ${later.join(", ")}`);
+    ok("…and not a seventh", later[5] === "outside-window", String(later[5]));
+
+    // A canceled subscription still ends it.
+    await syncSubscriptionFromStripe({ ...(subscription(WIN, qaOrg.id, null) as object), status: "canceled" } as never);
+    ok("a canceled subscription still ends the attribution",
+      (await db.attribution.findUnique({ where: { stripeSubscriptionId: WIN } }))?.status === "ENDED");
+
+    // THE REPAIR: a row the old rule already killed comes back on the next sync.
+    await db.attribution.update({ where: { stripeSubscriptionId: WIN }, data: { status: "ENDED" } });
+    await syncSubscriptionFromStripe(subscription(WIN, qaOrg.id, null));
+    ok("an attribution ENDED by the old rule is revived on the next sync",
+      (await db.attribution.findUnique({ where: { stripeSubscriptionId: WIN } }))?.status === "ACTIVE");
+
+    // …but never a self-referral VOID.
+    await syncSubscriptionFromStripe(subscription(`sub_${P}stamp`, qaOrg.id, null));
+    ok("a VOID self-referral attribution is never revived",
+      (await db.attribution.findUnique({ where: { stripeSubscriptionId: `sub_${P}stamp` } }))?.status === "VOID");
   } finally {
     // Put QA Co's subscription mirror back exactly as it was.
     if (mirrorBefore) {
