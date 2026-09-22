@@ -12,7 +12,12 @@
 //
 // Rows it writes are prefixed `qa-inf-` and deleted on the way out, pass or fail.
 import { PrismaClient } from "@prisma/client";
-import { accrueForInvoice, isSelfReferral, syncSubscriptionFromStripe } from "../../src/lib/stripeSync";
+import {
+  accrueForInvoice,
+  isSelfReferral,
+  reverseForCharge,
+  syncSubscriptionFromStripe,
+} from "../../src/lib/stripeSync";
 
 const db = new PrismaClient();
 const QA_SLUG = "qa-co";
@@ -39,6 +44,11 @@ function invoice(id: string, subId: string, chargeId: string | null, amountPaid:
     subtotal: amountPaid,
     currency: "usd",
   } as never;
+}
+// `invoice` decides whether an unmatched refund is parked for a later accrual or
+// dropped: a charge with no invoice can never accrue commission.
+function charge(id: string, amount: number, refunded: number, invoiceId: string | null) {
+  return { id, amount, amount_refunded: refunded, invoice: invoiceId } as never;
 }
 function subscription(id: string, orgId: string, promotionCodeId: string | null) {
   return {
@@ -94,6 +104,7 @@ async function cleanup() {
     await db.influencer.deleteMany({ where: { id: { in: ids } } });
   }
   await db.attribution.deleteMany({ where: { stripeSubscriptionId: { startsWith: `sub_${P}` } } });
+  await db.syncState.deleteMany({ where: { key: { startsWith: `refundPending:ch_${P}` } } });
   await db.user.deleteMany({ where: { email: { startsWith: P } } });
   return ids.length;
 }
@@ -204,6 +215,57 @@ async function main() {
     rInactiveCode.accruedCents === 1264,
     rInactiveCode.accruedCents !== undefined ? `accrued ${cents(rInactiveCode.accruedCents)}` : `skipped: ${rInactiveCode.skipped}`);
   await db.promoCode.update({ where: { id: outsiderPromo.id }, data: { active: true } });
+
+  // ── A REFUND THAT OUTRAN ITS INVOICE. Stripe does not order deliveries, so
+  //    charge.refunded can land before the invoice.paid it refunds. ──
+  const attrOoo = await db.attribution.create({
+    data: {
+      influencerId: outsider.id,
+      promoCodeId: outsiderPromo.id,
+      organizationId: qaOrg.id,
+      stripeCustomerId: `cus_${P}ooo`,
+      stripeSubscriptionId: `sub_${P}ooo`,
+      status: "ACTIVE",
+    },
+  });
+  const OOO_CH = `ch_${P}ooo`;
+  const OOO_INV = `in_${P}ooo`;
+  const early = (await reverseForCharge(charge(OOO_CH, 6320, 6320, OOO_INV))) as { skipped?: string };
+  ok("a refund with nothing to reverse yet is parked", early.skipped === "parked-until-accrual", String(early.skipped));
+  ok("the parked row holds the charge's amounts",
+    (await db.syncState.findUnique({ where: { key: `refundPending:${OOO_CH}` } }))?.cursor === "6320:6320");
+
+  const late = (await accrueForInvoice(invoice(OOO_INV, attrOoo.stripeSubscriptionId, OOO_CH, 6320))) as {
+    accruedCents?: number;
+    reversedCents?: number;
+  };
+  ok("the accrual settles the parked refund on arrival",
+    late.accruedCents === 1264 && late.reversedCents === 1264,
+    `accrued ${cents(late.accruedCents ?? 0)}, reversed ${cents(late.reversedCents ?? 0)}`);
+  const oooRows = await db.commissionLedger.findMany({
+    where: { stripeChargeId: OOO_CH },
+    select: { amountCents: true },
+  });
+  ok("nothing is owed on a fully refunded charge",
+    oooRows.reduce((n, r) => n + r.amountCents, 0) === 0,
+    `${oooRows.length} entries netting ${cents(oooRows.reduce((n, r) => n + r.amountCents, 0))}`);
+  ok("the parked row was consumed, not left behind",
+    (await db.syncState.findUnique({ where: { key: `refundPending:${OOO_CH}` } })) === null);
+  const again = (await accrueForInvoice(invoice(OOO_INV, attrOoo.stripeSubscriptionId, OOO_CH, 6320))) as {
+    skipped?: string;
+  };
+  ok("redelivering the invoice cannot reverse a second time",
+    again.skipped === "already-accrued" &&
+      (await db.commissionLedger.count({ where: { stripeChargeId: OOO_CH } })) === 2,
+    String(again.skipped));
+
+  // A charge with no invoice can never accrue commission, so an unmatched refund
+  // on one is dropped — the one-off proposal payments share this webhook.
+  const noInvoice = (await reverseForCharge(charge(`ch_${P}noinv`, 5000, 5000, null))) as { skipped?: string };
+  ok("an unmatched refund on a charge with no invoice is dropped, not parked",
+    noInvoice.skipped === "no-accrual" &&
+      (await db.syncState.findUnique({ where: { key: `refundPending:ch_${P}noinv` } })) === null,
+    String(noInvoice.skipped));
 
   // ── THE WRITE-TIME STAMP. syncSubscriptionFromStripe upserts QA Co's billing
   //    mirror, so snapshot it and put it back afterwards. ──

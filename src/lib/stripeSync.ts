@@ -308,19 +308,102 @@ export async function accrueForInvoice(invoice: Stripe.Invoice, eventId?: string
       firstPaidInvoiceAt: attribution.firstPaidInvoiceAt ?? new Date(),
     },
   });
-  return { accruedCents: commissionCents };
+
+  // A refund that arrived before this invoice parked its numbers; settle it now
+  // that there is something to reverse. Both this and the reversal are keyed, so
+  // a redelivery of either event cannot double-reverse.
+  const reversedFromPark = await drainParkedRefund(idOf(invoice.charge), eventId);
+
+  return reversedFromPark
+    ? { accruedCents: commissionCents, reversedCents: reversedFromPark }
+    : { accruedCents: commissionCents };
 }
 
 // ── refund / dispute → reverse commission (proportional, idempotent) ──
+
+/* A REFUND CAN OUTRUN THE INVOICE IT REFUNDS.
+ *
+ * Stripe does not order webhook deliveries, and charge.refunded and invoice.paid
+ * are separate events. When the refund is processed first there is no accrual to
+ * reverse, the handler found nothing and returned, and the accrual that landed a
+ * moment later stood forever: full commission owed on a fully refunded charge.
+ * Nothing repaired it — the reconcile cron re-runs accrueForInvoice over recent
+ * paid invoices (lib/reconcile.ts) but never re-runs a reversal.
+ *
+ * So an unmatched refund parks its numbers under this key and the accrual
+ * consumes them the moment it arrives. Written only for invoice-backed charges,
+ * so the one-off proposal payments that share this webhook never touch it, and
+ * deleted on use. An unconsumed row is inert: a plain key/value in SyncState
+ * that nothing else reads.
+ */
+const refundParkKey = (chargeId: string) => `refundPending:${chargeId}`;
+
+/** Settle a refund that outran its invoice. Returns the cents reversed, or 0. */
+async function drainParkedRefund(chargeId: string | null, eventId?: string): Promise<number> {
+  if (!chargeId) return 0;
+  const key = refundParkKey(chargeId);
+  const parked = await db.syncState.findUnique({ where: { key } }).catch(() => null);
+  if (!parked) return 0;
+  const parts = parked.cursor.split(":");
+  const amount = Number(parts[0]);
+  const refunded = Number(parts[1]);
+  // Drop the row first: a malformed value must not be retried forever, and the
+  // reversal below is idempotent on its own key, so losing the race with a
+  // redelivered charge.refunded costs nothing.
+  await db.syncState.delete({ where: { key } }).catch(() => {});
+  if (!Number.isFinite(amount) || !Number.isFinite(refunded)) return 0;
+  const res = await applyRefundReversal({
+    chargeId,
+    chargeAmountCents: amount,
+    refundedCents: refunded,
+    invoiceBacked: true,
+    eventId,
+  });
+  const reversed = (res as { reversedCents?: number }).reversedCents;
+  return typeof reversed === "number" ? reversed : 0;
+}
+
 export async function reverseForCharge(charge: Stripe.Charge, eventId?: string) {
-  const refundedCents = charge.amount_refunded ?? 0;
-  if (refundedCents <= 0 || charge.amount <= 0) return { skipped: "no-refund" as const };
-  const ratio = Math.min(1, refundedCents / charge.amount);
+  return applyRefundReversal({
+    chargeId: charge.id,
+    chargeAmountCents: charge.amount,
+    refundedCents: charge.amount_refunded ?? 0,
+    invoiceBacked: Boolean(idOf(charge.invoice)),
+    eventId,
+  });
+}
+
+async function applyRefundReversal(opts: {
+  chargeId: string;
+  chargeAmountCents: number;
+  refundedCents: number;
+  invoiceBacked: boolean;
+  eventId?: string;
+}) {
+  const { chargeId, chargeAmountCents, refundedCents, eventId } = opts;
+  if (refundedCents <= 0 || chargeAmountCents <= 0) return { skipped: "no-refund" as const };
+  const ratio = Math.min(1, refundedCents / chargeAmountCents);
 
   // Accruals tied to this charge (one per invoice).
   const accruals = await db.commissionLedger.findMany({
-    where: { stripeChargeId: charge.id, entryType: LedgerEntryType.ACCRUED },
+    where: { stripeChargeId: chargeId, entryType: LedgerEntryType.ACCRUED },
   });
+
+  if (!accruals.length) {
+    // Nothing to reverse YET. Park it if a commission could still be accrued
+    // against this charge; a charge with no invoice never accrues one.
+    if (!opts.invoiceBacked) return { skipped: "no-accrual" as const };
+    await db.syncState
+      .upsert({
+        where: { key: refundParkKey(chargeId) },
+        update: { cursor: `${chargeAmountCents}:${refundedCents}` },
+        create: { key: refundParkKey(chargeId), cursor: `${chargeAmountCents}:${refundedCents}` },
+      })
+      .catch(() => {
+        /* best effort — a parked refund is a repair, never a reason to 500 the webhook */
+      });
+    return { skipped: "parked-until-accrual" as const };
+  }
 
   let reversedTotal = 0;
   for (const accrual of accruals) {
@@ -349,14 +432,14 @@ export async function reverseForCharge(charge: Stripe.Charge, eventId?: string) 
           amountCents: -delta,
           currency: accrual.currency,
           stripeInvoiceId: accrual.stripeInvoiceId,
-          stripeChargeId: charge.id,
+          stripeChargeId: chargeId,
           stripeEventId: eventId ?? null,
           state: reversalState,
           // A reversal of a still-pending accrual clears with it, so the clear
           // cron's "flip PENDING where clearsAt<=now" rule nets them together.
           clearsAt: reversalState === LedgerEntryState.PENDING ? accrual.clearsAt : null,
-          idempotencyKey: `reverse:${charge.id}:${accrual.id}:${refundedCents}`,
-          memo: `Refund reversal (${Math.round(ratio * 100)}% of charge ${charge.id})`,
+          idempotencyKey: `reverse:${chargeId}:${accrual.id}:${refundedCents}`,
+          memo: `Refund reversal (${Math.round(ratio * 100)}% of charge ${chargeId})`,
         },
       });
       reversedTotal += delta;
