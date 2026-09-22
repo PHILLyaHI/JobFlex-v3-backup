@@ -15,6 +15,7 @@ import {
   writeOffReversedPayout,
 } from "@/lib/payouts";
 import { setTestTwinActive } from "@/lib/influencerPromoMode";
+import { refusal, refused, type ActionResult } from "@/lib/actionResult";
 import {
   InfluencerStatus,
   CommissionType,
@@ -114,25 +115,37 @@ const createInfluencerInput = z
   .merge(commissionShape)
   .superRefine(boundRate);
 
-export async function createInfluencer(raw: unknown) {
+// EVERY REFUSAL IS A VALUE (lib/actionResult): production redacts a thrown
+// Server Action message, so "already in use" and "enter 100 or less" only ever
+// reached the admin on the dev server. The sheets read the envelope.
+export async function createInfluencer(
+  raw: unknown,
+): Promise<ActionResult<{ id: string; code: string; inviteUrl: string | null }>> {
   await requirePlatformAdmin();
-  const data = createInfluencerInput.parse(raw);
+  const parsed = createInfluencerInput.safeParse(raw);
+  if (!parsed.success) return refusal(parsed.error);
+  const data = parsed.data;
   const code = data.code.toUpperCase();
 
   const existingCode = await db.promoCode.findUnique({ where: { code } });
-  if (existingCode) throw new Error(`Promo code "${code}" is already in use.`);
+  if (existingCode) return refused(`Promo code "${code}" is already in use.`);
   const existingEmail = await db.influencer.findUnique({ where: { email: data.email.toLowerCase() } });
-  if (existingEmail) throw new Error("An influencer with that email already exists.");
+  if (existingEmail) return refused("An influencer with that email already exists.");
 
   // Admin-set password → account is immediately usable. No password → the
   // influencer gets an invite email with a set-password link instead (the
   // login provider rejects null-password accounts until they complete it).
   const hashedPassword = data.password ? await bcrypt.hash(data.password, 10) : null;
-  const stripeIds = await provisionStripePromo({
-    code,
-    customerPercentOff: data.customerPercentOff,
-    label: `${data.displayName} (${code})`,
-  });
+  let stripeIds: { stripeCouponId: string; stripePromotionCodeId: string };
+  try {
+    stripeIds = await provisionStripePromo({
+      code,
+      customerPercentOff: data.customerPercentOff,
+      label: `${data.displayName} (${code})`,
+    });
+  } catch (err) {
+    return refusal(err); // "Refusing to create a Stripe promo code against a LIVE account…"
+  }
 
   const influencer = await db.influencer.create({
     data: {
@@ -169,16 +182,17 @@ export async function createInfluencer(raw: unknown) {
   }
 
   revalidatePath("/admin/influencers");
-  return { id: influencer.id, code, inviteUrl };
+  return { ok: true, id: influencer.id, code, inviteUrl };
 }
 
-export async function setInfluencerStatus(id: string, status: string) {
+export async function setInfluencerStatus(id: string, status: string): Promise<ActionResult> {
   await requirePlatformAdmin();
   if (!Object.values(InfluencerStatus).includes(status as never)) {
-    throw new Error("Invalid status");
+    return refused("Invalid status");
   }
   await db.influencer.update({ where: { id }, data: { status } });
   revalidatePath("/admin/influencers");
+  return { ok: true };
 }
 
 const profileInput = z.object({
@@ -189,9 +203,11 @@ const profileInput = z.object({
   notes: z.string().max(2000).nullable().optional(),
 });
 
-export async function updateInfluencerProfile(raw: unknown) {
+export async function updateInfluencerProfile(raw: unknown): Promise<ActionResult> {
   await requirePlatformAdmin();
-  const { id, ...rest } = profileInput.parse(raw);
+  const parsed = profileInput.safeParse(raw);
+  if (!parsed.success) return refusal(parsed.error);
+  const { id, ...rest } = parsed.data;
   await db.influencer.update({
     where: { id },
     data: {
@@ -202,6 +218,7 @@ export async function updateInfluencerProfile(raw: unknown) {
     },
   });
   revalidatePath("/admin/influencers");
+  return { ok: true };
 }
 
 // ── admin: promo codes ────────────────────────────────
@@ -213,21 +230,28 @@ const createPromoInput = z
   .merge(commissionShape)
   .superRefine(boundRate);
 
-export async function createPromoCode(raw: unknown) {
+export async function createPromoCode(raw: unknown): Promise<ActionResult> {
   await requirePlatformAdmin();
-  const data = createPromoInput.parse(raw);
+  const parsed = createPromoInput.safeParse(raw);
+  if (!parsed.success) return refusal(parsed.error);
+  const data = parsed.data;
   const code = data.code.toUpperCase();
 
   const influencer = await db.influencer.findUnique({ where: { id: data.influencerId } });
-  if (!influencer) throw new Error("Influencer not found");
+  if (!influencer) return refused("Influencer not found");
   const dupe = await db.promoCode.findUnique({ where: { code } });
-  if (dupe) throw new Error(`Promo code "${code}" is already in use.`);
+  if (dupe) return refused(`Promo code "${code}" is already in use.`);
 
-  const stripeIds = await provisionStripePromo({
-    code,
-    customerPercentOff: data.customerPercentOff,
-    label: `${influencer.displayName} (${code})`,
-  });
+  let stripeIds: { stripeCouponId: string; stripePromotionCodeId: string };
+  try {
+    stripeIds = await provisionStripePromo({
+      code,
+      customerPercentOff: data.customerPercentOff,
+      label: `${influencer.displayName} (${code})`,
+    });
+  } catch (err) {
+    return refusal(err);
+  }
 
   await db.promoCode.create({
     data: {
@@ -240,9 +264,10 @@ export async function createPromoCode(raw: unknown) {
     },
   });
   revalidatePath("/admin/influencers");
+  return { ok: true };
 }
 
-export async function setPromoActive(promoId: string, active: boolean) {
+export async function setPromoActive(promoId: string, active: boolean): Promise<ActionResult> {
   await requirePlatformAdmin();
   // Best-effort mirror to Stripe; never blocks the local state change.
   const promo = await db.promoCode.findUnique({ where: { id: promoId } });
@@ -259,6 +284,7 @@ export async function setPromoActive(promoId: string, active: boolean) {
   await setTestTwinActive(promoId, active);
   await db.promoCode.update({ where: { id: promoId }, data: { active } });
   revalidatePath("/admin/influencers");
+  return { ok: true };
 }
 
 const commissionEditInput = z
@@ -266,27 +292,35 @@ const commissionEditInput = z
   .merge(commissionShape)
   .superRefine(boundRate);
 
-export async function updatePromoCommission(raw: unknown) {
+export async function updatePromoCommission(raw: unknown): Promise<ActionResult> {
   await requirePlatformAdmin();
-  const { promoId, ...rest } = commissionEditInput.parse(raw);
+  const parsed = commissionEditInput.safeParse(raw);
+  if (!parsed.success) return refusal(parsed.error);
+  const { promoId, ...rest } = parsed.data;
   await db.promoCode.update({ where: { id: promoId }, data: commissionColumns(rest) });
   revalidatePath("/admin/influencers");
+  return { ok: true };
 }
 
 // ── payouts: admin approval (transfer executed by Phase 4 cron) ──
-export async function approvePayoutRequest(id: string) {
+export async function approvePayoutRequest(id: string): Promise<ActionResult> {
   const admin = await requirePlatformAdmin();
-  const reqRow = await db.payoutRequest.findUnique({ where: { id } });
-  if (!reqRow) throw new Error("Payout request not found");
-  if (reqRow.status !== PayoutRequestStatus.PENDING) throw new Error("Request is not pending");
-  await db.payoutRequest.update({
-    where: { id },
+  // A conditional write: two admins pressing Approve at once, or an Approve
+  // landing after the cron already claimed the row, cannot both succeed.
+  const res = await db.payoutRequest.updateMany({
+    where: { id, status: PayoutRequestStatus.PENDING },
     data: { status: PayoutRequestStatus.APPROVED, approvedBy: admin.id, approvedAt: new Date() },
   });
+  if (res.count === 0) {
+    const reqRow = await db.payoutRequest.findUnique({ where: { id }, select: { status: true } });
+    return refused(reqRow ? `This request is ${reqRow.status.toLowerCase().replace("_", " ")} — only a pending request can be approved.` : "Payout request not found");
+  }
   revalidatePath("/admin/influencers");
+  revalidatePath("/admin/payouts");
+  return { ok: true };
 }
 
-export async function rejectPayoutRequest(id: string, reason?: string) {
+export async function rejectPayoutRequest(id: string, reason?: string): Promise<ActionResult> {
   const admin = await requirePlatformAdmin();
   // Only a request no money has moved for can be rejected. There was no guard
   // here (approve has always required PENDING), so a request already PAID, or
@@ -305,10 +339,11 @@ export async function rejectPayoutRequest(id: string, reason?: string) {
     },
   });
   if (res.count === 0) {
-    throw new Error("This request can no longer be rejected — a payout is already being sent or has been sent.");
+    return refused("This request can no longer be rejected — a payout is already being sent or has been sent.");
   }
   revalidatePath("/admin/influencers");
   revalidatePath("/admin/payouts");
+  return { ok: true };
 }
 
 // ── payouts: after Stripe reversed a transfer ─────────

@@ -5,17 +5,22 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
 import { assertStripeWriteAllowed } from "@/lib/stripeSafety";
 import { ConnectStatus } from "@/lib/prismaEnums";
+import { refusal, refused, type ActionResult } from "@/lib/actionResult";
 
 // Influencer-initiated Stripe Connect (Express) onboarding. Creates the
 // connected account on first use, then returns a single-use hosted onboarding
 // link. The account.updated webhook flips payoutsEnabled/connectStatus when KYC
 // completes — we never store the (short-lived) account link.
-export async function createConnectOnboardingLink() {
+export async function createConnectOnboardingLink(): Promise<ActionResult<{ url: string }>> {
   const influencer = await requireInfluencer();
   if (!isStripeEnabled()) {
-    throw new Error("Payouts aren't available yet — Stripe isn't configured.");
+    return refused("Payouts aren't available yet — Stripe isn't configured.");
   }
-  assertStripeWriteAllowed("create a Stripe Connect account");
+  try {
+    assertStripeWriteAllowed("create a Stripe Connect account");
+  } catch (err) {
+    return refusal(err);
+  }
   const stripe = getStripe();
 
   let accountId = influencer.connectAccountId;
@@ -40,5 +45,5 @@ export async function createConnectOnboardingLink() {
     refresh_url: `${origin}/influencer?connect=refresh`,
     return_url: `${origin}/influencer?connect=done`,
   });
-  return { url: link.url };
+  return { ok: true, url: link.url };
 }

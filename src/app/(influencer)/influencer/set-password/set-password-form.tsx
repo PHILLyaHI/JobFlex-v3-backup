@@ -42,7 +42,13 @@ function SetPasswordInner() {
     setError(null);
     setPending(true);
     try {
-      await completeInfluencerSetPassword({ token, password });
+      const res = await completeInfluencerSetPassword({ token, password });
+      if (!res.ok) {
+        // The action's own sentence — the same one for every kind of bad link.
+        setError(res.error);
+        setPending(false);
+        return;
+      }
       router.push("/influencer/login" as Route);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message.trim() : "";

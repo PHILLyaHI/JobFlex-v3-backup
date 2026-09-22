@@ -159,7 +159,12 @@ export function AdminPayoutsContent({
     setBusyId(r.id);
     setError(null);
     try {
-      await approvePayoutRequest(r.id);
+      const res = await approvePayoutRequest(r.id);
+      if (!res.ok) {
+        setError(res.error);
+        router.refresh();
+        return;
+      }
       toast.success("Approved", `${money(r.amountCents / 100)} to ${r.influencerName} is queued for transfer.`);
       router.refresh();
     } catch (err) {
@@ -444,7 +449,11 @@ function RejectSheet({ handleRef }: { handleRef: React.RefObject<RejectHandle | 
     setBusy(true);
     setError(null);
     try {
-      await rejectPayoutRequest(req.id, reason.trim() || undefined);
+      const res = await rejectPayoutRequest(req.id, reason.trim() || undefined);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
       toast.success("Request rejected", reason.trim() ? "The reason is on the request." : undefined);
       close();
       router.refresh();

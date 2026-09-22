@@ -599,7 +599,8 @@ function PromoCodesCard({ promos }: { promos: PromoDTO[] }) {
     setBusyId(p.id);
     setOverride((o) => ({ ...o, [p.id]: next }));
     try {
-      await setPromoActive(p.id, next);
+      const res = await setPromoActive(p.id, next);
+      if (!res.ok) throw new Error(res.error);
       toast.success(next ? "Code active" : "Code paused", p.code);
       router.refresh();
     } catch (e) {

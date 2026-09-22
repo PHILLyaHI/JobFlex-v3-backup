@@ -503,6 +503,10 @@ function CreateSheet({ handleRef }: { handleRef: React.RefObject<CreateHandle | 
         password: values.password ? values.password : undefined,
         ...modelToInput(model),
       });
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
       setResult({ code: res.code, inviteUrl: res.inviteUrl, email: values.email.trim() });
       toast.success(
         "Partner account created",
@@ -669,16 +673,25 @@ function DetailSheet({
 
   const inf = influencer;
 
-  async function run(key: string, fn: () => Promise<unknown>, ok: string) {
-    if (busy) return;
+  // Every action answers with an envelope (lib/actionResult); a refusal is
+  // shown in the sheet and the toast stays quiet. The catch is for the
+  // network, and for what is still thrown (auth).
+  async function run(key: string, fn: () => Promise<{ ok: boolean; error?: string }>, ok: string): Promise<boolean> {
+    if (busy) return false;
     setBusy(key);
     setError(null);
     try {
-      await fn();
+      const res = await fn();
+      if (!res.ok) {
+        setError(res.error ?? "Something went wrong.");
+        return false;
+      }
       toast.success(ok);
       router.refresh();
+      return true;
     } catch (err) {
       setError(actionError(err));
+      return false;
     } finally {
       setBusy(null);
     }
@@ -781,7 +794,8 @@ function DetailSheet({
                   "invite",
                   async () => {
                     const res = await sendInfluencerInvite(inf.id);
-                    setInviteUrl(res.inviteUrl);
+                    if (res.ok) setInviteUrl(res.inviteUrl);
+                    return res;
                   },
                   "Invite sent",
                 )
@@ -879,7 +893,7 @@ function DetailSheet({
                         notes: draft.notes.trim() || null,
                       }),
                     "Profile saved",
-                  ).then(() => setEditing(false))
+                  ).then((saved) => saved && setEditing(false))
                 }
               >
                 <Ic name="check" />
@@ -1031,10 +1045,18 @@ function CodeSheet({ handleRef }: { handleRef: React.RefObject<CodeHandle | null
     try {
       if (target.mode === "add") {
         if (!codeValue.trim()) throw new Error("A promo code is required.");
-        await createPromoCode({ influencerId: target.influencerId, code: codeValue.trim(), ...modelToInput(model) });
+        const res = await createPromoCode({ influencerId: target.influencerId, code: codeValue.trim(), ...modelToInput(model) });
+        if (!res.ok) {
+          setError(res.error);
+          return;
+        }
         toast.success("Code added", `${codeValue.trim().toUpperCase()} is live for ${target.name}.`);
       } else {
-        await updatePromoCommission({ promoId: target.promo.id, ...modelToInput(model) });
+        const res = await updatePromoCommission({ promoId: target.promo.id, ...modelToInput(model) });
+        if (!res.ok) {
+          setError(res.error);
+          return;
+        }
         toast.success("Terms updated");
       }
       close();

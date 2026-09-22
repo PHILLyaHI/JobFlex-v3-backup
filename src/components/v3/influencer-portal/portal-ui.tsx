@@ -60,8 +60,13 @@ export function ConnectBanner({ connect }: { connect: ConnectDTO }) {
     setBusy(true);
     setError(null);
     try {
-      const { url } = await createConnectOnboardingLink();
-      window.location.href = url;
+      const res = await createConnectOnboardingLink();
+      if (!res.ok) {
+        setError(res.error);
+        setBusy(false);
+        return;
+      }
+      window.location.href = res.url;
     } catch (err) {
       setError(actionError(err));
       setBusy(false);
