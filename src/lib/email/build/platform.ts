@@ -281,6 +281,149 @@ export function buildPartnerPasswordReset(i: PartnerPasswordResetInput): EmailDo
   };
 }
 
+/* ── THE PARTNER'S MONEY, IN THE MAIL (owner, 2026-09-22) ──
+ * Four moments a partner should hear about without opening the portal: a
+ * payout approved (and when it goes out), sent (and where), declined (and
+ * why), and a commission frozen by a customer's dispute or taken back by a
+ * lost one. Sent from lib/influencerMail at the points that change the
+ * status. The amounts arrive formatted ("$63.20"); the dates as "Sep 23, 2026". */
+
+export interface PartnerPayoutApprovedInput {
+  name: string;
+  amount: string;
+  /** The day of the next payout run. */
+  expectedDate: string;
+  href: string;
+}
+
+export function buildPartnerPayoutApproved(i: PartnerPayoutApprovedInput): EmailDoc {
+  const first = i.name.trim().split(" ")[0] || "there";
+  return {
+    subject: `Your ${i.amount} payout is approved`,
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Partner · Payout" },
+    headline: "Your payout is approved",
+    prose: [
+      `Hi ${first} — your payout request was approved. It goes out on the next daily run, to the Stripe account you connected.`,
+    ],
+    box: [
+      { type: "item", name: "Payout", amount: i.amount },
+      { type: "cond", label: "Sent on", chip: i.expectedDate },
+    ],
+    cta: { label: "See your payouts", href: i.href },
+    footer: PLATFORM_FOOTER,
+  };
+}
+
+export interface PartnerPayoutSentInput {
+  name: string;
+  amount: string;
+  /** The last four characters of the connected Stripe account's id. */
+  accountLast4: string;
+  /** The Stripe transfer id, for the partner's own records. */
+  reference: string | null;
+  href: string;
+}
+
+export function buildPartnerPayoutSent(i: PartnerPayoutSentInput): EmailDoc {
+  const first = i.name.trim().split(" ")[0] || "there";
+  const box: BoxRow[] = [
+    { type: "item", name: "Payout", amount: i.amount },
+    { type: "field", label: "To", value: `Stripe account ····${i.accountLast4}` },
+  ];
+  if (i.reference) box.push({ type: "field", label: "Reference", value: i.reference });
+  return {
+    subject: `Your ${i.amount} payout is on its way`,
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Partner · Payout" },
+    headline: "Your payout is on its way",
+    prose: [
+      `Hi ${first} — ${i.amount} has left for your Stripe account. Stripe pays it out to your bank on its own schedule, usually within a couple of business days.`,
+    ],
+    box,
+    cta: { label: "See your payouts", href: i.href },
+    footer: PLATFORM_FOOTER,
+  };
+}
+
+export interface PartnerPayoutDeclinedInput {
+  name: string;
+  amount: string;
+  reason: string | null;
+  href: string;
+}
+
+export function buildPartnerPayoutDeclined(i: PartnerPayoutDeclinedInput): EmailDoc {
+  const first = i.name.trim().split(" ")[0] || "there";
+  return {
+    subject: `Your ${i.amount} payout request was declined`,
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Partner · Payout", tone: "warn" },
+    headline: "Your payout request was declined",
+    prose: [
+      `Hi ${first} — your request for ${i.amount} was declined. The money stays in your balance; you can request it again once the reason below is resolved.`,
+    ],
+    box: [
+      { type: "item", name: "Requested", amount: i.amount },
+      { type: "field", label: "Reason", value: i.reason?.trim() || "No reason was given — write to your JobFlex contact." },
+    ],
+    cta: { label: "See your payouts", href: i.href },
+    footer: PLATFORM_FOOTER,
+  };
+}
+
+export interface PartnerCommissionHeldInput {
+  name: string;
+  amount: string;
+  openedDate: string;
+  href: string;
+}
+
+export function buildPartnerCommissionHeld(i: PartnerCommissionHeldInput): EmailDoc {
+  const first = i.name.trim().split(" ")[0] || "there";
+  return {
+    subject: `${i.amount} of your commission is on hold`,
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Partner · Commission", tone: "warn" },
+    headline: "A commission is on hold",
+    prose: [
+      `Hi ${first} — a customer disputed a payment with their bank. The commission on that payment is frozen while the dispute is open: it is not clearing and cannot be paid out. If the dispute is won, it goes back to clearing; if it is lost, it is taken back, as a refund would be.`,
+    ],
+    box: [
+      { type: "item", name: "On hold", amount: i.amount },
+      { type: "cond", label: "Dispute opened", chip: i.openedDate, tone: "warn" },
+    ],
+    cta: { label: "See your earnings", href: i.href },
+    footer: PLATFORM_FOOTER,
+  };
+}
+
+export interface PartnerChargebackInput {
+  name: string;
+  amount: string;
+  closedDate: string;
+  href: string;
+}
+
+export function buildPartnerChargeback(i: PartnerChargebackInput): EmailDoc {
+  const first = i.name.trim().split(" ")[0] || "there";
+  return {
+    subject: `${i.amount} of your commission was taken back`,
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Partner · Commission", tone: "warn" },
+    headline: "A commission was taken back",
+    prose: [
+      `Hi ${first} — a customer's dispute was lost, so the commission on that payment is taken back, the same as a full refund. If it had already been paid out, your balance goes negative and the next commissions pay it back before anything is transferred.`,
+    ],
+    box: [
+      { type: "item", name: "Taken back", amount: i.amount },
+      { type: "cond", label: "Dispute lost", chip: i.closedDate, tone: "warn" },
+    ],
+    cta: { label: "See your earnings", href: i.href },
+    footer: PLATFORM_FOOTER,
+  };
+}
+
 export interface TestEmailInput {
   org: OrgBrand;
 }

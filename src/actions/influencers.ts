@@ -16,6 +16,7 @@ import {
 } from "@/lib/payouts";
 import { setTestTwinActive } from "@/lib/influencerPromoMode";
 import { refusal, refused, type ActionResult } from "@/lib/actionResult";
+import { mailPayoutApproved, mailPayoutDeclined } from "@/lib/influencerMail";
 import {
   InfluencerStatus,
   CommissionType,
@@ -319,6 +320,7 @@ export async function approvePayoutRequest(id: string): Promise<ActionResult> {
     const reqRow = await db.payoutRequest.findUnique({ where: { id }, select: { status: true } });
     return refused(reqRow ? `This request is ${reqRow.status.toLowerCase().replace("_", " ")} — only a pending request can be approved.` : "Payout request not found");
   }
+  await mailPayoutApproved(id); // best-effort; the approval stands either way
   revalidatePath("/admin/influencers");
   revalidatePath("/admin/payouts");
   return { ok: true };
@@ -345,6 +347,7 @@ export async function rejectPayoutRequest(id: string, reason?: string): Promise<
   if (res.count === 0) {
     return refused("This request can no longer be rejected — a payout is already being sent or has been sent.");
   }
+  await mailPayoutDeclined(id); // best-effort; the reason is on the request either way
   revalidatePath("/admin/influencers");
   revalidatePath("/admin/payouts");
   return { ok: true };

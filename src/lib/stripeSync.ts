@@ -24,6 +24,7 @@ import {
 } from "@/lib/commission";
 import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
 import { mirrorSubAtKey, recordMirrorReference } from "@/lib/subscriptionRecord";
+import { mailChargeback, mailCommissionHeld } from "@/lib/influencerMail";
 
 // ── small helpers ─────────────────────────────────────
 function idOf(v: string | { id: string } | null | undefined): string | null {
@@ -934,7 +935,11 @@ export async function holdForDispute(dispute: Stripe.Dispute, openedAt: Date = n
   if (!known) {
     await writeDispute(chargeId, { id: dispute.id, status: "open", openedAt: openedAt.toISOString() });
   }
-  return { heldRows: await holdChargeRows(chargeId) };
+  const heldRows = await holdChargeRows(chargeId);
+  // Told once, when the freeze happens (a redelivered created event holds
+  // nothing new and says nothing). Best-effort, after the ledger.
+  if (heldRows > 0) await mailCommissionHeld(chargeId, openedAt);
+  return { heldRows };
 }
 
 export async function settleDispute(dispute: Stripe.Dispute, eventId?: string, closedAt: Date = new Date()) {
@@ -983,6 +988,7 @@ export async function settleDispute(dispute: Stripe.Dispute, eventId?: string, c
 
   const reversedCents = await reverseForLostDispute(chargeId, dispute.id, eventId);
   await closeRecord();
+  if (reversedCents > 0) await mailChargeback(dispute.id, closedAt);
   return { reversedCents };
 }
 

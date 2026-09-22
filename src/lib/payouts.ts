@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
 import { isStripeWriteAllowed } from "@/lib/stripeSafety";
 import { holdOpenDisputes } from "@/lib/stripeSync";
+import { mailPayoutSent } from "@/lib/influencerMail";
 import {
   PayoutRequestStatus,
   PayoutTransferStatus,
@@ -392,6 +393,9 @@ export async function processApprovedPayouts(transfers: TransferApi, now: Date =
         });
       });
       paid++;
+      // The partner hears the money left — after the books, never before, and
+      // never in a way that can fail the run.
+      await mailPayoutSent(tr.id);
     } catch (err) {
       // Closed by an overlapping run, or reversed by Stripe first: either way the
       // transfer's state is already settled by someone else.
