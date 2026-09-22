@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { longDate } from "@/lib/format";
-import { startEstimateFromLead } from "@/actions/leadEstimate";
+import { startEstimateFromLead, writeLeadScope } from "@/actions/leadEstimate";
 import { ESTIMATOR_LABEL, estimatorFor, looksLikeStreetAddress, type EstimatorId } from "@/lib/leadRules";
 
 // Session-scoped, never static. Declared so the dev server does not fork its
@@ -19,8 +19,15 @@ export const dynamic = "force-dynamic";
 // first (lib/leadRules estimatorFor) and is the filled button.
 const ENGINES: EstimatorId[] = ["roof", "fence", "hvac", "smart"];
 
-export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function LeadDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { id } = await params;
+  const scopeFailed = (await searchParams)?.scope === "failed";
   const { organizationId, role, user } = await requireOrg();
   const lead = await db.lead.findUnique({ where: { id }, include: { assignedTo: true } });
   if (!lead || lead.organizationId !== organizationId) return notFound();
@@ -103,6 +110,21 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           <p className="text-[13.5px] leading-relaxed text-[color:var(--ink-soft)] whitespace-pre-wrap">
             {lead.description ?? "No description provided."}
           </p>
+
+          {/* A lead without a scope — a request from before the scope
+              existed, an import, a hand-typed lead: one click writes it. */}
+          {!lead.scope && canEstimate && (lead.description ?? "").trim().length >= 12 && (
+            <form action={writeLeadScope.bind(null, lead.id)} className="mt-3 flex flex-wrap items-center gap-3" data-lead-write-scope>
+              <Button type="submit" size="sm" variant="outline">
+                Write the scope of work
+              </Button>
+              <span className="text-[12px] text-[color:var(--ink-muted)]">
+                {scopeFailed
+                  ? "The scope couldn't be written just now — try again in a minute."
+                  : "Turns these words into the scope a contractor prices from; it then opens in the estimators."}
+              </span>
+            </form>
+          )}
 
           {canEstimate && (
             <div className="mt-5 pt-4 border-t border-[color:var(--line)]" data-lead-estimators>
