@@ -61,6 +61,32 @@ export function payoutRequestRefusal(e: PayoutEligibility): string | null {
   return null;
 }
 
+/* ── THE TRANSFER ARGUMENTS, BUILT WHERE THEY CAN BE READ ────
+ *
+ * The one call in this codebase that moves real money to someone outside it.
+ * Built here rather than inline at the call site so the exact params and options
+ * can be asserted — amount in integer cents, the destination account, the
+ * one-per-request idempotency key, both ids in metadata for reconciliation —
+ * without anything reaching Stripe. scripts/qa/influencer-payout.check.ts prints
+ * and checks them; runApprovedPayouts hands the same object to the SDK.
+ */
+export function transferArgsFor(
+  inf: { id: string; connectAccountId: string; defaultCurrency: string },
+  reqRow: { id: string },
+  amountCents: number,
+) {
+  return {
+    params: {
+      amount: amountCents,
+      currency: inf.defaultCurrency,
+      destination: inf.connectAccountId,
+      metadata: { influencerId: inf.id, payoutRequestId: reqRow.id },
+    },
+    // One transfer per payout request, whatever retries Stripe or we do.
+    options: { idempotencyKey: `payout:${reqRow.id}` },
+  };
+}
+
 export async function runApprovedPayouts() {
   if (!isStripeEnabled()) return { skipped: "stripe-disabled", paid: 0, failed: 0 };
   // Real money movement — never auto-transfer against a live key without opt-in.
@@ -102,6 +128,12 @@ export async function runApprovedPayouts() {
 
     await db.payoutRequest.update({ where: { id: reqRow.id }, data: { status: PayoutRequestStatus.PROCESSING } });
 
+    const args = transferArgsFor(
+      { id: inf.id, connectAccountId: inf.connectAccountId, defaultCurrency: inf.defaultCurrency },
+      reqRow,
+      amount,
+    );
+
     const transferRow = await db.payoutTransfer.create({
       data: {
         influencerId: inf.id,
@@ -110,20 +142,12 @@ export async function runApprovedPayouts() {
         currency: inf.defaultCurrency,
         status: PayoutTransferStatus.PENDING,
         stripeConnectAccountId: inf.connectAccountId,
-        idempotencyKey: `payout:${reqRow.id}`,
+        idempotencyKey: args.options.idempotencyKey,
       },
     });
 
     try {
-      const transfer = await stripe.transfers.create(
-        {
-          amount,
-          currency: inf.defaultCurrency,
-          destination: inf.connectAccountId,
-          metadata: { influencerId: inf.id, payoutRequestId: reqRow.id },
-        },
-        { idempotencyKey: `payout:${reqRow.id}` },
-      );
+      const transfer = await stripe.transfers.create(args.params, args.options);
 
       // Atomically: move cleared entries out of the CLEARED bucket, record the
       // negative PAID entry, and close the request + transfer.
