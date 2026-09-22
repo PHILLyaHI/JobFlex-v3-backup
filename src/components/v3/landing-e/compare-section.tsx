@@ -1,4 +1,3 @@
-import { LogoMark } from "./logo";
 import { Reveal } from "./reveal";
 import { StampIn } from "./stamp-in";
 import { COMPARE_COMPETITORS, COMPARE_ROWS, type CompareCell } from "./landing-compare";
@@ -9,7 +8,7 @@ import { COMPARE_COMPETITORS, COMPARE_ROWS, type CompareCell } from "./landing-c
 
    The rules it is drawn to: the section is paper with the drafting grid; the
    plate is white with a 2 px ink line and the hard offset shadow; our column
-   has a blueprint-filled head (paper mark and name) sitting flush on ONE
+   has a blueprint-filled head (the name in paper) sitting flush on ONE
    2 px blueprint rectangle around the rows 01–11 (drawn in the stylesheet —
    see .lp-spec-us::before), the two reading as one figure, a blue tab over
    an outline; inside the outline the plate's own white, with a blueprint
@@ -83,12 +82,7 @@ export function CompareSection() {
                 Capability
               </th>
               <th scope="col" className="lp-spec-us">
-                {/* The filled head: the house mark over the name, both paper
-                    on blueprint, centred on the column's axis. */}
-                <span className="lp-spec-usHead">
-                  <LogoMark tone="paper" />
-                  JobFlex
-                </span>
+                JobFlex
               </th>
               {COMPARE_COMPETITORS.map((c) => (
                 <th key={c.id} scope="col" className="lp-spec-them">

@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
-import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
+import { PHASE_DEVELOPMENT_SERVER } from "next/constants.js";
 
 // Content-Security-Policy, REPORT-ONLY for the first release. Enumerated from
 // the third parties the code actually loads: Stripe.js + Checkout, PayPal and
@@ -161,5 +161,30 @@ export default function config(phase: string): NextConfig {
   return {
     ...nextConfig,
     experimental: { ...nextConfig.experimental, workerThreads: dev },
+    ...(dev ? { webpack: relaxCssModules } : {}),
   };
+}
+
+// WEBPACK FALLBACK, DEV ONLY (2026-09-14). Turbopack accepts a CSS-module rule
+// whose selector is `:global(...)` alone; webpack's css-loader runs CSS modules
+// in "pure" mode and refuses it, and the blueprint modules carry thousands of
+// them. When the native SWC binding cannot load (Windows Smart App Control
+// blocks next-swc.win32-x64-msvc.node) `next dev --webpack` is the only dev
+// mode there is, so under it the modules run in "local" mode: the same class
+// hashing, without the purity check. Only invoked by webpack; Turbopack and
+// `next build` never see it.
+type LoaderUse = { loader?: string; options?: { modules?: { mode?: string } } };
+type Rule = { oneOf?: Rule[]; rules?: Rule[]; use?: LoaderUse | LoaderUse[] };
+function relaxCssModules(config: { module?: { rules?: Rule[] } }) {
+  const visit = (rules: Rule[]) => {
+    for (const rule of rules) {
+      if (!rule || typeof rule !== "object") continue;
+      if (rule.oneOf) visit(rule.oneOf);
+      if (rule.rules) visit(rule.rules);
+      const uses = Array.isArray(rule.use) ? rule.use : rule.use ? [rule.use] : [];
+      for (const u of uses) if (u?.options?.modules?.mode === "pure") u.options.modules.mode = "local";
+    }
+  };
+  visit(config.module?.rules ?? []);
+  return config;
 }
