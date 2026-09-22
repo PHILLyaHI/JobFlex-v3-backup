@@ -39,6 +39,7 @@
 //    Text inputs are 16px so iOS Safari does not zoom the viewport on focus.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { DictateButton, MicIcon, setTextareaValue } from "@/components/estimator/DictateButton";
 import {
   CONTACT_FIELDS,
   QUESTIONS,
@@ -327,6 +328,10 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
           defaultValue={desc}
           onChange={onDescInput}
         />
+        {/* Press and speak (owner, 2026-09-21): the words go in the way typing
+            would, so onDescInput still runs. Hidden where the browser cannot listen. */}
+        <DictateButton value={desc} onChange={(next) => setTextareaValue(descRef.current, next)} icon={<MicIcon />} label="Speak your project"
+          wrapClassName="dictate" buttonClassName="mic" onClassName="on" noteClassName="dictate-note" />
       </div>
       {uploads.length ? (
         <div className="ups">

@@ -769,3 +769,15 @@
   font-weight: 600;
   line-height: 1.45;
 }
+
+/* Press and speak, under the description (2026-09-21) — the Smart Proposal's
+   microphone in this page's kit. Hidden where the browser cannot listen. */
+.bp :global(.dictate) { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 6px 20px 8px; }
+.bp :global(.mic) { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); cursor: pointer; }
+.bp :global(.mic:hover) { background: var(--ink); color: var(--paper); }
+.bp :global(.mic .ic) { width: 15px; height: 15px; }
+.bp :global(.mic.on) { border-color: var(--danger); color: var(--danger); background: #fff; }
+.bp :global(.mic.on .ic) { animation: ho-mic-pulse 1.2s ease-in-out infinite; }
+.bp :global(.dictate-note) { flex: 1 1 100%; font-size: 12.5px; color: var(--danger); }
+@keyframes ho-mic-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.25); opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .bp :global(.mic.on .ic) { animation: none; } }

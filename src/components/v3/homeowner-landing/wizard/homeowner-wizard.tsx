@@ -49,6 +49,7 @@
 // project sent from this page reached nobody.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { DictateButton, MicIcon, setTextareaValue } from "@/components/estimator/DictateButton";
 import {
   CONTACT_FIELDS,
   QUESTIONS,
@@ -358,6 +359,11 @@ export function HomeownerWizard({ uid }: { uid: string }) {
           defaultValue={desc}
           onChange={onDescInput}
         />
+        {/* Press and speak — the words land in the field as they are recognised,
+            as on the Smart Proposal (owner, 2026-09-21). The field is uncontrolled,
+            so the text goes in the way typing would and onDescInput still runs. */}
+        <DictateButton value={desc} onChange={(next) => setTextareaValue(descRef.current, next)} icon={<MicIcon />} label="Speak your project"
+          wrapClassName="dictate" buttonClassName="mic" onClassName="on" noteClassName="dictate-note" />
       </div>
       {uploads.length ? (
         <div className="ups">
