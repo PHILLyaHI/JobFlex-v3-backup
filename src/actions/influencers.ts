@@ -283,8 +283,15 @@ export async function approvePayoutRequest(id: string) {
 
 export async function rejectPayoutRequest(id: string, reason?: string) {
   const admin = await requirePlatformAdmin();
-  await db.payoutRequest.update({
-    where: { id },
+  // Only a request no money has moved for can be rejected. There was no guard
+  // here (approve has always required PENDING), so a request already PAID, or
+  // PROCESSING with a transfer in flight, could be relabelled REJECTED — the
+  // partner's portal would then call a payment that reached their bank
+  // "declined", and runApprovedPayouts would stop driving a transfer that may
+  // already exist. The conditional write makes it atomic against the cron
+  // claiming the same row.
+  const res = await db.payoutRequest.updateMany({
+    where: { id, status: { in: [PayoutRequestStatus.PENDING, PayoutRequestStatus.APPROVED] } },
     data: {
       status: PayoutRequestStatus.REJECTED,
       approvedBy: admin.id,
@@ -292,7 +299,11 @@ export async function rejectPayoutRequest(id: string, reason?: string) {
       rejectedReason: reason ?? null,
     },
   });
+  if (res.count === 0) {
+    throw new Error("This request can no longer be rejected — a payout is already being sent or has been sent.");
+  }
   revalidatePath("/admin/influencers");
+  revalidatePath("/admin/payouts");
 }
 
 // ── influencer (self): request a payout of cleared balance ──

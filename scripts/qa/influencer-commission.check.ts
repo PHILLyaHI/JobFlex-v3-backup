@@ -461,6 +461,25 @@ async function main() {
 
   // The rate bound is on the server, at all three writers.
   const infSrc = readFileSync("src/actions/influencers.ts", "utf8");
+
+  // rejectPayoutRequest may only touch a request no money has moved for. The
+  // action needs an admin session, so the guard is pinned in its source; the
+  // predicate itself is exercised by the conditional write it compiles to.
+  const rejectStart = infSrc.indexOf("export async function rejectPayoutRequest");
+  const rejectBody = infSrc.slice(rejectStart, infSrc.indexOf("\nexport ", rejectStart + 1));
+  ok("reject is a conditional write limited to PENDING and APPROVED",
+    /updateMany\(\{\s*where: \{ id, status: \{ in: \[PayoutRequestStatus\.PENDING, PayoutRequestStatus\.APPROVED\] \} \}/.test(rejectBody),
+    rejectStart === -1 ? "function not found" : "");
+  const guarded = await db.payoutRequest.create({
+    data: { influencerId: outsider.id, amountCents: 1000, currency: "usd", status: "PAID" },
+  });
+  const flipped = await db.payoutRequest.updateMany({
+    where: { id: guarded.id, status: { in: ["PENDING", "APPROVED"] } },
+    data: { status: "REJECTED" },
+  });
+  ok("…and that predicate leaves a PAID request alone",
+    flipped.count === 0 && (await db.payoutRequest.findUnique({ where: { id: guarded.id } }))?.status === "PAID");
+  await db.payoutRequest.delete({ where: { id: guarded.id } });
   ok("the percent bound is applied at all three writers (create, add code, edit)",
     (infSrc.match(/\.superRefine\(boundRate\)/g) ?? []).length === 3 && /commissionValue > 100/.test(infSrc));
 
