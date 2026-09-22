@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { hashToken } from "@/lib/tokens";
+import { MINUTE, clientIp, rateLimitShared } from "@/lib/rateLimit";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { INFLUENCER_TOKEN_PREFIX, sendInfluencerInviteEmail } from "@/lib/influencerInvite";
 import { InfluencerStatus } from "@/lib/prismaEnums";
@@ -29,6 +30,12 @@ export async function completeInfluencerSetPassword(raw: unknown): Promise<Actio
   const parsed = setPasswordSchema.safeParse(raw);
   if (!parsed.success) return refusal(parsed.error);
   const data = parsed.data;
+  // The same brake as the sign-in door, per address: 8 tries in 15 minutes.
+  // Over it, the answer is the link's own sentence — a refused try and a bad
+  // token read the same.
+  const ip = await clientIp();
+  const brake = await rateLimitShared(`influencer-setpw:ip:${ip}`, 8, 15 * MINUTE);
+  if (!brake.ok) return refused(INVALID_LINK);
   const tokenHash = hashToken(data.token);
   // The token is looked at BEFORE the slow hash: a caller with no valid link
   // used to cost a bcrypt round (~100 ms of CPU) per request.
