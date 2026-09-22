@@ -12,6 +12,7 @@ import {
   SubscriptionStatus,
   PayoutTransferStatus,
   ConnectStatus,
+  Role,
 } from "@/lib/prismaEnums";
 import {
   computeCommissionCents,
@@ -51,6 +52,49 @@ async function planSlugForPrice(stripePriceId: string | null): Promise<string | 
   // gating resolves custom slugs to ENTERPRISE (orgPlan.ts) and their quotas
   // come from the plan's own limitsJson; readers match case-insensitively.
   return pp ? pp.planSlug.toUpperCase() : null;
+}
+
+/**
+ * SELF-REFERRAL — the influencer IS the organization paying the invoice.
+ *
+ * Without this the commission is a standing discount on the partner's own
+ * subscription: they pay list-minus-coupon and we hand a share of it back every
+ * month, for as long as the promo's window runs. On a $79 plan with a 20%-off
+ * code and 20% NET commission that is $63.20 out and $12.64 back — $50.56 a
+ * month, forever, off a public-facing referral programme.
+ *
+ * Two legs, because neither alone is enough:
+ *   · the LINKED ACCOUNT — Influencer.userId owning the org (the strong leg;
+ *     set when the partner also has an app login);
+ *   · the EMAIL — an OWNER membership whose user email is the influencer's
+ *     (catches the common case where the two accounts were never linked).
+ *
+ * What it cannot catch, and the owner should know: a partner who signs up with
+ * a different email address and never links the accounts. That needs payment
+ * -instrument or identity matching, which is Stripe Radar's job, not ours. This
+ * closes the open door, it is not proof of identity.
+ */
+export async function isSelfReferral(
+  influencerId: string,
+  organizationId: string | null | undefined,
+): Promise<boolean> {
+  if (!organizationId) return false;
+  const inf = await db.influencer.findUnique({
+    where: { id: influencerId },
+    select: { userId: true, email: true },
+  });
+  if (!inf) return false;
+
+  const owners = await db.membership.findMany({
+    where: { organizationId, role: Role.OWNER },
+    select: { userId: true, user: { select: { email: true } } },
+  });
+  const email = inf.email.toLowerCase();
+  return owners.some(
+    (m) =>
+      (inf.userId && m.userId === inf.userId) ||
+      (m.user.email ?? "").toLowerCase() === email,
+  );
 }
 
 // Resolve a Stripe discount (promotion_code preferred, else coupon) to our PromoCode.
@@ -120,12 +164,18 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
   reportPlanChange(organizationId, "stripe", planWas);
 
   if (promo && customerId) {
-    // Confirm/create the attribution off the Stripe-issued subscription discount.
+    // A partner's own organization is recorded, not paid: the row still exists
+    // so the admin can see the code was used, but VOID keeps it out of every
+    // accrual. The upsert rewrites status on every subscription.updated, so the
+    // verdict is recomputed here each time rather than being set once — and
+    // accrueForInvoice re-checks anyway, because this state is not durable.
+    const selfReferral = await isSelfReferral(promo.influencerId, organizationId);
+    const status = selfReferral ? AttributionStatus.VOID : AttributionStatus.ACTIVE;
     const attribution = await db.attribution.upsert({
       where: { stripeSubscriptionId: externalSubId },
       update: {
         organizationId,
-        status: AttributionStatus.ACTIVE,
+        status,
         influencerId: promo.influencerId,
         promoCodeId: promo.id,
       },
@@ -135,7 +185,7 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
         organizationId,
         stripeCustomerId: customerId,
         stripeSubscriptionId: externalSubId,
-        status: AttributionStatus.ACTIVE,
+        status,
       },
     });
     await db.subscription.update({ where: { organizationId }, data: { attributionId: attribution.id } });
@@ -185,6 +235,13 @@ export async function accrueForInvoice(invoice: Stripe.Invoice, eventId?: string
   });
   if (!attribution || attribution.status !== AttributionStatus.ACTIVE) {
     return { skipped: "no-active-attribution" as const };
+  }
+
+  // Checked at the money moment, not only when the attribution was written:
+  // syncSubscriptionFromStripe's upsert rewrites status on every
+  // subscription.updated, so a VOID stamp is not something to rely on.
+  if (await isSelfReferral(attribution.influencerId, attribution.organizationId)) {
+    return { skipped: "self-referral" as const };
   }
 
   const promo = attribution.promoCode;
