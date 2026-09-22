@@ -423,19 +423,17 @@
    Sits after the unread badge (or alone, pushed to the row's right edge). */
 .sbScroll .sbQuota {
   flex: 0 0 auto;
-  min-width: 22px; height: 20px; padding: 0 5px;
+  height: 20px; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1.5px solid var(--blueprint);
-  border-radius: var(--radius);
   color: var(--blueprint);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10.5px; font-weight: 700; line-height: 1;
+  font-size: 11px; font-weight: 700; line-height: 1; letter-spacing: 0.02em; white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 .sbScroll .sbQuotaEnd { margin-left: auto; }
-.sbScroll .sbQuota.isOut { border-color: var(--danger, #a83232); color: var(--danger, #a83232); }
-.sbScroll .sbLink.active .sbQuota { border-color: var(--ink); color: var(--ink); }
-.sbScroll .sbLink.active .sbQuota.isOut { border-color: var(--danger, #a83232); color: var(--danger, #a83232); }
+.sbScroll .sbQuota.isOut { color: var(--danger, #a83232); }
+.sbScroll .sbLink.active .sbQuota { color: var(--blueprint); }
+.sbScroll .sbLink.active .sbQuota.isOut { color: var(--danger, #a83232); }
 /* Locked rows dim to the desk sidebar's value (it reads 0.48, the drawer
    read 0.5) — one number, so the two never disagree. */
 .sbLockd { opacity: 0.48; }

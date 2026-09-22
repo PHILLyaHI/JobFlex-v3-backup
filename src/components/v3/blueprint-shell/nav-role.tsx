@@ -68,6 +68,19 @@ export type NavLimit = {
 };
 const EMPTY_LIMITS: Record<string, NavLimit> = {};
 
+/**
+ * What the nav says about a quota, if anything (owner, 2026-09-21). A full
+ * meter is not news: the pill is drawn only when the plan is nearly used up
+ * (a fifth or less left) or used up — "2 left" in blueprint, "none left" in
+ * red. Every other value draws nothing, so a row never carries a number that
+ * only means "you are fine".
+ */
+export function quotaPill(q: NavLimit): { text: string; out: boolean } | null {
+  if (q.remaining <= 0) return { text: "none left", out: true };
+  if (q.limit > 0 && q.remaining / q.limit <= 0.2) return { text: `${q.remaining} left`, out: false };
+  return null;
+}
+
 const NavLimitsContext = createContext<Record<string, NavLimit>>(EMPTY_LIMITS);
 
 export function NavRoleProvider({

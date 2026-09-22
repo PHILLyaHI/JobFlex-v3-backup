@@ -44,6 +44,7 @@ import {
   flattenNavItems,
 } from "@/components/v3/blueprint-shell/nav-map";
 import {
+  quotaPill,
   useNavBadges,
   useNavIdentity,
   useNavLimits,
@@ -351,6 +352,9 @@ export function MobileNav() {
                 const isActive = item.href === active;
                 const cls = `${styles.sbLink} ${isActive ? styles.active : ""}`;
                 const count = badges[item.href] ?? 0;
+                // The quota only when it is low or gone (quotaPill): a full
+                // meter is not news, and a row never carries a bare "0".
+                const quota = limits[item.href] ? quotaPill(limits[item.href]) : null;
                 // Surfaces with no page yet stay dead, but must not jump the
                 // scroller to the top on the way — the drawer just closes.
                 return item.href === "#" ? (
@@ -391,13 +395,13 @@ export function MobileNav() {
                             {count > 99 ? "99+" : count}
                           </span>
                         )}
-                        {limits[item.href] ? (
+                        {quota ? (
                           <span
-                            className={`${styles.sbQuota}${limits[item.href].remaining <= 0 ? ` ${styles.isOut}` : ""}${count > 0 ? "" : ` ${styles.sbQuotaEnd}`}`}
+                            className={`${styles.sbQuota}${quota.out ? ` ${styles.isOut}` : ""}${count > 0 ? "" : ` ${styles.sbQuotaEnd}`}`}
                             title={quotaTip(limits[item.href])}
                             aria-label={quotaTip(limits[item.href])}
                           >
-                            {limits[item.href].remaining > 99 ? "99+" : limits[item.href].remaining}
+                            {quota.text}
                           </span>
                         ) : null}
                       </>

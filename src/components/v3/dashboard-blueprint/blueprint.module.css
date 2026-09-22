@@ -1237,3 +1237,34 @@
 /* Same box as the quota pill: the badge carries the same 1.5px border (in its
    own fill colour) so one- and two-digit plates match to the pixel. */
 .bp :global(.sb-badge) { border: 1.5px solid var(--blueprint); }
+
+/* ── ONE ROW GRAMMAR (owner, 2026-09-21): [icon 20] [label] … [badge slot]
+   [chevron slot]. The two slots at the end are reserved on every row, empty
+   or not, so the badges of different rows stand in one column and the
+   chevrons in theirs; the slots are 24px tall, so every row is the same
+   height whether or not it folds. The badge slot is right-aligned and grows
+   leftwards for a wider label ("none left"), keeping the column's right edge. */
+.bp :global(.sb-link) { gap: 10px; padding: 6px 11px; min-height: 39px; }
+.bp :global(.sb-link .ic) { width: 20px; height: 20px; flex: 0 0 auto; }
+.bp :global(.sb-lbl) { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bp :global(.sb-slot) { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: flex-end; height: 24px; }
+/* The label keeps the room: 8px before the badge slot, 4px between the slots. */
+.bp :global(.sb-slot-b) { min-width: 28px; gap: 6px; margin-left: auto; padding-left: 8px; box-sizing: content-box; }
+.bp :global(.sb-lbl + .sb-slot-b) { margin-left: -2px; }
+.bp :global(.sb-slot-c) { width: 24px; margin-left: -6px; }
+.bp :global(.sb-slot .sb-badge), .bp :global(.sb-slot .sb-quota), .bp :global(.sb-slot .sb-lock-ic) { margin-left: 0; }
+
+/* The quota is a short mono label, not a numbered plate: "2 left" in
+   blueprint while the plan is nearly used up, "none left" in red once it is.
+   A full meter draws nothing (quotaPill in nav-role.tsx). */
+.bp :global(.sb-quota) {
+  min-width: 0; height: 24px; padding: 0;
+  border: 0; background: transparent;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap;
+  color: var(--blueprint);
+}
+.bp :global(.sb-quota-n) { top: 0; }
+.bp :global(.sb-quota.is-out) { color: var(--danger); }
+.bp :global(.sb-link.active .sb-quota) { color: var(--blueprint); }
+.bp :global(.sb-link.active .sb-quota.is-out) { color: var(--danger); }
+.bp :global(.sb-quota:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }

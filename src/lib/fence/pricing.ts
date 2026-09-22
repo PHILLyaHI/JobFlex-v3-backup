@@ -209,7 +209,9 @@ export function priceFencePackage(layout: FenceLayoutInput, opts: FencePriceOpti
   const takeoff = computeFenceTakeoff({ ...layout, type: t.id, frostIn });
   const hFt = nearestHeight(t, layout.heightFt);
   const hf = heightFactor(t, hFt);
-  const waste = 1 + Math.min(30, Math.max(0, layout.wastePct ?? 10)) / 100;
+  // A blank field reads as NaN, and NaN through Math.min/max stays NaN — every
+  // material cost would then fail the convert schema (QA check, 2026-09-22).
+  const waste = 1 + Math.min(30, Math.max(0, Number.isFinite(layout.wastePct) ? (layout.wastePct as number) : 10)) / 100;
   const rates = jobRates(resolved, opts);
   const effSpacing = effectiveSpacingFt(t, layout.postSpacingFt);
   const spacingRatio = t.postSpacingFt / effSpacing;

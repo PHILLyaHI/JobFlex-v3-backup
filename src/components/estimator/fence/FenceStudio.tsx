@@ -16,7 +16,7 @@ import { materialLabel, materialColor, variantLabel } from "./fenceTypes";
 import { computeFenceLayout } from "./fenceGeometry";
 import { buildFenceEstimate, type FenceLabels } from "./fencePricing";
 import { convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
-import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
+import { reportPlanLimit, reportPlanLimitResult, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 import { fetchPropertyBoundary } from "@/actions/fenceBoundary";
 import { latLngToLocalFeet, simplifyPath, buildingsToFootprints } from "./mapProjection";
 import type { BuildingFootprint } from "./fenceTypes";
@@ -166,6 +166,13 @@ export function FenceStudio() {
         assumptions,
         previewDataUrl,
       });
+      // A failure comes back as a result (prod redacts thrown messages).
+      if (!res.ok) {
+        setConverting(false);
+        if (reportPlanLimitResult(res)) return;
+        toast.error("Couldn't create proposal", res.error);
+        return;
+      }
       toast.success("Proposal created");
       router.push(`/dashboard/proposals/${res.id}` as Route);
     } catch (err) {
