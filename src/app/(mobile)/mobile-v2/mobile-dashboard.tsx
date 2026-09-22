@@ -49,6 +49,7 @@ import {
   useNavBadges,
   useNavIdentity,
   useNavLimits,
+  quotaPill,
   useNavLocked,
   useNavRole,
   type NavLimit,
@@ -1453,13 +1454,15 @@ function DashboardView({ data }: { data: DashboardData }) {
                             {navBadges[item.href] > 99 ? "99+" : navBadges[item.href]}
                           </span>
                         ) : null}
-                        {navLimits[item.href] ? (
+                        {/* The quota only when it is low or gone (quotaPill):
+                            a full meter is not news, and never a bare "0". */}
+                        {navLimits[item.href] && quotaPill(navLimits[item.href]) ? (
                           <span
-                            className={`${styles.sbQuota}${navLimits[item.href].remaining <= 0 ? ` ${styles.isOut}` : ""}${(navBadges[item.href] ?? 0) > 0 ? "" : ` ${styles.sbQuotaEnd}`}`}
+                            className={`${styles.sbQuota}${quotaPill(navLimits[item.href])!.out ? ` ${styles.isOut}` : ""}${(navBadges[item.href] ?? 0) > 0 ? "" : ` ${styles.sbQuotaEnd}`}`}
                             title={quotaTip(navLimits[item.href])}
                             aria-label={quotaTip(navLimits[item.href])}
                           >
-                            {navLimits[item.href].remaining > 99 ? "99+" : navLimits[item.href].remaining}
+                            {quotaPill(navLimits[item.href])!.text}
                           </span>
                         ) : null}
                       </>

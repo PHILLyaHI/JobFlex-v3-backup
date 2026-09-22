@@ -20,7 +20,7 @@ import { usePathname } from "next/navigation";
 // so the mobile hamburger drawers could share them instead of carrying a
 // second, href-less copy. Re-exported here for existing importers.
 import { NAV_SECTIONS, activeHref, canOpen, isLimitedRole, navSectionsFor, type NavItem } from "./nav-map";
-import { useNavBadges, useNavLimits, type NavLimit, useNavLocked, useNavRole } from "./nav-role";
+import { quotaPill, useNavBadges, useNavLimits, type NavLimit, useNavLocked, useNavRole } from "./nav-role";
 import { SignOutButton } from "./sign-out";
 import { foldShortcutLabel } from "./sidebar-fold";
 
@@ -118,15 +118,21 @@ export function Sidebar({
   // Which trees are folded. Unset means "open when its page is the one shown".
   const [folds, setFolds] = useState<Record<string, boolean>>({});
   const isOpen = (item: NavItem) => folds[item.href] ?? (active === item.href || !!item.children?.some((c) => c.href === active));
-  // One row, as the donor drew it; the tree below draws the same row for a
-  // parent and for each of its children.
-  const renderRow = (item: NavItem) =>
-              item.href === "#" ? (
+  // One row grammar for every item (owner, 2026-09-21): icon · label · a
+  // badge slot · a chevron slot. Both slots are reserved whether or not they
+  // hold anything, so the badges of different rows stand in one column and
+  // the chevrons in theirs; a child row (an inventory) is indented instead and
+  // has no chevron slot of its own.
+  const renderRow = (item: NavItem, child = false) => {
+    const quota = limits[item.href] ? quotaPill(limits[item.href]) : null;
+    return item.href === "#" ? (
                 <a key={item.label} className="sb-link" href="#" {...tipProps(item.label)}>
                   <svg className="ic">
                     <use href={`#${item.icon}`} />
                   </svg>
                   <span className="sb-lbl">{item.label}</span>
+                  <span className="sb-slot sb-slot-b" />
+                  {!child && <span className="sb-slot sb-slot-c" />}
                 </a>
               ) : (
                 <Link
@@ -134,7 +140,7 @@ export function Sidebar({
                   className={`sb-link${item.href === active ? " active" : ""}${item.locked ? " sb-lockd" : ""}`}
                   href={item.href as Route}
                   {...tipProps(
-                    (badges[item.href] ?? 0) > 0 ? `${item.label} · ${badges[item.href]} new` : item.locked ? `${item.label} · not in your plan` : item.label,
+                    (badges[item.href] ?? 0) > 0 ? `${item.label} · ${badges[item.href]} new` : item.locked ? `${item.label} · not in your plan` : quota ? `${item.label} · ${quota.text}` : item.label,
                   )}
                 >
                   <svg className="ic">
@@ -144,6 +150,7 @@ export function Sidebar({
                       and keep it for screen readers; the row's name is still
                       its text. */}
                   <span className="sb-lbl">{item.label}</span>
+                  <span className="sb-slot sb-slot-b">
                   {/* CUSTOM-PLAN LOCK — the page is not in this org's plan.
                       Still a live link on purpose: the route renders the
                       upgrade offer, so the padlock is a door, not a wall. */}
@@ -159,15 +166,14 @@ export function Sidebar({
                           {badges[item.href] > 99 ? "99+" : badges[item.href]}
                         </span>
                       )}
-                      {limits[item.href] ? (
+                      {/* The quota, only when it is low or gone — see quotaPill. */}
+                      {quota ? (
                         <span
-                          className={`sb-quota${limits[item.href].remaining <= 0 ? " is-out" : ""}`}
+                          className={`sb-quota${quota.out ? " is-out" : ""}`}
                           tabIndex={0}
                           aria-label={quotaTip(limits[item.href])}
                         >
-                          <span className="sb-quota-n">
-                            {limits[item.href].remaining > 99 ? "99+" : limits[item.href].remaining}
-                          </span>
+                          <span className="sb-quota-n">{quota.text}</span>
                           <span className="sb-quota-tip" role="tooltip">
                             {quotaTip(limits[item.href])}
                           </span>
@@ -175,8 +181,11 @@ export function Sidebar({
                       ) : null}
                     </>
                   )}
+                  </span>
+                  {!child && <span className="sb-slot sb-slot-c" aria-hidden="true" />}
                 </Link>
               );
+  };
 
   return (
     <aside className="sb" ref={sbRef}>
@@ -209,9 +218,9 @@ export function Sidebar({
                 <div key={item.label} className={`sb-tree${isOpen(item) ? " is-open" : ""}`}>
                   <div className="sb-parent">
                     {renderRow(item)}
-                    {/* The fold (owner, 2026-09-20): a chevron beside the
-                        estimator's row. Open on its own when the estimator or
-                        its inventory is the page; the click remembers the choice. */}
+                    {/* The fold (owner, 2026-09-20): a chevron in the row's
+                        chevron slot. Open on its own when the estimator or its
+                        inventory is the page; the click remembers the choice. */}
                     <button
                       type="button"
                       className="sb-fold-btn"
@@ -219,12 +228,12 @@ export function Sidebar({
                       aria-label={`${isOpen(item) ? "Fold" : "Unfold"} ${item.label}`}
                       onClick={() => setFolds((f) => ({ ...f, [item.href]: !isOpen(item) }))}
                     >
-                      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
                         <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     </button>
                   </div>
-                  {isOpen(item) && <div className="sb-sub">{item.children.map((child) => renderRow(child))}</div>}
+                  {isOpen(item) && <div className="sb-sub">{item.children.map((child) => renderRow(child, true))}</div>}
                 </div>
               ) : (
                 renderRow(item)
