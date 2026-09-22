@@ -51,6 +51,9 @@ export type LeadsContentOptions = {
   /** Handed the page's handle once it is live, so the React wrapper can push
    *  freshly-revalidated server rows in without remounting the module. */
   onReady?: (handle: LeadsHandle) => void;
+  /** Opens a lead's page (2026-09-22): a row click or its Open button. The
+   *  scope, the homeowner's words and the estimator buttons live there. */
+  navigate?: (href: string) => void;
 };
 
 /** The only way into a mounted leads sheet from React. */
@@ -75,6 +78,11 @@ function actionError(err: unknown): string {
 /** Attribute-safe user text. The row builders below drop database strings into
  *  innerHTML, so anything landing inside quotes has to be escaped first — same
  *  helper Jobs and Projects carry. */
+/** The first line of a scope, cut to `n` characters for a table cell. */
+function excerpt(v: string, n: number): string {
+  const t = (v || "").replace(/\s+/g, " ").trim();
+  return t.length > n ? esc(t.slice(0, n - 1)) + "…" : esc(t);
+}
 function esc(v: string): string {
   return v
     .replace(/&/g, "&amp;")
@@ -447,9 +455,9 @@ export function initLeadsContent(
       body.innerHTML = slice
         .map(function (l) {
           return (
-            '<tr class="prow" data-id="' +
+            '<tr class="prow prow--link" data-id="' +
             l.id +
-            '">' +
+            '" title="Open this lead">' +
             '<td><div class="cname"><span class="cav">' +
             initials(l.name) +
             "</span>" +
@@ -476,6 +484,7 @@ export function initLeadsContent(
                 pct(l.conf) +
                 "</b></span>"
               : "") +
+            (l.desc ? '<span class="pt-desc">' + excerpt(l.desc, 110) + "</span>" : "") +
             "</td>" +
             '<td><span class="pstatus lst--' +
             l.status.toLowerCase() +
@@ -488,7 +497,10 @@ export function initLeadsContent(
             '<td><span class="pt-mono">' +
             l.age +
             "</span></td>" +
-            '<td class="num"><button class="pt-open" type="button" data-act="ask-delete" aria-label="Delete ' +
+            '<td class="num"><button class="pt-open" type="button" data-act="open" aria-label="Open ' +
+            esc(l.name) +
+            '" title="Open — scope and estimators"><svg class="ic" style="transform:rotate(-90deg)"><use href="#i-chev"/></svg></button>' +
+            '<button class="pt-open" type="button" data-act="ask-delete" aria-label="Delete ' +
             esc(l.name) +
             '"><svg class="ic"><use href="#i-trash"/></svg></button></td>' +
             "</tr>"
@@ -777,6 +789,7 @@ export function initLeadsContent(
           '<div class="icard-act">' +
           '<button class="btn btn-primary btn--sm" type="button" data-act="accept"><svg class="ic"><use href="#i-check"/></svg>Accept</button>' +
           '<button class="btn btn-ghost btn--sm" type="button" data-act="decline">Decline</button>' +
+          '<button class="btn btn-ghost btn--sm" type="button" data-act="open">Open</button>' +
           "</div>" +
           "</div></div>"
         );
@@ -1339,8 +1352,21 @@ export function initLeadsContent(
     }
 
     const act = target.closest<HTMLElement>("[data-act]");
-    if (!act) return;
+    // A click on the row itself (not a button or a link in it) opens the lead.
+    if (!act) {
+      const row = target.closest<HTMLElement>("tr.prow--link[data-id]");
+      if (row && row.dataset.id && !target.closest("a, button, input, select, textarea")) {
+        options.navigate?.("/dashboard/leads/" + row.dataset.id);
+      }
+      return;
+    }
     const kind = act.dataset.act;
+
+    if (kind === "open") {
+      const id = act.closest<HTMLElement>("[data-id]")?.dataset.id || "";
+      if (id) options.navigate?.("/dashboard/leads/" + id);
+      return;
+    }
 
     if (kind === "offer-yes" || kind === "offer-no") {
       const card = act.closest<HTMLElement>("[data-offer]");

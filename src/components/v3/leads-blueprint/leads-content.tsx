@@ -17,6 +17,7 @@
 // leads.module.css carries the matching stacking-context rule.
 
 import { useCallback, useEffect, useRef } from "react";
+import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initLeadsContent, type LeadsHandle } from "./leads-behavior";
@@ -46,6 +47,7 @@ export function LeadsContent({ leads, offers }: { leads: Lead[]; offers: Offer[]
       leads: seedRef.current.leads,
       offers: seedRef.current.offers,
       refresh: () => routerRef.current.refresh(),
+      navigate: (href) => routerRef.current.push(href as Route),
       onReady: (handle) => {
         handleRef.current = handle;
       },
