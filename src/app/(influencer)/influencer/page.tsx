@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { money, longDate } from "@/lib/format";
 import { ledgerBalances, describeCommission } from "@/lib/commission";
+import { payoutRequestRefusal } from "@/lib/payouts";
 import { AttributionStatus, LedgerEntryType, PayoutRequestStatus } from "@/lib/prismaEnums";
 import { RequestPayoutButton } from "./request-payout-button";
 import { ConnectCard } from "./connect-card";
@@ -73,12 +74,16 @@ export default async function InfluencerHome() {
   const openRequest = payoutRequests.find((r) =>
     [PayoutRequestStatus.PENDING, PayoutRequestStatus.APPROVED, PayoutRequestStatus.PROCESSING].includes(r.status as never),
   );
-  const belowMin = balances.clearedCents < influencer.minPayoutCents;
-  const payoutReason = openRequest
-    ? `A payout request is ${openRequest.status.toLowerCase()}.`
-    : belowMin
-      ? `You need ${money(influencer.minPayoutCents / 100)} cleared to request a payout.`
-      : null;
+  // The SAME sentence the server action would answer with — one wording, decided
+  // in lib/payouts, so the hint under the button can never contradict the reason
+  // the request is actually refused.
+  const payoutReason = payoutRequestRefusal({
+    payoutsEnabled: influencer.payoutsEnabled,
+    connectStatus: influencer.connectStatus,
+    minPayoutCents: influencer.minPayoutCents,
+    clearedCents: balances.clearedCents,
+    openRequestStatus: openRequest?.status ?? null,
+  });
 
   return (
     <div className="space-y-8">
@@ -90,7 +95,7 @@ export default async function InfluencerHome() {
             Earnings reflect only Stripe-confirmed, non-refunded charges.
           </p>
         </div>
-        <RequestPayoutButton disabled={!!openRequest || belowMin} reason={payoutReason} />
+        <RequestPayoutButton disabled={payoutReason !== null} reason={payoutReason} />
       </div>
 
       {!influencer.payoutsEnabled && <ConnectCard status={influencer.connectStatus} />}

@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
 import { assertStripeWriteAllowed, isStripeWriteAllowed } from "@/lib/stripeSafety";
 import { ledgerBalances } from "@/lib/commission";
+import { payoutRequestRefusal } from "@/lib/payouts";
 import {
   InfluencerStatus,
   CommissionType,
@@ -265,28 +266,37 @@ export async function rejectPayoutRequest(id: string, reason?: string) {
 }
 
 // ── influencer (self): request a payout of cleared balance ──
-export async function requestPayout() {
+/**
+ * Answers with an envelope, not a throw: Next.js redacts a thrown Server Action
+ * message in production, so a refusal has to be RETURNED to reach the partner as
+ * words. The wording itself lives in lib/payouts so the button's disabled hint
+ * and the server's answer cannot drift apart.
+ */
+export async function requestPayout(): Promise<{ ok: true } | { ok: false; error: string }> {
   const influencer = await requireInfluencer();
 
-  // Block stacking requests.
   const open = await db.payoutRequest.findFirst({
     where: {
       influencerId: influencer.id,
       status: { in: [PayoutRequestStatus.PENDING, PayoutRequestStatus.APPROVED, PayoutRequestStatus.PROCESSING] },
     },
+    select: { status: true },
   });
-  if (open) throw new Error("You already have a payout request in progress.");
 
   const entries = await db.commissionLedger.findMany({
     where: { influencerId: influencer.id },
     select: { entryType: true, amountCents: true, state: true },
   });
   const { clearedCents } = ledgerBalances(entries);
-  if (clearedCents < influencer.minPayoutCents) {
-    throw new Error(
-      `You need at least $${(influencer.minPayoutCents / 100).toFixed(0)} in cleared commission to request a payout.`,
-    );
-  }
+
+  const refusal = payoutRequestRefusal({
+    payoutsEnabled: influencer.payoutsEnabled,
+    connectStatus: influencer.connectStatus,
+    minPayoutCents: influencer.minPayoutCents,
+    clearedCents,
+    openRequestStatus: open?.status ?? null,
+  });
+  if (refusal) return { ok: false, error: refusal };
 
   await db.payoutRequest.create({
     data: {
@@ -298,6 +308,8 @@ export async function requestPayout() {
     },
   });
   revalidatePath("/influencer");
+  revalidatePath("/influencer/payouts");
+  return { ok: true };
 }
 
 // ── admin: dashboard rollup for /admin/influencers ───

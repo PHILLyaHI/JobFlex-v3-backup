@@ -11,6 +11,7 @@
 // it back, because that function upserts the billing mirror.
 //
 // Rows it writes are prefixed `qa-inf-` and deleted on the way out, pass or fail.
+import { readFileSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import {
   accrueForInvoice,
@@ -18,6 +19,7 @@ import {
   reverseForCharge,
   syncSubscriptionFromStripe,
 } from "../../src/lib/stripeSync";
+import { payoutRequestRefusal } from "../../src/lib/payouts";
 
 const db = new PrismaClient();
 const QA_SLUG = "qa-co";
@@ -319,6 +321,48 @@ async function main() {
         (mirrorBefore?.attributionId ?? null) === (mirrorAfter?.attributionId ?? null),
       `plan ${mirrorAfter?.plan ?? "(none)"} · sub ${mirrorAfter?.externalSubId ?? "(none)"}`);
   }
+
+  // ── PAYOUT REFUSALS ARE WORDS. One wording, shared by the server action and
+  //    the button's hint, so the two cannot contradict each other. ──
+  const base = { payoutsEnabled: true, connectStatus: "ENABLED", minPayoutCents: 2500, clearedCents: 9000, openRequestStatus: null };
+  const words = (s: string | null) => typeof s === "string" && s.length > 20 && /[a-z]/.test(s);
+
+  ok("a payable request is allowed", payoutRequestRefusal(base) === null, String(payoutRequestRefusal(base)));
+
+  const belowMin = payoutRequestRefusal({ ...base, clearedCents: 1200 });
+  ok("below the minimum is refused in words", words(belowMin), String(belowMin));
+  ok("the refusal names BOTH numbers, not just the threshold",
+    (belowMin ?? "").includes("$25.00") && (belowMin ?? "").includes("$12.00"),
+    String(belowMin));
+
+  const noConnect = payoutRequestRefusal({ ...base, payoutsEnabled: false, connectStatus: "NONE" });
+  ok("payoutsEnabled=false is refused in words", words(noConnect), String(noConnect));
+  const halfConnect = payoutRequestRefusal({ ...base, payoutsEnabled: false, connectStatus: "RESTRICTED" });
+  ok("a half-finished Stripe setup says so, not 'connect an account'",
+    words(halfConnect) && halfConnect !== noConnect,
+    String(halfConnect));
+  ok("payoutsEnabled=true but connectStatus not ENABLED is still refused",
+    words(payoutRequestRefusal({ ...base, payoutsEnabled: true, connectStatus: "RESTRICTED" })));
+
+  for (const st of ["PENDING", "APPROVED", "PROCESSING"]) {
+    const stacked = payoutRequestRefusal({ ...base, openRequestStatus: st });
+    ok(`a second request while one is ${st} is refused in words`, words(stacked), String(stacked));
+  }
+  ok("a FAILED or REJECTED request does not block the next one",
+    payoutRequestRefusal({ ...base, openRequestStatus: null }) === null);
+
+  // The action must RETURN the refusal, not throw it: production redacts thrown
+  // Server Action messages, so a throw would reach the partner as Next's
+  // generic fault paragraph.
+  const src = readFileSync("src/actions/influencers.ts", "utf8");
+  const start = src.indexOf("export async function requestPayout");
+  const rest = src.slice(start + 1);
+  const next = rest.indexOf("\nexport ");
+  const body = next === -1 ? rest : rest.slice(0, next);
+  ok("requestPayout is the function this check is pinning", start !== -1 && body.includes("payoutRequestRefusal("));
+  ok("requestPayout RETURNS the refusal rather than throwing it",
+    body.includes("return { ok: false, error: refusal }") && !body.includes("throw new Error"),
+    body.includes("throw new Error") ? "it still throws — production would redact the message" : "returns an envelope");
 
   console.log(`\n${passes} passed, ${failures} failed`);
   const removed = await cleanup();

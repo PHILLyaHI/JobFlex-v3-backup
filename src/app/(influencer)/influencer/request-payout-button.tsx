@@ -19,7 +19,14 @@ export function RequestPayoutButton({
   async function submit() {
     setBusy(true);
     try {
-      await requestPayout();
+      // An envelope, not a throw: production redacts a thrown Server Action
+      // message, so the refusal has to come back as a value to be readable.
+      const res = await requestPayout();
+      if (!res.ok) {
+        toast.error("Couldn't request payout", res.error);
+        router.refresh();
+        return;
+      }
       toast.success("Payout requested", "An admin will review and release it to your Stripe account.");
       router.refresh();
     } catch (err: unknown) {

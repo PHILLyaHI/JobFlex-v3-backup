@@ -15,6 +15,52 @@ import {
   ConnectStatus,
 } from "@/lib/prismaEnums";
 
+/* ── WHY A PAYOUT REQUEST IS REFUSED, IN WORDS ──────────────
+ *
+ * ONE wording, decided once. Before this the server action threw a string and
+ * the button computed its own hint from a different set of conditions, so the
+ * two could disagree — and the thrown one never arrived anyway: Next.js redacts
+ * a thrown Server Action message in production (see the comments in
+ * actions/ai.ts, actions/fenceEstimator.ts, actions/roofEstimator.ts), so a
+ * partner clicking Request payout got Next's generic fault paragraph instead of
+ * a reason. The caller returns this string in an envelope.
+ *
+ * The Connect check is new. Nothing looked at payoutsEnabled before the request
+ * was created, so a partner with no bank account attached could file one that
+ * runApprovedPayouts would silently count as "notReady" on every run, forever,
+ * with no way for either side to learn why: the request blocks every later
+ * request, and nothing in the portal or the admin page says what is wrong.
+ */
+export interface PayoutEligibility {
+  payoutsEnabled: boolean;
+  connectStatus: string;
+  minPayoutCents: number;
+  clearedCents: number;
+  /** The status of an already-open request (PENDING/APPROVED/PROCESSING), else null. */
+  openRequestStatus: string | null;
+}
+
+const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
+/** The reason this partner cannot request a payout right now, or null if they can. */
+export function payoutRequestRefusal(e: PayoutEligibility): string | null {
+  if (e.openRequestStatus) {
+    return e.openRequestStatus === PayoutRequestStatus.PENDING
+      ? "You already have a payout request waiting for review. It will be released to your Stripe account once an admin approves it."
+      : `Your payout request is ${e.openRequestStatus.toLowerCase()}. You can request the next one after it lands.`;
+  }
+  if (!e.payoutsEnabled || e.connectStatus !== ConnectStatus.ENABLED) {
+    return e.connectStatus === ConnectStatus.NONE
+      ? "Connect a Stripe account first — we have nowhere to send the money yet. You keep earning in the meantime."
+      : "Finish your Stripe setup before requesting a payout. Stripe still needs something from you before it will accept a transfer.";
+  }
+  if (e.clearedCents < e.minPayoutCents) {
+    return `You need ${usd(e.minPayoutCents)} cleared to request a payout — you have ${usd(e.clearedCents)}.`;
+  }
+  if (e.clearedCents <= 0) return "There is nothing cleared to pay out yet.";
+  return null;
+}
+
 export async function runApprovedPayouts() {
   if (!isStripeEnabled()) return { skipped: "stripe-disabled", paid: 0, failed: 0 };
   // Real money movement — never auto-transfer against a live key without opt-in.
