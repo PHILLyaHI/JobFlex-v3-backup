@@ -13,6 +13,7 @@ import {
   PayoutTransferStatus,
   ConnectStatus,
   Role,
+  InfluencerStatus,
 } from "@/lib/prismaEnums";
 import {
   computeCommissionCents,
@@ -170,12 +171,13 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
     // verdict is recomputed here each time rather than being set once — and
     // accrueForInvoice re-checks anyway, because this state is not durable.
     const selfReferral = await isSelfReferral(promo.influencerId, organizationId);
-    const status = selfReferral ? AttributionStatus.VOID : AttributionStatus.ACTIVE;
+    // Named apart from `status` above — that one is the SUBSCRIPTION's state.
+    const attrStatus = selfReferral ? AttributionStatus.VOID : AttributionStatus.ACTIVE;
     const attribution = await db.attribution.upsert({
       where: { stripeSubscriptionId: externalSubId },
       update: {
         organizationId,
-        status,
+        status: attrStatus,
         influencerId: promo.influencerId,
         promoCodeId: promo.id,
       },
@@ -185,7 +187,7 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
         organizationId,
         stripeCustomerId: customerId,
         stripeSubscriptionId: externalSubId,
-        status,
+        status: attrStatus,
       },
     });
     await db.subscription.update({ where: { organizationId }, data: { attributionId: attribution.id } });
@@ -242,6 +244,24 @@ export async function accrueForInvoice(invoice: Stripe.Invoice, eventId?: string
   // subscription.updated, so a VOID stamp is not something to rely on.
   if (await isSelfReferral(attribution.influencerId, attribution.organizationId)) {
     return { skipped: "self-referral" as const };
+  }
+
+  // A suspended or terminated partner stops earning. requireInfluencer already
+  // refuses them the portal, so without this the ledger kept growing money they
+  // could not see, request or be told about — and the admin's owed-across-all
+  // -partners total kept climbing for a relationship that had ended.
+  //
+  // PENDING is deliberately NOT here: that is a partner who has an invite out
+  // and has not set a password yet. Their code can already be live, and the
+  // referral they brought in is owed to them.
+  //
+  // PromoCode.active is also deliberately not checked. Switching a code off
+  // stops NEW signups (validateAttribution refuses it) and leaves existing
+  // subscribers earning — a different lever from ending the relationship, and
+  // the one an admin reaches for when they only want to close the code.
+  const infStatus = attribution.influencer.status;
+  if (infStatus === InfluencerStatus.SUSPENDED || infStatus === InfluencerStatus.TERMINATED) {
+    return { skipped: "influencer-inactive" as const };
   }
 
   const promo = attribution.promoCode;

@@ -173,6 +173,38 @@ async function main() {
   ok("an attribution with no resolved organization is not treated as self-referral",
     (await isSelfReferral(outsider.id, null)) === false);
 
+  // ── PARTNER STATUS. A suspended or terminated partner stops earning; a
+  //    PENDING one (invite out, no password yet) keeps earning. ──
+  for (const [status, shouldAccrue] of [
+    ["ACTIVE", true],
+    ["PENDING", true],
+    ["SUSPENDED", false],
+    ["TERMINATED", false],
+  ] as const) {
+    await db.influencer.update({ where: { id: outsider.id }, data: { status } });
+    const res = (await accrueForInvoice(
+      invoice(`in_${P}st-${status}`, attrOut.stripeSubscriptionId, `ch_${P}st-${status}`, 6320),
+    )) as { accruedCents?: number; skipped?: string };
+    ok(
+      shouldAccrue ? `${status} keeps accruing` : `${status} stops accruing`,
+      shouldAccrue ? res.accruedCents === 1264 : res.skipped === "influencer-inactive",
+      res.accruedCents !== undefined ? `accrued ${cents(res.accruedCents)}` : `skipped: ${res.skipped}`,
+    );
+  }
+  await db.influencer.update({ where: { id: outsider.id }, data: { status: "ACTIVE" } });
+
+  // An inactive code is deliberately NOT the same lever: it closes the code to
+  // new signups and leaves existing subscribers earning. Pinned so a later
+  // change to that split is a deliberate one.
+  await db.promoCode.update({ where: { id: outsiderPromo.id }, data: { active: false } });
+  const rInactiveCode = (await accrueForInvoice(
+    invoice(`in_${P}codeoff`, attrOut.stripeSubscriptionId, `ch_${P}codeoff`, 6320),
+  )) as { accruedCents?: number; skipped?: string };
+  ok("an inactive promo code still accrues for subscribers already on it",
+    rInactiveCode.accruedCents === 1264,
+    rInactiveCode.accruedCents !== undefined ? `accrued ${cents(rInactiveCode.accruedCents)}` : `skipped: ${rInactiveCode.skipped}`);
+  await db.promoCode.update({ where: { id: outsiderPromo.id }, data: { active: true } });
+
   // ── THE WRITE-TIME STAMP. syncSubscriptionFromStripe upserts QA Co's billing
   //    mirror, so snapshot it and put it back afterwards. ──
   const mirrorBefore = await db.subscription.findUnique({ where: { organizationId: qaOrg.id } });
