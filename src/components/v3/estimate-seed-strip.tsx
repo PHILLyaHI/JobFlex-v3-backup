@@ -17,6 +17,9 @@ export function EstimateSeedStrip({ leadId, name, address }: { leadId: string; n
   return (
     <div
       className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--r-md)] border border-[color:var(--line)] bg-black/[0.03] px-3 py-2 text-[12.5px] dark:bg-white/[0.04]"
+      // Inline, because the blueprint shell's element reset (`.content *`)
+      // outranks the utility classes and left the strip a hairline (2026-09-22).
+      style={{ padding: "9px 14px", margin: "0 0 14px", border: "1.5px solid var(--ink, #0a0a0a)", background: "#fff", fontSize: 13 }}
       data-estimate-seed
     >
       <span className="quiet-caps">From the lead</span>

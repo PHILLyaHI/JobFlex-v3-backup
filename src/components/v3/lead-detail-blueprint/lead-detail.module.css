@@ -135,3 +135,9 @@
   :global(.jf-blueprint .content) .page-title { font-size: 34px; }
   :global(.jf-blueprint .content) .card { padding: 16px 16px 18px; }
 }
+
+/* The estimator buttons on a phone (2026-09-22): two to a row, thumb-sized. */
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .est-row form { flex: 1 1 calc(50% - 4px); }
+  :global(.jf-blueprint .content) .est-row .btn--sm { width: 100%; min-height: 44px; justify-content: center; }
+}

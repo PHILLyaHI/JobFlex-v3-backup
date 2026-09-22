@@ -5,11 +5,12 @@
 //                       must carry the full street address.
 //   estimatorFor      — which estimator a lead opens: roof → roof, fence →
 //                       fence, HVAC → hvac, everything else → the Smart
-//                       Proposal.
+//                       Proposal. The manual proposal is never the
+//                       recommendation, always a choice (owner, 2026-09-22).
 //   looksLikeStreetAddress — a number and a street word, not a city or ZIP.
 // The model call that writes the scope lives in lib/leadScope (server).
 
-export type EstimatorId = "roof" | "fence" | "hvac" | "smart";
+export type EstimatorId = "roof" | "fence" | "hvac" | "smart" | "manual";
 
 /** Work that is measured off the lot or the roof: the address is part of the request. */
 const PARCEL_WORK =
@@ -36,6 +37,7 @@ export const ESTIMATOR_PATH: Record<EstimatorId, string> = {
   fence: "/dashboard/fence-estimator",
   hvac: "/dashboard/hvac-estimator",
   smart: "/dashboard/advanced-ai",
+  manual: "/dashboard/manual-blueprint",
 };
 
 export const ESTIMATOR_LABEL: Record<EstimatorId, string> = {
@@ -43,6 +45,7 @@ export const ESTIMATOR_LABEL: Record<EstimatorId, string> = {
   fence: "Fence estimator",
   hvac: "HVAC estimator",
   smart: "Smart Proposal",
+  manual: "Manual proposal",
 };
 
 /** A street address, not just a city or a ZIP: a number followed by a street word. */

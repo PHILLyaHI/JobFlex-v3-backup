@@ -36,9 +36,14 @@ contractor pricing it, and where each piece lives.
 - **Lead page** (`/dashboard/leads/[id]`, a blueprint-shell page:
   `components/v3/lead-detail-blueprint`): "Scope of work" above "In the
   homeowner's words"; the job address, with a note when there is no street
-  address yet; and **Estimate this job** — four buttons, the lead's own
+  address yet; and **Estimate this job** — five buttons, the lead's own
   trade first and filled (`lib/leadRules` `estimatorFor`: Roofing → roof,
-  Fencing → fence, HVAC → hvac, everything else → Smart Proposal). Roof and
+  Fencing → fence, HVAC → hvac, everything else → Smart Proposal), and
+  **Manual proposal** last (owner, 2026-09-22): the sheet opens titled
+  "<project type> — <name>", the scope in Scope of work, the homeowner's own
+  words in Overview, the address on the sheet, and the client either the
+  record whose email or phone matches the lead or a one-off name with the
+  lead's email and phone in the contact, so a send makes the record. Roof and
   fence stay off until the lead has a street address. A lead without a
   scope (a request from before 2026-09-21, an import, a hand-typed lead)
   has a **Write the scope of work** button (`actions/leadEstimate`

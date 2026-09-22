@@ -21,6 +21,7 @@
 // this replaces carried a hard-coded date string.
 
 import { db } from "@/lib/db";
+import type { EstimateSeed } from "@/lib/estimateSeed";
 import { isEstimatorRole, isSalesRole } from "@/lib/orgContext";
 import { APPROVED_CO_SELECT } from "@/lib/contractTotal";
 import {
@@ -53,7 +54,29 @@ export type ManualBuilderData = {
   /** The project `?project=<id>` resolved to (for a NEW proposal), or the
    *  reopened proposal's own project, or null. */
   initialProjectId: string | null;
+  /** The lead this NEW sheet was opened from (2026-09-22), or null. When the
+   *  lead's email or phone matched a client on file, `initialClientId` names
+   *  that record; otherwise the sheet carries the lead's name as a one-off
+   *  client and its contact, and a send makes the record. */
+  seed: ManualSeed | null;
 };
+
+export type ManualSeed = {
+  leadId: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  state: string | null;
+  /** The sheet's title: the project type and the name. */
+  title: string;
+  /** The professional scope, else the homeowner's own words — the scope of work. */
+  brief: string;
+  /** The homeowner's own words, for the overview, when the brief is the professional scope. */
+  words: string | null;
+};
+
+const digits = (s: string | null | undefined) => (s ?? "").replace(/\D+/g, "");
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -96,6 +119,7 @@ export async function loadManualBuilder({
   clientId,
   proposalId,
   projectId,
+  seed: leadSeed,
 }: {
   organizationId: string;
   /** Active-org membership role — SALES and ESTIMATOR may only reopen their
@@ -105,6 +129,8 @@ export async function loadManualBuilder({
   clientId?: string;
   proposalId?: string;
   projectId?: string;
+  /** The lead hand-off (lib/estimateSeed), read by the page for the manual proposal. */
+  seed?: EstimateSeed | null;
 }): Promise<ManualBuilderData> {
   const ownProposalsOnly = isSalesRole(role) || isEstimatorRole(role);
 
@@ -249,10 +275,20 @@ export async function loadManualBuilder({
   const fromProject = !proposal && projectId ? (projectRows.find((p) => p.id === projectId) ?? null) : null;
   const initialProjectId = proposal ? (proposalRow?.projectId ?? null) : (fromProject?.id ?? null);
 
+  // A lead whose email or phone is already a client on file files under that
+  // record; the sheet then takes its address like any `?client=` would.
+  const seed = !proposal && leadSeed ? leadSeed : null;
+  const seedEmail = (seed?.email ?? "").trim().toLowerCase();
+  const seedPhone = digits(seed?.phone);
+  const matched = seed
+    ? (clientRows.find((c) => (seedEmail && (c.email ?? "").trim().toLowerCase() === seedEmail) || (seedPhone.length >= 7 && digits(c.phone) === seedPhone)) ?? null)
+    : null;
+
   const initialClientId =
     proposal?.clientId ??
     (clientId && clients.some((c) => c.id === clientId) ? clientId : null) ??
-    (fromProject?.clientId && clients.some((c) => c.id === fromProject.clientId) ? fromProject.clientId : null);
+    (fromProject?.clientId && clients.some((c) => c.id === fromProject.clientId) ? fromProject.clientId : null) ??
+    (matched ? matched.id : null);
 
   const now = new Date();
   const identity: SheetIdentity = {
@@ -277,5 +313,18 @@ export async function loadManualBuilder({
     proposalMissing,
     initialClientId,
     initialProjectId,
+    seed: seed
+      ? {
+          leadId: seed.leadId,
+          name: seed.name,
+          email: seed.email,
+          phone: seed.phone,
+          address: seed.address,
+          state: seed.state,
+          title: [seed.projectType, seed.name].filter((x) => x && x.trim()).join(" — ") || "New proposal",
+          brief: seed.brief,
+          words: seed.words,
+        }
+      : null,
   };
 }
