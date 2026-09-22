@@ -167,6 +167,7 @@ export function MobileSubscription({
   nextBill,
   trialEndsAt,
   cancelAtPeriodEnd,
+  complimentary,
   usage,
   invoices,
   nextCharge,
@@ -186,7 +187,7 @@ export function MobileSubscription({
 
   /* ---------- Derived, all from the server props ---------------------- */
 
-  const isTrial = status === "TRIALING";
+  const isTrial = status === "TRIALING" && !complimentary;
 
   // Pressure order. `slice()` first: the prop array is the server's and must
   // not be sorted in place.
@@ -339,14 +340,20 @@ export function MobileSubscription({
 
   /* ---------- Render ---------------------------------------------------- */
 
-  const billLabel = isTrial ? "Trial ends" : "Next bill";
-  const billValue = isTrial
-    ? trialEndsAt
-      ? longDate(trialEndsAt)
-      : "On trial"
-    : nextBill
-      ? longDate(nextBill)
-      : "—";
+  /* A complimentary plan (lib/planGrant) shows when it ends, never a next
+     bill — nothing is billed (owner, 2026-09-22). */
+  const billLabel = complimentary ? "Complimentary until" : isTrial ? "Trial ends" : "Next bill";
+  const billValue = complimentary
+    ? complimentary.endsAt
+      ? longDate(complimentary.endsAt)
+      : "No end date"
+    : isTrial
+      ? trialEndsAt
+        ? longDate(trialEndsAt)
+        : "On trial"
+      : nextBill
+        ? longDate(nextBill)
+        : "—";
 
   return (
     <div className="jf-mobile-subscription" onClick={onRootClick}>
@@ -400,15 +407,15 @@ export function MobileSubscription({
                   would collide, and here the row simply lays them out. */}
               <div className="jfms-heroHead">
                 <div className="jfms-heroMeta">Your plan</div>
-                <div className={`jfms-stamp ${stampTone(status)}`}>
-                  {status.replace(/_/g, " ").toLowerCase()}
+                <div className={`jfms-stamp ${complimentary ? "jfms-stOk" : stampTone(status)}`}>
+                  {complimentary ? "complimentary" : status.replace(/_/g, " ").toLowerCase()}
                 </div>
               </div>
               <h2 className="jfms-heroName">{planName}</h2>
               <div className="jfms-heroRow">
                 <span className="jfms-heroPrice">
-                  {priceCents !== null ? formatPlanPrice(priceCents) : "—"}
-                  {priceCents !== null ? <i>{priceCadence(true)}</i> : null}
+                  {complimentary ? "$0" : priceCents !== null ? formatPlanPrice(priceCents) : "—"}
+                  {complimentary ? <i>free of charge</i> : priceCents !== null ? <i>{priceCadence(true)}</i> : null}
                 </span>
               </div>
             </div>
@@ -418,9 +425,9 @@ export function MobileSubscription({
                 <span className="jfms-heroFactV">{billValue}</span>
               </div>
               <div className="jfms-heroFact">
-                <span className="jfms-heroFactL">Billing</span>
+                <span className="jfms-heroFactL">{complimentary ? "Then" : "Billing"}</span>
                 <span className="jfms-heroFactV">
-                  {priceCents === null ? "—" : "Per month"}
+                  {complimentary ? (complimentary.after === "free" ? "Free plan" : "Choose a plan") : priceCents === null ? "—" : "Per month"}
                 </span>
               </div>
             </div>
@@ -583,7 +590,7 @@ export function MobileSubscription({
               The desktop page's last row, the same component and the same
               money rule. Renders nothing without a live subscription. */}
           <CancelSubscription
-            status={status}
+            status={complimentary ? "COMPLIMENTARY" : status}
             planName={planName}
             endsAt={nextBill ?? trialEndsAt}
             cancelAtPeriodEnd={cancelAtPeriodEnd}

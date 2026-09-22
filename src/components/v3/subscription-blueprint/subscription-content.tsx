@@ -174,10 +174,13 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
     [props.plans],
   );
 
-  const statusLabel = props.status
-    ? props.status.charAt(0).toUpperCase() + props.status.slice(1).toLowerCase()
-    : "—";
-  const isTrial = props.status === "TRIALING";
+  const comp = props.complimentary;
+  const statusLabel = comp
+    ? "Complimentary"
+    : props.status
+      ? props.status.charAt(0).toUpperCase() + props.status.slice(1).toLowerCase()
+      : "—";
+  const isTrial = props.status === "TRIALING" && !comp;
   const nextCharge = props.nextCharge;
   const nextChargeItems = useMemo(() => (nextCharge ? nextChargeLines(nextCharge) : []), [nextCharge]);
 
@@ -237,7 +240,12 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
           <div className={cx("sub-hero-name")}>{props.planName}</div>
           <div className={cx("sub-hero-row")}>
             <span className={cx("sub-hero-price")}>
-              {props.priceCents === null ? (
+              {comp ? (
+                <>
+                  {"$0"}
+                  <i>/ mo · free of charge</i>
+                </>
+              ) : props.priceCents === null ? (
                 "—"
               ) : (
                 <>
@@ -256,16 +264,33 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
               as dates — "Sep 16, 2026", not an ISO timestamp (owner). A trial
               shows its end; an active plan shows its next bill. */}
           <div className={cx("sub-hero-facts")}>
-            {isTrial && props.trialEndsAt ? (
-              <div>
-                <span>Trial ends</span>
-                <b>{longDate(props.trialEndsAt)}</b>
-              </div>
-            ) : null}
-            <div>
-              <span>{isTrial ? "First bill" : "Next bill"}</span>
-              <b>{longDate(props.nextBill ?? props.trialEndsAt)}</b>
-            </div>
+            {comp ? (
+              /* A grant: when it ends and what follows — never a "next bill",
+                 because nothing is billed (owner, 2026-09-22). */
+              <>
+                <div>
+                  <span>Complimentary until</span>
+                  <b>{comp.endsAt ? longDate(comp.endsAt) : "No end date"}</b>
+                </div>
+                <div>
+                  <span>Then</span>
+                  <b>{comp.after === "free" ? "Free plan" : "Choose a plan"}</b>
+                </div>
+              </>
+            ) : (
+              <>
+                {isTrial && props.trialEndsAt ? (
+                  <div>
+                    <span>Trial ends</span>
+                    <b>{longDate(props.trialEndsAt)}</b>
+                  </div>
+                ) : null}
+                <div>
+                  <span>{isTrial ? "First bill" : "Next bill"}</span>
+                  <b>{longDate(props.nextBill ?? props.trialEndsAt)}</b>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </section>
@@ -512,7 +537,8 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
           handheld build; renders nothing when there is no live subscription. */}
       <div className={cx(RV)}>
         <CancelSubscription
-          status={props.status}
+          // A complimentary plan has no subscription to cancel; the row hides.
+          status={comp ? "COMPLIMENTARY" : props.status}
           planName={props.planName}
           endsAt={props.nextBill ?? props.trialEndsAt}
           cancelAtPeriodEnd={props.cancelAtPeriodEnd}

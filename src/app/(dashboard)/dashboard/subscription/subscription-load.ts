@@ -28,6 +28,7 @@ import { getOrgLimitUsage } from "@/lib/limitsEngine";
 import { LIMIT_DEFS } from "@/lib/planLimits";
 import { titleCaseSlug, type PlanDTO } from "@/lib/planCatalog";
 import type { SubscriptionInvoice } from "@/actions/billing";
+import { readPlanGrant } from "@/lib/planGrant";
 
 // The result shape. These interfaces lived in ./subscription-view.tsx until
 // 2026-08-13, when that desktop view was superseded by the blueprint page at
@@ -57,6 +58,9 @@ export interface SubscriptionViewProps {
   /** A cancellation is booked for the end of this cycle (billing.ts's
    *  cancelSubscription mirrors Stripe's cancel_at_period_end here). */
   cancelAtPeriodEnd: boolean;
+  /** The plan is a complimentary grant from JobFlex (lib/planGrant): nobody
+   *  pays, nothing is billed, and it ends on `endsAt` (null = no end date). */
+  complimentary: { endsAt: string | null; after: "free" | "expired" } | null;
   /** The limits engine's enforced caps for this org (unlimited keys omitted). */
   usage: UsageRow[];
   /** What the org has used on keys the plan does not cap — shown as counts. */
@@ -174,6 +178,17 @@ export async function loadSubscriptionData(
   // No subscription row → the stamp reads "inactive" (the Free tier is gone,
   // so absence of a subscription is no longer presented as a free plan).
   const status = sub?.status ?? "INACTIVE";
+  /* A COMPLIMENTARY PLAN (owner, 2026-09-22). A MANUAL row that is ACTIVE is a
+     grant from JobFlex: the page says so, shows when it ends, and previews no
+     bill — there is no Stripe subscription to bill, and the "estimate" the
+     page used to work out from the list price read as a charge that was
+     coming. The grant's own record has the end date; an older grant written
+     before the record existed falls back to the row's period end. */
+  const grant = sub?.provider === "MANUAL" && sub.status === "ACTIVE" ? await readPlanGrant(organizationId) : null;
+  const complimentary =
+    sub?.provider === "MANUAL" && sub.status === "ACTIVE"
+      ? { endsAt: grant?.endsAt ?? sub.currentPeriodEnd?.toISOString() ?? null, after: grant?.fallback ?? ("free" as const) }
+      : null;
   const { plan: planDto, rawPlan } = planContext;
 
   // Only finite caps render as usage bars; unlimited keys are omitted.
@@ -215,9 +230,11 @@ export async function loadSubscriptionData(
     .filter((r) => r.status === "PAID" && r.rewardAppliedAt)
     .map((r) => r.rewardCents ?? perReferralCents);
   const upcoming = invoiceResult.upcoming ?? null;
-  const billable = ["ACTIVE", "TRIALING", "PAST_DUE"].includes(status.toUpperCase());
+  const billable = ["ACTIVE", "TRIALING", "PAST_DUE"].includes(status.toUpperCase()) && !complimentary;
   let nextCharge: NextCharge | null = null;
-  if (upcoming) {
+  if (complimentary) {
+    nextCharge = null;
+  } else if (upcoming) {
     nextCharge = {
       dueAt: upcoming.dueAt ? new Date(upcoming.dueAt * 1000).toISOString() : null,
       subtotalCents: upcoming.subtotalCents,
@@ -264,9 +281,10 @@ export async function loadSubscriptionData(
     currentSlug: planDto?.slug ?? rawPlan.toLowerCase(),
     plans,
     status,
-    nextBill: sub?.currentPeriodEnd ? sub.currentPeriodEnd.toISOString() : null,
+    nextBill: !complimentary && sub?.currentPeriodEnd ? sub.currentPeriodEnd.toISOString() : null,
     trialEndsAt: sub?.trialEndsAt ? sub.trialEndsAt.toISOString() : null,
     cancelAtPeriodEnd: Boolean(sub?.canceledAt),
+    complimentary,
     usage,
     usageUnlimited,
     invoices: invoiceResult,
