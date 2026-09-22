@@ -1,0 +1,137 @@
+/* ============================================================
+   LEAD DETAIL — blueprint sheet (2026-09-22)
+   One lead under the blueprint shell, the same paper as the Leads
+   list it opens from: page head, two hairline cards, mono labels.
+   Head and button rules are the project-detail module's, verbatim,
+   so the two pages read as one design.
+   ── NO @keyframes (Lightning CSS rejects them in a module) ──
+   ── Light mode only. ──
+   ============================================================ */
+
+:global(.jf-blueprint .content) .page-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  margin-bottom: 14px;
+}
+:global(.jf-blueprint .content) .kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+:global(.jf-blueprint .content) .kicker::before {
+  content: '';
+  width: 7px; height: 7px;
+  background: var(--sky);
+  border-radius: 50%;
+}
+:global(.jf-blueprint .content) .page-title {
+  font-size: 46px; font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+  overflow-wrap: anywhere;
+}
+:global(.jf-blueprint .content) .page-actions { display: flex; gap: 10px; align-items: center; }
+
+:global(.jf-blueprint .content) svg.ic { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+:global(.jf-blueprint .content) .btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 0 16px;
+  height: 40px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+:global(.jf-blueprint .content) .btn .ic { width: 15px; height: 15px; }
+:global(.jf-blueprint .content) .btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint .content) .btn:active { transform: translate(0, 0); box-shadow: none; }
+:global(.jf-blueprint .content) .btn-primary { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .btn-primary:hover { background: var(--blueprint-dark); }
+:global(.jf-blueprint .content) .btn-ghost { background: #fff; color: var(--ink); }
+:global(.jf-blueprint .content) .btn-ghost:hover { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .btn--sm { height: 34px; padding: 0 12px; font-size: 11px; }
+:global(.jf-blueprint .content) .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+:global(.jf-blueprint .content) .btn:disabled:hover { transform: none; box-shadow: none; background: #fff; }
+
+/* ── the two cards ── */
+:global(.jf-blueprint .content) .grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) 2fr;
+  gap: 18px;
+  align-items: start;
+}
+:global(.jf-blueprint .content) .card {
+  background: #fff;
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px 24px;
+  position: relative;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+/* who */
+:global(.jf-blueprint .content) .who { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+:global(.jf-blueprint .content) .av {
+  width: 46px; height: 46px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: var(--border); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: 13px; font-weight: 800; letter-spacing: 0.08em;
+  background: var(--paper);
+}
+:global(.jf-blueprint .content) .who-n { font-size: 19px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+:global(.jf-blueprint .content) .who-s { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+
+/* key / value */
+:global(.jf-blueprint .content) .kv { margin: 0; }
+:global(.jf-blueprint .content) .kv dt {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--muted); margin-top: 14px; margin-bottom: 4px;
+}
+:global(.jf-blueprint .content) .kv dt:first-child { margin-top: 0; }
+:global(.jf-blueprint .content) .kv dd { margin: 0; font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .kv .mono { font-family: var(--font-mono); font-size: 12.5px; }
+:global(.jf-blueprint .content) .soft { color: var(--muted); }
+
+/* plates */
+:global(.jf-blueprint .content) .plates { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+:global(.jf-blueprint .content) .plate {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  background: #fff;
+}
+:global(.jf-blueprint .content) .plate--status { color: var(--blueprint); border-color: var(--blueprint); }
+:global(.jf-blueprint .content) .plate b { font-weight: 800; color: var(--blueprint); }
+
+/* sections */
+:global(.jf-blueprint .content) .sec-h {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--muted); margin: 0 0 8px;
+}
+:global(.jf-blueprint .content) .sec-h + .sec-h { margin-top: 18px; }
+:global(.jf-blueprint .content) .scope { font-size: 15px; line-height: 1.6; white-space: pre-wrap; margin: 0 0 18px; }
+:global(.jf-blueprint .content) .words { font-size: 13.5px; line-height: 1.55; color: var(--muted); white-space: pre-wrap; margin: 0; }
+:global(.jf-blueprint .content) .write { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
+:global(.jf-blueprint .content) .hint { font-size: 12px; line-height: 1.45; color: var(--muted); }
+
+/* the estimators */
+:global(.jf-blueprint .content) .est { margin-top: 20px; padding-top: 16px; border-top: 1.5px solid var(--ink); }
+:global(.jf-blueprint .content) .est .hint { display: block; margin: 0 0 12px; }
+:global(.jf-blueprint .content) .est-row { display: flex; flex-wrap: wrap; gap: 8px; }
+:global(.jf-blueprint .content) .est-row form { margin: 0; }
+
+@media (max-width: 900px) {
+  :global(.jf-blueprint .content) .grid { grid-template-columns: 1fr; }
+  :global(.jf-blueprint .content) .page-title { font-size: 34px; }
+  :global(.jf-blueprint .content) .card { padding: 16px 16px 18px; }
+}
