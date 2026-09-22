@@ -13,7 +13,7 @@ import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { ESTIMATOR_PATH, writeProfessionalScope, type EstimatorId } from "@/lib/leadScope";
 import { writeEstimateSeed } from "@/lib/estimateSeed";
 
-const ENGINES = new Set<string>(["roof", "fence", "hvac", "smart"]);
+const ENGINES = new Set<string>(["roof", "fence", "hvac", "smart", "manual"]);
 
 export async function startEstimateFromLead(leadId: string, estimator: string): Promise<void> {
   const { organizationId } = await requireEstimatorOrManager();
@@ -21,10 +21,12 @@ export async function startEstimateFromLead(leadId: string, estimator: string): 
   const engine = estimator as EstimatorId;
   const lead = await db.lead.findFirst({
     where: { id: leadId, organizationId },
-    select: { id: true, name: true, address: true, city: true, state: true, zip: true, description: true, scope: true },
+    select: { id: true, name: true, email: true, phone: true, address: true, city: true, state: true, zip: true, projectType: true, description: true, scope: true },
   });
   if (!lead) return;
   const address = [lead.address, lead.city, [lead.state, lead.zip].filter(Boolean).join(" ")].filter((s) => s && s.trim()).join(", ") || null;
+  const brief = (lead.scope ?? lead.description ?? "").trim();
+  const words = (lead.description ?? "").trim();
   await writeEstimateSeed({
     leadId: lead.id,
     organizationId,
@@ -32,7 +34,12 @@ export async function startEstimateFromLead(leadId: string, estimator: string): 
     name: lead.name,
     address,
     state: lead.state ?? null,
-    brief: (lead.scope ?? lead.description ?? "").trim(),
+    brief,
+    email: lead.email ?? null,
+    phone: lead.phone ?? null,
+    projectType: lead.projectType ?? null,
+    // The homeowner's own words beside the professional scope; nothing when they are the same text.
+    words: words && words !== brief ? words : null,
   });
   redirect(ESTIMATOR_PATH[engine] as Route);
 }

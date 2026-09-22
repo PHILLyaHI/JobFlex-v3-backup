@@ -25,6 +25,13 @@ export type EstimateSeed = {
   state: string | null;
   /** The professional scope, else the homeowner's own words. */
   brief: string;
+  /** For the manual proposal (2026-09-22): the contact a send makes the client
+   *  record from, the project type that names the sheet, and the homeowner's
+   *  own words for the overview when the brief is the professional scope. */
+  email: string | null;
+  phone: string | null;
+  projectType: string | null;
+  words: string | null;
 };
 
 export function encodeSeed(seed: EstimateSeed): string {
@@ -36,15 +43,20 @@ export function decodeSeed(raw: string | null | undefined): EstimateSeed | null 
   try {
     const s = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as Partial<EstimateSeed>;
     if (!s || typeof s.leadId !== "string" || typeof s.organizationId !== "string" || typeof s.brief !== "string") return null;
-    if (s.estimator !== "roof" && s.estimator !== "fence" && s.estimator !== "hvac" && s.estimator !== "smart") return null;
+    if (s.estimator !== "roof" && s.estimator !== "fence" && s.estimator !== "hvac" && s.estimator !== "smart" && s.estimator !== "manual") return null;
+    const text = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.slice(0, max) : null);
     return {
       leadId: s.leadId,
       organizationId: s.organizationId,
       estimator: s.estimator,
       name: typeof s.name === "string" ? s.name : "",
-      address: typeof s.address === "string" && s.address ? s.address : null,
-      state: typeof s.state === "string" && s.state ? s.state : null,
+      address: text(s.address, 300),
+      state: text(s.state, 8),
       brief: s.brief.slice(0, 6000),
+      email: text(s.email, 200),
+      phone: text(s.phone, 40),
+      projectType: text(s.projectType, 80),
+      words: text(s.words, 3000),
     };
   } catch {
     return null;

@@ -13,7 +13,9 @@ import styles from "./lead-detail.module.css";
 const cx = (...names: Array<string | false | null | undefined>) =>
   names.filter(Boolean).map((n) => styles[n as string] ?? n).join(" ");
 
-const ENGINES: EstimatorId[] = ["roof", "fence", "hvac", "smart"];
+// The manual proposal last (owner, 2026-09-22): the sheet opens with the
+// lead's name, contact, address and scope already on it.
+const ENGINES: EstimatorId[] = ["roof", "fence", "hvac", "smart", "manual"];
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);

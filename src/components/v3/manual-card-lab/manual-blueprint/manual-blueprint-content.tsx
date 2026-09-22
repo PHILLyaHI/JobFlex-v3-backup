@@ -59,6 +59,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { EstimateSeedStrip } from "@/components/v3/estimate-seed-strip";
 import type { Route } from "next";
 import { toast } from "@/components/ui/Toast";
 // One definition of the post-action hold, shared with the register surfaces.
@@ -170,9 +171,20 @@ function recordOf(clients: ClientRecord[], choice: ClientChoice): ClientRecord |
 function openingDraft(data: ManualBuilderData): Draft {
   const opened = data.proposal ? data.proposal.draft : emptyDraft(data.defaults);
   // A new proposal opened from a project page files under that project.
-  const base: Draft = !data.proposal && data.initialProjectId ? { ...opened, projectId: data.initialProjectId } : opened;
+  const filed: Draft = !data.proposal && data.initialProjectId ? { ...opened, projectId: data.initialProjectId } : opened;
+  // Opened from a lead (2026-09-22): the lead's words become the sheet —
+  // the title, the overview and the scope of work — before the client is
+  // settled below.
+  const seed = !data.proposal ? data.seed : null;
+  const base: Draft = seed ? { ...filed, title: seed.title, description: seed.words ?? "", scopeOfWork: seed.brief } : filed;
   const id = data.initialClientId;
-  if (!id) return base;
+  if (!id) {
+    if (!seed) return base;
+    // Nothing on file matched the lead's email or phone: a one-off name on
+    // the sheet, with the lead's address; the send makes the client record.
+    const next: Draft = { ...base, client: { mode: "freeText", name: seed.name }, address: seed.address ?? "" };
+    return withTax(next, seed.state ?? undefined);
+  }
   const rec = data.clients.find((c) => c.id === id);
   if (!rec) return base;
   const next: Draft = { ...base, client: { mode: "record", id } };
@@ -185,14 +197,22 @@ function openingDraft(data: ManualBuilderData): Draft {
 export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
   const [draft, setDraft] = useState<Draft>(() => openingDraft(data));
   const [clients, setClients] = useState<ClientRecord[]>(() => data.clients);
-  const [contact, setContact] = useState(() =>
-    contactOf(
+  const [contact, setContact] = useState(() => {
+    // A lead with no record on file: its email and phone are the contact,
+    // which is what a send needs to make the record (2026-09-22).
+    if (!data.proposal && data.seed && !data.initialClientId) return { email: data.seed.email ?? "", phone: data.seed.phone ?? "" };
+    return contactOf(
       data.clients,
       data.initialClientId
         ? { mode: "record", id: data.initialClientId }
         : { mode: "none" },
-    ),
-  );
+    );
+  });
+  // The lead this sheet was opened from, kept from the first render: mounting
+  // the strip spends the seed (a cookie delete in a server action), which
+  // re-renders the page without one, and a strip drawn by the page vanished
+  // a moment after it appeared. State here outlives that refresh.
+  const [fromLead] = useState(() => (!data.proposal ? data.seed : null));
   const router = useRouter();
   // Set on a successful save or send: the panel that says so out loud and then
   // hands over to the proposals list. The bar's status chip alone was too quiet
@@ -566,6 +586,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
 
   return (
     <div className={styles.page}>
+      {fromLead && <EstimateSeedStrip leadId={fromLead.leadId} name={fromLead.name} address={fromLead.address} />}
       <div className={cx("page-head", styles.head)} data-rv="">
         <div>
           <div className="kicker">Proposal builder</div>

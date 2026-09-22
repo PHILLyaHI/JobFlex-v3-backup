@@ -31,12 +31,23 @@ contractor pricing it, and where each piece lives.
 - **Leads page**: the table row and the offer card show the scope when there
   is one, else the description.
 - **Accepting an offer** copies the scope onto the company's `Lead.scope`.
-- **Lead page** (`/dashboard/leads/[id]`): "Scope of work" above "In the
+- **Leads list**: a row click or its › button opens the lead; the row shows
+  the scope's first line under the project.
+- **Lead page** (`/dashboard/leads/[id]`, a blueprint-shell page:
+  `components/v3/lead-detail-blueprint`): "Scope of work" above "In the
   homeowner's words"; the job address, with a note when there is no street
-  address yet; and **Estimate this job** — four buttons, the lead's own
+  address yet; and **Estimate this job** — five buttons, the lead's own
   trade first and filled (`lib/leadRules` `estimatorFor`: Roofing → roof,
-  Fencing → fence, HVAC → hvac, everything else → Smart Proposal). Roof and
-  fence stay off until the lead has a street address.
+  Fencing → fence, HVAC → hvac, everything else → Smart Proposal), and
+  **Manual proposal** last (owner, 2026-09-22): the sheet opens titled
+  "<project type> — <name>", the scope in Scope of work, the homeowner's own
+  words in Overview, the address on the sheet, and the client either the
+  record whose email or phone matches the lead or a one-off name with the
+  lead's email and phone in the contact, so a send makes the record. Roof and
+  fence stay off until the lead has a street address. A lead without a
+  scope (a request from before 2026-09-21, an import, a hand-typed lead)
+  has a **Write the scope of work** button (`actions/leadEstimate`
+  `writeLeadScope`).
 - **The hand-off** (`actions/leadEstimate` → `lib/estimateSeed`): the button
   writes a ten-minute, httpOnly cookie with the lead id, the address, the
   state and the brief (scope, else description), then redirects. The
@@ -54,8 +65,10 @@ contractor pricing it, and where each piece lives.
 
 - `scripts/qa/lead-scope.check.ts` — the rules, the paths, the seed round
   trip (pure, no model).
-- Stand walk `lead-handoff.js` (scratchpad): lead → each estimator, the
-  strip, the spent seed, the wizard's address rule.
+- Stand walks (scratchpad): `lead-handoff.js` (lead → each estimator, the
+  strip, the spent seed, the wizard's address rule), `leads-open.js` (the
+  list opens a lead), `write-scope.js`, `scope-step.js` (the wizard's scope
+  step; `BASE=https://www.jobflex.app` reads the live model without sending).
 
 ## Not done
 

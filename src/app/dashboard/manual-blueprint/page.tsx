@@ -39,6 +39,7 @@ import type { Metadata } from "next";
 import { NoOrgError, UnauthorizedError, requireOrg } from "@/lib/orgContext";
 import { ManualBlueprintContent } from "@/components/v3/manual-card-lab/manual-blueprint/manual-blueprint-content";
 import { loadManualBuilder } from "@/components/v3/manual-card-lab/manual-blueprint/manual-blueprint-load";
+import { readEstimateSeed } from "@/lib/estimateSeed";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,9 @@ export default async function ManualBlueprintPage({
   }
 
   const params = await searchParams;
+  // Opened from a lead (2026-09-22): the hand-off seed meant for the manual
+  // proposal, this company only; null otherwise, never an error.
+  const seed = await readEstimateSeed(ctx.organizationId, "manual").catch(() => null);
   const data = await loadManualBuilder({
     organizationId: ctx.organizationId,
     role: ctx.role,
@@ -77,6 +81,7 @@ export default async function ManualBlueprintPage({
     clientId: one(params.client),
     proposalId: one(params.proposal),
     projectId: one(params.project),
+    seed,
   });
 
   return <ManualBlueprintContent data={data} />;
