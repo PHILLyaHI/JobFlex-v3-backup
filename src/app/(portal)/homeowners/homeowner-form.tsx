@@ -2,7 +2,8 @@
 import * as React from "react";
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, ChevronRight, ChevronLeft } from "lucide-react";
+import { Check, ChevronRight, ChevronLeft, Mic } from "lucide-react";
+import { DictateButton } from "@/components/estimator/DictateButton";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
@@ -141,6 +142,19 @@ export function HomeownerForm() {
                 onChange={(e) => update("description", e.target.value)}
                 placeholder="Roof is 15 years old, has some missing shingles after the storm…"
                 hint="At least a sentence or two — specifics help contractors give a tighter quote."
+              />
+              {/* Press and speak — the words land in the field as they are
+                  recognised, as on the Smart Proposal (owner, 2026-09-21).
+                  Hidden where the browser cannot listen. */}
+              <DictateButton
+                value={values.description}
+                onChange={(next) => update("description", next)}
+                icon={<Mic className="h-4 w-4" aria-hidden="true" />}
+                label="Speak your project"
+                wrapClassName="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2"
+                buttonClassName="inline-flex h-11 items-center gap-2 rounded-[var(--r-md)] hairline bg-white px-4 text-[12px] font-semibold uppercase tracking-[0.08em] text-[color:var(--ink)] transition-colors hover:bg-black/[0.03] focus-ring"
+                onClassName="!text-[color:var(--rose)] shadow-[inset_0_0_0_1.5px_var(--rose)]"
+                noteClassName="basis-full text-[12.5px] text-[color:var(--rose)]"
               />
             </>
           )}

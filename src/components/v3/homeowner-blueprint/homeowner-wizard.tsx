@@ -16,6 +16,7 @@
 //     dragleave test reads `relatedTarget` against that exact element.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DictateButton, MicIcon } from "@/components/estimator/DictateButton";
 import { submitHomeownerRequest, suggestHomeownerQuestions } from "@/actions/homeowner";
 import {
   CATEGORIES,
@@ -312,6 +313,10 @@ export function HomeownerWizard() {
       <div className="desc-wrap">
         <textarea ref={attachDesc} className="desc" rows={3} aria-label="Describe your project"
           value={desc} onChange={(e) => setDesc(e.target.value)} />
+        {/* Press and speak — the words land in the field as they are recognised,
+            as on the Smart Proposal (owner, 2026-09-21). Hidden where the browser cannot listen. */}
+        <DictateButton value={desc} onChange={setDesc} icon={<MicIcon />} label="Speak your project"
+          wrapClassName="dictate" buttonClassName="mic" onClassName="on" noteClassName="dictate-note" />
 
         {suggested && !category ? (
           <button className="guess" type="button"

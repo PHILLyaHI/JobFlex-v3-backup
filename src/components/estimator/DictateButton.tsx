@@ -6,7 +6,33 @@
 // from the surface that mounts it, so the desktop console and the handheld
 // page each draw it in their own kit.
 
+import type { ReactNode } from "react";
 import { useDictation } from "@/hooks/useDictation";
+
+/** The microphone drawn inline — for pages with no sprite of their own (the homeowner portals, 2026-09-21). */
+export function MicIcon({ className = "ic" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0" />
+      <path d="M12 18v3" />
+      <path d="M8 21h8" />
+    </svg>
+  );
+}
+
+/**
+ * Put dictated text into an UNCONTROLLED textarea the way typing would: through
+ * the element's own value setter and an input event, so React's onChange runs
+ * and whatever the field does on typing (state, a category guess) still happens.
+ */
+export function setTextareaValue(el: HTMLTextAreaElement | null, next: string): void {
+  if (!el) return;
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+  if (setter) setter.call(el, next);
+  else el.value = next;
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}
 
 export function DictateButton({
   id,
@@ -18,6 +44,8 @@ export function DictateButton({
   noteClassName,
   iconId = "i-mic",
   iconClassName = "ic",
+  icon,
+  label = "Speak the brief",
 }: {
   id?: string;
   value: string;
@@ -29,6 +57,10 @@ export function DictateButton({
   noteClassName?: string;
   iconId?: string;
   iconClassName?: string;
+  /** An inline icon instead of the sprite symbol. */
+  icon?: ReactNode;
+  /** The resting label; while listening the button always says so. */
+  label?: string;
 }) {
   const d = useDictation(value, onChange);
   if (!d.supported) return null;
@@ -42,10 +74,12 @@ export function DictateButton({
         title={d.listening ? "Stop listening" : "Press and speak — the words type themselves"}
         onClick={d.toggle}
       >
-        <svg className={iconClassName} aria-hidden="true">
-          <use href={`#${iconId}`} />
-        </svg>
-        <span>{d.listening ? "Listening… press to stop" : "Speak the brief"}</span>
+        {icon ?? (
+          <svg className={iconClassName} aria-hidden="true">
+            <use href={`#${iconId}`} />
+          </svg>
+        )}
+        <span>{d.listening ? "Listening… press to stop" : label}</span>
       </button>
       {d.error ? (
         <span className={noteClassName} role="alert">
