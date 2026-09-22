@@ -95,19 +95,25 @@ export async function POST(req: Request) {
     livePriceId = price.stripePriceId;
   }
 
-  const [sub, org] = await Promise.all([
+  const [sub, org, priorAttribution] = await Promise.all([
     db.subscription.findUnique({ where: { organizationId } }),
     db.organization.findUnique({
       where: { id: organizationId },
       select: { signupPromoCodeId: true },
     }),
+    db.attribution.findFirst({ where: { organizationId }, select: { id: true } }),
   ]);
 
   // An organisation that has ever had a Stripe subscription is buying a
-  // successor (an upgrade) or coming back — not a first month. lib/checkoutDiscount
-  // gives it no discount and no promo field; the partner keeps earning because
+  // successor (an upgrade) or coming back — not a first month. Read from what
+  // lasts, not from the mirror's current link: an admin comp clears
+  // externalSubId on purpose (actions/adminUsers, DETACH_FROM_STRIPE) and keeps
+  // the customer, and a client with an attribution has subscribed before.
+  const everSubscribed = Boolean(sub?.externalSubId || sub?.externalCustomerId || priorAttribution);
+  // One that came through a partner keeps that partner: lib/checkoutDiscount
+  // offers the code again neither pre-applied nor through the typed field, and
   // the attribution moves to the new subscription on its own (lib/stripeSync).
-  const everSubscribed = Boolean(sub?.externalSubId);
+  const alreadyAttributed = Boolean(priorAttribution || org?.signupPromoCodeId);
 
   // Resolve a promo to auto-apply. Both paths re-validate against the DB (the
   // cookie is untrusted input); a dead/suspended code simply resolves to null.
@@ -259,6 +265,7 @@ export async function POST(req: Request) {
   // the discount the plan step promised was the bug the owner reported.
   const discount = checkoutDiscount({
     everSubscribed,
+    alreadyAttributed,
     promotionCode: autoApplyPromotionCode,
     referralCoupon,
   });

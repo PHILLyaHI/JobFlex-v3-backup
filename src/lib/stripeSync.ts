@@ -155,6 +155,10 @@ async function resolvePromoCode(discount: Stripe.Discount | null | undefined) {
  * can be delivered before its created event, and must not be skipped for it.
  */
 const attrSubAtKey = (attributionId: string) => `attributionSubAt:${attributionId}`;
+/** Which client row a subscription it has moved on from belongs to — so an
+ *  invoice of that old subscription, delivered or replayed after the move, is
+ *  still accrued to it (accrueForInvoice). */
+const attrFromKey = (subId: string) => `attributionFrom:${subId}`;
 
 async function carryAttributionToSubscription(opts: {
   toSubId: string;
@@ -188,6 +192,15 @@ async function carryAttributionToSubscription(opts: {
   const destMs = opts.subCreatedMs;
   if (Number.isFinite(refMs) && destMs <= refMs) return false;
 
+  if (prior.stripeSubscriptionId) {
+    await db.syncState
+      .upsert({
+        where: { key: attrFromKey(prior.stripeSubscriptionId) },
+        update: { cursor: prior.id },
+        create: { key: attrFromKey(prior.stripeSubscriptionId), cursor: prior.id },
+      })
+      .catch(() => {});
+  }
   await db.attribution.update({
     where: { id: prior.id },
     data: {
@@ -253,6 +266,15 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
   if (!organizationId) {
     const existing = await db.subscription.findFirst({ where: { externalSubId } });
     organizationId = existing?.organizationId ?? null;
+  }
+  if (!organizationId && customerId) {
+    // A subscription the mirror has moved on from is still this customer's. A
+    // signup-checkout subscription carries no organisation in its metadata, so
+    // once the org upgrades, the old one could no longer be mapped at all — and
+    // a referred signup whose first sync came before its organisation existed
+    // lost its partner for good.
+    const byCustomer = await db.subscription.findFirst({ where: { externalCustomerId: customerId } });
+    organizationId = byCustomer?.organizationId ?? null;
   }
   if (!organizationId) return; // can't map — leave for reconciliation once metadata is present
 
@@ -474,6 +496,19 @@ export async function accrueForInvoice(invoice: Stripe.Invoice, eventId?: string
         where: { stripeSubscriptionId: subId },
         include: { promoCode: true, influencer: true },
       });
+    } else {
+      // An invoice of a subscription this client has already moved on from —
+      // the month before an upgrade, delivered late or replayed by the reconcile
+      // cron. It is still the client's month: accrued to the same row, inside
+      // the same window, without moving the row back. Refusing it lost that
+      // month's commission and let a 7th month be paid in its place.
+      const from = await db.syncState.findUnique({ where: { key: attrFromKey(subId) } }).catch(() => null);
+      if (from) {
+        attribution = await db.attribution.findUnique({
+          where: { id: from.cursor },
+          include: { promoCode: true, influencer: true },
+        });
+      }
     }
   }
   if (!attribution || attribution.status !== AttributionStatus.ACTIVE) {

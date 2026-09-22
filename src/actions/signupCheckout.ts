@@ -29,7 +29,9 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { TRADE_TYPES } from "@/lib/tradeTypes";
+import type Stripe from "stripe";
 import { bindAttributionToOrg } from "@/lib/attribution";
+import { syncSubscriptionFromStripe } from "@/lib/stripeSync";
 import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { CUSTOM_PLAN_SLUG, normalizeCustomPages } from "@/lib/customPlan";
@@ -347,6 +349,7 @@ export async function completePendingSignup(
 
   let stripeCustomerId: string | null = null;
   let stripeSubscriptionId: string | null = null;
+  let stripeSubscription: Stripe.Subscription | null = null;
   let planSlug: string | null = null;
   let trialEnd: Date | null = null;
   let periodEnd: Date | null = null;
@@ -382,6 +385,7 @@ export async function completePendingSignup(
       if (sub && typeof sub !== "string") {
         if (sub.status === "trialing") analyticsOutcome = "trial_started";
         stripeSubscriptionId = sub.id;
+        stripeSubscription = sub;
         trialEnd = sub.trial_end ? new Date(sub.trial_end * 1000) : null;
         periodEnd = sub.current_period_end ? new Date(sub.current_period_end * 1000) : null;
       } else if (typeof sub === "string") {
@@ -540,6 +544,19 @@ export async function completePendingSignup(
         console.warn("[signup] referral settle failed:", err),
       );
     }
+  }
+
+  // THE PARTNER'S ATTRIBUTION, written now rather than left to the webhook. At
+  // session creation there was no organisation for the subscription's metadata
+  // to name, so customer.subscription.created could not be mapped and wrote
+  // nothing; the next event used to repair it — unless the shop upgraded first,
+  // and the replacement carries no code. The subscription came back expanded
+  // with the session above, so this costs no Stripe call. Best-effort: the
+  // webhook and the reconcile cron still get their turn.
+  if (stripeSubscription) {
+    await syncSubscriptionFromStripe(stripeSubscription).catch((err) =>
+      console.warn("[signup] subscription sync failed:", err),
+    );
   }
 
   // The intent is spent; the done marker takes its place (see loadDone).

@@ -10,12 +10,15 @@
 // commission window with it.
 //
 // So a checkout for an organisation that has EVER had a Stripe subscription
-// carries no discount at all, and no promo field either — with the field open
-// the customer could simply type the partner's code again. That is the same
-// predicate the referral coupon already used ("ONCE, on the first bill only",
-// owner 2026-09-04). The partner keeps earning across the upgrade: the
-// attribution now lives on the organisation and moves to the new subscription
-// by itself (lib/stripeSync, carryAttributionToSubscription).
+// pre-applies nothing — the same predicate the referral coupon already used
+// ("ONCE, on the first bill only", owner 2026-09-04). If that organisation
+// already came through a partner, the promo field stays closed too: with it
+// open the customer could simply type the partner's code again. The partner
+// keeps earning across the upgrade: the attribution lives on the organisation
+// and moves to the new subscription by itself (lib/stripeSync,
+// carryAttributionToSubscription). An existing customer that never had a
+// partner keeps the field, as before — closing it for everyone also shut out
+// every other Stripe code (retention, support) on every upgrade.
 //
 // What Stripe does on its own: a discount attached through Checkout is a
 // SUBSCRIPTION-level discount. A new subscription does not inherit it; only a
@@ -32,12 +35,18 @@ export type CheckoutDiscount =
 export function checkoutDiscount(opts: {
   /** The organisation has had a Stripe subscription before (an upgrade or a return). */
   everSubscribed: boolean;
+  /** The organisation already came through a partner (an attribution, or a signup stamp). */
+  alreadyAttributed: boolean;
   /** The partner's promotion code, already resolved for this Stripe mode. */
   promotionCode: string | null;
   /** The member-referral coupon, when this is a referred shop's first bill. */
   referralCoupon: string | null;
 }): CheckoutDiscount {
-  if (opts.everSubscribed) return { kind: "none", params: {} };
+  if (opts.everSubscribed) {
+    return opts.alreadyAttributed
+      ? { kind: "none", params: {} }
+      : { kind: "open", params: { allow_promotion_codes: true } };
+  }
   if (opts.promotionCode) return { kind: "promo", params: { discounts: [{ promotion_code: opts.promotionCode }] } };
   if (opts.referralCoupon) return { kind: "referral", params: { discounts: [{ coupon: opts.referralCoupon }] } };
   return { kind: "open", params: { allow_promotion_codes: true } };

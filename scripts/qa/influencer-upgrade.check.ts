@@ -9,6 +9,11 @@
 // the subscription is new; commission after the upgrade is on the new invoice
 // amount; the upgrade checkout does not pass the discount code again.
 //
+// H–J (review follow-ups): a pre-upgrade invoice delivered after the move is
+// still the client's month; a signup subscription first synced before its
+// organisation existed keeps its partner through an upgrade; a comped or
+// never-referred organisation gets the right checkout.
+//
 // G: the billing mirror follows only forward as well — the reconcile replay of
 // the cancelled predecessor must not take QA Co's mirror back to it (FREE limits
 // while paying, and a next checkout that replaces nothing), nor overwrite a comp.
@@ -44,7 +49,7 @@ const t = (iso: string) => Math.floor(Date.parse(iso) / 1000);
 function subscription(o: {
   id: string;
   customer: string;
-  orgId: string;
+  orgId: string | null;
   promotionCodeId: string | null;
   created: number;
   status?: string;
@@ -55,7 +60,7 @@ function subscription(o: {
     customer: o.customer,
     status: o.status ?? "active",
     created: o.created,
-    metadata: { organizationId: o.orgId },
+    metadata: o.orgId ? { organizationId: o.orgId } : {},
     items: { data: [{ price: { id: o.price ?? `price_${P}79` } }] },
     current_period_end: o.created + 30 * 86400,
     canceled_at: o.status === "canceled" ? o.created + 60 : null,
@@ -111,6 +116,7 @@ async function cleanup() {
   const ids = infs.map((i) => i.id);
   const attrs = await db.attribution.findMany({ where: { influencerId: { in: ids } }, select: { id: true } });
   await db.syncState.deleteMany({ where: { key: { in: attrs.map((a) => `attributionSubAt:${a.id}`) } } });
+  await db.syncState.deleteMany({ where: { key: { startsWith: `attributionFrom:sub_${P}` } } });
   if (ids.length) {
     await db.commissionLedger.deleteMany({ where: { influencerId: { in: ids } } });
     await db.attribution.deleteMany({ where: { influencerId: { in: ids } } });
@@ -222,7 +228,7 @@ async function main() {
     mNow = await mirror();
     ok("…and so does a late event of it while still live", mNow?.provider === "MANUAL" && mNow?.externalSubId === null, JSON.stringify(mNow));
     const LATER = `sub_${P}later`;
-    await syncSubscriptionFromStripe(subscription({ id: LATER, customer: CUS, orgId: org, promotionCodeId: null, created: Math.floor(Date.now() / 1000) + 60 }));
+    await syncSubscriptionFromStripe(subscription({ id: LATER, customer: CUS, orgId: org, promotionCodeId: null, created: Math.floor(Date.now() / 1000) }));
     mNow = await mirror();
     ok("a subscription bought after the comp does take it over", mNow?.externalSubId === LATER && mNow?.provider === "STRIPE", JSON.stringify(mNow));
     await cleanup();
@@ -268,22 +274,89 @@ async function main() {
     ok("moved to the new subscription and still VOID", ev[0]?.stripeSubscriptionId === `sub_${P}void2` && ev[0]?.status === "VOID", JSON.stringify(ev[0]));
     await cleanup();
 
+    // ═══ H. The month before the upgrade, delivered after it ═══
+    head("H · month 3's invoice lands after the upgrade moved the client: still paid, still counted");
+    const h1 = await partnerWithPromo("late3");
+    const CUSH = `cus_${P}late3`;
+    const H_OLD = `sub_${P}late3-old`;
+    const H_NEW = `sub_${P}late3-new`;
+    await syncSubscriptionFromStripe(subscription({ id: H_OLD, customer: CUSH, orgId: org, promotionCodeId: h1.promo.stripePromotionCodeId, created: t("2026-06-01T00:00:00Z") }));
+    await accrueForInvoice(invoice({ id: `in_${P}h1`, sub: H_OLD, customer: CUSH, paid: 6320, created: t("2026-06-01T00:00:10Z") }));
+    await accrueForInvoice(invoice({ id: `in_${P}h2`, sub: H_OLD, customer: CUSH, paid: 7900, created: t("2026-07-01T00:00:00Z") }));
+    await syncSubscriptionFromStripe(subscription({ id: H_NEW, customer: CUSH, orgId: org, promotionCodeId: null, created: t("2026-08-15T00:00:00Z"), price: `price_${P}149` }));
+    const h3 = (await accrueForInvoice(invoice({ id: `in_${P}h3`, sub: H_OLD, customer: CUSH, paid: 7900, created: t("2026-08-01T00:00:00Z") }))) as { accruedCents?: number; skipped?: string };
+    attrs = await attributionsFor(org);
+    ok("the old subscription's month 3 accrues 1580¢ to the same client — the row stays on the new subscription",
+      h3.accruedCents === 1580 && attrs.length === 1 && attrs[0].stripeSubscriptionId === H_NEW && attrs[0].qualifyingMonths === 3,
+      `${JSON.stringify(h3)} · ${JSON.stringify(attrs[0])}`);
+    const hNew: (number | string)[] = [];
+    for (const [i, month] of ["2026-08-15", "2026-09-15", "2026-10-15", "2026-11-15"].entries()) {
+      const r = (await accrueForInvoice(invoice({ id: `in_${P}hn${i}`, sub: H_NEW, customer: CUSH, paid: 14900, created: t(`${month}T00:00:05Z`) }))) as { accruedCents?: number; skipped?: string };
+      hNew.push(r.accruedCents ?? r.skipped ?? "?");
+    }
+    ok("the new subscription pays months 4–6 and refuses a 7th", hNew.join(",") === "2980,2980,2980,outside-window", hNew.join(", "));
+    const hAgain = (await accrueForInvoice(invoice({ id: `in_${P}h3`, sub: H_OLD, customer: CUSH, paid: 7900, created: t("2026-08-01T00:00:00Z") }))) as { skipped?: string };
+    const hRows = await db.commissionLedger.count({ where: { stripeInvoiceId: `in_${P}h3` } });
+    ok("replaying it writes nothing and counts nothing", Boolean(hAgain.skipped) && hRows === 1 && (await attributionsFor(org))[0]?.qualifyingMonths === 6, `${hAgain.skipped} · ${hRows} row(s)`);
+    await cleanup();
+
+    // ═══ I. A signup subscription synced before its organisation existed ═══
+    head("I · signup: the first sync cannot map the subscription; an upgrade follows; the partner is not lost");
+    const i1 = await partnerWithPromo("signup");
+    const CUSI = `cus_${P}signup`;
+    const I_OLD = `sub_${P}signup-old`;
+    const I_NEW = `sub_${P}signup-new`;
+    // customer.subscription.created, before the completion page made the org: no metadata, no mirror.
+    await syncSubscriptionFromStripe(subscription({ id: I_OLD, customer: CUSI, orgId: null, promotionCodeId: i1.promo.stripePromotionCodeId, created: t("2026-06-01T00:00:00Z") }));
+    ok("set-up: nothing could be written yet", (await attributionsFor(org)).length === 0);
+    // The completion page writes the mirror (its own upsert, no sync — the old behaviour).
+    // A brand-new organisation has no mirror reference yet.
+    await db.syncState.deleteMany({ where: { key: refKey } });
+    await db.subscription.upsert({
+      where: { organizationId: org },
+      update: { status: "ACTIVE", provider: "STRIPE", externalCustomerId: CUSI, externalSubId: I_OLD },
+      create: { organizationId: org, plan: "STARTER", status: "ACTIVE", provider: "STRIPE", externalCustomerId: CUSI, externalSubId: I_OLD },
+    });
+    // The upgrade, before any other event for the old subscription.
+    await syncSubscriptionFromStripe(subscription({ id: I_NEW, customer: CUSI, orgId: org, promotionCodeId: null, created: t("2026-07-10T00:00:00Z"), price: `price_${P}149` }));
+    // The reconcile cron: newest first — the new subscription, then the old one (now cancelled).
+    await syncSubscriptionFromStripe(subscription({ id: I_NEW, customer: CUSI, orgId: org, promotionCodeId: null, created: t("2026-07-10T00:00:00Z"), price: `price_${P}149` }));
+    await syncSubscriptionFromStripe(subscription({ id: I_OLD, customer: CUSI, orgId: null, promotionCodeId: i1.promo.stripePromotionCodeId, created: t("2026-06-01T00:00:00Z"), status: "canceled" }));
+    const iNew = (await accrueForInvoice(invoice({ id: `in_${P}i2`, sub: I_NEW, customer: CUSI, paid: 14900, created: t("2026-07-10T00:00:05Z") }))) as { accruedCents?: number };
+    const iOld = (await accrueForInvoice(invoice({ id: `in_${P}i1`, sub: I_OLD, customer: CUSI, paid: 6320, created: t("2026-06-01T00:00:10Z") }))) as { accruedCents?: number };
+    attrs = await attributionsFor(org);
+    ok("the old subscription is mapped through its customer: one attribution, on the new subscription, both months paid",
+      attrs.length === 1 && attrs[0].stripeSubscriptionId === I_NEW && attrs[0].qualifyingMonths === 2 && iNew.accruedCents === 2980 && iOld.accruedCents === 1264,
+      `${JSON.stringify(attrs)} · new ${JSON.stringify(iNew)} · old ${JSON.stringify(iOld)}`);
+    const mI = await mirror();
+    ok("…and the mirror stays on the new subscription", mI?.externalSubId === I_NEW && mI?.status === "ACTIVE", JSON.stringify(mI));
+    const signupSrc = readFileSync("src/actions/signupCheckout.ts", "utf8");
+    ok("the completion page now syncs the expanded subscription itself, after writing the mirror",
+      signupSrc.indexOf("syncSubscriptionFromStripe(stripeSubscription)") > signupSrc.indexOf("where: { organizationId: orgId }"));
+    await cleanup();
+
     // ═══ F. The coupon is not issued a second time ═══
     head("F · the upgrade checkout passes no code and opens no promo field");
-    const upg = checkoutDiscount({ everSubscribed: true, promotionCode: "promo_live_x", referralCoupon: "coupon_ref" });
-    ok("a replacement checkout carries no discount and no promo field",
+    const upg = checkoutDiscount({ everSubscribed: true, alreadyAttributed: true, promotionCode: "promo_live_x", referralCoupon: "coupon_ref" });
+    ok("a referred client's replacement checkout carries no discount and no promo field",
       upg.kind === "none" && !("discounts" in upg.params) && !("allow_promotion_codes" in upg.params), JSON.stringify(upg));
+    const plain = checkoutDiscount({ everSubscribed: true, alreadyAttributed: false, promotionCode: "promo_live_x", referralCoupon: "coupon_ref" });
+    ok("an existing customer that never had a partner: nothing pre-applied, the field open as before",
+      plain.kind === "open" && !("discounts" in plain.params), JSON.stringify(plain));
     ok("the first subscription still gets the partner's code",
-      checkoutDiscount({ everSubscribed: false, promotionCode: "promo_live_x", referralCoupon: null }).kind === "promo");
+      checkoutDiscount({ everSubscribed: false, alreadyAttributed: true, promotionCode: "promo_live_x", referralCoupon: null }).kind === "promo");
     ok("…or the referral coupon, or an open field when there is neither",
-      checkoutDiscount({ everSubscribed: false, promotionCode: null, referralCoupon: "c" }).kind === "referral" &&
-        checkoutDiscount({ everSubscribed: false, promotionCode: null, referralCoupon: null }).kind === "open");
+      checkoutDiscount({ everSubscribed: false, alreadyAttributed: false, promotionCode: null, referralCoupon: "c" }).kind === "referral" &&
+        checkoutDiscount({ everSubscribed: false, alreadyAttributed: false, promotionCode: null, referralCoupon: null }).kind === "open");
     const route = readFileSync("src/app/api/checkout/subscription/route.ts", "utf8");
     ok("the route decides everSubscribed before resolving any promo, and asks checkoutDiscount",
       route.indexOf("const everSubscribed") > -1 &&
         route.indexOf("const everSubscribed") < route.indexOf("let promoForCheckout") &&
         /org\?\.signupPromoCodeId && !everSubscribed/.test(route) &&
-        /checkoutDiscount\(\{\s*everSubscribed/.test(route));
+        /checkoutDiscount\(\{\s*everSubscribed,\s*alreadyAttributed/.test(route));
+    ok("a comp does not make a client new again: everSubscribed also reads the customer and any attribution",
+      /const everSubscribed = Boolean\(sub\?\.externalSubId \|\| sub\?\.externalCustomerId \|\| priorAttribution\)/.test(route) &&
+        /const alreadyAttributed = Boolean\(priorAttribution \|\| org\?\.signupPromoCodeId\)/.test(route));
     ok("nothing in the code sets a customer-level discount a new subscription could inherit",
       !/customers\.(create|update)\([\s\S]{0,300}(coupon|promotion_code)/.test(readFileSync("src/lib/referralRewards.ts", "utf8")));
   } finally {
