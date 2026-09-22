@@ -8,6 +8,8 @@
 // because a rejection with no reason is a partner writing in to ask why.
 // Writes go to approvePayoutRequest / rejectPayoutRequest (existing); the
 // page is a server component, so `router.refresh()` is the update.
+// A reversed transfer is settled here too: Retry payout / Write off on its
+// request, and "Mark settled" on a transfer Stripe reversed only in part.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -17,6 +19,7 @@ import {
   approvePayoutRequest,
   rejectPayoutRequest,
   retryReversedPayout,
+  settlePartialPayoutReversal,
   writeOffPayout,
 } from "@/actions/influencers";
 import {
@@ -45,6 +48,10 @@ export interface PayoutRequestDTO {
   rejectedReason: string | null;
   createdAt: string;
   approvedAt: string | null;
+  /** REVERSED only: what Write off would close — the net of the commissions the
+   *  transfer carried, after any refund or chargeback since — and what it netted
+   *  for other payments, which stays on the balance (lib/payouts). */
+  writeOff: { closesCents: number; standsCents: number } | null;
 }
 export interface TransferDTO {
   id: string;
@@ -53,6 +60,8 @@ export interface TransferDTO {
   status: string;
   stripeTransferId: string | null;
   failureReason: string | null;
+  /** Stripe reversed part of it; a person settles the rest (lib/payouts). */
+  partialReversal: boolean;
   createdAt: string;
   paidAt: string | null;
 }
@@ -105,6 +114,7 @@ const FILTERS: { key: Filter; label: string; match: (s: string) => boolean }[] =
 
 type RejectHandle = { open: (req: PayoutRequestDTO) => void };
 type WriteOffHandle = { open: (req: PayoutRequestDTO) => void };
+type SettleHandle = { open: (t: TransferDTO) => void };
 
 export function AdminPayoutsContent({
   requests,
@@ -122,6 +132,7 @@ export function AdminPayoutsContent({
   const [error, setError] = useState<string | null>(null);
   const rejectRef = useRef<RejectHandle | null>(null);
   const writeOffRef = useRef<WriteOffHandle | null>(null);
+  const settleRef = useRef<SettleHandle | null>(null);
 
   const counts = useMemo(() => {
     const c = {} as Record<Filter, number>;
@@ -170,7 +181,9 @@ export function AdminPayoutsContent({
       } else {
         toast.success(
           "Returned to balance",
-          `${money(r.amountCents / 100)} is payable to ${r.influencerName} again. They can request it.`,
+          res.held
+            ? `${money(res.releasedCents / 100)} is back with ${r.influencerName}. Part of it stays on hold while a customer dispute is open.`
+            : `${money(res.releasedCents / 100)} is payable to ${r.influencerName} again. They can request it.`,
         );
       }
       router.refresh();
@@ -365,6 +378,16 @@ export function AdminPayoutsContent({
                     {t.stripeTransferId ?? "—"}
                     {t.failureReason ? ` · ${t.failureReason}` : ""}
                   </Meta>
+                  {t.partialReversal ? (
+                    <button
+                      className={cx("btn", ui.btnGhost, ui.btnSm, styles.settleBtn)}
+                      type="button"
+                      onClick={() => settleRef.current?.open(t)}
+                    >
+                      <Ic name="check" />
+                      Mark settled
+                    </button>
+                  ) : null}
                 </div>
                 <div className={cx(ui.tdAmt, t.status === "PAID" && styles.amtOk)}>
                   <span className={ui.tdLbl}>Amount</span>
@@ -382,6 +405,7 @@ export function AdminPayoutsContent({
 
       <RejectSheet handleRef={rejectRef} />
       <WriteOffSheet handleRef={writeOffRef} />
+      <SettleSheet handleRef={settleRef} />
     </div>
   );
 }
@@ -519,7 +543,10 @@ function WriteOffSheet({ handleRef }: { handleRef: React.RefObject<WriteOffHandl
         setError(res.error);
         return;
       }
-      toast.success("Written off", "The request is closed with your note.");
+      toast.success(
+        "Written off",
+        `${money(res.writtenOffCents / 100)} closed with your note — it will not be paid.`,
+      );
       close();
       router.refresh();
     } catch (err) {
@@ -557,7 +584,15 @@ function WriteOffSheet({ handleRef }: { handleRef: React.RefObject<WriteOffHandl
         <form onSubmit={submit} noValidate>
           <div className={styles.rejectWho}>
             <b>{money(req.amountCents / 100)}</b> to {req.influencerName} was reversed by Stripe. Writing it
-            off closes it for good — it will not be paid.
+            off closes <b>{money((req.writeOff?.closesCents ?? req.amountCents) / 100)}</b> of commission for
+            good — it will not be paid.
+            {req.writeOff && req.writeOff.standsCents !== 0
+              ? req.writeOff.standsCents < 0
+                ? ` The ${money(-req.writeOff.standsCents / 100)} it deducted for other payments stays owed.`
+                : ` The ${money(req.writeOff.standsCents / 100)} it carried for other payments stays on the balance.`
+              : req.writeOff && req.writeOff.closesCents !== req.amountCents
+                ? " That is what is still owed after refunds and chargebacks since the payout."
+                : ""}
           </div>
           <div className="mf">
             <label className="mf-lbl" htmlFor="payWriteOff">
@@ -571,6 +606,106 @@ function WriteOffSheet({ handleRef }: { handleRef: React.RefObject<WriteOffHandl
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Reversed after the partner's bank account was closed."
+            />
+          </div>
+        </form>
+      )}
+    </Sheet>
+  );
+}
+
+/* ============================================================
+   MARK SETTLED — a transfer Stripe reversed only in part
+   ============================================================ */
+
+function SettleSheet({ handleRef }: { handleRef: React.RefObject<SettleHandle | null> }) {
+  const router = useRouter();
+  const [tr, setTr] = useState<TransferDTO | null>(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  const { ref: mdlRef, open: openMdlDialog, close } = useMdl();
+  const open = useCallback(
+    (t: TransferDTO) => {
+      setTr(t);
+      setNote("");
+      setError(null);
+      setBusy(false);
+      openMdlDialog();
+      requestAnimationFrame(() => requestAnimationFrame(() => areaRef.current?.focus()));
+    },
+    [openMdlDialog],
+  );
+  useEffect(() => {
+    handleRef.current = { open };
+  }, [handleRef, open]);
+
+  async function submit(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (busy || !tr) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await settlePartialPayoutReversal(tr.id, note.trim());
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      toast.success("Marked settled", "The note is on the transfer, and Health no longer flags it.");
+      close();
+      router.refresh();
+    } catch (err) {
+      setError(actionError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet
+      mdlRef={mdlRef}
+      title="Settle partial reversal"
+      titleId="paySettleTitle"
+      onClose={close}
+      error={error}
+      foot={
+        <>
+          <button className="btn btn-ghost" type="button" onClick={close} disabled={busy}>
+            Not yet
+          </button>
+          <button
+            className={cx("btn", ui.btnOk, busy && ui.btnBusy)}
+            type="button"
+            onClick={() => submit()}
+            disabled={busy || !tr}
+          >
+            <Ic name="check" />
+            {busy ? "Saving…" : "Mark settled"}
+          </button>
+        </>
+      }
+    >
+      {!tr ? null : (
+        <form onSubmit={submit} noValidate>
+          <div className={styles.rejectWho}>
+            Stripe reversed part of <b>{money(tr.amountCents / 100)}</b> to {tr.influencerName}. Settle the
+            difference in Stripe first — re-send it by hand if it is owed — then record what you did. The
+            ledger is not changed.
+          </div>
+          <div className="mf">
+            <label className="mf-lbl" htmlFor="paySettle">
+              What was done
+            </label>
+            <textarea
+              className={cx("mf-in", ui.area)}
+              id="paySettle"
+              ref={areaRef}
+              rows={3}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Re-sent the difference by hand on Sept 21."
             />
           </div>
         </form>

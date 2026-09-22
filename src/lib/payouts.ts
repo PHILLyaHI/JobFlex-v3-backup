@@ -139,6 +139,9 @@ export function transferArgsFor(
  */
 
 const RETRY_WINDOW_MS = 20 * 60 * 60 * 1000; // inside Stripe's 24h key retention
+
+/** Step 6 found the transfer already PAID or REVERSED — nothing to write. */
+class BooksClosedElsewhere extends Error {}
 const IN_RUN_ATTEMPTS = 3;
 
 /** The one Stripe method this needs, so the loop can be driven by a stub. */
@@ -352,37 +355,47 @@ export async function processApprovedPayouts(transfers: TransferApi, now: Date =
       });
     }
 
-    // ── 6. Close the books for exactly the reserved rows. ──
+    // ── 6. Close the books for exactly the reserved rows — only while the
+    //       transfer is still open. A transfer.reversed that lands between step 5
+    //       and here has already moved the rows to REVERSED_TRANSFER and marked
+    //       the request for the admin; writing PAID over that would record a
+    //       payout with nothing to offset it. ──
+    const tr = transferRow;
+    const txId = stripeTransferId;
     try {
-      await db.$transaction([
-        db.commissionLedger.updateMany({
-          where: { payoutTransferId: transferRow.id, state: LedgerEntryState.CLEARED },
+      await db.$transaction(async (tx) => {
+        const claimed = await tx.payoutTransfer.updateMany({
+          where: { id: tr.id, status: { notIn: [PayoutTransferStatus.PAID, PayoutTransferStatus.REVERSED] } },
+          data: { status: PayoutTransferStatus.PAID, paidAt: new Date() },
+        });
+        if (claimed.count === 0) throw new BooksClosedElsewhere();
+        await tx.commissionLedger.updateMany({
+          where: { payoutTransferId: tr.id, state: LedgerEntryState.CLEARED },
           data: { state: LedgerEntryState.PAID },
-        }),
-        db.commissionLedger.create({
+        });
+        await tx.commissionLedger.create({
           data: {
             influencerId: inf.id,
             attributionId: null,
             entryType: LedgerEntryType.PAID,
-            amountCents: -transferRow.amountCents,
-            currency: transferRow.currency,
+            amountCents: -tr.amountCents,
+            currency: tr.currency,
             state: LedgerEntryState.PAID,
-            payoutTransferId: transferRow.id,
-            idempotencyKey: `pay:${stripeTransferId}`,
-            memo: `Payout transfer ${stripeTransferId}`,
+            payoutTransferId: tr.id,
+            idempotencyKey: `pay:${txId}`,
+            memo: `Payout transfer ${txId}`,
           },
-        }),
-        db.payoutTransfer.update({
-          where: { id: transferRow.id },
-          data: { status: PayoutTransferStatus.PAID, paidAt: new Date() },
-        }),
-        db.payoutRequest.update({
+        });
+        await tx.payoutRequest.update({
           where: { id: reqRow.id },
-          data: { status: PayoutRequestStatus.PAID, amountCents: transferRow.amountCents },
-        }),
-      ]);
+          data: { status: PayoutRequestStatus.PAID, amountCents: tr.amountCents },
+        });
+      });
       paid++;
     } catch (err) {
+      // Closed by an overlapping run, or reversed by Stripe first: either way the
+      // transfer's state is already settled by someone else.
+      if (err instanceof BooksClosedElsewhere) continue;
       // An overlapping run can take a PROCESSING request too: both send the same
       // key (Stripe hands both the one transfer) and the second to reach the books
       // hits the unique `pay:<transfer>` key. If the transfer is already PAID the
@@ -512,8 +525,40 @@ export async function releaseReversedPayout(requestId: string, at: Date = new Da
   return { ok: true as const, releasedCents: res.releasedCents, heldRows };
 }
 
-/** Write off: the money is not paid. The rows close as VOID and an ADJUSTMENT
- *  records the write-off, so the balance is zero and the journal says why. */
+/**
+ * What Write off would close, from the rows a reversed transfer holds.
+ *
+ * It closes the COMMISSIONS the transfer carried, at their net: each accrual,
+ * with every refund, chargeback or adjustment of that same payment. Anything
+ * else the transfer netted — a clawback of some other payment, owed whatever
+ * happens to this transfer — goes back to the balance as it was. Used by the
+ * write-off itself and by the admin page, so the sheet says what the button does.
+ */
+export function splitReversedRows<
+  R extends { id: string; amountCents: number; entryType: string; stripeInvoiceId: string | null },
+>(rows: R[]) {
+  const carried = new Set(
+    rows
+      .filter((r) => r.entryType === LedgerEntryType.ACCRUED && r.stripeInvoiceId)
+      .map((r) => r.stripeInvoiceId as string),
+  );
+  const closes = rows.filter(
+    (r) => r.entryType === LedgerEntryType.ACCRUED || (r.stripeInvoiceId !== null && carried.has(r.stripeInvoiceId)),
+  );
+  const closing = new Set(closes.map((r) => r.id));
+  const stands = rows.filter((r) => !closing.has(r.id));
+  return {
+    carried: [...carried],
+    closes,
+    stands,
+    closesCents: closes.reduce((n, r) => n + r.amountCents, 0),
+  };
+}
+
+/** Write off: the money is not paid. The commissions the transfer carried close
+ *  as VOID at their net and an ADJUSTMENT records the write-off, so the journal
+ *  says why — and the partner never ends up owing money on a commission they
+ *  never received. */
 export async function writeOffReversedPayout(requestId: string, note: string, at: Date = new Date()) {
   return db.$transaction(async (tx) => {
     const req = await tx.payoutRequest.findUnique({
@@ -539,20 +584,29 @@ export async function writeOffReversedPayout(requestId: string, note: string, at
     const ids = req.transfers.map((t) => t.id);
     const rows = await tx.commissionLedger.findMany({
       where: { payoutTransferId: { in: ids }, state: LedgerEntryState.REVERSED_TRANSFER },
-      select: { amountCents: true },
+      select: { id: true, amountCents: true, entryType: true, stripeInvoiceId: true },
     });
-    const total = rows.reduce((n, r) => n + r.amountCents, 0);
+    const { carried, closes, stands, closesCents } = splitReversedRows(rows);
+
     await tx.commissionLedger.updateMany({
-      where: { payoutTransferId: { in: ids }, state: LedgerEntryState.REVERSED_TRANSFER },
+      where: { id: { in: closes.map((r) => r.id) } },
       data: { state: LedgerEntryState.VOID },
     });
-    if (total !== 0) {
+    // Netted into this transfer, but owed for a payment it did not carry: the
+    // debt stands, back on the balance.
+    if (stands.length) {
+      await tx.commissionLedger.updateMany({
+        where: { id: { in: stands.map((r) => r.id) } },
+        data: { state: LedgerEntryState.CLEARED, payoutTransferId: null },
+      });
+    }
+    if (closesCents !== 0) {
       await tx.commissionLedger.create({
         data: {
           influencerId: req.influencerId,
           attributionId: null,
           entryType: LedgerEntryType.ADJUSTMENT,
-          amountCents: -total,
+          amountCents: -closesCents,
           currency: req.currency,
           state: LedgerEntryState.VOID,
           idempotencyKey: `transfer-written-off:${requestId}`,
@@ -560,6 +614,67 @@ export async function writeOffReversedPayout(requestId: string, note: string, at
         },
       });
     }
-    return { ok: true as const, writtenOffCents: total };
+    // A refund of a written-off commission that a LATER payout already netted
+    // took real money off the partner for a commission they will now never
+    // receive. It comes back.
+    let returnedCents = 0;
+    if (carried.length) {
+      const settled = await tx.commissionLedger.findMany({
+        where: {
+          influencerId: req.influencerId,
+          stripeInvoiceId: { in: carried },
+          entryType: LedgerEntryType.REVERSED,
+          OR: [
+            { state: LedgerEntryState.PAID },
+            { state: LedgerEntryState.CLEARED, payoutTransferId: { not: null } },
+          ],
+        },
+        select: { id: true, amountCents: true, currency: true, stripeInvoiceId: true, stripeChargeId: true },
+      });
+      for (const r of settled) {
+        await tx.commissionLedger.create({
+          data: {
+            influencerId: req.influencerId,
+            attributionId: null,
+            entryType: LedgerEntryType.ADJUSTMENT,
+            amountCents: -r.amountCents,
+            currency: r.currency,
+            state: LedgerEntryState.CLEARED,
+            stripeInvoiceId: r.stripeInvoiceId,
+            stripeChargeId: r.stripeChargeId,
+            idempotencyKey: `transfer-written-off:${requestId}:${r.id}`,
+            memo: `Refund deduction returned — its commission was written off on ${when}`,
+          },
+        });
+        returnedCents += -r.amountCents;
+      }
+    }
+    return { ok: true as const, writtenOffCents: closesCents, returnedCents };
   });
+}
+
+/* ── A PARTIAL REVERSAL, SETTLED BY A PERSON ────────────────
+ *
+ * handleTransferEvent cannot split a partly reversed transfer across its rows,
+ * so it marks the transfer and the Health row asks someone to settle it in
+ * Stripe — re-send the difference by hand, or decide it is not owed. This
+ * records that it was done, with a note, and clears the Health row. The ledger
+ * is not touched: re-sending by hand makes "paid" true again, and anything else
+ * is the note's to explain.
+ */
+const PARTIAL_PREFIX = "Partially reversed: ";
+
+export async function settlePartialReversal(transferId: string, note: string, at: Date = new Date()) {
+  const t = await db.payoutTransfer.findUnique({ where: { id: transferId }, select: { failureReason: true } });
+  const reason = t?.failureReason ?? "";
+  if (!reason.startsWith(PARTIAL_PREFIX)) return { ok: false as const, reason: "not-partial" };
+  const part = reason.slice(PARTIAL_PREFIX.length).replace(/ — settle it in Stripe, then here\.$/, "");
+  const clean = note.trim();
+  const res = await db.payoutTransfer.updateMany({
+    where: { id: transferId, failureReason: reason },
+    data: {
+      failureReason: `Partial reversal of ${part} settled on ${at.toISOString().slice(0, 10)}${clean ? `: ${clean}` : "."}`,
+    },
+  });
+  return res.count ? { ok: true as const } : { ok: false as const, reason: "not-partial" };
 }

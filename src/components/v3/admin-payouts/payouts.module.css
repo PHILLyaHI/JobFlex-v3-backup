@@ -26,6 +26,9 @@
 :global(.jf-blueprint .content .pmdl) .rejectWho { font-size: 13.5px; line-height: 1.5; margin-bottom: 14px; overflow-wrap: anywhere; }
 :global(.jf-blueprint .content .pmdl) .rejectWho b { font-weight: 900; font-variant-numeric: tabular-nums; }
 
+/* "Mark settled" sits under a partly reversed transfer's reference line. */
+:global(.jf-blueprint .content) .settleBtn { margin-top: 8px; }
+
 @media (max-width: 860px) {
   :global(.jf-blueprint .content) .bannerX { padding: 12px; }
 }

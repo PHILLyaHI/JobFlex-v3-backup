@@ -655,6 +655,11 @@ async function applyRefundReversal(opts: {
 
   let reversedTotal = 0;
   for (const accrual of accruals) {
+    // VOID is closed: a written-off commission (lib/payouts) was never received,
+    // and a charged-back one is already netted to zero. Reversing it again would
+    // charge the partner for money they never had — and its offset is an
+    // ADJUSTMENT, which the sum below does not see.
+    if (accrual.state === LedgerEntryState.VOID) continue;
     const desiredReversed = Math.round(accrual.amountCents * ratio);
 
     // How much we've already reversed for this accrual's invoice.
@@ -1086,22 +1091,49 @@ export async function handleTransferEvent(transfer: Stripe.Transfer, reversed: b
     return { skipped: "partial-reversal" as const };
   }
 
-  const booksClosed = await db.commissionLedger.findFirst({
-    where: { payoutTransferId: row.id, entryType: LedgerEntryType.PAID },
-    select: { id: true },
-  });
   const when = at.toISOString().slice(0, 10);
 
-  await db.$transaction(async (tx) => {
+  const moved = await db.$transaction(async (tx) => {
+    // Re-read inside the transaction: the payout run closing its books and this
+    // reversal can land together, and each must see what the other wrote.
+    const current = await tx.payoutTransfer.findUnique({ where: { id: row.id }, select: { status: true } });
+    if (current?.status === PayoutTransferStatus.REVERSED) return null;
+    const booksClosed = await tx.commissionLedger.findFirst({
+      where: { payoutTransferId: row.id, entryType: LedgerEntryType.PAID },
+      select: { id: true },
+    });
     // The rows this transfer paid (or had reserved, if the books never closed).
-    const moved = await tx.commissionLedger.updateMany({
-      where: {
-        payoutTransferId: row.id,
-        entryType: { not: LedgerEntryType.PAID },
-        state: { in: [LedgerEntryState.PAID, LedgerEntryState.CLEARED] },
-      },
+    const paidRows = {
+      payoutTransferId: row.id,
+      entryType: { not: LedgerEntryType.PAID },
+      state: { in: [LedgerEntryState.PAID, LedgerEntryState.CLEARED] },
+    };
+    const accruals = await tx.commissionLedger.findMany({
+      where: { ...paidRows, entryType: LedgerEntryType.ACCRUED },
+      select: { stripeInvoiceId: true },
+    });
+    const movedRows = await tx.commissionLedger.updateMany({
+      where: paidRows,
       data: { state: LedgerEntryState.REVERSED_TRANSFER },
     });
+    // A refund or a lost chargeback of a commission this transfer paid, written
+    // after the payout, is a clawback not tied to any transfer. It waits with the
+    // transfer too, so Retry payout returns the NET and Write off closes the NET
+    // whichever order the events came in — left behind, it went on deducting
+    // from later commissions after the commission itself was written off.
+    const invoices = accruals.map((a) => a.stripeInvoiceId).filter((id): id is string => Boolean(id));
+    if (invoices.length) {
+      await tx.commissionLedger.updateMany({
+        where: {
+          influencerId: row.influencerId,
+          stripeInvoiceId: { in: invoices },
+          entryType: { in: [LedgerEntryType.REVERSED, LedgerEntryType.ADJUSTMENT] },
+          state: LedgerEntryState.CLEARED,
+          payoutTransferId: null,
+        },
+        data: { state: LedgerEntryState.REVERSED_TRANSFER, payoutTransferId: row.id },
+      });
+    }
     if (booksClosed) {
       await tx.commissionLedger.create({
         data: {
@@ -1130,11 +1162,13 @@ export async function handleTransferEvent(transfer: Stripe.Transfer, reversed: b
         },
       });
     }
-    return moved.count;
+    return movedRows.count;
   }).catch((e: unknown) => {
     if (!isUniqueViolation(e)) throw e; // the offset for this transfer already exists
+    return null;
   });
-  return { reversedRows: true };
+  if (moved === null) return { skipped: "already-reversed" as const };
+  return { reversedRows: moved };
 }
 
 function isUniqueViolation(e: unknown): boolean {

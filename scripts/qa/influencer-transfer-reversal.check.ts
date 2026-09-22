@@ -8,6 +8,13 @@
 // admin chooses Retry payout (rows back to CLEARED, the partner may request
 // again) or Write off (closed with a note). Idempotent by transfer id.
 //
+// 9–14 cover what the first version got wrong: a refund or chargeback written
+// between the payout and the reversal travels with the transfer, so Retry and
+// Write off act on the NET; Write off closes only the commissions the transfer
+// carried and returns a clawback a later payout already took; nothing is taken
+// after a write-off; a partial reversal can be marked settled; and a reversal
+// that beats the run's own bookkeeping is not written over.
+//
 // Rows are written in **QA Co** (slug `qa-co`), prefixed `qa-rev-`, and deleted
 // on the way out, pass or fail. Payouts run through processApprovedPayouts with a
 // recording stub in place of stripe.transfers.
@@ -17,10 +24,17 @@ delete process.env.STRIPE_SECRET_KEY_TEST;
 
 import { readFileSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
-import { accrueForInvoice, handleTransferEvent, reverseForCharge } from "../../src/lib/stripeSync";
+import {
+  accrueForInvoice,
+  handleTransferEvent,
+  holdForDispute,
+  reverseForCharge,
+  settleDispute,
+} from "../../src/lib/stripeSync";
 import {
   processApprovedPayouts,
   releaseReversedPayout,
+  settlePartialReversal,
   writeOffReversedPayout,
   type TransferApi,
 } from "../../src/lib/payouts";
@@ -75,8 +89,8 @@ async function invariant(label: string, influencerId: string) {
     `balance ${c(bal.balanceCents)} · cleared ${c(bal.clearedCents)} · reversed ${c(bal.reversedTransferCents)} · paid out ${c(bal.paidOutCents)} · paid-net ${c(paidNet)} · void-net ${c(voidNet)}`);
 }
 
-/** A partner with `accruals` cleared, approved for `approved`, paid by the stub. */
-async function paidPartner(suffix: string, qaOrgId: string, accruals: number[], approved: number) {
+/** A partner with an ACTIVE attribution in QA Co and nothing earned yet. */
+async function newPartner(suffix: string, qaOrgId: string) {
   const inf = await db.influencer.create({
     data: {
       email: `${P}${suffix}@jobflex.test`,
@@ -112,6 +126,12 @@ async function paidPartner(suffix: string, qaOrgId: string, accruals: number[], 
       status: "ACTIVE",
     },
   });
+  return { inf, sub };
+}
+
+/** A partner with `accruals` cleared, approved for `approved`, paid by the stub. */
+async function paidPartner(suffix: string, qaOrgId: string, accruals: number[], approved: number) {
+  const { inf, sub } = await newPartner(suffix, qaOrgId);
   for (const [i, paid] of accruals.entries()) {
     await accrueForInvoice(invoice(`in_${P}${suffix}${i}`, sub, `ch_${P}${suffix}${i}`, paid));
   }
@@ -136,6 +156,7 @@ async function cleanup() {
     await db.promoCode.deleteMany({ where: { influencerId: { in: ids } } });
     await db.influencer.deleteMany({ where: { id: { in: ids } } });
   }
+  await db.syncState.deleteMany({ where: { key: { startsWith: `dispute:ch_${P}` } } });
   return ids.length;
 }
 
@@ -268,6 +289,120 @@ async function main() {
   ok("the payout loop does not re-send a reversed transfer", s7.calls.length === 0);
   await invariant("reversed before books closed", f.inf.id);
 
+  // ═══ 9. A clawback written between the payout and the reversal ═══
+  head("9 · refunded after the payout, then the transfer is reversed: Write off closes the NET");
+  const h = await paidPartner("clawwo", qaOrg.id, [7900], 1580);
+  await reverseForCharge({ id: `ch_${P}clawwo0`, amount: 7900, amount_refunded: 3950, invoice: `in_${P}clawwo0` } as never);
+  bk = await books(h.inf.id);
+  ok("set-up: the refund is a −790¢ clawback, CLEARED and not tied to any transfer",
+    bk.rows.some((r) => r.entryType === "REVERSED" && r.state === "CLEARED" && r.payoutTransferId === null && r.amountCents === -790));
+  await handleTransferEvent(stripeTransfer(h.transfer.stripeTransferId!, 1580, 1580), true, when);
+  bk = await books(h.inf.id);
+  ok("the clawback waits with the transfer — 790¢ net held, nothing left deducting",
+    bk.bal.reversedTransferCents === 790 && bk.bal.clearedCents === 0 &&
+      bk.rows.filter((r) => r.entryType === "REVERSED").every((r) => r.state === "REVERSED_TRANSFER" && r.payoutTransferId === h.transfer.id),
+    `reversed ${c(bk.bal.reversedTransferCents)} · cleared ${c(bk.bal.clearedCents)}`);
+  const hWo = await writeOffReversedPayout(h.req.id, "Wrong payee");
+  bk = await books(h.inf.id);
+  ok("Write off closes 790¢ — balance 0, the partner owes nothing on money never received",
+    hWo.ok && hWo.writtenOffCents === 790 && bk.bal.balanceCents === 0 && bk.bal.clearedCents === 0, JSON.stringify(hWo));
+  await accrueForInvoice(invoice(`in_${P}clawwo1`, `sub_${P}clawwo`, `ch_${P}clawwo1`, 7900));
+  await db.commissionLedger.updateMany({ where: { influencerId: h.inf.id, state: "PENDING" }, data: { state: "CLEARED" } });
+  ok("the next 1580¢ commission is payable in full", (await books(h.inf.id)).bal.clearedCents === 1580);
+  await invariant("clawback then reversal, written off", h.inf.id);
+
+  head("9b · charged back after the payout, then reversed: Retry returns the net — nothing");
+  const h2 = await paidPartner("cbretry", qaOrg.id, [7900], 1580);
+  await holdForDispute({ id: `du_${P}cb`, charge: `ch_${P}cbretry0`, status: "needs_response", created: 0 } as never);
+  await settleDispute({ id: `du_${P}cb`, charge: `ch_${P}cbretry0`, status: "lost", created: 0 } as never, `evt_${P}cb`);
+  await handleTransferEvent(stripeTransfer(h2.transfer.stripeTransferId!, 1580, 1580), true, when);
+  const h2r = await releaseReversedPayout(h2.req.id);
+  bk = await books(h2.inf.id);
+  ok("the chargeback travelled with the transfer; Retry releases 0¢ net and the balance is 0",
+    h2r.ok && h2r.releasedCents === 0 && bk.bal.balanceCents === 0 && bk.bal.clearedCents === 0, JSON.stringify(h2r));
+  await invariant("chargeback then reversal, retried", h2.inf.id);
+
+  // ═══ 10. The clawback was already netted into a later payout ═══
+  head("10 · refunded, the clawback netted into a LATER payout, then the first transfer is reversed and written off");
+  const k = await paidPartner("elsewhere", qaOrg.id, [7900], 1580);
+  await reverseForCharge({ id: `ch_${P}elsewhere0`, amount: 7900, amount_refunded: 3950, invoice: `in_${P}elsewhere0` } as never);
+  await accrueForInvoice(invoice(`in_${P}elsewhere1`, `sub_${P}elsewhere`, `ch_${P}elsewhere1`, 7900));
+  await db.commissionLedger.updateMany({ where: { influencerId: k.inf.id, state: "PENDING" }, data: { state: "CLEARED" } });
+  await db.payoutRequest.create({ data: { influencerId: k.inf.id, amountCents: 790, currency: "usd", status: "APPROVED" } });
+  const s10 = stub();
+  await processApprovedPayouts(s10.api);
+  ok("set-up: the second payout sent 1580 − 790 = 790¢", s10.calls[0]?.amount === 790, JSON.stringify(s10.calls));
+  await handleTransferEvent(stripeTransfer(k.transfer.stripeTransferId!, 1580, 1580), true, when);
+  const kWo = await writeOffReversedPayout(k.req.id, "Recovered by the bank");
+  bk = await books(k.inf.id);
+  ok("the 790¢ the later payout took for it comes back — earned 1580 (the rest written off), received 790",
+    kWo.ok && kWo.writtenOffCents === 1580 && kWo.returnedCents === 790 && bk.bal.clearedCents === 790 && bk.bal.balanceCents === 790,
+    `${JSON.stringify(kWo)} · cleared ${c(bk.bal.clearedCents)}`);
+  await invariant("clawback netted elsewhere, written off", k.inf.id);
+
+  // ═══ 11. A clawback of ANOTHER payment rode the reversed transfer ═══
+  head("11 · the transfer netted a refund of a commission it did not pay: Write off leaves that debt standing");
+  const m = await newPartner("foreign", qaOrg.id);
+  await accrueForInvoice(invoice(`in_${P}foreign0`, m.sub, `ch_${P}foreign0`, 7900));
+  await accrueForInvoice(invoice(`in_${P}foreign1`, m.sub, `ch_${P}foreign1`, 7900));
+  await db.commissionLedger.updateMany({ where: { influencerId: m.inf.id }, data: { state: "CLEARED" } });
+  await reverseForCharge({ id: `ch_${P}foreign1`, amount: 7900, amount_refunded: 3950, invoice: `in_${P}foreign1` } as never);
+  const mReq = await db.payoutRequest.create({ data: { influencerId: m.inf.id, amountCents: 790, currency: "usd", status: "APPROVED" } });
+  const s11 = stub();
+  await processApprovedPayouts(s11.api);
+  const mT = await db.payoutTransfer.findUnique({ where: { idempotencyKey: `payout:${mReq.id}` } });
+  await handleTransferEvent(stripeTransfer(mT!.stripeTransferId!, 790, 790), true, when);
+  const mWo = await writeOffReversedPayout(mReq.id, "Wrong payee");
+  bk = await books(m.inf.id);
+  ok("the commission it paid closes (1580¢); the other payment's −790¢ refund stays owed against its 1580¢",
+    mWo.ok && mWo.writtenOffCents === 1580 && bk.bal.clearedCents === 790 && bk.bal.balanceCents === 790,
+    `${JSON.stringify(mWo)} · cleared ${c(bk.bal.clearedCents)}`);
+  await invariant("foreign clawback, written off", m.inf.id);
+
+  // ═══ 12. After a write-off, nothing more is taken ═══
+  head("12 · a refund or a lost dispute after Write off takes nothing more");
+  await reverseForCharge({ id: `ch_${P}writeoff0`, amount: 7900, amount_refunded: 7900, invoice: `in_${P}writeoff0` } as never);
+  await holdForDispute({ id: `du_${P}wo`, charge: `ch_${P}writeoff0`, status: "needs_response", created: 0 } as never);
+  await settleDispute({ id: `du_${P}wo`, charge: `ch_${P}writeoff0`, status: "lost", created: 0 } as never, `evt_${P}wo`);
+  bk = await books(b.inf.id);
+  ok("no new row, balance still 0, VOID still nets to zero",
+    bk.rows.filter((r) => r.entryType === "REVERSED").length === 0 && bk.bal.balanceCents === 0 && bk.voidNet === 0,
+    `${bk.rows.length} rows · balance ${c(bk.bal.balanceCents)} · void-net ${c(bk.voidNet)}`);
+  await invariant("refund after write-off", b.inf.id);
+
+  // ═══ 13. A partial reversal, settled by a person ═══
+  head("13 · Mark settled clears the partial reversal from Health, once");
+  const st = await settlePartialReversal(e.transfer.id, "Re-sent the $5.00 by hand", new Date("2026-09-28T00:00:00Z"));
+  const eT = await db.payoutTransfer.findUnique({ where: { id: e.transfer.id } });
+  ok("the transfer records what was done, with the date",
+    st.ok && /^Partial reversal of \$5\.00 of \$15\.80 settled on 2026-09-28: Re-sent the \$5\.00 by hand$/.test(eT?.failureReason ?? ""),
+    eT?.failureReason ?? "");
+  ok("Health no longer lists it", !/partially reversed/.test((await checkInfluencerPayouts(new Date().toISOString())).reason));
+  ok("a second click does nothing", !(await settlePartialReversal(e.transfer.id, "again")).ok);
+
+  // ═══ 14. Reversed before our books closed, inside the same run ═══
+  head("14 · Stripe reverses the transfer before the run writes PAID: the run does not write over it");
+  const g = await newPartner("race", qaOrg.id);
+  await accrueForInvoice(invoice(`in_${P}race0`, g.sub, `ch_${P}race0`, 7900));
+  await db.commissionLedger.updateMany({ where: { influencerId: g.inf.id }, data: { state: "CLEARED" } });
+  const gReq = await db.payoutRequest.create({ data: { influencerId: g.inf.id, amountCents: 1580, currency: "usd", status: "APPROVED" } });
+  await processApprovedPayouts({
+    async create(p, o) {
+      // The transfer.reversed webhook is handled before this run reaches step 6.
+      const id = `tr_${P}race`;
+      const row = await db.payoutTransfer.findUnique({ where: { idempotencyKey: o.idempotencyKey } });
+      await db.payoutTransfer.update({ where: { id: row!.id }, data: { stripeTransferId: id } });
+      await handleTransferEvent(stripeTransfer(id, p.amount, p.amount), true, when);
+      return { id };
+    },
+  });
+  bk = await books(g.inf.id);
+  const gReqAfter = await db.payoutRequest.findUnique({ where: { id: gReq.id } });
+  ok("no PAID entry, the rows still wait for the admin, the request still says reversed",
+    !bk.rows.some((r) => r.entryType === "PAID") && bk.bal.reversedTransferCents === 1580 && gReqAfter?.status === "REVERSED",
+    `${gReqAfter?.status} · reversed ${c(bk.bal.reversedTransferCents)} · ${bk.rows.map((r) => r.entryType).join(",")}`);
+  await invariant("reversed mid-run", g.inf.id);
+
   // ═══ 8. Wiring ═══
   head("8 · wiring");
   const route = readFileSync("src/app/api/webhooks/stripe/route.ts", "utf8");
@@ -276,7 +411,8 @@ async function main() {
   const actions = readFileSync("src/actions/influencers.ts", "utf8");
   ok("both admin actions are gated and call the lib",
     /export async function retryReversedPayout[\s\S]{0,200}requirePlatformAdmin\(\)[\s\S]{0,120}releaseReversedPayout\(/.test(actions) &&
-      /export async function writeOffPayout[\s\S]{0,200}requirePlatformAdmin\(\)[\s\S]{0,200}writeOffReversedPayout\(/.test(actions));
+      /export async function writeOffPayout[\s\S]{0,200}requirePlatformAdmin\(\)[\s\S]{0,200}writeOffReversedPayout\(/.test(actions) &&
+      /export async function settlePartialPayoutReversal[\s\S]{0,200}requirePlatformAdmin\(\)[\s\S]{0,120}settlePartialReversal\(/.test(actions));
 
   console.log(`\n${passes} passed, ${failures} failed`);
   const removed = await cleanup();

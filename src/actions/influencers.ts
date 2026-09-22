@@ -8,7 +8,12 @@ import { db } from "@/lib/db";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
 import { assertStripeWriteAllowed, isStripeWriteAllowed } from "@/lib/stripeSafety";
 import { ledgerBalances } from "@/lib/commission";
-import { payoutRequestRefusal, releaseReversedPayout, writeOffReversedPayout } from "@/lib/payouts";
+import {
+  payoutRequestRefusal,
+  releaseReversedPayout,
+  settlePartialReversal,
+  writeOffReversedPayout,
+} from "@/lib/payouts";
 import { setTestTwinActive } from "@/lib/influencerPromoMode";
 import {
   InfluencerStatus,
@@ -311,25 +316,44 @@ export async function rejectPayoutRequest(id: string, reason?: string) {
 // answer with an envelope, not a throw — production redacts a thrown Server
 // Action message, and "already handled" is exactly the sentence a second click
 // needs to read.
-export async function retryReversedPayout(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+// The amounts come back from the ledger, not from the request: refunds and
+// chargebacks since the payout change what is owed, and the admin's toast
+// should say what actually moved.
+export async function retryReversedPayout(
+  id: string,
+): Promise<{ ok: true; releasedCents: number; held: boolean } | { ok: false; error: string }> {
   await requirePlatformAdmin();
   const res = await releaseReversedPayout(id);
   revalidatePath("/admin/payouts");
   revalidatePath("/admin/influencers");
   return res.ok
-    ? { ok: true }
+    ? { ok: true, releasedCents: res.releasedCents, held: res.heldRows > 0 }
     : { ok: false, error: "This payout is not waiting on a reversed transfer any more — it was already handled." };
 }
 
-export async function writeOffPayout(id: string, note: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function writeOffPayout(
+  id: string,
+  note: string,
+): Promise<{ ok: true; writtenOffCents: number } | { ok: false; error: string }> {
   await requirePlatformAdmin();
   const clean = String(note ?? "").slice(0, 500);
   const res = await writeOffReversedPayout(id, clean);
   revalidatePath("/admin/payouts");
   revalidatePath("/admin/influencers");
   return res.ok
-    ? { ok: true }
+    ? { ok: true, writtenOffCents: res.writtenOffCents }
     : { ok: false, error: "This payout is not waiting on a reversed transfer any more — it was already handled." };
+}
+
+export async function settlePartialPayoutReversal(
+  transferId: string,
+  note: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requirePlatformAdmin();
+  const res = await settlePartialReversal(transferId, String(note ?? "").slice(0, 500));
+  revalidatePath("/admin/payouts");
+  revalidatePath("/admin/health");
+  return res.ok ? { ok: true } : { ok: false, error: "This transfer has no partial reversal left to settle." };
 }
 
 // ── influencer (self): request a payout of cleared balance ──
