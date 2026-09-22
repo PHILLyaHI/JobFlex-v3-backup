@@ -337,26 +337,25 @@ async function main() {
 
     // ═══ F. The coupon is not issued a second time ═══
     head("F · the upgrade checkout passes no code and opens no promo field");
-    const upg = checkoutDiscount({ everSubscribed: true, alreadyAttributed: true, promotionCode: "promo_live_x", referralCoupon: "coupon_ref" });
-    ok("a referred client's replacement checkout carries no discount and no promo field",
+    const upg = checkoutDiscount({ everSubscribed: true, promotionCode: "promo_live_x", referralCoupon: "coupon_ref" });
+    ok("a replacement checkout carries no discount and no promo field — for a referred client",
       upg.kind === "none" && !("discounts" in upg.params) && !("allow_promotion_codes" in upg.params), JSON.stringify(upg));
-    const plain = checkoutDiscount({ everSubscribed: true, alreadyAttributed: false, promotionCode: "promo_live_x", referralCoupon: "coupon_ref" });
-    ok("an existing customer that never had a partner: nothing pre-applied, the field open as before",
-      plain.kind === "open" && !("discounts" in plain.params), JSON.stringify(plain));
+    const plain = checkoutDiscount({ everSubscribed: true, promotionCode: null, referralCoupon: null });
+    ok("…and for a customer that never had a partner: a code is accepted at signup, nowhere else (owner, 2026-09-22)",
+      plain.kind === "none" && !("allow_promotion_codes" in plain.params), JSON.stringify(plain));
     ok("the first subscription still gets the partner's code",
-      checkoutDiscount({ everSubscribed: false, alreadyAttributed: true, promotionCode: "promo_live_x", referralCoupon: null }).kind === "promo");
+      checkoutDiscount({ everSubscribed: false, promotionCode: "promo_live_x", referralCoupon: null }).kind === "promo");
     ok("…or the referral coupon, or an open field when there is neither",
-      checkoutDiscount({ everSubscribed: false, alreadyAttributed: false, promotionCode: null, referralCoupon: "c" }).kind === "referral" &&
-        checkoutDiscount({ everSubscribed: false, alreadyAttributed: false, promotionCode: null, referralCoupon: null }).kind === "open");
+      checkoutDiscount({ everSubscribed: false, promotionCode: null, referralCoupon: "c" }).kind === "referral" &&
+        checkoutDiscount({ everSubscribed: false, promotionCode: null, referralCoupon: null }).kind === "open");
     const route = readFileSync("src/app/api/checkout/subscription/route.ts", "utf8");
     ok("the route decides everSubscribed before resolving any promo, and asks checkoutDiscount",
       route.indexOf("const everSubscribed") > -1 &&
         route.indexOf("const everSubscribed") < route.indexOf("let promoForCheckout") &&
         /org\?\.signupPromoCodeId && !everSubscribed/.test(route) &&
-        /checkoutDiscount\(\{\s*everSubscribed,\s*alreadyAttributed/.test(route));
+        /checkoutDiscount\(\{\s*everSubscribed,\s*promotionCode/.test(route));
     ok("a comp does not make a client new again: everSubscribed also reads the customer and any attribution",
-      /const everSubscribed = Boolean\(sub\?\.externalSubId \|\| sub\?\.externalCustomerId \|\| priorAttribution\)/.test(route) &&
-        /const alreadyAttributed = Boolean\(priorAttribution \|\| org\?\.signupPromoCodeId\)/.test(route));
+      /const everSubscribed = Boolean\(sub\?\.externalSubId \|\| sub\?\.externalCustomerId \|\| priorAttribution\)/.test(route));
     ok("nothing in the code sets a customer-level discount a new subscription could inherit",
       !/customers\.(create|update)\([\s\S]{0,300}(coupon|promotion_code)/.test(readFileSync("src/lib/referralRewards.ts", "utf8")));
   } finally {

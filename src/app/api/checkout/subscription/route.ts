@@ -109,11 +109,10 @@ export async function POST(req: Request) {
   // lasts, not from the mirror's current link: an admin comp clears
   // externalSubId on purpose (actions/adminUsers, DETACH_FROM_STRIPE) and keeps
   // the customer, and a client with an attribution has subscribed before.
+  // lib/checkoutDiscount then offers no code at all — neither pre-applied nor
+  // through the typed field (a code is accepted at signup, nowhere else); a
+  // partner's attribution moves to the new subscription on its own (lib/stripeSync).
   const everSubscribed = Boolean(sub?.externalSubId || sub?.externalCustomerId || priorAttribution);
-  // One that came through a partner keeps that partner: lib/checkoutDiscount
-  // offers the code again neither pre-applied nor through the typed field, and
-  // the attribution moves to the new subscription on its own (lib/stripeSync).
-  const alreadyAttributed = Boolean(priorAttribution || org?.signupPromoCodeId);
 
   // Resolve a promo to auto-apply. Both paths re-validate against the DB (the
   // cookie is untrusted input); a dead/suspended code simply resolves to null.
@@ -265,7 +264,6 @@ export async function POST(req: Request) {
   // the discount the plan step promised was the bug the owner reported.
   const discount = checkoutDiscount({
     everSubscribed,
-    alreadyAttributed,
     promotionCode: autoApplyPromotionCode,
     referralCoupon,
   });
