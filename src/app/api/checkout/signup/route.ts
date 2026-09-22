@@ -22,6 +22,7 @@ import { CUSTOM_PLAN_SLUG, customPriceCents } from "@/lib/customPlan";
 import { getCustomPlanTrialDays } from "@/lib/customPlanConfig";
 import { ensureRecurringPrice } from "@/lib/stripePriceCache";
 import { validateAttribution } from "@/lib/attribution";
+import { promotionCodeIdForMode } from "@/lib/influencerPromoMode";
 import { ensureReferralCoupon, referralCouponMonths } from "@/lib/referralDiscount";
 
 // The custom plan's trial is set in /admin/plans (SyncState, not a catalog
@@ -131,16 +132,35 @@ export async function POST(req: Request) {
      Until 2026-09-02 this only opened Stripe's own promo field, so "code
      applied" on our page met a full price on Stripe's (owner's report). The
      validated code rides with the pending intent: an influencer promo becomes
-     its Stripe promotion code (live account only — the ids are live ids); a
-     member referral becomes the referral coupon (lib/referralDiscount).
-     `discounts` and `allow_promotion_codes` are mutually exclusive at Stripe,
-     so a session with a discount attached has no promo field. */
+     its Stripe promotion code; a member referral becomes the referral coupon
+     (lib/referralDiscount). `discounts` and `allow_promotion_codes` are
+     mutually exclusive at Stripe, so a session with a discount attached has no
+     promo field.
+
+     THE MODE GATE THAT USED TO BE HERE. `&& mode === "live"` made this branch a
+     no-op in the sandbox, because the stored promo_… ids belong to the live
+     account and passing one to a test session 400s the whole checkout. True,
+     but the remedy reproduced the 2026-09-02 defect in test mode: the plan step
+     promises "20% off · $63.20" and Stripe charges $79. lib/influencerPromoMode
+     resolves the id per mode instead — the stored one on live, byte for byte,
+     and a cached test twin in the sandbox. */
   let discounts: Stripe.Checkout.SessionCreateParams.Discount[] | null = null;
   const attr = pending.attribution;
-  if (attr?.kind === "promo" && mode === "live") {
+  if (attr?.kind === "promo") {
     const v = await validateAttribution("promo", attr.code);
-    if (v?.kind === "promo" && v.stripePromotionCodeId.startsWith("promo_")) {
-      discounts = [{ promotion_code: v.stripePromotionCodeId }];
+    if (v?.kind === "promo") {
+      const promotionCode = await promotionCodeIdForMode(stripe, mode, {
+        id: v.promoId,
+        code: v.code,
+        stripeCouponId: v.stripeCouponId,
+        stripePromotionCodeId: v.stripePromotionCodeId,
+        customerPercentOff: v.percentOff,
+      });
+      if (promotionCode) discounts = [{ promotion_code: promotionCode }];
+      // Never silently: the plan step has already shown this visitor a price
+      // with the discount in it, so a drop here is a promise being broken and
+      // the operator must be able to find out why.
+      else console.warn(`[checkout/signup] promo ${v.code} is not applicable in ${mode} mode`);
     }
   } else if (attr?.kind === "ref") {
     const v = await validateAttribution("ref", attr.code);

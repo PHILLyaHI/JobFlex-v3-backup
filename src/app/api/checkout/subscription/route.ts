@@ -4,6 +4,7 @@ import { requireOwner } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { readAttributionCookie, validateAttribution } from "@/lib/attribution";
+import { promotionCodeIdForMode, type PromoForCheckout } from "@/lib/influencerPromoMode";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { ensureRecurringPrice } from "@/lib/stripePriceCache";
 import { ensureReferralCoupon } from "@/lib/referralDiscount";
@@ -104,29 +105,44 @@ export async function POST(req: Request) {
   // Resolve a promo to auto-apply. Both paths re-validate against the DB (the
   // cookie is untrusted input); a dead/suspended code simply resolves to null.
   // local_promo_* synthetics (Stripe-disabled dev) never reach Stripe.
-  let autoApplyPromotionCode: string | null = null;
+  let promoForCheckout: PromoForCheckout | null = null;
   if (org?.signupPromoCodeId) {
     const stamped = await db.promoCode.findUnique({
       where: { id: org.signupPromoCodeId },
       select: {
+        id: true,
+        code: true,
         active: true,
+        customerPercentOff: true,
+        stripeCouponId: true,
         stripePromotionCodeId: true,
         influencer: { select: { status: true } },
       },
     });
     if (stamped?.active && stamped.influencer.status === "ACTIVE") {
-      autoApplyPromotionCode = stamped.stripePromotionCodeId;
+      promoForCheckout = {
+        id: stamped.id,
+        code: stamped.code,
+        stripeCouponId: stamped.stripeCouponId,
+        stripePromotionCodeId: stamped.stripePromotionCodeId,
+        customerPercentOff: stamped.customerPercentOff,
+      };
     }
   }
-  if (!autoApplyPromotionCode) {
+  if (!promoForCheckout) {
     const captured = await readAttributionCookie();
     if (captured?.k === "promo") {
       const validated = await validateAttribution("promo", captured.c);
-      if (validated?.kind === "promo") autoApplyPromotionCode = validated.stripePromotionCodeId;
+      if (validated?.kind === "promo") {
+        promoForCheckout = {
+          id: validated.promoId,
+          code: validated.code,
+          stripeCouponId: validated.stripeCouponId,
+          stripePromotionCodeId: validated.stripePromotionCodeId,
+          customerPercentOff: validated.percentOff,
+        };
+      }
     }
-  }
-  if (autoApplyPromotionCode && !autoApplyPromotionCode.startsWith("promo_")) {
-    autoApplyPromotionCode = null;
   }
 
 
@@ -134,9 +150,21 @@ export async function POST(req: Request) {
   // Origin header — a forged Origin minted a real, contractor-branded checkout
   // whose post-payment landing page was an attacker domain.
   const origin = await appBaseUrl();
-  // A stored promo_… id belongs to the LIVE account; on the sandbox it would
-  // 400 the session. Test runs fall back to typing a code on Stripe's page.
-  if (mode === "test") autoApplyPromotionCode = null;
+  /* THE STORED promo_… ID BELONGS TO THE LIVE ACCOUNT, so on the sandbox it
+     would 400 the session. This used to null the promo outright, which left a
+     shop that carries a permanent signup stamp paying list price in a test run
+     with nothing in the log to explain it — and the influencer earning nothing,
+     since the attribution is only ever created from a Stripe-issued discount.
+     lib/influencerPromoMode returns the stored id unchanged on live and a
+     cached test twin in the sandbox. */
+  const autoApplyPromotionCode = promoForCheckout
+    ? await promotionCodeIdForMode(stripe, mode, promoForCheckout)
+    : null;
+  if (promoForCheckout && !autoApplyPromotionCode) {
+    console.warn(
+      `[checkout/subscription] promo ${promoForCheckout.code} is not applicable in ${mode} mode`,
+    );
+  }
 
   /* THE REFERRED SHOP'S DISCOUNT (lib/referralDiscount) — ONCE, on the first
      bill only (owner, 2026-09-04: an Enterprise upgrade was getting the 10%

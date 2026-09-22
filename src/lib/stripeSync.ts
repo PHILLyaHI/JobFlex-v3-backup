@@ -111,6 +111,16 @@ async function resolvePromoCode(discount: Stripe.Discount | null | undefined) {
     const byCoupon = await db.promoCode.findFirst({ where: { stripeCouponId: couponId } });
     if (byCoupon) return byCoupon;
   }
+  // A SANDBOX TWIN has neither stored id — it was minted on the test account by
+  // lib/influencerPromoMode and carries the PromoCode row's id in its coupon
+  // metadata instead. A live coupon is created without metadata
+  // (actions/influencers.ts), so on live this branch cannot fire; it is reached
+  // only after both lookups above have already missed.
+  const metaPromoId = discount.coupon?.metadata?.jfPromoCodeId;
+  if (metaPromoId) {
+    const byMeta = await db.promoCode.findUnique({ where: { id: metaPromoId } });
+    if (byMeta) return byMeta;
+  }
   return null;
 }
 

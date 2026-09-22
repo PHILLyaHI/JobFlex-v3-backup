@@ -9,6 +9,7 @@ import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
 import { assertStripeWriteAllowed, isStripeWriteAllowed } from "@/lib/stripeSafety";
 import { ledgerBalances } from "@/lib/commission";
 import { payoutRequestRefusal } from "@/lib/payouts";
+import { setTestTwinActive } from "@/lib/influencerPromoMode";
 import {
   InfluencerStatus,
   CommissionType,
@@ -225,6 +226,10 @@ export async function setPromoActive(promoId: string, active: boolean) {
       // ignore — local state is the UI source of truth; reconcile can repair.
     }
   }
+  // The sandbox twin, if one was ever minted, moves with it. Without this a code
+  // switched off here stays redeemable in a test run, which is exactly the kind
+  // of difference that makes a rehearsal worthless.
+  await setTestTwinActive(promoId, active);
   await db.promoCode.update({ where: { id: promoId }, data: { active } });
   revalidatePath("/admin/influencers");
 }

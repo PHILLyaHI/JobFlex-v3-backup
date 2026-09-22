@@ -24,6 +24,10 @@ export type ValidatedAttribution =
       kind: "promo";
       code: string;
       promoId: string;
+      /** Needed to resolve the code on a NON-live Stripe account: the twin's
+       *  percent is read off the live coupon when the mirror column is null
+       *  (lib/influencerPromoMode). */
+      stripeCouponId: string;
       stripePromotionCodeId: string;
       displayName: string;
       percentOff: number | null;
@@ -58,6 +62,7 @@ export async function validateAttribution(
         code: true,
         active: true,
         customerPercentOff: true,
+        stripeCouponId: true,
         stripePromotionCodeId: true,
         influencer: { select: { displayName: true, status: true } },
       },
@@ -67,6 +72,7 @@ export async function validateAttribution(
       kind: "promo",
       code: promo.code,
       promoId: promo.id,
+      stripeCouponId: promo.stripeCouponId,
       stripePromotionCodeId: promo.stripePromotionCodeId,
       displayName: promo.influencer.displayName,
       percentOff: promo.customerPercentOff ?? null,

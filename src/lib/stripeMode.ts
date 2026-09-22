@@ -19,11 +19,22 @@
 //   · Catalog plans are priced with inline `price_data` from the PricingPlan
 //     row, NOT the PlanPrice mirror — the mirror holds LIVE price_… ids,
 //     which do not exist in the sandbox. Same amounts, same trial.
-//   · Stored Stripe promotion-code ids (promo_… on the live account) are not
-//     auto-applied; the code field on Stripe's page still works.
-//   · The live webhook endpooint never sees sandbox events, so flows that
+//   · Influencer promo codes are minted on the LIVE account (actions/
+//     influencers.ts goes through getStripe(), which prefers the live key), so
+//     neither the stored promo_… id nor the code STRING exists in the sandbox —
+//     a PromotionCode is a per-account object, so typing "JAMIE20" on Stripe's
+//     own page there answers "invalid promotion code" too. (This comment used
+//     to claim the manual field still worked. It did not, and that is why the
+//     "code applied over a full price" defect went unnoticed in test mode long
+//     after it was fixed for live.) lib/influencerPromoMode now mints a test
+//     TWIN — same code string, same percent, same duration — on the first
+//     sandbox checkout that carries a code, and caches it in SyncState.
+//   · The live webhook endpoint never sees sandbox events, so flows that
 //     need an answer verify the checkout session directly on return — the
-//     signup flow already works this way in both modes.
+//     signup flow already works this way in both modes. NOTE this also means
+//     the commission ledger does not move in sandbox: Attribution and
+//     CommissionLedger are only ever written from that webhook, so a rehearsal
+//     exercises the discount and the checkout, not the accrual.
 
 import { db } from "@/lib/db";
 
