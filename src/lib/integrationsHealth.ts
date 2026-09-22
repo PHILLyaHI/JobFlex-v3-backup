@@ -386,6 +386,14 @@ export async function checkInfluencerPayouts(now: string): Promise<ServiceHealth
     note: "optional · partner commission",
   };
   const staleBefore = new Date(Date.now() - PAYOUT_STALE_DAYS * 86_400_000);
+  // runApprovedPayouts stops retrying an unknown transfer outcome after 20 hours
+  // (Stripe keeps an idempotency key for ~24), because a retry past that could
+  // pay twice. From then on only a person can settle it, by looking the transfer
+  // up in the Stripe dashboard — so this is the one line here that is URGENT.
+  const unconfirmedBefore = new Date(Date.now() - 20 * 60 * 60 * 1000);
+  const unconfirmed = await db.payoutTransfer
+    .count({ where: { status: "PENDING", stripeTransferId: null, createdAt: { lt: unconfirmedBefore } } })
+    .catch(() => 0);
   const [pending, stale, failedTransfers, stuck] = await Promise.all([
     db.payoutRequest.count({ where: { status: "PENDING" } }).catch(() => 0),
     db.payoutRequest.count({ where: { status: "PENDING", createdAt: { lt: staleBefore } } }).catch(() => 0),
@@ -395,15 +403,19 @@ export async function checkInfluencerPayouts(now: string): Promise<ServiceHealth
     db.payoutRequest.count({ where: { status: { in: ["APPROVED", "PROCESSING"] }, createdAt: { lt: staleBefore } } }).catch(() => 0),
   ]);
 
-  if (pending + stale + failedTransfers + stuck === 0) {
+  if (pending + stale + failedTransfers + stuck + unconfirmed === 0) {
     return { ...base, level: "ok", reason: "nothing waiting, no failed transfers" };
   }
   const parts: string[] = [];
+  // First, because it is the only one with a clock on it.
+  if (unconfirmed > 0) {
+    parts.push(`${unconfirmed} transfer${unconfirmed === 1 ? "" : "s"} unconfirmed with Stripe — look ${unconfirmed === 1 ? "it" : "them"} up in the dashboard before re-sending`);
+  }
   if (stale > 0) parts.push(`${stale} request${stale === 1 ? "" : "s"} undecided for over ${PAYOUT_STALE_DAYS} days`);
   else if (pending > 0) parts.push(`${pending} request${pending === 1 ? "" : "s"} waiting for review`);
   if (stuck > 0) parts.push(`${stuck} approved but still unsent after ${PAYOUT_STALE_DAYS} days`);
   if (failedTransfers > 0) parts.push(`${failedTransfers} failed transfer${failedTransfers === 1 ? "" : "s"}`);
-  const needsSomeone = stale > 0 || stuck > 0 || failedTransfers > 0;
+  const needsSomeone = unconfirmed > 0 || stale > 0 || stuck > 0 || failedTransfers > 0;
   return {
     ...base,
     level: needsSomeone ? "degraded" : "ok",
