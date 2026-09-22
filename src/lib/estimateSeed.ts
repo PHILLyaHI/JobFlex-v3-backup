@@ -32,6 +32,8 @@ export type EstimateSeed = {
   phone: string | null;
   projectType: string | null;
   words: string | null;
+  /** The client record the lead is (found or made at hand-off, lib/leadClient); the estimate files under it. */
+  clientId: string | null;
 };
 
 export function encodeSeed(seed: EstimateSeed): string {
@@ -57,6 +59,7 @@ export function decodeSeed(raw: string | null | undefined): EstimateSeed | null 
       phone: text(s.phone, 40),
       projectType: text(s.projectType, 80),
       words: text(s.words, 3000),
+      clientId: text(s.clientId, 64),
     };
   } catch {
     return null;

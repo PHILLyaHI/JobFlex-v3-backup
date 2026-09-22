@@ -281,7 +281,9 @@ export async function loadManualBuilder({
   const seedEmail = (seed?.email ?? "").trim().toLowerCase();
   const seedPhone = digits(seed?.phone);
   const matched = seed
-    ? (clientRows.find((c) => (seedEmail && (c.email ?? "").trim().toLowerCase() === seedEmail) || (seedPhone.length >= 7 && digits(c.phone) === seedPhone)) ?? null)
+    ? ((seed.clientId && clientRows.find((c) => c.id === seed.clientId)) ||
+        clientRows.find((c) => (seedEmail && (c.email ?? "").trim().toLowerCase() === seedEmail) || (seedPhone.length >= 7 && digits(c.phone) === seedPhone)) ||
+        null)
     : null;
 
   const initialClientId =

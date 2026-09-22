@@ -8,15 +8,18 @@
 import type { Route } from "next";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { db } from "@/lib/db";
-import { requireEstimatorOrManager } from "@/lib/orgContext";
+import { isEstimatorRole, requireEstimatorOrManager } from "@/lib/orgContext";
 import { ESTIMATOR_PATH, writeProfessionalScope, type EstimatorId } from "@/lib/leadScope";
 import { writeEstimateSeed } from "@/lib/estimateSeed";
+import { ensureClientForLead } from "@/lib/leadClient";
+import { FILING_COOKIE, FILING_MAX_AGE_S } from "@/lib/filingCookie";
 
 const ENGINES = new Set<string>(["roof", "fence", "hvac", "smart", "manual"]);
 
 export async function startEstimateFromLead(leadId: string, estimator: string): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId, role } = await requireEstimatorOrManager();
   if (!ENGINES.has(estimator)) return;
   const engine = estimator as EstimatorId;
   const lead = await db.lead.findFirst({
@@ -27,6 +30,15 @@ export async function startEstimateFromLead(leadId: string, estimator: string): 
   const address = [lead.address, lead.city, [lead.state, lead.zip].filter(Boolean).join(" ")].filter((s) => s && s.trim()).join(", ") || null;
   const brief = (lead.scope ?? lead.description ?? "").trim();
   const words = (lead.description ?? "").trim();
+  // The client the lead is — found by email or phone, else made from the
+  // lead (lib/leadClient; an estimator's role matches but never makes one).
+  // The estimate files under it through the same cookie the estimator picker
+  // writes (lib/filingCookie), so the chip on the estimator says so and every
+  // convert-to-proposal action reads it. Not httpOnly: the chip reads it.
+  const client = await ensureClientForLead(organizationId, lead, { create: !isEstimatorRole(role) });
+  if (client) {
+    (await cookies()).set(FILING_COOKIE, JSON.stringify({ clientId: client.id, clientName: client.name }), { path: "/", maxAge: FILING_MAX_AGE_S, sameSite: "lax" });
+  }
   await writeEstimateSeed({
     leadId: lead.id,
     organizationId,
@@ -40,6 +52,7 @@ export async function startEstimateFromLead(leadId: string, estimator: string): 
     projectType: lead.projectType ?? null,
     // The homeowner's own words beside the professional scope; nothing when they are the same text.
     words: words && words !== brief ? words : null,
+    clientId: client?.id ?? null,
   });
   redirect(ESTIMATOR_PATH[engine] as Route);
 }

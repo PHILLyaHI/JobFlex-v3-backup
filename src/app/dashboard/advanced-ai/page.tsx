@@ -73,7 +73,7 @@ export default async function AdvancedAiPage() {
   const seed = await readSmartSeed();
   return (
     <>
-      {seed && <EstimateSeedStrip leadId={seed.leadId} name={seed.name} address={seed.address} />}
+      <EstimateSeedStrip seed={seed} />
       <AdvancedAiContent seed={seed ? { brief: seed.brief, address: seed.address ?? "", state: seed.state ?? "" } : undefined} />
     </>
   );

@@ -68,7 +68,7 @@ export default async function RoofEstimatorPage() {
 
   return (
     <>
-      {seed && <EstimateSeedStrip leadId={seed.leadId} name={seed.name} address={seed.address} />}
+      <EstimateSeedStrip seed={seed} />
       <RoofEstimatorContent
         evEnabled={isEagleViewEnabled()}
         aiEnabled={isOpenAIEnabled()}

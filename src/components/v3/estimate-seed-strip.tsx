@@ -5,15 +5,27 @@
 // back. Mounting it spends the seed (actions/estimateSeed), so the estimator
 // prefills once and a later visit starts empty.
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { consumeEstimateSeed } from "@/actions/estimateSeed";
 
-export function EstimateSeedStrip({ leadId, name, address }: { leadId: string; name: string; address: string | null }) {
+export type SeedStripData = { leadId: string; name: string; address: string | null; phone?: string | null; email?: string | null };
+
+/**
+ * Rendered by the estimator page on EVERY visit, with the seed or null. The
+ * seed is kept from the first render: spending it (a cookie delete in a
+ * server action) makes Next re-render the page without one, and a strip the
+ * page only drew while it had a seed vanished a moment after it appeared
+ * (2026-09-22). State here outlives that refresh; a later visit starts null.
+ */
+export function EstimateSeedStrip({ seed }: { seed: SeedStripData | null }) {
+  const [kept] = useState(() => seed);
   useEffect(() => {
-    void consumeEstimateSeed();
-  }, []);
+    if (kept) void consumeEstimateSeed();
+  }, [kept]);
+  if (!kept) return null;
+  const { leadId, name, address, phone, email } = kept;
   return (
     <div
       className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--r-md)] border border-[color:var(--line)] bg-black/[0.03] px-3 py-2 text-[12.5px] dark:bg-white/[0.04]"
@@ -24,6 +36,8 @@ export function EstimateSeedStrip({ leadId, name, address }: { leadId: string; n
     >
       <span className="quiet-caps">From the lead</span>
       <span className="font-medium">{name || "Homeowner"}</span>
+      {phone ? <span className="text-[color:var(--ink-muted)]">{phone}</span> : null}
+      {email ? <span className="text-[color:var(--ink-muted)]">{email}</span> : null}
       {address ? <span className="text-[color:var(--ink-muted)]">{address}</span> : null}
       <Link href={`/dashboard/leads/${leadId}` as Route} className="ml-auto underline underline-offset-4">
         Back to the lead

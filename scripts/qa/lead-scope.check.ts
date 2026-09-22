@@ -26,9 +26,9 @@ check("the manual proposal is offered but never recommended (2026-09-22)",
 check("a street address has a number and a street word; a city or a ZIP alone is not one",
   looksLikeStreetAddress("4567 Rainier Ave S, Seattle, WA 98118") && looksLikeStreetAddress("13520 Bothell-Everett Hwy") && !looksLikeStreetAddress("Seattle, WA") && !looksLikeStreetAddress("98118") && !looksLikeStreetAddress(""));
 
-const seed = { leadId: "l1", organizationId: "o1", estimator: "roof" as const, name: "Pat Homeowner", address: "4567 Rainier Ave S, Seattle, WA 98118", state: "WA", brief: "Replace the roof: 2,400 sq ft of 20-year architectural shingles, two layers to tear off.", email: "pat@example.test", phone: "(206) 555-0100", projectType: "Roofing", words: "my roof is 20 years old and leaking" };
+const seed = { leadId: "l1", organizationId: "o1", estimator: "roof" as const, name: "Pat Homeowner", address: "4567 Rainier Ave S, Seattle, WA 98118", state: "WA", brief: "Replace the roof: 2,400 sq ft of 20-year architectural shingles, two layers to tear off.", email: "pat@example.test", phone: "(206) 555-0100", projectType: "Roofing", words: "my roof is 20 years old and leaking", clientId: "c1" };
 check("the hand-off seed survives the cookie round trip", JSON.stringify(decodeSeed(encodeSeed(seed))) === JSON.stringify(seed));
-const manual = { ...seed, estimator: "manual" as const, email: null, phone: null, projectType: null, words: null };
+const manual = { ...seed, estimator: "manual" as const, email: null, phone: null, projectType: null, words: null, clientId: null };
 check("a manual-proposal seed round-trips, and a seed from before the contact fields still reads (they come back null)",
   JSON.stringify(decodeSeed(encodeSeed(manual))) === JSON.stringify(manual) && decodeSeed(Buffer.from(JSON.stringify({ leadId: "l1", organizationId: "o1", estimator: "smart", name: "Pat", brief: "b" })).toString("base64url"))?.email === null);
 check("a broken or foreign seed is nothing", decodeSeed("not-a-seed") === null && decodeSeed(null) === null && decodeSeed(Buffer.from(JSON.stringify({ leadId: "x", organizationId: "o", estimator: "bogus", brief: "b" })).toString("base64url")) === null);

@@ -48,7 +48,7 @@ export default async function FenceEstimatorPage() {
   const seed = await readFenceSeed();
   return (
     <>
-      {seed && <EstimateSeedStrip leadId={seed.leadId} name={seed.name} address={seed.address} />}
+      <EstimateSeedStrip seed={seed} />
       <FenceEstimatorContent initialAddress={seed?.address ?? undefined} />
     </>
   );

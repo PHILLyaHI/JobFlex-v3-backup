@@ -50,7 +50,14 @@ contractor pricing it, and where each piece lives.
   `writeLeadScope`).
 - **The hand-off** (`actions/leadEstimate` → `lib/estimateSeed`): the button
   writes a ten-minute, httpOnly cookie with the lead id, the address, the
-  state and the brief (scope, else description), then redirects. The
+  state and the brief (scope, else description), then redirects. It also
+  finds the client record the lead already is (same email, case aside, or
+  the same phone) or makes one from the lead — name, phone, email, address
+  (`lib/leadClient`; an estimator's role matches but never makes one; at the
+  plan's client cap none is made) — and files the estimate under it through
+  the estimator picker's own cookie (`lib/filingCookie`), so the chip on the
+  estimator says "Files for <name>" and the converted proposal carries the
+  client (owner, 2026-09-22). The strip shows the phone and email too. The
   estimator page reads a seed meant for it and this company only:
   - Roof estimator: the address is in the search field; press *Measure*.
   - Fence estimator: the address is in the search bar; *Find* is pressed for

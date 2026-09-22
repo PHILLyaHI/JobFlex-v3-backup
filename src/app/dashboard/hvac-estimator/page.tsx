@@ -64,7 +64,7 @@ export default async function HvacEstimatorPage({
   if (seed?.address) initialAddress = seed.address;
   return (
     <>
-      {seed && <EstimateSeedStrip leadId={seed.leadId} name={seed.name} address={seed.address} />}
+      <EstimateSeedStrip seed={seed} />
       <HvacEstimatorContent aiEnabled={isOpenAIEnabled()} initialAddress={initialAddress} />
     </>
   );

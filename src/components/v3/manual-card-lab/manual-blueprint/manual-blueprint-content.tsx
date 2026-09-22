@@ -208,11 +208,6 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
         : { mode: "none" },
     );
   });
-  // The lead this sheet was opened from, kept from the first render: mounting
-  // the strip spends the seed (a cookie delete in a server action), which
-  // re-renders the page without one, and a strip drawn by the page vanished
-  // a moment after it appeared. State here outlives that refresh.
-  const [fromLead] = useState(() => (!data.proposal ? data.seed : null));
   const router = useRouter();
   // Set on a successful save or send: the panel that says so out loud and then
   // hands over to the proposals list. The bar's status chip alone was too quiet
@@ -586,7 +581,8 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
 
   return (
     <div className={styles.page}>
-      {fromLead && <EstimateSeedStrip leadId={fromLead.leadId} name={fromLead.name} address={fromLead.address} />}
+      {/* The lead this sheet was opened from; the strip keeps it past the seed-spending refresh. */}
+      <EstimateSeedStrip seed={!data.proposal ? data.seed : null} />
       <div className={cx("page-head", styles.head)} data-rv="">
         <div>
           <div className="kicker">Proposal builder</div>
