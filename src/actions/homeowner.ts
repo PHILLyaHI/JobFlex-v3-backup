@@ -21,6 +21,8 @@ const homeownerSchema = z.object({
   projectType: z.string().optional(),
   description: z.string().min(1),
   referralCode: z.string().optional(),
+  /** The scope the wizard wrote and the homeowner approved (suggestHomeownerScope); stored as is. */
+  scope: z.string().trim().max(3000).optional(),
 });
 
 // Reuse a prior geocode for the SAME address instead of paying Google again.
@@ -109,8 +111,11 @@ export async function submitHomeownerRequest(raw: unknown) {
       state: data.state,
       zip: data.zip,
     }).catch(() => null),
-    // The words and the answers, written up as a contractor's scope of work.
-    writeProfessionalScope({ description: data.description, address: data.address, projectType: data.projectType }),
+    // The scope the homeowner approved in the wizard, else written now from
+    // the words and the answers.
+    data.scope && data.scope.length >= 20
+      ? Promise.resolve(data.scope)
+      : writeProfessionalScope({ description: data.description, address: data.address, projectType: data.projectType }),
   ]);
 
   const platformLead = await db.platformLead.create({
@@ -209,6 +214,33 @@ const questionsInput = z.object({
  *  editing their description and re-refining is normal behaviour. */
 const QUESTIONS_PER_WINDOW = 12;
 const QUESTIONS_WINDOW_MS = 5 * 60 * 1000;
+
+const scopeInput = z.object({
+  description: z.string().trim().min(1).max(4000),
+  answers: z.array(z.object({ q: z.string().trim().max(300), a: z.string().trim().max(500) })).max(12).optional(),
+});
+
+/**
+ * "Generate my scope" in the wizards (owner, 2026-09-21): the description
+ * and the answers, written up as the scope a contractor prices from
+ * (lib/leadScope). The homeowner reads it on the scope step and sends it
+ * with the request. Never throws — null means "show the homeowner's words".
+ */
+export async function suggestHomeownerScope(raw: unknown): Promise<{ scope: string | null }> {
+  let data: z.infer<typeof scopeInput>;
+  try {
+    data = scopeInput.parse(raw);
+  } catch {
+    return { scope: null };
+  }
+  const gate = await rateLimitShared(`homeowner-scope:${await clientIp()}`, QUESTIONS_PER_WINDOW, QUESTIONS_WINDOW_MS);
+  if (!gate.ok) return { scope: null };
+  const answers = (data.answers ?? [])
+    .filter((x) => x.a)
+    .map((x) => `${x.q} ${x.a}`)
+    .join("\n");
+  return { scope: await writeProfessionalScope({ description: answers ? `${data.description}\n\n${answers}` : data.description }) };
+}
 
 /**
  * 3-5 follow-up questions for this description, or null when the wizard should

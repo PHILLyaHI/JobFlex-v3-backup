@@ -50,7 +50,7 @@ import { needsAddressFor } from "@/lib/leadRules";
 
 /** The street address is CONTACT_FIELDS[4]; required only when lib/leadRules says the job is measured at the property. */
 const ADDRESS_FIELD = 4;
-import { submitHomeownerRequest, suggestHomeownerQuestions } from "@/actions/homeowner";
+import { submitHomeownerRequest, suggestHomeownerQuestions, suggestHomeownerScope } from "@/actions/homeowner";
 import { prefersReducedMotion } from "../homeowner-landing/use-homeowner-behavior";
 import { usePlaceholderCycle } from "../homeowner-landing/wizard/use-placeholder-cycle";
 
@@ -81,6 +81,12 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
   /* Questions written from THIS description (server, OpenAI); null keeps the
      static set from homeowner-data.ts. */
   const [aiQs, setAiQs] = useState<Question[] | null>(null);
+  /* The scope a contractor prices from, written by the server from the
+     description and the answers when "Generate my scope" is pressed; the
+     scope step shows it (the homeowner's own words until it lands, or if
+     it fails) and it is sent with the request. */
+  const [scope, setScope] = useState<string | null>(null);
+  const [scopeBusy, setScopeBusy] = useState(false);
   /* The submission. This pane used to advance to "on its way" and send
      nothing — no lead, no confirmation email, nothing in the Lead Center. */
   const [sending, setSending] = useState(false);
@@ -256,6 +262,23 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
   /* CONTACT_FIELDS maps positionally: name, email, phone (optional), zip. The
      clarify answers ride along in the description, which is the one free-text
      body `submitHomeownerRequest` takes. */
+  /* "Generate my scope": the description and the answers go to the server,
+     which writes the scope a contractor prices from (lib/leadScope). */
+  const writeScope = () => {
+    const answered = questions
+      .map((q, i) => ({ q: q.q, a: (answers.current[i] ?? "").trim() }))
+      .filter((x) => x.a);
+    setScope(null);
+    setScopeBusy(true);
+    const work = suggestHomeownerScope({ description: desc.trim(), answers: answered })
+      .then((res) => {
+        if (res.scope) setScope(res.scope);
+      })
+      .catch(() => {})
+      .finally(() => setScopeBusy(false));
+    go(2, work);
+  };
+
   /* The street address (CONTACT_FIELDS[4]) is required only when the job is
      measured at the property — lib/leadRules decides from the description. */
   const needsAddress = needsAddressFor(desc);
@@ -294,6 +317,7 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
         phone: phone || undefined,
         zip,
         address: address || undefined,
+        scope: scope ?? undefined,
         description,
       });
       if (!res.ok) {
@@ -448,7 +472,7 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
         <button className="back" type="button" data-to="0" onClick={() => onBack(0)}>
           ‹ Back
         </button>
-        <button className="go go-scope" type="button" onClick={() => go(2)}>
+        <button className="go go-scope" type="button" onClick={writeScope}>
           Generate my scope
         </button>
       </div>
@@ -493,7 +517,7 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
         </div>
         <div className="sheet">
           <div className="sheet-n">Scope of work</div>
-          <p className="sheet-p">{desc.trim() || "Homeowner project description."}</p>
+          <p className="sheet-p" data-scope-text>{scope ?? (scopeBusy ? "Writing your scope of work…" : desc.trim() || "Homeowner project description.")}</p>
           <div className="sheet-list">{scopeRows()}</div>
         </div>
       </div>

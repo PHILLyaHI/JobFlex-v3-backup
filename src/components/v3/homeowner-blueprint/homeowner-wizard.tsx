@@ -17,7 +17,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DictateButton, MicIcon } from "@/components/estimator/DictateButton";
-import { submitHomeownerRequest, suggestHomeownerQuestions } from "@/actions/homeowner";
+import { submitHomeownerRequest, suggestHomeownerQuestions, suggestHomeownerScope } from "@/actions/homeowner";
 import {
   CATEGORIES,
   CONTACT_FIELDS,
@@ -68,6 +68,12 @@ export function HomeownerWizard() {
      written — the static set in homeowner-data.ts is the fallback, never a
      blank step. */
   const [aiQs, setAiQs] = useState<Question[] | null>(null);
+  /* The scope a contractor prices from, written by the server from the
+     description and the answers when "Generate my scope" is pressed; the
+     scope step shows it (the homeowner's own words until it lands, or if
+     it fails) and it is sent with the request. */
+  const [scope, setScope] = useState<string | null>(null);
+  const [scopeBusy, setScopeBusy] = useState(false);
   const [contact, setContact] = useState<string[]>(() => CONTACT_FIELDS.map(() => ""));
   const [thinking, setThinking] = useState(false);
   const [drag, setDrag] = useState(false);
@@ -156,6 +162,7 @@ export function HomeownerWizard() {
         phone: phone || undefined,
         zip: zip || undefined,
         address: address || undefined,
+        scope: scope ?? undefined,
         projectType: category ?? undefined,
         description,
       });
@@ -174,7 +181,7 @@ export function HomeownerWizard() {
     } finally {
       setSending(false);
     }
-  }, [sending, contact, answers, category, desc, qs]);
+  }, [sending, contact, answers, category, desc, qs, scope]);
 
   /* ---- head: donor renderHead() ---- */
   let headLabel = step < 4 ? STEP_NAMES[step] : "Done";
@@ -196,6 +203,24 @@ export function HomeownerWizard() {
       setStep(n);
     });
   }, []);
+
+  /* "Generate my scope": the description and the answers go to the server,
+     which writes the scope a contractor prices from (lib/leadScope). A plain
+     function after `go` — nothing to memoize, the button just calls it. */
+  const writeScope = () => {
+    const answered = answers
+      .map((a, i) => ({ q: qs[i]?.q ?? "", a: (a ?? "").trim() }))
+      .filter((x) => x.q && x.a);
+    setScope(null);
+    setScopeBusy(true);
+    const work = suggestHomeownerScope({ description: desc.trim(), answers: answered })
+      .then((res) => {
+        if (res.scope) setScope(res.scope);
+      })
+      .catch(() => {})
+      .finally(() => setScopeBusy(false));
+    go(2, work);
+  };
 
   /* Ask the server for questions about THIS project, then step forward. A
      failure, a slow answer or no API key all land on the static set. */
@@ -422,7 +447,7 @@ export function HomeownerWizard() {
       })}
       <div className="pane-foot">
         <button className="back" type="button" data-to="0" onClick={() => setStep(0)}>‹ Back</button>
-        <button className="go go-scope" type="button" onClick={() => go(2)}>Generate my scope</button>
+        <button className="go go-scope" type="button" onClick={writeScope}>Generate my scope</button>
       </div>
     </div>
   );
@@ -457,7 +482,7 @@ export function HomeownerWizard() {
       </div>
       <div className="sheet">
         <div className="sheet-n">Scope of work · {catLabel}</div>
-        <p className="sheet-p">{desc.trim() || "Homeowner project description."}</p>
+        <p className="sheet-p" data-scope-text>{scope ?? (scopeBusy ? "Writing your scope of work…" : desc.trim() || "Homeowner project description.")}</p>
         <div className="sheet-list">{scopeRows}</div>
       </div>
       <div className="pane-foot">
