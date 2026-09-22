@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Logo } from "@/components/v3/landing-e/logo";
-import { LEGAL_CONTACT_EMAIL, LEGAL_EFFECTIVE_DATE } from "@/lib/legal";
+import { LEGAL_CONTACT_EMAIL } from "@/lib/legal";
 import "@/components/v3/landing-e/landing-e.css";
 import styles from "./legal-page.module.css";
 
@@ -9,8 +9,8 @@ export function LegalContact() {
   return <a href={`mailto:${LEGAL_CONTACT_EMAIL}`}>{LEGAL_CONTACT_EMAIL}</a>;
 }
 
-export function LegalPage({ title, number, summary, children }: {
-  title: string; number: string; summary: string; children: ReactNode;
+export function LegalPage({ title, number, summary, updated, children }: {
+  title: string; number: string; summary: string; updated: { iso: string; label: string }; children: ReactNode;
 }) {
   return (
     <div className={`jf-lp ${styles.page}`}>
@@ -23,7 +23,7 @@ export function LegalPage({ title, number, summary, children }: {
           <div className={styles.kicker}>JobFlex / Legal / {number}</div>
           <h1>{title}</h1>
           <p className={styles.summary}>{summary}</p>
-          <div className={styles.meta}>Last updated <time dateTime="2026-09-20">{LEGAL_EFFECTIVE_DATE}</time></div>
+          <div className={styles.meta}>Last updated <time dateTime={updated.iso}>{updated.label}</time></div>
         </header>
         <nav className={styles.tabs} aria-label="Legal documents">
           <Link href="/privacy" aria-current={number === "01" ? "page" : undefined}>01 / Privacy policy</Link>

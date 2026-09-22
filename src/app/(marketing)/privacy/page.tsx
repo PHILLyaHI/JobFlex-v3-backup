@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalContact, LegalPage } from "@/components/legal/legal-page";
-import { LEGAL_OPERATOR_NAME } from "@/lib/legal";
+import { LEGAL_OPERATOR_NAME, LEGAL_UPDATED } from "@/lib/legal";
 
 export const metadata: Metadata = {
   title: "JobFlex · Privacy policy",
@@ -11,10 +11,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy policy" number="01" summary="What we collect, how connected services work, and the choices you have about your information.">
-      <p>
-        Google-data sharing disclosure updated September 22, 2026.
-      </p>
+    <LegalPage title="Privacy policy" number="01" summary="What we collect, how connected services work, and the choices you have about your information." updated={LEGAL_UPDATED.privacy}>
       <p>
         {LEGAL_OPERATOR_NAME}, operating as JobFlex in Washington, United States (&ldquo;we,&rdquo;
         &ldquo;us&rdquo;), provides business software for contractors. This policy covers our website,
