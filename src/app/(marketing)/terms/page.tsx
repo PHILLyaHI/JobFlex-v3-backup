@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalContact, LegalPage } from "@/components/legal/legal-page";
-import { LEGAL_OPERATOR_NAME } from "@/lib/legal";
+import { LEGAL_OPERATOR_NAME, LEGAL_UPDATED } from "@/lib/legal";
 
 export const metadata: Metadata = {
   title: "JobFlex · Terms of service",
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
-    <LegalPage title="Terms of service" number="02" summary="The agreement for your workspace, subscriptions, business documents, and connected services.">
+    <LegalPage title="Terms of service" number="02" summary="The agreement for your workspace, subscriptions, business documents, and connected services." updated={LEGAL_UPDATED.terms}>
       <p>
         These terms govern JobFlex, operated by {LEGAL_OPERATOR_NAME}, operating as JobFlex in
         Washington, United States (&ldquo;we,&rdquo; &ldquo;us&rdquo;). By creating an account or otherwise

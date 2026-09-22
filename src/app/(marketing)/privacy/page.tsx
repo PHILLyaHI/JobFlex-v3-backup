@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalContact, LegalPage } from "@/components/legal/legal-page";
-import { LEGAL_OPERATOR_NAME } from "@/lib/legal";
+import { LEGAL_OPERATOR_NAME, LEGAL_UPDATED } from "@/lib/legal";
 
 export const metadata: Metadata = {
   title: "JobFlex · Privacy policy",
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy policy" number="01" summary="What we collect, how connected services work, and the choices you have about your information.">
+    <LegalPage title="Privacy policy" number="01" summary="What we collect, how connected services work, and the choices you have about your information." updated={LEGAL_UPDATED.privacy}>
       <p>
         {LEGAL_OPERATOR_NAME}, operating as JobFlex in Washington, United States (&ldquo;we,&rdquo;
         &ldquo;us&rdquo;), provides business software for contractors. This policy covers our website,
@@ -69,10 +69,50 @@ export default function PrivacyPage() {
       <p>
         We use Gmail authorization information to operate connected email, not for advertising, sale
         to data brokers, credit decisions, or training generalized AI models. Our estimating tools do not
-        receive Gmail tokens or retrieve inbox messages. Google user data is shared only for the disclosed
-        feature, security, legal obligations, or other transfers Google&apos;s policies permit. Human
+        receive Gmail tokens or retrieve inbox messages. Human
         access is limited to circumstances those policies allow, such as your specific consent,
         security investigations, or legal requirements.
+      </p>
+      <h3 id="google-data-sharing">Who receives Google user data</h3>
+      <p>
+        For the Gmail connection, Google user data includes your connected Google email address,
+        OAuth access and refresh tokens, and authorization-expiration information. We share, transfer,
+        or disclose this information, and the outgoing communications associated with the connection,
+        with the following recipients for the purposes described here:
+      </p>
+      <ul>
+        <li><strong>Hosting and database providers:</strong> Vercel and the database hosting services
+          used by JobFlex process the connected email address and authorization information on our
+          behalf to run and store your Gmail connection. Our application uses tokens on the server;
+          new connection tokens are encrypted before database storage.</li>
+        <li><strong>Google:</strong> we send authorization tokens to Google to authenticate requests,
+          refresh access, and attempt revocation when you disconnect. When a message is sent through
+          Gmail, Google receives the sender and recipient addresses, subject, message body, and
+          reply-to information needed to deliver it.</li>
+        <li><strong>Authorized members of your JobFlex workspace:</strong> members with access to the
+          relevant settings can see the connected email address and connection status. Workspace
+          permissions govern who can use the connection to initiate messages. Access and refresh
+          tokens are not displayed in the workspace interface.</li>
+        <li><strong>Your intended email recipients and their email providers:</strong> they receive
+          the outgoing message, sender address, and reply-to address as part of email delivery.
+          Recipients may retain or forward messages under their own practices.</li>
+        <li><strong>Resend or our configured SMTP email provider:</strong> when a supported workflow
+          uses platform email, including fallback after a Gmail failure, this provider receives the
+          recipient addresses, subject, message content, and configured reply-to address. The reply-to
+          address can be your connected Google email address. We do not pass Gmail OAuth access or
+          refresh tokens to these email delivery providers.</li>
+        <li><strong>Recipients of legally required or security-related disclosures:</strong> we may
+          disclose relevant Google user data to authorities or other parties when required by
+          applicable law, or when necessary for security purposes such as investigating abuse,
+          consistent with Google&apos;s Limited Use requirements.</li>
+      </ul>
+      <p>
+        A transfer of Google user data in a merger, acquisition, or sale of assets requires your
+        explicit prior consent under Google&apos;s Limited Use requirements. We do not transfer or
+        disclose Gmail connection data for purposes other than the ones described in this section.
+        We do not sell this data or share Gmail authorization tokens with advertising networks,
+        data brokers, or AI model providers. The general provider list below does not mean that every
+        listed provider receives your Gmail connection data.
       </p>
       <p>
         JobFlex&apos;s use and transfer of information received from Google APIs will adhere to the{" "}
