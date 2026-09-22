@@ -91,6 +91,12 @@ export function FenceEstimatorForm() {
         labor: labor.map(({ id: _, ...rest }) => rest),
         assumptions,
       });
+      if (!res.ok) {
+        setConvertBusy(false);
+        if (reportPlanLimitResult(res)) return;
+        toast.error("Couldn't convert", res.error);
+        return;
+      }
       toast.success("Proposal created");
       router.push(`/dashboard/proposals/${res.id}` as any);
     } catch (err: any) {

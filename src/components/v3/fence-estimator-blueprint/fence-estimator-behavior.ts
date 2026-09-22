@@ -115,7 +115,7 @@ import {
 } from "@/lib/parcels";
 import { pointInRing } from "@/lib/parcel";
 import { convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
-import { isPlanLimitError, PLAN_LIMIT_MESSAGE } from "@/lib/planLimits";
+import { isPlanLimitError, isPlanLimitFailure, PLAN_LIMIT_MESSAGE } from "@/lib/planLimits";
 import { DEFAULT_REMOVAL_PER_LF, OPENINGS, type OpeningType } from "./fence-estimator-data";
 
 /** Where a created proposal opens: the BLUEPRINT manual builder, loaded with
@@ -2822,6 +2822,14 @@ export function initFenceEstimatorContent(
       hintEl.textContent = AIM_TIP;
       return;
     }
+    if (hintNote && hintLink) {
+      hintEl.textContent = hintNote + ' ';
+      const a = document.createElement('a');
+      a.href = hintLink.href;
+      a.textContent = hintLink.label;
+      hintEl.appendChild(a);
+      return;
+    }
     hintEl.textContent = hintNote
       ? hintNote
       : armed
@@ -2845,12 +2853,33 @@ export function initFenceEstimatorContent(
    *  would leave a failure with no explanation anywhere on screen. */
   function sayHint(msg: string) {
     hintNote = msg;
+    hintLink = null;
     syncHint();
     after(function () {
       if (hintNote !== msg) return; // a newer note replaced it
       hintNote = null;
       syncHint();
     }, 6000);
+  }
+  /** A failure the contractor has to act on stays until the next action —
+   *  the next hint, or another go at the button — instead of fading at 6 s
+   *  while they are still reading it (2026-09-22). `link` is rendered as an
+   *  anchor after the sentence: the plan cap points at the upgrade page. */
+  let hintLink: { href: string; label: string } | null = null;
+  function holdHint(msg: string, link?: { href: string; label: string }) {
+    hintNote = msg;
+    hintLink = link ?? null;
+    held = true;
+    syncHint();
+  }
+  /** The next action — another go at the button, or a change to the trace — takes the held line down. */
+  let held = false;
+  function dropHeldHint() {
+    if (!held) return;
+    held = false;
+    hintNote = null;
+    hintLink = null;
+    syncHint();
   }
 
   /** Rebuild `#runsList` wholesale. Only for the moment the demo fixture is
@@ -2907,6 +2936,7 @@ export function initFenceEstimatorContent(
    *  the ledger — and therefore the price. */
   function onTraceChange(pts: PathPoint[]) {
     mapPoints = pts;
+    dropHeldHint();
     const segs = tracedSegments(pts);
     if (!mapOwnsRuns) {
       if (!segs.length) { pushMap(); return; }
@@ -3244,7 +3274,27 @@ export function initFenceEstimatorContent(
     const canvas = modelHost?.querySelector<HTMLCanvasElement>('canvas');
     if (!canvas) return null;
     try {
-      return canvas.toDataURL('image/png');
+      // A retina canvas as PNG runs to megabytes, and Vercel refuses a
+      // request over 4.5 MB before the action ever runs (2026-09-22). The
+      // snapshot goes as a JPEG no longer than 1600 px, and if that is still
+      // over 1 MB the quality steps down; if nothing fits, no picture — the
+      // proposal never fails for its snapshot.
+      const MAX_SIDE = 1600;
+      const scale = Math.min(1, MAX_SIDE / Math.max(canvas.width, canvas.height, 1));
+      const w = Math.max(1, Math.round(canvas.width * scale));
+      const h = Math.max(1, Math.round(canvas.height * scale));
+      const off = document.createElement('canvas');
+      off.width = w; off.height = h;
+      const cx = off.getContext('2d');
+      if (!cx) return null;
+      cx.fillStyle = '#ffffff';
+      cx.fillRect(0, 0, w, h);
+      cx.drawImage(canvas, 0, 0, w, h);
+      for (const q of [0.85, 0.7, 0.55, 0.4]) {
+        const url = off.toDataURL('image/jpeg', q);
+        if (url.length <= 1_000_000) return url;
+      }
+      return null;
     } catch {
       return null;
     }
@@ -3859,6 +3909,7 @@ export function initFenceEstimatorContent(
       after(function () { btn.innerHTML = old; delete btn.dataset.busy; }, 2200);
     };
     btn.dataset.busy = '1';
+    dropHeldHint();
 
     const p = price();
     if (p.ft <= 0) {
@@ -3920,21 +3971,41 @@ export function initFenceEstimatorContent(
         previewDataUrl: captureModel() ?? undefined,
       });
 
+      // A refusal comes back as a result, never a throw (production redacts
+      // a thrown message, so the page could not tell a plan cap from a bug).
+      // The line under the stage keeps it until the next action.
+      if (!res.ok) {
+        if (isPlanLimitFailure(res)) {
+          say('i-file', 'Plan limit');
+          holdHint('This organization is at its proposal cap for the period — the next proposal needs a bigger plan.', { href: '/dashboard/upgrade', label: 'See plans' });
+        } else if (res.code === 'FORBIDDEN') {
+          say('i-file', 'Not allowed');
+          holdHint(res.error);
+        } else if (res.code === 'INVALID') {
+          say('i-file', "Couldn't convert");
+          holdHint('The estimate has a line the proposal cannot take — ' + res.error);
+        } else {
+          say('i-file', "Couldn't convert");
+          holdHint(res.error);
+        }
+        restore();
+        return;
+      }
       // No `restore()`: the router is about to unmount this page, and the
       // teardown clears every pending timer anyway.
       say('i-check', 'Proposal created');
       opts.navigate(PROPOSAL_ROUTE + res.id);
     } catch (err) {
       console.error('[fence-estimator] convert failed:', err);
+      say('i-file', "Couldn't convert");
       if (isPlanLimitError(err)) {
-        say('i-file', 'Plan limit');
-        sayHint(PLAN_LIMIT_MESSAGE + ' — this organization is at its proposal cap for the period.');
+        holdHint(PLAN_LIMIT_MESSAGE + ' — this organization is at its proposal cap for the period.', { href: '/dashboard/upgrade', label: 'See plans' });
+      } else if (/unexpected response/i.test(err instanceof Error ? err.message : '')) {
+        // The middleware answered instead of the action: the session is gone.
+        holdHint('The session has ended — reload the page and sign in again.');
       } else {
-        say('i-file', "Couldn't convert");
-        const msg = err instanceof Error ? err.message.trim() : '';
-        sayHint(msg && msg.length <= 160
-          ? msg
-          : 'The proposal could not be created. Try again, or check that this account is allowed to create proposals.');
+        // A network drop or a request the platform refused (too large) never reaches the action.
+        holdHint('The request did not reach the server — check the connection and try again.');
       }
       restore();
     }

@@ -1,8 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
-import { requireEstimatorOrManager } from "@/lib/orgContext";
+import { NoOrgError, UnauthorizedError, requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { recordInventoryLink } from "@/lib/inventoryPick";
 import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
@@ -11,7 +10,9 @@ import { uploadBlob, isBlobEnabled } from "@/lib/sdk/blob";
 import { getOpenAI, isOpenAIEnabled, samplingOptions, resolveOpenAIModel } from "@/lib/sdk/openai";
 import { estimateSchema, type GeneratedEstimate } from "@/lib/estimatorSchema";
 import { ProposalStatus } from "@/lib/prismaEnums";
-import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
+import { checkPlanLimit } from "@/lib/limitsEngine";
+import { fenceConvertSchema, firstIssue, PREVIEW_MAX_CHARS, type FenceConvertInput } from "@/lib/fence/convertSchema";
+import { logServerError } from "@/lib/server-events";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
@@ -103,57 +104,42 @@ ${input.notes ? `Notes: ${input.notes}` : ""}`,
   }
 }
 
-const convertSchema = z.object({
-  title: z.string(),
-  scope: z.string().optional(),
-  materials: z.array(
-    z.object({
-      name: z.string(),
-      quantity: z.number().finite(),
-      unitPrice: z.number().finite(),
-      unit: z.string().optional(),
-    }),
-  ),
-  labor: z.array(
-    z.object({
-      name: z.string(),
-      quantity: z.number().finite(),
-      unitPrice: z.number().finite(),
-      unit: z.string().optional(),
-    }),
-  ),
-  assumptions: z.array(z.string()),
-  // The package engine's lines (lib/fence/pricing, 2026-09-18): one row per
-  // part of the job with its MATERIAL and LABOR halves per unit, so the
-  // proposal can print both to the client and the org's markup lands on
-  // each half. When present these are the proposal's lines; `materials` /
-  // `labor` above stay for the older callers.
-  lines: z
-    .array(
-      z.object({
-        name: z.string().min(1).max(200),
-        description: z.string().max(400).optional(),
-        quantity: z.number().finite().min(0),
-        unit: z.string().optional(),
-        materialCost: z.number().finite().min(0),
-        laborCost: z.number().finite().min(0),
-      }),
-    )
-    .max(80)
-    .optional(),
-  // The job address: rides with the proposal and sets the state's sales tax.
-  address: z.string().max(300).optional().nullable(),
-  // Optional 3D snapshot (PNG data URL) — uploaded to Blob and attached when present.
-  previewDataUrl: z.string().optional(),
-  // Pre-links the proposal to a client when converted from a client's page.
-  clientId: z.string().optional().nullable(),
-  inventoryLinked: z.boolean().optional().nullable(),
-});
+/** The result of a convert. A FAILURE IS RETURNED, NOT THROWN (2026-09-22):
+ *  a thrown Error's message is redacted by Next.js in production, so the page
+ *  saw "Couldn't convert" for a plan cap, a role and a bad field alike, and
+ *  the plan-limit detection (message equality) only ever worked in dev. */
+export type FenceConvertResult =
+  | { ok: true; id: string }
+  | { ok: false; code: "PLAN_LIMIT_REACHED"; error: string; resource?: LimitKey }
+  | { ok: false; code: "FORBIDDEN" | "INVALID" | "FAILED"; error: string };
 
-export async function convertFenceEstimateToProposal(raw: unknown) {
-  const { organizationId, user } = await requireEstimatorOrManager();
-  await enforcePlanLimit(organizationId, "proposalsCreated");
-  const data = convertSchema.parse(raw);
+export async function convertFenceEstimateToProposal(raw: unknown): Promise<FenceConvertResult> {
+  let ctx: Awaited<ReturnType<typeof requireEstimatorOrManager>>;
+  try {
+    ctx = await requireEstimatorOrManager();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return { ok: false, code: "FORBIDDEN", error: "Only an estimator, a manager or the owner can turn an estimate into a proposal." };
+    if (err instanceof NoOrgError) return { ok: false, code: "FORBIDDEN", error: "Sign in to an organization to create a proposal." };
+    throw err;
+  }
+  const { organizationId, user } = ctx;
+  const quota = await checkPlanLimit(organizationId, "proposalsCreated");
+  if (!quota.allowed) {
+    return { ok: false, code: "PLAN_LIMIT_REACHED", error: PLAN_LIMIT_MESSAGE, resource: quota.cappedBy ?? "proposalsCreated" };
+  }
+  const parsed = fenceConvertSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, code: "INVALID", error: firstIssue(parsed.error) };
+  try {
+    return { ok: true, id: await writeProposal(organizationId, user.id, parsed.data) };
+  } catch (err) {
+    // The cause goes to the log and to PostHog (server_error, scope fence-convert); the page gets one plain line.
+    logServerError("fence-convert", err, { kind: "action", organizationId });
+    return { ok: false, code: "FAILED", error: "The proposal could not be saved. Try again in a moment; if it keeps failing, tell support the time it happened." };
+  }
+}
+
+async function writeProposal(organizationId: string, userId: string, data: FenceConvertInput): Promise<string> {
+  const user = { id: userId };
 
   // Never trust a client id from the browser — it must belong to this org.
   const named = data.clientId
@@ -230,14 +216,16 @@ export async function convertFenceEstimateToProposal(raw: unknown) {
   // Best-effort: persist the 3D snapshot to Blob so it can ride along in the
   // proposal/PDF. Never blocks proposal creation if Blob is off or upload fails.
   let beforePhotos: string | undefined;
-  if (data.previewDataUrl?.startsWith("data:image/") && data.previewDataUrl.length <= 5_000_000 && isBlobEnabled()) {
-    try {
-      const base64 = data.previewDataUrl.split(",")[1] ?? "";
-      const { url } = await uploadBlob(`fence-preview/${randomUUID()}.png`, Buffer.from(base64, "base64"));
+  try {
+    const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(data.previewDataUrl ?? "");
+    // Anything oversized is dropped, not refused: the proposal never waits on its picture.
+    if (m && (data.previewDataUrl?.length ?? 0) <= PREVIEW_MAX_CHARS && isBlobEnabled()) {
+      const ext = m[1] === "jpeg" ? "jpg" : m[1];
+      const { url } = await uploadBlob(`fence-preview/${randomUUID()}.${ext}`, Buffer.from(m[2], "base64"));
       beforePhotos = JSON.stringify([url]);
-    } catch {
-      /* preview is optional */
     }
+  } catch {
+    /* preview is optional */
   }
 
   const proposal = await db.proposal.create({
@@ -280,7 +268,7 @@ export async function convertFenceEstimateToProposal(raw: unknown) {
   if (filing) await clearFilingContext();
   if (projectId) revalidatePath(`/dashboard/projects/${projectId}`);
   revalidatePath("/dashboard/proposals");
-  return { id: proposal.id };
+  return proposal.id;
 }
 
 function unitToType(unit: string | undefined): string {
