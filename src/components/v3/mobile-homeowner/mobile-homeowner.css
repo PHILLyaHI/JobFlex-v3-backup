@@ -563,6 +563,13 @@ body:has(.jf-mobile-homeowner)::before { content: none; }
   color: var(--ink);
 }
 .jf-mobile-homeowner .desc::placeholder { color: var(--muted); }
+/* The typewriter's fades (use-placeholder-cycle.ts): opacity only, so the
+   field never moves; still under reduced motion. */
+.jf-mobile-homeowner .desc::placeholder { transition: opacity 150ms ease; }
+.jf-mobile-homeowner .desc[data-ph-out]::placeholder { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .jf-mobile-homeowner .desc::placeholder { transition: none; }
+}
 /* One focus ring for the field and its category chip. */
 .jf-mobile-homeowner .desc-wrap { display: flex; flex-direction: column; padding-bottom: calc(2px * var(--s)); }
 .jf-mobile-homeowner .desc-wrap:focus-within { outline: calc(2px * var(--s)) solid var(--blueprint); outline-offset: calc(-2px * var(--s)); }

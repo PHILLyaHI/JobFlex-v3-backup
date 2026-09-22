@@ -252,6 +252,13 @@ body:has(.jf-homeowner-landing)::before { content: none; }
   background: transparent; outline: none; padding: calc(18px * var(--s)) calc(20px * var(--s)) calc(6px * var(--s));
   font-size: calc(16px * var(--s)); line-height: 1.6; color: var(--ink); }
 .jf-homeowner-landing .desc::placeholder { color: var(--muted); }
+/* The typewriter's fades (use-placeholder-cycle.ts): opacity only, so the
+   field never moves; still under reduced motion. */
+.jf-homeowner-landing .desc::placeholder { transition: opacity 150ms ease; }
+.jf-homeowner-landing .desc[data-ph-out]::placeholder { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .jf-homeowner-landing .desc::placeholder { transition: none; }
+}
 .jf-homeowner-landing .guess { display: inline-flex; align-items: center; gap: calc(9px * var(--s)); margin: calc(10px * var(--s)) calc(20px * var(--s)) calc(6px * var(--s));
   padding: calc(6px * var(--s)) calc(12px * var(--s)); border: calc(1.5px * var(--s)) solid var(--blueprint); border-radius: var(--radius);
   background: rgba(24,84,160,.06); color: var(--blueprint);
