@@ -275,6 +275,9 @@ async function main() {
   // ── THE WRITE-TIME STAMP. syncSubscriptionFromStripe upserts QA Co's billing
   //    mirror, so snapshot it and put it back afterwards. ──
   const mirrorBefore = await db.subscription.findUnique({ where: { organizationId: qaOrg.id } });
+  // …and the reference of which subscription the mirror may follow next.
+  const mirrorRefKey = `mirrorSubAt:${qaOrg.id}`;
+  const mirrorRefBefore = await db.syncState.findUnique({ where: { key: mirrorRefKey } });
   // ONE ORGANISATION IS ONE CLIENT (owner, 2026-09-22): syncSubscriptionFromStripe
   // carries an organisation's attribution onto its newest subscription. The rows
   // this check created directly above are all "in" QA Co, so while the
@@ -396,6 +399,11 @@ async function main() {
       });
     } else {
       await db.subscription.deleteMany({ where: { organizationId: qaOrg.id } });
+    }
+    if (mirrorRefBefore) {
+      await db.syncState.update({ where: { key: mirrorRefKey }, data: { cursor: mirrorRefBefore.cursor } });
+    } else {
+      await db.syncState.deleteMany({ where: { key: mirrorRefKey } });
     }
     const mirrorAfter = await db.subscription.findUnique({ where: { organizationId: qaOrg.id } });
     ok("QA Co's subscription mirror was restored",

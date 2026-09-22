@@ -23,6 +23,7 @@ import {
   isWithinCommissionWindow,
 } from "@/lib/commission";
 import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
+import { mirrorSubAtKey, recordMirrorReference } from "@/lib/subscriptionRecord";
 
 // ── small helpers ─────────────────────────────────────
 function idOf(v: string | { id: string } | null | undefined): string | null {
@@ -207,6 +208,39 @@ async function carryAttributionToSubscription(opts: {
   return true;
 }
 
+/* ── THE BILLING MIRROR MOVES ONLY FORWARD TOO ──
+ *
+ * The mirror was upserted by organisation with whatever subscription was being
+ * synced. After an upgrade the reconcile replay syncs the cancelled predecessor
+ * last, so every run ended with the mirror naming the OLD subscription as
+ * CANCELED: the organisation dropped to FREE limits while paying for Pro, and
+ * the next checkout, seeing no live subscription to replace, left the real one
+ * running — two subscriptions billing at once.
+ *
+ * A subscription other than the one mirrored may write the mirror only if:
+ *   · it is not a cancelled one replacing a live mirror (an operator's comp
+ *     counts as live — that is the same overwrite, reached by another road);
+ *   · it is not older than the newest subscription the mirror has followed
+ *     (lib/subscriptionRecord, mirrorSubAt:<orgId>). After a comp detached the
+ *     mirror, only a subscription created after it.
+ * The attribution logic below still runs for every subscription — it has its
+ * own forward-only rule.
+ */
+const LIVE_MIRROR: string[] = [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING, SubscriptionStatus.PAST_DUE];
+
+async function mirrorAccepts(organizationId: string, externalSubId: string, status: string, createdMs: number) {
+  const mirror = await db.subscription.findUnique({
+    where: { organizationId },
+    select: { externalSubId: true, status: true, provider: true, updatedAt: true },
+  });
+  if (!mirror || mirror.externalSubId === externalSubId) return true;
+  if (status === SubscriptionStatus.CANCELED && LIVE_MIRROR.includes(mirror.status)) return false;
+  const ref = await db.syncState.findUnique({ where: { key: mirrorSubAtKey(organizationId) } }).catch(() => null);
+  const refMs = ref ? Number(ref.cursor) : mirror.provider === "MANUAL" ? mirror.updatedAt.getTime() : NaN;
+  if (!Number.isFinite(refMs)) return true;
+  return mirror.externalSubId ? createdMs >= refMs : createdMs > refMs;
+}
+
 // ── subscription lifecycle → Subscription mirror + Attribution ──
 export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
   const externalSubId = sub.id;
@@ -227,35 +261,39 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
   const promo = await resolvePromoCode(sub.discount);
   const status = mapStripeStatus(sub.status);
 
-  const planWas = await planSnapshot(organizationId);
-  await db.subscription.upsert({
-    where: { organizationId },
-    update: {
-      status,
-      provider: "STRIPE",
-      externalCustomerId: customerId,
-      externalSubId,
-      stripePriceId,
-      ...(planSlug && { plan: planSlug }),
-      currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : null,
-      canceledAt: sub.canceled_at ? new Date(sub.canceled_at * 1000) : null,
-      appliedPromotionCodeId: idOf(sub.discount?.promotion_code),
-      appliedCouponId: sub.discount?.coupon?.id ?? null,
-    },
-    create: {
-      organizationId,
-      plan: planSlug ?? "FREE",
-      status,
-      provider: "STRIPE",
-      externalCustomerId: customerId,
-      externalSubId,
-      stripePriceId,
-      currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : null,
-      appliedPromotionCodeId: idOf(sub.discount?.promotion_code),
-      appliedCouponId: sub.discount?.coupon?.id ?? null,
-    },
-  });
-  reportPlanChange(organizationId, "stripe", planWas);
+  const subCreatedMs = (sub.created ?? Math.floor(Date.now() / 1000)) * 1000;
+  if (await mirrorAccepts(organizationId, externalSubId, status, subCreatedMs)) {
+    const planWas = await planSnapshot(organizationId);
+    await db.subscription.upsert({
+      where: { organizationId },
+      update: {
+        status,
+        provider: "STRIPE",
+        externalCustomerId: customerId,
+        externalSubId,
+        stripePriceId,
+        ...(planSlug && { plan: planSlug }),
+        currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : null,
+        canceledAt: sub.canceled_at ? new Date(sub.canceled_at * 1000) : null,
+        appliedPromotionCodeId: idOf(sub.discount?.promotion_code),
+        appliedCouponId: sub.discount?.coupon?.id ?? null,
+      },
+      create: {
+        organizationId,
+        plan: planSlug ?? "FREE",
+        status,
+        provider: "STRIPE",
+        externalCustomerId: customerId,
+        externalSubId,
+        stripePriceId,
+        currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : null,
+        appliedPromotionCodeId: idOf(sub.discount?.promotion_code),
+        appliedCouponId: sub.discount?.coupon?.id ?? null,
+      },
+    });
+    reportPlanChange(organizationId, "stripe", planWas);
+    await recordMirrorReference(organizationId, subCreatedMs);
+  }
 
   // The client's attribution — months already counted — moves onto this
   // subscription first, so the branches below find it by subscription id and
@@ -264,7 +302,7 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
     toSubId: externalSubId,
     organizationId,
     customerId,
-    subCreatedMs: (sub.created ?? Math.floor(Date.now() / 1000)) * 1000,
+    subCreatedMs,
     subCanceled: status === SubscriptionStatus.CANCELED,
   });
 

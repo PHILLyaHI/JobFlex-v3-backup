@@ -9,9 +9,14 @@
 // the subscription is new; commission after the upgrade is on the new invoice
 // amount; the upgrade checkout does not pass the discount code again.
 //
+// G: the billing mirror follows only forward as well — the reconcile replay of
+// the cancelled predecessor must not take QA Co's mirror back to it (FREE limits
+// while paying, and a next checkout that replaces nothing), nor overwrite a comp.
+//
 // Runs in **QA Co** (slug `qa-co`). syncSubscriptionFromStripe upserts QA Co's
-// billing mirror, so the mirror is snapshotted first and put back at the end,
-// pass or fail. Rows are prefixed `qa-upg-` and removed on the way out.
+// billing mirror, so the mirror (and its mirrorSubAt reference) is snapshotted
+// first and put back at the end, pass or fail. Rows are prefixed `qa-upg-` and
+// removed on the way out.
 
 delete process.env.STRIPE_SECRET_KEY;
 delete process.env.STRIPE_SECRET_KEY_TEST;
@@ -125,6 +130,12 @@ async function main() {
   const org = qaOrg.id;
   console.log(`upgrades · ${qaOrg.name} (${QA_SLUG}) · real handlers · no Stripe calls`);
   const mirrorBefore = await db.subscription.findUnique({ where: { organizationId: org } });
+  const refKey = `mirrorSubAt:${org}`;
+  const refBefore = await db.syncState.findUnique({ where: { key: refKey } });
+  const mirror = () => db.subscription.findUnique({ where: { organizationId: org }, select: { externalSubId: true, status: true, plan: true, provider: true } });
+  // The route's own predicate for the subscription a checkout replaces.
+  const replaces = (m: { externalSubId: string | null; status: string } | null) =>
+    m?.externalSubId && (m.status === "ACTIVE" || m.status === "TRIALING") ? m.externalSubId : null;
 
   try {
     // ═══ A. Three months, then an upgrade to a new subscription ═══
@@ -180,6 +191,14 @@ async function main() {
     ok("still on the new subscription, still ACTIVE, months unchanged",
       attrs.length === 1 && attrs[0].stripeSubscriptionId === NEW && attrs[0].status === "ACTIVE" && attrs[0].qualifyingMonths === 6,
       JSON.stringify(attrs[0]));
+    let mNow = await mirror();
+    ok("QA Co's billing mirror stays on the live Pro subscription — not the cancelled Starter one",
+      mNow?.externalSubId === NEW && mNow?.status === "ACTIVE", JSON.stringify(mNow));
+    ok("so the next checkout replaces the live subscription instead of billing beside it",
+      replaces(mNow) === NEW, String(replaces(mNow)));
+    const routeSrc = readFileSync("src/app/api/checkout/subscription/route.ts", "utf8");
+    ok("(the route computes replacesSubId from the mirror exactly so)",
+      /const replacesSubId =\s*sub\?\.externalSubId && \(sub\.status === "ACTIVE" \|\| sub\.status === "TRIALING"\)/.test(routeSrc));
     await syncSubscriptionFromStripe(subscription({ id: NEW, customer: CUS, orgId: org, promotionCodeId: null, created: t("2026-08-15T00:00:00Z"), price: `price_${P}149` }));
     ok("…and re-syncing the new one changes nothing", (await attributionsFor(org))[0]?.stripeSubscriptionId === NEW);
     // An upgrade inside month 1: the OLD subscription is replayed still carrying
@@ -188,6 +207,24 @@ async function main() {
     attrs = await attributionsFor(org);
     ok("the old subscription replayed WITH its discount creates no second attribution",
       attrs.length === 1 && attrs[0].stripeSubscriptionId === NEW && attrs[0].qualifyingMonths === 6, JSON.stringify(attrs));
+    await cleanup();
+
+    // ═══ G. A comp is not overwritten by the subscription it replaced ═══
+    head("G · an operator's comp: neither the cancelled nor the still-live old subscription takes the mirror back");
+    await db.subscription.update({
+      where: { organizationId: org },
+      data: { plan: "PROFESSIONAL", status: "ACTIVE", provider: "MANUAL", externalSubId: null, stripePriceId: null },
+    });
+    await syncSubscriptionFromStripe(subscription({ id: NEW, customer: CUS, orgId: org, promotionCodeId: null, created: t("2026-08-15T00:00:00Z"), status: "canceled" }));
+    mNow = await mirror();
+    ok("the cancelled predecessor leaves the comp alone", mNow?.provider === "MANUAL" && mNow?.status === "ACTIVE" && mNow?.externalSubId === null, JSON.stringify(mNow));
+    await syncSubscriptionFromStripe(subscription({ id: NEW, customer: CUS, orgId: org, promotionCodeId: null, created: t("2026-08-15T00:00:00Z"), price: `price_${P}149` }));
+    mNow = await mirror();
+    ok("…and so does a late event of it while still live", mNow?.provider === "MANUAL" && mNow?.externalSubId === null, JSON.stringify(mNow));
+    const LATER = `sub_${P}later`;
+    await syncSubscriptionFromStripe(subscription({ id: LATER, customer: CUS, orgId: org, promotionCodeId: null, created: Math.floor(Date.now() / 1000) + 60 }));
+    mNow = await mirror();
+    ok("a subscription bought after the comp does take it over", mNow?.externalSubId === LATER && mNow?.provider === "STRIPE", JSON.stringify(mNow));
     await cleanup();
 
     // ═══ C. The new subscription's first invoice arrives before its created event ═══
@@ -270,6 +307,11 @@ async function main() {
       });
     } else {
       await db.subscription.deleteMany({ where: { organizationId: org } });
+    }
+    if (refBefore) {
+      await db.syncState.update({ where: { key: refKey }, data: { cursor: refBefore.cursor } });
+    } else {
+      await db.syncState.deleteMany({ where: { key: refKey } });
     }
     const now = await db.subscription.findUnique({ where: { organizationId: org } });
     ok("QA Co's billing mirror was restored",

@@ -12,6 +12,27 @@ import { db } from "@/lib/db";
 import type { SubscriptionStatus } from "@/lib/prismaEnums";
 import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
 
+/* WHICH SUBSCRIPTION THE MIRROR MAY FOLLOW NEXT. An organisation's mirror names
+ * one Stripe subscription, and Stripe keeps sending events for the ones it
+ * replaced — the reconcile cron replays every subscription newest first, so a
+ * cancelled predecessor is synced AFTER its successor. The reference below is
+ * the newest subscription the mirror has been moved to (its creation time, or
+ * the moment a checkout return recorded it); lib/stripeSync lets an older one
+ * write the mirror no more. */
+export const mirrorSubAtKey = (organizationId: string) => `mirrorSubAt:${organizationId}`;
+
+export async function recordMirrorReference(organizationId: string, ms: number) {
+  await db.syncState
+    .upsert({
+      where: { key: mirrorSubAtKey(organizationId) },
+      update: { cursor: String(ms) },
+      create: { key: mirrorSubAtKey(organizationId), cursor: String(ms) },
+    })
+    .catch(() => {
+      /* best effort — the reference only ever narrows what may overwrite the mirror */
+    });
+}
+
 export interface PlanChangeRecord {
   organizationId: string;
   /** Catalog slug, lowercase; stored uppercased, the way every reader expects. */
@@ -52,5 +73,8 @@ export async function recordPlanChange(rec: PlanChangeRecord): Promise<string> {
     },
   });
   reportPlanChange(organizationId, "checkout", planWas);
+  // The subscription this checkout produced was created moments ago; anything
+  // older must not take the mirror back.
+  if (subId) await recordMirrorReference(organizationId, Date.now());
   return planSlug;
 }
