@@ -8,6 +8,7 @@ import { startCascade } from "@/lib/leadCenter/cascade";
 import { getRoutingMode, MANUAL_MODE_REASON } from "@/lib/leadCenter/routingMode";
 import { suggestIntakeQuestions, type IntakeQuestion } from "@/lib/ai/homeownerQuestions";
 import { enforceRateLimit, clientIp, rateLimitShared, MINUTE } from "@/lib/rateLimit";
+import { needsAddressFor, writeProfessionalScope } from "@/lib/leadScope";
 
 const homeownerSchema = z.object({
   name: z.string().min(1),
@@ -20,6 +21,8 @@ const homeownerSchema = z.object({
   projectType: z.string().optional(),
   description: z.string().min(1),
   referralCode: z.string().optional(),
+  /** The scope the wizard wrote and the homeowner approved (suggestHomeownerScope); stored as is. */
+  scope: z.string().trim().max(3000).optional(),
 });
 
 // Reuse a prior geocode for the SAME address instead of paying Google again.
@@ -74,6 +77,17 @@ export async function submitHomeownerRequest(raw: unknown) {
   await enforceRateLimit(`homeowner:${await clientIp()}`, 3, 10 * MINUTE, "requests");
   await enforceRateLimit("homeowner:global", 60, MINUTE, "requests");
 
+  // A roof, a fence, siding, gutters, a driveway or a deck is measured at the
+  // property (lib/leadRules): without the street address the contractor's
+  // estimator has nothing to look at. Said back as a plain answer the wizard
+  // shows, not a thrown error — those are masked in production.
+  if (needsAddressFor(data.description) && !(data.address ?? "").trim()) {
+    return {
+      ok: false as const,
+      error: "This job is measured at the property, so contractors need the street address. Please add it and send again.",
+    };
+  }
+
   const req = await db.homeownerRequest.create({
     data: {
       name: data.name,
@@ -89,7 +103,7 @@ export async function submitHomeownerRequest(raw: unknown) {
   // The description is the ONE trade source (owner, 2026-09-04) — the wizards
   // no longer carry a specialty picker. `projectType` stays accepted in the
   // schema for older clients but is only context, never the classification.
-  const [detected, geo] = await Promise.all([
+  const [detected, geo, scope] = await Promise.all([
     detectTrade(`${data.projectType ?? ""}\n${data.description}`).catch(() => null),
     geocodeOrReuse({
       address: data.address,
@@ -97,6 +111,11 @@ export async function submitHomeownerRequest(raw: unknown) {
       state: data.state,
       zip: data.zip,
     }).catch(() => null),
+    // The scope the homeowner approved in the wizard, else written now from
+    // the words and the answers.
+    data.scope && data.scope.length >= 20
+      ? Promise.resolve(data.scope)
+      : writeProfessionalScope({ description: data.description, address: data.address, projectType: data.projectType }),
   ]);
 
   const platformLead = await db.platformLead.create({
@@ -117,6 +136,9 @@ export async function submitHomeownerRequest(raw: unknown) {
       lng: geo?.lng ?? null,
       projectType: data.projectType,
       description: data.description,
+      // The scope a contractor prices from (lib/leadScope); null when the
+      // model is off or failed, and the lead carries the homeowner's words.
+      scope,
       detectedTrade: detected?.trade ?? null,
       aiConfidence: detected?.confidence ?? null,
     },
@@ -170,7 +192,7 @@ export async function submitHomeownerRequest(raw: unknown) {
   }
 
   return {
-    ok: true,
+    ok: true as const,
     platformLeadId: platformLead.id,
     /** The homeowner's status page — the wizard's Done screen links it. */
     statusPath: `/request/${platformLead.accessToken}`,
@@ -192,6 +214,33 @@ const questionsInput = z.object({
  *  editing their description and re-refining is normal behaviour. */
 const QUESTIONS_PER_WINDOW = 12;
 const QUESTIONS_WINDOW_MS = 5 * 60 * 1000;
+
+const scopeInput = z.object({
+  description: z.string().trim().min(1).max(4000),
+  answers: z.array(z.object({ q: z.string().trim().max(300), a: z.string().trim().max(500) })).max(12).optional(),
+});
+
+/**
+ * "Generate my scope" in the wizards (owner, 2026-09-21): the description
+ * and the answers, written up as the scope a contractor prices from
+ * (lib/leadScope). The homeowner reads it on the scope step and sends it
+ * with the request. Never throws — null means "show the homeowner's words".
+ */
+export async function suggestHomeownerScope(raw: unknown): Promise<{ scope: string | null }> {
+  let data: z.infer<typeof scopeInput>;
+  try {
+    data = scopeInput.parse(raw);
+  } catch {
+    return { scope: null };
+  }
+  const gate = await rateLimitShared(`homeowner-scope:${await clientIp()}`, QUESTIONS_PER_WINDOW, QUESTIONS_WINDOW_MS);
+  if (!gate.ok) return { scope: null };
+  const answers = (data.answers ?? [])
+    .filter((x) => x.a)
+    .map((x) => `${x.q} ${x.a}`)
+    .join("\n");
+  return { scope: await writeProfessionalScope({ description: answers ? `${data.description}\n\n${answers}` : data.description }) };
+}
 
 /**
  * 3-5 follow-up questions for this description, or null when the wizard should

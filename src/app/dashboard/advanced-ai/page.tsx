@@ -33,6 +33,18 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { AdvancedAiContent } from "@/components/v3/advanced-ai-blueprint/advanced-ai-content";
+import { readEstimateSeed } from "@/lib/estimateSeed";
+import { EstimateSeedStrip } from "@/components/v3/estimate-seed-strip";
+
+/** The hand-off seed for this company's Smart Proposal, or null — never an error. */
+async function readSmartSeed() {
+  try {
+    const { organizationId } = await requireOrg();
+    return await readEstimateSeed(organizationId, "smart");
+  } catch {
+    return null;
+  }
+}
 
 export const dynamic = "force-dynamic";
 // A server action runs under the segment config of the page that calls it,
@@ -56,5 +68,13 @@ export default async function AdvancedAiPage() {
     throw err;
   }
 
-  return <AdvancedAiContent />;
+  // A lead handed over from its page (lib/estimateSeed): the scope is the
+  // brief, the address is the location, before the contractor types a word.
+  const seed = await readSmartSeed();
+  return (
+    <>
+      {seed && <EstimateSeedStrip leadId={seed.leadId} name={seed.name} address={seed.address} />}
+      <AdvancedAiContent seed={seed ? { brief: seed.brief, address: seed.address ?? "", state: seed.state ?? "" } : undefined} />
+    </>
+  );
 }

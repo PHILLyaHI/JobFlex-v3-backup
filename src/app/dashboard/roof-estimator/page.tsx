@@ -16,6 +16,19 @@ import { auth } from "@/lib/auth";
 import { isEagleViewEnabled } from "@/lib/eagleview";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { RoofEstimatorContent } from "@/components/v3/roof-estimator-blueprint/roof-estimator-content";
+import { readEstimateSeed } from "@/lib/estimateSeed";
+import { EstimateSeedStrip } from "@/components/v3/estimate-seed-strip";
+import { requireOrg } from "@/lib/orgContext";
+
+/** The hand-off seed for this company's roof estimator, or null — never an error. */
+async function readRoofSeed() {
+  try {
+    const { organizationId } = await requireOrg();
+    return await readEstimateSeed(organizationId, "roof");
+  } catch {
+    return null;
+  }
+}
 
 export const dynamic = "force-dynamic";
 // The measure action this page calls places up to seven aerial orders, waits
@@ -49,12 +62,19 @@ export default async function RoofEstimatorPage() {
   // server Google key entitled to Geocoding + Solar that the deploy did not
   // have. A deploy with no flag now gets the same page as local dev.
   const drawingEnabled = process.env.ROOF_DRAWING_ENABLED === "true";
+  // A roof lead handed over from its page (lib/estimateSeed): the address is
+  // already in the search field when the contractor arrives.
+  const seed = await readRoofSeed();
 
   return (
-    <RoofEstimatorContent
-      evEnabled={isEagleViewEnabled()}
-      aiEnabled={isOpenAIEnabled()}
-      drawingEnabled={drawingEnabled}
-    />
+    <>
+      {seed && <EstimateSeedStrip leadId={seed.leadId} name={seed.name} address={seed.address} />}
+      <RoofEstimatorContent
+        evEnabled={isEagleViewEnabled()}
+        aiEnabled={isOpenAIEnabled()}
+        drawingEnabled={drawingEnabled}
+        initialAddress={seed?.address ?? undefined}
+      />
+    </>
   );
 }

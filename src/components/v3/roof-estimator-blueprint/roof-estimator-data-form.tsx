@@ -237,7 +237,7 @@ function shotDateLabel(v: string | undefined): string | null {
   return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
 
-export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolean } = {}) {
+export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { aiEnabled?: boolean; initialAddress?: string } = {}) {
   const router = useRouter();
 
   // ── Screen ──
@@ -449,6 +449,14 @@ export function RoofEstimatorDataForm({ aiEnabled = true }: { aiEnabled?: boolea
 
   // Google Places on the donor's plain <input>, the same module the Fence
   // studio uses. Uncontrolled on purpose: the module writes the field itself.
+  // A lead's address arrives already typed (lib/estimateSeed); the contractor
+  // presses Find. Uncontrolled field, so it is written once, on the intake.
+  React.useEffect(() => {
+    if (panel !== "intake" || !initialAddress) return;
+    const input = addrRef.current;
+    if (input && !input.value) input.value = initialAddress;
+  }, [panel, initialAddress]);
+
   React.useEffect(() => {
     if (panel !== "intake") return;
     const input = addrRef.current;

@@ -65,4 +65,7 @@ export const QUESTIONS: Record<string, Question[]> = {
 
 export const STEP_NAMES = ["Describe", "Clarify", "Scope", "Contact"];
 
-export const CONTACT_FIELDS = ["Full name", "Email", "Phone (optional)", "ZIP code"];
+// "Street address" (2026-09-21): needed when the job is priced off the roof
+// or the lot — roof, fence, siding, gutters, driveway, deck — and the wizard
+// says so; optional for everything else. The estimators read it.
+export const CONTACT_FIELDS = ["Full name", "Email", "Phone (optional)", "ZIP code", "Street address"];

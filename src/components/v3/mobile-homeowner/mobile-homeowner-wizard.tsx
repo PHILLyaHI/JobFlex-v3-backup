@@ -46,7 +46,11 @@ import {
   STEP_NAMES,
   type Question,
 } from "../homeowner-landing/homeowner-data";
-import { submitHomeownerRequest, suggestHomeownerQuestions } from "@/actions/homeowner";
+import { needsAddressFor } from "@/lib/leadRules";
+
+/** The street address is CONTACT_FIELDS[4]; required only when lib/leadRules says the job is measured at the property. */
+const ADDRESS_FIELD = 4;
+import { submitHomeownerRequest, suggestHomeownerQuestions, suggestHomeownerScope } from "@/actions/homeowner";
 import { prefersReducedMotion } from "../homeowner-landing/use-homeowner-behavior";
 import { usePlaceholderCycle } from "../homeowner-landing/wizard/use-placeholder-cycle";
 
@@ -77,6 +81,12 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
   /* Questions written from THIS description (server, OpenAI); null keeps the
      static set from homeowner-data.ts. */
   const [aiQs, setAiQs] = useState<Question[] | null>(null);
+  /* The scope a contractor prices from, written by the server from the
+     description and the answers when "Generate my scope" is pressed; the
+     scope step shows it (the homeowner's own words until it lands, or if
+     it fails) and it is sent with the request. */
+  const [scope, setScope] = useState<string | null>(null);
+  const [scopeBusy, setScopeBusy] = useState(false);
   /* The submission. This pane used to advance to "on its way" and send
      nothing — no lead, no confirmation email, nothing in the Lead Center. */
   const [sending, setSending] = useState(false);
@@ -252,9 +262,30 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
   /* CONTACT_FIELDS maps positionally: name, email, phone (optional), zip. The
      clarify answers ride along in the description, which is the one free-text
      body `submitHomeownerRequest` takes. */
+  /* "Generate my scope": the description and the answers go to the server,
+     which writes the scope a contractor prices from (lib/leadScope). */
+  const writeScope = () => {
+    const answered = questions
+      .map((q, i) => ({ q: q.q, a: (answers.current[i] ?? "").trim() }))
+      .filter((x) => x.a);
+    setScope(null);
+    setScopeBusy(true);
+    const work = suggestHomeownerScope({ description: desc.trim(), answers: answered })
+      .then((res) => {
+        if (res.scope) setScope(res.scope);
+      })
+      .catch(() => {})
+      .finally(() => setScopeBusy(false));
+    go(2, work);
+  };
+
+  /* The street address (CONTACT_FIELDS[4]) is required only when the job is
+     measured at the property — lib/leadRules decides from the description. */
+  const needsAddress = needsAddressFor(desc);
+
   const onSend = async () => {
     if (sending) return;
-    const [name, email, phone, zip] = [0, 1, 2, 3].map(contactValue);
+    const [name, email, phone, zip, address] = [0, 1, 2, 3, 4].map(contactValue);
     if (!name || !email || !zip) {
       setSendErr("Name, email and ZIP code are needed to send this to contractors.");
       return;
@@ -263,8 +294,6 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
       setSendErr("That email address does not look right.");
       return;
     }
-    setSendErr("");
-    setSending(true);
     const extra = questions
       .map((q, i) => {
         const a = (answers.current[i] ?? "").trim();
@@ -272,14 +301,29 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
       })
       .filter(Boolean)
       .join(NEWLINE);
+    const description = extra ? desc.trim() + NEWLINE + NEWLINE + extra : desc.trim();
+    // The answers can reveal a roof or a fence the first words did not: the
+    // same rule the server applies, said here first.
+    if (needsAddressFor(description) && !address) {
+      setSendErr("This job is measured at the property — please add the street address.");
+      return;
+    }
+    setSendErr("");
+    setSending(true);
     try {
-      await submitHomeownerRequest({
+      const res = await submitHomeownerRequest({
         name,
         email,
         phone: phone || undefined,
         zip,
-        description: extra ? desc.trim() + NEWLINE + NEWLINE + extra : desc.trim(),
+        address: address || undefined,
+        scope: scope ?? undefined,
+        description,
       });
+      if (!res.ok) {
+        setSendErr(res.error);
+        return;
+      }
       setStep(4);
       bump();
     } catch (err) {
@@ -428,7 +472,7 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
         <button className="back" type="button" data-to="0" onClick={() => onBack(0)}>
           ‹ Back
         </button>
-        <button className="go go-scope" type="button" onClick={() => go(2)}>
+        <button className="go go-scope" type="button" onClick={writeScope}>
           Generate my scope
         </button>
       </div>
@@ -473,7 +517,7 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
         </div>
         <div className="sheet">
           <div className="sheet-n">Scope of work</div>
-          <p className="sheet-p">{desc.trim() || "Homeowner project description."}</p>
+          <p className="sheet-p" data-scope-text>{scope ?? (scopeBusy ? "Writing your scope of work…" : desc.trim() || "Homeowner project description.")}</p>
           <div className="sheet-list">{scopeRows()}</div>
         </div>
       </div>
@@ -505,12 +549,13 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
         <div className="cform">
           {CONTACT_FIELDS.map((field, i) => {
             const id = uid + "c" + i;
+            const label = i === ADDRESS_FIELD ? (needsAddress ? field + " — needed to measure this job" : field + " (optional)") : field;
             return (
               <div key={field}>
                 <label className="fld-l" htmlFor={id}>
-                  {field}
+                  {label}
                 </label>
-                <input className="q-in c-in" id={id} placeholder={field} />
+                <input className="q-in c-in" id={id} placeholder={label} autoComplete={i === ADDRESS_FIELD ? "street-address" : undefined} />
               </div>
             );
           })}

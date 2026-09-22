@@ -83,7 +83,8 @@ export default async function LeadsPage() {
     source: l.source ?? "MANUAL",
     assignee: l.assignedTo?.name ?? l.assignedTo?.email ?? null,
     age: relative(l.createdAt),
-    desc: l.description ?? "",
+    // The scope written for a contractor when the request carried one.
+    desc: l.scope ?? l.description ?? "",
   }));
 
   // `new Date()`, not `Date.now()`: the react-hooks purity rule flags the
@@ -103,7 +104,7 @@ export default async function LeadsPage() {
     // remaining life of the LeadOffer row.
     mins: Math.max(0, Math.round((o.expiresAt.getTime() - now) / 60000)),
     age: relative(o.createdAt),
-    desc: o.platformLead.description ?? "",
+    desc: o.platformLead.scope ?? o.platformLead.description ?? "",
   }));
 
   return (
