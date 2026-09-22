@@ -8,7 +8,7 @@
 // the payment is an amount and a date.
 
 import { db } from "@/lib/db";
-import { readDispute } from "@/lib/stripeSync";
+import { disputesOnCharge, readDispute } from "@/lib/stripeSync";
 import { LedgerEntryState, LedgerEntryType } from "@/lib/prismaEnums";
 import type { MoneyNoteDTO } from "@/components/v3/influencer-portal/portal-data";
 
@@ -24,7 +24,7 @@ export async function moneyNotes(influencerId: string): Promise<MoneyNoteDTO[]> 
         entryType: LedgerEntryType.REVERSED,
         idempotencyKey: { startsWith: "dispute:" },
       },
-      select: { id: true, amountCents: true, createdAt: true, stripeChargeId: true },
+      select: { id: true, amountCents: true, createdAt: true, stripeChargeId: true, idempotencyKey: true },
     }),
   ]);
 
@@ -44,7 +44,9 @@ export async function moneyNotes(influencerId: string): Promise<MoneyNoteDTO[]> 
 
   const notes: MoneyNoteDTO[] = [];
   for (const [chargeId, v] of byCharge) {
-    const dispute = chargeId === "unknown" ? null : await readDispute(chargeId);
+    // A payment can have had disputes before; the one holding it is the open one.
+    const dispute =
+      chargeId === "unknown" ? null : (await disputesOnCharge(chargeId)).find((d) => d.status === "open");
     notes.push({
       id: `held:${chargeId}`,
       kind: "held",
@@ -53,9 +55,11 @@ export async function moneyNotes(influencerId: string): Promise<MoneyNoteDTO[]> 
     });
   }
   for (const r of chargebacks) {
-    // Dated by the day the dispute was LOST, from the dispute record — not by the
-    // moment our webhook happened to write the row.
-    const dispute = r.stripeChargeId ? await readDispute(r.stripeChargeId) : null;
+    // Dated by the day the dispute was LOST, from that dispute's record — named
+    // in the row's key, dispute:<disputeId>:<accrualId> — not by the moment our
+    // webhook happened to write the row.
+    const disputeId = r.idempotencyKey.split(":")[1];
+    const dispute = r.stripeChargeId && disputeId ? await readDispute(r.stripeChargeId, disputeId) : null;
     notes.push({
       id: r.id,
       kind: "chargeback",

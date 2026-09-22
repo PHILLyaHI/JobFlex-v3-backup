@@ -538,9 +538,33 @@ export async function accrueForInvoice(invoice: Stripe.Invoice, eventId?: string
   // a redelivery of either event cannot double-reverse.
   const reversedFromPark = await drainParkedRefund(idOf(invoice.charge), eventId);
 
-  return reversedFromPark
-    ? { accruedCents: commissionCents, reversedCents: reversedFromPark }
-    : { accruedCents: commissionCents };
+  // A dispute can outrun its invoice as well: this commission is born into it —
+  // frozen while it is open, charged back if it was already lost. Without this
+  // the accrual stood PENDING with its clock running, and a lost dispute whose
+  // closed event had come first was never applied: redeliveries of it are
+  // skipped as already closed.
+  const dispute = await applyDisputesToNewAccrual(idOf(invoice.charge), eventId);
+
+  return {
+    accruedCents: commissionCents,
+    ...(reversedFromPark ? { reversedCents: reversedFromPark } : {}),
+    ...(dispute ? { dispute } : {}),
+  };
+}
+
+async function applyDisputesToNewAccrual(chargeId: string | null, eventId?: string) {
+  if (!chargeId) return null;
+  const records = await disputesOnCharge(chargeId);
+  const lost = records.find((d) => d.status === "lost");
+  if (lost) {
+    await reverseForLostDispute(chargeId, lost.id, eventId);
+    return "lost" as const;
+  }
+  if (records.some((d) => d.status === "open")) {
+    await holdChargeRows(chargeId);
+    return "held" as const;
+  }
+  return null;
 }
 
 // ── refund / dispute → reverse commission (proportional, idempotent) ──
@@ -702,12 +726,17 @@ async function applyRefundReversal(opts: {
  * negative and the next commissions pay it back before anything is transferred
  * (runApprovedPayouts always nets negative rows into a payout).
  *
- * The dispute's own state is kept in SyncState under dispute:<chargeId>, which
- * is what makes this idempotent by dispute id and safe against the two events
- * arriving in the wrong order: a created that lands after its closed is ignored
- * rather than freezing the money again forever.
+ * The dispute's own state is kept in SyncState, one record per dispute under
+ * dispute:<chargeId>:<disputeId> — a payment can be disputed again after an
+ * inquiry closes, and each dispute runs its own open → won/lost course. The
+ * record is what makes this idempotent by dispute id and safe against the two
+ * events arriving in the wrong order: a created that lands after its closed is
+ * ignored rather than freezing the money again forever.
+ *
+ * A DISPUTE CAN OUTRUN ITS INVOICE, like a refund can: accrueForInvoice reads
+ * these records and holds, or charges back, a commission that arrives late.
  */
-const disputeKey = (chargeId: string) => `dispute:${chargeId}`;
+const disputeKey = (chargeId: string, disputeId: string) => `dispute:${chargeId}:${disputeId}`;
 
 export interface DisputeRecord {
   id: string;
@@ -716,22 +745,33 @@ export interface DisputeRecord {
   closedAt?: string;
 }
 
-export async function readDispute(chargeId: string): Promise<DisputeRecord | null> {
-  const row = await db.syncState.findUnique({ where: { key: disputeKey(chargeId) } }).catch(() => null);
-  if (!row) return null;
+function parseDispute(cursor: string): DisputeRecord | null {
   try {
-    return JSON.parse(row.cursor) as DisputeRecord;
+    return JSON.parse(cursor) as DisputeRecord;
   } catch {
     return null;
   }
 }
 
+export async function readDispute(chargeId: string, disputeId: string): Promise<DisputeRecord | null> {
+  const row = await db.syncState.findUnique({ where: { key: disputeKey(chargeId, disputeId) } }).catch(() => null);
+  return row ? parseDispute(row.cursor) : null;
+}
+
+/** Every dispute this payment has had, open or closed. */
+export async function disputesOnCharge(chargeId: string): Promise<DisputeRecord[]> {
+  const rows = await db.syncState
+    .findMany({ where: { key: { startsWith: `dispute:${chargeId}:` } } })
+    .catch(() => []);
+  return rows.map((r) => parseDispute(r.cursor)).filter((r): r is DisputeRecord => r !== null);
+}
+
 async function writeDispute(chargeId: string, rec: DisputeRecord) {
   const cursor = JSON.stringify(rec);
   await db.syncState.upsert({
-    where: { key: disputeKey(chargeId) },
+    where: { key: disputeKey(chargeId, rec.id) },
     update: { cursor },
-    create: { key: disputeKey(chargeId), cursor },
+    create: { key: disputeKey(chargeId, rec.id), cursor },
   });
 }
 
@@ -744,28 +784,85 @@ const unpaidRows = {
   ],
 };
 
+function isUnpaid(row: { state: string; payoutTransferId: string | null }): boolean {
+  return (
+    row.state === LedgerEntryState.PENDING ||
+    row.state === LedgerEntryState.HELD ||
+    (row.state === LedgerEntryState.CLEARED && !row.payoutTransferId)
+  );
+}
+
+/**
+ * Freeze the commission on a payment that nobody has been paid yet: each unpaid
+ * accrual with its refund reversals, so a partial refund cannot clear on its own
+ * while the commission it reduces is frozen.
+ *
+ * A commission already paid out is left alone, and so is its refund clawback:
+ * that clawback is money the partner owes back, and a debt is never frozen. It
+ * goes on netting against the next payout — freezing it, as the first version
+ * did, left it HELD for good once the dispute was lost, and that part of the
+ * chargeback was never recovered.
+ */
+async function holdChargeRows(chargeId: string): Promise<number> {
+  const accruals = await db.commissionLedger.findMany({
+    where: { stripeChargeId: chargeId, entryType: LedgerEntryType.ACCRUED },
+    select: { influencerId: true, stripeInvoiceId: true, state: true, payoutTransferId: true },
+  });
+  let held = 0;
+  for (const a of accruals) {
+    if (!a.stripeInvoiceId || !isUnpaid(a)) continue;
+    const r = await db.commissionLedger.updateMany({
+      where: {
+        influencerId: a.influencerId,
+        stripeInvoiceId: a.stripeInvoiceId,
+        ...unpaidRows,
+        NOT: { state: LedgerEntryState.HELD },
+      },
+      data: { state: LedgerEntryState.HELD, clearsAt: null },
+    });
+    held += r.count;
+  }
+  return held;
+}
+
+/**
+ * Freeze again whatever these payments released while a dispute on them is
+ * still open. The hold runs once, when the dispute opens, and skips money that
+ * is in a payout at that moment — so a payout that is then refused, or a
+ * reversed transfer an admin retries, hands those rows back as CLEARED. Called
+ * by lib/payouts on every path that frees rows, and before rows are reserved.
+ */
+export async function holdOpenDisputes(chargeIds: Array<string | null>): Promise<number> {
+  const wanted = new Set(chargeIds.filter((c): c is string => Boolean(c)));
+  if (!wanted.size) return 0;
+  const records = await db.syncState
+    .findMany({ where: { key: { startsWith: "dispute:" } }, select: { key: true, cursor: true } })
+    .catch(() => []);
+  const open = new Set<string>();
+  for (const r of records) {
+    const chargeId = r.key.split(":")[1];
+    if (wanted.has(chargeId) && parseDispute(r.cursor)?.status === "open") open.add(chargeId);
+  }
+  let held = 0;
+  for (const chargeId of open) held += await holdChargeRows(chargeId);
+  return held;
+}
+
 export async function holdForDispute(dispute: Stripe.Dispute, openedAt: Date = new Date()) {
   const chargeId = idOf(dispute.charge);
   if (!chargeId) return { skipped: "no-charge" as const };
-  const known = await readDispute(chargeId);
+  const known = await readDispute(chargeId, dispute.id);
   if (known && known.status !== "open") return { skipped: "already-closed" as const };
   if (!known) {
     await writeDispute(chargeId, { id: dispute.id, status: "open", openedAt: openedAt.toISOString() });
   }
-  // Every unpaid row of this payment — the accrual and any refund reversal of
-  // it — moves together, so a partial refund cannot clear on its own while the
-  // commission it reduces is frozen.
-  const held = await db.commissionLedger.updateMany({
-    where: { stripeChargeId: chargeId, ...unpaidRows, NOT: { state: LedgerEntryState.HELD } },
-    data: { state: LedgerEntryState.HELD, clearsAt: null },
-  });
-  return { heldRows: held.count };
+  return { heldRows: await holdChargeRows(chargeId) };
 }
 
 export async function settleDispute(dispute: Stripe.Dispute, eventId?: string, closedAt: Date = new Date()) {
   const chargeId = idOf(dispute.charge);
   if (!chargeId) return { skipped: "no-charge" as const };
-  const known = await readDispute(chargeId);
+  const known = await readDispute(chargeId, dispute.id);
   if (known && known.status !== "open") return { skipped: "already-closed" as const };
   const lost = dispute.status === "lost";
   // Written LAST, after the ledger has moved: if this run dies half way, the
@@ -784,10 +881,15 @@ export async function settleDispute(dispute: Stripe.Dispute, eventId?: string, c
     // WON, or an inquiry closed without a chargeback: nothing is reversed. The
     // frozen rows go back to PENDING and the hold runs again from today — a
     // dispute that took six weeks must not let the money clear the day it ends.
-    const held = await db.commissionLedger.findMany({
-      where: { stripeChargeId: chargeId, state: LedgerEntryState.HELD },
-      select: { id: true, influencer: { select: { holdDays: true } } },
-    });
+    // Unless another dispute on the same payment is still open: the money stays
+    // frozen for that one.
+    const otherOpen = (await disputesOnCharge(chargeId)).some((d) => d.id !== dispute.id && d.status === "open");
+    const held = otherOpen
+      ? []
+      : await db.commissionLedger.findMany({
+          where: { stripeChargeId: chargeId, state: LedgerEntryState.HELD },
+          select: { id: true, influencer: { select: { holdDays: true } } },
+        });
     for (const r of held) {
       await db.commissionLedger.update({
         where: { id: r.id },
@@ -801,69 +903,129 @@ export async function settleDispute(dispute: Stripe.Dispute, eventId?: string, c
     return { released: held.length };
   }
 
-  // LOST: reverse the whole commission on this payment, like a full refund.
+  const reversedCents = await reverseForLostDispute(chargeId, dispute.id, eventId);
+  await closeRecord();
+  return { reversedCents };
+}
+
+/**
+ * LOST: reverse the whole commission on this payment, like a full refund. Keyed
+ * by dispute + accrual, so it runs from the closed event and again, harmlessly,
+ * from an accrual that arrives after it (accrueForInvoice).
+ */
+async function reverseForLostDispute(chargeId: string, disputeId: string, eventId?: string): Promise<number> {
   const accruals = await db.commissionLedger.findMany({
     where: { stripeChargeId: chargeId, entryType: LedgerEntryType.ACCRUED },
   });
   let reversedTotal = 0;
   for (const accrual of accruals) {
-    if (accrual.state === LedgerEntryState.VOID) continue; // already settled
-    const prior = await db.commissionLedger.aggregate({
-      where: { stripeInvoiceId: accrual.stripeInvoiceId, entryType: LedgerEntryType.REVERSED },
-      _sum: { amountCents: true },
-    });
-    const delta = accrual.amountCents + (prior._sum.amountCents ?? 0); // reversals are negative
-    const unpaid =
-      accrual.state === LedgerEntryState.PENDING ||
-      accrual.state === LedgerEntryState.HELD ||
-      (accrual.state === LedgerEntryState.CLEARED && !accrual.payoutTransferId);
+    if (accrual.state === LedgerEntryState.VOID || !accrual.stripeInvoiceId) continue; // already settled
+    const invoiceRows = { stripeInvoiceId: accrual.stripeInvoiceId, influencerId: accrual.influencerId };
+    const row = {
+      influencerId: accrual.influencerId,
+      attributionId: accrual.attributionId,
+      currency: accrual.currency,
+      stripeInvoiceId: accrual.stripeInvoiceId,
+      stripeChargeId: chargeId,
+      stripeEventId: eventId ?? null,
+      clearsAt: null,
+    };
 
-    const applied = await db.$transaction(async (tx) => {
-      if (unpaid) {
-        // Never paid: the accrual, its refund reversals and the chargeback all
+    const reversed = await db.$transaction(async (tx) => {
+      if (isUnpaid(accrual)) {
+        // Never paid: the accrual, its unpaid refund reversals and the chargeback
         // net to zero, so they are closed together as VOID — nothing clears,
         // nothing is paid, and the journal still shows what happened.
+        const open = await tx.commissionLedger.findMany({
+          where: { ...invoiceRows, ...unpaidRows },
+          select: { amountCents: true },
+        });
+        const openCents = open.reduce((n, r) => n + r.amountCents, 0);
         await tx.commissionLedger.updateMany({
-          where: { stripeInvoiceId: accrual.stripeInvoiceId, influencerId: accrual.influencerId, ...unpaidRows },
+          where: { ...invoiceRows, ...unpaidRows },
           data: { state: LedgerEntryState.VOID, clearsAt: null },
         });
-      }
-      if (delta > 0) {
-        await tx.commissionLedger.create({
-          data: {
-            influencerId: accrual.influencerId,
-            attributionId: accrual.attributionId,
+        if (openCents > 0) {
+          await tx.commissionLedger.create({
+            data: {
+              ...row,
+              entryType: LedgerEntryType.REVERSED,
+              amountCents: -openCents,
+              state: LedgerEntryState.VOID,
+              idempotencyKey: `dispute:${disputeId}:${accrual.id}`,
+              memo: `Chargeback — dispute ${disputeId} lost`,
+            },
+          });
+        }
+        // A refund of this payment that was already netted into a payout took
+        // real money off the partner — for a commission that will now never be
+        // paid. It comes back. Tied to its transfer if that transfer was
+        // reversed, so it follows the admin's Retry or Write off with it.
+        const settled = await tx.commissionLedger.findMany({
+          where: {
+            ...invoiceRows,
             entryType: LedgerEntryType.REVERSED,
-            amountCents: -delta,
-            currency: accrual.currency,
-            stripeInvoiceId: accrual.stripeInvoiceId,
-            stripeChargeId: chargeId,
-            stripeEventId: eventId ?? null,
-            // Paid already (or in a payout in flight): the chargeback is owed
-            // back, so it waits CLEARED and nets against the next payout. On a
-            // reversed transfer it waits with that transfer for the admin.
-            state: unpaid
-              ? LedgerEntryState.VOID
-              : accrual.state === LedgerEntryState.REVERSED_TRANSFER
-                ? LedgerEntryState.REVERSED_TRANSFER
-                : LedgerEntryState.CLEARED,
-            payoutTransferId:
-              accrual.state === LedgerEntryState.REVERSED_TRANSFER ? accrual.payoutTransferId : null,
-            clearsAt: null,
-            idempotencyKey: `dispute:${dispute.id}:${accrual.id}`,
-            memo: `Chargeback — dispute ${dispute.id} lost`,
+            OR: [
+              { state: LedgerEntryState.PAID },
+              { state: LedgerEntryState.CLEARED, payoutTransferId: { not: null } },
+              { state: LedgerEntryState.REVERSED_TRANSFER },
+            ],
           },
+          select: { id: true, amountCents: true, state: true, payoutTransferId: true },
         });
+        let returned = 0;
+        for (const r of settled) {
+          const onReversed = r.state === LedgerEntryState.REVERSED_TRANSFER;
+          await tx.commissionLedger.create({
+            data: {
+              ...row,
+              entryType: LedgerEntryType.ADJUSTMENT,
+              amountCents: -r.amountCents,
+              state: onReversed ? LedgerEntryState.REVERSED_TRANSFER : LedgerEntryState.CLEARED,
+              payoutTransferId: onReversed ? r.payoutTransferId : null,
+              idempotencyKey: `dispute:${disputeId}:${accrual.id}:${r.id}`,
+              memo: `Refund deduction returned — the commission it reduced was lost to dispute ${disputeId} and never paid`,
+            },
+          });
+          returned += -r.amountCents;
+        }
+        return Math.max(0, openCents - returned);
       }
-      return true;
+
+      // Paid already (or in a payout in flight): the chargeback is owed back, so
+      // it waits CLEARED and nets against the next payout. On a reversed
+      // transfer it waits with that transfer for the admin.
+      const prior = await tx.commissionLedger.aggregate({
+        where: { stripeInvoiceId: accrual.stripeInvoiceId, entryType: LedgerEntryType.REVERSED },
+        _sum: { amountCents: true },
+      });
+      const delta = accrual.amountCents + (prior._sum.amountCents ?? 0); // reversals are negative
+      // A clawback frozen by the first version of the hold goes back to netting.
+      await tx.commissionLedger.updateMany({
+        where: { ...invoiceRows, state: LedgerEntryState.HELD },
+        data: { state: LedgerEntryState.CLEARED, payoutTransferId: null },
+      });
+      if (delta <= 0) return 0;
+      const onReversed = accrual.state === LedgerEntryState.REVERSED_TRANSFER;
+      await tx.commissionLedger.create({
+        data: {
+          ...row,
+          entryType: LedgerEntryType.REVERSED,
+          amountCents: -delta,
+          state: onReversed ? LedgerEntryState.REVERSED_TRANSFER : LedgerEntryState.CLEARED,
+          payoutTransferId: onReversed ? accrual.payoutTransferId : null,
+          idempotencyKey: `dispute:${disputeId}:${accrual.id}`,
+          memo: `Chargeback — dispute ${disputeId} lost`,
+        },
+      });
+      return delta;
     }).catch((e: unknown) => {
       if (!isUniqueViolation(e)) throw e; // this dispute was already settled for this accrual
-      return false;
+      return 0;
     });
-    if (applied && delta > 0) reversedTotal += delta;
+    reversedTotal += reversed;
   }
-  await closeRecord();
-  return { reversedCents: reversedTotal };
+  return reversedTotal;
 }
 
 // ── Connect account + transfer webhooks (Phase 4 reconcile) ──

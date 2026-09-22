@@ -7,6 +7,7 @@
 import { db } from "@/lib/db";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
 import { isStripeWriteAllowed } from "@/lib/stripeSafety";
+import { holdOpenDisputes } from "@/lib/stripeSync";
 import {
   PayoutRequestStatus,
   PayoutTransferStatus,
@@ -305,6 +306,10 @@ export async function processApprovedPayouts(transfers: TransferApi, now: Date =
 
     if (refusal) {
       // Stripe said no, so no money moved: release the rows and close it FAILED.
+      const freed = await db.commissionLedger.findMany({
+        where: { payoutTransferId: transferRow.id, state: LedgerEntryState.CLEARED },
+        select: { stripeChargeId: true },
+      });
       await db.$transaction([
         db.commissionLedger.updateMany({
           where: { payoutTransferId: transferRow.id, state: LedgerEntryState.CLEARED },
@@ -319,6 +324,9 @@ export async function processApprovedPayouts(transfers: TransferApi, now: Date =
           data: { status: PayoutRequestStatus.FAILED, rejectedReason: errText(refusal) },
         }),
       ]);
+      // A dispute that opened while these rows were in the payout could not
+      // freeze them then; it does now, before anything can reserve them again.
+      await holdOpenDisputes(freed.map((r) => r.stripeChargeId));
       failed++;
       continue;
     }
@@ -406,6 +414,15 @@ async function reserveRows(
   inf: { id: string; connectAccountId: string | null; defaultCurrency: string },
   approvedCents: number,
 ) {
+  // The last gate before money leaves: commission on a payment under an open
+  // dispute is frozen here even if some path released it as CLEARED.
+  const candidates = await db.commissionLedger.findMany({
+    where: { influencerId: inf.id, state: LedgerEntryState.CLEARED, payoutTransferId: null, amountCents: { gt: 0 } },
+    select: { stripeChargeId: true },
+    distinct: ["stripeChargeId"],
+  });
+  await holdOpenDisputes(candidates.map((r) => r.stripeChargeId));
+
   return db.$transaction(async (tx) => {
     const rows = await tx.commissionLedger.findMany({
       where: { influencerId: inf.id, state: LedgerEntryState.CLEARED, payoutTransferId: null },
@@ -457,9 +474,11 @@ async function reserveRows(
  */
 
 /** Retry payout: the money goes back to the partner's CLEARED balance and is no
- *  longer tied to the reversed transfer, so the partner can request it again. */
+ *  longer tied to the reversed transfer, so the partner can request it again —
+ *  except commission on a payment under an open dispute, which goes back to
+ *  HELD and waits for the dispute like any other. */
 export async function releaseReversedPayout(requestId: string, at: Date = new Date()) {
-  return db.$transaction(async (tx) => {
+  const res = await db.$transaction(async (tx) => {
     const req = await tx.payoutRequest.findUnique({
       where: { id: requestId },
       select: { status: true, rejectedReason: true, transfers: { select: { id: true } } },
@@ -476,14 +495,21 @@ export async function releaseReversedPayout(requestId: string, at: Date = new Da
     const ids = req.transfers.map((t) => t.id);
     const rows = await tx.commissionLedger.findMany({
       where: { payoutTransferId: { in: ids }, state: LedgerEntryState.REVERSED_TRANSFER },
-      select: { amountCents: true },
+      select: { amountCents: true, stripeChargeId: true },
     });
     await tx.commissionLedger.updateMany({
       where: { payoutTransferId: { in: ids }, state: LedgerEntryState.REVERSED_TRANSFER },
       data: { state: LedgerEntryState.CLEARED, payoutTransferId: null },
     });
-    return { ok: true as const, releasedCents: rows.reduce((n, r) => n + r.amountCents, 0) };
+    return {
+      ok: true as const,
+      releasedCents: rows.reduce((n, r) => n + r.amountCents, 0),
+      chargeIds: rows.map((r) => r.stripeChargeId),
+    };
   });
+  if (!res.ok) return res;
+  const heldRows = await holdOpenDisputes(res.chargeIds);
+  return { ok: true as const, releasedCents: res.releasedCents, heldRows };
 }
 
 /** Write off: the money is not paid. The rows close as VOID and an ADJUSTMENT
