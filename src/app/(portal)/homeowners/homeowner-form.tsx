@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { submitHomeownerRequest } from "@/actions/homeowner";
+import { needsAddressFor } from "@/lib/leadRules";
 
 const STEPS = ["About you", "The project", "Details"] as const;
 
@@ -20,6 +21,8 @@ export function HomeownerForm() {
   /** The capability-token status page for the request just sent, or null when
    *  the action answered without one (a legacy row shape). */
   const [statusPath, setStatusPath] = React.useState<string | null>(null);
+  /** The action's refusal (a roof or fence without its street address), shown under the form. */
+  const [sendErr, setSendErr] = React.useState("");
   const [values, setValues] = React.useState({
     name: "",
     email: "",
@@ -41,10 +44,23 @@ export function HomeownerForm() {
     setValues((prev) => ({ ...prev, [k]: v }));
   }
 
+  // A roof, a fence, siding, gutters, a driveway or a deck is measured at the
+  // property (lib/leadRules): the address stops being optional.
+  const needsAddress = needsAddressFor(values.description);
+
   async function onSubmit() {
+    if (needsAddress && !values.address.trim()) {
+      setSendErr("This job is measured at the property — please add the street address.");
+      return;
+    }
+    setSendErr("");
     setSubmitting(true);
     try {
       const res = await submitHomeownerRequest({ ...values, referralCode: referralCode || undefined });
+      if (!res.ok) {
+        setSendErr(res.error);
+        return;
+      }
       // The status page the submission just minted a token for. The wizard at
       // /homeowner-portal has always linked it from its Done screen; this form
       // did not, so the only way back to a request sent here was the
@@ -160,7 +176,7 @@ export function HomeownerForm() {
           )}
           {step === 2 && (
             <>
-              <Input label="Address (optional)" value={values.address} onChange={(e) => update("address", e.target.value)} placeholder="221 Oak St" />
+              <Input label={needsAddress ? "Street address — needed to measure this job" : "Address (optional)"} value={values.address} onChange={(e) => update("address", e.target.value)} placeholder="221 Oak St" autoComplete="street-address" />
               <div className="grid grid-cols-[1fr_72px_88px] gap-2">
                 <Input label="City" value={values.city} onChange={(e) => update("city", e.target.value)} placeholder="Philadelphia" />
                 <Input label="State" value={values.state} onChange={(e) => update("state", e.target.value)} placeholder="PA" />
@@ -174,6 +190,11 @@ export function HomeownerForm() {
         </motion.div>
       </AnimatePresence>
 
+      {sendErr ? (
+        <p className="text-[12.5px] text-[color:var(--rose)]" role="alert">
+          {sendErr}
+        </p>
+      ) : null}
       <div className="flex items-center justify-between pt-2">
         <Button
           variant="ghost"

@@ -100,6 +100,7 @@ export async function acceptLeadOffer(offerId: string): Promise<{ ok: true; lead
         zip: pl.zip,
         projectType: pl.projectType,
         description: pl.description,
+        scope: pl.scope,
         photos: pl.photos ?? "[]",
         source: "LEAD_CENTER",
         status: "CLAIMED",

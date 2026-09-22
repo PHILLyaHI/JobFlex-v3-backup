@@ -56,6 +56,10 @@ import {
   STEP_NAMES,
   type Question,
 } from "../homeowner-data";
+import { needsAddressFor } from "@/lib/leadRules";
+
+/** The street address is CONTACT_FIELDS[4]; required only when lib/leadRules says the job is measured at the property. */
+const ADDRESS_FIELD = 4;
 import { submitHomeownerRequest, suggestHomeownerQuestions } from "@/actions/homeowner";
 import { prefersReducedMotion } from "../use-homeowner-behavior";
 import { usePlaceholderCycle } from "./use-placeholder-cycle";
@@ -282,9 +286,13 @@ export function HomeownerWizard({ uid }: { uid: string }) {
      so the four fields map positionally. The clarify answers ride along in the
      description because `submitHomeownerRequest` takes one free-text body.
      Attachments are NOT sent: the uploader never leaves the browser. */
+  /* The street address (CONTACT_FIELDS[4]) is required only when the job is
+     measured at the property — lib/leadRules decides from the description. */
+  const needsAddress = needsAddressFor(desc);
+
   const onSend = async () => {
     if (sending) return;
-    const [name, email, phone, zip] = [0, 1, 2, 3].map(contactValue);
+    const [name, email, phone, zip, address] = [0, 1, 2, 3, 4].map(contactValue);
     if (!name || !email || !zip) {
       setSendErr("Name, email and ZIP code are needed to send this to contractors.");
       return;
@@ -293,8 +301,6 @@ export function HomeownerWizard({ uid }: { uid: string }) {
       setSendErr("That email address does not look right.");
       return;
     }
-    setSendErr("");
-    setSending(true);
     const extra = questions
       .map((q, i) => {
         const a = (answers.current[i] ?? "").trim();
@@ -302,14 +308,28 @@ export function HomeownerWizard({ uid }: { uid: string }) {
       })
       .filter(Boolean)
       .join("\n");
+    const description = extra ? desc.trim() + "\n\n" + extra : desc.trim();
+    // The answers can reveal a roof or a fence the first words did not: the
+    // same rule the server applies, said here first.
+    if (needsAddressFor(description) && !address) {
+      setSendErr("This job is measured at the property — please add the street address.");
+      return;
+    }
+    setSendErr("");
+    setSending(true);
     try {
-      await submitHomeownerRequest({
+      const res = await submitHomeownerRequest({
         name,
         email,
         phone: phone || undefined,
         zip,
-        description: extra ? desc.trim() + "\n\n" + extra : desc.trim(),
+        address: address || undefined,
+        description,
       });
+      if (!res.ok) {
+        setSendErr(res.error);
+        return;
+      }
       setStep(4);
       bump();
     } catch (err) {
@@ -534,12 +554,13 @@ export function HomeownerWizard({ uid }: { uid: string }) {
       <div className="cform">
         {CONTACT_FIELDS.map((field, i) => {
           const id = uid + "c" + i;
+          const label = i === ADDRESS_FIELD ? (needsAddress ? field + " — needed to measure this job" : field + " (optional)") : field;
           return (
             <div key={field}>
               <label className="fld-l" htmlFor={id}>
-                {field}
+                {label}
               </label>
-              <input className="q-in c-in" id={id} placeholder={field} />
+              <input className="q-in c-in" id={id} placeholder={label} autoComplete={i === ADDRESS_FIELD ? "street-address" : undefined} />
             </div>
           );
         })}

@@ -459,6 +459,8 @@ model Lead {
   source         String?
   status         String    @default("NEW")
   aiCategory     String?
+  // The professional scope carried over from the platform lead (2026-09-21).
+  scope          String?
   aiConfidence   Float?
   assignedToId   String?
   claimedById    String?
@@ -520,6 +522,10 @@ model PlatformLead {
   description        String?
   photos             String?   @default("[]")
   detectedTrade      String? // canonical TRADE_TYPES value (src/lib/tradeTypes.ts)
+  // The request written for a contractor — what exists, what is to be done,
+  // the sizes stated, what to confirm on site (lib/leadScope, 2026-09-21).
+  // Null when the model was not reachable; the homeowner's words stand.
+  scope              String?
   aiConfidence       Float?
   status             String    @default("MATCHING") // MATCHING | OFFERED | MATCHED | MANUAL_QUEUE
   attemptCount       Int       @default(0)

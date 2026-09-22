@@ -14,6 +14,18 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { HvacEstimatorContent } from "@/components/v3/hvac-estimator-blueprint/hvac-estimator-content";
+import { readEstimateSeed } from "@/lib/estimateSeed";
+import { EstimateSeedStrip } from "@/components/v3/estimate-seed-strip";
+
+/** The hand-off seed for the signed-in company's HVAC estimator, or null — never an error. */
+async function readHvacSeed(userId: string) {
+  try {
+    const orgId = (await db.user.findUnique({ where: { id: userId }, select: { activeOrgId: true } }))?.activeOrgId;
+    return orgId ? await readEstimateSeed(orgId, "hvac") : null;
+  } catch {
+    return null;
+  }
+}
 
 export const dynamic = "force-dynamic";
 // A server action runs under the segment config of the page that calls it,
@@ -47,5 +59,13 @@ export default async function HvacEstimatorPage({
     const client = orgId ? await db.client.findFirst({ where: { id: clientId, organizationId: orgId, deletedAt: null }, select: { address: true, city: true, state: true, zip: true } }) : null;
     if (client?.address) initialAddress = [client.address, client.city, [client.state, client.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   }
-  return <HvacEstimatorContent aiEnabled={isOpenAIEnabled()} initialAddress={initialAddress} />;
+  // A lead handed over from its page (lib/estimateSeed) fills the address too.
+  const seed = initialAddress ? null : await readHvacSeed(session.user.id);
+  if (seed?.address) initialAddress = seed.address;
+  return (
+    <>
+      {seed && <EstimateSeedStrip leadId={seed.leadId} name={seed.name} address={seed.address} />}
+      <HvacEstimatorContent aiEnabled={isOpenAIEnabled()} initialAddress={initialAddress} />
+    </>
+  );
 }

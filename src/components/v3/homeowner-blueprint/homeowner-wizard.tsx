@@ -27,6 +27,7 @@ import {
   STEP_NAMES,
   type Question,
 } from "./homeowner-data";
+import { needsAddressFor } from "@/lib/leadRules";
 
 type Upload = { name: string; kind: "pdf" | "photo"; progress: number };
 
@@ -41,6 +42,9 @@ const AI_WAIT_MS = 6500;
    hardcoded by index, so editing CONTACT_FIELDS stays a one-place change. */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const isOptional = (label: string) => /\(optional\)/i.test(label);
+/* The street address (CONTACT_FIELDS[4]) is required only when the job is
+   measured at the property — lib/leadRules decides from the description. */
+const isAddress = (label: string) => /street address/i.test(label);
 
 /* Keyboard/autofill hints, likewise derived from the label. */
 function fieldProps(label: string) {
@@ -48,6 +52,7 @@ function fieldProps(label: string) {
   if (l.includes("email")) return { type: "email", autoComplete: "email" as const };
   if (l.includes("phone")) return { type: "tel", autoComplete: "tel" as const };
   if (l.includes("zip")) return { type: "text", inputMode: "numeric" as const, autoComplete: "postal-code" as const };
+  if (l.includes("address")) return { type: "text", autoComplete: "street-address" as const };
   return { type: "text", autoComplete: "name" as const };
 }
 
@@ -111,8 +116,10 @@ export function HomeownerWizard() {
 
   /* Every non-optional contact field filled, and the email actually shaped
      like one — otherwise "Send to contractors" stays disabled. */
+  const needsAddress = needsAddressFor(desc);
   const canSend = CONTACT_FIELDS.every((f, i) => {
     const v = (contact[i] || "").trim();
+    if (isAddress(f)) return !needsAddress || v.length >= 5;
     if (isOptional(f)) return true;
     if (!v) return false;
     return f.toLowerCase().includes("email") ? EMAIL_RE.test(v) : true;
@@ -129,20 +136,33 @@ export function HomeownerWizard() {
     if (sending) return;
     setSendErr("");
     setSending(true);
-    const [name, email, phone, zip] = contact.map((v) => v.trim());
+    const [name, email, phone, zip, address] = contact.map((v) => v.trim());
     const extra = answers
       .map((a, i) => (a && a.trim() && qs[i] ? qs[i].q + " " + a.trim() : ""))
       .filter(Boolean)
       .join("\n");
+    const description = extra ? desc.trim() + "\n\n" + extra : desc.trim();
+    // The answers can reveal a roof or a fence the first words did not
+    // (lib/leadRules): the same rule the server applies, said here first.
+    if (needsAddressFor(description) && !address) {
+      setSendErr("This job is measured at the property — please add the street address.");
+      setSending(false);
+      return;
+    }
     try {
       const res = await submitHomeownerRequest({
         name,
         email,
         phone: phone || undefined,
         zip: zip || undefined,
+        address: address || undefined,
         projectType: category ?? undefined,
-        description: extra ? desc.trim() + "\n\n" + extra : desc.trim(),
+        description,
       });
+      if (!res.ok) {
+        setSendErr(res.error);
+        return;
+      }
       setStatusPath(res.statusPath ?? null);
       setStep(4);
     } catch (err) {
@@ -454,11 +474,12 @@ export function HomeownerWizard() {
       <div className="cform">
         {CONTACT_FIELDS.map((f, i) => {
           const id = UID + "c" + i;
-          const optional = isOptional(f);
+          const optional = isOptional(f) || (isAddress(f) && !needsAddress);
+          const label = isAddress(f) ? (needsAddress ? f + " — needed to measure this job" : f + " (optional)") : f;
           return (
             <div key={f}>
-              <label className="fld-l" htmlFor={id}>{f}</label>
-              <input className="q-in c-in" id={id} placeholder={f} required={!optional}
+              <label className="fld-l" htmlFor={id}>{label}</label>
+              <input className="q-in c-in" id={id} placeholder={label} required={!optional}
                 aria-required={!optional} {...fieldProps(f)}
                 value={contact[i]} onChange={(e) => {
                   const v = e.target.value;

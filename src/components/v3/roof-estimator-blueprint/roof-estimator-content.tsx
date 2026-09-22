@@ -27,7 +27,10 @@ export function RoofEstimatorContent({
   evEnabled,
   aiEnabled,
   drawingEnabled = true,
+  initialAddress,
 }: {
+  /** A lead's address, typed into the search field on arrival (lib/estimateSeed). */
+  initialAddress?: string;
   /** EagleView credentials present — read on the server, in page.tsx. */
   evEnabled: boolean;
   /** OpenAI key present; without it the estimate generator returns a sample. */
@@ -55,7 +58,7 @@ export function RoofEstimatorContent({
         drawingEnabled ? (
           <RoofEstimatorBlueprintForm aiEnabled={aiEnabled} />
         ) : (
-          <RoofEstimatorDataForm aiEnabled={aiEnabled} />
+          <RoofEstimatorDataForm aiEnabled={aiEnabled} initialAddress={initialAddress} />
         )
       ) : (
         <div className="card rf-card">

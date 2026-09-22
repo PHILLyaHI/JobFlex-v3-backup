@@ -165,14 +165,15 @@ function clampNum(raw: string, max: number): number {
   return Math.min(Math.max(n, 0), max);
 }
 
-export function AdvancedAiContent() {
+export function AdvancedAiContent({ seed }: { seed?: { brief: string; address: string; state: string } } = {}) {
   const router = useRouter();
 
   // ── Panel 1: the intake console ──────────────────────────────────
   const [panel, setPanel] = useState<Panel>("intake");
-  const [addr, setAddr] = useState("");
-  const [usState, setUsState] = useState("");
-  const [brief, setBrief] = useState("");
+  // A lead's hand-off (lib/estimateSeed) fills the brief and the location.
+  const [addr, setAddr] = useState(seed?.address ?? "");
+  const [usState, setUsState] = useState(seed?.state ?? "");
+  const [brief, setBrief] = useState(seed?.brief ?? "");
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [photoErr, setPhotoErr] = useState("");
   const [dragOver, setDragOver] = useState(false);

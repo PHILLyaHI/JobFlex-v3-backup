@@ -129,6 +129,8 @@ const PROPOSAL_ROUTE = "/dashboard/manual-blueprint?proposal=";
  *  can hold a Next router. */
 export type FenceEstimatorOptions = {
   navigate: (href: string) => void;
+  /** A lead's address (lib/estimateSeed): typed into the search bar on init, and Find pressed when a map key is configured. */
+  initialAddress?: string;
 };
 
 /** The two fields of a Geocoder result this page reads. */
@@ -3300,6 +3302,13 @@ export function initFenceEstimatorContent(
         },
       }),
     );
+    if (opts.initialAddress && !addrInput.value) {
+      // A lead handed over from its page: the address is already typed, and
+      // Find geocodes it at once when the browser key allows.
+      addrInput.value = opts.initialAddress;
+      const fb = root.querySelector<HTMLElement>('#findBtn');
+      if (fb && isMapsBrowserEnabled()) window.setTimeout(function () { fb.click(); }, 300);
+    }
   }
 
   /** Moves the draw surface to the resolved address, and keeps the placeholder

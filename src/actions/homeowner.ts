@@ -8,6 +8,7 @@ import { startCascade } from "@/lib/leadCenter/cascade";
 import { getRoutingMode, MANUAL_MODE_REASON } from "@/lib/leadCenter/routingMode";
 import { suggestIntakeQuestions, type IntakeQuestion } from "@/lib/ai/homeownerQuestions";
 import { enforceRateLimit, clientIp, rateLimitShared, MINUTE } from "@/lib/rateLimit";
+import { needsAddressFor, writeProfessionalScope } from "@/lib/leadScope";
 
 const homeownerSchema = z.object({
   name: z.string().min(1),
@@ -74,6 +75,17 @@ export async function submitHomeownerRequest(raw: unknown) {
   await enforceRateLimit(`homeowner:${await clientIp()}`, 3, 10 * MINUTE, "requests");
   await enforceRateLimit("homeowner:global", 60, MINUTE, "requests");
 
+  // A roof, a fence, siding, gutters, a driveway or a deck is measured at the
+  // property (lib/leadRules): without the street address the contractor's
+  // estimator has nothing to look at. Said back as a plain answer the wizard
+  // shows, not a thrown error — those are masked in production.
+  if (needsAddressFor(data.description) && !(data.address ?? "").trim()) {
+    return {
+      ok: false as const,
+      error: "This job is measured at the property, so contractors need the street address. Please add it and send again.",
+    };
+  }
+
   const req = await db.homeownerRequest.create({
     data: {
       name: data.name,
@@ -89,7 +101,7 @@ export async function submitHomeownerRequest(raw: unknown) {
   // The description is the ONE trade source (owner, 2026-09-04) — the wizards
   // no longer carry a specialty picker. `projectType` stays accepted in the
   // schema for older clients but is only context, never the classification.
-  const [detected, geo] = await Promise.all([
+  const [detected, geo, scope] = await Promise.all([
     detectTrade(`${data.projectType ?? ""}\n${data.description}`).catch(() => null),
     geocodeOrReuse({
       address: data.address,
@@ -97,6 +109,8 @@ export async function submitHomeownerRequest(raw: unknown) {
       state: data.state,
       zip: data.zip,
     }).catch(() => null),
+    // The words and the answers, written up as a contractor's scope of work.
+    writeProfessionalScope({ description: data.description, address: data.address, projectType: data.projectType }),
   ]);
 
   const platformLead = await db.platformLead.create({
@@ -117,6 +131,9 @@ export async function submitHomeownerRequest(raw: unknown) {
       lng: geo?.lng ?? null,
       projectType: data.projectType,
       description: data.description,
+      // The scope a contractor prices from (lib/leadScope); null when the
+      // model is off or failed, and the lead carries the homeowner's words.
+      scope,
       detectedTrade: detected?.trade ?? null,
       aiConfidence: detected?.confidence ?? null,
     },
@@ -170,7 +187,7 @@ export async function submitHomeownerRequest(raw: unknown) {
   }
 
   return {
-    ok: true,
+    ok: true as const,
     platformLeadId: platformLead.id,
     /** The homeowner's status page — the wizard's Done screen links it. */
     statusPath: `/request/${platformLead.accessToken}`,

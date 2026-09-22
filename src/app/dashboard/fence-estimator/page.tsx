@@ -10,6 +10,19 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { auth } from "@/lib/auth";
 import { FenceEstimatorContent } from "@/components/v3/fence-estimator-blueprint/fence-estimator-content";
+import { readEstimateSeed } from "@/lib/estimateSeed";
+import { EstimateSeedStrip } from "@/components/v3/estimate-seed-strip";
+import { requireOrg } from "@/lib/orgContext";
+
+/** The hand-off seed for this company's fence estimator, or null — never an error. */
+async function readFenceSeed() {
+  try {
+    const { organizationId } = await requireOrg();
+    return await readEstimateSeed(organizationId, "fence");
+  } catch {
+    return null;
+  }
+}
 
 export const dynamic = "force-dynamic";
 // A server action runs under the segment config of the page that calls it,
@@ -30,5 +43,13 @@ export default async function FenceEstimatorPage() {
     redirect("/auth/login?next=%2Fdashboard%2Ffence-estimator");
   }
 
-  return <FenceEstimatorContent />;
+  // A fence lead handed over from its page (lib/estimateSeed): the address
+  // is typed into the search bar and Find is pressed for the contractor.
+  const seed = await readFenceSeed();
+  return (
+    <>
+      {seed && <EstimateSeedStrip leadId={seed.leadId} name={seed.name} address={seed.address} />}
+      <FenceEstimatorContent initialAddress={seed?.address ?? undefined} />
+    </>
+  );
 }
