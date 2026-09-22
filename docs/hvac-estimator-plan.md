@@ -660,3 +660,40 @@ HEAR state program pages (CEC, WA Commerce, NH DOE) and 2026 status trackers;
 ENERGY STAR Design Temperature Limit Reference Guide (2019 ed.); AHRI Data
 Subscription Program page; NEEP ccASHP list (ashp.neep.org); DOE consumer
 central AC and heat pump standards page.
+
+## Service menu after the Housecall Pro comparison (2026-09-22)
+
+The owner put HCP's HVAC price book (14 categories, ~103 services, every one
+at $0.00) next to ours. What changed (`src/lib/hvac/serviceMenu.ts`):
+
+- **93 tasks in 13 groups** (was 47 in 9): line set repair / flush /
+  replacement and relocation, ECM module, fan blade, surge protector,
+  crankcase heater, heat strips and sequencer, low-voltage wiring repair,
+  heat exchanger replacement, blower door switch, condensing-furnace trap,
+  evaporator and condenser coil replacement, drain pan, blower belt and
+  bearing, duct sealing / return upgrade / duct cleaning, thermostat
+  relocation, an **Air quality** group (media cabinet, UV lamp, humidifier,
+  dehumidifier, ERV/HRV, air-cleaner cell), a **Zoning** group (zone board,
+  dampers, actuator, bypass, zone thermostat), ductless blower and flare
+  repair, water-heater gas valve and expansion tank, and a **Boiler /
+  hydronic** group (tune-up, zone valve, circulator, expansion tank,
+  aquastat, relief valve, purge and fill, ignition) shown where the house
+  burns gas or propane. Every row is priced — typical labor and part cost,
+  brands where they matter — never $0.
+- **Labor moves to the job's market**: `serviceLaborIndex` reads the same
+  city/state index the Smart Proposal uses (`lib/estimate/location-index`);
+  built-in labor is multiplied and rounded to $5 (Frisco ×0.91, Seattle
+  ×1.25); parts and a shop's own saved tasks are untouched. The ledger's
+  assumption line says the factor and the place.
+- **Repair or replace** (`repairAdvice`): the age (15 years; 12 for heat
+  pumps and ductless), the $5,000 rule from ten years, a major part
+  (compressor, heat exchanger, a coil, reversing valve, line set) on an old
+  unit, R-22, and the repair as a share of a replacement quote when the form
+  has one (it runs the replacement job on the same house). Verdict `repair`
+  (silent), `consider` or `replace`; the sentence goes on the estimate's
+  assumptions and, on the page, a card with the two prices and a **Quote
+  the replacement** button that switches the job.
+- **The shelf**: the menu's parts join the HVAC inventory presets
+  (`lib/inventoryPresets`), so a service proposal's parts match stock and
+  the crew's pick list.
+- QA: `scripts/qa/hvac-service-menu.check.ts`.

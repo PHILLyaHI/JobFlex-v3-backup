@@ -67,7 +67,7 @@ import {
 import { calibrationLine, type CalibrationStats } from "@/lib/hvac/calibration";
 import { useHvacWalk } from "./use-hvac-walk";
 import { SHOTS, TIPS, coverageFor } from "./filming-guide";
-import { serviceMenuFor } from "@/lib/hvac/serviceMenu";
+import { indexedLabor, repairAdvice, serviceLaborIndex, serviceMenuFor } from "@/lib/hvac/serviceMenu";
 import { US_CATALOG } from "@/lib/hvac/data/usCatalog";
 import { ultraLowNoxNeeded } from "@/lib/hvac/data/rules";
 import { CapacityChart } from "./capacity-chart";
@@ -653,6 +653,17 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
     return mid && mid.item.id !== chosen.item.id ? rerun(mid.item.id) : engineRaw;
   }, [engineRaw, pickId, model, catalogItems, custom, job, jobInput, outdoorKind]);
   const ledger = React.useMemo(() => (engine && model && catalog ? buildLedger(engine, model, card.card, catalogItems, { job, input: jobInput, linesetFt, pick: pickId ?? undefined }) : null), [engine, model, catalog, catalogItems, card, job, jobInput, linesetFt, pickId]);
+  // A service visit's other number (2026-09-22): what replacing the system
+  // would cost here, from the same house, so the repair can be weighed.
+  const replaceQuote = React.useMemo<number | null>(() => {
+    if (job !== "service" || !model || !catalog || !(model.conditionedSqft > 0)) return null;
+    try {
+      const r = runEngine(model, { catalog: catalogItems, job: "replace-system", input: jobInput });
+      return buildLedger(r, model, card.card, catalogItems, { job: "replace-system", input: jobInput }).subtotal;
+    } catch {
+      return null;
+    }
+  }, [job, model, catalog, catalogItems, jobInput, card]);
   // Good · Better · Best: the best fitting unit of each tier, priced as a whole job.
   const tiers = React.useMemo(() => (engineRaw && model && catalog ? tiersFor(engineRaw, model, card.card, catalogItems, { job, input: jobInput, linesetFt }, (id) => runEngine(model, { catalog: catalogItems, job, input: jobInput, outdoorKind: outdoorKind ?? undefined, custom: custom ?? undefined, pick: id })) : []), [engineRaw, model, catalog, catalogItems, custom, card, job, jobInput, linesetFt, outdoorKind]);
 
@@ -1567,6 +1578,9 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
             {job === "service" && model && (() => {
               const menu = serviceMenuFor(model, card.card.serviceMenu);
               const sel = new Set(jobInput.service?.tasks ?? []);
+              // Labor in this market, and the repair-or-replace read on what is picked.
+              const idx = serviceLaborIndex(model);
+              const advice = sel.size ? repairAdvice({ model, taskIds: [...sel], repairSubtotal: ledger?.subtotal ?? 0, replaceSubtotal: replaceQuote }) : null;
               const customOn = jobInput.service?.custom ?? [];
               const rechargeOn = sel.has("recharge");
               const q = svcQ.trim().toLowerCase();
@@ -1595,7 +1609,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
                                 <button type="button" role="checkbox" aria-checked={on} className={cx("svc-rb")} onClick={() => toggleTask(t.id)}>
                                   <span className={cx("svc-box")} aria-hidden="true">{on && <svg className={cx("ic")}><use href="#i-check" /></svg>}</span>
                                   <span className={cx("svc-n")}>{t.title}{rec && !on ? <span className={cx("svc-tag")}>suggested</span> : null}{t.custom ? <span className={cx("svc-tag")}>yours</span> : null}</span>
-                                  <span className={cx("mono", "svc-p")}>{t.unit === "lb" ? `$${card.card.labor.refrigerantPerLb}/lb + refrigerant` : `$${t.laborUsd.toLocaleString("en-US")}${t.part ? ` + $${t.part.costUsd.toLocaleString("en-US")} part` : ""}`}</span>
+                                                  <span className={cx("mono", "svc-p")}>{t.unit === "lb" ? `$${card.card.labor.refrigerantPerLb}/lb + refrigerant` : `$${indexedLabor(t, idx.factor).toLocaleString("en-US")}${t.part ? ` + $${t.part.costUsd.toLocaleString("en-US")} part` : ""}`}</span>
                                 </button>
                                 {on && (
                                   <div className={cx("svc-x")}>
@@ -1616,6 +1630,16 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
                     <ul className={cx("svc-list")}>
                       {customOn.map((c, i) => <li key={`${c.name}-${i}`}><span>{c.name} — ${c.laborUsd.toLocaleString("en-US")} labor{c.partName ? ` · ${c.partName}${c.partCost ? ` $${c.partCost.toLocaleString("en-US")}` : ""}` : ""}</span><button type="button" className={cx("link")} onClick={() => setSvc({ custom: customOn.filter((_, k) => k !== i) })}>Remove</button></li>)}
                     </ul>
+                  )}
+                  {advice && advice.verdict !== "repair" && (
+                    <div className={cx("call", advice.verdict === "replace" ? "warn" : "info")} style={{ marginTop: 10 }} data-repair-advice={advice.verdict}>
+                      <span className={cx("stamp")}>{advice.verdict === "replace" ? "replace" : "weigh it"}</span>
+                      <span>
+                        {advice.why.join("; ")}
+                        {replaceQuote ? ` — a replacement here runs about $${Math.round(replaceQuote).toLocaleString("en-US")} against $${Math.round(ledger?.subtotal ?? 0).toLocaleString("en-US")} of repairs.` : "."}{" "}
+                        <button type="button" className={cx("btn", "btn-ghost", "btn-sm")} style={{ marginLeft: 6 }} onClick={() => setJob("replace-system")}>Quote the replacement</button>
+                      </span>
+                    </div>
                   )}
                   <details className={cx("how")}>
                     <summary>Not listed? Add it</summary>

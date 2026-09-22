@@ -19,6 +19,7 @@ import { buildRoofPackage, defaultSpec, withSystem, type RoofFacts } from "@/lib
 import { runEngine } from "@/lib/hvac/engine";
 import { modelFromSite } from "@/lib/hvac/intake";
 import { buildLedger, DEFAULT_RATE_CARD, STARTER_CATALOG } from "@/lib/hvac/ledger";
+import { SERVICE_MENU } from "@/lib/hvac/serviceMenu";
 import type { BuildingModel } from "@/lib/hvac/types";
 import { stockKey, type TradeId } from "@/lib/inventory";
 
@@ -128,6 +129,9 @@ function hvacPresets(): PresetItem[] {
       }
     }
   }
+  // The service menu's parts (2026-09-22): capacitors, contactors, motors,
+  // igniters — what a service truck and the shelf actually hold.
+  collect(SERVICE_MENU.flatMap((t) => (t.part ? [{ name: t.part.name, unit: "each" }] : [])), out);
   return [...out.values()];
 }
 

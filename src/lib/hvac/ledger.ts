@@ -11,7 +11,7 @@
 
 import { ultraLowNoxNeeded } from "./data/rules";
 import type { BuildingModel, CatalogItem, EngineResult , SelectionCandidate } from "./types";
-import { serviceTask, type ServiceTask } from "./serviceMenu";
+import { indexedLabor, repairAdvice, serviceLaborIndex, serviceTask, type ServiceTask } from "./serviceMenu";
 import { DEFAULT_JOB, jobDef, type JobInput, type JobKind } from "./jobs";
 import { waterHeaterPlan } from "./waterHeater";
 
@@ -869,13 +869,16 @@ function serviceLedger(engine: EngineResult, m: BuildingModel, card: HvacRateCar
   const L = card.labor;
   const mk = (c: number) => markup(c, card.materialsMarkupPct);
   const custom = card.serviceMenu ?? [];
+  // The menu's US-typical labor, moved to this market (2026-09-22); the shop's
+  // own saved tasks keep the number the shop typed.
+  const idx = serviceLaborIndex(m);
   // The tasks the visit does, in the menu's order; unknown ids are skipped.
   const tasks = (s?.tasks ?? []).map((id) => serviceTask(id, custom)).filter((t): t is NonNullable<typeof t> => !!t);
   // A tune-up carries the inspection; otherwise the visit starts with the diagnostic.
   if (!tasks.some((t) => t.includesDiagnostic)) lab.push({ id: "l-diag", name: "Diagnostic visit", quantity: 1, unitPrice: L.diagnostic, unit: "each", basis: "estimated" });
   for (const t of tasks) {
     if (t.unit === "lb") continue; // refrigerant is priced by the pound below
-    lab.push({ id: `l-svc-${t.id}`, name: t.title, quantity: 1, unitPrice: t.laborUsd, unit: "each", basis: "estimated", note: `${t.includes}${t.custom ? " · your saved task" : " · typical shop labor — edit to your rate"}` });
+    lab.push({ id: `l-svc-${t.id}`, name: t.title, quantity: 1, unitPrice: indexedLabor(t, idx.factor), unit: "each", basis: "estimated", note: `${t.includes}${t.custom ? " · your saved task" : " · typical shop labor — edit to your rate"}` });
     if (t.part) mat.push({ id: `m-svc-${t.id}`, name: t.part.name, quantity: 1, unitPrice: mk(t.part.costUsd), unit: "each", basis: "estimated", note: `${t.custom ? "Your saved cost" : "Typical shop cost"} $${t.part.costUsd.toLocaleString("en-US")} + ${card.materialsMarkupPct}%${t.part.brands?.length ? ` · ${t.part.brands.join(", ")}` : ""}` });
   }
   const lbs = s?.refrigerantLb && s.refrigerantLb > 0 ? s.refrigerantLb : 0;
@@ -893,10 +896,14 @@ function serviceLedger(engine: EngineResult, m: BuildingModel, card: HvacRateCar
     mat.push({ id: `m-part-${i}`, name: p.name, quantity: 1, unitPrice: mk(p.cost), unit: "each", basis: "entered", note: `Shop cost $${p.cost.toLocaleString("en-US")} + ${card.materialsMarkupPct}%` });
   }
   if (s?.task) lab.push({ id: "l-repair", name: s.task, quantity: 1, unitPrice: L.repairEach, unit: "each", basis: "entered" });
-  const assumptions = [`Priced from the service menu by the task: typical shop labor and part costs (parts +${card.materialsMarkupPct}%) — edit any line to your rate.`];
+  const assumptions = [`Priced from the service menu by the task: typical shop labor${idx.factor !== 1 ? ` (×${idx.factor.toFixed(2)} for ${idx.place})` : ""} and part costs (parts +${card.materialsMarkupPct}%) — edit any line to your rate.`];
   for (const t of tasks) if (t.note) assumptions.push(t.note);
   if (m.existing.refrigerant === "R-22") assumptions.push("R-22 system: recharge is priced per pound at today's reclaimed R-22 cost; a replacement quote is the alternative.");
   const subtotal = r2([...mat, ...lab].reduce((a, l) => a + l.quantity * l.unitPrice, 0));
+  // Repair or replace, on the estimate itself (2026-09-22): the age, the
+  // $5,000 rule, a major part on an old unit, R-22.
+  const advice = repairAdvice({ model: m, taskIds: tasks.map((t) => t.id), repairSubtotal: subtotal });
+  if (advice.line) assumptions.push(advice.line);
   const lower = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
   const done = [...tasks.filter((t) => t.unit !== "lb").map((t) => lower(t.title)), ...(lbs ? [`recharge ${lbs} lb`] : []), ...(s?.custom ?? []).map((c) => lower(c.name)), ...(s?.task ? [lower(s.task)] : [])];
   // A by-the-pound task prices only through the pounds entered; without them

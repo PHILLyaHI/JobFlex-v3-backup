@@ -6,8 +6,9 @@
 // the list. Pure data + one filter, no imports beyond the model types.
 
 import type { BuildingModel, ExistingKind } from "./types";
+import { locationIndex } from "@/lib/estimate/location-index";
 
-export type ServiceGroup = "tune-up" | "refrigerant" | "electrical" | "furnace" | "airflow" | "refrigeration" | "controls" | "ductless" | "water-heater" | "custom";
+export type ServiceGroup = "tune-up" | "refrigerant" | "electrical" | "furnace" | "airflow" | "refrigeration" | "controls" | "iaq" | "zoning" | "ductless" | "water-heater" | "boiler" | "custom";
 
 export interface ServiceTask {
   id: string;
@@ -46,8 +47,11 @@ export const SERVICE_GROUPS: Array<{ group: ServiceGroup; title: string }> = [
   { group: "airflow", title: "Coils, drains and airflow" },
   { group: "refrigeration", title: "Refrigeration parts" },
   { group: "controls", title: "Thermostats and controls" },
+  { group: "iaq", title: "Air quality" },
+  { group: "zoning", title: "Zoning and dampers" },
   { group: "ductless", title: "Ductless" },
   { group: "water-heater", title: "Water heater" },
+  { group: "boiler", title: "Boiler / hydronic" },
   { group: "custom", title: "Your own tasks" },
 ];
 
@@ -116,6 +120,73 @@ export const SERVICE_MENU: ServiceTask[] = [
   { id: "wh-anode", group: "water-heater", title: "Anode rod", includes: "Anode pulled and replaced, tank checked for rust — the cheapest years a tank can buy", laborUsd: 140, part: { name: "Anode rod", costUsd: 45, brands: ["Rheem", "A.O. Smith", "Corro-Protec"] } },
   { id: "wh-element", group: "water-heater", title: "Electric element + thermostat", includes: "Element and thermostat on an electric tank, tank drained and refilled, checked at 240 V", laborUsd: 160, part: { name: "Element + thermostat", costUsd: 45, brands: ["Camco", "Rheem", "A.O. Smith"] } },
   { id: "wh-flush", group: "water-heater", title: "Tank flush and descale", includes: "Tank drained and flushed, tankless descaled with a pump kit, T&P exercised", laborUsd: 129 },
+
+  // ── 2026-09-22: the rows a Housecall Pro book carries that this one did not ──
+  // line set, relocation
+  { id: "lineset-repair", group: "refrigerant", title: "Line set repair", includes: "Braze or replace the damaged section, new filter drier, pressure test, evacuate and weigh in (refrigerant by the pound)", laborUsd: 450, part: { name: "Line set section and fittings", costUsd: 60 }, appliesTo: OUTDOOR },
+  { id: "lineset-flush", group: "refrigerant", title: "Line set flush", includes: "Flush after a compressor burnout, suction-line drier, evacuate to 500 microns", laborUsd: 350, part: { name: "Flush kit and suction drier", costUsd: 90 }, appliesTo: OUTDOOR },
+  { id: "lineset-replace", group: "refrigerant", title: "Line set replacement (to 50 ft)", includes: "New insulated copper run, brazed, pressure tested and evacuated; longer runs by the foot", laborUsd: 750, part: { name: "Line set, 3/8 × 3/4, 50 ft insulated", costUsd: 220 }, appliesTo: OUTDOOR },
+  { id: "relocate-outdoor", group: "refrigerant", title: "Relocate the outdoor unit", includes: "New pad, line set extension brazed and insulated, disconnect and whip moved, evacuate and recharge", laborUsd: 950, part: { name: "Pad, line set extension and whip", costUsd: 260 }, appliesTo: OUTDOOR },
+
+  // electrical
+  { id: "blower-ecm-module", group: "electrical", title: "ECM blower module", includes: "Control module on a variable-speed blower, programmed to the furnace or air handler, airflow verified", laborUsd: 175, part: { name: "ECM motor control module", costUsd: 320, brands: ["Genteq", "Broad-Ocean"] }, appliesTo: DUCTED },
+  { id: "fan-blade", group: "electrical", title: "Condenser fan blade", includes: "Blade matched to the motor, balanced, amps checked", laborUsd: 120, part: { name: "Condenser fan blade", costUsd: 60 }, appliesTo: OUTDOOR },
+  { id: "surge", group: "electrical", title: "Surge protector, outdoor unit", includes: "Surge protector at the disconnect — the board and the compressor ride out the lightning season", laborUsd: 120, part: { name: "HVAC surge protector", costUsd: 110, brands: ["Intermatic", "DiversiTech"] }, appliesTo: OUTDOOR },
+  { id: "crankcase-heater", group: "electrical", title: "Crankcase heater", includes: "Belly-band or insert heater on the compressor, wired to the contactor", laborUsd: 130, part: { name: "Crankcase heater", costUsd: 45 }, appliesTo: OUTDOOR },
+  { id: "heat-strip", group: "electrical", title: "Electric heat kit / strip", includes: "Heat kit or element in the air handler, sequencer and limit checked, amps verified", laborUsd: 225, part: { name: "Electric heat kit", costUsd: 260 }, appliesTo: ["split-heat-pump", "package-unit"] },
+  { id: "sequencer", group: "electrical", title: "Heat sequencer / relay", includes: "Sequencer or heat relay on the strip heat, staging verified", laborUsd: 120, part: { name: "Sequencer", costUsd: 40 }, appliesTo: ["split-heat-pump", "package-unit"] },
+  { id: "wiring-repair", group: "electrical", title: "Low-voltage wiring repair", includes: "Find the short or the break, repair or rerun the thermostat wire, fuse replaced", laborUsd: 175, part: { name: "Thermostat wire and fuse", costUsd: 15 } },
+
+  // gas furnace
+  { id: "hx-replace", group: "furnace", title: "Heat exchanger replacement", includes: "Furnace pulled apart, new exchanger, burners and collector box reset, combustion and CO verified", laborUsd: 950, part: { name: "Heat exchanger (often under the parts warranty)", costUsd: 900 }, appliesTo: GAS_FURNACE, fuel: ["gas", "propane"], note: "A cracked heat exchanger is usually under the 20-year or lifetime parts warranty — then this is labor only. Out of warranty on an older furnace, quote the furnace first." },
+  { id: "door-switch", group: "furnace", title: "Blower door safety switch", includes: "Door interlock switch, wired and tested", laborUsd: 85, part: { name: "Blower door switch", costUsd: 20 }, appliesTo: GAS_FURNACE, fuel: ["gas", "propane"] },
+  { id: "furnace-trap", group: "furnace", title: "Condensate trap and drain (90%+ furnace)", includes: "Trap and tubing on a condensing furnace, pressure-switch hoses checked, drain run to a proper outlet", laborUsd: 150, part: { name: "Condensate trap and tubing", costUsd: 30 }, appliesTo: GAS_FURNACE, fuel: ["gas", "propane"] },
+
+  // coils, drains and airflow
+  { id: "evap-coil-replace", group: "airflow", title: "Evaporator coil replacement", includes: "Matched cased coil, brazed in, new drier, evacuated and weighed in (refrigerant by the pound)", laborUsd: 850, part: { name: "Evaporator coil, cased", costUsd: 750, brands: ["ADP", "Aspen"] }, appliesTo: ["split-ac-furnace", "split-heat-pump"], note: "Past 12 years, the matching outdoor unit is usually the better money than a coil alone." },
+  { id: "cond-coil-replace", group: "airflow", title: "Condenser coil replacement", includes: "Coil on an outdoor unit under warranty, brazed in, evacuated and recharged", laborUsd: 750, part: { name: "Condenser coil", costUsd: 650 }, appliesTo: ["split-ac-furnace", "split-heat-pump", "package-unit"], note: "Out of warranty, the whole outdoor unit is replaced instead of its coil." },
+  { id: "drain-pan", group: "airflow", title: "Evaporator drain pan replacement", includes: "Primary or secondary pan, float switch reset, drain flushed", laborUsd: 300, part: { name: "Drain pan", costUsd: 90 }, appliesTo: DUCTED },
+  { id: "fan-belt", group: "airflow", title: "Blower belt", includes: "Belt on a belt-drive blower, tensioned, pulleys aligned", laborUsd: 95, part: { name: "Blower belt", costUsd: 25 }, appliesTo: DUCTED },
+  { id: "blower-bearing", group: "airflow", title: "Blower pulley or bearing", includes: "Pulley or shaft bearing on a belt-drive blower, aligned and greased", laborUsd: 175, part: { name: "Blower pulley / bearing", costUsd: 60 }, appliesTo: DUCTED },
+  { id: "duct-seal", group: "airflow", title: "Duct sealing, accessible runs", includes: "Mastic and tape at every reachable joint and boot, plenums sealed, static pressure before and after", laborUsd: 450, part: { name: "Mastic, tape and straps", costUsd: 60 }, appliesTo: DUCTED },
+  { id: "return-upgrade", group: "airflow", title: "Return air upgrade", includes: "A second return or a larger grille and drop, to bring the static pressure into range", laborUsd: 600, part: { name: "Return grille, boot and duct", costUsd: 180 }, appliesTo: DUCTED },
+  { id: "duct-clean", group: "airflow", title: "Duct cleaning", includes: "Negative-air machine on every run, registers and returns, blower compartment vacuumed", laborUsd: 450, appliesTo: DUCTED },
+
+  // thermostats and controls
+  { id: "relocate-tstat", group: "controls", title: "Relocate the thermostat", includes: "Thermostat moved off the sun or the hallway draft, wire fished, old spot patched", laborUsd: 150, part: { name: "Thermostat wire and plate", costUsd: 20 } },
+
+  // air quality
+  { id: "media-cabinet", group: "iaq", title: "Media filter cabinet (4-5 in.)", includes: "Cabinet cut into the return, 4-5 in. pleated media, filter door sealed", laborUsd: 300, part: { name: "Media filter cabinet with 4-5 in. filter", costUsd: 220, brands: ["Aprilaire", "Honeywell"] }, appliesTo: DUCTED },
+  { id: "uv-lamp", group: "iaq", title: "UV lamp at the coil", includes: "UV-C lamp over the evaporator coil, wired to the air handler, mold and slime kept off the coil and pan", laborUsd: 175, part: { name: "UV coil lamp", costUsd: 220, brands: ["Fresh-Aire UV", "Honeywell"] }, appliesTo: DUCTED, note: "The bulb is a yearly change — a plan-visit item." },
+  { id: "humidifier", group: "iaq", title: "Whole-home humidifier", includes: "Bypass or fan humidifier on the supply, water line and drain, humidistat set", laborUsd: 450, part: { name: "Bypass or fan humidifier", costUsd: 320, brands: ["Aprilaire", "Honeywell"] }, appliesTo: DUCTED },
+  { id: "dehumidifier", group: "iaq", title: "Whole-home dehumidifier", includes: "Ducted dehumidifier tied into the return, condensate to a drain, dehumidistat set", laborUsd: 900, part: { name: "Ducted dehumidifier", costUsd: 1600, brands: ["Aprilaire", "Santa Fe"] }, appliesTo: DUCTED },
+  { id: "erv", group: "iaq", title: "ERV / HRV fresh-air unit", includes: "Energy- or heat-recovery ventilator with its ducting, balanced, controls set", laborUsd: 1200, part: { name: "ERV/HRV with ducting kit", costUsd: 1500, brands: ["Broan", "Panasonic", "RenewAire"] }, appliesTo: DUCTED },
+  { id: "eac-cell", group: "iaq", title: "Electronic air cleaner cell / service", includes: "Cells and pre-filters washed or replaced, power supply tested", laborUsd: 150, part: { name: "Air cleaner cell / pre-filter set", costUsd: 120 }, appliesTo: DUCTED },
+
+  // zoning and dampers
+  { id: "zone-board", group: "zoning", title: "Zone control board", includes: "Zone panel, thermostats and dampers wired to it, staging and bypass set", laborUsd: 300, part: { name: "Zone control panel", costUsd: 280, brands: ["Honeywell", "EWC"] }, appliesTo: DUCTED },
+  { id: "damper", group: "zoning", title: "Motorized zone damper", includes: "Damper in the trunk or branch, wired to the panel, travel checked", laborUsd: 250, part: { name: "Motorized damper", costUsd: 140 }, appliesTo: DUCTED },
+  { id: "damper-actuator", group: "zoning", title: "Damper actuator", includes: "Actuator on an existing damper, end switches set", laborUsd: 150, part: { name: "Damper actuator", costUsd: 85 }, appliesTo: DUCTED },
+  { id: "bypass-damper", group: "zoning", title: "Bypass damper", includes: "Barometric bypass between supply and return, weight set for the static", laborUsd: 250, part: { name: "Barometric bypass damper", costUsd: 120 }, appliesTo: DUCTED },
+  { id: "zone-tstat", group: "zoning", title: "Zone thermostat / sensor", includes: "Thermostat or remote sensor for one zone, wired and addressed", laborUsd: 120, part: { name: "Zone thermostat", costUsd: 90 }, appliesTo: DUCTED },
+
+  // ductless
+  { id: "ductless-blower", group: "ductless", title: "Ductless blower motor", includes: "Indoor fan motor in the head, wheel rebalanced, error code cleared", laborUsd: 250, part: { name: "Ductless indoor fan motor", costUsd: 180 }, appliesTo: ["ductless"] },
+  { id: "ductless-flare", group: "ductless", title: "Ductless flare / leak repair and recharge", includes: "Flares remade or fittings replaced, pressure test, evacuate and weigh in (refrigerant by the pound)", laborUsd: 450, part: { name: "Flare nuts and drier", costUsd: 40 }, appliesTo: ["ductless"] },
+
+  // water heater
+  { id: "wh-gas-valve", group: "water-heater", title: "Water heater gas control valve", includes: "Gas control / thermostat on a gas tank, pilot relit, burner and draft checked", laborUsd: 200, part: { name: "Gas control valve / thermostat", costUsd: 180 }, fuel: ["gas", "propane"] },
+  { id: "wh-expansion", group: "water-heater", title: "Expansion tank", includes: "Thermal expansion tank on the cold side, pre-charged to house pressure", laborUsd: 180, part: { name: "Thermal expansion tank", costUsd: 60 } },
+
+  // boiler / hydronic — where the house burns gas or propane
+  { id: "boiler-tuneup", group: "boiler", title: "Boiler tune-up", includes: "Burners cleaned, combustion analysis, relief valve exercised, expansion tank checked, air bled from the loops", laborUsd: 260, fuel: ["gas", "propane"], includesDiagnostic: true },
+  { id: "zone-valve", group: "boiler", title: "Zone valve", includes: "Zone valve head or body, wired to the relay, loop purged", laborUsd: 220, part: { name: "Zone valve", costUsd: 110, brands: ["Taco", "Honeywell"] }, fuel: ["gas", "propane"] },
+  { id: "circulator", group: "boiler", title: "Circulator pump", includes: "Circulator on the loop, flanges and gaskets, air bled", laborUsd: 300, part: { name: "Circulator pump", costUsd: 220, brands: ["Taco", "Grundfos"] }, fuel: ["gas", "propane"] },
+  { id: "boiler-expansion", group: "boiler", title: "Boiler expansion tank", includes: "Expansion tank and fill valve, system pressure set", laborUsd: 200, part: { name: "Boiler expansion tank", costUsd: 70 }, fuel: ["gas", "propane"] },
+  { id: "aquastat", group: "boiler", title: "Aquastat / boiler control", includes: "Aquastat relay or control, limits set, burner cycle verified", laborUsd: 220, part: { name: "Aquastat relay", costUsd: 180 }, fuel: ["gas", "propane"] },
+  { id: "boiler-relief", group: "boiler", title: "Boiler relief valve", includes: "30 psi relief valve and discharge line", laborUsd: 150, part: { name: "30 psi relief valve", costUsd: 40 }, fuel: ["gas", "propane"] },
+  { id: "purge-fill", group: "boiler", title: "Purge and fill, air bled", includes: "Loops purged of air, system refilled and pressurized, every radiator or loop hot", laborUsd: 220, fuel: ["gas", "propane"] },
+  { id: "boiler-ignition", group: "boiler", title: "Boiler pilot / igniter", includes: "Igniter, thermocouple or pilot assembly, flame proven", laborUsd: 180, part: { name: "Igniter or thermocouple", costUsd: 45 }, fuel: ["gas", "propane"] },
 ];
 
 const TITLES: Record<ExistingKind, string> = { "split-ac-furnace": "AC + furnace", "split-heat-pump": "heat pump", "furnace-only": "furnace", "package-unit": "package unit", ductless: "ductless", boiler: "boiler", none: "system" };
@@ -144,4 +215,68 @@ export function serviceMenuFor(m: BuildingModel, custom: ServiceTask[] = []): { 
 /** One row by id, from the built-in list or the shop's own. */
 export function serviceTask(id: string, custom: ServiceTask[] = []): ServiceTask | undefined {
   return SERVICE_MENU.find((t) => t.id === id) ?? custom.find((t) => t.id === id);
+}
+
+/**
+ * The menu's labor is a US-typical shop price; the job's own market moves
+ * it (lib/estimate/location-index — a listed city, else the state, else the
+ * country). Parts are not indexed, and a shop's own saved tasks are the
+ * shop's number as typed.
+ */
+export function serviceLaborIndex(m: BuildingModel): { factor: number; place: string } {
+  const idx = locationIndex(m.address || m.state);
+  return { factor: idx.factor, place: idx.place };
+}
+/** A built-in task's labor in this market, to the nearest $5. */
+export function indexedLabor(t: ServiceTask, factor: number): number {
+  return t.custom ? t.laborUsd : Math.round((t.laborUsd * factor) / 5) * 5;
+}
+
+/** The repairs that are the heart of the system: on an old unit they are money into a replacement. */
+export const MAJOR_REPAIRS = new Set(["compressor", "hx-replace", "evap-coil-replace", "cond-coil-replace", "reversing-valve", "lineset-replace"]);
+
+export interface RepairAdvice {
+  verdict: "repair" | "consider" | "replace";
+  /** The reasons, in the contractor's words. */
+  why: string[];
+  /** One line for the estimate and the customer. */
+  line: string;
+  age?: number;
+}
+
+/**
+ * Repair or replace — the rule every shop uses, written down: the age, the
+ * "$5,000 rule" (age × repair cost), a major part on an old system, R-22, and
+ * the repair against a replacement quote when one is known.
+ */
+export function repairAdvice(input: { model: BuildingModel; taskIds: string[]; repairSubtotal: number; replaceSubtotal?: number | null }): RepairAdvice {
+  const { model: m, taskIds, repairSubtotal, replaceSubtotal } = input;
+  const age = m.existing.yearMade ? new Date().getFullYear() - m.existing.yearMade : undefined;
+  const heatPump = m.existing.kind === "split-heat-pump" || m.existing.kind === "ductless";
+  const oldAt = heatPump ? 12 : 15;
+  const major = taskIds.filter((id) => MAJOR_REPAIRS.has(id));
+  const refrigerantWork = taskIds.some((id) => SERVICE_MENU.find((t) => t.id === id)?.group === "refrigerant") || major.length > 0;
+  const r22 = m.existing.refrigerant === "R-22" && refrigerantWork;
+  const why: string[] = [];
+  let score = 0;
+  const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+  if (age !== undefined && age >= oldAt && repairSubtotal >= 600) { why.push(`the system is ${age} years old`); score += 2; }
+  else if (age !== undefined && age >= oldAt - 3 && repairSubtotal >= 400) { why.push(`the system is ${age} years old`); score += 1; }
+  if (age !== undefined && age >= 10 && age * repairSubtotal >= 5000 && repairSubtotal >= 400) { why.push(`the $5,000 rule: ${age} years × ${usd(repairSubtotal)} = ${usd(age * repairSubtotal)}`); score += 1; }
+  if (major.length && age !== undefined && age >= 10) { why.push(`${major.map((id) => SERVICE_MENU.find((t) => t.id === id)?.title.toLowerCase() ?? id).join(" and ")} on the ${age}-year-old system`); score += 2; }
+  else if (major.length) { why.push(`${major.map((id) => SERVICE_MENU.find((t) => t.id === id)?.title.toLowerCase() ?? id).join(" and ")} is a major repair`); score += 1; }
+  if (r22) { why.push(major.length || repairSubtotal >= 800 ? "R-22: refrigerant work on a discontinued system" : "R-22 refrigerant is reclaimed stock at today's price"); score += major.length || repairSubtotal >= 800 ? 2 : 1; }
+  if (replaceSubtotal && replaceSubtotal > 0 && repairSubtotal > 0) {
+    const share = repairSubtotal / replaceSubtotal;
+    if (share >= 0.6) { why.push(`the repair is ${Math.round(share * 100)}% of a replacement (${usd(replaceSubtotal)})`); score += 2; }
+    else if (share >= 0.4) { why.push(`the repair is ${Math.round(share * 100)}% of a replacement (${usd(replaceSubtotal)})`); score += 1; }
+  }
+  const verdict: RepairAdvice["verdict"] = score >= 3 ? "replace" : score >= 1 ? "consider" : "repair";
+  const line =
+    verdict === "replace"
+      ? `Repair or replace: ${why.join("; ")} — the replacement is the better money. Quote both and let the customer choose.`
+      : verdict === "consider"
+        ? `Repair or replace: ${why.join("; ")} — worth putting the replacement quote next to this one.`
+        : "";
+  return { verdict, why, line, age };
 }
