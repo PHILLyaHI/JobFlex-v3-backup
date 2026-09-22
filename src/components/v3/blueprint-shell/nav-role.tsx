@@ -82,12 +82,16 @@ export function quotaPill(q: NavLimit): { text: string; out: boolean } | null {
 }
 
 const NavLimitsContext = createContext<Record<string, NavLimit>>(EMPTY_LIMITS);
+// Fifth channel: the caps do not apply to this user here (a platform admin
+// in an organization they own) — the shell says so once instead of counting.
+const NavLimitsExemptContext = createContext<boolean>(false);
 
 export function NavRoleProvider({
   identity,
   badges,
   locked,
   limits,
+  limitsExempt,
   children,
 }: {
   identity?: NavIdentity;
@@ -97,6 +101,8 @@ export function NavRoleProvider({
   locked?: string[];
   /** Remaining plan quota by nav href, from the layout's getNavLimitCounters. */
   limits?: Record<string, NavLimit>;
+  /** The caps do not apply to this user here (lib/navLimits getNavLimitState). */
+  limitsExempt?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -104,7 +110,7 @@ export function NavRoleProvider({
       <NavBadgesContext.Provider value={badges ?? EMPTY_BADGES}>
         <NavLockedContext.Provider value={locked ?? EMPTY_LOCKED}>
           <NavLimitsContext.Provider value={limits ?? EMPTY_LIMITS}>
-            {children}
+            <NavLimitsExemptContext.Provider value={limitsExempt ?? false}>{children}</NavLimitsExemptContext.Provider>
           </NavLimitsContext.Provider>
         </NavLockedContext.Provider>
       </NavBadgesContext.Provider>
@@ -115,6 +121,11 @@ export function NavRoleProvider({
 /** Remaining quota by nav href, or an empty map outside the provider. */
 export function useNavLimits(): Record<string, NavLimit> {
   return useContext(NavLimitsContext);
+}
+
+/** True when the plan's caps do not apply to this user in this organization. */
+export function useNavLimitsExempt(): boolean {
+  return useContext(NavLimitsExemptContext);
 }
 
 /** The custom plan's blocked hrefs, or an empty list outside the provider and

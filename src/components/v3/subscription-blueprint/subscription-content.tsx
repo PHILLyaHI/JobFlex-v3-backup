@@ -320,7 +320,9 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
             </a>
           </div>
           <div className={cx("us-list")} id="usList">
-            {props.usage.length === 0 && (props.usageUnlimited ?? []).length === 0 ? (
+            {props.usageExempt ? (
+              <div className={cx("us-note")}>Unlimited · platform admin</div>
+            ) : props.usage.length === 0 && (props.usageUnlimited ?? []).length === 0 ? (
               <div className={cx("us-note")}>Nothing used yet this cycle.</div>
             ) : null}
             {props.usage.map((u) => {
@@ -350,9 +352,11 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
             ))}
           </div>
           <div className={cx("us-note")}>
-            {props.usage.length > 0
-              ? "Limits reset each billing cycle · hitting one never blocks existing work"
-              : "This plan has no caps · counts reset each billing cycle"}
+            {props.usageExempt
+              ? "The plan's caps do not apply to a platform admin in their own organization"
+              : props.usage.length > 0
+                ? "Limits reset each billing cycle · hitting one never blocks existing work"
+                : "This plan has no caps · counts reset each billing cycle"}
           </div>
         </div>
         <div className={cx("card", "bill-card")} id="billCard">

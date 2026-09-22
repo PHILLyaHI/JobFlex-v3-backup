@@ -40,8 +40,22 @@
 // begins at the mark instead of at the cycle start. The mark holds only
 // while it lies inside the current cycle (see usageResetInForce), so it
 // burns by itself when the next cycle begins; nothing is deleted.
+//
+// PLATFORM ADMINS IN THEIR OWN ORGANIZATION (owner, 2026-09-22). When the
+// current user carries isPlatformAdmin AND is an OWNER of the organization
+// being checked, the plan's caps do not apply: every key resolves unlimited,
+// enforcePlanLimit passes, and the sidebar and the plans page say
+// "Unlimited · platform admin" instead of counting. In any other
+// organization — an admin who is merely a member, or no member at all — the
+// caps hold as for anyone. The rule lives HERE, in resolvePlan: the engine
+// reads the session itself (no caller passes a user), so no action needs a
+// check of its own. Where there is no session — a cron, an inbound phone
+// call, a public form — there is no current user and the caps apply. Money
+// is untouched: paid providers (EagleView, ReportAll …) keep their own
+// budgets and ledgers; this is the plan's caps only.
 // ─────────────────────────────────────────────────────────────────────────
 import { db } from "@/lib/db";
+import { auth } from "@/lib/auth";
 import {
   parsePlanLimits,
   isUnlimited,
@@ -67,6 +81,9 @@ export interface LimitStatus {
   /** ISO time of the admin's usage reset the count starts from, when one is
    *  in force this cycle (monthly keys only). Absent otherwise. */
   resetAt?: string;
+  /** Set when the caps do not apply to the current user here: a platform
+   *  admin in an organization they own. Every such status is unlimited. */
+  exempt?: true;
   /** The configured cap, or null when unlimited. */
   limit: number | null;
   /** Current usage within the relevant window. 0 when unlimited (count skipped). */
@@ -176,6 +193,44 @@ export function usageResetInForce(mark: UsageResetMark | undefined, cycleStart: 
   return at.getTime() >= cycleStart.getTime() ? at : null;
 }
 
+/* ── Who is asking ────────────────────────────────────────────────────────
+   The engine resolves the current user on its own, from the session, so the
+   platform-admin rule needs no caller to pass one. `actorId` is for contexts
+   that know better than the session: the QA harness (an explicit user), or a
+   caller that must count as nobody (`null`). Undefined = read the session. */
+
+export interface LimitActor {
+  actorId?: string | null;
+}
+
+/**
+ * The rule itself: the user carries isPlatformAdmin and holds an OWNER seat
+ * in this organization. Nothing else exempts anyone.
+ */
+export async function isPlanLimitExempt(organizationId: string, userId: string | null | undefined): Promise<boolean> {
+  if (!userId) return false;
+  const user = await db.user
+    .findUnique({
+      where: { id: userId },
+      select: { isPlatformAdmin: true, memberships: { where: { organizationId, role: "OWNER" }, select: { id: true }, take: 1 } },
+    })
+    .catch(() => null);
+  return !!user?.isPlatformAdmin && user.memberships.length > 0;
+}
+
+/** The session's user id, or null outside a request or for a partner session. */
+async function currentUserId(): Promise<string | null> {
+  try {
+    const session = await auth();
+    const u = session?.user;
+    if (!u?.id || u.principal === "INFLUENCER") return null;
+    return u.id;
+  } catch {
+    // No request scope (cron, script, build): nobody is asking.
+    return null;
+  }
+}
+
 /** Tolerates renewal-webhook lag before an ACTIVE/TRIALING sub is treated as lapsed. */
 const LAPSE_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
 
@@ -210,13 +265,15 @@ function isLapsed(
  */
 async function resolvePlan(
   organizationId: string,
-): Promise<{ limits: PlanLimits; cycleStart: Date; resets: UsageResetMarks }> {
-  const [sub, resets] = await Promise.all([
+  actor?: LimitActor,
+): Promise<{ limits: PlanLimits; cycleStart: Date; resets: UsageResetMarks; exempt: boolean }> {
+  const [sub, resets, exempt] = await Promise.all([
     db.subscription.findUnique({
       where: { organizationId },
       select: { plan: true, status: true, currentPeriodEnd: true, trialEndsAt: true },
     }),
     readUsageResetMarks(organizationId),
+    (actor && "actorId" in actor ? Promise.resolve(actor.actorId) : currentUserId()).then((uid) => isPlanLimitExempt(organizationId, uid)),
   ]);
 
   const now = new Date();
@@ -235,16 +292,18 @@ async function resolvePlan(
   const plan = plans.find((p) => p.slug.toLowerCase() === planKey) ?? null;
 
   // A lapsed org with no "free" catalog row must not fail open to unlimited.
-  if (lapsed && !plan) return { limits: { ...DEFAULT_FREE_LIMITS }, cycleStart, resets };
+  // A platform admin in their own organization: no caps, whatever the plan.
+  if (exempt) return { limits: {}, cycleStart, resets, exempt };
+  if (lapsed && !plan) return { limits: { ...DEFAULT_FREE_LIMITS }, cycleStart, resets, exempt };
 
-  return { limits: parsePlanLimits(plan?.limitsJson ?? null), cycleStart, resets };
+  return { limits: parsePlanLimits(plan?.limitsJson ?? null), cycleStart, resets, exempt };
 }
 
 type ResolvedPlan = Awaited<ReturnType<typeof resolvePlan>>;
 
 /** The organization's current cycle start, for surfaces that show the marks. */
 export async function getOrgCycleStart(organizationId: string): Promise<Date> {
-  return (await resolvePlan(organizationId)).cycleStart;
+  return (await resolvePlan(organizationId, { actorId: null })).cycleStart;
 }
 
 /** Count current usage for a resource. `cycleStart` is ignored for absolute scopes. */
@@ -381,7 +440,7 @@ async function rawStatusFor(
   // A reset moves the start of the count. Seats (absolute keys) are live
   // counts and are never reset.
   const resetAt = scope === "absolute" ? null : usageResetInForce(resets[resource], cycleStart);
-  const marked = resetAt ? { resetAt: resetAt.toISOString() } : {};
+  const marked = { ...(resetAt ? { resetAt: resetAt.toISOString() } : {}), ...(plan.exempt ? { exempt: true as const } : {}) };
 
   if (isUnlimited(cap)) {
     return { resource, limit: null, used: 0, remaining: null, allowed: true, ...marked };
@@ -451,6 +510,7 @@ export async function checkPlanLimit(
   organizationId: string,
   resource: LimitResource,
   needed = 1,
+  actor?: LimitActor,
 ): Promise<LimitStatus> {
   // "managers" is carved out of the app-wide quota switch-off: it is plan
   // COMPOSITION (which plans sell manager seats at all), not a usage upsell,
@@ -458,7 +518,7 @@ export async function checkPlanLimit(
   if (LIMITS_DISABLED && resource !== "managers") {
     return { resource, limit: null, used: 0, remaining: null, allowed: true };
   }
-  const plan = await resolvePlan(organizationId);
+  const plan = await resolvePlan(organizationId, actor);
   return statusFor(plan, organizationId, resource, needed);
 }
 
@@ -472,8 +532,9 @@ export async function enforcePlanLimit(
   organizationId: string,
   resource: LimitResource,
   needed = 1,
+  actor?: LimitActor,
 ): Promise<LimitStatus> {
-  const status = await checkPlanLimit(organizationId, resource, needed);
+  const status = await checkPlanLimit(organizationId, resource, needed, actor);
   if (!status.allowed) {
     // Stable message so the client can detect this and raise the upgrade dialog.
     const err = new Error(PLAN_LIMIT_MESSAGE) as Error & {
@@ -498,7 +559,7 @@ export async function enforcePlanLimit(
  * plan ONCE and runs one COUNT per *limited* key (unlimited keys cost zero
  * queries), so it is cheap enough for per-render use (sidebar counters).
  */
-export async function getOrgLimitUsage(organizationId: string): Promise<LimitStatus[]> {
+export async function getOrgLimitUsage(organizationId: string, actor?: LimitActor): Promise<LimitStatus[]> {
   if (LIMITS_DISABLED) {
     return LIMIT_DEFS.map((d) => ({
       resource: d.key,
@@ -508,6 +569,18 @@ export async function getOrgLimitUsage(organizationId: string): Promise<LimitSta
       allowed: true,
     }));
   }
-  const plan = await resolvePlan(organizationId);
+  const plan = await resolvePlan(organizationId, actor);
   return Promise.all(LIMIT_DEFS.map((d) => statusFor(plan, organizationId, d.key)));
+}
+
+/**
+ * The snapshot plus whether the caps apply to the asker at all — for the
+ * surfaces that say "Unlimited · platform admin" rather than count.
+ */
+export async function getOrgLimitOverview(
+  organizationId: string,
+  actor?: LimitActor,
+): Promise<{ exempt: boolean; usage: LimitStatus[] }> {
+  const usage = await getOrgLimitUsage(organizationId, actor);
+  return { exempt: usage.some((u) => u.exempt === true), usage };
 }

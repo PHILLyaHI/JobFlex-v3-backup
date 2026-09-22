@@ -20,7 +20,7 @@ import { usePathname } from "next/navigation";
 // so the mobile hamburger drawers could share them instead of carrying a
 // second, href-less copy. Re-exported here for existing importers.
 import { NAV_SECTIONS, activeHref, canOpen, isLimitedRole, navSectionsFor, type NavItem } from "./nav-map";
-import { quotaPill, useNavBadges, useNavLimits, type NavLimit, useNavLocked, useNavRole } from "./nav-role";
+import { quotaPill, useNavBadges, useNavLimits, useNavLimitsExempt, type NavLimit, useNavLocked, useNavRole } from "./nav-role";
 import { SignOutButton } from "./sign-out";
 import { foldShortcutLabel } from "./sidebar-fold";
 
@@ -110,6 +110,8 @@ export function Sidebar({
   // badge (owner, 2026-09-02): same size and type, no fill, red at zero, and
   // a hover note that says what the number counts.
   const limits = useNavLimits();
+  // A platform admin in their own organization: no pills, one line that says so.
+  const limitsExempt = useNavLimitsExempt();
   // The footer's two links leave the nav's own surfaces, so they get the same
   // test everything else does. A limited role that cannot open /dashboard/
   // settings would otherwise be handed a gear that bounces it back to Jobs.
@@ -254,6 +256,7 @@ export function Sidebar({
             <span className="sb-foot-txt">
               <span className="sb-foot-name">{name}</span>
               <span className="sb-foot-role">{role}</span>
+              {limitsExempt ? <span className="sb-foot-role sb-foot-unlim">Unlimited · platform admin</span> : null}
             </span>
           </Link>
         ) : (
@@ -266,6 +269,7 @@ export function Sidebar({
             <span className="sb-foot-txt">
               <span className="sb-foot-name">{name}</span>
               <span className="sb-foot-role">{role}</span>
+              {limitsExempt ? <span className="sb-foot-role sb-foot-unlim">Unlimited · platform admin</span> : null}
             </span>
           </div>
         )}

@@ -24,7 +24,7 @@ import { REFERRAL_REWARD_PCT, settleReferralsForCode } from "@/lib/referralRewar
 import { getOrCreateMyReferralCode } from "@/actions/referrals";
 import { listSubscriptionInvoices, type UpcomingInvoice } from "@/actions/billing";
 import { getPlanCatalog, getOrgPlanContext } from "@/lib/planCatalogServer";
-import { getOrgLimitUsage } from "@/lib/limitsEngine";
+import { getOrgLimitOverview } from "@/lib/limitsEngine";
 import { LIMIT_DEFS } from "@/lib/planLimits";
 import { titleCaseSlug, type PlanDTO } from "@/lib/planCatalog";
 import type { SubscriptionInvoice } from "@/actions/billing";
@@ -65,6 +65,9 @@ export interface SubscriptionViewProps {
   usage: UsageRow[];
   /** What the org has used on keys the plan does not cap — shown as counts. */
   usageUnlimited?: { resource: string; label: string; used: number }[];
+  /** The caps do not apply to this user here — a platform admin in an
+   *  organization they own (lib/limitsEngine). The card says so instead. */
+  usageExempt?: boolean;
   invoices: { available: boolean; invoices: SubscriptionInvoice[]; upcoming?: UpcomingInvoice | null };
   /** The next charge and what the org's referrals take off it; null when
    *  nothing is going to be billed (no subscription, no priced plan). */
@@ -134,13 +137,16 @@ function referralsBehind(rewardsNewestFirst: number[], balanceCents: number, spe
 export async function loadSubscriptionData(
   organizationId: string,
 ): Promise<SubscriptionViewProps> {
-  const [sub, planContext, plans, limitUsage, code] = await Promise.all([
+  const [sub, planContext, plans, limitOverview, code] = await Promise.all([
     db.subscription.findUnique({ where: { organizationId } }),
     getOrgPlanContext(organizationId),
     getPlanCatalog(),
-    getOrgLimitUsage(organizationId),
+    getOrgLimitOverview(organizationId),
     getOrCreateMyReferralCode(),
   ]);
+  // No meters for a platform admin in their own organization: the card says
+  // "Unlimited · platform admin" instead of counting what is not capped.
+  const limitUsage = limitOverview.exempt ? [] : limitOverview.usage;
 
   // Referral catch-up: a referred shop that has since started its
   // subscription flips the referrer's PENDING row and lands the credit.
@@ -287,6 +293,7 @@ export async function loadSubscriptionData(
     complimentary,
     usage,
     usageUnlimited,
+    usageExempt: limitOverview.exempt,
     invoices: invoiceResult,
     nextCharge,
     customPages,

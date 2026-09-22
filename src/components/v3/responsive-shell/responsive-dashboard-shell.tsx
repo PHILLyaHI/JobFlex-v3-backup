@@ -301,6 +301,7 @@ export function ResponsiveDashboardShell({
   badges,
   locked,
   limits,
+  limitsExempt,
 }: {
   children: React.ReactNode;
   /** Signed-in identity, read in the server layout and handed to the desktop
@@ -320,6 +321,8 @@ export function ResponsiveDashboardShell({
   locked?: string[];
   /** Remaining plan quota by nav href (lib/navLimits) for the sidebar pills. */
   limits?: Record<string, NavLimit>;
+  /** The caps do not apply to this user here (getNavLimitState). */
+  limitsExempt?: boolean;
   /** The desktop sidebar starts folded (the jf_sb cookie, read in the layout). */
   sidebarFolded?: boolean;
 }) {
@@ -336,7 +339,7 @@ export function ResponsiveDashboardShell({
   if (isHandheld && Handheld) {
     const seenSurface = HANDHELD_SEEN[pathname ?? ""];
     return (
-      <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits}>
+      <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits} limitsExempt={limitsExempt}>
         {/* Keyed: this shell persists across navigation, and MarkNavSeen only
             stamps once per mount — a new key remounts it for the new surface. */}
         {seenSurface && <MarkNavSeen key={seenSurface} surface={seenSurface} />}
@@ -394,21 +397,21 @@ export function ResponsiveDashboardShell({
   // MobileNav), so they need the provider just as much as the mapped ones.
   if (isHandheld && PAGE_OWNED_HANDHELD.test(pathname ?? "")) {
     return (
-      <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits}>
+      <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits} limitsExempt={limitsExempt}>
         <CustomGateSwap>{children}</CustomGateSwap>
       </NavRoleProvider>
     );
   }
   if (isHandheld && PAGE_OWNED_STATIC.has(pathname ?? "")) {
     return (
-      <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits}>
+      <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits} limitsExempt={limitsExempt}>
         <CustomGateSwap>{children}</CustomGateSwap>
       </NavRoleProvider>
     );
   }
   if (isHandheld && BLUEPRINT_HANDHELD.has(pathname ?? "")) {
     return (
-      <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits}>
+      <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits} limitsExempt={limitsExempt}>
         <BlueprintHandheldFrame>
           <CustomGateSwap>{children}</CustomGateSwap>
         </BlueprintHandheldFrame>
@@ -437,7 +440,7 @@ export function ResponsiveDashboardShell({
     </BlueprintShell>
   );
   return (
-    <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits}>
+    <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits} limitsExempt={limitsExempt}>
       {switchable ? (
         <div data-desk-fallback="" style={{ display: "contents" }}>
           {desk}

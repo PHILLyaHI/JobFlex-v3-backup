@@ -43,7 +43,7 @@ import { getBlockedCustomPages } from "@/lib/customPageAccess";
 import { UpgradeGate } from "@/components/v3/upgrade-gate/upgrade-gate";
 import { isCustomBlockedPath } from "@/lib/customPlan";
 import { getBadgeCounts } from "@/lib/badgeCounts";
-import { getNavLimitCounters, type NavLimitInfo } from "@/lib/navLimits";
+import { getNavLimitState, type NavLimitInfo } from "@/lib/navLimits";
 import { ResponsiveDashboardShell } from "@/components/v3/responsive-shell/responsive-dashboard-shell";
 import { SIDEBAR_FOLD_COOKIE } from "@/components/v3/blueprint-shell/sidebar-fold";
 import { LeadOfferPopup } from "@/components/leads/LeadOfferPopup";
@@ -90,6 +90,7 @@ export default async function DashboardBlueprintLayout({
   // What is left of each metered page, for the sidebar's quota pills. Same
   // failure story as the badges: cosmetic, may fail quietly.
   let navLimits: Record<string, NavLimitInfo> | undefined;
+  let navLimitsExempt = false;
   // Decided inside the try, acted on OUTSIDE it: redirect() throws, and the
   // catch below would swallow it.
   let needsSetup = false;
@@ -137,7 +138,9 @@ export default async function DashboardBlueprintLayout({
         select: { id: true, title: true, body: true, priority: true, createdAt: true, expiresAt: true },
       })
       .catch(() => []);
-    navLimits = await getNavLimitCounters(ctx.organizationId).catch(() => undefined);
+    const limitState = await getNavLimitState(ctx.organizationId).catch(() => undefined);
+    navLimits = limitState?.counters;
+    navLimitsExempt = limitState?.exempt ?? false;
     plan = await db.subscription
       .findUnique({ where: { organizationId: ctx.organizationId }, select: { plan: true } })
       .then((sub) => sub?.plan ?? "FREE")
@@ -197,6 +200,7 @@ export default async function DashboardBlueprintLayout({
       badges={badges}
       locked={lockedPages ?? undefined}
       limits={navLimits}
+      limitsExempt={navLimitsExempt}
     >
       <TrafficContext role={role} plan={plan} organizationId={organizationId} />
       {announcements.length > 0 && <DashboardAnnouncementDismiss announcements={announcements} />}

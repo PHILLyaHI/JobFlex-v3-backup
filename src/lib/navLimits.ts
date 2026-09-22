@@ -7,7 +7,7 @@
 // absent, so the sidebar renders no counter for them. When one nav surface is
 // governed by two quotas (calendar: job events + appointment cards), the
 // tighter remaining wins.
-import { getOrgLimitUsage } from "@/lib/limitsEngine";
+import { getOrgLimitOverview } from "@/lib/limitsEngine";
 import { LIMIT_DEFS, type LimitKey } from "@/lib/planLimits";
 
 export interface NavLimitInfo {
@@ -67,9 +67,20 @@ const NAV_NOUN: Partial<Record<LimitKey, string>> = {
 export async function getNavLimitCounters(
   organizationId: string,
 ): Promise<Record<string, NavLimitInfo>> {
+  return (await getNavLimitState(organizationId)).counters;
+}
+
+/**
+ * The counters plus whether the caps apply to the current user here at all
+ * (a platform admin in their own organization): the sidebar then draws
+ * "Unlimited · platform admin" and no pill.
+ */
+export async function getNavLimitState(
+  organizationId: string,
+): Promise<{ counters: Record<string, NavLimitInfo>; exempt: boolean }> {
   // One plan resolution + one COUNT per limited key (unlimited keys cost
   // nothing) — cheap enough to run on every dashboard layout render.
-  const usage = await getOrgLimitUsage(organizationId);
+  const { usage, exempt } = await getOrgLimitOverview(organizationId);
   const byKey = new Map(usage.map((s) => [s.resource, s]));
 
   const out: Record<string, NavLimitInfo> = {};
@@ -91,5 +102,5 @@ export async function getNavLimitCounters(
     }
     if (tightest) out[href] = tightest;
   }
-  return out;
+  return { counters: out, exempt };
 }

@@ -1739,6 +1739,7 @@
   color: var(--ink);
   line-height: 1;
 }
+.sbFootUnlim { margin-top: 3px; color: var(--blueprint); }
 .sbFootRole {
   font-size: 9.5px;
   font-weight: 800;

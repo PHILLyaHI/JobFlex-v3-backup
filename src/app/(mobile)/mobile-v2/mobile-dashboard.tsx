@@ -49,6 +49,7 @@ import {
   useNavBadges,
   useNavIdentity,
   useNavLimits,
+  useNavLimitsExempt,
   quotaPill,
   useNavLocked,
   useNavRole,
@@ -810,6 +811,8 @@ function DashboardView({ data }: { data: DashboardData }) {
      neither). Both come from the same provider the shell mounts. */
   const navBadges = useNavBadges();
   const navLimits = useNavLimits();
+  // A platform admin in their own organization: no pills, one line in the foot.
+  const navLimitsExempt = useNavLimitsExempt();
   const navSections = navSectionsFor(navRole, navLocked);
   /* The composer this page's Help button opens is mounted by the responsive
      shell, which only wraps the authenticated route. On the standalone
@@ -1489,6 +1492,7 @@ function DashboardView({ data }: { data: DashboardData }) {
             <span className={styles.sbFootTxt}>
               <span className={styles.sbFootName}>{data.viewer.name}</span>
               <span className={styles.sbFootRole}>{data.viewer.role}</span>
+              {navLimitsExempt ? <span className={`${styles.sbFootRole} ${styles.sbFootUnlim}`}>Unlimited · platform admin</span> : null}
             </span>
           </Link>
           <Link

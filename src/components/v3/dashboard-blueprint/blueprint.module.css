@@ -305,6 +305,9 @@
 .bp :global(.sb-foot-txt) { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .bp :global(.sb-foot-name) { font-size: 13px; font-weight: 700; color: var(--ink); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bp :global(.sb-foot-role) { font-size: 9.5px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-light); line-height: 1; }
+/* A platform admin in their own organization: the caps do not apply, and the
+   foot says so where a quota pill would otherwise count (2026-09-22). */
+.bp :global(.sb-foot-unlim) { margin-top: 3px; color: var(--blueprint); }
 .bp :global(.sb-foot-ic) {
   position: relative;
   width: 34px; height: 34px;

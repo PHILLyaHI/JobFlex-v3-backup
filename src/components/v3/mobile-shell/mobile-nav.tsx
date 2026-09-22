@@ -48,6 +48,7 @@ import {
   useNavBadges,
   useNavIdentity,
   useNavLimits,
+  useNavLimitsExempt,
   useNavLocked,
   type NavLimit,
 } from "@/components/v3/blueprint-shell/nav-role";
@@ -157,6 +158,7 @@ export function MobileNav() {
      sidebar draws, in the drawer since 2026-09-04 (owner: the phone showed
      none of the counters). */
   const limits = useNavLimits();
+  const limitsExempt = useNavLimitsExempt();
   /* Every engine in the picker lives outside a field worker's allow-list, so
      for them the handheld New Estimate button could only open a dialog whose
      every card bounces. Asked of the engine list itself, not a copy of it. */
@@ -432,6 +434,7 @@ export function MobileNav() {
               <span className={styles.sbFootTxt}>
                 <span className={styles.sbFootName}>{accountName || "Account"}</span>
                 <span className={styles.sbFootRole}>{roleTitle(role)}</span>
+                {limitsExempt ? <span className={`${styles.sbFootRole} ${styles.sbFootUnlim}`}>Unlimited · platform admin</span> : null}
               </span>
             </Link>
           ) : (
@@ -440,6 +443,7 @@ export function MobileNav() {
               <span className={styles.sbFootTxt}>
                 <span className={styles.sbFootName}>{accountName || "Account"}</span>
                 <span className={styles.sbFootRole}>{roleTitle(role)}</span>
+                {limitsExempt ? <span className={`${styles.sbFootRole} ${styles.sbFootUnlim}`}>Unlimited · platform admin</span> : null}
               </span>
             </div>
           )}

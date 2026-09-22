@@ -169,6 +169,7 @@ export function MobileSubscription({
   cancelAtPeriodEnd,
   complimentary,
   usage,
+  usageExempt,
   invoices,
   nextCharge,
   referral,
@@ -443,8 +444,10 @@ export function MobileSubscription({
             <div className="jfms-cardBody">
               {usageSorted.length === 0 ? (
                 <div className="jfms-empty">
-                  <div className="jfms-emptyT">No caps on this plan</div>
-                  <div className="jfms-emptyS">Everything on your plan is unlimited.</div>
+                  <div className="jfms-emptyT">{usageExempt ? "Unlimited · platform admin" : "No caps on this plan"}</div>
+                  <div className="jfms-emptyS">
+                    {usageExempt ? "The plan's caps do not apply to a platform admin in their own organization." : "Everything on your plan is unlimited."}
+                  </div>
                 </div>
               ) : (
                 usageSorted.map((u) => {
