@@ -35,7 +35,7 @@
 /* DESIGN TOKENS — JobFlex Blueprint System (donor :root + inherited body
    typography). `background` and `overflow` from the donor's body stay with
    the shell: painting the paper on .content would hide the graph-paper
-   field that .main::before draws underneath it. */
+   field that .main draws as its own background. */
 .bp :global(.content) {
   --paper: #f2f0eb;
   --paper-deep: #ffffff;
@@ -81,8 +81,6 @@
 
   font-family: var(--font);
   color: var(--ink);
-  -webkit-font-smoothing: auto;
-  -moz-osx-font-smoothing: auto;
   font-feature-settings: 'cv11', 'ss01', 'ss03';
 
   /* ── Environment restore ─────────────────────────────────────────

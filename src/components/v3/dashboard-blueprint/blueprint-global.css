@@ -482,13 +482,13 @@ body:has(.jf-blueprint) {
    `.jf-blueprint[data-sb]` on purpose: a dozen page modules each redeclare
    `--sidebar-w: 264px` on their own `.bp`, and (0,2,0) outranks all of
    them without touching one. Everything reads `--sidebar-w` — the grid
-   column, the graph-paper field — so narrowing it moves the whole layout.
+   column (and .main, whose own background is the graph-paper field) — so
+   narrowing it moves the whole layout.
    Desktop only: at 860px and below the sidebar is a drawer, the arrow is
    hidden and the attribute changes nothing. */
 
 @media (min-width: 861px) {
   .jf-blueprint .layout { transition: grid-template-columns 0.24s cubic-bezier(0.4, 0, 0.2, 1); }
-  .jf-blueprint .main::before { transition: left 0.24s cubic-bezier(0.4, 0, 0.2, 1); }
   /* The arrow straddles the sidebar's border, so the sidebar may no longer
      clip — its own scroller still does, sideways. */
   .jf-blueprint .sb { position: relative; overflow: visible; z-index: 30; }
@@ -567,7 +567,7 @@ body:has(.jf-blueprint) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .jf-blueprint .layout, .jf-blueprint .main::before, .jf-blueprint .sb-fold .ic { transition: none; }
+  .jf-blueprint .layout, .jf-blueprint .sb-fold .ic { transition: none; }
   .jf-blueprint .sb-tip { animation: none; }
 }
 

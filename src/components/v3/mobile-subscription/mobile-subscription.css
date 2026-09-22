@@ -155,7 +155,6 @@
      stylistic sets are part of the house type, not an accident of the
      host, so they are re-stated rather than reset to `normal`. */
   font-feature-settings: "cv11", "ss01", "ss03";
-  -webkit-font-smoothing: auto;
 }
 
 /* ── HOST NEUTRALIZATION ─────────────────────────────────────

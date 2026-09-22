@@ -53,7 +53,16 @@ export function HeroEntrance({ children }: { children: ReactNode }) {
           // 110% could show its top edge before it rose.
           gsap.set(self.lines, { yPercent: 130 });
           h1.style.visibility = "visible";
-          const tl = gsap.timeline();
+          // At rest nothing may keep a transform or a will-change: either one
+          // leaves the block on a layer of its own, and Chrome draws text on
+          // such a layer with greyscale antialiasing instead of ClearType.
+          const moved = [sub, cta].filter((el): el is HTMLElement => !!el);
+          const tl = gsap.timeline({
+            onComplete: () => {
+              gsap.set(self.lines, { clearProps: "transform", willChange: "auto" });
+              if (moved.length) gsap.set(moved, { clearProps: "transform" });
+            },
+          });
           tl.to(self.lines, { yPercent: 0, duration: 0.9, ease: "power3.out", stagger: 0.12 }, 0);
           if (sub) tl.fromTo(sub, { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.15);
           if (cta) tl.fromTo(cta, { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, duration: 0.6, ease: "power2.out" }, 0.25);

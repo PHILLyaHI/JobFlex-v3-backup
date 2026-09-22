@@ -134,8 +134,6 @@
                                           ::-webkit-scrollbar sizing */
   font-family: var(--font);
   color: var(--ink);
-  -webkit-font-smoothing: auto;
-  -moz-osx-font-smoothing: auto;
   font-feature-settings: 'cv11', 'ss01', 'ss03';
   line-height: normal;
   text-rendering: auto;

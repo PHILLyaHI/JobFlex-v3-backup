@@ -86,8 +86,6 @@
      shell's graph-paper field. */
   font-family: var(--font);
   color: var(--ink);
-  -webkit-font-smoothing: auto;
-  -moz-osx-font-smoothing: auto;
   font-feature-settings: 'cv11', 'ss01', 'ss03';
 
   /* ── Environment restore ──────────────────────────────────────────

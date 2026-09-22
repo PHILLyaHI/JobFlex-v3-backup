@@ -27,9 +27,9 @@
    trap both under the topbar and hide the sheet's header.
 
    Dropping `.content` back to `z-index: auto` restores the donor's paint
-   order exactly: `.content` still paints above the graph-paper field
-   (`.main::before`, z-index 0) because the pseudo-element precedes it in tree
-   order at the same stacking level, and the sheet's own 110/111 now resolve
+   order exactly: `.content` still paints above the graph-paper field (the
+   background of `.main`, which paints under all content), and the sheet's
+   own 110/111 now resolve
    against the same context the donor used.
 
    `:has(> .sheet)` self-scopes this to a page that puts a `.sheet` element

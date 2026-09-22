@@ -3152,13 +3152,15 @@
     display: none !important;
   }
 
-  /* The two fixed decorations of the app: the paper grain on
-     <body> and the graph-paper grid behind `.main`. Both are
-     `position: fixed`, which in paged media means both would be
-     painted on EVERY sheet of the client's contract. */
-  :global(body)::before,
-  :global(.jf-blueprint) :global(.main)::before {
+  /* The two decorations of the app: the paper grain on <body>
+     (`position: fixed`, so paged media would paint it on EVERY
+     sheet of the client's contract) and the graph-paper grid, the
+     background of `.main`. */
+  :global(body)::before {
     display: none !important;
+  }
+  :global(.jf-blueprint) :global(.main) {
+    background-image: none !important;
   }
 
   :global(.jf-blueprint) {

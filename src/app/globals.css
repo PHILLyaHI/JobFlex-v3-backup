@@ -70,6 +70,9 @@ html, body {
   color: var(--ink);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   font-feature-settings: 'cv11', 'ss01', 'ss03';
+  /* Font smoothing is set once, here, for the whole app; page modules no
+     longer repeat it. `auto`, never `antialiased` (owner's rule, sharpness
+     pass 2026-08-18; reaffirmed 2026-09-21). Acts on macOS only. */
   -webkit-font-smoothing: auto;
   text-rendering: optimizeLegibility;
 }

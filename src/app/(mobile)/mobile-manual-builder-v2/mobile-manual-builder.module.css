@@ -67,7 +67,6 @@
   background: var(--paper);
   color: var(--ink);
   font-feature-settings: "cv11", "ss01", "ss03";
-  -webkit-font-smoothing: auto;
 }
 
 .scroll {

@@ -30,7 +30,6 @@
   --ease: cubic-bezier(0.4, 0, 0.2, 1); --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
 
   font-family: var(--font); background: var(--paper); color: var(--ink);
-  -webkit-font-smoothing: auto; -moz-osx-font-smoothing: auto;
   /* Environment restores — the same two the other doors make: Tailwind
      preflight's line-height 1.5 and globals.css's Inter feature set. */
   line-height: normal;

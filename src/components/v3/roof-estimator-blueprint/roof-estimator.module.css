@@ -1890,7 +1890,7 @@
 .bp :global(.content .rf-recent-src) { font-size: 9.5px; padding: 3px 7px; }
 .bp :global(.content .rf-recent-fig) { min-width: 64px; text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bp :global(.content .rf-recent-fig span) { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: var(--muted); margin-left: 4px; }
-.bp :global(.content .rf-recent-empty) { margin: 14px 18px 18px; padding: 16px; border: 1.5px dashed var(--muted-faint); border-radius: var(--radius); font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); text-align: center; }
+.bp :global(.content .rf-recent-empty) { margin: 14px 18px 18px; padding: 16px; border: 1.5px dashed var(--muted-faint); border-radius: var(--radius); font-family: var(--font-mono); font-size: 11px; /* mono-caps floor (was 10.5) */ font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); text-align: center; }
 
 /* Details card — a <dl> in the .lf-list rhythm: section kickers in mono caps,
    rows label / tabular value, 1.5px hairline dividers. */

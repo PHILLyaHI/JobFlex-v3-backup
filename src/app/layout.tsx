@@ -10,8 +10,11 @@ import { MetaPixel } from "@/components/providers/meta-pixel";
 // just not mounted. Restore: re-add the import and <CookieBanner /> below.
 // import { CookieBanner } from "@/components/consent/cookie-banner";
 
-/* Variable fonts — blueprint system needs Inter up to 900 (H1 caps, KPI
-   numerals) and JetBrains Mono 500–600 for the drafting-annotation layer. */
+/* Variable fonts, one file each, so every weight is a real instance and
+   never a synthesized bold: Inter 100–900 (the app sets 400–900; 900 for H1
+   caps and KPI numerals), JetBrains Mono 100–800 (400–800 in use). A weight
+   range such as "400 900" would cut the files, but Turbopack's next/font
+   rejects ranges ("Unknown weight"), so the full axis ships. */
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
@@ -41,7 +44,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       {/* suppressHydrationWarning: browser extensions (e.g. Grammarly) inject
           data-gr-* attributes on <body> before React hydrates — benign mismatch. */}
       {/* No `antialiased`: default subpixel rendering keeps text crisper
-          (sharpness pass, owner 2026-08-18). */}
+          (sharpness pass, owner 2026-08-18). Smoothing is set once, in
+          globals.css (html, body). */}
       <body className="min-h-dvh" suppressHydrationWarning>
         <div className="relative z-10">{children}</div>
         {/* Root layout is the one shell every public entry page shares — the

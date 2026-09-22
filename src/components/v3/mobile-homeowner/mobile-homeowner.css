@@ -200,7 +200,6 @@ body:has(.jf-mobile-homeowner)::before { content: none; }
     linear-gradient(var(--grid-light) calc(1px * var(--s)), transparent calc(1px * var(--s))),
     linear-gradient(90deg, var(--grid-light) calc(1px * var(--s)), transparent calc(1px * var(--s)));
   background-size: calc(38px * var(--s)) calc(38px * var(--s));
-  -webkit-font-smoothing: auto;
 }
 
 /* ── CONTROL BASELINE ──────────────────────────────────────────────────────
