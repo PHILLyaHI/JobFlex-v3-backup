@@ -11,18 +11,20 @@
 import { useRef } from "react";
 import { Empty, KpiStrip, Meta, cx, useReveal } from "@/components/v3/admin-influencers/admin-ui";
 import ui from "@/components/v3/admin-influencers/admin-ui.module.css";
-import { usd, type BalancesDTO, type MonthEarningsDTO, type PartnerDTO } from "./portal-data";
-import { HoldNote } from "./portal-ui";
+import { usd, type BalancesDTO, type MoneyNoteDTO, type MonthEarningsDTO, type PartnerDTO } from "./portal-data";
+import { HoldNote, MoneyNotes } from "./portal-ui";
 import styles from "./portal.module.css";
 
 export function InfluencerEarningsContent({
   partner,
   balances,
   months,
+  notes,
 }: {
   partner: PartnerDTO;
   balances: BalancesDTO;
   months: MonthEarningsDTO[];
+  notes: MoneyNoteDTO[];
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   useReveal(rootRef);
@@ -40,29 +42,38 @@ export function InfluencerEarningsContent({
       </div>
 
       <KpiStrip
-        cols={4}
+        cols={balances.heldCents !== 0 ? 5 : 4}
         cells={[
           { label: "Gross accrued", value: usd(balances.lifetimeEarnedCents) },
           {
-            label: "Taken back by refunds",
+            label: "Refunds & chargebacks",
             value: usd(reversedTotal),
             tone: reversedTotal > 0 ? "warn" : undefined,
           },
           { label: "Net earned", value: usd(netTotal), accent: true },
-          { label: "Owed to you now", value: usd(balances.balanceCents), tone: "ok" },
+          ...(balances.heldCents !== 0
+            ? [{ label: "On hold", value: usd(balances.heldCents), tone: "warn" as const }]
+            : []),
+          {
+            label: "Owed to you now",
+            value: usd(balances.balanceCents),
+            tone: balances.balanceCents < 0 ? ("bad" as const) : ("ok" as const),
+          },
         ]}
       />
       <div className="rv">
         <HoldNote holdDays={partner.holdDays} />
       </div>
 
+      <MoneyNotes notes={notes} />
+
       <section className="card rv">
         <div className={cx("card-head", ui.cardHead)}>
           <div className="card-titles">
             <div className="card-title">By month</div>
             <div className="card-sub">
-              Only Stripe-confirmed payments count. A refund shows as a deduction in the month the
-              refund landed, not the month the payment did.
+              Only Stripe-confirmed payments count. A refund or a lost chargeback shows as a deduction
+              in the month it landed, not the month the payment did.
             </div>
           </div>
           <span className={ui.cardCount}>
@@ -77,7 +88,7 @@ export function InfluencerEarningsContent({
             <div className={cx(ui.tr, ui.th, styles.monthCols)} role="row">
               <span>Month</span>
               <span className={ui.thR}>Accrued</span>
-              <span className={ui.thR}>Refunded</span>
+              <span className={ui.thR}>Taken back</span>
               <span className={ui.thR}>Net</span>
             </div>
             {months.map((m) => (
@@ -90,7 +101,7 @@ export function InfluencerEarningsContent({
                   {usd(m.accruedCents)}
                 </div>
                 <div className={cx(ui.tdNum, m.reversedCents === 0 && ui.tdNumMute)}>
-                  <span className={ui.tdLbl}>Refunded</span>
+                  <span className={ui.tdLbl}>Taken back</span>
                   {m.reversedCents === 0 ? "—" : usd(-m.reversedCents)}
                 </div>
                 <div className={cx(ui.tdAmt, m.netCents > 0 && ui.tdAmtBp)}>
@@ -108,7 +119,7 @@ export function InfluencerEarningsContent({
                 {usd(months.reduce((n, m) => n + m.accruedCents, 0))}
               </div>
               <div className={cx(ui.tdNum, reversedTotal === 0 && ui.tdNumMute)}>
-                <span className={ui.tdLbl}>Refunded</span>
+                <span className={ui.tdLbl}>Taken back</span>
                 {reversedTotal === 0 ? "—" : usd(-reversedTotal)}
               </div>
               <div className={cx(ui.tdAmt, ui.tdAmtBp)}>

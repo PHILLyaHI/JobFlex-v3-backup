@@ -29,8 +29,11 @@ export function usd(cents: number): string {
 export interface BalancesDTO {
   /** Accrued, still inside the hold window. */
   pendingCents: number;
-  /** Past the hold window — payable. */
+  /** Past the hold window — payable. Negative while a chargeback on money
+   *  already paid out is being paid back from new commission. */
   clearedCents: number;
+  /** Frozen while a customer disputes the payment it came from. */
+  heldCents: number;
   /** Already transferred out (positive). */
   paidOutCents: number;
   /** Gross ever accrued (positive accruals only). */
@@ -74,6 +77,21 @@ export interface MonthEarningsDTO {
   /** Positive number: what refunds took back that month. */
   reversedCents: number;
   netCents: number;
+}
+
+/**
+ * A line the partner must be able to read in words, with its date: money frozen
+ * by an open dispute, or taken back by a lost one. Built on the server from the
+ * ledger and the dispute record — never from anything that names the customer.
+ */
+export interface MoneyNoteDTO {
+  /** Opaque key for React. */
+  id: string;
+  kind: "held" | "chargeback";
+  /** Positive for a hold (what is frozen), negative for a chargeback. */
+  amountCents: number;
+  /** ISO — when the dispute opened (held) or was lost (chargeback). */
+  date: string;
 }
 
 export interface PayoutRequestDTO {

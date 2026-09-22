@@ -24,8 +24,15 @@ import {
   useReveal,
 } from "@/components/v3/admin-influencers/admin-ui";
 import ui from "@/components/v3/admin-influencers/admin-ui.module.css";
-import { usd, type BalancesDTO, type PartnerDTO, type PromoCodeDTO, type ReferredClientDTO } from "./portal-data";
-import { ConnectBanner, HoldNote, RequestPayoutButton } from "./portal-ui";
+import {
+  usd,
+  type BalancesDTO,
+  type MoneyNoteDTO,
+  type PartnerDTO,
+  type PromoCodeDTO,
+  type ReferredClientDTO,
+} from "./portal-data";
+import { ConnectBanner, HoldNote, MoneyNotes, RequestPayoutButton } from "./portal-ui";
 import styles from "./portal.module.css";
 
 const CLIENT_TONE: Record<string, Tone> = {
@@ -44,12 +51,14 @@ export function InfluencerOverviewContent({
   balances,
   codes,
   clients,
+  notes,
   payoutReason,
 }: {
   partner: PartnerDTO;
   balances: BalancesDTO;
   codes: PromoCodeDTO[];
   clients: ReferredClientDTO[];
+  notes: MoneyNoteDTO[];
   payoutReason: string | null;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -75,7 +84,11 @@ export function InfluencerOverviewContent({
         cols={4}
         cells={[
           { label: "Still clearing", value: usd(balances.pendingCents) },
-          { label: "Ready to withdraw", value: usd(balances.clearedCents), accent: true },
+          {
+            label: "Ready to withdraw",
+            value: usd(balances.clearedCents),
+            ...(balances.clearedCents < 0 ? { tone: "bad" as const } : { accent: true }),
+          },
           { label: "Paid out", value: usd(balances.paidOutCents), tone: "ok" },
           { label: "Lifetime earned", value: usd(balances.lifetimeEarnedCents) },
         ]}
@@ -85,6 +98,8 @@ export function InfluencerOverviewContent({
       </div>
 
       <ConnectBanner connect={partner.connect} />
+
+      <MoneyNotes notes={notes} />
 
       <section className="card rv">
         <div className={cx("card-head", ui.cardHead)}>

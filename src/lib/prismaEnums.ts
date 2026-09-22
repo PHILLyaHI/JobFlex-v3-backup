@@ -327,6 +327,11 @@ export const LedgerEntryState = {
   CLEARED: "CLEARED",
   PAID: "PAID",
   VOID: "VOID",
+  // A customer has disputed the payment this commission came from. Not pending
+  // (the hold clock is stopped), not payable, not in any payout — until the
+  // dispute closes: won → back to PENDING with a fresh hold, lost → VOID against
+  // a chargeback reversal (lib/stripeSync, holdForDispute / settleDispute).
+  HELD: "HELD",
 } as const;
 export type LedgerEntryState = (typeof LedgerEntryState)[keyof typeof LedgerEntryState];
 

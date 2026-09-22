@@ -14,6 +14,7 @@ import { requireInfluencer } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { ledgerBalances } from "@/lib/commission";
 import { LedgerEntryType } from "@/lib/prismaEnums";
+import { moneyNotes } from "@/lib/influencerNotes";
 import { InfluencerEarningsContent } from "@/components/v3/influencer-portal/earnings-content";
 import type { MonthEarningsDTO, PartnerDTO } from "@/components/v3/influencer-portal/portal-data";
 
@@ -28,6 +29,7 @@ export default async function InfluencerEarningsPage() {
   });
 
   const balances = ledgerBalances(ledger);
+  const notes = await moneyNotes(partner.id);
 
   const byMonth = new Map<string, { accrued: number; reversed: number }>();
   for (const e of ledger) {
@@ -63,5 +65,5 @@ export default async function InfluencerEarningsPage() {
     connect: { payoutsEnabled: partner.payoutsEnabled, status: partner.connectStatus },
   };
 
-  return <InfluencerEarningsContent partner={partnerDto} balances={balances} months={months} />;
+  return <InfluencerEarningsContent partner={partnerDto} balances={balances} months={months} notes={notes} />;
 }

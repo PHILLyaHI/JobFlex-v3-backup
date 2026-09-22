@@ -9,6 +9,8 @@ import {
   markSubscriptionPastDue,
   accrueForInvoice,
   reverseForCharge,
+  holdForDispute,
+  settleDispute,
   handleConnectAccountUpdate,
   handleTransferEvent,
 } from "@/lib/stripeSync";
@@ -86,6 +88,18 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
     }
     case "charge.refunded": {
       await reverseForCharge(event.data.object as Stripe.Charge, event.id);
+      break;
+    }
+    // A chargeback removes the commission as a refund does (owner, 2026-09-22):
+    // frozen while the dispute is open, reversed if it is lost, released with a
+    // fresh hold if it is won. The event's own time is the date the dispute
+    // opened or closed — a retried delivery must not move the hold clock.
+    case "charge.dispute.created": {
+      await holdForDispute(event.data.object as Stripe.Dispute, new Date(event.created * 1000));
+      break;
+    }
+    case "charge.dispute.closed": {
+      await settleDispute(event.data.object as Stripe.Dispute, event.id, new Date(event.created * 1000));
       break;
     }
     case "account.updated": {

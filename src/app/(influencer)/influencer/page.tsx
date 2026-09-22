@@ -16,6 +16,7 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { ledgerBalances, describeCommission } from "@/lib/commission";
 import { payoutRequestRefusal } from "@/lib/payouts";
 import { PayoutRequestStatus } from "@/lib/prismaEnums";
+import { moneyNotes } from "@/lib/influencerNotes";
 import { InfluencerOverviewContent } from "@/components/v3/influencer-portal/overview-content";
 import type {
   PartnerDTO,
@@ -62,6 +63,7 @@ export default async function InfluencerOverviewPage() {
   ]);
 
   const balances = ledgerBalances(ledger);
+  const notes = await moneyNotes(partner.id);
   const appUrl = await appBaseUrl();
 
   // The plan comes from the Subscription mirror, joined on the Stripe id. That
@@ -117,6 +119,7 @@ export default async function InfluencerOverviewPage() {
       balances={balances}
       codes={codeDto}
       clients={clientDto}
+      notes={notes}
       payoutReason={payoutReason}
     />
   );

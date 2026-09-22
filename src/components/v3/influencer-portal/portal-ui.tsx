@@ -15,11 +15,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Ic, actionError, cx } from "@/components/v3/admin-influencers/admin-ui";
+import { Chip, Ic, Meta, type Tone, actionError, cx } from "@/components/v3/admin-influencers/admin-ui";
 import ui from "@/components/v3/admin-influencers/admin-ui.module.css";
 import { createConnectOnboardingLink } from "@/actions/connect";
 import { requestPayout } from "@/actions/influencers";
-import type { ConnectDTO } from "./portal-data";
+import { longDate } from "@/lib/format";
+import { usd, type ConnectDTO, type MoneyNoteDTO } from "./portal-data";
 import styles from "./portal.module.css";
 
 /* ============================================================
@@ -137,6 +138,62 @@ export function RequestPayoutButton({ reason }: { reason: string | null }) {
         </p>
       ) : null}
     </div>
+  );
+}
+
+/* ============================================================
+   HOLDS AND CHARGEBACKS, IN WORDS WITH A DATE
+   ============================================================ */
+
+const NOTE_COPY: Record<MoneyNoteDTO["kind"], { chip: string; tone: Tone; line: string; when: string }> = {
+  held: {
+    chip: "On hold",
+    tone: "wait",
+    line: "A customer disputed this payment. The commission is frozen — not clearing, not payable — until the dispute closes.",
+    when: "dispute opened",
+  },
+  chargeback: {
+    chip: "Chargeback",
+    tone: "bad",
+    line: "The customer's dispute was lost, so the commission on that payment is taken back — the same as a full refund.",
+    when: "dispute lost",
+  },
+};
+
+/** The ledger lines that moved for a reason the partner did not cause. */
+export function MoneyNotes({ notes }: { notes: MoneyNoteDTO[] }) {
+  if (!notes.length) return null;
+  return (
+    <section className="card rv">
+      <div className={cx("card-head", ui.cardHead)}>
+        <div className="card-titles">
+          <div className="card-title">Holds and chargebacks</div>
+          <div className="card-sub">
+            If a dispute is won, the commission comes back and its hold starts again from that day.
+          </div>
+        </div>
+      </div>
+      <div className={ui.tbl} role="table" aria-label="Holds and chargebacks">
+        {notes.map((n) => {
+          const copy = NOTE_COPY[n.kind];
+          return (
+            <div key={n.id} className={cx(ui.tr, styles.noteCols)} role="row">
+              <div className={ui.tdWide}>
+                <Chip tone={copy.tone}>{copy.chip}</Chip>
+                <p className={styles.noteLine}>{copy.line}</p>
+                <Meta className={styles.reason}>
+                  {copy.when} {longDate(n.date)}
+                </Meta>
+              </div>
+              <div className={cx(ui.tdAmt, n.kind === "chargeback" && styles.amtBad)}>
+                <span className={ui.tdLbl}>Amount</span>
+                {usd(n.amountCents)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
