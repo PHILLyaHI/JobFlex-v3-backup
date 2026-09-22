@@ -13,6 +13,7 @@ import {
   STRIPE_PAGE_SIZE,
 } from "@/components/v3/admin-subscribers/billing-metrics";
 import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
+import { readGrantsAndMarks, type PlanGrant, type SyncingMark } from "@/lib/planGrant";
 
 export interface AdminUserRow {
   id: string;
@@ -43,6 +44,14 @@ export interface AdminUserRow {
   stripeStatus: string | null;
   stripeSubId: string | null;
   externalSubId: string | null;
+  /** The Stripe customer behind the row (kept through a comp) or the Stripe row's. */
+  stripeCustomerId: string | null;
+  /** What Stripe bills a month for the subscription it holds, or null. */
+  stripeAmountCents: number | null;
+  /** The standing complimentary plan (lib/planGrant), or null. */
+  grant: PlanGrant | null;
+  /** A change written from Stripe's reply that Stripe has not confirmed back yet. */
+  syncing: SyncingMark | null;
   currentPeriodEnd: Date | null;
   trialEndsAt: Date | null;
   canceledAt: Date | null;
@@ -165,21 +174,25 @@ export async function getAdminUsersData(): Promise<AdminUsersData> {
   const orgIds = Array.from(
     new Set(users.map((u) => primaryOrg(u)?.id).filter(Boolean) as string[]),
   );
-  const records = orgIds.length
-    ? await db.subscription.findMany({
-        where: { organizationId: { in: orgIds } },
-        select: {
-          organizationId: true,
-          plan: true,
-          status: true,
-          provider: true,
-          externalSubId: true,
-          currentPeriodEnd: true,
-          trialEndsAt: true,
-          canceledAt: true,
-        },
-      })
-    : [];
+  const [records, { grants, marks }] = await Promise.all([
+    orgIds.length
+      ? db.subscription.findMany({
+          where: { organizationId: { in: orgIds } },
+          select: {
+            organizationId: true,
+            plan: true,
+            status: true,
+            provider: true,
+            externalSubId: true,
+            externalCustomerId: true,
+            currentPeriodEnd: true,
+            trialEndsAt: true,
+            canceledAt: true,
+          },
+        })
+      : Promise.resolve([]),
+    readGrantsAndMarks(orgIds),
+  ]);
 
   const recordByOrg = new Map(records.map((s) => [s.organizationId, s]));
   const countByOrg = new Map(memberCounts.map((m) => [m.organizationId, m._count]));
@@ -233,6 +246,10 @@ export async function getAdminUsersData(): Promise<AdminUsersData> {
       stripeStatus: fromStripe?.status ?? null,
       stripeSubId: fromStripe?.externalSubId ?? null,
       externalSubId: record?.externalSubId ?? live?.externalSubId ?? null,
+      stripeCustomerId: record?.externalCustomerId ?? fromStripe?.stripeCustomerId ?? null,
+      stripeAmountCents: fromStripe ? fromStripe.amountCents : null,
+      grant: org ? (grants.get(org.id) ?? null) : null,
+      syncing: org ? (marks.get(org.id) ?? null) : null,
       currentPeriodEnd: record?.currentPeriodEnd ?? null,
       trialEndsAt: record?.trialEndsAt ?? null,
       canceledAt: record?.canceledAt ?? null,
@@ -323,30 +340,17 @@ export async function getAdminUsersData(): Promise<AdminUsersData> {
   };
 }
 
-/**
- * What a write stamped MANUAL stops claiming — the hand-grant rule, whose one
- * statement lives in billing-metrics.ts. The row becomes the operator's own
- * record and mirrors no Stripe subscription, so it names none and carries none
- * of that subscription's price.
- *
- * Keeping the id was the whole defect: a canceled `sub_…` left on a comp let
- * the subscribers read model drop the grant as "already returned by Stripe",
- * let the sync overwrite it as an ordinary write, and let the webhook's
- * markSubscriptionCanceled() (updateMany by externalSubId) downgrade it to
- * CANCELED — which drops the org to FREE limits through the lapsed-sub rule.
- *
- * externalCustomerId deliberately STAYS. That is an org ↔ customer fact rather
- * than a subscription one, and it is how the next sync finds its way back to
- * this organization once the grant ends.
- */
-const DETACH_FROM_STRIPE = { externalSubId: null, stripePriceId: null } as const;
+// The subscription itself is edited by actions/adminSubscription (two modes:
+// change the billed plan on the Stripe subscription, or grant a complimentary
+// plan with a term). The free-form status/date writer that lived here until
+// 2026-09-22 (updateAdminSubscription) stamped a row MANUAL and let go of the
+// Stripe subscription without cancelling it — the trial then billed at its
+// end while the product read the row as a comp.
 
 const updateInput = z.object({
   userId: z.string().min(1),
   email: z.string().email().optional(),
   name: z.string().nullable().optional(),
-  /** PricingPlan.slug to assign to the user's org, or undefined to leave unchanged. */
-  planSlug: z.string().optional(),
 });
 
 export async function updateAdminUser(raw: unknown) {
@@ -383,59 +387,6 @@ export async function updateAdminUser(raw: unknown) {
     }
   }
 
-  // 2) Plan assignment — set the user's primary org Subscription to the chosen plan.
-  if (data.planSlug !== undefined) {
-    const plan = await db.pricingPlan.findFirst({ where: { slug: data.planSlug } });
-    if (!plan) throw new Error("Unknown pricing plan.");
-
-    const user = await db.user.findUnique({
-      where: { id: data.userId },
-      select: {
-        activeOrgId: true,
-        memberships: {
-          orderBy: [{ createdAt: "asc" }, { organizationId: "asc" }],
-          select: {
-            role: true,
-            organizationId: true,
-            organization: { select: { id: true, name: true } },
-          },
-        },
-      },
-    });
-    const org = user ? primaryOrg(user) : null;
-    if (!org) throw new Error("User has no organization to assign a plan to.");
-
-    // Store the UPPERCASE canonical form. The limits engine matches
-    // PricingPlan.slug ↔ Subscription.plan case-insensitively, AND the separate
-    // tier feature-gating (entitlements.ts) compares case-SENSITIVELY against
-    // FREE/STARTER/PROFESSIONAL/ENTERPRISE — so a tier-named slug must be stored
-    // uppercase or the user would be silently downgraded to FREE features.
-    const tier = plan.slug.toUpperCase();
-
-    // Manual admin override (does NOT create a Stripe subscription). provider
-    // MANUAL flags it: the billing read model keeps a comp out of MRR, and
-    // currentPeriodEnd null → monthly limits use the calendar month.
-    // The three lifecycle dates go with the Stripe link: this grant is live and
-    // is not a trial, so a churned subscription's cancel date has no business
-    // sitting beside an ACTIVE plan the operator just handed out.
-    const grant = {
-      plan: tier,
-      status: "ACTIVE",
-      provider: "MANUAL",
-      currentPeriodEnd: null,
-      trialEndsAt: null,
-      canceledAt: null,
-      ...DETACH_FROM_STRIPE,
-    };
-    const planWas = await planSnapshot(org.id);
-    await db.subscription.upsert({
-      where: { organizationId: org.id },
-      update: grant,
-      create: { organizationId: org.id, ...grant },
-    });
-    reportPlanChange(org.id, "admin", planWas);
-  }
-
   revalidateAdminBilling();
 }
 
@@ -458,69 +409,6 @@ export async function setPlatformAdmin(userId: string, on: boolean) {
   if (!target) throw new Error("User not found.");
   await db.user.update({ where: { id: data.userId }, data: { isPlatformAdmin: data.on } });
   revalidatePath("/admin/users");
-}
-
-// ── Subscription record (manual) ──────────────────────
-
-const SUB_STATUSES = Object.values(SubscriptionStatus) as [string, ...string[]];
-
-/** ISO string → Date, or null. An unparseable string is a validation error. */
-const nullableDate = z.union([z.null(), z.coerce.date()]);
-
-const subscriptionInput = z.object({
-  organizationId: z.string().min(1),
-  /** PricingPlan.slug (any casing) — stored uppercase, see updateAdminUser. */
-  plan: z.string().min(1),
-  status: z.enum(SUB_STATUSES),
-  currentPeriodEnd: nullableDate,
-  trialEndsAt: nullableDate,
-  canceledAt: nullableDate,
-});
-
-export type AdminSubscriptionInput = z.input<typeof subscriptionInput>;
-
-/**
- * Write the org's Subscription record by hand. Every hand edit stamps
- * provider = "MANUAL", and MANUAL means the row mirrors nothing: it stops
- * claiming Stripe truth, drops out of MRR (it is a comp, not an invoice), and
- * lets go of the Stripe subscription it used to name (DETACH_FROM_STRIPE).
- * While it is live, "Sync from Stripe" reports it rather than overwriting it.
- */
-export async function updateAdminSubscription(raw: unknown) {
-  await requirePlatformAdmin();
-  const data = subscriptionInput.parse(raw);
-
-  const org = await db.organization.findUnique({
-    where: { id: data.organizationId },
-    select: { id: true },
-  });
-  if (!org) throw new Error("Organization not found.");
-
-  // Case-insensitive slug match — SQLite has no `mode: insensitive`, and there
-  // are few plans (same approach as the limits engine).
-  const plans = await db.pricingPlan.findMany({ select: { slug: true } });
-  const plan = plans.find((p) => p.slug.toLowerCase() === data.plan.toLowerCase());
-  if (!plan) throw new Error("Unknown pricing plan.");
-  const tier = plan.slug.toUpperCase();
-
-  const fields = {
-    plan: tier,
-    status: data.status,
-    provider: "MANUAL",
-    currentPeriodEnd: data.currentPeriodEnd,
-    trialEndsAt: data.trialEndsAt,
-    canceledAt: data.canceledAt,
-    ...DETACH_FROM_STRIPE,
-  };
-  const planWas = await planSnapshot(org.id);
-  await db.subscription.upsert({
-    where: { organizationId: org.id },
-    update: fields,
-    create: { organizationId: org.id, ...fields },
-  });
-  reportPlanChange(org.id, "admin", planWas);
-
-  revalidateAdminBilling();
 }
 
 // ── Delete account ────────────────────────────────────
@@ -796,7 +684,7 @@ export async function syncSubscriptionsFromStripe(): Promise<StripeSyncResult> {
     // grant written over a Stripe-managed row kept that row's id, so the sync
     // read it as "the same subscription" and overwrote the operator's ENTERPRISE
     // comp with whatever `sub_…` said, counted as an ordinary write with no
-    // conflict flagged. Writes now clear the id (DETACH_FROM_STRIPE), and the id
+    // conflict flagged. A grant clears the id (actions/adminSubscription), and the id
     // is no longer part of the question either way.
     //
     // The way back is the operator's, not the sync's: end the grant (Canceled /

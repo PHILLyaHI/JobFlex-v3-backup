@@ -14,6 +14,7 @@ import {
   handleConnectAccountUpdate,
   handleTransferEvent,
 } from "@/lib/stripeSync";
+import { confirmSyncingFromStripe } from "@/lib/planGrant";
 import { processReferralEffectsForInvoice } from "@/lib/referralRewards";
 import { metaOnCheckoutCompleted, metaOnInvoicePaid } from "@/lib/metaSignupEvents";
 import { trackActivation } from "@/lib/activation-events";
@@ -65,7 +66,11 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
     }
     case "customer.subscription.created":
     case "customer.subscription.updated": {
-      await syncSubscriptionFromStripe(event.data.object as Stripe.Subscription);
+      const sub = event.data.object as Stripe.Subscription;
+      await syncSubscriptionFromStripe(sub);
+      // An admin change written from Stripe's reply is "syncing" until Stripe
+      // reports the subscription back in that state (lib/planGrant).
+      await confirmSyncingFromStripe(sub).catch((err) => console.warn("[webhook] sync mark:", err));
       break;
     }
     case "customer.subscription.deleted": {

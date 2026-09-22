@@ -212,6 +212,9 @@ export const ActivityKind = {
   PAYMENT_DISCONNECTED: "PAYMENT_DISCONNECTED",
   // Settings → "Send test notification". Only visible to its actor.
   TEST: "TEST",
+  // The organization's plan moved by JobFlex support (actions/adminSubscription)
+  // or a complimentary plan began / ended (lib/planGrant). meta holds the terms.
+  PLAN_CHANGE: "PLAN_CHANGE",
 } as const;
 export type ActivityKind = (typeof ActivityKind)[keyof typeof ActivityKind];
 

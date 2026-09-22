@@ -11,6 +11,9 @@
 import { db } from "@/lib/db";
 import type { SubscriptionStatus } from "@/lib/prismaEnums";
 import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
+import { clearPlanGrant, clearSyncingMark, readPlanGrant, recordPlanActivity } from "@/lib/planGrant";
+import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
+import { titleCaseSlug } from "@/lib/planCatalog";
 
 /* WHICH SUBSCRIPTION THE MIRROR MAY FOLLOW NEXT. An organisation's mirror names
  * one Stripe subscription, and Stripe keeps sending events for the ones it
@@ -76,5 +79,32 @@ export async function recordPlanChange(rec: PlanChangeRecord): Promise<string> {
   // The subscription this checkout produced was created moments ago; anything
   // older must not take the mirror back.
   if (subId) await recordMirrorReference(organizationId, Date.now());
+  await endGrantForCheckout(organizationId, planSlug, subId);
   return planSlug;
+}
+
+/* A PAID PLAN ENDS A COMP. The row above already carries the paid plan; the
+ * grant record (lib/planGrant) is removed so the expiry cron never reverts a
+ * paying organization, the syncing mark of an earlier admin change goes with
+ * it, and the activity says why the comp ended. The subscription the grant
+ * booked to cancel at its period end (if any) is still winding down on Stripe
+ * beside the new one — it is cancelled now, best effort, the same way the
+ * upgrade return cancels a replaced subscription. */
+async function endGrantForCheckout(organizationId: string, planSlug: string, subId: string | null) {
+  const grant = await readPlanGrant(organizationId);
+  await clearSyncingMark(organizationId);
+  if (!grant) return;
+  await clearPlanGrant(organizationId);
+  const old = grant.replaced;
+  if (old && old.action === "cancel_at_period_end" && old.subId !== subId && isStripeEnabled()) {
+    await getStripe()
+      .subscriptions.cancel(old.subId, { prorate: false, invoice_now: false })
+      .catch((err) => console.warn("[subscriptionRecord] could not cancel the replaced subscription:", err));
+  }
+  await recordPlanActivity({
+    organizationId,
+    actorId: null,
+    summary: `Complimentary ${titleCaseSlug(grant.plan)} ended — the organization subscribed to ${titleCaseSlug(planSlug)}`,
+    meta: { mode: "grant-superseded", how: "checkout", grant, subId },
+  });
 }

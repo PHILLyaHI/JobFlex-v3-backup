@@ -142,3 +142,35 @@
   :global(.jf-blueprint .content) .au-c-created { display: block; }
   :global(.jf-blueprint .content) .au-del-row { grid-template-columns: 1fr; align-items: stretch; }
 }
+
+/* ── THE SUBSCRIPTION EDITOR (2026-09-22) ─────────────────────────────
+   Two modes on one segmented control, the "now → becomes" comparison as a
+   dashed panel in the sheet's own rhythm, Apply armed on the first press. */
+:global(.jf-blueprint .content) .au-seg { display: grid; grid-template-columns: 1fr 1fr; border: 2px solid var(--ink); background: var(--paper); }
+:global(.jf-blueprint .content) .au-seg button {
+  min-height: 44px; padding: 0 12px; border: 0; background: transparent; cursor: pointer;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+}
+:global(.jf-blueprint .content) .au-seg button + button { border-left: 2px solid var(--ink); }
+:global(.jf-blueprint .content) .au-seg button[aria-checked="true"] { background: var(--ink); color: #fff; }
+:global(.jf-blueprint .content) .au-seg button:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -4px; }
+:global(.jf-blueprint .content) .au-cmp { display: grid; grid-template-columns: 1fr 22px 1fr; gap: 10px 8px; padding: 12px; border: 1.5px dashed var(--hair); background: var(--paper); }
+:global(.jf-blueprint .content) .au-cmp[aria-busy="true"] { opacity: 0.6; }
+:global(.jf-blueprint .content) .au-cmp-col { min-width: 0; }
+:global(.jf-blueprint .content) .au-cmp-h { font-family: var(--font-mono); font-size: 10px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+:global(.jf-blueprint .content) .au-cmp dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; }
+:global(.jf-blueprint .content) .au-cmp dt { font-size: 11px; color: var(--muted); }
+:global(.jf-blueprint .content) .au-cmp dd { margin: 0; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .au-cmp-note { margin-top: 6px; font-size: 11px; line-height: 1.4; color: var(--muted); }
+:global(.jf-blueprint .content) .au-cmp-arrow { align-self: center; text-align: center; font-size: 16px; font-weight: 900; color: var(--muted-light); }
+:global(.jf-blueprint .content) .au-cmp-foot { grid-column: 1 / -1; display: grid; gap: 4px; padding-top: 8px; border-top: 1.5px dashed var(--hair); font-size: 12px; }
+:global(.jf-blueprint .content) .au-charge { font-weight: 900; color: var(--danger); }
+:global(.jf-blueprint .content) .au-act { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: var(--muted); }
+:global(.jf-blueprint .content) .au-warn { font-size: 11px; color: var(--warning); font-weight: 700; }
+:global(.jf-blueprint .content) .au-apply { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+:global(.jf-blueprint .content) .au-syncing { color: var(--warning); }
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .au-cmp { grid-template-columns: 1fr; }
+  :global(.jf-blueprint .content) .au-cmp-arrow { transform: rotate(90deg); }
+  :global(.jf-blueprint .content) .au-apply > button { flex: 1 1 100%; }
+}

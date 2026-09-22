@@ -8,27 +8,26 @@
 // Database control over the local mirror: every account, the org it belongs
 // to, the org's Subscription row, and the platform-admin flag. Writes go
 // through src/actions/adminUsers.ts — updateAdminUser (name/email),
-// setPlatformAdmin, updateAdminSubscription (stamps provider MANUAL) and
-// deleteAdminUser (typed confirmation; refuses self and the last owner).
+// setPlatformAdmin and deleteAdminUser (typed confirmation; refuses self and
+// the last owner) — and, for the subscription itself, the two-mode editor in
+// ./admin-subscription-editor (actions/adminSubscription: change the billed
+// plan on Stripe, or grant a complimentary plan with a term).
 
 import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Search, RefreshCw } from "lucide-react";
 import { toast } from "@/components/ui/Toast";
 import { longDate } from "@/lib/format";
-import { SubscriptionStatus } from "@/lib/prismaEnums";
 import {
   updateAdminUser,
   setPlatformAdmin,
-  updateAdminSubscription,
   deleteAdminUser,
   syncSubscriptionsFromStripe,
 } from "@/actions/adminUsers";
 import type { AdminUsersData, SubscriptionSummary } from "@/actions/adminUsers";
-import {
-  LIVE_RECORD_STATUSES,
-  STRIPE_SCAN_CEILING_LABEL,
-} from "@/components/v3/admin-subscribers/billing-metrics";
+import type { PlanGrant, SyncingMark } from "@/lib/planGrant";
+import { STRIPE_SCAN_CEILING_LABEL } from "@/components/v3/admin-subscribers/billing-metrics";
+import { SubscriptionEditor } from "./admin-subscription-editor";
 import shared from "./admin-shared.module.css";
 import s from "./admin-users.module.css";
 import {
@@ -39,13 +38,10 @@ import {
   SheetBody,
   SheetFoot,
   Field,
-  Select,
   Toggle,
   Note,
   StatusBadge,
   errorMessage,
-  toDay,
-  fromDay,
 } from "./admin-kit";
 import { useAdminMotion } from "./use-admin-motion";
 
@@ -72,6 +68,12 @@ export interface AdminUserDTO {
   stripeStatus: string | null;
   stripeSubId: string | null;
   externalSubId: string | null;
+  stripeCustomerId: string | null;
+  stripeAmountCents: number | null;
+  /** The standing complimentary plan, with its term and author (lib/planGrant). */
+  grant: PlanGrant | null;
+  /** An admin change Stripe has not confirmed back yet. */
+  syncing: SyncingMark | null;
   currentPeriodEnd: string | null;
   trialEndsAt: string | null;
   canceledAt: string | null;
@@ -85,11 +87,6 @@ export interface PlanOption {
 }
 
 type BillingSource = AdminUsersData["source"];
-
-const STATUS_OPTIONS = Object.values(SubscriptionStatus).map((v) => ({
-  value: v,
-  label: v.replace("_", " "),
-}));
 
 function planLabel(plan: string, plans: PlanOption[]): string {
   const match = plans.find((p) => p.slug.toUpperCase() === plan.toUpperCase());
@@ -114,6 +111,10 @@ export function AdminUsersContent({
 
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<AdminUserDTO | null>(null);
+  // The sheet reads the LATEST row for the account it opened on: the
+  // subscription editor refreshes the server data after a change and the
+  // sheet must show the new state, not the row as it was when clicked.
+  const current = selected ? (users.find((u) => u.id === selected.id) ?? selected) : null;
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ text: string; bad: boolean } | null>(null);
   const sheet = useSheet();
@@ -376,8 +377,15 @@ export function AdminUsersContent({
                         {u.planSource === "stripe" && u.recordStatus === "NONE" ? (
                           <span className={cx("au-plan-src")}>Stripe only</span>
                         ) : u.planSource === "record" && u.provider === "MANUAL" ? (
-                          <span className={cx("au-plan-src")}>Grant</span>
+                          <span className={cx("au-plan-src")}>
+                            {u.grant?.endsAt
+                              ? `Complimentary · until ${longDate(u.grant.endsAt)}`
+                              : u.currentPeriodEnd && u.recordStatus === "ACTIVE"
+                                ? `Complimentary · until ${longDate(u.currentPeriodEnd)}`
+                                : "Complimentary"}
+                          </span>
                         ) : null}
+                        {u.syncing ? <span className={cx("au-plan-src", "au-syncing")}>Syncing</span> : null}
                       </div>
                     </td>
                     <td data-l="Admin">
@@ -400,8 +408,8 @@ export function AdminUsersContent({
         title={selected?.name || selected?.email || "Account"}
         onClose={closeSheet}
       >
-        {selected ? (
-          <UserForm key={selected.id} user={selected} plans={plans} meId={meId} onDone={closeSheet} />
+        {current ? (
+          <UserForm key={current.id} user={current} plans={plans} meId={meId} onDone={closeSheet} />
         ) : null}
       </Sheet>
     </>
@@ -431,52 +439,21 @@ function UserForm({
   const [email, setEmail] = useState(user.email);
   const [admin, setAdmin] = useState(user.isPlatformAdmin);
 
-  // The fields edit the STORED row, so they initialise from it — not from the
-  // merged value in the table, which may be Stripe's and is not what save writes.
-  const initialPlan =
-    plans.find((p) => p.slug.toUpperCase() === user.recordPlan.toUpperCase())?.slug ?? "";
-  // No record → no status. Pre-selecting ACTIVE would put a status on screen
-  // that nothing in the database claims.
-  const initialStatus = user.recordStatus === "NONE" ? "" : user.recordStatus;
-  const [plan, setPlan] = useState(initialPlan);
-  const [status, setStatus] = useState(initialStatus);
-  const [periodEnd, setPeriodEnd] = useState(toDay(user.currentPeriodEnd));
-  const [trialEnd, setTrialEnd] = useState(toDay(user.trialEndsAt));
-  const [canceled, setCanceled] = useState(toDay(user.canceledAt));
-
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState<"save" | "delete" | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const profileDirty = name.trim() !== (user.name ?? "") || email.trim().toLowerCase() !== user.email;
   const adminDirty = admin !== user.isPlatformAdmin;
-  const subDirty =
-    !!user.orgId &&
-    (plan !== initialPlan ||
-      status !== initialStatus ||
-      periodEnd !== toDay(user.currentPeriodEnd) ||
-      trialEnd !== toDay(user.trialEndsAt) ||
-      canceled !== toDay(user.canceledAt));
-  const dirty = profileDirty || adminDirty || subDirty;
+  // The subscription has its own Apply inside its section (SubscriptionEditor):
+  // a Stripe change is confirmed on its own, not swept up with a name edit.
+  const dirty = profileDirty || adminDirty;
 
   async function save() {
     if (!dirty || busy) return;
     setBusy("save");
     setErr(null);
     try {
-      if (subDirty && !plan) throw new Error("Pick a plan before saving the subscription.");
-      if (subDirty && !status) throw new Error("Pick a status before saving the subscription.");
-      const subPayload = subDirty
-        ? {
-            organizationId: user.orgId as string,
-            plan,
-            status,
-            currentPeriodEnd: fromDay(periodEnd, "Period end"),
-            trialEndsAt: fromDay(trialEnd, "Trial end"),
-            canceledAt: fromDay(canceled, "Canceled"),
-          }
-        : null;
-
       if (profileDirty) {
         await updateAdminUser({
           userId: user.id,
@@ -485,7 +462,6 @@ function UserForm({
         });
       }
       if (adminDirty) await setPlatformAdmin(user.id, admin);
-      if (subPayload) await updateAdminSubscription(subPayload);
 
       toast.success("Saved");
       router.refresh();
@@ -514,18 +490,6 @@ function UserForm({
       setBusy(null);
     }
   }
-
-  const planOptions = plans.map((p) => ({ value: p.slug, label: p.name }));
-  const stripeManaged = user.provider === "STRIPE" && !!user.externalSubId;
-  // A live hand grant. It outranks anything Stripe holds, the limits engine
-  // obeys it, and Sync from Stripe reports it instead of writing over it.
-  const liveGrant = user.provider === "MANUAL" && LIVE_RECORD_STATUSES.has(user.recordStatus);
-  // Stripe holds a subscription for this org saying something else. The fields
-  // below write the stored row, which is the one the product reads — so this
-  // gap is the operator's to settle, in one direction or the other.
-  const stripeDisagrees =
-    !!user.stripeStatus &&
-    (user.stripePlan !== user.recordPlan || user.stripeStatus !== user.recordStatus);
 
   return (
     <>
@@ -572,94 +536,7 @@ function UserForm({
         {!user.orgId ? (
           <Note>No organization.</Note>
         ) : (
-          <>
-            <div className={cx("meta")}>
-              <span>
-                Provider <b>{user.provider ?? "—"}</b>
-              </span>
-              {user.externalSubId ? (
-                <span title={user.externalSubId}>
-                  Sub <b>{user.externalSubId}</b>
-                </span>
-              ) : user.stripeSubId ? (
-                // The row names no subscription; Stripe still holds one for
-                // this org, and the id is what the operator looks it up by.
-                <span title={user.stripeSubId}>
-                  Stripe holds <b>{user.stripeSubId}</b>
-                </span>
-              ) : null}
-            </div>
-            {stripeDisagrees ? (
-              <Note>
-                Stripe says <b>{user.stripePlan || "—"}</b> · <b>{user.stripeStatus}</b>; this row
-                says <b>{user.recordPlan}</b> · <b>{user.recordStatus}</b>.{" "}
-                {liveGrant
-                  ? "The grant stands — Sync from Stripe reports it and writes nothing. End it (Canceled or Expired) to hand the row back to Stripe."
-                  : "Sync from Stripe writes it."}
-              </Note>
-            ) : liveGrant ? (
-              <Note tone="ok">Hand grant — outside MRR, and the sync leaves it alone.</Note>
-            ) : null}
-            {stripeManaged ? (
-              <Note>
-                Stripe-managed — saving detaches this row from the subscription and stamps{" "}
-                <b>MANUAL</b>.
-              </Note>
-            ) : null}
-            <div className={cx("row")}>
-              <Field label="Plan" htmlFor="au-plan">
-                <Select
-                  id="au-plan"
-                  value={plan}
-                  onChange={setPlan}
-                  options={planOptions}
-                  placeholder={plans.length ? "— pick a plan —" : "No plans in the catalog"}
-                  disabled={plans.length === 0}
-                />
-              </Field>
-              <Field label="Status" htmlFor="au-status">
-                <Select
-                  id="au-status"
-                  value={status}
-                  onChange={setStatus}
-                  options={STATUS_OPTIONS}
-                  placeholder="— pick a status —"
-                />
-              </Field>
-            </div>
-            <div className={cx("row", "row--3")}>
-              <Field label="Period end" htmlFor="au-cpe">
-                <input
-                  id="au-cpe"
-                  className={cx("in", "in--mono")}
-                  inputMode="numeric"
-                  placeholder="YYYY-MM-DD"
-                  value={periodEnd}
-                  onChange={(e) => setPeriodEnd(e.target.value)}
-                />
-              </Field>
-              <Field label="Trial ends" htmlFor="au-trial">
-                <input
-                  id="au-trial"
-                  className={cx("in", "in--mono")}
-                  inputMode="numeric"
-                  placeholder="YYYY-MM-DD"
-                  value={trialEnd}
-                  onChange={(e) => setTrialEnd(e.target.value)}
-                />
-              </Field>
-              <Field label="Canceled" htmlFor="au-canc">
-                <input
-                  id="au-canc"
-                  className={cx("in", "in--mono")}
-                  inputMode="numeric"
-                  placeholder="YYYY-MM-DD"
-                  value={canceled}
-                  onChange={(e) => setCanceled(e.target.value)}
-                />
-              </Field>
-            </div>
-          </>
+          <SubscriptionEditor key={user.orgId + user.recordStatus + user.recordPlan + (user.syncing?.since ?? "")} user={user} plans={plans} />
         )}
       </div>
 
