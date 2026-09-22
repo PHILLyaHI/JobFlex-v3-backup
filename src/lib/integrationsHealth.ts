@@ -360,6 +360,57 @@ async function checkPaymentConnections(now: string): Promise<ServiceHealth> {
   return { ...base, level: restricted + revoked > 0 ? "degraded" : "ok", reason: restricted + revoked > 0 ? `${read} — the owners were told; nothing to do platform-side` : read };
 }
 
+/**
+ * Partner payouts — the two states that need a person, and only those.
+ *
+ *   · a request nobody has decided on for more than 7 days. The queue at
+ *     /admin/payouts has no timer on it, so a request approved late is
+ *     indistinguishable from one approved on time until the partner writes in.
+ *   · a transfer that FAILED or was REVERSED. runApprovedPayouts writes the
+ *     failure onto the row and moves on; nothing has ever read it back.
+ *
+ * NOT a Stripe call — both are our own rows. Optional, because neither stops an
+ * estimate: this is money owed to a partner, which is this week's job, not an
+ * outage, and calling it one teaches everyone to ignore the panel.
+ */
+const PAYOUT_STALE_DAYS = 7;
+
+/** Exported so scripts/qa can assert it without running the whole sweep — that
+ *  one does reach OpenAI and SerpAPI, and a check must never spend money. */
+export async function checkInfluencerPayouts(now: string): Promise<ServiceHealth> {
+  const base = {
+    key: "influencer-payouts",
+    name: "Influencer payouts",
+    checkedAt: now,
+    optional: true,
+    note: "optional · partner commission",
+  };
+  const staleBefore = new Date(Date.now() - PAYOUT_STALE_DAYS * 86_400_000);
+  const [pending, stale, failedTransfers, stuck] = await Promise.all([
+    db.payoutRequest.count({ where: { status: "PENDING" } }).catch(() => 0),
+    db.payoutRequest.count({ where: { status: "PENDING", createdAt: { lt: staleBefore } } }).catch(() => 0),
+    db.payoutTransfer.count({ where: { status: { in: ["FAILED", "REVERSED"] } } }).catch(() => 0),
+    // Approved but never sent: the cron could not pay it (no Connect account,
+    // no cleared balance) or died mid-run and left it in PROCESSING.
+    db.payoutRequest.count({ where: { status: { in: ["APPROVED", "PROCESSING"] }, createdAt: { lt: staleBefore } } }).catch(() => 0),
+  ]);
+
+  if (pending + stale + failedTransfers + stuck === 0) {
+    return { ...base, level: "ok", reason: "nothing waiting, no failed transfers" };
+  }
+  const parts: string[] = [];
+  if (stale > 0) parts.push(`${stale} request${stale === 1 ? "" : "s"} undecided for over ${PAYOUT_STALE_DAYS} days`);
+  else if (pending > 0) parts.push(`${pending} request${pending === 1 ? "" : "s"} waiting for review`);
+  if (stuck > 0) parts.push(`${stuck} approved but still unsent after ${PAYOUT_STALE_DAYS} days`);
+  if (failedTransfers > 0) parts.push(`${failedTransfers} failed transfer${failedTransfers === 1 ? "" : "s"}`);
+  const needsSomeone = stale > 0 || stuck > 0 || failedTransfers > 0;
+  return {
+    ...base,
+    level: needsSomeone ? "degraded" : "ok",
+    reason: needsSomeone ? `${parts.join(" · ")} — /admin/payouts` : parts.join(" · "),
+  };
+}
+
 function short(err: unknown): string {
   return (err instanceof Error ? err.message : String(err)).replace(/\s+/g, " ").slice(0, 80);
 }
@@ -383,6 +434,7 @@ export async function runIntegrationsHealth(): Promise<HealthReport> {
       checkSquareApp,
       checkGmailOAuth,
       checkPaymentConnections,
+      checkInfluencerPayouts,
     ].map((fn) =>
       fn(now).catch(
         (err): ServiceHealth => ({

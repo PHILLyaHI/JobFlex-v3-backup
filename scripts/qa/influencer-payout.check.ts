@@ -19,6 +19,7 @@ delete process.env.STRIPE_SECRET_KEY_TEST;
 import { PrismaClient } from "@prisma/client";
 import { transferArgsFor, runApprovedPayouts, payoutRequestRefusal } from "../../src/lib/payouts";
 import { ledgerBalances } from "../../src/lib/commission";
+import { checkInfluencerPayouts } from "../../src/lib/integrationsHealth";
 
 const db = new PrismaClient();
 const QA_SLUG = "qa-co";
@@ -188,6 +189,68 @@ async function main() {
     (await db.payoutTransfer.count({ where: { influencerId: inf.id } })) === 0);
   ok("the ledger was not touched",
     (await db.commissionLedger.count({ where: { influencerId: inf.id, state: "PAID" } })) === 0);
+
+  // ── THE HEALTH ROW. Only the two states that need a person. ──
+  // checkInfluencerPayouts alone, never runIntegrationsHealth: that sweep does
+  // reach OpenAI and SerpAPI, and a check must never spend money.
+  const now = new Date().toISOString();
+  const nine = new Date(Date.now() - 9 * 86_400_000);
+
+  // Baseline: the rows above are a FAILED transfer and an APPROVED request, both
+  // made just now, so only the failed transfer should be calling for someone.
+  let row = await checkInfluencerPayouts(now);
+  ok("the health row is optional — partner money is this week's job, not an outage",
+    row.optional === true && row.key === "influencer-payouts", `${row.key} optional=${row.optional}`);
+
+  // A request waiting, but decided on in time: counted, not escalated.
+  const fresh = await db.payoutRequest.create({
+    data: { influencerId: inf.id, amountCents: 3000, currency: "usd", status: "PENDING" },
+  });
+  row = await checkInfluencerPayouts(now);
+  ok("a request waiting a short time is reported without calling for someone",
+    row.reason.includes("waiting for review"), `${row.level} · ${row.reason}`);
+
+  // The same request, nine days old and still undecided.
+  await db.payoutRequest.update({ where: { id: fresh.id }, data: { createdAt: nine } });
+  row = await checkInfluencerPayouts(now);
+  ok("a request undecided for over 7 days is degraded and says so",
+    row.level === "degraded" && /undecided for over 7 days/.test(row.reason),
+    `${row.level} · ${row.reason}`);
+  ok("it names where to go", row.reason.includes("/admin/payouts"), row.reason);
+
+  // Approved but never sent — the cron could not pay it and nothing said so.
+  await db.payoutRequest.update({ where: { id: fresh.id }, data: { status: "APPROVED" } });
+  row = await checkInfluencerPayouts(now);
+  ok("an approved request still unsent after 7 days is degraded",
+    row.level === "degraded" && /approved but still unsent/.test(row.reason),
+    `${row.level} · ${row.reason}`);
+
+  // A failed transfer on its own is enough to call for someone — with every
+  // request settled, so nothing else can be what turns the row.
+  await db.payoutRequest.delete({ where: { id: fresh.id } });
+  await db.payoutRequest.updateMany({ where: { influencerId: inf.id }, data: { status: "PAID" } });
+  const failedTransfer = await db.payoutTransfer.create({
+    data: {
+      influencerId: inf.id,
+      amountCents: 1200,
+      currency: "usd",
+      status: "FAILED",
+      stripeConnectAccountId: `acct_${P}ready`,
+      failureReason: "The bank returned the deposit.",
+      idempotencyKey: `payout:${P}failed`,
+    },
+  });
+  row = await checkInfluencerPayouts(now);
+  ok("a FAILED transfer alone is degraded, with no request outstanding",
+    row.level === "degraded" && /failed transfer/.test(row.reason),
+    `${row.level} · ${row.reason}`);
+
+  // And with nothing outstanding it is quiet.
+  await db.payoutTransfer.update({ where: { id: failedTransfer.id }, data: { status: "PAID" } });
+  row = await checkInfluencerPayouts(now);
+  ok("with nothing outstanding the row is ok and quiet",
+    row.level === "ok" && row.reason === "nothing waiting, no failed transfers",
+    `${row.level} · ${row.reason}`);
 
   console.log(`\n${passes} passed, ${failures} failed`);
   const removed = await cleanup();
