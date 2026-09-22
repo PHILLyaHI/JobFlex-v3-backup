@@ -3,13 +3,14 @@ import { db } from "@/lib/db";
 import { ledgerBalances } from "@/lib/commission";
 import { PayoutRequestStatus, PayoutTransferStatus } from "@/lib/prismaEnums";
 import { getInfluencerRollup } from "@/actions/influencers";
+import { cheapestPaidPlanCents, promoAboveLimit } from "@/lib/commissionLimits";
 import { AdminInfluencersContent } from "@/components/v3/admin-influencers/influencers-content";
 import type { InfluencerDTO } from "@/components/v3/admin-influencers/influencers-data";
 
 export default async function AdminInfluencersPage() {
   await requirePlatformAdmin();
 
-  const [influencers, rollup] = await Promise.all([
+  const [influencers, rollup, cheapestPlanCents] = await Promise.all([
     db.influencer.findMany({
       orderBy: { createdAt: "desc" },
       include: {
@@ -29,6 +30,7 @@ export default async function AdminInfluencersPage() {
       },
     }),
     getInfluencerRollup(),
+    cheapestPaidPlanCents(),
   ]);
 
   const dto: InfluencerDTO[] = influencers.map((inf) => {
@@ -58,6 +60,7 @@ export default async function AdminInfluencersPage() {
         customerPercentOff: p.customerPercentOff,
         clicks: p.clicks,
         conversions: p._count.attributions,
+        aboveLimit: promoAboveLimit(p, cheapestPlanCents),
       })),
       clicks: inf.promoCodes.reduce((n, p) => n + p.clicks, 0),
       conversions: inf._count.attributions,

@@ -16,6 +16,7 @@ import {
 } from "@/lib/payouts";
 import { setTestTwinActive } from "@/lib/influencerPromoMode";
 import { refusal, refused, type ActionResult } from "@/lib/actionResult";
+import { cheapestPaidPlanCents, commissionRefusal } from "@/lib/commissionLimits";
 import { mailPayoutApproved, mailPayoutDeclined } from "@/lib/influencerMail";
 import {
   InfluencerStatus,
@@ -132,6 +133,8 @@ export async function createInfluencer(
   if (existingCode) return refused(`Promo code "${code}" is already in use.`);
   const existingEmail = await db.influencer.findUnique({ where: { email: data.email.toLowerCase() } });
   if (existingEmail) return refused("An influencer with that email already exists.");
+  const overLimit = commissionRefusal(data, await cheapestPaidPlanCents());
+  if (overLimit) return refused(overLimit);
 
   // Admin-set password → account is immediately usable, ACTIVE. No password →
   // the influencer gets an invite email with a set-password link instead (the
@@ -246,6 +249,8 @@ export async function createPromoCode(raw: unknown): Promise<ActionResult> {
   if (!influencer) return refused("Influencer not found");
   const dupe = await db.promoCode.findUnique({ where: { code } });
   if (dupe) return refused(`Promo code "${code}" is already in use.`);
+  const overLimit = commissionRefusal(data, await cheapestPaidPlanCents());
+  if (overLimit) return refused(overLimit);
 
   let stripeIds: { stripeCouponId: string; stripePromotionCodeId: string };
   try {
@@ -302,6 +307,10 @@ export async function updatePromoCommission(raw: unknown): Promise<ActionResult>
   const parsed = commissionEditInput.safeParse(raw);
   if (!parsed.success) return refusal(parsed.error);
   const { promoId, ...rest } = parsed.data;
+  // A code written before the limit stays as it is until its terms are edited;
+  // the edit has to bring it under.
+  const overLimit = commissionRefusal(rest, await cheapestPaidPlanCents());
+  if (overLimit) return refused(overLimit);
   await db.promoCode.update({ where: { id: promoId }, data: commissionColumns(rest) });
   revalidatePath("/admin/influencers");
   return { ok: true };

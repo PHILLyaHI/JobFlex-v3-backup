@@ -241,10 +241,11 @@ export function AdminInfluencersContent({
                         r.promoCodes.map((p) => (
                           <span
                             key={p.id}
-                            className={cx(ui.tag, !p.active && ui.tagOff)}
-                            title={p.active ? p.code : `${p.code} (off)`}
+                            className={cx(ui.tag, !p.active && ui.tagOff, p.aboveLimit && styles.tagOver)}
+                            title={p.aboveLimit ? `${p.code} — above the commission limit` : p.active ? p.code : `${p.code} (off)`}
                           >
                             {p.code}
+                            {p.aboveLimit ? <span className={styles.tagOverMark} aria-label="above the limit">!</span> : null}
                           </span>
                         ))
                       )}
@@ -928,6 +929,7 @@ function DetailSheet({
                     <div className={styles.codeHead}>
                       <span className={cx(ui.tag, styles.codeTag, !p.active && ui.tagOff)}>{p.code}</span>
                       <Chip tone={p.active ? "ok" : "mute"}>{p.active ? "Active" : "Off"}</Chip>
+                      {p.aboveLimit ? <Chip tone="bad">Above limit</Chip> : null}
                       <Meta className={styles.codeShort}>{shortModel(m)}</Meta>
                     </div>
                     <div className={styles.codeDesc}>
@@ -936,6 +938,12 @@ function DetailSheet({
                     <Meta>
                       {plural(p.clicks, "click")} · {plural(p.conversions, "conversion")}
                     </Meta>
+                    {p.aboveLimit ? (
+                      <p className={styles.codeOver}>
+                        Above the limit — at most 50% for a percentage code, the cheapest plan&apos;s price for a
+                        flat one. Written before the rule; editing the terms has to bring it under.
+                      </p>
+                    ) : null}
                     <div className={styles.codeAct}>
                       <button
                         className={cx("btn", ui.btnGhost, ui.btnSm)}

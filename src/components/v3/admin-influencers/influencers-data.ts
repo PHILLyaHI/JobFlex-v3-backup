@@ -19,6 +19,8 @@ export interface PromoDTO {
   customerPercentOff: number | null;
   clicks: number;
   conversions: number;
+  /** Written before the limit (lib/commissionLimits), or the plans got cheaper. */
+  aboveLimit: boolean;
 }
 
 export interface InfluencerDTO {

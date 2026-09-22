@@ -52,6 +52,12 @@
 }
 :global(.jf-blueprint .content) .secLink:hover { color: var(--blueprint-dark); border-bottom-color: var(--blueprint-dark); }
 
+/* A code above the commission limit (lib/commissionLimits): the danger rule on
+   the tag, a bang beside the code, and a sentence in the record. */
+:global(.jf-blueprint .content) .tagOver { border-color: var(--danger); color: var(--danger); }
+:global(.jf-blueprint .content) .tagOverMark { margin-left: 5px; font-weight: 900; }
+:global(.jf-blueprint .content) .codeOver { margin: 6px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--danger); overflow-wrap: anywhere; }
+
 /* Code cards inside the record */
 :global(.jf-blueprint .content) .codes { display: flex; flex-direction: column; gap: 10px; }
 :global(.jf-blueprint .content) .code {
