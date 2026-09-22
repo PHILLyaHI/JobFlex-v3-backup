@@ -68,6 +68,10 @@ export async function completeInfluencerSetPassword(raw: unknown): Promise<Actio
         where: { id: influencer.id },
         data: {
           hashedPassword,
+          // Every session issued before this moment is out: the JWT carries
+          // the version it was stamped with (lib/auth) and requireInfluencer
+          // refuses a stale one on the next request.
+          sessionVersion: { increment: 1 },
           // A PENDING partner completing their invite becomes ACTIVE.
           ...(influencer.status === InfluencerStatus.PENDING ? { status: InfluencerStatus.ACTIVE } : {}),
         },

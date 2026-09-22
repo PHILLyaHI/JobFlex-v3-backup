@@ -1894,6 +1894,7 @@ model Influencer {
   email            String   @unique
   displayName      String
   hashedPassword   String? // set when the influencer logs in via the separate surface
+  sessionVersion   Int      @default(0) // bumped on every password change; a JWT issued before the bump is refused (lib/orgContext.requireInfluencer)
   status           String   @default("PENDING") // InfluencerStatus
   connectAccountId String?  @unique // Stripe Connect acct_...
   connectStatus    String   @default("NONE") // ConnectStatus (mirror of account state)

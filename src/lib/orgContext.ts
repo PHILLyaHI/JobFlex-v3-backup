@@ -79,7 +79,18 @@ export async function requireInfluencer() {
   if (influencer.status === "SUSPENDED" || influencer.status === "TERMINATED") {
     throw new UnauthorizedError("Influencer account is not active");
   }
+  // A password change bumps Influencer.sessionVersion; a JWT stamped with the
+  // old value is refused here, on every request — every other tab is out the
+  // moment the new password is set.
+  if (!influencerSessionCurrent(influencer.sessionVersion, sessionUser.credentialVersion)) {
+    throw new UnauthorizedError("Session expired — please sign in again");
+  }
   return influencer;
+}
+
+/** The rule itself, pure: the token's stamp must equal the row's version. */
+export function influencerSessionCurrent(rowVersion: number | null | undefined, tokenVersion: number | null | undefined): boolean {
+  return (rowVersion ?? 0) === (tokenVersion ?? 0);
 }
 
 // Use on any id-bearing influencer route: the resource id is never trusted from

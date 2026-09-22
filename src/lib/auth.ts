@@ -42,6 +42,10 @@ declare module "next-auth" {
       credentialVersion?: number | null;
     };
   }
+  interface User {
+    /** Influencer sign-in only: Influencer.sessionVersion at the moment of sign-in. */
+    sessionVersion?: number;
+  }
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -152,7 +156,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!byIp.ok || !byEmail.ok) return null;
         const inf = await db.influencer.findUnique({
           where: { email },
-          select: { id: true, email: true, displayName: true, hashedPassword: true, status: true },
+          select: { id: true, email: true, displayName: true, hashedPassword: true, status: true, sessionVersion: true },
         });
         if (!inf?.hashedPassword) return null;
         // Suspended/terminated influencers cannot obtain a session at all
@@ -160,7 +164,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (inf.status === "SUSPENDED" || inf.status === "TERMINATED") return null;
         const ok = await bcrypt.compare(password, inf.hashedPassword);
         if (!ok) return null;
-        return { id: inf.id, email: inf.email, name: inf.displayName };
+        return { id: inf.id, email: inf.email, name: inf.displayName, sessionVersion: inf.sessionVersion };
       },
     }),
   ],
@@ -256,6 +260,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.activeOrgId = null;
         token.role = null;
         token.orgName = null;
+        // The partner's credential epoch, stamped once (see `cv` below for why
+        // it is never rewritten on refresh). A password change bumps the row;
+        // requireInfluencer refuses the old stamp on every request, and the
+        // refresh below ends the session outright.
+        token.sv = user.sessionVersion ?? 0;
+        token.svCheckedAt = Date.now();
+        return token;
+      }
+      if (!user && token.principal === "INFLUENCER" && token.influencerId) {
+        const checkedAt = typeof token.svCheckedAt === "number" ? token.svCheckedAt : 0;
+        if (Date.now() - checkedAt > 60_000) {
+          const row = await db.influencer.findUnique({
+            where: { id: String(token.influencerId) },
+            select: { sessionVersion: true },
+          });
+          if (!row) return null;
+          if ((row.sessionVersion ?? 0) !== (typeof token.sv === "number" ? token.sv : 0)) return null;
+          token.svCheckedAt = Date.now();
+        }
         return token;
       }
       if (user?.email) {
@@ -331,7 +354,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Default to USER so pre-existing JWTs (issued before this field) behave.
         session.user.principal = (token.principal as string | null) ?? "USER";
         session.user.influencerId = (token.influencerId as string | null) ?? null;
-        session.user.credentialVersion = (token.cv as number | null) ?? 0;
+        session.user.credentialVersion =
+          token.principal === "INFLUENCER" ? ((token.sv as number | null) ?? 0) : ((token.cv as number | null) ?? 0);
       }
       return session;
     },
