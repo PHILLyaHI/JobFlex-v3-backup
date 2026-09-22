@@ -11,7 +11,8 @@
 // setPlatformAdmin and deleteAdminUser (typed confirmation; refuses self and
 // the last owner) — and, for the subscription itself, the two-mode editor in
 // ./admin-subscription-editor (actions/adminSubscription: change the billed
-// plan on Stripe, or grant a complimentary plan with a term).
+// plan on Stripe, or grant a complimentary plan with a term), and the usage
+// meters with the admin's reset in ./admin-usage-reset (actions/adminUsage).
 
 import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -28,6 +29,7 @@ import type { AdminUsersData, SubscriptionSummary } from "@/actions/adminUsers";
 import type { PlanGrant, SyncingMark } from "@/lib/planGrant";
 import { STRIPE_SCAN_CEILING_LABEL } from "@/components/v3/admin-subscribers/billing-metrics";
 import { SubscriptionEditor } from "./admin-subscription-editor";
+import { UsageReset } from "./admin-usage-reset";
 import shared from "./admin-shared.module.css";
 import s from "./admin-users.module.css";
 import {
@@ -539,6 +541,10 @@ function UserForm({
           <SubscriptionEditor key={user.orgId + user.recordStatus + user.recordPlan + (user.syncing?.since ?? "")} user={user} plans={plans} />
         )}
       </div>
+
+      {/* The meters and the admin's reset (owner, 2026-09-22). Reads on open,
+          so the table lists people without a COUNT per limit per row. */}
+      {user.orgId ? <UsageReset key={user.orgId} orgId={user.orgId} orgName={user.orgName} /> : null}
 
       <div className={cx("sec", "sec--danger")}>
         <div className={cx("sec-h")}>

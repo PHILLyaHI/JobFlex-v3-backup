@@ -31,6 +31,15 @@
 //     from the conversationsStarted counter entirely)
 // Exception by product decision: over-limit inbound AI phone calls ARE blocked
 // (polite unavailable TwiML in api/twilio/voice).
+//
+// THERE ARE NO COUNTERS. Usage is never stored: every check COUNTS the rows
+// themselves (proposals, estimates, calls …) created since the start of the
+// current cycle. A "reset" therefore cannot zero a number — it moves the
+// point the count starts from. The admin's reset (lib/usageReset) writes a
+// SyncState mark `usageResetAt:<orgId>:<key>` and the count for that key
+// begins at the mark instead of at the cycle start. The mark holds only
+// while it lies inside the current cycle (see usageResetInForce), so it
+// burns by itself when the next cycle begins; nothing is deleted.
 // ─────────────────────────────────────────────────────────────────────────
 import { db } from "@/lib/db";
 import {
@@ -55,6 +64,9 @@ export function isManagerEquivalentRole(role: string | null | undefined): boolea
 
 export interface LimitStatus {
   resource: LimitResource;
+  /** ISO time of the admin's usage reset the count starts from, when one is
+   *  in force this cycle (monthly keys only). Absent otherwise. */
+  resetAt?: string;
   /** The configured cap, or null when unlimited. */
   limit: number | null;
   /** Current usage within the relevant window. 0 when unlimited (count skipped). */
@@ -109,6 +121,61 @@ function monthlyCycleStart(anchor: Date | null, now: Date): Date {
   return thisMonth;
 }
 
+/* ── The admin's usage reset marks ────────────────────────────────────────
+   One SyncState row per (organization, key): `usageResetAt:<orgId>:<key>`,
+   JSON. Written by lib/usageReset with an author and a reason; read here on
+   every plan resolution. */
+
+export const usageResetKey = (organizationId: string, key: LimitKey) => `usageResetAt:${organizationId}:${key}`;
+export const usageResetPrefix = (organizationId: string) => `usageResetAt:${organizationId}:`;
+
+export interface UsageResetMark {
+  /** When the reset was made — the count for the key starts here. */
+  at: string;
+  /** The cycle start the engine saw at the time, for the record. */
+  cycleStart: string;
+  actorId: string;
+  actorEmail: string;
+  reason: string;
+  /** What the meter read just before the reset. */
+  before: { used: number; limit: number | null };
+}
+
+export type UsageResetMarks = Partial<Record<LimitKey, UsageResetMark>>;
+
+/** Every mark on the organization, in force or not. */
+export async function readUsageResetMarks(organizationId: string): Promise<UsageResetMarks> {
+  const rows = await db.syncState.findMany({ where: { key: { startsWith: usageResetPrefix(organizationId) } } }).catch(() => []);
+  const out: UsageResetMarks = {};
+  const known = new Set<string>(LIMIT_DEFS.map((d) => d.key));
+  for (const r of rows) {
+    const key = r.key.slice(usageResetPrefix(organizationId).length);
+    if (!known.has(key)) continue;
+    try {
+      out[key as LimitKey] = JSON.parse(r.cursor) as UsageResetMark;
+    } catch {
+      /* an unreadable mark is no mark */
+    }
+  }
+  return out;
+}
+
+/**
+ * A mark counts only while it lies inside the current cycle: `at` on or after
+ * the cycle start. At the next cycle the cycle start moves past it and the
+ * count begins at the cycle start again, as if the mark were gone. The mark
+ * is keyed by TIME, not by plan, so a plan change in the same cycle keeps it
+ * (the change moves the cap, not the past); if the change moves the billing
+ * anchor so far that the new cycle start passes the mark, the mark is over —
+ * and the rows before that start would not have counted anyway.
+ */
+export function usageResetInForce(mark: UsageResetMark | undefined, cycleStart: Date): Date | null {
+  if (!mark) return null;
+  const at = new Date(mark.at);
+  if (Number.isNaN(at.getTime())) return null;
+  return at.getTime() >= cycleStart.getTime() ? at : null;
+}
+
 /** Tolerates renewal-webhook lag before an ACTIVE/TRIALING sub is treated as lapsed. */
 const LAPSE_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
 
@@ -143,11 +210,14 @@ function isLapsed(
  */
 async function resolvePlan(
   organizationId: string,
-): Promise<{ limits: PlanLimits; cycleStart: Date }> {
-  const sub = await db.subscription.findUnique({
-    where: { organizationId },
-    select: { plan: true, status: true, currentPeriodEnd: true, trialEndsAt: true },
-  });
+): Promise<{ limits: PlanLimits; cycleStart: Date; resets: UsageResetMarks }> {
+  const [sub, resets] = await Promise.all([
+    db.subscription.findUnique({
+      where: { organizationId },
+      select: { plan: true, status: true, currentPeriodEnd: true, trialEndsAt: true },
+    }),
+    readUsageResetMarks(organizationId),
+  ]);
 
   const now = new Date();
   const cycleStart = monthlyCycleStart(
@@ -165,9 +235,16 @@ async function resolvePlan(
   const plan = plans.find((p) => p.slug.toLowerCase() === planKey) ?? null;
 
   // A lapsed org with no "free" catalog row must not fail open to unlimited.
-  if (lapsed && !plan) return { limits: { ...DEFAULT_FREE_LIMITS }, cycleStart };
+  if (lapsed && !plan) return { limits: { ...DEFAULT_FREE_LIMITS }, cycleStart, resets };
 
-  return { limits: parsePlanLimits(plan?.limitsJson ?? null), cycleStart };
+  return { limits: parsePlanLimits(plan?.limitsJson ?? null), cycleStart, resets };
+}
+
+type ResolvedPlan = Awaited<ReturnType<typeof resolvePlan>>;
+
+/** The organization's current cycle start, for surfaces that show the marks. */
+export async function getOrgCycleStart(organizationId: string): Promise<Date> {
+  return (await resolvePlan(organizationId)).cycleStart;
 }
 
 /** Count current usage for a resource. `cycleStart` is ignored for absolute scopes. */
@@ -293,24 +370,28 @@ const CAPPED_BY: Partial<Record<LimitResource, LimitResource>> = {
 
 /** Own status for one resource (before any cross-resource cap is applied). */
 async function rawStatusFor(
-  limits: PlanLimits,
-  cycleStart: Date,
+  plan: ResolvedPlan,
   organizationId: string,
   resource: LimitResource,
   needed = 1,
 ): Promise<LimitStatus> {
+  const { limits, cycleStart, resets } = plan;
   const cap = limits[resource];
+  const scope = SCOPE_BY_KEY.get(resource);
+  // A reset moves the start of the count. Seats (absolute keys) are live
+  // counts and are never reset.
+  const resetAt = scope === "absolute" ? null : usageResetInForce(resets[resource], cycleStart);
+  const marked = resetAt ? { resetAt: resetAt.toISOString() } : {};
 
   if (isUnlimited(cap)) {
-    return { resource, limit: null, used: 0, remaining: null, allowed: true };
+    return { resource, limit: null, used: 0, remaining: null, allowed: true, ...marked };
   }
 
   const limit = cap as number;
-  const scope = SCOPE_BY_KEY.get(resource);
   const used = await countUsage(
     resource,
     organizationId,
-    scope === "absolute" ? new Date(0) : cycleStart,
+    scope === "absolute" ? new Date(0) : (resetAt ?? cycleStart),
   );
 
   return {
@@ -319,6 +400,7 @@ async function rawStatusFor(
     used,
     remaining: Math.max(0, limit - used),
     allowed: used + needed <= limit,
+    ...marked,
   };
 }
 
@@ -341,17 +423,16 @@ function applyCap(own: LimitStatus, cap: LimitStatus, needed: number): LimitStat
 
 /** Status for one resource, with any cross-resource cap (CAPPED_BY) applied. */
 async function statusFor(
-  limits: PlanLimits,
-  cycleStart: Date,
+  plan: ResolvedPlan,
   organizationId: string,
   resource: LimitResource,
   needed = 1,
 ): Promise<LimitStatus> {
-  const own = await rawStatusFor(limits, cycleStart, organizationId, resource, needed);
+  const own = await rawStatusFor(plan, organizationId, resource, needed);
   const capKey = CAPPED_BY[resource];
   if (!capKey) return own;
   // The capping resource is never itself capped, so this doesn't recurse.
-  const cap = await rawStatusFor(limits, cycleStart, organizationId, capKey, needed);
+  const cap = await rawStatusFor(plan, organizationId, capKey, needed);
   return applyCap(own, cap, needed);
 }
 
@@ -377,8 +458,8 @@ export async function checkPlanLimit(
   if (LIMITS_DISABLED && resource !== "managers") {
     return { resource, limit: null, used: 0, remaining: null, allowed: true };
   }
-  const { limits, cycleStart } = await resolvePlan(organizationId);
-  return statusFor(limits, cycleStart, organizationId, resource, needed);
+  const plan = await resolvePlan(organizationId);
+  return statusFor(plan, organizationId, resource, needed);
 }
 
 /**
@@ -427,8 +508,6 @@ export async function getOrgLimitUsage(organizationId: string): Promise<LimitSta
       allowed: true,
     }));
   }
-  const { limits, cycleStart } = await resolvePlan(organizationId);
-  return Promise.all(
-    LIMIT_DEFS.map((d) => statusFor(limits, cycleStart, organizationId, d.key)),
-  );
+  const plan = await resolvePlan(organizationId);
+  return Promise.all(LIMIT_DEFS.map((d) => statusFor(plan, organizationId, d.key)));
 }

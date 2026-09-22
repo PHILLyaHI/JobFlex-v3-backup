@@ -215,6 +215,10 @@ export const ActivityKind = {
   // The organization's plan moved by JobFlex support (actions/adminSubscription)
   // or a complimentary plan began / ended (lib/planGrant). meta holds the terms.
   PLAN_CHANGE: "PLAN_CHANGE",
+  // JobFlex support reset the organization's usage count for one or more
+  // plan limits this cycle (lib/usageReset). meta holds the keys, the reason
+  // and what each meter read before.
+  USAGE_RESET: "USAGE_RESET",
 } as const;
 export type ActivityKind = (typeof ActivityKind)[keyof typeof ActivityKind];
 

@@ -142,6 +142,10 @@ function describe(e: ActivityEventDTO): { verb: string; tone: Tone } {
       return { verb: "Measured a roof", tone: "wait" };
     case "ESTIMATE_HVAC":
       return { verb: "Sized an HVAC system", tone: "wait" };
+    case "PLAN_CHANGE":
+      return { verb: "Plan changed by support", tone: "bp" };
+    case "USAGE_RESET":
+      return { verb: "Usage reset by support", tone: "bp" };
     default: {
       const words = e.kind.toLowerCase().replace(/_/g, " ");
       return { verb: words.charAt(0).toUpperCase() + words.slice(1), tone: "mute" };
