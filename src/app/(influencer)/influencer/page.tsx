@@ -1,225 +1,123 @@
+// PARTNER PORTAL — OVERVIEW. Route: /influencer.
+//
+// Balances, the codes to share, and who came in through them. Reads only; the
+// one write on the page (Request payout) goes through actions/influencers.
+//
+// PRIVACY IS ENFORCED HERE, not in the component: the referred-client rows are
+// built with no organisation name, no email, no slug, no Stripe ids and not even
+// the organisation id — see components/v3/influencer-portal/portal-data.ts. A
+// field that never crosses into the DTO cannot be rendered by accident later.
+
 import { redirect } from "next/navigation";
+import type { Route } from "next";
 import { requireInfluencer } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
-import { StatCard } from "@/components/ui/StatCard";
-import { StaggerGrid } from "@/components/ui/StaggerGrid";
-import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Badge";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { money, longDate } from "@/lib/format";
 import { ledgerBalances, describeCommission } from "@/lib/commission";
 import { payoutRequestRefusal } from "@/lib/payouts";
-import { AttributionStatus, LedgerEntryType, PayoutRequestStatus } from "@/lib/prismaEnums";
-import { RequestPayoutButton } from "./request-payout-button";
-import { ConnectCard } from "./connect-card";
-import { CopyShareLink } from "./copy-link";
+import { PayoutRequestStatus } from "@/lib/prismaEnums";
+import { InfluencerOverviewContent } from "@/components/v3/influencer-portal/overview-content";
+import type {
+  PartnerDTO,
+  PromoCodeDTO,
+  ReferredClientDTO,
+} from "@/components/v3/influencer-portal/portal-data";
 
-export default async function InfluencerHome() {
-  const session = await requireInfluencer().catch(() => null);
-  if (!session) redirect("/influencer/login");
-  const influencer = session;
+/** "March 2026" — a month, never the day a particular business started paying. */
+function monthLabel(d: Date): string {
+  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
 
-  const [promoCodes, attributions, ledger, payoutRequests] = await Promise.all([
-    db.promoCode.findMany({ where: { influencerId: influencer.id }, orderBy: { createdAt: "asc" } }),
+export default async function InfluencerOverviewPage() {
+  const partner = await requireInfluencer().catch(() => null);
+  if (!partner) redirect("/influencer/login" as Route);
+
+  const [codes, attributions, ledger, openRequest] = await Promise.all([
+    db.promoCode.findMany({ where: { influencerId: partner.id }, orderBy: { createdAt: "asc" } }),
     db.attribution.findMany({
-      where: { influencerId: influencer.id },
+      where: { influencerId: partner.id },
       orderBy: { createdAt: "desc" },
-      include: { promoCode: { select: { code: true } } },
+      select: {
+        id: true,
+        status: true,
+        firstPaidInvoiceAt: true,
+        createdAt: true,
+        stripeSubscriptionId: true,
+        promoCode: { select: { code: true } },
+      },
     }),
     db.commissionLedger.findMany({
-      where: { influencerId: influencer.id },
-      select: { entryType: true, amountCents: true, state: true, createdAt: true },
+      where: { influencerId: partner.id },
+      select: { entryType: true, amountCents: true, state: true },
     }),
-    db.payoutRequest.findMany({ where: { influencerId: influencer.id }, orderBy: { createdAt: "desc" } }),
+    db.payoutRequest.findFirst({
+      where: {
+        influencerId: partner.id,
+        status: {
+          in: [PayoutRequestStatus.PENDING, PayoutRequestStatus.APPROVED, PayoutRequestStatus.PROCESSING],
+        },
+      },
+      select: { status: true },
+    }),
   ]);
 
   const balances = ledgerBalances(ledger);
-  const activeCount = attributions.filter((a) => a.status === AttributionStatus.ACTIVE).length;
-  const totalClicks = promoCodes.reduce((sum, p) => sum + p.clicks, 0);
   const appUrl = await appBaseUrl();
 
-  // Net earnings by month (accruals minus reversals; payout debits excluded).
-  const byMonth = new Map<string, number>();
-  for (const entry of ledger) {
-    if (entry.entryType === LedgerEntryType.PAID) continue;
-    const d = entry.createdAt;
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    byMonth.set(key, (byMonth.get(key) ?? 0) + entry.amountCents);
-  }
-  const monthlyEarnings = [...byMonth.entries()]
-    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-    .slice(0, 6)
-    .map(([key, cents]) => ({
-      key,
-      label: new Date(Number(key.slice(0, 4)), Number(key.slice(5)) - 1, 1).toLocaleDateString("en-US", {
-        month: "long",
-        year: "numeric",
-      }),
-      cents,
-    }));
-
-  // Join referred subscribers to org name + plan/status (no PII like email).
-  const orgIds = attributions.map((a) => a.organizationId).filter(Boolean) as string[];
+  // The plan comes from the Subscription mirror, joined on the Stripe id. That
+  // id is used HERE and left behind: it identifies a customer at Stripe and has
+  // no business crossing to the browser.
   const subIds = attributions.map((a) => a.stripeSubscriptionId);
-  const [orgs, subs] = await Promise.all([
-    orgIds.length ? db.organization.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } }) : [],
-    subIds.length
-      ? db.subscription.findMany({ where: { externalSubId: { in: subIds } }, select: { externalSubId: true, plan: true, status: true } })
-      : [],
-  ]);
-  const orgName = new Map(orgs.map((o) => [o.id, o.name]));
-  const subByExt = new Map(subs.map((s) => [s.externalSubId, s]));
+  const subs = subIds.length
+    ? await db.subscription.findMany({
+        where: { externalSubId: { in: subIds } },
+        select: { externalSubId: true, plan: true },
+      })
+    : [];
+  const planByExt = new Map(subs.map((s) => [s.externalSubId, s.plan]));
 
-  const openRequest = payoutRequests.find((r) =>
-    [PayoutRequestStatus.PENDING, PayoutRequestStatus.APPROVED, PayoutRequestStatus.PROCESSING].includes(r.status as never),
-  );
-  // The SAME sentence the server action would answer with — one wording, decided
-  // in lib/payouts, so the hint under the button can never contradict the reason
-  // the request is actually refused.
+  const codeDto: PromoCodeDTO[] = codes.map((c) => ({
+    id: c.id,
+    code: c.code,
+    active: c.active,
+    terms: describeCommission(c),
+    customerPercentOff: c.customerPercentOff,
+    clicks: c.clicks,
+    shareUrl: `${appUrl}/?promo=${c.code}`,
+  }));
+
+  const clientDto: ReferredClientDTO[] = attributions.map((a) => ({
+    id: a.id,
+    code: a.promoCode.code,
+    since: a.firstPaidInvoiceAt ? monthLabel(a.firstPaidInvoiceAt) : null,
+    plan: planByExt.get(a.stripeSubscriptionId)?.toLowerCase() ?? null,
+    status: a.status,
+  }));
+
+  const partnerDto: PartnerDTO = {
+    displayName: partner.displayName,
+    holdDays: partner.holdDays,
+    minPayoutCents: partner.minPayoutCents,
+    currency: partner.defaultCurrency,
+    connect: { payoutsEnabled: partner.payoutsEnabled, status: partner.connectStatus },
+  };
+
+  // The same sentence the server action would answer with, from the same helper.
   const payoutReason = payoutRequestRefusal({
-    payoutsEnabled: influencer.payoutsEnabled,
-    connectStatus: influencer.connectStatus,
-    minPayoutCents: influencer.minPayoutCents,
+    payoutsEnabled: partner.payoutsEnabled,
+    connectStatus: partner.connectStatus,
+    minPayoutCents: partner.minPayoutCents,
     clearedCents: balances.clearedCents,
     openRequestStatus: openRequest?.status ?? null,
   });
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="quiet-caps mb-2">Partner dashboard</div>
-          <h1 className="font-display text-[30px] tracking-[-0.02em]">Hi, {influencer.displayName}.</h1>
-          <p className="mt-1 text-[13px] text-[color:var(--ink-muted)]">
-            Earnings reflect only Stripe-confirmed, non-refunded charges.
-          </p>
-        </div>
-        <RequestPayoutButton disabled={payoutReason !== null} reason={payoutReason} />
-      </div>
-
-      {!influencer.payoutsEnabled && <ConnectCard status={influencer.connectStatus} />}
-
-      <StaggerGrid className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard label="Active codes" value={String(promoCodes.filter((p) => p.active).length)} />
-        <StatCard label="Link clicks" value={String(totalClicks)} />
-        <StatCard label="Subscribers referred" value={String(activeCount)} />
-        <StatCard label="Lifetime earned" value={money(balances.lifetimeEarnedCents / 100)} />
-        <StatCard label="Available to withdraw" value={money(balances.clearedCents / 100)} accent hint={money(balances.pendingCents / 100) + " still clearing"} />
-      </StaggerGrid>
-
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>Your promo codes</CardTitle>
-            <CardSubtitle>Share these — commission accrues when a subscriber pays.</CardSubtitle>
-          </div>
-        </CardHeader>
-        {promoCodes.length === 0 ? (
-          <p className="text-[12px] text-[color:var(--ink-muted)]">No promo codes assigned yet.</p>
-        ) : (
-          <ul className="divide-y divide-[color:var(--ink-line)]">
-            {promoCodes.map((p) => (
-              <li key={p.id} className="py-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="font-mono text-[14px] text-[color:var(--ink)]">{p.code}</span>
-                    <div className="text-[11px] text-[color:var(--ink-muted)]">
-                      {describeCommission(p)}
-                      {p.customerPercentOff ? ` · buyer saves ${p.customerPercentOff}%` : ""}
-                      {` · ${p.clicks} click${p.clicks === 1 ? "" : "s"}`}
-                    </div>
-                  </div>
-                  <Badge tone={p.active ? "success" : "neutral"} dot>
-                    {p.active ? "active" : "off"}
-                  </Badge>
-                </div>
-                {p.active && <CopyShareLink url={`${appUrl}/?promo=${p.code}`} />}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      {monthlyEarnings.length > 0 && (
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>Earnings by month</CardTitle>
-              <CardSubtitle>Net accrued commission (refund reversals included)</CardSubtitle>
-            </div>
-          </CardHeader>
-          <ul className="divide-y divide-[color:var(--ink-line)]">
-            {monthlyEarnings.map((m) => (
-              <li key={m.key} className="flex items-center justify-between py-3">
-                <span className="text-[13px] text-[color:var(--ink)]">{m.label}</span>
-                <span className="tabular text-[13px] text-[color:var(--ink)]">{money(m.cents / 100)}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>Referred subscribers</CardTitle>
-            <CardSubtitle>{activeCount} active · confirmed through Stripe</CardSubtitle>
-          </div>
-        </CardHeader>
-        {attributions.length === 0 ? (
-          <EmptyState
-            title="No referrals yet"
-            description="When someone subscribes with your code and their first payment clears, they'll appear here."
-          />
-        ) : (
-          <ul className="divide-y divide-[color:var(--ink-line)]">
-            {attributions.map((a) => {
-              const sub = subByExt.get(a.stripeSubscriptionId);
-              return (
-                <li key={a.id} className="flex items-center justify-between py-3">
-                  <div className="min-w-0">
-                    <div className="text-[13px] font-medium text-[color:var(--ink)] truncate">
-                      {a.organizationId ? (orgName.get(a.organizationId) ?? "A subscriber") : "A subscriber"}
-                    </div>
-                    <div className="text-[11px] text-[color:var(--ink-muted)]">
-                      <span className="font-mono">{a.promoCode.code}</span>
-                      {sub && <> · {sub.plan.toLowerCase()}</>}
-                      {a.firstPaidInvoiceAt && <> · since {longDate(a.firstPaidInvoiceAt)}</>}
-                    </div>
-                  </div>
-                  <Badge tone={a.status === "ACTIVE" ? "success" : "neutral"}>{a.status.toLowerCase()}</Badge>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Card>
-
-      {payoutRequests.length > 0 && (
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>Payout history</CardTitle>
-            </div>
-          </CardHeader>
-          <ul className="divide-y divide-[color:var(--ink-line)]">
-            {payoutRequests.map((r) => (
-              <li key={r.id} className="flex items-center justify-between py-3">
-                <div>
-                  <div className="text-[13px] tabular text-[color:var(--ink)]">{money(r.amountCents / 100)}</div>
-                  <div className="text-[11px] text-[color:var(--ink-muted)]">{longDate(r.createdAt)}</div>
-                </div>
-                <Badge
-                  tone={r.status === "PAID" ? "success" : r.status === "REJECTED" || r.status === "FAILED" ? "danger" : "warn"}
-                >
-                  {r.status.toLowerCase()}
-                </Badge>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
-    </div>
+    <InfluencerOverviewContent
+      partner={partnerDto}
+      balances={balances}
+      codes={codeDto}
+      clients={clientDto}
+      payoutReason={payoutReason}
+    />
   );
 }

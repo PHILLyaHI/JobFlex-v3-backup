@@ -1,0 +1,238 @@
+/* ============================================================
+   PARTNER PORTAL — BLUEPRINT
+   /influencer · /influencer/earnings · /influencer/payouts
+
+   Page-specific vocabulary only. Every piece of shared furniture — chips,
+   tables, KPI strip, facts grid, copy rows, empty states, buttons, the
+   handheld layer that stacks all of it at ≤860px with 44px targets — comes
+   from admin-influencers/admin-ui.module.css, imported as `ui`.
+
+   Every class here is hashed and scoped `:global(.jf-blueprint .content) .cls`
+   ⇒ (0,3,0). That number is load-bearing: the always-on proposals module
+   declares its dialog rules as `.bp :global(.content .pmdl .mdl-box)` (0,3,0)
+   and the shell's resets as `.bp :global(.content *)` (0,2,0), so rules here
+   win by specificity rather than by bundle order.
+
+   NO @keyframes — Lightning CSS rejects them in the modules pipeline. The
+   entrance is the shared `.rv` cascade (useReveal), published globally.
+
+   Light mode only. Tokens only — no colour or spacing literals.
+   ============================================================ */
+
+:global(.jf-blueprint .content) .root { display: flex; flex-direction: column; gap: 22px; }
+
+/* A partner display name and a page title are both user-facing type that must
+   wrap rather than clip: a cut page title reads as a rendering bug. */
+:global(.jf-blueprint .content) .headTxt { min-width: 0; }
+:global(.jf-blueprint .content) .title { overflow-wrap: break-word; }
+
+/* ── The hold-window sentence ───────────────────────────────── */
+/* The mono annotation layer's shape, but `--muted`, not the `--muted-light` the
+   kit's `.meta` uses: this is a SENTENCE about someone's money, not a technical
+   label beside a number it merely qualifies. #888 on this paper is about 3.1:1,
+   under the 4.5:1 floor, and a partner asking "why can't I withdraw this" is
+   exactly the reader who should not have to squint. */
+:global(.jf-blueprint .content) .holdNote {
+  margin: -6px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  max-width: 68ch;
+}
+
+/* ── Request payout ─────────────────────────────────────────── */
+:global(.jf-blueprint .content) .payoutAct {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 7px;
+  min-width: 0;
+}
+:global(.jf-blueprint .content) .payoutBtn { white-space: nowrap; }
+/* The refusal is the whole point of the control being visible while disabled,
+   so it gets real line length and reads left-aligned even though the button
+   above it is right-aligned — a right-ragged sentence is harder to read. */
+:global(.jf-blueprint .content) .payoutWhy {
+  margin: 0;
+  max-width: 34ch;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* ── Connect banner ─────────────────────────────────────────── */
+/* The one blocking thing on the page, so it takes the blueprint stripe on its
+   leading edge. The three long-hands, never the `border-color` shorthand: that
+   repaints all four sides and takes the stripe with it (decisions.md). */
+:global(.jf-blueprint .content) .connect {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  border-left: 6px solid var(--blueprint);
+}
+:global(.jf-blueprint .content) .connectMark {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--blueprint);
+}
+:global(.jf-blueprint .content) .connectMark :global(.ic) { width: 19px; height: 19px; }
+:global(.jf-blueprint .content) .connectTxt { flex: 1; min-width: 0; }
+:global(.jf-blueprint .content) .connectTitle {
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+:global(.jf-blueprint .content) .connectBody {
+  margin: 5px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 62ch;
+  overflow-wrap: anywhere;
+}
+:global(.jf-blueprint .content) .connectErr { margin-top: 12px; }
+:global(.jf-blueprint .content) .connectBtn { flex-shrink: 0; white-space: nowrap; }
+:global(.jf-blueprint .content) .connectFacts { margin-top: 4px; }
+
+/* ── Codes ──────────────────────────────────────────────────── */
+/* Intrinsic, not breakpoint-driven: one code fills the row, three sit side by
+   side, and the tablet range needs no rule of its own. */
+:global(.jf-blueprint .content) .codes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+:global(.jf-blueprint .content) .code {
+  min-width: 0;
+  padding: 14px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+:global(.jf-blueprint .content) .codeTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+:global(.jf-blueprint .content) .codeTag { font-size: 12.5px; padding: 5px 9px; }
+:global(.jf-blueprint .content) .codeTerms { margin-top: 9px; }
+:global(.jf-blueprint .content) .codeCopies { margin-top: 12px; }
+:global(.jf-blueprint .content) .codeOff {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.6;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* ── Column grids ───────────────────────────────────────────── */
+/* Referred clients: since · plan · code · status. No name column exists — see
+   portal-data.ts. */
+:global(.jf-blueprint .content) .clientCols {
+  grid-template-columns: 130px minmax(0, 1fr) minmax(0, 1fr) 130px;
+}
+:global(.jf-blueprint .content) .clientSince {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+:global(.jf-blueprint .content) .clientPlan {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  text-transform: capitalize;
+  overflow-wrap: anywhere;
+}
+
+/* Earnings: month · accrued · refunded · net */
+:global(.jf-blueprint .content) .monthCols {
+  grid-template-columns: minmax(0, 1fr) 110px 110px 120px;
+}
+/* The total is the row the eye lands on, so it takes the ink rule above it and
+   drops the hairline below — the estimate sheet's own summary treatment. */
+:global(.jf-blueprint .content) .totalRow {
+  border-top: 1.5px solid var(--ink);
+  border-bottom: none;
+  margin-top: 2px;
+}
+
+/* Requests: amount · asked · status.  Transfers: amount · when · status. */
+:global(.jf-blueprint .content) .reqCols,
+:global(.jf-blueprint .content) .trCols {
+  grid-template-columns: 120px 110px minmax(0, 1fr);
+}
+:global(.jf-blueprint .content) .reason { margin-top: 5px; }
+:global(.jf-blueprint .content) .amtOk { color: var(--success); }
+
+/* ── Handheld (≤860px) ───────────────────────────────────────
+   The kit's own mobile layer already stacks .tr to two columns, reveals the
+   .tdLbl captions, left-aligns the numerals and lifts every control to 44px.
+   What is left is this page's own vocabulary. Same breakpoint as the kit and
+   the shell, so the three layers never disagree about which mode they are in.
+
+   LAST IN THE FILE, after every rule above: at equal specificity a later rule
+   wins, and a mobile layer written earlier would be silently overridden by the
+   desktop rules that follow it (decisions.md). */
+@media (max-width: 860px) {
+  /* THE DONOR'S `.page-actions` IS `flex-shrink: 0` (blueprint.module.css:575),
+     which is right for a row of buttons and wrong for a row containing a
+     sentence: the refusal under the button is ~120 characters, so the flex item
+     sized itself to the sentence's 690px max-content width and pushed `.content`
+     off a 390px screen. Bounding the item is the fix — everything inside it then
+     has a width to wrap against. Four classes deep so it outranks the donor's
+     two. */
+  :global(.jf-blueprint .content) .root :global(.page-actions) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* The button is the primary action on a phone: full width, thumb-sized, and
+     the reason underneath it reads as a caption rather than a ragged column. */
+  :global(.jf-blueprint .content) .payoutAct { align-items: stretch; width: 100%; min-width: 0; }
+  :global(.jf-blueprint .content) .payoutBtn { width: 100%; justify-content: center; min-height: 44px; }
+  /* 100%, not none: `none` lets the sentence size its own parent again. */
+  :global(.jf-blueprint .content) .payoutWhy { max-width: 100%; }
+
+  /* The Connect card becomes a stack: at 390px a 40px mark, prose and a button
+     in one row leaves the prose about twelve characters wide. */
+  :global(.jf-blueprint .content) .connect { flex-wrap: wrap; gap: 12px; }
+  :global(.jf-blueprint .content) .connectTxt { flex-basis: 100%; order: 2; }
+  :global(.jf-blueprint .content) .connectBtn {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  :global(.jf-blueprint .content) .codes { grid-template-columns: 1fr; }
+
+  /* Two columns per row, as the kit's layer sets; the wide cells claim the full
+     width so a status chip and its reason are not squeezed into half of 390px. */
+  :global(.jf-blueprint .content) .clientCols,
+  :global(.jf-blueprint .content) .monthCols,
+  :global(.jf-blueprint .content) .reqCols,
+  :global(.jf-blueprint .content) .trCols {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  :global(.jf-blueprint .content) .clientSince { grid-column: 1 / -1; }
+  :global(.jf-blueprint .content) .totalRow { margin-top: 6px; }
+}
