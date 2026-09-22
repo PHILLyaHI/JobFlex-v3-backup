@@ -49,6 +49,8 @@ async function cleanup() {
     await db.influencer.delete({ where: { id: inf.id } });
   }
   await db.verificationToken.deleteMany({ where: { identifier: `${INFLUENCER_TOKEN_PREFIX}${EMAIL}` } });
+  // The set-password brake this check spends (8 tries in 15 minutes per caller).
+  await db.syncState.deleteMany({ where: { key: { startsWith: "rl:influencer-setpw:" } } });
   return inf ? 1 : 0;
 }
 
