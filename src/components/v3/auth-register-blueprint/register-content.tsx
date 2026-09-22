@@ -937,7 +937,11 @@ export function RegisterContent({
           {brand}
 
           <div className="auth-body">
-          <ReferralBanner onChange={setAttribution} />
+          {/* A code carried in by the link (or the 30-day cookie) prices the
+              Plan step too — the same `promo` a typed code sets in
+              onApplyPromo, so the cards show "20% off · $63.20" rather than
+              list price under a "code applied" banner two steps back. */}
+          <ReferralBanner onChange={setAttribution} onResolved={setPromo} />
 
           {stepper}
 

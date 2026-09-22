@@ -14,24 +14,40 @@ export type RegisterAttribution = { kind: "promo" | "ref"; code: string };
 // unchanged, re-dressed in the donor's `.ref-banner` markup. The donor mockup
 // shows the referred state only — it defines no manual "enter a code" field and
 // no remove control, so neither ships here (see the port report).
-export function ReferralBanner({ onChange }: { onChange: (a: RegisterAttribution | null) => void }) {
+export interface ResolvedReferral {
+  kind: "promo" | "ref";
+  code: string;
+  displayName: string;
+  percentOff: number | null;
+}
+
+export function ReferralBanner({
+  onChange,
+  onResolved,
+}: {
+  onChange: (a: RegisterAttribution | null) => void;
+  /** The validated code with its discount — what the Plan step prices by. A
+   *  link-captured code used to reach the plan cards only as an attribution
+   *  (stamped at checkout, so the discount was real) while the cards showed
+   *  list price: "code applied" over an unchanged number (owner, 2026-09-02). */
+  onResolved?: (p: ResolvedReferral | null) => void;
+}) {
   const onChangeRef = React.useRef(onChange);
+  const onResolvedRef = React.useRef(onResolved);
   React.useEffect(() => {
     onChangeRef.current = onChange;
-  }, [onChange]);
+    onResolvedRef.current = onResolved;
+  }, [onChange, onResolved]);
 
-  const [pill, setPill] = React.useState<{
-    kind: "promo" | "ref";
-    code: string;
-    displayName: string;
-    percentOff: number | null;
-  } | null>(null);
+  const [pill, setPill] = React.useState<ResolvedReferral | null>(null);
 
   const apply = React.useCallback(async (kind: "promo" | "ref", code: string): Promise<boolean> => {
     const res = await validateAttributionCode({ kind, code });
     if (!res.ok) return false;
-    setPill({ kind: res.kind, code: res.code, displayName: res.displayName, percentOff: res.percentOff });
+    const resolved = { kind: res.kind, code: res.code, displayName: res.displayName, percentOff: res.percentOff };
+    setPill(resolved);
     onChangeRef.current({ kind: res.kind, code: res.code });
+    onResolvedRef.current?.(resolved);
     return true;
   }, []);
 
