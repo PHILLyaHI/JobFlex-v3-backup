@@ -231,8 +231,14 @@ export async function processApprovedPayouts(transfers: TransferApi, now: Date =
         data: { status: PayoutRequestStatus.PAID, amountCents: existing.amountCents },
       });
       continue;
-    } else if (existing.status === PayoutTransferStatus.FAILED) {
-      // A definite refusal already closed this; the request should say so too.
+    } else if (
+      existing.status === PayoutTransferStatus.FAILED ||
+      existing.status === PayoutTransferStatus.REVERSED
+    ) {
+      // A definite refusal already closed this, or Stripe reversed it and an
+      // admin decides what happens next (releaseReversedPayout /
+      // writeOffReversedPayout). Re-sending under the same key would only hand
+      // back the reversed transfer and write a second PAID entry.
       continue;
     } else if (
       !existing.stripeTransferId &&
@@ -438,5 +444,96 @@ async function reserveRows(
       data: { payoutTransferId: transferRow.id },
     });
     return transferRow;
+  });
+}
+
+/* ── AFTER A REVERSED TRANSFER: THE ADMIN'S TWO CHOICES ─────
+ *
+ * lib/stripeSync.handleTransferEvent moves the rows a reversed transfer paid to
+ * REVERSED_TRANSFER and marks the request REVERSED. Nothing is paid again until
+ * one of these runs, and each runs at most once per request: both are a
+ * conditional write on status REVERSED, so a second click, a double submit or
+ * the other button finds nothing to do.
+ */
+
+/** Retry payout: the money goes back to the partner's CLEARED balance and is no
+ *  longer tied to the reversed transfer, so the partner can request it again. */
+export async function releaseReversedPayout(requestId: string, at: Date = new Date()) {
+  return db.$transaction(async (tx) => {
+    const req = await tx.payoutRequest.findUnique({
+      where: { id: requestId },
+      select: { status: true, rejectedReason: true, transfers: { select: { id: true } } },
+    });
+    if (!req || req.status !== PayoutRequestStatus.REVERSED) return { ok: false as const, reason: "not-reversed" };
+    const claimed = await tx.payoutRequest.updateMany({
+      where: { id: requestId, status: PayoutRequestStatus.REVERSED },
+      data: {
+        status: PayoutRequestStatus.RELEASED,
+        rejectedReason: `${req.rejectedReason ?? "Transfer reversed."} Returned to the partner's balance on ${at.toISOString().slice(0, 10)}.`,
+      },
+    });
+    if (claimed.count === 0) return { ok: false as const, reason: "not-reversed" };
+    const ids = req.transfers.map((t) => t.id);
+    const rows = await tx.commissionLedger.findMany({
+      where: { payoutTransferId: { in: ids }, state: LedgerEntryState.REVERSED_TRANSFER },
+      select: { amountCents: true },
+    });
+    await tx.commissionLedger.updateMany({
+      where: { payoutTransferId: { in: ids }, state: LedgerEntryState.REVERSED_TRANSFER },
+      data: { state: LedgerEntryState.CLEARED, payoutTransferId: null },
+    });
+    return { ok: true as const, releasedCents: rows.reduce((n, r) => n + r.amountCents, 0) };
+  });
+}
+
+/** Write off: the money is not paid. The rows close as VOID and an ADJUSTMENT
+ *  records the write-off, so the balance is zero and the journal says why. */
+export async function writeOffReversedPayout(requestId: string, note: string, at: Date = new Date()) {
+  return db.$transaction(async (tx) => {
+    const req = await tx.payoutRequest.findUnique({
+      where: { id: requestId },
+      select: {
+        status: true,
+        influencerId: true,
+        currency: true,
+        rejectedReason: true,
+        transfers: { select: { id: true } },
+      },
+    });
+    if (!req || req.status !== PayoutRequestStatus.REVERSED) return { ok: false as const, reason: "not-reversed" };
+    const when = at.toISOString().slice(0, 10);
+    const claimed = await tx.payoutRequest.updateMany({
+      where: { id: requestId, status: PayoutRequestStatus.REVERSED },
+      data: {
+        status: PayoutRequestStatus.WRITTEN_OFF,
+        rejectedReason: `${req.rejectedReason ?? "Transfer reversed."} Written off on ${when}${note.trim() ? `: ${note.trim()}` : "."}`,
+      },
+    });
+    if (claimed.count === 0) return { ok: false as const, reason: "not-reversed" };
+    const ids = req.transfers.map((t) => t.id);
+    const rows = await tx.commissionLedger.findMany({
+      where: { payoutTransferId: { in: ids }, state: LedgerEntryState.REVERSED_TRANSFER },
+      select: { amountCents: true },
+    });
+    const total = rows.reduce((n, r) => n + r.amountCents, 0);
+    await tx.commissionLedger.updateMany({
+      where: { payoutTransferId: { in: ids }, state: LedgerEntryState.REVERSED_TRANSFER },
+      data: { state: LedgerEntryState.VOID },
+    });
+    if (total !== 0) {
+      await tx.commissionLedger.create({
+        data: {
+          influencerId: req.influencerId,
+          attributionId: null,
+          entryType: LedgerEntryType.ADJUSTMENT,
+          amountCents: -total,
+          currency: req.currency,
+          state: LedgerEntryState.VOID,
+          idempotencyKey: `transfer-written-off:${requestId}`,
+          memo: `Reversed payout written off on ${when}${note.trim() ? `: ${note.trim()}` : ""}`,
+        },
+      });
+    }
+    return { ok: true as const, writtenOffCents: total };
   });
 }

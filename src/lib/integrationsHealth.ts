@@ -394,16 +394,24 @@ export async function checkInfluencerPayouts(now: string): Promise<ServiceHealth
   const unconfirmed = await db.payoutTransfer
     .count({ where: { status: "PENDING", stripeTransferId: null, createdAt: { lt: unconfirmedBefore } } })
     .catch(() => 0);
+  // A reversed transfer that nobody has decided on (Retry payout / Write off),
+  // and a partial reversal, which the code deliberately does not guess at.
+  const [reversedAwaiting, partialReversals] = await Promise.all([
+    db.payoutRequest.count({ where: { status: "REVERSED" } }).catch(() => 0),
+    db.payoutTransfer
+      .count({ where: { failureReason: { startsWith: "Partially reversed" } } })
+      .catch(() => 0),
+  ]);
   const [pending, stale, failedTransfers, stuck] = await Promise.all([
     db.payoutRequest.count({ where: { status: "PENDING" } }).catch(() => 0),
     db.payoutRequest.count({ where: { status: "PENDING", createdAt: { lt: staleBefore } } }).catch(() => 0),
-    db.payoutTransfer.count({ where: { status: { in: ["FAILED", "REVERSED"] } } }).catch(() => 0),
+    db.payoutTransfer.count({ where: { status: "FAILED" } }).catch(() => 0),
     // Approved but never sent: the cron could not pay it (no Connect account,
     // no cleared balance) or died mid-run and left it in PROCESSING.
     db.payoutRequest.count({ where: { status: { in: ["APPROVED", "PROCESSING"] }, createdAt: { lt: staleBefore } } }).catch(() => 0),
   ]);
 
-  if (pending + stale + failedTransfers + stuck + unconfirmed === 0) {
+  if (pending + stale + failedTransfers + stuck + unconfirmed + reversedAwaiting + partialReversals === 0) {
     return { ...base, level: "ok", reason: "nothing waiting, no failed transfers" };
   }
   const parts: string[] = [];
@@ -415,7 +423,14 @@ export async function checkInfluencerPayouts(now: string): Promise<ServiceHealth
   else if (pending > 0) parts.push(`${pending} request${pending === 1 ? "" : "s"} waiting for review`);
   if (stuck > 0) parts.push(`${stuck} approved but still unsent after ${PAYOUT_STALE_DAYS} days`);
   if (failedTransfers > 0) parts.push(`${failedTransfers} failed transfer${failedTransfers === 1 ? "" : "s"}`);
-  const needsSomeone = unconfirmed > 0 || stale > 0 || stuck > 0 || failedTransfers > 0;
+  if (reversedAwaiting > 0) {
+    parts.push(`${reversedAwaiting} reversed transfer${reversedAwaiting === 1 ? "" : "s"} awaiting Retry payout or Write off`);
+  }
+  if (partialReversals > 0) {
+    parts.push(`${partialReversals} partially reversed transfer${partialReversals === 1 ? "" : "s"} to settle by hand`);
+  }
+  const needsSomeone =
+    unconfirmed > 0 || stale > 0 || stuck > 0 || failedTransfers > 0 || reversedAwaiting > 0 || partialReversals > 0;
   return {
     ...base,
     level: needsSomeone ? "degraded" : "ok",

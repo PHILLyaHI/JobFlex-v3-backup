@@ -15,6 +15,7 @@ import {
   Role,
   InfluencerStatus,
   CommissionType,
+  PayoutRequestStatus,
 } from "@/lib/prismaEnums";
 import {
   computeCommissionCents,
@@ -504,8 +505,13 @@ async function applyRefundReversal(opts: {
 
     // Match the bucket so pending/cleared math stays consistent; a clawback on an
     // already-PAID accrual lands as CLEARED so it nets against the next payout.
+    // An accrual whose transfer was reversed is waiting on an admin; its refund
+    // waits with it, tied to the same transfer, so Retry payout releases the net
+    // and Write off closes the net — never one without the other.
     const reversalState =
       accrual.state === LedgerEntryState.PAID ? LedgerEntryState.CLEARED : accrual.state;
+    const reversalTransferId =
+      accrual.state === LedgerEntryState.REVERSED_TRANSFER ? accrual.payoutTransferId : null;
 
     try {
       await db.commissionLedger.create({
@@ -519,6 +525,7 @@ async function applyRefundReversal(opts: {
           stripeChargeId: chargeId,
           stripeEventId: eventId ?? null,
           state: reversalState,
+          payoutTransferId: reversalTransferId,
           // A reversal of a still-pending accrual clears with it, so the clear
           // cron's "flip PENDING where clearsAt<=now" rule nets them together.
           clearsAt: reversalState === LedgerEntryState.PENDING ? accrual.clearsAt : null,
@@ -694,8 +701,15 @@ export async function settleDispute(dispute: Stripe.Dispute, eventId?: string, c
             stripeChargeId: chargeId,
             stripeEventId: eventId ?? null,
             // Paid already (or in a payout in flight): the chargeback is owed
-            // back, so it waits CLEARED and nets against the next payout.
-            state: unpaid ? LedgerEntryState.VOID : LedgerEntryState.CLEARED,
+            // back, so it waits CLEARED and nets against the next payout. On a
+            // reversed transfer it waits with that transfer for the admin.
+            state: unpaid
+              ? LedgerEntryState.VOID
+              : accrual.state === LedgerEntryState.REVERSED_TRANSFER
+                ? LedgerEntryState.REVERSED_TRANSFER
+                : LedgerEntryState.CLEARED,
+            payoutTransferId:
+              accrual.state === LedgerEntryState.REVERSED_TRANSFER ? accrual.payoutTransferId : null,
             clearsAt: null,
             idempotencyKey: `dispute:${dispute.id}:${accrual.id}`,
             memo: `Chargeback — dispute ${dispute.id} lost`,
@@ -731,12 +745,95 @@ export async function handleConnectAccountUpdate(account: Stripe.Account) {
   });
 }
 
-export async function handleTransferEvent(transfer: Stripe.Transfer, reversed: boolean) {
+/*
+ * A REVERSED TRANSFER — NOT PAID TWICE, AND NOT LOST (owner, 2026-09-22).
+ *
+ * Before this, transfer.reversed set the transfer row to REVERSED and stopped:
+ * the ledger still said PAID, "Paid out" still counted it, and the partner's
+ * money was simply gone. Crediting it straight back to CLEARED is the opposite
+ * mistake — a platform-initiated reversal (wrong payee, fraud, a recovered
+ * dispute) would then be paid out again on the next run.
+ *
+ * So the rows this transfer paid move to REVERSED_TRANSFER: owed, visible, and
+ * payable only after an admin chooses Retry payout (lib/payouts,
+ * releaseReversedPayout) or Write off (writeOffReversedPayout). The request is
+ * marked REVERSED for that decision.
+ *
+ * The books stay honest by appending, never editing: the transfer's PAID entry
+ * (−X) stays as history and an ADJUSTMENT of +X in state PAID offsets it, so the
+ * balance is again X owed, "paid out" drops by X, and the PAID bucket nets to
+ * zero. Idempotent by transfer id: a transfer already REVERSED is left alone,
+ * and the offset is keyed transfer-reversed:<tr_id>.
+ *
+ * A PARTIAL reversal is not guessed at: the rows cannot be split, so the
+ * transfer is annotated and the Health row asks a person to settle it.
+ */
+export async function handleTransferEvent(transfer: Stripe.Transfer, reversed: boolean, at: Date = new Date()) {
   const row = await db.payoutTransfer.findUnique({ where: { stripeTransferId: transfer.id } });
-  if (!row) return;
-  if (reversed) {
-    await db.payoutTransfer.update({ where: { id: row.id }, data: { status: PayoutTransferStatus.REVERSED } });
+  if (!row || !reversed) return { skipped: "not-ours-or-not-reversed" as const };
+  if (row.status === PayoutTransferStatus.REVERSED) return { skipped: "already-reversed" as const };
+
+  const reversedCents = transfer.amount_reversed ?? 0;
+  const whole = transfer.reversed === true || reversedCents >= row.amountCents;
+  if (!whole) {
+    await db.payoutTransfer.update({
+      where: { id: row.id },
+      data: {
+        failureReason: `Partially reversed: $${(reversedCents / 100).toFixed(2)} of $${(row.amountCents / 100).toFixed(2)} — settle it in Stripe, then here.`,
+      },
+    });
+    return { skipped: "partial-reversal" as const };
   }
+
+  const booksClosed = await db.commissionLedger.findFirst({
+    where: { payoutTransferId: row.id, entryType: LedgerEntryType.PAID },
+    select: { id: true },
+  });
+  const when = at.toISOString().slice(0, 10);
+
+  await db.$transaction(async (tx) => {
+    // The rows this transfer paid (or had reserved, if the books never closed).
+    const moved = await tx.commissionLedger.updateMany({
+      where: {
+        payoutTransferId: row.id,
+        entryType: { not: LedgerEntryType.PAID },
+        state: { in: [LedgerEntryState.PAID, LedgerEntryState.CLEARED] },
+      },
+      data: { state: LedgerEntryState.REVERSED_TRANSFER },
+    });
+    if (booksClosed) {
+      await tx.commissionLedger.create({
+        data: {
+          influencerId: row.influencerId,
+          attributionId: null,
+          entryType: LedgerEntryType.ADJUSTMENT,
+          amountCents: row.amountCents,
+          currency: row.currency,
+          state: LedgerEntryState.PAID,
+          payoutTransferId: row.id,
+          idempotencyKey: `transfer-reversed:${transfer.id}`,
+          memo: `Transfer ${transfer.id} reversed by Stripe on ${when} — offsets its payout entry`,
+        },
+      });
+    }
+    await tx.payoutTransfer.update({
+      where: { id: row.id },
+      data: { status: PayoutTransferStatus.REVERSED, failureReason: `Reversed by Stripe on ${when}` },
+    });
+    if (row.payoutRequestId) {
+      await tx.payoutRequest.update({
+        where: { id: row.payoutRequestId },
+        data: {
+          status: PayoutRequestStatus.REVERSED,
+          rejectedReason: `Transfer reversed by Stripe on ${when} — the money did not reach the partner.`,
+        },
+      });
+    }
+    return moved.count;
+  }).catch((e: unknown) => {
+    if (!isUniqueViolation(e)) throw e; // the offset for this transfer already exists
+  });
+  return { reversedRows: true };
 }
 
 function isUniqueViolation(e: unknown): boolean {

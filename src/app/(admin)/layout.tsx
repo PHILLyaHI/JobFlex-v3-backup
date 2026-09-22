@@ -46,7 +46,9 @@ export default async function AdminRootLayout({ children }: { children: React.Re
 
   const [unreadSupport, pendingPayouts, manualQueueLeads] = await Promise.all([
     unreadSupportCount(),
-    db.payoutRequest.count({ where: { status: "PENDING" } }),
+    // A reversed transfer waits on an admin's Retry payout / Write off exactly
+    // as a new request waits on Approve, so both light the badge.
+    db.payoutRequest.count({ where: { status: { in: ["PENDING", "REVERSED"] } } }),
     db.platformLead.count({ where: { status: "MANUAL_QUEUE" } }),
   ]);
 

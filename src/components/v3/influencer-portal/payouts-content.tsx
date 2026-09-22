@@ -23,6 +23,9 @@ const REQUEST_TONE: Record<string, Tone> = {
   PAID: "ok",
   REJECTED: "bad",
   FAILED: "bad",
+  REVERSED: "bad",
+  RELEASED: "wait",
+  WRITTEN_OFF: "mute",
 };
 const REQUEST_LABEL: Record<string, string> = {
   PENDING: "Waiting for review",
@@ -31,6 +34,10 @@ const REQUEST_LABEL: Record<string, string> = {
   PAID: "Paid",
   REJECTED: "Declined",
   FAILED: "Failed",
+  // The words carry the meaning; the date is in the sentence under the chip.
+  REVERSED: "Transfer reversed",
+  RELEASED: "Back in your balance",
+  WRITTEN_OFF: "Written off",
 };
 const TRANSFER_TONE: Record<string, Tone> = {
   PENDING: "wait",
@@ -105,6 +112,16 @@ export function InfluencerPayoutsContent({
       </div>
 
       <ConnectBanner connect={partner.connect} />
+
+      {balances.reversedTransferCents > 0 ? (
+        <div className={cx(ui.bannerErr, "rv")} role="status">
+          <span>
+            {usd(balances.reversedTransferCents)} was sent to your Stripe account and then reversed by Stripe,
+            so it did not reach you. It is still yours — JobFlex will resend it or contact you. You do not
+            need to request it again.
+          </span>
+        </div>
+      ) : null}
 
       <section className="card rv">
         <div className={cx("card-head", ui.cardHead)}>

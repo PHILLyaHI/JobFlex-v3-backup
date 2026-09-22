@@ -34,6 +34,8 @@ export interface BalancesDTO {
   clearedCents: number;
   /** Frozen while a customer disputes the payment it came from. */
   heldCents: number;
+  /** Paid out, then reversed by Stripe — owed, waiting on JobFlex to resend. */
+  reversedTransferCents: number;
   /** Already transferred out (positive). */
   paidOutCents: number;
   /** Gross ever accrued (positive accruals only). */

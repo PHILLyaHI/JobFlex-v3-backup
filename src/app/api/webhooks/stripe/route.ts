@@ -111,7 +111,8 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
       break;
     }
     case "transfer.reversed": {
-      await handleTransferEvent(event.data.object as Stripe.Transfer, true);
+      // The event's own time is the reversal date written on the request.
+      await handleTransferEvent(event.data.object as Stripe.Transfer, true, new Date(event.created * 1000));
       break;
     }
     default:

@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
 import { assertStripeWriteAllowed, isStripeWriteAllowed } from "@/lib/stripeSafety";
 import { ledgerBalances } from "@/lib/commission";
-import { payoutRequestRefusal } from "@/lib/payouts";
+import { payoutRequestRefusal, releaseReversedPayout, writeOffReversedPayout } from "@/lib/payouts";
 import { setTestTwinActive } from "@/lib/influencerPromoMode";
 import {
   InfluencerStatus,
@@ -304,6 +304,32 @@ export async function rejectPayoutRequest(id: string, reason?: string) {
   }
   revalidatePath("/admin/influencers");
   revalidatePath("/admin/payouts");
+}
+
+// ── payouts: after Stripe reversed a transfer ─────────
+// The admin's two choices for a request marked REVERSED (lib/payouts). Both
+// answer with an envelope, not a throw — production redacts a thrown Server
+// Action message, and "already handled" is exactly the sentence a second click
+// needs to read.
+export async function retryReversedPayout(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requirePlatformAdmin();
+  const res = await releaseReversedPayout(id);
+  revalidatePath("/admin/payouts");
+  revalidatePath("/admin/influencers");
+  return res.ok
+    ? { ok: true }
+    : { ok: false, error: "This payout is not waiting on a reversed transfer any more — it was already handled." };
+}
+
+export async function writeOffPayout(id: string, note: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requirePlatformAdmin();
+  const clean = String(note ?? "").slice(0, 500);
+  const res = await writeOffReversedPayout(id, clean);
+  revalidatePath("/admin/payouts");
+  revalidatePath("/admin/influencers");
+  return res.ok
+    ? { ok: true }
+    : { ok: false, error: "This payout is not waiting on a reversed transfer any more — it was already handled." };
 }
 
 // ── influencer (self): request a payout of cleared balance ──

@@ -35,7 +35,12 @@ export interface LedgerBalances {
   /** Frozen while a customer disputes the payment it came from — neither
    *  clearing nor payable until the dispute closes. */
   heldCents: number;
-  /** Total already transferred to the influencer (positive number). */
+  /** Paid out, then Stripe reversed the transfer: owed to the partner but not
+   *  payable until an admin chooses Retry payout (or Write off). */
+  reversedTransferCents: number;
+  /** Total that actually reached the influencer (positive number). A reversed
+   *  transfer is not "paid out": its PAID entry is offset by an ADJUSTMENT in
+   *  state PAID, which is subtracted here. */
   paidOutCents: number;
   /** Gross commission ever accrued (positive accruals only). */
   lifetimeEarnedCents: number;
@@ -47,6 +52,7 @@ export function ledgerBalances(entries: LedgerEntryLite[]): LedgerBalances {
   let pendingCents = 0;
   let clearedCents = 0;
   let heldCents = 0;
+  let reversedTransferCents = 0;
   let paidOutCents = 0;
   let lifetimeEarnedCents = 0;
   let balanceCents = 0;
@@ -56,13 +62,27 @@ export function ledgerBalances(entries: LedgerEntryLite[]): LedgerBalances {
     if (e.state === LedgerEntryState.PENDING) pendingCents += e.amountCents;
     if (e.state === LedgerEntryState.CLEARED) clearedCents += e.amountCents;
     if (e.state === LedgerEntryState.HELD) heldCents += e.amountCents;
+    if (e.state === LedgerEntryState.REVERSED_TRANSFER) reversedTransferCents += e.amountCents;
     if (e.entryType === LedgerEntryType.PAID) paidOutCents += -e.amountCents;
+    // A correction to money paid out — today only the offset written when a
+    // transfer is reversed — takes that payment back out of "paid out".
+    if (e.entryType === LedgerEntryType.ADJUSTMENT && e.state === LedgerEntryState.PAID) {
+      paidOutCents -= e.amountCents;
+    }
     if (e.entryType === LedgerEntryType.ACCRUED && e.amountCents > 0) {
       lifetimeEarnedCents += e.amountCents;
     }
   }
 
-  return { pendingCents, clearedCents, heldCents, paidOutCents, lifetimeEarnedCents, balanceCents };
+  return {
+    pendingCents,
+    clearedCents,
+    heldCents,
+    reversedTransferCents,
+    paidOutCents,
+    lifetimeEarnedCents,
+    balanceCents,
+  };
 }
 
 /**

@@ -332,6 +332,11 @@ export const LedgerEntryState = {
   // dispute closes: won → back to PENDING with a fresh hold, lost → VOID against
   // a chargeback reversal (lib/stripeSync, holdForDispute / settleDispute).
   HELD: "HELD",
+  // Paid out, and then Stripe reversed the transfer: the money never reached the
+  // partner. NOT pending and NOT payable — it is never paid again automatically.
+  // An admin decides at /admin/payouts: Retry payout (back to CLEARED, the
+  // partner may request again) or Write off (VOID, closed with a note).
+  REVERSED_TRANSFER: "REVERSED_TRANSFER",
 } as const;
 export type LedgerEntryState = (typeof LedgerEntryState)[keyof typeof LedgerEntryState];
 
@@ -342,6 +347,12 @@ export const PayoutRequestStatus = {
   PROCESSING: "PROCESSING",
   PAID: "PAID",
   FAILED: "FAILED",
+  // Stripe reversed the transfer this request was paid with. Waiting on an admin.
+  REVERSED: "REVERSED",
+  // …the admin chose Retry payout: the money is back in the partner's balance.
+  RELEASED: "RELEASED",
+  // …the admin chose Write off: closed, with the admin's note in rejectedReason.
+  WRITTEN_OFF: "WRITTEN_OFF",
 } as const;
 export type PayoutRequestStatus = (typeof PayoutRequestStatus)[keyof typeof PayoutRequestStatus];
 

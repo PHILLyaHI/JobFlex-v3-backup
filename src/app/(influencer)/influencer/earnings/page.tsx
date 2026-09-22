@@ -33,7 +33,9 @@ export default async function InfluencerEarningsPage() {
 
   const byMonth = new Map<string, { accrued: number; reversed: number }>();
   for (const e of ledger) {
-    if (e.entryType === LedgerEntryType.PAID) continue;
+    // A payout — and the ADJUSTMENT that offsets one Stripe reversed, or records
+    // its write-off — moves money already earned; it is not a month's earnings.
+    if (e.entryType === LedgerEntryType.PAID || e.entryType === LedgerEntryType.ADJUSTMENT) continue;
     const d = e.createdAt;
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     const row = byMonth.get(key) ?? { accrued: 0, reversed: 0 };

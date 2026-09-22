@@ -13,7 +13,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/Toast";
 import { money, relative, shortDate } from "@/lib/format";
-import { approvePayoutRequest, rejectPayoutRequest } from "@/actions/influencers";
+import {
+  approvePayoutRequest,
+  rejectPayoutRequest,
+  retryReversedPayout,
+  writeOffPayout,
+} from "@/actions/influencers";
 import {
   Chip,
   Empty,
@@ -59,6 +64,9 @@ const REQUEST_TONE: Record<string, Tone> = {
   PAID: "ok",
   REJECTED: "bad",
   FAILED: "bad",
+  REVERSED: "bad",
+  RELEASED: "mute",
+  WRITTEN_OFF: "mute",
 };
 const REQUEST_LABEL: Record<string, string> = {
   PENDING: "Pending",
@@ -67,6 +75,11 @@ const REQUEST_LABEL: Record<string, string> = {
   PAID: "Paid",
   REJECTED: "Rejected",
   FAILED: "Failed",
+  // Stripe reversed the transfer; the money did not reach the partner and is
+  // not paid again until an admin chooses below (lib/payouts).
+  REVERSED: "Transfer reversed",
+  RELEASED: "Returned to balance",
+  WRITTEN_OFF: "Written off",
 };
 const TRANSFER_TONE: Record<string, Tone> = {
   PENDING: "wait",
@@ -75,7 +88,7 @@ const TRANSFER_TONE: Record<string, Tone> = {
   REVERSED: "bad",
 };
 
-type Filter = "ALL" | "PENDING" | "APPROVED" | "PAID" | "REJECTED" | "FAILED";
+type Filter = "ALL" | "PENDING" | "APPROVED" | "PAID" | "REJECTED" | "FAILED" | "REVERSED";
 const FILTERS: { key: Filter; label: string; match: (s: string) => boolean }[] = [
   { key: "ALL", label: "All", match: () => true },
   { key: "PENDING", label: "Pending", match: (s) => s === "PENDING" },
@@ -83,9 +96,15 @@ const FILTERS: { key: Filter; label: string; match: (s: string) => boolean }[] =
   { key: "PAID", label: "Paid", match: (s) => s === "PAID" },
   { key: "REJECTED", label: "Rejected", match: (s) => s === "REJECTED" },
   { key: "FAILED", label: "Failed", match: (s) => s === "FAILED" },
+  {
+    key: "REVERSED",
+    label: "Reversed",
+    match: (s) => s === "REVERSED" || s === "RELEASED" || s === "WRITTEN_OFF",
+  },
 ];
 
 type RejectHandle = { open: (req: PayoutRequestDTO) => void };
+type WriteOffHandle = { open: (req: PayoutRequestDTO) => void };
 
 export function AdminPayoutsContent({
   requests,
@@ -102,6 +121,7 @@ export function AdminPayoutsContent({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const rejectRef = useRef<RejectHandle | null>(null);
+  const writeOffRef = useRef<WriteOffHandle | null>(null);
 
   const counts = useMemo(() => {
     const c = {} as Record<Filter, number>;
@@ -130,6 +150,29 @@ export function AdminPayoutsContent({
     try {
       await approvePayoutRequest(r.id);
       toast.success("Approved", `${money(r.amountCents / 100)} to ${r.influencerName} is queued for transfer.`);
+      router.refresh();
+    } catch (err) {
+      setError(actionError(err));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /** Retry payout: the money goes back to the partner's cleared balance, once. */
+  async function retry(r: PayoutRequestDTO) {
+    if (busyId) return;
+    setBusyId(r.id);
+    setError(null);
+    try {
+      const res = await retryReversedPayout(r.id);
+      if (!res.ok) {
+        setError(res.error);
+      } else {
+        toast.success(
+          "Returned to balance",
+          `${money(r.amountCents / 100)} is payable to ${r.influencerName} again. They can request it.`,
+        );
+      }
       router.refresh();
     } catch (err) {
       setError(actionError(err));
@@ -230,6 +273,10 @@ export function AdminPayoutsContent({
                   {r.status === "APPROVED" && r.approvedAt ? (
                     <Meta className={styles.reason}>approved {relative(r.approvedAt)}</Meta>
                   ) : null}
+                  {(r.status === "REVERSED" || r.status === "RELEASED" || r.status === "WRITTEN_OFF") &&
+                  r.rejectedReason ? (
+                    <Meta className={styles.reason}>{r.rejectedReason}</Meta>
+                  ) : null}
                 </div>
                 <div className={ui.tdAct}>
                   {r.status === "PENDING" ? (
@@ -251,6 +298,28 @@ export function AdminPayoutsContent({
                       >
                         <Ic name="check" />
                         {busyId === r.id ? "Approving…" : "Approve"}
+                      </button>
+                    </>
+                  ) : null}
+                  {r.status === "REVERSED" ? (
+                    <>
+                      <button
+                        className={cx("btn", ui.btnBad, ui.btnSm)}
+                        type="button"
+                        disabled={busyId !== null}
+                        onClick={() => writeOffRef.current?.open(r)}
+                      >
+                        <Ic name="ban" />
+                        Write off
+                      </button>
+                      <button
+                        className={cx("btn", ui.btnOk, ui.btnSm, busyId === r.id && ui.btnBusy)}
+                        type="button"
+                        disabled={busyId !== null}
+                        onClick={() => retry(r)}
+                      >
+                        <Ic name="undo" />
+                        {busyId === r.id ? "Returning…" : "Retry payout"}
                       </button>
                     </>
                   ) : null}
@@ -312,6 +381,7 @@ export function AdminPayoutsContent({
       </section>
 
       <RejectSheet handleRef={rejectRef} />
+      <WriteOffSheet handleRef={writeOffRef} />
     </div>
   );
 }
@@ -402,6 +472,105 @@ function RejectSheet({ handleRef }: { handleRef: React.RefObject<RejectHandle | 
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Balance includes a refunded charge still inside the hold window."
+            />
+          </div>
+        </form>
+      )}
+    </Sheet>
+  );
+}
+
+/* ============================================================
+   WRITE OFF — a reversed transfer that will not be paid again
+   ============================================================ */
+
+function WriteOffSheet({ handleRef }: { handleRef: React.RefObject<WriteOffHandle | null> }) {
+  const router = useRouter();
+  const [req, setReq] = useState<PayoutRequestDTO | null>(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  const { ref: mdlRef, open: openMdlDialog, close } = useMdl();
+  const open = useCallback(
+    (r: PayoutRequestDTO) => {
+      setReq(r);
+      setNote("");
+      setError(null);
+      setBusy(false);
+      openMdlDialog();
+      requestAnimationFrame(() => requestAnimationFrame(() => areaRef.current?.focus()));
+    },
+    [openMdlDialog],
+  );
+  useEffect(() => {
+    handleRef.current = { open };
+  }, [handleRef, open]);
+
+  async function submit(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (busy || !req) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await writeOffPayout(req.id, note.trim());
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      toast.success("Written off", "The request is closed with your note.");
+      close();
+      router.refresh();
+    } catch (err) {
+      setError(actionError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet
+      mdlRef={mdlRef}
+      title="Write off reversed payout"
+      titleId="payWriteOffTitle"
+      onClose={close}
+      error={error}
+      foot={
+        <>
+          <button className="btn btn-ghost" type="button" onClick={close} disabled={busy}>
+            Keep it
+          </button>
+          <button
+            className={cx("btn", ui.btnBad, busy && ui.btnBusy)}
+            type="button"
+            onClick={() => submit()}
+            disabled={busy || !req}
+          >
+            <Ic name="ban" />
+            {busy ? "Writing off…" : "Write off"}
+          </button>
+        </>
+      }
+    >
+      {!req ? null : (
+        <form onSubmit={submit} noValidate>
+          <div className={styles.rejectWho}>
+            <b>{money(req.amountCents / 100)}</b> to {req.influencerName} was reversed by Stripe. Writing it
+            off closes it for good — it will not be paid.
+          </div>
+          <div className="mf">
+            <label className="mf-lbl" htmlFor="payWriteOff">
+              Note (the partner sees this)
+            </label>
+            <textarea
+              className={cx("mf-in", ui.area)}
+              id="payWriteOff"
+              ref={areaRef}
+              rows={3}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Reversed after the partner's bank account was closed."
             />
           </div>
         </form>
