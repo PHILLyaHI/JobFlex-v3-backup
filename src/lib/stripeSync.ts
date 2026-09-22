@@ -964,7 +964,7 @@ export async function handleTransferEvent(transfer: Stripe.Transfer, reversed: b
         where: { id: row.payoutRequestId },
         data: {
           status: PayoutRequestStatus.REVERSED,
-          rejectedReason: `Transfer reversed by Stripe on ${when} — the money did not reach the partner.`,
+          rejectedReason: `Transfer reversed by Stripe on ${when} — the money did not arrive.`,
         },
       });
     }

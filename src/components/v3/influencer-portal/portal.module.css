@@ -248,5 +248,12 @@
     grid-template-columns: 1fr 1fr !important;
   }
   :global(.jf-blueprint .content) .clientSince { grid-column: 1 / -1; }
+  /* An odd number of KPIs (the fifth, On hold, appears only while a dispute is
+     open) left the last cell alone in a two-column grid, its right rule running
+     into empty space. The last odd cell takes the full row instead. */
+  :global(.jf-blueprint .content) .root :global(.kpi-grid) > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+    border-right: none !important;
+  }
   :global(.jf-blueprint .content) .totalRow { margin-top: 6px; }
 }

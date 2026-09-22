@@ -469,7 +469,7 @@ export async function releaseReversedPayout(requestId: string, at: Date = new Da
       where: { id: requestId, status: PayoutRequestStatus.REVERSED },
       data: {
         status: PayoutRequestStatus.RELEASED,
-        rejectedReason: `${req.rejectedReason ?? "Transfer reversed."} Returned to the partner's balance on ${at.toISOString().slice(0, 10)}.`,
+        rejectedReason: `${req.rejectedReason ?? "Transfer reversed."} Returned to the balance on ${at.toISOString().slice(0, 10)}.`,
       },
     });
     if (claimed.count === 0) return { ok: false as const, reason: "not-reversed" };
