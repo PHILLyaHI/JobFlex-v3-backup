@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { readAttributionCookie, validateAttribution } from "@/lib/attribution";
 import { promotionCodeIdForMode, type PromoForCheckout } from "@/lib/influencerPromoMode";
+import { checkoutDiscount } from "@/lib/checkoutDiscount";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { ensureRecurringPrice } from "@/lib/stripePriceCache";
 import { ensureReferralCoupon } from "@/lib/referralDiscount";
@@ -102,11 +103,17 @@ export async function POST(req: Request) {
     }),
   ]);
 
+  // An organisation that has ever had a Stripe subscription is buying a
+  // successor (an upgrade) or coming back — not a first month. lib/checkoutDiscount
+  // gives it no discount and no promo field; the partner keeps earning because
+  // the attribution moves to the new subscription on its own (lib/stripeSync).
+  const everSubscribed = Boolean(sub?.externalSubId);
+
   // Resolve a promo to auto-apply. Both paths re-validate against the DB (the
   // cookie is untrusted input); a dead/suspended code simply resolves to null.
   // local_promo_* synthetics (Stripe-disabled dev) never reach Stripe.
   let promoForCheckout: PromoForCheckout | null = null;
-  if (org?.signupPromoCodeId) {
+  if (org?.signupPromoCodeId && !everSubscribed) {
     const stamped = await db.promoCode.findUnique({
       where: { id: org.signupPromoCodeId },
       select: {
@@ -129,7 +136,7 @@ export async function POST(req: Request) {
       };
     }
   }
-  if (!promoForCheckout) {
+  if (!promoForCheckout && !everSubscribed) {
     const captured = await readAttributionCookie();
     if (captured?.k === "promo") {
       const validated = await validateAttribution("promo", captured.c);
@@ -176,7 +183,6 @@ export async function POST(req: Request) {
      this path covers a referred shop that skipped the plan at signup. Promo
      wins when both apply — one discount per session at Stripe. */
   let referralCoupon: string | null = null;
-  const everSubscribed = Boolean(sub?.externalSubId);
   if (!autoApplyPromotionCode && !everSubscribed) {
     const conversion = await db.referralConversion.findFirst({
       where: { signupOrgId: organizationId },
@@ -247,28 +253,21 @@ export async function POST(req: Request) {
   };
 
   // Stripe forbids combining `discounts` with `allow_promotion_codes`, so it's
-  // one or the other. If Stripe rejects the pre-applied code (deactivated or
-  // expired on their side), fall back to plain checkout with manual code entry.
+  // one or the other — or, on a replacement, neither. If Stripe rejects a
+  // pre-applied discount (deactivated or expired on their side) the first bill
+  // falls back to manual code entry, and says so in the log: silently dropping
+  // the discount the plan step promised was the bug the owner reported.
+  const discount = checkoutDiscount({
+    everSubscribed,
+    promotionCode: autoApplyPromotionCode,
+    referralCoupon,
+  });
   let session;
-  if (autoApplyPromotionCode) {
-    try {
-      session = await stripe.checkout.sessions.create({
-        ...baseParams,
-        discounts: [{ promotion_code: autoApplyPromotionCode }],
-      });
-    } catch {
-      session = await stripe.checkout.sessions.create({ ...baseParams, allow_promotion_codes: true });
-    }
-  } else if (referralCoupon) {
-    try {
-      session = await stripe.checkout.sessions.create({
-        ...baseParams,
-        discounts: [{ coupon: referralCoupon }],
-      });
-    } catch {
-      session = await stripe.checkout.sessions.create({ ...baseParams, allow_promotion_codes: true });
-    }
-  } else {
+  try {
+    session = await stripe.checkout.sessions.create({ ...baseParams, ...discount.params });
+  } catch (err) {
+    if (discount.kind !== "promo" && discount.kind !== "referral") throw err;
+    console.warn(`[checkout/subscription] Stripe refused the ${discount.kind} discount, falling back to manual entry:`, err);
     session = await stripe.checkout.sessions.create({ ...baseParams, allow_promotion_codes: true });
   }
 

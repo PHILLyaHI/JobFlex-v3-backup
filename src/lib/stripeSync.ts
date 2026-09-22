@@ -126,6 +126,87 @@ async function resolvePromoCode(discount: Stripe.Discount | null | undefined) {
   return null;
 }
 
+/* ── THE COMMISSION WINDOW BELONGS TO THE CLIENT, NOT TO A STRIPE SUBSCRIPTION ──
+ *
+ * The owner's decision (2026-09-22). An upgrade through our Checkout creates a
+ * NEW Stripe subscription and cancels the old one. Attribution was keyed on the
+ * subscription id, so the upgrade either minted a fresh attribution with
+ * qualifyingMonths = 0 (the window restarted — a "20% for 6 months" code paid
+ * 6 + 6) or, once the code is no longer re-applied at checkout, found no
+ * attribution at all (commission simply stopped at the upgrade).
+ *
+ * Now the organisation's attribution — with its months already counted — moves
+ * onto the new subscription. The row stays one row: its promo, its partner, its
+ * qualifyingMonths, its firstPaidInvoiceAt all travel. A 7th month is refused
+ * even though the subscription is new.
+ *
+ * ONLY FORWARD. The reconcile cron re-syncs every subscription it lists,
+ * cancelled ones included and newest first — so the OLD subscription is synced
+ * after the new one. Moving the row to "whatever subscription was just synced"
+ * would drag it back onto a dead subscription and stop the commission. So a row
+ * moves onto a subscription only if that subscription is live AND was created
+ * after the one the row is on now. The reference time is kept in SyncState
+ * (attributionSubAt:<attributionId>); a row that predates this rule falls back
+ * to its own createdAt, which is after its first subscription was created.
+ *
+ * Called from syncSubscriptionFromStripe (customer.subscription.created, and any
+ * later sync) and from accrueForInvoice — the new subscription's first invoice
+ * can be delivered before its created event, and must not be skipped for it.
+ */
+const attrSubAtKey = (attributionId: string) => `attributionSubAt:${attributionId}`;
+
+async function carryAttributionToSubscription(opts: {
+  toSubId: string;
+  organizationId: string | null;
+  customerId: string | null;
+  /** When the destination subscription was created (ms) — or, from an invoice,
+   *  when that invoice was created, which is never earlier. */
+  subCreatedMs: number;
+  subCanceled: boolean;
+}): Promise<boolean> {
+  if (opts.subCanceled) return false; // never move a client onto a dead subscription
+  const own = await db.attribution.findUnique({ where: { stripeSubscriptionId: opts.toSubId }, select: { id: true } });
+  if (own) return false;
+  const or = [
+    ...(opts.organizationId ? [{ organizationId: opts.organizationId }] : []),
+    ...(opts.customerId ? [{ stripeCustomerId: opts.customerId }] : []),
+  ];
+  if (!or.length) return false;
+  const prior = await db.attribution.findFirst({
+    where: { OR: or, stripeSubscriptionId: { not: opts.toSubId } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!prior) return false;
+
+  const refRow = await db.syncState.findUnique({ where: { key: attrSubAtKey(prior.id) } }).catch(() => null);
+  const refMs = refRow ? Number(refRow.cursor) : prior.createdAt.getTime();
+  // Strictly later than where the row is now. From an invoice this is the
+  // invoice's own creation time: the reconcile cron replays the last 100 paid
+  // invoices, the OLD subscription's among them, and every one of those predates
+  // the replacement — so an old invoice can never pull the row back.
+  const destMs = opts.subCreatedMs;
+  if (Number.isFinite(refMs) && destMs <= refMs) return false;
+
+  await db.attribution.update({
+    where: { id: prior.id },
+    data: {
+      stripeSubscriptionId: opts.toSubId,
+      ...(opts.customerId ? { stripeCustomerId: opts.customerId } : {}),
+      // VOID is the self-referral verdict and stays VOID; anything else is live
+      // again on a live subscription. qualifyingMonths is NOT touched.
+      ...(prior.status === AttributionStatus.VOID ? {} : { status: AttributionStatus.ACTIVE, endedAt: null }),
+    },
+  });
+  await db.syncState
+    .upsert({
+      where: { key: attrSubAtKey(prior.id) },
+      update: { cursor: String(destMs) },
+      create: { key: attrSubAtKey(prior.id), cursor: String(destMs) },
+    })
+    .catch(() => {});
+  return true;
+}
+
 // ── subscription lifecycle → Subscription mirror + Attribution ──
 export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
   const externalSubId = sub.id;
@@ -176,7 +257,32 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
   });
   reportPlanChange(organizationId, "stripe", planWas);
 
-  if (promo && customerId) {
+  // The client's attribution — months already counted — moves onto this
+  // subscription first, so the branches below find it by subscription id and
+  // update it instead of starting a fresh window.
+  await carryAttributionToSubscription({
+    toSubId: externalSubId,
+    organizationId,
+    customerId,
+    subCreatedMs: (sub.created ?? Math.floor(Date.now() / 1000)) * 1000,
+    subCanceled: status === SubscriptionStatus.CANCELED,
+  });
+
+  // ONE CLIENT, ONE ATTRIBUTION. If this subscription has no row of its own but
+  // the organisation already has one on another subscription, the carry above
+  // declined to move it here — this subscription is older or dead (the reconcile
+  // replay of a pre-upgrade subscription that still carried the month-1
+  // discount). Creating a second, fresh row would restart the window on it.
+  let promoApplies = Boolean(promo && customerId);
+  if (promoApplies) {
+    const own = await db.attribution.findUnique({ where: { stripeSubscriptionId: externalSubId }, select: { id: true } });
+    if (!own) {
+      const elsewhere = await db.attribution.findFirst({ where: { organizationId }, select: { id: true } });
+      if (elsewhere) promoApplies = false;
+    }
+  }
+
+  if (promo && customerId && promoApplies) {
     // A partner's own organization is recorded, not paid: the row still exists
     // so the admin can see the code was used, but VOID keeps it out of every
     // accrual. The upsert rewrites status on every subscription.updated, so the
@@ -202,7 +308,22 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
         status: attrStatus,
       },
     });
+    // The "only forward" reference for carrying this client to a later
+    // subscription: this subscription's own creation time, recorded once. The
+    // row's createdAt is when WE first synced it, which can be later.
+    await db.syncState
+      .create({
+        data: {
+          key: attrSubAtKey(attribution.id),
+          cursor: String((sub.created ?? Math.floor(Date.now() / 1000)) * 1000),
+        },
+      })
+      .catch(() => {
+        /* already recorded — keep the earliest */
+      });
     await db.subscription.update({ where: { organizationId }, data: { attributionId: attribution.id } });
+  } else if (promo && customerId && !promoApplies) {
+    // The client's attribution lives on a newer subscription; nothing to do here.
   } else {
     /* NO DISCOUNT ON THE SUBSCRIPTION ANY MORE — WHICH IS THE NORMAL CASE.
      *
@@ -295,10 +416,28 @@ export async function accrueForInvoice(invoice: Stripe.Invoice, eventId?: string
   const subId = idOf(invoice.subscription);
   if (!subId) return { skipped: "no-subscription" as const };
 
-  const attribution = await db.attribution.findUnique({
+  let attribution = await db.attribution.findUnique({
     where: { stripeSubscriptionId: subId },
     include: { promoCode: true, influencer: true },
   });
+  if (!attribution) {
+    // The first invoice of a replacement subscription can arrive before its
+    // customer.subscription.created — carry the client's attribution here too,
+    // or that month would be skipped for want of a row.
+    const carried = await carryAttributionToSubscription({
+      toSubId: subId,
+      organizationId: null,
+      customerId: idOf(invoice.customer),
+      subCreatedMs: (invoice.created ?? Math.floor(Date.now() / 1000)) * 1000,
+      subCanceled: false,
+    });
+    if (carried) {
+      attribution = await db.attribution.findUnique({
+        where: { stripeSubscriptionId: subId },
+        include: { promoCode: true, influencer: true },
+      });
+    }
+  }
   if (!attribution || attribution.status !== AttributionStatus.ACTIVE) {
     return { skipped: "no-active-attribution" as const };
   }

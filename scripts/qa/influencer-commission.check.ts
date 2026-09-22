@@ -101,6 +101,8 @@ async function cleanup() {
   });
   const ids = infs.map((i) => i.id);
   if (ids.length) {
+    const attrs = await db.attribution.findMany({ where: { influencerId: { in: ids } }, select: { id: true } });
+    await db.syncState.deleteMany({ where: { key: { in: attrs.map((a) => `attributionSubAt:${a.id}`) } } });
     await db.commissionLedger.deleteMany({ where: { influencerId: { in: ids } } });
     await db.attribution.deleteMany({ where: { influencerId: { in: ids } } });
     await db.promoCode.deleteMany({ where: { influencerId: { in: ids } } });
@@ -273,7 +275,24 @@ async function main() {
   // ── THE WRITE-TIME STAMP. syncSubscriptionFromStripe upserts QA Co's billing
   //    mirror, so snapshot it and put it back afterwards. ──
   const mirrorBefore = await db.subscription.findUnique({ where: { organizationId: qaOrg.id } });
+  // ONE ORGANISATION IS ONE CLIENT (owner, 2026-09-22): syncSubscriptionFromStripe
+  // carries an organisation's attribution onto its newest subscription. The rows
+  // this check created directly above are all "in" QA Co, so while the
+  // subscription-sync scenarios below run they are parked (organisation detached)
+  // and each scenario starts as a fresh client; the finally block restores them.
+  const parked = await db.attribution.findMany({
+    where: { organizationId: qaOrg.id, influencerId: { in: [linked.id, byEmail.id, outsider.id] } },
+    select: { id: true },
+  });
+  await db.attribution.updateMany({ where: { id: { in: parked.map((a) => a.id) } }, data: { organizationId: null } });
+  const SYNC_SUBS = [`sub_${P}stamp`, `sub_${P}stamp2`, `sub_${P}window`];
+  const freshClient = async () => {
+    const rows = await db.attribution.findMany({ where: { stripeSubscriptionId: { in: SYNC_SUBS } }, select: { id: true } });
+    await db.syncState.deleteMany({ where: { key: { in: rows.map((r) => `attributionSubAt:${r.id}`) } } });
+    await db.attribution.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } });
+  };
   try {
+    await freshClient();
     await syncSubscriptionFromStripe(
       subscription(`sub_${P}stamp`, qaOrg.id, linkedPromo.stripePromotionCodeId),
     );
@@ -285,7 +304,12 @@ async function main() {
       skipped?: string;
     };
     ok("a VOID attribution never reaches the accrual", rStamp.skipped === "no-active-attribution", String(rStamp.skipped));
+    // …and the discount leaving it (the coupon expiring) never revives a VOID.
+    await syncSubscriptionFromStripe(subscription(`sub_${P}stamp`, qaOrg.id, null));
+    ok("a VOID self-referral attribution is never revived",
+      (await db.attribution.findUnique({ where: { stripeSubscriptionId: `sub_${P}stamp` } }))?.status === "VOID");
 
+    await freshClient();
     await syncSubscriptionFromStripe(
       subscription(`sub_${P}stamp2`, qaOrg.id, outsiderPromo.stripePromotionCodeId),
     );
@@ -313,6 +337,7 @@ async function main() {
       },
     });
     const WIN = `sub_${P}window`;
+    await freshClient();
     await syncSubscriptionFromStripe(subscription(WIN, qaOrg.id, winPromo.stripePromotionCodeId));
     const m1 = (await accrueForInvoice(invoice(`in_${P}w1`, WIN, `ch_${P}w1`, 6320))) as { accruedCents?: number };
     // Stripe drops the spent one-month coupon:
@@ -348,12 +373,9 @@ async function main() {
     await syncSubscriptionFromStripe(subscription(WIN, qaOrg.id, null));
     ok("an attribution ENDED by the old rule is revived on the next sync",
       (await db.attribution.findUnique({ where: { stripeSubscriptionId: WIN } }))?.status === "ACTIVE");
-
-    // …but never a self-referral VOID.
-    await syncSubscriptionFromStripe(subscription(`sub_${P}stamp`, qaOrg.id, null));
-    ok("a VOID self-referral attribution is never revived",
-      (await db.attribution.findUnique({ where: { stripeSubscriptionId: `sub_${P}stamp` } }))?.status === "VOID");
   } finally {
+    // The directly-created rows go back into QA Co for the checks that follow.
+    await db.attribution.updateMany({ where: { id: { in: parked.map((a) => a.id) } }, data: { organizationId: qaOrg.id } });
     // Put QA Co's subscription mirror back exactly as it was.
     if (mirrorBefore) {
       await db.subscription.update({
