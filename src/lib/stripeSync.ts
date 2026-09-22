@@ -14,6 +14,7 @@ import {
   ConnectStatus,
   Role,
   InfluencerStatus,
+  CommissionType,
 } from "@/lib/prismaEnums";
 import {
   computeCommissionCents,
@@ -331,11 +332,31 @@ export async function accrueForInvoice(invoice: Stripe.Invoice, eventId?: string
     return { skipped: "outside-window" as const };
   }
 
+  /* A PRORATION IS NOT A MONTH. A mid-cycle plan change bills an immediate
+   * proration invoice (billing_reason "subscription_update") with its own id,
+   * and the window counted INVOICES, not billing periods — so one upgrade paid
+   * commission twice in a month and ended a 6-month window a month early. Worse
+   * for FLAT: $10 flat on a $4.30 proration, and a month of the window gone.
+   *
+   *   · PERCENT still accrues on a proration — it is money actually collected —
+   *     but does not consume a window month (see the increment below).
+   *   · FLAT does not accrue on a proration at all: "$10 per payment" means per
+   *     billing period, which is what the admin preview promises.
+   */
+  const isProration = invoice.billing_reason === "subscription_update";
+  if (isProration && promo.commissionType === CommissionType.FLAT) {
+    return { skipped: "flat-on-proration" as const };
+  }
+
   const basisCents = commissionBasisCents(promo, {
     amountPaidCents: invoice.amount_paid,
     subtotalCents: invoice.subtotal ?? invoice.amount_paid,
   });
-  const commissionCents = computeCommissionCents(promo, basisCents);
+  // Never more than the invoice actually collected. computeCommissionCents clamps
+  // FLAT to its basis, but on a GROSS code that basis is the pre-discount
+  // subtotal, which can exceed what was paid; the cash is the only bound that
+  // holds for every basis.
+  const commissionCents = Math.min(computeCommissionCents(promo, basisCents), invoice.amount_paid);
   if (commissionCents <= 0) return { skipped: "zero-commission" as const };
 
   const clearsAt = new Date(Date.now() + attribution.influencer.holdDays * 24 * 60 * 60 * 1000);
@@ -366,7 +387,8 @@ export async function accrueForInvoice(invoice: Stripe.Invoice, eventId?: string
   await db.attribution.update({
     where: { id: attribution.id },
     data: {
-      qualifyingMonths: { increment: 1 },
+      // A proration is paid on, but is not a billing period of its own.
+      ...(isProration ? {} : { qualifyingMonths: { increment: 1 } }),
       firstPaidInvoiceAt: attribution.firstPaidInvoiceAt ?? new Date(),
     },
   });

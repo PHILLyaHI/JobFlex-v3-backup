@@ -33,6 +33,26 @@ const commissionShape = z.object({
   durationMonths: z.number().int().min(1).max(120).optional(),
 });
 
+/* A RATE IS A PERCENTAGE. There was no upper bound, so a "2000" typed into the
+   Rate (%) field — someone thinking in basis points — became 200000 bps and
+   accrued twenty times the invoice. The bound lives HERE, on the server, because
+   both admin forms are noValidate and an input's `max` blocks nothing.
+
+   A refinement applied AFTER each merge, not on commissionShape itself: a refined
+   schema cannot be .merge()d, and all three writers (createInfluencer,
+   createPromoCode, updatePromoCommission) merge it. FLAT gets no invented
+   ceiling — it is capped per invoice at the money actually collected
+   (lib/commission, and the accrual in lib/stripeSync). */
+function boundRate(c: { commissionType: string; commissionValue: number }, ctx: z.RefinementCtx) {
+  if (c.commissionType === CommissionType.PERCENT && c.commissionValue > 100) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["commissionValue"],
+      message: "A commission rate is a percentage — 20 means 20%. Enter 100 or less.",
+    });
+  }
+}
+
 function commissionColumns(c: z.infer<typeof commissionShape>) {
   return {
     commissionType: c.commissionType,
@@ -86,7 +106,8 @@ const createInfluencerInput = z
     code: z.string().min(3).max(40).regex(/^[A-Za-z0-9_-]+$/, "Letters, numbers, - and _ only"),
     password: z.string().min(8).optional(),
   })
-  .merge(commissionShape);
+  .merge(commissionShape)
+  .superRefine(boundRate);
 
 export async function createInfluencer(raw: unknown) {
   await requirePlatformAdmin();
@@ -184,7 +205,8 @@ const createPromoInput = z
     influencerId: z.string(),
     code: z.string().min(3).max(40).regex(/^[A-Za-z0-9_-]+$/),
   })
-  .merge(commissionShape);
+  .merge(commissionShape)
+  .superRefine(boundRate);
 
 export async function createPromoCode(raw: unknown) {
   await requirePlatformAdmin();
@@ -234,7 +256,10 @@ export async function setPromoActive(promoId: string, active: boolean) {
   revalidatePath("/admin/influencers");
 }
 
-const commissionEditInput = z.object({ promoId: z.string() }).merge(commissionShape);
+const commissionEditInput = z
+  .object({ promoId: z.string() })
+  .merge(commissionShape)
+  .superRefine(boundRate);
 
 export async function updatePromoCommission(raw: unknown) {
   await requirePlatformAdmin();

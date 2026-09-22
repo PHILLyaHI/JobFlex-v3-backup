@@ -58,15 +58,21 @@ export function ledgerBalances(entries: LedgerEntryLite[]): LedgerBalances {
   return { pendingCents, clearedCents, paidOutCents, lifetimeEarnedCents, balanceCents };
 }
 
-/** Commission owed on a single paid invoice, given the promo rule + the basis amount. */
+/**
+ * Commission owed on a single paid invoice, given the promo rule + the basis
+ * amount. NEVER MORE THAN THE BASIS: a FLAT $10 on a $4 invoice used to owe the
+ * full $10 — commission above the revenue it came from. The call site
+ * (stripeSync.accrueForInvoice) additionally caps at the cash actually
+ * collected, because on a GROSS code the basis is the pre-discount subtotal.
+ */
 export function computeCommissionCents(rule: PromoCommissionRule, basisCents: number): number {
   if (basisCents <= 0) return 0;
   if (rule.commissionType === CommissionType.PERCENT) {
     const bps = rule.commissionRateBps ?? 0;
-    return Math.round((basisCents * bps) / 10000);
+    return Math.min(basisCents, Math.round((basisCents * bps) / 10000));
   }
   if (rule.commissionType === CommissionType.FLAT) {
-    return Math.max(0, rule.commissionFlatCents ?? 0);
+    return Math.min(basisCents, Math.max(0, rule.commissionFlatCents ?? 0));
   }
   return 0;
 }

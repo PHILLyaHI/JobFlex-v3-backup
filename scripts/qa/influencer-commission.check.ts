@@ -20,6 +20,7 @@ import {
   syncSubscriptionFromStripe,
 } from "../../src/lib/stripeSync";
 import { payoutRequestRefusal } from "../../src/lib/payouts";
+import { computeCommissionCents } from "../../src/lib/commission";
 
 const db = new PrismaClient();
 const QA_SLUG = "qa-co";
@@ -381,6 +382,87 @@ async function main() {
         (mirrorBefore?.attributionId ?? null) === (mirrorAfter?.attributionId ?? null),
       `plan ${mirrorAfter?.plan ?? "(none)"} · sub ${mirrorAfter?.externalSubId ?? "(none)"}`);
   }
+
+  // ── COMMISSION NEVER EXCEEDS THE MONEY COLLECTED, AND A PRORATION IS NOT A
+  //    MONTH. ──
+  ok("FLAT is capped at its basis: $10 flat on a $4 invoice owes $4",
+    computeCommissionCents({ commissionType: "FLAT", commissionFlatCents: 1000, durationType: "FOREVER" }, 400) === 400);
+  ok("PERCENT can never exceed its basis either (a 200% rate owes 100%)",
+    computeCommissionCents({ commissionType: "PERCENT", commissionRateBps: 20000, durationType: "FOREVER" }, 7900) === 7900);
+
+  const flatPromo = await db.promoCode.create({
+    data: {
+      influencerId: outsider.id,
+      code: "QAINFFLAT",
+      stripeCouponId: "local_coupon_QAINFFLAT",
+      stripePromotionCodeId: "local_promo_QAINFFLAT",
+      commissionType: "FLAT",
+      commissionFlatCents: 1000,
+      commissionBasis: "GROSS",
+      durationType: "REPEATING",
+      durationMonths: 3,
+    },
+  });
+  const attrFlat = await db.attribution.create({
+    data: {
+      influencerId: outsider.id,
+      promoCodeId: flatPromo.id,
+      organizationId: qaOrg.id,
+      stripeCustomerId: `cus_${P}flat`,
+      stripeSubscriptionId: `sub_${P}flat`,
+      status: "ACTIVE",
+    },
+  });
+  // GROSS basis: subtotal 7900 but only 400 actually collected.
+  const tiny = (await accrueForInvoice({
+    id: `in_${P}flat-tiny`,
+    subscription: attrFlat.stripeSubscriptionId,
+    charge: `ch_${P}flat-tiny`,
+    paid: true,
+    amount_paid: 400,
+    subtotal: 7900,
+    currency: "usd",
+    billing_reason: "subscription_cycle",
+  } as never)) as { accruedCents?: number };
+  ok("on a GROSS code the cash collected is the cap, not the pre-discount subtotal",
+    tiny.accruedCents === 400, `accrued ${cents(tiny.accruedCents ?? 0)} on $4.00 collected (subtotal $79.00)`);
+
+  const monthsBefore = (await db.attribution.findUnique({ where: { id: attrFlat.id } }))?.qualifyingMonths ?? 0;
+  const flatPro = (await accrueForInvoice({
+    id: `in_${P}flat-pro`,
+    subscription: attrFlat.stripeSubscriptionId,
+    charge: `ch_${P}flat-pro`,
+    paid: true,
+    amount_paid: 4300,
+    subtotal: 4300,
+    currency: "usd",
+    billing_reason: "subscription_update",
+  } as never)) as { accruedCents?: number; skipped?: string };
+  ok("FLAT pays nothing on a proration — it is per billing period",
+    flatPro.skipped === "flat-on-proration", String(flatPro.skipped ?? flatPro.accruedCents));
+  ok("…and the proration spends no month of the window",
+    (await db.attribution.findUnique({ where: { id: attrFlat.id } }))?.qualifyingMonths === monthsBefore);
+
+  const pctPro = (await accrueForInvoice({
+    id: `in_${P}pct-pro`,
+    subscription: attrOut.stripeSubscriptionId,
+    charge: `ch_${P}pct-pro`,
+    paid: true,
+    amount_paid: 4300,
+    subtotal: 4300,
+    currency: "usd",
+    billing_reason: "subscription_update",
+  } as never)) as { accruedCents?: number };
+  const outMonths = (await db.attribution.findUnique({ where: { id: attrOut.id } }))?.qualifyingMonths;
+  ok("PERCENT still accrues on a proration — 20% of the 4300¢ actually collected",
+    pctPro.accruedCents === 860, `accrued ${cents(pctPro.accruedCents ?? 0)}`);
+  const outMonthsAfter = (await db.attribution.findUnique({ where: { id: attrOut.id } }))?.qualifyingMonths;
+  ok("…without spending a month", outMonths === outMonthsAfter);
+
+  // The rate bound is on the server, at all three writers.
+  const infSrc = readFileSync("src/actions/influencers.ts", "utf8");
+  ok("the percent bound is applied at all three writers (create, add code, edit)",
+    (infSrc.match(/\.superRefine\(boundRate\)/g) ?? []).length === 3 && /commissionValue > 100/.test(infSrc));
 
   // ── PAYOUT REFUSALS ARE WORDS. One wording, shared by the server action and
   //    the button's hint, so the two cannot contradict each other. ──
