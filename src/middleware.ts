@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
+import { isPartnerPublic, principalRedirect } from "@/lib/principalRoutes";
 
 // The standalone handheld URLs (/mobile-*, /trade-services) are protected too:
 // they render the same org data as their /dashboard twins and the (mobile)
@@ -46,11 +47,9 @@ export async function middleware(req: NextRequest) {
     // url.search is carried over by clone(); nothing else is touched.
     return NextResponse.redirect(url, 308);
   }
-  // Influencer login + invite set-password must stay reachable without a session.
-  if (
-    pathname.startsWith("/influencer/login") ||
-    pathname.startsWith("/influencer/set-password")
-  ) {
+  // Influencer login, invite / reset set-password and forgot-password must
+  // stay reachable without a session (lib/principalRoutes).
+  if (isPartnerPublic(pathname)) {
     return NextResponse.next();
   }
   if (PUBLIC_MOBILE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
@@ -65,6 +64,27 @@ export async function middleware(req: NextRequest) {
   const sessionToken =
     req.cookies.get("authjs.session-token")?.value ??
     req.cookies.get("__Secure-authjs.session-token")?.value;
+
+  // THE PRINCIPAL FIRST. A partner's session (INFLUENCER) has no organisation:
+  // on /dashboard it drew the contractor shell over nothing and every action
+  // threw NoOrgError; an owner's session on /influencer found the partner door.
+  // Each is sent to its own home. Fail-open like the role gate below — the
+  // server guards (requireUser refuses a partner, requireInfluencer refuses a
+  // user) are the boundary; this is the redirect that keeps it from being felt.
+  if (sessionToken) {
+    try {
+      const principal = (await decodeSession(req))?.principal;
+      const home = principalRedirect(pathname, typeof principal === "string" ? principal : null);
+      if (home) {
+        const url = req.nextUrl.clone();
+        url.pathname = home;
+        url.search = "";
+        return NextResponse.redirect(url);
+      }
+    } catch {
+      // fail-open — see above
+    }
+  }
 
   // Platform admin console. Two cookies open it: the authjs session (a user
   // flagged isPlatformAdmin) or the signed `jf_admin` cookie minted by the
@@ -105,19 +125,7 @@ export async function middleware(req: NextRequest) {
   // limited roles are kept out of them entirely (their home is under /dashboard).
   if (pathname.startsWith("/dashboard") || pathname.startsWith("/v3")) {
     try {
-      const secureCookie =
-        req.cookies.has("__Secure-authjs.session-token") ||
-        (process.env.NEXTAUTH_URL ?? "").startsWith("https://");
-      const cookieName = secureCookie
-        ? "__Secure-authjs.session-token"
-        : "authjs.session-token";
-      const token = await getToken({
-        req,
-        secret: process.env.NEXTAUTH_SECRET ?? process.env.AUTH_SECRET,
-        salt: cookieName,
-        secureCookie,
-        cookieName,
-      });
+      const token = await decodeSession(req);
       const gate = token?.role ? ROLE_ROUTE_GATES[String(token.role)] : undefined;
       if (gate && !isPathAllowed(gate, pathname)) {
         const url = req.nextUrl.clone();
@@ -138,6 +146,21 @@ export async function middleware(req: NextRequest) {
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
+/** The session JWT's claims, or null. Same cookie rules NextAuth uses. */
+async function decodeSession(req: NextRequest) {
+  const secureCookie =
+    req.cookies.has("__Secure-authjs.session-token") ||
+    (process.env.NEXTAUTH_URL ?? "").startsWith("https://");
+  const cookieName = secureCookie ? "__Secure-authjs.session-token" : "authjs.session-token";
+  return getToken({
+    req,
+    secret: process.env.NEXTAUTH_SECRET ?? process.env.AUTH_SECRET,
+    salt: cookieName,
+    secureCookie,
+    cookieName,
+  });
+}
+
 export const config = {
   matcher: [
     "/dashboard/:path*",
@@ -145,6 +168,10 @@ export const config = {
     "/influencer/:path*",
     "/v3/:path*",
     "/mobile-:slug*",
+    // The pattern above does not reach a bare "/mobile-v2" (it needs a second
+    // segment), so the standalone handheld twins fell through to their own
+    // page guard — a partner landed on /auth/login instead of home.
+    "/(mobile-.*)",
     "/trade-services/:path*",
     "/trade-services",
     // The removed landings, by exact path: the middleware exists for them only

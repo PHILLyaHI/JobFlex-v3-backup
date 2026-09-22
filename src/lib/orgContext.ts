@@ -19,21 +19,26 @@ export class NoOrgError extends Error {
 export async function requireUser() {
   const session = await auth();
   if (!session?.user?.id) throw new UnauthorizedError();
+  // A partner's session is not a user's: it has no organisation, no role and
+  // no business in any contractor action. It used to pass here and fail one
+  // step later with NoOrgError (or, worse, reach an action that never asked
+  // for an org). requireInfluencer reads the session on its own.
+  if (session.user.principal === "INFLUENCER") {
+    throw new UnauthorizedError("Partner session — this is the contractor app");
+  }
   // Session revocation: a stateless JWT is otherwise valid for its full 7-day
   // maxAge even after a password reset. Every USER-principal request re-checks
   // the credential epoch against the DB — a reset bumps User.credentialVersion,
   // instantly invalidating every previously-issued token (the "log out
-  // everywhere" a bare JWT can't do). Influencers use a separate table with
-  // their own status re-check in requireInfluencer, so they're exempt here.
-  if (session.user.principal !== "INFLUENCER") {
-    const fresh = await db.user.findUnique({
-      where: { id: session.user.id },
-      select: { credentialVersion: true },
-    });
-    if (!fresh) throw new UnauthorizedError();
-    if (fresh.credentialVersion !== (session.user.credentialVersion ?? 0)) {
-      throw new UnauthorizedError("Session expired — please sign in again");
-    }
+  // everywhere" a bare JWT can't do). Influencers have the same check on
+  // their own table (sessionVersion) in requireInfluencer.
+  const fresh = await db.user.findUnique({
+    where: { id: session.user.id },
+    select: { credentialVersion: true },
+  });
+  if (!fresh) throw new UnauthorizedError();
+  if (fresh.credentialVersion !== (session.user.credentialVersion ?? 0)) {
+    throw new UnauthorizedError("Session expired — please sign in again");
   }
   return session.user;
 }
@@ -62,8 +67,9 @@ export async function requirePlatformAdmin() {
 // Influencer principal for the (influencer) portal. Re-reads the Influencer row
 // and rejects suspended/terminated accounts even if the JWT is still valid.
 export async function requireInfluencer() {
-  const sessionUser = await requireUser();
-  if (sessionUser.principal !== "INFLUENCER" || !sessionUser.influencerId) {
+  const session = await auth();
+  const sessionUser = session?.user;
+  if (!sessionUser?.id || sessionUser.principal !== "INFLUENCER" || !sessionUser.influencerId) {
     throw new UnauthorizedError("Influencer login required");
   }
   const influencer = await db.influencer.findUnique({
