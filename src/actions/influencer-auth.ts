@@ -6,7 +6,11 @@ import { db } from "@/lib/db";
 import { hashToken } from "@/lib/tokens";
 import { MINUTE, clientIp, rateLimitShared } from "@/lib/rateLimit";
 import { requirePlatformAdmin } from "@/lib/orgContext";
-import { INFLUENCER_TOKEN_PREFIX, sendInfluencerInviteEmail } from "@/lib/influencerInvite";
+import {
+  INFLUENCER_TOKEN_PREFIX,
+  sendInfluencerInviteEmail,
+  sendInfluencerPasswordResetEmail,
+} from "@/lib/influencerInvite";
 import { InfluencerStatus } from "@/lib/prismaEnums";
 import { refusal, refused, type ActionResult } from "@/lib/actionResult";
 
@@ -92,6 +96,38 @@ export async function completeInfluencerSetPassword(raw: unknown): Promise<Actio
   }
 
   return { ok: true };
+}
+
+const RESET_SENT =
+  "If that address belongs to a partner account, a link to set a new password is on its way. It works for one hour.";
+
+/**
+ * Public: "forgot password". ONE ANSWER for every address — a partner's, a
+ * stranger's, a suspended one — so the form cannot be used to tell them apart.
+ * Braked like the sign-in door, per address and per caller (8 in 15 minutes);
+ * the brake's refusal is the only other sentence, and it names no one.
+ */
+export async function requestInfluencerPasswordReset(rawEmail: unknown): Promise<ActionResult<{ message: string }>> {
+  const email = String(rawEmail ?? "").trim().toLowerCase();
+  const ip = await clientIp();
+  const [byIp, byEmail] = await Promise.all([
+    rateLimitShared(`influencer-reset:ip:${ip}`, 8, 15 * MINUTE),
+    rateLimitShared(`influencer-reset:email:${email}`, 8, 15 * MINUTE),
+  ]);
+  if (!byIp.ok || !byEmail.ok) return refused("Too many requests. Wait fifteen minutes and try again.");
+  if (!z.string().email().safeParse(email).success) return { ok: true, message: RESET_SENT };
+  const influencer = await db.influencer.findUnique({
+    where: { email },
+    select: { displayName: true, status: true },
+  });
+  if (
+    influencer &&
+    influencer.status !== InfluencerStatus.SUSPENDED &&
+    influencer.status !== InfluencerStatus.TERMINATED
+  ) {
+    await sendInfluencerPasswordResetEmail({ email, displayName: influencer.displayName });
+  }
+  return { ok: true, message: RESET_SENT };
 }
 
 /** Admin: re-send (rotate) the invite. Returns the fresh link for the copy row. */

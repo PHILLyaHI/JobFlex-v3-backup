@@ -260,6 +260,27 @@ export function buildPartnerInvite(i: PartnerInviteInput): EmailDoc {
   };
 }
 
+export interface PartnerPasswordResetInput {
+  name: string;
+  href: string;
+}
+
+/** "Forgot password" for a partner: the user reset's shape with the partner kicker. */
+export function buildPartnerPasswordReset(i: PartnerPasswordResetInput): EmailDoc {
+  const first = i.name.trim().split(" ")[0] || "there";
+  return {
+    subject: "Reset your JobFlex partner password",
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Partner" },
+    headline: "Reset your password",
+    prose: [`Hi ${first} — we received a request to reset the password for your JobFlex partner account.`],
+    box: [{ type: "cond", label: "Link expires", chip: "In 1 hour", tone: "warn" }],
+    cta: { label: "Set a new password", href: i.href },
+    fine: "Didn't ask for this? Ignore the email — your password won't change.",
+    footer: PLATFORM_FOOTER,
+  };
+}
+
 export interface TestEmailInput {
   org: OrgBrand;
 }

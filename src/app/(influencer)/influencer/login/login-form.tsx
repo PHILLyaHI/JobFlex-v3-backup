@@ -16,6 +16,7 @@ import * as React from "react";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Route } from "next";
+import Link from "next/link";
 import { signIn } from "next-auth/react";
 import styles from "../partner-door.module.css";
 
@@ -121,7 +122,10 @@ function PartnerLoginForm() {
           </form>
 
           <p className={styles.note}>
-            Lost your invite, or never set a password? Ask your JobFlex contact to send a fresh link.
+            <Link href={"/influencer/forgot-password" as Route}>Forgot your password?</Link>
+          </p>
+          <p className={styles.note}>
+            Never set one? Ask your JobFlex contact to send a fresh invite.
           </p>
         </section>
       </main>

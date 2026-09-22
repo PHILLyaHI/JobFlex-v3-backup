@@ -9,21 +9,43 @@ import { hashToken } from "@/lib/tokens";
 // vice versa. Same posture as resets: hashed at rest, single-use, expiring.
 export const INFLUENCER_TOKEN_PREFIX = "influencer:";
 const INVITE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days — invites are slower than resets
+export const RESET_TTL_MS = 1000 * 60 * 60; // 1 hour — a "forgot password" link, like the user reset
 
-export async function mintInfluencerInvite(email: string): Promise<{ inviteUrl: string }> {
+export async function mintInfluencerInvite(
+  email: string,
+  ttlMs: number = INVITE_TTL_MS,
+): Promise<{ inviteUrl: string }> {
   const identifier = `${INFLUENCER_TOKEN_PREFIX}${email.toLowerCase()}`;
-  // One live link per influencer — a fresh invite invalidates prior ones.
+  // One live link per influencer — a fresh invite (or reset) invalidates prior ones.
   await db.verificationToken.deleteMany({ where: { identifier } });
   const rawToken = randomBytes(32).toString("hex");
   await db.verificationToken.create({
     data: {
       identifier,
       token: hashToken(rawToken),
-      expires: new Date(Date.now() + INVITE_TTL_MS),
+      expires: new Date(Date.now() + ttlMs),
     },
   });
   const appUrl = await appBaseUrl();
   return { inviteUrl: `${appUrl}/influencer/set-password?token=${rawToken}` };
+}
+
+/** "Forgot password": the same one-time link, alive for an hour, in its own mail. */
+export async function sendInfluencerPasswordResetEmail(opts: {
+  email: string;
+  displayName: string;
+}): Promise<{ inviteUrl: string }> {
+  const { inviteUrl } = await mintInfluencerInvite(opts.email, RESET_TTL_MS);
+  try {
+    const { sendEmail } = await import("@/lib/sdk/resend");
+    const { renderEmail } = await import("@/lib/email/renderEmail");
+    const { buildPartnerPasswordReset } = await import("@/lib/email/build/platform");
+    const { subject, html } = renderEmail(buildPartnerPasswordReset({ name: opts.displayName, href: inviteUrl }));
+    await sendEmail({ to: opts.email, subject, html });
+  } catch (err) {
+    console.warn("[influencerInvite] reset email failed:", err);
+  }
+  return { inviteUrl };
 }
 
 /**

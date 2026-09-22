@@ -186,6 +186,8 @@
   :global(.jf-partner-door) .brand { margin-bottom: 26px; }
   :global(.jf-partner-door) .h1 { font-size: 27px; }
   :global(.jf-partner-door) .note { min-height: 44px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+  /* The link inside the note (Sign in / Forgot your password?) is 20px of type; the tap box is the row. */
+  :global(.jf-partner-door) .note a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
