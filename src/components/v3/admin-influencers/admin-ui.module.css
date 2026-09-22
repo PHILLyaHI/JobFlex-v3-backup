@@ -294,7 +294,9 @@
      the link stretches to fill it, so the words stay small and the tap area
      does not. */
   :global(.jf-blueprint .content) .secL { min-height: 44px; }
-  :global(.jf-blueprint .content) .secL button { align-self: stretch; }
+  /* "Edit" / "Cancel" are four letters wide — 29px; a thumb needs 44px either way,
+     so the button keeps a 44px box and the words stay against the right edge. */
+  :global(.jf-blueprint .content) .secL button { align-self: stretch; min-width: 44px; justify-content: flex-end; }
   :global(.jf-blueprint .content) .segBtn { min-height: 44px; }
   :global(.jf-blueprint .content) .facts4 { grid-template-columns: repeat(2, 1fr); }
   :global(.jf-blueprint .content) .facts4 > .fact { border-bottom: 1.5px solid var(--hair); }

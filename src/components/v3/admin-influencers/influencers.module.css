@@ -81,4 +81,10 @@
 @media (max-width: 860px) {
   :global(.jf-blueprint .content) .codeAct :global(.btn) { flex: 1; justify-content: center; }
   :global(.jf-blueprint .content) .codeShort { margin-left: 0; width: 100%; }
+  /* The section rule's "Open queue" is a link, not a button, so the kit's
+     44px stretch for `.secL button` never reached it: 15px of reach. Same
+     treatment — the row carries the target, the type stays small. */
+  :global(.jf-blueprint .content) .secLink { display: inline-flex; align-items: center; align-self: stretch; min-height: 44px; }
+  /* "Edit" / "Cancel" are four letters wide; a thumb needs 44px either way. */
+  :global(.jf-blueprint .content .pmdl) .secL button { min-width: 44px; justify-content: flex-end; }
 }
