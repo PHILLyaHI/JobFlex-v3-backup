@@ -45,8 +45,12 @@ export async function readAttributionCookie(): Promise<CapturedAttribution | nul
 
 /**
  * Resolve a captured code to its live owner. Null for anything that shouldn't
- * attract signups: unknown code, deactivated promo, non-ACTIVE influencer.
+ * attract signups: unknown code, deactivated promo, a suspended or terminated
+ * influencer. PENDING counts as live: that is a partner whose invite is still
+ * out — their code is already being shared, and the accrual in lib/stripeSync
+ * pays PENDING partners for the same reason.
  */
+export const INFLUENCER_LIVE_STATUSES = ["ACTIVE", "PENDING"] as const;
 export async function validateAttribution(
   kind: AttributionKind,
   rawCode: string
@@ -67,7 +71,9 @@ export async function validateAttribution(
         influencer: { select: { displayName: true, status: true } },
       },
     });
-    if (!promo?.active || promo.influencer.status !== "ACTIVE") return null;
+    if (!promo?.active || !(INFLUENCER_LIVE_STATUSES as readonly string[]).includes(promo.influencer.status)) {
+      return null;
+    }
     return {
       kind: "promo",
       code: promo.code,

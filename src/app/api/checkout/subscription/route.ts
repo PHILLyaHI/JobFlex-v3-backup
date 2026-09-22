@@ -3,7 +3,7 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { requireOwner } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
-import { readAttributionCookie, validateAttribution } from "@/lib/attribution";
+import { INFLUENCER_LIVE_STATUSES, readAttributionCookie, validateAttribution } from "@/lib/attribution";
 import { promotionCodeIdForMode, type PromoForCheckout } from "@/lib/influencerPromoMode";
 import { checkoutDiscount } from "@/lib/checkoutDiscount";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
@@ -132,7 +132,7 @@ export async function POST(req: Request) {
         influencer: { select: { status: true } },
       },
     });
-    if (stamped?.active && stamped.influencer.status === "ACTIVE") {
+    if (stamped?.active && (INFLUENCER_LIVE_STATUSES as readonly string[]).includes(stamped.influencer.status)) {
       promoForCheckout = {
         id: stamped.id,
         code: stamped.code,

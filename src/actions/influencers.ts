@@ -132,9 +132,13 @@ export async function createInfluencer(
   const existingEmail = await db.influencer.findUnique({ where: { email: data.email.toLowerCase() } });
   if (existingEmail) return refused("An influencer with that email already exists.");
 
-  // Admin-set password → account is immediately usable. No password → the
-  // influencer gets an invite email with a set-password link instead (the
-  // login provider rejects null-password accounts until they complete it).
+  // Admin-set password → account is immediately usable, ACTIVE. No password →
+  // the influencer gets an invite email with a set-password link instead (the
+  // login provider rejects null-password accounts until they complete it), and
+  // the account is PENDING until completeInfluencerSetPassword flips it: the
+  // admin page's "pending invite" count is exactly these. Their code is live
+  // from this moment either way — a PENDING partner's referrals are theirs
+  // (lib/attribution, and the accrual in lib/stripeSync).
   const hashedPassword = data.password ? await bcrypt.hash(data.password, 10) : null;
   let stripeIds: { stripeCouponId: string; stripePromotionCodeId: string };
   try {
@@ -152,7 +156,7 @@ export async function createInfluencer(
       email: data.email.toLowerCase(),
       displayName: data.displayName,
       hashedPassword,
-      status: InfluencerStatus.ACTIVE,
+      status: hashedPassword ? InfluencerStatus.ACTIVE : InfluencerStatus.PENDING,
       promoCodes: {
         create: {
           code,
