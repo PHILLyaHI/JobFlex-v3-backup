@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import { getStripeMode, stripeKeyFor, type StripeMode } from "@/lib/stripeMode";
 import { stripeClientForKey, stripeClientForMode } from "@/lib/sdk/stripe";
 import { decryptSecret, isSecretBoxConfigured } from "@/lib/crypto/secretBox";
+import { credentialErrorMessage } from "./credentialErrors";
 
 export interface StripeConnectionLike {
   stripeAccountId: string | null;
@@ -128,13 +129,9 @@ export function parseStripeKey(raw: string): { key: string; kind: StripeKeyKind;
   return { key, kind: m[1] as StripeKeyKind, livemode: m[2] === "live" };
 }
 
-/** Stripe's own words, with the two common cases named. Never echoes the key. */
+/** Only allowlisted messages; Stripe errors can include API key fragments. */
 export function stripeErrorMessage(err: unknown): string {
-  const e = err as { statusCode?: number; message?: string } | null;
-  const msg = e?.message?.trim() || "unknown error";
-  if (e?.statusCode === 401) return `Stripe rejected the key — ${msg}`;
-  if (e?.statusCode === 403) return `The key is missing a permission JobFlex needs — ${msg}`;
-  return `Stripe error — ${msg}`;
+  return credentialErrorMessage("Stripe", err);
 }
 
 export interface ValidatedStripeKey extends ExchangedAccount {
@@ -211,7 +208,7 @@ export async function removeKeyWebhook(stripe: Stripe, id: string): Promise<bool
     await stripe.webhookEndpoints.del(id);
     return true;
   } catch (err) {
-    console.warn("[stripe-key] webhook removal failed", id, err instanceof Error ? err.message : err);
+    console.warn("[stripe-key] webhook removal failed", id, stripeErrorMessage(err));
     return false;
   }
 }
@@ -244,7 +241,7 @@ export function stripeForConnection(conn: StripeConnectionLike): BoundStripe | n
     try {
       key = decryptSecret(conn.stripeKeyEnc);
     } catch (err) {
-      console.warn("[stripe-key] cannot decrypt key for", conn.stripeAccountId, err instanceof Error ? err.message : err);
+      console.warn("[stripe-key] cannot decrypt key for", conn.stripeAccountId, stripeErrorMessage(err));
       return null;
     }
     return { stripe: stripeClientForKey(key), accountId: conn.stripeAccountId, mode, reqOpts: {}, viaKey: true };
@@ -270,7 +267,7 @@ export async function deauthorizeConnection(conn: StripeConnectionLike): Promise
     await bound.stripe.oauth.deauthorize({ client_id: clientId, stripe_user_id: bound.accountId });
     return true;
   } catch (err) {
-    console.warn("[stripe-connect] deauthorize failed", bound.accountId, err instanceof Error ? err.message : err);
+    console.warn("[stripe-connect] deauthorize failed", bound.accountId, stripeErrorMessage(err));
     return false;
   }
 }
@@ -293,7 +290,7 @@ export async function expireStripeSession(
   } catch (err) {
     const code = (err as { code?: string; statusCode?: number })?.statusCode;
     if (code === 404) return "gone";
-    console.warn("[stripe-connect] expire failed", sessionId, err instanceof Error ? err.message : err);
+    console.warn("[stripe-connect] expire failed", sessionId, stripeErrorMessage(err));
     return "unavailable";
   }
 }

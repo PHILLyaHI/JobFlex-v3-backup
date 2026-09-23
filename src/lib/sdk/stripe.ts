@@ -1,3 +1,4 @@
+import "server-only";
 import Stripe from "stripe";
 import { IntegrationDisabledError } from "./base";
 import { getStripeMode, stripeKeyFor, type StripeMode } from "@/lib/stripeMode";
@@ -21,15 +22,15 @@ export function isStripeMocked(): boolean {
   return mockIfEnabled() !== null;
 }
 
-// One client per secret key, cached for the life of the process. Two can be
-// alive at once — the live one and the sandbox one — since the admin switch
-// (lib/stripeMode) can flip between requests.
+// Only platform credentials are cached. Bound the cache across key rotations;
+// contractor keys (including invalid submissions) must never accumulate here.
 const clients = new Map<string, Stripe>();
 
 function clientFor(key: string): Stripe {
   let c = clients.get(key);
   if (!c) {
     c = new Stripe(key, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion });
+    if (clients.size >= 2) clients.delete(clients.keys().next().value!);
     clients.set(key, c);
   }
   return c;
@@ -75,11 +76,11 @@ export function stripeClientForMode(mode: StripeMode): Stripe | null {
 
 /**
  * A client on a CONTRACTOR'S OWN key — Settings → Payments → "Use API key"
- * (lib/payments/stripeConnect.ts decrypts it). Cached like the platform
- * clients, keyed by the key; the key never leaves the server.
+ * (lib/payments/stripeConnect.ts decrypts it). Request-scoped: disconnecting
+ * or replacing a stored key must not leave a copy in a global client cache.
  */
 export function stripeClientForKey(key: string): Stripe {
-  return clientFor(key);
+  return new Stripe(key, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion });
 }
 
 /**

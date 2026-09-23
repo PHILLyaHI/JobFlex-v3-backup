@@ -16,6 +16,7 @@ import {
   type SquareEnv,
 } from "@/lib/sdk/square";
 import { decryptSecret, encryptSecret } from "@/lib/crypto/secretBox";
+import { credentialErrorMessage } from "./credentialErrors";
 
 export const SQUARE_SCOPES = [
   "MERCHANT_PROFILE_READ",
@@ -82,8 +83,7 @@ async function tokenRequest(body: Record<string, string>): Promise<SquareTokens>
   });
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
-    const msg = (json.message as string) || (json.error_description as string) || `HTTP ${res.status}`;
-    throw new Error(`Square token: ${msg}`);
+    throw new Error(squareErrorMessage({ statusCode: res.status }));
   }
   const accessToken = json.access_token as string | undefined;
   const merchantId = json.merchant_id as string | undefined;
@@ -135,7 +135,7 @@ export async function revokeSquareToken(merchantId: string): Promise<boolean> {
     });
     return res.ok;
   } catch (err) {
-    console.warn("[square] revoke failed", merchantId, err instanceof Error ? err.message : err);
+    console.warn("[square] revoke failed", merchantId, squareErrorMessage(err));
     return false;
   }
 }
@@ -206,7 +206,7 @@ export async function deleteSquarePaymentLink(
   } catch (err) {
     const status = (err as { statusCode?: number })?.statusCode;
     if (status === 404) return "gone";
-    console.warn("[square] delete link failed", linkId, err instanceof Error ? err.message : err);
+    console.warn("[square] delete link failed", linkId, squareErrorMessage(err));
     return "unavailable";
   }
 }
@@ -217,13 +217,9 @@ export function squareEnvLabel(): "sandbox" | "production" {
 
 // ── The paste-a-token join ───────────────────────────────────────────────
 
-/** Square's own words. The SDK's SquareError carries statusCode + errors[]. */
+/** Do not expose Square's free-form response or SDK request details. */
 export function squareErrorMessage(err: unknown): string {
-  const e = err as { statusCode?: number; message?: string; errors?: Array<{ detail?: string; code?: string }> } | null;
-  const detail = e?.errors?.[0]?.detail ?? e?.errors?.[0]?.code ?? e?.message?.trim() ?? "unknown error";
-  if (e?.statusCode === 401) return `Square rejected the token — ${detail}`;
-  if (e?.statusCode === 403) return `The token is missing a permission JobFlex needs — ${detail}`;
-  return `Square error — ${detail}`;
+  return credentialErrorMessage("Square", err);
 }
 
 export interface ValidatedSquareToken {
@@ -319,7 +315,7 @@ export async function removeSquareWebhook(conn: SquareConnectionLike, id: string
     await client.webhooks.subscriptions.delete({ subscriptionId: id });
     return true;
   } catch (err) {
-    console.warn("[square-token] webhook removal failed", id, err instanceof Error ? err.message : err);
+    console.warn("[square-token] webhook removal failed", id, squareErrorMessage(err));
     return false;
   }
 }

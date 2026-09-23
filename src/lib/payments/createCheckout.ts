@@ -4,6 +4,7 @@
 // Stripe: the account is reached through the platform key + Stripe-Account
 // header (OAuth join) or the contractor's own key (pasted in Settings) —
 // stripeForConnection decides; this file only spreads `reqOpts`.
+import { credentialErrorMessage } from "./credentialErrors";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { getStripeMode } from "@/lib/stripeMode";
@@ -269,7 +270,7 @@ export async function createCheckout(input: {
     });
     return { ok: true, url: link.url, reused: false };
   } catch (err) {
-    console.error("[createCheckout]", input.provider, proposal.id, err instanceof Error ? err.message : err);
+    console.error("[createCheckout]", input.provider, proposal.id, credentialErrorMessage(input.provider === "STRIPE" ? "Stripe" : input.provider === "SQUARE" ? "Square" : "Stax", err));
     await db.installment.updateMany({
       where: { id: { in: stageIds }, status: InstallmentStatus.PENDING, checkoutOpenedAt: openedAt },
       data: { status: InstallmentStatus.UNPAID, checkoutProvider: null, checkoutRef: null, checkoutOrderId: null, checkoutOpenedAt: null },

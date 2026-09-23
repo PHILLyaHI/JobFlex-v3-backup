@@ -2,6 +2,7 @@
 // app key, TOKEN_ENCRYPTION_KEY = 32 random bytes, base64 (`openssl rand
 // -base64 32`). Output format `v1.<iv>.<tag>.<ciphertext>` (base64url) so a
 // future key rotation can add `v2.` without a migration.
+import "server-only";
 import crypto from "node:crypto";
 
 const VERSION = "v1";
@@ -37,11 +38,17 @@ export function encryptSecret(plain: string): string {
 export function decryptSecret(enc: string): string {
   const key = keyBytes();
   if (!key) throw new SecretBoxError("TOKEN_ENCRYPTION_KEY is missing or not 32 bytes");
-  const [v, ivB, tagB, ctB] = enc.split(".");
-  if (v !== VERSION || !ivB || !tagB || !ctB) throw new SecretBoxError("Unrecognised secret format");
-  const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(ivB, "base64url"));
-  decipher.setAuthTag(Buffer.from(tagB, "base64url"));
+  const parts = enc.split(".");
+  const [v, ivB, tagB, ctB] = parts;
+  if (parts.length !== 4 || v !== VERSION || !ivB || !tagB || !ctB) {
+    throw new SecretBoxError("Unrecognised secret format");
+  }
+  const iv = Buffer.from(ivB, "base64url");
+  const tag = Buffer.from(tagB, "base64url");
+  if (iv.length !== 12 || tag.length !== 16) throw new SecretBoxError("Unrecognised secret format");
   try {
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
+    decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(Buffer.from(ctB, "base64url")), decipher.final()]).toString("utf8");
   } catch {
     throw new SecretBoxError("Secret failed authentication (wrong key?)");

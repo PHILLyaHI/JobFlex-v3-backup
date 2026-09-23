@@ -22,6 +22,7 @@ export type Provider = "STRIPE" | "SQUARE" | "STAX";
  *  shows this in place of OAuth scopes. A full secret key (sk_) has all of
  *  it; a restricted key (rk_) is built with exactly these. */
 export const STRIPE_KEY_PERMISSIONS = [
+  "Accounts · read",
   "Checkout Sessions · write",
   "PaymentIntents · read",
   "Charges · read",

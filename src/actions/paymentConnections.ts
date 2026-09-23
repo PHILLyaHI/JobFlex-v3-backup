@@ -12,6 +12,7 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { parsePaymentSettings } from "@/lib/settings";
 import { encryptSecret, isSecretBoxConfigured } from "@/lib/crypto/secretBox";
 import { ActivityKind, PaymentConnectionStatus } from "@/lib/prismaEnums";
+import { enforceRateLimit, RateLimitError, MINUTE } from "@/lib/rateLimit";
 import {
   disconnectSquareFor,
   disconnectStaxFor,
@@ -48,6 +49,19 @@ const SETTINGS = "/dashboard/settings";
 const keySchema = z.string().trim().min(20).max(400);
 const NO_BOX = "Key storage isn't set up on this platform yet (TOKEN_ENCRYPTION_KEY).";
 
+// Shared across providers and server instances. Neither switching providers
+// nor switching workspaces should let one user hammer credential validation.
+async function keyAttemptLimit(ctx: Awaited<ReturnType<typeof requireOwner>>): Promise<string | null> {
+  try {
+    await enforceRateLimit(`payment-key:user:${ctx.user.id}`, 10, 10 * MINUTE, "connection attempts");
+    await enforceRateLimit(`payment-key:org:${ctx.organizationId}`, 10, 10 * MINUTE, "connection attempts");
+    return null;
+  } catch (err) {
+    if (err instanceof RateLimitError) return err.message;
+    throw err;
+  }
+}
+
 /** What every paste-a-key action answers with: the form reads `ok`,
  *  `message` and `webhook`; the rest is for the activity line. */
 export type KeyConnectResult =
@@ -59,10 +73,12 @@ export type ConnectWithKeyResult = KeyConnectResult;
 /** "Use API key": the contractor pastes their own Stripe secret / restricted
  *  key. Checked against Stripe, stored encrypted, and a webhook endpoint is
  *  registered on their account with it. Replaces an OAuth join if one
- *  exists. Answers with an envelope, not a throw — production redacts thrown
- *  messages, and Stripe's reason is the whole point. */
+ *  exists. Returns safe, actionable messages without exposing provider
+ *  response bodies or request credentials. */
 export async function connectStripeWithKey(raw: unknown): Promise<KeyConnectResult> {
   const ctx = await requireOwner();
+  const limited = await keyAttemptLimit(ctx);
+  if (limited) return { ok: false, message: limited };
   const parsed = keySchema.safeParse(raw);
   if (!parsed.success) return { ok: false, message: "Paste the whole key." };
   if (!stripeKeyPathReady()) return { ok: false, message: NO_BOX };
@@ -134,6 +150,8 @@ export async function connectStripeWithKey(raw: unknown): Promise<KeyConnectResu
  *  subscription is registered on their app with it. Replaces an OAuth join. */
 export async function connectSquareWithToken(raw: unknown): Promise<KeyConnectResult> {
   const ctx = await requireOwner();
+  const limited = await keyAttemptLimit(ctx);
+  if (limited) return { ok: false, message: limited };
   const parsed = keySchema.safeParse(raw);
   if (!parsed.success) return { ok: false, message: "Paste the whole access token." };
   if (!isSecretBoxConfigured()) return { ok: false, message: NO_BOX };
@@ -210,6 +228,8 @@ export async function connectSquareWithToken(raw: unknown): Promise<KeyConnectRe
  *  Stax signs nothing. Built without a Stax account to test against. */
 export async function connectStaxWithKey(raw: unknown): Promise<KeyConnectResult> {
   const ctx = await requireOwner();
+  const limited = await keyAttemptLimit(ctx);
+  if (limited) return { ok: false, message: limited };
   const parsed = keySchema.safeParse(raw);
   if (!parsed.success) return { ok: false, message: "Paste the whole key." };
   if (!isSecretBoxConfigured()) return { ok: false, message: NO_BOX };

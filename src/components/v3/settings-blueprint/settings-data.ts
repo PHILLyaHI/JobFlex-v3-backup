@@ -327,15 +327,15 @@ export interface KeyFormCopy {
 export const KEY_FORMS: Record<KeyProvider, KeyFormCopy> = {
   stripe: {
     title: 'Paste a Stripe API key',
-    desc: 'Stripe Dashboard → Developers → API keys → Secret key. A restricted key works too if it can write Checkout Sessions and Webhook Endpoints and read PaymentIntents, Charges and Refunds. Stored encrypted; never shown again.',
-    label: 'Secret key',
-    placeholder: 'sk_live_…',
+    desc: 'Stripe Dashboard → Developers → API keys → Create restricted key. Enable Accounts Read, Checkout Sessions Write, Webhook Endpoints Write, and Read for PaymentIntents, Charges and Refunds. Stored encrypted; never shown again.',
+    label: 'Restricted or secret key',
+    placeholder: 'rk_live_…',
     show: 'Show key',
     submit: 'Connect with this key',
     busy: 'Checking with Stripe…',
     cancel: 'Cancel',
     or: 'or',
-    note: 'A test key (sk_test_…) connects in test mode — real cards will not work.',
+    note: 'A test key (rk_test_… or sk_test_…) connects in test mode — real cards will not work.',
     feeNote: (pct) =>
       `With a pasted key the ${pct}% platform fee can't come out of the payment — it's added to your JobFlex invoice instead.`,
     webhookMissing:
