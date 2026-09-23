@@ -1,0 +1,39 @@
+.form.form { color: var(--ink); font-family: var(--font-sans); font-size: 14px; }
+.form.form .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.form.form .wide { grid-column: 1 / -1; }
+.form.form .field { display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 13px; font-weight: 700; }
+.form.form .field input, .form.form .field select { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; background: var(--paper-deep); border: 1px solid var(--ink-muted); border-radius: var(--r-sm); color: var(--ink); font: inherit; font-weight: 500; caret-color: var(--accent); }
+.form.form .field input::placeholder { color: var(--ink-muted); opacity: 1; }
+.form.form .field input:focus-visible, .form.form .field select:focus-visible, .form.form button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.form.form .field small { color: var(--ink-muted); font-size: 12px; font-weight: 400; }
+.form.form .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.form.form .actions button { min-height: 44px; padding: 10px 16px; border: 1px solid var(--ink); border-radius: var(--r-sm); font-size: 13px; font-weight: 700; transition: background 150ms var(--ease-out), color 150ms var(--ease-out); }
+.form.form .actions button:disabled { opacity: .55; cursor: wait; }
+.form.form .primary { background: var(--accent); color: var(--paper-deep); }
+.form.form .primary:hover:not(:disabled) { background: var(--accent-ink); }
+.form.form .secondary { color: var(--ink); background: var(--paper-deep); }
+.form.form .secondary:hover:not(:disabled) { background: var(--paper); }
+.form.form .actions .remove { margin-left: auto; color: var(--rose); background: transparent; border-color: transparent; text-decoration: underline; text-underline-offset: 4px; }
+.form.form .actions .remove:hover { background: var(--paper); }
+.form.form .danger { background: var(--rose); color: var(--paper-deep); }
+.form.form .helper { margin: 0 0 20px; color: var(--ink-muted); line-height: 1.6; }
+.form.form .quantityFields { max-width: 440px; }
+.form.form .quantityInput { position: relative; display: flex; align-items: center; }
+.form.form .quantityInput input { padding-right: 80px; }
+.form.form .quantityInput > span { position: absolute; right: 12px; color: var(--ink-muted); font-size: 13px; font-weight: 500; }
+.form.form .facts { display: flex; flex-wrap: wrap; gap: 20px 32px; margin: 24px 0 0; padding-top: 20px; border-top: 1px solid var(--ink-line); }
+.form.form .facts div { display: grid; gap: 5px; }
+.form.form .facts dt { color: var(--ink-muted); font-size: 12px; }
+.form.form .facts dd { margin: 0; font-size: 13px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.form.form .confirm { margin-top: 20px; padding: 16px; border: 1px solid var(--rose); }
+.form.form .confirm p { margin: 0; line-height: 1.5; }
+.form.form .confirm .actions { margin-top: 12px; }
+.form.form.compact .grid { grid-template-columns: 1fr; gap: 18px; }
+.form.form.compact .field { font-size: 14px; }
+.form.form.compact .field input, .form.form.compact .field select { min-height: 48px; font-size: 16px; }
+.form.form.compact .actions { gap: 10px; }
+.form.form.compact .actions button { flex: 1; min-height: 48px; padding-inline: 12px; }
+.form.form.compact .actions .remove { flex-basis: 100%; margin-left: 0; }
+.form.form.compact .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 12px; }
+.form.form.compact .quantityFields { max-width: none; }
+@media (prefers-reduced-motion: reduce) { .form.form .actions button { transition: none; } }

@@ -84,52 +84,16 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 <claude-mem-context>
 # Memory Context
 
-# [joblfex-v3] recent context, 2026-09-20 10:07pm PDT
+# [joblfex-v3] recent context, 2026-09-22 8:51pm PDT
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (16,014t read) | 344,257t work | 95% savings
+Stats: 50 obs (17,029t read) | 639,564t work | 97% savings
 
-### Sep 12, 2026
-S1960 Roof estimator wrong-building guard refactored from hard block to warnings; Smart console layout implemented; Stripe integration questions clarified (Sep 12, 10:00 PM)
-S1961 Reposition "Edit roof types" and "Edit underlayments" links: move from beside field selectors to below them; rename to "Add roof type" and "Add underlayment" (Sep 12, 10:28 PM)
-S1962 Integrate Stripe payment processing into JobFlex so contractors can connect their Stripe account in Settings and clients can pay proposals directly through the platform with 1% commission to JobFlex. (Sep 12, 10:50 PM)
-S1963 Implement Stripe integration for JobFlex so users can connect their Stripe account in settings; when users send proposals to clients, clients pay through Stripe with 1% platform commission. Expanded to include Square and Stax payment processors. (Sep 12, 11:26 PM)
 ### Sep 13, 2026
-S1964 Consolidate proposal editor routes; classic pages → blueprint builder. Design three roof estimator card variants. (Sep 13, 12:04 AM)
-17439 12:04a 🔵 Auth.js API endpoints failing; CSRF and callback handlers not responding
-17440 12:05a 🔵 Email normalization mismatch in rate-limit table; slow database round-trip (1.1s)
-17441 " 🔵 Dev server at :3000 is DOWN; log file stale for 1+ hour
-17443 12:07a ✅ Dev server restarted; npm run dev:pg spawned in background
-17444 12:08a 🟣 Dev server successfully restarted; healthy and responding on all routes
-17445 12:11a 🔵 Test still times out on login despite server recovery; auth flow remains broken
-17446 12:12a 🔵 Auth.js CredentialsSignin error on login attempt; credentials rejected
-17447 " ✅ Test script modified to retry login up to 3 times; handles transient auth failures
-17448 12:19a 🔄 Proposal routes consolidated to blueprint-based navigation
-17449 12:24a 🟣 Proposal editor consolidated to blueprint builder
-S1965 Integrate Stripe, Square, and Stax payment processors into JobFlex user settings with encrypted key storage and webhook support; deploy to production with roof estimator improvements and proposals editor refactor from parallel session. (Sep 13, 12:24 AM)
-17450 1:22p 🟣 Square-token and Stax columns pushed to Neon dev database
-17451 1:23p 🔵 Square-token and Stax implementation passes strict eslint with zero warnings
-17452 1:24p ✅ QA test environment provisioned on Neon dev branch
-17453 " ✅ Playwright test script created for Square-token and Stax manual browser verification
-17454 " 🔵 Dev server started successfully with regenerated Prisma schema
-17455 1:26p 🔵 Square-token and Stax payment forms verified end-to-end on desktop and mobile
-17456 1:27p 🔵 TypeScript compilation errors in Next.js validator for proposal pages
-17457 1:30p 🟣 Three payment providers integrated with encrypted key storage
-17458 " 🔵 Branch divergence: origin/main ahead with roof estimator changes
-17459 1:31p ✅ Merged origin/main roof changes into blueprint-design branch
-17460 " 🟣 paymentConnections.ts expanded for multi-provider webhook support
-17461 " 🔴 Missing server actions from previous payment commit (305ee90)
-17462 1:32p 🔴 Fix commit c0eb9ec added missing paymentConnections server actions
-17463 1:34p 🔵 TypeScript errors in merged tree: old routes + missing Prisma model
-17464 " ✅ Pushed blueprint-design and fast-forwarded main to c0eb9ec
-17465 1:35p ✅ Regenerated Prisma client and synced ProposalSitePhoto model to Neon dev branch
-17466 " ✅ Production deployment building with merged roof + payments commits
-17467 " 🔵 Dev server restarted; Prisma errors resolved, validator cache stale
 17468 1:39p ✅ Production deployment c0eb9ec READY; all aliases active
-S1966 Polish roof estimator intake and build card UI; simplify information hierarchy and visual clutter (Sep 13, 1:39 PM)
 17469 10:31p 🟣 Review submission form with photo upload and star ratings
 17470 " 🟣 Review submission page with proposal/job context and photo parsing
 17471 10:33p 🟣 Public reviews page at /r/[org-slug]
@@ -140,7 +104,6 @@ S1966 Polish roof estimator intake and build card UI; simplify information hiera
 17475 10:34p 🔵 Schema mismatch in reviews implementation—missing fields and relations
 17477 10:36p ✅ Roof estimator UI simplified and restyled
 17478 10:37p ✅ Roof estimator polish pushed to origin/main
-S1968 Diagnostic check on crashed Next.js dev server; server recovered automatically and is now serving on port 3000 (Sep 13, 10:38 PM)
 17479 10:39p 🔵 Linting errors in review feature implementation
 17480 10:40p 🔴 Fixed Next.js Link navigation in public reviews component
 17481 " 🔴 Fixed TypeScript any types in review error handling
@@ -150,19 +113,49 @@ S1968 Diagnostic check on crashed Next.js dev server; server recovered automatic
 17485 " 🟣 Extended ReviewEntry type for proposal-based reviews and photos
 17486 10:47p 🟣 Implemented reviews data loader with public rating and photos support
 17502 10:57p 🔵 Next.js dev server crashed with exit code 1
-S1971 Set up email domain verification for jobflex.app using Resend API, determine DNS configuration approach (Sep 13, 10:59 PM)
 17512 11:07p 🔄 Mobile test context reuse via storageState to avoid auth duplication
 ### Sep 16, 2026
 17519 8:04p 🔵 Missing landing-d page module references in Next.js type definitions
-S1972 Merge friend's work (origin/main) into blueprint-design branch; resolve conflicts with uncommitted local edits. (Sep 16, 8:09 PM)
-**Investigated**: Pulled origin/main, checked merge status and conflicts (34 incoming commits, 11 conflicting files from parallel-session edits). Ran typecheck. Identified 39 uncommitted files from other session, 18 of which changed in main.
+### Sep 20, 2026
+17520 10:09p 🟣 Legal pages and billing management components deployed
+17521 " ✅ Production database schema migration from SQLite to Postgres
+17522 " 🟣 Centralized email routing with Gmail OAuth and platform fallback
+17523 " ✅ Codebase linting verified with no warnings
+S1987 Monitor and verify Vercel production deployment completion for jobflex-v3 release (Sep 20, 10:21 PM)
+S1988 Inspect Vercel build logs to validate production deployment success and identify any build issues (Sep 20, 10:21 PM)
+S1989 Monitor remaining Vercel build stages for production deployment completion (Sep 20, 10:22 PM)
+S1990 Validate responsive design of newly deployed legal pages on mobile viewport (Sep 20, 10:22 PM)
+S1991 Comprehensive validation of deployed legal pages (privacy and terms) across desktop and mobile viewports (Sep 20, 10:23 PM)
+S1992 Validate deployed terms page content and layout in production (Sep 20, 10:23 PM)
+S1993 Review Vercel build log compilation and TypeScript stages to confirm successful production build (Sep 20, 10:23 PM)
+S1994 Verify privacy page deployment and disclosure through browser-based inspection (Sep 20, 10:23 PM)
+### Sep 22, 2026
+S1995 Verify JobFlex roofing inventory redesign through database validation and responsive browser testing (Sep 22, 4:22 PM)
+17524 7:11p 🔵 Dev Postgres setup connects to Neon and generates Prisma Client successfully
+17525 " 🔵 TypeScript executor (tsx) fails in Windows sandbox due to missing userInfo
+17526 7:12p 🟣 Inventory board model for Claude redesign
+17527 7:14p 🔴 Validation and auto-fixes for inventory redesign files
+17528 7:15p 🔵 Blueprint sprite icon system for UI components
+17529 " 🔵 Dual sprite system: desktop and mobile icon architecture
+17531 7:16p 🟣 Roofing inventory pages implemented for desktop and mobile
+17532 " 🔴 Dashboard shell CSS overrides breaking inventory button styles
+17530 " ✅ Truck highlight icon swapped from hardhat to jobs
+17534 " 🔵 QA test account and organization identified
+17535 " 🔵 QA automation harness with session caching and control guards
+S1996 Design and implement new roofing inventory pages for desktop and mobile using Impeccable skill with 2 GPT-6 Astra agents; verify layout, forms, and proposal linkage through browser testing. (Sep 22, 7:17 PM)
+17536 7:17p 🔵 QA safety guards and forbidden control list
+17537 7:18p 🔵 Prisma schema provider mismatch: repo SQLite vs generated PostgreSQL client
+17538 " 🔵 QA sign-in failed: CredentialsSignin error
+17539 " 🔵 SQLite dev.db exists but stale; schema column mismatch
+17540 7:19p 🔵 QA test account and organization not seeded in dev.db
+17541 " 🔵 Dev server using PostgreSQL, not SQLite dev.db
+17542 7:20p 🔵 Roofing estimator defines 97 standard stock items
+17543 " 🔵 Located sidebar and navigation label definitions across codebase
+17544 7:21p 🟣 Development fixture for roofing inventory redesign preview
+17545 7:22p 🟣 Component scaffolding and mobile routing for inventory redesign
+17546 " 🟣 Mobile page route and dev preview for inventory redesign
+17547 7:23p 🟣 Codex agents built complete roofing inventory redesign implementation
+17548 " 🟣 Claude redesign preview route at /dashboard/roof-estimator/board/claude
 
-**Learned**: Merge itself clean—no conflicts between branches. Conflicts arose from uncommitted local edits vs. friend's latest work on portal, roof card, workers, settings. Leftover Next.js build cache references deleted landing-d page (clears on next build). Schema adds 89 lines (Prisma client regeneration + db push required).
-
-**Completed**: Merge commit 23a9d34 created. Tree reset to clean merge state. Conflicted edits stashed as "parallel-session work before merging origin/main 2026-09-16" for recovery if needed. Typecheck clean (only stale cache errors).
-
-**Next Steps**: Run `prisma generate` (stop dev server first on Windows), then `prisma db push` against Neon dev branch to sync local database schema. Awaiting confirmation per CLAUDE.md.
-
-
-Access 344k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 640k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

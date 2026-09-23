@@ -29,12 +29,12 @@ import { getOrgLimitUsage } from "@/lib/limitsEngine";
 import { GMAIL_SCOPES, isGmailOAuthConfigured } from "@/lib/sdk/gmail";
 import { isStripeConnectConfigured } from "@/lib/sdk/integrations";
 import { isSecretBoxConfigured } from "@/lib/crypto/secretBox";
+import { metaAllowed } from "@/lib/meta/graph";
+import { metaConnectionView } from "@/lib/meta/connections";
 import { getPaymentConnectionStatus } from "@/lib/payments/connections";
 import { parseNotificationPrefs } from "@/lib/notificationPrefsShared";
 import {
-  META_DEFAULTS,
   parseGmailSettings,
-  parseMetaSettings,
   parsePaymentSettings,
 } from "@/lib/settings";
 import type { Badge, SettingsData } from "@/components/v3/settings-blueprint/settings-data";
@@ -129,11 +129,8 @@ export async function loadSettingsData(ctx: SettingsOrgContext): Promise<Setting
   /* ── settings blobs ── */
   const payment = parsePaymentSettings(org.paymentSettingsJson);
   const gmail = parseGmailSettings(org.gmailSettingsJson);
-  const meta = parseMetaSettings(org.metaSettingsJson);
+  const meta = await metaConnectionView(organizationId, user.id);
   const gmailConnected = Boolean(org.gmailTokensJson);
-
-  const savedMetaPage =
-    meta.defaultPage && meta.defaultPage !== META_DEFAULTS.defaultPage ? meta.defaultPage : "";
 
   const isOwner = isOwnerRole(role);
   const fmtWhen = (d: Date | null | undefined) => (d ? `${longDate(d)} ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : null);
@@ -201,18 +198,12 @@ export async function loadSettingsData(ctx: SettingsOrgContext): Promise<Setting
         connectHref: "/api/integrations/gmail/connect",
       },
       meta: {
-        // There is no Meta OAuth in the app: the switch is this org's own
-        // forwarding flag, so the integration is not live for anyone yet.
-        comingSoon: true,
-        // Never "connected": the stored flag was a button that wrote
-        // connected:true with no OAuth behind it (audit, 2026-09-20). Until a
-        // real connection exists the card cannot show a green badge.
-        connected: false,
+        ...meta,
+        comingSoon: !metaAllowed(me?.email ?? user.email),
+        canManage: isOwnerOrManager(role),
         orgName: org.name,
-        // Round-tripped untouched through updateMetaSettings; the Default
-        // lead handling card that edited these is gone.
-        defaultPage: savedMetaPage || org.name,
-        formCategory: meta.formCategory,
+        defaultPage: meta.pageName,
+        formCategory: "auto",
       },
       stripe: {
         key: "stripe",

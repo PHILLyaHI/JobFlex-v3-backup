@@ -864,12 +864,16 @@ export interface GmailData {
 
 export interface MetaData {
   connected: boolean;
-  /** No Meta OAuth exists yet — the toggle is a local forwarding flag. */
   comingSoon: boolean;
   orgName: string;
-  /** Stored values, round-tripped untouched through updateMetaSettings. */
   defaultPage: string;
   formCategory: string;
+  pageId: string;
+  pageName: string;
+  pages: { id: string; name: string }[];
+  canManage: boolean;
+  canResume: boolean;
+  lastImportAt: string | null;
 }
 
 /** The deep view of one payment link (Integrations → Stripe / Square). */

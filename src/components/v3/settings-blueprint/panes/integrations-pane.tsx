@@ -1,5 +1,7 @@
 "use client";
 
+import { MetaConnection } from "../meta-connection";
+
 // Settings blueprint — INTEGRATIONS pane.
 //
 // Owns the `.sub` subtab bar and four `.subpane` blocks:
@@ -39,7 +41,6 @@ import {
   disconnectGmail,
   sendGmailTestEmail,
   updateGmailSettings,
-  updateMetaSettings,
 } from "@/actions/settings";
 import type { Badge, CardHead, PaneProps, SubTabKey } from "../settings-data";
 import {
@@ -63,11 +64,7 @@ import {
   COMING_SOON_BADGE,
   COMING_SOON_TAB,
   comingSoonNote,
-  META_CONNECTED_DESC,
   META_CONNECTION_CARD,
-  META_CONNECTION_ICON,
-  META_CONNECT_ACTION,
-  META_DISCONNECT_ACTION,
   NOT_CONNECTED_BADGE,
   SCOPE_CHECK,
 } from "../settings-data";
@@ -186,28 +183,6 @@ export function IntegrationsPane({ data, sub: wanted, notice }: PaneProps) {
     }
   }
 
-  const [metaConnected, setMetaConnected] = useState(meta.connected);
-  const [metaBusy, setMetaBusy] = useState(false);
-
-  // The one Meta write. Lead handling is fixed policy now: every form
-  // submission becomes a lead, nobody gets auto-texted.
-  async function setMeta(connected: boolean) {
-    setMetaBusy(true);
-    setMetaConnected(connected);
-    try {
-      await updateMetaSettings({
-        connected,
-        autoCreate: true,
-        autoText: false,
-        defaultPage: meta.defaultPage,
-        formCategory: meta.formCategory,
-      });
-    } catch {
-      setMetaConnected(!connected);
-    } finally {
-      setMetaBusy(false);
-    }
-  }
 
   /** Which tabs the platform has not switched on yet. */
   const soon: Record<SubTabKey, boolean> = {
@@ -414,54 +389,9 @@ export function IntegrationsPane({ data, sub: wanted, notice }: PaneProps) {
 
       {/* ═══════════════════════ Meta business ═══════════════════════ */}
       <div className={sub === "meta" ? "subpane on" : "subpane"}>
-        {/* ── Connection ── */}
         <section className="sc">
-          <CardHeader
-            card={META_CONNECTION_CARD}
-            badge={metaConnected ? CONNECTED_BADGE : meta.comingSoon ? COMING_SOON_BADGE : NOT_CONNECTED_BADGE}
-          />
-          <div className={metaConnected ? "sc-b sc-b--rows" : "sc-b"}>
-            {metaConnected ? (
-              <div className="prow">
-                <span className="prow-ic">
-                  <svg className="ic">
-                    <use href={`#${META_CONNECTION_ICON}`} />
-                  </svg>
-                </span>
-                <span className="prow-b">
-                  <span className="prow-n">{meta.orgName}</span>
-                  <span className="prow-d">{META_CONNECTED_DESC}</span>
-                </span>
-                <span className="prow-act prow-act--pair">
-                  <button
-                    className={`btn btn-ghost btn-sm ${META_DISCONNECT_ACTION.state ?? ""}`}
-                    type="button"
-                    disabled={metaBusy}
-                    onClick={() => void setMeta(false)}
-                  >
-                    {META_DISCONNECT_ACTION.label}
-                  </button>
-                </span>
-              </div>
-            ) : (
-              /* Same shape as the Gmail Connect button: one primary action,
-                 nothing else in the body. */
-              /* Disarmed while there is no Meta OAuth (audit, 2026-09-20): the
-                 button used to write connected:true and paint the badge green
-                 with nothing behind it. */
-              <button
-                className="btn btn-primary"
-                type="button"
-                disabled={metaBusy || meta.comingSoon}
-                onClick={() => (meta.comingSoon ? undefined : void setMeta(true))}
-              >
-                <svg className="ic">
-                  <use href={`#${META_CONNECTION_ICON}`} />
-                </svg>
-                {metaBusy ? "Connecting…" : meta.comingSoon ? "Coming soon" : META_CONNECT_ACTION.label}
-              </button>
-            )}
-          </div>
+          <CardHeader card={META_CONNECTION_CARD} badge={meta.connected ? CONNECTED_BADGE : meta.comingSoon ? COMING_SOON_BADGE : NOT_CONNECTED_BADGE} />
+          <div className="sc-b"><MetaConnection data={meta} /></div>
         </section>
       </div>
 

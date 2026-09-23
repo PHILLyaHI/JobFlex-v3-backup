@@ -46,8 +46,13 @@ export async function GET(req: Request) {
     where: { updatedAt: { lt: cacheCutoff } },
   });
 
+  // Unselected Meta Page tokens expire after 15 minutes; purge leftovers daily.
+  const pendingMeta = await db.syncState.deleteMany({
+    where: { key: { startsWith: "meta:pending:" }, updatedAt: { lt: new Date(Date.now() - 15 * 60_000) } },
+  });
+
   console.info(
     `[cron/daily-cleanup] revoked ${revoked} inactive worker token(s); pruned ${pruned.count} price-cache row(s).`,
   );
-  return NextResponse.json({ ok: true, revokedWorkers: revoked, prunedCache: pruned.count });
+  return NextResponse.json({ ok: true, revokedWorkers: revoked, prunedCache: pruned.count, prunedMetaAuthorizations: pendingMeta.count });
 }

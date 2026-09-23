@@ -573,29 +573,45 @@ body:has(.jf-blueprint) {
 
 /* A row with rows folded under it — an estimator and its inventory (2026-09-20). */
 .jf-blueprint .sb-parent { position: relative; }
-/* The chevron sits IN the row's chevron slot (owner, 2026-09-21): every row
-   reserves a 24px slot at its end (.sb-slot-c, blueprint.module.css), and the
-   fold button — a sibling of the link, since a button cannot live inside an
-   anchor — is laid over that slot: the link's 12px margin, 1.5px border and
-   11px padding put the slot's right edge 24.5px from the row's. One style for
-   the whole menu: a plain 16px ink chevron, no frame, no plate on hover or on
-   the active row; it turns 90° while the inventory is open. */
+/* Submenu controls are separate from navigation, with a full touch target. */
+.jf-blueprint .sb-parent .sb-link { min-height: 44px; padding-right: 48px; }
+.jf-blueprint .sb-parent .sb-slot-c { display: none; }
+.jf-blueprint .sb-parent .sb-slot-b:empty { display: none; }
 .jf-blueprint .sb-fold-btn {
-  position: absolute; right: 24.5px; top: 50%; transform: translateY(-50%);
-  width: 24px; height: 24px; padding: 0; border: 0; background: transparent;
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  width: 44px; height: 44px; padding: 0; border: 0; background: transparent;
   color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
   z-index: 2;
 }
-.jf-blueprint .sb-fold-btn:hover, .jf-blueprint .sb-fold-btn:focus-visible { background: transparent; border: 0; outline: none; }
-.jf-blueprint .sb-fold-btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+.jf-blueprint .sb-fold-btn::before {
+  content: ""; position: absolute; inset: 7px; border: 1px solid var(--hair);
+  border-radius: var(--radius); background: var(--paper-deep);
+  transition: background 160ms var(--ease-out), border-color 160ms var(--ease-out);
+}
+.jf-blueprint .sb-fold-btn:hover { color: var(--blueprint); }
+.jf-blueprint .sb-fold-btn:hover::before, .jf-blueprint .sb-fold-btn:focus-visible::before {
+  border-color: var(--blueprint); background: var(--accent-soft);
+}
+.jf-blueprint .sb-fold-btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -4px; }
+.jf-blueprint .sb-fold-btn svg { position: relative; }
 .jf-blueprint .sb-fold-btn svg { width: 16px; height: 16px; transition: transform 160ms ease; }
 .jf-blueprint .sb-tree.is-open .sb-fold-btn svg { transform: rotate(90deg); }
-/* A child row is indented 28px past its parent's icon and has no chevron slot. */
-.jf-blueprint .sb-sub .sb-link { padding-left: 39px; font-size: 0.94em; }
-.jf-blueprint .sb-sub .sb-link .ic { width: 16px; height: 16px; opacity: 0.8; }
+/* Indent the whole child row, including its outline, without scaling type. */
+.jf-blueprint .sb-sub .sb-link { margin-left: 28px; }
 /* …and no reserved badge slot (a count still draws, sized by itself), so
    its name keeps the room the indent took. */
 .jf-blueprint .sb-sub .sb-slot-b { min-width: 0; padding-left: 0; }
 /* The folded rail keeps only icons: no chevron, no children, no slots. */
 .jf-blueprint[data-sb="fold"] .sb-fold-btn, .jf-blueprint[data-sb="fold"] .sb-sub, .jf-blueprint[data-sb="fold"] .sb-slot { display: none; }
 @media (prefers-reduced-motion: reduce) { .jf-blueprint .sb-fold-btn svg { transition: none; } }
+
+/* Measure the actual row bounds and animate the plate behind the link text.
+   The existing ease-out token settles without the old spring overshoot. */
+.jf-blueprint .sb .sb-indicator { top: 0; right: auto; z-index: 0; }
+.jf-blueprint .sb .sb-indicator.ready {
+  transition: transform 320ms var(--ease-out), left 320ms var(--ease-out),
+    width 320ms var(--ease-out), height 320ms var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .jf-blueprint .sb .sb-indicator.ready, .jf-blueprint .sb-fold-btn::before { transition: none; }
+}

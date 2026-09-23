@@ -22,7 +22,6 @@ import { usePathname } from "next/navigation";
 import { NAV_SECTIONS, activeHref, canOpen, isLimitedRole, navSectionsFor, type NavItem } from "./nav-map";
 import { quotaPill, useNavBadges, useNavLimits, useNavLimitsExempt, type NavLimit, useNavLocked, useNavRole } from "./nav-role";
 import { SignOutButton } from "./sign-out";
-import { foldShortcutLabel } from "./sidebar-fold";
 
 export { NAV_SECTIONS };
 
@@ -54,12 +53,10 @@ function quotaTip(q: NavLimit): string {
 export function Sidebar({
   user,
   folded = false,
-  onToggleFold,
 }: {
   user?: SidebarUser;
   /** Drawn as the icon rail (desktop only; the drawer ignores it). */
   folded?: boolean;
-  onToggleFold?: () => void;
 }) {
   const pathname = usePathname() ?? "";
   // HOVER LABELS for the folded rail. One plate, positioned against the
@@ -209,9 +206,8 @@ export function Sidebar({
 
       <nav className="sb-scroll" onScroll={hideTip}>
         <div className="sb-indicator" id="sbIndicator"></div>
-        {/* Fragments, not wrapper elements: the donor keeps labels and links as
-            direct children of .sb-scroll, and the indicator measures
-            link.offsetTop against it. */}
+        {/* Section labels and estimator trees share the scroll container.
+            The indicator accounts for positioned wrappers inside each tree. */}
         {sections.map((section) => (
           <Fragment key={section.label}>
             <div className="sb-sec-label">{section.label}</div>
@@ -227,7 +223,8 @@ export function Sidebar({
                       type="button"
                       className="sb-fold-btn"
                       aria-expanded={isOpen(item)}
-                      aria-label={`${isOpen(item) ? "Fold" : "Unfold"} ${item.label}`}
+                      aria-controls={`sb-sub-${item.icon}`}
+                      aria-label={`${isOpen(item) ? "Hide" : "Show"} ${item.label} subpages`}
                       onClick={() => setFolds((f) => ({ ...f, [item.href]: !isOpen(item) }))}
                     >
                       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -235,7 +232,7 @@ export function Sidebar({
                       </svg>
                     </button>
                   </div>
-                  {isOpen(item) && <div className="sb-sub">{item.children.map((child) => renderRow(child, true))}</div>}
+                  <div id={`sb-sub-${item.icon}`} className="sb-sub" hidden={!isOpen(item)}>{item.children.map((child) => renderRow(child, true))}</div>
                 </div>
               ) : (
                 renderRow(item)
@@ -300,28 +297,6 @@ export function Sidebar({
           <SignOutButton className="sb-foot-ic sb-foot-out" iconClassName="ic" />
         )}
       </div>
-
-      {/* THE FOLD ARROW — on the sidebar's edge, halfway down (owner,
-          2026-09-18). It points the way the sidebar will move; its label says
-          what it does and the shortcut that does the same. Desktop only: the
-          drawer below 860px hides it. */}
-      {onToggleFold && (
-        <button
-          type="button"
-          className="sb-fold"
-          aria-label={folded ? "Expand sidebar" : "Collapse sidebar"}
-          aria-expanded={!folded}
-          onClick={() => {
-            hideTip();
-            onToggleFold();
-          }}
-          {...tipProps(`${folded ? "Expand" : "Collapse"} · ${foldShortcutLabel()}`, true)}
-        >
-          <svg className="ic" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="m15 18-6-6 6-6" />
-          </svg>
-        </button>
-      )}
 
       {tip && (
         <div className="sb-tip" role="tooltip" style={{ top: tip.top }}>

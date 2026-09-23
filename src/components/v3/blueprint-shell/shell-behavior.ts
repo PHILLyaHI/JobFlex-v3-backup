@@ -128,21 +128,44 @@ export function initBlueprintShell(root: HTMLElement): ShellHandle {
   const sbIndicator = $("#sbIndicator");
   const moveIndicator = (link: HTMLElement | null) => {
     if (!link || !sbIndicator) return;
-    sbIndicator.style.top = link.offsetTop + "px";
+    // A folded subtree keeps the current page selected, with its parent
+    // carrying the visible outline until the subpages are opened again.
+    if (!link.offsetHeight) {
+      link = link.closest(".sb-tree")?.querySelector<HTMLElement>(".sb-parent .sb-link") ?? null;
+      if (!link) return;
+    }
+    // Estimator links sit inside positioned .sb-parent wrappers. Sum their
+    // offsets up to the plate's container, keeping CSS coordinates so shell
+    // zoom and scrolling do not change the alignment.
+    const container = sbIndicator.offsetParent;
+    let top = 0;
+    let left = 0;
+    let node: HTMLElement | null = link;
+    while (node && node !== container) {
+      top += node.offsetTop;
+      left += node.offsetLeft;
+      node = node.offsetParent as HTMLElement | null;
+    }
+    sbIndicator.style.transform = `translateY(${top}px)`;
+    sbIndicator.style.left = left + "px";
+    sbIndicator.style.width = link.offsetWidth + "px";
     sbIndicator.style.height = link.offsetHeight + "px";
   };
   // Real routes navigate; only the donor's dead "#" links swallow the click.
   // The plate slides either way, so the animation plays on every item — on a
   // real navigation it gives instant feedback while the next page streams in,
   // and React then re-renders `active` onto the matching item.
-  $$(".sb-link").forEach((link) => {
-    link.addEventListener("click", (e) => {
+  const sbNav = sbIndicator?.parentElement ?? null;
+  if (sbNav) {
+    on(sbNav, "click", (e) => {
+      const link = (e.target as HTMLElement).closest<HTMLElement>(".sb-link");
+      if (!link) return;
       if (link.getAttribute("href") === "#") e.preventDefault();
       $$(".sb-link").forEach((l) => l.classList.remove("active"));
       link.classList.add("active");
       moveIndicator(link);
     });
-  });
+  }
   moveIndicator($(".sb-link.active"));
   requestAnimationFrame(() => sbIndicator && sbIndicator.classList.add("ready"));
   on(window, "load", () => moveIndicator($(".sb-link.active")));
@@ -152,7 +175,6 @@ export function initBlueprintShell(root: HTMLElement): ShellHandle {
      the measured `top` went stale, leaving the frame a few pixels off its
      item (owner's screenshot, 2026-09-02). Re-measure on any size change in
      the nav and on any DOM change inside it. */
-  const sbNav = sbIndicator?.parentElement ?? null;
   if (sbNav) {
     const remeasure = () => moveIndicator($(".sb-link.active"));
     if (typeof ResizeObserver !== "undefined") {
@@ -163,7 +185,7 @@ export function initBlueprintShell(root: HTMLElement): ShellHandle {
     }
     if (typeof MutationObserver !== "undefined") {
       const mo = new MutationObserver(() => requestAnimationFrame(remeasure));
-      mo.observe(sbNav, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+      mo.observe(sbNav, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "hidden"] });
       disposers.push(() => mo.disconnect());
     }
   }

@@ -129,6 +129,33 @@ export default function PrivacyPage() {
         reply-to address. Request deletion of retained personal information through <LegalContact />.
         Google and recipients maintain their own copies under their policies.
       </p>
+      <h3 id="meta-leads">Meta Page connections and lead imports</h3>
+      <p>
+        If you connect Meta, JobFlex receives the Facebook user identifier associated with your
+        authorization, the Pages you grant access to, their names and identifiers, and Page access
+        tokens. We encrypt stored tokens and use them on the server to access the Page you select.
+        When an authorized workspace owner or manager clicks Import leads, we retrieve available
+        lead-form submissions, including contact details and answers supplied by prospects, and
+        create leads in that workspace. We keep import identifiers and progress to avoid duplicate
+        imports and allow interrupted imports to resume. Importing does not create ads or automatically
+        send messages to prospects.
+      </p>
+      <p>
+        Meta processes authorization and API requests. JobFlex&apos;s hosting and database providers
+        process connection information and imported leads on our behalf. Authorized workspace members
+        can access imported leads according to their roles; tokens are not shown in the workspace.
+        This import does not send lead-form answers to advertising measurement or AI providers.
+        Separate features you subsequently use with a lead follow the disclosures in this policy.
+        Only connect Pages and import prospect information you are authorized to use.
+      </p>
+      <p>
+        Disconnecting Meta in Settings removes the stored Page connection token and pending import
+        progress. To revoke Meta authorization, also remove JobFlex from Facebook Business Integrations.
+        Imported leads remain in the workspace until deleted through available controls or an applicable
+        deletion request. For deletion of Meta-related personal information, contact <LegalContact />
+        with the subject &ldquo;Meta data deletion&rdquo; and identify your workspace and Page; do not send
+        passwords or access tokens. Meta retains its own records under its privacy policy.
+      </p>
       <h2 id="purposes">3. How we use information</h2>
       <p>
         We use information to provide accounts and workspaces, run requested features, prepare and deliver

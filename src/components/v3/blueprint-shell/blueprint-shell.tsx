@@ -218,7 +218,7 @@ export function BlueprintShell({
       <SupportWidget signedIn={Boolean(user)} />
 
       <div className="layout">
-        <Sidebar user={user} folded={folded} onToggleFold={toggleFold} />
+        <Sidebar user={user} folded={folded} />
 
         <div className="sb-overlay" id="sbOverlay"></div>
 

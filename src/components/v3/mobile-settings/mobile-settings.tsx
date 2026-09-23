@@ -1,5 +1,7 @@
 "use client";
 
+import { MetaConnection } from "@/components/v3/settings-blueprint/meta-connection";
+
 // SETTINGS · HANDHELD — /dashboard/settings on a phone, and the standalone
 // preview at /mobile-settings-v1.
 //
@@ -58,7 +60,6 @@ import {
   disconnectGmail,
   sendGmailTestEmail,
   updateGmailSettings,
-  updateMetaSettings,
   updatePaymentSettings,
 } from "@/actions/settings";
 import { toast } from "@/components/ui/Toast";
@@ -119,11 +120,7 @@ import {
   GMAIL_PERMISSIONS_CARD,
   GMAIL_SCOPES_EMPTY,
   MANAGE_ACTION,
-  META_CONNECTED_DESC,
   META_CONNECTION_CARD,
-  META_CONNECTION_ICON,
-  META_CONNECT_ACTION,
-  META_DISCONNECT_ACTION,
   NOTIFICATIONS_CARD,
   NOTIFICATION_CHANNELS,
   NOTIFICATION_COLUMN_LABEL,
@@ -1297,26 +1294,6 @@ function IntegrationsPane({
     }
   }
 
-  const [metaConnected, setMetaConnected] = useState(meta.connected);
-  const [metaBusy, setMetaBusy] = useState(false);
-
-  async function setMetaConn(connected: boolean) {
-    setMetaBusy(true);
-    setMetaConnected(connected);
-    try {
-      await updateMetaSettings({
-        connected,
-        autoCreate: true,
-        autoText: false,
-        defaultPage: meta.defaultPage,
-        formCategory: meta.formCategory,
-      });
-    } catch {
-      setMetaConnected(!connected);
-    } finally {
-      setMetaBusy(false);
-    }
-  }
 
   return (
     <>
@@ -1459,46 +1436,8 @@ function IntegrationsPane({
       {/* ── Meta business ── */}
       <div className={sub === "meta" ? "mst-subpane is-on" : "mst-subpane"}>
         <section className="mst-card">
-          <CardHeader
-            card={META_CONNECTION_CARD}
-            badge={metaConnected ? CONNECTED_BADGE : meta.comingSoon ? COMING_SOON_BADGE : NOT_CONNECTED_BADGE}
-          />
-          <div className={metaConnected ? "mst-cardB mst-cardB--rows" : "mst-cardB"}>
-            {metaConnected ? (
-              <div className="mst-row">
-                <div className="mst-rowTop">
-                  <span className="mst-rowIc">
-                    <Ic name={META_CONNECTION_ICON} />
-                  </span>
-                  <span className="mst-rowB">
-                    <span className="mst-rowN">{meta.orgName}</span>
-                    <span className="mst-rowD">{META_CONNECTED_DESC}</span>
-                  </span>
-                </div>
-                <div className="mst-rowAct">
-                  <button
-                    className={`mst-btn mst-btn--ghost ${META_DISCONNECT_ACTION.state ?? ""}`}
-                    type="button"
-                    disabled={metaBusy}
-                    onClick={() => void setMetaConn(false)}
-                  >
-                    {META_DISCONNECT_ACTION.label}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              /* Disarmed while there is no Meta OAuth (audit, 2026-09-20). */
-              <button
-                className="mst-btn mst-btn--primary mst-btn--wide"
-                type="button"
-                disabled={metaBusy || meta.comingSoon}
-                onClick={() => (meta.comingSoon ? undefined : void setMetaConn(true))}
-              >
-                <Ic name={META_CONNECTION_ICON} />
-                {metaBusy ? "Connecting…" : meta.comingSoon ? "Coming soon" : META_CONNECT_ACTION.label}
-              </button>
-            )}
-          </div>
+          <CardHeader card={META_CONNECTION_CARD} badge={meta.connected ? CONNECTED_BADGE : meta.comingSoon ? COMING_SOON_BADGE : NOT_CONNECTED_BADGE} />
+          <div className="mst-cardB"><MetaConnection data={meta} mobile /></div>
         </section>
       </div>
 

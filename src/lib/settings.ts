@@ -165,10 +165,10 @@ export interface MetaSettings {
   formCategory: string;
 }
 export const META_DEFAULTS: MetaSettings = {
-  connected: true,
-  autoCreate: true,
+  connected: false,
+  autoCreate: false,
   autoText: false,
-  defaultPage: "Patel Roofing & Co.",
+  defaultPage: "",
   formCategory: "auto",
 };
 export function parseMetaSettings(json: string | null | undefined): MetaSettings {

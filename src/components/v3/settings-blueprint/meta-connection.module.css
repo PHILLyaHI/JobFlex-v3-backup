@@ -1,0 +1,10 @@
+.root { display: grid; gap: 16px; min-width: 0; color: var(--ink-soft); font-family: var(--font-sans); }
+.root p { margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
+.root strong { color: var(--ink); }
+.root a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.actions button, .choice button, .choice select { min-height: 44px; max-width: 100%; white-space: normal; }
+.choice { display: grid; gap: 12px; min-width: 0; }
+.choice label { font-weight: 700; }
+.notice { padding: 12px; background: var(--accent-soft); border-left: 3px solid var(--accent); }
+.error { padding: 12px; border-left: 3px solid var(--rose); }

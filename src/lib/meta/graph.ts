@@ -1,0 +1,106 @@
+import crypto from "node:crypto";
+import { z } from "zod";
+import { isSecretBoxConfigured } from "@/lib/crypto/secretBox";
+
+// A User-token Facebook Login for Business configuration is required. Never
+// request ad/campaign fields: this integration only imports submitted leads.
+export const META_LEAD_PERMISSIONS = ["pages_show_list", "pages_read_engagement", "leads_retrieval", "pages_manage_ads", "ads_management"];
+export const metaId = z.string().regex(/^\d{1,40}$/);
+export const metaPageSchema = z.object({ id: metaId, name: z.string().max(500), access_token: z.string().min(1) });
+export const metaLeadSchema = z.object({
+  id: metaId,
+  created_time: z.string().optional(),
+  field_data: z.array(z.object({ name: z.string(), values: z.array(z.string()) })).default([]),
+});
+export type MetaLead = z.infer<typeof metaLeadSchema>;
+
+function version() {
+  const value = process.env.META_GRAPH_VERSION || "v25.0";
+  if (!/^v\d+\.0$/.test(value)) throw new Error("Invalid Meta API version configuration.");
+  return value;
+}
+export function metaConfigured() {
+  return Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET && process.env.META_LOGIN_CONFIG_ID && process.env.META_REDIRECT_URI && isSecretBoxConfigured());
+}
+export function metaAllowed(email?: string | null) {
+  return metaConfigured() && (process.env.META_LEADS_PUBLIC === "true" || (process.env.META_LEADS_TEST_USERS || "").split(",").map(v => v.trim().toLowerCase()).includes((email || "").toLowerCase()) && Boolean(email));
+}
+export class MetaApiError extends Error {
+  constructor(public code: number, public retryable: boolean) {
+    super(code === 190 ? "Meta authorization expired. Disconnect and reconnect your Page." : code === 10 || code === 200 ? "Meta denied lead access. Check app permissions, Page access, and Leads Access in Meta Business settings." : "Meta could not complete the request. Try again and check the app's lead permissions.");
+  }
+}
+
+async function graphRequest(path: string, params: Record<string, string>, token?: string, method = "GET") {
+  const url = new URL(`https://graph.facebook.com/${version()}/${path}`);
+  const query = new URLSearchParams(params);
+  if (token) query.set("appsecret_proof", crypto.createHmac("sha256", process.env.META_APP_SECRET!).update(token).digest("hex"));
+  if (method === "GET") url.search = query.toString();
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(12000),
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(method !== "GET" ? { "Content-Type": "application/x-www-form-urlencoded" } : {}) },
+      ...(method !== "GET" ? { body: query.toString() } : {}),
+    });
+  } catch { throw new MetaApiError(0, true); }
+  // Never log Meta's raw error/request: they can include tokens and lead PII.
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body.error) {
+    const code = Number(body.error?.code || response.status);
+    throw new MetaApiError(code, response.status >= 500 || response.status === 429 || [1, 2, 4, 17, 32, 613].includes(code));
+  }
+  return body as unknown;
+}
+export async function metaGraph(path: string, token: string, params: Record<string, string> = {}, method = "GET") {
+  return graphRequest(path, params, token, method);
+}
+
+export function metaLoginUrl(state: string) {
+  const url = new URL(`https://www.facebook.com/${version()}/dialog/oauth`);
+  url.search = new URLSearchParams({ client_id: process.env.META_APP_ID!, redirect_uri: process.env.META_REDIRECT_URI!, config_id: process.env.META_LOGIN_CONFIG_ID!, response_type: "code", override_default_response_type: "true", state }).toString();
+  return url.toString();
+}
+
+export async function exchangeMetaCode(code: string) {
+  const tokenSchema = z.object({ access_token: z.string().min(1) });
+  const short = tokenSchema.parse(await graphRequest("oauth/access_token", { client_id: process.env.META_APP_ID!, client_secret: process.env.META_APP_SECRET!, redirect_uri: process.env.META_REDIRECT_URI!, code }));
+  const long = tokenSchema.parse(await graphRequest("oauth/access_token", { grant_type: "fb_exchange_token", client_id: process.env.META_APP_ID!, client_secret: process.env.META_APP_SECRET!, fb_exchange_token: short.access_token }));
+  const token = long.access_token;
+  const me = z.object({ id: metaId }).parse(await metaGraph("me", token, { fields: "id" }));
+  const permissions = z.object({ data: z.array(z.object({ permission: z.string(), status: z.string() })) }).parse(await metaGraph("me/permissions", token));
+  const granted = new Set(permissions.data.filter(v => v.status === "granted").map(v => v.permission));
+  if (META_LEAD_PERMISSIONS.some(p => !granted.has(p))) throw new MetaApiError(200, false);
+  const pages = [];
+  let after: string | undefined;
+  // Pagination cursor only; never follow an upstream URL containing a token.
+  for (let i = 0; i < 20; i++) {
+    const batch = z.object({ data: z.array(metaPageSchema), paging: z.object({ next: z.string().optional(), cursors: z.object({ after: z.string().optional() }).optional() }).optional() }).parse(await metaGraph("me/accounts", token, { fields: "id,name,access_token", limit: "100", ...(after ? { after } : {}) }));
+    pages.push(...batch.data);
+    after = batch.paging?.next ? batch.paging.cursors?.after : undefined;
+    if (!after) break;
+    if (i === 19) throw new Error("Too many Pages. Reconnect and grant access only to the Page you want to connect.");
+  }
+  return { userId: me.id, pages };
+}
+
+export function safeEqual(a: string, b: string) {
+  const aa = Buffer.from(a), bb = Buffer.from(b);
+  return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
+}
+export function validMetaSignature(raw: string, header: string | null) {
+  if (!process.env.META_APP_SECRET || !header || !/^sha256=[a-f0-9]{64}$/.test(header)) return false;
+  return safeEqual(header, `sha256=${crypto.createHmac("sha256", process.env.META_APP_SECRET).update(raw).digest("hex")}`);
+}
+
+export function metaLeadFields(lead: MetaLead) {
+  const fields = new Map(lead.field_data.map(v => [v.name, v.values.join(", ").slice(0, 4000)]));
+  const read = (...names: string[]) => names.map(n => fields.get(n)).find(Boolean) || null;
+  return {
+    name: (read("full_name", "name") || [read("first_name"), read("last_name")].filter(Boolean).join(" ") || "Meta lead").slice(0, 250),
+    email: read("email"), phone: read("phone_number", "phone"), address: read("street_address", "address"),
+    city: read("city"), state: read("state", "province"), zip: read("zip_code", "postal_code", "zip"),
+    projectType: read("project_type", "service"),
+    description: lead.field_data.map(v => `${v.name}: ${v.values.join(", ")}`).join("\n").slice(0, 20000),
+  };
+}

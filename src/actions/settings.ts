@@ -187,12 +187,8 @@ const metaSchema = z.object({
 });
 
 export async function updateMetaSettings(raw: unknown) {
-  const { organizationId } = await requireManager();
-  const data = metaSchema.parse(raw);
-  await db.organization.update({
-    where: { id: organizationId },
-    data: { metaSettingsJson: JSON.stringify(data) },
-  });
-  revalidatePath("/dashboard/settings/meta");
-  return { ok: true };
+  await requireManager();
+  metaSchema.parse(raw);
+  // Reject stale clients: a boolean must never forge or overwrite OAuth state.
+  throw new Error("Use the Meta connection controls to connect or disconnect a Page.");
 }

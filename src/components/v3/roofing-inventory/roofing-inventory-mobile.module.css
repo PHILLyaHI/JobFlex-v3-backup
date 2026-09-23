@@ -1,0 +1,178 @@
+.mobile.mobile {
+  min-width: 0;
+  padding: 20px 16px 32px;
+  color: var(--ink);
+  font-family: var(--font-sans), sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.mobile.mobile *, .sheet * { box-sizing: border-box; }
+.mobile.mobile button, .mobile.mobile input, .mobile.mobile select, .sheet button { font: inherit; }
+.mobile.mobile button, .sheet button { cursor: pointer; }
+.mobile.mobile button:disabled, .sheet button:disabled { cursor: wait; opacity: 0.5; }
+.mobile.mobile :where(button, a, input, select):focus-visible, .sheet :where(button, a, input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.mobile.mobile ::selection, .sheet ::selection { background: var(--accent-soft); color: var(--accent-ink); }
+.mobile.mobile a { text-underline-offset: 3px; }
+
+.mobile.mobile .header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.mobile.mobile .header h1 { margin: 0; font-size: 25px; font-weight: 900; line-height: 1.14; letter-spacing: -0.035em; text-transform: uppercase; }
+.mobile.mobile .addButton, .mobile.mobile .iconButton, .sheet.sheet .iconButton { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 10px; border: 1px solid var(--ink-line); border-radius: var(--r-sm); background: var(--paper-deep); color: var(--ink); flex-shrink: 0; }
+.mobile.mobile .addButton { border: 1.5px solid var(--ink); background: var(--accent); color: var(--paper-deep); }
+.mobile.mobile .readOnly { margin: -8px 0 20px; color: var(--ink-muted); font-size: 13px; }
+.mobile.mobile .attention { display: grid; gap: 14px; margin-bottom: 24px; padding: 16px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); }
+.mobile.mobile .attention h2 { margin: 0; font-size: 19px; font-weight: 800; line-height: 1.3; letter-spacing: -0.02em; }
+.mobile.mobile .attention p { margin: 5px 0 0; color: var(--ink-muted); font-size: 13px; }
+.mobile.mobile .primary, .mobile.mobile .secondary, .mobile.mobile .textButton, .mobile.mobile .fullButton { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 12px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); font-size: 14px; line-height: 1.3; font-weight: 750; text-decoration: none; }
+.mobile.mobile .primary { background: var(--accent); color: var(--paper-deep); }
+.mobile.mobile .secondary { background: var(--paper-deep); color: var(--ink); }
+.mobile.mobile .textButton { justify-content: flex-start; padding: 10px 0; border: 0; background: transparent; color: var(--accent); text-align: left; }
+.mobile.mobile .textButton svg { flex-shrink: 0; }
+.mobile.mobile .covered { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 20px; font-size: 13px; }
+.mobile.mobile .covered > svg { color: var(--emerald); flex-shrink: 0; }
+.mobile.mobile .covered .textButton { width: 100%; }
+.mobile.mobile .nav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; border-bottom: 1.5px solid var(--ink); margin-bottom: 24px; }
+.mobile.mobile .nav button { position: relative; display: flex; flex-direction: column; gap: 5px; align-items: center; justify-content: center; min-width: 0; min-height: 64px; padding: 8px 2px 12px; color: var(--ink-muted); border: 0; background: transparent; font-size: 12px; font-weight: 650; }
+.mobile.mobile .nav button[aria-current] { color: var(--accent); box-shadow: inset 0 -3px var(--accent); }
+.mobile.mobile .nav button i { position: absolute; top: 7px; right: 17%; width: 5px; height: 5px; border-radius: var(--r-xs); background: var(--accent); }
+.mobile.mobile .section { min-width: 0; }
+.mobile.mobile .sectionHeading, .mobile.mobile .subsectionHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.mobile.mobile .sectionHeading h2, .mobile.mobile .subsectionHeading h2 { margin: 0; font-size: 19px; font-weight: 850; line-height: 1.25; letter-spacing: -0.02em; text-transform: uppercase; }
+.mobile.mobile .sectionHeading > span, .mobile.mobile .subsectionHeading > span { font-size: 13px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.mobile.mobile .subsectionHeading { margin-top: 32px; }
+.mobile.mobile .sectionNote { margin: 0 0 16px; color: var(--ink-muted); font-size: 13px; }
+.mobile.mobile .search { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 12px; margin-bottom: 12px; background: var(--paper-deep); border: 1.5px solid var(--ink); border-radius: var(--r-sm); }
+.mobile.mobile .search > svg { flex-shrink: 0; color: var(--ink-muted); }
+.mobile.mobile .search input { min-width: 0; width: 100%; min-height: 44px; padding: 8px 0; border: 0; color: var(--ink); background: transparent; font-size: 16px; outline: 0; }
+.mobile.mobile .search:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mobile.mobile .search input:focus-visible { outline: 0; }
+.mobile.mobile .search input::placeholder { color: var(--ink-muted); font-size: 14px; }
+.mobile.mobile .filters { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 12px; margin-bottom: 20px; }
+.mobile.mobile .filterField { display: flex; flex-direction: column; min-width: 0; gap: 5px; }
+.mobile.mobile .filterField > span:first-child { font-size: 12px; color: var(--ink-muted); font-weight: 650; }
+.mobile.mobile .filterField :global(.bp-sel) { display: block; min-width: 0; width: 100%; }
+.mobile.mobile .filterField :global(.bp-sel-in) { width: 100%; min-width: 0; min-height: 44px; padding: 8px 28px 8px 10px; border: 1px solid var(--ink); border-radius: var(--r-sm); background-color: var(--paper-deep); color: var(--ink); font-family: inherit; font-size: 16px; }
+.mobile.mobile .stockList { border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); }
+.mobile.mobile .stockList:empty { display: none; }
+.mobile.mobile .stockGroup + .stockGroup { border-top: 1.5px solid var(--ink); }
+.mobile.mobile .category { display: flex; align-items: center; justify-content: space-between; margin: 0; padding: 12px 14px; font-size: 13px; font-weight: 750; background: var(--paper); border-bottom: 1px solid var(--ink-line); }
+.mobile.mobile .category span { font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+.mobile.mobile .item + .item { border-top: 1px solid var(--ink-line); }
+.mobile.mobile .itemTop { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; padding: 16px 14px 8px; }
+.mobile.mobile .itemIdentity { min-width: 0; }
+.mobile.mobile .itemIdentity h3 { margin: 0; font-size: 16px; font-weight: 750; line-height: 1.35; letter-spacing: -0.015em; }
+.mobile.mobile .stockStatus { display: block; margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--ink-muted); }
+.mobile.mobile .stockStatus[data-tone="danger"], .mobile.mobile .nextJob p[data-tone="danger"], .mobile.mobile .material[data-tone="danger"] { color: var(--rose); }
+.mobile.mobile .stockStatus[data-tone="warning"] { color: var(--ink-soft); }
+.mobile.mobile .stockStatus[data-tone="warning"]::before { content: ""; display: inline-block; width: 5px; height: 5px; margin-right: 6px; vertical-align: 2px; background: var(--amber); }
+.mobile.mobile .available { display: flex; flex-direction: column; align-items: flex-end; max-width: 100px; text-align: right; }
+.mobile.mobile .available > span, .mobile.mobile .available small { color: var(--ink-muted); font-size: 11px; line-height: 1.4; }
+.mobile.mobile .available strong { font-size: 26px; font-weight: 850; line-height: 1.2; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.mobile.mobile .available[data-short] strong { color: var(--rose); }
+.mobile.mobile .itemFoot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 8px; padding: 0 8px 4px 14px; }
+.mobile.mobile .itemFoot > span { color: var(--ink-muted); font-size: 12px; }
+.mobile.mobile .itemFoot b { font-weight: 700; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.mobile.mobile .itemFoot > span > span { margin: 0 4px; }
+.mobile.mobile .detailsButton { display: inline-flex; align-items: center; gap: 5px; min-height: 44px; padding: 8px 6px; border: 0; background: transparent; color: var(--accent); font-size: 12px; font-weight: 750; }
+.mobile.mobile .detailsButton svg { transition: transform 160ms var(--ease-out); }
+.mobile.mobile .rotate { transform: rotate(180deg); }
+.mobile.mobile .itemDetails { padding: 8px 14px 16px; background: var(--paper); border-top: 1px solid var(--ink-line); }
+.mobile.mobile .itemFacts { margin: 0 0 14px; }
+.mobile.mobile .itemFacts > div { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; padding: 6px 0; font-size: 12px; }
+.mobile.mobile .itemFacts dt { color: var(--ink-muted); }
+.mobile.mobile .itemFacts dd { margin: 0; text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; }
+.mobile.mobile .itemActions { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 8px; }
+.mobile.mobile .itemActions button { padding: 10px 6px; font-size: 13px; }
+.mobile.mobile .fullButton { justify-content: space-between; width: 100%; margin-top: 12px; border: 1px solid var(--ink-line); background: transparent; color: var(--accent); font-size: 13px; }
+.mobile.mobile .setup { margin-top: 24px; padding-top: 4px; border-top: 1px solid var(--ink-line); }
+.mobile.mobile .setup summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 52px; list-style: none; font-weight: 700; cursor: pointer; }
+.mobile.mobile .setup summary::-webkit-details-marker { display: none; }
+.mobile.mobile .setup[open] summary > svg { transform: rotate(180deg); }
+.mobile.mobile .setupBlock { padding: 4px 0 16px; }
+.mobile.mobile .setupBlock + .setupBlock { padding-top: 16px; border-top: 1px solid var(--ink-line); }
+.mobile.mobile .setupBlock h3 { margin: 0 0 6px; font-size: 14px; font-weight: 700; }
+.mobile.mobile .setupBlock p { margin: 0 0 12px; color: var(--ink-muted); font-size: 13px; }
+.mobile.mobile .untracked { margin: 0; padding: 0; list-style: none; }
+.mobile.mobile .untracked li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--ink-line); }
+.mobile.mobile .untracked small { display: block; color: var(--ink-muted); }
+.mobile.mobile .empty { display: grid; justify-items: start; gap: 12px; padding: 24px 16px; border: 1.5px dashed var(--ink-line); }
+.mobile.mobile .empty h3 { margin: 0; font-size: 16px; font-weight: 750; }
+.mobile.mobile .empty p { margin: 0; color: var(--ink-muted); font-size: 14px; }
+.mobile.mobile .order { padding: 16px; margin-bottom: 16px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); }
+.mobile.mobile .orderHead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.mobile.mobile .orderHead h3 { margin: 0; font-size: 16px; font-weight: 800; line-height: 1.3; }
+.mobile.mobile .orderHead > span { flex-shrink: 0; font-size: 12px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.mobile.mobile .orderLines { margin: 0; padding: 0; list-style: none; }
+.mobile.mobile .orderLines li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 16px; padding: 10px 0; border-top: 1px solid var(--ink-line); font-size: 13px; }
+.mobile.mobile .orderLines strong { max-width: 110px; text-align: right; font-weight: 750; font-variant-numeric: tabular-nums; }
+.mobile.mobile .orderLines small { font-size: 12px; font-weight: 500; }
+.mobile.mobile .order > .primary, .mobile.mobile .order > .secondary { width: 100%; margin-top: 12px; }
+.mobile.mobile .orderEmail { margin: 10px 0 0; font-size: 12px; color: var(--ink-muted); }
+.mobile.mobile .warningText { margin: 10px 0 0; color: var(--rose); font-size: 13px; }
+.mobile.mobile .unassigned { margin: 24px 0; }
+.mobile.mobile .unassigned h3 { margin: 0 0 6px; font-size: 16px; font-weight: 750; }
+.mobile.mobile .assignRow { padding: 14px 0; border-top: 1px solid var(--ink-line); }
+.mobile.mobile .assignRow > div { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; font-size: 13px; }
+.mobile.mobile .assignRow > div > span { color: var(--ink-muted); text-align: right; }
+.mobile.mobile .muted { color: var(--ink-muted); }
+.mobile.mobile .nextJob { margin-bottom: 20px; padding: 14px 16px; border: 1.5px solid var(--ink); background: var(--paper-deep); }
+.mobile.mobile .nextJobTop { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: var(--ink-muted); font-size: 12px; }
+.mobile.mobile .nextJob h3 { margin: 0 0 4px; font-size: 16px; font-weight: 750; }
+.mobile.mobile .nextJob p { margin: 0; font-size: 13px; }
+.mobile.mobile .proposals { margin-top: 20px; }
+.mobile.mobile .proposal { padding: 16px 0; border-bottom: 1px solid var(--ink-line); }
+.mobile.mobile .proposal:first-child { padding-top: 0; }
+.mobile.mobile .proposalMeta { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.mobile.mobile .proposalMeta > strong { font-variant-numeric: tabular-nums; font-size: 15px; }
+.mobile.mobile .badge { display: inline-block; padding: 3px 7px; border: 1px solid var(--ink-line); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.mobile.mobile .proposalTitle { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; min-height: 44px; padding: 8px 0; color: var(--ink); font-size: 16px; font-weight: 750; line-height: 1.35; text-decoration: none; }
+.mobile.mobile .proposalTitle svg { flex-shrink: 0; color: var(--accent); }
+.mobile.mobile .proposal > p { margin: 4px 0 10px; color: var(--ink-muted); font-size: 12px; }
+.mobile.mobile .material { display: flex; gap: 7px; align-items: flex-start; font-size: 13px; }
+.mobile.mobile .material svg { flex-shrink: 0; margin-top: 2px; }
+.mobile.mobile .proposal > .inferred { margin: 8px 0 0; }
+.mobile.mobile .proposalActions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 16px; margin-top: 4px; }
+.mobile.mobile .proposalActions .textButton { font-size: 12px; }
+.mobile.mobile .supplier { padding: 16px 0; border-bottom: 1px solid var(--ink-line); }
+.mobile.mobile .supplier:first-child { padding-top: 0; }
+.mobile.mobile .contactLink { display: flex; align-items: center; gap: 8px; min-height: 44px; color: var(--accent); text-decoration: none; }
+.mobile.mobile .contactLink svg { flex-shrink: 0; }
+.mobile.mobile .suppliers + .sectionNote { margin-top: 20px; }
+.mobile.mobile .valueSummary { margin: 0 0 24px; padding: 14px 16px; border: 1.5px solid var(--ink); background: var(--paper-deep); }
+.mobile.mobile .valueSummary > div { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; font-size: 13px; }
+.mobile.mobile .valueSummary dt { color: var(--ink-muted); }
+.mobile.mobile .valueSummary dd { margin: 0; font-weight: 750; font-variant-numeric: tabular-nums; }
+.mobile.mobile .activityList { margin: 0; padding: 0; list-style: none; }
+.mobile.mobile .activityList > li { padding: 16px 0; border-bottom: 1px solid var(--ink-line); }
+.mobile.mobile .activityList > li:first-child { padding-top: 0; }
+.mobile.mobile .activityTop { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--ink-muted); font-size: 12px; }
+.mobile.mobile .activityTop > span { font-weight: 650; }
+.mobile.mobile .activityMain { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; margin-top: 8px; }
+.mobile.mobile .activityMain h3 { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.35; }
+.mobile.mobile .activityMain > strong { font-size: 18px; line-height: 1.2; text-align: right; font-variant-numeric: tabular-nums; }
+.mobile.mobile .activityMain > strong[data-positive] { color: var(--emerald); }
+.mobile.mobile .activityMain small { display: block; margin-top: 3px; color: var(--ink-muted); font-size: 11px; font-weight: 500; }
+.mobile.mobile .activityList p { margin: 6px 0 0; font-size: 12px; color: var(--ink-muted); }
+.mobile.mobile .activityList .textButton { font-size: 12px; }
+.mobile.mobile .feedback, .sheet.sheet .feedback { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 16px; padding: 12px; border: 1px solid var(--accent); background: var(--paper-deep); color: var(--accent-ink); font-size: 13px; }
+.mobile.mobile .feedback[data-error="true"], .sheet.sheet .feedback[data-error="true"] { border-color: var(--rose); color: var(--rose); }
+.mobile.mobile .feedback .iconButton, .sheet.sheet .feedback .iconButton { min-width: 44px; border: 0; background: transparent; color: inherit; }
+.sheetBackdrop { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: flex-end; justify-content: center; padding-top: max(24px, env(safe-area-inset-top)); background: color-mix(in srgb, var(--ink) 40%, transparent); }
+.sheet { display: flex; flex-direction: column; width: 100%; max-height: 90dvh; min-width: 0; color: var(--ink); background: var(--paper); border-top: 2px solid var(--ink); border-radius: var(--r-sm) var(--r-sm) 0 0; outline: 0; font-family: var(--font-sans), sans-serif; overflow-wrap: anywhere; }
+.sheetHeader { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-shrink: 0; padding: 12px 16px; border-bottom: 1px solid var(--ink-line); }
+.sheetHeader h2 { margin: 0; font-size: 19px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 850; text-transform: uppercase; }
+.sheetBody { min-height: 0; padding: 20px 16px max(24px, env(safe-area-inset-bottom)); overflow-y: auto; overscroll-behavior: contain; }
+.sheetItemName { margin: 0 0 16px; font-size: 16px; font-weight: 700; }
+.mobile.mobile .srOnly { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+@media (hover: hover) {
+  .mobile.mobile .primary:hover:not(:disabled), .mobile.mobile .addButton:hover:not(:disabled) { background: var(--accent-ink); }
+  .mobile.mobile .secondary:hover:not(:disabled), .mobile.mobile .iconButton:hover:not(:disabled), .sheet.sheet .iconButton:hover:not(:disabled) { background: var(--paper); }
+  .mobile.mobile .textButton:hover:not(:disabled), .mobile.mobile .detailsButton:hover:not(:disabled), .mobile.mobile .contactLink:hover, .mobile.mobile .proposalTitle:hover { text-decoration: underline; }
+  .mobile.mobile .nav button:hover { color: var(--accent); background: var(--accent-soft); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile.mobile .detailsButton svg { transition: none; }
+}

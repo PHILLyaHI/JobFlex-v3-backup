@@ -1,10 +1,11 @@
-// THE ROOFING BOARD (2026-09-20): this trade's proposals, its warehouse stock
-// with the work counted against it, and its suppliers — under the estimator
-// in the sidebar. The read is lib/inventoryBoard; the writes are
-// actions/inventory (manager or owner). Sales and estimator roles read it.
+// ROOFING INVENTORY · REDESIGN PREVIEW (2026-09-22) — the desktop build of the
+// Claude redesign on real data, beside the live board at
+// /dashboard/roof-estimator/board. A parallel Codex session owns that route and
+// its page.tsx, so this preview has a route of its own rather than a query
+// switch inside it. Same reads, same role rule, same writes as the live board.
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { RoofingInventory } from "@/components/v3/roofing-inventory/roofing-inventory";
+import { RoofInventory } from "@/components/v3/roof-inventory-claude/roof-inventory";
 import { loadTradeBoard } from "@/lib/inventoryBoard";
 import { loadStockFacts } from "@/lib/inventoryDashboard";
 import { isLimitedRole, NoOrgError, requireOrg, UnauthorizedError } from "@/lib/orgContext";
@@ -20,17 +21,16 @@ export default async function Page() {
     organizationId = ctx.organizationId;
     role = ctx.role;
   } catch (err) {
-    if (err instanceof UnauthorizedError) redirect("/auth/login?next=%2Fdashboard%2Froof-estimator%2Fboard");
+    if (err instanceof UnauthorizedError) redirect("/auth/login?next=%2Fdashboard%2Froof-estimator%2Fboard%2Fclaude");
     if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
     throw err;
   }
   const data = await loadTradeBoard(organizationId, "roof");
   if (!data) redirect("/dashboard/roof-estimator");
-  // The dashboard's extra facts — value, pace, history, the next loads (2026-09-20).
   const facts = await loadStockFacts(
     organizationId,
     "roof",
     data.proposals.filter((p) => p.linked && p.status === "ACCEPTED" && !p.loaded).map((p) => p.id),
   );
-  return <RoofingInventory data={data} facts={facts} canWrite={!isLimitedRole(role)} />;
+  return <RoofInventory data={data} facts={facts} canWrite={!isLimitedRole(role)} />;
 }
