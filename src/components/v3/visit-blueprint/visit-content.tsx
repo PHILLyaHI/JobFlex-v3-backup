@@ -29,6 +29,7 @@ export function VisitContent({ v, appUrl }: { v: VisitView; appUrl: string }) {
           <h1 className={cx("page-title")}>{v.appointment.title}</h1>
         </div>
         <div className={cx("page-actions")}>
+          {v.client?.id && <Link className={cx("btn", "btn-primary")} href={`/dashboard/hvac-estimator?client=${v.client.id}` as Route}>Price the repair</Link>}
           {v.client?.id && <Link className={cx("btn", "btn-ghost")} href={`/dashboard/client-detail?client=${v.client.id}` as Route}>Client</Link>}
           <Link className={cx("btn", "btn-ghost")} href={"/dashboard/calendar" as Route}>Calendar</Link>
         </div>

@@ -121,7 +121,10 @@ export const NAV_SECTIONS: NavSection[] = [
         label: "HVAC estimator",
         icon: "i-heatpump",
         href: "/dashboard/hvac-estimator",
-        children: [{ label: "HVAC inventory", icon: "i-heatpump", href: "/dashboard/hvac-estimator/board" }],
+        children: [
+          { label: "HVAC service menu", icon: "i-heatpump", href: "/dashboard/hvac-estimator/services" },
+          { label: "HVAC inventory", icon: "i-heatpump", href: "/dashboard/hvac-estimator/board" },
+        ],
       },
       { label: "Phone", icon: "i-phone", href: "/dashboard/phone" },
       { label: "Messages", icon: "i-msg", href: "/dashboard/messages" },
