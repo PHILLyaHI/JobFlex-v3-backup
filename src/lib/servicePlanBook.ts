@@ -100,6 +100,7 @@ export async function activatePlan(planId: string, opts: { acceptedName?: string
   const slots = visitSchedule(startsAt, plan.termMonths, plan.visitsPerYear, plan.trade);
   const tz = plan.organization.timezone || "America/New_York";
   const seq0 = plan.visits.reduce((a, v) => Math.max(a, v.seq), 0);
+  const appUrl = await appBaseUrl();
   let invoiceNumber = "";
   await db.$transaction(async (tx) => {
     await tx.servicePlan.update({
@@ -111,6 +112,8 @@ export async function activatePlan(planId: string, opts: { acceptedName?: string
       const appt = await tx.appointment.create({
         data: { organizationId: plan.organizationId, clientId: plan.clientId, title: `${s.label} · ${plan.name}`, startsAt: start, endsAt: new Date(start.getTime() + 2 * 3600000), notes: tuneUpChecklist(s.label, plan.trade), status: "SCHEDULED" },
       });
+      // The crew's report form for this visit (2026-09-23), first line of the notes.
+      await tx.appointment.update({ where: { id: appt.id }, data: { notes: `Report form: ${appUrl}/dashboard/visits/${appt.id}\n\n${tuneUpChecklist(s.label, plan.trade)}` } });
       await tx.servicePlanVisit.create({ data: { organizationId: plan.organizationId, planId: plan.id, seq: seq0 + s.seq, label: s.label, dueAt: s.dueAt, status: "SCHEDULED", appointmentId: appt.id } });
     }
     const inv = await createPlanInvoice(tx, plan, startsAt);
@@ -161,11 +164,13 @@ export async function renewPlan(planId: string): Promise<{ ok: boolean }> {
   const slots = visitSchedule(startsAt, plan.termMonths, plan.visitsPerYear, plan.trade);
   const tz = plan.organization.timezone || "America/New_York";
   const seq0 = plan.visits.reduce((a, v) => Math.max(a, v.seq), 0);
+  const appUrl = await appBaseUrl();
   await db.$transaction(async (tx) => {
     await tx.servicePlan.update({ where: { id: plan.id }, data: { status: "ACTIVE", startsAt, endsAt, nextBillingAt: advanceBilling(startsAt, plan.billing as Billing), expiringNoticedAt: null } });
     for (const s of slots) {
       const start = atLocalHour(s.dueAt, 9, tz);
       const appt = await tx.appointment.create({ data: { organizationId: plan.organizationId, clientId: plan.clientId, title: `${s.label} · ${plan.name}`, startsAt: start, endsAt: new Date(start.getTime() + 2 * 3600000), notes: tuneUpChecklist(s.label, plan.trade), status: "SCHEDULED" } });
+      await tx.appointment.update({ where: { id: appt.id }, data: { notes: `Report form: ${appUrl}/dashboard/visits/${appt.id}\n\n${tuneUpChecklist(s.label, plan.trade)}` } });
       await tx.servicePlanVisit.create({ data: { organizationId: plan.organizationId, planId: plan.id, seq: seq0 + s.seq, label: s.label, dueAt: s.dueAt, status: "SCHEDULED", appointmentId: appt.id } });
     }
     const inv = await createPlanInvoice(tx, plan, startsAt);
@@ -373,7 +378,7 @@ export interface PlansDashboard {
   plans: PlanRow[];
   clients: { id: string; name: string }[];
   stats: { active: number; expiring: number; drafts: number; mrrCents: number; dueCents: number; dueCount: number; visitsDue: number };
-  visitsDue: { id: string; planId: string; label: string; dueAt: Date; clientName: string; planName: string; startsAt: Date | null }[];
+  visitsDue: { id: string; planId: string; label: string; dueAt: Date; clientName: string; planName: string; startsAt: Date | null; appointmentId: string | null }[];
 }
 
 export async function loadPlansDashboard(organizationId: string, now = new Date()): Promise<PlansDashboard> {
@@ -414,7 +419,7 @@ export async function loadPlansDashboard(organizationId: string, now = new Date(
   });
   const active = rows.filter((r) => r.status === "ACTIVE");
   const visitsDue = plans
-    .flatMap((p) => p.visits.filter((v) => v.status === "SCHEDULED" && p.status === "ACTIVE" && v.dueAt.getTime() <= now.getTime() + 30 * DAY).map((v) => ({ id: v.id, planId: p.id, label: v.label, dueAt: v.dueAt, clientName: p.client.name, planName: p.name, startsAt: v.appointment?.startsAt ?? null })))
+    .flatMap((p) => p.visits.filter((v) => v.status === "SCHEDULED" && p.status === "ACTIVE" && v.dueAt.getTime() <= now.getTime() + 30 * DAY).map((v) => ({ id: v.id, planId: p.id, label: v.label, dueAt: v.dueAt, clientName: p.client.name, planName: p.name, startsAt: v.appointment?.startsAt ?? null, appointmentId: v.appointmentId })))
     .sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());
   const open = rows.flatMap((r) => r.openInvoices);
   return {

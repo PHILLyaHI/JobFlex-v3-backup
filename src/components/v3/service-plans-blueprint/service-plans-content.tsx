@@ -222,7 +222,12 @@ export function ServicePlansContent({ data, timeZone, appUrl }: { data: PlansDas
                       <td className={cx("mono")}>{when(v.startsAt ?? v.dueAt, timeZone)}</td>
                       <td className={cx("who")}>{v.clientName}</td>
                       <td>{v.label}<span className={cx("sub")}>{v.planName}</span></td>
-                      <td><form action={completePlanVisit.bind(null, v.id)}><button className={cx("btn", "btn-ghost", "btn--sm")} type="submit">Done</button></form></td>
+                      <td>
+                        <div className={cx("acts")}>
+                          {v.appointmentId && <Link className={cx("btn", "btn-primary", "btn--sm")} href={`/dashboard/visits/${v.appointmentId}` as Route}>Report</Link>}
+                          <form action={completePlanVisit.bind(null, v.id)}><button className={cx("btn", "btn-ghost", "btn--sm")} type="submit">Done</button></form>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

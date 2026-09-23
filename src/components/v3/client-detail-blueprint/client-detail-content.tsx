@@ -65,6 +65,7 @@ import { AddToProjectSheet } from "@/components/v3/project-links/add-to-project-
 import { openAddToProject } from "@/components/v3/project-links/open-add-to-project";
 import { useReveal } from "./use-reveal";
 import { activateServicePlan, cancelServicePlan, enrollClientInPlan, renewServicePlan, sendServicePlan } from "@/actions/servicePlans";
+import { EquipmentPanel } from "./equipment-panel";
 
 const FILTERS: { value: ProposalFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -346,6 +347,11 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
               </form>
             )}
           </div>
+        </Panel>
+
+        {/* THE EQUIPMENT (2026-09-23): what is installed at the home. */}
+        <Panel title="Equipment on file" note={view.equipment.length ? `${view.equipment.length} unit${view.equipment.length === 1 ? "" : "s"}` : "Nothing on file"}>
+          <EquipmentPanel clientId={clientId} rows={view.equipment} />
         </Panel>
 
         {/* THE LEDGER ------------------------------------------------ */}

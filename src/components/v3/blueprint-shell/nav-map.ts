@@ -54,6 +54,8 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Delivery",
     items: [
       { label: "Calendar", icon: "i-cal", href: "/dashboard/calendar" },
+      // Online booking (2026-09-23): the public /book/<slug> page's office side.
+      { label: "Online booking", icon: "i-cal", href: "/dashboard/booking" },
       { label: "Jobs", icon: "i-jobs", href: "/dashboard/jobs" },
       { label: "Workers", icon: "i-hardhat", href: "/dashboard/workers" },
       { label: "Hire", icon: "i-userplus", href: "/dashboard/hire" },

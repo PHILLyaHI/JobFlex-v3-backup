@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/cronAuth";
 import { runServicePlans } from "@/lib/servicePlanBook";
+import { runBookingReminders } from "@/lib/bookingBook";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -13,5 +14,10 @@ export const maxDuration = 120;
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const report = await runServicePlans(new Date());
-  return NextResponse.json({ ok: true, ...report });
+  // Online bookings (2026-09-23): the day-before reminder rides the same run.
+  const bookings = await runBookingReminders(new Date()).catch((err) => {
+    console.error(`[booking] reminders: ${err instanceof Error ? err.message : String(err)}`);
+    return { reminded: 0 };
+  });
+  return NextResponse.json({ ok: true, ...report, bookingsReminded: bookings.reminded });
 }

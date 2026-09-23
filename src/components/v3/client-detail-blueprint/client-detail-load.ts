@@ -25,6 +25,8 @@
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { money, planPhase, planTermsLine } from "@/lib/servicePlans";
+import { equipmentAdvice, equipmentLine } from "@/lib/equipment";
+import type { EquipmentRow } from "./equipment-panel";
 import {
   splitAddress,
   type ActivityRow,
@@ -70,6 +72,8 @@ export type ClientDetailRecord = {
   /** Memberships (2026-09-22), newest first, and the plans the shop sells. */
   plans: ClientPlanRow[];
   planTemplates: { id: string; name: string; terms: string }[];
+  /** The units at the home (2026-09-23). */
+  equipment: EquipmentRow[];
   /** The raw columns behind `client`, for the Edit dialog.
    *
    *  Carried SEPARATELY rather than parsed back out of the display strings.
@@ -249,6 +253,8 @@ export async function loadClientDetail(
     };
   });
   const planTemplates = templateRows.map((t) => ({ id: t.id, name: t.name, terms: planTermsLine(t) }));
+  const equipmentRows = await db.clientEquipment.findMany({ where: { clientId: row.id, organizationId }, orderBy: { createdAt: "asc" } });
+  const equipment: EquipmentRow[] = equipmentRows.map((e) => ({ id: e.id, kind: e.kind, line: equipmentLine(e), advice: equipmentAdvice(e), filterSize: e.filterSize, location: e.location, serial: e.serial, source: e.source }));
 
   const lastActivity = row.activities[0]?.createdAt ?? row.updatedAt;
   const addr = splitAddress(row.address);
@@ -290,6 +296,7 @@ export async function loadClientDetail(
     projects: row.projects,
     plans,
     planTemplates,
+    equipment,
     editable: {
       name: row.name,
       email: row.email ?? "",
