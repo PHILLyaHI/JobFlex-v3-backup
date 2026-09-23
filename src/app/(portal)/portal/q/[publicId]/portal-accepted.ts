@@ -24,10 +24,10 @@ function subscribe(l: () => void) {
   };
 }
 
-export function useAcceptedLocally(publicId: string): boolean {
+export function useAcceptedLocally(publicId: string): boolean | null {
   return useSyncExternalStore(
     subscribe,
-    () => flags.get(publicId) ?? false,
-    () => false,
+    () => flags.get(publicId) ?? null,
+    () => null,
   );
 }

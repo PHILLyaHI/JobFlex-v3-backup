@@ -1,0 +1,25 @@
+.dialog, .dialog * { box-sizing: border-box; }
+.dialog { border: 2px solid var(--ink); border-radius: var(--r-sm); padding: 0; width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; overflow: auto; background: var(--paper-deep); color: var(--ink); font-family: var(--font-sans); }
+.dialog::backdrop { background: color-mix(in srgb, var(--ink) 55%, transparent); }
+.content { min-width: 0; }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px; border-bottom: 1px solid var(--ink); }
+.header p { margin: 0 0 4px; font-size: 12px; color: var(--ink-muted); }
+.header h2 { margin: 0; font-size: 24px; font-weight: 900; text-transform: uppercase; }
+.close { min-width: 44px; min-height: 44px; font-size: 28px; border: 1px solid var(--ink); border-radius: var(--r-sm); cursor: pointer; }
+.body { display: grid; gap: 16px; padding: 20px; }
+.body p { margin: 0; line-height: 1.5; }
+.amount { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; }
+.amount strong { font-size: 28px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.targets { display: flex; flex-wrap: wrap; gap: 8px; }
+.targets button { flex: 1 1 180px; min-height: 44px; padding: 10px; border: 1px solid var(--ink); border-radius: var(--r-sm); cursor: pointer; }
+.targets button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.provider { display: flex; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; padding: 12px 16px; background: var(--accent); color: var(--paper-deep); border: 1.5px solid var(--ink); border-radius: var(--r-sm); font-weight: 800; cursor: pointer; }
+.provider:hover:not(:disabled) { background: var(--accent-ink); }
+.dialog button:disabled { opacity: .55; cursor: not-allowed; }
+.dialog button:focus-visible, .bank summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.note { font-size: 13px; color: var(--ink-muted); }
+.error { color: var(--rose); border-left: 3px solid var(--rose); padding-left: 12px; }
+.bank { border: 1px solid var(--ink); padding: 12px; }
+.bank summary { min-height: 44px; padding-block: 12px; cursor: pointer; font-weight: 700; }
+.bank p { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 768px) { .dialog { width: 100%; max-width: none; max-height: calc(100dvh - 24px); margin: auto 0 0; border-bottom: 0; } .body { padding-bottom: max(20px, env(safe-area-inset-bottom)); } }

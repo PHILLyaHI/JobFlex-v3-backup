@@ -1,0 +1,17 @@
+.inline { margin-top: 20px; }
+.form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; width: 100%; }
+.field { display: grid; gap: 8px; flex: 1 1 220px; min-width: 0; }
+.field label { font-size: 14px; font-weight: 700; color: var(--ink); }
+.field input { width: 100%; min-height: 48px; padding: 10px 12px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet, var(--paper-deep)); color: var(--ink); font: inherit; font-size: 16px; }
+.actions { display: flex; gap: 8px; flex: 1 1 260px; }
+.inline .primary, .form .primary, .form .secondary { min-height: 48px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); padding: 12px 16px; font: inherit; font-size: 14px; font-weight: 800; cursor: pointer; }
+.actions .primary { flex: 1; }
+.primary { background: var(--accent); color: var(--sheet, var(--paper-deep)); }
+.primary:hover:not(:disabled) { background: var(--accent-ink); }
+.secondary { background: var(--sheet, var(--paper-deep)); color: var(--ink); }
+.primary:disabled, .secondary:disabled { opacity: .55; cursor: wait; }
+.field input:focus-visible, .primary:focus-visible, .secondary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.error { color: var(--rose); font-size: 13px; line-height: 1.4; }
+.bar { position: fixed; inset: auto 0 0; z-index: 50; padding: 12px 20px max(12px, env(safe-area-inset-bottom)); background: var(--paper-deep); border-top: 2px solid var(--ink); color: var(--ink); font-family: var(--font-sans); }
+.barInner { max-width: 960px; margin-inline: auto; }
+@media print { .bar { display: none; } }
