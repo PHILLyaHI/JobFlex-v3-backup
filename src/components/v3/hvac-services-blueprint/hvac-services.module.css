@@ -137,3 +137,66 @@
   :global(.jf-blueprint .content) .card { padding: 14px 14px 16px; }
   :global(.jf-blueprint .content) .tbl-wrap { overflow-x: auto; }
 }
+
+/* ── the editable book (2026-09-23) ── */
+:global(.jf-blueprint .content) .tools { padding: 14px 18px; }
+:global(.jf-blueprint .content) .tools-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+:global(.jf-blueprint .content) .search { flex: 0 1 280px; min-width: 200px; }
+:global(.jf-blueprint .content) .search .in { height: 36px; padding: 0 10px; }
+:global(.jf-blueprint .content) .chip { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 11px; border: 1.5px solid var(--hair); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); cursor: pointer; }
+:global(.jf-blueprint .content) .chip.on { border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.06); }
+:global(.jf-blueprint .content) .chip b { font-weight: 700; }
+:global(.jf-blueprint .content) .adjust { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+:global(.jf-blueprint .content) .adjust .lbl { white-space: nowrap; }
+:global(.jf-blueprint .content) .money { display: inline-flex; align-items: center; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; }
+:global(.jf-blueprint .content) .money-sign { padding: 0 6px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+:global(.jf-blueprint .content) .in-money { width: 74px; height: 32px; padding: 0 8px 0 0; border: 0; font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; text-align: right; }
+:global(.jf-blueprint .content) .in-pct { width: 56px; height: 32px; padding: 0 0 0 8px; border: 0; font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; text-align: right; }
+:global(.jf-blueprint .content) .in-money:focus-visible, :global(.jf-blueprint .content) .in-pct:focus-visible { outline: none; }
+:global(.jf-blueprint .content) .money:focus-within { outline: 2px solid var(--blueprint); outline-offset: 1px; }
+:global(.jf-blueprint .content) .in:disabled { opacity: 0.5; }
+:global(.jf-blueprint .content) .was { display: block; margin-top: 3px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+:global(.jf-blueprint .content) .part-name { display: block; font-size: 13px; font-weight: 600; }
+:global(.jf-blueprint .content) .part-cost { display: block; margin-top: 4px; }
+:global(.jf-blueprint .content) .sub-inline { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 3px; }
+:global(.jf-blueprint .content) .line-total { font-weight: 800; white-space: nowrap; }
+:global(.jf-blueprint .content) .tag { margin-left: 8px; padding: 1px 6px; font-size: 9.5px; vertical-align: 1px; }
+:global(.jf-blueprint .content) .row-hidden td { opacity: 0.55; }
+:global(.jf-blueprint .content) .row-hidden td.row-acts { opacity: 1; }
+:global(.jf-blueprint .content) .row-acts { white-space: nowrap; text-align: right; }
+:global(.jf-blueprint .content) .row-acts .link + .link { margin-left: 10px; }
+:global(.jf-blueprint .content) .link { background: none; border: 0; padding: 0; font: inherit; font-size: 12px; font-weight: 700; color: var(--blueprint); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+:global(.jf-blueprint .content) .link:disabled { opacity: 0.5; cursor: default; }
+:global(.jf-blueprint .content) .link-danger { color: var(--danger, #a83232); }
+:global(.jf-blueprint .content) .tbl-edit th:nth-child(2) { width: 130px; }
+:global(.jf-blueprint .content) .tbl-edit th:nth-child(3) { width: 260px; }
+:global(.jf-blueprint .content) .tbl-edit th:nth-child(4) { width: 90px; }
+:global(.jf-blueprint .content) .tbl-edit th:nth-child(5) { width: 150px; }
+:global(.jf-blueprint .content) .card-act { margin-left: auto; }
+:global(.jf-blueprint .content) .frm { margin-bottom: 14px; }
+:global(.jf-blueprint .content) .frm-edit { margin: 4px 0; padding: 12px; border: 1.5px solid var(--ink); background: var(--paper); }
+:global(.jf-blueprint .content) .note { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 9px 12px; border: 1.5px solid var(--ink); border-left-width: 5px; background: #fff; font-size: 13px; }
+:global(.jf-blueprint .content) .note-ok { border-color: var(--success, #2e7d32); }
+:global(.jf-blueprint .content) .note-err { border-color: var(--danger, #a83232); color: var(--danger, #a83232); }
+:global(.jf-blueprint .content) .note-x { margin-left: auto; width: 28px; height: 28px; border: 0; background: none; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; }
+
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .search { flex-basis: 100%; }
+  :global(.jf-blueprint .content) .search .in, :global(.jf-blueprint .content) .in-money, :global(.jf-blueprint .content) .in-pct, :global(.jf-blueprint .content) .chip { height: 44px; }
+  :global(.jf-blueprint .content) .adjust { margin-left: 0; width: 100%; flex-wrap: wrap; }
+  :global(.jf-blueprint .content) .adjust .btn--sm { height: 44px; }
+  :global(.jf-blueprint .content) .tbl-wrap { overflow: visible; }
+  :global(.jf-blueprint .content) .tbl-edit { display: block; }
+  :global(.jf-blueprint .content) .tbl-edit thead { display: none; }
+  :global(.jf-blueprint .content) .tbl-edit tbody, :global(.jf-blueprint .content) .tbl-edit tr { display: block; }
+  :global(.jf-blueprint .content) .tbl-edit tr { padding: 10px 0 12px; border-bottom: 1.5px solid var(--hair, #e3e1da); }
+  :global(.jf-blueprint .content) .tbl-edit tr:last-child { border-bottom: none; }
+  :global(.jf-blueprint .content) .tbl-edit td { display: block; padding: 4px 0; border: 0; }
+  :global(.jf-blueprint .content) .tbl-edit td[data-l]:not([data-l=""])::before { content: attr(data-l); display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+  :global(.jf-blueprint .content) .tbl-edit td[data-l="Task"]::before { display: none; }
+  :global(.jf-blueprint .content) .row-acts { text-align: left; display: flex; gap: 14px; margin-top: 6px; }
+  :global(.jf-blueprint .content) .row-acts .link + .link { margin-left: 0; }
+  :global(.jf-blueprint .content) .row-acts .link { min-height: 44px; display: inline-flex; align-items: center; }
+  :global(.jf-blueprint .content) .was { white-space: normal; }
+  :global(.jf-blueprint .content) .tbl-edit th { width: auto; }
+}

@@ -72,6 +72,7 @@ import type { Route } from "next";
 import { useHvacWalk } from "./use-hvac-walk";
 import { SHOTS, TIPS, coverageFor } from "./filming-guide";
 import { indexedLabor, repairAdvice, serviceLaborIndex, serviceMenuFor } from "@/lib/hvac/serviceMenu";
+import { setHvacServiceOverride } from "@/actions/hvacServices";
 import { US_CATALOG } from "@/lib/hvac/data/usCatalog";
 import { ultraLowNoxNeeded } from "@/lib/hvac/data/rules";
 import { CapacityChart } from "./capacity-chart";
@@ -661,6 +662,32 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
     return mid && mid.item.id !== chosen.item.id ? rerun(mid.item.id) : engineRaw;
   }, [engineRaw, pickId, model, catalogItems, custom, job, jobInput, outdoorKind]);
   const ledger = React.useMemo(() => (engine && model && catalog ? buildLedger(engine, model, card.card, catalogItems, { job, input: jobInput, linesetFt, pick: pickId ?? undefined }) : null), [engine, model, catalog, catalogItems, card, job, jobInput, linesetFt, pickId]);
+  // The service lines priced away from the menu on THIS estimate: a labor line
+  // (l-svc-<task>) or a part line (m-svc-<task>) whose price is not what the
+  // ledger wrote. Saving one puts the number on the shop's menu (the part as
+  // a cost, the markup taken back off) and the ledger repeats it from then on.
+  const [learnBusy, setLearnBusy] = React.useState<string | null>(null);
+  const [learnMsg, setLearnMsg] = React.useState("");
+  const menuDiffs = React.useMemo(() => {
+    if (job !== "service" || !lines || !ledger) return [] as Array<{ lineId: string; kind: "l" | "m"; taskId: string; name: string; price: number }>;
+    const base = new Map([...ledger.labor, ...ledger.materials].map((b) => [b.id, b.unitPrice]));
+    return [...lines.labor, ...lines.materials].flatMap((l) => {
+      const m = /^([lm])-svc-(.+)$/.exec(l.id);
+      const b = base.get(l.id);
+      if (!m || b === undefined || Math.abs(b - l.unitPrice) < 0.5 || !(l.unitPrice >= 0)) return [];
+      return [{ lineId: l.id, kind: m[1] as "l" | "m", taskId: m[2], name: l.name, price: l.unitPrice }];
+    });
+  }, [job, lines, ledger]);
+  const learnPrice = async (d: { lineId: string; kind: "l" | "m"; taskId: string; name: string; price: number }) => {
+    setLearnBusy(d.lineId);
+    setLearnMsg("");
+    const res = await setHvacServiceOverride(d.kind === "l" ? { id: d.taskId, laborUsd: Math.round(d.price) } : { id: d.taskId, partCostUsd: Math.round(d.price / (1 + card.card.materialsMarkupPct / 100)) });
+    setLearnBusy(null);
+    if (!res.ok) { setLearnMsg(res.error); return; }
+    setCard({ card: res.card, own: true });
+    setLearnMsg(`${d.name} is ${money(d.price)} on your menu now.`);
+  };
+
   // A service visit's other number (2026-09-22): what replacing the system
   // would cost here, from the same house, so the repair can be weighed.
   const replaceQuote = React.useMemo<number | null>(() => {
@@ -1584,7 +1611,8 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
               </div>
             )}
             {job === "service" && model && (() => {
-              const menu = serviceMenuFor(model, card.card.serviceMenu);
+              const menu = serviceMenuFor(model, card.card.serviceMenu, card.card.serviceOverrides);
+              const adj = card.card.serviceLaborAdjustPct ?? 0;
               const sel = new Set(jobInput.service?.tasks ?? []);
               // Labor in this market, and the repair-or-replace read on what is picked.
               const idx = serviceLaborIndex(model);
@@ -1616,8 +1644,8 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
                               <li key={t.id} className={cx("svc-r", on && "on")}>
                                 <button type="button" role="checkbox" aria-checked={on} className={cx("svc-rb")} onClick={() => toggleTask(t.id)}>
                                   <span className={cx("svc-box")} aria-hidden="true">{on && <svg className={cx("ic")}><use href="#i-check" /></svg>}</span>
-                                  <span className={cx("svc-n")}>{t.title}{rec && !on ? <span className={cx("svc-tag")}>suggested</span> : null}{t.custom ? <span className={cx("svc-tag")}>yours</span> : null}</span>
-                                                  <span className={cx("mono", "svc-p")}>{t.unit === "lb" ? `$${card.card.labor.refrigerantPerLb}/lb + refrigerant` : `$${indexedLabor(t, idx.factor).toLocaleString("en-US")}${t.part ? ` + $${t.part.costUsd.toLocaleString("en-US")} part` : ""}`}</span>
+                                  <span className={cx("svc-n")}>{t.title}{rec && !on ? <span className={cx("svc-tag")}>suggested</span> : null}{t.custom || t.ownLabor ? <span className={cx("svc-tag")}>yours</span> : null}</span>
+                                                  <span className={cx("mono", "svc-p")}>{t.unit === "lb" ? `$${card.card.labor.refrigerantPerLb}/lb + refrigerant` : `$${indexedLabor(t, idx.factor, adj).toLocaleString("en-US")}${t.part ? ` + $${t.part.costUsd.toLocaleString("en-US")} part` : ""}`}</span>
                                 </button>
                                 {on && (
                                   <div className={cx("svc-x")}>
@@ -1983,6 +2011,22 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
           </details>
           <LinesBlock title="Equipment & materials" rows={lines.materials} editing={editLine} onEdit={setEditLine} onChange={(rows) => setLines({ ...lines, materials: rows })} phone={phone} onAddPhone={() => setNewLineFor("materials")} />
           <LinesBlock title="Labor · permit · disposal" rows={lines.labor} editing={editLine} onEdit={setEditLine} onChange={(rows) => setLines({ ...lines, labor: rows })} phone={phone} onAddPhone={() => setNewLineFor("labor")} />
+          {/* THE MENU LEARNS (2026-09-23): a service line priced away from the
+              menu can become the shop's price for that task, once, here. */}
+          {menuDiffs.length > 0 && (
+            <div className={cx("call", "info")} style={{ marginTop: 10 }} data-menu-learn>
+              <span className={cx("stamp")}>menu</span>
+              <span>
+                {menuDiffs.length === 1 ? "One menu price changed on this estimate" : `${menuDiffs.length} menu prices changed on this estimate`} — keep it for next time?{" "}
+                {menuDiffs.map((d) => (
+                  <button key={d.lineId} type="button" className={cx("btn", "btn-ghost", "btn-sm")} style={{ margin: "4px 6px 0 0" }} disabled={learnBusy === d.lineId} onClick={() => void learnPrice(d)}>
+                    {learnBusy === d.lineId ? "Saving…" : `Save ${money(d.price)} for ${d.name}${d.kind === "m" ? " (part)" : ""}`}
+                  </button>
+                ))}
+                {learnMsg ? <span className={cx("acts-note")}>{learnMsg}</span> : null}
+              </span>
+            </div>
+          )}
           {phone && (() => {
             if (newLineFor) {
               const sec = newLineFor;

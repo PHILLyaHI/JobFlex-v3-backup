@@ -32,7 +32,27 @@ export interface ServiceTask {
   note?: string;
   /** Saved by the shop, not from the built-in list. */
   custom?: true;
+  /** The labor is the shop's own number (a menu override) — never indexed or adjusted. */
+  ownLabor?: true;
+  /** The part cost is the shop's own number. */
+  ownPart?: true;
 }
+
+/**
+ * The shop's own numbers on a built-in task (2026-09-23, owner: "make those
+ * services editable"). Saved on the rate card by task id; a field left out
+ * keeps the typical. `hidden` takes the task off the shop's menu — an old
+ * estimate that already picked it still prices.
+ */
+export interface ServiceOverride {
+  laborUsd?: number;
+  partCostUsd?: number;
+  partName?: string;
+  brands?: string[];
+  includes?: string;
+  hidden?: boolean;
+}
+export type ServiceOverrides = Record<string, ServiceOverride>;
 
 const OUTDOOR: ExistingKind[] = ["split-ac-furnace", "split-heat-pump", "package-unit", "ductless"];
 const DUCTED: ExistingKind[] = ["split-ac-furnace", "split-heat-pump", "package-unit", "furnace-only"];
@@ -189,17 +209,37 @@ export const SERVICE_MENU: ServiceTask[] = [
   { id: "boiler-ignition", group: "boiler", title: "Boiler pilot / igniter", includes: "Igniter, thermocouple or pilot assembly, flame proven", laborUsd: 180, part: { name: "Igniter or thermocouple", costUsd: 45 }, fuel: ["gas", "propane"] },
 ];
 
+/** A built-in task with the shop's own numbers on it, when it has any. */
+export function applyOverride(t: ServiceTask, o?: ServiceOverride): ServiceTask {
+  if (!o) return t;
+  const out: ServiceTask = { ...t };
+  if (typeof o.laborUsd === "number") { out.laborUsd = o.laborUsd; out.ownLabor = true; }
+  if (typeof o.includes === "string" && o.includes.trim()) out.includes = o.includes;
+  if (t.part && (typeof o.partCostUsd === "number" || o.partName || o.brands)) {
+    out.part = { ...t.part };
+    if (typeof o.partCostUsd === "number") { out.part.costUsd = o.partCostUsd; out.ownPart = true; }
+    if (o.partName) out.part.name = o.partName;
+    if (o.brands?.length) out.part.brands = o.brands;
+  }
+  return out;
+}
+
+/** The built-in menu as this shop prices it: overrides applied, hidden tasks left out. */
+export function withShopPrices(tasks: readonly ServiceTask[], overrides: ServiceOverrides = {}): ServiceTask[] {
+  return tasks.filter((t) => !overrides[t.id]?.hidden).map((t) => applyOverride(t, overrides[t.id]));
+}
+
 const TITLES: Record<ExistingKind, string> = { "split-ac-furnace": "AC + furnace", "split-heat-pump": "heat pump", "furnace-only": "furnace", "package-unit": "package unit", ductless: "ductless", boiler: "boiler", none: "system" };
 
 /** The menu for this house: the tasks that apply to what is there, grouped,
  *  with the shop's own tasks folded in, and the words the visit should open
  *  with (R-22, an old system, no cooling to service). */
-export function serviceMenuFor(m: BuildingModel, custom: ServiceTask[] = []): { groups: Array<{ group: ServiceGroup; title: string; tasks: ServiceTask[] }>; recommended: string[]; notes: string[] } {
+export function serviceMenuFor(m: BuildingModel, custom: ServiceTask[] = [], overrides: ServiceOverrides = {}): { groups: Array<{ group: ServiceGroup; title: string; tasks: ServiceTask[] }>; recommended: string[]; notes: string[] } {
   const kind = m.existing.kind;
   const fuel = m.existing.fuel;
   const burns = fuel === "gas" || fuel === "propane" || (fuel === undefined && m.gas.available !== false && (kind === "split-ac-furnace" || kind === "furnace-only" || kind === "package-unit"));
   const fits = (t: ServiceTask) => (!t.appliesTo || t.appliesTo.includes(kind)) && (!t.fuel || burns);
-  const all = [...SERVICE_MENU, ...custom.map((c) => ({ ...c, custom: true as const, group: c.group ?? "custom" }))];
+  const all = [...withShopPrices(SERVICE_MENU, overrides), ...custom.map((c) => ({ ...c, custom: true as const, group: c.group ?? "custom" }))];
   const groups = SERVICE_GROUPS.map((g) => ({ ...g, tasks: all.filter((t) => t.group === g.group && fits(t)) })).filter((g) => g.tasks.length);
   const recommended: string[] = [];
   const notes: string[] = [];
@@ -212,9 +252,10 @@ export function serviceMenuFor(m: BuildingModel, custom: ServiceTask[] = []): { 
   return { groups, recommended, notes };
 }
 
-/** One row by id, from the built-in list or the shop's own. */
-export function serviceTask(id: string, custom: ServiceTask[] = []): ServiceTask | undefined {
-  return SERVICE_MENU.find((t) => t.id === id) ?? custom.find((t) => t.id === id);
+/** One row by id, from the built-in list (with the shop's numbers on it) or the shop's own. A hidden task still resolves: an estimate that picked it keeps pricing. */
+export function serviceTask(id: string, custom: ServiceTask[] = [], overrides: ServiceOverrides = {}): ServiceTask | undefined {
+  const t = SERVICE_MENU.find((x) => x.id === id);
+  return t ? applyOverride(t, overrides[id]) : custom.find((x) => x.id === id);
 }
 
 /**
@@ -227,9 +268,12 @@ export function serviceLaborIndex(m: BuildingModel): { factor: number; place: st
   const idx = locationIndex(m.address || m.state);
   return { factor: idx.factor, place: idx.place };
 }
-/** A built-in task's labor in this market, to the nearest $5. */
-export function indexedLabor(t: ServiceTask, factor: number): number {
-  return t.custom ? t.laborUsd : Math.round((t.laborUsd * factor) / 5) * 5;
+/** A built-in task's labor in this market, to the nearest $5 — moved by the
+ *  shop's own adjustment (+10 = ten percent above typical) when it set one.
+ *  The shop's own numbers (a saved task, a menu override) are never moved. */
+export function indexedLabor(t: ServiceTask, factor: number, adjustPct = 0): number {
+  if (t.custom || t.ownLabor) return t.laborUsd;
+  return Math.round((t.laborUsd * factor * (1 + adjustPct / 100)) / 5) * 5;
 }
 
 /** The repairs that are the heart of the system: on an old unit they are money into a replacement. */
