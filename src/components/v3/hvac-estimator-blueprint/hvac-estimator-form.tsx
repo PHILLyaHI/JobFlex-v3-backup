@@ -65,6 +65,10 @@ import {
   type HvacPermit,
 } from "@/actions/hvacEstimator";
 import { calibrationLine, type CalibrationStats } from "@/lib/hvac/calibration";
+import { startEstimateFromLead } from "@/actions/leadEstimate";
+import type { WaitingLead } from "@/lib/leadRules";
+import Link from "next/link";
+import type { Route } from "next";
 import { useHvacWalk } from "./use-hvac-walk";
 import { SHOTS, TIPS, coverageFor } from "./filming-guide";
 import { indexedLabor, repairAdvice, serviceLaborIndex, serviceMenuFor } from "@/lib/hvac/serviceMenu";
@@ -392,7 +396,7 @@ function NumCell({ value, onCommit, ariaLabel, className }: { value: number; onC
 
 // ── the form ────────────────────────────────────────────────────────────────
 
-export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: boolean; initialAddress?: string }) {
+export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { aiEnabled: boolean; initialAddress?: string; leads?: WaitingLead[] }) {
   const router = useRouter();
 
   // The stepper: which step is open. A client's record hands the page an
@@ -410,6 +414,10 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
   // and the estimate line's sheet (an id, or a new line for one section).
   const phone = usePhone();
   const [recentAll, setRecentAll] = React.useState(false);
+  // The recent list is folded until asked for (owner, 2026-09-22: "why do we
+  // need recent estimates there"); recording an actual from the phone sheet
+  // unfolds it so the fields are on screen.
+  const [recentOpen, setRecentOpen] = React.useState(false);
   const [rowSheet, setRowSheet] = React.useState<string | null>(null);
   const [newLineFor, setNewLineFor] = React.useState<"materials" | "labor" | null>(null);
   const go = React.useCallback((k: StepKey) => {
@@ -2106,16 +2114,47 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
       {summary}
       </div>
 
-      {/* ── RECENT ───────────────────────────────────────────────────────── */}
-      <section className={cx("card", "recent-card")}>
-        <div className={cx("head")}>
-          <div className={cx("head-txt")}>
-            <div className={cx("card-title")}>Recent estimates</div>
-            <div className={cx("card-sub")}>Reopen one to change the design or convert it.</div>
-            <div className={cx("rec-fit")}>{calib ? calibrationLine(calib) : "…"}</div>
+      {/* ── LEADS WAITING (2026-09-22) ─────────────────────────────────────
+          The work this page is for: the shop's leads that still want an HVAC
+          estimate (lib/leadQueue). Estimate is the lead page's own hand-off —
+          the address and the client arrive with the reload. Nothing when
+          there are none. */}
+      {leads.length > 0 && (
+        <section className={cx("card", "lead-card")} data-hvac-leads>
+          <div className={cx("head")}>
+            <div className={cx("head-txt")}>
+              <div className={cx("card-title")}>Leads waiting for an HVAC estimate</div>
+              <div className={cx("card-sub")}>From the Leads page. One click opens this estimator with the address and the client filled in.</div>
+            </div>
           </div>
-        </div>
-        {recent.length ? (
+          <div className={cx("lead-rows")}>
+            {leads.map((l) => (
+              <div key={l.id} className={cx("lead-row")}>
+                <Link href={`/dashboard/leads/${l.id}` as Route} className={cx("lead-main")}>
+                  <span className={cx("lead-name")}>{l.name}</span>
+                  <span className={cx("mono", "lead-meta")}>{[l.place, l.projectType, l.ago].filter(Boolean).join(" · ")}</span>
+                </Link>
+                <form action={startEstimateFromLead.bind(null, l.id, "hvac")}>
+                  <button type="submit" className={cx("btn", "btn-primary", "btn-sm")} data-lead-estimate={l.id}>Estimate</button>
+                </form>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── RECENT, folded (owner, 2026-09-22) ─────────────────────────────
+          One line — the count and the fit — until it is asked for; the list
+          and "record actual" are behind it. Nothing when nothing is saved. */}
+      {recent.length > 0 && (
+      <section className={cx("card", "recent-card")} data-hvac-recent>
+        <button type="button" className={cx("rec-fold")} aria-expanded={recentOpen} onClick={() => setRecentOpen((v) => !v)}>
+          <span className={cx("rec-fold-t")}>Recent estimates · {recent.length}</span>
+          <span className={cx("mono", "rec-fold-s")}>{calib && calib.n ? calibrationLine(calib) : "reopen one, or record what you quoted"}</span>
+          <span className={cx("rec-fold-chev")} aria-hidden="true">{recentOpen ? "▴" : "▾"}</span>
+        </button>
+        {recentOpen && calib && !calib.n ? <div className={cx("rec-fit", "rec-fit--open")}>{calibrationLine(calib)}</div> : null}
+        {recentOpen ? (
           <div className={cx("recent")}>
             {(phone && !recentAll ? recent.slice(0, 3) : recent).map((r) => (
               <div key={r.id} className={cx("rrow-wrap")}>
@@ -2140,10 +2179,9 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
             ))}
             {phone && !recentAll && recent.length > 3 && <button type="button" className={cx("rrow-more")} onClick={() => setRecentAll(true)}>Show all {recent.length}</button>}
           </div>
-        ) : (
-          <div className={cx("empty")}>Nothing saved yet — the first estimate you save lands here.</div>
-        )}
+        ) : null}
       </section>
+      )}
       {phone && rowSheet && (() => {
         const r = recent.find((x) => x.id === rowSheet);
         if (!r) return null;
@@ -2151,7 +2189,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
           <BlueprintSheet open onClose={() => setRowSheet(null)} title={shortTitle(r)} description={`${shortMeta(r)} · ${money(r.subtotal)}`}>
             <div className={cx("rs-acts")}>
               <button type="button" className="bps-btn bps-btn--primary" onClick={() => { setRowSheet(null); void reopen(r.id); }}>Reopen</button>
-              <button type="button" className="bps-btn bps-btn--ghost" onClick={() => { setRowSheet(null); setActualFor(r.id); setActualDraft({ tons: r.actual?.tons ? String(r.actual.tons) : "", price: r.actual?.price ? String(r.actual.price) : "", notes: r.actual?.notes ?? "" }); }}>{r.actual ? "Edit actual" : "Record actual"}</button>
+              <button type="button" className="bps-btn bps-btn--ghost" onClick={() => { setRowSheet(null); setRecentOpen(true); setActualFor(r.id); setActualDraft({ tons: r.actual?.tons ? String(r.actual.tons) : "", price: r.actual?.price ? String(r.actual.price) : "", notes: r.actual?.notes ?? "" }); }}>{r.actual ? "Edit actual" : "Record actual"}</button>
             </div>
           </BlueprintSheet>
         );
