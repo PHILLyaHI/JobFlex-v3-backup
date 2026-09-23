@@ -607,7 +607,7 @@ body:has(.jf-blueprint) {
 
 /* Measure the actual row bounds and animate the plate behind the link text.
    The existing ease-out token settles without the old spring overshoot. */
-.jf-blueprint .sb .sb-indicator { top: 0; right: auto; z-index: 0; }
+.jf-blueprint .sb .sb-indicator { top: 0; right: auto; z-index: 2; }
 .jf-blueprint .sb .sb-indicator.ready {
   transition: transform 320ms var(--ease-out), left 320ms var(--ease-out),
     width 320ms var(--ease-out), height 320ms var(--ease-out);

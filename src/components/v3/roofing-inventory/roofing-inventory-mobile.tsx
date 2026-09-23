@@ -52,6 +52,7 @@ function ItemCard({ item, workspace: w, expanded, onExpand }: Props & { item: In
       </div>
       <div className={s.itemFoot}>
         <span><b>{qty(r.onHand)}</b> on hand <span aria-hidden="true">·</span> <b>{qty(r.reserved)}</b> reserved</span>
+        {w.canWrite && <button type="button" className={s.detailsButton} aria-label={`Manage ${r.name}`} aria-haspopup="dialog" onClick={() => w.setItemPanel({ mode: "receive", itemId: r.id })}>Manage</button>}
         <button type="button" onClick={onExpand} aria-expanded={expanded} aria-controls={`roof-item-${r.id}`} aria-label={`${expanded ? "Close" : "View"} ${r.name} details`} className={s.detailsButton}>
           Details <ChevronDown size={16} aria-hidden="true" className={expanded ? s.rotate : undefined} />
         </button>
@@ -82,11 +83,11 @@ function ItemCard({ item, workspace: w, expanded, onExpand }: Props & { item: In
 
 function Stock({ workspace: w }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  return <section className={s.section} aria-label="Roofing stock">
+  return <section className={s.section} aria-label={`${w.tradeLabel} stock`}>
     <div className={s.sectionHeading}><h2>Stock</h2><span>{w.rows.length} items</span></div>
     <label className={s.search}>
       <Search size={18} aria-hidden="true" />
-      <input type="search" value={w.q} onChange={(e) => w.setQ(e.target.value)} placeholder="Find an item or supplier" aria-label="Search roofing inventory" />
+      <input type="search" value={w.q} onChange={(e) => w.setQ(e.target.value)} placeholder="Find an item or supplier" aria-label={`Search ${w.tradeLabel} inventory`} />
     </label>
     <div className={s.filters}>
       <label className={s.filterField}><span>Show</span><span className="bp-sel"><select className="bp-sel-in" value={w.filter} onChange={(e) => w.setFilter(e.target.value as InventoryWorkspace["filter"])}>
@@ -105,20 +106,18 @@ function Stock({ workspace: w }: Props) {
           {section.items.map((item) => <ItemCard key={item.r.id} item={item} workspace={w} expanded={expandedId === item.r.id} onExpand={() => setExpandedId(expandedId === item.r.id ? null : item.r.id)} />)}
         </div>)}
       </div>}
-      {w.shown.length === 0 && w.folded.length === 0 && <Empty title="No matching items" action={<button type="button" className={s.secondary} onClick={() => { w.setQ(""); w.setFilter("ALL"); }}>Clear filters</button>}>Try another name, supplier, or stock filter.</Empty>}
-      {w.folded.length > 0 && <button type="button" className={s.fullButton} onClick={() => w.setShowEmpty(true)}>Show {w.folded.length} items not stocked<ChevronDown size={18} aria-hidden="true" /></button>}
-      {w.showEmpty && w.filter === "ALL" && !w.q.trim() && w.rows.some((row) => row.st === "empty") && <button type="button" className={s.fullButton} onClick={() => w.setShowEmpty(false)}>Hide items not stocked<ChevronDown size={18} className={s.rotate} aria-hidden="true" /></button>}
+      {w.shown.length === 0 && <Empty title="No matching items" action={<button type="button" className={s.secondary} onClick={() => { w.setQ(""); w.setFilter("ALL"); }}>Clear filters</button>}>Try another name, supplier, or stock filter.</Empty>}
     </>}
     {w.canWrite && (w.data.presets.missing > 0 || w.data.untracked.length > 0) && <details className={s.setup}>
       <summary>Complete your stock list<ChevronDown size={18} aria-hidden="true" /></summary>
-      {w.data.presets.missing > 0 && <div className={s.setupBlock}><p>Add {w.data.presets.missing} standard roofing materials to your list. Stock starts at zero.</p><button type="button" className={s.secondary} disabled={w.pending} onClick={w.seedItems}>Add standard items</button></div>}
+      {w.data.presets.missing > 0 && <div className={s.setupBlock}><p>Add {w.data.presets.missing} standard {w.tradeLabel} materials to your list. Stock starts at zero.</p><button type="button" className={s.secondary} disabled={w.pending} onClick={w.seedItems}>Add standard items</button></div>}
       {w.data.untracked.length > 0 && <div className={s.setupBlock}><h3>Used in proposals, not tracked</h3><p>Add each item, then receive what you have on hand.</p><button type="button" className={s.secondary} disabled={w.pending} onClick={w.trackAllItems}>Track all {w.data.untracked.length} items</button><ul className={s.untracked}>{w.data.untracked.map((line) => <li key={line.name}><span>{line.name}<small>{line.unit || "each"}</small></span><button type="button" className={s.iconButton} disabled={w.pending} onClick={() => w.trackItem(line)} aria-label={`Track ${line.name}`}><Plus size={18} aria-hidden="true" /></button></li>)}</ul></div>}
     </details>}
   </section>;
 }
 
 function Orders({ workspace: w }: Props) {
-  return <section className={s.section} aria-label="Roofing purchase orders">
+  return <section className={s.section} aria-label={`${w.tradeLabel} purchase orders`}>
     <div className={s.sectionHeading}><h2>Order materials</h2>{w.orderCost > 0 && <span>Est. {usd(w.orderCost)}</span>}</div>
     {w.needs.length > 0 ? <>
       <p className={s.sectionNote}>Suggested quantities cover sold jobs, open proposals, and your reorder level.</p>
@@ -137,7 +136,7 @@ function Orders({ workspace: w }: Props) {
         {w.unassigned.map((item) => <div className={s.assignRow} key={item.id}><div><strong>{item.name}</strong><span>Order {qty(item.suggestedOrder)} {item.unit}</span></div>{w.canWrite ? <label className={s.filterField}><span className={s.srOnly}>Supplier for {item.name}</span><span className="bp-sel"><select className="bp-sel-in" value="" disabled={w.pending} onChange={(e) => { if (e.target.value) w.assignSupplier(item, e.target.value); }}><option value="">Select supplier</option>{w.data.suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></span></label> : <span className={s.muted}>No supplier assigned</span>}</div>)}
         {w.canWrite && <button type="button" className={s.secondary} onClick={() => w.setSupplierOpen(true)}><Plus size={16} aria-hidden="true" /> Add supplier</button>}
       </div>}
-    </> : <Empty title={w.data.rows.length ? "Nothing to order right now" : "No suggested orders yet"}>{w.data.rows.length ? "Your tracked materials cover current demand and reorder levels." : "Track your roofing materials and enter current stock to calculate what to order."}</Empty>}
+    </> : <Empty title={w.data.rows.length ? "Nothing to order right now" : "No suggested orders yet"}>{w.data.rows.length ? "Your tracked materials cover current demand and reorder levels." : `Track your ${w.tradeLabel} materials and enter current stock to calculate what to order.`}</Empty>}
     <div className={s.subsectionHeading}><h2>On the way</h2><span>{w.data.orders.length}</span></div>
     {w.data.orders.length === 0 ? <p className={s.sectionNote}>Sent purchase orders appear here until received.</p> : w.data.orders.map((order) => <article className={s.order} key={order.id}>
       <div className={s.orderHead}><h3>{order.supplier}</h3><span>{dayOf(order.sentAt)}</span></div>
@@ -148,7 +147,7 @@ function Orders({ workspace: w }: Props) {
 }
 
 function Jobs({ workspace: w }: Props) {
-  return <section className={s.section} aria-label="Roofing jobs and proposals">
+  return <section className={s.section} aria-label={`${w.tradeLabel} jobs and proposals`}>
     <div className={s.sectionHeading}><h2>Jobs &amp; proposals</h2><span>{w.proposals.length}</span></div>
     {w.next && <div className={s.nextJob}>
       <div className={s.nextJobTop}><Truck size={18} aria-hidden="true" /><span>Next to load{w.next.startsAt ? ` · ${dayOf(w.next.startsAt)}` : ""}</span></div>
@@ -157,14 +156,14 @@ function Jobs({ workspace: w }: Props) {
       <Link href={`/dashboard/jobs/${w.next.jobId}` as Route} className={s.textButton}>Open pick list<ArrowRight size={16} aria-hidden="true" /></Link>
     </div>}
     <label className={s.filterField}><span>Show proposals</span><span className="bp-sel"><select className="bp-sel-in" value={w.ptab} onChange={(e) => w.setPtab(e.target.value as InventoryWorkspace["ptab"])}>{w.ptabs.map((tab) => <option key={tab.id} value={tab.id}>{tab.label} ({tab.n})</option>)}</select></span></label>
-    {w.proposals.length === 0 ? <Empty title="No roofing proposals yet" action={<Link className={s.secondary} href="/dashboard/roof-estimator">Open roofing estimator<ArrowRight size={16} aria-hidden="true" /></Link>}>Create an estimate to see its material needs here.</Empty> : w.listedProposals.length === 0 ? <Empty title="No proposals in this view">Choose another proposal status to see your work.</Empty> : <div className={s.proposals}>{w.listedProposals.map((proposal) => {
+    {w.proposals.length === 0 ? <Empty title={`No ${w.tradeLabel} proposals yet`} action={<Link className={s.secondary} href={w.estimatorHref}>Open {w.tradeLabel} estimator<ArrowRight size={16} aria-hidden="true" /></Link>}>Create an estimate to see its material needs here.</Empty> : w.listedProposals.length === 0 ? <Empty title="No proposals in this view">Choose another proposal status to see your work.</Empty> : <div className={s.proposals}>{w.listedProposals.map((proposal) => {
       const material = materialsOf(proposal, w.data.rows);
       return <article className={s.proposal} key={proposal.id}>
         <div className={s.proposalMeta}><span className={s.badge}>{statusLabel(proposal.status)}</span><strong>{usd(proposal.total)}</strong></div>
         <Link className={s.proposalTitle} href={`/dashboard/manual-blueprint?proposal=${proposal.id}` as Route}>{proposal.title}<ChevronRight size={18} aria-hidden="true" /></Link>
         <p>{proposal.client || "No client"} · {dayOf(proposal.createdAt)}</p>
         <div className={s.material} data-tone={material.tone}><ClipboardList size={16} aria-hidden="true" /><span>{material.text}</span></div>
-        {proposal.inferred && <p className={s.inferred}>Matched by its roofing materials</p>}
+        {proposal.inferred && <p className={s.inferred}>Matched by its {w.tradeLabel} materials</p>}
         <div className={s.proposalActions}>
           {proposal.linked && proposal.jobId && (proposal.status === "ACCEPTED" || proposal.status === "COMPLETED") && <Link className={s.textButton} href={`/dashboard/jobs/${proposal.jobId}` as Route}>Pick list<ArrowRight size={16} aria-hidden="true" /></Link>}
           {w.canWrite && <button type="button" className={s.textButton} disabled={w.pending} onClick={() => w.linkProposal(proposal, !proposal.linked)}>{proposal.linked ? "Disconnect inventory" : "Connect inventory"}</button>}
@@ -183,7 +182,7 @@ function supplierWebsite(value: string | null): string | null {
 }
 
 function Suppliers({ workspace: w }: Props) {
-  return <section className={s.section} aria-label="Roofing suppliers">
+  return <section className={s.section} aria-label={`${w.tradeLabel} suppliers`}>
     <div className={s.sectionHeading}><h2>Suppliers</h2>{w.canWrite && <button className={s.iconButton} type="button" aria-label="Add supplier" onClick={() => w.setSupplierOpen(true)}><Plus size={20} aria-hidden="true" /></button>}</div>
     {w.data.suppliers.length === 0 ? <Empty title="Where do you buy materials?" action={w.canWrite ? <button type="button" className={s.primary} onClick={() => w.setSupplierOpen(true)}><Plus size={16} aria-hidden="true" /> Add supplier</button> : undefined}>Add a supplier and their order email to send purchase orders from your stock list.</Empty> : <div className={s.suppliers}>{w.data.suppliers.map((supplier) => <article className={s.supplier} key={supplier.id}>
       <div className={s.orderHead}><h3>{supplier.name}</h3><span>{supplier.itemCount} {supplier.itemCount === 1 ? "item" : "items"}</span></div>
@@ -251,7 +250,7 @@ export function RoofingInventoryMobile({ workspace: w }: Props) {
   const sheetTitle = w.supplierOpen ? "Supplier details" : w.itemPanel?.mode === "add" ? "Add stock item" : w.itemPanel?.mode === "receive" ? "Receive stock" : w.itemPanel?.mode === "count" ? "Count stock" : "Edit stock item";
   const closeSheet = () => { w.setItemPanel(null); w.setSupplierOpen(false); };
   return <div className={s.mobile} aria-busy={w.pending} onFocusCapture={(event) => { if (event.target instanceof HTMLElement && event.currentTarget.contains(event.target)) returnFocus.current = event.target; }}>
-    <header className={s.header}><h1>Roofing inventory</h1>{w.canWrite && <button type="button" className={s.addButton} aria-label="Add inventory item" disabled={w.pending} onClick={() => w.setItemPanel({ mode: "add" })}><Plus size={20} aria-hidden="true" /></button>}</header>
+    <header className={s.header}><h1>{w.tradeLabel} inventory</h1>{w.canWrite && <button type="button" className={s.addButton} aria-label="Add inventory item" disabled={w.pending} onClick={() => w.setItemPanel({ mode: "add" })}><Plus size={20} aria-hidden="true" /></button>}</header>
     {!w.canWrite && <p className={s.readOnly}>View only · Stock changes are managed by your office.</p>}
     {w.needs.length > 0 ? <div className={s.attention}>
       <div><h2>{w.needs.length} {w.needs.length === 1 ? "item needs" : "items need"} ordering</h2><p>{w.soldShort ? `${w.soldShort} short for sold jobs` : "Keep the next job supplied"}{w.data.orders.length ? ` · ${w.data.orders.length} ${w.data.orders.length === 1 ? "order" : "orders"} on the way` : ""}</p></div>
@@ -265,7 +264,7 @@ export function RoofingInventoryMobile({ workspace: w }: Props) {
     {w.tab === "suppliers" && <Suppliers workspace={w} />}
     {w.tab === "activity" && <Activity workspace={w} />}
     {typeof document !== "undefined" && createPortal(<AnimatePresence>{sheetOpen && <Sheet key="inventory-form" title={sheetTitle} onClose={closeSheet} pending={w.pending} returnFocus={returnFocus}>
-      {item && <p className={s.sheetItemName}>{item.name}</p>}
+      {item && <><p className={s.sheetItemName}>{item.name}</p><div className={s.sheetModes} role="group" aria-label="Stock action">{(["receive", "count", "edit"] as const).map(mode => <button type="button" key={mode} className={s.secondary} aria-pressed={w.itemPanel?.mode === mode} disabled={w.pending} onClick={() => w.setItemPanel({mode, itemId:item.id})}>{mode === "receive" ? "Receive" : mode === "count" ? "Count stock" : "Edit item"}</button>)}</div></>}
       {w.error && <div className={s.feedback} data-error="true" role="alert">{w.error}</div>}
       {w.supplierOpen ? <InventorySupplierForm workspace={w} compact /> : <InventoryItemForm key={`${w.itemPanel?.mode}-${w.itemPanel?.itemId ?? "new"}`} workspace={w} compact />}
     </Sheet>}</AnimatePresence>, document.body)}

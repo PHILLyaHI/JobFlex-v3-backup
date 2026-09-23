@@ -170,3 +170,8 @@
 .workspace.workspace .activity time { color: var(--ink-muted); text-align: right; font-size: 11px; white-space: nowrap; }
 .workspace.workspace .srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (prefers-reduced-motion: reduce) { .workspace.workspace *, .workspace.workspace *::before, .workspace.workspace *::after { transition: none; } }
+
+.workspace.itemDialog { position: fixed; inset: 0; margin: auto; width: min(680px, calc(100vw - 48px)); max-height: calc(100dvh - 64px); overflow: auto; padding: 0; border: 2px solid var(--ink); border-radius: var(--radius); background: var(--paper-deep); color: var(--ink); }
+.itemDialog::backdrop { background: color-mix(in srgb, var(--ink) 40%, transparent); }
+.workspace.workspace .dialogBody { padding: 24px; }
+.workspace.workspace .dialogBody > .modeSwitch { margin-bottom: 24px; }

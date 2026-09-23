@@ -34,7 +34,7 @@ export function InventoryItemForm({ workspace: w, compact = false }: { workspace
         </div>
       ) : (
         <div className={s.grid}>
-          {panel.mode === "add" && <label className={`${s.field} ${s.wide}`}>Item name<input autoFocus required name="name" maxLength={120} placeholder="Architectural shingles" /></label>}
+          {panel.mode === "add" && <label className={`${s.field} ${s.wide}`}>Item name<input autoFocus required name="name" maxLength={120} placeholder={w.data.trade === "roof" ? "Architectural shingles" : w.data.trade === "fence" ? "Cedar fence pickets" : "Air filter"} /></label>}
           <label className={s.field}>Unit<input autoFocus={panel.mode === "edit"} name="unit" required maxLength={24} defaultValue={item?.unit ?? "each"} placeholder="bundle, roll, each" /></label>
           {panel.mode === "add" && <label className={s.field}>On hand<input name="onHand" type="number" step="any" min="0" defaultValue="0" /></label>}
           <label className={s.field}>Reorder at<input name="reorder" type="number" step="any" min="0" defaultValue={item?.reorderPoint ?? ""} placeholder={item ? `Automatic · ${qty(item.threshold)}` : "Automatic"} /><small>Leave blank to cover the biggest job.</small></label>

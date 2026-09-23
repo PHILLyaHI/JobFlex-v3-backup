@@ -4,13 +4,13 @@
 // actions/inventory (manager or owner). Sales and estimator roles read it.
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { TradeBoard } from "@/components/v3/trade-board/trade-board";
+import { RoofingInventory } from "@/components/v3/roofing-inventory/roofing-inventory";
 import { loadTradeBoard } from "@/lib/inventoryBoard";
 import { loadStockFacts } from "@/lib/inventoryDashboard";
 import { isLimitedRole, NoOrgError, requireOrg, UnauthorizedError } from "@/lib/orgContext";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "JobFlex · HVAC board" };
+export const metadata: Metadata = { title: "JobFlex · HVAC inventory" };
 
 export default async function Page() {
   let organizationId: string;
@@ -32,5 +32,5 @@ export default async function Page() {
     "hvac",
     data.proposals.filter((p) => p.linked && p.status === "ACCEPTED" && !p.loaded).map((p) => p.id),
   );
-  return <TradeBoard data={data} facts={facts} canWrite={!isLimitedRole(role)} />;
+  return <RoofingInventory key={data.trade} data={data} facts={facts} canWrite={!isLimitedRole(role)} />;
 }

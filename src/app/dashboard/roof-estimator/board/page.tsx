@@ -32,5 +32,5 @@ export default async function Page() {
     "roof",
     data.proposals.filter((p) => p.linked && p.status === "ACCEPTED" && !p.loaded).map((p) => p.id),
   );
-  return <RoofingInventory data={data} facts={facts} canWrite={!isLimitedRole(role)} />;
+  return <RoofingInventory key={data.trade} data={data} facts={facts} canWrite={!isLimitedRole(role)} />;
 }

@@ -560,25 +560,19 @@ export function comingSoonNote(name: string): string {
   return `${name} isn't switched on for everyone yet. We're finishing the setup — you'll be able to connect it here as soon as it goes live.`;
 }
 
-/* HIDDEN FOR NOW (owner, 2026-09-15): Gmail and Meta business are off the
-   subtab bar on both viewports until they are ready to be offered. Their
-   cards, state and server wiring are untouched.
-   2026-09-16: Gmail returns for the accounts it is switched on for — the
-   Testing-stage allowlist (GMAIL_OAUTH_TEST_USERS), everyone once Google
-   has verified the app (GMAIL_OAUTH_PUBLIC), or an org that already
-   connected — via `integrationSubTabs`. `isVisibleSubTab` keeps a
-   ?sub=gmail deep link from reaching a hidden pane. */
+/* Meta is discoverable for every workspace. Connection and import controls
+   retain the server-provided availability and manager permissions. Gmail
+   remains visible only for enabled or previously connected accounts. */
 export const INTEGRATION_SUBTABS: readonly SubTab[] = [
+  { key: 'meta', label: 'Meta business' },
   { key: 'stripe', label: 'Stripe' },
   { key: 'square', label: 'Square' },
 ];
 
-/** The subtab bar for one viewer: Gmail (and, one day, Meta) ahead of the
- *  processors when that integration is open to them. */
-export function integrationSubTabs(show: { gmail: boolean; meta?: boolean }): readonly SubTab[] {
+/** Add Gmail for viewers who can use or reconnect it. */
+export function integrationSubTabs(show: { gmail: boolean }): readonly SubTab[] {
   const lead: SubTab[] = [];
   if (show.gmail) lead.push({ key: 'gmail', label: 'Gmail' });
-  if (show.meta) lead.push({ key: 'meta', label: 'Meta business' });
   return [...lead, ...INTEGRATION_SUBTABS];
 }
 

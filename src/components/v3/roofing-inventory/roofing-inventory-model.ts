@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useDeferredValue, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { countStock, deleteInventoryItem, receivePurchaseOrder, receiveStock, seedTradeItems, sendPurchaseOrder, upsertInventoryItem, upsertSupplier } from "@/actions/inventory";
 import { setProposalInventoryLink } from "@/actions/inventoryLink";
@@ -77,7 +77,9 @@ export function useRoofingInventory({ data, facts, canWrite }: RoofingInventoryP
   const [view, setView] = useState<"urgency" | "category">("urgency");
   const [ptab, setPtab] = useState<ProposalFilter>("ALL");
   const [q, setQ] = useState("");
-  const [showEmpty, setShowEmpty] = useState(false);
+  const search = useDeferredValue(q);
+  const tradeLabel = data.trade === "roof" ? "Roofing" : data.trade === "fence" ? "Fence" : "HVAC";
+  const estimatorHref = `/dashboard/${data.trade}-estimator` as const;
   const [itemPanel, setItemPanel] = useState<ItemPanel | null>(null);
   const [supplierOpen, setSupplierOpen] = useState(false);
 
@@ -99,44 +101,46 @@ export function useRoofingInventory({ data, facts, canWrite }: RoofingInventoryP
   }
 
   const rows = useMemo<InventoryRow[]>(() => data.rows.map((r) => ({ r, st: stateOf(r), idle: r.onHand > 0 && r.reserved === 0 && r.forecast === 0 && !((facts.items[r.id]?.used ?? 0) > 0) })).sort((a, b) => ORDER[a.st] - ORDER[b.st] || a.r.name.localeCompare(b.r.name)), [data.rows, facts.items]);
-  const needs = rows.filter((x) => NEEDS.has(x.st)).map((x) => x.r);
-  const soldShort = rows.filter((x) => x.st === "soldshort").length;
-  const stocked = rows.filter((x) => x.r.onHand > 0).length;
-  const emptyCount = rows.filter((x) => x.st === "empty").length;
-  const idle = rows.filter((x) => x.idle);
-  const idleValue = idle.reduce((n, x) => n + x.r.onHand * (facts.items[x.r.id]?.lastCost ?? 0), 0);
-  const needle = q.trim().toLowerCase();
-  const listed = rows.filter((x) => (filter === "ALL" || (filter === "ORDER" ? NEEDS.has(x.st) : filter === "RESERVED" ? x.r.reserved > 0 : filter === "STOCKED" ? x.r.onHand > 0 : filter === "IDLE" ? x.idle : x.st === "empty")) && (!needle || x.r.name.toLowerCase().includes(needle) || (x.r.supplierName ?? "").toLowerCase().includes(needle) || (x.r.supplierSku ?? "").toLowerCase().includes(needle)));
-  const folding = filter === "ALL" && !needle && !showEmpty;
-  const folded = folding ? listed.filter((x) => x.st === "empty") : [];
-  const shown = folding ? listed.filter((x) => x.st !== "empty") : listed;
-  const sections: Array<{ label: string | null; items: InventoryRow[]; needs: number }> = view === "category" ? groupByCategory(data.trade, shown, (x) => x.r.name).map((g) => ({ label: g.label, items: g.items, needs: g.items.filter((x) => NEEDS.has(x.st)).length })) : [{ label: null, items: shown, needs: 0 }];
-  const chips: Array<{ id: StockFilter; label: string; n: number }> = [
-    { id: "ALL", label: "All items", n: rows.length }, { id: "ORDER", label: "Needs ordering", n: needs.length }, { id: "RESERVED", label: "Reserved", n: rows.filter((x) => x.r.reserved > 0).length }, { id: "STOCKED", label: "In stock", n: stocked }, { id: "IDLE", label: "Idle", n: idle.length }, { id: "EMPTY", label: "Not stocked", n: emptyCount },
-  ];
-  const bySupplier = new Map<string, StockRow[]>();
-  const unassigned: StockRow[] = [];
-  for (const r of needs) {
-    if (r.suggestedOrder <= 0) continue;
-    if (!r.supplierId) unassigned.push(r);
-    else bySupplier.set(r.supplierId, [...(bySupplier.get(r.supplierId) ?? []), r]);
-  }
-  const orderCost = needs.reduce((n, r) => n + r.suggestedOrder * (facts.items[r.id]?.lastCost ?? 0), 0);
-  const next = facts.nextLoads[0];
-  const nextProposal = next ? data.proposals.find((p) => p.id === next.proposalId) : undefined;
-  const nextPick = nextProposal ? pickList(data.rows, nextProposal.lines) : [];
-  const nextShort = nextPick.filter((p) => p.itemId && !p.enough).length;
-  const rank = (p: BoardProposal) => !p.linked ? 3 : p.status === "ACCEPTED" ? 0 : OPEN.has(p.status) ? 1 : 2;
-  const proposals = [...data.proposals].sort((a, b) => rank(a) - rank(b));
-  const ptabs: Array<{ id: ProposalFilter; label: string; n: number }> = [
-    { id: "ALL", label: "All", n: proposals.length }, { id: "OPEN", label: "Open", n: proposals.filter((p) => p.linked && OPEN.has(p.status)).length }, { id: "SOLD", label: "Sold", n: proposals.filter((p) => p.linked && p.status === "ACCEPTED").length }, { id: "DONE", label: "Done", n: proposals.filter((p) => rank(p) === 2).length }, { id: "OFF", label: "Not connected", n: proposals.filter((p) => !p.linked).length },
-  ];
-  const listedProposals = proposals.filter((p) => ptab === "ALL" || (ptab === "OPEN" ? p.linked && OPEN.has(p.status) : ptab === "SOLD" ? p.linked && p.status === "ACCEPTED" : ptab === "DONE" ? rank(p) === 2 : !p.linked));
+  const derived = useMemo(() => {
+    const needs = rows.filter((x) => NEEDS.has(x.st)).map((x) => x.r);
+    const soldShort = rows.filter((x) => x.st === "soldshort").length;
+    const stocked = rows.filter((x) => x.r.onHand > 0).length;
+    const emptyCount = rows.filter((x) => x.st === "empty").length;
+    const idle = rows.filter((x) => x.idle);
+    const idleValue = idle.reduce((n, x) => n + x.r.onHand * (facts.items[x.r.id]?.lastCost ?? 0), 0);
+    const needle = search.trim().toLowerCase();
+    const listed = rows.filter((x) => (filter === "ALL" || (filter === "ORDER" ? NEEDS.has(x.st) : filter === "RESERVED" ? x.r.reserved > 0 : filter === "STOCKED" ? x.r.onHand > 0 : filter === "IDLE" ? x.idle : x.st === "empty")) && (!needle || x.r.name.toLowerCase().includes(needle) || (x.r.supplierName ?? "").toLowerCase().includes(needle) || (x.r.supplierSku ?? "").toLowerCase().includes(needle)));
+    const shown = listed;
+    const sections: Array<{ label: string | null; items: InventoryRow[]; needs: number }> = view === "category" ? groupByCategory(data.trade, shown, (x) => x.r.name).map((g) => ({ label: g.label, items: g.items, needs: g.items.filter((x) => NEEDS.has(x.st)).length })) : [{ label: null, items: shown, needs: 0 }];
+    const chips: Array<{ id: StockFilter; label: string; n: number }> = [
+      { id: "ALL", label: "All items", n: rows.length }, { id: "ORDER", label: "Needs ordering", n: needs.length }, { id: "RESERVED", label: "Reserved", n: rows.filter((x) => x.r.reserved > 0).length }, { id: "STOCKED", label: "In stock", n: stocked }, { id: "IDLE", label: "Idle", n: idle.length }, { id: "EMPTY", label: "Not stocked", n: emptyCount },
+    ];
+    const bySupplier = new Map<string, StockRow[]>();
+    const unassigned: StockRow[] = [];
+    for (const r of needs) {
+      if (r.suggestedOrder <= 0) continue;
+      if (!r.supplierId) unassigned.push(r);
+      else bySupplier.set(r.supplierId, [...(bySupplier.get(r.supplierId) ?? []), r]);
+    }
+    const orderCost = needs.reduce((n, r) => n + r.suggestedOrder * (facts.items[r.id]?.lastCost ?? 0), 0);
+    const next = facts.nextLoads[0];
+    const nextProposal = next ? data.proposals.find((p) => p.id === next.proposalId) : undefined;
+    const nextPick = nextProposal ? pickList(data.rows, nextProposal.lines) : [];
+    const nextShort = nextPick.filter((p) => p.itemId && !p.enough).length;
+    const rank = (p: BoardProposal) => !p.linked ? 3 : p.status === "ACCEPTED" ? 0 : OPEN.has(p.status) ? 1 : 2;
+    const proposals = [...data.proposals].sort((a, b) => rank(a) - rank(b));
+    const ptabs: Array<{ id: ProposalFilter; label: string; n: number }> = [
+      { id: "ALL", label: "All", n: proposals.length }, { id: "OPEN", label: "Open", n: proposals.filter((p) => p.linked && OPEN.has(p.status)).length }, { id: "SOLD", label: "Sold", n: proposals.filter((p) => p.linked && p.status === "ACCEPTED").length }, { id: "DONE", label: "Done", n: proposals.filter((p) => rank(p) === 2).length }, { id: "OFF", label: "Not connected", n: proposals.filter((p) => !p.linked).length },
+    ];
+    const listedProposals = proposals.filter((p) => ptab === "ALL" || (ptab === "OPEN" ? p.linked && OPEN.has(p.status) : ptab === "SOLD" ? p.linked && p.status === "ACCEPTED" : ptab === "DONE" ? rank(p) === 2 : !p.linked));
+
+    return { shown, sections, chips, needs, soldShort, stocked, emptyCount, idle, idleValue, bySupplier, unassigned, orderCost, next, nextPick, nextShort, proposals, listedProposals, ptabs };
+  }, [rows, data, facts, search, filter, view, ptab]);
 
   return {
-    data, facts, canWrite, pending, error, note, dismissFeedback: () => { setError(null); setNote(null); },
-    tab, setTab, filter, setFilter, view, setView, ptab, setPtab, q, setQ, showEmpty, setShowEmpty, itemPanel, setItemPanel, supplierOpen, setSupplierOpen,
-    rows, shown, folded, sections, chips, needs, soldShort, stocked, emptyCount, idle, idleValue, bySupplier, unassigned, orderCost, next, nextPick, nextShort, proposals, listedProposals, ptabs,
+    tradeLabel, estimatorHref, data, facts, canWrite, pending, error, note, dismissFeedback: () => { setError(null); setNote(null); },
+    tab, setTab, filter, setFilter, view, setView, ptab, setPtab, q, setQ, itemPanel, setItemPanel, supplierOpen, setSupplierOpen,
+    rows, ...derived,
     saveItem: (input: ItemInput) => run(() => upsertInventoryItem({ ...input, trade: data.trade }), () => `${input.name} saved.`, () => setItemPanel(null)),
     removeItem: (r: StockRow) => run(() => deleteInventoryItem(r.id), () => `${r.name} removed.`, () => setItemPanel(null)),
     receiveItem: (r: StockRow, n: number) => run(() => receiveStock(r.id, n), () => `${qty(n)} ${r.unit} of ${r.name} received.`, () => setItemPanel(null)),
@@ -145,7 +149,7 @@ export function useRoofingInventory({ data, facts, canWrite }: RoofingInventoryP
     assignSupplier: (r: StockRow, supplierId: string) => run(() => upsertInventoryItem({ trade: data.trade, name: r.name, unit: r.unit, reorderPoint: r.reorderPoint, supplierId, supplierSku: r.supplierSku ?? null, lastCost: facts.items[r.id]?.lastCost ?? null }), () => `Supplier assigned to ${r.name}.`),
     sendOrder: (supplierId: string, list: StockRow[]) => run(() => sendPurchaseOrder({ trade: data.trade, supplierId, lines: list.map((r) => ({ itemId: r.id, quantity: r.suggestedOrder })) }), (r) => r.ok ? `Purchase order emailed to ${r.to} · ${r.count} lines.` : ""),
     receiveOrder: (id: string) => run(() => receivePurchaseOrder(id), (r) => r.ok ? `${r.received} lines received into stock.` : ""),
-    seedItems: () => run(() => seedTradeItems(data.trade), (r) => r.ok ? `${r.added} standard roofing items added. Receive your current stock to update quantities.` : ""),
+    seedItems: () => run(() => seedTradeItems(data.trade), (r) => r.ok ? `${r.added} standard ${tradeLabel} items added. Receive your current stock to update quantities.` : ""),
     trackItem: (l: StockLine) => run(() => upsertInventoryItem({ trade: data.trade, name: l.name, unit: l.unit ?? "each" }), () => `${l.name} is now tracked. Receive your current stock to update its quantity.`),
     trackAllItems: () => run(async () => { let added = 0; for (const l of data.untracked) { const r = await upsertInventoryItem({ trade: data.trade, name: l.name, unit: l.unit ?? "each" }); if (!r.ok) return r; added++; } return { ok: true as const, added }; }, (r) => r.ok ? `${r.added} items now tracked.` : ""),
     linkProposal: (p: BoardProposal, linked: boolean) => run(() => setProposalInventoryLink({ proposalId: p.id, linked, trade: data.trade }), () => linked ? `${p.title} is connected to inventory.` : `${p.title} is estimate only. No stock is reserved.`),
