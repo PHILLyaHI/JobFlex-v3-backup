@@ -43,6 +43,7 @@ import {
   type PromptAnalysis,
 } from "@/lib/estimatorSchema";
 import { trackActivation, trackProposalCreated } from "@/lib/activation-events";
+import { applyMemberDiscount } from "@/lib/servicePlanBook";
 
 /**
  * Quota gate for the AI *run* functions. Returned (not thrown) because these
@@ -1598,6 +1599,8 @@ export async function convertEstimateToProposal(raw: unknown) {
       },
     },
   });
+  // A member client (2026-09-22): the plan's discount rides on the new proposal (lib/servicePlanBook).
+  await applyMemberDiscount(proposal.id).catch(() => {});
   // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
   await recordInventoryLink(organizationId, proposal.id, data.inventoryLinked, user.id);
 

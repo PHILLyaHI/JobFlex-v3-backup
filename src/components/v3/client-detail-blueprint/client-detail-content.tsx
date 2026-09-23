@@ -64,6 +64,7 @@ import styles from "./client-detail.module.css";
 import { AddToProjectSheet } from "@/components/v3/project-links/add-to-project-sheet";
 import { openAddToProject } from "@/components/v3/project-links/open-add-to-project";
 import { useReveal } from "./use-reveal";
+import { activateServicePlan, cancelServicePlan, enrollClientInPlan, renewServicePlan, sendServicePlan } from "@/actions/servicePlans";
 
 const FILTERS: { value: ProposalFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -131,6 +132,9 @@ function ClientMissing({ view }: { view: ClientDetailMiss }) {
 
 function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
   const { clientId, client: CLIENT, proposals: PROPOSALS, payments: PAYMENTS, activity: ACTIVITY } = view;
+  // The membership (2026-09-22): the live plan, else the one waiting to be signed.
+  const PLAN = view.plans.find((p) => p.status === "ACTIVE") ?? view.plans.find((p) => p.status === "SENT" || p.status === "DRAFT") ?? null;
+  const PLAN_LABEL: Record<string, string> = { draft: "Draft — not sent", sent: "Sent — waiting to be signed", active: "Member", expiring: "Member · expiring", lapsed: "Ended — renew", expired: "Expired", canceled: "Canceled" };
   const router = useRouter();
   const [filter, setFilter] = useState<ProposalFilter>("all");
   const editRef = useRef<EditHandle | null>(null);
@@ -295,6 +299,54 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
             </div>
           </div>
         </div>
+
+        {/* THE PLAN (2026-09-22): the client's membership, or the way in. */}
+        <Panel title="Service plan" note={PLAN ? PLAN_LABEL[PLAN.phase] ?? PLAN.status : view.planTemplates.length ? "Not a member" : "No plans set up"}>
+          <div data-client-plan={PLAN ? PLAN.phase : "none"} style={{ fontSize: 13, lineHeight: 1.5 }}>
+            {PLAN ? (
+              <>
+                <div style={{ fontWeight: 800, fontSize: 15 }}>{PLAN.name}{PLAN.discountPct > 0 && PLAN.status === "ACTIVE" ? ` · ${PLAN.discountPct}% off every proposal` : ""}</div>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>{PLAN.terms}</div>
+                {PLAN.term && <div style={{ marginTop: 6 }}>Term: <span style={{ fontFamily: "var(--font-mono)" }}>{PLAN.term}</span></div>}
+                {PLAN.nextVisit && <div>Next visit: {PLAN.nextVisit}</div>}
+                {PLAN.nextBill && <div>Billing: {PLAN.nextBill}</div>}
+                {PLAN.acceptHref && (
+                  <div style={{ marginTop: 6 }}>
+                    Accept link: <a href={PLAN.acceptHref} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>open</a> — the client signs there, or start it below if they signed with you.
+                  </div>
+                )}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                  {(PLAN.status === "DRAFT" || PLAN.status === "SENT") && (
+                    <>
+                      <form action={sendServicePlan.bind(null, PLAN.id)}><button type="submit" className="btn btn-ghost btn--sm">{PLAN.status === "SENT" ? "Send again" : "Send to sign"}</button></form>
+                      <form action={activateServicePlan.bind(null, PLAN.id)}><button type="submit" className="btn btn-primary btn--sm" data-client-plan-activate>Start today</button></form>
+                    </>
+                  )}
+                  {(PLAN.phase === "expiring" || PLAN.phase === "lapsed") && (
+                    <form action={renewServicePlan.bind(null, PLAN.id)}><button type="submit" className="btn btn-primary btn--sm">Renew now</button></form>
+                  )}
+                  <form action={cancelServicePlan.bind(null, PLAN.id)}><button type="submit" className="btn btn-ghost btn--sm">Cancel plan</button></form>
+                  <a href="/dashboard/service-plans" className="btn btn-ghost btn--sm">All plans</a>
+                </div>
+              </>
+            ) : view.planTemplates.length === 0 ? (
+              <EmptyNote kicker="No plans yet">
+                Set up the plans you sell on the <a href="/dashboard/service-plans" style={{ textDecoration: "underline" }}>Service plans</a> page — three starter plans are one click away.
+              </EmptyNote>
+            ) : (
+              <form action={enrollClientInPlan} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }} data-client-plan-enroll>
+                <input type="hidden" name="clientId" value={clientId} />
+                <select name="templateId" defaultValue={view.planTemplates[0]?.id} style={{ font: "inherit", fontSize: 13, padding: "6px 8px", border: "1.5px solid var(--ink)", borderRadius: "var(--radius)", background: "#fff", minWidth: 220 }}>
+                  {view.planTemplates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name} — {t.terms}</option>
+                  ))}
+                </select>
+                <button type="submit" name="then" value="send" className="btn btn-primary btn--sm">Enroll and send to sign</button>
+                <button type="submit" name="then" value="activate" className="btn btn-ghost btn--sm">Enroll and start today</button>
+              </form>
+            )}
+          </div>
+        </Panel>
 
         {/* THE LEDGER ------------------------------------------------ */}
         <Panel

@@ -49,6 +49,7 @@ import type { SiteFacts, NameplateRead } from "@/lib/hvac/intake";
 import { DEFAULT_RATE_CARD, STARTER_CATALOG, normalizeRateCard, parseCatalogCsv, type HvacRateCard } from "@/lib/hvac/ledger";
 import { JOBS, OUTDOOR_KINDS } from "@/lib/hvac/jobs";
 import { US_CATALOG, US_CATALOG_VERIFIED_ON } from "@/lib/hvac/data/usCatalog";
+import { applyMemberDiscount } from "@/lib/servicePlanBook";
 
 type Fail = { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey };
 
@@ -804,6 +805,8 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
       },
     },
   });
+  // A member client (2026-09-22): the plan's discount rides on the new proposal (lib/servicePlanBook).
+  await applyMemberDiscount(proposal.id).catch(() => {});
   // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
   await recordInventoryLink(organizationId, proposal.id, data.inventoryLinked, user.id);
 

@@ -64,6 +64,9 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Money",
     items: [
       { label: "Financials", icon: "i-bank", href: "/dashboard/financials" },
+      // Memberships (2026-09-22): the plans a shop sells, its members, the
+      // visits and the bills they bring.
+      { label: "Service plans", icon: "i-check", href: "/dashboard/service-plans" },
       // /dashboard/subscription IS the blueprint page now (owner promoted the
       // port 2026-08-12; the classic "Well-Kept Ledger" donor was deleted with
       // it and this URL taken over). The responsive staging build — desktop

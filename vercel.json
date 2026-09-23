@@ -13,6 +13,7 @@
     { "path": "/api/cron/purge-deleted-orgs", "schedule": "15 5 * * *" },
     { "path": "/api/cron/payment-reminders", "schedule": "0 15 * * *" },
     { "path": "/api/cron/review-reminders", "schedule": "0 16 * * *" },
-    { "path": "/api/cron/integrations-health", "schedule": "40 4 * * *" }
+    { "path": "/api/cron/integrations-health", "schedule": "40 4 * * *" },
+    { "path": "/api/cron/service-plans", "schedule": "0 14 * * *" }
   ]
 }

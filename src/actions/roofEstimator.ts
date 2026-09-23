@@ -15,6 +15,7 @@ import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import { trackActivation, trackProposalCreated } from "@/lib/activation-events";
 import { logServerError } from "@/lib/server-events";
+import { applyMemberDiscount } from "@/lib/servicePlanBook";
 
 /**
  * The sample shown when no OpenAI key is set. Scaled from the REAL squares
@@ -283,6 +284,8 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
       },
     },
   });
+  // A member client (2026-09-22): the plan's discount rides on the new proposal (lib/servicePlanBook).
+  await applyMemberDiscount(proposal.id).catch(() => {});
   // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
   await recordInventoryLink(organizationId, proposal.id, data.inventoryLinked, user.id);
 

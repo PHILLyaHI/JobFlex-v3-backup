@@ -138,6 +138,9 @@ model Organization {
   overheads            MonthlyOverhead[]
   suppliers            Supplier[]
   inventoryItems       InventoryItem[]
+  servicePlanTemplates ServicePlanTemplate[]
+  servicePlans         ServicePlan[]
+  servicePlanVisits    ServicePlanVisit[]
   signupPromo          PromoCode?            @relation("OrgSignupPromo", fields: [signupPromoCodeId], references: [id], onDelete: SetNull)
 
   @@index([slug])
@@ -416,6 +419,7 @@ model Client {
   payments       Payment[]
   reviewRequests ReviewRequest[]
   appointments   Appointment[]
+  servicePlans   ServicePlan[]
 
   @@index([organizationId])
   @@index([organizationId, deletedAt])
@@ -795,11 +799,14 @@ model Invoice {
   externalId     String?
   dueDate        DateTime?
   paidAt         DateTime?
+  // The service plan this invoice bills (2026-09-22); null for a proposal invoice.
+  servicePlanId  String?
   createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   proposal     Proposal?    @relation(fields: [proposalId], references: [id])
   payments     Payment[]
+  servicePlan  ServicePlan? @relation(fields: [servicePlanId], references: [id])
 
   @@unique([organizationId, number])
   @@index([organizationId, status])
@@ -1681,6 +1688,7 @@ model Appointment {
   proposal     Proposal?               @relation(fields: [proposalId], references: [id])
   createdBy    User?                   @relation("AppointmentCreator", fields: [createdById], references: [id])
   assignments  AppointmentAssignment[]
+  planVisit    ServicePlanVisit?
 
   @@index([organizationId, startsAt])
 }
@@ -2418,4 +2426,100 @@ model InventoryMovement {
 
   @@index([itemId, createdAt])
   @@index([jobId])
+}
+
+// ── SERVICE PLANS / MEMBERSHIPS (2026-09-22) ─────────────────────────────────
+// A plan template is what the shop sells (visits a year, price, discount,
+// benefits); a ServicePlan is one client's membership — a snapshot of the
+// terms at signing, its visits, and the invoices that bill it.
+
+model ServicePlanTemplate {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  name               String
+  description        String?
+  trade              String   @default("hvac")
+  visitsPerYear      Int      @default(2)
+  termMonths         Int      @default(12)
+  priceCents         Int
+  billing            String   @default("MONTHLY") // MONTHLY | YEARLY
+  discountPct        Int      @default(0)
+  benefitsJson       String   @default("[]")
+  priorityScheduling Boolean  @default(true)
+  waivedDiagnostic   Boolean  @default(false)
+  active             Boolean  @default(true)
+  sortOrder          Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plans        ServicePlan[]
+
+  @@index([organizationId])
+}
+
+model ServicePlan {
+  id                 String    @id @default(cuid())
+  organizationId     String
+  templateId         String?
+  clientId           String
+  status             String    @default("DRAFT") // DRAFT | SENT | ACTIVE | EXPIRED | CANCELED
+  name               String
+  description        String?
+  trade              String    @default("hvac")
+  visitsPerYear      Int
+  termMonths         Int
+  priceCents         Int
+  billing            String // MONTHLY | YEARLY
+  discountPct        Int       @default(0)
+  benefitsJson       String    @default("[]")
+  priorityScheduling Boolean   @default(true)
+  waivedDiagnostic   Boolean   @default(false)
+  propertyAddress    String?
+  startsAt           DateTime?
+  endsAt             DateTime?
+  nextBillingAt      DateTime?
+  autoRenew          Boolean   @default(true)
+  acceptToken        String    @unique @default(cuid())
+  sentAt             DateTime?
+  acceptedAt         DateTime?
+  acceptedName       String?
+  canceledAt         DateTime?
+  expiringNoticedAt  DateTime?
+  renewedFromId      String?
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  template     ServicePlanTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  client       Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  visits       ServicePlanVisit[]
+  invoices     Invoice[]
+
+  @@index([organizationId, status])
+  @@index([clientId])
+  @@index([organizationId, endsAt])
+  @@index([organizationId, nextBillingAt])
+}
+
+model ServicePlanVisit {
+  id             String    @id @default(cuid())
+  organizationId String
+  planId         String
+  seq            Int
+  label          String
+  dueAt          DateTime
+  status         String    @default("SCHEDULED") // SCHEDULED | DONE | SKIPPED
+  appointmentId  String?   @unique
+  doneAt         DateTime?
+  remindedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         ServicePlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+  appointment  Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, dueAt])
+  @@index([planId])
 }

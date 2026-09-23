@@ -16,6 +16,7 @@ import { logServerError } from "@/lib/server-events";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
+import { applyMemberDiscount } from "@/lib/servicePlanBook";
 
 const STUB: GeneratedEstimate = {
   title: "Cedar privacy fence estimate · AI disabled",
@@ -262,6 +263,8 @@ async function writeProposal(organizationId: string, userId: string, data: Fence
       },
     },
   });
+  // A member client (2026-09-22): the plan's discount rides on the new proposal (lib/servicePlanBook).
+  await applyMemberDiscount(proposal.id).catch(() => {});
   // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
   await recordInventoryLink(organizationId, proposal.id, data.inventoryLinked, user.id);
 
