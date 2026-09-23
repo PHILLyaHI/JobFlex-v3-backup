@@ -55,13 +55,31 @@ export interface FenceLayoutInput {
   /** Sections that must STEP down a slope (from the terrain report) — each
    *  needs an extended post and extra set-and-trim time. */
   steppedSections?: number;
-  /** Post stock upgrade — steel or 6×6 pressure-treated (wood fences). */
-  postUpgrade?: "steel" | "6x6" | null;
+  /** Post system upgrade (wood fences): galvanized steel, 6×6, post-on-pipe
+   *  (a pressure-treated or clear cedar post sleeved over a steel pipe), or
+   *  3×3 black steel with brackets. Each carries its own structural warranty
+   *  (lib/fence/pricing POST_SYSTEMS). */
+  postUpgrade?: PostSystem | null;
+  /** Cedar board grade (wood fences): #2 & better, #1 tight-knot, clear. */
+  boardGrade?: BoardGrade | null;
+  /** Hot-dip galvanized (standard) or stainless — no rust streaks on cedar. */
+  fasteners?: "galvanized" | "stainless" | null;
+  /** Standard or heavy-duty gate hardware (ball-bearing hinges, heavy latch, cane bolt on doubles). */
+  gateHardware?: "standard" | "heavy-duty" | null;
+  /** Gates hang on black steel posts even on a wood-post fence (wood gate posts sag). */
+  steelGatePosts?: boolean;
+  /** The crew clears the 2-ft path along the line (else the owner does). */
+  clearLine?: boolean;
+  /** Excavated soil is hauled away (else spread along the line). */
+  haulSoil?: boolean;
   /** Line-post spacing override, ft o.c. (stick and mesh builds only). */
   postSpacingFt?: number | null;
   /** Code frost depth for the job's market, inches — drives burial and concrete. */
   frostIn?: number;
 }
+
+export type PostSystem = "steel" | "6x6" | "post-on-pipe" | "cedar-post-on-pipe" | "black-steel";
+export type BoardGrade = "standard" | "tight-knot-1" | "clear";
 
 export type BomUnit = "ea" | "lf" | "bag" | "box" | "gal";
 
@@ -103,6 +121,11 @@ const roundPost = (ft: number) => Math.ceil(ft / 2) * 2;
  * schedule ran a crew out of mix mid-job in the South and did not begin
  * to cover a northern frost hole.
  */
+/** The grade on a cedar board line: "#1 tight-knot " or "clear " ahead of the stock. */
+export function gradeWords(grade: BoardGrade | null | undefined): string {
+  return grade === "tight-knot-1" ? "#1 tight-knot " : grade === "clear" ? "Clear " : "";
+}
+
 export function concreteBagsPerPost(heightFt: number, postWidthIn: number, frostIn: number): number {
   const depthFt = burialFt(heightFt, frostIn);
   // Auger rule: 3× the post width, floored at 8" and capped at 12" — nobody
@@ -168,7 +191,8 @@ export function computeFenceTakeoff(input: FenceLayoutInput): FenceTakeoff {
   add("post-line", `Line posts · ${t.spec.postMaterial} · ${basePost}' (${spacingFt}' o.c.)`, linePosts, "ea");
   add("post-corner", `Corner posts · ${basePost}'`, corners, "ea");
   add("post-end", `End posts · ${basePost}'`, ends, "ea");
-  add("post-gate", `Gate posts · heavy-set · ${basePost}'`, gatePosts, "ea");
+  const steelGate = !!input.steelGatePosts && t.category === "wood" && input.postUpgrade !== "steel" && input.postUpgrade !== "black-steel";
+  add("post-gate", steelGate ? `Gate posts · 4×4 black steel · ${basePost}'` : `Gate posts · heavy-set · ${basePost}'`, gatePosts, "ea");
   if (t.spec.setInConcrete) {
     const bagsLine = concreteBagsPerPost(heightFt, t.spec.postWidthIn, frostIn);
     const bagsTerm = concreteBagsPerPost(heightFt, t.spec.terminalWidthIn, frostIn);
@@ -192,18 +216,23 @@ export function computeFenceTakeoff(input: FenceLayoutInput): FenceTakeoff {
       // course. Height is what grows the count here.
       const courses = Math.ceil((heightFt * 12) / pitch);
       const slats = courses * sections;
-      add("picket", `${t.spec.infillMaterial} (${spacingFt}' bays × ${courses} courses)`, slats * waste, "ea");
+      add("picket", `${gradeWords(input.boardGrade)}${t.spec.infillMaterial} (${spacingFt}' bays × ${courses} courses)`, slats * waste, "ea");
+      // A horizontal fence carries its boards on a vertical 2×2 mid-bay
+      // support (two past 6' bays) so they cannot bow, and the posts are
+      // dressed with 1×4 trim on both faces — the stock a picket fence never needs.
+      add("mid-support", `2×2 kiln-dried cedar mid-bay supports · ${heightFt}'`, sections * (spacingFt > 6 ? 2 : 1) * waste, "ea");
+      add("post-trim", `1×4 cedar post trim · ${heightFt}' (both faces)`, totalPosts * 2 * waste, "ea");
       // 4 screws per slat end × 2 ends, 500 per box.
-      add("fasteners", "Screws · 5 lb boxes", (slats * 8) / 500, "box");
+      add("fasteners", input.fasteners === "stainless" ? "Stainless steel screws · 5 lb boxes" : "Screws · 5 lb boxes", (slats * 8) / 500, "box");
     } else {
       let pickets = (netFenceLf * 12) / pitch;
       if (t.id === "shadowbox") pickets *= 2; // both faces
       // Picket COUNT does not grow with height — taller fences use longer
       // pickets (priced via the height factor), not more.
-      add("picket", `${t.spec.infillMaterial} · ${heightFt}'`, pickets * waste, "ea");
+      add("picket", `${gradeWords(input.boardGrade)}${t.spec.infillMaterial} · ${heightFt}'`, pickets * waste, "ea");
       // Two nails per picket per rail (plus 10% bend / misfire); a 5 lb box
       // of ring-shank runs ~500.
-      add("fasteners", "Ring-shank nails · 5 lb boxes", (pickets * Math.max(1, railsPer) * 2 * 1.1) / 500, "box");
+      add("fasteners", input.fasteners === "stainless" ? "Stainless ring-shank nails · 5 lb boxes" : "Ring-shank nails · 5 lb boxes", (pickets * Math.max(1, railsPer) * 2 * 1.1) / 500, "box");
     }
   } else if (t.build === "panel") {
     // Panels are discrete units — nobody buys 10% spare prefab panels.
@@ -242,7 +271,15 @@ export function computeFenceTakeoff(input: FenceLayoutInput): FenceTakeoff {
   if (stepped > 0) add("step-posts", `Extended posts for stepped sections · ${stepPost}' (slope)`, stepped, "ea");
   const upgradeApplies = !!input.postUpgrade && t.category === "wood" && !(input.postUpgrade === "6x6" && t.spec.postWidthIn >= 5.5);
   if (upgradeApplies) {
-    add("post-upgrade", input.postUpgrade === "steel" ? "Post upgrade — galvanized steel (every post)" : "Post upgrade — 6×6 pressure-treated (every post)", totalPosts, "ea");
+    const up = input.postUpgrade as PostSystem;
+    const label =
+      up === "steel" ? "Post upgrade — galvanized steel (every post)"
+      : up === "6x6" ? "Post upgrade — 6×6 pressure-treated (every post)"
+      : up === "post-on-pipe" ? "Post upgrade — post-on-pipe, pressure-treated post over steel pipe (every post)"
+      : up === "cedar-post-on-pipe" ? "Post upgrade — clear cedar post over steel pipe (every post)"
+      : "Post upgrade — 3×3 black steel posts with brackets (every post)";
+    add("post-upgrade", label, totalPosts, "ea");
+    if (up === "post-on-pipe" || up === "cedar-post-on-pipe") add("post-pipe", `Galvanized pipe · 2⅜″ × ${basePost}' (post-on-pipe)`, totalPosts, "ea");
   }
   // Caps are per-system hardware, not a generic line: chain-link line posts
   // take loop caps that the top rail threads through while their terminals

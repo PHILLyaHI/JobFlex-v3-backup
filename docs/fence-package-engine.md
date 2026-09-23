@@ -125,3 +125,43 @@ the page still prices after the round trip — desktop and phone.
 
 Not exercised on the stand: the traced-map path (no billable Google key
 here), covered by `layout.ts` checks and the terrain suites.
+
+## After the Optima estimate (2026-09-23)
+
+The owner put a top Washington fence company's estimate next to the engine
+(6' horizontal cedar, 402 lf at $50/lf; 3×3 black metal posts at $18/lf with
+a lifetime warranty; an 8' double and a 4' single gate with metal posts and
+heavy hardware; #1 tight-knot cedar, kiln-dried 2×2 mid supports, 1×4 post
+trim, 4000 psi concrete, stainless nails; a 4-year workmanship warranty with
+10-year / 20-year / lifetime structural tiers by post system; the owner
+clears the line, marks private utilities, keeps the soil). What was added:
+
+- **Post systems** (`POST_SYSTEMS`, `FenceLayoutInput.postUpgrade`): 6×6,
+  galvanized steel (unchanged prices), **post-on-pipe** (PT post over a 2⅜″
+  pipe, 10-year), **clear cedar post-on-pipe** (20-year), **3×3 black
+  steel with brackets** (lifetime). One upgrade line per post, the warranty
+  in its description and in the scope; the pipe on the bill of materials.
+- **Cedar grade** (`boardGrade`): #2 & better ×1, #1 tight-knot ×1.12,
+  clear ×1.6 on the fence material; named on the package line and the
+  pickets' BOM line.
+- **Fasteners** (`fasteners`): stainless is a $0.50/lf upgrade line; the
+  BOM says stainless ring-shank / stainless screws.
+- **Gates**: `gateHardware: "heavy-duty"` (ball-bearing hinges, heavy latch,
+  cane bolt on doubles — $45 single / $120 double + labor);
+  `steelGatePosts` (4×4 black steel at the gates on a wood-post fence, $48 +
+  $12 each; not needed when every post is steel). The notes warn that a
+  wood gate post limits the gate warranty to 6 months.
+- **Site prep**: `clearLine` ($3/lf labor), `haulSoil` ($6/post, $120
+  floor). Off, the notes say the owner clears the 2-ft path and the soil
+  is spread along the line.
+- **Horizontal build**: the takeoff now carries 2×2 kiln-dried mid-bay
+  supports (two past 6' bays) and 1×4 post trim on both faces.
+- **`FencePackage.notes`** (`packageNotes`): warranty (4-year workmanship +
+  the post system's structural years), wood's nature, the line to clear,
+  the soil, 811 vs private utilities, property lines / HOA. The estimator
+  appends them to the proposal's scope under "Please note:".
+- The page: a **Post system** row (six choices, the warranty under it),
+  **Boards & fasteners** card (grade, fasteners — wood only), **Steel gate
+  posts** and **Gate hardware** rows, **Clear the fence line** and **Haul
+  away excavated soil** toggles. QA: the last block of
+  `scripts/qa/fence-package.check.ts`.

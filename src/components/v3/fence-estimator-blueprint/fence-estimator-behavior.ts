@@ -14,6 +14,8 @@
 // - the donor's `safe(name, fn)` try/catch wrapper is dropped: the modules it
 //   guarded are either shell-owned or replaced by strict null checks below.
 
+import { BOARD_GRADES, POST_SYSTEMS, POST_SYSTEM_ORDER } from "@/lib/fence/pricing";
+import type { BoardGrade, PostSystem } from "@/lib/fence/takeoff";
 import { isMapsBrowserEnabled, loadMapsLibrary } from "@/lib/googleMaps";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { attachPlacesSuggest, type PickedPlace } from "@/components/v3/blueprint-shell/places-suggest";
@@ -167,8 +169,15 @@ type FenceState = {
   removalPerLf: number;
   /** Stain & seal after install (wood types only). */
   stain: boolean;
-  /** Post stock upgrade (wood types only). */
-  postUpgrade: "steel" | "6x6" | null;
+  /** Post system upgrade (wood types only) — lib/fence/pricing POST_SYSTEMS. */
+  postUpgrade: PostSystem | null;
+  /** Cedar board grade, fasteners, gate hardware, steel gate posts, site prep (2026-09-23). */
+  boardGrade: BoardGrade;
+  fasteners: "galvanized" | "stainless";
+  gateHardware: "standard" | "heavy-duty";
+  steelGatePosts: boolean;
+  clearLine: boolean;
+  haulSoil: boolean;
   /** Line-post spacing override, ft o.c.; null = the type's standard. */
   spacing: number | null;
   /** Ground difficulty: measured from the profile ("auto") or the contractor's pick. */
@@ -270,6 +279,12 @@ export function initFenceEstimatorContent(
     removalPerLf: DEFAULT_REMOVAL_PER_LF,
     stain: false,
     postUpgrade: null,
+    boardGrade: 'standard',
+    fasteners: 'galvanized',
+    gateHardware: 'standard',
+    steelGatePosts: true,
+    clearLine: false,
+    haulSoil: false,
     spacing: null,
     terrain: 'auto',
     wastePct: 10,
@@ -389,6 +404,12 @@ export function initFenceEstimatorContent(
       stain: fs.stain,
       steppedSections: sl ? sl.steppedSections : 0,
       postUpgrade: fs.postUpgrade,
+      boardGrade: fs.boardGrade,
+      fasteners: fs.fasteners,
+      gateHardware: fs.gateHardware,
+      steelGatePosts: fs.steelGatePosts,
+      clearLine: fs.clearLine,
+      haulSoil: fs.haulSoil,
       postSpacingFt: fs.spacing,
       frostIn: market()?.frostIn,
     };
@@ -787,13 +808,42 @@ export function initFenceEstimatorContent(
       const six = t.spec.postWidthIn >= 5.5;
       const seg = upRow.querySelector<HTMLElement>('.site-seg');
       if (seg) {
-        seg.innerHTML = ([['', 'Standard'], ['steel', 'Steel'], ['6x6', '6×6']] as Array<[string, string]>).map(function (o) {
-          if (o[0] === '6x6' && six) return '';
+        const opts: Array<[string, string]> = [['', 'Standard 4×4']];
+        POST_SYSTEM_ORDER.forEach(function (id) { if (!(id === '6x6' && six)) opts.push([id, POST_SYSTEMS[id].short]); });
+        seg.innerHTML = opts.map(function (o) {
           const on = (fs.postUpgrade || '') === o[0];
           return '<button class="seg-btn' + (on ? ' on' : '') + '" type="button" data-upgrade="' + o[0] + '">' + o[1] + '</button>';
         }).join('');
       }
+      const hint = upRow.querySelector<HTMLElement>('.tg-h');
+      if (hint) {
+        const sys = fs.postUpgrade ? POST_SYSTEMS[fs.postUpgrade] : null;
+        hint.textContent = sys ? sys.blurb.charAt(0).toUpperCase() + sys.blurb.slice(1) + '. ' + (sys.warranty ? sys.warranty + '.' : '4-year workmanship warranty.') : 'Standard 4×4 pressure-treated carries the 4-year workmanship warranty; steel and post-on-pipe systems add 10-year to lifetime structural.';
+      }
     }
+    // Wood-only rows (2026-09-23): the board grade, the fasteners, steel gate posts.
+    const wood = t.category === 'wood';
+    $('#woodCard')?.classList.toggle('is-hidden', !wood);
+    const gradeSeg = $('#gradeRow .site-seg');
+    if (gradeSeg) gradeSeg.innerHTML = (['standard', 'tight-knot-1', 'clear'] as BoardGrade[]).map(function (g) {
+      return '<button class="seg-btn' + (fs.boardGrade === g ? ' on' : '') + '" type="button" data-grade="' + g + '">' + BOARD_GRADES[g].label + '</button>';
+    }).join('');
+    const fastenSeg = $('#fastenRow .site-seg');
+    if (fastenSeg) fastenSeg.innerHTML = ([['galvanized', 'Galvanized'], ['stainless', 'Stainless']] as Array<[string, string]>).map(function (o) {
+      return '<button class="seg-btn' + (fs.fasteners === o[0] ? ' on' : '') + '" type="button" data-fasten="' + o[0] + '">' + o[1] + '</button>';
+    }).join('');
+    const gpRow = $('#gatePostsRow');
+    if (gpRow) {
+      const applies = wood && fs.postUpgrade !== 'steel' && fs.postUpgrade !== 'black-steel';
+      gpRow.classList.toggle('is-hidden', !applies);
+      $('#gatePostsTgl')?.classList.toggle('on', fs.steelGatePosts && applies);
+    }
+    const hwSeg = $('#gateHwRow .site-seg');
+    if (hwSeg) hwSeg.innerHTML = ([['standard', 'Standard'], ['heavy-duty', 'Heavy-duty']] as Array<[string, string]>).map(function (o) {
+      return '<button class="seg-btn' + (fs.gateHardware === o[0] ? ' on' : '') + '" type="button" data-gatehw="' + o[0] + '">' + o[1] + '</button>';
+    }).join('');
+    $('#clearTgl')?.classList.toggle('on', fs.clearLine);
+    $('#haulTgl')?.classList.toggle('on', fs.haulSoil);
     const spRow = $('#spacingRow');
     if (spRow) {
       const opts = spacingOptions(t);
@@ -1271,9 +1321,49 @@ export function initFenceEstimatorContent(
     }
     const up = target.closest<HTMLElement>('[data-upgrade]');
     if (up) {
-      const v = up.dataset.upgrade;
-      fs.postUpgrade = v === 'steel' ? 'steel' : v === '6x6' ? '6x6' : null;
-      $$('#upgradeRow [data-upgrade]').forEach(function (b) { b.classList.toggle('on', b === up); });
+      const v = up.dataset.upgrade || '';
+      fs.postUpgrade = (POST_SYSTEM_ORDER as string[]).includes(v) ? (v as PostSystem) : null;
+      renderSite();
+      renderFigures();
+      return;
+    }
+    const grade = target.closest<HTMLElement>('[data-grade]');
+    if (grade) {
+      const v = grade.dataset.grade;
+      fs.boardGrade = v === 'tight-knot-1' || v === 'clear' ? v : 'standard';
+      $$('#gradeRow [data-grade]').forEach(function (b) { b.classList.toggle('on', b === grade); });
+      renderFigures();
+      return;
+    }
+    const fasten = target.closest<HTMLElement>('[data-fasten]');
+    if (fasten) {
+      fs.fasteners = fasten.dataset.fasten === 'stainless' ? 'stainless' : 'galvanized';
+      $$('#fastenRow [data-fasten]').forEach(function (b) { b.classList.toggle('on', b === fasten); });
+      renderFigures();
+      return;
+    }
+    const hw = target.closest<HTMLElement>('[data-gatehw]');
+    if (hw) {
+      fs.gateHardware = hw.dataset.gatehw === 'heavy-duty' ? 'heavy-duty' : 'standard';
+      $$('#gateHwRow [data-gatehw]').forEach(function (b) { b.classList.toggle('on', b === hw); });
+      renderFigures();
+      return;
+    }
+    if (target.closest('#gatePostsTgl')) {
+      fs.steelGatePosts = !fs.steelGatePosts;
+      $('#gatePostsTgl')?.classList.toggle('on', fs.steelGatePosts);
+      renderFigures();
+      return;
+    }
+    if (target.closest('#clearTgl')) {
+      fs.clearLine = !fs.clearLine;
+      $('#clearTgl')?.classList.toggle('on', fs.clearLine);
+      renderFigures();
+      return;
+    }
+    if (target.closest('#haulTgl')) {
+      fs.haulSoil = !fs.haulSoil;
+      $('#haulTgl')?.classList.toggle('on', fs.haulSoil);
       renderFigures();
       return;
     }
@@ -1501,6 +1591,12 @@ export function initFenceEstimatorContent(
       fs.demo = false;
       fs.stain = false;
       fs.postUpgrade = null;
+      fs.boardGrade = 'standard';
+      fs.fasteners = 'galvanized';
+      fs.gateHardware = 'standard';
+      fs.steelGatePosts = true;
+      fs.clearLine = false;
+      fs.haulSoil = false;
       fs.spacing = null;
       fs.terrain = 'auto';
       fs.material = DEFAULT_FENCE_TYPE;
@@ -3948,7 +4044,9 @@ export function initFenceEstimatorContent(
 
       const res = await convertFenceEstimateToProposal({
         title: pk.resolved.label + ' fence · ' + lf + ' lf',
-        scope: fenceScope(pk, layout, where || null).join('\n'),
+        // The package's notes (warranty, wood, site prep, soil, utilities)
+        // follow the scope so the client reads them on the proposal.
+        scope: fenceScope(pk, layout, where || null).concat(['', 'Please note:'], pk.notes.map(function (n) { return '• ' + n; })).join('\n'),
         lines: pk.lines.map(function (l) {
           return { name: l.name, description: l.description, quantity: l.quantity, unit: l.unit, materialCost: l.materialCost, laborCost: l.laborCost };
         }),
