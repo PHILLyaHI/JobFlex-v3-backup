@@ -2744,3 +2744,26 @@ model PlatformIntegration {
   updatedAt   DateTime @updatedAt
   updatedById String?
 }
+
+// ── TRIAL WATCH (2026-09-24) ──────────────────────────────────────────────
+// Who looked at what during a company's first weeks: one row per page a
+// signed-in member opens (the route pattern, never the query string), so the
+// admin's Trial watch can tell a contractor working from a visitor touring
+// the product to copy it. Written fire-and-forget by actions/pageView, which
+// also prunes rows older than 120 days; read by actions/trialWatch. No
+// relation to Organization on purpose: an unrelated table reaches production
+// without touching any table the app already reads.
+model PageView {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String?
+  /// "/dashboard/jobs/*" — ids collapsed, query dropped (lib/trialWatch routePattern).
+  route          String
+  /// First 16 hex of sha256(client address) and of sha256(user agent): the same device across two trials, no address kept.
+  ipHash         String?
+  uaHash         String?
+  at             DateTime @default(now())
+
+  @@index([organizationId, at])
+  @@index([uaHash, ipHash, at])
+}

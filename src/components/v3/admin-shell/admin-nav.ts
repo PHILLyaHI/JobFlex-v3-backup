@@ -24,6 +24,9 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
       // estimates made — counted per user, with the trail beneath.
       { label: "User activity", icon: "i-clock", href: "/admin/activity" },
       { label: "Subscribers", icon: "i-card", href: "/admin/subscribers" },
+      // Added 2026-09-24: the trials to look at — accounts touring the product
+      // to copy it, read off how they behave (lib/trialWatch).
+      { label: "Trial watch", icon: "i-eye", href: "/admin/trials" },
     ],
   },
   {

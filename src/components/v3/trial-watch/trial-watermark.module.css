@@ -1,0 +1,17 @@
+/* The trial watermark: one SVG tile repeated over the viewport, above
+   everything, touching nothing. `.w.w` outranks any shell reset. */
+.w { display: block; }
+.w.w {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+  user-select: none;
+  background-repeat: repeat;
+  background-size: 460px 280px;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+@media print {
+  .w.w { position: fixed; }
+}

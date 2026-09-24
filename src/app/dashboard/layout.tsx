@@ -49,6 +49,7 @@ import { SIDEBAR_FOLD_COOKIE } from "@/components/v3/blueprint-shell/sidebar-fol
 import { LeadOfferPopup } from "@/components/leads/LeadOfferPopup";
 import { DashboardAnnouncementDismiss } from "@/app/(dashboard)/announcement-dismiss";
 import { TrafficContext } from "@/components/providers/traffic-context";
+import { TrialWatchMount } from "@/components/v3/trial-watch/trial-watch-mount";
 
 /** Membership.role is a raw enum-ish string ("OWNER", "INSTALLER"). The
  *  sidebar shows it to a human, so title-case it. */
@@ -98,10 +99,14 @@ export default async function DashboardBlueprintLayout({
   // The plan slug as stored; a failed read costs the label, never the page.
   let organizationId: string | null = null;
   let plan: string | null = null;
+  // For the trial watch (components/v3/trial-watch): the beacon while the
+  // company is new, the watermark while it has not paid.
+  let email: string | null = null;
   try {
     const ctx = await requireOrg();
     role = ctx.role;
     organizationId = ctx.organizationId;
+    email = ctx.user.email ?? null;
     name = ctx.user.name || ctx.user.email || "Account";
     // A Google signup lands here with a placeholder org. The owner finishes
     // the company step (address + trades) before the app opens — the same
@@ -203,6 +208,7 @@ export default async function DashboardBlueprintLayout({
       limitsExempt={navLimitsExempt}
     >
       <TrafficContext role={role} plan={plan} organizationId={organizationId} />
+      {organizationId && <TrialWatchMount organizationId={organizationId} email={email} />}
       {announcements.length > 0 && <DashboardAnnouncementDismiss announcements={announcements} />}
       {customGate ?? children}
       {canHandleLeads ? <LeadOfferPopup /> : null}
