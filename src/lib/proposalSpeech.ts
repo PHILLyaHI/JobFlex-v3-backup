@@ -185,6 +185,9 @@ export function spokenUnit(t: string | null | undefined, qty: number): string {
  */
 export function spokenText(s: string): string {
   return s
+    // A parenthetical is a detail for the eye — "(Mitsubishi SUZ-AK12NLHZ)",
+    // "(EPA 608)" — and ten seconds of letters in a forty-second brief.
+    .replace(/\s*\([^)]*\)/g, "")
     .replace(/(\d)\s*["″]\s*[×x]\s*(\d+)\s*["″]/g, "$1 by $2 inch")
     .replace(/(\d)\s*['′]\s*[×x]\s*(\d+)\s*['′]/g, "$1 by $2 foot")
     .replace(/(\d)\s*[×x]\s*(\d)/g, "$1 by $2")
@@ -353,7 +356,8 @@ function andList(parts: string[]): string {
  */
 export function buildProposalSpeech(input: SpeechInput): string {
   const now = input.now ?? new Date();
-  const first = (input.clientName ?? "").trim().split(/\s+/)[0] || "there";
+  const typed = (input.clientName ?? "").trim().split(/\s+/)[0] ?? "";
+  const first = typed ? typed[0].toUpperCase() + typed.slice(1) : "there";
   const org = (input.orgName ?? "").trim() || "your contractor";
   const trade = tradeWord(input.trade);
   const status = input.status.toUpperCase();

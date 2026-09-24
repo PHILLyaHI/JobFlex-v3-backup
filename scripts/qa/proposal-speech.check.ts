@@ -175,14 +175,14 @@ check("a Smart Proposal is just 'your proposal'; forty items read as the three b
 const hvac2: SpeechInput = {
   ...hvac,
   status: "ACCEPTED",
-  clientName: "Serge",
+  clientName: "serge",
   address: "97th Dr NE, Lake Cassidy, WA 98258",
   title: "Heat pump replacement — 97th Dr NE",
-  description: "Replace the existing AC and furnace at 97th Dr NE, Lake Cassidy, WA 98258 with a ducted heat pump.",
+  description: "Replace the existing AC and furnace at 97th Dr NE, Lake Cassidy, WA 98258 with a ducted heat pump (Mitsubishi SUZ-AK12NLHZ).",
   lineItems: [
     { name: "Mitsubishi SUZ-AK12NLHZ", quantity: 1, measurementType: "UNIT", total: 3200 },
     { name: "Mitsubishi SVZ-AP12NL", quantity: 1, measurementType: "UNIT", total: 2100 },
-    { name: "Set the air handler", quantity: 1, measurementType: "UNIT", total: 900 },
+    { name: "Set the air handler (EPA 608)", quantity: 1, measurementType: "UNIT", total: 900 },
     { name: "Line set 3/8 × 5/8, 25 ft", quantity: 1, measurementType: "UNIT", total: 400 },
     { name: "Honeywell T6 Pro thermostat", quantity: 1, measurementType: "UNIT", total: 250 },
   ],
@@ -190,7 +190,8 @@ const hvac2: SpeechInput = {
 const s5 = buildProposalSpeech(hvac2);
 console.log("--- hvac, the owner's own test proposal ---\n" + s5 + "\n");
 const p5 = s5.split("\n\n");
-check("a title that names the street is not introduced with the street again, and the address tail is cut from the scope",
+check("a lower-case name is greeted properly", p5[0].startsWith("Hi Serge, this is"), p5[0]);
+check("a title that names the street is not introduced with the street again; the address tail and a parenthetical are cut from the scope",
   p5[1] === "The job: Heat pump replacement, 97th Dr NE. Replace the existing AC and furnace at 97th Dr NE with a ducted heat pump.", p5[1]);
 check("model numbers are not spelled out, and a repeated name is said once",
   p5[2] === "It covers 5 items; the main ones are mitsubishi, set the air handler, and line set 3/8 by 5/8, 25 feet.", p5[2]);
