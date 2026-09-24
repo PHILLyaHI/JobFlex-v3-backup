@@ -312,6 +312,30 @@ export function shortName(name: string): string {
   return name.split(/\s+[·—–|]\s+/)[0]?.trim() || name.trim();
 }
 
+/**
+ * "Mitsubishi SUZ-AK12NLHZ" → "Mitsubishi": a model number read letter by
+ * letter is ten seconds of noise in a forty-second brief. A name that is
+ * nothing but a model number is kept as it is.
+ */
+export function spokenItemName(name: string): string {
+  const words = shortName(name).split(/\s+/);
+  const kept = words.filter((w) => {
+    const core = w.replace(/[,;:.]+$/, "");
+    return !(/^[A-Z0-9][A-Z0-9/-]{4,}$/.test(core) && /[A-Z]/.test(core) && /\d/.test(core));
+  });
+  return (kept.length ? kept.join(" ") : words.join(" ")).replace(/[,;:]+$/, "").trim();
+}
+
+/** The address as written in a sentence, cut back to its street line. */
+function withoutAddressTail(text: string, address: string | null): string {
+  if (!address) return text;
+  const parts = address.split(/,|\n/).map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) return text;
+  const esc = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const tail = new RegExp(`(${esc(parts[0])})[,\\s]+${parts.slice(1).map(esc).join("[,\\s]+")}`, "i");
+  return text.replace(tail, "$1");
+}
+
 /** "Tear-off" → "tear-off"; "HVAC tune-up" stays. */
 function lowerFirst(s: string): string {
   return s.length > 1 && s[1] === s[1].toLowerCase() && s[1] !== s[1].toUpperCase() ? s[0].toLowerCase() + s.slice(1) : s;
@@ -340,10 +364,13 @@ export function buildProposalSpeech(input: SpeechInput): string {
 
   /* ---- 2. the job in one breath: the house, the title, one sentence of the scope ---- */
   const street = input.address ? spokenAddress(input.address) : "";
-  const title = spokenText(input.title.trim());
-  const summary = briefSentence(input.showScope && input.scopeOfWork?.trim() ? input.scopeOfWork : input.description);
+  const title = spokenText(withoutAddressTail(input.title.trim(), input.address));
+  const summary = briefSentence(withoutAddressTail(input.showScope && input.scopeOfWork?.trim() ? input.scopeOfWork ?? "" : input.description ?? "", input.address));
+  // A title that already names the street ("Heat pump replacement — 97th Dr
+  // NE") is not introduced with the street a second time.
+  const titleSaysStreet = Boolean(street) && title.toLowerCase().includes(street.toLowerCase());
   const job: string[] = [];
-  if (title) job.push(street ? `It's for ${street}: ${endsSentence(lowerFirst(title))}` : `The job: ${endsSentence(title)}`);
+  if (title) job.push(street && !titleSaysStreet ? `It's for ${street}: ${endsSentence(lowerFirst(title))}` : `The job: ${endsSentence(title)}`);
   else if (street) job.push(`It's for ${street}.`);
   if (summary && summary.toLowerCase() !== title.toLowerCase()) job.push(endsSentence(spokenText(summary)));
   if (job.length) paragraphs.push(job.join(" "));
@@ -351,7 +378,8 @@ export function buildProposalSpeech(input: SpeechInput): string {
   /* ---- 3. the main items, named ---- */
   const priced = input.lineItems.filter((l) => l.name.trim() && Number.isFinite(l.total) && l.total > 0);
   if (priced.length) {
-    const top = [...priced].sort((a, b) => b.total - a.total).slice(0, TOP_ITEMS).map((l) => lowerFirst(spokenText(shortName(l.name))));
+    const names = [...priced].sort((a, b) => b.total - a.total).map((l) => lowerFirst(spokenText(spokenItemName(l.name))));
+    const top = names.filter((n, i) => n && names.findIndex((m) => m.toLowerCase() === n.toLowerCase()) === i).slice(0, TOP_ITEMS);
     paragraphs.push(priced.length <= TOP_ITEMS ? `It covers ${andList(top)}.` : `It covers ${priced.length} items; the main ones are ${andList(top)}.`);
   }
 

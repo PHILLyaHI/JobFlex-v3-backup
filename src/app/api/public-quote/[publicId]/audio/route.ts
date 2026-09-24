@@ -19,7 +19,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { HOUR, ipFromRequest, rateLimitShared } from "@/lib/rateLimit";
-import { canSynthesize, generateProposalAudio, isAudioFresh, loadAudioRow, speechFor, type AudioRow } from "@/lib/proposalAudio";
+import { canSynthesize, generateProposalAudio, isAudioFresh, lastAudioFailure, loadAudioRow, speechFor, type AudioRow } from "@/lib/proposalAudio";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,7 +72,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ publicId: strin
     new Promise<null>((resolve) => setTimeout(() => resolve(null), GENERATE_TIMEOUT_MS)),
   ]);
   if (!probe) await noteListened(row, req);
-  return NextResponse.json(url ? { ...base, url, mode: "audio" } : { ...base, url: null, mode: "device", why: "failed" }, { headers });
+  // A probe also learns what each voice model answered — the only window
+  // into a failure without the server log.
+  return NextResponse.json(
+    url ? { ...base, url, mode: "audio" } : { ...base, url: null, mode: "device", why: "failed", ...(probe ? { errors: lastAudioFailure() } : {}) },
+    { headers },
+  );
 }
 
 /** The feed line for a client's play — not for the company's own members. */

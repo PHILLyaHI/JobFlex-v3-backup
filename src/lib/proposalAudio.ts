@@ -89,8 +89,20 @@ export function audioFilePath(publicId: string, hash: string): string {
 
 type Spoken = { audio: Buffer; model: string; voice: string };
 
+/** Why the last generation in this process made no file — for `?probe=1`. */
+let lastFailure: string[] = [];
+export function lastAudioFailure(): string[] {
+  return lastFailure;
+}
+
+function describe(err: unknown): string {
+  const e = err as { status?: number; code?: string; message?: string } | null;
+  return [e?.status, e?.code, (e?.message ?? String(err)).replace(/\s+/g, " ").slice(0, 160)].filter(Boolean).join(" ");
+}
+
 async function synthesize(script: string): Promise<Spoken | null> {
   const client = getOpenAI();
+  lastFailure = [];
   for (const c of TTS_CANDIDATES) {
     try {
       const res = await client.audio.speech.create({
@@ -102,9 +114,11 @@ async function synthesize(script: string): Promise<Spoken | null> {
       });
       const audio = Buffer.from(await res.arrayBuffer());
       if (audio.length > 1_000) return { audio, model: c.model, voice: c.voice };
+      lastFailure.push(`${c.model}/${c.voice}: ${audio.length} bytes`);
       console.warn(`[proposalAudio] ${c.model}/${c.voice} returned ${audio.length} bytes`);
     } catch (err) {
-      console.warn(`[proposalAudio] ${c.model}/${c.voice} failed: ${err instanceof Error ? err.message : String(err)}`);
+      lastFailure.push(`${c.model}/${c.voice}: ${describe(err)}`);
+      console.warn(`[proposalAudio] ${c.model}/${c.voice} failed: ${describe(err)}`);
     }
   }
   return null;
@@ -133,7 +147,8 @@ export async function generateProposalAudio(row: Pick<AudioRow, "id" | "publicId
     await db.proposal.update({ where: { id: row.id }, data: { audioUrl: url, audioScriptHash: hash } });
     return url;
   } catch (err) {
-    console.error(`[proposalAudio] generation failed: ${err instanceof Error ? err.message : String(err)}`);
+    lastFailure.push(`store: ${describe(err)}`);
+    console.error(`[proposalAudio] generation failed: ${describe(err)}`);
     return null;
   }
 }

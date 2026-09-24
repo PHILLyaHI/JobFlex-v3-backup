@@ -12,6 +12,7 @@ import {
   speechInputFromRow,
   speechSeconds,
   speechSentences,
+  spokenItemName,
   spokenMoney,
   spokenPhone,
   spokenText,
@@ -170,6 +171,31 @@ console.log("--- smart ---\n" + s4 + "\n");
 const p4 = s4.split("\n\n");
 check("a Smart Proposal is just 'your proposal'; forty items read as the three biggest; six stages read as a count; a leading +1 is dropped",
   p4[0].endsWith("summary of your proposal.") && p4[2] === "It covers 40 items; the main ones are step 40 of the remodel, step 39 of the remodel, and step 38 of the remodel." && p4[4] === "Payment is in 6 steps, starting with stage 1, $3,463.33." && s4.includes("Call us at 2 0 6, 5 5 5, 0 1 9 9."), s4);
+
+const hvac2: SpeechInput = {
+  ...hvac,
+  status: "ACCEPTED",
+  clientName: "Serge",
+  address: "97th Dr NE, Lake Cassidy, WA 98258",
+  title: "Heat pump replacement — 97th Dr NE",
+  description: "Replace the existing AC and furnace at 97th Dr NE, Lake Cassidy, WA 98258 with a ducted heat pump.",
+  lineItems: [
+    { name: "Mitsubishi SUZ-AK12NLHZ", quantity: 1, measurementType: "UNIT", total: 3200 },
+    { name: "Mitsubishi SVZ-AP12NL", quantity: 1, measurementType: "UNIT", total: 2100 },
+    { name: "Set the air handler", quantity: 1, measurementType: "UNIT", total: 900 },
+    { name: "Line set 3/8 × 5/8, 25 ft", quantity: 1, measurementType: "UNIT", total: 400 },
+    { name: "Honeywell T6 Pro thermostat", quantity: 1, measurementType: "UNIT", total: 250 },
+  ],
+};
+const s5 = buildProposalSpeech(hvac2);
+console.log("--- hvac, the owner's own test proposal ---\n" + s5 + "\n");
+const p5 = s5.split("\n\n");
+check("a title that names the street is not introduced with the street again, and the address tail is cut from the scope",
+  p5[1] === "The job: Heat pump replacement, 97th Dr NE. Replace the existing AC and furnace at 97th Dr NE with a ducted heat pump.", p5[1]);
+check("model numbers are not spelled out, and a repeated name is said once",
+  p5[2] === "It covers 5 items; the main ones are mitsubishi, set the air handler, and line set 3/8 by 5/8, 25 feet.", p5[2]);
+check("spokenItemName keeps a name that is nothing but a model number, and drops a trailing comma",
+  spokenItemName("SUZ-AK12NLHZ") === "SUZ-AK12NLHZ" && spokenItemName("Honeywell T6 Pro thermostat") === "Honeywell T6 Pro thermostat" && spokenItemName("Carrier 24ACC636A003, 3-ton") === "Carrier 3-ton");
 
 check("a script past the cap is cut at a sentence",
   buildProposalSpeech({ ...smart, title: ("A very long title without a period " + "x".repeat(200) + ", ").repeat(40) }).length <= MAX_SPEECH_CHARS);
