@@ -1576,3 +1576,7 @@
   .bp :global(.content .mdl-x) { width: 44px; height: 44px; margin: -8px -8px 0 0; }
   .bp :global(.content .mdl-x .ic) { width: 16px; height: 16px; }
 }
+
+/* The schedule-texts switch in the invite/edit sheet (2026-09-24). */
+.bp :global(.mf-chk) { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--ink); cursor: pointer; margin-top: 2px; }
+.bp :global(.mf-chk input) { width: 16px; height: 16px; accent-color: var(--blueprint); margin: 0; }

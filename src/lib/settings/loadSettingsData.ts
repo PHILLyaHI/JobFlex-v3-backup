@@ -37,7 +37,7 @@ import {
   parseGmailSettings,
   parsePaymentSettings,
 } from "@/lib/settings";
-import type { Badge, SettingsData } from "@/components/v3/settings-blueprint/settings-data";
+import type { Badge, SettingsData, SmsSettingsData } from "@/components/v3/settings-blueprint/settings-data";
 
 /** Emails allowed to use the Gmail connector while the Google app is still in
  *  Testing — GMAIL_OAUTH_TEST_USERS, comma-separated, case-insensitive. */
@@ -81,7 +81,7 @@ export async function loadSettingsData(ctx: SettingsOrgContext): Promise<Setting
     await Promise.all([
       db.user.findUnique({
         where: { id: user.id },
-        select: { name: true, email: true, phone: true, notificationPrefsJson: true },
+        select: { name: true, email: true, phone: true, notificationPrefsJson: true, smsPhone: true, smsVerifiedAt: true },
       }),
       db.organization.findUnique({
         where: { id: organizationId },
@@ -229,6 +229,48 @@ export async function loadSettingsData(ctx: SettingsOrgContext): Promise<Setting
     },
     notifications: {
       prefs: parseNotificationPrefs(me?.notificationPrefsJson),
+      sms: await loadSmsSettings(organizationId, me?.smsPhone ?? null, me?.smsVerifiedAt ?? null, role),
     },
   };
+}
+
+/** "(206) 555-0100" for a stored E.164 number. */
+function prettyPhone(e164: string): string {
+  const d = e164.replace(/\D/g, "");
+  return d.length === 11 && d.startsWith("1") ? `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}` : e164;
+}
+
+/** The Text messages card (2026-09-24): the member's mobile, the company's
+ *  extra numbers, this month's count. A missing table costs the card, never
+ *  the page. */
+async function loadSmsSettings(organizationId: string, smsPhone: string | null, smsVerifiedAt: Date | null, role: string): Promise<SmsSettingsData> {
+  const { isTwilioEnabled } = await import("@/lib/sdk/twilio");
+  const base: SmsSettingsData = {
+    configured: isTwilioEnabled(),
+    phone: smsPhone ? prettyPhone(smsPhone) : null,
+    verifiedAt: smsVerifiedAt ? smsVerifiedAt.toISOString() : null,
+    stopped: false,
+    extras: [],
+    monthCount: 0,
+    canManage: ["OWNER", "ADMIN", "MANAGER"].includes(role),
+  };
+  try {
+    const monthStart = new Date();
+    monthStart.setUTCDate(1);
+    monthStart.setUTCHours(0, 0, 0, 0);
+    const [extras, stops, monthCount] = await Promise.all([
+      db.notificationPhone.findMany({ where: { organizationId }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, phone: true, active: true } }),
+      db.smsOptOut.findMany({ where: { phone: { in: [smsPhone ?? "", ...(await db.notificationPhone.findMany({ where: { organizationId }, select: { phone: true } })).map((x) => x.phone)] } }, select: { phone: true } }),
+      db.smsMessage.count({ where: { organizationId, direction: "OUT", status: { in: ["SENT", "DELIVERED", "QUEUED"] }, createdAt: { gte: monthStart } } }),
+    ]);
+    const stopped = new Set(stops.map((x) => x.phone));
+    return {
+      ...base,
+      stopped: Boolean(smsPhone && stopped.has(smsPhone)),
+      extras: extras.map((x) => ({ id: x.id, name: x.name, phone: prettyPhone(x.phone), active: x.active, stopped: stopped.has(x.phone) })),
+      monthCount,
+    };
+  } catch {
+    return base;
+  }
 }

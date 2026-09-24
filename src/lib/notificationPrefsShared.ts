@@ -30,27 +30,35 @@ export interface PrefEventMeta {
   /** False when nothing in the app mails this event — the Email cell is
    *  disabled rather than lying. */
   emailAvailable: boolean;
-  /** Seed [inApp, email] for a user who has never saved. */
-  seed: [boolean, boolean];
+  /** False when nothing in the app texts this event (2026-09-24) — same rule. */
+  smsAvailable: boolean;
+  /** Seed [inApp, email, sms] for a user who has never saved. The sms seed
+   *  only matters once a mobile is verified — verifying is the opt-in. */
+  seed: [boolean, boolean, boolean];
 }
 
 /** Every key here has a real producer (an ActivityEvent kind or a notify*
  *  sender). Anything without one was cut from the matrix. */
 export const PREF_EVENTS: readonly PrefEventMeta[] = [
-  { key: "lead-assigned", name: "New lead", sub: "A platform or web lead lands in your pipeline", emailAvailable: true, seed: [true, true] },
-  { key: "proposal-viewed", name: "Proposal viewed", sub: "The client opened your estimate", emailAvailable: false, seed: [true, false] },
-  { key: "proposal-accepted", name: "Proposal accepted", sub: "Signed and ready to schedule", emailAvailable: true, seed: [true, true] },
-  { key: "proposal-declined", name: "Proposal declined", sub: "With the reason the client gave", emailAvailable: true, seed: [true, true] },
-  { key: "payment-received", name: "Payment received", sub: "A stage was paid — card, Square or recorded by hand", emailAvailable: true, seed: [true, true] },
-  { key: "change-order", name: "Change order answered", sub: "The client approved or declined it", emailAvailable: true, seed: [true, true] },
-  { key: "job-scheduled", name: "Job scheduled", sub: "A crew is booked for a date", emailAvailable: false, seed: [true, false] },
-  { key: "job-completed", name: "Job completed", sub: "Crew marked the work done", emailAvailable: false, seed: [true, false] },
-  { key: "worker-responded", name: "Worker responded", sub: "Accepted or declined an assignment", emailAvailable: true, seed: [true, true] },
-  { key: "review-received", name: "Review received", sub: "A homeowner left a rating", emailAvailable: false, seed: [true, false] },
-  { key: "trade-reply", name: "Trade board reply", sub: "Someone answered your post", emailAvailable: true, seed: [true, true] },
+  { key: "lead-assigned", name: "New lead", sub: "A platform or web lead lands in your pipeline", emailAvailable: true, smsAvailable: true, seed: [true, true, true] },
+  { key: "proposal-viewed", name: "Proposal viewed", sub: "The client opened your estimate", emailAvailable: false, smsAvailable: false, seed: [true, false, false] },
+  { key: "proposal-accepted", name: "Proposal accepted", sub: "Signed and ready to schedule", emailAvailable: true, smsAvailable: true, seed: [true, true, true] },
+  { key: "proposal-declined", name: "Proposal declined", sub: "With the reason the client gave", emailAvailable: true, smsAvailable: true, seed: [true, true, false] },
+  { key: "payment-received", name: "Payment received", sub: "A stage was paid — card, Square or recorded by hand", emailAvailable: true, smsAvailable: true, seed: [true, true, true] },
+  { key: "change-order", name: "Change order answered", sub: "The client approved or declined it", emailAvailable: true, smsAvailable: true, seed: [true, true, true] },
+  { key: "job-scheduled", name: "Job scheduled", sub: "A crew is booked for a date", emailAvailable: false, smsAvailable: false, seed: [true, false, false] },
+  { key: "job-completed", name: "Job completed", sub: "Crew marked the work done", emailAvailable: false, smsAvailable: false, seed: [true, false, false] },
+  { key: "worker-responded", name: "Worker responded", sub: "Accepted or declined an assignment", emailAvailable: true, smsAvailable: true, seed: [true, true, false] },
+  { key: "review-received", name: "Review received", sub: "A homeowner left a rating", emailAvailable: false, smsAvailable: false, seed: [true, false, false] },
+  { key: "trade-reply", name: "Trade board reply", sub: "Someone answered your post", emailAvailable: true, smsAvailable: false, seed: [true, true, false] },
 ];
 
-export type PrefCells = [inApp: boolean, email: boolean];
+/** [in-app, email, text]. The third cell came back on 2026-09-24 with the
+ *  platform's own Twilio number; a stored pair from before reads as the seed. */
+export type PrefCells = [inApp: boolean, email: boolean, sms: boolean];
+
+/** Texts that never wait for the morning: a lead waits for no one. */
+export const SMS_URGENT_KEYS: readonly PrefKey[] = ["lead-assigned"];
 
 export interface NotificationPrefs {
   matrix: Record<PrefKey, PrefCells>;
@@ -64,12 +72,13 @@ export const QUIET_TO_DEFAULT = "07:00";
 
 export function defaultNotificationPrefs(): NotificationPrefs {
   const matrix = {} as Record<PrefKey, PrefCells>;
-  for (const e of PREF_EVENTS) matrix[e.key] = [e.seed[0], e.seed[1]];
+  for (const e of PREF_EVENTS) matrix[e.key] = [e.seed[0], e.seed[1], e.seed[2]];
   return { matrix, quietFrom: QUIET_FROM_DEFAULT, quietTo: QUIET_TO_DEFAULT, muteWeekends: false };
 }
 
-/** Accepts the current pair shape AND the legacy [inApp, email, sms] triple
- *  (the sms cell is dropped). Unknown keys are ignored; missing ones seed. */
+/** Accepts the triple and the older [inApp, email] pair — a pair's text cell
+ *  is the seed, since that user never had the choice. Unknown keys are
+ *  ignored; missing ones seed. */
 export function parseNotificationPrefs(json: string | null | undefined): NotificationPrefs {
   const base = defaultNotificationPrefs();
   if (!json) return base;
@@ -85,7 +94,8 @@ export function parseNotificationPrefs(json: string | null | undefined): Notific
   for (const e of PREF_EVENTS) {
     const cells = stored[e.key];
     if (Array.isArray(cells) && cells.length >= 2 && typeof cells[0] === "boolean" && typeof cells[1] === "boolean") {
-      base.matrix[e.key] = [cells[0], e.emailAvailable ? cells[1] : false];
+      const sms = typeof cells[2] === "boolean" ? cells[2] : e.seed[2];
+      base.matrix[e.key] = [cells[0], e.emailAvailable ? cells[1] : false, e.smsAvailable ? sms : false];
     }
   }
   const str = (v: unknown, fb: string) => (typeof v === "string" && /^\d{2}:\d{2}$/.test(v) ? v : fb);
@@ -97,6 +107,29 @@ export function parseNotificationPrefs(json: string | null | undefined): Notific
   };
 }
 
+
+/**
+ * What a save writes (2026-09-24): the incoming cells over the stored ones.
+ * A pair — the handheld settings page still saves pairs — keeps the Text cell
+ * it cannot see; an unavailable channel is always off.
+ */
+export function mergeMatrixSave(
+  incoming: Record<string, readonly boolean[]>,
+  stored: NotificationPrefs,
+): Record<PrefKey, PrefCells> {
+  const out = {} as Record<PrefKey, PrefCells>;
+  for (const e of PREF_EVENTS) {
+    const cells = incoming[e.key];
+    const prev = stored.matrix[e.key] ?? [e.seed[0], e.seed[1], e.seed[2]];
+    if (!cells || cells.length < 2) {
+      out[e.key] = prev;
+      continue;
+    }
+    const sms = cells.length >= 3 ? Boolean(cells[2]) : prev[2];
+    out[e.key] = [Boolean(cells[0]), e.emailAvailable ? Boolean(cells[1]) : false, e.smsAvailable ? sms : false];
+  }
+  return out;
+}
 
 // ── kind → preference key ────────────────────────────────────────────────
 
@@ -204,3 +237,50 @@ export function allowsEmail(prefs: NotificationPrefs, key: PrefKey, now?: Date, 
   return prefs.matrix[key]?.[1] ?? false;
 }
 
+// ── text messages (2026-09-24) ───────────────────────────────────────────
+
+/** The Text cell alone — whether this member wants the event by text at all. */
+export function allowsSms(prefs: NotificationPrefs, key: PrefKey): boolean {
+  return prefs.matrix[key]?.[2] ?? false;
+}
+
+/**
+ * Text now, hold it for the morning, or not at all. Quiet hours DO gate
+ * texts (a phone buzzing at 2 AM is not a notification, it is a complaint):
+ * a held text goes out at the end of the quiet window, folded with anything
+ * else that waited into one message. A new lead never waits.
+ */
+export function smsDecision(prefs: NotificationPrefs, key: PrefKey, now: Date, tz: string): "send" | "hold" | "skip" {
+  if (!allowsSms(prefs, key)) return "skip";
+  if (SMS_URGENT_KEYS.includes(key)) return "send";
+  return inQuietHours(prefs, now, tz) ? "hold" : "send";
+}
+
+/** The instant the wall clock in `tz` next reads `hh:mm` (today if still ahead, else tomorrow). */
+export function nextLocalTime(hhmm: string, now: Date, tz: string): Date {
+  const [h, m] = hhmm.split(":").map((x) => Number.parseInt(x, 10));
+  const hour = Number.isFinite(h) ? h : 7;
+  const minute = Number.isFinite(m) ? m : 0;
+  const at = (day: Date) => {
+    const guess = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour, minute, 0));
+    try {
+      const dtf = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const p = Object.fromEntries(dtf.formatToParts(guess).map((x) => [x.type, x.value])) as Record<string, string>;
+      const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+      return new Date(guess.getTime() - (asUtc - guess.getTime()));
+    } catch {
+      return guess;
+    }
+  };
+  // The local calendar day may differ from the UTC one; try yesterday, today, tomorrow and take the first ahead of now.
+  for (const off of [-1, 0, 1]) {
+    const t = at(new Date(now.getTime() + off * 86_400_000));
+    if (t.getTime() > now.getTime()) return t;
+  }
+  return at(new Date(now.getTime() + 2 * 86_400_000));
+}
+
+/** When a held text goes out: the end of this member's quiet window. */
+export function nextQuietEnd(prefs: NotificationPrefs, now: Date, tz: string): Date {
+  return nextLocalTime(prefs.quietTo, now, tz);
+}

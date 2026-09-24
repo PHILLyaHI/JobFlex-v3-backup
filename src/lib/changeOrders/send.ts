@@ -10,6 +10,8 @@ import { renderEmail } from "@/lib/email/renderEmail";
 import { buildChangeOrder } from "@/lib/email/build/client";
 import { buildOwnerChangeOrderAnswered } from "@/lib/email/build/operator";
 import { sendToMembersByPref } from "@/lib/notificationPrefs";
+import { textOffice } from "@/lib/sms/send";
+import { changeOrderLine } from "@/lib/sms/format";
 import { isTwilioEnabled, sendSMS } from "@/lib/sdk/twilio";
 import { toE164 } from "@/lib/phone";
 import { contractTotal, type ContractCo } from "@/lib/contractTotal";
@@ -114,6 +116,11 @@ export async function notifyOfficeChangeOrderAnswered(coId: string, approved: bo
   const appUrl = await appBaseUrl();
   const href = co.jobId ? `${appUrl}/dashboard/jobs/${co.jobId}` : `${appUrl}/dashboard/proposals`;
   const after = proposal ? contractTotal(proposal.total, proposal.changeOrders) : null;
+  await textOffice(
+    co.organizationId,
+    "change-order",
+    changeOrderLine(client?.name ?? "Your client", approved, co.number ?? null, co.title, co.total ?? co.amount, co.proposal?.title ?? co.job?.title ?? "the job"),
+  );
   await sendToMembersByPref(
     co.organizationId,
     "change-order",

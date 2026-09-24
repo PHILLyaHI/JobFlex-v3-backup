@@ -1,0 +1,103 @@
+// POST /api/twilio/sms — a text came in on the platform's number (2026-09-24).
+//
+// STOP and START are mirrored into SmsOptOut (Twilio blocks on its side too;
+// this is what the app checks and shows). Anything else is a reply from
+// the field or a client: logged, matched to whoever we texted at that
+// number recently, put on that company's bell, and forwarded to the office
+// numbers right away — a "can't make it tomorrow" at 11 PM is exactly the
+// text the office wants. The signature is verified like the voice webhook.
+
+import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
+import { verifyTwilioSignature } from "@/lib/sdk/twilioVoice";
+import { clip, helpText, isHelpWord, isStartWord, isStopWord, replyForwardLine } from "@/lib/sms/format";
+import { sendText, textOfficeNow } from "@/lib/sms/send";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const twiml = () => new NextResponse("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>", { headers: { "Content-Type": "text/xml" } });
+
+export async function POST(req: Request) {
+  const form = await req.formData();
+  const params: Record<string, string> = {};
+  form.forEach((v, k) => {
+    params[k] = String(v);
+  });
+  const url = `${process.env.TWILIO_APP_URL ?? (await appBaseUrl())}/api/twilio/sms`;
+  if (!(await verifyTwilioSignature(url, params, req.headers.get("x-twilio-signature")))) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 403 });
+  }
+  const from = (params.From ?? "").trim();
+  const to = (params.To ?? "").trim();
+  const body = (params.Body ?? "").trim();
+  const sid = params.MessageSid || null;
+  if (!from) return twiml();
+
+  if (isStopWord(body)) {
+    await db.smsOptOut.upsert({ where: { phone: from }, create: { phone: from, body: clip(body, 60) }, update: { stoppedAt: new Date(), body: clip(body, 60) } });
+    await db.smsMessage.create({ data: { direction: "IN", to, from, body, kind: "stop", status: "RECEIVED", sid } }).catch(() => null);
+    return twiml();
+  }
+  if (isStartWord(body)) {
+    await db.smsOptOut.deleteMany({ where: { phone: from } });
+    await db.smsMessage.create({ data: { direction: "IN", to, from, body, kind: "start", status: "RECEIVED", sid } }).catch(() => null);
+    return twiml();
+  }
+  if (isHelpWord(body)) {
+    await sendText({ organizationId: null, to: from, body: helpText(), kind: "help" });
+    return twiml();
+  }
+
+  // Whose reply is this? The companies that texted this number lately.
+  const since = new Date(Date.now() - 60 * 86_400_000);
+  const recent = await db.smsMessage.findMany({ where: { to: from, direction: "OUT", createdAt: { gte: since }, organizationId: { not: null } }, orderBy: { createdAt: "desc" }, take: 20, select: { organizationId: true } });
+  const orgIds = [...new Set(recent.map((r) => r.organizationId!).filter(Boolean))];
+  const organizationId = orgIds[0] ?? null;
+  await db.smsMessage.create({ data: { organizationId, direction: "IN", to, from, body, kind: "reply", status: "RECEIVED", sid } }).catch(() => null);
+  if (!organizationId) return twiml();
+
+  const [worker, member, client, extra] = await Promise.all([
+    db.workerProfile.findFirst({ where: { organizationId, phone: { not: null } }, select: { id: true, displayName: true, phone: true } }).then((w) => (w && sameNumber(w.phone, from) ? w : null)),
+    db.membership.findFirst({ where: { organizationId, user: { smsPhone: from } }, select: { user: { select: { name: true, email: true } } } }),
+    db.client.findFirst({ where: { organizationId, phone: { not: null } }, select: { id: true, name: true, phone: true } }).then((c) => (c && sameNumber(c.phone, from) ? c : null)),
+    db.notificationPhone.findFirst({ where: { organizationId, phone: from }, select: { name: true } }),
+  ]);
+  // The lookups above take the first phone-bearing row and compare; the
+  // exact matches below cover the rest of the roster.
+  const workerExact = worker ?? (await db.workerProfile.findFirst({ where: { organizationId, phone: { in: variants(from) } }, select: { id: true, displayName: true, phone: true } }));
+  const clientExact = client ?? (await db.client.findFirst({ where: { organizationId, phone: { in: variants(from) } }, select: { id: true, name: true, phone: true } }));
+
+  const who = workerExact ? { name: workerExact.displayName, what: "crew", href: "/dashboard/workers" }
+    : member ? { name: member.user?.name ?? member.user?.email ?? "A teammate", what: "office", href: "/dashboard/settings" }
+    : extra ? { name: extra.name, what: "office", href: "/dashboard/settings" }
+    : clientExact ? { name: clientExact.name, what: "client", href: `/dashboard/clients/${clientExact.id}` }
+    : { name: from, what: "", href: "/dashboard/settings" };
+
+  await db.activityEvent.create({
+    data: {
+      organizationId,
+      clientId: clientExact?.id ?? null,
+      kind: "SMS_REPLY",
+      summary: `${who.name} texted: "${clip(body, 140)}"`,
+      meta: JSON.stringify({ href: who.href, from, sid }),
+    },
+  }).catch(() => null);
+  // The office hears it now; the sender is not texted their own words back.
+  if (who.what !== "office") await textOfficeNow(organizationId, replyForwardLine(who.name, who.what, body), { excludePhones: [from], kind: "reply-forward" });
+  return twiml();
+}
+
+function digits(p: string | null | undefined): string {
+  return (p ?? "").replace(/\D/g, "").replace(/^1(\d{10})$/, "$1");
+}
+function sameNumber(a: string | null | undefined, b: string): boolean {
+  return Boolean(a) && digits(a) === digits(b);
+}
+/** The ways a US number is typed: +12065550100, 2065550100, (206) 555-0100, 206-555-0100. */
+function variants(e164: string): string[] {
+  const d = digits(e164);
+  if (d.length !== 10) return [e164];
+  return [e164, d, `1${d}`, `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`, `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`, `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`, `${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6)}`];
+}

@@ -81,6 +81,7 @@ export default async function WorkersPage() {
     name: w.displayName,
     email: w.user?.email ?? null,
     phone: w.phone,
+    sms: w.smsOptIn,
     specialties: parseSpec(w.specialties),
     rate: w.hourlyRate,
     token: w.token,

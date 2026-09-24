@@ -10,6 +10,9 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { AssignmentStatus, Role, roleLabel } from "@/lib/prismaEnums";
 import { auth, signIn } from "@/lib/auth";
 import { enforceRateLimit, clientIp, HOUR } from "@/lib/rateLimit";
+import { afterResponse } from "@/lib/server-events";
+import { sendText } from "@/lib/sms/send";
+import { welcomeText } from "@/lib/sms/format";
 
 const inviteInput = z.object({
   name: z.string().min(1),
@@ -18,9 +21,18 @@ const inviteInput = z.object({
   // restricted-vs-full dashboard via isWorkerRole). Defaults to INSTALLER.
   role: z.enum(["INSTALLER", "SALES", "ESTIMATOR", "MANAGER"]).default("INSTALLER"),
   phone: z.string().optional().nullable(),
+  /** Text their schedule to that phone (2026-09-24). */
+  smsOptIn: z.boolean().optional(),
   specialties: z.array(z.string()).default([]),
   hourlyRate: z.number().optional().nullable(),
 });
+
+/** The welcome text with the STOP line — the consent a work number gets. */
+async function welcomeByText(organizationId: string, phone: string | null | undefined): Promise<void> {
+  if (!phone) return;
+  const org = await db.organization.findUnique({ where: { id: organizationId }, select: { name: true } });
+  await sendText({ organizationId, to: phone, body: welcomeText(org?.name ?? null), kind: "welcome" });
+}
 
 export async function createWorkerInvite(raw: unknown) {
   const { organizationId, user: inviter } = await requireManager();
@@ -147,6 +159,8 @@ export async function createWorkerInvite(raw: unknown) {
       phone: data.phone ?? null,
       specialties: JSON.stringify(data.specialties),
       hourlyRate: data.hourlyRate ?? null,
+      smsOptIn: data.smsOptIn ?? undefined,
+      ...(data.smsOptIn ? { smsOptedInAt: new Date() } : {}),
       inviteStatus: "PENDING",
       respondedAt: null,
     },
@@ -157,10 +171,13 @@ export async function createWorkerInvite(raw: unknown) {
       phone: data.phone ?? null,
       specialties: JSON.stringify(data.specialties),
       hourlyRate: data.hourlyRate ?? null,
+      smsOptIn: data.smsOptIn ?? false,
+      smsOptedInAt: data.smsOptIn ? new Date() : null,
       token: randomUUID(),
       inviteStatus: "PENDING",
     },
   });
+  if (data.smsOptIn && data.phone) afterResponse(() => welcomeByText(organizationId, data.phone));
 
   // Invite email (the link doubles as the manual shareable link).
   //
@@ -331,6 +348,7 @@ const updateWorkerInput = z.object({
   name: z.string().min(1),
   role: z.enum(["INSTALLER", "SALES", "ESTIMATOR", "MANAGER"]).optional(),
   phone: z.string().optional().nullable(),
+  smsOptIn: z.boolean().optional(),
   specialties: z.array(z.string()).default([]),
   hourlyRate: z.number().optional().nullable(),
 });
@@ -349,8 +367,12 @@ export async function updateWorker(raw: unknown) {
       phone: data.phone ?? null,
       specialties: JSON.stringify(data.specialties),
       hourlyRate: data.hourlyRate ?? null,
+      smsOptIn: data.smsOptIn ?? undefined,
+      ...(data.smsOptIn && !w.smsOptIn ? { smsOptedInAt: new Date() } : {}),
     },
   });
+  // Turned on, or a new phone with it on: the welcome text with the STOP line.
+  if (data.smsOptIn && data.phone && (!w.smsOptIn || w.phone !== data.phone)) afterResponse(() => welcomeByText(organizationId, data.phone));
   // A role change writes to the membership (the org seat / permission level).
   // Guard the last owner so a role edit can't lock an org out of its own admin.
   if (data.role) {

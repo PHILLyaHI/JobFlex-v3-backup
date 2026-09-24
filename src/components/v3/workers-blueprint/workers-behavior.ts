@@ -365,7 +365,7 @@ export function initWorkersContent(
         '<div class="fld-row"><div class="kpi-lbl">Email</div>' +
           (e.email ? '<div class="fld-v">' + escapeText(e.email) + '</div>' : '<div class="fld-v none">no email</div>') + '</div>' +
         '<div class="fld-row"><div class="kpi-lbl">Phone</div>' +
-          (e.phone ? '<div class="fld-v mono">' + escapeText(e.phone) + '</div>' : '<div class="fld-v none">no phone</div>') + '</div>' +
+          (e.phone ? '<div class="fld-v mono">' + escapeText(e.phone) + (e.sms ? ' · texts on' : '') + '</div>' : '<div class="fld-v none">no phone</div>') + '</div>' +
         '<div class="fld-row"><div class="kpi-lbl">Role</div><div class="fld-v">' + escapeText(roleLabel(e.role)) + '</div></div>' +
         '<div class="fld-row"><div class="kpi-lbl">Specialties</div>' +
           (e.specialties.length
@@ -475,6 +475,7 @@ export function initWorkersContent(
         '<div><label class="mf-lbl">Phone (optional)</label><input class="mf-in" data-i="phone" placeholder="(425) 555-0199" value="' + escapeAttr(entry && entry.phone ? entry.phone : '') + '"></div>' +
         '<div><label class="mf-lbl">Hourly rate</label><input class="mf-in" type="number" min="0" data-i="rate" placeholder="38" value="' + escapeAttr(entry && entry.rate ? String(entry.rate) : '') + '"></div>' +
       '</div>' +
+      '<div class="mf"><label class="mf-chk"><input type="checkbox" data-i="sms"' + (entry && entry.sms ? ' checked' : '') + '> Text their schedule to this phone — jobs, moves, tomorrow\'s list (reply STOP opts out)</label></div>' +
       '<div class="mf"><label class="mf-lbl">Specialties</label><input class="mf-in" data-i="spec" placeholder="Roofing, Fencing" value="' + escapeAttr(entry ? entry.specialties.join(', ') : '') + '"></div>' +
       '<div class="mf"><label class="mf-lbl">Role</label><div class="mf-roles" id="mfRoles">' +
         WORKER_ROLES.map(function (r) {
@@ -702,6 +703,7 @@ export function initWorkersContent(
       const input = $<HTMLInputElement>('[data-i="' + f + '"]');
       return input ? input.value.trim() : '';
     };
+    const smsOn = Boolean($<HTMLInputElement>('[data-i="sms"]')?.checked);
     const name = val('name');
     if (!name) {
       inviteError('Enter the worker’s full name.');
@@ -743,6 +745,7 @@ export function initWorkersContent(
           name,
           role,
           phone: val('phone') || null,
+          smsOptIn: smsOn,
           specialties,
           hourlyRate: rate,
         });
@@ -750,6 +753,7 @@ export function initWorkersContent(
         if (entry) {
           entry.name = name;
           entry.phone = val('phone') || null;
+          entry.sms = smsOn;
           entry.rate = rate;
           entry.specialties = specialties;
           entry.role = role;
@@ -758,6 +762,7 @@ export function initWorkersContent(
         const created = await createWorkerInvite({
           name,
           email,
+          smsOptIn: smsOn,
           role,
           phone: val('phone') || null,
           specialties,
