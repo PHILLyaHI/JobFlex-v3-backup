@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { PortalPayModel } from "@/lib/payments/portalModel";
 import { proposalAcceptanceSchema } from "@/lib/proposalAcceptance";
@@ -8,10 +8,11 @@ import { PaymentCenter, paymentActionLabel } from "./payment-center";
 import styles from "./proposal-decision.module.css";
 
 /** The same decision and typed name follow the reader when the inline form leaves view. */
-export function ProposalDecision({ settled, busy, model, onAccept, onDecline }: {
+export function ProposalDecision({ settled, busy, model, acceptedMessage, onAccept, onDecline }: {
   settled: string | null;
   busy: boolean;
   model: PortalPayModel;
+  acceptedMessage: ReactNode;
   onAccept: (name: string) => Promise<void>;
   onDecline: () => void;
 }) {
@@ -22,15 +23,17 @@ export function ProposalDecision({ settled, busy, model, onAccept, onDecline }: 
   const anchor = useRef<HTMLDivElement>(null);
   const id = useId();
   const canPay = settled === "accepted" && model.remainingMinor > 0 && model.anyWay;
-  const visible = !settled || canPay;
+  const positive = settled === "accepted" || settled === "paid";
+  const visible = !settled || positive;
+  const stickyAvailable = !settled || canPay;
 
   useEffect(() => {
     const el = anchor.current;
-    if (!el || !visible || !("IntersectionObserver" in window)) return;
+    if (!el || !stickyAvailable || !("IntersectionObserver" in window)) return;
     const observer = new IntersectionObserver(([entry]) => setOffscreen(entry.intersectionRatio < 1), { threshold: 1 });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [visible, settled]);
+  }, [stickyAvailable, settled]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -46,7 +49,10 @@ export function ProposalDecision({ settled, busy, model, onAccept, onDecline }: 
   }
 
   function content(sticky: boolean) {
-    if (canPay) return <button type="button" className={styles.primary} disabled={busy} onClick={() => setPayOpen(true)} aria-haspopup="dialog">{paymentActionLabel(model)}</button>;
+    if (positive) return <div className={styles.settled}>
+      <div className={styles.confirmation}>{sticky ? <span>Accepted — thank you.</span> : acceptedMessage}</div>
+      {canPay && <button type="button" className={styles.primary} disabled={busy} onClick={() => setPayOpen(true)} aria-haspopup="dialog">{paymentActionLabel(model)}</button>}
+    </div>;
     const fieldId = id + (sticky ? "-sticky" : "-inline");
     return <form className={styles.form} onSubmit={submit} noValidate>
       <div className={styles.field}>
@@ -66,7 +72,7 @@ export function ProposalDecision({ settled, busy, model, onAccept, onDecline }: 
   if (!visible) return null;
   return <>
     <div ref={anchor} className={styles.inline}>{content(false)}</div>
-    {offscreen && createPortal(<div className={styles.bar} aria-label="Proposal actions"><div className={styles.barInner}>{content(true)}</div></div>, document.body)}
+    {offscreen && stickyAvailable && createPortal(<div className={styles.bar} aria-label="Proposal actions"><div className={styles.barInner}>{content(true)}</div></div>, document.body)}
     {payOpen && <PaymentCenter model={model} onClose={() => setPayOpen(false)} />}
   </>;
 }

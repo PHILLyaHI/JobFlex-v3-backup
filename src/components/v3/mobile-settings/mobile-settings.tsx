@@ -1,5 +1,7 @@
 "use client";
 
+import { GmailConnection } from "@/components/v3/settings-blueprint/panes/gmail-connection";
+import { ProcessorSubpane } from "@/components/v3/settings-blueprint/panes/processor-subpane";
 import { MetaConnection } from "@/components/v3/settings-blueprint/meta-connection";
 
 // SETTINGS · HANDHELD — /dashboard/settings on a phone, and the standalone
@@ -57,18 +59,13 @@ import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { logOutEverywhere } from "@/components/v3/blueprint-shell/sign-out";
 import { updateBusiness, updateNotificationPrefs, updateProfile } from "@/actions/accountSettings";
 import {
-  disconnectGmail,
-  sendGmailTestEmail,
-  updateGmailSettings,
   updatePaymentSettings,
 } from "@/actions/settings";
-import { toast } from "@/components/ui/Toast";
 import {
   disconnectSquare,
   disconnectStax,
   disconnectStripeConnect,
   saveBankTransferSettings,
-  setProviderOffered,
   setStripeAchEnabled,
 } from "@/actions/paymentConnections";
 import { sendTestNotification } from "@/actions/notifications";
@@ -81,7 +78,6 @@ import type {
   MatrixAction,
   OAuthNotice,
   PrefKey,
-  ProcessorIntegrationData,
   Processor,
   RailKey,
   SettingsData,
@@ -93,11 +89,8 @@ import {
   BILLING_CONTACT_LABELS,
   BUSINESS_CARD,
   BUSINESS_LABELS,
-  COMING_SOON_BADGE,
-  CONNECTED_BADGE,
   CONNECT_ACTION,
   CURRENCY_SELECT,
-  DASHBOARD_HREF,
   DEFAULT_RAIL,
   DEFAULT_SUBTAB,
   isVisibleSubTab,
@@ -107,29 +100,13 @@ import {
   EMAIL_UNAVAILABLE_TAG,
   EMAIL_UNAVAILABLE_TITLE,
   FEE_NOTE_KICKER,
-  GMAIL_BEHAVIOR_CARD,
-  GMAIL_BEHAVIOR_TOGGLES,
-  GMAIL_CONNECTION_CARD,
-  GMAIL_CONNECT_ACTION,
-  GMAIL_FROM_CARD,
-  GMAIL_FROM_LABELS,
-  GMAIL_OAUTH_NOTICE,
-  GMAIL_RECONNECT_ACTION,
-  GMAIL_REVOKED_NOTE,
-  GMAIL_TEST_ACTION,
-  GMAIL_PERMISSIONS_CARD,
-  GMAIL_SCOPES_EMPTY,
   MANAGE_ACTION,
-  META_CONNECTION_CARD,
   NOTIFICATIONS_CARD,
   NOTIFICATION_CHANNELS,
   NOTIFICATION_COLUMN_LABEL,
   NOTIFICATION_EVENT_COLUMN,
   NOTIFICATION_FOOTER_ACTIONS,
   NOTIFICATION_ICONS,
-  NOT_CONNECTED_BADGE,
-  OFFER_TOGGLE,
-  OPEN_DASHBOARD_LABEL,
   PAGE_TITLE,
   PAYMENT_AUTOMATIONS,
   PAYMENT_AUTOMATIONS_CARD,
@@ -146,30 +123,19 @@ import {
   PROCESSORS,
   PROCESSORS_CARD,
   PROCESSOR_OAUTH_NOTICE,
-  PROCESSOR_BEHAVIOR_CARD,
-  PROCESSOR_CONNECTION_CARD,
-  PROCESSOR_LAST_EVENT_PREFIX,
-  PROCESSOR_NO_EVENTS,
-  PROCESSOR_PERMISSIONS_CARD,
-  PROCESSOR_SCOPES_EMPTY,
   PROCESSOR_STATE_COPY,
   PROCESSOR_UNAVAILABLE_BADGE,
-  PROCESSOR_WEBHOOK_CARD,
   PROFILE_CARD,
   PROFILE_LABELS,
   RAIL_ITEMS,
   RAIL_NEW_BADGE,
   RECONNECT_ACTION,
-  SCOPE_CHECK,
   SECURITY_CARD,
   SECURITY_ITEMS,
   SIGN_OUT_LABEL,
   KEY_FORMS,
-  KEY_WEBHOOK_REGISTERED,
-  SQUARE_TOKEN_PERMISSIONS_CARD,
   STRIPE_ACH_TOGGLE,
   STRIPE_KEY_ACTION,
-  STRIPE_KEY_PERMISSIONS_CARD,
   TEST_RESULT_COPY,
   currencyCodeFor,
   currencyOptionFor,
@@ -308,34 +274,6 @@ function Toggle({
       aria-label={ariaLabel}
       onClick={() => onChange(!checked)}
     />
-  );
-}
-
-/** `.mono-box` + `.copy`; click copies and flashes "Copied" for 1600ms. */
-function CopyBox({ value }: { value: string }) {
-  const [done, setDone] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-    },
-    [],
-  );
-  const copy = useCallback(() => {
-    void navigator.clipboard?.writeText(value).catch(() => {
-      /* clipboard blocked (insecure origin / denied permission) — still flash */
-    });
-    setDone(true);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setDone(false), 1600);
-  }, [value]);
-  return (
-    <div className="mst-mono">
-      <code>{value}</code>
-      <button className={done ? "mst-copy is-done" : "mst-copy"} type="button" onClick={copy}>
-        {done ? "Copied" : "Copy"}
-      </button>
-    </div>
   );
 }
 
@@ -963,269 +901,6 @@ function BillingPane({ data }: { data: SettingsData }) {
   );
 }
 
-/* ═══════════════════ INTEGRATIONS → Stripe / Square ═══════════════════ */
-
-function ProcessorSubpane({
-  d,
-  conns,
-}: {
-  d: ProcessorIntegrationData;
-  conns: PaymentConnectionStatusView;
-}) {
-  const router = useRouter();
-  const isStripe = d.key === "stripe";
-  const s = conns.stripe;
-  const q = conns.square;
-  const state = isStripe ? s.state : q.state;
-  const connected = state === "connected";
-  const hasRow = state !== "not_configured" && state !== "disconnected";
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [ach, setAch] = useState(s.achEnabled);
-  const [offered, setOffered] = useState(isStripe ? s.offered : q.offered);
-  // Two ways in: OAuth (when the platform offers it) and a pasted key /
-  // token. A row joined by key reconnects through the form, not the OAuth link.
-  const [keyOpen, setKeyOpen] = useState(false);
-  const viaKey = isStripe ? s.auth === "key" : q.auth === "token";
-  const keyOffered = isStripe ? s.keyOffered : q.keyOffered;
-  const webhookRegistered = isStripe ? s.webhookRegistered : q.webhookRegistered;
-  const keyCopy = KEY_FORMS[d.key];
-  const connectHref: string | null = isStripe
-    ? s.oauthOffered
-      ? conns.connectHref.stripe
-      : null
-    : q.oauthOffered
-      ? conns.connectHref.square
-      : null;
-
-  async function disconnect() {
-    setBusy(true);
-    setErr("");
-    try {
-      if (isStripe) await disconnectStripeConnect();
-      else await disconnectSquare();
-      router.refresh();
-    } catch (e) {
-      setErr(actionError(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const modeBadge: Badge | null = hasRow
-    ? isStripe
-      ? {
-          label: s.livemode === false ? "Test mode" : "Live",
-          tone: s.livemode === false ? "bg-off" : "bg-live",
-        }
-      : {
-          label: q.env === "sandbox" ? "Sandbox" : "Production",
-          tone: q.env === "sandbox" ? "bg-off" : "bg-live",
-        }
-    : null;
-
-  const connectedOn = isStripe
-    ? s.connectedAt
-      ? new Date(s.connectedAt).toLocaleDateString()
-      : ""
-    : q.connectedAt
-      ? new Date(q.connectedAt).toLocaleDateString()
-      : "";
-
-  return (
-    <>
-      {/* ── Connection ── */}
-      <section className="mst-card">
-        <CardHeader
-          card={PROCESSOR_CONNECTION_CARD}
-          badge={connected ? CONNECTED_BADGE : NOT_CONNECTED_BADGE}
-        />
-        <div className={hasRow ? "mst-cardB mst-cardB--rows" : "mst-cardB"}>
-          {hasRow ? (
-            <div className="mst-row">
-              <div className="mst-rowTop">
-                <span className="mst-rowIc">
-                  <Ic name={isStripe ? "i-card" : "i-grid"} />
-                </span>
-                <span className="mst-rowB">
-                  <span className="mst-rowN">{isStripe ? stripeConnLine(s) : squareConnLine(q)}</span>
-                  <span className={`mst-rowD${connected ? "" : " is-warn"}`}>
-                    {connected ? `Connected ${connectedOn}` : PROCESSOR_STATE_COPY[state]}
-                  </span>
-                  {modeBadge ? (
-                    <span className="mst-rowBadge">
-                      <Badge2 badge={modeBadge} />
-                    </span>
-                  ) : null}
-                </span>
-              </div>
-              <div className="mst-rowAct">
-                {!connected ? (
-                  viaKey || !connectHref ? (
-                    keyOffered ? (
-                      <button
-                        className={`mst-btn mst-btn--ghost ${RECONNECT_ACTION.state}`}
-                        type="button"
-                        onClick={() => setKeyOpen((v) => !v)}
-                      >
-                        {RECONNECT_ACTION.label}
-                      </button>
-                    ) : null
-                  ) : (
-                    <a className={`mst-btn mst-btn--ghost ${RECONNECT_ACTION.state}`} href={connectHref}>
-                      {RECONNECT_ACTION.label}
-                    </a>
-                  )
-                ) : null}
-                <button
-                  className={`mst-btn mst-btn--ghost ${DISCONNECT_ACTION.state}`}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void disconnect()}
-                >
-                  {DISCONNECT_ACTION.label}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="mst-rowD">{PROCESSOR_STATE_COPY[state]}</div>
-              {state === "disconnected" ? (
-                <div className="skf-ways">
-                  {connectHref ? (
-                    <a className="mst-btn mst-btn--primary mst-btn--wide" href={connectHref}>
-                      {CONNECT_ACTION.icon ? <Ic name={CONNECT_ACTION.icon} /> : null}
-                      {`Connect ${isStripe ? "Stripe" : "Square"}`}
-                    </a>
-                  ) : null}
-                  {keyOffered ? (
-                    <>
-                      {connectHref ? <span className="skf-or">{keyCopy.or}</span> : null}
-                      <button
-                        className={`mst-btn mst-btn--wide ${connectHref ? "mst-btn--ghost" : "mst-btn--primary"}`}
-                        type="button"
-                        aria-expanded={keyOpen}
-                        onClick={() => setKeyOpen((v) => !v)}
-                      >
-                        <Ic name={keyCopy.action.icon ?? "i-card"} />
-                        {keyCopy.action.label}
-                      </button>
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
-            </>
-          )}
-          {keyOpen && !connected ? (
-            <ProviderKeyForm
-              provider={d.key}
-              variant="mobile"
-              feePct={conns.platformFeePct}
-              onCancel={() => setKeyOpen(false)}
-              onDone={(r) => {
-                if (r.webhook) setKeyOpen(false); // else the form shows the webhook note
-              }}
-            />
-          ) : null}
-          {err ? <div className="mst-rowD is-warn">{err}</div> : null}
-          {hasRow ? (
-            <a
-              className="mst-btn mst-btn--ghost mst-btn--wide"
-              href={DASHBOARD_HREF[d.key]}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Ic name="i-ext" />
-              {OPEN_DASHBOARD_LABEL[d.key]}
-            </a>
-          ) : null}
-        </div>
-      </section>
-
-      {/* ── Behavior ── */}
-      {hasRow ? (
-        <section className="mst-card">
-          <CardHeader card={PROCESSOR_BEHAVIOR_CARD} />
-          <div className="mst-cardB mst-cardB--rows">
-            <div className="mst-trow">
-              <span className="mst-trowB">
-                <span className="mst-trowN">{OFFER_TOGGLE.name}</span>
-                <span className="mst-trowD">{OFFER_TOGGLE.desc}</span>
-              </span>
-              <Toggle
-                checked={offered}
-                onChange={(next) => {
-                  setOffered(next);
-                  void setProviderOffered({ provider: d.key, offered: next }).catch((e) =>
-                    setErr(actionError(e)),
-                  );
-                }}
-                ariaLabel={OFFER_TOGGLE.name}
-              />
-            </div>
-            {isStripe ? (
-              <div className="mst-trow">
-                <span className="mst-trowB">
-                  <span className="mst-trowN">{STRIPE_ACH_TOGGLE.name}</span>
-                  <span className="mst-trowD">{STRIPE_ACH_TOGGLE.desc}</span>
-                </span>
-                <Toggle
-                  checked={ach}
-                  onChange={(next) => {
-                    setAch(next);
-                    void setStripeAchEnabled(next).catch((e) => setErr(actionError(e)));
-                  }}
-                  ariaLabel={STRIPE_ACH_TOGGLE.name}
-                />
-              </div>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
-
-      {/* ── Permissions ── */}
-      <section className="mst-card">
-        <CardHeader
-          card={viaKey ? (isStripe ? STRIPE_KEY_PERMISSIONS_CARD : SQUARE_TOKEN_PERMISSIONS_CARD) : PROCESSOR_PERMISSIONS_CARD}
-        />
-        <div className="mst-cardB">
-          {(isStripe ? s.scopes : q.scopes).length === 0 ? (
-            <div className="mst-rowD">{PROCESSOR_SCOPES_EMPTY}</div>
-          ) : (
-            <div className="mst-scopes">
-              {(isStripe ? s.scopes : q.scopes).map((scope) => (
-                <div className="mst-scope" key={scope}>
-                  <i>{SCOPE_CHECK}</i>
-                  <code>{scope}</code>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* ── Webhook ── */}
-      <section className="mst-card">
-        <CardHeader card={PROCESSOR_WEBHOOK_CARD} />
-        <div className="mst-cardB">
-          {viaKey ? (
-            <div className={webhookRegistered ? "mst-rowD" : "mst-rowD is-warn"}>
-              {webhookRegistered ? KEY_WEBHOOK_REGISTERED : keyCopy.webhookMissing}
-            </div>
-          ) : null}
-          <div className="mst-fld">
-            <span className="mst-fldL">Endpoint</span>
-            <CopyBox value={d.webhookUrl} />
-          </div>
-          <div className="mst-rowD">
-            {d.lastEventAt ? `${PROCESSOR_LAST_EVENT_PREFIX}${d.lastEventAt}` : PROCESSOR_NO_EVENTS}
-          </div>
-        </div>
-      </section>
-    </>
-  );
-}
-
 /* ════════════════════════════ INTEGRATIONS ════════════════════════════ */
 
 function IntegrationsPane({
@@ -1251,50 +926,6 @@ function IntegrationsPane({
     if (wanted) setSub(wanted);
   }
 
-  const [displayName, setDisplayName] = useState(gmail.displayName);
-  const [replyTo, setReplyTo] = useState(gmail.replyTo);
-  const [sendFromUser, setSendFromUser] = useState(gmail.sendFromUser);
-
-  const gmailToggle: Record<string, [boolean, (next: boolean) => void]> = {
-    sendFromUser: [sendFromUser, setSendFromUser],
-  };
-
-  const saveGmail = () =>
-    updateGmailSettings({
-      // `connected` is owned by the OAuth callback — the action re-reads the
-      // stored value and ignores whatever is passed here.
-      connected: gmail.connected,
-      sendFromUser,
-      displayName,
-      replyTo,
-    });
-
-  const [gmailBusy, setGmailBusy] = useState(false);
-  const gmailNotice = notice?.gmail ? GMAIL_OAUTH_NOTICE[notice.gmail] : undefined;
-  async function testGmail() {
-    setGmailBusy(true);
-    try {
-      const r = await sendGmailTestEmail();
-      toast.success("Test email sent", `To ${r.to}, ${r.via === "gmail" ? "from your Gmail" : "from the JobFlex address"}.`);
-    } catch (e) {
-      toast.error("Test email failed", e instanceof Error ? e.message : "Try again in a minute.");
-    } finally {
-      setGmailBusy(false);
-    }
-  }
-  async function dropGmail() {
-    setGmailBusy(true);
-    try {
-      await disconnectGmail();
-      toast.success("Gmail disconnected", "Mail now leaves from the JobFlex address with you as reply-to.");
-    } catch (e) {
-      toast.error("Couldn't disconnect", e instanceof Error ? e.message : "Try again in a minute.");
-    } finally {
-      setGmailBusy(false);
-    }
-  }
-
-
   return (
     <>
       <div className="mst-subrail">
@@ -1315,138 +946,20 @@ function IntegrationsPane({
 
       {/* ── Gmail ── */}
       <div className={sub === "gmail" ? "mst-subpane is-on" : "mst-subpane"}>
-        {gmailNotice ? (
-          <div className="mst-note" role="status">
-            <span className={gmailNotice.tone === "ok" ? "mst-noteK" : "mst-noteK is-warn"}>{gmailNotice.title}</span>
-            <span>{gmailNotice.sub}</span>
-          </div>
-        ) : null}
-        {!gmail.connected && gmail.revokedAt ? (
-          <div className="mst-note" role="alert">
-            <span className="mst-noteK is-warn">{GMAIL_REVOKED_NOTE.title}</span>
-            <span>{GMAIL_REVOKED_NOTE.sub}</span>
-            <a className="mst-btn mst-btn--primary mst-btn--wide" href={gmail.connectHref}>
-              {GMAIL_RECONNECT_ACTION.label}
-            </a>
-          </div>
-        ) : null}
-        <section className="mst-card">
-          <CardHeader
-            card={GMAIL_CONNECTION_CARD}
-            badge={gmail.connected ? CONNECTED_BADGE : NOT_CONNECTED_BADGE}
-          />
-          <div className={gmail.connected ? "mst-cardB mst-cardB--rows" : "mst-cardB"}>
-            {gmail.connected ? (
-              <div className="mst-row">
-                <div className="mst-rowTop">
-                  <span className="mst-rowIc">
-                    <Ic name="i-google" brand />
-                  </span>
-                  <span className="mst-rowB">
-                    <span className="mst-rowN">{gmail.connectedEmail || gmail.replyToPlaceholder}</span>
-                    <span className="mst-rowD">{GMAIL_CONNECTION_CARD.sub}</span>
-                  </span>
-                </div>
-                <div className="mst-rowAct">
-                  <button className="mst-btn mst-btn--ghost" type="button" disabled={gmailBusy} onClick={() => void testGmail()}>
-                    {GMAIL_TEST_ACTION.label}
-                  </button>
-                  <button
-                    className={`mst-btn mst-btn--ghost ${DISCONNECT_ACTION.state}`}
-                    type="button"
-                    disabled={gmailBusy}
-                    onClick={() => void dropGmail()}
-                  >
-                    {DISCONNECT_ACTION.icon ? <Ic name={DISCONNECT_ACTION.icon} /> : null}
-                    {DISCONNECT_ACTION.label}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              /* Real OAuth hand-off — the same server route the desktop hub
-                 uses; Google redirects back through the callback. */
-              <a className="mst-btn mst-btn--primary mst-btn--wide" href={gmail.connectHref}>
-                {GMAIL_CONNECT_ACTION.icon ? <Ic name={GMAIL_CONNECT_ACTION.icon} brand /> : null}
-                {GMAIL_CONNECT_ACTION.label}
-              </a>
-            )}
-          </div>
-        </section>
-
-        <section className="mst-card">
-          <CardHeader card={GMAIL_FROM_CARD} />
-          <div className="mst-cardB">
-            <Field
-              label={GMAIL_FROM_LABELS.displayName}
-              value={displayName}
-              placeholder={gmail.displayNamePlaceholder}
-              onChange={setDisplayName}
-            />
-            <Field
-              label={GMAIL_FROM_LABELS.replyTo}
-              value={replyTo}
-              placeholder={gmail.replyToPlaceholder}
-              onChange={setReplyTo}
-              inputMode="email"
-            />
-          </div>
-        </section>
-
-        <section className="mst-card">
-          <CardHeader card={GMAIL_BEHAVIOR_CARD} />
-          <div className="mst-cardB mst-cardB--rows">
-            {GMAIL_BEHAVIOR_TOGGLES.map((t) => {
-              const [on, set] = gmailToggle[t.key];
-              return (
-                <div className="mst-trow" key={t.key}>
-                  <span className="mst-trowB">
-                    <span className="mst-trowN">{t.name}</span>
-                    <span className="mst-trowD">{t.desc}</span>
-                  </span>
-                  <Toggle checked={on} onChange={set} ariaLabel={t.name} />
-                </div>
-              );
-            })}
-          </div>
-          {/* The Gmail subtab's one save bar: gmailSettingsJson is a single
-              column, so this writes the From address and the behavior flags
-              together — the desktop does exactly the same. */}
-          <SaveBar onSave={saveGmail} />
-        </section>
-
-        <section className="mst-card">
-          <CardHeader card={GMAIL_PERMISSIONS_CARD} />
-          <div className="mst-cardB">
-            {gmail.scopes.length === 0 ? (
-              <div className="mst-rowD">{GMAIL_SCOPES_EMPTY}</div>
-            ) : (
-              <div className="mst-scopes">
-                {gmail.scopes.map((scope) => (
-                  <div className="mst-scope" key={scope}>
-                    <i>{SCOPE_CHECK}</i>
-                    <code>{scope}</code>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
+        <GmailConnection data={gmail} notice={notice?.gmail} mobile />
       </div>
 
       {/* ── Meta business ── */}
       <div className={sub === "meta" ? "mst-subpane is-on" : "mst-subpane"}>
-        <section className="mst-card">
-          <CardHeader card={META_CONNECTION_CARD} badge={meta.connected ? CONNECTED_BADGE : meta.comingSoon ? COMING_SOON_BADGE : NOT_CONNECTED_BADGE} />
-          <div className="mst-cardB"><MetaConnection data={meta} mobile /></div>
-        </section>
+        <MetaConnection data={meta} mobile />
       </div>
 
       {/* ── Stripe / Square ── */}
       <div className={sub === "stripe" ? "mst-subpane is-on" : "mst-subpane"}>
-        <ProcessorSubpane d={stripe} conns={connections} />
+        <ProcessorSubpane d={stripe} conns={connections} mobile />
       </div>
       <div className={sub === "square" ? "mst-subpane is-on" : "mst-subpane"}>
-        <ProcessorSubpane d={square} conns={connections} />
+        <ProcessorSubpane d={square} conns={connections} mobile />
       </div>
     </>
   );

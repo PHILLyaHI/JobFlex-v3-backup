@@ -288,7 +288,6 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
       </div>
     ) : null;
 
-
   return (
     <div className="jf-mobile-proposal-client" ref={rootRef}>
       <div className="mpc-doc">
@@ -356,37 +355,38 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
               </figure>
             ) : null}
 
-            <div
-              className="mpc-state"
-              role="status"
-              hidden={!positive}
-              data-cheer={cheer ? "1" : undefined}
-            >
-              {cheer && (
-                <span className="mpc-cheer" aria-hidden="true">
-                  {Array.from({ length: 8 }, (_, i) => (
-                    <i key={i} style={{ "--i": i } as React.CSSProperties} />
-                  ))}
-                </span>
-              )}
-              <IcCheck />
-              <span>
-                {settled === "paid"
-                  ? "Paid in full — thank you. The team has been notified."
-                  : "Accepted — thank you. The team has been notified."}
-              </span>
-            </div>
-
             {/* HOW TO PAY — only once accepted. It used to live in the action
                 bar next to Decline, asking for money before the client had
                 agreed to anything; and because that bar is hidden the moment
                 the proposal settles, paying became unreachable at exactly the
                 point it starts to make sense. */}
-            {revert?.kind === "accept" ? revertRow : null}
             <Suspense fallback={null}>
               <PayReturnBanner publicId={view.publicId} />
             </Suspense>
-            <ProposalDecision settled={settled} busy={busy !== null} model={pay} onAccept={accept} onDecline={() => setDeclineOpen(true)} />
+            <ProposalDecision settled={settled} busy={busy !== null} model={pay}
+              acceptedMessage={
+                <div
+                  className="mpc-state"
+                  role="status"
+                  hidden={!positive}
+                  data-cheer={cheer ? "1" : undefined}
+                >
+                  {cheer && (
+                    <span className="mpc-cheer" aria-hidden="true">
+                      {Array.from({ length: 8 }, (_, i) => (
+                        <i key={i} style={{ "--i": i } as React.CSSProperties} />
+                      ))}
+                    </span>
+                  )}
+                  <IcCheck />
+                  <span>
+                    {settled === "paid"
+                      ? "Paid in full — thank you."
+                      : "Accepted — thank you."}
+                  </span>
+                </div>
+              } onAccept={accept} onDecline={() => setDeclineOpen(true)} />
+            {revert?.kind === "accept" ? revertRow : null}
             {settled === "accepted" && !pay.anyWay ? (
               <div className="mpc-pay-sum mpc-pay-touch">The team will be in touch about payment.</div>
             ) : null}

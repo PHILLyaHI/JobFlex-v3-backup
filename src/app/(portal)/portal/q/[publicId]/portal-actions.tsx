@@ -25,8 +25,7 @@ function settledFrom(status: string): Settled {
   return null;
 }
 
-// Paying moved to ./portal-payment.tsx — per stage, on the contractor's own
-// Stripe / Square. This block is Accept / Decline and the settled states.
+// Acceptance and the payment shortcut share one row; the schedule stays below.
 export function PortalActions({ publicId, status, model }: { publicId: string; status: string; model: PortalPayModel }) {
   const router = useRouter();
   const [freshPay, setFreshPay] = useState<PortalPayModel | null>(null);
@@ -148,7 +147,30 @@ export function PortalActions({ publicId, status, model }: { publicId: string; s
 
   return (
     <div className="pv-actions" id="pvActions">
-      <ProposalDecision settled={settled} busy={busy !== null} model={["ACCEPTED", "COMPLETED", "PAID"].includes(status) ? model : freshPay ?? model} onAccept={accept} onDecline={() => {
+      <ProposalDecision settled={settled} busy={busy !== null} model={["ACCEPTED", "COMPLETED", "PAID"].includes(status) ? model : freshPay ?? model}
+        acceptedMessage={
+          <div
+            className="pv-state"
+            id="pvAccepted"
+            hidden={!positive}
+            data-cheer={cheer ? "1" : undefined}
+          >
+            {cheer && (
+              <span className="pv-cheer" aria-hidden="true">
+                {/* Eight sparks thrown from behind the plate. Pure CSS, no library,
+                    and `prefers-reduced-motion` stops them dead (see the stylesheet). */}
+                {Array.from({ length: 8 }, (_, i) => (
+                  <i key={i} style={{ "--i": i } as React.CSSProperties} />
+                ))}
+              </span>
+            )}
+            {/* The donor writes `&#10003;&nbsp;` — a NO-BREAK space after the check,
+                not a plain one. ` ` keeps it one. */}
+            {settled === "paid"
+              ? "✓ Paid in full — thank you."
+              : "✓ Accepted — thank you."}
+          </div>
+        } onAccept={accept} onDecline={() => {
         setDeclineOpen(true);
         requestAnimationFrame(() => { document.getElementById("pvDecline")?.scrollIntoView({ block: "center" }); document.getElementById("pvNote")?.focus(); });
       }} />
@@ -184,31 +206,7 @@ export function PortalActions({ publicId, status, model }: { publicId: string; s
         </div>
       </div>
 
-      <div
-        className="pv-state"
-        id="pvAccepted"
-        hidden={!positive}
-        data-cheer={cheer ? "1" : undefined}
-      >
-        {cheer && (
-          <span className="pv-cheer" aria-hidden="true">
-            {/* Eight sparks thrown from behind the plate. Pure CSS, no library,
-                and `prefers-reduced-motion` stops them dead (see the stylesheet). */}
-            {Array.from({ length: 8 }, (_, i) => (
-              <i key={i} style={{ "--i": i } as React.CSSProperties} />
-            ))}
-          </span>
-        )}
-        {/* The donor writes `&#10003;&nbsp;` — a NO-BREAK space after the check,
-            not a plain one. ` ` keeps it one. */}
-        {settled === "paid"
-          ? "✓ Paid in full — thank you. The team has been notified."
-          : "✓ Accepted — thank you. The team has been notified."}
-      </div>
-      {/* HOW TO PAY — after acceptance the payment schedule below carries the
-          buttons, one stage at a time; this is a pointer to it. */}
       {revert?.kind === "accept" ? revertRow : null}
-
 
       <div
         className="pv-state pv-state--declined"

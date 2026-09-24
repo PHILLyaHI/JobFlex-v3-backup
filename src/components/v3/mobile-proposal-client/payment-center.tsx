@@ -12,9 +12,7 @@ type Provider = "stripe" | "square" | "stax";
 const providers: Array<{ id: Provider; name: string }> = [{ id: "stripe", name: "Stripe" }, { id: "square", name: "Square" }, { id: "stax", name: "Stax" }];
 
 export function paymentActionLabel(model: PortalPayModel): string {
-  const available = providers.filter((p) => model.providers[p.id].ok);
-  if (available.length === 1 && !model.bankTransfer.ok) return "Pay with " + available[0].name;
-  return available.length ? "Choose payment method" : "View payment details";
+  return model.anyHosted ? "Make payment" : "Payment details";
 }
 
 /** One payment center for both proposal layouts; amounts and availability come from the server. */
@@ -66,8 +64,8 @@ export function PaymentCenter({ model, onClose, initialTarget = "next", method =
       <div className={styles.body}>
         <div className={styles.amount}><span>{remaining ? "Remaining balance" : next.label}</span><strong>{amount}</strong></div>
         {next && next.amountMinor < model.remainingMinor && <div className={styles.targets} role="group" aria-label="Amount to pay">
-          <button type="button" aria-pressed={!remaining} disabled={Boolean(busy)} onClick={() => setTarget("next")}>{next.label} · {next.amount}</button>
-          <button type="button" aria-pressed={remaining} disabled={Boolean(busy)} onClick={() => setTarget("remaining")}>Remaining · {model.remaining}</button>
+          <button type="button" aria-pressed={!remaining} disabled={Boolean(busy)} onClick={() => setTarget("next")}>Pay {next.label} · {next.amount}</button>
+          <button type="button" aria-pressed={remaining} disabled={Boolean(busy)} onClick={() => setTarget("remaining")}>Pay everything · {model.remaining}</button>
         </div>}
         {available.length > 0 && <p>Choose how you would like to pay.</p>}
         {available.map((provider) => {
