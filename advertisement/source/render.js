@@ -40,11 +40,11 @@ fs.mkdirSync(path.join(HERE, "out"), { recursive: true });
     const inputs = cue.map((c) => `-i "${path.join(HERE, c.file)}"`).join(" ");
     const delays = cue.map((c, i) => `[${i + 1}:a]adelay=${Math.round(c.at * 1000)}|${Math.round(c.at * 1000)}[a${i}]`).join(";");
     const mix = cue.map((_, i) => `[a${i}]`).join("");
-    execSync(`ffmpeg -v error -y -i "${silent}" ${inputs} -filter_complex "${delays};${mix}amix=inputs=${cue.length}:normalize=0[voice];[voice]apad[aout]" -map 0:v -map "[aout]" -c:v copy -c:a aac -b:a 192k -shortest "${video}"`, { stdio: "inherit" });
+    execSync(`ffmpeg -v error -y -i "${silent}" ${inputs} -filter_complex "${delays};${mix}amix=inputs=${cue.length}:normalize=0[voice];[voice]apad,atrim=0:${seconds}[aout]" -map 0:v -map "[aout]" -c:v copy -c:a aac -b:a 192k -t ${seconds} "${video}"`, { stdio: "inherit" });
     fs.rmSync(silent);
   } else {
-    // a silent stereo track keeps every platform's uploader happy
-    execSync(`ffmpeg -v error -y -i "${silent}" -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=48000 -c:v copy -c:a aac -b:a 96k -shortest "${video}"`, { stdio: "inherit" });
+    // a silent stereo track keeps every platform's uploader happy (-t, not -shortest: ffmpeg 7's -shortest with apad dies with a bogus ENOSPC)
+    execSync(`ffmpeg -v error -y -i "${silent}" -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=48000 -c:v copy -c:a aac -b:a 96k -t ${seconds} "${video}"`, { stdio: "inherit" });
     fs.rmSync(silent);
   }
   fs.rmSync(dir, { recursive: true, force: true });

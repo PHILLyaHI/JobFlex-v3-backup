@@ -1,2 +1,0 @@
-const { chromium } = require("playwright-core");
-(async () => { const b = await chromium.launch({ executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", headless: true }); const p = await b.newPage({ viewport: { width: 768, height: 768 } }); await p.goto("file://" + __dirname + "/mosaic-h.html", { waitUntil: "networkidle" }); await p.waitForTimeout(400); await p.screenshot({ path: __dirname + "/mosaic-h.png" }); await b.close(); })();

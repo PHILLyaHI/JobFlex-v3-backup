@@ -16,11 +16,11 @@
   .clip { position:absolute; overflow:hidden; background:#fff; }
   .clip img { position:absolute; left:0; top:0; display:block; will-change:transform; }
   .frame { position:absolute; border:3px solid var(--ink); background:#fff; box-shadow: 14px 14px 0 var(--ink); }
-  .cap { position:absolute; left:0; right:0; text-align:center; padding:0 48px; font-weight:900; letter-spacing:-.02em; line-height:1.02; text-transform:uppercase; text-wrap:balance; }
+  .cap { position:absolute; z-index:5; left:0; right:0; text-align:center; padding:0 48px; font-weight:900; letter-spacing:-.02em; line-height:1.02; text-transform:uppercase; text-wrap:balance; }
   .cap small { display:block; margin-top:14px; font-family:var(--mono); font-weight:600; font-size:.34em; letter-spacing:.18em; color:var(--blue); text-transform:uppercase; }
-  .sub { position:absolute; left:0; right:0; text-align:center; padding:0 40px; font-weight:700; letter-spacing:-.01em; line-height:1.15; text-wrap:balance; }
+  .sub { position:absolute; z-index:5; left:0; right:0; text-align:center; padding:0 40px; font-weight:700; letter-spacing:-.01em; line-height:1.15; text-wrap:balance; }
   .sub span { display:inline; background:var(--ink); color:#fff; padding:6px 14px; box-decoration-break:clone; -webkit-box-decoration-break:clone; }
-  .kicker { position:absolute; font-family:var(--mono); font-weight:600; letter-spacing:.22em; text-transform:uppercase; color:var(--blue); }
+  .kicker { position:absolute; z-index:5; font-family:var(--mono); font-weight:600; letter-spacing:.22em; text-transform:uppercase; color:var(--blue); }
   .kicker::before { content:''; display:inline-block; width:.55em; height:.55em; background:var(--blue); margin-right:.6em; vertical-align:middle; }
   .hl { position:absolute; border:4px solid var(--blue); box-shadow:0 0 0 6px rgba(74,158,255,.28); pointer-events:none; }
   .tag { position:absolute; background:var(--ink); color:#fff; font-family:var(--mono); font-weight:600; font-size:22px; letter-spacing:.14em; text-transform:uppercase; padding:8px 14px; white-space:nowrap; }
@@ -74,9 +74,10 @@
     bpCost1: { src: "assets/bp-cost-after.png", k: 2, w: 1440, h: 960 },
     desk:   { src: "assets/portal-desktop.png", k: 2, w: 1280, h: 900 },
     phone:  { src: "assets/portal-mobile.png", k: 3, w: 390, h: 844 },
-    aerial: { src: "assets/tiles/mosaic-c2.png", k: 1, w: 1024, h: 1024 },
+    aerial: { src: "assets/aerial-hq.png", k: 1, w: 1280, h: 1280 },
   };
-  const HOUSE = { cx: 676, cy: 724, ring: [[622.5,685],[737.5,685],[741,696],[741,750],[667.5,760],[667.5,764.5],[609.5,764.5],[609.5,727.5],[622.5,727.5]] };
+  const HOUSE = { cx: 646, cy: 681, ring: [] };
+  const PIN = (sc) => `<g transform="scale(${sc})"><path d="M0 8 C-14 -12 -14 -30 0 -30 C14 -30 14 -12 0 8 Z" fill="#1854a0" stroke="#0a0a0a" stroke-width="1.5"/><circle cx="0" cy="-20" r="5" fill="#fff"/></g>`;
 
   // A shot: a clipped window onto one capture. view(srcRect) maps source CSS px → the box.
   class Shot {
@@ -155,19 +156,20 @@
   const LINE_Y = [86, 134, 181, 229, 276, 324, 372, 419, 467, 515, 562, 610, 657, 705, 752];
   for (let i = 0; i < LINES.length; i++) { const n = $("div", "num"); nums.push(n); }
   // the client's roof picture inside the portal's figure: an aerial crop with the outline
-  const makePic = (parent) => { const pic = new Shot(A.aerial, { x: 0, y: 0, w: 10, h: 10 }, parent); pic.fit = "cover"; pic.el.classList.remove("clip"); pic.el.style.overflow = "hidden"; pic.el.style.position = "absolute"; const sv = document.createElementNS("http://www.w3.org/2000/svg", "svg"); sv.setAttribute("class", "layer"); sv.style.pointerEvents = "none"; pic.el.appendChild(sv); const ring = document.createElementNS("http://www.w3.org/2000/svg", "polygon"); sv.appendChild(ring); pic.ring = ring; return pic; };
+  const makePic = (parent) => { const pic = new Shot(A.aerial, { x: 0, y: 0, w: 10, h: 10 }, parent); pic.fit = "cover"; pic.el.classList.remove("clip"); pic.el.style.overflow = "hidden"; pic.el.style.position = "absolute"; const sv = document.createElementNS("http://www.w3.org/2000/svg", "svg"); sv.setAttribute("class", "layer"); sv.style.pointerEvents = "none"; pic.el.appendChild(sv); const ring = document.createElementNS("http://www.w3.org/2000/svg", "g"); sv.appendChild(ring); pic.ring = ring; return pic; };
+  const pinInto = (g, pic, sc) => { const q = pic.at(HOUSE.cx, HOUSE.cy); g.setAttribute("transform", `translate(${q.x - pic.box.x},${q.y - pic.box.y})`); g.innerHTML = PIN(sc); };
   const deskPic = makePic(sDesk.over), reportPic = makePic(sReport.over);
   const deskRing = deskPic.ring, reportRing = reportPic.ring;
   // a picture inside a frame: the box is relative to the frame
   const picInto = (pic, shot, srcRect, ring, stroke, clipBottom = Infinity) => {
     const cut = { ...srcRect, h: Math.max(10, Math.min(srcRect.h, clipBottom - srcRect.y)) };
     const r = shot.rect(cut); const box = { x: r.x - shot.box.x, y: r.y - shot.box.y, w: r.w, h: r.h };
-    place(pic.el, box); pic.box = box; pic.view({ x: HOUSE.cx - 120, y: HOUSE.cy - 120, w: 240, h: 240 });
-    ring.setAttribute("points", ringPointsLocal(pic)); ring.setAttribute("fill", "rgba(245,196,0,.2)"); ring.setAttribute("stroke", "#f5c400"); ring.setAttribute("stroke-width", String(stroke)); show(pic.el);
+    place(pic.el, box); pic.box = box; pic.view({ x: HOUSE.cx - 170, y: HOUSE.cy - 170, w: 340, h: 340 });
+    pinInto(ring, pic, stroke * .45); show(pic.el);
   };
   const phonePic = new Shot(A.aerial, { x: 0, y: 0, w: 10, h: 10 }, phoneShell); phonePic.fit = "cover"; phonePic.el.classList.remove("clip"); phonePic.el.style.overflow = "hidden"; phonePic.el.style.position = "absolute";
   const phonePoly = document.createElementNS("http://www.w3.org/2000/svg", "svg"); phonePoly.setAttribute("class", "layer"); phonePic.el.appendChild(phonePoly);
-  const phoneRing = document.createElementNS("http://www.w3.org/2000/svg", "polygon"); phonePoly.appendChild(phoneRing);
+  const phoneRing = document.createElementNS("http://www.w3.org/2000/svg", "g"); phonePoly.appendChild(phoneRing);
   const endCard = $("div", "end"); endCard.innerHTML = `<div class="wordmark" style="font-size:${VERT ? 150 : 140}px">Job<em>Flex</em></div><div style="margin-top:34px;font-size:${VERT ? 56 : 48}px;font-weight:900;letter-spacing:-.02em;line-height:1.05">Estimate faster.<br>Win more roofs.</div><div style="margin-top:44px;font-family:var(--mono);font-weight:600;letter-spacing:.24em;font-size:${VERT ? 26 : 22}px;line-height:1.7;color:var(--blue)">JOBFLEX.APP${VERT ? "<br>" : " · "}ROOF · FENCE · HVAC · SMART PROPOSAL</div>`;
 
   const everything = [kick, cap, sub, ...frames.map((s) => s.el), aerial.el, svg, ...calls, cursor, hl, hl2, tag, typed, total, slider, ...nums, deskPic.el, reportPic.el, phonePic.el, phoneShell, endCard];
@@ -184,7 +186,7 @@
   const T = { s1: [0, 4.0], s2: [4.0, 13.2], s3: [13.2, 17.2], s4: [17.2, 25.6], s5: [25.6, 31.2], s6: [31.2, 37.8], s7: [37.8, 46.2], s8: [46.2, 50.0] };
 
   function render(t) {
-    hideAll();
+    hideAll(); kick.style.color = ""; cap.style.color = ""; cap.style.textShadow = ""; kick.style.textShadow = "";
     if (!VERT) { for (const el of [cap, sub]) { el.style.right = "40px"; el.style.left = "auto"; el.style.width = L.side.w + "px"; } sDesk.box.x = 60; sDesk.box.w = 1250; sDesk.el.style.left = "60px"; sDesk.el.style.width = "1250px"; }
     const captionBig = V === "v1";
     // ─ S1: the address
@@ -214,23 +216,19 @@
     if (t < T.s2[1]) {
       const p = seg(t, 4, 13.2);
       show(aerial.el);
-      const z = lerp(0.78, 0.36, ease(seg(t, 4, 7.5)));       // window size in mosaic px
-      const side = 1024 * z; const asp = W / H;
+      const z = lerp(0.82, 0.34, ease(seg(t, 4, 7.5)));       // window size in mosaic px
+      const side = 1280 * z; const asp = W / H;
       const vw = VERT ? side : side * asp, vh = VERT ? side / asp : side;
       aerial.view({ x: HOUSE.cx - vw / 2, y: HOUSE.cy - vh / 2 - (VERT ? vh * .06 : 0), w: vw, h: vh });
-      // the outline draws itself
-      const pts = ringPoints(aerial); poly.setAttribute("points", pts); polyFill.setAttribute("points", pts);
-      const total_len = polyLen(HOUSE.ring.map(([x, y]) => { const q = aerial.at(x, y); return [q.x, q.y]; }));
-      const draw = seg(t, 5.6, 8.0);
-      poly.setAttribute("fill", "none"); poly.setAttribute("stroke", "#f5c400"); poly.setAttribute("stroke-width", String(Math.max(6, 8 * aerial.k / 2.5))); poly.setAttribute("stroke-linejoin", "round");
-      poly.setAttribute("stroke-dasharray", `${total_len}`); poly.setAttribute("stroke-dashoffset", `${total_len * (1 - ease(draw))}`);
-      poly.setAttribute("paint-order", "stroke"); poly.style.filter = "drop-shadow(0 0 2px #0a0a0a)";
-      polyFill.setAttribute("fill", "rgba(245,196,0,.22)"); polyFill.setAttribute("stroke", "none"); polyFill.style.opacity = String(seg(t, 7.6, 8.4));
       show(svg);
-      // the pin drops at the house
+      // the pin drops on the house and stays
       const pin = aerial.at(HOUSE.cx, HOUSE.cy);
       const drop = seg(t, 4.6, 5.3);
-      if (t > 4.6 && t < 6.2) { dims.innerHTML = `<g transform="translate(${pin.x},${pin.y - lerp(200, 0, ease(drop))}) scale(${lerp(2.2, 1.6, ease(drop))})"><path d="M0 8 C-14 -12 -14 -30 0 -30 C14 -30 14 -12 0 8 Z" fill="#1854a0" stroke="#0a0a0a" stroke-width="1.5"/><circle cx="0" cy="-20" r="5" fill="#fff"/></g>`; dims.style.opacity = String(1 - seg(t, 5.7, 6.2)); } else dims.innerHTML = "";
+      if (t > 4.6) {
+        const halo = t > 5.3 ? `<circle cx="${pin.x}" cy="${pin.y}" r="${lerp(18, 70, (Math.sin((t - 5.3) * 2.6) + 1) / 2)}" fill="none" stroke="#1854a0" stroke-width="3" opacity="${lerp(.7, .1, (Math.sin((t - 5.3) * 2.6) + 1) / 2)}"/>` : "";
+        dims.innerHTML = halo + `<g transform="translate(${pin.x},${pin.y - lerp(260, 0, ease(drop))})">${PIN(lerp(2.6, 2.0, ease(drop)))}</g>`;
+        dims.style.opacity = "1";
+      } else dims.innerHTML = "";
       // the callouts land one by one, numbers counting
       const cols = VERT ? 2 : 3; const cw = VERT ? 460 : 330;
       calls.forEach((c, i) => {
@@ -245,10 +243,10 @@
         else c.querySelector("b").textContent = v;
         show(c);
       });
-      setKick("Roof estimator · 02 · from the air");
-      if (t < 8.2) setCap(captionBig ? "Found. Outlined.<br>Measured." : "Found. Outlined. Measured.", "in seconds, from the air", win(t, 4.3, 8.6, .4));
+      setKick("Roof estimator · 02 · from the air"); kick.style.color = "#fff"; cap.style.color = "#fff"; cap.style.textShadow = "0 2px 12px rgba(0,0,0,.7)"; kick.style.textShadow = "0 1px 6px rgba(0,0,0,.8)";
+      if (t < 8.2) setCap(captionBig ? "Found.<br>Measured." : "Found. Measured.", "in seconds, from the air", win(t, 4.3, 8.6, .4));
       else setCap(captionBig ? "The whole house." : "Squares · ridge · hips · valleys", "", win(t, 8.2, 13.2, .4));
-      if (!captionBig && t < 8.2) setSub("Imagery © Esri, Maxar", .7);
+      if (!captionBig && t < 8.2) setSub("Imagery © Microsoft", .7);
       return;
     }
     // ─ S3: the report page
@@ -360,7 +358,7 @@
         show(phoneShell);
         sPhone.view({ x: 0, y: 0, w: 390, h: 844 });
         const pf = sPhone.rect({ x: 36, y: 364, w: 318, h: 318 });
-        place(phonePic.el, { x: pf.x, y: pf.y, w: pf.w, h: pf.h }); phonePic.box = { x: pf.x, y: pf.y, w: pf.w, h: pf.h }; phonePic.view({ x: HOUSE.cx - 120, y: HOUSE.cy - 120, w: 240, h: 240 }); phoneRing.setAttribute("points", ringPointsLocal(phonePic)); phoneRing.setAttribute("fill", "rgba(245,196,0,.2)"); phoneRing.setAttribute("stroke", "#f5c400"); phoneRing.setAttribute("stroke-width", "5"); show(phonePic.el);
+        place(phonePic.el, { x: pf.x, y: pf.y, w: pf.w, h: pf.h }); phonePic.box = { x: pf.x, y: pf.y, w: pf.w, h: pf.h }; phonePic.view({ x: HOUSE.cx - 170, y: HOUSE.cy - 170, w: 340, h: 340 }); pinInto(phoneRing, phonePic, 2); show(phonePic.el);
         if (t > 43.4) { const b = sPhone.rect({ x: 20, y: 786, w: 256, h: 50 }); const pulse = 1 + .04 * Math.sin((t - 43.4) * 9); place(hl2, { x: phoneShell.offsetLeft + b.x - 6, y: phoneShell.offsetTop + b.y - 6 + (1 - slide) * 900, w: b.w + 12, h: b.h + 12 }); hl2.style.transform = `scale(${pulse})`; show(hl2); }
       }
       setKick("The client's copy · 07");
