@@ -139,7 +139,7 @@ export async function sendInvoice(input: { proposalId: string; installmentId: st
   }
   const phone = toE164(proposal.client?.phone);
   if (phone) {
-    if (!isTwilioEnabled()) report.sms = "disabled";
+    if (!await isTwilioEnabled()) report.sms = "disabled";
     else {
       try {
         const how = input.method === "bank" ? "Bank-transfer details are in your email." : input.method === "card" ? "Pay by card here:" : "Pay here:";

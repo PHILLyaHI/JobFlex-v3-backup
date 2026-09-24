@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/cronAuth";
 import { runCrewTexts } from "@/lib/sms/crew";
+import { runClientReminders } from "@/lib/sms/clients";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -11,6 +12,8 @@ export const maxDuration = 60;
 // company time. Fail-closed cron auth like the other cron routes.
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const r = await runCrewTexts(new Date());
-  return NextResponse.json({ ok: true, ...r });
+  const now = new Date();
+  const r = await runCrewTexts(now);
+  const clientReminders = await runClientReminders(now);
+  return NextResponse.json({ ok: true, ...r, clientReminders });
 }

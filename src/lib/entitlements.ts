@@ -52,6 +52,19 @@ export const MINIMUM_PLAN_FOR: Record<Feature, Plan> = {
   white_label: "FREE",
 };
 
+/** Texts a company sends each month within its plan (2026-09-24); beyond it
+ *  texts still go and are billed through at SMS_OVERAGE_CENTS each. */
+export const SMS_ALLOWANCE: Record<Plan, number> = {
+  FREE: 50,
+  STARTER: 250,
+  PROFESSIONAL: 1000,
+  ENTERPRISE: 4000,
+};
+export const SMS_OVERAGE_CENTS = 3;
+export function smsAllowanceFor(plan: Plan | string | null | undefined): number {
+  return SMS_ALLOWANCE[(plan as Plan) ?? "FREE"] ?? SMS_ALLOWANCE.FREE;
+}
+
 const RANK: Record<Plan, number> = {
   FREE: 0,
   STARTER: 1,
@@ -70,9 +83,10 @@ export function requireFeatureOrThrow(plan: Plan | string | null | undefined, fe
     const err = new Error(
       `${FEATURE_LABELS[feature]} requires the ${MINIMUM_PLAN_FOR[feature]} plan.`,
     );
-    (err as any).code = "FEATURE_GATED";
-    (err as any).feature = feature;
-    (err as any).requiredPlan = MINIMUM_PLAN_FOR[feature];
+    const gated = err as Error & { code?: string; feature?: Feature; requiredPlan?: Plan };
+    gated.code = "FEATURE_GATED";
+    gated.feature = feature;
+    gated.requiredPlan = MINIMUM_PLAN_FOR[feature];
     throw err;
   }
 }

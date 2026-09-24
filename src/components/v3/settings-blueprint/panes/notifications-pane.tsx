@@ -24,10 +24,13 @@ import { updateNotificationPrefs } from "@/actions/accountSettings";
 import { sendTestNotification } from "@/actions/notifications";
 import {
   addNotificationPhone,
+  claimOwnNumber,
   confirmPhoneVerification,
+  releaseOwnNumber,
   removeNotificationPhone,
   removeSmsPhone,
   sendTestText,
+  setClientTextsOn,
   setNotificationPhoneActive,
   startPhoneVerification,
   type SmsActionResult,
@@ -275,7 +278,7 @@ function TextsCard({ sms, quietFrom, quietTo, onQuiet }: { sms: SmsSettingsData;
           <div className="sc-t">{TEXTS_CARD.title}</div>
           <div className="sc-s">{TEXTS_CARD.sub}</div>
         </div>
-        <span className="sc-badge">{TEXTS_COPY.usage(sms.monthCount)}</span>
+        <span className="sc-badge" title={TEXTS_COPY.overage}>{TEXTS_COPY.usage(sms.monthCount, sms.allowance)}</span>
       </div>
       <div className="sc-b">
         {!sms.configured ? <p className="tx-note tx-note--warn">{TEXTS_COPY.notConfigured}</p> : null}
@@ -339,6 +342,52 @@ function TextsCard({ sms, quietFrom, quietTo, onQuiet }: { sms: SmsSettingsData;
             </label>
           </div>
         </div>
+
+        {/* ── clients, and the company's own number ── */}
+        {sms.canManage ? (
+          <div className="tx-sub">
+            <div className="tx-sub-h">
+              <b>{TEXTS_COPY.clientsTitle}</b>
+              <span>{TEXTS_COPY.clientsSub}</span>
+            </div>
+            <div className="tx-row-a tx-row-a--left">
+              <button type="button" className={`btn btn-sm ${sms.clientsOn ? "btn-primary" : "btn-ghost"}`} disabled={busy !== null || sms.clientsOn} onClick={() => run("clients", () => setClientTextsOn(true))}>
+                {TEXTS_COPY.clientsOn}
+              </button>
+              <button type="button" className={`btn btn-sm ${sms.clientsOn ? "btn-ghost" : "btn-primary"}`} disabled={busy !== null || !sms.clientsOn} onClick={() => run("clients", () => setClientTextsOn(false))}>
+                {TEXTS_COPY.clientsOff}
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {sms.canManage ? (
+          <div className="tx-sub">
+            <div className="tx-sub-h">
+              <b>{TEXTS_COPY.ownTitle}</b>
+              <span>{TEXTS_COPY.ownSub}</span>
+            </div>
+            {sms.ownNumber ? (
+              <div className="tx-row">
+                <div className="tx-row-t">
+                  <b>{sms.ownNumber}</b>
+                  <span className="tx-tag">yours</span>
+                </div>
+                <div className="tx-row-a">
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={busy !== null} onClick={() => run("release", releaseOwnNumber)}>
+                    {TEXTS_COPY.ownRelease}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="tx-row-a tx-row-a--left">
+                <button type="button" className="btn btn-ghost btn-sm" disabled={busy !== null || !sms.configured} onClick={() => run("claim", claimOwnNumber)}>
+                  {busy === "claim" ? "Finding a number…" : TEXTS_COPY.ownGet}
+                </button>
+                <span className="tx-note" style={{ margin: 0, alignSelf: "center" }}>{TEXTS_COPY.ownCost}</span>
+              </div>
+            )}
+          </div>
+        ) : null}
 
         {/* ── extra office numbers ── */}
         {sms.canManage ? (

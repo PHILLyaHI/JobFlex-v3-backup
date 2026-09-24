@@ -56,7 +56,9 @@ export async function verifyTwilioSignature(
   params: Record<string, string>,
   signature: string | null,
 ): Promise<boolean> {
-  const token = process.env.TWILIO_AUTH_TOKEN;
+  // The token the admin saved (/admin/integrations/twilio), else the env.
+  const { twilioAuthToken } = await import("./twilio");
+  const token = (await twilioAuthToken()) ?? process.env.TWILIO_AUTH_TOKEN;
   // Fail-closed in production: a missing auth token must not turn these webhooks
   // into unauthenticated write endpoints. Outside prod, allow (local dev without
   // Twilio configured).

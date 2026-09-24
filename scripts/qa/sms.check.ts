@@ -35,6 +35,8 @@ import {
   smsDecision,
 } from "../../src/lib/notificationPrefsShared";
 import { toE164 } from "../../src/lib/phone";
+import { clientProposalText, clientReminderText } from "../../src/lib/sms/clients";
+import { smsAllowanceFor } from "../../src/lib/entitlements";
 
 let bad = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -103,6 +105,16 @@ check("a text sends by day, waits by night, and a new lead never waits",
 const end = nextQuietEnd(d, night, TZ);
 check("a held text goes out at 7 AM company time", end.toISOString() === "2026-10-07T14:00:00.000Z", end.toISOString());
 check("the next local time rolls to tomorrow once passed", nextLocalTime("07:00", day, TZ).toISOString() === "2026-10-08T14:00:00.000Z" && nextLocalTime("20:00", day, TZ).toISOString() === "2026-10-08T03:00:00.000Z");
+
+/* ── the client's texts, the allowance ── */
+check("the client gets the proposal link with the company name and the STOP line",
+  clientProposalText("Ridgeline Roofing", "Roof replacement — architectural shingles", 11306.52, "https://www.jobflex.app/portal/q/abc") === "Ridgeline Roofing: your proposal \"Roof replacement — architectural shingles\" ($11,306.52) is ready — see it and accept here: https://www.jobflex.app/portal/q/abc Reply STOP to opt out.",
+  clientProposalText("Ridgeline Roofing", "Roof replacement — architectural shingles", 11306.52, "https://www.jobflex.app/portal/q/abc"));
+check("the evening-before reminder names the street and the hours",
+  clientReminderText("Ridgeline Roofing", { title: "Roof tear-off", startsAt: oct7, endsAt: oct7end, address: "4567 Rainier Ave S, Seattle, WA" }, TZ) === "Ridgeline Roofing: reminder — we're scheduled at 4567 Rainier Ave S tomorrow, Wed Oct 7, 8 AM–4 PM (Roof tear-off). Reply here with any questions.",
+  clientReminderText("Ridgeline Roofing", { title: "Roof tear-off", startsAt: oct7, endsAt: oct7end, address: "4567 Rainier Ave S, Seattle, WA" }, TZ));
+check("the monthly allowance grows with the plan and defaults to the free tier",
+  smsAllowanceFor("FREE") === 50 && smsAllowanceFor("PROFESSIONAL") === 1000 && smsAllowanceFor(null) === 50 && smsAllowanceFor("weird") === 50);
 
 console.log(bad ? `\n${bad} check(s) FAILED` : "\nall checks passed");
 process.exit(bad ? 1 : 0);

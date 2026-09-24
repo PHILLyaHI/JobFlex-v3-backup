@@ -791,7 +791,17 @@ export const TEXTS_COPY = {
   quietFrom: 'From',
   quietTo: 'Until',
   testText: 'Send me a test text',
-  usage: (n: number) => `${n} text${n === 1 ? '' : 's'} this month`,
+  usage: (n: number, allowance: number) => `${n} of ${allowance} texts this month`,
+  overage: 'Beyond the allowance, texts are billed through at 3¢ each.',
+  clientsTitle: 'Text clients',
+  clientsSub: 'The proposal link the moment it is sent, and a reminder the evening before a visit — signed with your company name, with the STOP line.',
+  clientsOn: 'On',
+  clientsOff: 'Off',
+  ownTitle: 'Your own number',
+  ownSub: 'A local number in your area code that your texts show and clients can reply to. It stays on the JobFlex account, registered with the carriers.',
+  ownGet: 'Get my own number',
+  ownRelease: 'Release it',
+  ownCost: 'Billed through at cost.',
   notConfigured: 'Texting is not set up on this server yet — numbers are kept, nothing is sent.',
   stopped: 'replied STOP',
 } as const;
@@ -814,9 +824,14 @@ export interface SmsSettingsData {
   verifiedAt: string | null;
   stopped: boolean;
   extras: ExtraPhoneData[];
-  /** Texts the company sent this month. */
+  /** Texts the company sent this month, and the plan's monthly allowance. */
   monthCount: number;
+  allowance: number;
   canManage: boolean;
+  /** Client-facing texts (the proposal link, a reminder before a visit). */
+  clientsOn: boolean;
+  /** The company's own number, pretty, when it claimed one. */
+  ownNumber: string | null;
 }
 
 export const TEST_RESULT_COPY = {

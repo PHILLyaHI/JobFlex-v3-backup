@@ -74,6 +74,11 @@ function GroupCard({
               </div>
             </div>
             <span className={chip.cls}>{chip.label}</span>
+            {it.setupHref ? (
+              <Link className="btn btn-ghost btn-sm" href={it.setupHref as Route}>
+                Set up
+              </Link>
+            ) : null}
             <div className={i.keys}>
               {it.envKeys.map((k) => (
                 <span className={s.envk} key={k}>

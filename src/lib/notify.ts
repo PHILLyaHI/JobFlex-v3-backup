@@ -38,6 +38,7 @@ import { resolveEmailRecipients, sendToMembersByPref, sendToUserByPref } from "@
 import { textOffice } from "@/lib/sms/send";
 import { acceptedLine, dayLabel, leadLine, leadOfferLine, paymentLine, workerRespondedLine } from "@/lib/sms/format";
 import { textAppointmentAssigned, textAssignmentCreated } from "@/lib/sms/crew";
+import { textClientProposalSent } from "@/lib/sms/clients";
 import { ActivityKind } from "@/lib/prismaEnums";
 import { buildAppointmentAssignment, buildJobAssignment } from "@/lib/email/build/worker";
 import {
@@ -180,6 +181,9 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
     clientId: proposal.clientId,
     what: "The proposal email",
   });
+  // The client's phone gets the link too (2026-09-24), when the company
+  // texts clients and the client has a number.
+  await textClientProposalSent(proposal.id);
 
   return {
     skipped: false as const,
@@ -583,7 +587,7 @@ async function sendLeadSms(
     .join(" ");
 
   if (!raw) return "invalid-number";
-  if (!isTwilioEnabled()) {
+  if (!await isTwilioEnabled()) {
     // Not a failure: the provider is off by configuration, which is the
     // documented local/dev state. Said once, quietly, so a missing text during
     // testing has an explanation in the log.

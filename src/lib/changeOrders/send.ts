@@ -90,7 +90,7 @@ export async function sendChangeOrderToClient(coId: string): Promise<SendReport>
 
   const phone = toE164(client?.phone);
   if (phone) {
-    if (!isTwilioEnabled()) {
+    if (!await isTwilioEnabled()) {
       report.sms = "disabled";
     } else {
       try {

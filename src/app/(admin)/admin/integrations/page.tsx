@@ -10,7 +10,7 @@ import {
 export default async function AdminIntegrationsPage() {
   await requirePlatformAdmin();
 
-  const items = getIntegrationStatuses();
+  const items = await getIntegrationStatuses();
 
   // The only two services with a live check. Both are real round trips:
   // Stripe reads its balance, PostHog runs a HogQL query (cached 5 min in

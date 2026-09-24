@@ -229,7 +229,7 @@ export async function loadSettingsData(ctx: SettingsOrgContext): Promise<Setting
     },
     notifications: {
       prefs: parseNotificationPrefs(me?.notificationPrefsJson),
-      sms: await loadSmsSettings(organizationId, me?.smsPhone ?? null, me?.smsVerifiedAt ?? null, role),
+      sms: await loadSmsSettings(organizationId, me?.smsPhone ?? null, me?.smsVerifiedAt ?? null, role, sub?.plan ?? null),
     },
   };
 }
@@ -243,21 +243,26 @@ function prettyPhone(e164: string): string {
 /** The Text messages card (2026-09-24): the member's mobile, the company's
  *  extra numbers, this month's count. A missing table costs the card, never
  *  the page. */
-async function loadSmsSettings(organizationId: string, smsPhone: string | null, smsVerifiedAt: Date | null, role: string): Promise<SmsSettingsData> {
+async function loadSmsSettings(organizationId: string, smsPhone: string | null, smsVerifiedAt: Date | null, role: string, plan: string | null): Promise<SmsSettingsData> {
   const { isTwilioEnabled } = await import("@/lib/sdk/twilio");
+  const { smsAllowanceFor } = await import("@/lib/entitlements");
   const base: SmsSettingsData = {
-    configured: isTwilioEnabled(),
+    configured: await isTwilioEnabled(),
     phone: smsPhone ? prettyPhone(smsPhone) : null,
     verifiedAt: smsVerifiedAt ? smsVerifiedAt.toISOString() : null,
     stopped: false,
     extras: [],
     monthCount: 0,
+    allowance: smsAllowanceFor(plan),
     canManage: ["OWNER", "ADMIN", "MANAGER"].includes(role),
+    clientsOn: true,
+    ownNumber: null,
   };
   try {
     const monthStart = new Date();
     monthStart.setUTCDate(1);
     monthStart.setUTCHours(0, 0, 0, 0);
+    const orgSms = await db.organization.findUnique({ where: { id: organizationId }, select: { smsClientsOn: true, smsFromNumber: true } });
     const [extras, stops, monthCount] = await Promise.all([
       db.notificationPhone.findMany({ where: { organizationId }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, phone: true, active: true } }),
       db.smsOptOut.findMany({ where: { phone: { in: [smsPhone ?? "", ...(await db.notificationPhone.findMany({ where: { organizationId }, select: { phone: true } })).map((x) => x.phone)] } }, select: { phone: true } }),
@@ -269,6 +274,8 @@ async function loadSmsSettings(organizationId: string, smsPhone: string | null, 
       stopped: Boolean(smsPhone && stopped.has(smsPhone)),
       extras: extras.map((x) => ({ id: x.id, name: x.name, phone: prettyPhone(x.phone), active: x.active, stopped: stopped.has(x.phone) })),
       monthCount,
+      clientsOn: orgSms?.smsClientsOn ?? true,
+      ownNumber: orgSms?.smsFromNumber ? prettyPhone(orgSms.smsFromNumber) : null,
     };
   } catch {
     return base;

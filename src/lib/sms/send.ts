@@ -87,13 +87,15 @@ async function dispatch(m: { organizationId: string | null; to: string; body: st
     return { ok: false, reason: "limiter-down" };
   }
   const row = await db.smsMessage.create({ data: { organizationId: m.organizationId, direction: "OUT", to: m.to, body: m.body, kind: m.kind, status: "QUEUED" } });
-  if (!isTwilioEnabled()) {
+  if (!await isTwilioEnabled()) {
     await db.smsMessage.update({ where: { id: row.id }, data: { status: "SKIPPED", error: "not-configured" } });
     return { ok: true, id: row.id, status: "SKIPPED" };
   }
   try {
     const statusCallback = `${await appBaseUrl()}/api/twilio/sms/status`;
-    const r = await sendSMS(m.to, m.body, { statusCallback });
+    // The company's own number when it claimed one (lib/sms/numbers).
+    const own = m.organizationId ? (await db.organization.findUnique({ where: { id: m.organizationId }, select: { smsFromNumber: true } }))?.smsFromNumber : null;
+    const r = await sendSMS(m.to, m.body, { statusCallback, from: own ?? null });
     await db.smsMessage.update({ where: { id: row.id }, data: { status: "SENT", sid: r.skipped ? null : r.sid } });
     return { ok: true, id: row.id, status: "SENT" };
   } catch (err) {

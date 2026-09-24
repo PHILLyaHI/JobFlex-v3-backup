@@ -29,6 +29,13 @@ model Organization {
   address               String?
   website               String?
   timezone              String    @default("America/New_York")
+  // Text messages (2026-09-24): client-facing texts on/off (the proposal link
+  // when sent, a reminder the day before a visit), and the company's own
+  // number when it claimed one (provisioned into the platform's Messaging
+  // Service, so it stays registered; released from Settings or /admin).
+  smsClientsOn          Boolean   @default(true)
+  smsFromNumber         String?
+  smsNumberSid          String?
   // Online booking (2026-09-23): hours, slot length, lead time, crews, the services offered.
   bookingSettingsJson   String?
   defaultTaxRate        Float     @default(0)
@@ -2725,4 +2732,15 @@ model SmsOptOut {
   phone     String   @id
   stoppedAt DateTime @default(now())
   body      String?
+}
+
+/// A platform-wide integration the admin sets up once for everyone
+/// (2026-09-24): `json` is a secretBox-encrypted blob. Key "twilio" holds
+/// { accountSid, authToken, messagingServiceSid, fromNumber, enabled }.
+/// Env vars remain the fallback when there is no row.
+model PlatformIntegration {
+  key         String   @id
+  json        String
+  updatedAt   DateTime @updatedAt
+  updatedById String?
 }

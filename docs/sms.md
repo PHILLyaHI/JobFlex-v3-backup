@@ -7,7 +7,15 @@ change their day.
 
 ## Setup, once, on the platform
 
-- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and either `TWILIO_MESSAGING_SERVICE_SID`
+- **/admin/integrations/twilio** (2026-09-24): the platform admin pastes the
+  Account SID, the Auth Token (stored encrypted with `TOKEN_ENCRYPTION_KEY`,
+  never shown back), the Messaging Service SID (preferred) or a sending
+  number, and a switch. "Check with Twilio" is a real round trip; "Send test"
+  texts a number; the page lists the webhook URLs to paste and the last texts
+  with Twilio's delivery status. Every contractor runs on these settings
+  within a minute of a save (a one-minute cache per process).
+- The env keys stay the fallback when the admin row is empty:
+  `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and either `TWILIO_MESSAGING_SERVICE_SID`
   (preferred) or `TWILIO_PHONE_NUMBER`. US carriers only honor an A2P
   registration for traffic sent through a Messaging Service — a bare number
   reads as unregistered and comes back undelivered (error 30034). Register a
@@ -36,6 +44,27 @@ Without the keys the app works the same: every text is a `SKIPPED` row in
   "overnight" message. A new lead never waits.
 - Workers → edit a worker: phone + "Text their schedule to this phone". The
   worker gets the welcome text; a STOP reply wins over the switch.
+
+## Clients, a company's own number, the allowance (2026-09-24)
+
+- **Text clients** (switch in the card, default on): the proposal link the
+  moment a proposal is sent (`Ridgeline Roofing: your proposal "…" ($11,306.52)
+  is ready — see it and accept here: <link> Reply STOP to opt out.`) and a
+  reminder at 6 PM the evening before a visit (`reminder — we're scheduled at
+  4567 Rainier Ave S tomorrow, Fri Sep 25, 9 AM–4 PM (Roof tear-off). Reply
+  here with any questions.`). Both need a phone on the client (or the lead).
+- **Your own number**: one click buys a local number in the company's area
+  code on the platform's Twilio account, points its inbound webhook at
+  `/api/twilio/sms`, adds it to the platform's Messaging Service (so the A2P
+  registration still covers it) and keeps it on the organization
+  (`smsFromNumber`, `smsNumberSid`). That company's texts then show that
+  number and replies to it route straight to the company. "Release it" puts
+  it back. Billed through at cost.
+- **Allowance per plan** (`SMS_ALLOWANCE` in `src/lib/entitlements.ts`):
+  FREE 50, STARTER 250, PROFESSIONAL 1,000, ENTERPRISE 4,000 texts a month;
+  the card shows "142 of 1,000 texts this month". Beyond it texts still go
+  and are billed through at 3¢ each (`SMS_OVERAGE_CENTS`); the daily caps
+  still apply.
 
 ## What gets texted
 
@@ -73,9 +102,11 @@ Replies from the field or a client come back on the bell ("Marcus texted:
 ## Data layer (additive)
 
 `User.smsPhone`, `User.smsVerifiedAt`; `WorkerProfile.smsOptIn`,
-`WorkerProfile.smsOptedInAt`; tables `NotificationPhone`,
-`PhoneVerification`, `SmsMessage`, `SmsOptOut`. Applied to production by
-hand before the deploy.
+`WorkerProfile.smsOptedInAt`; `Organization.smsClientsOn`, `smsFromNumber`,
+`smsNumberSid`; tables `NotificationPhone`, `PhoneVerification`,
+`SmsMessage`, `SmsOptOut`, `PlatformIntegration` (the admin's encrypted
+Twilio settings, key "twilio"). Applied to production by hand before the
+deploy.
 
 ## Files
 
@@ -90,7 +121,6 @@ tick); `src/actions/sms.ts` (verify, extras, test); hooks in
 
 ## Open
 
-- Client-facing texts (crew arriving tomorrow, proposal ready, invoice paid)
-  on the same number, signed by the company.
-- A dedicated number per company for two-way texting under their own brand.
-- A monthly allowance per plan with pass-through beyond it.
+- Invoice-paid and payment-due texts to clients.
+- Billing the overage and the own-number cost through Stripe automatically
+  (today: counts in the table, the note in the card).

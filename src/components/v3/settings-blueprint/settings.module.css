@@ -766,3 +766,4 @@
 @media (max-width: 640px) {
   .bp :global(.content .tx-row-a), .bp :global(.content .tx-list-a) { margin-left: 0; width: 100%; }
 }
+.bp :global(.content .tx-row-a--left) { margin-left: 0; margin-top: 0; }

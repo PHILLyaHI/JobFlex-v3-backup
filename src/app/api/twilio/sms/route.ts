@@ -50,11 +50,13 @@ export async function POST(req: Request) {
     return twiml();
   }
 
-  // Whose reply is this? The companies that texted this number lately.
+  // Whose reply is this? A company's own number says so outright; on the
+  // shared number, the company that texted this phone most recently.
+  const owner = to ? await db.organization.findFirst({ where: { smsFromNumber: to }, select: { id: true } }) : null;
   const since = new Date(Date.now() - 60 * 86_400_000);
-  const recent = await db.smsMessage.findMany({ where: { to: from, direction: "OUT", createdAt: { gte: since }, organizationId: { not: null } }, orderBy: { createdAt: "desc" }, take: 20, select: { organizationId: true } });
+  const recent = owner ? [] : await db.smsMessage.findMany({ where: { to: from, direction: "OUT", createdAt: { gte: since }, organizationId: { not: null } }, orderBy: { createdAt: "desc" }, take: 20, select: { organizationId: true } });
   const orgIds = [...new Set(recent.map((r) => r.organizationId!).filter(Boolean))];
-  const organizationId = orgIds[0] ?? null;
+  const organizationId = owner?.id ?? orgIds[0] ?? null;
   await db.smsMessage.create({ data: { organizationId, direction: "IN", to, from, body, kind: "reply", status: "RECEIVED", sid } }).catch(() => null);
   if (!organizationId) return twiml();
 

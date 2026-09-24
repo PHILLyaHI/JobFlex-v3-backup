@@ -17,6 +17,7 @@ import { enforceRateLimit, HOUR, RateLimitError } from "@/lib/rateLimit";
 import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { testText, verifyText, welcomeText } from "@/lib/sms/format";
 import { sendText } from "@/lib/sms/send";
+import { claimNumberFor, releaseNumberFor } from "@/lib/sms/numbers";
 
 const SETTINGS_PATH = "/dashboard/settings";
 const CODE_TTL_MS = 10 * 60_000;
@@ -142,9 +143,32 @@ export async function sendTestText(): Promise<SmsActionResult> {
   const { organizationId, user } = await requireOrg();
   const me = await db.user.findUnique({ where: { id: user.id }, select: { smsPhone: true, smsVerifiedAt: true } });
   if (!me?.smsPhone || !me.smsVerifiedAt) return { ok: false, error: "Verify a mobile first." };
-  if (!isTwilioEnabled()) return { ok: false, error: "Texting is not set up on this server." };
+  if (!await isTwilioEnabled()) return { ok: false, error: "Texting is not set up on this server." };
   const org = await db.organization.findUnique({ where: { id: organizationId }, select: { name: true } });
   const r = await sendText({ organizationId, to: me.smsPhone, body: testText(org?.name ?? null), kind: "test" });
   if (!r.ok) return { ok: false, error: r.reason === "duplicate" ? "A test just went out — give it a minute." : r.reason === "opted-out" ? "That number replied STOP." : "Couldn't send. Try again in a moment." };
   return { ok: true, note: `Test text sent to ${pretty(me.smsPhone)}.` };
+}
+
+/** Client-facing texts on/off: the proposal link when sent, a reminder the evening before a visit. */
+export async function setClientTextsOn(on: boolean): Promise<SmsActionResult> {
+  const { organizationId } = await requireManager();
+  await db.organization.update({ where: { id: organizationId }, data: { smsClientsOn: on } });
+  revalidatePath(SETTINGS_PATH);
+  return { ok: true, note: on ? "Clients get the proposal link and a reminder the evening before a visit." : "Clients are not texted." };
+}
+
+/** "Get your own number": a local number in the company's area code, kept on the company. */
+export async function claimOwnNumber(): Promise<SmsActionResult> {
+  const { organizationId } = await requireManager();
+  const r = await claimNumberFor(organizationId);
+  revalidatePath(SETTINGS_PATH);
+  return r.ok ? { ok: true, note: `${pretty(r.number)} is yours — your texts show it, and replies to it come straight to you.` } : { ok: false, error: r.error };
+}
+
+export async function releaseOwnNumber(): Promise<SmsActionResult> {
+  const { organizationId } = await requireManager();
+  const r = await releaseNumberFor(organizationId);
+  revalidatePath(SETTINGS_PATH);
+  return r.ok ? { ok: true, note: `${pretty(r.number)} released. Texts go from the JobFlex number again.` } : { ok: false, error: r.error };
 }
