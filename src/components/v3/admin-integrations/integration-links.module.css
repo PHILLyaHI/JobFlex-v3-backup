@@ -1,0 +1,31 @@
+/* The quick links beside an API: mono, quiet, each with the "opens
+   elsewhere" mark. Scoped like admin-shared so the rules outrank the
+   dashboard module's resets. On the integrations row they sit at the end of
+   the first line; on a phone the row wraps and they take a line of their own. */
+:global(.jf-blueprint .content) .quick {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-left: auto;
+  min-width: 0;
+}
+:global(.jf-blueprint .content) .quick a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--blueprint);
+  text-decoration: none;
+  white-space: nowrap;
+}
+:global(.jf-blueprint .content) .quick a:hover { text-decoration: underline; text-underline-offset: 3px; }
+:global(.jf-blueprint .content) .quick a :global(.ic) { width: 11px; height: 11px; }
+/* Under a name in the health card: its own line, no margin trick. */
+:global(.jf-blueprint .content) .compact { display: flex; margin: 2px 0 0; gap: 2px 10px; }
+:global(.jf-blueprint .content) .compact a { min-height: 22px; font-size: 9.5px; }
