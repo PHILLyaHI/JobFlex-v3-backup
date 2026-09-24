@@ -19,8 +19,8 @@ Codex project instructions adapted from `CLAUDE.md`. Keep shared project rules i
 - `prisma/schema.prisma` is the schema of record. `src/app/globals.css` holds the design tokens.
 
 ## Design
-- Read **[DESIGN.md](DESIGN.md)** before any frontend work. It is the full spec — palette, type, borders, shadows, motion, product context, accessibility, and the anti-references. Do not duplicate its contents here.
-- Tokens in `src/app/globals.css` are unlocked. Change palette, type, radii, and motion freely without approval.
+- Read **[DESIGN.md](DESIGN.md)** before any frontend work. It is the single current Blueprint specification for every agent, including Codex, Claude and Impeccable. Its linked live components are the maintained examples; historical prototypes and generic skill aesthetics are not design authorities. Keep design decisions in that one file.
+- Tune tokens in `src/app/globals.css` within the current Blueprint specification. Do not introduce another palette, font system, corner treatment or motion theme unless the user requests a design-system change; record approved changes in DESIGN.md.
 - Change values at the token layer, never hardcode literals in components. A theme swap should be one file.
 - Check for an existing token before adding a near-duplicate.
 - Ask before repurposing what a token *means* app-wide, or removing the token system.
@@ -73,7 +73,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 ## Codex setup
 
 - Project skills live in `.agents/skills/`: `frontend-design`, `jobflex-page-styler`, `mobile-app-ui-design`, and `source-command-fleet`. Prefer these project versions when an identically named global skill also appears.
-- This file and `DESIGN.md` take precedence over generic skill suggestions. The app stays light-only and uses the established ≤768px mobile switch. The page-styler's 860px breakpoint and standalone HTML checks apply only to its reference prototypes.
+- This file and `DESIGN.md` take precedence over generic skill suggestions. The app stays light-only and uses the established ≤768px mobile switch. Project design skills point to the same root specification; do not restore a prototype-based theme or shell.
 - Read the applicable skill before using it. Globally installed skills and plugins are shared across projects; do not copy the entire user skill library into this repository.
 - `$source-command-fleet` runs the existing dashboard for Claude workflow logs. It does not display Codex subagents. Use Codex's native agent tools to manage Codex subagents when the task authorizes delegation.
 - `.codex/config.toml` defines this project's MCP servers. Load the folder as a trusted Codex project and start a new task to activate project configuration. A shell command with this working directory does not reattach an existing task.
@@ -84,7 +84,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 <claude-mem-context>
 # Memory Context
 
-# [joblfex-v3] recent context, 2026-09-22 8:51pm PDT
+# [joblfex-v3] recent context, 2026-09-23 6:34pm PDT
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE

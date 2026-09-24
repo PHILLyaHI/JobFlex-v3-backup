@@ -1286,3 +1286,7 @@ body:has(.jf-mobile-proposal-client)::before { content: none; }
 .jf-mobile-proposal-client .mpc-sheet-bank { margin-top: 4px; }
 .jf-mobile-proposal-client .mpc-sheet-bank summary { min-height: 48px; display: flex; align-items: center; }
 .jf-mobile-proposal-client .mpc-pay-touch { margin-top: 14px; text-align: center; }
+
+/* Keep the final content reachable above the conditional decision bar. */
+.jf-mobile-proposal-client .mpc-doc { padding-bottom: 200px; }
+@media print { .jf-mobile-proposal-client .mpc-doc { padding-bottom: 0; } }

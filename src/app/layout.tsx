@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { ToastHostLazy } from "@/components/ui/toast-host-lazy";
 import { AttributionCapture } from "@/components/attribution-capture";
@@ -10,19 +10,22 @@ import { MetaPixel } from "@/components/providers/meta-pixel";
 // just not mounted. Restore: re-add the import and <CookieBanner /> below.
 // import { CookieBanner } from "@/components/consent/cookie-banner";
 
-/* Variable fonts, one file each, so every weight is a real instance and
-   never a synthesized bold: Inter 100–900 (the app sets 400–900; 900 for H1
-   caps and KPI numerals), JetBrains Mono 100–800 (400–800 in use). A weight
-   range such as "400 900" would cut the files, but Turbopack's next/font
-   rejects ranges ("Unknown weight"), so the full axis ships. */
-const inter = Inter({
-  subsets: ["latin"],
+/* Bundle the official variable fonts so local and production builds never
+   depend on a Google Fonts request. Keep the complete weight ranges and
+   character sets; licenses and sources live alongside the font files. */
+const inter = localFont({
+  src: "./fonts/Inter-variable.ttf",
+  weight: "100 900",
+  style: "normal",
   variable: "--font-inter",
   display: "swap",
 });
 
-const jbMono = JetBrains_Mono({
-  subsets: ["latin"],
+const jbMono = localFont({
+  src: "./fonts/JetBrainsMono-variable.ttf",
+  weight: "100 800",
+  style: "normal",
+  adjustFontFallback: false,
   variable: "--font-jbmono",
   display: "swap",
 });

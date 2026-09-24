@@ -4,6 +4,7 @@
 // expiry. The nonce is ALSO set as an httpOnly cookie by the connect route and
 // must match on callback — a state that was minted for someone else's browser
 // (CSRF: attacker links their provider account to the victim's org) fails.
+import "server-only";
 import crypto from "node:crypto";
 import { cookies } from "next/headers";
 
@@ -20,7 +21,9 @@ export interface OAuthState {
 const TTL_MS = 10 * 60 * 1000;
 
 function secret(): string {
-  return process.env.NEXTAUTH_SECRET ?? process.env.AUTH_SECRET ?? "";
+  const key = process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET;
+  if (!key?.trim()) throw new Error("OAuth signing is not configured");
+  return key;
 }
 
 export function cookieNameFor(provider: OAuthProvider): string {
@@ -39,19 +42,21 @@ export function signOAuthState(input: Omit<OAuthState, "nonce" | "exp">): {
 }
 
 export function verifyOAuthState(state: string | null, provider: OAuthProvider): OAuthState | null {
-  if (!state) return null;
-  const [body, sig] = state.split(".");
-  if (!body || !sig) return null;
-  const expected = crypto.createHmac("sha256", secret()).update(body).digest("base64url");
+  if (!state || state.length > 4096) return null;
+  const parts = state.split(".");
+  const [body, sig] = parts;
+  if (parts.length !== 2 || !body || !sig) return null;
   try {
+    const expected = crypto.createHmac("sha256", secret()).update(body).digest("base64url");
     if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
   } catch {
     return null;
   }
   try {
     const p = JSON.parse(Buffer.from(body, "base64url").toString()) as OAuthState;
-    if (p.provider !== provider || !p.organizationId || !p.userId || !p.nonce) return null;
-    if (!p.exp || Date.now() > p.exp) return null;
+    if (p.provider !== provider) return null;
+    if (![p.organizationId, p.userId, p.nonce].every((v) => typeof v === "string" && v.length > 0)) return null;
+    if (!Number.isSafeInteger(p.exp) || Date.now() >= p.exp) return null;
     return p;
   } catch {
     return null;

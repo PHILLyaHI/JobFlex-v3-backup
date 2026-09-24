@@ -4,7 +4,7 @@ import { requireOwner } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { consumeOAuthNonceCookie, verifyOAuthState } from "@/lib/oauthState";
-import { exchangeConnectCode, stripeAccountHeldElsewhere, stripeConnectReady } from "@/lib/payments/stripeConnect";
+import { exchangeConnectCode, stripeAccountHeldElsewhere, stripeConnectReady, stripeErrorMessage } from "@/lib/payments/stripeConnect";
 import { parsePaymentSettings } from "@/lib/settings";
 import { ActivityKind, PaymentConnectionStatus } from "@/lib/prismaEnums";
 
@@ -69,6 +69,13 @@ export async function GET(req: NextRequest) {
         country: acct.country,
         lastError: null,
         connectedByUserId: ctx.user.id,
+        // An OAuth connection must never retain a previous account's API key.
+        // The old key endpoint stops accepting events once these are cleared.
+        stripeKeyEnc: null,
+        stripeKeyKind: null,
+        stripeKeyLast4: null,
+        stripeWebhookId: null,
+        stripeWebhookSecretEnc: null,
         connectedAt: new Date(),
       },
     });
@@ -92,7 +99,7 @@ export async function GET(req: NextRequest) {
     });
     return back(acct.chargesEnabled ? "connected" : "restricted");
   } catch (err) {
-    console.error("[stripe connect callback] exchange failed:", err);
+    console.error("[stripe connect callback] exchange failed:", stripeErrorMessage(err));
     return back("error");
   }
 }

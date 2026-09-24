@@ -286,6 +286,7 @@ export default async function PublicProposalPortal({
             <PortalActions
               publicId={publicId}
               status={proposal.status}
+                model={payModel}
             />
           </div>
 

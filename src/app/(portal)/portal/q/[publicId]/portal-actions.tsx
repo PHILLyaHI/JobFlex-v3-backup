@@ -1,48 +1,12 @@
 "use client";
 
-// PUBLIC PROPOSAL PORTAL — the action block.
-// Route: /portal/q/[publicId].
-//
-// The donor's `div.pv-actions` from `jobflex-proposal-client-blueprint (3).html`,
-// markup-for-markup: `#pvBtns` / `#pvDecline` / `#pvAccepted` / `#pvDeclined`,
-// the donor's literal ids kept, the donor's `hidden` attribute kept as the
-// show/hide mechanism (`.jf-proposal-portal [hidden] { display: none !important }`
-// is what makes it beat `.pv-btnrow { display: flex }`). The donor's script
-// toggled those four nodes imperatively; here React owns the same four flags.
-//
-// WHAT IS NOT THE DONOR'S, and why:
-//
-//   · THE THREE CHECKOUT BUTTONS. The mockup's action row is Accept + Decline
-//     and nothing else, but this surface already initiates Stripe / Square /
-//     PayPal checkout against /api/checkout/[provider] and that capability is
-//     not the port's to delete. They ship in the donor's own `.pv-btnrow`
-//     (which is `flex-wrap: wrap`, so the row absorbs them) wearing the
-//     donor's own `.pv-btn--ghost`. No new CSS, no new vocabulary — but the
-//     row is five buttons wide where the mockup drew two. Flagged in the port
-//     report; delete them here if the owner wants the mockup's two.
-//
-//   · TOASTS on network failure. The donor has no error affordance at all
-//     beyond `#pvErr` (which is the empty-note guard, and IS the donor's).
-//     A homeowner whose accept POST 500s must be told something. Toasts render
-//     outside the page box via the root layout's ToastHost, so nothing on the
-//     happy path looks different from the mockup.
-//
-//   · `disabled` while a request is in flight, to stop double-submits. The
-//     donor declares no `:disabled` style and author rules beat the UA's
-//     `:disabled { color: graytext }`, so this is visually inert.
-//
-//   · The PAID state reuses `#pvAccepted` with "Paid in full" in place of
-//     "Accepted". The mockup has one settled-positive string; the app has two
-//     settled-positive statuses and losing the distinction would tell a paid
-//     client less than the page knows.
-//
-// NO DATA-LAYER CHANGE. Same three endpoints, same payloads, same
-// router.refresh() as the component this replaces.
-
+// Proposal acceptance and decline; payment availability refreshes after acceptance.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/Toast";
 import { markAcceptedLocally } from "./portal-accepted";
+import { ProposalDecision } from "@/components/v3/mobile-proposal-client/proposal-decision";
+import type { PortalPayModel } from "@/lib/payments/portalModel";
 
 /** `"open"` is the one local value the SERVER never sends: a revert has put the
  *  proposal back, and the page must show it open before the refresh lands. */
@@ -61,10 +25,10 @@ function settledFrom(status: string): Settled {
   return null;
 }
 
-// Paying moved to ./portal-payment.tsx — per stage, on the contractor's own
-// Stripe / Square. This block is Accept / Decline and the settled states.
-export function PortalActions({ publicId, status }: { publicId: string; status: string }) {
+// Acceptance and the payment shortcut share one row; the schedule stays below.
+export function PortalActions({ publicId, status, model }: { publicId: string; status: string; model: PortalPayModel }) {
   const router = useRouter();
+  const [freshPay, setFreshPay] = useState<PortalPayModel | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [declineOpen, setDeclineOpen] = useState(false);
   const [note, setNote] = useState("");
@@ -78,32 +42,24 @@ export function PortalActions({ publicId, status }: { publicId: string; status: 
   const [cheer, setCheer] = useState(false);
   const [revert, setRevert] = useState<Revert | null>(null);
 
-  const settled = local === "open" ? null : (local ?? settledFrom(status));
+  const settled = status === "PAID" ? "paid" : local === "open" ? null : (local ?? settledFrom(status));
 
-  async function accept() {
-    // OPTIMISTIC, and this is the whole point. The comment above has always
-    // claimed the settled state swaps "before any round trip"; it did not —
-    // the swap waited on the POST, and that POST blocks on sending two emails
-    // through the mail provider. The client sat on an unchanged page for
-    // several seconds after clicking Accept, with no signal that anything had
-    // happened, and a reload in that window showed the proposal still open.
-    // Flip first, celebrate, and put it back only if the server refuses.
-    const previous = local;
+  async function accept(name: string) {
+    if (busy) return;
     setBusy("accept");
-    setLocal("accepted");
-    setCheer(true);
     try {
-      const res = await fetch(`/api/public-quote/${publicId}/accept`, { method: "POST" });
-      if (!res.ok) throw new Error("Couldn't record acceptance");
-      const data = (await res.json().catch(() => ({}))) as { revertToken?: string };
+      const res = await fetch(`/api/public-quote/${publicId}/accept`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({})) as { error?: string; revertToken?: string; pay?: PortalPayModel };
+      if (!res.ok) throw new Error(data.error ?? "Couldn't record acceptance");
+      if (data.pay) setFreshPay(data.pay);
+      setLocal("accepted");
+      setCheer(true);
       if (data.revertToken) setRevert({ token: data.revertToken, kind: "accept" });
-      // The payment block (a sibling island) may now offer the deposit — the
-      // server has recorded the acceptance, so a checkout will be honoured.
       markAcceptedLocally(publicId, true);
       router.refresh();
     } catch (err) {
-      setLocal(previous);
-      setCheer(false);
       toast.error("Acceptance failed", err instanceof Error ? err.message : undefined);
     } finally {
       setBusy(null);
@@ -191,26 +147,33 @@ export function PortalActions({ publicId, status }: { publicId: string; status: 
 
   return (
     <div className="pv-actions" id="pvActions">
-      <div className="pv-btnrow" id="pvBtns" hidden={settled !== null}>
-        <button
-          className="pv-btn pv-btn--primary"
-          type="button"
-          id="pvAccept"
-          disabled={busy !== null}
-          onClick={accept}
-        >
-          Accept proposal
-        </button>
-        <button
-          className="pv-btn pv-btn--danger"
-          type="button"
-          id="pvDeclineT"
-          aria-expanded={declineOpen}
-          onClick={() => setDeclineOpen((v) => !v)}
-        >
-          Decline
-        </button>
-      </div>
+      <ProposalDecision settled={settled} busy={busy !== null} model={["ACCEPTED", "COMPLETED", "PAID"].includes(status) ? model : freshPay ?? model}
+        acceptedMessage={
+          <div
+            className="pv-state"
+            id="pvAccepted"
+            hidden={!positive}
+            data-cheer={cheer ? "1" : undefined}
+          >
+            {cheer && (
+              <span className="pv-cheer" aria-hidden="true">
+                {/* Eight sparks thrown from behind the plate. Pure CSS, no library,
+                    and `prefers-reduced-motion` stops them dead (see the stylesheet). */}
+                {Array.from({ length: 8 }, (_, i) => (
+                  <i key={i} style={{ "--i": i } as React.CSSProperties} />
+                ))}
+              </span>
+            )}
+            {/* The donor writes `&#10003;&nbsp;` — a NO-BREAK space after the check,
+                not a plain one. ` ` keeps it one. */}
+            {settled === "paid"
+              ? "✓ Paid in full — thank you."
+              : "✓ Accepted — thank you."}
+          </div>
+        } onAccept={accept} onDecline={() => {
+        setDeclineOpen(true);
+        requestAnimationFrame(() => { document.getElementById("pvDecline")?.scrollIntoView({ block: "center" }); document.getElementById("pvNote")?.focus(); });
+      }} />
 
       <div className="pv-decline" id="pvDecline" hidden={!declineOpen || settled !== null}>
         <label className="pv-decline-l" htmlFor="pvNote">
@@ -243,37 +206,7 @@ export function PortalActions({ publicId, status }: { publicId: string; status: 
         </div>
       </div>
 
-      <div
-        className="pv-state"
-        id="pvAccepted"
-        hidden={!positive}
-        data-cheer={cheer ? "1" : undefined}
-      >
-        {cheer && (
-          <span className="pv-cheer" aria-hidden="true">
-            {/* Eight sparks thrown from behind the plate. Pure CSS, no library,
-                and `prefers-reduced-motion` stops them dead (see the stylesheet). */}
-            {Array.from({ length: 8 }, (_, i) => (
-              <i key={i} style={{ "--i": i } as React.CSSProperties} />
-            ))}
-          </span>
-        )}
-        {/* The donor writes `&#10003;&nbsp;` — a NO-BREAK space after the check,
-            not a plain one. ` ` keeps it one. */}
-        {settled === "paid"
-          ? "✓ Paid in full — thank you. The team has been notified."
-          : "✓ Accepted — thank you. The team has been notified."}
-      </div>
-      {/* HOW TO PAY — after acceptance the payment schedule below carries the
-          buttons, one stage at a time; this is a pointer to it. */}
       {revert?.kind === "accept" ? revertRow : null}
-      {settled === "accepted" ? (
-        <div className="pv-paynow" id="pvPay">
-          <a className="pv-paynow-l pv-paynow-link" href="#pvPayment">
-            Ready when you are — pay below ↓
-          </a>
-        </div>
-      ) : null}
 
       <div
         className="pv-state pv-state--declined"

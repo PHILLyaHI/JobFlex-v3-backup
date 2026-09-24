@@ -1,62 +1,16 @@
 "use client";
 
-// CLIENT PROPOSAL · HANDHELD — the whole page.
-//
-// Serves TWO URLs, one implementation:
-//   · /portal/q/<publicId>                  at ≤768px, through the media-query
-//     switch in that route's own portal-viewport.tsx (the desktop tree is
-//     served above 768px and is untouched);
-//   · /mobile-proposal-client-v2/<publicId> as the direct-review entry point.
-//
-// It is a CLIENT component that receives an already-read, already-formatted
-// PortalView from a SERVER component. The Prisma read, the VIEWED side-effect
-// and generateMetadata all stay on the server exactly where they were — this
-// page is opened from an email link and losing SSR on it would be a real
-// regression, not a stylistic one. Nothing here fetches the proposal.
-//
-// ── WHAT IS CARRIED OVER VERBATIM FROM ./(portal) portal-actions.tsx ───────
-//   · POST /api/public-quote/{publicId}/accept — no body.
-//   · POST /api/public-quote/{publicId}/decline — JSON { note }, note trimmed,
-//     and the empty-note guard that reveals the error line and stops before
-//     any network call. maxLength 2000.
-//   · POST /api/checkout/{stripe|square|paypal} — JSON { publicId, amount },
-//     amount in cents; `data.url` redirects, `data.disabled` info-toasts.
-//   · The PDF link → /api/public-quote/{publicId}/pdf, target=_blank with
-//     rel="noopener noreferrer".
-//   · `disabled` on every control while a request is in flight, so a slow
-//     network cannot produce two acceptances.
-//   · Toasts on network failure. They render outside the page box via the root
-//     layout's ToastHost.
-//   · Optimistic local settle + router.refresh(), and the ACCEPTED / PAID /
-//     DECLINED settled states, PAID keeping its own string.
-//   · The `hidden` attribute as the show/hide mechanism, backed by this page's
-//     own `[hidden] { display: none !important }`.
-//   · The .rv / .on IntersectionObserver reveal. framer-motion was deliberately
-//     removed from this route; it is not reintroduced here.
-//
-// ── KNOWN COLLISION, NOT FIXED HERE ────────────────────────────────────────
-// The root layout's <ToastHost /> is `fixed bottom-6 right-6 z-[100]`, a
-// sibling of the wrapper this page renders inside, so it draws over the sticky
-// action bar at handheld widths no matter what z-index the bar takes. Toasts
-// are transient and only appear on failure, so the bar keeps a lower z-index
-// deliberately — an error message covered by a button would be worse than a
-// button covered for four seconds. Fixing it means moving ToastHost, which is
-// a shared file owned by no one in this batch; reported rather than edited.
-//
-// ── DOM IDS ────────────────────────────────────────────────────────────────
-// The desktop tree uses the mockup's literal ids (#pvBtns, #pvNote, #pvErr).
-// This tree uses `mpc-`-prefixed ids for the same roles. The two never mount
-// together — the switch renders exactly one — but ids are document-global and
-// a namespaced pair costs nothing, while a duplicated one would silently break
-// every `aria-describedby`/`htmlFor` on whichever tree lost the race.
-
+// Handheld proposal: required typed acceptance and the shared payment center.
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/Toast";
 import { lockScroll } from "@/lib/scrollLock";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import type { PortalView } from "./portal-view";
-import { startCheckout, usePayReturn } from "./use-pay-return";
+import type { PortalPayModel } from "@/lib/payments/portalModel";
+import { ProposalDecision } from "./proposal-decision";
+import { PaymentCenter } from "./payment-center";
+import { usePayReturn } from "./use-pay-return";
 import { StarsInline } from "@/components/reviews/StarsInline";
 import "./mobile-proposal-client.css";
 
@@ -112,11 +66,6 @@ const IcMinus = () => (
     <path d="M5 12h14" />
   </svg>
 );
-const IcNext = () => (
-  <svg className="mpc-ic" viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M9 5l7 7-7 7" />
-  </svg>
-);
 const IcPhone = () => (
   <svg className="mpc-ic" viewBox="0 0 24 24" aria-hidden="true">
     <path d="M6.5 3h3l1.5 4-2 1.5a12 12 0 0 0 6.5 6.5L17 13l4 1.5v3a2 2 0 0 1-2.2 2A17 17 0 0 1 3 5.2 2 2 0 0 1 5 3Z" />
@@ -133,18 +82,17 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
   const [cheer, setCheer] = useState(false);
   // Only providers with a healthy connection on this contractor's account —
   // the same gate the pay routes enforce (src/lib/payments/payOptions.ts).
-  const pay = view.pay;
+  const [freshPay, setFreshPay] = useState<PortalPayModel | null>(null);
+  const pay = ["ACCEPTED", "COMPLETED", "PAID"].includes(view.status) ? view.pay : freshPay ?? view.pay;
   const payOptions: Array<{ id: Provider; name: string }> = [
     ...(pay.providers.stripe.ok
-      ? [{ id: "stripe" as const, name: pay.providers.stripe.ach ? "Card or bank account" : "Card" }]
+      ? [{ id: "stripe" as const, name: "Stripe" }]
       : []),
     ...(pay.providers.square.ok ? [{ id: "square" as const, name: "Square" }] : []),
     ...(pay.providers.stax.ok ? [{ id: "stax" as const, name: "Stax" }] : []),
   ];
-  const nextStage = pay.stages.find((s) => s.id === pay.nextPayableId) ?? null;
   // Which target the sheet is paying: the next stage, or everything left.
   const [payTarget, setPayTarget] = useState<"next" | "remaining">("next");
-  const targetAmount = payTarget === "remaining" || !nextStage ? pay.remaining : nextStage.amount;
   const [note, setNote] = useState("");
   const [noteErr, setNoteErr] = useState(false);
   const [local, setLocal] = useState<Settled>(null);
@@ -154,16 +102,15 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
   const introRef = useRef<HTMLElement | null>(null);
   const noteRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const settled = local === "open" ? null : (local ?? settledFrom(view.status));
+  const settled = view.status === "PAID" ? "paid" : local === "open" ? null : (local ?? settledFrom(view.status));
   const positive = settled === "accepted" || settled === "paid";
-  const sheetOpen = payOpen || declineOpen;
+  const sheetOpen = declineOpen;
 
   const closeSheets = useCallback(() => {
     setPayOpen(false);
     setDeclineOpen(false);
   }, []);
 
-  const payDrag = useSheetDrag(payOpen, () => setPayOpen(false));
   const declineDrag = useSheetDrag(declineOpen, () => setDeclineOpen(false));
 
   /* ── Reveal. Same contract as the desktop port: the first two blocks are
@@ -246,25 +193,22 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
     el.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
   }, [local]);
 
-  async function accept() {
-    // Flip FIRST. The accept endpoint blocks on sending two emails, so waiting
-    // for it left a thumb on an unchanged screen for seconds — and a reload in
-    // that window showed the proposal still open. Roll back only if the server
-    // actually refuses.
-    const previous = local;
+  async function accept(name: string) {
+    if (busy) return;
     setBusy("accept");
     closeSheets();
-    setLocal("accepted");
-    setCheer(true);
     try {
-      const res = await fetch(`/api/public-quote/${view.publicId}/accept`, { method: "POST" });
-      if (!res.ok) throw new Error("Couldn't record acceptance");
-      const data = (await res.json().catch(() => ({}))) as { revertToken?: string };
+      const res = await fetch(`/api/public-quote/${view.publicId}/accept`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({})) as { error?: string; revertToken?: string; pay?: PortalPayModel };
+      if (!res.ok) throw new Error(data.error ?? "Couldn't record acceptance");
+      if (data.pay) setFreshPay(data.pay);
+      setLocal("accepted");
+      setCheer(true);
       if (data.revertToken) setRevert({ token: data.revertToken, kind: "accept" });
       router.refresh();
     } catch (err) {
-      setLocal(previous);
-      setCheer(false);
       toast.error("Acceptance failed", err instanceof Error ? err.message : undefined);
     } finally {
       setBusy(null);
@@ -344,17 +288,6 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
       </div>
     ) : null;
 
-  async function checkout(provider: Provider) {
-    setBusy(provider);
-    const target =
-      payTarget === "remaining" || !nextStage ? ("remaining" as const) : { installmentId: nextStage.id };
-    const res = await startCheckout(provider, view.publicId, target);
-    if (!res.ok) {
-      toast.error("Couldn't start checkout", res.error);
-      setBusy(null);
-    }
-  }
-
   return (
     <div className="jf-mobile-proposal-client" ref={rootRef}>
       <div className="mpc-doc">
@@ -422,51 +355,38 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
               </figure>
             ) : null}
 
-            <div
-              className="mpc-state"
-              role="status"
-              hidden={!positive}
-              data-cheer={cheer ? "1" : undefined}
-            >
-              {cheer && (
-                <span className="mpc-cheer" aria-hidden="true">
-                  {Array.from({ length: 8 }, (_, i) => (
-                    <i key={i} style={{ "--i": i } as React.CSSProperties} />
-                  ))}
-                </span>
-              )}
-              <IcCheck />
-              <span>
-                {settled === "paid"
-                  ? "Paid in full — thank you. The team has been notified."
-                  : "Accepted — thank you. The team has been notified."}
-              </span>
-            </div>
-
             {/* HOW TO PAY — only once accepted. It used to live in the action
                 bar next to Decline, asking for money before the client had
                 agreed to anything; and because that bar is hidden the moment
                 the proposal settles, paying became unreachable at exactly the
                 point it starts to make sense. */}
-            {revert?.kind === "accept" ? revertRow : null}
             <Suspense fallback={null}>
               <PayReturnBanner publicId={view.publicId} />
             </Suspense>
-            {settled === "accepted" && pay.anyWay && nextStage ? (
-              <button
-                className="mpc-btn mpc-btn--frame mpc-paynow"
-                type="button"
-                disabled={busy !== null}
-                aria-haspopup="dialog"
-                aria-expanded={payOpen}
-                onClick={() => {
-                  setPayTarget("next");
-                  setPayOpen(true);
-                }}
-              >
-                {`Pay ${nextStage.label.toLowerCase()} · ${nextStage.amount}`}
-              </button>
-            ) : null}
+            <ProposalDecision settled={settled} busy={busy !== null} model={pay}
+              acceptedMessage={
+                <div
+                  className="mpc-state"
+                  role="status"
+                  hidden={!positive}
+                  data-cheer={cheer ? "1" : undefined}
+                >
+                  {cheer && (
+                    <span className="mpc-cheer" aria-hidden="true">
+                      {Array.from({ length: 8 }, (_, i) => (
+                        <i key={i} style={{ "--i": i } as React.CSSProperties} />
+                      ))}
+                    </span>
+                  )}
+                  <IcCheck />
+                  <span>
+                    {settled === "paid"
+                      ? "Paid in full — thank you."
+                      : "Accepted — thank you."}
+                  </span>
+                </div>
+              } onAccept={accept} onDecline={() => setDeclineOpen(true)} />
+            {revert?.kind === "accept" ? revertRow : null}
             {settled === "accepted" && !pay.anyWay ? (
               <div className="mpc-pay-sum mpc-pay-touch">The team will be in touch about payment.</div>
             ) : null}
@@ -639,38 +559,6 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
         </footer>
       </div>
 
-      {/* ── THE ACTION BAR. Sticky, last in flow, so it is pinned for the whole
-             scroll and settles below the footer at the end of the document
-             rather than covering it. Gone entirely once settled. ── */}
-      {/* ONE ROW (owner, 2026-09-02): Accept takes the measure, Decline sits
-          beside it at a third — the two answers on one line, both full height,
-          rather than a slab over a short plate hanging off the left edge. */}
-      <div className="mpc-bar" hidden={settled !== null}>
-        <div className="mpc-bar-in">
-          <button
-            className="mpc-btn mpc-btn--primary"
-            type="button"
-            disabled={busy !== null}
-            onClick={accept}
-          >
-            Accept proposal
-          </button>
-          <button
-            className="mpc-btn mpc-btn--danger"
-            type="button"
-            disabled={busy !== null}
-            aria-haspopup="dialog"
-            aria-expanded={declineOpen}
-            onClick={() => {
-              setPayOpen(false);
-              setDeclineOpen(true);
-            }}
-          >
-            Decline
-          </button>
-        </div>
-      </div>
-
       {/* One scrim for both sheets — only one is ever open. */}
       <div
         className={`mpc-scrim${sheetOpen ? " on" : ""}`}
@@ -678,79 +566,7 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
         onClick={closeSheets}
       />
 
-      {/* ── PAYMENT SHEET. Every provider the desktop row carried is still one
-             tap away; none of them costs permanent screen. ── */}
-      <div
-        className={`mpc-sheet${payOpen ? " on" : ""}`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="mpc-pay-t"
-        {...payDrag.sheetProps}
-      >
-        <div className="mpc-grab" {...payDrag.handleProps} />
-        <div className="mpc-sheet-h" {...payDrag.handleProps}>
-          <div className="mpc-sheet-k">Secure checkout</div>
-          <div className="mpc-sheet-t" id="mpc-pay-t">{`Pay ${targetAmount}`}</div>
-        </div>
-        <div className="mpc-sheet-b">
-          {pay.showRemaining && nextStage ? (
-            <div className="mpc-seg" role="group" aria-label="What to pay">
-              <button
-                type="button"
-                className={`mpc-seg-b${payTarget === "next" ? " on" : ""}`}
-                aria-pressed={payTarget === "next"}
-                onClick={() => setPayTarget("next")}
-              >
-                {`${nextStage.label} · ${nextStage.amount}`}
-              </button>
-              <button
-                type="button"
-                className={`mpc-seg-b${payTarget === "remaining" ? " on" : ""}`}
-                aria-pressed={payTarget === "remaining"}
-                onClick={() => setPayTarget("remaining")}
-              >
-                {`Everything · ${pay.remaining}`}
-              </button>
-            </div>
-          ) : null}
-          {payOptions.map((p, i) => (
-            <button
-              className="mpc-opt"
-              type="button"
-              key={p.id}
-              disabled={busy !== null}
-              onClick={() => checkout(p.id)}
-            >
-              <span className="mpc-opt-b" aria-hidden="true">
-                {String(i + 1).padStart(2, "0")}
-              </span>
-              <span className="mpc-opt-n">{p.name}</span>
-              <IcNext />
-            </button>
-          ))}
-          {/* Bank transfer is a way to pay too — the whole hub in one sheet,
-              so a contractor who takes only bank transfers still has a
-              working "Pay deposit" button. */}
-          {pay.bankTransfer.ok ? (
-            <details className="mpc-pay-bank mpc-sheet-bank" open={payOptions.length === 0}>
-              <summary>{payOptions.length ? `${String(payOptions.length + 1).padStart(2, "0")} · Bank transfer` : "Bank transfer"}</summary>
-              <pre className="mpc-pay-bank-body">{pay.bankTransfer.instructions}</pre>
-              <div className="mpc-pay-bank-note">
-                {`Reference "${nextStage && payTarget === "next" ? nextStage.label : "Balance"}" — the team will mark it paid once it arrives.`}
-              </div>
-            </details>
-          ) : null}
-          {payOptions.length ? (
-            <p className="mpc-sheet-note">
-              You will be handed to the provider to finish the payment, then
-              returned to this page.
-            </p>
-          ) : null}
-        </div>
-        <button className="mpc-cancel" type="button" onClick={closeSheets}>
-          Cancel
-        </button>
-      </div>
+      {payOpen && <PaymentCenter model={pay} initialTarget={payTarget} onClose={() => setPayOpen(false)} />}
 
       {/* ── DECLINE SHEET. The note and its required-note guard, unchanged. ── */}
       <div

@@ -46,7 +46,6 @@ const DESKTOP_TWIN: Record<string, string> = {
   "/mobile-smart-estimate-v1": "/dashboard/advanced-ai",
   "/mobile-video-estimator-v1": "/dashboard/advanced-ai",
   "/mobile-roof-estimator-v2": "/dashboard/roof-estimator",
-  "/mobile-roof-inventory-v1": "/dashboard/roof-estimator/board",
   "/mobile-fence-estimator-v2": "/dashboard/fence-estimator",
   "/mobile-phone-v2": "/dashboard/phone",
   "/mobile-messages-v2": "/dashboard/messages",

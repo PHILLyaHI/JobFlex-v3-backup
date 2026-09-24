@@ -14,12 +14,11 @@
 // resolved (paid stages frozen, unpaid recomputed, remaining = total − paid).
 
 import { Suspense, useState, useEffect } from "react";
-import { toast } from "@/components/ui/Toast";
+import { PaymentCenter } from "@/components/v3/mobile-proposal-client/payment-center";
 import type { PortalPayModel, PortalStage } from "@/lib/payments/portalModel";
-import { startCheckout, usePayReturn } from "@/components/v3/mobile-proposal-client/use-pay-return";
+import { usePayReturn } from "@/components/v3/mobile-proposal-client/use-pay-return";
 import { useAcceptedLocally } from "./portal-accepted";
 
-type Provider = "stripe" | "square" | "stax";
 
 function statusWord(s: PortalStage, accepted: boolean): string {
   if (s.status === "PAID") return s.paidOn ? `Paid · ${s.paidOn}` : "Paid";
@@ -56,12 +55,12 @@ export function PortalPayment({
   /** The rail the invoice chose: bank hides the hosted buttons, card hides the bank details. */
   method?: "card" | "bank" | "any" | null;
 }) {
-  const [busy, setBusy] = useState<string | null>(null);
+  const [target, setTarget] = useState<"next" | "remaining" | null>(null);
   // COMPLETED still pays: finishing the work does not settle the money, and an
   // approved change order can add to a finished job. The local flag is the
   // Accept tap on this page, recorded by the server but not yet re-rendered.
   const acceptedLocally = useAcceptedLocally(model.publicId);
-  const accepted = model.status === "ACCEPTED" || model.status === "COMPLETED" || acceptedLocally;
+  const accepted = acceptedLocally ?? (model.status === "ACCEPTED" || model.status === "COMPLETED");
   const showHosted = model.anyHosted && method !== "bank";
   const showBank = model.bankTransfer.ok && method !== "card";
   useEffect(() => {
@@ -70,64 +69,14 @@ export function PortalPayment({
   }, [focus]);
   const paidInFull = model.status === "PAID" || (model.remainingMinor <= 0 && model.paidMinor > 0);
 
-  async function pay(provider: Provider, target: { installmentId: string } | "remaining") {
-    const key = `${provider}:${typeof target === "string" ? target : target.installmentId}`;
-    setBusy(key);
-    const res = await startCheckout(provider, model.publicId, target);
-    if (!res.ok) {
-      toast.error("Couldn't start checkout", res.error);
-      setBusy(null);
-    }
-  }
-
-  const cardLabel = model.providers.stripe.ach ? "Pay with card or bank" : "Pay with card";
-
   function buttons(stage: PortalStage | null) {
-    const target = stage ? { installmentId: stage.id } : ("remaining" as const);
-    const idKey = stage ? stage.id : "remaining";
-    const below = stage?.belowMin ?? { stripe: false, square: false, stax: false };
-    return (
-      <div className="pv-btnrow pv-pay-btns">
-        {model.providers.stripe.ok ? (
-          <button
-            className="pv-btn pv-btn--primary pv-btn--pay"
-            type="button"
-            disabled={busy !== null || below.stripe}
-            title={below.stripe ? "Below the card minimum — pay the remaining balance instead" : undefined}
-            onClick={() => pay("stripe", target)}
-          >
-            {busy === `stripe:${idKey}` ? "Opening…" : cardLabel}
-          </button>
-        ) : null}
-        {model.providers.square.ok ? (
-          <button
-            className="pv-btn pv-btn--ghost pv-btn--pay"
-            type="button"
-            disabled={busy !== null || below.square}
-            title={below.square ? "Below the Square minimum — pay the remaining balance instead" : undefined}
-            onClick={() => pay("square", target)}
-          >
-            {busy === `square:${idKey}` ? "Opening…" : "Pay with Square"}
-          </button>
-        ) : null}
-        {model.providers.stax.ok ? (
-          <button
-            className="pv-btn pv-btn--ghost pv-btn--pay"
-            type="button"
-            disabled={busy !== null || below.stax}
-            title={below.stax ? "Below the Stax minimum — pay the remaining balance instead" : undefined}
-            onClick={() => pay("stax", target)}
-          >
-            {busy === `stax:${idKey}` ? "Opening…" : "Pay with Stax"}
-          </button>
-        ) : null}
-      </div>
-    );
+    return <div className="pv-btnrow pv-pay-btns"><button className="pv-btn pv-btn--primary pv-btn--pay" type="button" onClick={() => setTarget(stage ? "next" : "remaining")} aria-haspopup="dialog">Open payment center</button></div>;
   }
 
   return (
     <section className="pv-sec rv" id="pvPayment">
       <h2 className="pv-sec-h">Payment schedule</h2>
+      {target && <PaymentCenter model={model} initialTarget={target} method={method} onClose={() => setTarget(null)} />}
       <Suspense fallback={null}>
         <PayReturnBanner publicId={model.publicId} />
       </Suspense>

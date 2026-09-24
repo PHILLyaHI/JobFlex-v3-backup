@@ -50,19 +50,6 @@
   --ease-draw: cubic-bezier(0.4, 0, 0.2, 1);       /* line drawing */
 }
 
-.dark {
-  --paper: #11151b;
-  --paper-deep: #1a1f28;
-  --paper-ink: #eceef2;
-  --ink: #eceef2;
-  --ink-soft: #c0c5cf;
-  --ink-muted: #99a2b0;
-  --ink-faint: #6f7785;
-  --ink-line: #2a3140;
-  --accent: #34c685;
-  --accent-soft: rgba(52, 198, 133, 0.16);
-}
-
 * { border-color: var(--ink-line); }
 
 html, body {
@@ -112,15 +99,8 @@ body {
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-sm);
 }
-.dark .paper-card {
-  background: rgba(22, 22, 26, 0.68);
-  backdrop-filter: saturate(1.15) blur(18px);
-  -webkit-backdrop-filter: saturate(1.15) blur(18px);
-  box-shadow: none;
-}
 
 .hairline { box-shadow: inset 0 0 0 0.5px rgba(10, 10, 10, 0.16); }
-.dark .hairline { box-shadow: inset 0 0 0 0.5px rgba(245, 243, 236, 0.14); }
 
 /* ── Focus ring ─────────────────────────────────── */
 .focus-ring:focus-visible {

@@ -8,7 +8,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Route } from "next";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { money, shortDate, longDate, relative } from "@/lib/format";
@@ -21,13 +20,6 @@ export const metadata: Metadata = {
   title: "Operations Sheet · Dashboard v2 — JobFlex",
   description: "Blueprint-edition dashboard: revenue, pipeline, and the next moves on one sheet.",
 };
-
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800", "900"],
-  variable: "--font-inter",
-  display: "swap",
-});
 
 const ACTIVE_PIPELINE = { notIn: ["DECLINED", "ARCHIVED", "EXPIRED"] };
 
@@ -194,7 +186,7 @@ export default async function DashboardV2Page() {
   ];
 
   return (
-    <div className={`${inter.variable} ${styles.sheet}`}>
+    <div className={styles.sheet}>
       <FluidScale />
       {/* ── NAV — cell grid ─────────────────────────────────────────── */}
       <nav className={styles.nav} aria-label="Operations">

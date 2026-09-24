@@ -1,0 +1,139 @@
+# JobFlex — current Blueprint design
+
+This is the single design specification for JobFlex, for Codex, Claude,
+Impeccable and agents with no conversation history. Updated September 23, 2026.
+Use it for new work and restyling. Update this file when an owner-approved
+design decision changes; do not maintain a second theme specification.
+
+## Intent and hierarchy
+
+JobFlex serves small US contracting businesses, at a desk, on a jobsite and
+in front of clients. A surface should reveal its purpose, current state and
+next action at a glance. Keep working data and actions visible. Use short,
+specific copy; move secondary explanations into an accessible disclosure.
+
+The current Blueprint is a crisp engineering sheet: drafting-paper background,
+white surfaces, ink frames, strong uppercase headings and restrained blue
+actions. Structure comes from alignment, spacing and continuous rules.
+No soft SaaS cards, rounded pills, glass, gradients, blurred shadows, grain
+over text, ornamental drawing numbers or decorative metrics.
+
+## Authority and working examples
+
+1. This specification defines the design intent.
+2. [globals.css](src/app/globals.css) defines the shared token values.
+3. These maintained components demonstrate the current treatment:
+   - [Meta connection](src/components/v3/settings-blueprint/meta-connection.tsx)
+     and its [styles](src/components/v3/settings-blueprint/meta-connection.module.css):
+     framed card, status stamp, annotation labels, section rules and action row.
+   - [Roofing inventory desktop](src/components/v3/roofing-inventory/roofing-inventory-desktop.tsx)
+     and [styles](src/components/v3/roofing-inventory/roofing-inventory-desktop.module.css):
+     dense working tables, filters, clear item hierarchy and management actions.
+   - [Roofing inventory mobile](src/components/v3/roofing-inventory/roofing-inventory-mobile.tsx)
+     and [styles](src/components/v3/roofing-inventory/roofing-inventory-mobile.module.css):
+     a dedicated handheld composition of the same functionality.
+
+Examples show patterns, not a template to copy into every page. A quiet table
+label or text action need not become a stamp. Match each element's role.
+Existing components outside this list are implementation context, not automatic
+approval of every visual choice. Prior prototypes and historical notes do not
+override this specification. If code and this document conflict, flag the
+specific discrepancy rather than silently selecting another theme.
+
+## Tokens and surfaces
+
+Use CSS custom properties; do not paste a palette into new components.
+
+| Purpose | Existing token |
+| --- | --- |
+| Drafting-paper background | `--paper` |
+| White surface | `--paper-deep`; `--sheet` in mobile scopes that define it |
+| Main text and frames | `--ink` |
+| Body / secondary text | `--ink-soft` / `--ink-muted` |
+| Quiet repeated row separators | `--ink-line` |
+| Primary blue / hover / soft fill | `--accent` / `--accent-ink` / `--accent-soft` |
+| Success / warning / error | `--emerald` / `--amber` / `--rose` |
+| Sans / annotation type | `--font-sans` / `--font-mono` |
+| Near-square corners | `--r-sm` (2px) |
+| Motion | `--ease-out`, `--ease-soft`, `--ease-draw` |
+
+Some existing mobile scopes give `--paper-deep` a recessed-paper meaning.
+Inspect the consuming scope; use `var(--sheet, var(--paper-deep))` for a shared
+white card where appropriate. Do not globally repurpose a token to fix one card.
+Use existing semantic status tones where available; otherwise derive a soft
+fill from the status token. Status color conveys state, not decoration.
+
+Light mode only. Keep the existing drafting grid behind content, never over
+type. Resting cards have no shadow (`--shadow-sm` and `--shadow-md` are `none`).
+An existing hard ink hover treatment may be retained on interactive controls;
+do not give static cards decorative elevation.
+
+## Typography
+
+- Keep Inter through `--font-sans`; do not choose a new font per page.
+- Page and card headings: weight 800–900, uppercase, compact line height.
+  Large headings use tight tracking; small section titles can use slight
+  positive tracking. Typical working sizes: page 28–32px, card 16–20px,
+  key entity 22–24px, section 12–14px. Fit the page's existing hierarchy.
+- Body and user data stay readable, typically 13–16px, with normal casing.
+  Do not uppercase paragraphs, editable input values or whole tables.
+- Use JetBrains Mono only for short annotations, units and technical labels,
+  usually 10–12px with measured tracking. Do not make navigation, paragraphs
+  or large amounts monospace.
+- Amounts use Inter with tabular numerals; important totals use weight 800–900.
+- Status stamps: near-square frame, 10–11px, weight 800, uppercase, tracking
+  about .1em, a semantic border and soft fill. Always include readable text.
+- Keep the global font-rendering settings; no page-specific smoothing reset.
+
+## Layout, frames and controls
+
+- Main card frames: 1.5–2px ink. Major internal boundaries: 1px ink,
+  edge-to-edge within the frame. Use quieter separators for repeated rows.
+  Adjacent borders must not double in thickness or cross labels or links.
+- Use a 4px spacing scale. Start with 24px desktop card padding and 20px
+  mobile padding; 8px within a label/value group, 16–24px between groups.
+  Adapt density to the task rather than filling unused space with copy.
+- Keep one clear primary action per task group: blue surface, white text,
+  visible ink border, near-square corners and a concise verb label.
+  The Meta card's primary actions use bold uppercase text; quieter secondary
+  actions may use normal casing as in the inventory reference.
+- Controls must have visible focus, hover, disabled and busy states. Disabled
+  styling must not be mistaken for an available action. Minimum mobile hit
+  area is 44×44px; labelled full-width actions are useful on narrow cards.
+- Use existing Lucide icons at consistent sizes; decorative icons are hidden
+  from assistive technology, icon-only controls have accessible names.
+- Preserve all existing actions, validation, units, permissions and data
+  states during a redesign. Do not fabricate metrics, statuses or success.
+- Reuse the live shared sidebar, navigation map and responsive shell.
+  Sidebar subpage toggles are separate buttons with hover and expanded state;
+  nested links retain consistent type and a clear indentation guide.
+
+## Mobile and motion
+
+Use the existing viewport switch at **≤768px** and its dynamically imported
+mobile component. Exactly one layout tree mounts. Reuse shared logic and data;
+compose the mobile surface for handheld use. No UA detection, new zoom system,
+copied standalone HTML shell or alternate mobile palette.
+
+Keep lists visible while filtering, selecting and editing. No opacity-zero
+entrance dependency or MutationObserver that replays the whole list. Use
+short state transitions: about 120–180ms for hover and 200–350ms for a panel.
+Support `prefers-reduced-motion`. Loading feedback follows actual work and
+keeps the layout stable. Never delay usable content for an animation.
+
+Long names must wrap or have an accessible way to view the full value. Use
+`min-width: 0` on flex/grid children and `overflow-wrap: anywhere` where needed.
+Keep key mobile data available; do not hide functionality to make a layout fit.
+
+## Implementation and review
+
+Read [implementation notes](docs/design/implementation.md) when editing an
+existing interactive surface, and [mobile notes](docs/design/mobile.md) for
+handheld work. These describe code hazards, not alternative visual themes.
+
+Before delivery, verify the changed surface in its actual shell at desktop
+width and 390×844. Check long content, focus, overflow, touch targets, loading,
+empty/error/connected states as applicable, and all preserved actions. Use
+relevant existing lint/type checks. Report what was actually verified; a
+redirect or compilation alone is not visual verification. Do not create test
+scaffolding, change the data layer, commit or publish unless authorized.

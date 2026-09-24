@@ -10,6 +10,7 @@
 // against. Field names follow the docs; the first real payment is the test.
 import crypto from "node:crypto";
 import { decryptSecret } from "@/lib/crypto/secretBox";
+import { credentialErrorMessage } from "./credentialErrors";
 
 const BASE = "https://apiprod.fattlabs.com";
 /** The hosted bill page; the invoice id is appended. */
@@ -23,18 +24,6 @@ export class StaxError extends Error {
     super(message);
     this.name = "StaxError";
   }
-}
-
-function messageOf(json: unknown, status: number): string {
-  if (json && typeof json === "object") {
-    const o = json as Record<string, unknown>;
-    if (typeof o.message === "string" && o.message.trim()) return o.message;
-    if (typeof o.error === "string" && o.error.trim()) return o.error;
-    // Validation errors: { field: ["The field is required."] }
-    const first = Object.values(o).find((v) => Array.isArray(v) && typeof v[0] === "string") as string[] | undefined;
-    if (first) return first[0];
-  }
-  return `HTTP ${status}`;
 }
 
 async function staxFetch<T>(key: string, path: string, init?: { method?: string; body?: unknown }): Promise<T> {
@@ -55,17 +44,13 @@ async function staxFetch<T>(key: string, path: string, init?: { method?: string;
   } catch {
     json = null;
   }
-  if (!res.ok) throw new StaxError(messageOf(json, res.status), res.status);
+  if (!res.ok) throw new StaxError(credentialErrorMessage("Stax", { status: res.status }), res.status);
   return json as T;
 }
 
-/** Stax's own words, with the two common cases named. Never echoes the key. */
+/** Do not expose provider bodies, which may echo a key or webhook URL. */
 export function staxErrorMessage(err: unknown): string {
-  const e = err as { status?: number; message?: string } | null;
-  const msg = e?.message?.trim() || "unknown error";
-  if (e?.status === 401) return `Stax rejected the key — ${msg}`;
-  if (e?.status === 403) return `The key is missing a permission JobFlex needs — ${msg}`;
-  return `Stax error — ${msg}`;
+  return credentialErrorMessage("Stax", err);
 }
 
 export interface StaxConnectionLike {
@@ -81,7 +66,7 @@ export function staxKeyFor(conn: StaxConnectionLike): string | null {
   try {
     return decryptSecret(conn.staxApiKeyEnc);
   } catch (err) {
-    console.warn("[stax] cannot decrypt key for", conn.staxMerchantId, err instanceof Error ? err.message : err);
+    console.warn("[stax] cannot decrypt key for", conn.staxMerchantId, staxErrorMessage(err));
     return null;
   }
 }
@@ -185,7 +170,7 @@ export async function removeStaxWebhooks(key: string, ids: string[]): Promise<bo
       await staxFetch(key, `/webhook/${encodeURIComponent(id)}`, { method: "DELETE" });
     } catch (err) {
       all = false;
-      console.warn("[stax] webhook removal failed", id, err instanceof Error ? err.message : err);
+      console.warn("[stax] webhook removal failed", id, staxErrorMessage(err));
     }
   }
   return all;
@@ -292,7 +277,7 @@ export async function deleteStaxInvoice(key: string, id: string): Promise<"delet
     return "deleted";
   } catch (err) {
     if ((err as { status?: number })?.status === 404) return "gone";
-    console.warn("[stax] invoice delete failed", id, err instanceof Error ? err.message : err);
+    console.warn("[stax] invoice delete failed", id, staxErrorMessage(err));
     return "unavailable";
   }
 }

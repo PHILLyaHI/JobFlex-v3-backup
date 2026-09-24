@@ -7,6 +7,7 @@
 // endpoint serves, with the fee computed here, never read from metadata.
 // A session minted before the signature shipped is ignored here and still
 // settles through the portal's active verification and the reconcile cron.
+import { credentialErrorMessage } from "./credentialErrors";
 import type Stripe from "stripe";
 import { db } from "@/lib/db";
 import { InstallmentStatus, PaymentConnectionStatus } from "@/lib/prismaEnums";
@@ -196,7 +197,7 @@ async function settleFromSession(ctx: StripeEventContext, session: Stripe.Checko
       const charge = pi.latest_charge as Stripe.Charge | null;
       method = charge?.payment_method_details?.type ?? "card";
     } catch (err) {
-      console.warn(`[stripe-${ctx.via}] PI retrieve failed`, piId, err instanceof Error ? err.message : err);
+      console.warn(`[stripe-${ctx.via}] PI retrieve failed`, piId, credentialErrorMessage("Stripe", err));
     }
   }
   await settleInstallmentPayment({

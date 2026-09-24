@@ -11,6 +11,7 @@ import {
   obtainSquareToken,
   pickSquareLocation,
   revokeSquareToken,
+  squareErrorMessage,
 } from "@/lib/payments/squareConnect";
 import { platformCountry } from "@/lib/payments/fees";
 import { parsePaymentSettings } from "@/lib/settings";
@@ -84,6 +85,11 @@ export async function GET(req: NextRequest) {
         country: location.country,
         lastError: null,
         connectedByUserId: ctx.user.id,
+        // Stop trusting the webhook belonging to a previous personal token.
+        squareAuth: "oauth",
+        squareTokenLast4: null,
+        squareWebhookId: null,
+        squareWebhookSignatureKeyEnc: null,
         connectedAt: new Date(),
         ...enc,
       },
@@ -108,7 +114,7 @@ export async function GET(req: NextRequest) {
     });
     return back("connected");
   } catch (err) {
-    console.error("[square callback] token exchange failed:", err);
+    console.error("[square callback] token exchange failed:", squareErrorMessage(err));
     return back("error");
   }
 }
