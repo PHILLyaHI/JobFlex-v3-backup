@@ -194,7 +194,8 @@
   :global(.jf-blueprint .content) .tbl-edit td { display: block; padding: 4px 0; border: 0; }
   :global(.jf-blueprint .content) .tbl-edit td[data-l]:not([data-l=""])::before { content: attr(data-l); display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
   :global(.jf-blueprint .content) .tbl-edit td[data-l="Task"]::before { display: none; }
-  :global(.jf-blueprint .content) .row-acts { text-align: left; display: flex; gap: 14px; margin-top: 6px; }
+  /* td.row-acts: the stacked-cell rule above is a shade more specific, so this one names the cell too */
+  :global(.jf-blueprint .content) .tbl-edit td.row-acts { text-align: left; display: flex; gap: 16px; margin-top: 6px; }
   :global(.jf-blueprint .content) .row-acts .link + .link { margin-left: 0; }
   :global(.jf-blueprint .content) .row-acts .link { min-height: 44px; display: inline-flex; align-items: center; }
   :global(.jf-blueprint .content) .was { white-space: normal; }
