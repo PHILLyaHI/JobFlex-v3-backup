@@ -21,7 +21,10 @@ type Provider = "stripe" | "square" | "stax";
 
 /** The way back, held in memory only — a reload forgets it, which is the whole
  *  point: "revert" exists for the tap that was a slip, not for next week. */
-type Revert = { token: string; kind: "accept" | "decline" };
+/* A DECLINE only. An accept has no way back from here (owner, 2026-09-23):
+   the server hands no token for it and refuses one; undoing an acceptance is
+   the contractor's call, in the dashboard. */
+type Revert = { token: string; kind: "decline" };
 
 function PayReturnBanner({ publicId }: { publicId: string }) {
   const state = usePayReturn(publicId);
@@ -201,12 +204,12 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
       const res = await fetch(`/api/public-quote/${view.publicId}/accept`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
       });
-      const data = await res.json().catch(() => ({})) as { error?: string; revertToken?: string; pay?: PortalPayModel };
+      const data = await res.json().catch(() => ({})) as { error?: string; pay?: PortalPayModel };
       if (!res.ok) throw new Error(data.error ?? "Couldn't record acceptance");
       if (data.pay) setFreshPay(data.pay);
       setLocal("accepted");
       setCheer(true);
-      if (data.revertToken) setRevert({ token: data.revertToken, kind: "accept" });
+      setRevert(null);
       router.refresh();
     } catch (err) {
       toast.error("Acceptance failed", err instanceof Error ? err.message : undefined);
@@ -245,8 +248,7 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
     }
   }
 
-  /** Take the accept or decline back. One shot: the token is dropped on
-   *  success, and the server refuses it anyway once money has moved. */
+  /** Take the decline back. One shot: the token is dropped on success. */
   async function undo() {
     if (!revert) return;
     setBusy("revert");
@@ -259,7 +261,6 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data?.error ?? "Couldn't revert");
       setRevert(null);
-      setCheer(false);
       setLocal("open");
       setNote("");
       router.refresh();
@@ -270,10 +271,10 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
     }
   }
 
-  // Under whichever settled plate this page's own tap produced, and only
-  // while the token from that tap is in memory.
+  // Under the declined plate this page's own tap produced, and only while the
+  // token from that tap is in memory. Never under the accepted plate.
   const revertRow =
-    revert && settled !== "paid" && settled !== null ? (
+    revert && settled === "declined" ? (
       <div className="mpc-revert">
         <button
           className="mpc-btn mpc-btn--frame mpc-revert-b"
@@ -282,7 +283,7 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
           onClick={undo}
         >
           <span className="mpc-revert-ic" aria-hidden="true">↺</span>
-          {busy === "revert" ? "Reverting…" : revert.kind === "accept" ? "Revert acceptance" : "Revert decline"}
+          {busy === "revert" ? "Reverting…" : "Revert decline"}
         </button>
         <span className="mpc-revert-n">Only while this page stays open</span>
       </div>
@@ -386,7 +387,6 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
                   </span>
                 </div>
               } onAccept={accept} onDecline={() => setDeclineOpen(true)} />
-            {revert?.kind === "accept" ? revertRow : null}
             {settled === "accepted" && !pay.anyWay ? (
               <div className="mpc-pay-sum mpc-pay-touch">The team will be in touch about payment.</div>
             ) : null}
@@ -398,7 +398,7 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
               <IcMinus />
               <span>You declined this proposal.</span>
             </div>
-            {revert?.kind === "decline" ? revertRow : null}
+            {revertRow}
           </div>
         </section>
 

@@ -6,13 +6,18 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { sendToMembersByPref } from "@/lib/notificationPrefs";
 import { buildOwnerReverted } from "@/lib/email/build/operator";
 
-// Public proposal REVERT — the homeowner takes back an accept or a decline
-// they did not mean, from the same page, while it is still open.
+// Public proposal REVERT — the homeowner takes back a DECLINE they did not
+// mean, from the same page, while it is still open.
 //
-// Guarded by the signed token ../accept and ../decline hand back (see
-// lib/quoteRevert.ts): it names the proposal, the action, the status to put
-// back and the job the accept created. Without a valid token there is nothing
-// here to call. A PAID proposal can never be reverted — money has moved.
+// Guarded by the signed token ../decline hands back (see lib/quoteRevert.ts):
+// it names the proposal, the action and the status to put back. Without a
+// valid token there is nothing here to call.
+//
+// AN ACCEPTANCE IS FINAL FOR THE CLIENT (owner, 2026-09-23). ../accept no
+// longer hands back a token, and an accept claim — however it was made, a
+// token from before the change included — is refused here with 403 before
+// anything is read or written. Undoing an acceptance is the contractor's
+// call, in the dashboard (updateProposalStatus), with its own activity.
 export async function POST(
   req: Request,
   ctx: { params: Promise<{ publicId: string }> },
@@ -29,6 +34,9 @@ export async function POST(
   }
   const claim = verifyRevert((body as { token?: unknown })?.token);
   if (!claim) return NextResponse.json({ error: "This change can no longer be reverted." }, { status: 403 });
+  if (claim.a !== "decline") {
+    return NextResponse.json({ error: "An acceptance can't be taken back from this page — contact the contractor." }, { status: 403 });
+  }
 
   const proposal = await db.proposal.findUnique({
     where: { publicId },
@@ -39,11 +47,7 @@ export async function POST(
   }
 
   // The token says what was done; the row must still say the same thing.
-  const expected = claim.a === "accept" ? "ACCEPTED" : "DECLINED";
-  if (proposal.status === "PAID") {
-    return NextResponse.json({ error: "A payment has been made — this can't be reverted." }, { status: 409 });
-  }
-  if (proposal.status !== expected) {
+  if (proposal.status !== "DECLINED") {
     // Already put back (double tap, two tabs): idempotent.
     if (proposal.status === claim.prev) return NextResponse.json({ ok: true, alreadyReverted: true });
     return NextResponse.json({ error: "This proposal has changed since — reload the page." }, { status: 409 });
@@ -56,59 +60,34 @@ export async function POST(
 
   await db.proposal.update({
     where: { id: proposal.id },
-    data:
-      claim.a === "accept"
-        ? { status: prev, acceptedAt: null, acceptedIp: null }
-        : { status: prev, declinedAt: null },
+    data: { status: prev, declinedAt: null },
   });
 
-  // The job the accept auto-created goes with it — but ONLY while nobody has
-  // touched it. Anything hung off it since (a crew, a receipt, a photo, a
-  // message, a change order) means the office has started work on it, and a
-  // homeowner's second thought must not delete that.
-  let jobRemoved = false;
-  if (claim.a === "accept" && claim.j) {
-    const job = await db.job.findFirst({
-      where: { id: claim.j, organizationId: proposal.organizationId, proposalId: proposal.id },
-      include: {
-        _count: {
-          select: { assignments: true, photos: true, expenses: true, messages: true, changeOrders: true, reviewRequests: true },
-        },
-      },
-    });
-    if (job && Object.values(job._count).every((n) => n === 0)) {
-      await db.jobEvent.deleteMany({ where: { jobId: job.id } });
-      await db.job.delete({ where: { id: job.id } });
-      jobRemoved = true;
-    }
-  }
-
   const ip = ipFromRequest(req);
-  const what = claim.a === "accept" ? "acceptance" : "decline";
   await db.activityEvent.create({
     data: {
       organizationId: proposal.organizationId,
       proposalId: proposal.id,
       clientId: proposal.clientId,
       kind: "REVERTED",
-      summary: `${proposal.client?.name ?? "Client"} took back their ${what}`,
-      meta: JSON.stringify({ action: claim.a, restored: prev, jobRemoved, ip }),
+      summary: `${proposal.client?.name ?? "Client"} took back their decline`,
+      meta: JSON.stringify({ action: "decline", restored: prev, ip }),
     },
   });
 
-  // The office already got the "accepted" or "declined" email; it must get
-  // this one too, or the earlier one stands as the last word. Gated by the
-  // same preference as the event it cancels.
+  // The office already got the "declined" email; it must get this one too, or
+  // the earlier one stands as the last word. Gated by the same preference as
+  // the event it cancels.
   try {
     const appUrl = await appBaseUrl();
     await sendToMembersByPref(
       proposal.organizationId,
-      claim.a === "accept" ? "proposal-accepted" : "proposal-declined",
+      "proposal-declined",
       buildOwnerReverted({
         org: { name: proposal.organization.name, logoUrl: proposal.organization.logoUrl, phone: proposal.organization.phone },
         clientName: proposal.client?.name ?? "A client",
         title: proposal.title,
-        action: claim.a,
+        action: "decline",
         total: proposal.total,
         href: `${appUrl}/dashboard/proposals/${proposal.id}`,
       }),
@@ -117,5 +96,5 @@ export async function POST(
     console.warn("[revert] office email failed", err);
   }
 
-  return NextResponse.json({ ok: true, status: prev, jobRemoved });
+  return NextResponse.json({ ok: true, status: prev });
 }
