@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createJobFromProposalInternal } from "@/lib/jobFromProposal";
 import { rateLimitShared, ipFromRequest, HOUR } from "@/lib/rateLimit";
-import { signRevert } from "@/lib/quoteRevert";
 import { trackActivation } from "@/lib/activation-events";
 import { proposalAcceptanceSchema } from "@/lib/proposalAcceptance";
 import { buildPortalPayModel } from "@/lib/payments/portalModel";
@@ -53,7 +52,7 @@ export async function POST(
     req.headers.get("x-real-ip") ??
     null;
 
-  // What the row said BEFORE, so a revert can put it back exactly.
+  // What the row says now — the update below is conditional on it.
   const prev = proposal.status;
 
   const pay = await paymentModel();
@@ -81,13 +80,9 @@ export async function POST(
 
   // Auto-create a Job + JobEvent so the new work shows up on calendar + jobs list immediately.
   let jobId: string | null = null;
-  // Only a job THIS click created may be removed by a revert; one that already
-  // existed belongs to the office.
-  let createdJobId: string | null = null;
   try {
-    const { id, created } = await createJobFromProposalInternal(proposal.id);
+    const { id } = await createJobFromProposalInternal(proposal.id);
     jobId = id;
-    if (created) createdJobId = id;
   } catch (err) {
     console.warn("[accept] Couldn't auto-create job:", err);
   }
@@ -100,9 +95,8 @@ export async function POST(
     console.warn("[accept] notify failed:", err);
   }
 
-  // The way back, for as long as the page stays open — see lib/quoteRevert.ts
-  // and ../revert. Never persisted by the page; a reload forgets it.
-  const revertToken = signRevert({ p: proposal.id, a: "accept", prev, j: createdJobId });
-
-  return NextResponse.json({ ok: true, jobId, revertToken, pay });
+  // No way back from the portal (owner, 2026-09-23): an acceptance is final
+  // for the client; ../revert refuses an accept claim. Undoing one is the
+  // contractor's call, in the dashboard.
+  return NextResponse.json({ ok: true, jobId, pay });
 }

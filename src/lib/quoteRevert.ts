@@ -3,14 +3,19 @@ import { tokensEqual } from "@/lib/tokens";
 
 // REVERT TOKENS for the public proposal portal.
 //
-// A homeowner who taps Accept meaning Decline (or the reverse) gets one way
-// back: a "Revert" control that is shown ONLY for as long as the page stays
-// open. The control needs a credential, because the portal is unauthenticated
-// and the revert endpoint must not be a way for anyone holding the public link
-// to un-settle a deal weeks later. So the accept and decline routes hand the
-// page a signed, short-lived token describing exactly what they did, and the
-// revert route accepts nothing else. The page keeps it in component state —
-// never in storage — which is what makes "until the window closes" true.
+// A homeowner who taps Decline meaning Accept gets one way back: a "Revert"
+// control that is shown ONLY for as long as the page stays open. The control
+// needs a credential, because the portal is unauthenticated and the revert
+// endpoint must not be a way for anyone holding the public link to un-settle
+// a deal weeks later. So the decline route hands the page a signed,
+// short-lived token describing exactly what it did, and the revert route
+// accepts nothing else. The page keeps it in component state — never in
+// storage — which is what makes "until the window closes" true.
+//
+// AN ACCEPTANCE HAS NO WAY BACK FROM THE PORTAL (owner, 2026-09-23). The
+// accept route signs nothing any more; `a: "accept"` stays in the claim type
+// only so a token minted before the change still parses — and is then refused
+// by the revert route (403) rather than failing as "malformed".
 //
 // Stateless on purpose: no schema. HMAC over the payload with the auth secret,
 // the same secret NextAuth signs sessions with, so there is no second secret to
@@ -23,8 +28,8 @@ export type RevertClaim = {
   a: "accept" | "decline";
   /** The status the proposal had BEFORE, to put it back exactly. */
   prev: string;
-  /** The job the accept auto-created, if it created one, so the revert can
-   *  remove it again while it is still untouched. */
+  /** Always null now; kept so older tokens parse (the field was the job an
+   *  accept had auto-created). */
   j: string | null;
   /** Expiry, epoch ms. */
   exp: number;

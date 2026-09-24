@@ -8,13 +8,17 @@ import { markAcceptedLocally } from "./portal-accepted";
 import { ProposalDecision } from "@/components/v3/mobile-proposal-client/proposal-decision";
 import type { PortalPayModel } from "@/lib/payments/portalModel";
 
-/** `"open"` is the one local value the SERVER never sends: a revert has put the
- *  proposal back, and the page must show it open before the refresh lands. */
+/** `"open"` is the one local value the SERVER never sends: a reverted decline
+ *  has put the proposal back, and the page must show it open before the
+ *  refresh lands. */
 type Settled = "accepted" | "paid" | "declined" | "open" | null;
 
-/** The way back, held in memory only — a reload forgets it, which is the whole
- *  point: "revert" exists for the tap that was a slip, not for next week. */
-type Revert = { token: string; kind: "accept" | "decline" };
+/** The way back from a DECLINE, held in memory only — a reload forgets it,
+ *  which is the whole point: "revert" exists for the tap that was a slip, not
+ *  for next week. An ACCEPT has no way back from here (owner, 2026-09-23):
+ *  the server hands no token for it and refuses one, and the page draws no
+ *  button. Undoing an acceptance is the contractor's call, in the dashboard. */
+type Revert = { token: string; kind: "decline" };
 
 function settledFrom(status: string): Settled {
   if (status === "PAID") return "paid";
@@ -51,12 +55,12 @@ export function PortalActions({ publicId, status, model }: { publicId: string; s
       const res = await fetch(`/api/public-quote/${publicId}/accept`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
       });
-      const data = await res.json().catch(() => ({})) as { error?: string; revertToken?: string; pay?: PortalPayModel };
+      const data = await res.json().catch(() => ({})) as { error?: string; pay?: PortalPayModel };
       if (!res.ok) throw new Error(data.error ?? "Couldn't record acceptance");
       if (data.pay) setFreshPay(data.pay);
       setLocal("accepted");
       setCheer(true);
-      if (data.revertToken) setRevert({ token: data.revertToken, kind: "accept" });
+      setRevert(null);
       markAcceptedLocally(publicId, true);
       router.refresh();
     } catch (err) {
@@ -93,8 +97,7 @@ export function PortalActions({ publicId, status, model }: { publicId: string; s
     }
   }
 
-  /** Take the accept or decline back. One shot: the token is dropped on
-   *  success, and the server refuses it anyway once money has moved. */
+  /** Take the decline back. One shot: the token is dropped on success. */
   async function undo() {
     if (!revert) return;
     setBusy("revert");
@@ -107,11 +110,9 @@ export function PortalActions({ publicId, status, model }: { publicId: string; s
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data?.error ?? "Couldn't revert");
       setRevert(null);
-      setCheer(false);
       setLocal("open");
       setDeclineOpen(false);
       setNote("");
-      markAcceptedLocally(publicId, false);
       router.refresh();
     } catch (err) {
       toast.error("Couldn't revert", err instanceof Error ? err.message : undefined);
@@ -122,10 +123,10 @@ export function PortalActions({ publicId, status, model }: { publicId: string; s
 
   const positive = settled === "accepted" || settled === "paid";
 
-  // Shown under whichever settled plate this page's own click produced, and
-  // only while the token from that click is in memory.
+  // Under the declined plate this page's own click produced, and only while
+  // the token from that click is in memory. Never under the accepted plate.
   const revertRow =
-    revert && settled !== "paid" && settled !== null ? (
+    revert && settled === "declined" ? (
       <div className="pv-revert" id="pvRevert">
         {/* ONE ROW, TWO REGISTERS: the plate says what it does, the mono
             note beside it says for how long. The first cut put a bold
@@ -139,7 +140,7 @@ export function PortalActions({ publicId, status, model }: { publicId: string; s
           onClick={undo}
         >
           <span className="pv-revert-ic" aria-hidden="true">↺</span>
-          {busy === "revert" ? "Reverting…" : revert.kind === "accept" ? "Revert acceptance" : "Revert decline"}
+          {busy === "revert" ? "Reverting…" : "Revert decline"}
         </button>
         <span className="pv-revert-n">Only while this page stays open</span>
       </div>
@@ -206,8 +207,6 @@ export function PortalActions({ publicId, status, model }: { publicId: string; s
         </div>
       </div>
 
-      {revert?.kind === "accept" ? revertRow : null}
-
       <div
         className="pv-state pv-state--declined"
         id="pvDeclined"
@@ -215,7 +214,7 @@ export function PortalActions({ publicId, status, model }: { publicId: string; s
       >
         You declined this proposal.
       </div>
-      {revert?.kind === "decline" ? revertRow : null}
+      {revertRow}
     </div>
   );
 }
