@@ -65,6 +65,18 @@ export type PortalRating = {
   href: string;
 };
 
+/** A picture the proposal carries to the client (lib/proposalPictures):
+ *  the fence's 3D snapshot or traced layout, the roof from the air or as a
+ *  plan. `overlay` is the measured outline in a 0…1000 square over `src`. */
+export type PortalPicture = {
+  kind: "fence-3d" | "fence-plan" | "roof-photo" | "roof-plan";
+  src: string;
+  alt: string;
+  caption: string;
+  facts: string | null;
+  overlay: string[] | null;
+};
+
 export type PortalView = {
   publicId: string;
   status: string;
@@ -93,9 +105,9 @@ export type PortalView = {
   pay: PortalPayModel;
   /** Org standard terms, shown as a disclosure. Empty when none are set. */
   terms: string;
-  /** The client's own house — the satellite photo of the measurement this
-   *  proposal was priced from — or null when no measurement is linked. */
-  sitePhotoHref: string | null;
+  /** The client's own job in pictures — the fence's 3D and layout, the
+   *  roof from the air (2026-09-23) — or none. */
+  pictures: PortalPicture[];
 };
 
 /** The shape buildPortalView needs — structural, so this module never has to
@@ -148,7 +160,7 @@ export function buildPortalView(
   proposal: ProposalRow,
   fmt: Fmt,
   /** Built by the caller, which already has the row + org connections. */
-  extras: { pay: PortalPayModel; terms: string; rating?: PortalRating | null; sitePhoto?: boolean },
+  extras: { pay: PortalPayModel; terms: string; rating?: PortalRating | null; pictures?: PortalPicture[] },
 ): PortalView {
   const { money, longDate } = fmt;
   const org = proposal.organization;
@@ -158,7 +170,7 @@ export function buildPortalView(
     pay: extras.pay,
     terms: extras.terms,
     rating: extras.rating ?? null,
-    sitePhotoHref: extras.sitePhoto ? `/api/public-quote/${publicId}/site-photo` : null,
+    pictures: extras.pictures ?? [],
     publicId,
     status: proposal.status,
     total: proposal.total,

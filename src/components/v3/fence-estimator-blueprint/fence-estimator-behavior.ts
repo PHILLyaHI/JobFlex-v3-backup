@@ -73,6 +73,7 @@ import type {
 // Type-only: the component itself arrives through a dynamic import so Three.js
 // stays off the initial bundle of a page whose primary surface is a map.
 import type { FenceModel3D, FenceTerrain3D } from "@/components/estimator/fence/FenceModel3D";
+import type { FencePlan } from "@/lib/fence/planSvg";
 import {
   CATEGORY_LABEL,
   DEFAULT_FENCE_TYPE,
@@ -3398,6 +3399,66 @@ export function initFenceEstimatorContent(
     }
   }
 
+  /** The snapshot for the proposal, whether or not the 3D view was ever
+   *  opened (owner, 2026-09-23: the client was not getting the picture).
+   *  When no scene is up, the 3D panel is shown for a moment, the scene
+   *  mounted and given time to draw, the canvas read, and the map put back.
+   *  Any failure means no picture, never a failed proposal. */
+  async function captureModelForProposal(): Promise<string | null> {
+    const direct = captureModel();
+    if (direct) return direct;
+    if (mapPoints.length < 2 || torndown) return null;
+    const was = fs.mode;
+    const setMode = function (m: string) {
+      fs.mode = m;
+      $$('#modeSwitch .vsw-btn').forEach(function (b) { b.classList.toggle('active', (b as HTMLElement).dataset.mode === m); });
+    };
+    try {
+      setMode('3d');
+      if (armed) setArmed(null);
+      $('#mapSlot')?.classList.add('is-hidden');
+      $('#stage3d')?.classList.remove('is-hidden');
+      await ensureModel();
+      pushModel();
+      const t0 = Date.now();
+      while (Date.now() - t0 < 2200) {
+        await new Promise<void>(function (r) { requestAnimationFrame(function () { r(); }); });
+        const c = modelHost?.querySelector<HTMLCanvasElement>('canvas');
+        if (c && c.width > 0 && c.height > 0 && Date.now() - t0 >= 900) break;
+      }
+      return captureModel();
+    } catch {
+      return null;
+    } finally {
+      setMode(was);
+      syncStage();
+    }
+  }
+
+  /** The traced layout for the client's drawing (lib/fence/planSvg): the
+   *  runs, the gates where they sit, the houses and the lot, in local feet.
+   *  Nothing when the runs were typed rather than traced. */
+  function fencePlanForProposal(pk: FencePackage, lf: number, where: string): FencePlan | null {
+    if (!mapOwnsRuns || mapPoints.length < 2) return null;
+    const r1 = function (n: number) { return Math.round(n * 10) / 10; };
+    const pt = function (p: PathPoint) { return p.gap ? { x: r1(p.x), y: r1(p.y), gap: true } : { x: r1(p.x), y: r1(p.y) }; };
+    const o = mapOrigin;
+    return {
+      points: mapPoints.slice(0, 600).map(pt),
+      gates: modelGates().slice(0, 40).map(function (g) {
+        const op = fs.openings.find(function (x) { return x.id === g.id; });
+        return { segmentIndex: g.segmentIndex, t: g.t, widthFt: g.widthFt, kind: g.kind, label: op ? opType(op.type).label : undefined, x: g.x, y: g.y };
+      }),
+      buildings: modelBuildings().slice(0, 40).map(function (b) { return { ring: b.ring.slice(0, 300).map(pt), role: b.role }; }),
+      lots: (o ? lotRingsFt(o) : []).slice(0, 10).map(function (r) { return r.slice(0, 400).map(pt); }),
+      origin: o,
+      heightFt: pk.builtHeightFt,
+      typeLabel: pk.resolved.label,
+      totalLf: lf,
+      address: where || null,
+    };
+  }
+
   disposers.push(function () {
     // Set BEFORE the unmount: it is also what stops an in-flight `import()`
     // from mounting a scene into a page that has already gone.
@@ -4024,6 +4085,10 @@ export function initFenceEstimatorContent(
       return;
     }
 
+    // The picture first: the 3D scene may need a moment to draw (see
+    // captureModelForProposal); the button says so.
+    say('i-file', 'Preparing the picture…');
+    const previewDataUrl = await captureModelForProposal();
     say('i-file', 'Creating…');
     try {
       const layout = layoutInput();
@@ -4075,7 +4140,8 @@ export function initFenceEstimatorContent(
         // The 3D scene renders with `preserveDrawingBuffer`, so its canvas can be
         // read straight off the island host. Only present once the user has
         // actually opened the 3D view.
-        previewDataUrl: captureModel() ?? undefined,
+        previewDataUrl: previewDataUrl ?? undefined,
+        plan: fencePlanForProposal(pk, lf, where) ?? undefined,
       });
 
       // A refusal comes back as a result, never a throw (production redacts

@@ -36,6 +36,7 @@ import { buildPortalView, type PortalRating } from "@/components/v3/mobile-propo
 import { buildPortalPayModel } from "@/lib/payments/portalModel";
 import { formatAvg, orgPublicRating, publicReviewsPath } from "@/lib/reviews/publicSummary";
 import { MobileProposalClient } from "@/components/v3/mobile-proposal-client/mobile-proposal-client";
+import { proposalPictures } from "@/lib/proposalPictures";
 
 export const dynamic = "force-dynamic";
 
@@ -89,18 +90,13 @@ export default async function MobileProposalClientPage({
       ? { avg: formatAvg(pub.avg) as string, count: pub.count, href: publicReviewsPath(proposal.organization.slug) }
       : null;
 
-  // The client's own house, when the proposal was priced from a measurement
-  // (roof estimator → convert). A link table not pushed yet means no photo.
-  let sitePhoto = false;
-  try {
-    sitePhoto = !!(await db.proposalSitePhoto.findUnique({ where: { proposalId: proposal.id }, select: { id: true } }));
-  } catch {
-    sitePhoto = false;
-  }
+  // The client's own job in pictures (lib/proposalPictures, 2026-09-23) —
+  // the same set the desk page shows.
+  const pictures = await proposalPictures({ id: proposal.id, publicId, trade: proposal.trade, beforePhotos: proposal.beforePhotos }).catch(() => []);
 
   return (
     <MobileProposalClient
-      view={buildPortalView(publicId, proposal, { money, longDate }, { pay, terms: "", rating, sitePhoto })}
+      view={buildPortalView(publicId, proposal, { money, longDate }, { pay, terms: "", rating, pictures })}
     />
   );
 }

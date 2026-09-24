@@ -1265,6 +1265,7 @@ body:has(.jf-mobile-proposal-client)::before { content: none; }
   overflow: hidden;
   background: var(--paper-deep);
 }
+.jf-mobile-proposal-client .mpc-site-frame { position: relative; }
 .jf-mobile-proposal-client .mpc-site img {
   display: block;
   width: 100%;
@@ -1272,6 +1273,11 @@ body:has(.jf-mobile-proposal-client)::before { content: none; }
   max-height: 320px;
   object-fit: cover;
 }
+.jf-mobile-proposal-client .mpc-site[data-picture="roof-photo"] img { aspect-ratio: 1 / 1; max-height: 390px; }
+.jf-mobile-proposal-client .mpc-site[data-picture="fence-plan"] img, .jf-mobile-proposal-client .mpc-site[data-picture="roof-plan"] img { object-fit: contain; max-height: none; background: #f7f6f2; }
+.jf-mobile-proposal-client .mpc-site-ov { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.jf-mobile-proposal-client .mpc-site-ov polygon { fill: rgba(24, 84, 160, 0.12); stroke: #ffd60a; stroke-width: 6; stroke-linejoin: round; vector-effect: non-scaling-stroke; paint-order: stroke; }
+.jf-mobile-proposal-client .mpc-site-facts { display: block; margin-top: 3px; letter-spacing: 0.06em; text-transform: none; color: var(--ink); }
 .jf-mobile-proposal-client .mpc-site figcaption {
   padding: 8px 12px;
   font-family: var(--font-mono);

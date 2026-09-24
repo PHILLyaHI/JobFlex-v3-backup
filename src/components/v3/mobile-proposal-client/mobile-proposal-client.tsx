@@ -345,16 +345,26 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
               </div>
             </div>
 
-            {/* THE CLIENT'S OWN HOUSE — the satellite photo of the measurement
-                this proposal was priced from, exactly as the desktop tree and
-                the PDF show it. It was missing here (owner, 2026-09-14). */}
-            {view.sitePhotoHref ? (
-              <figure className="mpc-site">
-                {/* eslint-disable-next-line @next/next/no-img-element -- streamed PNG from this app's own route; next/image adds nothing */}
-                <img src={view.sitePhotoHref} alt="Satellite view of your roof" loading="lazy" />
-                <figcaption>Your roof, as measured from the air</figcaption>
+            {/* THE CLIENT'S OWN JOB IN PICTURES — the fence's 3D and traced
+                layout, the roof from the air with the measured outline drawn
+                over it, exactly the set the desk page shows (2026-09-23). */}
+            {view.pictures.map((p) => (
+              <figure key={p.kind} className="mpc-site" data-picture={p.kind}>
+                <div className="mpc-site-frame">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- streamed from this app's own routes or Blob; next/image adds nothing */}
+                  <img src={p.src} alt={p.alt} loading="lazy" />
+                  {p.overlay ? (
+                    <svg className="mpc-site-ov" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+                      {p.overlay.map((pts, i) => <polygon key={i} points={pts} />)}
+                    </svg>
+                  ) : null}
+                </div>
+                <figcaption>
+                  {p.caption}
+                  {p.facts ? <span className="mpc-site-facts">{p.facts}</span> : null}
+                </figcaption>
               </figure>
-            ) : null}
+            ))}
 
             {/* HOW TO PAY — only once accepted. It used to live in the action
                 bar next to Decline, asking for money before the client had
