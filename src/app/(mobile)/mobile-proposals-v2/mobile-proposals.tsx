@@ -80,6 +80,7 @@ import {
   type TabKey,
 } from "./proposals-data";
 import { chainsOf, chained } from "@/components/v3/proposals-blueprint/proposals-data";
+import { clientProposalUrl, proposalTextMessage, smsHref } from "@/lib/proposalLink";
 
 /**
  * VIEWS — what the contractor checks after sending (owner, 2026-09-20). A
@@ -803,6 +804,9 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
     return [
       { act: "open", icon: "i-file", tone: styles.pmiBp, title: "Open proposal", sub: "Edit the full document" },
       { act: "public", icon: "i-arrow", title: "View public page", sub: "What the client sees" },
+      // The client's link, copied or handed to the phone's messages (2026-09-24).
+      { act: "copylink", icon: "i-out", title: "Copy client link", sub: "Paste it into a text" },
+      { act: "textlink", icon: "i-msg", title: "Text the link", sub: "Opens Messages with the link filled in" },
       { act: "dup", icon: "i-copy", title: "Duplicate", sub: "Copy into a new draft" },
       { act: "send", icon: "i-send", tone: styles.pmiSky, title: "Send to client",
         sub: p.clientEmail ?? "No email on the client record" },
@@ -835,6 +839,13 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
     setSheetId(null);
     if (act === "open") router.push(`/dashboard/proposals/${p.id}`);
     else if (act === "public") window.open(`/portal/q/${p.publicId}`, "_blank", "noopener,noreferrer");
+    else if (act === "copylink") {
+      const url = clientProposalUrl(p.publicId);
+      navigator.clipboard.writeText(url).then(
+        () => setNote({ tone: "ok", text: "Client link copied — paste it into a text." }),
+        () => setNote({ tone: "bad", text: `Couldn't copy. The link: ${url}` }),
+      );
+    } else if (act === "textlink") window.location.assign(smsHref(null, proposalTextMessage({ clientName: p.client, title: p.title, link: clientProposalUrl(p.publicId) })));
     else if (act === "dup") void runDuplicate(p);
     else if (act === "send") void runSend(p);
     else if (act === "remind") void runReminder(p, "");

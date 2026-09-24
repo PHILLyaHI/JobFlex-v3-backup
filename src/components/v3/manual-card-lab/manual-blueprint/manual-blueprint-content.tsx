@@ -56,7 +56,7 @@
 //   · `pdf` — the four page decisions, which describe the paper rather than the
 //     proposal.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { EstimateSeedStrip } from "@/components/v3/estimate-seed-strip";
@@ -90,6 +90,7 @@ import {
 } from "../manual-focus/manual-focus-math";
 import styles from "./manual-blueprint.module.css";
 import { Btn, Card, Field, Group, Pair, TextArea, TextField, cx } from "./bp-ui";
+import { clientProposalUrl, proposalTextMessage, smsHref } from "@/lib/proposalLink";
 import { ClientField, ProjectField, type NewClientInput } from "./bp-pickers";
 // The line table is the lines-v2 block — the reference format: one entry row
 // per line plus a full-width material/labor split beneath it, with the three
@@ -129,6 +130,8 @@ import { useHandheld } from "./use-handheld";
  * would have to decide between at render time.
  */
 type Note = { tone: "idle" | "live" | "ok" | "err"; text: string };
+/** The origin never changes while the page is open: nothing to subscribe to. */
+const noSubscribe = () => () => {};
 
 const NOTE_NEW: Note = { tone: "idle", text: "Nothing saved yet" };
 const NOTE_EDITED: Note = { tone: "live", text: "Edited — not saved" };
@@ -237,6 +240,11 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
   // from the first save otherwise, so every later write in the same session
   // UPDATES that row rather than creating a second one.
   const [savedId, setSavedId] = useState<string | null>(data.proposal?.id ?? null);
+  /** The client's page exists once the proposal is saved — the link to copy or text (2026-09-24). */
+  const [publicId, setPublicId] = useState<string | null>(data.proposal?.publicId ?? null);
+  // The page's own host, for the link shown and copied: "" on the server and
+  // on the first client paint (so they agree), the real origin right after.
+  const origin = useSyncExternalStore(noSubscribe, () => window.location.origin, () => "");
   const [identity, setIdentity] = useState<SheetIdentity>(data.identity);
   const [busy, setBusy] = useState<null | "save" | "send">(null);
 
@@ -499,6 +507,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
     try {
       const res = await saveProposal(payloadFromDraft(d, savedId ?? undefined));
       setSavedId(res.id);
+      setPublicId(res.publicId);
       // What was saved is what the sheet now holds: the baked costs, the two
       // sliders at zero. Merged, not replaced, so an edit made while the save
       // was in flight is not thrown away.
@@ -898,6 +907,38 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
 
         {/* 10 ------------------------------------------------------- */}
         <Card num="10" title="Their copy" id="q-10" sheet>
+          {publicId ? (
+            <div className={styles.shareRow} data-client-link>
+              <Btn
+                icon="link"
+                title="Copy the client's link to paste into a text"
+                onClick={() => {
+                  const url = clientProposalUrl(publicId, origin || undefined);
+                  navigator.clipboard.writeText(url).then(
+                    () => setNote({ tone: "ok", text: "Client link copied — paste it into a text." }),
+                    () => setNote({ tone: "err", text: `Couldn't copy. The link: ${url}` }),
+                  );
+                }}
+              >
+                Copy client link
+              </Btn>
+              <Btn
+                icon="phone"
+                title="Opens your messages with the link filled in"
+                onClick={() => {
+                  window.location.assign(
+                    smsHref(
+                      contactOf(clients, draft.client).phone,
+                      proposalTextMessage({ org: identity.orgName, clientName, title: draft.title, link: clientProposalUrl(publicId, origin || undefined) }),
+                    ),
+                  );
+                }}
+              >
+                Text the link
+              </Btn>
+              <span className={styles.shareNote}>{clientProposalUrl(publicId, origin).replace(/^https?:\/\//, "")}</span>
+            </div>
+          ) : null}
           <TheirCopy
             identity={identity}
             title={draft.title}

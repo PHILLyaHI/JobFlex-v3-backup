@@ -1765,6 +1765,9 @@
    THEIR COPY — the printed sheet
    ============================================================ */
 
+/* The client's link above their copy: copy it, or hand it to Messages (2026-09-24). */
+:global(.jf-blueprint) .shareRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+:global(.jf-blueprint) .shareNote { flex: 1 1 100%; font-family: var(--font-mono); font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
 :global(.jf-blueprint) .printCaption {
   font-family: var(--font-mono);
   font-size: 10px;
