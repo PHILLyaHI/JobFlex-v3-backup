@@ -55,6 +55,7 @@ export type KeyConnected = Extract<KeyConnectResult, { ok: true }>;
 
 export interface ProviderKeyFormProps {
   provider: KeyProvider;
+  showDescription?: boolean;
   variant?: Variant;
   /** PLATFORM_FEE_BPS / 100, for the "billed on your invoice" note. */
   feePct: number;
@@ -64,7 +65,7 @@ export interface ProviderKeyFormProps {
   onDone?: (result: KeyConnected) => void;
 }
 
-export function ProviderKeyForm({ provider, variant = "desk", feePct, onCancel, onDone }: ProviderKeyFormProps) {
+export function ProviderKeyForm({ provider, showDescription = true, variant = "desk", feePct, onCancel, onDone }: ProviderKeyFormProps) {
   const router = useRouter();
   const c = CLS[variant];
   const copy = KEY_FORMS[provider];
@@ -104,7 +105,7 @@ export function ProviderKeyForm({ provider, variant = "desk", feePct, onCancel, 
 
   return (
     <form className={c.form} onSubmit={(e) => void submit(e)}>
-      <div className={c.note}>{copy.desc}</div>
+      {showDescription && <div className={c.note}>{copy.desc}</div>}
       <label className={c.fld}>
         <span className={c.lbl}>{copy.label}</span>
         <input

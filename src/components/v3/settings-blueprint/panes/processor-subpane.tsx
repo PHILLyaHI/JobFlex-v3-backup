@@ -13,6 +13,7 @@ import {
 } from "../settings-data";
 import { CopyBox, Toggle, actionError } from "../ui";
 import { ProviderKeyForm } from "./stripe-key-form";
+import { ProviderKeyGuide } from "./provider-key-guide";
 import styles from "../meta-connection.module.css";
 import layout from "./integration-cards.module.css";
 
@@ -89,8 +90,9 @@ export function ProcessorSubpane({ d, conns, mobile = false }: {
             {keyOffered && <button className={connectHref ? styles.button : primary} type="button" aria-expanded={keyOpen} aria-controls={keyId} onClick={() => setKeyOpen(value => !value)}><KeyRound size={18} aria-hidden="true" />{keyCopy.action.label}</button>}
           </div>}
         </div>}
+        {!connected && keyOffered && <ProviderKeyGuide provider={d.key} expanded={keyOpen} oauthAvailable={Boolean(connectHref)} />}
         {keyOpen && !connected && <div className={layout.keyForm} id={keyId}>
-          <ProviderKeyForm provider={d.key} variant={mobile ? "mobile" : "desk"} feePct={conns.platformFeePct} onCancel={() => setKeyOpen(false)} onDone={result => { if (result.webhook) setKeyOpen(false); }} />
+          <ProviderKeyForm provider={d.key} showDescription={false} variant={mobile ? "mobile" : "desk"} feePct={conns.platformFeePct} onCancel={() => setKeyOpen(false)} onDone={result => { if (result.webhook) setKeyOpen(false); }} />
         </div>}
         {viaKey && !webhookRegistered && <p className={styles.error} role="status">{keyCopy.webhookMissing}</p>}
         {err && <p className={styles.error} role="alert">{err}</p>}

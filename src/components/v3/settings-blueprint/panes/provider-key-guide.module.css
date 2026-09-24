@@ -1,0 +1,24 @@
+.guide { min-width: 0; border-block: 1px solid var(--ink-line); color: var(--ink); }
+.guide > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding-block: 12px; font: 700 14px/1.5 var(--font-sans); cursor: pointer; list-style: none; }
+.guide > summary::-webkit-details-marker { display: none; }
+.guide > summary:hover { color: var(--accent-ink); }
+.guide > summary:focus-visible, .steps a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.guide > summary svg { flex-shrink: 0; transition: transform 160ms var(--ease-out); }
+.guide[open] > summary svg { transform: rotate(180deg); }
+.body { display: grid; gap: 16px; padding-block: 4px 20px; }
+.guide .steps { display: grid; gap: 16px; margin: 0; padding-left: 24px; list-style: decimal; font: 400 14px/1.6 var(--font-sans); }
+.guide .steps > li { display: list-item; padding-left: 4px; min-width: 0; list-style: decimal; }
+.steps li::marker { color: var(--accent-ink); font-weight: 800; }
+.steps strong { font-weight: 700; }
+.steps a { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; color: var(--accent-ink); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.steps a svg { flex-shrink: 0; }
+.steps code { font: 12px/1.6 var(--font-mono); overflow-wrap: anywhere; }
+.permissions { width: 100%; margin-top: 12px; border-collapse: collapse; font-size: 13px; text-align: left; }
+.permissions caption { text-align: left; font-weight: 700; padding-bottom: 8px; }
+.permissions th, .permissions td { padding: 8px; border-bottom: 1px solid var(--ink-line); }
+.permissions th { font-weight: 500; }
+.permissions thead { background: var(--paper); }
+.permissions thead th { font-weight: 700; }
+.permissions td { color: var(--accent-ink); font-weight: 700; white-space: nowrap; }
+.guide .note { margin: 0; color: var(--ink-muted); font: 400 13px/1.5 var(--font-sans); }
+@media (prefers-reduced-motion: reduce) { .guide > summary svg { transition: none; } }
