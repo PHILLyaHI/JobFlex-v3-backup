@@ -1,0 +1,21 @@
+{
+ "url": "http://localhost:3100/dashboard/proposals/cmug00kkd000710ynpit4bli9",
+ "proposalId": "cmug00kkd000710ynpit4bli9",
+ "cardBox": {
+  "x": 300,
+  "y": 272.859375,
+  "width": 1060,
+  "height": 688.359375
+ },
+ "rowsMetal": [
+  "01\nROOF SYSTEM\nStanding-seam metal · 8% waste",
+  "02\nUNDERLAYMENT\nPremium synthetic · high-temp · ice & water eaves + valleys",
+  "03\nEDGES\nEave 98 · rake 83 · ridge 49 ft · drip edge · fascia 98 ft · gutters reset\nESTIMATED",
+  "04\nFLASHING\n5 valleys · 3 pipe boots · 1 chimney",
+  "05\nVENTS\n49 ft ridge vent · 16 × soffit / intake vent\nBALANCED",
+  "06\nTEAR-OFF & EXTRAS\nTear-off 1 layer · cleanup $250",
+  "07\nCOMMERCIAL JOB\nResidential pricing",
+  "08\nCUSTOM LINES\nNone"
+ ],
+ "hasMetal": true
+}

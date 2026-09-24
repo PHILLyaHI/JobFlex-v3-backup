@@ -1,0 +1,1 @@
+Console RpcErrorThe caller does not have permissionCall Stack 13Show 12 ignore-listed frame(s)new Promise<anonymous>

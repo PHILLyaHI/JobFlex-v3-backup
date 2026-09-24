@@ -1,0 +1,20 @@
+BUTTON.vsw-btn.active :: Roof package
+BUTTON.btn.btn-ghost.bec-btn :: Review 26 lines
+BUTTON.btn.btn-primary.bec-btn.bec-btn--stamp :: Convert to proposal
+BUTTON.bec-row-btn :: 01Roof systemArchitectural shingle · 30-yr · 12% w
+BUTTON.bec-sel-btn :: Roof type
+BUTTON.bec-sel-btn :: System
+BUTTON.bec-link.bec-link--under :: Add roof type
+BUTTON.bec-sel-btn :: Waste
+INPUT.est-in :: Material rate
+INPUT.est-in :: Install labor rate
+INPUT.est-in :: Hip & ridge cap rate
+BUTTON.bec-row-btn :: 02UnderlaymentSynthetic underlayment · ice & water
+BUTTON.bec-row-btn :: 03EdgesEave 98 · rake 83 · ridge 49 ft · drip edge
+BUTTON.bec-row-btn :: 04Flashing5 valleys · 3 pipe boots · 1 chimney
+BUTTON.bec-row-btn :: 05Vents49 ft ridge vent · 16 × soffit / intake ven
+BUTTON.bec-row-btn :: 06Tear-off & extrasTear-off 1 layer · cleanup $250
+BUTTON.bec-row-btn :: 07Commercial jobResidential pricing
+BUTTON.bec-row-btn :: 08Custom linesNone
+BUTTON.btn.btn-ghost.bec-btn.bec-btn--sm :: Save as defaults
+BUTTON.btn.btn-primary.bec-btn.bec-btn--stamp :: Convert to proposal

@@ -1,0 +1,7 @@
+<!doctype html><html><body style="margin:0;background:#000">
+<script>
+const name = new URLSearchParams(location.search).get("c") || "a";
+const grid = document.createElement("div"); grid.style.cssText="display:grid;grid-template-columns:repeat(4,256px);width:1024px";
+for (let dy=0;dy<4;dy++) for (let dx=0;dx<4;dx++){ const img=document.createElement("img"); img.src=`c2_${dx}_${dy}.jpg`; img.width=256; img.height=256; img.style.display="block"; grid.appendChild(img); }
+document.body.appendChild(grid);
+</script></body></html>
