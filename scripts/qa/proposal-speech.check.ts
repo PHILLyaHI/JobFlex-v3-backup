@@ -1,10 +1,13 @@
-// "Listen to this proposal" (2026-09-23): the words the audio reads, for a
-// roof, a fence, an HVAC and a Smart proposal. Pure, no model, no DB.
+// "Listen to this proposal" (2026-09-23, forty-second brief 2026-09-24): the
+// words the audio reads, for a roof, a fence, an HVAC and a Smart proposal.
+// Pure, no model, no DB.
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/proposal-speech.check.ts
 import {
+  briefSentence,
   buildProposalSpeech,
   MAX_SPEECH_CHARS,
   openingSentences,
+  shortName,
   speechHash,
   speechInputFromRow,
   speechSeconds,
@@ -22,6 +25,7 @@ const check = (name: string, ok: boolean, detail = "") => {
   console.log(`${ok ? "ok  " : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
 };
 const now = new Date("2026-09-23T12:00:00Z");
+const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
 
 const roof: SpeechInput = {
   trade: "roofing",
@@ -37,7 +41,7 @@ const roof: SpeechInput = {
   showScope: true,
   lineItems: [
     { name: "Tear-off & disposal", quantity: 24, measurementType: "SQUARE", total: 2400 },
-    { name: 'Architectural shingles · 30-yr', quantity: 24, measurementType: "SQUARE", total: 6480 },
+    { name: "Architectural shingles · 30-yr", quantity: 24, measurementType: "SQUARE", total: 6480 },
     { name: "Synthetic underlayment", quantity: 2400, measurementType: "SQFT", total: 720 },
     { name: "Ridge vent", quantity: 40, measurementType: "LINEAR_FT", total: 480 },
     { name: "Pipe boots", quantity: 3, measurementType: "UNIT", total: 180 },
@@ -55,27 +59,26 @@ const roof: SpeechInput = {
 };
 const s1 = buildProposalSpeech(roof);
 console.log("\n--- roof ---\n" + s1 + "\n");
-check("the opener names the client, the trade and the company, and promises a length",
-  s1.startsWith("Hi Rick. Here's your roofing proposal from Ridgeline Roofing, in about"), s1.slice(0, 90));
-check("the street line is read, the ZIP is not", s1.includes("It's for 4567 Rainier Ave S.") && !s1.includes("98118"));
-check("the title is read with its dash spoken as a pause", s1.includes("The job: Roof replacement, architectural shingles."));
-check("the scope's opening is read, the 'Please note' block is not",
-  s1.includes("Tear off one layer of 3-tab shingles from the 24-square main roof") && !s1.includes("Rotten decking"));
-check("the three biggest items are read with quantity, unit and price, biggest first",
-  s1.includes("It's priced in 5 items. The biggest are: Architectural shingles, 30-yr, 24 squares, at $6,480; Tear-off and disposal, 24 squares, at $2,400; and Synthetic underlayment, 2,400 square feet, at $720."), s1);
-check("the total is exact to the cent, and the tax is named", s1.includes("Your total comes to $11,306.52.") && s1.includes("That includes $1,046.52 in sales tax."));
-check("percent stages are read as dollars of the total", s1.includes("Payment is in 2 steps: Deposit, $3,391.96; and Final payment, $7,914.56."), s1);
-check("the price holds until the date, and the phone is dictated in groups",
-  s1.includes("This price holds until October 15.") && s1.includes("Call Ridgeline Roofing at 2 0 6, 5 5 5, 0 1 0 0."));
-check("an open proposal ends with what to do when parked", s1.endsWith("When you're parked, open the link to see every line, and accept online."));
+const p1 = s1.split("\n\n");
+check("six short paragraphs, a pause between each", p1.length === 6, `${p1.length} paragraphs`);
+check("the opener: who it is from and what this is", p1[0] === "Hi Rick, this is Ridgeline Roofing with a quick summary of your roofing proposal.", p1[0]);
+check("the job in one breath: the street, the title, one sentence of the scope; the note block stays on the page",
+  p1[1] === "It's for 4567 Rainier Ave S: roof replacement, architectural shingles. Tear off one layer of 3-tab shingles from the 24-square main roof and haul it away." && !s1.includes("Rotten decking") && !s1.includes("98118"), p1[1]);
+check("the main items are named, biggest first, without prices",
+  p1[2] === "It covers 5 items; the main ones are architectural shingles, tear-off and disposal, and synthetic underlayment.", p1[2]);
+check("the total exact to the cent, with the tax", p1[3] === "Your total comes to $11,306.52, including $1,046.52 in sales tax.", p1[3]);
+check("two stages as dollars, and how long the price holds",
+  p1[4] === "Payment is in two steps: deposit, $3,391.96, then final payment, $7,914.56. This price is good through October 15.", p1[4]);
+check("the phone in digit groups, then what to do when parked",
+  p1[5] === "Questions? Call us at 2 0 6, 5 5 5, 0 1 0 0. When you're parked, open the link to see every line and accept online.", p1[5]);
+check("about forty seconds", words(s1) >= 80 && words(s1) <= 125 && speechSeconds(s1) >= 30 && speechSeconds(s1) <= 48, `${words(s1)} words, ${speechSeconds(s1)} s`);
 check("no inch marks, ampersands or dashes survive for the voice", !/[&×—–"″]/.test(s1));
-check("well under the model's input cap, and about a minute long", s1.length < MAX_SPEECH_CHARS && speechSeconds(s1) >= 40 && speechSeconds(s1) <= 100, `${s1.length} chars, ${speechSeconds(s1)} s`);
 check("the same words hash the same; a price change moves the hash",
   speechHash(s1) === speechHash(buildProposalSpeech(roof)) && speechHash(s1) !== speechHash(buildProposalSpeech({ ...roof, total: 11500 })) && /^[0-9a-f]{16}$/.test(speechHash(s1)));
 
 const fence: SpeechInput = {
   trade: "fence",
-  title: 'Cedar privacy fence — 6\' × 120 lf',
+  title: "Cedar privacy fence — 6' × 120 lf",
   status: "ACCEPTED",
   clientName: "Maria Lopez",
   orgName: "Optima Fence & Deck",
@@ -103,14 +106,16 @@ const fence: SpeechInput = {
 };
 const s2 = buildProposalSpeech(fence);
 console.log("--- fence ---\n" + s2 + "\n");
-check("a fence proposal says so, and speaks feet, inches and grades",
-  s2.includes("your fence proposal from Optima Fence and Deck") && s2.includes("The job: Cedar privacy fence, 6 foot by 120 linear feet.") && s2.includes("2 by 4 inch rails on steel posts") && s2.includes("number 1 tight-knot cedar"), s2);
-check("three items or fewer are all read, and the fence note stays on the page", s2.includes("The work is priced in 3 items: Fence materials, number 1 tight-knot cedar, 120 linear feet, at $4,200;") && !s2.includes("clear path"));
-check("a discount and the approved change orders are both said",
-  s2.includes("A $300 discount is already in that price.") && s2.includes("With the approved change orders, the contract total is $7,950."));
-check("what was paid and what is still due, against the contract total", s2.includes("$2,000 has been paid so far; $5,950 is still due."), s2);
-check("an expired price asks for a call; an accepted proposal says thank you",
-  s2.includes("The price was quoted through August 1, so please call to confirm it still stands.") && s2.includes("You've already accepted this proposal. Thank you."));
+const p2 = s2.split("\n\n");
+check("a fence proposal says so, and speaks feet and inches",
+  p2[0] === "Hi Maria, this is Optima Fence and Deck with a quick summary of your fence proposal." && p2[1] === "It's for 8232 195th Pl SW: cedar privacy fence, 6 foot by 120 linear feet. Build 120 linear feet of 6 foot cedar privacy fence with 2 by 4 inch rails on steel posts.", p2[1]);
+check("three items or fewer are all named, short names only; the fence note stays on the page",
+  p2[2] === "It covers fence materials, installation labor, and walk gate." && !s2.includes("clear path"), p2[2]);
+check("no tax line at zero; a discount and the approved change orders are both said",
+  p2[3] === "Your total comes to $7,350. A $300 discount is already in that price. With the approved change orders, the contract total is $7,950.", p2[3]);
+check("what was paid and what is still due, and an expired price asks for a call",
+  p2[4] === "Payment is in two steps: deposit, $2,000, then on completion, $5,350. $2,000 has been paid so far; $5,950 is still due. The price was quoted through August 1, so please call to confirm it still stands.", p2[4]);
+check("an accepted proposal says thank you", p2[5].endsWith("You've already accepted this proposal. Thank you!"), p2[5]);
 
 const hvac: SpeechInput = {
   trade: "hvac",
@@ -120,7 +125,7 @@ const hvac: SpeechInput = {
   orgName: "Ridgeline Roofing",
   orgPhone: null,
   address: null,
-  description: "Replace the 18-year-old 3-ton split system with a 3-ton 16 SEER2 heat pump and matching air handler.",
+  description: "Replace the 18-year-old 3-ton split system with a 3-ton 16 SEER2 heat pump and matching air handler, reusing the line set after a pressure test, with a new pad, disconnect and thermostat.",
   scopeOfWork: "hidden scope",
   showScope: false,
   lineItems: [{ name: "3-ton heat pump system, installed", quantity: 1, measurementType: "LUMP_SUM", total: 12800 }],
@@ -134,9 +139,11 @@ const hvac: SpeechInput = {
 };
 const s3 = buildProposalSpeech(hvac);
 console.log("--- hvac ---\n" + s3 + "\n");
-check("no name, no address, no phone: 'Hi there', the description stands in for a hidden scope",
-  s3.startsWith("Hi there. Here's your HVAC proposal from Ridgeline Roofing") && s3.includes("Replace the 18-year-old 3-ton split system") && !s3.includes("hidden scope") && !s3.includes("Call"), s3);
-check("one item, one payment, paid in full", s3.includes("The work is priced in one item: 3-ton heat pump system, installed at $12,800.") && s3.includes("Payment: Full payment, $12,800.") && s3.includes("It is paid in full. Thank you.") && s3.endsWith("This proposal is accepted and paid in full. Thank you."));
+const p3 = s3.split("\n\n");
+check("no name, no address, no phone: 'Hi there', the job by title, the description stands in for a hidden scope and is cut at a clause",
+  p3[0] === "Hi there, this is Ridgeline Roofing with a quick summary of your HVAC proposal." && p3[1] === "The job: Heat pump replacement. Replace the 18-year-old 3-ton split system with a 3-ton 16 SEER2 heat pump and matching air handler." && !s3.includes("hidden scope") && !s3.includes("Call"), p3[1]);
+check("one item, one payment, paid in full",
+  p3[2] === "It covers 3-ton heat pump system, installed." && p3[4] === "Payment: full payment, $12,800. It is paid in full. Thank you." && p3[5] === "This proposal is accepted and paid in full. Thank you!", s3);
 
 const smart: SpeechInput = {
   trade: null,
@@ -149,7 +156,7 @@ const smart: SpeechInput = {
   description: null,
   scopeOfWork: null,
   showScope: true,
-  lineItems: Array.from({ length: 40 }, (_, i) => ({ name: `Step ${i + 1} of the remodel with a fairly long description of the work involved`, quantity: 1, measurementType: "UNIT", total: 500 + i })),
+  lineItems: Array.from({ length: 40 }, (_, i) => ({ name: `Step ${i + 1} of the remodel`, quantity: 1, measurementType: "UNIT", total: 500 + i })),
   subtotal: 20780,
   discountTotal: 0,
   taxTotal: 0,
@@ -160,12 +167,12 @@ const smart: SpeechInput = {
 };
 const s4 = buildProposalSpeech(smart);
 console.log("--- smart ---\n" + s4 + "\n");
-check("a Smart Proposal is just 'your proposal'; forty items read as the three biggest; six stages read as a count",
-  s4.includes("Here's your proposal from Acme Remodeling") && s4.includes("It's priced in 40 items. The biggest are: Step 40") && s4.includes("Payment is in 6 steps, starting with Stage 1, $3,463.33."), s4);
-check("a leading +1 is dropped from the phone", s4.includes("at 2 0 6, 5 5 5, 0 1 9 9."));
+const p4 = s4.split("\n\n");
+check("a Smart Proposal is just 'your proposal'; forty items read as the three biggest; six stages read as a count; a leading +1 is dropped",
+  p4[0].endsWith("summary of your proposal.") && p4[2] === "It covers 40 items; the main ones are step 40 of the remodel, step 39 of the remodel, and step 38 of the remodel." && p4[4] === "Payment is in 6 steps, starting with stage 1, $3,463.33." && s4.includes("Call us at 2 0 6, 5 5 5, 0 1 9 9."), s4);
 
 check("a script past the cap is cut at a sentence",
-  buildProposalSpeech({ ...smart, scopeOfWork: ("A very long sentence without a period " + "x".repeat(200) + ", ").repeat(40) }).length <= MAX_SPEECH_CHARS);
+  buildProposalSpeech({ ...smart, title: ("A very long title without a period " + "x".repeat(200) + ", ").repeat(40) }).length <= MAX_SPEECH_CHARS);
 
 check("the row adapter takes the portal's row: job address first, contract with approved orders, hidden scope honoured",
   (() => {
@@ -184,10 +191,13 @@ check("spoken helpers: money, units, phone, text",
   spokenPhone("(206) 555-0100") === "2 0 6, 5 5 5, 0 1 0 0" && spokenPhone("12065550100") === "2 0 6, 5 5 5, 0 1 0 0" && spokenPhone("555-0100") === "555-0100" &&
   spokenText('2"×4" cedar rails, 6\' tall, 24 sq ft, #2 & better — 15% off') === "2 by 4 inch cedar rails, 6 foot tall, 24 square feet, number 2 and better, 15 percent off",
   spokenText('2"×4" cedar rails, 6\' tall, 24 sq ft, #2 & better — 15% off'));
-check("the opening of a scope stops at whole sentences, drops bullets",
+check("the opening of a scope stops at whole sentences and drops bullets; a brief is one sentence cut at a clause; short names stop at the dot",
   openingSentences("First sentence here. Second one is here too. Third sentence is long enough to push past the limit when it is added to the first two sentences of the text, so it stays out of the summary. Fourth.", 90) === "First sentence here. Second one is here too." &&
-  openingSentences("- bullet one.\n- bullet two.") === "bullet one. bullet two.");
-check("the device voice gets whole sentences", speechSentences(s1).length >= 10 && speechSentences(s1).every((x) => x.length < 400));
+  openingSentences("- bullet one.\n- bullet two.") === "bullet one. bullet two." &&
+  briefSentence("Tear off the old roof, install new underlayment and ice and water shield at every eave and valley, then lay thirty-year architectural shingles with new flashing at the chimney and the walls, and haul everything away. Second sentence.", 100) === "Tear off the old roof, install new underlayment and ice and water shield at every eave and valley." &&
+  shortName("Fence materials · #1 tight-knot cedar") === "Fence materials" && shortName("Ridge vent") === "Ridge vent",
+  briefSentence("Tear off the old roof, install new underlayment and ice and water shield at every eave and valley, then lay thirty-year architectural shingles with new flashing at the chimney and the walls, and haul everything away. Second sentence.", 100));
+check("the device voice gets whole sentences, never a paragraph break inside one", speechSentences(s1).length >= 8 && speechSentences(s1).every((x) => !x.includes("\n")));
 
 console.log(bad ? `\n${bad} check(s) FAILED` : "\nall checks passed");
 process.exit(bad ? 1 : 0);

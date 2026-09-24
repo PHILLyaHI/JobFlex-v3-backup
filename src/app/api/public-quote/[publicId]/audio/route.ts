@@ -3,14 +3,17 @@
 // The spoken summary of a proposal for the client portal's play button and
 // the contractor's "Listen" on the proposal line. Answers with the script
 // and, when a voice is configured, the URL of the MP3 read from it:
-//   { ok, script, seconds, url | null, mode: "audio" | "device" }
+//   { ok, script, seconds, url | null, mode: "audio" | "device", why? }
 // A cache hit is one read and no limits. A miss spends real money on a
 // public route, so only misses are rate-limited — and a limited or failed
-// miss still answers with the script, which the device reads itself.
+// miss still answers with the script, which the device reads itself, and
+// says why there is no file: "no-openai" (no key configured), "limited", or
+// "failed" (every voice model refused — see the server log).
 //
 // A client's play is written to the feed once every twelve hours
 // ("Rick listened to the proposal"); the company's own members listening
-// from the proposals page are not counted, like their own opens.
+// from the proposals page are not counted, like their own opens, and
+// neither is a `?probe=1` call from a check.
 
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
@@ -29,6 +32,7 @@ const GENERATE_TIMEOUT_MS = 40_000;
 export async function GET(req: Request, ctx: { params: Promise<{ publicId: string }> }) {
   const { publicId } = await ctx.params;
   if (!publicId || publicId.length < 3) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+  const probe = new URL(req.url).searchParams.get("probe") === "1";
   const row = await loadAudioRow({ publicId });
   if (!row || row.organization.deletedAt) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
 
@@ -46,13 +50,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ publicId: strin
 
   // Cache hit: the file was read from exactly these words.
   if (isAudioFresh(row, hash)) {
-    await noteListened(row, req);
+    if (!probe) await noteListened(row, req);
     return NextResponse.json({ ...base, url: row.audioUrl, mode: "audio" }, { headers });
   }
   // No voice configured: the device reads the script.
   if (!canSynthesize()) {
-    await noteListened(row, req);
-    return NextResponse.json({ ...base, url: null, mode: "device" }, { headers });
+    if (!probe) await noteListened(row, req);
+    return NextResponse.json({ ...base, url: null, mode: "device", why: "no-openai" }, { headers });
   }
   // Cache miss on a public route — per client and per proposal limits, and
   // a limited play still gets the script.
@@ -60,15 +64,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ publicId: strin
   const perIp = await rateLimitShared(`quote-audio:${ip}`, 12, HOUR);
   const perProposal = perIp.ok ? await rateLimitShared(`quote-audio-p:${publicId}`, 6, HOUR) : perIp;
   if (!perIp.ok || !perProposal.ok) {
-    await noteListened(row, req);
-    return NextResponse.json({ ...base, url: null, mode: "device", limited: true }, { headers });
+    if (!probe) await noteListened(row, req);
+    return NextResponse.json({ ...base, url: null, mode: "device", why: "limited" }, { headers });
   }
   const url = await Promise.race([
     generateProposalAudio(row, script, hash),
     new Promise<null>((resolve) => setTimeout(() => resolve(null), GENERATE_TIMEOUT_MS)),
   ]);
-  await noteListened(row, req);
-  return NextResponse.json({ ...base, url, mode: url ? "audio" : "device" }, { headers });
+  if (!probe) await noteListened(row, req);
+  return NextResponse.json(url ? { ...base, url, mode: "audio" } : { ...base, url: null, mode: "device", why: "failed" }, { headers });
 }
 
 /** The feed line for a client's play — not for the company's own members. */

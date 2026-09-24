@@ -185,25 +185,30 @@ export class ListenEngine {
       if (!el.ended) this.set({ status: "paused" });
     };
     el.onended = () => this.set({ status: "ended", progress: 1 });
-    el.onerror = () => {
-      // The file is gone or the network dropped it: the device reads instead.
-      if (this.sentences.length) {
-        this.audio = null;
-        this.set({ mode: "device" });
-        this.sentence = 0;
-        this.spokenChars = 0;
-        void this.speakFrom(0);
-      } else this.fail("Couldn't play the audio.");
-    };
+    // The file is gone, the network dropped it, or the browser refused it:
+    // the device reads instead. Both the element's error and the rejected
+    // play() can fire for one failure — the fallback runs once.
+    el.onerror = () => this.fallbackToDevice("Couldn't play the audio.");
     el.src = url;
     this.mediaSession(el);
-    void el.play().catch(() => {
-      if (this.sentences.length) {
-        this.audio = null;
-        this.set({ mode: "device" });
-        void this.speakFrom(0);
-      } else this.fail("Tap play again to listen.");
-    });
+    void el.play().catch(() => this.fallbackToDevice("Tap play again to listen."));
+  }
+
+  private fallbackToDevice(orError: string): void {
+    if (this.destroyed || this.state.mode === "device") return;
+    if (!this.sentences.length) {
+      this.fail(orError);
+      return;
+    }
+    if (this.audio) {
+      this.audio.onerror = null;
+      this.audio.pause();
+      this.audio = null;
+    }
+    this.set({ mode: "device" });
+    this.sentence = 0;
+    this.spokenChars = 0;
+    void this.speakFrom(0);
   }
 
   private mediaSession(el: HTMLAudioElement): void {

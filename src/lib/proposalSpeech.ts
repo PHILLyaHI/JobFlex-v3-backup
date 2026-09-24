@@ -7,16 +7,17 @@
 // a model: a proposal is a money document, and the audio must say exactly
 // the numbers the page shows.
 //
-// Written for a windshield, not a screen: one pass, no scrollback, about a
-// minute of attention. So the script is ordered by what a driver needs:
-//   1. who it is from, and how long this takes
-//   2. which house, and what the job is — the title and the scope's opening
-//   3. the biggest items, each with its price
-//   4. the total, alone, so one number lands — then tax, discount, changes
+// Written for a windshield, not a screen: one pass, no scrollback, about
+// forty seconds (owner, 2026-09-24: "just brief about the estimate and
+// totals"). Six short paragraphs, and the voice pauses between them:
+//   1. who it is from, and what this is
+//   2. which house, and the job in one breath — the title and one sentence
+//   3. the main items, named
+//   4. the total with the tax — then a discount, the contract total
 //   5. how the payment is split, and how long the price holds
 //   6. what to do: call, or open the link when parked
-// Deliberately NOT spoken: every line, the terms, the full scope. That is
-// what the link is for.
+// Deliberately NOT spoken: every line, item prices, the terms, the full
+// scope. That is what the link is for.
 //
 // The hash of the script is the audio cache key (lib/proposalAudio): the MP3
 // is made again only when these words change — a price edit, a discount, an
@@ -254,19 +255,23 @@ export function speechSeconds(script: string): number {
  * SUMMARY_CHARS. Bullets and the fence package's "Please note:" block are
  * left for the page; a single very long sentence is cut at a comma.
  */
-export function openingSentences(text: string | null | undefined, max = SUMMARY_CHARS): string {
-  const clean = (text ?? "")
+/** The sentences of a scope or description, bullets stripped, the fence
+ *  package's "Please note:" block and everything under it left on the page. */
+function sentencesOf(text: string | null | undefined): string[] {
+  return (text ?? "")
     .replace(/\r/g, "")
-    // The fence package's "Please note:" block and anything under it stay on the page.
     .replace(/\bplease note:?[\s\S]*$/i, "")
     .split("\n")
     .map((l) => l.replace(/^\s*[-*•·]\s*/, "").trim())
-    .filter(Boolean);
-  const sentences = clean
+    .filter(Boolean)
     .join(" ")
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+export function openingSentences(text: string | null | undefined, max = SUMMARY_CHARS): string {
+  const sentences = sentencesOf(text);
   const out: string[] = [];
   let len = 0;
   for (const s of sentences) {
@@ -289,100 +294,117 @@ function endsSentence(s: string): string {
   return /[.!?]$/.test(t) ? t : `${t}.`;
 }
 
-function listWords(parts: string[]): string {
-  if (parts.length <= 1) return parts.join("");
-  if (parts.length === 2) return `${parts[0]}; and ${parts[1]}`;
-  return `${parts.slice(0, -1).join("; ")}; and ${parts[parts.length - 1]}`;
-}
-
 function installmentDollars(it: SpeechInstallment, total: number): number {
   return Math.round((it.isPercent ? (total * it.amount) / 100 : it.amount) * 100) / 100;
 }
 
-/** The spoken script for one proposal. Deterministic for the same input. */
+/** The first sentence of a scope, cut at a clause when it runs long. */
+export function briefSentence(text: string | null | undefined, max = 140): string {
+  const first = sentencesOf(text)[0] ?? "";
+  if (first.length <= max) return first;
+  const cut = Math.max(first.lastIndexOf(",", max), first.lastIndexOf(";", max), first.lastIndexOf(" and ", max), first.lastIndexOf(" with ", max));
+  const short = (cut > max / 2 ? first.slice(0, cut) : first.slice(0, max)).trim();
+  return /[.!?]$/.test(short) ? short : `${short}.`;
+}
+
+/** "Fence materials · #1 tight-knot cedar" → "Fence materials". */
+export function shortName(name: string): string {
+  return name.split(/\s+[·—–|]\s+/)[0]?.trim() || name.trim();
+}
+
+/** "Tear-off" → "tear-off"; "HVAC tune-up" stays. */
+function lowerFirst(s: string): string {
+  return s.length > 1 && s[1] === s[1].toLowerCase() && s[1] !== s[1].toUpperCase() ? s[0].toLowerCase() + s.slice(1) : s;
+}
+
+function andList(parts: string[]): string {
+  if (parts.length <= 1) return parts.join("");
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+}
+
+/**
+ * The spoken script for one proposal — about forty seconds, in paragraphs
+ * the voice pauses between. Deterministic for the same input.
+ */
 export function buildProposalSpeech(input: SpeechInput): string {
   const now = input.now ?? new Date();
   const first = (input.clientName ?? "").trim().split(/\s+/)[0] || "there";
   const org = (input.orgName ?? "").trim() || "your contractor";
   const trade = tradeWord(input.trade);
-  const parts: string[] = [];
+  const status = input.status.toUpperCase();
+  const paragraphs: string[] = [];
 
-  /* ---- 2. which house, and what the job is ---- */
+  /* ---- 1. who, and what this is ---- */
+  paragraphs.push(`Hi ${first}, this is ${org} with a quick summary of your ${trade ? `${trade} ` : ""}proposal.`);
+
+  /* ---- 2. the job in one breath: the house, the title, one sentence of the scope ---- */
   const street = input.address ? spokenAddress(input.address) : "";
-  if (street) parts.push(`It's for ${street}.`);
   const title = spokenText(input.title.trim());
-  if (title) parts.push(`The job: ${endsSentence(title)}`);
-  const summary = openingSentences(input.showScope && input.scopeOfWork?.trim() ? input.scopeOfWork : input.description);
-  if (summary && summary.toLowerCase() !== title.toLowerCase()) parts.push(endsSentence(spokenText(summary)));
+  const summary = briefSentence(input.showScope && input.scopeOfWork?.trim() ? input.scopeOfWork : input.description);
+  const job: string[] = [];
+  if (title) job.push(street ? `It's for ${street}: ${endsSentence(lowerFirst(title))}` : `The job: ${endsSentence(title)}`);
+  else if (street) job.push(`It's for ${street}.`);
+  if (summary && summary.toLowerCase() !== title.toLowerCase()) job.push(endsSentence(spokenText(summary)));
+  if (job.length) paragraphs.push(job.join(" "));
 
-  /* ---- 3. the biggest items, each with its price ---- */
+  /* ---- 3. the main items, named ---- */
   const priced = input.lineItems.filter((l) => l.name.trim() && Number.isFinite(l.total) && l.total > 0);
   if (priced.length) {
-    const top = [...priced].sort((a, b) => b.total - a.total).slice(0, TOP_ITEMS);
-    const said = top.map((l) => {
-      const unit = spokenUnit(l.measurementType, l.quantity);
-      const qty = l.quantity > 1 && unit ? `, ${spokenQuantity(l.quantity)} ${unit},` : "";
-      return `${spokenText(l.name)}${qty} at ${spokenMoney(l.total)}`;
-    });
-    parts.push(
-      priced.length <= TOP_ITEMS
-        ? `The work is priced in ${priced.length === 1 ? "one item" : `${priced.length} items`}: ${listWords(said)}.`
-        : `It's priced in ${priced.length} items. The biggest are: ${listWords(said)}.`,
-    );
+    const top = [...priced].sort((a, b) => b.total - a.total).slice(0, TOP_ITEMS).map((l) => lowerFirst(spokenText(shortName(l.name))));
+    paragraphs.push(priced.length <= TOP_ITEMS ? `It covers ${andList(top)}.` : `It covers ${priced.length} items; the main ones are ${andList(top)}.`);
   }
 
-  /* ---- 4. the number that matters, on its own ---- */
-  if (input.total > 0) parts.push(`Your total comes to ${spokenMoney(input.total)}.`);
-  if (input.taxTotal > 0) parts.push(`That includes ${spokenMoney(input.taxTotal)} in sales tax.`);
-  if (input.discountTotal > 0) parts.push(`A ${spokenMoney(input.discountTotal)} discount is already in that price.`);
+  /* ---- 4. the money ---- */
+  const money: string[] = [];
+  if (input.total > 0) {
+    money.push(`Your total comes to ${spokenMoney(input.total)}${input.taxTotal > 0 ? `, including ${spokenMoney(input.taxTotal)} in sales tax` : ""}.`);
+  }
+  if (input.discountTotal > 0) money.push(`A ${spokenMoney(input.discountTotal)} discount is already in that price.`);
   const contract = input.contractTotal != null && Math.abs(input.contractTotal - input.total) >= 0.005 ? input.contractTotal : null;
-  if (contract != null) parts.push(`With the approved change orders, the contract total is ${spokenMoney(contract)}.`);
+  if (contract != null) money.push(`With the approved change orders, the contract total is ${spokenMoney(contract)}.`);
+  if (money.length) paragraphs.push(money.join(" "));
   const owedOn = contract ?? input.total;
 
   /* ---- 5. the payment, and how long the price holds ---- */
+  const pay: string[] = [];
   const stages = input.installments.filter((i) => i.label.trim());
-  if (stages.length === 1) {
-    parts.push(`Payment: ${spokenText(stages[0].label)}, ${spokenMoney(installmentDollars(stages[0], input.total))}.`);
-  } else if (stages.length > 1 && stages.length <= 4) {
-    const said = stages.map((it) => `${spokenText(it.label)}, ${spokenMoney(installmentDollars(it, input.total))}`);
-    parts.push(`Payment is in ${stages.length} steps: ${listWords(said)}.`);
-  } else if (stages.length > 4) {
-    parts.push(`Payment is in ${stages.length} steps, starting with ${spokenText(stages[0].label)}, ${spokenMoney(installmentDollars(stages[0], input.total))}.`);
-  }
+  const dollars = (it: SpeechInstallment) => spokenMoney(installmentDollars(it, input.total));
+  const label = (it: SpeechInstallment) => lowerFirst(spokenText(it.label));
+  if (stages.length === 1) pay.push(`Payment: ${label(stages[0])}, ${dollars(stages[0])}.`);
+  else if (stages.length === 2) pay.push(`Payment is in two steps: ${label(stages[0])}, ${dollars(stages[0])}, then ${label(stages[1])}, ${dollars(stages[1])}.`);
+  else if (stages.length > 2) pay.push(`Payment is in ${stages.length} steps, starting with ${label(stages[0])}, ${dollars(stages[0])}.`);
   const paid = stages
     .filter((i) => (i.status ?? "").toUpperCase() === "PAID")
     .reduce((s, i) => s + (i.paidAmount ?? installmentDollars(i, input.total)), 0);
   if (paid > 0) {
     const owed = Math.max(0, Math.round((owedOn - paid) * 100) / 100);
-    parts.push(owed > 0 ? `${spokenMoney(paid)} has been paid so far; ${spokenMoney(owed)} is still due.` : `It is paid in full. Thank you.`);
+    pay.push(owed > 0 ? `${spokenMoney(paid)} has been paid so far; ${spokenMoney(owed)} is still due.` : `It is paid in full. Thank you.`);
   }
   if (input.validUntil) {
     const until = new Date(input.validUntil);
     const when = spokenDate(until, now);
     if (when) {
-      parts.push(
+      pay.push(
         until.getTime() < now.getTime() - 86_400_000
           ? `The price was quoted through ${when}, so please call to confirm it still stands.`
-          : `This price holds until ${when}.`,
+          : `This price is good through ${when}.`,
       );
     }
   }
+  if (pay.length) paragraphs.push(pay.join(" "));
 
   /* ---- 6. what to do, hands on the wheel ---- */
-  const status = input.status.toUpperCase();
+  const close: string[] = [];
   const phone = (input.orgPhone ?? "").trim();
-  if (phone) parts.push(`Questions? Call ${org} at ${spokenPhone(phone)}.`);
-  if (status === "PAID") parts.push("This proposal is accepted and paid in full. Thank you.");
-  else if (status === "ACCEPTED" || status === "COMPLETED") parts.push("You've already accepted this proposal. Thank you.");
-  else if (status === "DECLINED") parts.push("This proposal is marked as declined. If you'd like to revisit it, just call.");
-  else parts.push("When you're parked, open the link to see every line, and accept online.");
+  if (phone) close.push(`Questions? Call us at ${spokenPhone(phone)}.`);
+  if (status === "PAID") close.push("This proposal is accepted and paid in full. Thank you!");
+  else if (status === "ACCEPTED" || status === "COMPLETED") close.push("You've already accepted this proposal. Thank you!");
+  else if (status === "DECLINED") close.push("This proposal is marked as declined. If you'd like to revisit it, just call.");
+  else close.push("When you're parked, open the link to see every line and accept online.");
+  paragraphs.push(close.join(" "));
 
-  /* ---- 1. the opener, written last so it can promise a length ---- */
-  const body = parts.join(" ");
-  const words = body.split(/\s+/).filter(Boolean).length;
-  const opener = `Hi ${first}. Here's your ${trade ? `${trade} ` : ""}proposal from ${org}, in ${spokenDuration(words + 20)}, so you can keep driving.`;
-
-  let script = spokenText(`${opener} ${body}`);
+  let script = paragraphs.map((p) => spokenText(p)).filter(Boolean).join("\n\n");
   if (script.length > MAX_SPEECH_CHARS) {
     const cut = script.lastIndexOf(". ", MAX_SPEECH_CHARS);
     script = cut > 0 ? script.slice(0, cut + 1) : script.slice(0, MAX_SPEECH_CHARS);

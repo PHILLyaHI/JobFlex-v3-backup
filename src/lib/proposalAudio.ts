@@ -11,23 +11,35 @@
 //     any price change after sending — the cache key is the hash of the
 //     script, so a discount or an approved change order moves the hash and
 //     the next play is read again with the new numbers.
-// Without an OpenAI key or a Blob token there is no file: the route hands
-// the script to the browser, which reads it with the device's own voice.
+// The MP3 lives in the database (ProposalAudio, one row per proposal) and is
+// served by /api/public-quote/[publicId]/audio/file: production has no Blob
+// store (2026-09-24 — every play there was the phone's own voice), and a
+// forty-second file is a few hundred kilobytes. Without an OpenAI key there
+// is no file: the route hands the script to the browser, which reads it
+// with the device's own voice.
 
 import { db } from "@/lib/db";
 import { getOpenAI, isOpenAIEnabled } from "@/lib/sdk/openai";
-import { deleteBlob, isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { buildProposalSpeech, speechHash, speechInputFromRow, speechSeconds, type SpeechRowLike } from "@/lib/proposalSpeech";
 
-const TTS_VOICE = "nova";
+// THE VOICE (owner, 2026-09-24: "one level voice, no spaces — I need a better
+// girl speaking"). The steerable speech model with OpenAI's most natural
+// female voice and a delivery brief; the script's paragraph breaks are the
+// pauses. A project key that is not entitled to the model answers
+// model_not_found, and the HD classic model is next — never the flat tts-1
+// unless nothing else answers. The file's name carries which one read it.
 const TTS_INSTRUCTIONS =
-  "Warm, clear and unhurried: a contractor's office reading a written proposal to a homeowner who is listening in the car. " +
-  "Speak every dollar amount and every phone digit distinctly.";
-// The newer speech model takes instructions; a project key that is not
-// entitled to it answers model_not_found, and the classic tts-1 is next.
-const TTS_CANDIDATES: Array<{ model: string; instructions?: string }> = [
-  { model: "gpt-4o-mini-tts", instructions: TTS_INSTRUCTIONS },
-  { model: "tts-1" },
+  "Voice: a warm, friendly woman from the contractor's front office — confident, easygoing and genuinely helpful, " +
+  "like leaving a friendly voicemail for a customer. " +
+  "Pacing: conversational and unhurried, about 150 words a minute. Take a clear pause at every paragraph break, " +
+  "and a short breath before each dollar amount. " +
+  "Delivery: read dollar amounts slowly and clearly; read the phone digits one at a time, in their groups. " +
+  "Natural rises and falls, a smile in the voice — never flat, never robotic, never salesy.";
+const TTS_CANDIDATES: Array<{ model: string; voice: string; instructions?: string }> = [
+  { model: "gpt-4o-mini-tts", voice: "marin", instructions: TTS_INSTRUCTIONS },
+  { model: "gpt-4o-mini-tts", voice: "coral", instructions: TTS_INSTRUCTIONS },
+  { model: "tts-1-hd", voice: "nova" },
+  { model: "tts-1", voice: "nova" },
 ];
 
 /** What the loader selects — the speech input plus the cache columns. */
@@ -65,27 +77,34 @@ export function isAudioFresh(row: Pick<AudioRow, "audioUrl" | "audioScriptHash">
   return Boolean(row.audioUrl) && row.audioScriptHash === hash;
 }
 
-/** A voice model and a place to keep the file — else the device reads. */
+/** A voice model to read with — else the device reads. */
 export function canSynthesize(): boolean {
-  return isOpenAIEnabled() && isBlobEnabled();
+  return isOpenAIEnabled();
 }
 
-async function synthesize(script: string): Promise<Buffer | null> {
+/** Where the file is served from; the hash makes the URL immutable. */
+export function audioFilePath(publicId: string, hash: string): string {
+  return `/api/public-quote/${encodeURIComponent(publicId)}/audio/file?v=${hash}`;
+}
+
+type Spoken = { audio: Buffer; model: string; voice: string };
+
+async function synthesize(script: string): Promise<Spoken | null> {
   const client = getOpenAI();
   for (const c of TTS_CANDIDATES) {
     try {
       const res = await client.audio.speech.create({
         model: c.model,
-        voice: TTS_VOICE,
+        voice: c.voice,
         input: script,
         response_format: "mp3",
         ...(c.instructions ? { instructions: c.instructions } : {}),
       });
-      const buf = Buffer.from(await res.arrayBuffer());
-      if (buf.length > 1_000) return buf;
-      console.warn(`[proposalAudio] ${c.model} returned ${buf.length} bytes`);
+      const audio = Buffer.from(await res.arrayBuffer());
+      if (audio.length > 1_000) return { audio, model: c.model, voice: c.voice };
+      console.warn(`[proposalAudio] ${c.model}/${c.voice} returned ${audio.length} bytes`);
     } catch (err) {
-      console.warn(`[proposalAudio] ${c.model} failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.warn(`[proposalAudio] ${c.model}/${c.voice} failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
   return null;
@@ -93,27 +112,26 @@ async function synthesize(script: string): Promise<Buffer | null> {
 
 /**
  * Read the script, keep the file, remember the hash. Returns the file's
- * URL, or null when no voice is configured or every model failed. Never
+ * path, or null when no voice is configured or every model failed. Never
  * throws — every caller treats the audio as optional.
  */
-export async function generateProposalAudio(row: Pick<AudioRow, "id" | "audioUrl">, script: string, hash: string): Promise<string | null> {
+export async function generateProposalAudio(row: Pick<AudioRow, "id" | "publicId">, script: string, hash: string): Promise<string | null> {
   if (!canSynthesize()) return null;
   try {
-    const audio = await synthesize(script);
-    if (!audio) return null;
-    const blob = await uploadBlob(`proposal-audio/${row.id}/${hash}.mp3`, audio, { contentType: "audio/mpeg", addRandomSuffix: true });
-    // Two plays racing on a cache miss can both land; the last write wins
-    // and the loser's file is orphaned — a few hundred kilobytes, not worth a lock.
-    const stale = row.audioUrl;
-    await db.proposal.update({ where: { id: row.id }, data: { audioUrl: blob.url, audioScriptHash: hash } });
-    if (stale && stale !== blob.url) {
-      try {
-        await deleteBlob(stale);
-      } catch {
-        /* an orphaned old file is fine */
-      }
-    }
-    return blob.url;
+    const spoken = await synthesize(script);
+    if (!spoken) return null;
+    // One row per proposal; a new script replaces the old file. Two plays
+    // racing on a cache miss both land and the last write wins — same words,
+    // same voice, not worth a lock. The model and voice are kept, so the
+    // database says which one a client actually heard.
+    await db.proposalAudio.upsert({
+      where: { proposalId: row.id },
+      create: { proposalId: row.id, hash, model: spoken.model, voice: spoken.voice, bytes: spoken.audio },
+      update: { hash, model: spoken.model, voice: spoken.voice, bytes: spoken.audio, createdAt: new Date() },
+    });
+    const url = audioFilePath(row.publicId, hash);
+    await db.proposal.update({ where: { id: row.id }, data: { audioUrl: url, audioScriptHash: hash } });
+    return url;
   } catch (err) {
     console.error(`[proposalAudio] generation failed: ${err instanceof Error ? err.message : String(err)}`);
     return null;

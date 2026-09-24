@@ -663,6 +663,7 @@ model Proposal {
 
   organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   owner        User?             @relation("ProposalOwner", fields: [ownerId], references: [id])
+  audio        ProposalAudio?
   client       Client?           @relation(fields: [clientId], references: [id])
   project      Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
   lineItems    LineItem[]
@@ -700,6 +701,21 @@ model PricingSnapshot {
   proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
 
   @@index([proposalId, createdAt])
+}
+
+// "Listen to this proposal" (2026-09-24): the spoken summary's MP3, kept in
+// the database — production has no Blob store, and a forty-second file is a
+// few hundred kilobytes. One per proposal; a new script replaces it. Served
+// by /api/public-quote/[publicId]/audio/file, cached for a year by hash.
+model ProposalAudio {
+  proposalId String   @id
+  hash       String
+  model      String
+  voice      String
+  bytes      Bytes
+  createdAt  DateTime @default(now())
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
 }
 
 model LineItem {
