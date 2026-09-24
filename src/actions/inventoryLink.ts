@@ -17,6 +17,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { isTradeId, type TradeId } from "@/lib/inventory";
 import { inventoryLinkOf, pickForProposal, recordInventoryLink } from "@/lib/inventoryPick";
+import { stockPolicyOf } from "@/lib/inventoryPolicy";
 import { NoOrgError, requireEstimatorOrManager, requireOrg, UnauthorizedError } from "@/lib/orgContext";
 
 type Fail = { ok: false; error: string };
@@ -25,13 +26,14 @@ const fail = (err: unknown): Fail =>
 
 const BOARDS: Record<TradeId, string> = { fence: "/dashboard/fence-estimator/board", roof: "/dashboard/roof-estimator/board", hvac: "/dashboard/hvac-estimator/board" };
 
-export async function inventoryLinkDefault(trade?: string | null): Promise<{ linked: boolean; items: number }> {
+export async function inventoryLinkDefault(trade?: string | null): Promise<{ linked: boolean; items: number; /** Of those, bought per job (lib/inventoryPolicy); 0 when the trade is not known. */ perJob: number }> {
   try {
     const { organizationId } = await requireOrg();
-    const items = await db.inventoryItem.count({ where: { organizationId, ...(isTradeId(trade) ? { trade } : {}) } });
-    return { linked: items > 0, items };
+    const rows = await db.inventoryItem.findMany({ where: { organizationId, ...(isTradeId(trade) ? { trade } : {}) }, select: { key: true } });
+    const policy = isTradeId(trade) ? await stockPolicyOf(organizationId, trade) : null;
+    return { linked: rows.length > 0, items: rows.length, perJob: policy ? rows.filter((r) => policy.perJob.has(r.key)).length : 0 };
   } catch {
-    return { linked: false, items: 0 };
+    return { linked: false, items: 0, perJob: 0 };
   }
 }
 
@@ -52,7 +54,7 @@ export async function setProposalInventoryLink(input: { proposalId: string; link
   }
 }
 
-export type PickLine = { name: string; unit: string; quantity: number; tracked: boolean; onHand: number | null; enough: boolean };
+export type PickLine = { name: string; unit: string; quantity: number; tracked: boolean; onHand: number | null; enough: boolean; /** Bought per job — "buy for this job", not "short". */ perJob: boolean };
 
 export async function proposalPickList(proposalId: string): Promise<{ ok: true; linked: boolean; trade: TradeId | null; explicit: boolean | null; rows: PickLine[] } | Fail> {
   try {
@@ -64,7 +66,7 @@ export async function proposalPickList(proposalId: string): Promise<{ ok: true; 
     if (!p) return { ok: false, error: "Proposal not found" };
     const explicit = (await inventoryLinkOf(organizationId, [proposalId])).get(proposalId) ?? null;
     const { trade, rows } = await pickForProposal(organizationId, { ...p, inventoryLinked: explicit });
-    return { ok: true, linked: !!trade, trade, explicit, rows: rows.map((r) => ({ name: r.name, unit: r.unit, quantity: r.quantity, tracked: !!r.itemId, onHand: r.onHand, enough: r.enough })) };
+    return { ok: true, linked: !!trade, trade, explicit, rows: rows.map((r) => ({ name: r.name, unit: r.unit, quantity: r.quantity, tracked: !!r.itemId, onHand: r.onHand, enough: r.enough, perJob: r.perJob })) };
   } catch (err) {
     return fail(err);
   }

@@ -15,12 +15,12 @@ import s from "./inventory-link-choice.module.css";
 const LABEL: Record<string, string> = { roof: "roofing", fence: "fence", hvac: "HVAC" };
 
 export function InventoryLinkChoice({ trade, value, onChange, compact }: { trade: string | null; value: boolean | null; onChange: (v: boolean) => void; compact?: boolean }) {
-  const [items, setItems] = useState<number | null>(null);
+  const [items, setItems] = useState<{ items: number; perJob: number } | null>(null);
   useEffect(() => {
     let live = true;
     inventoryLinkDefault(trade).then((d) => {
       if (!live) return;
-      setItems(d.items);
+      setItems({ items: d.items, perJob: d.perJob });
       if (value === null) onChange(d.linked);
     });
     return () => {
@@ -36,7 +36,11 @@ export function InventoryLinkChoice({ trade, value, onChange, compact }: { trade
       <div className={s.head}>
         Inventory
         {items != null && (
-          <span className={s.hint}>{items > 0 ? `you keep ${items} ${noun} item${items === 1 ? "" : "s"} in stock` : `no ${noun || ""} stock yet`.replace("  ", " ")}</span>
+          <span className={s.hint}>
+            {items.items > 0
+              ? `you keep ${items.items - items.perJob} ${noun} item${items.items - items.perJob === 1 ? "" : "s"} in stock${items.perJob ? ` · ${items.perJob} bought per job` : ""}`
+              : `no ${noun || ""} stock yet`.replace("  ", " ")}
+          </span>
         )}
       </div>
       <div className={s.opts}>

@@ -5,10 +5,11 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import type { Route } from "next";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ArrowDownToLine, ArrowRight, Check, ChevronDown, ChevronRight, ClipboardList, Clock3, FileText, Mail, Package, Phone, Plus, Search, Store, Truck, X } from "lucide-react";
+import { ArrowDownToLine, ArrowRight, Check, ChevronDown, ChevronRight, ClipboardList, Clock3, FileText, ListChecks, Mail, Package, Phone, Plus, Search, ShoppingCart, Store, Truck, X } from "lucide-react";
 import { lockScroll } from "@/lib/scrollLock";
 import { InventoryItemForm, InventorySupplierForm } from "./roofing-inventory-forms";
-import { ago, dayOf, materialsOf, moveLabel, qty, statusLabel, usd, type InventoryWorkspace } from "./roofing-inventory-model";
+import { StockListEditor } from "./stock-list-editor";
+import { ago, dayOf, materialsOf, moveLabel, perJobStatus, qty, statusLabel, usd, type InventoryWorkspace } from "./roofing-inventory-model";
 import s from "./roofing-inventory-mobile.module.css";
 
 type Props = { workspace: InventoryWorkspace };
@@ -26,7 +27,8 @@ function itemStatus({ r, st }: InventoryRow) {
   if (st === "soldshort") return { text: `Short ${qty(-r.available)} for sold jobs`, tone: "danger" };
   if (st === "low") return { text: "Below reorder level", tone: "warning" };
   if (st === "short") return { text: "Short if open proposals sell", tone: "warning" };
-  if (st === "empty") return { text: "Not stocked", tone: "neutral" };
+  if (st === "perjob") return { text: perJobStatus(r), tone: "neutral" };
+  if (st === "empty") return { text: "Nothing on hand", tone: "neutral" };
   return { text: r.reserved > 0 ? "Stock reserved" : "In stock", tone: "neutral" };
 }
 
@@ -46,9 +48,11 @@ function ItemCard({ item, workspace: w, expanded, onExpand }: Props & { item: In
           <h3>{r.name}</h3>
           <span className={s.stockStatus} data-tone={status.tone}>{status.text}</span>
         </div>
-        <div className={s.available} data-short={r.available < 0 || undefined}>
+        {item.st === "perjob" ? <div className={s.available}>
+          <span>Sold jobs need</span><strong>{qty(r.reserved)}</strong><small>{r.unit}</small>
+        </div> : <div className={s.available} data-short={r.available < 0 || undefined}>
           <span>Available</span><strong>{qty(r.available)}</strong><small>{r.unit}</small>
-        </div>
+        </div>}
       </div>
       <div className={s.itemFoot}>
         <span><b>{qty(r.onHand)}</b> on hand <span aria-hidden="true">·</span> <b>{qty(r.reserved)}</b> reserved</span>
@@ -60,8 +64,9 @@ function ItemCard({ item, workspace: w, expanded, onExpand }: Props & { item: In
       {expanded && (
         <div className={s.itemDetails} id={`roof-item-${r.id}`}>
           <dl className={s.itemFacts}>
+            <div><dt>Stock</dt><dd>{item.st === "perjob" ? "Bought per job" : "Kept in stock"}</dd></div>
             <div><dt>Open proposal demand</dt><dd>{qty(r.forecast)} {r.unit}</dd></div>
-            <div><dt>Reorder level</dt><dd>{qty(r.threshold)} {r.unit}</dd></div>
+            {item.st !== "perjob" && <div><dt>Reorder level</dt><dd>{qty(r.threshold)} {r.unit}</dd></div>}
             {r.suggestedOrder > 0 && <div><dt>Suggested order</dt><dd>{qty(r.suggestedOrder)} {r.unit}</dd></div>}
             <div><dt>Supplier</dt><dd>{r.supplierName || "Not assigned"}</dd></div>
             {r.supplierSku && <div><dt>Supplier SKU</dt><dd>{r.supplierSku}</dd></div>}
@@ -83,8 +88,16 @@ function ItemCard({ item, workspace: w, expanded, onExpand }: Props & { item: In
 
 function Stock({ workspace: w }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  // The checklist replaces the list on request, and for a company whose list is still empty.
+  const editing = w.canWrite && (w.setupOpen || (w.data.rows.length === 0 && w.data.catalog.length > 0));
+  if (editing) return <section className={s.section} aria-label={`${w.tradeLabel} stock`}><div className={s.stockEditor}><StockListEditor workspace={w} compact /></div></section>;
   return <section className={s.section} aria-label={`${w.tradeLabel} stock`}>
-    <div className={s.sectionHeading}><h2>Stock</h2><span>{w.rows.length} items</span></div>
+    <div className={s.sectionHeading}><h2>Stock</h2><span>{w.rows.length} in stock{w.perJobRows.length ? ` · ${w.perJobRows.length} per job` : ""}</span></div>
+    {w.canWrite && <ol className={s.guide} aria-label="Setting up the inventory">
+      <li data-done={w.data.policy.decided || undefined}><b>1</b><div><strong>What you stock</strong><span>{w.data.policy.decided ? `${w.data.policy.stocked} kept in stock · ${w.data.policy.perJob} bought per job` : "Tick what you keep on the shelf; the rest is bought per job."}</span><button type="button" className={s.textButton} onClick={() => w.setSetupOpen(true)}><ListChecks size={16} aria-hidden="true" />{w.data.policy.decided ? "Change what we stock" : "Set up"}</button></div></li>
+      <li data-done={(w.rows.length > 0 && w.uncounted === 0) || undefined}><b>2</b><div><strong>Count the shelf</strong><span>{w.rows.length === 0 ? "Once the list is saved, enter what you have on hand." : w.uncounted ? `${w.uncounted} stocked ${w.uncounted === 1 ? "item still shows" : "items still show"} 0 on hand — Manage → Count stock.` : "Every stocked item has a count."}</span></div></li>
+      <li data-done={w.connected > 0 || undefined}><b>3</b><div><strong>Proposals draw on it</strong><span>{w.connected ? `${w.connected} connected · sold jobs reserve stock, open ones forecast it.` : "New estimates connect by default: sold jobs reserve stock, open ones forecast it."}</span></div></li>
+    </ol>}
     <label className={s.search}>
       <Search size={18} aria-hidden="true" />
       <input type="search" value={w.q} onChange={(e) => w.setQ(e.target.value)} placeholder="Find an item or supplier" aria-label={`Search ${w.tradeLabel} inventory`} />
@@ -97,8 +110,9 @@ function Stock({ workspace: w }: Props) {
         <option value="urgency">Priority</option><option value="category">Category</option>
       </select></span></label>
     </div>
-    {w.rows.length === 0 ? (
-      <Empty title="Build your stock list" action={w.canWrite ? <button type="button" className={s.primary} disabled={w.pending} onClick={() => w.setItemPanel({ mode: "add" })}><Plus size={16} aria-hidden="true" /> Add first item</button> : undefined}>Add the materials you keep on hand, then receive your current stock.</Empty>
+    {w.filter === "PERJOB" && <p className={s.sectionNote}>Bought for each job, not kept on the shelf: never low, never on a restock order. When a job sells, these go on its shopping list under Orders.</p>}
+    {w.data.rows.length === 0 ? (
+      <Empty title={`No ${w.tradeLabel} stock list yet`}>Your office sets up what the company keeps in stock and what it buys per job.</Empty>
     ) : <>
       {w.shown.length > 0 && <div className={s.stockList}>
         {w.sections.map((section) => <div key={section.label ?? "all"} className={s.stockGroup}>
@@ -106,11 +120,15 @@ function Stock({ workspace: w }: Props) {
           {section.items.map((item) => <ItemCard key={item.r.id} item={item} workspace={w} expanded={expandedId === item.r.id} onExpand={() => setExpandedId(expandedId === item.r.id ? null : item.r.id)} />)}
         </div>)}
       </div>}
-      {w.shown.length === 0 && <Empty title="No matching items" action={<button type="button" className={s.secondary} onClick={() => { w.setQ(""); w.setFilter("ALL"); }}>Clear filters</button>}>Try another name, supplier, or stock filter.</Empty>}
+      {w.folded.length > 0 && <details className={s.perJob} data-per-job>
+        <summary><ShoppingCart size={16} aria-hidden="true" />{w.folded.length} {w.folded.length === 1 ? "item" : "items"} bought per job<span>not shelf stock</span><ChevronDown size={18} aria-hidden="true" /></summary>
+        <div className={s.stockList}>{w.folded.map((item) => <ItemCard key={item.r.id} item={item} workspace={w} expanded={expandedId === item.r.id} onExpand={() => setExpandedId(expandedId === item.r.id ? null : item.r.id)} />)}</div>
+      </details>}
+      {w.shown.length === 0 && w.folded.length === 0 && <Empty title="No matching items" action={<button type="button" className={s.secondary} onClick={() => { w.setQ(""); w.setFilter("ALL"); }}>Clear filters</button>}>Try another name, supplier, or stock filter.</Empty>}
     </>}
     {w.canWrite && (w.data.presets.missing > 0 || w.data.untracked.length > 0) && <details className={s.setup}>
       <summary>Complete your stock list<ChevronDown size={18} aria-hidden="true" /></summary>
-      {w.data.presets.missing > 0 && <div className={s.setupBlock}><p>Add {w.data.presets.missing} standard {w.tradeLabel} materials to your list. Stock starts at zero.</p><button type="button" className={s.secondary} disabled={w.pending} onClick={w.seedItems}>Add standard items</button></div>}
+      {w.data.presets.missing > 0 && <div className={s.setupBlock}><p>{w.data.presets.missing} standard {w.tradeLabel} materials are not on your list. Open the checklist to add them — as kept in stock or bought per job.</p><button type="button" className={s.secondary} disabled={w.pending} onClick={() => w.setSetupOpen(true)}><ListChecks size={16} aria-hidden="true" /> What we stock</button></div>}
       {w.data.untracked.length > 0 && <div className={s.setupBlock}><h3>Used in proposals, not tracked</h3><p>Add each item, then receive what you have on hand.</p><button type="button" className={s.secondary} disabled={w.pending} onClick={w.trackAllItems}>Track all {w.data.untracked.length} items</button><ul className={s.untracked}>{w.data.untracked.map((line) => <li key={line.name}><span>{line.name}<small>{line.unit || "each"}</small></span><button type="button" className={s.iconButton} disabled={w.pending} onClick={() => w.trackItem(line)} aria-label={`Track ${line.name}`}><Plus size={18} aria-hidden="true" /></button></li>)}</ul></div>}
     </details>}
   </section>;
@@ -118,7 +136,22 @@ function Stock({ workspace: w }: Props) {
 
 function Orders({ workspace: w }: Props) {
   return <section className={s.section} aria-label={`${w.tradeLabel} purchase orders`}>
-    <div className={s.sectionHeading}><h2>Order materials</h2>{w.orderCost > 0 && <span>Est. {usd(w.orderCost)}</span>}</div>
+    <div className={s.sectionHeading}><h2>Order materials</h2>{w.orderCost + w.buyCost > 0 && <span>Est. {usd(w.orderCost + w.buyCost)}</span>}</div>
+    {w.buy.length > 0 && <>
+      <p className={s.sectionNote}>Buy for the sold jobs still to load — materials you buy per job, soonest job first.{w.buyCost > 0 ? ` About ${usd(w.buyCost)} still to buy.` : ""}</p>
+      {w.buy.map((j) => <article className={s.order} key={j.job.id} data-buy-job>
+        <div className={s.orderHead}><h3>{j.job.title}</h3><span>{j.job.startsAt ? dayOf(j.job.startsAt) : "unscheduled"}</span></div>
+        <p className={s.orderEmail}>{j.job.client ?? "No client"} · {j.toBuy ? `${j.toBuy} to buy${j.cost > 0 ? ` · ${usd(j.cost)}` : ""}` : "arrived or on the way"}</p>
+        {j.bySupplier.map((g) => <div key={g.supplierId ?? "none"} className={s.buyGroup}>
+          <div className={s.buyGroupHead}><strong>{g.supplier?.name ?? "No supplier yet"}</strong>{!g.supplier && <span>assign one on each item · Edit</span>}</div>
+          <ul className={s.orderLines}>{g.lines.map((l) => <li key={l.itemId}><span>{l.name}<small className={s.buyState} data-tone={l.toBuy === 0 ? "success" : l.onTheWay ? "neutral" : "warning"}>{l.toBuy === 0 ? "arrived" : l.onTheWay ? "on the way" : l.have > 0 ? `${qty(l.toBuy)} to buy · ${qty(l.have)} arrived` : "to buy"}</small></span><strong>{qty(l.quantity)} <small>{l.unit}</small></strong></li>)}</ul>
+          {g.supplier && !g.supplier.email && <p className={s.warningText}>Add a supplier email before sending.</p>}
+          {w.canWrite && g.supplier && <button type="button" className={s.secondary} disabled={w.pending || !g.supplier.email || g.toBuy === 0} onClick={() => w.sendJobOrder(j, g.supplierId!, g.lines)}><Mail size={16} aria-hidden="true" /> Email order · {g.toBuy}</button>}
+        </div>)}
+        {j.job.jobId && <Link className={s.textButton} href={`/dashboard/jobs/${j.job.jobId}` as Route}>Open job<ArrowRight size={16} aria-hidden="true" /></Link>}
+      </article>)}
+      <div className={s.subsectionHeading}><h2>Restock the shelf</h2><span>{w.needs.length}</span></div>
+    </>}
     {w.needs.length > 0 ? <>
       <p className={s.sectionNote}>Suggested quantities cover sold jobs, open proposals, and your reorder level.</p>
       {[...w.bySupplier.entries()].map(([supplierId, items]) => {
@@ -136,7 +169,7 @@ function Orders({ workspace: w }: Props) {
         {w.unassigned.map((item) => <div className={s.assignRow} key={item.id}><div><strong>{item.name}</strong><span>Order {qty(item.suggestedOrder)} {item.unit}</span></div>{w.canWrite ? <label className={s.filterField}><span className={s.srOnly}>Supplier for {item.name}</span><span className="bp-sel"><select className="bp-sel-in" value="" disabled={w.pending} onChange={(e) => { if (e.target.value) w.assignSupplier(item, e.target.value); }}><option value="">Select supplier</option>{w.data.suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></span></label> : <span className={s.muted}>No supplier assigned</span>}</div>)}
         {w.canWrite && <button type="button" className={s.secondary} onClick={() => w.setSupplierOpen(true)}><Plus size={16} aria-hidden="true" /> Add supplier</button>}
       </div>}
-    </> : <Empty title={w.data.rows.length ? "Nothing to order right now" : "No suggested orders yet"}>{w.data.rows.length ? "Your tracked materials cover current demand and reorder levels." : `Track your ${w.tradeLabel} materials and enter current stock to calculate what to order.`}</Empty>}
+    </> : <Empty title={w.data.rows.length ? "Nothing to restock right now" : "No suggested orders yet"}>{w.data.rows.length ? "Your stocked materials cover current demand and reorder levels." : `Set up what you stock and count it to calculate what to order.`}</Empty>}
     <div className={s.subsectionHeading}><h2>On the way</h2><span>{w.data.orders.length}</span></div>
     {w.data.orders.length === 0 ? <p className={s.sectionNote}>Sent purchase orders appear here until received.</p> : w.data.orders.map((order) => <article className={s.order} key={order.id}>
       <div className={s.orderHead}><h3>{order.supplier}</h3><span>{dayOf(order.sentAt)}</span></div>
@@ -152,7 +185,7 @@ function Jobs({ workspace: w }: Props) {
     {w.next && <div className={s.nextJob}>
       <div className={s.nextJobTop}><Truck size={18} aria-hidden="true" /><span>Next to load{w.next.startsAt ? ` · ${dayOf(w.next.startsAt)}` : ""}</span></div>
       <h3>{w.next.title}</h3>
-      <p data-tone={w.nextShort ? "danger" : "neutral"}>{w.nextShort ? `${w.nextShort} material ${w.nextShort === 1 ? "line is" : "lines are"} short` : w.nextPick.length ? "Tracked materials are on hand" : "No material lines yet"}</p>
+      <p data-tone={w.nextShort ? "danger" : "neutral"}>{w.nextShort ? `${w.nextShort} material ${w.nextShort === 1 ? "line is" : "lines are"} short on the shelf${w.nextBuy ? ` · ${w.nextBuy} to buy for the job` : ""}` : w.nextBuy ? `${w.nextBuy} ${w.nextBuy === 1 ? "line" : "lines"} to buy for the job` : w.nextPick.length ? "Stocked materials are on hand" : "No material lines yet"}</p>
       <Link href={`/dashboard/jobs/${w.next.jobId}` as Route} className={s.textButton}>Open pick list<ArrowRight size={16} aria-hidden="true" /></Link>
     </div>}
     <label className={s.filterField}><span>Show proposals</span><span className="bp-sel"><select className="bp-sel-in" value={w.ptab} onChange={(e) => w.setPtab(e.target.value as InventoryWorkspace["ptab"])}>{w.ptabs.map((tab) => <option key={tab.id} value={tab.id}>{tab.label} ({tab.n})</option>)}</select></span></label>
@@ -255,8 +288,8 @@ export function RoofingInventoryMobile({ workspace: w }: Props) {
     {w.needs.length > 0 ? <div className={s.attention}>
       <div><h2>{w.needs.length} {w.needs.length === 1 ? "item needs" : "items need"} ordering</h2><p>{w.soldShort ? `${w.soldShort} short for sold jobs` : "Keep the next job supplied"}{w.data.orders.length ? ` · ${w.data.orders.length} ${w.data.orders.length === 1 ? "order" : "orders"} on the way` : ""}</p></div>
       <button type="button" className={s.primary} onClick={() => w.setTab("orders")}>Review orders<ArrowRight size={18} aria-hidden="true" /></button>
-    </div> : w.data.rows.length > 0 && <div className={s.covered}><Check size={18} aria-hidden="true" /><span>Tracked material needs are covered.</span>{w.data.orders.length > 0 && <button type="button" className={s.textButton} onClick={() => w.setTab("orders")}>{w.data.orders.length} on the way<ArrowRight size={16} aria-hidden="true" /></button>}</div>}
-    <nav className={s.nav} aria-label="Inventory sections">{destinations.map(({ id, label, icon: Icon }) => <button key={id} type="button" aria-current={w.tab === id ? "page" : undefined} onClick={() => w.setTab(id)}><Icon size={19} aria-hidden="true" /><span>{label}</span>{id === "orders" && w.data.orders.length > 0 && <i aria-label={`${w.data.orders.length} pending orders`} />}</button>)}</nav>
+    </div> : w.data.rows.length > 0 && <div className={s.covered}><Check size={18} aria-hidden="true" /><span>{w.buyLines ? `Shelf stock is covered · ${w.buyLines} ${w.buyLines === 1 ? "line" : "lines"} to buy for sold jobs.` : "Stocked material needs are covered."}</span>{(w.data.orders.length > 0 || w.buyLines > 0) && <button type="button" className={s.textButton} onClick={() => w.setTab("orders")}>{w.buyLines ? "Shopping list" : `${w.data.orders.length} on the way`}<ArrowRight size={16} aria-hidden="true" /></button>}</div>}
+    <nav className={s.nav} aria-label="Inventory sections">{destinations.map(({ id, label, icon: Icon }) => <button key={id} type="button" aria-current={w.tab === id ? "page" : undefined} onClick={() => w.setTab(id)}><Icon size={19} aria-hidden="true" /><span>{label}</span>{id === "orders" && (w.data.orders.length > 0 || w.orderBadge > 0) && <i aria-label={`${w.data.orders.length + w.orderBadge} orders to look at`} />}</button>)}</nav>
     {(w.error || w.note) && !sheetOpen && <div className={s.feedback} data-error={Boolean(w.error)} role={w.error ? "alert" : "status"}><span>{w.error || w.note}</span><button className={s.iconButton} type="button" aria-label="Dismiss message" onClick={w.dismissFeedback}><X size={18} aria-hidden="true" /></button></div>}
     {w.tab === "stock" && <Stock workspace={w} />}
     {w.tab === "orders" && <Orders workspace={w} />}

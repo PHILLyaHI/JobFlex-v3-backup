@@ -9,8 +9,9 @@
 //   pickForProposal the crew's list against that trade's shelf.
 
 import { db } from "@/lib/db";
-import { pickList, type PickRow, type StockItem, type TradeId } from "@/lib/inventory";
+import { pickList, type PickRow, type TradeId } from "@/lib/inventory";
 import { explodeLines } from "@/lib/inventoryBom";
+import { stockItemsOf } from "@/lib/inventoryPolicy";
 import { proposalTrade } from "@/lib/inventoryTrade";
 
 // The choice itself is an ActivityEvent (kind INVENTORY_LINK, meta {linked}),
@@ -65,6 +66,7 @@ export function linkedTradeOf(p: LinkedProposal): TradeId | null {
 export async function pickForProposal(organizationId: string, p: LinkedProposal): Promise<{ trade: TradeId | null; rows: PickRow[] }> {
   const trade = linkedTradeOf(p);
   if (!trade || !p.lineItems.length) return { trade, rows: [] };
-  const items: StockItem[] = (await db.inventoryItem.findMany({ where: { organizationId, trade } })).map((i) => ({ id: i.id, name: i.name, key: i.key, unit: i.unit, onHand: i.onHand, reorderPoint: i.reorderPoint, supplierId: i.supplierId }));
+  // The stock policy rides along: a per-job item reads "ordered for this job", not "short".
+  const items = await stockItemsOf(organizationId, trade);
   return { trade, rows: pickList(items, explodeLines(trade, p.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType.toLowerCase().replace("_", " ") })))) };
 }

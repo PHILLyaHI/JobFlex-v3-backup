@@ -168,6 +168,29 @@
 .workspace.workspace .movementQty { text-align: right; font-weight: 750; font-variant-numeric: tabular-nums; }
 .workspace.workspace .movementQty small { color: var(--ink-muted); font-size: 11px; font-weight: 400; }
 .workspace.workspace .activity time { color: var(--ink-muted); text-align: right; font-size: 11px; white-space: nowrap; }
+/* what we stock (2026-09-23): the three steps, the per-job fold, the shopping list */
+.workspace.workspace .guide { list-style: none; margin: 0 0 20px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.workspace.workspace .guide li { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); }
+.workspace.workspace .guide li > b { display: grid; place-items: center; flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--ink); color: var(--paper-deep); font-size: 12px; font-weight: 900; }
+.workspace.workspace .guide li[data-done] > b { background: var(--emerald); }
+.workspace.workspace .guide li > div { flex: 1; min-width: 0; }
+.workspace.workspace .guide strong { display: block; font-size: 13px; font-weight: 800; line-height: 1.35; }
+.workspace.workspace .guide span { display: block; margin-top: 4px; color: var(--ink-muted); font-size: 12px; line-height: 1.5; }
+.workspace.workspace .guide .textButton { flex-shrink: 0; min-height: 28px; padding: 0; }
+.workspace.workspace .toolbarActs { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.workspace.workspace .table td.foldCell { padding: 0; }
+.workspace.workspace .table .foldRow:hover { background: transparent; }
+.workspace.workspace .fold svg { flex-shrink: 0; }
+.workspace.workspace .table tr[data-state="perjob"] td { color: var(--ink-soft); }
+.workspace.workspace .buyGroup { padding: 12px 0 4px; }
+.workspace.workspace .buyGroup + .buyGroup { border-top: 1px dashed var(--ink-line); }
+.workspace.workspace .buyGroupHead { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.workspace.workspace .buyGroupHead > strong { font-size: 13px; font-weight: 750; }
+.workspace.workspace .buyGroupHead > .meta, .workspace.workspace .buyGroupHead > .missingEmail { margin: 0; }
+.workspace.workspace .buyGroupHead > .primary { margin-left: auto; min-height: 40px; padding: 8px 14px; }
+.workspace.workspace .buyState { display: grid; justify-items: end; gap: 2px; text-align: right; }
+.workspace.workspace .buyState em { font-style: normal; font-size: 11px; font-weight: 650; }
+@media (max-width: 1100px) { .workspace.workspace .guide { grid-template-columns: 1fr; } }
 .workspace.workspace .srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (prefers-reduced-motion: reduce) { .workspace.workspace *, .workspace.workspace *::before, .workspace.workspace *::after { transition: none; } }
 

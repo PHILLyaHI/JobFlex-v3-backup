@@ -185,8 +185,8 @@ export default async function WorkerAssignmentPage({
                   {r.quantity} {r.unit}
                 </span>
                 <span className="min-w-0 flex-1 text-[13.5px] text-[color:var(--ink-soft)]">{r.name}</span>
-                <span className={`text-[11px] font-semibold uppercase tracking-[0.08em] ${r.itemId ? (r.enough ? "text-[color:var(--emerald)]" : "text-[color:var(--rose)]") : "text-[color:var(--ink-faint)]"}`}>
-                  {r.itemId ? (r.enough ? "on the shelf" : `short · ${r.onHand ?? 0} there`) : "not stocked"}
+                <span className={`text-[11px] font-semibold uppercase tracking-[0.08em] ${r.itemId ? (r.enough ? "text-[color:var(--emerald)]" : r.perJob ? "text-[color:var(--ink-muted)]" : "text-[color:var(--rose)]") : "text-[color:var(--ink-faint)]"}`}>
+                  {r.itemId ? (r.enough ? "on the shelf" : r.perJob ? "ordered for this job" : `short · ${r.onHand ?? 0} there`) : "bring it along"}
                 </span>
               </li>
             ))}

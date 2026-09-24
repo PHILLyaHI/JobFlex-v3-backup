@@ -7,13 +7,21 @@
 // counted, the purchase order. One crew write: "loaded" on a job's pick
 // list, which takes the materials out of the warehouse and frees the
 // reservation — allowed to the office and to a worker ON that job.
+//
+// What the company keeps in stock (2026-09-23, lib/inventoryPolicy): the
+// "What we stock" checklist is saved by saveStockList; a single item's choice
+// rides on upsertInventoryItem (`stocked`); the standard items added in one
+// go get the suggested choice (lib/inventoryStockDefaults). A purchase order
+// may be for one job's per-job materials (`jobId`).
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { sendOrgEmail } from "@/lib/email/orgSend";
-import { isTradeId, pickList, purchaseOrderText, stockKey, type StockItem } from "@/lib/inventory";
+import { isTradeId, pickList, purchaseOrderText, stockKey, type TradeId } from "@/lib/inventory";
 import { presetItems } from "@/lib/inventoryPresets";
 import { explodeLines } from "@/lib/inventoryBom";
+import { recordStockPolicy, stockItemsOf, stockPolicyOf } from "@/lib/inventoryPolicy";
+import { defaultStocked } from "@/lib/inventoryStockDefaults";
 import { NoOrgError, requireManager, requireOrg, UnauthorizedError, isWorkerRole } from "@/lib/orgContext";
 
 type Fail = { ok: false; error: string };
@@ -26,6 +34,8 @@ const fail = (err: unknown): Fail =>
 
 const boardPath = (trade: string) => `/dashboard/${trade === "roof" ? "roof" : trade}-estimator/board`;
 const money = (n: unknown) => Math.round((Number(n) || 0) * 100) / 100;
+const LABEL: Record<TradeId, string> = { fence: "Fence", roof: "Roofing", hvac: "HVAC" };
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** Add or edit a stock item. An existing item of the same trade and name is updated. */
 export async function upsertInventoryItem(input: {
@@ -37,9 +47,11 @@ export async function upsertInventoryItem(input: {
   supplierId?: string | null;
   supplierSku?: string | null;
   lastCost?: number | null;
+  /** Kept in stock (true) or bought per job (false); undefined leaves the choice alone. */
+  stocked?: boolean;
 }): Promise<{ ok: true; id: string } | Fail> {
   try {
-    const { organizationId } = await requireManager();
+    const { organizationId, user } = await requireManager();
     if (!isTradeId(input.trade)) return { ok: false, error: "Unknown trade" };
     const name = input.name.trim().slice(0, 120);
     const key = stockKey(name);
@@ -62,7 +74,17 @@ export async function upsertInventoryItem(input: {
       update: data,
       select: { id: true },
     });
+    if (typeof input.stocked === "boolean") {
+      const policy = await stockPolicyOf(organizationId, input.trade);
+      if (policy.perJob.has(key) === input.stocked) {
+        const perJob = new Set(policy.perJob);
+        if (input.stocked) perJob.delete(key);
+        else perJob.add(key);
+        await recordStockPolicy(organizationId, input.trade, perJob, user.id, input.stocked ? `${name} is kept in stock from now on` : `${name} is bought per job from now on — not counted as shelf stock`);
+      }
+    }
     revalidatePath(boardPath(input.trade));
+    revalidatePath("/dashboard/jobs");
     return { ok: true, id: row.id };
   } catch (err) {
     return fail(err);
@@ -149,16 +171,18 @@ export async function upsertSupplier(input: { id?: string | null; name: string; 
  * Email a purchase order to a supplier for the given items and quantities.
  * The company's own mail (Gmail when connected, else the platform sender).
  */
-export async function sendPurchaseOrder(input: { trade: string; supplierId: string; lines: Array<{ itemId: string; quantity: number }>; note?: string }): Promise<{ ok: true; to: string; count: number } | Fail> {
+export async function sendPurchaseOrder(input: { trade: string; supplierId: string; lines: Array<{ itemId: string; quantity: number }>; note?: string; /** The job these per-job materials are for, when they are. */ jobId?: string | null }): Promise<{ ok: true; to: string; count: number } | Fail> {
   try {
     const { organizationId, user } = await requireManager();
     if (!isTradeId(input.trade)) return { ok: false, error: "Unknown trade" };
-    const [org, supplier] = await Promise.all([
+    const [org, supplier, job] = await Promise.all([
       db.organization.findUnique({ where: { id: organizationId }, select: { name: true, gmailSettingsJson: true, gmailTokensJson: true, billingEmail: true } }),
       db.supplier.findFirst({ where: { id: input.supplierId, organizationId } }),
+      input.jobId ? db.job.findFirst({ where: { id: input.jobId, organizationId }, select: { id: true, title: true } }) : Promise.resolve(null),
     ]);
     if (!org) return { ok: false, error: "No organization" };
     if (!supplier) return { ok: false, error: "That supplier is not on this company" };
+    if (input.jobId && !job) return { ok: false, error: "That job is not on this company" };
     if (!supplier.email) return { ok: false, error: `${supplier.name} has no email yet — add one on the Suppliers card` };
     const wanted = new Map(input.lines.filter((l) => l.quantity > 0).map((l) => [l.itemId, Math.ceil(l.quantity)]));
     if (!wanted.size) return { ok: false, error: "Nothing to order" };
@@ -168,7 +192,7 @@ export async function sendPurchaseOrder(input: { trade: string; supplierId: stri
       company: org.name ?? "Our company",
       supplier: supplier.name,
       trade: input.trade,
-      note: input.note,
+      note: input.note ?? (job ? `For the job: ${job.title}.` : undefined),
       lines: items.map((it) => ({ name: it.name, sku: it.supplierSku, unit: it.unit, quantity: wanted.get(it.id) ?? 0 })),
     });
     await sendOrgEmail(org, { to: supplier.email, subject: text.subject, html: text.html });
@@ -177,8 +201,8 @@ export async function sendPurchaseOrder(input: { trade: string; supplierId: stri
         organizationId,
         actorId: user.id,
         kind: "PURCHASE_ORDER_SENT",
-        summary: `Purchase order emailed to ${supplier.name} — ${items.length} ${input.trade} item(s)`,
-        meta: JSON.stringify({ supplierId: supplier.id, trade: input.trade, href: boardPath(input.trade), lines: items.map((it) => ({ id: it.id, name: it.name, quantity: wanted.get(it.id) ?? 0 })) }),
+        summary: `Purchase order emailed to ${supplier.name} — ${items.length} ${input.trade} item(s)${job ? ` for ${job.title}` : ""}`,
+        meta: JSON.stringify({ supplierId: supplier.id, trade: input.trade, jobId: job?.id ?? null, href: boardPath(input.trade), lines: items.map((it) => ({ id: it.id, name: it.name, quantity: wanted.get(it.id) ?? 0 })) }),
       },
     });
     revalidatePath(boardPath(input.trade));
@@ -213,14 +237,16 @@ export async function loadJobMaterials(jobId: string): Promise<{ ok: true; taken
       await db.job.update({ where: { id: job.id }, data: { materialsLoadedAt: new Date() } });
       return { ok: true, taken: 0, untracked: job.proposal?.lineItems.length ?? 0 };
     }
-    const items = await db.inventoryItem.findMany({ where: { organizationId, trade: job.proposal.trade } });
-    const stock: StockItem[] = items.map((i) => ({ id: i.id, name: i.name, key: i.key, unit: i.unit, onHand: i.onHand, reorderPoint: i.reorderPoint, supplierId: i.supplierId }));
+    const stock = await stockItemsOf(organizationId, job.proposal.trade);
     const rows = pickList(stock, explodeLines(job.proposal.trade, job.proposal.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType }))));
     const tracked = rows.filter((r) => r.itemId);
+    // A per-job item leaves the warehouse only as far as it was there: what
+    // was bought straight for the job never touched the shelf.
+    const taken = tracked.map((r) => ({ ...r, take: r.perJob ? Math.min(r.quantity, Math.max(0, r.onHand ?? 0)) : r.quantity })).filter((r) => r.take > 0);
     await db.$transaction([
-      ...tracked.flatMap((r) => [
-        db.inventoryMovement.create({ data: { itemId: r.itemId!, kind: "PICKED", quantity: -r.quantity, jobId: job.id, proposalId: job.proposal!.id, actorId: ctx.user.id } }),
-        db.inventoryItem.update({ where: { id: r.itemId! }, data: { onHand: { decrement: r.quantity } } }),
+      ...taken.flatMap((r) => [
+        db.inventoryMovement.create({ data: { itemId: r.itemId!, kind: "PICKED", quantity: -r.take, jobId: job.id, proposalId: job.proposal!.id, actorId: ctx.user.id } }),
+        db.inventoryItem.update({ where: { id: r.itemId! }, data: { onHand: { decrement: r.take } } }),
       ]),
       db.job.update({ where: { id: job.id }, data: { materialsLoadedAt: new Date() } }),
     ]);
@@ -301,16 +327,61 @@ export async function receivePurchaseOrder(eventId: string): Promise<{ ok: true;
  */
 export async function seedTradeItems(trade: string): Promise<{ ok: true; added: number; total: number } | Fail> {
   try {
-    const { organizationId } = await requireManager();
+    const { organizationId, user } = await requireManager();
     if (!isTradeId(trade)) return { ok: false, error: "Unknown trade" };
     const presets = presetItems(trade);
     const have = new Set((await db.inventoryItem.findMany({ where: { organizationId, trade }, select: { key: true } })).map((i) => i.key));
     const missing = presets.filter((p) => !have.has(stockKey(p.name)));
     if (missing.length) {
       await db.inventoryItem.createMany({ data: missing.map((p) => ({ organizationId, trade, name: p.name, key: stockKey(p.name), unit: p.unit })) });
+      // The new items take the suggested choice; the checklist is there to change it.
+      const policy = await stockPolicyOf(organizationId, trade);
+      const perJob = new Set(policy.perJob);
+      let suggestedPerJob = 0;
+      for (const p of missing) {
+        if (defaultStocked(trade, p.name)) continue;
+        perJob.add(stockKey(p.name));
+        suggestedPerJob++;
+      }
+      if (suggestedPerJob) await recordStockPolicy(organizationId, trade, perJob, user.id, `${LABEL[trade]} standard items added — ${plural(missing.length - suggestedPerJob, "item")} kept in stock, ${suggestedPerJob} bought per job (suggested; change any on the board)`);
     }
     revalidatePath(boardPath(trade));
     return { ok: true, added: missing.length, total: presets.length };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * The "What we stock" checklist, saved (2026-09-23). Each key named is a
+ * standard item or one already on the list: a standard item not on the list
+ * yet is added (at zero on hand), and the trade's choice is rewritten so the
+ * keys in `stocked` are kept in stock and the keys in `perJob` are bought
+ * per job. Keys not named keep their choice; a key nothing knows is ignored.
+ */
+export async function saveStockList(input: { trade: string; stocked: string[]; perJob: string[] }): Promise<{ ok: true; added: number; stocked: number; perJob: number } | Fail> {
+  try {
+    const { organizationId, user } = await requireManager();
+    if (!isTradeId(input.trade)) return { ok: false, error: "Unknown trade" };
+    const trade = input.trade;
+    const clean = (list: unknown) => new Set((Array.isArray(list) ? list : []).filter((k): k is string => typeof k === "string").map((k) => k.trim()).filter(Boolean));
+    const stockedKeys = clean(input.stocked);
+    const perJobKeys = clean(input.perJob);
+    for (const k of stockedKeys) perJobKeys.delete(k); // named twice: kept in stock wins
+    const presets = new Map(presetItems(trade).map((p) => [stockKey(p.name), p]));
+    const have = new Set((await db.inventoryItem.findMany({ where: { organizationId, trade }, select: { key: true } })).map((i) => i.key));
+    const toCreate = [...stockedKeys, ...perJobKeys].filter((k) => !have.has(k) && presets.has(k)).map((k) => ({ organizationId, trade, name: presets.get(k)!.name, key: k, unit: presets.get(k)!.unit }));
+    if (toCreate.length) await db.inventoryItem.createMany({ data: toCreate });
+    for (const c of toCreate) have.add(c.key);
+    const policy = await stockPolicyOf(organizationId, trade);
+    const perJob = new Set(policy.perJob);
+    for (const k of stockedKeys) perJob.delete(k);
+    for (const k of perJobKeys) if (have.has(k)) perJob.add(k);
+    const perJobCount = [...perJob].filter((k) => have.has(k)).length;
+    await recordStockPolicy(organizationId, trade, perJob, user.id, `${LABEL[trade]} stock list saved — ${plural(have.size - perJobCount, "item")} kept in stock, ${perJobCount} bought per job`);
+    revalidatePath(boardPath(trade));
+    revalidatePath("/dashboard/jobs");
+    return { ok: true, added: toCreate.length, stocked: have.size - perJobCount, perJob: perJobCount };
   } catch (err) {
     return fail(err);
   }

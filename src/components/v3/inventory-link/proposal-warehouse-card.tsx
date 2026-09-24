@@ -51,7 +51,8 @@ export function ProposalWarehouseCard({ proposalId }: { proposalId: string | nul
     setBusy(false);
   };
   const on = state?.linked ?? false;
-  const short = state?.rows.filter((r) => r.tracked && !r.enough).length ?? 0;
+  const short = state?.rows.filter((r) => r.tracked && !r.perJob && !r.enough).length ?? 0;
+  const toBuy = state?.rows.filter((r) => r.tracked && r.perJob && !r.enough).length ?? 0;
   const untracked = state?.rows.filter((r) => !r.tracked).length ?? 0;
   return (
     <div className={s.w} data-warehouse-card>
@@ -83,7 +84,8 @@ export function ProposalWarehouseCard({ proposalId }: { proposalId: string | nul
           <div className={s.pickHead}>
             Materials to pick up · {state.rows.length}
             {short ? <em className={s.bad}> · {short} short on the shelf</em> : null}
-            {untracked ? <em> · {untracked} not stocked</em> : null}
+            {toBuy ? <em> · {toBuy} to buy for the job</em> : null}
+            {untracked ? <em> · {untracked} not tracked</em> : null}
           </div>
           <ul className={s.pickList}>
             {state.rows.map((r) => (
@@ -92,7 +94,7 @@ export function ProposalWarehouseCard({ proposalId }: { proposalId: string | nul
                   {r.quantity} {r.unit}
                 </b>
                 <span>{r.name}</span>
-                <i className={r.tracked ? (r.enough ? s.ok : s.bad) : undefined}>{r.tracked ? (r.enough ? "on the shelf" : `short · ${r.onHand ?? 0} there`) : "not stocked"}</i>
+                <i className={r.tracked ? (r.enough ? s.ok : r.perJob ? undefined : s.bad) : undefined}>{r.tracked ? (r.enough ? "on the shelf" : r.perJob ? "buy for this job" : `short · ${r.onHand ?? 0} there`) : "not tracked"}</i>
               </li>
             ))}
           </ul>

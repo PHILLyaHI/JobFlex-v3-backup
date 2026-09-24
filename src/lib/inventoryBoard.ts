@@ -12,12 +12,21 @@
 // every status but ARCHIVED is listed; only sold-and-not-loaded work reserves
 // the shelf and only open work forecasts it, as before.
 
+// What the company keeps in stock (2026-09-23, lib/inventoryPolicy): items
+// bought per job are never low or short here; the sold jobs' per-job
+// materials come back as `buy`, the shopping list per job, and `catalog` is
+// the checklist — every standard item and every item on the list with its
+// kept-in-stock / bought-per-job choice — the board's "What we stock" editor.
+
 import { db } from "@/lib/db";
-import { isTradeId, stockKey, stockRows, untrackedLines, type StockItem, type StockLine, type StockRow, type TradeId } from "@/lib/inventory";
+import { isStocked, isTradeId, jobBuyList, stockKey, stockRows, untrackedLines, type BuyJob, type StockItem, type StockLine, type StockRow, type TradeId } from "@/lib/inventory";
 import { presetItems } from "@/lib/inventoryPresets";
 import { explodeLines } from "@/lib/inventoryBom";
+import { itemCategory } from "@/lib/inventoryCategories";
 import { proposalTrade } from "@/lib/inventoryTrade";
 import { inventoryLinkOf } from "@/lib/inventoryPick";
+import { stockPolicyOf, withPolicy } from "@/lib/inventoryPolicy";
+import { defaultStocked, type StockChoice } from "@/lib/inventoryStockDefaults";
 
 export type BoardProposal = {
   id: string;
@@ -39,7 +48,18 @@ export type BoardProposal = {
 
 export type BoardSupplier = { id: string; name: string; email: string | null; phone: string | null; website: string | null; itemCount: number };
 
-export type BoardOrder = { id: string; supplier: string; sentAt: string; lines: Array<{ name: string; quantity: number }> };
+export type BoardOrder = {
+  id: string;
+  supplier: string;
+  supplierId: string | null;
+  sentAt: string;
+  /** Ordered for one job's per-job materials, when it was. */
+  jobId: string | null;
+  lines: Array<{ id?: string; name: string; quantity: number }>;
+};
+
+/** A sold job still to load, on the per-job shopping list. */
+export type BoardBuyJob = BuyJob<{ id: string; jobId: string | null; title: string; client: string | null; startsAt: string | null; lines: StockLine[] }>;
 
 export type TradeBoardData = {
   trade: TradeId;
@@ -52,6 +72,12 @@ export type TradeBoardData = {
   untracked: StockLine[];
   /** The estimator's standard items not on the shelf list yet, and how many there are in all. */
   presets: { missing: number; total: number };
+  /** The "What we stock" checklist: every standard item and every item on the list, with its choice. */
+  catalog: StockChoice[];
+  /** The company's choice for the trade — ever saved, when, and the counts on the list. */
+  policy: { decided: boolean; decidedAt: string | null; stocked: number; perJob: number };
+  /** The per-job shopping list: sold jobs still to load and the per-job materials each needs. */
+  buy: BoardBuyJob[];
   pipeline: { open: number; openTotal: number; sold: number; soldTotal: number; low: number; short: number };
 };
 
@@ -111,17 +137,18 @@ async function tradeProposals(organizationId: string, wanted: readonly TradeId[]
 
 export async function loadTradeBoard(organizationId: string, trade: string): Promise<TradeBoardData | null> {
   if (!isTradeId(trade)) return null;
-  const [proposals, items, suppliers, sent] = await Promise.all([
+  const [proposals, items, suppliers, sent, policy] = await Promise.all([
     tradeProposals(organizationId, [trade]),
     db.inventoryItem.findMany({ where: { organizationId, trade }, orderBy: { name: "asc" }, include: { supplier: { select: { name: true } } } }),
     db.supplier.findMany({ where: { organizationId }, orderBy: { name: "asc" }, include: { _count: { select: { items: true } } } }),
     db.activityEvent.findMany({ where: { organizationId, kind: "PURCHASE_ORDER_SENT", meta: { contains: `"trade":"${trade}"` } }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, createdAt: true, meta: true } }),
+    stockPolicyOf(organizationId, trade),
   ]);
   const orders: BoardOrder[] = sent
     .map((e) => {
-      const meta = JSON.parse(e.meta ?? "{}") as { supplierId?: string; receivedAt?: string; lines?: Array<{ name: string; quantity: number }> };
+      const meta = JSON.parse(e.meta ?? "{}") as { supplierId?: string; jobId?: string; receivedAt?: string; lines?: Array<{ id?: string; name: string; quantity: number }> };
       if (meta.receivedAt) return null;
-      return { id: e.id, supplier: suppliers.find((s) => s.id === meta.supplierId)?.name ?? "Supplier", sentAt: e.createdAt.toISOString(), lines: meta.lines ?? [] };
+      return { id: e.id, supplier: suppliers.find((s) => s.id === meta.supplierId)?.name ?? "Supplier", supplierId: meta.supplierId ?? null, sentAt: e.createdAt.toISOString(), jobId: meta.jobId ?? null, lines: meta.lines ?? [] };
     })
     .filter((o): o is BoardOrder => !!o);
   const list: BoardProposal[] = proposals.map(({ row: p, inferred, linked }) => ({
@@ -139,26 +166,38 @@ export async function loadTradeBoard(organizationId: string, trade: string): Pro
     // A fence package line becomes the posts, rails and pickets it was priced from.
     lines: explodeLines(trade, p.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType }))),
   }));
-  const stock: StockItem[] = items.map((i) => ({
-    id: i.id,
-    name: i.name,
-    key: i.key,
-    unit: i.unit,
-    onHand: i.onHand,
-    reorderPoint: i.reorderPoint,
-    supplierId: i.supplierId,
-    supplierName: i.supplier?.name ?? null,
-    supplierSku: i.supplierSku,
-  }));
+  const stock: StockItem[] = withPolicy(items, policy);
   // Sold work still to load reserves the shelf; open work is the forecast.
   // Only work that draws on the warehouse reserves or forecasts the shelf.
   const sold = list.filter((p) => p.linked && p.status === "ACCEPTED" && !p.loaded);
   const open = list.filter((p) => p.linked && OPEN.includes(p.status));
   const rows = stockRows(stock, sold, open);
   const untracked = untrackedLines(stock, [...sold, ...open].flatMap((p) => p.lines));
-  const have = new Set(stock.map((i) => i.key));
+  const byKey = new Map(stock.map((i) => [i.key, i]));
   const standard = presetItems(trade);
-  const presets = { missing: standard.filter((p) => !have.has(stockKey(p.name))).length, total: standard.length };
+  const presets = { missing: standard.filter((p) => !byKey.has(stockKey(p.name))).length, total: standard.length };
+  // The checklist: the standard items first (an item already on the list
+  // keeps its own name, unit and choice), then whatever else is on the list.
+  const catalog: StockChoice[] = [];
+  const seen = new Set<string>();
+  for (const p of standard) {
+    const key = stockKey(p.name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const have = byKey.get(key);
+    const name = have?.name ?? p.name;
+    const suggested = defaultStocked(trade, name);
+    catalog.push({ key, name, unit: have?.unit ?? p.unit, isNew: !have, stocked: have ? isStocked(have) : suggested, suggested, category: itemCategory(trade, name) });
+  }
+  for (const i of stock) {
+    if (seen.has(i.key)) continue;
+    seen.add(i.key);
+    catalog.push({ key: i.key, name: i.name, unit: i.unit, isNew: false, stocked: isStocked(i), suggested: defaultStocked(trade, i.name), category: itemCategory(trade, i.name) });
+  }
+  catalog.sort((a, b) => a.name.localeCompare(b.name));
+  const perJobCount = stock.filter((i) => !isStocked(i)).length;
+  // The per-job shopping list: the sold jobs still to load, soonest first.
+  const buy = jobBuyList(stock, sold.map((p) => ({ id: p.id, jobId: p.jobId, title: p.title, client: p.client, startsAt: p.jobStartsAt, lines: p.lines })));
   return {
     trade,
     orders,
@@ -167,6 +206,9 @@ export async function loadTradeBoard(organizationId: string, trade: string): Pro
     suppliers: suppliers.map((s) => ({ id: s.id, name: s.name, email: s.email, phone: s.phone, website: s.website, itemCount: s._count.items })),
     untracked,
     presets,
+    catalog,
+    policy: { decided: !!policy.decidedAt, decidedAt: policy.decidedAt, stocked: stock.length - perJobCount, perJob: perJobCount },
+    buy,
     pipeline: {
       open: open.length,
       openTotal: open.reduce((a, p) => a + p.total, 0),
@@ -185,8 +227,10 @@ export async function lowStockCounts(organizationId: string): Promise<Record<Tra
   if (!items.length) return out;
   const proposals = await tradeProposals(organizationId, ALL_TRADES);
   for (const trade of ALL_TRADES) {
-    const stock = items.filter((i) => i.trade === trade);
-    if (!stock.length) continue;
+    const ofTradeItems = items.filter((i) => i.trade === trade);
+    if (!ofTradeItems.length) continue;
+    // An item bought per job is never low (lib/inventory stockRows).
+    const stock = withPolicy(ofTradeItems, await stockPolicyOf(organizationId, trade));
     const ofTrade = proposals.filter((p) => p.trade === trade && p.linked).map((p) => p.row);
     const sold = ofTrade.filter((p) => p.status === "ACCEPTED" && !p.jobs[0]?.materialsLoadedAt).map((p) => ({ lines: explodeLines(trade, p.lineItems) }));
     const open = ofTrade.filter((p) => OPEN.includes(p.status)).map((p) => ({ lines: explodeLines(trade, p.lineItems) }));

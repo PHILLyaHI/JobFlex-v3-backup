@@ -23,8 +23,9 @@ import { db } from "@/lib/db";
 import { isOwnerOrManager, isWorkerRole } from "@/lib/orgContext";
 import { contractTotal } from "@/lib/contractTotal";
 import { crewTotals, jobMoney } from "@/lib/jobCosting";
-import { isTradeId, pickList, type StockItem } from "@/lib/inventory";
+import { isTradeId, pickList } from "@/lib/inventory";
 import { inventoryLinkOf, linkedTradeOf } from "@/lib/inventoryPick";
+import { stockItemsOf } from "@/lib/inventoryPolicy";
 import { explodeLines } from "@/lib/inventoryBom";
 import {
   STATUS_TO_KEY,
@@ -557,9 +558,8 @@ async function loadWorkerScoped(
  */
 async function pickFor(organizationId: string, trade: string | null, lines: Array<{ name: string; measurementType: string; quantity: number }>): Promise<JdPick[]> {
   if (!lines.length) return [];
-  const items: StockItem[] = isTradeId(trade)
-    ? (await db.inventoryItem.findMany({ where: { organizationId, trade } })).map((i) => ({ id: i.id, name: i.name, key: i.key, unit: i.unit, onHand: i.onHand, reorderPoint: i.reorderPoint, supplierId: i.supplierId }))
-    : [];
+  // The stock policy rides along (lib/inventoryPolicy): a per-job item is "ordered for this job", not "short".
+  const items = isTradeId(trade) ? await stockItemsOf(organizationId, trade) : [];
   return pickList(items, explodeLines(trade, lines.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType.toLowerCase().replace("_", " ") })))).map((r) => ({
     name: r.name,
     unit: r.unit,
@@ -567,6 +567,7 @@ async function pickFor(organizationId: string, trade: string | null, lines: Arra
     tracked: r.itemId !== null,
     enough: r.enough,
     onHand: r.onHand,
+    perJob: r.perJob,
   }));
 }
 

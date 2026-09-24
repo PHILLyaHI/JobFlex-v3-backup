@@ -164,6 +164,28 @@
 .sheetHeader h2 { margin: 0; font-size: 19px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 850; text-transform: uppercase; }
 .sheetBody { min-height: 0; padding: 20px 16px max(24px, env(safe-area-inset-bottom)); overflow-y: auto; overscroll-behavior: contain; }
 .sheetItemName { margin: 0 0 16px; font-size: 16px; font-weight: 700; }
+/* what we stock (2026-09-23): the three steps, the checklist frame, the per-job fold, the shopping list */
+.mobile.mobile .guide { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 8px; }
+.mobile.mobile .guide li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--ink-line); border-radius: var(--r-sm); background: var(--paper-deep); }
+.mobile.mobile .guide li > b { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; background: var(--ink); color: var(--paper-deep); font-size: 12px; font-weight: 900; }
+.mobile.mobile .guide li[data-done] > b { background: var(--emerald); }
+.mobile.mobile .guide li > div { flex: 1; min-width: 0; }
+.mobile.mobile .guide strong { display: block; font-size: 13px; font-weight: 750; }
+.mobile.mobile .guide span { display: block; margin-top: 2px; color: var(--ink-muted); font-size: 12px; line-height: 1.45; }
+.mobile.mobile .guide .textButton { min-height: 40px; padding: 6px 0 0; font-size: 12.5px; }
+.mobile.mobile .stockEditor { border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); overflow: hidden; }
+.mobile.mobile .perJob { margin-top: 16px; }
+.mobile.mobile .perJob summary { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 4px; list-style: none; font-weight: 700; font-size: 14px; cursor: pointer; }
+.mobile.mobile .perJob summary::-webkit-details-marker { display: none; }
+.mobile.mobile .perJob summary span { margin-left: auto; color: var(--ink-muted); font-size: 12px; font-weight: 500; }
+.mobile.mobile .perJob[open] summary > svg:last-child { transform: rotate(180deg); }
+.mobile.mobile .buyGroup { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--ink-line); }
+.mobile.mobile .buyGroupHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 13px; }
+.mobile.mobile .buyGroupHead span { color: var(--ink-muted); font-size: 12px; }
+.mobile.mobile .buyState { display: block; margin-top: 2px; font-size: 11px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-muted); }
+.mobile.mobile .buyState[data-tone="success"] { color: var(--emerald); }
+.mobile.mobile .buyState[data-tone="warning"] { color: var(--ink-soft); }
+.mobile.mobile .buyGroup > .secondary { width: 100%; margin-top: 10px; }
 .mobile.mobile .srOnly { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 @media (hover: hover) {

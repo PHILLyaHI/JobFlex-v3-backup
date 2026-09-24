@@ -85,11 +85,62 @@ treated or cedar boards and posts … same for roofing and HVAC."
 - The board offers "Add the N standard items" until they are all on the
   list; they start at zero on hand, then the office receives what it has.
 
+## What the company keeps in stock (2026-09-23)
+
+Owner: "not every contractor stocks everything to get the job done … when
+they set up their inventory, mark what they keep in stock … check-box what
+they're stocking and calculate on that … make it understandable how to set
+up the inventory."
+
+- **Two kinds of item.** *Kept in stock*: everything above — counted on the
+  shelf, reserved by sold jobs, forecast by open ones, low against a reorder
+  point, on the restock order. *Bought per job*: the shelf is not expected
+  to hold it — never low, never short, never on a restock order; when a job
+  sells, its per-job materials go on that job's shopping list instead, and
+  the crew's list says "ordered for this job", not "short".
+- **The checklist ("What we stock")** on each board: every standard material
+  of the trade and every item on the list, grouped by shelf, one checkbox
+  each, with a search, all/none per group and "Suggested". It opens by
+  itself for a company whose list is empty, with the three steps written
+  out: tick what you stock → count the shelf → let the proposals do the
+  rest. Saving adds the standard items not on the list yet (at zero) and
+  rewrites the choice. Any item's choice can also be changed in its edit
+  form ("Kept in stock" / "Bought per job").
+- **The suggestion** (`lib/inventoryStockDefaults`, one sentence per trade,
+  shown over the list): roofing keeps the small stuff every truck carries
+  and buys shingles, membranes and coatings per job; fence keeps posts,
+  rails, concrete, fasteners, caps and gate hardware and buys pickets,
+  panels, fabric and the non-wood systems per job; HVAC keeps the service
+  truck's parts and orders equipment per job. "Add the standard items" in
+  one go applies the same suggestion.
+- **The shopping list** (`jobBuyList`, pure): for each sold job still to
+  load, soonest first, its per-job materials in whole units; what is on
+  hand already (an order that arrived) is given to the soonest job, the
+  rest reads "to buy", and a purchase order emailed for the job marks its
+  lines "on the way". The Orders tab shows it as "Buy for upcoming jobs",
+  one email per supplier per job (`sendPurchaseOrder` takes `jobId`);
+  "Restock the shelf" below it is the old suggested order, stocked items
+  only. The next-load card, the coverage column and the bell notice say
+  "N short on the shelf · M to buy for the job".
+- **Storage, no schema change:** one `ActivityEvent` per company and trade
+  (kind `INVENTORY_STOCK_POLICY`, meta `{ trade, perJob: [item keys] }`),
+  newest wins, absent = kept in stock — `lib/inventoryPolicy`
+  (`stockPolicyOf`, `recordStockPolicy`, `stockItemsOf`: the one read every
+  page that counts against the shelf now uses). Keyed by the item's
+  normalized name, which survives a delete and re-seed.
+- **The three steps** stay on the board as a strip — what you stock (with
+  the counts and a Change button), count the shelf (how many stocked items
+  still show zero), proposals draw on it — each marked done as it happens.
+- Proof: `scripts/qa/inventory.check.ts` (per-job rows, the crew's flag,
+  the shopping list) and `scripts/qa/inventory-stock-defaults.check.ts`.
+
 ## Data layer
 
 New tables `Supplier`, `InventoryItem`, `InventoryMovement`; new columns
-`Proposal.trade` and `Job.materialsLoadedAt`, both nullable. The build's
-`prisma db push` adds them without touching existing rows.
+`Proposal.trade` and `Job.materialsLoadedAt`, both nullable (2026-09-20,
+when the build still pushed the schema). Everything since — the
+connect-or-not choice and what the company keeps in stock — is an
+`ActivityEvent`, because the production build no longer pushes the schema.
 
 ## Proof
 

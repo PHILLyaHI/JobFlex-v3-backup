@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isCronAuthorized } from "@/lib/cronAuth";
 import { lowStockCounts } from "@/lib/inventoryBoard";
-import { isTradeId, pickList, type StockItem } from "@/lib/inventory";
+import { isTradeId, pickList } from "@/lib/inventory";
 import { explodeLines } from "@/lib/inventoryBom";
+import { stockItemsOf } from "@/lib/inventoryPolicy";
 
 export const runtime = "nodejs";
 
@@ -11,7 +12,8 @@ export const runtime = "nodejs";
 // each becoming a bell notification (an ActivityEvent the feed already reads):
 //   STOCK_LOW        — a trade board has items low for the next job.
 //   STOCK_SHORT_JOB  — a job starting within two days needs more than the
-//                      shelf holds. Said once per job.
+//                      shelf holds, or has per-job materials not bought yet
+//                      (lib/inventoryPolicy). Said once per job.
 // Fail-closed cron auth, like the other cron routes. Never throws past one
 // company: a bad org is logged and the rest still run.
 const BOARD: Record<string, string> = { fence: "/dashboard/fence-estimator/board", roof: "/dashboard/roof-estimator/board", hvac: "/dashboard/hvac-estimator/board" };
@@ -45,16 +47,18 @@ export async function GET(req: Request) {
       for (const job of jobs) {
         const trade = job.proposal?.trade;
         if (!isTradeId(trade) || !job.proposal) continue;
-        const items: StockItem[] = (await db.inventoryItem.findMany({ where: { organizationId, trade } })).map((i) => ({ id: i.id, name: i.name, key: i.key, unit: i.unit, onHand: i.onHand, reorderPoint: i.reorderPoint, supplierId: i.supplierId }));
-        const short = pickList(items, explodeLines(trade, job.proposal.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType })))).filter((r) => r.itemId && !r.enough);
-        if (!short.length) continue;
+        const items = await stockItemsOf(organizationId, trade);
+        const pick = pickList(items, explodeLines(trade, job.proposal.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType })))).filter((r) => r.itemId && !r.enough);
+        const short = pick.filter((r) => !r.perJob);
+        const toBuy = pick.filter((r) => r.perJob);
+        if (!short.length && !toBuy.length) continue;
         const said = await db.activityEvent.findFirst({ where: { organizationId, kind: "STOCK_SHORT_JOB", meta: { contains: `"jobId":"${job.id}"` } }, select: { id: true } });
         if (said) continue;
         await db.activityEvent.create({
           data: {
             organizationId,
             kind: "STOCK_SHORT_JOB",
-            summary: `${job.title} starts ${job.startsAt?.toLocaleDateString("en-US", { month: "short", day: "numeric" }) ?? "soon"} and the warehouse is short: ${short.map((s) => `${s.name} (${s.quantity} needed, ${s.onHand} there)`).join(", ")}`,
+            summary: `${job.title} starts ${job.startsAt?.toLocaleDateString("en-US", { month: "short", day: "numeric" }) ?? "soon"}${short.length ? ` and the warehouse is short: ${short.map((s) => `${s.name} (${s.quantity} needed, ${s.onHand} there)`).join(", ")}` : ""}${toBuy.length ? `${short.length ? ";" : " and"} still to buy for the job: ${toBuy.map((s) => `${s.name} (${s.quantity})`).join(", ")}` : ""}`,
             meta: JSON.stringify({ jobId: job.id, trade, href: `/dashboard/jobs/${job.id}` }),
           },
         });
