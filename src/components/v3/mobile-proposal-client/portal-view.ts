@@ -108,6 +108,8 @@ export type PortalView = {
   /** The client's own job in pictures — the fence's 3D and layout, the
    *  roof from the air (2026-09-23) — or none. */
   pictures: PortalPicture[];
+  /** How long the spoken summary runs ("Listen to this proposal", 2026-09-23). */
+  listenSeconds: number;
 };
 
 /** The shape buildPortalView needs — structural, so this module never has to
@@ -160,7 +162,7 @@ export function buildPortalView(
   proposal: ProposalRow,
   fmt: Fmt,
   /** Built by the caller, which already has the row + org connections. */
-  extras: { pay: PortalPayModel; terms: string; rating?: PortalRating | null; pictures?: PortalPicture[] },
+  extras: { pay: PortalPayModel; terms: string; rating?: PortalRating | null; pictures?: PortalPicture[]; listenSeconds?: number },
 ): PortalView {
   const { money, longDate } = fmt;
   const org = proposal.organization;
@@ -171,6 +173,7 @@ export function buildPortalView(
     terms: extras.terms,
     rating: extras.rating ?? null,
     pictures: extras.pictures ?? [],
+    listenSeconds: extras.listenSeconds ?? 0,
     publicId,
     status: proposal.status,
     total: proposal.total,

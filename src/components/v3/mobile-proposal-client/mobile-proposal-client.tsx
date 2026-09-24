@@ -12,6 +12,7 @@ import { ProposalDecision } from "./proposal-decision";
 import { PaymentCenter } from "./payment-center";
 import { usePayReturn } from "./use-pay-return";
 import { StarsInline } from "@/components/reviews/StarsInline";
+import { ListenCard } from "@/components/portal/listen-card";
 import "./mobile-proposal-client.css";
 
 /** `"open"` is the one local value the SERVER never sends: a revert has put the
@@ -344,6 +345,11 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
                 <b>{view.validUntil}</b>
               </div>
             </div>
+
+            {/* LISTEN (2026-09-23) — the summary and the totals read aloud,
+                for a client who is driving: one tap, then the lock screen
+                and the car take over. Same card as the desktop tree. */}
+            <ListenCard publicId={view.publicId} title={view.title} orgName={view.orgName} seconds={view.listenSeconds} />
 
             {/* THE CLIENT'S OWN JOB IN PICTURES — the fence's 3D and traced
                 layout, the roof from the air with the measured outline drawn

@@ -1,0 +1,53 @@
+/* "Listen to this proposal" — the client portal's card (2026-09-23).
+   Lives inside either portal tree, so every token falls back to the
+   blueprint sheet's own values when a tree does not define it. */
+.jf-listen {
+  display: flex; align-items: flex-start; gap: 14px;
+  margin-top: 20px; padding: 14px 16px;
+  border: var(--border, 2px solid #0a0a0a); border-radius: var(--radius, 2px);
+  background: var(--paper, #f2f0eb);
+  transition: box-shadow .25s ease, background .25s ease;
+}
+.jf-listen.is-lit { box-shadow: 0 0 0 3px var(--sky, #4a9eff); background: #fff; }
+.jf-listen.is-error { border-color: var(--danger, #a83232); }
+.jf-listen-btn {
+  appearance: none; cursor: pointer; flex: 0 0 auto;
+  width: 48px; height: 48px; border-radius: 50%;
+  border: var(--border, 2px solid #0a0a0a);
+  background: var(--blueprint, #1854a0); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 3px 3px 0 var(--ink, #0a0a0a);
+  transition: transform .08s ease, box-shadow .08s ease, background .15s ease;
+}
+.jf-listen-btn:hover { background: var(--blueprint-dark, #0e3d7a); }
+.jf-listen-btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink, #0a0a0a); }
+.jf-listen-btn:disabled { cursor: progress; opacity: .8; }
+.jf-listen-btn:focus-visible { outline: 3px solid var(--sky, #4a9eff); outline-offset: 2px; }
+.jf-listen-btn svg { display: block; }
+.jf-listen-spin { animation: jf-listen-spin 1s linear infinite; }
+@keyframes jf-listen-spin { to { transform: rotate(360deg); } }
+.jf-listen-body { min-width: 0; flex: 1 1 auto; padding-top: 3px; }
+.jf-listen-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.jf-listen-head b { font-family: var(--font, inherit); font-size: 14px; font-weight: 900; letter-spacing: -.01em; color: var(--ink, #0a0a0a); }
+.jf-listen-head i {
+  margin-left: auto; flex: 0 0 auto; font-style: normal;
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; font-weight: 600;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--muted, #555);
+}
+.jf-listen-ic { flex: 0 0 auto; color: var(--blueprint, #1854a0); }
+.jf-listen-sub { margin-top: 4px; font-size: 13px; line-height: 1.4; color: var(--muted, #555); font-variant-numeric: tabular-nums; }
+.jf-listen.is-error .jf-listen-sub { color: var(--danger, #a83232); }
+.jf-listen-bar {
+  position: relative; margin-top: 10px; height: 8px;
+  border: 1.5px solid var(--ink, #0a0a0a); background: #fff; cursor: pointer;
+}
+.jf-listen-bar span { position: absolute; inset: 0 auto 0 0; background: var(--blueprint, #1854a0); transition: width .2s linear; }
+.jf-listen-bar:focus-visible { outline: 3px solid var(--sky, #4a9eff); outline-offset: 2px; }
+@media (max-width: 480px) {
+  .jf-listen { gap: 12px; padding: 12px 12px; }
+  .jf-listen-head i { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jf-listen, .jf-listen-btn, .jf-listen-bar span { transition: none; }
+  .jf-listen-spin { animation: none; }
+}

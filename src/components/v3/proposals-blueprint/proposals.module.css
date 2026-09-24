@@ -1735,3 +1735,35 @@
 .bp :global(.content .pt-views--quiet) { border-color: var(--hair); color: var(--muted); }
 /* The column is right-aligned; the plate keeps its own left edge. */
 .bp :global(.content .ptable td.num .pt-views) { margin-left: auto; }
+
+/* THE "LISTEN" PANEL (2026-09-23, ./listen-panel.ts) — what the client hears,
+   played at the bottom right in the menu's own dress: white sheet, ink
+   border, the hard 4px shadow. One panel at a time. */
+.bp :global(.plisten) {
+  position: fixed; right: 18px; bottom: 18px; z-index: 70;
+  width: min(360px, calc(100vw - 36px));
+  background: #fff; border: var(--border); border-radius: var(--radius);
+  box-shadow: 4px 4px 0 var(--ink); padding: 10px 12px 12px;
+}
+.bp :global(.plisten-h) { display: flex; align-items: flex-start; gap: 8px; }
+.bp :global(.plisten-h .ic) { width: 16px; height: 16px; flex: 0 0 auto; margin-top: 2px; color: var(--blueprint); }
+.bp :global(.plisten-t) { min-width: 0; flex: 1 1 auto; }
+.bp :global(.plisten-t b) { display: block; font-size: 12.5px; font-weight: 800; letter-spacing: -.01em; }
+.bp :global(.plisten-t i) { display: block; margin-top: 1px; font-style: normal; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bp :global(.plisten-x) { appearance: none; border: 0; background: none; cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px; color: var(--muted); }
+.bp :global(.plisten-x:hover) { color: var(--ink); }
+.bp :global(.plisten-b) { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.bp :global(.plisten-btn) {
+  appearance: none; cursor: pointer; flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%;
+  border: var(--border); background: var(--blueprint); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; box-shadow: 2px 2px 0 var(--ink);
+}
+.bp :global(.plisten-btn:disabled) { cursor: progress; opacity: .8; }
+.bp :global(.plisten-btn svg) { display: block; }
+.bp :global(.plisten-spin) { animation: plisten-spin 1s linear infinite; }
+@keyframes plisten-spin { to { transform: rotate(360deg); } }
+.bp :global(.plisten-m) { min-width: 0; flex: 1 1 auto; }
+.bp :global(.plisten-s) { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; line-height: 1.35; }
+.bp :global(.plisten.is-error .plisten-s) { color: var(--danger, #a83232); }
+.bp :global(.plisten-bar) { position: relative; margin-top: 7px; height: 7px; border: 1.5px solid var(--ink); background: #fff; cursor: pointer; }
+.bp :global(.plisten-bar span) { position: absolute; inset: 0 auto 0 0; background: var(--blueprint); transition: width .2s linear; }

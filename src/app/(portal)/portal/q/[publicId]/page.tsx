@@ -44,6 +44,8 @@ import { PortalActions } from "./portal-actions";
 import { PortalPayment } from "./portal-payment";
 import { PortalReveal } from "./portal-reveal";
 import { PortalViewport } from "./portal-viewport";
+import { ListenCard } from "@/components/portal/listen-card";
+import { speechFor } from "@/lib/proposalAudio";
 import "./proposal-portal.css";
 
 export const dynamic = "force-dynamic";
@@ -201,6 +203,10 @@ export default async function PublicProposalPortal({
   const hasScope = Boolean(proposal.showScope && proposal.scopeOfWork && proposal.scopeOfWork.trim());
   const hasDescription = Boolean(proposal.description && proposal.description.trim());
   const telHref = org.phone ? `tel:${org.phone.replace(/\s+/g, "")}` : null;
+  // "Listen to this proposal" (2026-09-23): the spoken summary's length for
+  // the card's label. The words are written from this same row
+  // (lib/proposalSpeech); the audio itself loads on the first tap.
+  const listenSeconds = speechFor(proposal).seconds;
 
   // ── HANDHELD ────────────────────────────────────────────────────────────
   // At ≤768px this URL serves the handheld rebuild instead of the tree below;
@@ -217,6 +223,7 @@ export default async function PublicProposalPortal({
     terms: orgTerms,
     rating,
     pictures,
+    listenSeconds,
   });
 
   return (
@@ -271,6 +278,10 @@ export default async function PublicProposalPortal({
               <div className="total"><span>Total</span><b>{money(proposal.total)}</b></div>
               <div><span>Valid until</span><b>{longDate(proposal.validUntil)}</b></div>
             </div>
+
+            {/* LISTEN — the summary and the totals read aloud, for a client
+                on the road. Under the total, before anything to read. */}
+            <ListenCard publicId={publicId} title={proposal.title} orgName={org.name ?? ""} seconds={listenSeconds} />
 
             {pictures.length > 0 && (
               <div className={`pv-pics${pictures.length > 1 ? " pv-pics--two" : ""}`} data-pictures={pictures.map((p) => p.kind).join(" ")}>
