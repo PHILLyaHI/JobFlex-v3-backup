@@ -26,6 +26,7 @@
 delete process.env.STRIPE_SECRET_KEY;
 delete process.env.STRIPE_SECRET_KEY_TEST;
 
+import "./_server-only"; // `server-only` outside Next — see the file
 import { readFileSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { accrueForInvoice, markSubscriptionCanceled, syncSubscriptionFromStripe } from "../../src/lib/stripeSync";

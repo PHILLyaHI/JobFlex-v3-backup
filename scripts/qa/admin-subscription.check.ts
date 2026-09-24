@@ -15,6 +15,7 @@
 // are snapshotted first and put back at the end, pass or fail. The PlanPrice
 // rows it needs are prefixed `price_qa_` and removed on the way out.
 
+import "./_server-only"; // `server-only` outside Next — see the file
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";

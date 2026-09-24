@@ -11,6 +11,7 @@
 // it back, because that function upserts the billing mirror.
 //
 // Rows it writes are prefixed `qa-inf-` and deleted on the way out, pass or fail.
+import "./_server-only"; // `server-only` outside Next — see the file
 import { readFileSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import {

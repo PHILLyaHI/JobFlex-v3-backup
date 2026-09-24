@@ -15,6 +15,7 @@
 // here and removed at the end, pass or fail, with the jobs and activity the
 // accept produced.
 
+import "./_server-only"; // `server-only` outside Next — see the file
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
@@ -25,21 +26,13 @@ delete process.env.STRIPE_SECRET_KEY;
 delete process.env.STRIPE_SECRET_KEY_TEST;
 delete process.env.NEXT_PUBLIC_POSTHOG_KEY;
 
-import Module from "node:module";
 import { PrismaClient } from "@prisma/client";
+import { POST as acceptRoute } from "../../src/app/api/public-quote/[publicId]/accept/route";
+import { POST as declineRoute } from "../../src/app/api/public-quote/[publicId]/decline/route";
+import { POST as revertRoute } from "../../src/app/api/public-quote/[publicId]/revert/route";
+import { signRevert } from "../../src/lib/quoteRevert";
 
-// The routes reach lib/sdk/stripe, which imports Next's `server-only` marker
-// — a virtual module outside Next. Stubbed here, before the routes load.
-{
-  const M = Module as unknown as { _resolveFilename: (r: string, ...a: unknown[]) => string; _cache: Record<string, unknown> };
-  const orig = M._resolveFilename;
-  M._resolveFilename = function (this: unknown, request: string, ...rest: unknown[]) {
-    return request === "server-only" ? "server-only" : orig.call(this, request, ...rest);
-  };
-  M._cache["server-only"] = { id: "server-only", filename: "server-only", loaded: true, exports: {} };
-}
-type Route = (req: Request, ctx: { params: Promise<{ publicId: string }> }) => Promise<Response>;
-type Sign = (typeof import("../../src/lib/quoteRevert"))["signRevert"];
+type Route = typeof acceptRoute;
 
 const db = new PrismaClient();
 const QA_SLUG = "qa-co";
@@ -81,12 +74,6 @@ const statusOf = async (id: string) => (await db.proposal.findUnique({ where: { 
 const reverted = (id: string) => db.activityEvent.count({ where: { proposalId: id, kind: "REVERTED" } });
 
 async function main() {
-  const [{ POST: acceptRoute }, { POST: declineRoute }, { POST: revertRoute }, { signRevert }]: [{ POST: Route }, { POST: Route }, { POST: Route }, { signRevert: Sign }] = await Promise.all([
-    import("../../src/app/api/public-quote/[publicId]/accept/route"),
-    import("../../src/app/api/public-quote/[publicId]/decline/route"),
-    import("../../src/app/api/public-quote/[publicId]/revert/route"),
-    import("../../src/lib/quoteRevert"),
-  ]);
   const org = await db.organization.findUnique({ where: { slug: QA_SLUG }, select: { id: true } });
   if (!org) throw new Error("QA Co (qa-co) is not seeded");
   orgId = org.id;

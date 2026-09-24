@@ -2,6 +2,7 @@
 // pricing: system switches, saved preferences, catalog upgrades, report merges,
 // client scope, and the smaller pricing rules.
 //   npx tsx scripts/qa/roofReview.check.ts
+import "./_server-only"; // `server-only` outside Next — see the file
 import { BUILTIN_LISTS, type CatalogLists } from "../../src/lib/roofPackage/catalog";
 import { buildRoofPackage, defaultSpec, likeForLikeFamily, withJobClass, withMeasured, withSystem, type RoofFacts, type RoofPackage, type RoofPackageSpec } from "../../src/lib/roofPackage/takeoff";
 import { applyPickedPrices, applyPrefs, familyFit, pickSystemOn, prefsOf, reconcile, upgradeLists, type Prefs } from "../../src/components/v3/roof-estimator-blueprint/roof-package-builder";

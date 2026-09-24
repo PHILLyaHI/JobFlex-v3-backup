@@ -7,6 +7,7 @@
 // Rows are written in **QA Co** (slug `qa-co`), prefixed `qa-mail-`, and deleted
 // on the way out, pass or fail.
 
+import "./_server-only"; // `server-only` outside Next — see the file
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
