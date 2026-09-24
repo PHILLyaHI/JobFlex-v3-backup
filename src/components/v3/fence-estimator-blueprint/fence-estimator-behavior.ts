@@ -106,7 +106,7 @@ import {
 } from "@/lib/fence/pricing";
 import { getFenceCatalog, saveFenceCatalog } from "@/actions/fenceCatalog";
 import type { ArmedOpening } from "@/stores/useFenceStudioStore";
-import { fetchPropertyBoundary } from "@/actions/fenceBoundary";
+import { fetchHouseFootprints, fetchPropertyBoundary } from "@/actions/fenceBoundary";
 import {
   groupSides,
   detectFrontSides,
@@ -2418,6 +2418,56 @@ export function initFenceEstimatorContent(
   /** The lookup's raw answer, kept so the subject can be re-picked when the
    *  lot arrives after the buildings did. */
   let osmRaw: Array<{ ring: Array<{ lat: number; lng: number }>; heightFt: number }> | null = null;
+  type SiteRing = { ring: Array<{ lat: number; lng: number }>; heightFt: number; heightTagged?: boolean };
+  /** The two answers behind `osmRaw` (2026-09-24): OpenStreetMap's, and
+   *  Google's aerial building mask when it has this address — the same photo
+   *  the map shows, so its outlines land on the roof without dragging
+   *  (lib/solarHouses). The aerial outlines win; OSM lends them its heights. */
+  let osmBuildings: SiteRing[] | null = null;
+  let solarBuildings: SiteRing[] | null = null;
+  let houseSource: 'osm' | 'solar' = 'osm';
+  let houseRefine: 'idle' | 'loading' | 'done' | 'none' = 'idle';
+  let houseImagery: string | null = null;
+  /** Each automatic house's ring as adopted — an untouched one makes way for
+   *  the aerial outline when that lands; a moved or redrawn one stays. */
+  const autoHouseRings = new Map<string, PathPoint[]>();
+  function ringCentroidLL(r: Array<{ lat: number; lng: number }>) {
+    let lat = 0, lng = 0;
+    r.forEach(function (q) { lat += q.lat; lng += q.lng; });
+    return { lat: lat / r.length, lng: lng / r.length };
+  }
+  function metresLL(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+    const d2r = Math.PI / 180;
+    return Math.hypot((b.lng - a.lng) * d2r * Math.cos(a.lat * d2r) * 6378137, (b.lat - a.lat) * d2r * 6378137);
+  }
+  function llInRing(p: { lat: number; lng: number }, ring: Array<{ lat: number; lng: number }>): boolean {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[i], b = ring[j];
+      if ((a.lat > p.lat) !== (b.lat > p.lat) && p.lng < ((b.lng - a.lng) * (p.lat - a.lat)) / (b.lat - a.lat) + a.lng) inside = !inside;
+    }
+    return inside;
+  }
+  /** OSM's heights on the aerial outlines: the OSM ring under the outline's centroid, else the nearest within 10 m. */
+  function withHeights(solar: SiteRing[], osm: SiteRing[]): SiteRing[] {
+    return solar.map(function (h) {
+      const c = ringCentroidLL(h.ring);
+      let best: SiteRing | null = null;
+      let bestM = 10;
+      for (const o of osm) {
+        if (o.ring.length >= 3 && llInRing(c, o.ring)) { best = o; break; }
+        const m = o.ring.length ? metresLL(c, ringCentroidLL(o.ring)) : Infinity;
+        if (m < bestM) { bestM = m; best = o; }
+      }
+      return best ? { ring: h.ring, heightFt: best.heightFt, heightTagged: best.heightTagged } : h;
+    });
+  }
+  function composeRaw() {
+    osmRaw = solarBuildings ? withHeights(solarBuildings, osmBuildings || []) : osmBuildings;
+  }
+  function sameRing(a: PathPoint[], b: PathPoint[]): boolean {
+    return a.length === b.length && a.every(function (q, i) { return Math.abs(q.x - b[i].x) < 0.05 && Math.abs(q.y - b[i].y) < 0.05; });
+  }
   /** The address the automatic house was made for — once per address, so a
    *  house the contractor removed stays removed. */
   let autoHouseFor: string | null = null;
@@ -2473,7 +2523,8 @@ export function initFenceEstimatorContent(
   let siteBuildingsRaw: BuildingFootprint[] = [];
   let siteShift: PathPoint = { x: 0, y: 0 };
   function shiftKey(): string | null {
-    return mapOrigin ? 'jf.fence.houseShift:' + mapOrigin.lat.toFixed(5) + ',' + mapOrigin.lng.toFixed(5) : null;
+    // The aerial outlines and the OSM ones sit differently on the photo: each source keeps its own remembered drag.
+    return mapOrigin ? 'jf.fence.houseShift:' + (houseSource === 'solar' ? 'solar:' : '') + mapOrigin.lat.toFixed(5) + ',' + mapOrigin.lng.toFixed(5) : null;
   }
   function savedShift(): PathPoint {
     try {
@@ -2562,7 +2613,10 @@ export function initFenceEstimatorContent(
         .map(function (q) { return { x: q.x, y: q.y }; }),
       stories: b.heightFt >= 30 ? 3 : b.heightFt >= 20 ? 2 : 1,
     }]);
-    if (auto) autoHouseIds.add(id);
+    if (auto) {
+      autoHouseIds.add(id);
+      autoHouseRings.set(id, houses[houses.length - 1].ring.slice());
+    }
   }
   /** The lookup's answer (or the lot) just landed: roles, the automatic house,
    *  the button's state. Safe to call again — it adopts once per address. */
@@ -2600,7 +2654,10 @@ export function initFenceEstimatorContent(
     first: Promise<{ buildings: Array<{ ring: Array<{ lat: number; lng: number }>; heightFt: number }>; roads: unknown[] }>,
   ) {
     setHouseLookup('loading');
+    refineHouses(o);
     const giveUp = function () {
+      // The aerial outline is here already: OSM only lent heights, and it lent none.
+      if (solarBuildings && solarBuildings.length) { settleHouseLookup(o); return; }
       setHouseLookup('failed');
       if (!houseLayerTouched && !houseLayer) setHouseLayer(true); // the panel is where "draw it" lives
       sayHint('The house outline could not be loaded · draw it: Trace outline, in Buildings under the map.');
@@ -2616,7 +2673,8 @@ export function initFenceEstimatorContent(
         const dead = !res.buildings.length && !res.roads.length;
         if (dead && attempt < 2) return retry();
         if (dead) return giveUp();
-        osmRaw = res.buildings;
+        osmBuildings = res.buildings;
+        composeRaw();
         settleHouseLookup(o);
       }).catch(function () {
         if (!sameOrigin(mapOrigin, o)) return;
@@ -2626,8 +2684,47 @@ export function initFenceEstimatorContent(
     };
     again(0, first);
   }
+  /** Google's aerial building mask for the pin (actions/fenceBoundary
+   *  fetchHouseFootprints): asked beside the OSM lookup, and when it answers
+   *  its outlines replace OSM's — the automatic house too, unless the
+   *  contractor has already moved or redrawn it. Fails quietly: no key, no
+   *  coverage or a failed call leaves the OSM outline exactly as it was. */
+  function refineHouses(o: { lat: number; lng: number }) {
+    houseRefine = 'loading';
+    renderHousePanel();
+    fetchHouseFootprints(o.lat, o.lng).then(function (res) {
+      if (!sameOrigin(mapOrigin, o)) return;
+      if (!res.ok || !res.buildings.length) { houseRefine = 'none'; renderHousePanel(); return; }
+      solarBuildings = res.buildings;
+      houseSource = 'solar';
+      houseImagery = res.imageryDate;
+      houseRefine = 'done';
+      composeRaw();
+      // The automatic house adopted from OSM, if untouched, makes way for the aerial one.
+      const key = o.lat.toFixed(6) + ',' + o.lng.toFixed(6);
+      if (autoHouseFor === key) {
+        const stale = houses.filter(function (h) { const orig = autoHouseRings.get(h.id); return !!orig && sameRing(orig, h.ring); }).map(function (h) { return h.id; });
+        if (stale.length) {
+          houses = houses.filter(function (h) { return stale.indexOf(h.id) < 0; });
+          stale.forEach(function (id) { autoHouseIds.delete(id); autoHouseRings.delete(id); });
+          autoHouseFor = null;
+        }
+      }
+      settleHouseLookup(o);
+    }).catch(function () {
+      if (!sameOrigin(mapOrigin, o)) return;
+      houseRefine = 'none';
+      renderHousePanel();
+    });
+  }
   function resetHouseLookup() {
     osmRaw = null;
+    osmBuildings = null;
+    solarBuildings = null;
+    houseSource = 'osm';
+    houseRefine = 'idle';
+    houseImagery = null;
+    autoHouseRings.clear();
     autoHouseFor = null;
     autoHouseIds.clear();
     houseSel = null;
@@ -2842,7 +2939,20 @@ export function initFenceEstimatorContent(
           : '') +
         (moved >= 0.05
           ? '<button class="tool" type="button" data-house-shift-reset>Detected outline moved ' + (moved < 10 ? moved.toFixed(1) : String(Math.round(moved))) + ' ft — reset</button>'
-          : '');
+          : '') +
+        (function () {
+          // Where the outline came from — the aerial photo's own building mask
+          // needs no dragging; an OSM outline may (2026-09-24).
+          const when = houseImagery ? new Date(houseImagery + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '';
+          const note = houseSource === 'solar'
+            ? 'Outline from Google aerial imagery' + (when ? ' · ' + when : '')
+            : houseRefine === 'loading'
+              ? 'Checking the aerial imagery for a better outline…'
+              : siteBuildingsRaw.length
+                ? 'Outline from OpenStreetMap · drag it onto the roof if it sits off'
+                : '';
+          return note ? '<span class="tool-note" data-house-source="' + houseSource + '">' + note + '</span>' : '';
+        })();
     }
     const mounts = $('#houseMounts');
     if (mounts) mounts.textContent = mountsText();

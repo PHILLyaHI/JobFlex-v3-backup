@@ -38,6 +38,7 @@ import type { RoadLine } from "@/lib/parcels";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { readOsmPoint, writeOsmPoint } from "@/lib/overpassStore";
 import { askOverpass } from "@/lib/overpass";
+import { solarHousesAt, withOsmHeights } from "@/lib/solarHouses";
 
 export type { LatLngPoint };
 
@@ -280,4 +281,36 @@ export async function fetchPropertyBoundary(
     };
   }
   return { ok: true, ring, buildings, roads: osm.roads };
+}
+
+/**
+ * The better house outlines (2026-09-24): every structure in Google's aerial
+ * building mask around the pin, in lat/lng, with OpenStreetMap's heights where
+ * an OSM building sits under the same roof (lib/solarHouses). `ok: false`
+ * says why there are none — no key, no Google coverage here, or a failed call
+ * — and the fence page keeps the OSM outlines it already has. Asked beside
+ * the OSM lookup, so a cached OSM answer may or may not be there yet; the page
+ * merges heights again when it is.
+ */
+export async function fetchHouseFootprints(
+  lat: number,
+  lng: number,
+  radiusM?: number,
+): Promise<
+  | { ok: true; source: "solar"; buildings: BuildingRing[]; imageryDate: string | null; imageryQuality: string; cached: boolean }
+  | { ok: false; reason: "off" | "no-coverage" | "failed"; error?: string }
+> {
+  const { organizationId } = await requireEstimatorOrManager();
+  await enforceRateLimit(`solar-houses:${organizationId}`, 30, HOUR, "house outline lookups");
+  const answer = await solarHousesAt({ lat, lng }, { radiusM });
+  if (!answer.ok) return answer;
+  const osm = await readOsmPoint<{ buildings: BuildingRing[]; roads: RoadLine[] }>(lat, lng).catch(() => null);
+  return {
+    ok: true,
+    source: "solar",
+    buildings: withOsmHeights(answer.buildings, osm?.buildings ?? []),
+    imageryDate: answer.imageryDate,
+    imageryQuality: answer.imageryQuality,
+    cached: answer.cached,
+  };
 }
