@@ -23,6 +23,7 @@ import { priceLinesForClient } from "@/lib/pricing/markup";
 import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
 import { trackActivation, trackProposalCreated } from "@/lib/activation-events";
 import { logServerError } from "@/lib/server-events";
+import { applyMemberDiscount } from "@/lib/servicePlanBook";
 
 const lineItemSchema = z.object({
   name: z.string().min(1),
@@ -441,6 +442,8 @@ export async function saveProposal(raw: unknown) {
         : {}),
     },
   });
+  // A member client (2026-09-22): the plan's discount rides on the new proposal (lib/servicePlanBook).
+  await applyMemberDiscount(created.id).catch(() => {});
   // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
   await recordInventoryLink(organizationId, created.id, data.inventoryLinked, user.id);
 

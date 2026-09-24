@@ -697,3 +697,37 @@ at $0.00) next to ours. What changed (`src/lib/hvac/serviceMenu.ts`):
   (`lib/inventoryPresets`), so a service proposal's parts match stock and
   the crew's pick list.
 - QA: `scripts/qa/hvac-service-menu.check.ts`.
+
+## The service menu is editable (2026-09-23)
+
+Owner: "what is the service menu for … make those services editable, make
+smart." What it is for: the price book the estimator's **Service / repair**
+job prices from — pick a house, pick the tasks, every line lands on the
+estimate at the menu's numbers (labor typical × the market index, part
+typical + markup), then converts to a proposal like any other estimate.
+
+What changed (`/dashboard/hvac-estimator/services`, now a client page;
+writes in `actions/hvacServices.ts`, all on the rate card — no schema):
+
+- **A price typed on a row is the shop's price** for that built-in task from
+  then on: `HvacRateCard.serviceOverrides[taskId]` (labor, part cost, part
+  name, brands, includes, hidden). `applyOverride` / `withShopPrices` in
+  `serviceMenu.ts` put the shop's numbers on the built-in rows and flag them
+  `ownLabor` / `ownPart`; `indexedLabor` never moves an own number; the
+  ledger writes the line as `entered` with "your menu price". The typical
+  stays beside the field; Reset brings it back.
+- **Hide** takes a task off the visit's menu (`serviceMenuFor` drops it);
+  `serviceTask(id)` still resolves it, so an old estimate keeps pricing.
+  "Offer again" from the Hidden filter.
+- **One adjustment** (`serviceLaborAdjustPct`, −50…+100) moves every
+  built-in task the shop has not priced itself: typical × market × (1 +
+  pct); the estimate's assumption line names it.
+- **The menu learns from the estimate**: a service line priced away from
+  the menu on an estimate shows "Save $X for <task>" under the lines; one
+  click makes it the shop's price (a part line saved as cost, the markup
+  taken back off).
+- **Own tasks** are edited in place (same id, so estimates keep pricing) and
+  removed with a two-step confirm.
+- The page stacks to cards on a phone and sits in the handheld chrome
+  (`BLUEPRINT_HANDHELD`).
+- QA: six checks added to `scripts/qa/hvac-service-menu.check.ts`.

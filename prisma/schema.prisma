@@ -29,6 +29,8 @@ model Organization {
   address               String?
   website               String?
   timezone              String    @default("America/New_York")
+  // Online booking (2026-09-23): hours, slot length, lead time, crews, the services offered.
+  bookingSettingsJson   String?
   defaultTaxRate        Float     @default(0)
   // Org-wide default profit markup (hidden from the client). Seeded into a new
   // proposal's per-proposal materialMarkupPct/laborMarkupPct at creation; the
@@ -138,6 +140,12 @@ model Organization {
   overheads            MonthlyOverhead[]
   suppliers            Supplier[]
   inventoryItems       InventoryItem[]
+  servicePlanTemplates ServicePlanTemplate[]
+  servicePlans         ServicePlan[]
+  servicePlanVisits    ServicePlanVisit[]
+  clientEquipment      ClientEquipment[]
+  visitReports         VisitReport[]
+  bookings             Booking[]
   signupPromo          PromoCode?            @relation("OrgSignupPromo", fields: [signupPromoCodeId], references: [id], onDelete: SetNull)
 
   @@index([slug])
@@ -416,6 +424,10 @@ model Client {
   payments       Payment[]
   reviewRequests ReviewRequest[]
   appointments   Appointment[]
+  servicePlans   ServicePlan[]
+  equipment      ClientEquipment[]
+  visitReports   VisitReport[]
+  bookings       Booking[]
 
   @@index([organizationId])
   @@index([organizationId, deletedAt])
@@ -475,6 +487,7 @@ model Lead {
   activities   ActivityEvent[]
   phoneCalls   AiPhoneCall[]
   appointments Appointment[]
+  bookings       Booking[]
 
   @@index([organizationId, status])
   @@index([assignedToId])
@@ -795,11 +808,14 @@ model Invoice {
   externalId     String?
   dueDate        DateTime?
   paidAt         DateTime?
+  // The service plan this invoice bills (2026-09-22); null for a proposal invoice.
+  servicePlanId  String?
   createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   proposal     Proposal?    @relation(fields: [proposalId], references: [id])
   payments     Payment[]
+  servicePlan  ServicePlan? @relation(fields: [servicePlanId], references: [id])
 
   @@unique([organizationId, number])
   @@index([organizationId, status])
@@ -1681,6 +1697,9 @@ model Appointment {
   proposal     Proposal?               @relation(fields: [proposalId], references: [id])
   createdBy    User?                   @relation("AppointmentCreator", fields: [createdById], references: [id])
   assignments  AppointmentAssignment[]
+  planVisit    ServicePlanVisit?
+  report       VisitReport?
+  booking      Booking?
 
   @@index([organizationId, startsAt])
 }
@@ -2418,4 +2437,197 @@ model InventoryMovement {
 
   @@index([itemId, createdAt])
   @@index([jobId])
+}
+
+// ── SERVICE PLANS / MEMBERSHIPS (2026-09-22) ─────────────────────────────────
+// A plan template is what the shop sells (visits a year, price, discount,
+// benefits); a ServicePlan is one client's membership — a snapshot of the
+// terms at signing, its visits, and the invoices that bill it.
+
+model ServicePlanTemplate {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  name               String
+  description        String?
+  trade              String   @default("hvac")
+  visitsPerYear      Int      @default(2)
+  termMonths         Int      @default(12)
+  priceCents         Int
+  billing            String   @default("MONTHLY") // MONTHLY | YEARLY
+  discountPct        Int      @default(0)
+  benefitsJson       String   @default("[]")
+  priorityScheduling Boolean  @default(true)
+  waivedDiagnostic   Boolean  @default(false)
+  active             Boolean  @default(true)
+  sortOrder          Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plans        ServicePlan[]
+
+  @@index([organizationId])
+}
+
+model ServicePlan {
+  id                 String    @id @default(cuid())
+  organizationId     String
+  templateId         String?
+  clientId           String
+  status             String    @default("DRAFT") // DRAFT | SENT | ACTIVE | EXPIRED | CANCELED
+  name               String
+  description        String?
+  trade              String    @default("hvac")
+  visitsPerYear      Int
+  termMonths         Int
+  priceCents         Int
+  billing            String // MONTHLY | YEARLY
+  discountPct        Int       @default(0)
+  benefitsJson       String    @default("[]")
+  priorityScheduling Boolean   @default(true)
+  waivedDiagnostic   Boolean   @default(false)
+  propertyAddress    String?
+  startsAt           DateTime?
+  endsAt             DateTime?
+  nextBillingAt      DateTime?
+  autoRenew          Boolean   @default(true)
+  acceptToken        String    @unique @default(cuid())
+  sentAt             DateTime?
+  acceptedAt         DateTime?
+  acceptedName       String?
+  canceledAt         DateTime?
+  expiringNoticedAt  DateTime?
+  renewedFromId      String?
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  template     ServicePlanTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  client       Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  visits       ServicePlanVisit[]
+  invoices     Invoice[]
+
+  @@index([organizationId, status])
+  @@index([clientId])
+  @@index([organizationId, endsAt])
+  @@index([organizationId, nextBillingAt])
+}
+
+model ServicePlanVisit {
+  id             String    @id @default(cuid())
+  organizationId String
+  planId         String
+  seq            Int
+  label          String
+  dueAt          DateTime
+  status         String    @default("SCHEDULED") // SCHEDULED | DONE | SKIPPED
+  appointmentId  String?   @unique
+  doneAt         DateTime?
+  remindedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         ServicePlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+  appointment  Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  report       VisitReport?
+
+  @@index([organizationId, dueAt])
+  @@index([planId])
+}
+
+// ── EQUIPMENT ON FILE, VISIT REPORTS, ONLINE BOOKING (2026-09-23) ────────────
+
+// What is installed at a client's home: typed, read off a nameplate photo,
+// filed by the HVAC estimator on conversion, or noted by the crew on a visit.
+model ClientEquipment {
+  id                 String    @id @default(cuid())
+  organizationId     String
+  clientId           String
+  kind               String // split-ac-furnace | split-heat-pump | furnace-only | package-unit | ductless | water-heater | boiler | other
+  label              String?
+  brand              String?
+  model              String?
+  serial             String?
+  tons               Float?
+  refrigerant        String?
+  fuel               String? // gas | propane | electric | oil
+  yearMade           Int?
+  installedAt        DateTime?
+  warrantyPartsUntil DateTime?
+  warrantyLaborUntil DateTime?
+  filterSize         String?
+  location           String?
+  notes              String?
+  source             String    @default("typed") // typed | nameplate | estimator | visit
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, clientId])
+}
+
+// The crew's tune-up / visit report: readings, findings, what the client
+// should hear — sent by email and readable on a public page.
+model VisitReport {
+  id              String    @id @default(cuid())
+  organizationId  String
+  appointmentId   String    @unique
+  clientId        String?
+  planVisitId     String?   @unique
+  techName        String?
+  kind            String    @default("both") // cooling | heating | both | other
+  readingsJson    String    @default("{}")
+  findingsJson    String    @default("[]")
+  recommendations String?
+  summary         String?
+  publicToken     String    @unique @default(cuid())
+  sentAt          DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  appointment  Appointment       @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  client       Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  planVisit    ServicePlanVisit? @relation(fields: [planVisitId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+}
+
+// A visit booked online at /book/<slug>: the customer's words, the slot, the
+// appointment it became, and the manage link they can move or cancel it with.
+model Booking {
+  id             String    @id @default(cuid())
+  organizationId String
+  appointmentId  String?   @unique
+  leadId         String?
+  clientId       String?
+  serviceKey     String
+  serviceLabel   String
+  minutes        Int
+  status         String    @default("BOOKED") // BOOKED | RESCHEDULED | CANCELED | DONE
+  name           String
+  email          String?
+  phone          String?
+  address        String?
+  notes          String?
+  answersJson    String    @default("[]")
+  member         Boolean   @default(false)
+  manageToken    String    @unique @default(cuid())
+  startsAt       DateTime
+  endsAt         DateTime
+  remindedAt     DateTime?
+  canceledAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  appointment  Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  lead         Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  client       Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, startsAt])
+  @@index([organizationId, status])
 }

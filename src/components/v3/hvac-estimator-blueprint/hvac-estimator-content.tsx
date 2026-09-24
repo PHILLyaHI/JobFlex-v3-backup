@@ -6,9 +6,10 @@
 // newer hashed-class convention, so nothing is registered in blueprint-shell.
 
 import { HvacEstimatorForm } from "./hvac-estimator-form";
+import type { WaitingLead } from "@/lib/leadRules";
 import s from "./hvac-estimator.module.css";
 
-export function HvacEstimatorContent({ aiEnabled, initialAddress }: { aiEnabled: boolean; initialAddress?: string }) {
+export function HvacEstimatorContent({ aiEnabled, initialAddress, leads }: { aiEnabled: boolean; initialAddress?: string; leads?: WaitingLead[] }) {
   return (
     <>
       <div className={s["page-head"]}>
@@ -17,7 +18,7 @@ export function HvacEstimatorContent({ aiEnabled, initialAddress }: { aiEnabled:
           <h1 className={s["page-title"]}>HVAC estimator</h1>
         </div>
       </div>
-      <HvacEstimatorForm aiEnabled={aiEnabled} initialAddress={initialAddress} />
+      <HvacEstimatorForm aiEnabled={aiEnabled} initialAddress={initialAddress} leads={leads} />
     </>
   );
 }

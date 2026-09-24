@@ -16,6 +16,7 @@ import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { HvacEstimatorContent } from "@/components/v3/hvac-estimator-blueprint/hvac-estimator-content";
 import { readEstimateSeed } from "@/lib/estimateSeed";
 import { EstimateSeedStrip } from "@/components/v3/estimate-seed-strip";
+import { leadsWaitingFor } from "@/lib/leadQueue";
 
 /** The hand-off seed for the signed-in company's HVAC estimator, or null — never an error. */
 async function readHvacSeed(userId: string) {
@@ -62,10 +63,14 @@ export default async function HvacEstimatorPage({
   // A lead handed over from its page (lib/estimateSeed) fills the address too.
   const seed = initialAddress ? null : await readHvacSeed(session.user.id);
   if (seed?.address) initialAddress = seed.address;
+  // The shop's leads still waiting for an HVAC estimate (lib/leadQueue) —
+  // the work this page is for, listed under the stepper. Never an error.
+  const orgId = (await db.user.findUnique({ where: { id: session.user.id }, select: { activeOrgId: true } }))?.activeOrgId;
+  const leads = orgId ? await leadsWaitingFor(orgId, "hvac").catch(() => []) : [];
   return (
     <>
       <EstimateSeedStrip seed={seed} />
-      <HvacEstimatorContent aiEnabled={isOpenAIEnabled()} initialAddress={initialAddress} />
+      <HvacEstimatorContent aiEnabled={isOpenAIEnabled()} initialAddress={initialAddress} leads={leads} />
     </>
   );
 }

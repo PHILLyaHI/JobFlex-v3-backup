@@ -2,9 +2,9 @@
 // rows a shop's book carries, every one priced; labor moved to the job's
 // market; the repair-or-replace rule; the parts on the shelf list.
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/hvac-service-menu.check.ts
-import { SERVICE_GROUPS, SERVICE_MENU, indexedLabor, repairAdvice, serviceLaborIndex, serviceMenuFor } from "../../src/lib/hvac/serviceMenu";
+import { SERVICE_GROUPS, SERVICE_MENU, indexedLabor, repairAdvice, serviceLaborIndex, serviceMenuFor, serviceTask } from "../../src/lib/hvac/serviceMenu";
 import { runEngine } from "../../src/lib/hvac/engine";
-import { buildLedger, DEFAULT_RATE_CARD, STARTER_CATALOG } from "../../src/lib/hvac/ledger";
+import { buildLedger, DEFAULT_RATE_CARD, normalizeRateCard, STARTER_CATALOG } from "../../src/lib/hvac/ledger";
 import { modelFromSite } from "../../src/lib/hvac/intake";
 import { presetItems } from "../../src/lib/inventoryPresets";
 import type { BuildingModel } from "../../src/lib/hvac/types";
@@ -65,6 +65,20 @@ const cheap = repairAdvice({ model: house(), taskIds: ["evap-coil-replace"], rep
 check("the same coil against an $11,000 replacement: still worth weighing (a major part), the share not named under 40%", cheap.verdict === "consider" && !/% of a replacement/.test(cheap.line), cheap.line);
 const ledOld = buildLedger(runEngine(house({ existing: { kind: "split-ac-furnace", tons: 3, fuel: "gas", refrigerant: "R-410A", yearMade: 2008 } }), { catalog: STARTER_CATALOG, job: "service", input: { service: { tasks: ["compressor"] } } }), house({ existing: { kind: "split-ac-furnace", tons: 3, fuel: "gas", refrigerant: "R-410A", yearMade: 2008 } }), DEFAULT_RATE_CARD, STARTER_CATALOG, { job: "service", input: { service: { tasks: ["compressor"] } } });
 check("the estimate itself carries the repair-or-replace line", ledOld.assumptions.some((a) => /^Repair or replace:/.test(a)));
+
+// ── the shop's own numbers on the book (2026-09-23)
+const mine = { capacitor: { laborUsd: 120, partCostUsd: 40 }, "hard-start": { hidden: true } };
+const own = serviceTask("capacitor", [], mine)!;
+check("a price the shop typed is the shop's price: not indexed, not adjusted, flagged as its own", own.ownLabor === true && own.ownPart === true && indexedLabor(own, 1.25, 15) === 120 && own.part?.costUsd === 40);
+check("the typical still indexes and takes the shop's adjustment, to the nearest $5", indexedLabor(cap, 1, 10) === 105 && indexedLabor(cap, 1, 0) === 95);
+const menuMine = serviceMenuFor(house(), [], mine);
+check("a hidden task is off the visit's menu, but still resolves by id so an old estimate keeps pricing", !ids(menuMine).includes("hard-start") && ids(menuMine).includes("capacitor") && serviceTask("hard-start", [], mine)?.title === "Hard-start kit");
+const cardMine = normalizeRateCard({ ...DEFAULT_RATE_CARD, serviceOverrides: { ...mine, junk: { laborUsd: "x" }, capacitorX: { laborUsd: 9e9 } }, serviceLaborAdjustPct: 250 });
+check("the rate card keeps the shop's numbers, drops junk, bounds the rest", cardMine.serviceOverrides?.capacitor?.laborUsd === 120 && cardMine.serviceOverrides?.["hard-start"]?.hidden === true && !cardMine.serviceOverrides?.junk && cardMine.serviceOverrides?.capacitorX?.laborUsd === 50_000 && cardMine.serviceLaborAdjustPct === 100, JSON.stringify(cardMine.serviceOverrides));
+const ledMine = buildLedger(runEngine(sea, { catalog: STARTER_CATALOG, job: "service", input: pick }), sea, { ...DEFAULT_RATE_CARD, serviceOverrides: mine }, STARTER_CATALOG, { job: "service", input: pick });
+check("the estimate prices the shop's numbers: $120 labor as entered, the part at the shop's cost plus markup, the note says so", ledMine.labor.find((l) => l.id === "l-svc-capacitor")?.unitPrice === 120 && ledMine.labor.find((l) => l.id === "l-svc-capacitor")?.basis === "entered" && ledMine.materials.find((l) => l.id === "m-svc-capacitor")?.unitPrice === Math.round(40 * (1 + DEFAULT_RATE_CARD.materialsMarkupPct / 100)) && /your menu price/.test(ledMine.labor.find((l) => l.id === "l-svc-capacitor")?.note ?? ""), ledMine.labor.find((l) => l.id === "l-svc-capacitor")?.note);
+const ledAdj = buildLedger(runEngine(sea, { catalog: STARTER_CATALOG, job: "service", input: pick }), sea, { ...DEFAULT_RATE_CARD, serviceLaborAdjustPct: 10 }, STARTER_CATALOG, { job: "service", input: pick });
+check("the shop's adjustment moves a typical price on the estimate and is named in the assumption", ledAdj.labor.find((l) => l.id === "l-svc-capacitor")?.unitPrice === indexedLabor(cap, seattle.factor, 10) && /\+10% your adjustment/.test(ledAdj.assumptions[0]), ledAdj.assumptions[0]);
 
 // ── the shelf
 const shelf = presetItems("hvac").map((i) => i.name);

@@ -11,7 +11,7 @@ import { computeFenceTakeoff, concreteBagsPerPost, type FenceLayoutInput } from 
 import { burialFt, rackingLimitFt, summarizeSlope, terrainFromGrade, type SlopeSegment } from "../../src/lib/fence/slope";
 import { BASIS_BY_TYPE, marketFrostIn, materialFactor, parseStateZip, resolveMarket, STATE_MARKETS } from "../../src/lib/fence/market";
 import { driftFromStandard, effectiveRate, isCustomized, rateRows, sanitizeRateBook, standardRate } from "../../src/lib/fence/rates";
-import { FENCE_JOB_MINIMUM, fenceChecks, fenceScope, fenceTiers, gateWidthFactor, jobRates, priceFencePackage, resolveFenceType, type CustomFenceType } from "../../src/lib/fence/pricing";
+import { BOARD_GRADES, FENCE_JOB_MINIMUM, fenceChecks, fenceScope, fenceTiers, gateWidthFactor, jobRates, packageNotes, POST_SYSTEMS, priceFencePackage, resolveFenceType, type CustomFenceType } from "../../src/lib/fence/pricing";
 import { EMPTY_FENCE_CATALOG, fenceCatalogSchema } from "../../src/lib/fence/catalogSchema";
 import { polylinesToRuns, typedRuns } from "../../src/lib/fence/layout";
 
@@ -276,6 +276,48 @@ console.log("── scope and checks");
   check("nothing drawn → no checks", fenceChecks(priceFencePackage({ ...CEDAR_100, runs: [] }), { ...CEDAR_100, runs: [] }).length === 0);
   const bags = concreteBagsPerPost(6, 3.5, 0);
   check("a 4×4 at 2' burial takes about 2–3 bags", bags > 1.8 && bags < 3.2, bags.toFixed(2));
+}
+
+
+console.log("── the package after the Optima estimate (2026-09-23): post systems, grade, fasteners, gates, site prep, notes");
+{
+  const base = priceFencePackage(CEDAR_100);
+  const lineOf = (pk: ReturnType<typeof priceFencePackage>, id: string) => pk.lines.find((l) => l.id === id);
+  // post systems
+  const pipe = priceFencePackage({ ...CEDAR_100, postUpgrade: "post-on-pipe" });
+  const cedarPipe = priceFencePackage({ ...CEDAR_100, postUpgrade: "cedar-post-on-pipe" });
+  const black = priceFencePackage({ ...CEDAR_100, postUpgrade: "black-steel" });
+  const steel = priceFencePackage({ ...CEDAR_100, postUpgrade: "steel" });
+  check("every post system prices one upgrade line per post, dearer in this order: 6×6 < steel < post-on-pipe < black steel < cedar on pipe", [pipe, cedarPipe, black, steel].every((pk) => lineOf(pk, "fence-post-upgrade")?.quantity === pk.takeoff.posts.total) && lineOf(steel, "fence-post-upgrade")!.unitPrice < lineOf(pipe, "fence-post-upgrade")!.unitPrice && lineOf(pipe, "fence-post-upgrade")!.unitPrice < lineOf(black, "fence-post-upgrade")!.unitPrice && lineOf(black, "fence-post-upgrade")!.unitPrice < lineOf(cedarPipe, "fence-post-upgrade")!.unitPrice, [steel, pipe, black, cedarPipe].map((pk) => `$${lineOf(pk, "fence-post-upgrade")!.unitPrice}`).join(" < "));
+  check("the line names the system and its warranty; the old steel and 6×6 prices did not move", /Post-on-pipe/.test(lineOf(pipe, "fence-post-upgrade")!.name) && /10-year structural/.test(lineOf(pipe, "fence-post-upgrade")!.description ?? "") && /lifetime structural/.test(lineOf(black, "fence-post-upgrade")!.description ?? "") && lineOf(steel, "fence-post-upgrade")!.materialCost === 24 && POST_SYSTEMS["6x6"].material === 14);
+  check("a post-on-pipe system puts the pipe on the bill of materials; black steel does not", qty(pipe.takeoff, "post-pipe") === pipe.takeoff.posts.total && !bom(black.takeoff, "post-pipe") && /3×3 black steel/.test(bom(black.takeoff, "post-upgrade")!.label));
+  // grade
+  const tight = priceFencePackage({ ...CEDAR_100, boardGrade: "tight-knot-1" });
+  const clear = priceFencePackage({ ...CEDAR_100, boardGrade: "clear" });
+  check("#1 tight-knot lifts the fence material 12%, clear 60%, and the package line says so; vinyl ignores the grade", Math.abs(lineOf(tight, "fence-materials")!.materialCost / lineOf(base, "fence-materials")!.materialCost - BOARD_GRADES["tight-knot-1"].factor) < 0.01 && Math.abs(lineOf(clear, "fence-materials")!.materialCost / lineOf(base, "fence-materials")!.materialCost - 1.6) < 0.01 && /#1 tight-knot cedar/.test(lineOf(tight, "fence-materials")!.name) && lineOf(priceFencePackage({ ...CEDAR_100, type: "vinyl-privacy", boardGrade: "clear" }), "fence-materials")!.materialCost === lineOf(priceFencePackage({ ...CEDAR_100, type: "vinyl-privacy" }), "fence-materials")!.materialCost);
+  check("the grade shows on the pickets' bill-of-materials line", /#1 tight-knot 1×6/.test(bom(tight.takeoff, "picket")!.label));
+  // fasteners
+  const ss = priceFencePackage({ ...CEDAR_100, fasteners: "stainless" });
+  check("stainless fasteners are a per-foot upgrade line on wood, named on the bill of materials, and nothing on chain link", lineOf(ss, "fence-fasteners")?.quantity === ss.netFenceLf && /Stainless ring-shank/.test(bom(ss.takeoff, "fasteners")!.label) && !lineOf(priceFencePackage({ ...CEDAR_100, type: "chain-link-galv", fasteners: "stainless" }), "fence-fasteners"));
+  // gates
+  const gates = { ...CEDAR_100, openings: [{ widthFt: 4, kind: "gate" as const, label: "Single gate" }, { widthFt: 10, kind: "gate" as const, label: "Double gate" }] };
+  const hw = priceFencePackage({ ...gates, gateHardware: "heavy-duty" });
+  check("heavy-duty hardware is one lot line priced for a single and a double, and says cane bolt", lineOf(hw, "fence-gate-hardware")?.quantity === 1 && Math.abs(lineOf(hw, "fence-gate-hardware")!.materialCost - (45 + 120) * materialFactor(undefined, "steel-ornamental")) < 0.01 && /cane bolt/.test(lineOf(hw, "fence-gate-hardware")!.description ?? ""));
+  const sgp = priceFencePackage({ ...gates, steelGatePosts: true });
+  check("steel gate posts: one per gate post on a wood-post fence, named on the takeoff; not when every post is already steel", lineOf(sgp, "fence-gate-posts-steel")?.quantity === sgp.takeoff.posts.gate && sgp.takeoff.posts.gate === 4 && /black steel/.test(bom(sgp.takeoff, "post-gate")!.label) && !lineOf(priceFencePackage({ ...gates, steelGatePosts: true, postUpgrade: "black-steel" }), "fence-gate-posts-steel"));
+  // site prep
+  const site = priceFencePackage({ ...CEDAR_100, clearLine: true, haulSoil: true });
+  check("clearing the line is $3 a foot of labor; hauling soil is per post with a $120 floor", lineOf(site, "fence-clear-line")?.laborCost === 3 && lineOf(site, "fence-clear-line")!.quantity === site.netFenceLf && lineOf(site, "fence-haul-soil")!.quantity === site.takeoff.posts.total && Math.abs(lineOf(site, "fence-haul-soil")!.quantity * lineOf(site, "fence-haul-soil")!.laborCost - Math.max(120, 6 * site.takeoff.posts.total)) < 0.5, `${site.takeoff.posts.total} posts · $${lineOf(site, "fence-haul-soil")!.laborCost}/post`);
+  // the horizontal build's own stock
+  const horiz = computeFenceTakeoff({ ...CEDAR_100, type: "horizontal-modern", heightFt: 6 });
+  check("a horizontal fence carries 2×2 mid-bay supports (one per 6' bay) and 1×4 post trim on both faces", qty(horiz, "mid-support") >= horiz.sections && qty(horiz, "post-trim") >= horiz.posts.total * 2 && !bom(computeFenceTakeoff(CEDAR_100), "mid-support"));
+  // notes and scope
+  const notes = packageNotes({ ...gates, postUpgrade: "black-steel", haulSoil: true }, fenceType("cedar-privacy"), sgp.takeoff);
+  check("the notes: 4-year workmanship plus the system's structural warranty, wood's nature, the line to clear, utilities and property lines; no soil line when it is hauled", notes.some((n) => /4-year workmanship.*lifetime structural/.test(n)) && notes.some((n) => /natural/.test(n)) && notes.some((n) => /2-ft path/.test(n)) && notes.some((n) => /811/.test(n)) && !notes.some((n) => /spread along the line/.test(n)), notes[0]);
+  check("wood gate posts are warned about; steel gate posts are not", packageNotes(gates, fenceType("cedar-privacy"), sgp.takeoff).some((n) => /6 months/.test(n)) && !packageNotes({ ...gates, steelGatePosts: true }, fenceType("cedar-privacy"), sgp.takeoff).some((n) => /6 months/.test(n)));
+  const scope = fenceScope(black, { ...CEDAR_100, postUpgrade: "black-steel", boardGrade: "tight-knot-1", fasteners: "stainless", clearLine: true }).join(" ");
+  check("the scope says the post system with its warranty, the grade, the fasteners and the clearing", /3×3 black steel posts throughout/.test(scope) && /Lifetime structural warranty/.test(scope) && /#1 tight-knot cedar/.test(scope) && /Stainless steel fasteners/.test(scope) && /2-ft path/.test(scope));
+  check("every package carries its notes", base.notes.length >= 4 && base.notes[0].startsWith("Warranty:"));
 }
 
 console.log(bad ? `\n${bad} check(s) FAILED` : "\nall checks passed");

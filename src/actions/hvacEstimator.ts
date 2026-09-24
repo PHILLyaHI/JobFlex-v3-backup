@@ -49,6 +49,8 @@ import type { SiteFacts, NameplateRead } from "@/lib/hvac/intake";
 import { DEFAULT_RATE_CARD, STARTER_CATALOG, normalizeRateCard, parseCatalogCsv, type HvacRateCard } from "@/lib/hvac/ledger";
 import { JOBS, OUTDOOR_KINDS } from "@/lib/hvac/jobs";
 import { US_CATALOG, US_CATALOG_VERIFIED_ON } from "@/lib/hvac/data/usCatalog";
+import { applyMemberDiscount } from "@/lib/servicePlanBook";
+import { fileEquipmentFromModel } from "@/lib/visitBook";
 
 type Fail = { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey };
 
@@ -770,7 +772,7 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
   let address = data.address?.trim() || null;
   let stateHint: string | null = null;
   if (data.estimateId) {
-    const saved = await db.hvacEstimate.findFirst({ where: { id: data.estimateId, organizationId }, select: { address: true, state: true } }).catch(() => null);
+    const saved = await db.hvacEstimate.findFirst({ where: { id: data.estimateId, organizationId }, select: { address: true, state: true, modelJson: true } }).catch(() => null);
     if (saved) { address = saved.address || address; stateHint = saved.state; }
   }
   const org = await db.organization.findUnique({ where: { id: organizationId }, select: { defaultTaxRate: true } });
@@ -804,6 +806,19 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
       },
     },
   });
+  // A member client (2026-09-22): the plan's discount rides on the new proposal (lib/servicePlanBook).
+  await applyMemberDiscount(proposal.id).catch(() => {});
+  // The estimate's existing system goes on the client's record (2026-09-23) —
+  // the next service visit and the tune-up report know what is there.
+  if (clientId && data.estimateId) {
+    try {
+      const row = await db.hvacEstimate.findFirst({ where: { id: data.estimateId, organizationId }, select: { modelJson: true } });
+      const existing = row ? (JSON.parse(row.modelJson) as { existing?: { kind?: string; tons?: number; fuel?: string; refrigerant?: string; yearMade?: number } }).existing : null;
+      await fileEquipmentFromModel(organizationId, clientId, existing);
+    } catch {
+      /* the proposal stands without the unit on file */
+    }
+  }
   // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
   await recordInventoryLink(organizationId, proposal.id, data.inventoryLinked, user.id);
 

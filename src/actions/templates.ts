@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { trackProposalCreated } from "@/lib/activation-events";
+import { applyMemberDiscount } from "@/lib/servicePlanBook";
 
 interface TemplateBody {
   description?: string | null;
@@ -189,6 +190,8 @@ export async function createProposalFromTemplate(templateId: string) {
       },
     },
   });
+  // A member client (2026-09-22): the plan's discount rides on the new proposal (lib/servicePlanBook).
+  await applyMemberDiscount(proposal.id).catch(() => {});
 
   await db.activityEvent.create({
     data: {

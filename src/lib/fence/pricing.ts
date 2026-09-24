@@ -28,7 +28,7 @@ import {
 } from "./catalog";
 import { blendedFactor, laborFactor, LINE_MATERIAL_SHARE, marketFrostIn, materialFactor, type MarketSnapshot } from "./market";
 import { standardRate, type FenceRate, type RateBook } from "./rates";
-import { computeFenceTakeoff, gateKitLabel, openingTotals, type FenceLayoutInput, type FenceOpeningInput, type FenceTakeoff } from "./takeoff";
+import { computeFenceTakeoff, gateKitLabel, openingTotals, type BoardGrade, type FenceLayoutInput, type FenceOpeningInput, type FenceTakeoff, type PostSystem } from "./takeoff";
 import type { SlopeSummary } from "./slope";
 
 /** Share of a fence's $/LF that is the posts + footings. Tightening the
@@ -48,6 +48,34 @@ export const STEP_EACH = 28;
 /** Stain & seal per sq ft of face, two coats. */
 export const STAIN_PER_SQFT = 1.1;
 export const POST_UPGRADE_EACH = { steel: 24, "6x6": 14 } as const;
+
+/**
+ * The post systems a wood fence can be built on (2026-09-23, after the
+ * owner's look at a top Washington fence company's estimate): each with
+ * its price per post over the standard 4×4 pressure-treated post, the words
+ * for the client, and the structural warranty a shop attaches to it. The
+ * standard post carries the workmanship warranty only.
+ */
+export const POST_SYSTEMS: Record<PostSystem, { label: string; short: string; blurb: string; material: number; labor: number; warranty: string | null }> = {
+  "6x6": { label: "6×6 pressure-treated posts", short: "6×6", blurb: "heavy 6×6 stock at every post", material: POST_UPGRADE_EACH["6x6"], labor: 0, warranty: null },
+  steel: { label: "Galvanized steel posts", short: "Steel", blurb: "steel never rots, warps or leans — hidden inside the fence", material: POST_UPGRADE_EACH.steel, labor: 0, warranty: "Lifetime structural warranty on the post system" },
+  "post-on-pipe": { label: "Post-on-pipe — pressure-treated post over steel pipe", short: "Post-on-pipe", blurb: "a 2⅜″ galvanized pipe set in concrete, the wood post sleeved over it — the post can never rot at the ground line", material: 32, labor: 16, warranty: "10-year structural warranty on the post system" },
+  "cedar-post-on-pipe": { label: "Post-on-pipe — clear cedar post over steel pipe", short: "Cedar on pipe", blurb: "a clear cedar post sleeved over a steel pipe — the look of cedar, the life of steel", material: 78, labor: 16, warranty: "20-year structural warranty on the post system" },
+  "black-steel": { label: "3×3 black steel posts", short: "Black steel 3×3", blurb: "powder-coated 3×3 steel posts with brackets — the modern look, and the post never moves", material: 62, labor: 28, warranty: "Lifetime structural warranty on the post system" },
+};
+export const POST_SYSTEM_ORDER: PostSystem[] = ["6x6", "steel", "post-on-pipe", "cedar-post-on-pipe", "black-steel"];
+/** The board grades a cedar fence is sold in, as a factor on the fence package's material. */
+export const BOARD_GRADES: Record<BoardGrade, { label: string; factor: number; blurb: string }> = {
+  standard: { label: "#2 & better", factor: 1, blurb: "the standard tight-knot cedar" },
+  "tight-knot-1": { label: "#1 tight-knot", factor: 1.12, blurb: "#1 grade tight-knot cedar — tighter, smaller knots, fewer culls" },
+  clear: { label: "Clear", factor: 1.6, blurb: "clear vertical-grain cedar — no knots" },
+};
+export const STAINLESS_PER_LF = 0.5;
+export const HEAVY_GATE_HARDWARE = { single: { material: 45, labor: 15 }, double: { material: 120, labor: 30 } } as const;
+export const STEEL_GATE_POST = { material: 48, labor: 12 } as const;
+export const CLEAR_LINE_PER_LF = 3;
+export const HAUL_SOIL_PER_POST = 6;
+export const HAUL_SOIL_MINIMUM = 120;
 
 /** A shop's own fence type: built like a catalog type, priced at its own rates. */
 export interface CustomFenceType {
@@ -147,6 +175,9 @@ export interface FencePackage {
   builtHeightFt: number;
   rates: JobRates;
   market?: MarketSnapshot;
+  /** What the package promises and what it asks of the owner: warranty by
+   *  post system, wood's nature, site prep, soil, utilities, property lines. */
+  notes: string[];
 }
 
 /** Continuous gate pricing by width: a walk gate (≤4') is 1×, the 10' drive
@@ -227,13 +258,14 @@ export function priceFencePackage(layout: FenceLayoutInput, opts: FencePriceOpti
   };
 
   const spacingNote = spacingRatio !== 1 ? ` — ${effSpacing}' post spacing` : "";
+  const grade = t.category === "wood" && layout.boardGrade && layout.boardGrade !== "standard" ? BOARD_GRADES[layout.boardGrade] : null;
   line({
     id: "fence-materials",
-    name: `${resolved.label} — ${hFt}' fence package`,
+    name: `${resolved.label} — ${hFt}' fence package${grade ? ` · ${grade.label.toLowerCase()} cedar` : ""}`,
     description: `Posts, ${t.build === "mesh" ? "top rail, fabric & tension hardware" : t.build === "panel" ? "panels" : t.build === "rail" ? "rails" : "rails & pickets"}, concrete, caps & fasteners${spacingNote}`,
     quantity: lf,
     unit: "ln ft",
-    materialCost: rates.materialPerLf * hf * waste * spacingMatF,
+    materialCost: rates.materialPerLf * hf * waste * spacingMatF * (grade ? grade.factor : 1),
     laborCost: 0,
     taxable: true,
   });
@@ -272,17 +304,87 @@ export function priceFencePackage(layout: FenceLayoutInput, opts: FencePriceOpti
   // and horizontal-modern ships on 6×6 stock.
   const upgradeApplies = !!layout.postUpgrade && t.category === "wood" && !(layout.postUpgrade === "6x6" && t.spec.postWidthIn >= 5.5);
   if (upgradeApplies) {
-    const up = layout.postUpgrade as "steel" | "6x6";
+    const up = layout.postUpgrade as PostSystem;
+    const sys = POST_SYSTEMS[up];
     const posts = takeoff.posts.total;
     line({
       id: "fence-post-upgrade",
-      name: up === "steel" ? "Galvanized steel posts — upgrade" : "6×6 pressure-treated posts — upgrade",
-      description: up === "steel" ? `${posts} posts — steel never rots, warps or leans` : `${posts} posts — heavy 6×6 stock at every post`,
+      name: `${sys.label} — upgrade`,
+      description: `${posts} posts — ${sys.blurb}${sys.warranty ? `; ${sys.warranty.toLowerCase()}` : ""}`,
       quantity: posts,
       unit: "ea",
-      materialCost: POST_UPGRADE_EACH[up] * materialFactor(mk, up === "steel" ? "steel-ornamental" : "pt-pine-privacy"),
+      materialCost: sys.material * materialFactor(mk, up === "6x6" ? "pt-pine-privacy" : "steel-ornamental"),
+      laborCost: sys.labor * laborFactor(mk),
+      taxable: true,
+    });
+  }
+  // Gates hang on steel even when the fence posts are wood: a wood gate post
+  // sags and the gate drags inside a year. Not needed when every post is steel.
+  const gatePosts = takeoff.posts.gate;
+  if (layout.steelGatePosts && t.category === "wood" && gatePosts > 0 && layout.postUpgrade !== "steel" && layout.postUpgrade !== "black-steel") {
+    line({
+      id: "fence-gate-posts-steel",
+      name: "Black steel gate posts",
+      description: `${gatePosts} 4×4 black steel posts at the gates — the gate hangs true for its life`,
+      quantity: gatePosts,
+      unit: "ea",
+      materialCost: STEEL_GATE_POST.material * materialFactor(mk, "steel-ornamental"),
+      laborCost: STEEL_GATE_POST.labor * laborFactor(mk),
+      taxable: true,
+    });
+  }
+  if (layout.gateHardware === "heavy-duty" && layout.openings.some((o) => o.widthFt > 0)) {
+    const singles = layout.openings.filter((o) => o.widthFt > 0 && o.widthFt <= 5.5).length;
+    const doubles = layout.openings.filter((o) => o.widthFt > 5.5).length;
+    const material = singles * HEAVY_GATE_HARDWARE.single.material + doubles * HEAVY_GATE_HARDWARE.double.material;
+    const labor = singles * HEAVY_GATE_HARDWARE.single.labor + doubles * HEAVY_GATE_HARDWARE.double.labor;
+    line({
+      id: "fence-gate-hardware",
+      name: "Heavy-duty gate hardware — upgrade",
+      description: `Ball-bearing hinges and a heavy latch on every gate${doubles ? ", cane bolt on the double" : ""}`,
+      quantity: 1,
+      unit: "lot",
+      materialCost: material * materialFactor(mk, "steel-ornamental"),
+      laborCost: labor * laborFactor(mk),
+      taxable: true,
+    });
+  }
+  if (layout.fasteners === "stainless" && t.category === "wood") {
+    line({
+      id: "fence-fasteners",
+      name: "Stainless steel fasteners — upgrade",
+      description: "Stainless ring-shank nails and screws — no rust streaks down the cedar, ever",
+      quantity: lf,
+      unit: "ln ft",
+      materialCost: STAINLESS_PER_LF * materialFactor(mk, t.id),
       laborCost: 0,
       taxable: true,
+    });
+  }
+  if (layout.clearLine && lf > 0) {
+    line({
+      id: "fence-clear-line",
+      name: "Clear the fence line",
+      description: "A 2-ft path along the line: brush, debris and small plants out of the way before the crew digs",
+      quantity: lf,
+      unit: "ln ft",
+      materialCost: 0,
+      laborCost: CLEAR_LINE_PER_LF * laborFactor(mk),
+      taxable: false,
+    });
+  }
+  if (layout.haulSoil && takeoff.posts.total > 0) {
+    const posts = takeoff.posts.total;
+    const perPost = Math.max(HAUL_SOIL_PER_POST, HAUL_SOIL_MINIMUM / posts) * laborFactor(mk);
+    line({
+      id: "fence-haul-soil",
+      name: "Haul away excavated soil",
+      description: "The spoil from every post hole loaded and hauled off, not spread along the line",
+      quantity: posts,
+      unit: "ea",
+      materialCost: 0,
+      laborCost: perPost,
+      taxable: false,
     });
   }
   const removal = Math.max(0, layout.removalLf ?? 0);
@@ -338,6 +440,7 @@ export function priceFencePackage(layout: FenceLayoutInput, opts: FencePriceOpti
     pricePerLf: lf > 0 ? round2(subtotal / lf) : 0,
     netFenceLf: lf,
     totalLf: takeoff.totalLf,
+    notes: packageNotes(layout, t, takeoff),
     takeoff,
     resolved,
     builtHeightFt: hFt,
@@ -460,11 +563,38 @@ export function fenceScope(pkg: FencePackage, layout: FenceLayoutInput, where?: 
     out.push(`${[...kinds].map(([k, n]) => `${n} × ${k}`).join(", ")} — hung, latched and adjusted.`);
   }
   if ((layout.steppedSections ?? 0) > 0) out.push(`${plural(layout.steppedSections!, "section")} stepped down the grade with extended posts, each step within 1' so the top line stays at code height.`);
-  if (layout.postUpgrade === "steel" && t.category === "wood") out.push("Galvanized steel posts throughout — they never rot, warp or lean.");
-  else if (layout.postUpgrade === "6x6" && t.category === "wood" && t.spec.postWidthIn < 5.5) out.push("Heavy 6×6 pressure-treated posts throughout.");
+  if (layout.postUpgrade && t.category === "wood" && !(layout.postUpgrade === "6x6" && t.spec.postWidthIn >= 5.5)) {
+    const sys = POST_SYSTEMS[layout.postUpgrade];
+    out.push(`${sys.label} throughout — ${sys.blurb}.${sys.warranty ? ` ${sys.warranty}.` : ""}`);
+  }
+  if (t.category === "wood" && layout.boardGrade && layout.boardGrade !== "standard") out.push(`Boards in ${BOARD_GRADES[layout.boardGrade].label.toLowerCase()} cedar — ${BOARD_GRADES[layout.boardGrade].blurb}.`);
+  if (t.category === "wood" && layout.fasteners === "stainless") out.push("Stainless steel fasteners throughout — no rust streaks down the boards.");
+  if (t.category === "wood" && layout.steelGatePosts && layout.postUpgrade !== "steel" && layout.postUpgrade !== "black-steel" && openingTotals(layout.openings).count > 0) out.push("Gates hung on 4×4 black steel posts, so they never sag.");
+  if (layout.gateHardware === "heavy-duty" && openingTotals(layout.openings).count > 0) out.push("Heavy-duty gate hardware: ball-bearing hinges, heavy latch, cane bolt on any double gate.");
+  if (layout.clearLine) out.push("We clear a 2-ft path along the fence line before digging.");
+  if (layout.haulSoil) out.push("Excavated soil is hauled away.");
   if (layout.stain && t.stainable) out.push("Penetrating stain and seal, two coats on both faces, after install.");
   if ((layout.removalLf ?? 0) > 0) out.push(`Tear-out and haul-away of ${Math.round(layout.removalLf!)} linear ft of the existing fence.`);
   out.push("Layout staked and string-lined before digging; site cleaned and swept when the work is done.");
+  return out;
+}
+
+/**
+ * The words under the numbers: what the package promises and what it asks of
+ * the owner. The workmanship warranty is every shop's; the structural years
+ * ride on the post system; the rest is what a fence contractor's terms say
+ * and a homeowner forgets — the line to clear, the soil, the private lines,
+ * the property line.
+ */
+export function packageNotes(layout: FenceLayoutInput, t: FenceType, takeoff: FenceTakeoff): string[] {
+  const out: string[] = [];
+  const sys = layout.postUpgrade && t.category === "wood" && !(layout.postUpgrade === "6x6" && t.spec.postWidthIn >= 5.5) ? POST_SYSTEMS[layout.postUpgrade] : null;
+  out.push(`Warranty: 4-year workmanship on the whole fence${sys?.warranty ? `; ${sys.warranty.toLowerCase()}` : t.category === "wood" ? " (a steel or post-on-pipe post system adds a 10-year to lifetime structural warranty)" : "; limited lifetime structural warranty on the post system"}.`);
+  if (t.category === "wood" && takeoff.posts.gate > 0 && !layout.steelGatePosts && layout.postUpgrade !== "steel" && layout.postUpgrade !== "black-steel") out.push("Gates on wood posts: the gate warranty is 6 months — steel gate posts carry it for life.");
+  if (t.category === "wood") out.push("Cedar and pressure-treated lumber are natural: color change, checking, small cracks and some movement with the seasons are normal, not defects. Staining or sealing is the owner's upkeep.");
+  if (!layout.clearLine) out.push("Before the crew arrives, the owner clears a 2-ft path along the fence line (plants to keep are marked); clearing on the day is extra.");
+  if (!layout.haulSoil) out.push("Soil from the post holes is spread along the line; hauling it away is extra.");
+  out.push("811 marks public utilities; the owner marks private ones — sprinklers, drains, low-voltage, septic. Property lines and HOA approval are the owner's to confirm.");
   return out;
 }
 

@@ -291,6 +291,8 @@ const BLUEPRINT_HANDHELD = new Set([
   "/dashboard/roof-estimator/board",
   "/dashboard/fence-estimator/board",
   "/dashboard/hvac-estimator/board",
+  // The HVAC service menu (2026-09-23): its tables stack to cards at ≤768px.
+  "/dashboard/hvac-estimator/services",
 ]);
 
 export function ResponsiveDashboardShell({

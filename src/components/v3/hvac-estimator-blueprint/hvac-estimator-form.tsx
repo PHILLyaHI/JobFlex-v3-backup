@@ -65,9 +65,14 @@ import {
   type HvacPermit,
 } from "@/actions/hvacEstimator";
 import { calibrationLine, type CalibrationStats } from "@/lib/hvac/calibration";
+import { startEstimateFromLead } from "@/actions/leadEstimate";
+import type { WaitingLead } from "@/lib/leadRules";
+import Link from "next/link";
+import type { Route } from "next";
 import { useHvacWalk } from "./use-hvac-walk";
 import { SHOTS, TIPS, coverageFor } from "./filming-guide";
 import { indexedLabor, repairAdvice, serviceLaborIndex, serviceMenuFor } from "@/lib/hvac/serviceMenu";
+import { setHvacServiceOverride } from "@/actions/hvacServices";
 import { US_CATALOG } from "@/lib/hvac/data/usCatalog";
 import { ultraLowNoxNeeded } from "@/lib/hvac/data/rules";
 import { CapacityChart } from "./capacity-chart";
@@ -392,7 +397,7 @@ function NumCell({ value, onCommit, ariaLabel, className }: { value: number; onC
 
 // ── the form ────────────────────────────────────────────────────────────────
 
-export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: boolean; initialAddress?: string }) {
+export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { aiEnabled: boolean; initialAddress?: string; leads?: WaitingLead[] }) {
   const router = useRouter();
 
   // The stepper: which step is open. A client's record hands the page an
@@ -410,6 +415,10 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
   // and the estimate line's sheet (an id, or a new line for one section).
   const phone = usePhone();
   const [recentAll, setRecentAll] = React.useState(false);
+  // The recent list is folded until asked for (owner, 2026-09-22: "why do we
+  // need recent estimates there"); recording an actual from the phone sheet
+  // unfolds it so the fields are on screen.
+  const [recentOpen, setRecentOpen] = React.useState(false);
   const [rowSheet, setRowSheet] = React.useState<string | null>(null);
   const [newLineFor, setNewLineFor] = React.useState<"materials" | "labor" | null>(null);
   const go = React.useCallback((k: StepKey) => {
@@ -653,6 +662,32 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
     return mid && mid.item.id !== chosen.item.id ? rerun(mid.item.id) : engineRaw;
   }, [engineRaw, pickId, model, catalogItems, custom, job, jobInput, outdoorKind]);
   const ledger = React.useMemo(() => (engine && model && catalog ? buildLedger(engine, model, card.card, catalogItems, { job, input: jobInput, linesetFt, pick: pickId ?? undefined }) : null), [engine, model, catalog, catalogItems, card, job, jobInput, linesetFt, pickId]);
+  // The service lines priced away from the menu on THIS estimate: a labor line
+  // (l-svc-<task>) or a part line (m-svc-<task>) whose price is not what the
+  // ledger wrote. Saving one puts the number on the shop's menu (the part as
+  // a cost, the markup taken back off) and the ledger repeats it from then on.
+  const [learnBusy, setLearnBusy] = React.useState<string | null>(null);
+  const [learnMsg, setLearnMsg] = React.useState("");
+  const menuDiffs = React.useMemo(() => {
+    if (job !== "service" || !lines || !ledger) return [] as Array<{ lineId: string; kind: "l" | "m"; taskId: string; name: string; price: number }>;
+    const base = new Map([...ledger.labor, ...ledger.materials].map((b) => [b.id, b.unitPrice]));
+    return [...lines.labor, ...lines.materials].flatMap((l) => {
+      const m = /^([lm])-svc-(.+)$/.exec(l.id);
+      const b = base.get(l.id);
+      if (!m || b === undefined || Math.abs(b - l.unitPrice) < 0.5 || !(l.unitPrice >= 0)) return [];
+      return [{ lineId: l.id, kind: m[1] as "l" | "m", taskId: m[2], name: l.name, price: l.unitPrice }];
+    });
+  }, [job, lines, ledger]);
+  const learnPrice = async (d: { lineId: string; kind: "l" | "m"; taskId: string; name: string; price: number }) => {
+    setLearnBusy(d.lineId);
+    setLearnMsg("");
+    const res = await setHvacServiceOverride(d.kind === "l" ? { id: d.taskId, laborUsd: Math.round(d.price) } : { id: d.taskId, partCostUsd: Math.round(d.price / (1 + card.card.materialsMarkupPct / 100)) });
+    setLearnBusy(null);
+    if (!res.ok) { setLearnMsg(res.error); return; }
+    setCard({ card: res.card, own: true });
+    setLearnMsg(`${d.name} is ${money(d.price)} on your menu now.`);
+  };
+
   // A service visit's other number (2026-09-22): what replacing the system
   // would cost here, from the same house, so the repair can be weighed.
   const replaceQuote = React.useMemo<number | null>(() => {
@@ -1576,7 +1611,8 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
               </div>
             )}
             {job === "service" && model && (() => {
-              const menu = serviceMenuFor(model, card.card.serviceMenu);
+              const menu = serviceMenuFor(model, card.card.serviceMenu, card.card.serviceOverrides);
+              const adj = card.card.serviceLaborAdjustPct ?? 0;
               const sel = new Set(jobInput.service?.tasks ?? []);
               // Labor in this market, and the repair-or-replace read on what is picked.
               const idx = serviceLaborIndex(model);
@@ -1608,8 +1644,8 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
                               <li key={t.id} className={cx("svc-r", on && "on")}>
                                 <button type="button" role="checkbox" aria-checked={on} className={cx("svc-rb")} onClick={() => toggleTask(t.id)}>
                                   <span className={cx("svc-box")} aria-hidden="true">{on && <svg className={cx("ic")}><use href="#i-check" /></svg>}</span>
-                                  <span className={cx("svc-n")}>{t.title}{rec && !on ? <span className={cx("svc-tag")}>suggested</span> : null}{t.custom ? <span className={cx("svc-tag")}>yours</span> : null}</span>
-                                                  <span className={cx("mono", "svc-p")}>{t.unit === "lb" ? `$${card.card.labor.refrigerantPerLb}/lb + refrigerant` : `$${indexedLabor(t, idx.factor).toLocaleString("en-US")}${t.part ? ` + $${t.part.costUsd.toLocaleString("en-US")} part` : ""}`}</span>
+                                  <span className={cx("svc-n")}>{t.title}{rec && !on ? <span className={cx("svc-tag")}>suggested</span> : null}{t.custom || t.ownLabor ? <span className={cx("svc-tag")}>yours</span> : null}</span>
+                                                  <span className={cx("mono", "svc-p")}>{t.unit === "lb" ? `$${card.card.labor.refrigerantPerLb}/lb + refrigerant` : `$${indexedLabor(t, idx.factor, adj).toLocaleString("en-US")}${t.part ? ` + $${t.part.costUsd.toLocaleString("en-US")} part` : ""}`}</span>
                                 </button>
                                 {on && (
                                   <div className={cx("svc-x")}>
@@ -1975,6 +2011,22 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
           </details>
           <LinesBlock title="Equipment & materials" rows={lines.materials} editing={editLine} onEdit={setEditLine} onChange={(rows) => setLines({ ...lines, materials: rows })} phone={phone} onAddPhone={() => setNewLineFor("materials")} />
           <LinesBlock title="Labor · permit · disposal" rows={lines.labor} editing={editLine} onEdit={setEditLine} onChange={(rows) => setLines({ ...lines, labor: rows })} phone={phone} onAddPhone={() => setNewLineFor("labor")} />
+          {/* THE MENU LEARNS (2026-09-23): a service line priced away from the
+              menu can become the shop's price for that task, once, here. */}
+          {menuDiffs.length > 0 && (
+            <div className={cx("call", "info")} style={{ marginTop: 10 }} data-menu-learn>
+              <span className={cx("stamp")}>menu</span>
+              <span>
+                {menuDiffs.length === 1 ? "One menu price changed on this estimate" : `${menuDiffs.length} menu prices changed on this estimate`} — keep it for next time?{" "}
+                {menuDiffs.map((d) => (
+                  <button key={d.lineId} type="button" className={cx("btn", "btn-ghost", "btn-sm")} style={{ margin: "4px 6px 0 0" }} disabled={learnBusy === d.lineId} onClick={() => void learnPrice(d)}>
+                    {learnBusy === d.lineId ? "Saving…" : `Save ${money(d.price)} for ${d.name}${d.kind === "m" ? " (part)" : ""}`}
+                  </button>
+                ))}
+                {learnMsg ? <span className={cx("acts-note")}>{learnMsg}</span> : null}
+              </span>
+            </div>
+          )}
           {phone && (() => {
             if (newLineFor) {
               const sec = newLineFor;
@@ -2106,16 +2158,47 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
       {summary}
       </div>
 
-      {/* ── RECENT ───────────────────────────────────────────────────────── */}
-      <section className={cx("card", "recent-card")}>
-        <div className={cx("head")}>
-          <div className={cx("head-txt")}>
-            <div className={cx("card-title")}>Recent estimates</div>
-            <div className={cx("card-sub")}>Reopen one to change the design or convert it.</div>
-            <div className={cx("rec-fit")}>{calib ? calibrationLine(calib) : "…"}</div>
+      {/* ── LEADS WAITING (2026-09-22) ─────────────────────────────────────
+          The work this page is for: the shop's leads that still want an HVAC
+          estimate (lib/leadQueue). Estimate is the lead page's own hand-off —
+          the address and the client arrive with the reload. Nothing when
+          there are none. */}
+      {leads.length > 0 && (
+        <section className={cx("card", "lead-card")} data-hvac-leads>
+          <div className={cx("head")}>
+            <div className={cx("head-txt")}>
+              <div className={cx("card-title")}>Leads waiting for an HVAC estimate</div>
+              <div className={cx("card-sub")}>From the Leads page. One click opens this estimator with the address and the client filled in.</div>
+            </div>
           </div>
-        </div>
-        {recent.length ? (
+          <div className={cx("lead-rows")}>
+            {leads.map((l) => (
+              <div key={l.id} className={cx("lead-row")}>
+                <Link href={`/dashboard/leads/${l.id}` as Route} className={cx("lead-main")}>
+                  <span className={cx("lead-name")}>{l.name}</span>
+                  <span className={cx("mono", "lead-meta")}>{[l.place, l.projectType, l.ago].filter(Boolean).join(" · ")}</span>
+                </Link>
+                <form action={startEstimateFromLead.bind(null, l.id, "hvac")}>
+                  <button type="submit" className={cx("btn", "btn-primary", "btn-sm")} data-lead-estimate={l.id}>Estimate</button>
+                </form>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── RECENT, folded (owner, 2026-09-22) ─────────────────────────────
+          One line — the count and the fit — until it is asked for; the list
+          and "record actual" are behind it. Nothing when nothing is saved. */}
+      {recent.length > 0 && (
+      <section className={cx("card", "recent-card")} data-hvac-recent>
+        <button type="button" className={cx("rec-fold")} aria-expanded={recentOpen} onClick={() => setRecentOpen((v) => !v)}>
+          <span className={cx("rec-fold-t")}>Recent estimates · {recent.length}</span>
+          <span className={cx("mono", "rec-fold-s")}>{calib && calib.n ? calibrationLine(calib) : "reopen one, or record what you quoted"}</span>
+          <span className={cx("rec-fold-chev")} aria-hidden="true">{recentOpen ? "▴" : "▾"}</span>
+        </button>
+        {recentOpen && calib && !calib.n ? <div className={cx("rec-fit", "rec-fit--open")}>{calibrationLine(calib)}</div> : null}
+        {recentOpen ? (
           <div className={cx("recent")}>
             {(phone && !recentAll ? recent.slice(0, 3) : recent).map((r) => (
               <div key={r.id} className={cx("rrow-wrap")}>
@@ -2140,10 +2223,9 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
             ))}
             {phone && !recentAll && recent.length > 3 && <button type="button" className={cx("rrow-more")} onClick={() => setRecentAll(true)}>Show all {recent.length}</button>}
           </div>
-        ) : (
-          <div className={cx("empty")}>Nothing saved yet — the first estimate you save lands here.</div>
-        )}
+        ) : null}
       </section>
+      )}
       {phone && rowSheet && (() => {
         const r = recent.find((x) => x.id === rowSheet);
         if (!r) return null;
@@ -2151,7 +2233,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress }: { aiEnabled: bo
           <BlueprintSheet open onClose={() => setRowSheet(null)} title={shortTitle(r)} description={`${shortMeta(r)} · ${money(r.subtotal)}`}>
             <div className={cx("rs-acts")}>
               <button type="button" className="bps-btn bps-btn--primary" onClick={() => { setRowSheet(null); void reopen(r.id); }}>Reopen</button>
-              <button type="button" className="bps-btn bps-btn--ghost" onClick={() => { setRowSheet(null); setActualFor(r.id); setActualDraft({ tons: r.actual?.tons ? String(r.actual.tons) : "", price: r.actual?.price ? String(r.actual.price) : "", notes: r.actual?.notes ?? "" }); }}>{r.actual ? "Edit actual" : "Record actual"}</button>
+              <button type="button" className="bps-btn bps-btn--ghost" onClick={() => { setRowSheet(null); setRecentOpen(true); setActualFor(r.id); setActualDraft({ tons: r.actual?.tons ? String(r.actual.tons) : "", price: r.actual?.price ? String(r.actual.price) : "", notes: r.actual?.notes ?? "" }); }}>{r.actual ? "Edit actual" : "Record actual"}</button>
             </div>
           </BlueprintSheet>
         );

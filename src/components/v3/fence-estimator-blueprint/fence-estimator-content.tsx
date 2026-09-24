@@ -341,15 +341,43 @@ export function FenceEstimatorContent({ initialAddress }: { initialAddress?: str
                 </div>
                 <button className="tgl" type="button" id="stainTgl" aria-label="Stain and seal after install"></button>
               </div>
+              <div className="site-row" id="clearRow">
+                <div>
+                  <div className="tg-t">Clear the fence line</div>
+                  <div className="tg-h">A 2-ft path — brush, debris, small plants — cleared by the crew, $3 per foot. Off: the owner clears it first.</div>
+                </div>
+                <button className="tgl" type="button" id="clearTgl" aria-label="Clear the fence line"></button>
+              </div>
+              <div className="site-row" id="haulRow">
+                <div>
+                  <div className="tg-t">Haul away excavated soil</div>
+                  <div className="tg-h">The spoil from every post hole loaded and hauled off. Off: spread along the line.</div>
+                </div>
+                <button className="tgl" type="button" id="haulTgl" aria-label="Haul away excavated soil"></button>
+              </div>
             </div>
             <div className="card fs-card fs-set">
               <div className="ledger-head">Posts</div>
               <div className="site-row site-row--stack is-hidden" id="upgradeRow">
                 <div>
-                  <div className="tg-t">Posts</div>
-                  <div className="tg-h">Galvanized steel never rots or leans; 6×6 is heavy stock at every post.</div>
+                  <div className="tg-t">Post system</div>
+                  <div className="tg-h">Standard 4×4 pressure-treated carries the 4-year workmanship warranty; steel and post-on-pipe systems add 10-year to lifetime structural.</div>
                 </div>
-                <div className="site-seg" role="group" aria-label="Post upgrade"></div>
+                <div className="site-seg" role="group" aria-label="Post system"></div>
+              </div>
+              <div className="site-row is-hidden" id="gatePostsRow">
+                <div>
+                  <div className="tg-t">Steel gate posts</div>
+                  <div className="tg-h">Gates hang on 4×4 black steel even on a wood-post fence — a wood gate post sags. Off: the gate warranty is 6 months.</div>
+                </div>
+                <button className="tgl" type="button" id="gatePostsTgl" aria-label="Steel gate posts"></button>
+              </div>
+              <div className="site-row site-row--stack" id="gateHwRow">
+                <div>
+                  <div className="tg-t">Gate hardware</div>
+                  <div className="tg-h">Heavy-duty: ball-bearing hinges, a heavy latch, a cane bolt on a double gate.</div>
+                </div>
+                <div className="site-seg" role="group" aria-label="Gate hardware"></div>
               </div>
               <div className="site-row site-row--stack" id="spacingRow">
                 <div>
@@ -357,6 +385,23 @@ export function FenceEstimatorContent({ initialAddress }: { initialAddress?: str
                   <div className="tg-h"></div>
                 </div>
                 <div className="site-seg" role="group" aria-label="Post spacing"></div>
+              </div>
+            </div>
+            <div className="card fs-card fs-set is-hidden" id="woodCard">
+              <div className="ledger-head">Boards &amp; fasteners</div>
+              <div className="site-row site-row--stack" id="gradeRow">
+                <div>
+                  <div className="tg-t">Cedar grade</div>
+                  <div className="tg-h">#2 &amp; better is the standard tight-knot board; #1 has tighter, smaller knots; clear has none.</div>
+                </div>
+                <div className="site-seg" role="group" aria-label="Cedar grade"></div>
+              </div>
+              <div className="site-row site-row--stack" id="fastenRow">
+                <div>
+                  <div className="tg-t">Fasteners</div>
+                  <div className="tg-h">Hot-dip galvanized ring-shank is standard; stainless leaves no rust streaks down the cedar.</div>
+                </div>
+                <div className="site-seg" role="group" aria-label="Fasteners"></div>
               </div>
             </div>
             <div className="card fs-card fs-set">

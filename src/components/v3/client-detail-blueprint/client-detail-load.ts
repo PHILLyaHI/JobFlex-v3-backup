@@ -23,6 +23,10 @@
 // "Aug 08, 2026" rather than Intl's "Aug 8, 2026".
 
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
+import { money, planPhase, planTermsLine } from "@/lib/servicePlans";
+import { equipmentAdvice, equipmentLine } from "@/lib/equipment";
+import type { EquipmentRow } from "./equipment-panel";
 import {
   splitAddress,
   type ActivityRow,
@@ -38,6 +42,20 @@ import {
  *  resolved to nothing in this org (deleted, mistyped, or another org's). */
 export type ClientDetailMiss = { found: false; reason: "none" | "missing" };
 
+/** The client's membership (2026-09-22), for the Service plan panel. */
+export type ClientPlanRow = {
+  id: string;
+  name: string;
+  status: string;
+  phase: string;
+  terms: string;
+  discountPct: number;
+  nextVisit: string | null;
+  nextBill: string | null;
+  term: string | null;
+  acceptHref: string | null;
+};
+
 export type ClientDetailRecord = {
   found: true;
   /** The real row's id. Every write on the page goes through it, and the type
@@ -51,6 +69,11 @@ export type ClientDetailRecord = {
   proposals: ProposalRow[];
   payments: PaymentRow[];
   activity: ActivityRow[];
+  /** Memberships (2026-09-22), newest first, and the plans the shop sells. */
+  plans: ClientPlanRow[];
+  planTemplates: { id: string; name: string; terms: string }[];
+  /** The units at the home (2026-09-23). */
+  equipment: EquipmentRow[];
   /** The raw columns behind `client`, for the Edit dialog.
    *
    *  Carried SEPARATELY rather than parsed back out of the display strings.
@@ -206,6 +229,33 @@ export async function loadClientDetail(
     return { found: false, reason: "missing" };
   }
 
+  // The client's plans and the shop's templates (2026-09-22).
+  const [planRows, templateRows, appUrl] = await Promise.all([
+    db.servicePlan.findMany({ where: { clientId: row.id, organizationId }, orderBy: { createdAt: "desc" }, take: 10, include: { visits: { where: { status: "SCHEDULED" }, orderBy: { dueAt: "asc" }, take: 1, include: { appointment: { select: { startsAt: true } } } }, invoices: { where: { status: "PENDING" }, orderBy: { dueDate: "asc" }, take: 1, select: { number: true, amount: true, dueDate: true } } } }),
+    db.servicePlanTemplate.findMany({ where: { organizationId, active: true }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], select: { id: true, name: true, visitsPerYear: true, termMonths: true, priceCents: true, billing: true, discountPct: true } }),
+    appBaseUrl(),
+  ]);
+  const dayOf = (d: Date | null | undefined) => (d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : null);
+  const plans: ClientPlanRow[] = planRows.map((p) => {
+    const v = p.visits[0];
+    const inv = p.invoices[0];
+    return {
+      id: p.id,
+      name: p.name,
+      status: p.status,
+      phase: planPhase(p),
+      terms: planTermsLine(p),
+      discountPct: p.discountPct,
+      nextVisit: v ? `${v.label} · ${dayOf(v.appointment?.startsAt ?? v.dueAt)}` : null,
+      nextBill: inv ? `${money(Math.round(inv.amount * 100))} open · invoice ${inv.number} due ${dayOf(inv.dueDate)}` : p.nextBillingAt ? `${money(p.priceCents)} on ${dayOf(p.nextBillingAt)}` : null,
+      term: p.startsAt ? `${dayOf(p.startsAt)} – ${dayOf(p.endsAt)}` : null,
+      acceptHref: p.status === "DRAFT" || p.status === "SENT" ? `${appUrl}/plan/${p.acceptToken}` : null,
+    };
+  });
+  const planTemplates = templateRows.map((t) => ({ id: t.id, name: t.name, terms: planTermsLine(t) }));
+  const equipmentRows = await db.clientEquipment.findMany({ where: { clientId: row.id, organizationId }, orderBy: { createdAt: "asc" } });
+  const equipment: EquipmentRow[] = equipmentRows.map((e) => ({ id: e.id, kind: e.kind, line: equipmentLine(e), advice: equipmentAdvice(e), filterSize: e.filterSize, location: e.location, serial: e.serial, source: e.source }));
+
   const lastActivity = row.activities[0]?.createdAt ?? row.updatedAt;
   const addr = splitAddress(row.address);
 
@@ -244,6 +294,9 @@ export async function loadClientDetail(
     clientId: row.id,
     client,
     projects: row.projects,
+    plans,
+    planTemplates,
+    equipment,
     editable: {
       name: row.name,
       email: row.email ?? "",

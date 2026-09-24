@@ -54,6 +54,8 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Delivery",
     items: [
       { label: "Calendar", icon: "i-cal", href: "/dashboard/calendar" },
+      // Online booking (2026-09-23): the public /book/<slug> page's office side.
+      { label: "Online booking", icon: "i-cal", href: "/dashboard/booking" },
       { label: "Jobs", icon: "i-jobs", href: "/dashboard/jobs" },
       { label: "Workers", icon: "i-hardhat", href: "/dashboard/workers" },
       { label: "Hire", icon: "i-userplus", href: "/dashboard/hire" },
@@ -64,6 +66,9 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Money",
     items: [
       { label: "Financials", icon: "i-bank", href: "/dashboard/financials" },
+      // Memberships (2026-09-22): the plans a shop sells, its members, the
+      // visits and the bills they bring.
+      { label: "Service plans", icon: "i-check", href: "/dashboard/service-plans" },
       // /dashboard/subscription IS the blueprint page now (owner promoted the
       // port 2026-08-12; the classic "Well-Kept Ledger" donor was deleted with
       // it and this URL taken over). The responsive staging build — desktop
@@ -116,7 +121,10 @@ export const NAV_SECTIONS: NavSection[] = [
         label: "HVAC estimator",
         icon: "i-heatpump",
         href: "/dashboard/hvac-estimator",
-        children: [{ label: "HVAC inventory", icon: "i-heatpump", href: "/dashboard/hvac-estimator/board" }],
+        children: [
+          { label: "HVAC service menu", icon: "i-heatpump", href: "/dashboard/hvac-estimator/services" },
+          { label: "HVAC inventory", icon: "i-heatpump", href: "/dashboard/hvac-estimator/board" },
+        ],
       },
       { label: "Phone", icon: "i-phone", href: "/dashboard/phone" },
       { label: "Messages", icon: "i-msg", href: "/dashboard/messages" },

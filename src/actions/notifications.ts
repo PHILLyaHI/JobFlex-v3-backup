@@ -51,8 +51,9 @@ function hrefFor(e: {
   clientId: string | null;
   leadId: string | null;
 }): string | null {
-  // A stock notice or a purchase order (2026-09-20) names its own page in meta.
-  if (e.kind && /^(STOCK_|PURCHASE_ORDER_)/.test(e.kind) && e.meta) {
+  // A stock notice, a purchase order (2026-09-20) or a service-plan notice
+  // (2026-09-22) names its own page in meta.
+  if (e.kind && /^(STOCK_|PURCHASE_ORDER_|PLAN_)/.test(e.kind) && e.meta) {
     try {
       const href = (JSON.parse(e.meta) as { href?: string }).href;
       if (href) return href;

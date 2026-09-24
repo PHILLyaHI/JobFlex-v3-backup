@@ -52,3 +52,14 @@ export const ESTIMATOR_LABEL: Record<EstimatorId, string> = {
 export function looksLikeStreetAddress(s: string | null | undefined): boolean {
   return /\d+\s+\S+.*\b(?:st|street|ave|avenue|rd|road|dr|drive|ln|lane|way|blvd|boulevard|ct|court|pl|place|cir|circle|hwy|highway|ter|terrace|pkwy|parkway|loop|trail|trl)\b/i.test(s ?? "");
 }
+
+/** A lead waiting for an estimate, as an estimator page lists it (lib/leadQueue). */
+export type WaitingLead = {
+  id: string;
+  name: string;
+  /** "Everett, WA" or the ZIP — never the street, which is on the lead. */
+  place: string | null;
+  projectType: string | null;
+  /** "2d ago" */
+  ago: string;
+};
