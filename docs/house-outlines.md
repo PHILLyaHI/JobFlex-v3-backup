@@ -42,3 +42,16 @@ a drawn mask (a house under the pin, a garage 15 m east, a shed turned
 30°, a speck under the floor) recovered where and how big it was drawn,
 and the heights merge. The live path needs the production key with the
 Solar API enabled; the stand has none.
+
+## Switched off, later the same day
+
+Owner: "let's not use this feature for outlining the house — when we
+request an address for a fence, don't outline the house; we'll draw it by
+hand." `DETECT_OUTLINES = false` in the fence page's behaviour: on an
+address, no outline is adopted, no detected footprint is drawn as context,
+and the aerial call is never made (no Solar cost). The House layer opens on
+the Buildings panel with Trace outline, and the hint says to draw the
+house. The Align button is gone — there is nothing to align. The lookups
+and `lib/solarHouses` stay in the code, one constant away, for the day the
+decision changes; the street centrelines from the same OSM answer still
+decide which side of the lot faces the street.

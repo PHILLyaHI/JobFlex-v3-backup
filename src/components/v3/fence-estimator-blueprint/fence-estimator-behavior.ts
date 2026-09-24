@@ -2413,7 +2413,15 @@ export function initFenceEstimatorContent(
   // address sits in becomes the house the moment it arrives, however late;
   // the House button only shows and hides the layer, and says what the lookup
   // is doing while there is nothing to show.
-  type HouseLookup = 'idle' | 'loading' | 'found' | 'none' | 'failed';
+  type HouseLookup = 'idle' | 'loading' | 'found' | 'none' | 'failed' | 'manual';
+  /** Owner, 2026-09-24: "let's not use this feature for outlining the house —
+   *  when we request an address for a fence, don't outline the house; we'll
+   *  draw it by hand." The lookups stay in the code (OpenStreetMap through
+   *  fetchPropertyBoundary, Google's aerial mask through fetchHouseFootprints)
+   *  for the day that changes; with this off no outline is adopted, nothing
+   *  is drawn as context, and the aerial call is never made. The Align button
+   *  went with it — there is nothing to align. */
+  const DETECT_OUTLINES = false;
   let houseLookup: HouseLookup = 'idle';
   /** The lookup's raw answer, kept so the subject can be re-picked when the
    *  lot arrives after the buildings did. */
@@ -2480,6 +2488,7 @@ export function initFenceEstimatorContent(
     found: 'House layer',
     none: 'No outline found · draw it',
     failed: 'Outline lookup failed · draw it',
+    manual: 'House layer — draw the house outline',
   };
   function syncHouseButton() {
     $$('[data-act="house"]').forEach(function (b) {
@@ -2653,6 +2662,15 @@ export function initFenceEstimatorContent(
     o: { lat: number; lng: number },
     first: Promise<{ buildings: Array<{ ring: Array<{ lat: number; lng: number }>; heightFt: number }>; roads: unknown[] }>,
   ) {
+    if (!DETECT_OUTLINES) {
+      // The address is in: the house is the contractor's to draw. The panel
+      // with Trace outline opens by itself unless the button was used.
+      setHouseLookup('manual');
+      if (!houseLayerTouched && !houseLayer) setHouseLayer(true);
+      renderHousePanel();
+      sayHint('Draw the house: Trace outline in Buildings under the map, then ' + (coarse ? 'tap' : 'click') + ' each corner of the house.');
+      return;
+    }
     setHouseLookup('loading');
     refineHouses(o);
     const giveUp = function () {
@@ -2920,8 +2938,10 @@ export function initFenceEstimatorContent(
     if (!houses.length) {
       html = houseMode
         ? '<li class="hs-empty">' + (coarse ? 'Tap' : 'Click') + ' each corner of the house on the map, then ' + (coarse ? 'tap' : 'click') + ' the first corner again to close the outline.</li>'
-        : houseLookup === 'loading'
-          ? '<li class="hs-empty">Looking for the house outline…</li>'
+        : houseLookup === 'manual'
+          ? '<li class="hs-empty">Draw the house — Trace outline, then ' + (coarse ? 'tap' : 'click') + ' each corner of the house on the map.</li>'
+          : houseLookup === 'loading'
+            ? '<li class="hs-empty">Looking for the house outline…</li>'
           : detected
             ? '<li class="hs-empty">A footprint was found for this lot — Use detected outline puts it back as the house.</li>'
             : houseLookup === 'failed'

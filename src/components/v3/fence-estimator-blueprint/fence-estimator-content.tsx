@@ -131,14 +131,8 @@ export function FenceEstimatorContent({ initialAddress }: { initialAddress?: str
         <div className="card fs-stage">
           <div className="stage-tools">
             <div className="tool-group">
-              {/* `data-act` drives the map's align MODE; `data-flash` is the
-                  fallback tick for when no map surface is mounted. */}
-              <button className="tool" type="button" data-act="align" data-flash="Aligned">
-                <svg className="ic">
-                  <use href="#i-grid" />
-                </svg>
-                Align
-              </button>
+              {/* Align (dragging a detected outline onto the roof) left with the
+                  detected outlines: the house is drawn by hand (2026-09-24). */}
               <button className="tool" type="button" data-act="close-loop">
                 <svg className="ic">
                   <use href="#i-undo" />
