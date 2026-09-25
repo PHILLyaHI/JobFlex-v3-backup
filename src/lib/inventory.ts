@@ -14,6 +14,13 @@
 //   low         available under the reorder point — the point the office
 //               set, else the biggest single job on the books, so the
 //               warehouse always covers the next truck.
+//
+// What the company keeps in stock (2026-09-23): not every contractor stocks
+// everything a job needs. An item is either KEPT IN STOCK — everything above
+// applies — or BOUGHT PER JOB (StockItem.stocked false): the shelf is not
+// expected to hold it, so it is never low or short and no restock is
+// suggested; instead, when a job sells, its per-job materials go on a
+// shopping list for that job (jobBuyList), and the crew's pick list says so.
 
 export type TradeId = "fence" | "roof" | "hvac";
 
@@ -40,7 +47,12 @@ export type StockItem = {
   supplierId: string | null;
   supplierName?: string | null;
   supplierSku?: string | null;
+  /** Kept on the shelf (absent = yes). False = bought for each job — never low, never restocked; on the job's shopping list instead. */
+  stocked?: boolean;
 };
+
+/** Absent counts as kept in stock, so a company that never chose reads as before. */
+export const isStocked = (it: { stocked?: boolean }) => it.stocked !== false;
 
 /**
  * The name a line or an item is matched by: lower case, the size and
@@ -104,6 +116,11 @@ export function stockRows(items: readonly StockItem[], sold: readonly Demand[], 
     const reserved = r2(s.total.get(it.key) ?? 0);
     const forecast = r2(o.total.get(it.key) ?? 0);
     const available = r2(it.onHand - reserved);
+    // Bought per job: the shelf is not meant to hold it, so it is never low or
+    // short and nothing is suggested for the shelf. What sold jobs still need
+    // and open proposals would take stay readable — the per-job shopping list
+    // (jobBuyList) is built from the same lines.
+    if (!isStocked(it)) return { ...it, reserved, available, forecast, short: 0, threshold: 0, low: false, suggestedOrder: 0 };
     const threshold = it.reorderPoint ?? Math.max(s.biggest.get(it.key) ?? 0, o.biggest.get(it.key) ?? 0);
     const short = r2(Math.max(0, forecast - available));
     const low = available < threshold || available < 0;
@@ -128,7 +145,16 @@ export function untrackedLines(items: readonly StockItem[], lines: readonly Stoc
   return out;
 }
 
-export type PickRow = { name: string; unit: string; quantity: number; itemId: string | null; onHand: number | null; enough: boolean };
+export type PickRow = {
+  name: string;
+  unit: string;
+  quantity: number;
+  itemId: string | null;
+  onHand: number | null;
+  enough: boolean;
+  /** The item is bought for each job, not kept on the shelf: "ordered for this job", not "short". */
+  perJob: boolean;
+};
 
 /**
  * What the crew takes from the warehouse for one job: every material line,
@@ -151,9 +177,63 @@ export function pickList(items: readonly StockItem[], lines: readonly StockLine[
       itemId: it?.id ?? null,
       onHand: it ? r2(it.onHand) : null,
       enough: it ? it.onHand >= quantity : false,
+      perJob: it ? !isStocked(it) : false,
     });
   }
   return [...merged.values()];
+}
+
+export type BuyLine = {
+  itemId: string;
+  key: string;
+  name: string;
+  unit: string;
+  /** Whole units the job needs. */
+  quantity: number;
+  /** Covered by what is on hand already — an order that arrived — soonest job first. */
+  have: number;
+  toBuy: number;
+  supplierId: string | null;
+  supplierName: string | null;
+  supplierSku: string | null;
+};
+export type BuyJob<J> = { job: J; lines: BuyLine[]; /** Lines with something still to buy. */ toBuy: number };
+export type BuyJobIn = Demand & { startsAt?: string | null };
+
+/**
+ * The per-job shopping list (2026-09-23): for each sold job still to load,
+ * the materials the company buys per job rather than keeps in stock — whole
+ * units, merged by item, the item's own name. What is on hand already (an
+ * order that arrived) is given to the soonest job first, so a line reads
+ * "arrived" or "to buy". A job with no per-job material is left out.
+ */
+export function jobBuyList<J extends BuyJobIn>(items: readonly StockItem[], jobs: readonly J[]): BuyJob<J>[] {
+  const perJob = new Map(items.filter((i) => !isStocked(i)).map((i) => [i.key, i]));
+  if (!perJob.size) return [];
+  const remaining = new Map<string, number>();
+  for (const it of perJob.values()) remaining.set(it.key, Math.max(0, it.onHand));
+  const when = (j: BuyJobIn) => (j.startsAt ? Date.parse(j.startsAt) || Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER);
+  const out: BuyJob<J>[] = [];
+  for (const job of [...jobs].sort((a, b) => when(a) - when(b))) {
+    const need = new Map<string, number>();
+    for (const l of job.lines) {
+      const k = stockKey(l.name);
+      if (!k || !(l.quantity > 0) || !perJob.has(k)) continue;
+      need.set(k, (need.get(k) ?? 0) + l.quantity);
+    }
+    if (!need.size) continue;
+    const lines: BuyLine[] = [];
+    for (const [k, q] of need) {
+      const it = perJob.get(k)!;
+      const quantity = ceil(q);
+      const have = r2(Math.min(quantity, Math.max(0, remaining.get(k) ?? 0)));
+      remaining.set(k, (remaining.get(k) ?? 0) - have);
+      lines.push({ itemId: it.id, key: k, name: it.name, unit: it.unit, quantity, have, toBuy: ceil(quantity - have), supplierId: it.supplierId, supplierName: it.supplierName ?? null, supplierSku: it.supplierSku ?? null });
+    }
+    lines.sort((a, b) => a.name.localeCompare(b.name));
+    out.push({ job, lines, toBuy: lines.filter((l) => l.toBuy > 0).length });
+  }
+  return out;
 }
 
 export type PoLine = { name: string; sku: string | null; unit: string; quantity: number };

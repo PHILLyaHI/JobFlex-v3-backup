@@ -4,6 +4,8 @@ import { rateLimitShared, ipFromRequest, HOUR } from "@/lib/rateLimit";
 import { verifyRevert } from "@/lib/quoteRevert";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendToMembersByPref } from "@/lib/notificationPrefs";
+import { textOffice } from "@/lib/sms/send";
+import { revertedLine } from "@/lib/sms/format";
 import { buildOwnerReverted } from "@/lib/email/build/operator";
 
 // Public proposal REVERT — the homeowner takes back a DECLINE they did not
@@ -80,6 +82,7 @@ export async function POST(
   // the event it cancels.
   try {
     const appUrl = await appBaseUrl();
+    await textOffice(proposal.organizationId, "proposal-declined", revertedLine(proposal.client?.name ?? "A client", proposal.title, "decline"));
     await sendToMembersByPref(
       proposal.organizationId,
       "proposal-declined",

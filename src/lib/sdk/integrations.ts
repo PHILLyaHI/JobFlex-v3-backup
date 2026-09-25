@@ -37,6 +37,8 @@ export interface IntegrationStatus {
   enabled: boolean;
   envKeys: string[];
   probe?: LiveProbe;
+  /** An admin page that sets this one up for everyone (2026-09-24: Twilio). */
+  setupHref?: string;
 }
 
 export function isSerpApiEnabled(): boolean {
@@ -58,7 +60,7 @@ export function isMapsBrowserKeySet(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY);
 }
 
-export function getIntegrationStatuses(): IntegrationStatus[] {
+export async function getIntegrationStatuses(): Promise<IntegrationStatus[]> {
   return [
     // ── Payments ──────────────────────────────────────────────────────────
     {
@@ -117,8 +119,9 @@ export function getIntegrationStatuses(): IntegrationStatus[] {
       key: "twilio",
       name: "Twilio",
       group: "messaging",
-      enabled: isTwilioEnabled(),
-      envKeys: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER"],
+      enabled: await isTwilioEnabled(),
+      envKeys: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_MESSAGING_SERVICE_SID"],
+      setupHref: "/admin/integrations/twilio",
     },
     {
       key: "gmail",

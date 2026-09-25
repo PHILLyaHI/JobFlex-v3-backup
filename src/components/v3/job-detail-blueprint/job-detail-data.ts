@@ -201,7 +201,7 @@ export type JdMoney = {
 /** A warehouse item out on this job: taken when the truck was loaded, and what came back. */
 export type JdPicked = { itemId: string; name: string; unit: string; taken: number; returned: number };
 
-export type JdPick = { name: string; unit: string; quantity: number; tracked: boolean; enough: boolean; onHand: number | null };
+export type JdPick = { name: string; unit: string; quantity: number; tracked: boolean; enough: boolean; onHand: number | null; /** Bought per job, not kept on the shelf (lib/inventoryPolicy). */ perJob: boolean };
 
 export type JdExpense = {
   id: string;

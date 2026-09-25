@@ -59,7 +59,7 @@ export async function clientChannels(clientId: string): Promise<{
   return {
     email: client.email,
     phone: client.phone,
-    smsConfigured: isTwilioEnabled(),
+    smsConfigured: await isTwilioEnabled(),
     emailConfigured: parseGmailSettings(org?.gmailSettingsJson).connected,
   };
 }
@@ -126,7 +126,7 @@ export async function messageClient(input: {
     await sendOrgEmail(org, { to, subject, html: textToHtml(body) });
   } else {
     if (!client.phone) throw new Error(`${client.name} has no phone number on file`);
-    if (!isTwilioEnabled()) throw new Error("Texting needs a Twilio number — set one up on the Phone page");
+    if (!await isTwilioEnabled()) throw new Error("Texting needs a Twilio number — set one up on the Phone page");
     to = client.phone;
     const res = await sendSMS(to, body);
     delivered = !res.skipped;

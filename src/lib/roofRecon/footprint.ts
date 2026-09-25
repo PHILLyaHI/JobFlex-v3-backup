@@ -47,6 +47,13 @@ export interface FootprintOptions {
   minFamilyShare?: number;
   /** Slope factor for the area warning (plan × factor vs Google's sloped area). */
   slopeFactor?: number;
+  /** Keep EVERY blob over the area floor, not only the parcel's (or the pin's):
+   *  the fence map wants the neighbours too (2026-09-24, lib/solarHouses). */
+  keepAll?: boolean;
+  /** When the regularised ring is not simple, hand back the traced staircase
+   *  (Douglas–Peucker'd) instead of nothing — an odd neighbour is still a wall
+   *  to keep a fence off. */
+  rawFallback?: boolean;
 }
 
 export interface FootprintComponent {
@@ -1039,7 +1046,9 @@ function outlineFromBinary(
   if (!vertsOk) reasons.push(`${ring.length} vertices, over the ${o.maxVertices} cap`);
 
   return {
-    ring: simple ? ring : null,
+    // Not simple: nothing — or, for a caller that would rather have a wall
+    // than a hole, the traced staircase itself, simplified.
+    ring: simple ? ring : o.rawFallback ? dropCollinear(douglasPeucker(staircase, o.simplifyFt)) : null,
     report: {
       components,
       keptComponents: components.filter((c) => c.kept).length,
@@ -1074,6 +1083,8 @@ export interface StructureFootprint {
   report: FootprintReport;
   /** Plan area of the mask blob this came from, before regularisation. */
   maskAreaSqft: number;
+  /** Centroid inside the parcel ring — or under the pin when there is no ring. */
+  onParcel: boolean;
 }
 
 export interface StructuresResult {
@@ -1126,20 +1137,24 @@ export function buildStructureFootprints(mask: Raster, opts: FootprintOptions = 
 
   const centreLabel = lab[Math.floor(h / 2) * w + Math.floor(w / 2)];
   const parcel = opts.parcel && opts.parcel.length >= 3 ? opts.parcel : null;
+  const onParcelById: boolean[] = [];
   const components: FootprintComponent[] = sizes.map((n, id) => {
     const areaSqft = n * pxArea;
     const centroid = { x: sumX[id] / n, y: sumY[id] / n };
     const onParcel = parcel ? pointInRing(centroid, parcel) : id === centreLabel;
+    onParcelById[id] = onParcel;
     const bigEnough = areaSqft >= MIN_STRUCTURE_SQFT;
-    const kept = onParcel && bigEnough;
+    const kept = bigEnough && (onParcel || Boolean(opts.keepAll));
     return {
       pixels: n,
       areaSqft,
       kept,
       reason: !onParcel
-        ? parcel
-          ? "centroid outside the parcel"
-          : "not the blob under the pin (no parcel ring)"
+        ? opts.keepAll && bigEnough
+          ? "off the parcel — kept, every structure in the tile"
+          : parcel
+            ? "centroid outside the parcel"
+            : "not the blob under the pin (no parcel ring)"
         : bigEnough
           ? id === centreLabel
             ? "under the pin, on the parcel"
@@ -1163,6 +1178,7 @@ export function buildStructureFootprints(mask: Raster, opts: FootprintOptions = 
       ring: res.ring,
       report: res.report,
       maskAreaSqft: e.c.areaSqft,
+      onParcel: onParcelById[e.id] ?? false,
     };
   });
 

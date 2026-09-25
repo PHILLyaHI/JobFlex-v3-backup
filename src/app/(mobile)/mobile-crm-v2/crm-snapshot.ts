@@ -212,7 +212,7 @@ export async function getCrmSnapshot(): Promise<CrmSnapshotResult> {
         phone: org?.phone ?? null,
         logoUrl: org?.logoUrl ?? null,
       },
-      smsEnabled: isTwilioEnabled(),
+      smsEnabled: await isTwilioEnabled(),
     },
   };
 }

@@ -7,8 +7,10 @@ import s from "./roofing-inventory-forms.module.css";
 export function InventoryItemForm({ workspace: w, compact = false }: { workspace: InventoryWorkspace; compact?: boolean }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const panel = w.itemPanel;
+  const item = w.data.rows.find((r) => r.id === panel?.itemId);
+  // Kept in stock or bought per job (lib/inventoryPolicy); a new item is stocked — it is being added to be tracked.
+  const [stocked, setStocked] = useState(item ? item.stocked !== false : true);
   if (!panel || !w.canWrite) return null;
-  const item = w.data.rows.find((r) => r.id === panel.itemId);
   const fact = item ? w.facts.items[item.id] : undefined;
   const isQuantity = panel.mode === "receive" || panel.mode === "count";
   if (panel.mode !== "add" && !item) return null;
@@ -25,7 +27,7 @@ export function InventoryItemForm({ workspace: w, compact = false }: { workspace
         else w.receiveItem(item, quantity);
         return;
       }
-      w.saveItem({ name: item?.name ?? value("name"), unit: value("unit") || "each", ...(panel.mode === "add" ? { onHand: Number(value("onHand")) || 0 } : {}), reorderPoint: value("reorder") === "" ? null : Number(value("reorder")), supplierId: value("supplier") || null, supplierSku: value("sku") || null, lastCost: value("cost") === "" ? null : Number(value("cost")) });
+      w.saveItem({ name: item?.name ?? value("name"), unit: value("unit") || "each", ...(panel.mode === "add" ? { onHand: Number(value("onHand")) || 0 } : {}), reorderPoint: value("reorder") === "" ? null : Number(value("reorder")), supplierId: value("supplier") || null, supplierSku: value("sku") || null, lastCost: value("cost") === "" ? null : Number(value("cost")), stocked });
     }}>
       {isQuantity && item ? (
         <div className={s.quantityFields}>
@@ -37,10 +39,17 @@ export function InventoryItemForm({ workspace: w, compact = false }: { workspace
           {panel.mode === "add" && <label className={`${s.field} ${s.wide}`}>Item name<input autoFocus required name="name" maxLength={120} placeholder={w.data.trade === "roof" ? "Architectural shingles" : w.data.trade === "fence" ? "Cedar fence pickets" : "Air filter"} /></label>}
           <label className={s.field}>Unit<input autoFocus={panel.mode === "edit"} name="unit" required maxLength={24} defaultValue={item?.unit ?? "each"} placeholder="bundle, roll, each" /></label>
           {panel.mode === "add" && <label className={s.field}>On hand<input name="onHand" type="number" step="any" min="0" defaultValue="0" /></label>}
-          <label className={s.field}>Reorder at<input name="reorder" type="number" step="any" min="0" defaultValue={item?.reorderPoint ?? ""} placeholder={item ? `Automatic · ${qty(item.threshold)}` : "Automatic"} /><small>Leave blank to cover the biggest job.</small></label>
+          <label className={s.field}>Reorder at<input name="reorder" type="number" step="any" min="0" defaultValue={item?.reorderPoint ?? ""} placeholder={item ? `Automatic · ${qty(item.threshold)}` : "Automatic"} disabled={!stocked} /><small>{stocked ? "Leave blank to cover the biggest job." : "Not used for an item bought per job."}</small></label>
           <label className={s.field}>Last cost per unit<input name="cost" type="number" step="any" min="0" defaultValue={fact?.lastCost ?? ""} placeholder="0.00" /></label>
           <label className={s.field}>Supplier<span className="bp-sel"><select name="supplier" className="bp-sel-in" defaultValue={item?.supplierId ?? ""}><option value="">No supplier</option>{w.data.suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></span></label>
           <label className={s.field}>Supplier SKU<input name="sku" defaultValue={item?.supplierSku ?? ""} placeholder="Optional" /></label>
+          <div className={`${s.field} ${s.wide}`} role="radiogroup" aria-label="Kept in stock or bought per job">
+            Stock
+            <div className={s.policy}>
+              <button type="button" role="radio" aria-checked={stocked} onClick={() => setStocked(true)}><b>Kept in stock</b><small>Counted on the shelf, reserved by sold jobs, reordered when it runs low.</small></button>
+              <button type="button" role="radio" aria-checked={!stocked} onClick={() => setStocked(false)}><b>Bought per job</b><small>Nothing to count. When a job sells it goes on that job&apos;s shopping list.</small></button>
+            </div>
+          </div>
         </div>
       )}
       {panel.mode === "edit" && item && <dl className={s.facts}>

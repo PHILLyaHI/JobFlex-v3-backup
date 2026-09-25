@@ -92,7 +92,7 @@ export default async function FollowUpsPage() {
       <FollowUpsClient
         rules={ruleRows}
         pending={pendingRows}
-        smsEnabled={isTwilioEnabled()}
+        smsEnabled={await isTwilioEnabled()}
       />
     </>
   );

@@ -709,8 +709,9 @@ export const NOTIFICATIONS_CARD: CardHead = {
   sub: 'Pick a channel per event. The bell always keeps a copy.',
 };
 
-/** Column order is load-bearing: index 1 is the "Email only" column. */
-export const NOTIFICATION_CHANNELS: readonly string[] = ['In-app', 'Email'];
+/** Column order is load-bearing: index 1 is the "Email only" column, index 2
+ *  the Text column (2026-09-24). */
+export const NOTIFICATION_CHANNELS: readonly string[] = ['In-app', 'Email', 'Text'];
 
 /** F17: the per-column `.colt` badge becomes a real `.colw` toggle. */
 export const NOTIFICATION_COLUMN_LABEL = 'All' as const;
@@ -753,6 +754,85 @@ export const NOTIFICATION_FOOTER_ACTIONS: readonly MatrixFooterAction[] = [
 
 /** "Email only" turns on this column index and clears the rest. */
 export const EMAIL_COLUMN_INDEX = 1 as const;
+/** The Text column (2026-09-24). */
+export const SMS_COLUMN_INDEX = 2 as const;
+export const SMS_UNAVAILABLE_TITLE = 'Nothing in the app texts this event.' as const;
+export const SMS_UNAVAILABLE_TAG = 'No text' as const;
+
+/* ------------------------------------------------------------------ */
+/* Text messages card (2026-09-24) — User.smsPhone + NotificationPhone */
+/* ------------------------------------------------------------------ */
+
+export const TEXTS_CARD: CardHead = {
+  title: 'Text messages',
+  sub: 'Verify your mobile and tick Text on the events above. Texts wait for the morning; a new lead never waits.',
+};
+
+export const TEXTS_COPY = {
+  mobileLabel: 'Your mobile',
+  mobilePlaceholder: '(206) 555-0100',
+  sendCode: 'Text me a code',
+  codeLabel: 'The six digits',
+  verify: 'Verify',
+  change: 'Change',
+  remove: 'Stop texting me',
+  verified: 'Verified',
+  noPhone: 'No mobile yet — nothing is texted to you.',
+  extrasTitle: 'Also text',
+  extrasSub: 'Extra office numbers get every office event — the dispatcher, whoever runs the books.',
+  extraName: 'Name',
+  extraPhone: 'Mobile',
+  addExtra: 'Add number',
+  pause: 'Pause',
+  resume: 'Resume',
+  removeExtra: 'Remove',
+  quietTitle: 'Quiet hours',
+  quietSub: 'Texts that land in this window wait, folded into one message at the end of it.',
+  quietFrom: 'From',
+  quietTo: 'Until',
+  testText: 'Send me a test text',
+  usage: (n: number, allowance: number) => `${n} of ${allowance} texts this month`,
+  overage: 'Beyond the allowance, texts are billed through at 3¢ each.',
+  clientsTitle: 'Text clients',
+  clientsSub: 'The proposal link the moment it is sent, and a reminder the evening before a visit — signed with your company name, with the STOP line.',
+  clientsOn: 'On',
+  clientsOff: 'Off',
+  ownTitle: 'Your own number',
+  ownSub: 'A local number in your area code that your texts show and clients can reply to. It stays on the JobFlex account, registered with the carriers.',
+  ownGet: 'Get my own number',
+  ownRelease: 'Release it',
+  ownCost: 'Billed through at cost.',
+  notConfigured: 'Texting is not set up on this server yet — numbers are kept, nothing is sent.',
+  stopped: 'replied STOP',
+} as const;
+
+export interface ExtraPhoneData {
+  id: string;
+  name: string;
+  /** Pretty, for the eye: "(206) 555-0100". */
+  phone: string;
+  active: boolean;
+  /** The number replied STOP — texts to it are blocked until it texts START. */
+  stopped: boolean;
+}
+
+export interface SmsSettingsData {
+  /** The platform has a Twilio number configured. */
+  configured: boolean;
+  /** The member's verified mobile, pretty, or null. */
+  phone: string | null;
+  verifiedAt: string | null;
+  stopped: boolean;
+  extras: ExtraPhoneData[];
+  /** Texts the company sent this month, and the plan's monthly allowance. */
+  monthCount: number;
+  allowance: number;
+  canManage: boolean;
+  /** Client-facing texts (the proposal link, a reminder before a visit). */
+  clientsOn: boolean;
+  /** The company's own number, pretty, when it claimed one. */
+  ownNumber: string | null;
+}
 
 export const TEST_RESULT_COPY = {
   sent: 'Sent to the bell and to your email.',
@@ -890,6 +970,7 @@ export interface IntegrationsData {
 
 export interface NotificationsData {
   prefs: NotificationPrefs;
+  sms: SmsSettingsData;
 }
 
 export interface SettingsData {

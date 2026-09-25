@@ -23,5 +23,5 @@ export default async function WorkflowsPage() {
     channel: parseChannel(r.template),
   }));
 
-  return <FollowUpRulesEditor rules={rows} smsEnabled={isTwilioEnabled()} />;
+  return <FollowUpRulesEditor rules={rows} smsEnabled={await isTwilioEnabled()} />;
 }

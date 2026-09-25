@@ -101,7 +101,7 @@ export async function sendPaymentReminder(input: { proposalId: string; installme
   }
   const phone = toE164(proposal.client?.phone);
   if (phone) {
-    if (!isTwilioEnabled()) report.sms = "disabled";
+    if (!await isTwilioEnabled()) report.sms = "disabled";
     else {
       try {
         await sendSMS(

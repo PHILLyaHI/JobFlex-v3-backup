@@ -16,6 +16,7 @@ import { checkIntegrationsNow } from "@/actions/integrationsHealth";
 import type { HealthLevel, HealthReport } from "@/lib/integrationsHealth";
 import s from "./admin-shared.module.css";
 import { ago } from "./admin-ui";
+import { IntegrationLinks } from "@/components/v3/admin-integrations/integration-links";
 
 const WORD: Record<HealthLevel, string> = {
   ok: "OK",
@@ -105,6 +106,7 @@ export function IntegrationsHealthCard({
               <span className={s.healthName}>
                 {x.name}
                 {x.note ? <span className={s.healthNote}>{x.note}</span> : null}
+                <IntegrationLinks id={x.key} compact />
               </span>
               <span className={`${s.healthLevel} ${toneClass(x.level)}`}>{WORD[x.level]}</span>
               <span className={s.healthReason}>{x.reason}</span>

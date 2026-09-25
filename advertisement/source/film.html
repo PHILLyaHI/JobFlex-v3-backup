@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>JobFlex roof estimator — the film</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --paper:#f2f0eb; --paper-deep:#ebe8e1; --ink:#0a0a0a; --blue:#1854a0; --blue-dark:#0e3d7a; --sky:#4a9eff; --muted:#555; --yellow:#f5c400; --font:'Inter',Helvetica,Arial,sans-serif; --mono:'JetBrains Mono',ui-monospace,monospace; }
+  html,body { margin:0; background:var(--paper); overflow:hidden; }
+  #stage { position:relative; overflow:hidden; background:var(--paper);
+    background-image: linear-gradient(rgba(10,10,10,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(10,10,10,.045) 1px, transparent 1px);
+    background-size: 48px 48px; font-family:var(--font); color:var(--ink); }
+  .layer { position:absolute; inset:0; }
+  svg.layer { width:100%; height:100%; }
+  .clip { position:absolute; overflow:hidden; background:#fff; }
+  .clip img { position:absolute; left:0; top:0; display:block; will-change:transform; }
+  .frame { position:absolute; border:3px solid var(--ink); background:#fff; box-shadow: 14px 14px 0 var(--ink); }
+  .cap { position:absolute; z-index:5; left:0; right:0; text-align:center; padding:0 48px; font-weight:900; letter-spacing:-.02em; line-height:1.02; text-transform:uppercase; text-wrap:balance; }
+  .cap small { display:block; margin-top:14px; font-family:var(--mono); font-weight:600; font-size:.34em; letter-spacing:.18em; color:var(--blue); text-transform:uppercase; }
+  .sub { position:absolute; z-index:5; left:0; right:0; text-align:center; padding:0 40px; font-weight:700; letter-spacing:-.01em; line-height:1.15; text-wrap:balance; }
+  .sub span { display:inline; background:var(--ink); color:#fff; padding:6px 14px; box-decoration-break:clone; -webkit-box-decoration-break:clone; }
+  .kicker { position:absolute; z-index:5; font-family:var(--mono); font-weight:600; letter-spacing:.22em; text-transform:uppercase; color:var(--blue); }
+  .kicker::before { content:''; display:inline-block; width:.55em; height:.55em; background:var(--blue); margin-right:.6em; vertical-align:middle; }
+  .hl { position:absolute; border:4px solid var(--blue); box-shadow:0 0 0 6px rgba(74,158,255,.28); pointer-events:none; }
+  .tag { position:absolute; background:var(--ink); color:#fff; font-family:var(--mono); font-weight:600; font-size:22px; letter-spacing:.14em; text-transform:uppercase; padding:8px 14px; white-space:nowrap; }
+  .call { position:absolute; background:#fff; border:3px solid var(--ink); box-shadow:8px 8px 0 var(--ink); padding:14px 20px 12px; min-width:250px; }
+  .call b { display:block; font-size:44px; font-weight:900; letter-spacing:-.02em; line-height:1; color:var(--blue); font-variant-numeric:tabular-nums; }
+  .call i { display:block; margin-top:6px; font-style:normal; font-family:var(--mono); font-weight:600; font-size:15px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); }
+  .cursor { position:absolute; width:34px; height:34px; pointer-events:none; }
+  .num { position:absolute; font-weight:700; font-variant-numeric:tabular-nums; text-align:right; background:#fff; }
+  .end { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+  .wordmark { font-weight:900; letter-spacing:-.04em; line-height:.9; text-transform:uppercase; }
+  .wordmark em { font-style:normal; color:var(--blue); }
+  .phone { position:absolute; background:var(--ink); border-radius:54px; padding:16px; box-shadow: 18px 18px 0 rgba(10,10,10,.18); }
+  .phone .clip { position:relative; border-radius:38px; background:#fff; }
+  .slider { position:absolute; background:#fff; border:3px solid var(--ink); box-shadow:10px 10px 0 var(--ink); padding:22px 26px 24px; }
+  .slider .lab { font-family:var(--mono); font-weight:600; font-size:15px; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); display:flex; justify-content:space-between; }
+  .slider .lab b { color:var(--blue); font-size:22px; letter-spacing:0; font-family:var(--font); font-weight:900; }
+  .slider .track { position:relative; margin-top:16px; height:10px; background:var(--paper-deep); border:2px solid var(--ink); }
+  .slider .fill { position:absolute; left:0; top:0; bottom:0; background:var(--blue); }
+  .slider .knob { position:absolute; top:50%; width:30px; height:30px; margin:-15px 0 0 -15px; background:#fff; border:3px solid var(--ink); box-shadow:3px 3px 0 var(--ink); }
+  .slider .note { margin-top:14px; font-size:15px; color:var(--muted); font-weight:600; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+(async () => {
+  const P = new URLSearchParams(location.search);
+  const W = +P.get("w") || 1080, H = +P.get("h") || 1920, V = P.get("version") || "v2";
+  const VERT = H > W;
+  const stage = document.getElementById("stage");
+  stage.style.width = W + "px"; stage.style.height = H + "px";
+  const $ = (tag, cls, parent = stage) => { const e = document.createElement(tag); if (cls) e.className = cls; parent.appendChild(e); return e; };
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const ease = (x) => 1 - Math.pow(1 - clamp(x), 3);
+  const io = (x) => (x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const seg = (t, a, b) => clamp((t - a) / (b - a));           // 0→1 over [a,b]
+  const win = (t, a, b, f = .35) => Math.min(seg(t, a, a + f), 1 - seg(t, b - f, b)); // in & out
+  const money = (n) => "$" + Math.round(n).toLocaleString("en-US");
+
+  // ── assets: source is in CSS px of the capture viewport; `k` = image px per CSS px
+  const A = {
+    start:  { src: "assets/est-start.png", k: 2, w: 1440, h: 960 },
+    report: { src: "assets/est-report.png", k: 2, w: 1440, h: 960 },
+    build:  { src: "assets/est-builder.png", k: 2, w: 1440, h: 960 },
+    metal:  { src: "assets/est-builder-metal-page.png", k: 2, w: 1440, h: 960 },
+    lines:  { src: "assets/est-lines.png", k: 2, w: 1440, h: 960 },
+    bpLines0: { src: "assets/bp-lines-before.png", k: 2, w: 1440, h: 960 },
+    bpLines1: { src: "assets/bp-lines-after.png", k: 2, w: 1440, h: 960 },
+    bpCost0: { src: "assets/bp-cost-before.png", k: 2, w: 1440, h: 960 },
+    bpCost1: { src: "assets/bp-cost-after.png", k: 2, w: 1440, h: 960 },
+    desk:   { src: "assets/portal-desktop.png", k: 2, w: 1280, h: 900 },
+    phone:  { src: "assets/portal-mobile.png", k: 3, w: 390, h: 844 },
+    aerial: { src: "assets/aerial-hq.png", k: 1, w: 1280, h: 1280 },
+  };
+  const HOUSE = { cx: 646, cy: 681, ring: [] };
+  const PIN = (sc) => `<g transform="scale(${sc})"><path d="M0 8 C-14 -12 -14 -30 0 -30 C14 -30 14 -12 0 8 Z" fill="#1854a0" stroke="#0a0a0a" stroke-width="1.5"/><circle cx="0" cy="-20" r="5" fill="#fff"/></g>`;
+
+  // A shot: a clipped window onto one capture. view(srcRect) maps source CSS px → the box.
+  class Shot {
+    constructor(asset, box, parent = stage) {
+      this.a = asset; this.box = box;
+      this.el = $("div", "clip", parent);
+      Object.assign(this.el.style, { left: box.x + "px", top: box.y + "px", width: box.w + "px", height: box.h + "px" });
+      this.img = document.createElement("img"); this.img.src = asset.src; this.el.appendChild(this.img);
+      this.over = $("div", "layer", this.el);
+      this.k = 1; this.src = { x: 0, y: 0, w: asset.w, h: asset.h };
+    }
+    view(src, fit = this.fit || "width") {
+      this.src = src;
+      let k;
+      if (fit === "cover") k = Math.max(this.box.w / src.w, this.box.h / src.h);
+      else {
+        k = this.box.w / src.w; this.box.h = Math.round(src.h * k); this.el.style.height = this.box.h + "px";
+        if (this.centerY) { this.box.y = Math.round(this.centerY - this.box.h / 2); this.el.style.top = this.box.y + "px"; }
+      }
+      this.k = k;
+      const ox = (this.box.w - src.w * k) / 2, oy = (this.box.h - src.h * k) / 2;
+      this.img.style.width = this.a.w * k + "px"; this.img.style.height = this.a.h * k + "px";
+      this.img.style.transform = `translate(${-src.x * k + ox}px, ${-src.y * k + oy}px)`;
+      this.ox = ox; this.oy = oy;
+      return this;
+    }
+    // stage coordinates of a source CSS point/rect
+    at(x, y) { return { x: this.box.x + this.ox + (x - this.src.x) * this.k, y: this.box.y + this.oy + (y - this.src.y) * this.k }; }
+    rect(r) { const p = this.at(r.x, r.y); return { x: p.x, y: p.y, w: r.w * this.k, h: r.h * this.k }; }
+    show(on) { this.el.style.display = on ? "" : "none"; }
+    alpha(a) { this.el.style.opacity = String(clamp(a)); }
+  }
+  const place = (el, r) => Object.assign(el.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
+
+  // ── layout per format
+  const L = VERT
+    ? { desk: { x: 40, y: 480, w: 1000, h: 700 }, deskTall: { x: 40, y: 380, w: 1000, h: 1100 }, capY: 150, capSize: 84, subY: 1330, subSize: 40, kickY: 96, phone: { x: 300, y: 330, w: 480 }, end: 150 }
+    : { desk: { x: 60, y: 120, w: 1300, h: 900 }, deskTall: { x: 60, y: 120, w: 1300, h: 900 }, capY: 130, capSize: 66, subY: 960, subSize: 34, kickY: 60, phone: { x: 1470, y: 110, w: 400 }, end: 110, side: { x: 1420, y: 220, w: 460 } };
+
+  // ── layers (built once, driven by t)
+  const kick = $("div", "kicker"); Object.assign(kick.style, { left: "48px", top: L.kickY + "px", fontSize: (VERT ? 24 : 20) + "px" });
+  const cap = $("div", "cap"); cap.style.top = L.capY + "px"; cap.style.fontSize = (V === "v1" ? L.capSize : L.capSize * .78) + "px";
+  if (!VERT) { Object.assign(cap.style, { left: "auto", right: "40px", width: L.side.w + "px", textAlign: "left", padding: "0", top: L.side.y + "px" }); }
+  const sub = $("div", "sub"); sub.style.top = L.subY + "px"; sub.style.fontSize = L.subSize + "px";
+  if (!VERT) { Object.assign(sub.style, { left: "auto", right: "40px", width: L.side.w + "px", textAlign: "left", padding: "0", top: "660px" }); }
+
+  const sStart = new Shot(A.start, L.desk);
+  const aerial = new Shot(A.aerial, { x: 0, y: 0, w: W, h: H }); aerial.fit = "cover";
+  const sReport = new Shot(A.report, L.deskTall);
+  const sBuild = new Shot(A.build, L.deskTall);
+  const sMetal = new Shot(A.metal, L.deskTall);
+  const sLines = new Shot(A.lines, L.deskTall);
+  const sL0 = new Shot(A.bpLines0, L.deskTall), sL1 = new Shot(A.bpLines1, L.deskTall), sC0 = new Shot(A.bpCost0, L.deskTall), sC1 = new Shot(A.bpCost1, L.deskTall);
+  const sDesk = new Shot(A.desk, VERT ? { x: 40, y: 300, w: 1000, h: 1000 } : { x: 60, y: 90, w: 1250, h: 930 });
+  const phoneBox = VERT ? { x: L.phone.x, y: L.phone.y, w: L.phone.w, h: Math.round(L.phone.w * 844 / 390) } : { x: L.phone.x, y: L.phone.y, w: L.phone.w, h: Math.round(L.phone.w * 844 / 390) };
+  const phoneShell = $("div", "phone"); place(phoneShell, { x: phoneBox.x - 16, y: phoneBox.y - 16, w: phoneBox.w, h: phoneBox.h }); phoneShell.style.width = phoneBox.w + "px"; phoneShell.style.height = phoneBox.h + "px";
+  const sPhone = new Shot(A.phone, { x: 0, y: 0, w: phoneBox.w, h: phoneBox.h }, phoneShell);
+  sPhone.el.style.position = "relative"; sPhone.fit = "cover";
+  const frames = [sStart, sReport, sBuild, sMetal, sLines, sDesk, sL0, sL1, sC0, sC1].map((s) => { s.el.classList.add("frame"); s.centerY = VERT ? 880 : 590; return s; });
+  let BOXES = null; try { BOXES = await (await fetch("assets/film-boxes.json")).json(); } catch {}
+
+  // aerial overlays: the outline (SVG) + the pin + callouts
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("class", "layer"); svg.style.pointerEvents = "none"; stage.appendChild(svg);
+  const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon"); svg.appendChild(poly);
+  const polyFill = document.createElementNS("http://www.w3.org/2000/svg", "polygon"); svg.insertBefore(polyFill, poly);
+  const dims = document.createElementNS("http://www.w3.org/2000/svg", "g"); svg.appendChild(dims);
+  const calls = ["Total area|1,681|sq ft", "Roofing squares|16.8|squares", "Pitch|6/12|rise over 12", "Roof facets|8|planes", "Eaves + rakes|181 ft|linear ft", "Ridge + hips|49 ft|linear ft", "Valleys|57 ft|linear ft"].map((s) => { const [lab, val, unit] = s.split("|"); const c = $("div", "call"); c.innerHTML = `<b></b><i>${lab} · ${unit}</i>`; c.dataset.val = val; return c; });
+  const cursor = $("div", "cursor"); cursor.innerHTML = '<svg viewBox="0 0 24 24" width="34" height="34"><path d="M4 2l16 9-7 2-3 8z" fill="#fff" stroke="#0a0a0a" stroke-width="2" stroke-linejoin="round"/></svg>';
+  const hl = $("div", "hl"); const hl2 = $("div", "hl"); hl2.style.borderColor = "var(--yellow)"; hl2.style.boxShadow = "0 0 0 6px rgba(245,196,0,.28)";
+  const tag = $("div", "tag");
+  const typed = $("div"); Object.assign(typed.style, { position: "absolute", background: "#fff", fontFamily: "var(--font)", fontWeight: "500", color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", display: "flex", alignItems: "center" });
+  const total = $("div", "call"); total.innerHTML = "<b></b><i>estimate total</i>";
+  const slider = $("div", "slider"); slider.innerHTML = '<div class="lab"><span>Materials</span><b>+0%</b></div><div class="track"><div class="fill"></div><div class="knob"></div></div><div class="note">Every material line follows, proportionally.</div>';
+  const nums = []; // the lines' amounts, drawn over the capture
+  const LINES = [10010, 874, 455, 272, 78, 314, 589, 848, 28, 18, 260, 221, 128, 82, 22];
+  const LINE_Y = [86, 134, 181, 229, 276, 324, 372, 419, 467, 515, 562, 610, 657, 705, 752];
+  for (let i = 0; i < LINES.length; i++) { const n = $("div", "num"); nums.push(n); }
+  // the client's roof picture inside the portal's figure: an aerial crop with the outline
+  const makePic = (parent) => { const pic = new Shot(A.aerial, { x: 0, y: 0, w: 10, h: 10 }, parent); pic.fit = "cover"; pic.el.classList.remove("clip"); pic.el.style.overflow = "hidden"; pic.el.style.position = "absolute"; const sv = document.createElementNS("http://www.w3.org/2000/svg", "svg"); sv.setAttribute("class", "layer"); sv.style.pointerEvents = "none"; pic.el.appendChild(sv); const ring = document.createElementNS("http://www.w3.org/2000/svg", "g"); sv.appendChild(ring); pic.ring = ring; return pic; };
+  const pinInto = (g, pic, sc) => { const q = pic.at(HOUSE.cx, HOUSE.cy); g.setAttribute("transform", `translate(${q.x - pic.box.x},${q.y - pic.box.y})`); g.innerHTML = PIN(sc); };
+  const deskPic = makePic(sDesk.over), reportPic = makePic(sReport.over);
+  const deskRing = deskPic.ring, reportRing = reportPic.ring;
+  // a picture inside a frame: the box is relative to the frame
+  const picInto = (pic, shot, srcRect, ring, stroke, clipBottom = Infinity) => {
+    const cut = { ...srcRect, h: Math.max(10, Math.min(srcRect.h, clipBottom - srcRect.y)) };
+    const r = shot.rect(cut); const box = { x: r.x - shot.box.x, y: r.y - shot.box.y, w: r.w, h: r.h };
+    place(pic.el, box); pic.box = box; pic.view({ x: HOUSE.cx - 170, y: HOUSE.cy - 170, w: 340, h: 340 });
+    pinInto(ring, pic, stroke * .45); show(pic.el);
+  };
+  const phonePic = new Shot(A.aerial, { x: 0, y: 0, w: 10, h: 10 }, phoneShell); phonePic.fit = "cover"; phonePic.el.classList.remove("clip"); phonePic.el.style.overflow = "hidden"; phonePic.el.style.position = "absolute";
+  const phonePoly = document.createElementNS("http://www.w3.org/2000/svg", "svg"); phonePoly.setAttribute("class", "layer"); phonePic.el.appendChild(phonePoly);
+  const phoneRing = document.createElementNS("http://www.w3.org/2000/svg", "g"); phonePoly.appendChild(phoneRing);
+  const endCard = $("div", "end"); endCard.innerHTML = `<div class="wordmark" style="font-size:${VERT ? 150 : 140}px">Job<em>Flex</em></div><div style="margin-top:34px;font-size:${VERT ? 56 : 48}px;font-weight:900;letter-spacing:-.02em;line-height:1.05">Estimate faster.<br>Win more roofs.</div><div style="margin-top:44px;font-family:var(--mono);font-weight:600;letter-spacing:.24em;font-size:${VERT ? 26 : 22}px;line-height:1.7;color:var(--blue)">JOBFLEX.APP${VERT ? "<br>" : " · "}ROOF · FENCE · HVAC · SMART PROPOSAL</div>`;
+
+  const everything = [kick, cap, sub, ...frames.map((s) => s.el), aerial.el, svg, ...calls, cursor, hl, hl2, tag, typed, total, slider, ...nums, deskPic.el, reportPic.el, phonePic.el, phoneShell, endCard];
+  const hideAll = () => everything.forEach((e) => { e.style.display = "none"; });
+  const show = (e, on = true) => { e.style.display = on ? "" : "none"; };
+  const setCap = (text, small = "", a = 1) => { cap.innerHTML = text + (small ? `<small>${small}</small>` : ""); cap.style.opacity = String(a); show(cap); };
+  const setSub = (text, a = 1, y = null) => { sub.innerHTML = `<span>${text}</span>`; sub.style.opacity = String(a); sub.style.top = (y ?? (VERT ? L.subY : 660)) + "px"; show(sub); };
+  const setKick = (text) => { kick.textContent = text; show(kick); };
+  const ringPoints = (shot) => HOUSE.ring.map(([x, y]) => { const p = shot.at(x, y); return `${p.x},${p.y}`; }).join(" ");
+  const ringPointsLocal = (shot) => HOUSE.ring.map(([x, y]) => { const p = shot.at(x, y); return `${p.x - shot.box.x},${p.y - shot.box.y}`; }).join(" ");
+  const polyLen = (pts) => { let s = 0; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; s += Math.hypot(a[0] - b[0], a[1] - b[1]); } return s; };
+
+  // ── the timeline (seconds)
+  const T = { s1: [0, 4.0], s2: [4.0, 13.2], s3: [13.2, 17.2], s4: [17.2, 25.6], s5: [25.6, 31.2], s6: [31.2, 37.8], s7: [37.8, 46.2], s8: [46.2, 50.0] };
+
+  function render(t) {
+    hideAll(); kick.style.color = ""; cap.style.color = ""; cap.style.textShadow = ""; kick.style.textShadow = "";
+    if (!VERT) { for (const el of [cap, sub]) { el.style.right = "40px"; el.style.left = "auto"; el.style.width = L.side.w + "px"; } sDesk.box.x = 60; sDesk.box.w = 1250; sDesk.el.style.left = "60px"; sDesk.el.style.width = "1250px"; }
+    const captionBig = V === "v1";
+    // ─ S1: the address
+    if (t < T.s1[1]) {
+      const p = seg(t, 0, 4);
+      show(sStart.el);
+      const z = lerp(1, 1.12, ease(p));
+      const cw = 1160 / z, ch = 560 / z;
+      sStart.view({ x: 280 + (1160 - cw) * .08, y: 100 + (560 - ch) * .3, w: cw, h: ch });
+      // type the address into the real field
+      const field = sStart.rect({ x: 318, y: 273, w: 476, h: 28 });
+      place(typed, { x: field.x, y: field.y, w: field.w, h: field.h }); typed.style.fontSize = 16 * sStart.k + "px"; typed.style.paddingLeft = 10 * sStart.k + "px";
+      const text = "18412 92nd Ave NE"; const n = Math.round(lerp(0, text.length, seg(t, .3, 2.2)));
+      typed.textContent = text.slice(0, n) + (t < 2.6 && Math.floor(t * 3) % 2 === 0 ? "|" : ""); show(typed);
+      // the cursor rides to the button and presses it
+      const btn = sStart.rect({ x: 318, y: 331, w: 172, h: 30 });
+      const cp = seg(t, 2.4, 3.2);
+      const c = { x: lerp(field.x + field.w * .6, btn.x + btn.w * .55, io(cp)), y: lerp(field.y + 60, btn.y + btn.h * .55, io(cp)) };
+      place(cursor, { x: c.x, y: c.y, w: 34, h: 34 }); cursor.style.transform = t > 3.3 && t < 3.55 ? "scale(.8)" : ""; show(cursor);
+      if (t > 3.3) { place(hl, { x: btn.x - 6, y: btn.y - 6, w: btn.w + 12, h: btn.h + 12 }); show(hl); }
+      setKick("Roof estimator · 01");
+      setCap(captionBig ? "Type the address." : "Type the address", "", win(t, 0, 4, .3));
+      if (!captionBig) setSub("One field. The house is found from the air.", win(t, .8, 4, .3));
+      return;
+    }
+    // ─ S2: the roof from the air
+    if (t < T.s2[1]) {
+      const p = seg(t, 4, 13.2);
+      show(aerial.el);
+      const z = lerp(0.82, 0.34, ease(seg(t, 4, 7.5)));       // window size in mosaic px
+      const side = 1280 * z; const asp = W / H;
+      const vw = VERT ? side : side * asp, vh = VERT ? side / asp : side;
+      aerial.view({ x: HOUSE.cx - vw / 2, y: HOUSE.cy - vh / 2 - (VERT ? vh * .06 : 0), w: vw, h: vh });
+      show(svg);
+      // the pin drops on the house and stays
+      const pin = aerial.at(HOUSE.cx, HOUSE.cy);
+      const drop = seg(t, 4.6, 5.3);
+      if (t > 4.6) {
+        const halo = t > 5.3 ? `<circle cx="${pin.x}" cy="${pin.y}" r="${lerp(18, 70, (Math.sin((t - 5.3) * 2.6) + 1) / 2)}" fill="none" stroke="#1854a0" stroke-width="3" opacity="${lerp(.7, .1, (Math.sin((t - 5.3) * 2.6) + 1) / 2)}"/>` : "";
+        dims.innerHTML = halo + `<g transform="translate(${pin.x},${pin.y - lerp(260, 0, ease(drop))})">${PIN(lerp(2.6, 2.0, ease(drop)))}</g>`;
+        dims.style.opacity = "1";
+      } else dims.innerHTML = "";
+      // the callouts land one by one, numbers counting
+      const cols = VERT ? 2 : 3; const cw = VERT ? 460 : 330;
+      calls.forEach((c, i) => {
+        const at = 8.2 + i * .55; const a = seg(t, at, at + .45);
+        if (a <= 0) return;
+        const col = i % cols, row = Math.floor(i / cols);
+        const x = VERT ? 60 + col * (cw + 40) : 60 + col * (cw + 30);
+        const y = VERT ? 1360 + row * 150 : 640 + row * 130;
+        place(c, { x, y, w: cw, h: 100 }); c.style.height = "auto"; c.style.opacity = String(a); c.style.transform = `translateY(${(1 - ease(a)) * 24}px)`;
+        const v = c.dataset.val; const m = v.match(/^([\d,.]+)(.*)$/);
+        if (m && !v.includes("/")) { const target = Number(m[1].replace(/,/g, "")); const shown = target * ease(seg(t, at, at + 1.2)); c.querySelector("b").textContent = (Number.isInteger(target) ? Math.round(shown).toLocaleString("en-US") : shown.toFixed(1)) + m[2]; }
+        else c.querySelector("b").textContent = v;
+        show(c);
+      });
+      setKick("Roof estimator · 02 · from the air"); kick.style.color = "#fff"; cap.style.color = "#fff"; cap.style.textShadow = "0 2px 12px rgba(0,0,0,.7)"; kick.style.textShadow = "0 1px 6px rgba(0,0,0,.8)";
+      if (t < 8.2) setCap(captionBig ? "Found.<br>Measured." : "Found. Measured.", "in seconds, from the air", win(t, 4.3, 8.6, .4));
+      else setCap(captionBig ? "The whole house." : "Squares · ridge · hips · valleys", "", win(t, 8.2, 13.2, .4));
+      if (!captionBig && t < 8.2) setSub("Imagery © Microsoft", .7);
+      return;
+    }
+    // ─ S3: the report page
+    if (t < T.s3[1]) {
+      show(sReport.el);
+      const p = seg(t, 13.2, 17.2);
+      sReport.view({ x: 240, y: 90, w: 1180 - 60 * ease(p), h: 787 - 40 * ease(p) });
+      // the aerial in the page's own frame
+      picInto(reportPic, sReport, { x: 301, y: 358, w: 504, h: 504 }, reportRing, 5);
+      // the stat tiles light up one after another
+      const i = Math.min(6, Math.floor(seg(t, 13.6, 16.6) * 7));
+      const tile = sReport.rect({ x: 300 + i * 151.3, y: 180, w: 151, h: 102 });
+      place(hl, { x: tile.x - 4, y: tile.y - 4, w: tile.w + 8, h: tile.h + 8 }); show(hl);
+      setKick("Roof estimator · 03 · the report");
+      setCap(captionBig ? "Every number.<br>Instantly." : "Every number, instantly", "", win(t, 13.2, 17.2, .3));
+      if (!captionBig) setSub("Area, squares, pitch, facets, eaves, ridge, hips, valleys — read off the aerial.", win(t, 13.6, 17.2, .3));
+      return;
+    }
+    // ─ S4: the builder — shingles to metal, accessories already in
+    if (t < T.s4[1]) {
+      const swap = seg(t, 19.7, 20.5);
+      const src = { x: 280, y: 280, w: 1140, h: 640 };
+      const cut = t >= 19.7;
+      show(cut ? sMetal.el : sBuild.el); (cut ? sMetal : sBuild).view(src); (cut ? sMetal : sBuild).alpha(1);
+      const shot = cut ? sMetal : sBuild;
+      if (t < 21.2) {
+        const r = shot.rect({ x: 349, y: 452, w: 132, h: 38 });          // the roof type picker
+        place(hl, { x: r.x - 6, y: r.y - 6, w: r.w + 12, h: r.h + 12 }); show(hl);
+        const c = { x: r.x + r.w * .5, y: r.y + r.h * .5 };
+        place(cursor, { x: c.x + 10, y: c.y + 6, w: 34, h: 34 }); cursor.style.transform = t > 19.4 && t < 19.7 ? "scale(.8)" : ""; show(cursor);
+      } else {
+        const rows = [703, 747, 792]; const j = Math.min(2, Math.floor(seg(t, 21.2, 24.6) * 3));
+        const r = shot.rect({ x: 300, y: rows[j] - 18, w: 1058, h: 40 });
+        place(hl, { x: r.x, y: r.y, w: r.w, h: r.h }); show(hl);
+      }
+      // the total counts across the switch
+      const tr = shot.rect({ x: 300, y: 340, w: 210, h: 56 });
+      const amount = lerp(12066, 26222, ease(swap));
+      place(total, { x: tr.x, y: tr.y - 6, w: 260, h: 90 }); total.style.height = "auto"; total.querySelector("b").textContent = money(amount); total.style.opacity = String(seg(t, 17.6, 18.2)); show(total);
+      setKick("Roof estimator · 04 · build the estimate");
+      if (t < 21.2) setCap(captionBig ? "Shingles or metal.<br>One click." : "Shingles or metal — one click", "", win(t, 17.2, 21.4, .3));
+      else setCap(captionBig ? "Flashing, vents,<br>tear-off: already in." : "Flashing, vents, tear-off — already in", "", win(t, 21.2, 25.6, .3));
+      if (!captionBig) setSub(t < 21.2 ? "Materials, labor and waste reprice the whole roof." : "Pre-selected from the measurement. Change anything.", win(t, 17.8, 25.6, .3));
+      return;
+    }
+    // ─ S5: the lines
+    if (t < T.s5[1]) {
+      show(sLines.el);
+      const p = seg(t, 25.6, 31.2);
+      sLines.view({ x: 290, y: 40 + 120 * ease(p), w: 1080, h: 720 });
+      setKick("Roof estimator · 05 · the lines");
+      setCap(captionBig ? "27 lines.<br>Edit anything." : "27 lines, every one editable", "", win(t, 25.6, 31.2, .3));
+      if (!captionBig) setSub("Materials and labor, quantities from the roof, your rates.", win(t, 26.2, 31.2, .3));
+      return;
+    }
+    // ─ S6: labor or materials, proportionally — the real knobs
+    if (t < T.s6[1]) {
+      const cost = BOXES?.costBox || { x: 300, y: 452, w: 1060, h: 624 };
+      const trk = (BOXES?.tracks?.divs || []).filter((d) => /slider/.test(d.cls));
+      const k1 = seg(t, 33.0, 33.6), k2 = seg(t, 34.2, 34.8);          // the two clicks
+      if (t < 32.6) {
+        show(sL0.el); sL0.view({ x: 280, y: 80, w: 1140, h: 640 });
+        setKick("Proposal builder · 06 · the lines"); setCap(captionBig ? "Every line,<br>materials and labor." : "Every line: materials and labor", "", win(t, 31.2, 32.8, .25));
+      } else if (t < 35.6) {
+        const src = { x: 280, y: 40, w: 1140, h: 640 };
+        const after = t >= 33.55;
+        show(after ? sC1.el : sC0.el); (after ? sC1 : sC0).view(src);
+        const shot = after ? sC1 : sC0;
+        // the cursor rides to the materials knob, clicks, then the labor knob
+        const m = trk[0] || { x: 321, y: 565, w: 698, h: 20 }, l = trk[1] || { x: 321, y: 680, w: 698, h: 20 };
+        const scrollY = 0; // the capture was taken with the block in view; positions are viewport CSS px
+        const p1 = shot.rect({ x: m.x + m.w * .62, y: m.y + scrollY, w: 1, h: 1 }), p2 = shot.rect({ x: l.x + l.w * .55, y: l.y + scrollY, w: 1, h: 1 });
+        const move = seg(t, 32.6, 33.0), move2 = seg(t, 33.7, 34.2);
+        const c = t < 33.7 ? { x: lerp(p1.x - 260, p1.x, io(move)), y: lerp(p1.y + 160, p1.y, io(move)) } : { x: lerp(p1.x, p2.x, io(move2)), y: lerp(p1.y, p2.y, io(move2)) };
+        place(cursor, { x: c.x, y: c.y, w: 34, h: 34 }); cursor.style.transform = (k1 > 0 && k1 < 1) || (k2 > 0 && k2 < 1) ? "scale(.8)" : ""; show(cursor);
+        const hr = shot.rect({ x: cost.x, y: cost.y - 8, w: cost.w, h: 150 });
+        place(hl, hr); show(hl);
+        setKick("Proposal builder · 06 · cost adjustment"); setCap(captionBig ? "More labor?<br>More materials?" : "More labor? More materials? Slide it.", "", win(t, 32.6, 35.8, .25));
+      } else {
+        show(sL1.el); sL1.view({ x: 280, y: 80, w: 1140, h: 640 });
+        const cols = sL1.rect({ x: 1150, y: 120, w: 215, h: 560 });
+        place(hl, cols); show(hl);
+        setKick("Proposal builder · 06 · the lines follow"); setCap(captionBig ? "Every line follows,<br>proportionally." : "Every line follows, proportionally", "", win(t, 35.6, 37.8, .25));
+      }
+      if (!captionBig) setSub("One slide — spread through every item line, materials or labor.", win(t, 31.6, 37.8, .3));
+      return;
+    }
+    // ─ S7: the client's proposal — desk, then phone
+    if (t < T.s7[1]) {
+      const p = seg(t, 37.8, 46.2);
+      const phoneIn = seg(t, 41.4, 42.4);
+      // desk page pans down to the roof picture
+      show(sDesk.el);
+      if (!VERT) {
+        const sl = ease(phoneIn);
+        const bx = Math.round(lerp(60, 30, sl)), bw = Math.round(lerp(1250, 990, sl));
+        sDesk.box.x = bx; sDesk.box.w = bw; sDesk.el.style.left = bx + "px"; sDesk.el.style.width = bw + "px";
+        const cx = Math.round(lerp(1420, 1050, sl)), cw2 = Math.round(lerp(L.side.w, 380, sl));
+        for (const el of [cap, sub]) { el.style.right = "auto"; el.style.left = cx + "px"; el.style.width = cw2 + "px"; }
+      }
+      const z = lerp(1, 1.14, ease(seg(t, 38.2, 41.0)));
+      const vw = 1280 / z, vh = 900 / z;
+      sDesk.view({ x: (1280 - vw) * .5, y: (900 - vh) * .78, w: vw, h: vh });
+      sDesk.alpha(1 - phoneIn * (VERT ? 1 : .0));
+      picInto(deskPic, sDesk, { x: 314, y: 404, w: 651, h: 651 }, deskRing, 6, 792);
+      if (t > 41.2) {
+        const slide = ease(phoneIn);
+        phoneShell.style.transform = `translateY(${(1 - slide) * 900}px)`; phoneShell.style.opacity = String(slide);
+        show(phoneShell);
+        sPhone.view({ x: 0, y: 0, w: 390, h: 844 });
+        const pf = sPhone.rect({ x: 36, y: 364, w: 318, h: 318 });
+        place(phonePic.el, { x: pf.x, y: pf.y, w: pf.w, h: pf.h }); phonePic.box = { x: pf.x, y: pf.y, w: pf.w, h: pf.h }; phonePic.view({ x: HOUSE.cx - 170, y: HOUSE.cy - 170, w: 340, h: 340 }); pinInto(phoneRing, phonePic, 2); show(phonePic.el);
+        if (t > 43.4) { const b = sPhone.rect({ x: 20, y: 786, w: 256, h: 50 }); const pulse = 1 + .04 * Math.sin((t - 43.4) * 9); place(hl2, { x: phoneShell.offsetLeft + b.x - 6, y: phoneShell.offsetTop + b.y - 6 + (1 - slide) * 900, w: b.w + 12, h: b.h + 12 }); hl2.style.transform = `scale(${pulse})`; show(hl2); }
+      }
+      setKick("The client's copy · 07");
+      if (t < 41.4) setCap(captionBig ? "One click.<br>A proposal." : "One click — a proposal", "with the roof picture", win(t, 37.8, 41.6, .3));
+      else setCap(captionBig ? "Accepted<br>on their phone." : "Accepted on their phone", "", win(t, 41.4, 46.2, .3));
+      if (!captionBig) setSub(t < 41.4 ? "Desk or phone — the same page, the same roof." : "Type a name, tap accept. Deposit next.", win(t, 38.4, 46.2, .3), VERT ? 1450 : 900);
+      return;
+    }
+    // ─ S8: end card
+    show(endCard); endCard.style.opacity = String(seg(t, 46.2, 46.9)); endCard.style.transform = `scale(${lerp(.97, 1, ease(seg(t, 46.2, 47.2)))})`;
+  }
+
+  // wait for the pictures and the fonts, then hand the wheel to the renderer
+  const imgs = Array.from(document.images);
+  await Promise.all(imgs.map((im) => (im.complete ? Promise.resolve() : new Promise((r) => { im.onload = r; im.onerror = r; }))));
+  await (document.fonts ? document.fonts.ready : Promise.resolve());
+  window.__seek = (t) => render(t);
+  render(0);
+  window.__ready = true;
+})();
+</script>
+</body>
+</html>

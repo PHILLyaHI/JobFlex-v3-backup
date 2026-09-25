@@ -36,6 +36,7 @@ import { contractTotal } from "@/lib/contractTotal";
 import { money, longDate } from "@/lib/format";
 import { parseProposalSettings } from "@/lib/settings";
 import { buildPortalView, type PortalRating } from "@/components/v3/mobile-proposal-client/portal-view";
+import { proposalPictures } from "@/lib/proposalPictures";
 import { buildPortalPayModel } from "@/lib/payments/portalModel";
 import { formatAvg, orgPublicRating, publicReviewsPath } from "@/lib/reviews/publicSummary";
 import { StarsInline } from "@/components/reviews/StarsInline";
@@ -43,6 +44,8 @@ import { PortalActions } from "./portal-actions";
 import { PortalPayment } from "./portal-payment";
 import { PortalReveal } from "./portal-reveal";
 import { PortalViewport } from "./portal-viewport";
+import { ListenCard } from "@/components/portal/listen-card";
+import { speechFor } from "@/lib/proposalAudio";
 import "./proposal-portal.css";
 
 export const dynamic = "force-dynamic";
@@ -112,15 +115,11 @@ export default async function PublicProposalPortal({
   // A soft-deleted org's proposals are gone from the outside world too.
   if (!proposal || proposal.organization.deletedAt) return notFound();
 
-  // The client's own house: the satellite photo of the measurement this
-  // proposal was priced from, when one is linked (roof estimator → convert).
-  // The link table may not be pushed yet — then there is simply no photo.
-  let sitePhoto = false;
-  try {
-    sitePhoto = !!(await db.proposalSitePhoto.findUnique({ where: { proposalId: proposal.id }, select: { id: true } }));
-  } catch {
-    sitePhoto = false;
-  }
+  // The client's own job in pictures (lib/proposalPictures, 2026-09-23): the
+  // fence's 3D and traced layout, the roof from the air with the measured
+  // outline, or as a plan. None is fine; a missing table costs a picture,
+  // never the page.
+  const pictures = await proposalPictures({ id: proposal.id, publicId, trade: proposal.trade, beforePhotos: proposal.beforePhotos }).catch(() => []);
 
   // THE SHOP'S OWN OPENS DO NOT COUNT (2026-09-20). The contractor checking
   // their own link — the preview from the proposals list, a reread before a
@@ -204,6 +203,10 @@ export default async function PublicProposalPortal({
   const hasScope = Boolean(proposal.showScope && proposal.scopeOfWork && proposal.scopeOfWork.trim());
   const hasDescription = Boolean(proposal.description && proposal.description.trim());
   const telHref = org.phone ? `tel:${org.phone.replace(/\s+/g, "")}` : null;
+  // "Listen to this proposal" (2026-09-23): the spoken summary's length for
+  // the card's label. The words are written from this same row
+  // (lib/proposalSpeech); the audio itself loads on the first tap.
+  const listenSeconds = speechFor(proposal).seconds;
 
   // ── HANDHELD ────────────────────────────────────────────────────────────
   // At ≤768px this URL serves the handheld rebuild instead of the tree below;
@@ -219,7 +222,8 @@ export default async function PublicProposalPortal({
     pay: payModel,
     terms: orgTerms,
     rating,
-    sitePhoto,
+    pictures,
+    listenSeconds,
   });
 
   return (
@@ -275,12 +279,30 @@ export default async function PublicProposalPortal({
               <div><span>Valid until</span><b>{longDate(proposal.validUntil)}</b></div>
             </div>
 
-            {sitePhoto && (
-              <figure className="pv-site">
-                {/* eslint-disable-next-line @next/next/no-img-element -- streamed PNG from this app's own route; next/image adds nothing */}
-                <img src={`/api/public-quote/${publicId}/site-photo`} alt="Satellite view of your roof" loading="lazy" />
-                <figcaption>Your roof, as measured from the air</figcaption>
-              </figure>
+            {/* LISTEN — the summary and the totals read aloud, for a client
+                on the road. Under the total, before anything to read. */}
+            <ListenCard publicId={publicId} title={proposal.title} orgName={org.name ?? ""} seconds={listenSeconds} />
+
+            {pictures.length > 0 && (
+              <div className={`pv-pics${pictures.length > 1 ? " pv-pics--two" : ""}`} data-pictures={pictures.map((p) => p.kind).join(" ")}>
+                {pictures.map((p) => (
+                  <figure key={p.kind} className="pv-site" data-picture={p.kind}>
+                    <div className="pv-site-frame">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- streamed from this app's own routes or Blob; next/image adds nothing */}
+                      <img src={p.src} alt={p.alt} loading="lazy" />
+                      {p.overlay && (
+                        <svg className="pv-site-ov" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+                          {p.overlay.map((pts, i) => <polygon key={i} points={pts} />)}
+                        </svg>
+                      )}
+                    </div>
+                    <figcaption>
+                      {p.caption}
+                      {p.facts ? <span className="pv-site-facts">{p.facts}</span> : null}
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
             )}
 
             <PortalActions

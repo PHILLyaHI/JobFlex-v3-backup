@@ -29,6 +29,13 @@ model Organization {
   address               String?
   website               String?
   timezone              String    @default("America/New_York")
+  // Text messages (2026-09-24): client-facing texts on/off (the proposal link
+  // when sent, a reminder the day before a visit), and the company's own
+  // number when it claimed one (provisioned into the platform's Messaging
+  // Service, so it stays registered; released from Settings or /admin).
+  smsClientsOn          Boolean   @default(true)
+  smsFromNumber         String?
+  smsNumberSid          String?
   // Online booking (2026-09-23): hours, slot length, lead time, crews, the services offered.
   bookingSettingsJson   String?
   defaultTaxRate        Float     @default(0)
@@ -128,6 +135,7 @@ model Organization {
   referralCodes        ReferralCode[]
   tradePosts           TradePost[]
   phoneCalls           AiPhoneCall[]
+  notificationPhones   NotificationPhone[]
   appointments         Appointment[]
   blockedTimes         BlockedTime[]
   unavailabilityRules  UnavailabilityRule[]
@@ -285,6 +293,10 @@ model User {
   // event, quiet hours, digest time) as one JSON-as-String blob, hydrated whole
   // like the org's *SettingsJson columns.
   phone                 String?
+  // Text messages (2026-09-24): the mobile the office events are texted to,
+  // verified by a six-digit code — the code is also the consent. Null: no texts.
+  smsPhone              String?
+  smsVerifiedAt         DateTime?
   notificationPrefsJson String?
   // Platform-admin authority for the (admin) console. Distinct from the
   // org-level Membership.role — only flagged users may reach platform-wide
@@ -319,6 +331,7 @@ model User {
   unavailabilityRules      UnavailabilityRule[]
   appointmentsCreated      Appointment[]             @relation("AppointmentCreator")
   jobEventsCreated         JobEvent[]                @relation("JobEventCreator")
+  phoneVerifications       PhoneVerification[]
 
   // Trade & Services (contractor-to-contractor job network)
   tradeNetworkProfile  TradeNetworkProfile?
@@ -653,11 +666,17 @@ model Proposal {
   // Automatic payment reminders for THIS proposal: true / false override the
   // company's reminder mode; null follows it (settings → payments).
   remindersOn       Boolean?
+  // "Listen to this proposal" (2026-09-23): the spoken summary's cached audio
+  // file and the hash of the script it was read from (lib/proposalAudio). A
+  // price change moves the hash and the next play regenerates the audio.
+  audioUrl          String?
+  audioScriptHash   String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   owner        User?             @relation("ProposalOwner", fields: [ownerId], references: [id])
+  audio        ProposalAudio?
   client       Client?           @relation(fields: [clientId], references: [id])
   project      Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
   lineItems    LineItem[]
@@ -695,6 +714,21 @@ model PricingSnapshot {
   proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
 
   @@index([proposalId, createdAt])
+}
+
+// "Listen to this proposal" (2026-09-24): the spoken summary's MP3, kept in
+// the database — production has no Blob store, and a forty-second file is a
+// few hundred kilobytes. One per proposal; a new script replaces it. Served
+// by /api/public-quote/[publicId]/audio/file, cached for a year by hash.
+model ProposalAudio {
+  proposalId String   @id
+  hash       String
+  model      String
+  voice      String
+  bytes      Bytes
+  createdAt  DateTime @default(now())
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
 }
 
 model LineItem {
@@ -1002,6 +1036,10 @@ model WorkerProfile {
   organizationId String
   displayName    String
   phone          String?
+  // Text messages (2026-09-24): the office ticks "text their schedule" and the
+  // worker gets a welcome text with the STOP line; a STOP reply wins over it.
+  smsOptIn       Boolean   @default(false)
+  smsOptedInAt   DateTime?
   specialties    String?   @default("[]")
   hourlyRate     Float?
   token          String    @unique @default(cuid())
@@ -2630,4 +2668,102 @@ model Booking {
 
   @@index([organizationId, startsAt])
   @@index([organizationId, status])
+}
+
+// ─── TEXT MESSAGES (2026-09-24) ─────────────────────────────────────────────
+// JobFlex owns the Twilio account; a contractor only adds phone numbers.
+// docs/sms.md.
+
+/// An extra office number that gets every office text (the dispatcher, the
+/// spouse who runs the books) — beside the members' own verified mobiles.
+model NotificationPhone {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  phone          String
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+/// A six-digit code on its way to a member's mobile. One live row per user.
+model PhoneVerification {
+  id        String   @id @default(cuid())
+  userId    String
+  phone     String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Every text, out and in: the usage counter, the delivery status from
+/// Twilio's callback, the overnight hold (HELD until sendAfter), replies.
+model SmsMessage {
+  id             String    @id @default(cuid())
+  organizationId String?
+  direction      String    @default("OUT") // OUT | IN
+  to             String
+  from           String?
+  body           String
+  kind           String? // a preference key, "crew-assigned", "crew-digest-today", "verify", "welcome", "reply", …
+  status         String    @default("QUEUED") // QUEUED | HELD | SENT | DELIVERED | FAILED | UNDELIVERED | SKIPPED | MERGED | RECEIVED
+  sendAfter      DateTime?
+  sid            String?   @unique
+  error          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([organizationId, createdAt])
+  @@index([to, createdAt])
+  @@index([status, sendAfter])
+}
+
+/// A number that replied STOP. Twilio blocks it on its side too; this row is
+/// what the app checks before every send and shows in Settings.
+model SmsOptOut {
+  phone     String   @id
+  stoppedAt DateTime @default(now())
+  body      String?
+}
+
+/// A platform-wide integration the admin sets up once for everyone
+/// (2026-09-24): `json` is a secretBox-encrypted blob. Key "twilio" holds
+/// { accountSid, authToken, messagingServiceSid, fromNumber, enabled }.
+/// Env vars remain the fallback when there is no row.
+model PlatformIntegration {
+  key         String   @id
+  json        String
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+}
+
+// ── TRIAL WATCH (2026-09-24) ──────────────────────────────────────────────
+// Who looked at what during a company's first weeks: one row per page a
+// signed-in member opens (the route pattern, never the query string), so the
+// admin's Trial watch can tell a contractor working from a visitor touring
+// the product to copy it. Written fire-and-forget by actions/pageView, which
+// also prunes rows older than 120 days; read by actions/trialWatch. No
+// relation to Organization on purpose: an unrelated table reaches production
+// without touching any table the app already reads.
+model PageView {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String?
+  /// "/dashboard/jobs/*" — ids collapsed, query dropped (lib/trialWatch routePattern).
+  route          String
+  /// First 16 hex of sha256(client address) and of sha256(user agent): the same device across two trials, no address kept.
+  ipHash         String?
+  uaHash         String?
+  at             DateTime @default(now())
+
+  @@index([organizationId, at])
+  @@index([uaHash, ipHash, at])
 }

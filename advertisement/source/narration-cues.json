@@ -1,0 +1,50 @@
+[
+ {
+  "file": "n1.wav",
+  "at": 0.4,
+  "seconds": 1.11,
+  "text": "Type the address."
+ },
+ {
+  "file": "n2.wav",
+  "at": 4.0,
+  "seconds": 7.49,
+  "text": "JobFlex finds the roof from the air, and measures it in seconds. Squares, ridge, hips, valleys. The whole house."
+ },
+ {
+  "file": "n3.wav",
+  "at": 13.2,
+  "seconds": 2.63,
+  "text": "Your estimate is ready before you finish your coffee."
+ },
+ {
+  "file": "n4.wav",
+  "at": 17.2,
+  "seconds": 6.59,
+  "text": "Switch shingles to metal with one click. Flashings, vents and tear-off are already in. Change anything you like."
+ },
+ {
+  "file": "n5.wav",
+  "at": 25.6,
+  "seconds": 2.72,
+  "text": "Twenty-seven lines, every one of them editable."
+ },
+ {
+  "file": "n6.wav",
+  "at": 31.2,
+  "seconds": 5.51,
+  "text": "Need more labor, or more materials? Slide it, and every line follows, proportionally."
+ },
+ {
+  "file": "n7.wav",
+  "at": 37.8,
+  "seconds": 5.27,
+  "text": "One click makes the proposal, with the roof picture. Your client accepts right on their phone."
+ },
+ {
+  "file": "n8.wav",
+  "at": 46.2,
+  "seconds": 3.25,
+  "text": "JobFlex. Estimate faster. Win more roofs."
+ }
+]

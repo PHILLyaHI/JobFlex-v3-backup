@@ -1,0 +1,76 @@
+{
+ "rows": [
+  {
+   "text": "Laboradjust every labor cost0.0%",
+   "x": 321,
+   "y": 622.65625,
+   "w": 698.015625,
+   "h": 16.578125
+  },
+  {
+   "text": "Laboradjust every labor cost",
+   "x": 321,
+   "y": 625.65625,
+   "w": 159.03125,
+   "h": 13.5
+  }
+ ],
+ "divs": [
+  {
+   "x": 321,
+   "y": 564.53125,
+   "w": 698.015625,
+   "h": 19.984375,
+   "cls": "bp-markup-module__Sgx7vW__slider"
+  },
+  {
+   "x": 321,
+   "y": 570.359375,
+   "w": 698.015625,
+   "h": 8.328125,
+   "cls": "bp-markup-module__Sgx7vW__track"
+  },
+  {
+   "x": 321,
+   "y": 645.890625,
+   "w": 698.015625,
+   "h": 19.984375,
+   "cls": "bp-markup-module__Sgx7vW__slider"
+  },
+  {
+   "x": 321,
+   "y": 651.71875,
+   "w": 698.015625,
+   "h": 8.328125,
+   "cls": "bp-markup-module__Sgx7vW__track"
+  },
+  {
+   "x": 321,
+   "y": 727.25,
+   "w": 698.015625,
+   "h": 19.984375,
+   "cls": "bp-markup-module__Sgx7vW__slider"
+  },
+  {
+   "x": 321,
+   "y": 733.078125,
+   "w": 698.015625,
+   "h": 8.328125,
+   "cls": "bp-markup-module__Sgx7vW__track"
+  },
+  {
+   "x": 321,
+   "y": 808.609375,
+   "w": 698.015625,
+   "h": 19.984375,
+   "cls": "bp-markup-module__Sgx7vW__slider"
+  },
+  {
+   "x": 321,
+   "y": 814.4375,
+   "w": 698.015625,
+   "h": 8.328125,
+   "cls": "bp-markup-module__Sgx7vW__track"
+  }
+ ]
+}

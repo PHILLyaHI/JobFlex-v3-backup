@@ -3,7 +3,7 @@
 // /dashboard/phone (desktop sheet + handheld build behind the viewport switch)
 // and the /mobile-phone-v2 preview route call this. The call log, the three
 // stat figures, the Twilio configuration state and the webhook URL are all
-// read here — the same four queries, the same `isTwilioEnabled()` check and
+// read here — the same four queries, the same `await isTwilioEnabled()` check and
 // the same `TWILIO_APP_URL ?? appBaseUrl()` webhook the archived classic page
 // used, so both editions describe the same line.
 
@@ -103,6 +103,6 @@ export async function loadPhoneProps(nextPath: string): Promise<PhoneProps> {
     entries,
     stats: { today: todayCount, week: weekCount, leads: leadsCreated },
     webhookUrl,
-    twilioConfigured: isTwilioEnabled(),
+    twilioConfigured: await isTwilioEnabled(),
   };
 }

@@ -4,6 +4,8 @@ import { z } from "zod";
 import { requireSalesOrManager, isSalesRole, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
+import { afterResponse } from "@/lib/server-events";
+import { crewOfAppointment, textAppointmentMoved, textCrewCancelled } from "@/lib/sms/crew";
 
 const baseInput = z.object({
   id: z.string().optional(),
@@ -198,6 +200,9 @@ export async function updateAppointment(id: string, rawInput: Partial<z.infer<ty
       status: raw.status ?? undefined,
     },
   });
+  // A moved appointment texts its crew (2026-09-24), after the response.
+  if (raw.startsAt) afterResponse(() => textAppointmentMoved(id));
+  if (raw.status === "CANCELED" && apt.status !== "CANCELED") afterResponse(async () => textCrewCancelled(await crewOfAppointment(id)));
   if (raw.workerIds) {
     const workerIds = await filterWorkerIdsForRole(role, user.id, raw.workerIds);
     const { added } = await syncAssignments(organizationId, id, workerIds ?? []);
@@ -211,7 +216,10 @@ export async function deleteAppointment(id: string) {
   const apt = await db.appointment.findUnique({ where: { id } });
   if (!apt || apt.organizationId !== organizationId) throw new Error("Not found");
   if (isSalesRole(role)) await assertSalesCanTouchAppointment(id, user.id);
+  // The crew is read before the row goes, and texted after the response.
+  const crew = await crewOfAppointment(id).catch(() => null);
   await db.appointment.delete({ where: { id } });
+  afterResponse(() => textCrewCancelled(crew));
   revalidatePath("/dashboard/calendar");
 }
 
@@ -230,5 +238,6 @@ export async function rescheduleAppointment(id: string, newStartISO: string) {
     where: { id },
     data: { startsAt: newStart, endsAt: newEnd },
   });
+  afterResponse(() => textAppointmentMoved(id));
   revalidatePath("/dashboard/calendar");
 }

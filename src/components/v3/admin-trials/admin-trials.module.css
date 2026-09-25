@@ -1,0 +1,32 @@
+/* ADMIN — Trial watch. Only what admin-shared does not carry: the score bar,
+   the level word, the signals list, the routes. Scoped like admin-shared so
+   the rules outrank the dashboard module's resets. */
+
+:global(.jf-blueprint .content) .warn { border-left: 3px solid var(--warning); }
+
+/* The bar and the number on one line, the level word under them: the level
+   never runs into the button beside the cell. */
+:global(.jf-blueprint .content) .score { display: grid; grid-template-columns: minmax(72px, 1fr) auto; align-items: center; gap: 3px 10px; min-width: 150px; }
+:global(.jf-blueprint .content) .score > .level { grid-column: 1 / -1; }
+:global(.jf-blueprint .content) .bar { position: relative; display: block; flex: 1 1 80px; height: 8px; border: 1px solid var(--ink); background: #fff; }
+:global(.jf-blueprint .content) .bar b { position: absolute; left: 0; top: 0; bottom: 0; background: var(--muted-light); }
+:global(.jf-blueprint .content) .bar[data-level="watch"] b { background: var(--warning); }
+:global(.jf-blueprint .content) .bar[data-level="suspicious"] b { background: var(--danger); }
+:global(.jf-blueprint .content) .score > b { min-width: 28px; font-family: var(--font-mono); font-size: 13px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .level { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+:global(.jf-blueprint .content) .level[data-level="watch"] { color: var(--warning); }
+:global(.jf-blueprint .content) .level[data-level="suspicious"] { color: var(--danger); }
+
+:global(.jf-blueprint .content) .detail { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 0.8fr); gap: 20px 28px; padding: 4px 0 8px; }
+:global(.jf-blueprint .content) .signals { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+:global(.jf-blueprint .content) .signals li { display: flex; align-items: baseline; gap: 10px; font-size: 13px; line-height: 1.45; }
+:global(.jf-blueprint .content) .signals li b { flex-shrink: 0; min-width: 34px; font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--danger); font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .signals li[data-weight="down"] b { color: var(--success); }
+:global(.jf-blueprint .content) .routes { display: flex; flex-wrap: wrap; gap: 6px; }
+:global(.jf-blueprint .content) .routes span { padding: 3px 7px; border: 1px solid var(--muted-faint); font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+:global(.jf-blueprint .content) .srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .score { min-width: 0; width: 100%; max-width: 240px; justify-self: end; }
+  :global(.jf-blueprint .content) .detail { grid-template-columns: 1fr; }
+}

@@ -1,0 +1,276 @@
+{
+ "ranges": [
+  {
+   "label": "Material and labor split",
+   "value": "100",
+   "x": 321,
+   "y": 947,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "100",
+   "x": 321,
+   "y": 1062,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "100",
+   "x": 321,
+   "y": 1176,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "100",
+   "x": 321,
+   "y": 1290,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "100",
+   "x": 321,
+   "y": 1405,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "100",
+   "x": 321,
+   "y": 1519,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "100",
+   "x": 321,
+   "y": 1633,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "100",
+   "x": 321,
+   "y": 1748,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "100",
+   "x": 321,
+   "y": 1862,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "100",
+   "x": 321,
+   "y": 1976,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "100",
+   "x": 321,
+   "y": 2091,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "100",
+   "x": 321,
+   "y": 2205,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "100",
+   "x": 321,
+   "y": 2319,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "100",
+   "x": 321,
+   "y": 2433,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "100",
+   "x": 321,
+   "y": 2548,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "0",
+   "x": 321,
+   "y": 2662,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "0",
+   "x": 321,
+   "y": 2776,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "0",
+   "x": 321,
+   "y": 2891,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "0",
+   "x": 321,
+   "y": 3005,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "0",
+   "x": 321,
+   "y": 3119,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "0",
+   "x": 321,
+   "y": 3234,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "0",
+   "x": 321,
+   "y": 3348,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "0",
+   "x": 321,
+   "y": 3462,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "0",
+   "x": 321,
+   "y": 3577,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "0",
+   "x": 321,
+   "y": 3691,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "0",
+   "x": 321,
+   "y": 3805,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": "Material and labor split",
+   "value": "0",
+   "x": 321,
+   "y": 3920,
+   "w": 1018,
+   "h": 18
+  },
+  {
+   "label": null,
+   "value": "0",
+   "x": 321,
+   "y": 4184,
+   "w": 698,
+   "h": 20
+  },
+  {
+   "label": null,
+   "value": "0",
+   "x": 321,
+   "y": 4265,
+   "w": 698,
+   "h": 20
+  },
+  {
+   "label": null,
+   "value": "0",
+   "x": 321,
+   "y": 4346,
+   "w": 698,
+   "h": 20
+  },
+  {
+   "label": null,
+   "value": "0",
+   "x": 321,
+   "y": 4428,
+   "w": 698,
+   "h": 20
+  }
+ ],
+ "heads": [
+  "Manual proposal",
+  "The job",
+  "The client",
+  "Line items",
+  "Cost adjustment",
+  "Estimate",
+  "Scope & notes",
+  "Show to client",
+  "Terms",
+  "Payment & deposits",
+  "Payment schedule",
+  "Files",
+  "Their copy",
+  "The PDF",
+  "Standing-seam metal · 18412 92nd Ave NE",
+  "Prepared for",
+  "Scope of work",
+  "Schedule of work & pricing",
+  "Totals",
+  "Payment schedule",
+  "Acceptance"
+ ],
+ "height": 960
+}

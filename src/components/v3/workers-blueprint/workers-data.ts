@@ -19,6 +19,8 @@ export type WorkerEntry = {
   name: string;
   email: string | null;
   phone: string | null;
+  /** Texts their schedule to that phone (2026-09-24). */
+  sms?: boolean;
   specialties: string[];
   rate: number | null;
   /** Pay on this worker's jobs, all of it and the part not yet marked paid (2026-09-20). */

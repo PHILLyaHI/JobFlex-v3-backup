@@ -131,7 +131,7 @@ export async function dispatchOne(id: string): Promise<boolean> {
     // TEXT falls back to email when the number was removed after the rule was
     // written — a follow-up that goes nowhere is worse than one that arrives on
     // the other channel.
-    const canText = channel === "TEXT" && isTwilioEnabled() && Boolean(proposal.client?.phone);
+    const canText = channel === "TEXT" && await isTwilioEnabled() && Boolean(proposal.client?.phone);
 
     if (canText && proposal.client?.phone) {
       const res = await sendSMS(proposal.client.phone, followUpSmsText(trigger ?? "SENT", ctx));

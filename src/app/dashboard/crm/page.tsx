@@ -220,7 +220,7 @@ export default async function CrmPage() {
       phone: org?.phone ?? null,
       logoUrl: org?.logoUrl ?? null,
     },
-    smsEnabled: isTwilioEnabled(),
+    smsEnabled: await isTwilioEnabled(),
   };
 
   return <CrmContent data={data} />;

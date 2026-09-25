@@ -19,7 +19,7 @@ import { revalidatePath } from "next/cache";
 import { requireManager, requireOwner, requireUser } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { signOutEverywhereFor } from "@/lib/sessions";
-import { PREF_EVENTS } from "@/lib/notificationPrefs";
+import { mergeMatrixSave, parseNotificationPrefs } from "@/lib/notificationPrefsShared";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
 import { markSubscriptionCanceled } from "@/lib/stripeSync";
 import { disconnectSquareFor, disconnectStripeConnectFor } from "@/lib/payments/connections";
@@ -103,8 +103,11 @@ export async function updateBusiness(raw: unknown) {
 // [in-app, email] pair; only keys the app actually produces are kept
 // (src/lib/notificationPrefs.ts is the list). Read by the bell feed and by
 // every office email sender.
+const cellsSchema = z.union([z.tuple([z.boolean(), z.boolean()]), z.tuple([z.boolean(), z.boolean(), z.boolean()])]);
 const notificationSchema = z.object({
-  matrix: z.record(z.string(), z.tuple([z.boolean(), z.boolean()])),
+  // [in-app, email] from the handheld page, [in-app, email, text] from the
+  // desk page (2026-09-24). A pair keeps the stored Text cell.
+  matrix: z.record(z.string(), cellsSchema),
   // Delivery rules are gone from the page (2026-09-03); the fields stay
   // optional so the stored blob keeps its shape for older readers.
   quietFrom: z.string().regex(/^\d{2}:\d{2}$/).default("20:00"),
@@ -116,9 +119,8 @@ const notificationSchema = z.object({
 export async function updateNotificationPrefs(raw: unknown) {
   const user = await requireUser();
   const data = notificationSchema.parse(raw);
-  const known = new Set<string>(PREF_EVENTS.map((e) => e.key));
-  const matrix: Record<string, [boolean, boolean]> = {};
-  for (const [k, v] of Object.entries(data.matrix)) if (known.has(k)) matrix[k] = v;
+  const stored = await db.user.findUnique({ where: { id: user.id }, select: { notificationPrefsJson: true } });
+  const matrix = mergeMatrixSave(data.matrix, parseNotificationPrefs(stored?.notificationPrefsJson));
   await db.user.update({
     where: { id: user.id },
     data: { notificationPrefsJson: JSON.stringify({ ...data, matrix }) },

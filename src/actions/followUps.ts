@@ -26,7 +26,7 @@ export async function upsertFollowUpRule(raw: unknown) {
   // TEXT in the editor is gated on the same flag, but the server is the one that
   // has to refuse — otherwise a rule quietly stops sending the day the number
   // is removed.
-  if (data.channel === "TEXT" && !isTwilioEnabled()) {
+  if (data.channel === "TEXT" && !await isTwilioEnabled()) {
     throw new Error("Texting needs a Twilio number — set one up on the Phone page.");
   }
   const channel = encodeChannel(data.channel);

@@ -429,12 +429,20 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                     {p.quantity} {p.unit} — {p.name}
                   </div>
                   <div className={cx("jd-row-m")}>
-                    {!p.tracked ? "not tracked in the warehouse — bring it anyway" : p.enough ? `on the shelf (${p.onHand})` : `short on the shelf — only ${p.onHand} there`}
+                    {!p.tracked
+                      ? "not tracked in the warehouse — bring it anyway"
+                      : p.perJob
+                        ? p.enough
+                          ? `ordered for this job — arrived (${p.onHand} there)`
+                          : "bought per job — order it for this job, it is not shelf stock"
+                        : p.enough
+                          ? `on the shelf (${p.onHand})`
+                          : `short on the shelf — only ${p.onHand} there`}
                   </div>
                 </div>
                 {p.tracked && !p.enough && !record.loadedAt ? (
                   <div className={cx("jd-row-act")}>
-                    <span className={cx("jd-b", "jd-b--wait")}>Short</span>
+                    {p.perJob ? <span className={cx("jd-b")}>Per job</span> : <span className={cx("jd-b", "jd-b--wait")}>Short</span>}
                   </div>
                 ) : null}
               </div>

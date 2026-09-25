@@ -262,7 +262,7 @@ async function checkMail(now: string): Promise<ServiceHealth> {
    Same shape, same reason for not sending anything. */
 async function checkTwilio(now: string): Promise<ServiceHealth> {
   const base = { key: "twilio", name: "Twilio", checkedAt: now };
-  if (!isTwilioEnabled()) return { ...base, level: "off", reason: "TWILIO_* is not set" };
+  if (!await isTwilioEnabled()) return { ...base, level: "off", reason: "TWILIO_* is not set" };
   const row = await readState(SMS_SENT_KEY);
   if (!row) return { ...base, level: "degraded", reason: "configured — nothing sent yet" };
   const quiet = Date.now() - row.updatedAt.getTime() > SEND_QUIET_DAYS * DAY_MS;

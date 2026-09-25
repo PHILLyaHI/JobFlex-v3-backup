@@ -105,7 +105,7 @@ export default async function AdminHealthPage() {
       message: traffic.status === "error" ? traffic.message : null,
     },
     emailTransport: isResendEnabled() ? "resend" : isSmtpEnabled() ? "smtp" : "none",
-    smsConfigured: isTwilioEnabled(),
+    smsConfigured: await isTwilioEnabled(),
     blobConfigured: isBlobEnabled(),
     stripeConfigured: stripeEnabled,
     stripeWebhookSecret: isStripeWebhookConfigured(),

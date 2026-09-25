@@ -35,6 +35,10 @@ import {
 import { parsePaymentSettings } from "@/lib/settings";
 import { resolveSchedule, fromMinor } from "@/lib/paymentSchedule";
 import { resolveEmailRecipients, sendToMembersByPref, sendToUserByPref } from "@/lib/notificationPrefs";
+import { textOffice } from "@/lib/sms/send";
+import { acceptedLine, dayLabel, leadLine, leadOfferLine, paymentLine, workerRespondedLine } from "@/lib/sms/format";
+import { textAppointmentAssigned, textAssignmentCreated } from "@/lib/sms/crew";
+import { textClientProposalSent } from "@/lib/sms/clients";
 import { ActivityKind } from "@/lib/prismaEnums";
 import { buildAppointmentAssignment, buildJobAssignment } from "@/lib/email/build/worker";
 import {
@@ -177,6 +181,9 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
     clientId: proposal.clientId,
     what: "The proposal email",
   });
+  // The client's phone gets the link too (2026-09-24), when the company
+  // texts clients and the client has a number.
+  await textClientProposalSent(proposal.id);
 
   return {
     skipped: false as const,
@@ -242,7 +249,9 @@ export async function notifyProposalAccepted({ proposalId }: { proposalId: strin
   }
 
   // 2) Internal heads-up to the office — every owner/manager whose
-  //    "Proposal accepted" email pref is on (quiet hours respected).
+  //    "Proposal accepted" email pref is on (quiet hours respected) — and
+  //    the same line by text to those who ticked Text (2026-09-24).
+  await textOffice(proposal.organizationId, "proposal-accepted", acceptedLine(proposal.client?.name ?? "A client", proposal.title, proposal.total, `${appUrl}/dashboard/proposals/${proposal.id}`));
   await sendToMembersByPref(
     proposal.organizationId,
     "proposal-accepted",
@@ -308,6 +317,12 @@ export async function notifyLeadCreated(leadId: string) {
   {
     // Owner only (see the privacy note above) — through their own prefs.
     const appUrl = await appBaseUrl();
+    await textOffice(
+      lead.organizationId,
+      "lead-assigned",
+      leadLine(lead.name, lead.projectType ?? null, [lead.city, lead.state].filter(Boolean).join(", ") || null, lead.phone ?? lead.email ?? null, `${appUrl}/dashboard/leads/${lead.id}`),
+      { roles: ["OWNER"] },
+    );
     await sendToMembersByPref(
       lead.organizationId,
       "lead-assigned",
@@ -391,6 +406,8 @@ export async function notifyAppointmentAssigned(appointmentId: string, workerIds
     await sendEmail({ to: email, subject, html });
     sent += 1;
   }
+  // The crew's phones (2026-09-24): those with the schedule switch on.
+  await textAppointmentAssigned(appointmentId, workerIds);
   return { skipped: false as const, sent };
 }
 
@@ -443,12 +460,9 @@ export async function notifyAssignmentCreated(assignmentId: string) {
     await sendEmail({ to: email, subject, html });
   }
 
-  if (a.worker.phone && isTwilioEnabled()) {
-    await sendSMS(
-      a.worker.phone,
-    `JobFlex: you were assigned to "${a.job.title}". Open your portal to confirm.`,
-    ).catch(() => null);
-  }
+  // The crew text (2026-09-24): only with the worker's schedule switch on,
+  // never to a number that replied STOP, with the day and the address.
+  await textAssignmentCreated(assignmentId);
 
   return { skipped: false as const };
 }
@@ -477,6 +491,16 @@ export async function notifyAssignmentResponded(
   const organizationId = a.job.organizationId;
 
   const workerEmail = a.worker.user?.email?.toLowerCase() ?? null;
+  // The owners' phones (2026-09-24), through their Text cell; never the worker's own.
+  {
+    const tzRow = await db.organization.findUnique({ where: { id: organizationId }, select: { timezone: true } });
+    await textOffice(
+      organizationId,
+      "worker-responded",
+      workerRespondedLine(a.worker.displayName, response === "ACCEPTED", a.job.title, a.job.startsAt ? dayLabel(a.job.startsAt, tzRow?.timezone || "America/New_York") : null),
+      { roles: ["OWNER"], excludeUserIds: [a.worker.userId] },
+    );
+  }
   const [org, owners, assignedEvent] = await Promise.all([
     db.organization.findUnique({
       where: { id: organizationId },
@@ -563,7 +587,7 @@ async function sendLeadSms(
     .join(" ");
 
   if (!raw) return "invalid-number";
-  if (!isTwilioEnabled()) {
+  if (!await isTwilioEnabled()) {
     // Not a failure: the provider is off by configuration, which is the
     // documented local/dev state. Said once, quietly, so a missing text during
     // testing has an explanation in the log.
@@ -628,6 +652,7 @@ export async function notifyLeadOfferCreated(offerId: string) {
   const appUrl = await appBaseUrl();
   const where = [pl.city, pl.state].filter(Boolean).join(", ") || pl.zip || "your area";
 
+  await textOffice(offer.organizationId, "lead-assigned", leadOfferLine(pl.detectedTrade ?? pl.projectType ?? "project", where, null, `${appUrl}/dashboard/leads`), { roles: ["OWNER"] });
   await sendToMembersByPref(
     offer.organizationId,
     "lead-assigned",
@@ -674,6 +699,12 @@ export async function notifyLeadOfferExpiring(offerId: string) {
   const where = [pl.city, pl.state].filter(Boolean).join(", ") || pl.zip || "your area";
   const trade = pl.detectedTrade ?? pl.projectType ?? "project";
 
+  await textOffice(
+    offer.organizationId,
+    "lead-assigned",
+    leadOfferLine(trade, where, Math.max(1, Math.round((offer.expiresAt.getTime() - Date.now()) / 3_600_000)), `${appUrl}/dashboard/leads`),
+    { roles: ["OWNER"] },
+  );
   await sendToMembersByPref(
     offer.organizationId,
     "lead-assigned",
@@ -1279,6 +1310,7 @@ export async function notifyPaymentReceived({ paymentId }: { paymentId: string }
     );
   }
 
+  await textOffice(payment.organizationId, "payment-received", paymentLine(clientName, proposal.title, payment.amount, remaining));
   await sendToMembersByPref(
     payment.organizationId,
     "payment-received",

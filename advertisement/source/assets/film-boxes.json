@@ -1,0 +1,87 @@
+{
+ "costBox": {
+  "x": 300,
+  "y": 451.640625,
+  "w": 1060,
+  "h": 623.703125
+ },
+ "tracks": {
+  "rows": [
+   {
+    "text": "Laboradjust every labor cost0.0%",
+    "x": 321,
+    "y": 622.65625,
+    "w": 698.015625,
+    "h": 16.578125
+   },
+   {
+    "text": "Laboradjust every labor cost",
+    "x": 321,
+    "y": 625.65625,
+    "w": 159.03125,
+    "h": 13.5
+   }
+  ],
+  "divs": [
+   {
+    "x": 321,
+    "y": 564.53125,
+    "w": 698.015625,
+    "h": 19.984375,
+    "cls": "bp-markup-module__Sgx7vW__slider"
+   },
+   {
+    "x": 321,
+    "y": 570.359375,
+    "w": 698.015625,
+    "h": 8.328125,
+    "cls": "bp-markup-module__Sgx7vW__track"
+   },
+   {
+    "x": 321,
+    "y": 645.890625,
+    "w": 698.015625,
+    "h": 19.984375,
+    "cls": "bp-markup-module__Sgx7vW__slider"
+   },
+   {
+    "x": 321,
+    "y": 651.71875,
+    "w": 698.015625,
+    "h": 8.328125,
+    "cls": "bp-markup-module__Sgx7vW__track"
+   },
+   {
+    "x": 321,
+    "y": 727.25,
+    "w": 698.015625,
+    "h": 19.984375,
+    "cls": "bp-markup-module__Sgx7vW__slider"
+   },
+   {
+    "x": 321,
+    "y": 733.078125,
+    "w": 698.015625,
+    "h": 8.328125,
+    "cls": "bp-markup-module__Sgx7vW__track"
+   },
+   {
+    "x": 321,
+    "y": 808.609375,
+    "w": 698.015625,
+    "h": 19.984375,
+    "cls": "bp-markup-module__Sgx7vW__slider"
+   },
+   {
+    "x": 321,
+    "y": 814.4375,
+    "w": 698.015625,
+    "h": 8.328125,
+    "cls": "bp-markup-module__Sgx7vW__track"
+   }
+  ]
+ },
+ "blockText": "04 COST ADJUSTMENT MARGIN · 8.1% Materials adjust every material cost +12.0% +$1,703.81 Labor adjust every labor cost +5.0% +$601.16 Overhead of subtotal 0.0% — Profit of cost + overhead 0.0% — Overhead and profit are inside every line's price on the client's copy — never a row of their own, so the lines add up to the total. Card 03 shows the client price under each line. In the breakdown they lan",
+ "grand": "GRAND TOTAL $30,380.19",
+ "linesTop": 472.765625
+}

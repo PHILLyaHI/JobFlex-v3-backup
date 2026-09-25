@@ -24,6 +24,7 @@ import type { IntegrationGroup, IntegrationStatus, LiveProbe } from "@/lib/sdk/i
 import s from "@/components/v3/admin-overview/admin-shared.module.css";
 import { Ic } from "@/components/v3/admin-overview/admin-ui";
 import { useAdminMotion } from "@/components/v3/admin-overview/admin-motion";
+import { IntegrationLinks } from "./integration-links";
 import i from "./integrations.module.css";
 
 const HEALTH = "/admin/health" as Route;
@@ -74,6 +75,12 @@ function GroupCard({
               </div>
             </div>
             <span className={chip.cls}>{chip.label}</span>
+            <IntegrationLinks id={it.key} />
+            {it.setupHref ? (
+              <Link className="btn btn-ghost btn-sm" href={it.setupHref as Route}>
+                Set up
+              </Link>
+            ) : null}
             <div className={i.keys}>
               {it.envKeys.map((k) => (
                 <span className={s.envk} key={k}>

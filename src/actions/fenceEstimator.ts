@@ -12,6 +12,7 @@ import { estimateSchema, type GeneratedEstimate } from "@/lib/estimatorSchema";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit } from "@/lib/limitsEngine";
 import { fenceConvertSchema, firstIssue, PREVIEW_MAX_CHARS, type FenceConvertInput } from "@/lib/fence/convertSchema";
+import { FENCE_PLAN_EVENT } from "@/lib/fence/planSvg";
 import { logServerError } from "@/lib/server-events";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
@@ -267,6 +268,19 @@ async function writeProposal(organizationId: string, userId: string, data: Fence
   await applyMemberDiscount(proposal.id).catch(() => {});
   // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
   await recordInventoryLink(organizationId, proposal.id, data.inventoryLinked, user.id);
+  // The traced layout rides with the proposal (2026-09-23): an activity
+  // event the client's page draws from. Best effort — the proposal never
+  // fails for its picture.
+  if (data.plan) {
+    try {
+      const gates = data.plan.gates.length;
+      await db.activityEvent.create({
+        data: { organizationId, actorId: user.id, proposalId: proposal.id, kind: FENCE_PLAN_EVENT, summary: `Fence layout drawn for the proposal — ${Math.round(data.plan.totalLf)} ft${gates ? `, ${gates} ${gates === 1 ? "gate" : "gates"}` : ""}`, meta: JSON.stringify(data.plan) },
+      });
+    } catch {
+      /* the layout is optional */
+    }
+  }
 
   if (filing) await clearFilingContext();
   if (projectId) revalidatePath(`/dashboard/projects/${projectId}`);

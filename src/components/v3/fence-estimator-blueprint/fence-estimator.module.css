@@ -1400,6 +1400,7 @@
 .bp :global(.content .tool-group) { display: flex; gap: 7px; flex-wrap: wrap; }
 .bp :global(.content .tool) { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-size: 11.5px; font-weight: 700; color: var(--muted); transition: border-color 0.12s, color 0.12s, background 0.12s; }
 .bp :global(.content .tool .ic) { width: 13px; height: 13px; }
+.bp :global(.content .house-tools .tool-note) { align-self: center; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; color: var(--muted); }
 @media (hover: hover) and (pointer: fine) {
   .bp :global(.content .tool:hover) { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
 }

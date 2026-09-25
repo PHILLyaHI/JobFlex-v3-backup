@@ -24,6 +24,7 @@ import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 import { getBlockedCustomPages } from "@/lib/customPageAccess";
 import { isCustomBlockedPath } from "@/lib/customPlan";
 import { UpgradeGate } from "@/components/v3/upgrade-gate/upgrade-gate";
+import { TrialWatchMount } from "@/components/v3/trial-watch/trial-watch-mount";
 
 /** Handheld URL prefix → the desktop route whose gates apply. */
 const DESKTOP_TWIN: Record<string, string> = {
@@ -75,10 +76,12 @@ export default async function MobileGroupLayout({ children }: { children: ReactN
 
   let role: string | null = null;
   let organizationId: string | null = null;
+  let email: string | null = null;
   try {
     const ctx = await requireOrg();
     role = ctx.role;
     organizationId = ctx.organizationId;
+    email = ctx.user.email ?? null;
   } catch {
     // Signed out, or no membership yet — the page redirects to login itself.
     return children;
@@ -97,5 +100,12 @@ export default async function MobileGroupLayout({ children }: { children: ReactN
     return <UpgradeGate pathname={twin} />;
   }
 
-  return children;
+  // The handheld twins render the same org data as /dashboard: same beacon,
+  // same watermark (components/v3/trial-watch).
+  return (
+    <>
+      {children}
+      {organizationId && <TrialWatchMount organizationId={organizationId} email={email} />}
+    </>
+  );
 }

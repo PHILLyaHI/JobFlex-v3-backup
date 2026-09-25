@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import { JobStatus } from "@/lib/prismaEnums";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { assertLinksInOrg } from "@/lib/assertLinksInOrg";
+import { afterResponse } from "@/lib/server-events";
+import { crewOfJobEvent, textAssignmentCreated, textCrewCancelled, textJobEventMoved } from "@/lib/sms/crew";
 
 const jobInput = z.object({
   title: z.string().min(1),
@@ -472,6 +474,8 @@ export async function rescheduleJobEvent(id: string, newStartISO: string) {
     where: { id },
     data: { startsAt: newStart, endsAt: newEnd },
   });
+  // The crew hears about the move by text (2026-09-24), after the response.
+  afterResponse(() => textJobEventMoved(id));
   revalidatePath("/dashboard/calendar");
   if (ev.jobId) revalidatePath(`/dashboard/jobs/${ev.jobId}`);
 }
@@ -480,7 +484,9 @@ export async function deleteJobEvent(id: string) {
   const { organizationId } = await requireManager();
   const ev = await db.jobEvent.findUnique({ where: { id } });
   if (!ev || ev.organizationId !== organizationId) throw new Error("Not found");
+  const crew = await crewOfJobEvent(id).catch(() => null);
   await db.jobEvent.delete({ where: { id } });
+  afterResponse(() => textCrewCancelled(crew));
   revalidatePath("/dashboard/calendar");
   if (ev.jobId) revalidatePath(`/dashboard/jobs/${ev.jobId}`);
 }
@@ -528,6 +534,7 @@ export async function rescheduleJobEventTime(
     where: { id },
     data: { startsAt: start, endsAt: end },
   });
+  afterResponse(() => textJobEventMoved(id));
   revalidatePath("/dashboard/calendar");
   if (ev.jobId) revalidatePath(`/dashboard/jobs/${ev.jobId}`);
 }
@@ -614,6 +621,7 @@ export async function assignEventWorker(
       where: { id: eventId },
       data: { startsAt: newStart, endsAt: newEnd },
     });
+    afterResponse(() => textJobEventMoved(eventId));
   }
 
   // Manage JobAssignment rows on the linked job
@@ -634,13 +642,14 @@ export async function assignEventWorker(
       // ensure target worker is assigned (don't strip others)
       const exists = ev.job?.assignments.find((a) => a.workerId === workerId);
       if (!exists) {
-        await db.jobAssignment.create({
+        const created = await db.jobAssignment.create({
           data: {
             jobId: ev.jobId,
             workerId,
             status: "PENDING",
           },
         });
+        afterResponse(() => textAssignmentCreated(created.id));
       }
     }
   }

@@ -10,6 +10,8 @@ import { z } from "zod";
  *  4.5 MB request cap. The server drops anything larger rather than failing. */
 export const PREVIEW_MAX_CHARS = 1_500_000;
 
+const planPoint = z.object({ x: z.number().finite(), y: z.number().finite(), gap: z.boolean().optional() });
+
 export const fenceConvertSchema = z.object({
   title: z.string().min(1).max(200),
   scope: z.string().optional(),
@@ -52,6 +54,22 @@ export const fenceConvertSchema = z.object({
   address: z.string().max(300).optional().nullable(),
   // Optional 3D snapshot (data URL) — uploaded to Blob and attached when present.
   previewDataUrl: z.string().optional(),
+  // The traced layout (2026-09-23): kept with the proposal as an ActivityEvent
+  // (FENCE_PLAN) and drawn for the client's page (lib/fence/planSvg). Local
+  // feet about the address pin, like the estimator's own trace.
+  plan: z
+    .object({
+      points: z.array(planPoint).min(2).max(600),
+      gates: z.array(z.object({ segmentIndex: z.number().int().min(0).max(600), t: z.number().min(0).max(1), widthFt: z.number().min(0).max(40), kind: z.enum(["gate", "door"]), label: z.string().max(60).optional(), x: z.number().finite().optional(), y: z.number().finite().optional() })).max(40),
+      buildings: z.array(z.object({ ring: z.array(planPoint).min(3).max(300), role: z.enum(["subject", "neighbor"]) })).max(40),
+      lots: z.array(z.array(planPoint).min(3).max(400)).max(10),
+      origin: z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) }).nullable(),
+      heightFt: z.number().min(0).max(20),
+      typeLabel: z.string().max(120),
+      totalLf: z.number().min(0).max(100_000),
+      address: z.string().max(300).nullable(),
+    })
+    .optional(),
   // Pre-links the proposal to a client when converted from a client's page.
   clientId: z.string().optional().nullable(),
   inventoryLinked: z.boolean().optional().nullable(),

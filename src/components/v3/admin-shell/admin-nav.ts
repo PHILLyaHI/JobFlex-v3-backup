@@ -24,6 +24,9 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
       // estimates made — counted per user, with the trail beneath.
       { label: "User activity", icon: "i-clock", href: "/admin/activity" },
       { label: "Subscribers", icon: "i-card", href: "/admin/subscribers" },
+      // Added 2026-09-24: the trials to look at — accounts touring the product
+      // to copy it, read off how they behave (lib/trialWatch).
+      { label: "Trial watch", icon: "i-eye", href: "/admin/trials" },
     ],
   },
   {
@@ -43,6 +46,9 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
       { label: "Support", icon: "i-msg", href: "/admin/support" },
       { label: "Health", icon: "i-check", href: "/admin/health" },
       { label: "Integrations", icon: "i-link", href: "/admin/integrations" },
+      // Texting is the one integration set up for every contractor at once
+      // (2026-09-24) — a door of its own beside Integrations.
+      { label: "Texting", icon: "i-phone", href: "/admin/integrations/twilio" },
       { label: "Announcements", icon: "i-bell", href: "/admin/announcements" },
       { label: "Campaigns", icon: "i-send", href: "/admin/campaigns" },
       { label: "Specialties", icon: "i-box", href: "/admin/specialties" },

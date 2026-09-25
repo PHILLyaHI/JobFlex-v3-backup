@@ -89,3 +89,15 @@
     margin-right: 4px;
   }
 }
+
+/* ── /admin/integrations/twilio (2026-09-24) ─────────────────────────── */
+.form { display: grid; gap: 12px; padding: 14px 0 4px; }
+.field { display: grid; gap: 5px; }
+.field > span { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.field input { font-family: var(--font-mono); font-size: 13px; padding: 9px 11px; border: var(--border); border-radius: var(--radius); background: #fff; color: var(--ink); width: 100%; }
+.field input[readonly] { background: var(--paper, #f2f0eb); }
+.inline { display: flex; gap: 8px; align-items: center; }
+.inline input { flex: 1 1 auto; }
+.check { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+.check input { width: 16px; height: 16px; accent-color: var(--blueprint); margin: 0; }
+.actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding-top: 8px; }
