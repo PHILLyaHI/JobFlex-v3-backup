@@ -38,7 +38,15 @@ export const metadata: Metadata = {
   icons: {
     // Tight crop of the mark (2026-09-24): the 384 file is two-thirds padding,
     // which drew the J tiny in the browser tab.
-    icon: "/jobflex-mark-tab.png",
+    // Follows the browser theme (2026-09-24): ink J on a light browser, white
+    // on a dark one. The SVG switches itself (prefers-color-scheme inside it —
+    // Chrome, Edge, Firefox); the two PNGs are the same pair by media query for
+    // browsers that do not take an SVG favicon.
+    icon: [
+      { url: "/jobflex-mark-tab-dark.png", type: "image/png", media: "(prefers-color-scheme: light)" },
+      { url: "/jobflex-mark-tab-light.png", type: "image/png", media: "(prefers-color-scheme: dark)" },
+      { url: "/jobflex-mark-tab.svg", type: "image/svg+xml" },
+    ],
     apple: "/jobflex-mark-384.png",
   },
 };
