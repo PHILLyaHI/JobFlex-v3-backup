@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>JobFlex — five roofing ads</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=JetBrains+Mono:wght@500;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fraunces:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#f3f1ec; --ink:#0a0a0a; --accent:#1854a0; --accent2:#f5c400; --paper:#fff; --subbg:#0a0a0a; --subink:#fff; --font:'Inter',Helvetica,Arial,sans-serif; --mono:'JetBrains Mono',ui-monospace,monospace; --capfont:'Inter',Helvetica,Arial,sans-serif; --shadow:#0a0a0a; --grid:rgba(10,10,10,.045); }
+  html,body { margin:0; background:#000; overflow:hidden; }
+  #stage { position:relative; overflow:hidden; background:var(--bg); font-family:var(--font); color:var(--ink);
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size:48px 48px; }
+  .layer { position:absolute; inset:0; }
+  svg.layer { width:100%; height:100%; }
+  .clip { position:absolute; overflow:hidden; background:#fff; }
+  .clip img { position:absolute; left:0; top:0; display:block; will-change:transform; }
+  .frame { position:absolute; border:3px solid var(--ink); background:#fff; box-shadow:14px 14px 0 var(--shadow); }
+  .kicker { position:absolute; z-index:5; font-family:var(--mono); font-weight:600; letter-spacing:.22em; text-transform:uppercase; color:var(--accent); }
+  .kicker::before { content:''; display:inline-block; width:.55em; height:.55em; background:var(--accent); margin-right:.6em; vertical-align:middle; }
+  .cap { position:absolute; z-index:5; font-family:var(--capfont); font-weight:900; letter-spacing:-.02em; line-height:.98; text-transform:uppercase; text-wrap:balance; color:var(--ink); }
+  .cap small { display:block; margin-top:14px; font-family:var(--mono); font-weight:600; font-size:.32em; letter-spacing:.18em; color:var(--accent); text-transform:uppercase; }
+  .sub { position:absolute; z-index:5; font-weight:700; letter-spacing:-.01em; line-height:1.18; text-wrap:balance; }
+  .sub span { display:inline; background:var(--subbg); color:var(--subink); padding:6px 14px; box-decoration-break:clone; -webkit-box-decoration-break:clone; }
+  .hl { position:absolute; z-index:6; border:4px solid var(--accent); box-shadow:0 0 0 6px rgba(74,158,255,.28); pointer-events:none; }
+  .cursor { position:absolute; z-index:7; width:34px; height:34px; pointer-events:none; }
+  .typed { position:absolute; z-index:6; background:#fff; font-family:'Inter'; font-weight:500; color:#0a0a0a; white-space:nowrap; overflow:hidden; display:flex; align-items:center; }
+  .call { position:absolute; z-index:6; background:#fff; border:3px solid var(--ink); box-shadow:8px 8px 0 var(--shadow); padding:14px 22px 12px; }
+  .call b { display:block; font-size:56px; font-weight:900; letter-spacing:-.02em; line-height:1; color:var(--accent); font-variant-numeric:tabular-nums; }
+  .call i { display:block; margin-top:6px; font-style:normal; font-family:var(--mono); font-weight:600; font-size:15px; letter-spacing:.16em; text-transform:uppercase; color:#555; }
+  .phone { position:absolute; z-index:3; background:#0a0a0a; border-radius:54px; padding:16px; box-shadow:18px 18px 0 rgba(10,10,10,.18); }
+  .phone .clip { position:relative; border-radius:38px; background:#fff; }
+  .end { position:absolute; inset:0; z-index:8; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:0 60px; }
+  .end .cta { font-family:var(--capfont); font-weight:900; text-transform:uppercase; letter-spacing:-.02em; line-height:.95; }
+  .end .offer { margin-top:34px; font-family:var(--mono); font-weight:600; letter-spacing:.22em; text-transform:uppercase; color:var(--accent); }
+  .end .mark { position:absolute; bottom:6%; left:0; right:0; font-weight:900; letter-spacing:-.04em; text-transform:uppercase; }
+  .end .mark em { font-style:normal; color:var(--accent); }
+  /* ad 1 — the stopwatch */
+  .clock { position:absolute; z-index:5; }
+  .clock .t { position:absolute; left:0; right:0; text-align:center; font-family:var(--mono); font-weight:700; font-variant-numeric:tabular-nums; color:var(--ink); }
+  /* ad 2 — sheets */
+  .leader { position:absolute; z-index:5; display:flex; gap:12px; }
+  .leader i { flex:1; height:8px; border:2px solid var(--ink); background:transparent; position:relative; }
+  .leader i b { position:absolute; left:0; top:0; bottom:0; width:0; background:var(--accent); }
+  .stamp { position:absolute; z-index:5; font-family:var(--mono); font-weight:700; border:3px solid var(--ink); padding:6px 12px; letter-spacing:.2em; background:#fff; }
+  /* ad 3 — receipt */
+  .receipt { position:absolute; z-index:5; background:#f3f1ec; color:#0a0a0a; font-family:var(--mono); font-weight:600; font-size:21px; line-height:1.55; padding:26px 22px 0; overflow:hidden; }
+  .receipt .ln { white-space:pre; display:flex; justify-content:space-between; gap:12px; }
+  .receipt .ln.h { font-weight:700; }
+  .receipt .ln.rule { color:#8a8a8a; letter-spacing:.1em; }
+  .receipt .tear { position:absolute; left:0; right:0; bottom:0; height:14px; background:linear-gradient(135deg, #f3f1ec 50%, transparent 50%) 0 0/14px 14px, linear-gradient(-135deg, #f3f1ec 50%, transparent 50%) 0 0/14px 14px; background-color:#0a0a0a; }
+  .paid { position:absolute; z-index:9; font-family:var(--mono); font-weight:700; color:#1f9a58; border:6px solid #1f9a58; border-radius:10px; padding:2px 16px; letter-spacing:.2em; transform:rotate(-12deg); }
+  /* ad 4 — toggle */
+  .toggle { position:absolute; z-index:5; background:#fff; border-radius:70px; display:flex; align-items:center; box-shadow:0 12px 0 rgba(0,0,0,.25); }
+  .toggle span { flex:1; text-align:center; font-family:var(--mono); font-weight:700; letter-spacing:.22em; color:var(--accent); position:relative; z-index:2; }
+  .toggle .knob { position:absolute; top:10px; bottom:10px; background:var(--accent2); border-radius:60px; z-index:1; }
+  .odo { position:absolute; z-index:6; background:#0a0a0a; color:var(--accent2); font-weight:900; font-variant-numeric:tabular-nums; letter-spacing:-.02em; padding:12px 26px 10px; }
+  .odo i { display:block; font-style:normal; font-family:var(--mono); font-weight:600; font-size:15px; letter-spacing:.2em; color:#fff; opacity:.8; margin-top:6px; }
+  /* ad 5 — cards */
+  .card { position:absolute; z-index:6; box-sizing:border-box; background:rgba(255,255,255,.96); border-radius:26px; box-shadow:0 20px 50px rgba(20,40,80,.22); padding:22px 26px; display:flex; gap:20px; align-items:flex-start; font-family:'Inter'; }
+  .card .ic { width:64px; height:64px; border-radius:16px; background:#0a0a0a; color:#fff; font-weight:900; font-size:34px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .card .ic.b { background:var(--accent); }
+  .card .tx { flex:1; min-width:0; }
+  .card .tx b { display:flex; justify-content:space-between; font-size:24px; font-weight:800; }
+  .card .tx b s { text-decoration:none; font-weight:500; color:#777; font-size:20px; }
+  .card .tx p { margin:6px 0 0; font-size:24px; line-height:1.3; color:#111; }
+  .wave { position:absolute; z-index:7; display:flex; align-items:flex-end; gap:5px; }
+  .wave i { width:6px; background:var(--accent); border-radius:3px; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+(async () => {
+  const P = new URLSearchParams(location.search);
+  const W = +P.get("w") || 1080, H = +P.get("h") || 1920, AD = +P.get("ad") || 1;
+  const VERT = H > 1500;
+  const stage = document.getElementById("stage");
+  stage.style.width = W + "px"; stage.style.height = H + "px";
+  const $ = (tag, cls, parent = stage) => { const e = document.createElement(tag); if (cls) e.className = cls; parent.appendChild(e); return e; };
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const ease = (x) => 1 - Math.pow(1 - clamp(x), 3);
+  const io = (x) => { x = clamp(x); return x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+  const spring = (x) => { x = clamp(x); return 1 - Math.exp(-6 * x) * Math.cos(9 * x); };
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const seg = (t, a, b) => clamp((t - a) / (b - a));
+  const win = (t, a, b, f = .3) => Math.min(seg(t, a, a + f), 1 - seg(t, b - f, b));
+  const money = (n) => "$" + Math.round(n).toLocaleString("en-US");
+  const place = (el, r) => Object.assign(el.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
+
+  // ── assets: source rects are CSS px of the capture viewport; k = image px per CSS px
+  const A = {
+    start:  { src: "assets/est-start.png", k: 2, w: 1440, h: 960 },
+    report: { src: "assets/est-report.png", k: 2, w: 1440, h: 960 },
+    build:  { src: "assets/est-builder.png", k: 2, w: 1440, h: 960 },
+    metal:  { src: "assets/est-builder-metal-page.png", k: 2, w: 1440, h: 960 },
+    lines:  { src: "assets/est-lines.png", k: 2, w: 1440, h: 960 },
+    bpLines1: { src: "assets/bp-lines-after.png", k: 2, w: 1440, h: 960 },
+    bpCost0: { src: "assets/bp-cost-before.png", k: 2, w: 1440, h: 960 },
+    bpCost1: { src: "assets/bp-cost-after.png", k: 2, w: 1440, h: 960 },
+    desk:   { src: "assets/portal-desktop.png", k: 2, w: 1280, h: 900 },
+    phone:  { src: "assets/portal-mobile.png", k: 3, w: 390, h: 844 },
+    phoneFull: { src: "assets/portal-mobile-full.png", k: 3, w: 390, h: 4500 },
+    typed:  { src: "assets/pay-accept-typed-phone.png", k: 3, w: 390, h: 844 },
+    payPhone: { src: "assets/pay-accepted-phone.png", k: 3, w: 390, h: 844 },
+    paidPhone: { src: "assets/pay-paid-phone.png", k: 3, w: 390, h: 844 },
+    detail: { src: "assets/mobile-detail.png", k: 3, w: 390, h: 844 },
+    payDesk0: { src: "assets/pay-accepted-desk.png", k: 2, w: 1280, h: 900 },
+    payDesk1: { src: "assets/pay-paid-desk.png", k: 2, w: 1280, h: 900 },
+    office: { src: "assets/office-dashboard.png", k: 2, w: 1440, h: 960 },
+    props:  { src: "assets/office-proposals.png", k: 2, w: 1440, h: 960 },
+    aerial: { src: "assets/aerial-hq.png", k: 1, w: 1280, h: 1280 },
+  };
+  const HOUSE = { cx: 646, cy: 681 };
+  const PIN = (sc, fill = "#1854a0") => `<g transform="scale(${sc})"><path d="M0 8 C-14 -12 -14 -30 0 -30 C14 -30 14 -12 0 8 Z" fill="${fill}" stroke="#0a0a0a" stroke-width="1.5"/><circle cx="0" cy="-20" r="5" fill="#fff"/></g>`;
+
+  class Shot {
+    constructor(asset, box, parent = stage) {
+      this.a = asset; this.box = { ...box };
+      this.el = $("div", "clip", parent);
+      place(this.el, this.box);
+      this.img = document.createElement("img"); this.img.src = asset.src; this.el.appendChild(this.img);
+      this.over = $("div", "layer", this.el);
+      this.k = 1; this.src = { x: 0, y: 0, w: asset.w, h: asset.h }; this.ox = 0; this.oy = 0;
+    }
+    view(src, fit = this.fit || "width") {
+      this.src = src;
+      let k;
+      if (fit === "cover") k = Math.max(this.box.w / src.w, this.box.h / src.h);
+      else {
+        k = this.box.w / src.w; let h = Math.round(src.h * k);
+        if (this.maxH) h = Math.min(h, this.maxH);
+        this.box.h = h; this.el.style.height = h + "px";
+      }
+      const ox = fit === "cover" ? (this.box.w - src.w * k) / 2 : 0, oy = fit === "cover" ? (this.box.h - src.h * k) / 2 : 0;
+      this.img.style.width = this.a.w * k + "px"; this.img.style.height = this.a.h * k + "px";
+      this.img.style.transform = `translate(${-src.x * k + ox}px, ${-src.y * k + oy}px)`;
+      this.ox = ox; this.oy = oy; this.k = k;
+      return this;
+    }
+    at(x, y) { return { x: this.box.x + this.ox + (x - this.src.x) * this.k, y: this.box.y + this.oy + (y - this.src.y) * this.k }; }
+    rect(r) { const p = this.at(r.x, r.y); return { x: p.x, y: p.y, w: r.w * this.k, h: r.h * this.k }; }
+    alpha(a) { this.el.style.opacity = String(clamp(a)); }
+  }
+  const show = (e, on = true) => { e.style.display = on ? "" : "none"; };
+
+  // ── themes: five looks that read as five different ads at a glance
+  const THEMES = {
+    1: { bg: "#f5c400", ink: "#0a0a0a", accent: "#1854a0", accent2: "#0a0a0a", subbg: "#0a0a0a", subink: "#f5c400", capfont: "'Barlow Condensed', 'Inter', sans-serif", grid: "rgba(10,10,10,.05)", align: "left", capScale: 1.22, capSpacing: "-.01em" },
+    2: { bg: "#f3f1ec", ink: "#0a0a0a", accent: "#1854a0", accent2: "#f5c400", subbg: "#0a0a0a", subink: "#fff", capfont: "'Inter', sans-serif", grid: "rgba(10,10,10,.06)", align: "center", capScale: 1, capSpacing: "-.03em" },
+    3: { bg: "#0a0a0a", ink: "#f3f1ec", accent: "#2fbf71", accent2: "#f5c400", subbg: "#f3f1ec", subink: "#0a0a0a", capfont: "'JetBrains Mono', monospace", grid: "rgba(255,255,255,.05)", align: "left", capScale: .78, capSpacing: "-.02em", shadow: "#2fbf71" },
+    4: { bg: "#1854a0", ink: "#ffffff", accent: "#f5c400", accent2: "#f5c400", subbg: "#f5c400", subink: "#0a0a0a", capfont: "'Inter', sans-serif", grid: "rgba(255,255,255,.07)", align: "center", capScale: 1, capSpacing: "-.03em", shadow: "#0e3d7a" },
+    5: { bg: "#e3ebf5", ink: "#0a0a0a", accent: "#1854a0", accent2: "#f5c400", subbg: "#1854a0", subink: "#fff", capfont: "'Fraunces', Georgia, serif", grid: "rgba(24,84,160,.08)", align: "center", capScale: .96, capSpacing: "-.02em", caseNone: true, capWeight: 700 },
+  };
+  const TH = THEMES[AD];
+  for (const [k, v] of Object.entries({ bg: TH.bg, ink: TH.ink, accent: TH.accent, accent2: TH.accent2, subbg: TH.subbg, subink: TH.subink, capfont: TH.capfont, grid: TH.grid, shadow: TH.shadow || TH.ink })) stage.style.setProperty("--" + k, v);
+  document.body.style.background = TH.bg;
+
+  // ── layout per format: words on top, the screen below (bottom may bleed on 4:5)
+  const L = VERT
+    ? { kickY: 232, kickSize: 24, capY: 290, capSize: 96, subY: 560, subSize: 40, visY: 690, visBottom: 1520, phoneW: 380, endCta: 120, endOffer: 30, markSize: 64, markBottom: "21%" }
+    : { kickY: 62, kickSize: 20, capY: 112, capSize: 78, subY: 320, subSize: 34, visY: 450, visBottom: 1310, phoneW: 380, endCta: 100, endOffer: 26, markSize: 56, markBottom: "6%" };
+  const PADX = 56;
+  const kick = $("div", "kicker"); Object.assign(kick.style, { left: PADX + "px", top: L.kickY + "px", fontSize: L.kickSize + "px" });
+  const cap = $("div", "cap"); Object.assign(cap.style, { left: PADX + "px", width: (W - PADX * 2) + "px", top: L.capY + "px", fontSize: Math.round(L.capSize * TH.capScale) + "px", textAlign: TH.align, letterSpacing: TH.capSpacing });
+  if (TH.caseNone) { cap.style.textTransform = "none"; cap.style.fontWeight = String(TH.capWeight || 700); cap.style.lineHeight = "1.02"; }
+  const sub = $("div", "sub"); Object.assign(sub.style, { left: PADX + "px", width: (W - PADX * 2) + "px", top: L.subY + "px", fontSize: L.subSize + "px", textAlign: TH.align });
+  const setKick = (s) => { kick.textContent = s; show(kick); };
+  const setCap = (html, small = "", a = 1) => { cap.innerHTML = html + (small ? `<small>${small}</small>` : ""); cap.style.opacity = String(a); show(cap); };
+  const setSub = (s, a = 1) => { sub.innerHTML = `<span>${s}</span>`; sub.style.opacity = String(a); show(sub); };
+
+  // frames and phones
+  const visW = (W - PADX * 2);
+  const frameAt = (asset, w = visW, x = PADX) => { const s = new Shot(asset, { x, y: L.visY, w, h: 10 }); s.el.classList.add("frame"); s.maxH = L.visBottom - L.visY; return s; };
+  const phoneAt = (asset, w = L.phoneW, x = null) => {
+    const ph = Math.round(w * 844 / 390); const px = x ?? Math.round((W - w) / 2) - 16;
+    const shell = $("div", "phone"); place(shell, { x: px, y: L.visY - 16, w, h: ph }); shell.style.width = w + "px"; shell.style.height = ph + "px";
+    const s = new Shot(asset, { x: 0, y: 0, w, h: ph }, shell); s.shell = shell; s.pw = w; s.ph = ph;
+    s.showAll = () => { show(shell); }; s.hideAll = () => { show(shell, false); };
+    return s;
+  };
+  // an aerial with a pin dropped into a page's figure box
+  const makePic = (parent) => { const pic = new Shot(A.aerial, { x: 0, y: 0, w: 10, h: 10 }, parent); pic.fit = "cover"; pic.el.classList.remove("clip"); pic.el.style.overflow = "hidden"; pic.el.style.position = "absolute"; pic.el.style.zIndex = "2"; const sv = document.createElementNS("http://www.w3.org/2000/svg", "svg"); sv.setAttribute("class", "layer"); pic.el.appendChild(sv); const g = document.createElementNS("http://www.w3.org/2000/svg", "g"); sv.appendChild(g); pic.g = g; return pic; };
+  const picInto = (pic, shot, srcRect, sc = 2.2, clipBottom = Infinity, win = 340) => {
+    const cut = { ...srcRect, h: Math.max(10, Math.min(srcRect.h, clipBottom - srcRect.y)) };
+    const r = shot.rect(cut); const box = { x: r.x - shot.box.x, y: r.y - shot.box.y, w: r.w, h: r.h };
+    if (box.y + box.h > shot.box.h) box.h = Math.max(10, shot.box.h - box.y);
+    place(pic.el, box); pic.box = box; pic.view({ x: HOUSE.cx - win / 2, y: HOUSE.cy - win / 2, w: win, h: win });
+    const q = pic.at(HOUSE.cx, HOUSE.cy); pic.g.setAttribute("transform", `translate(${q.x - box.x},${q.y - box.y})`); pic.g.innerHTML = PIN(sc); show(pic.el);
+  };
+  const cursor = $("div", "cursor"); cursor.innerHTML = '<svg viewBox="0 0 24 24" width="34" height="34"><path d="M4 2l16 9-7 2-3 8z" fill="#fff" stroke="#0a0a0a" stroke-width="2" stroke-linejoin="round"/></svg>';
+  const hl = $("div", "hl");
+  const typed = $("div", "typed");
+  const call = $("div", "call"); call.innerHTML = "<b></b><i></i>";
+  const setCall = (r, big, small) => { place(call, { x: r.x, y: r.y, w: "auto", h: "auto" }); call.style.width = "auto"; call.style.height = "auto"; call.querySelector("b").textContent = big; call.querySelector("i").textContent = small; show(call); };
+  const endCard = $("div", "end"); endCard.innerHTML = `<div class="motif"></div><div class="cta" style="font-size:${L.endCta}px"></div><div class="offer" style="font-size:${L.endOffer}px"></div><div class="mark" style="font-size:${L.markSize}px;bottom:${L.markBottom}">Job<em>Flex</em></div>`;
+  if (TH.caseNone) { endCard.querySelector(".cta").style.textTransform = "none"; endCard.querySelector(".cta").style.fontWeight = "700"; }
+  const setEnd = (cta, offer, motifHtml, a) => { endCard.querySelector(".cta").innerHTML = cta; endCard.querySelector(".offer").textContent = offer; endCard.querySelector(".motif").innerHTML = motifHtml || ""; endCard.style.opacity = String(a); show(endCard); };
+
+  // the shared page shots (built lazily per ad so only what an ad uses is loaded)
+  const S = {};
+  const shot = (name, asset, w, x) => S[name] || (S[name] = frameAt(asset, w, x));
+  const phone = (name, asset, w, x) => S[name] || (S[name] = phoneAt(asset, w, x));
+  const pics = {};
+  const pic = (name, parent) => pics[name] || (pics[name] = makePic(parent));
+  const typeInto = (s, t, a, b) => {
+    const field = s.rect({ x: 318, y: 273, w: 476, h: 28 });
+    place(typed, field); typed.style.fontSize = 16 * s.k + "px"; typed.style.paddingLeft = 10 * s.k + "px";
+    const text = "18412 92nd Ave NE"; const n = Math.round(lerp(0, text.length, seg(t, a, b)));
+    typed.textContent = text.slice(0, n) + (t < b + .5 && Math.floor(t * 3) % 2 === 0 ? "|" : ""); show(typed);
+  };
+  const pressButton = (s, t, a, b) => { // the cursor rides to Measure this roof and presses
+    const btn = s.rect({ x: 318, y: 331, w: 172, h: 30 }); const k = ease(seg(t, a, b));
+    place(cursor, { x: lerp(btn.x + 500, btn.x + btn.w * .5, k), y: lerp(btn.y + 260, btn.y + btn.h * .5, k), w: 34, h: 34 }); cursor.style.transform = t > b ? "scale(.8)" : ""; show(cursor);
+    if (t > b) { place(hl, { x: btn.x - 6, y: btn.y - 6, w: btn.w + 12, h: btn.h + 12 }); show(hl); }
+  };
+  const aerialZoom = (s, t, a, b, from = 900, to = 440) => { // full-bleed aerial closing on the house, pin drops and stays
+    const side = lerp(from, to, ease(seg(t, a, b))); const asp = s.box.w / s.box.h;
+    const vw = asp >= 1 ? side * asp : side, vh = asp >= 1 ? side : side / asp;
+    s.fit = "cover"; s.view({ x: HOUSE.cx - vw / 2, y: HOUSE.cy - vh / 2, w: vw, h: vh });
+    const q = s.at(HOUSE.cx, HOUSE.cy); const drop = seg(t, a + .5, a + 1.2);
+    s.over.innerHTML = t > a + .5 ? `<svg class="layer" style="width:100%;height:100%"><g transform="translate(${q.x - s.box.x},${q.y - s.box.y - lerp(260, 0, ease(drop))})">${PIN(lerp(2.8, 2.2, ease(drop)))}</g></svg>` : "";
+  };
+  const reportTiles = (s, t, a) => { const i = Math.min(6, Math.floor(seg(t, a, a + 3) * 7)); const r = s.rect({ x: 300 + i * 151.3, y: 180, w: 151, h: 102 }); place(hl, { x: r.x, y: r.y, w: r.w, h: r.h }); show(hl); };
+
+  // ═══ AD 1 · COFFEE CLOCK ═══════════════════════════════════════════════
+  const clock = $("div", "clock");
+  const CLK = VERT ? { cx: 880, cy: 380, r: 132 } : { cx: 900, cy: 205, r: 96 };
+  const drawClock = (t, frozen = null, at = CLK, big = false) => {
+    const r = at.r; const shown = frozen ?? t; const full = 24;
+    const p = clamp(shown / full); const C = 2 * Math.PI * (r - 8);
+    place(clock, { x: at.cx - r - 20, y: at.cy - r - 20, w: (r + 20) * 2, h: (r + 20) * 2 });
+    const mm = Math.floor(shown / 60), ss = Math.floor(shown % 60), d = Math.floor((shown * 10) % 10);
+    clock.innerHTML = `<svg viewBox="0 0 ${(r + 20) * 2} ${(r + 20) * 2}" width="${(r + 20) * 2}" height="${(r + 20) * 2}">
+      <circle cx="${r + 20}" cy="${r + 20}" r="${r}" fill="none" stroke="rgba(92,58,26,.55)" stroke-width="26"/>
+      <circle cx="${r + 20}" cy="${r + 20}" r="${r + 9}" fill="none" stroke="rgba(92,58,26,.18)" stroke-width="10"/>
+      <circle cx="${r + 20}" cy="${r + 20}" r="${r - 8}" fill="none" stroke="#0a0a0a" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - p)}" transform="rotate(-90 ${r + 20} ${r + 20})"/>
+      <circle cx="${r + 20}" cy="${r + 20}" r="${r - 30}" fill="rgba(255,255,255,.55)"/>
+    </svg><div class="t" style="top:${r + 20 - (big ? 34 : 22)}px;font-size:${big ? 60 : 40}px">${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}.${d}</div>`;
+    show(clock);
+  };
+  const ad1 = (t) => {
+    const capW = VERT ? 700 : 760; cap.style.width = capW + "px"; sub.style.width = capW + "px";
+    if (t < 27.2) setKick("Roof estimator · timer running");
+    if (t < 2.2) {
+      setCap("Your coffee's<br>still hot.", "", win(t, 0, 2.2, .25)); setSub("Address to priced roof estimate. Timer's running.", win(t, .4, 2.2, .25));
+      drawClock(t);
+      return;
+    }
+    if (t < 6) {
+      const s = shot("start", A.start); const z = lerp(1, 1.06, ease(seg(t, 2.2, 6)));
+      s.view({ x: 300, y: 105, w: 940 / z, h: 400 / z }); show(s.el);
+      typeInto(s, t, 2.6, 4.4); pressButton(s, t, 4.6, 5.4);
+      setCap("Type the<br>address.", "", win(t, 2.2, 6, .25)); setSub("That's the whole input.", win(t, 2.8, 6, .25));
+      drawClock(t); return;
+    }
+    if (t < 10) {
+      const s = shot("air", A.aerial); s.box.h = L.visBottom - L.visY; s.el.style.height = s.box.h + "px"; show(s.el);
+      aerialZoom(s, t, 6, 8.5, 1000, 420);
+      setCap("House<br>found.", "", win(t, 6, 10, .25)); setSub("Pin dropped from aerial imagery. No ladder.", win(t, 6.6, 10, .25));
+      drawClock(t); return;
+    }
+    if (t < 15) {
+      const s = shot("report", A.report); s.view({ x: 240, y: 90, w: 1180, h: 787 }); show(s.el);
+      picInto(pic("rep", s.over), s, { x: 301, y: 358, w: 504, h: 504 }, 2.2);
+      reportTiles(s, t, 10.4);
+      setCap("Measured.<br>16.8 squares.", "", win(t, 10, 15, .25)); setSub("1,681 sq ft · 6/12 · 8 facets · 57 ft valleys", win(t, 10.6, 15, .25));
+      drawClock(t); return;
+    }
+    if (t < 20) {
+      const s = shot("metal", A.metal); s.view({ x: 280, y: 250 + 40 * ease(seg(t, 16, 19.5)), w: 1140, h: 560 }); show(s.el);
+      const n = lerp(0, 26222, ease(seg(t, 15.3, 17))); setCall({ x: W - PADX - 420, y: L.visY + 22 }, money(n), "estimate · 27 lines");
+      setCap("Priced.<br>27 lines.", "", win(t, 15, 20, .25)); setSub("Materials and labor. Tear-off and vents already in.", win(t, 15.6, 20, .25));
+      drawClock(t); return;
+    }
+    if (t < 24.6) {
+      const p = phone("p1", A.phone); p.showAll(); p.view({ x: 0, y: 0, w: 390, h: 844 });
+      picInto(pic("ph1", p.over), p, { x: 36, y: 364, w: 318, h: 310 }, 2);
+      const b = p.rect({ x: 20, y: 786, w: 256, h: 50 }); const pulse = 1 + .04 * Math.sin((t - 20) * 9);
+      place(hl, { x: p.shell.offsetLeft + 16 + b.x - 6, y: p.shell.offsetTop + 16 + b.y - 6, w: b.w + 12, h: b.h + 12 }); hl.style.transform = `scale(${pulse})`; hl.style.borderColor = "#f5c400"; show(hl);
+      setCap("Sent. Coffee's<br>still hot.", "", win(t, 20, 24.6, .25)); setSub("Client proposal, on their phone. Accept is one tap.", win(t, 20.6, 24.6, .25));
+      drawClock(t, Math.min(t, 24)); return;
+    }
+    const a = seg(t, 24.6, 25.2);
+    setEnd("Time it<br>yourself.", "Free to start · jobflex.app", "", a);
+    drawClock(24, 24, { cx: W / 2, cy: VERT ? 520 : 300, r: VERT ? 150 : 110 }, true);
+  };
+
+  // ═══ AD 2 · FIVE SHEETS ════════════════════════════════════════════════
+  const leader = $("div", "leader"); place(leader, { x: PADX, y: L.visY - 34, w: visW, h: 12 }); leader.innerHTML = "<i><b></b></i>".repeat(5);
+  const stamp = $("div", "stamp"); Object.assign(stamp.style, { right: PADX + "px", top: (L.kickY - 10) + "px", fontSize: (VERT ? 26 : 22) + "px" });
+  const sheet = (n, t, a, b) => { setKick(`Sheet 0${n} / 05`); stamp.textContent = `SHEET 0${n}`; show(stamp); leader.querySelectorAll("i").forEach((seg_, i) => { seg_.querySelector("b").style.width = (i < n - 1 ? 100 : i === n - 1 ? 100 * ease(seg(t, a, b)) : 0) + "%"; }); show(leader); };
+  const ad2 = (t) => {
+    if (t < 2.2) {
+      setKick("Sheet 00 / 05 — the whole job"); setCap("Address to<br>signature.", "", win(t, 0, 2.2, .25)); setSub("Five sheets. One roof. Watch.", win(t, .4, 2.2, .25));
+      leader.querySelectorAll("b").forEach((b) => { b.style.width = "0%"; }); show(leader); return;
+    }
+    if (t < 6) {
+      sheet(1, t, 2.2, 6); const s = shot("start", A.start); s.view({ x: 300, y: 105, w: 940, h: 400 }); show(s.el);
+      typeInto(s, t, 2.5, 4.3); pressButton(s, t, 4.5, 5.3);
+      setCap("01 · Type the<br>address.", "", win(t, 2.2, 6, .25)); setSub("No ladder. No drive-by.", win(t, 2.8, 6, .25)); return;
+    }
+    if (t < 11) {
+      sheet(2, t, 6, 11);
+      if (t < 8.6) { const s = shot("air", A.aerial); s.box.h = L.visBottom - L.visY; s.el.style.height = s.box.h + "px"; show(s.el); aerialZoom(s, t, 6, 8.2, 1000, 440); }
+      else { const s = shot("report", A.report); s.view({ x: 240, y: 90, w: 1180, h: 787 }); show(s.el); picInto(pic("rep", s.over), s, { x: 301, y: 358, w: 504, h: 504 }, 2.2); reportTiles(s, t, 8.7); }
+      setCap("02 · Measured<br>from the air.", "", win(t, 6, 11, .25)); setSub("1,681 sq ft · 6/12 pitch · 8 facets.", win(t, 6.6, 11, .25)); return;
+    }
+    if (t < 16) {
+      sheet(3, t, 11, 16);
+      const s = t < 13.6 ? shot("build", A.build) : shot("metal", A.metal); s.view({ x: 280, y: 280, w: 1140, h: 560 }); show(s.el);
+      if (t >= 13.6) { const pk = s.rect({ x: 349, y: 452, w: 132, h: 38 }); place(hl, { x: pk.x - 6, y: pk.y - 6, w: pk.w + 12, h: pk.h + 12 }); hl.style.transform = ""; show(hl); }
+      const n = t < 13.6 ? lerp(0, 12066, ease(seg(t, 11.3, 12.6))) : lerp(12066, 26222, ease(seg(t, 13.6, 14.8)));
+      setCall({ x: W - PADX - 400, y: L.visY + 20 }, money(n), t < 13.6 ? "shingles · 27 lines" : "standing-seam metal");
+      setCap("03 · Priced.<br>27 lines.", "", win(t, 11, 16, .25)); setSub("Shingles $12,066. Metal $26,222, one switch.", win(t, 11.6, 16, .25)); return;
+    }
+    if (t < 21) {
+      sheet(4, t, 16, 21);
+      const s = shot("desk", A.desk); const z = lerp(1, 1.1, ease(seg(t, 16.3, 20))); s.view({ x: 220 + (840 - 840 / z) * .5, y: 140 + (660 - 660 / z) * .6, w: 840 / z, h: 660 / z }); show(s.el);
+      picInto(pic("desk", s.over), s, { x: 314, y: 404, w: 651, h: 651 }, 2.4, 792);
+      setCap("04 · One click.<br>Proposal.", "", win(t, 16, 21, .25)); setSub("Their roof's picture, right at the top.", win(t, 16.6, 21, .25)); return;
+    }
+    if (t < 26) {
+      sheet(5, t, 21, 26);
+      const p = phone("typed", A.typed); p.showAll(); p.view({ x: 0, y: 0, w: 390, h: 844 });
+      picInto(pic("pht", p.over), p, { x: 36, y: 365, w: 318, h: 305 }, 2);
+      const b = p.rect({ x: 20, y: 786, w: 256, h: 50 }); const tap = seg(t, 23.6, 24);
+      place(hl, { x: p.shell.offsetLeft + 16 + b.x - 6, y: p.shell.offsetTop + 16 + b.y - 6, w: b.w + 12, h: b.h + 12 }); hl.style.transform = `scale(${1 - .06 * Math.sin(tap * Math.PI)})`; show(hl);
+      place(cursor, { x: p.shell.offsetLeft + 16 + b.x + b.w * .55 + lerp(120, 0, ease(seg(t, 22.4, 23.6))), y: p.shell.offsetTop + 16 + b.y + 20 + lerp(90, 0, ease(seg(t, 22.4, 23.6))), w: 34, h: 34 }); show(cursor);
+      setCap("05 · Accepted<br>on their phone.", "", win(t, 21, 26, .25)); setSub("They type their name. That's the signature.", win(t, 21.6, 26, .25)); return;
+    }
+    const a = seg(t, 26, 26.6);
+    setEnd("Run your<br>next roof.", "Free to start · jobflex.app", `<div style="display:flex;gap:14px;justify-content:center;margin-bottom:40px">${[1, 2, 3, 4, 5].map((n) => `<span class="stamp" style="position:static;font-size:${VERT ? 26 : 22}px">0${n}</span>`).join("")}</div>`, a);
+  };
+
+  // ═══ AD 3 · RECEIPT ROLL ═══════════════════════════════════════════════
+  const RW = 272, RX = W - PADX - RW;
+  const receipt = $("div", "receipt"); receipt.style.left = RX + "px"; receipt.style.top = "0px"; receipt.style.width = RW + "px"; receipt.style.paddingTop = (VERT ? 190 : 26) + "px";
+  const tear = $("div", "tear", receipt);
+  const paidStamp = $("div", "paid");
+  const RLINES = [
+    [0.2, "RIDGELINE ROOFING CO.", "", "h"], [0.5, "PROPOSAL Nº BE1E", "", ""], [0.8, "18412 92ND AVE NE", "", ""], [1.1, "·····························", "", "rule"],
+    [3.6, "ACCEPTED", "2:14 PM", "h"], [4.4, "SARAH MITCHELL", "", ""], [5.0, "·····························", "", "rule"],
+    [7.8, "01 DEPOSIT · 30%", "", "h"], [8.3, "", "$8,377.82", ""], [8.9, "DUE NOW", "", ""],
+    [13.2, "PAID · SEP 24", "", "h"],
+    [14.6, "02 COMPLETION · 70%", "", "h"], [15.1, "", "$19,548.23", ""], [15.6, "DUE ON COMPLETION", "", ""], [16.2, "·····························", "", "rule"],
+    [18.2, "PAID TO DATE", "$8,377.82", "h"], [19.0, "REMAINING", "$19,548.23", ""],
+    [22.8, "·····························", "", "rule"], [23.2, "TOTAL", "$27,926.05", "h"], [23.8, "THANK YOU", "", ""],
+  ];
+  const printReceipt = (t) => {
+    const lines = RLINES.filter((l) => t >= l[0]);
+    receipt.innerHTML = lines.map((l) => `<div class="ln ${l[3]}"><span>${l[1]}</span><span>${l[2]}</span></div>`).join("") + `<div style="height:28px"></div>`;
+    receipt.appendChild(tear); receipt.style.height = "auto"; show(receipt);
+  };
+  const stampPaid = (t, a) => { const k = seg(t, a, a + .35); const y = [...receipt.querySelectorAll(".ln.h")].find((e) => e.textContent.startsWith("PAID")); if (!y || k <= 0) return; const r = y.getBoundingClientRect(); place(paidStamp, { x: RX + 120, y: r.top - 30, w: "auto", h: "auto" }); paidStamp.style.width = "auto"; paidStamp.style.height = "auto"; paidStamp.style.fontSize = "36px"; paidStamp.textContent = "PAID"; paidStamp.style.transform = `rotate(-12deg) scale(${lerp(2.2, 1, ease(k))})`; paidStamp.style.opacity = String(ease(k)); show(paidStamp); };
+  const ad3 = (t) => {
+    const colW = RX - PADX - 30; cap.style.width = colW + "px"; sub.style.width = colW + "px";
+    const pw = Math.min(L.phoneW, colW), px = PADX + Math.round((colW - pw) / 2);
+    const onePhone = (name, asset) => { for (const k of ["typed", "pay", "paid"]) if (k !== name && S[k]) S[k].hideAll(); const q = phone(name, asset, pw, px); q.showAll(); q.view({ x: 0, y: 0, w: 390, h: 844 }); return q; };
+    const hlIn = (q, r, pad = 6) => { const b = q.rect(r); place(hl, { x: q.shell.offsetLeft + 16 + b.x - pad, y: q.shell.offsetTop + 16 + b.y - pad, w: b.w + pad * 2, h: b.h + pad * 2 }); hl.style.transform = ""; hl.style.borderColor = "#2fbf71"; show(hl); };
+    if (t < 27.6) printReceipt(t);
+    if (t >= 13.2 && t < 27.2) stampPaid(t, 13.2);
+    if (t < 2.4) { setKick("Payments · online"); setCap("Stop chasing<br>the deposit.", "", win(t, 0, 2.4, .25)); setSub("Accepted → deposit → paid. Online, in stages.", win(t, .5, 2.4, .25)); return; }
+    if (t < 7.4) {
+      const q = t < 4.2 ? onePhone("typed", A.typed) : onePhone("pay", A.payPhone);
+      if (t < 4.2) { picInto(pic("pht", q.over), q, { x: 36, y: 365, w: 318, h: 305 }, 2); const tap = seg(t, 3.4, 3.8); hlIn(q, { x: 20, y: 786, w: 256, h: 50 }); hl.style.transform = `scale(${1 - .06 * Math.sin(tap * Math.PI)})`; }
+      else hlIn(q, { x: 16, y: 688, w: 358, h: 52 }, 4);
+      setKick("01 · Accepted"); setCap("Client accepts<br>on the phone.", "", win(t, 2.4, 7.4, .25)); setSub("Types their name. Done.", win(t, 3, 7.4, .25)); return;
+    }
+    if (t < 12.6) {
+      const q = onePhone("pay", A.payPhone); hlIn(q, { x: 36, y: 388, w: 318, h: 112 });
+      setKick("02 · Deposit"); setCap("30% deposit.<br>Due now.", "", win(t, 7.4, 12.6, .25)); setSub("Stages you set. Card or bank transfer — the client picks.", win(t, 8, 12.6, .25)); return;
+    }
+    if (t < 17.6) {
+      const q = onePhone("paid", A.paidPhone); hlIn(q, { x: 36, y: 392, w: 318, h: 62 });
+      setKick("03 · Paid"); setCap("Deposit<br>landed.", "", win(t, 12.6, 17.6, .25)); setSub("Marked paid. The balance keeps its own line.", win(t, 13.2, 17.6, .25)); return;
+    }
+    if (t < 22.4) {
+      const s = shot("office", A.office, colW); s.view({ x: 1000, y: 352, w: 380, h: 350 }); show(s.el);
+      const r = s.rect({ x: 1010, y: 412, w: 360, h: 46 }); place(hl, { x: r.x - 6, y: r.y - 6, w: r.w + 12, h: r.h + 12 }); hl.style.transform = ""; hl.style.borderColor = "#2fbf71"; show(hl);
+      setKick("04 · You're told"); setCap("Told the second<br>it lands.", "", win(t, 17.6, 22.4, .25)); setSub("Dashboard, inbox, phone. No bank-app refreshing.", win(t, 18.2, 22.4, .25)); return;
+    }
+    if (t < 27.2) {
+      const s = shot("props", A.props, colW); s.view({ x: 790, y: 446, w: 240, h: 100 }); show(s.el);
+      setKick("05 · Every job"); setCap("Paid by stage.<br>Every job.", "", win(t, 22.4, 27.2, .25)); setSub("$8,378 paid · $19,548 due — at a glance.", win(t, 23, 27.2, .25)); return;
+    }
+    const a = seg(t, 27.2, 27.8);
+    setEnd("Get paid<br>by stage.", "Free to start · jobflex.app", `<div class="receipt" style="position:static;display:inline-block;width:${VERT ? 360 : 320}px;margin-bottom:44px;padding-bottom:22px"><div class="ln h"><span>01 DEPOSIT</span><span>PAID</span></div><div class="ln"><span>02 COMPLETION</span><span>DUE</span></div><div class="ln rule"><span>·····························</span></div><div class="ln h"><span>TOTAL</span><span>$27,926.05</span></div></div>`, a);
+  };
+
+  // ═══ AD 4 · METAL SWITCH ═══════════════════════════════════════════════
+  const toggle = $("div", "toggle"); toggle.innerHTML = '<div class="knob"></div><span>Shingle</span><span>Metal</span>';
+  const TG = VERT ? { w: 560, h: 120, y: L.subY + 120 } : { w: 480, h: 100, y: L.subY + 96 };
+  const drawToggle = (on, y = TG.y, w = TG.w, h = TG.h) => { place(toggle, { x: (W - w) / 2, y, w, h }); const [ls, rs] = toggle.querySelectorAll("span"); for (const s of [ls, rs]) s.style.fontSize = Math.round(h * .28) + "px"; ls.style.color = on < .5 ? "#0a0a0a" : "#1854a0"; rs.style.color = on >= .5 ? "#0a0a0a" : "#1854a0"; const kn = toggle.querySelector(".knob"); kn.style.width = (w / 2 - 14) + "px"; kn.style.left = lerp(10, w / 2 + 4, on) + "px"; show(toggle); };
+  const odo = $("div", "odo"); odo.innerHTML = "<span></span><i></i>";
+  const split = $("div", "layer"); split.style.zIndex = "6"; split.style.pointerEvents = "none";
+  const setOdo = (n, small, r) => { place(odo, { x: r.x, y: r.y, w: "auto", h: "auto" }); odo.style.width = "auto"; odo.style.height = "auto"; odo.style.fontSize = (VERT ? 72 : 60) + "px"; odo.querySelector("span").textContent = money(n); odo.querySelector("i").textContent = small; show(odo); };
+  const ad4 = (t) => {
+    const visTop = TG.y + TG.h + 40;
+    const withFrame = (s) => { s.box.y = visTop; s.el.style.top = visTop + "px"; s.maxH = L.visBottom - visTop; return s; };
+    if (t < 2.4) {
+      setKick("Proposal builder"); setCap("Same roof.<br>Two prices.", "", win(t, 0, 2.4, .25)); setSub("One switch. Watch the lines move.", win(t, .4, 2.4, .25));
+      drawToggle(t < 1.2 ? 0 : ease(seg(t, 1.2, 1.7)));
+      const y = visTop + 40; const big = VERT ? 120 : 92;
+      cap.style.width = (W - PADX * 2) + "px";
+      split.innerHTML = `<div style="position:absolute;left:0;right:0;top:${y}px;display:flex;justify-content:center;gap:40px;font-weight:900;font-size:${big}px;letter-spacing:-.03em;color:#fff;font-variant-numeric:tabular-nums"><span style="opacity:${t < 1.4 ? 1 : .35}">$12,066</span><span style="color:#f5c400;opacity:${t < 1.4 ? .35 : 1}">$26,222</span></div>`;
+      split.style.opacity = String(win(t, 0, 2.4, .25)); show(split);
+      return;
+    }
+    if (t < 7.2) {
+      drawToggle(0); const s = withFrame(shot("build", A.build)); s.view({ x: 280, y: 280, w: 1140, h: 560 }); show(s.el);
+      const n = lerp(0, 12066, ease(seg(t, 2.6, 4))); setOdo(n, "shingles · 27 lines", { x: W - PADX - 430, y: visTop + 20 });
+      const rows = [703, 747, 792]; const i = Math.min(2, Math.floor(seg(t, 4.2, 7) * 3)); const r = s.rect({ x: 300, y: rows[i] - 16, w: 1080, h: 40 }); if (t > 4.2 && r.y + r.h < s.box.y + s.box.h) { place(hl, { x: r.x, y: r.y, w: r.w, h: r.h }); hl.style.borderColor = "#f5c400"; show(hl); }
+      setKick("Shingles"); setCap("Shingles. 27 lines.<br>$12,066.", "", win(t, 2.4, 7.2, .25)); setSub("Tear-off, flashings, vents already ticked.", win(t, 3, 7.2, .25)); return;
+    }
+    if (t < 12.4) {
+      const flip = ease(seg(t, 7.2, 7.7)); drawToggle(flip);
+      const s = withFrame(t < 7.5 ? shot("build", A.build) : shot("metal", A.metal)); s.view({ x: 280, y: 280, w: 1140, h: 560 }); show(s.el);
+      if (t >= 7.5) { const pk = s.rect({ x: 349, y: 452, w: 132, h: 38 }); place(hl, { x: pk.x - 6, y: pk.y - 6, w: pk.w + 12, h: pk.h + 12 }); hl.style.borderColor = "#f5c400"; show(hl); }
+      const n = lerp(12066, 26222, ease(seg(t, 7.6, 9.2))); setOdo(n, "standing-seam metal", { x: W - PADX - 430, y: visTop + 20 });
+      setKick("Metal"); setCap("Metal. One click.<br>$26,222.", "", win(t, 7.2, 12.4, .25)); setSub("Every line updates with it. Same roof, same measurements.", win(t, 7.8, 12.4, .25)); return;
+    }
+    if (t < 18.4) {
+      drawToggle(1);
+      const s = withFrame(t < 14.2 ? shot("cost0", A.bpCost0) : shot("cost1", A.bpCost1)); s.view({ x: 280, y: 430, w: 1140, h: 640 }); show(s.el);
+      const tr = s.rect({ x: 321, y: 564.5, w: 698, h: 20 }); const k = ease(seg(t, 12.9, 14.2));
+      place(cursor, { x: tr.x + tr.w * lerp(0.5, 0.62, k) - 6, y: tr.y + 4, w: 34, h: 34 }); show(cursor);
+      setKick("Cost adjustment"); setCap("Drag. Every<br>line follows.", "", win(t, 12.4, 18.4, .25)); setSub("Materials +12%, labor +5% — spread across all 27 lines, proportionally.", win(t, 13, 18.4, .25)); return;
+    }
+    if (t < 22.6) {
+      drawToggle(1);
+      const s = withFrame(shot("lines", A.bpLines1)); s.view({ x: 280, y: 120 + 120 * ease(seg(t, 18.6, 22)), w: 1140, h: 640 }); show(s.el);
+      setKick("Any line"); setCap("Any line.<br>Your number.", "", win(t, 18.4, 22.6, .25)); setSub("Type over it. Quantities from the roof, rates from your book.", win(t, 19, 22.6, .25)); return;
+    }
+    const a = seg(t, 22.6, 23.2);
+    setEnd("Price it<br>both ways.", "Free to start · jobflex.app", "", a);
+    drawToggle(1, VERT ? 560 : 330, TG.w, TG.h);
+  };
+
+  // ═══ AD 5 · FIRST BID ══════════════════════════════════════════════════
+  const cards = [$("div", "card"), $("div", "card")];
+  const CARD_W = Math.min(940, W - PADX * 2);
+  const drawCard = (i, y, k, icon, title, when, body, cls = "") => { const c = cards[i]; place(c, { x: (W - CARD_W) / 2, y: y - (1 - spring(k)) * 260, w: CARD_W, h: "auto" }); c.style.height = "auto"; c.style.opacity = String(clamp(k * 3)); c.innerHTML = `<div class="ic ${cls}">${icon}</div><div class="tx"><b><span>${title}</span><s>${when}</s></b><p>${body}</p></div>`; show(c); };
+  const wave = $("div", "wave");
+  const ad5 = (t) => {
+    const p = phone("p", A.phone, L.phoneW);
+    const onlyPhone = (name) => { for (const k of ["p", "detail", "typed", "pay"]) if (k !== name && S[k]) S[k].hideAll(); };
+    if (t < 2.4) {
+      setKick("The homeowner's side"); setCap("The first<br>bid wins.", "", win(t, 0, 2.4, .25)); setSub("This is what your homeowner sees.", win(t, .5, 2.4, .25));
+      drawCard(0, L.visY + 30, seg(t, .3, 1.2), "R", "Ridgeline Roofing Co.", "now", "Your roof estimate is ready — 18412 92nd Ave NE. Open it on your phone."); return;
+    }
+    if (t < 7.2) {
+      p.showAll(); p.view({ x: 0, y: 0, w: 390, h: 844 }); picInto(pic("ph", p.over), p, { x: 36, y: 364, w: 318, h: 310 }, 2);
+      setKick("01 · Their roof"); setCap("Their roof.<br>Their picture.", "", win(t, 2.4, 7.2, .25)); setSub("Their house from the air, pinned, at the top.", win(t, 3, 7.2, .25)); return;
+    }
+    if (t < 12.2) {
+      onlyPhone("detail"); const d = phone("detail", A.detail, L.phoneW); d.showAll(); d.view({ x: 0, y: 0, w: 390, h: 844 });
+      d.shell.style.transform = `translateY(${(1 - ease(seg(t, 7.2, 7.9))) * 40}px)`;
+      setKick("02 · The price"); setCap("The price,<br>in plain view.", "", win(t, 7.2, 12.2, .25)); setSub("$27,926.05 · what's included, line by line.", win(t, 7.8, 12.2, .25)); return;
+    }
+    if (t < 17.2) {
+      onlyPhone("p"); p.shell.style.transform = ""; p.showAll(); p.view({ x: 0, y: 0, w: 390, h: 844 }); picInto(pic("ph", p.over), p, { x: 36, y: 364, w: 318, h: 310 }, 2);
+      const lc = p.rect({ x: 36, y: 287, w: 318, h: 57 }); const ox = p.shell.offsetLeft + 16, oy = p.shell.offsetTop + 16;
+      place(hl, { x: ox + lc.x - 6, y: oy + lc.y - 6, w: lc.w + 12, h: lc.h + 12 }); hl.style.transform = ""; hl.style.borderColor = "#1854a0"; show(hl);
+      const pb = p.rect({ x: 44, y: 296, w: 40, h: 40 }); const tap = seg(t, 13, 13.4); place(cursor, { x: ox + pb.x + 14 + lerp(90, 0, ease(seg(t, 12.3, 13))), y: oy + pb.y + 14 + lerp(60, 0, ease(seg(t, 12.3, 13))), w: 34, h: 34 }); cursor.style.transform = `scale(${1 - .2 * Math.sin(tap * Math.PI)})`; show(cursor);
+      if (t > 13.4) { const n = Math.floor((lc.w - 40) / 11); place(wave, { x: ox + lc.x + 20, y: oy + lc.y + lc.h + 14, w: n * 11, h: 64 }); wave.style.background = "rgba(255,255,255,.92)"; wave.style.padding = "8px 10px"; wave.style.borderRadius = "10px"; wave.innerHTML = Array.from({ length: n }, (_, i) => `<i style="height:${10 + 38 * Math.abs(Math.sin(i * .9 + (t - 13.4) * 7))}px;opacity:${i / n < seg(t, 13.4, 17.2) ? 1 : .25}"></i>`).join(""); show(wave); }
+      setKick("03 · Or they listen"); setCap("Or they<br>just listen.", "", win(t, 12.2, 17.2, .25)); setSub("A 45-second brief, hands free.", win(t, 12.8, 17.2, .25)); return;
+    }
+    if (t < 22.2) {
+      onlyPhone(t < 19.9 ? "typed" : "pay");
+      const q = t < 19.9 ? phone("typed", A.typed) : phone("pay", A.payPhone); q.showAll(); q.view({ x: 0, y: 0, w: 390, h: 844 });
+      const ox = q.shell.offsetLeft + 16, oy = q.shell.offsetTop + 16;
+      if (t < 19.9) { picInto(pic("pht", q.over), q, { x: 36, y: 365, w: 318, h: 305 }, 2); const nm = q.rect({ x: 20, y: 706, w: 350, h: 56 }); const b = q.rect({ x: 20, y: 786, w: 256, h: 50 }); const tap = seg(t, 19.3, 19.7); if (t < 18.9) { place(hl, { x: ox + nm.x - 6, y: oy + nm.y - 6, w: nm.w + 12, h: nm.h + 12 }); } else { place(hl, { x: ox + b.x - 6, y: oy + b.y - 6, w: b.w + 12, h: b.h + 12 }); } hl.style.transform = `scale(${1 - .06 * Math.sin(tap * Math.PI)})`; hl.style.borderColor = "#f5c400"; show(hl); }
+      else { const b = q.rect({ x: 16, y: 688, w: 358, h: 52 }); place(hl, { x: ox + b.x - 4, y: oy + b.y - 4, w: b.w + 8, h: b.h + 8 }); hl.style.transform = ""; hl.style.borderColor = "#1854a0"; show(hl); }
+      setKick("04 · Accept"); setCap("Type a name.<br>Accepted.", "", win(t, 17.2, 22.2, .25)); setSub("No printer. No PDF. No “I'll get back to you.”", win(t, 17.8, 22.2, .25)); return;
+    }
+    if (t < 26.4) {
+      onlyPhone("none");
+      const s = shot("office", A.office); s.box.y = L.visY + 110; s.el.style.top = s.box.y + "px"; s.maxH = L.visBottom - s.box.y; s.view({ x: 1000, y: 352, w: 380, h: 350 }); show(s.el);
+      const r = s.rect({ x: 1010, y: 518, w: 360, h: 44 }); place(hl, { x: r.x - 6, y: r.y - 6, w: r.w + 12, h: r.h + 12 }); hl.style.transform = ""; hl.style.borderColor = "#1854a0"; show(hl);
+      drawCard(1, L.visY - 10, seg(t, 22.6, 23.5), "JF", "JobFlex", "now", "Sarah Mitchell accepted the proposal — $27,926.05. Open it.", "b");
+      setKick("05 · Your side"); setCap("You get<br>the ping.", "", win(t, 22.2, 26.4, .25)); setSub("Accepted, then paid — every step lands in your feed.", win(t, 22.8, 26.4, .25)); return;
+    }
+    const a = seg(t, 26.4, 27);
+    setEnd("Be their<br>first bid.", "Free to start · jobflex.app", "", a);
+    drawCard(0, VERT ? 420 : 200, 1, "R", "Ridgeline Roofing Co.", "now", "Your roof estimate is ready — 18412 92nd Ave NE."); cards[0].style.opacity = String(a);
+    drawCard(1, VERT ? 560 : 300, 1, "JF", "JobFlex", "now", "Sarah Mitchell accepted the proposal.", "b"); cards[1].style.opacity = String(a);
+  };
+
+  const ADS = { 1: [ad1, 28], 2: [ad2, 29], 3: [ad3, 28], 4: [ad4, 26], 5: [ad5, 29] };
+  window.__duration = ADS[AD][1];
+  const dyn = [kick, cap, sub, cursor, hl, typed, call, endCard, clock, leader, stamp, receipt, paidStamp, toggle, odo, split, wave, ...cards];
+  function render(t) {
+    for (const e of dyn) e.style.display = "none";
+    for (const s of Object.values(S)) { if (s.shell) s.hideAll(); else s.el.style.display = "none"; }
+    for (const p of Object.values(pics)) p.el.style.display = "none";
+    hl.style.transform = ""; hl.style.borderColor = "";
+    ADS[AD][0](t);
+  }
+  // preload everything an ad references, then fonts
+  await Promise.all(Object.values(A).map((a) => new Promise((res) => { const i = new Image(); i.onload = res; i.onerror = res; i.src = a.src; })));
+  await document.fonts.ready;
+  render(0);
+  window.__seek = (t) => render(t);
+  window.__ready = true;
+})();
+</script>
+</body>
+</html>
