@@ -1,4 +1,5 @@
 "use client";
+import { clientErrorText } from "@/lib/staleDeploy";
 
 // VIDEO ESTIMATOR — the one state machine behind both surfaces.
 //
@@ -474,7 +475,7 @@ export function useVideoEstimator(opts: {
       await sleep(420);
       setStep("result");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Something went wrong.";
+      const msg = clientErrorText(err, "Something went wrong.");
       setError(msg);
       toast.error("Analysis failed", msg);
     } finally {

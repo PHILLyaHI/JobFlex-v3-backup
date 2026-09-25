@@ -1,4 +1,5 @@
 "use client";
+import { clientErrorText } from "@/lib/staleDeploy";
 
 // SMART PROPOSAL · ESTIMATE / BLUEPRINT — the page.
 // Route: /dashboard/advanced-ai.
@@ -454,7 +455,7 @@ export function AdvancedAiContent({ seed }: { seed?: { brief: string; address: s
       }
     } catch (err) {
       await closeOverlay();
-      const msg = err instanceof Error ? err.message : "Something went wrong.";
+      const msg = clientErrorText(err, "Something went wrong.");
       setGenError(msg);
       toast.error("Generation failed", msg);
     }
@@ -542,7 +543,7 @@ export function AdvancedAiContent({ seed }: { seed?: { brief: string; address: s
       // does not, so there is no `finally` here.
       setSaveBusy(null);
       if (reportPlanLimit(err)) return;
-      const msg = err instanceof Error ? err.message : "Couldn't save the proposal.";
+      const msg = clientErrorText(err, "Couldn't save the proposal.");
       toast.error("Couldn't save", msg);
     }
   }
