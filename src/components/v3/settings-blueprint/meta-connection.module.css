@@ -26,7 +26,7 @@
 .root .button:hover:not(:disabled) { background: var(--paper); }
 .root .primary { background: var(--accent); color: var(--sheet, var(--paper-deep)); border-color: var(--ink); }
 .root .primary:hover:not(:disabled) { background: var(--accent-ink); border-color: var(--ink); }
-.root :is(button,select):disabled { opacity: 0.55; cursor: not-allowed; }
+.root :is(button,input,select):disabled { opacity: 0.55; cursor: not-allowed; }
 .root .textButton { padding: 8px 0; border-color: transparent; background: transparent; color: var(--ink-muted); font-weight: 600; font-size: 12px; letter-spacing: normal; text-transform: none; }
 .root .textButton:hover:not(:disabled) { color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
 .root .disconnect:hover:not(:disabled) { color: var(--rose); }
@@ -35,8 +35,16 @@
 .field label { font: 500 10px/1.5 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; }
 .root .field :is(select,input) { width: 100%; min-width: 0; min-height: 46px; padding: 10px 12px; border: 1px solid var(--ink-muted); border-radius: var(--r-sm); color: var(--ink); background: var(--sheet, var(--paper-deep)); font: 16px/1.4 var(--font-sans); }
 .root .fieldHelp { color: var(--ink-muted); font-size: 12px; max-width: 56ch; }
-.connectAction { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
-.connectAction p { color: var(--ink-muted); font-size: 13px; max-width: 38ch; }
+.connectAction { display: grid; justify-items: start; gap: 8px; }
+.connectAction p { color: var(--ink-muted); font-size: 13px; }
+.manual { margin-inline: calc(-1 * var(--meta-pad)); padding-inline: var(--meta-pad); border-top: 1px solid var(--ink-line); }
+.root .manual summary { width: 100%; min-height: 56px; justify-content: space-between; color: var(--ink-soft); font-weight: 600; }
+.root .manual summary:hover { color: var(--accent); }
+.manualForm { width: 100%; max-width: 680px; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; }
+.manualForm .field { flex: 1 1 240px; }
+.root .manualForm .button { min-height: 46px; flex: 0 0 auto; }
+.manualForm .fieldHelp { flex-basis: 100%; max-width: none; }
+.root .manualNotice { margin-bottom: 16px; color: var(--ink-soft); font-size: 13px; }
 .footer { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 8px var(--meta-pad); border-top: 1px solid var(--ink); }
 .details { min-width: 0; flex: 1; }
 .details summary { display: flex; width: fit-content; max-width: 100%; align-items: center; gap: 8px; min-height: 44px; color: var(--ink-muted); font-size: 13px; cursor: pointer; list-style: none; }
@@ -58,9 +66,10 @@
 .mobile :is(.page,.intro) h3 { font-size: 22px; }
 .mobile .task { display: grid; gap: 20px; }
 .mobile .actions { width: 100%; }
-.mobile .actions .button,.mobile .connectAction .button,.mobile .choice .button { width: 100%; }
+.mobile .actions .button,.mobile .connectAction .button,.mobile .choice .button,.mobile .manualForm .button { width: 100%; }
 .mobile .choice { display: grid; grid-template-columns: minmax(0,1fr); gap: 16px; }
-.mobile .connectAction { display: grid; gap: 12px; }
+.mobile .connectAction { justify-items: stretch; gap: 8px; }
+.mobile .manualForm { display: grid; grid-template-columns: minmax(0,1fr); gap: 12px; }
 .mobile .footer { flex-wrap: wrap; column-gap: 12px; }
 .mobile .details { flex-basis: 180px; }
 @media (prefers-reduced-motion: reduce) { .root :is(button,.chevron) { transition: none; } }

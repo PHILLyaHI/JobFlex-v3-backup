@@ -10,7 +10,7 @@ import styles from "./meta-connection.module.css";
 const notices: Record<string, string> = {
   denied: "Meta authorization was canceled. You can connect again when ready.",
   invalid_state: "The connection request expired or your workspace changed. Please connect again.",
-  no_pages: "Meta did not list your Pages. Try your Facebook Page ID below; we’ll verify access before connecting.",
+  no_pages: "No Pages returned. Connect using a Facebook Page ID.",
   page_unavailable: "Meta could not verify this Page. Check the Page ID and use the Facebook account with access to its lead forms.",
   failed: "Meta could not authorize this connection. Check that the app role invitation is accepted, all required permissions are granted, and the configuration uses a User access token. Then try again.",
   choose_page: "Authorization received. Choose the Page whose leads belong in this workspace.",
@@ -30,14 +30,16 @@ export function MetaConnection({ data, mobile = false }: { data: MetaData; mobil
   const primary = `${styles.button} ${styles.primary}`;
   const secondary = styles.button;
   const hasPages = data.pages.length > 0;
+  const pageChoice = selected || (data.pages.length === 1 ? data.pages[0].id : "");
+  const manualNotice = !data.connected && !message && query.get("meta") === "no_pages";
   const status = data.connected ? "Connected" : data.comingSoon ? "Coming soon" : hasPages ? "Choose a Page" : "Not connected";
   const feedback = message || (!data.connected ? notices[query.get("meta") || ""] : "");
 
   async function choose() {
-    if (!selected || busy) return;
+    if (!pageChoice || busy) return;
     setBusy(true); setError(false);
     try {
-      const result = await chooseMetaPage(selected);
+      const result = await chooseMetaPage(pageChoice);
       if (!result.ok) { setError(true); setMessage(result.error); }
       else { setMessage("Page connected. Click Import leads when you are ready."); router.refresh(); }
     } catch { setError(true); setMessage("Connection interrupted. Please try again."); }
@@ -102,37 +104,38 @@ export function MetaConnection({ data, mobile = false }: { data: MetaData; mobil
           </div>
         </> : <>
           <div className={styles.intro}>
-            <h3>{hasPages ? "Choose a Page" : "Connect your lead forms"}</h3>
-            <p>{hasPages ? "Connect the Page whose leads belong in this workspace." : "Import Facebook and Instagram lead-form submissions into JobFlex."}</p>
+            <h3>{hasPages ? "Choose a Page" : "Connect your leads"}</h3>
+            <p>{hasPages ? "Connect the Page whose leads belong in this workspace." : "Bring Facebook and Instagram form submissions into Leads."}</p>
           </div>
           {hasPages ? <div className={styles.choice}>
             <div className={styles.field}>
               <label htmlFor={mobile ? "meta-page-mobile" : "meta-page-desktop"}>Facebook Page</label>
-              <select id={mobile ? "meta-page-mobile" : "meta-page-desktop"} value={selected} disabled={busy || !data.canManage} onChange={event => setSelected(event.target.value)}><option value="">Choose a Page</option>{data.pages.map(page => <option key={page.id} value={page.id}>{page.name}</option>)}</select>
+              <select id={mobile ? "meta-page-mobile" : "meta-page-desktop"} value={pageChoice} disabled={busy || !data.canManage} onChange={event => setSelected(event.target.value)}><option value="">Choose a Page</option>{data.pages.map(page => <option key={page.id} value={page.id}>{page.name}</option>)}</select>
             </div>
-            <button type="button" className={primary} disabled={!selected || busy || !data.canManage || data.comingSoon} onClick={() => void choose()}><Link2 size={18} aria-hidden="true" />{busy ? "Connecting…" : "Connect Page"}</button>
+            <button type="button" className={primary} disabled={!pageChoice || busy || !data.canManage || data.comingSoon} onClick={() => void choose()}><Link2 size={18} aria-hidden="true" />{busy ? "Connecting…" : "Connect Page"}</button>
           </div> : <div className={styles.connectAction}>
             <button type="button" className={primary} disabled={busy || data.comingSoon || !data.canManage} onClick={() => { window.location.assign("/api/integrations/meta/connect"); }}><Link2 size={18} aria-hidden="true" />{data.comingSoon ? "Coming soon" : "Connect Meta Business"}</button>
-            <p>Use the Facebook account with access to your Page’s leads.</p>
+            <p>Sign in to Facebook, then choose your Page.</p>
           </div>}
           {hasPages && <div className={styles.actions}>
             <button type="button" className={styles.textButton} disabled={busy || data.comingSoon || !data.canManage} onClick={() => { window.location.assign("/api/integrations/meta/connect"); }}>Use another Facebook account<ArrowUpRight size={16} aria-hidden="true" /></button>
             <button type="button" className={styles.textButton} disabled={busy || !data.canManage} onClick={() => void disconnect()}>Cancel connection</button>
           </div>}
-          {!data.comingSoon && data.canManage && <details className={styles.details} open={query.get("meta") === "no_pages" || query.get("meta") === "page_unavailable" ? true : undefined}>
-            <summary>Page missing? Use its ID<ChevronDown size={16} className={styles.chevron} aria-hidden="true" /></summary>
-            <form className={styles.choice} action="/api/integrations/meta/connect" method="get">
+          {!data.comingSoon && data.canManage && <details className={`${styles.details} ${styles.manual}`} open={query.get("meta") === "no_pages" || query.get("meta") === "page_unavailable" ? true : undefined}>
+            <summary>Connect with a Page ID<ChevronDown size={16} className={styles.chevron} aria-hidden="true" /></summary>
+            {manualNotice && <p role="status" className={styles.manualNotice}>{notices.no_pages}</p>}
+            <form className={styles.manualForm} action="/api/integrations/meta/connect" method="get">
               <div className={styles.field}>
                 <label htmlFor={mobile ? "meta-page-id-mobile" : "meta-page-id-desktop"}>Facebook Page ID</label>
                 <input id={mobile ? "meta-page-id-mobile" : "meta-page-id-desktop"} name="pageId" type="text" inputMode="numeric" pattern="[0-9]{1,40}" maxLength={40} required disabled={busy} autoComplete="off" aria-describedby={mobile ? "meta-page-id-help-mobile" : "meta-page-id-help-desktop"} />
-                <p id={mobile ? "meta-page-id-help-mobile" : "meta-page-id-help-desktop"} className={styles.fieldHelp}>Find it in Meta Business Settings → Accounts → Pages. Use the Page ID, not the app or business ID.</p>
               </div>
-              <button type="submit" className={secondary} disabled={busy}>Verify Page with Facebook<ArrowUpRight size={16} aria-hidden="true" /></button>
+              <button type="submit" className={secondary} disabled={busy}>Find Page<ArrowUpRight size={16} aria-hidden="true" /></button>
+              <p id={mobile ? "meta-page-id-help-mobile" : "meta-page-id-help-desktop"} className={styles.fieldHelp}>Find your Page ID in Meta Business Settings → Accounts → Pages.</p>
             </form>
           </details>}
         </>}
         {!data.canManage && <p className={styles.notice}>Only workspace owners and managers can manage this connection.</p>}
-        {feedback && <p role={error ? "alert" : "status"} aria-live="polite" className={error ? styles.error : styles.notice}>{feedback}</p>}
+        {feedback && !manualNotice && <p role={error ? "alert" : "status"} aria-live="polite" className={error ? styles.error : styles.notice}>{feedback}</p>}
       </div>
       <footer className={styles.footer}>
         <details className={styles.details}>

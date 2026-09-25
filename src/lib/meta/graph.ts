@@ -66,6 +66,47 @@ export function metaLoginUrl(state: string) {
 
 export class MetaPageAccessError extends Error {}
 
+// A granted Page ID is a discovery hint, never proof of access by itself.
+async function verifiedMetaPage(pageId: string, token: string) {
+  try {
+    const page = metaPageSchema.parse(await metaGraph(pageId, token, { fields: "id,name,access_token" }));
+    if (page.id !== pageId) throw new MetaPageAccessError();
+    const identity = z.object({ id: metaId }).parse(await metaGraph("me", page.access_token, { fields: "id" }));
+    if (identity.id !== pageId) throw new MetaPageAccessError();
+    z.object({ data: z.array(z.object({ id: metaId })) }).parse(await metaGraph(`${pageId}/leadgen_forms`, page.access_token, { fields: "id", limit: "1" }));
+    return page;
+  } catch (error) {
+    if (error instanceof MetaApiError && error.retryable) throw error;
+    throw new MetaPageAccessError("Meta could not verify lead-form access for this Page.");
+  }
+}
+
+async function grantedMetaPages(token: string, userId: string) {
+  // /me/accounts can omit business-owned Pages. Inspect this app's existing
+  // grant instead; this requires no business_management permission or new scope.
+  const targetId = z.union([metaId, z.number().int().positive().max(Number.MAX_SAFE_INTEGER).transform(String)]);
+  const inspected = z.object({ data: z.object({
+    app_id: metaId, user_id: metaId, is_valid: z.boolean(),
+    granular_scopes: z.array(z.object({ scope: z.string(), target_ids: z.array(targetId).nullish() })).default([]),
+  }) }).parse(await graphRequest("debug_token", { input_token: token }, `${process.env.META_APP_ID}|${process.env.META_APP_SECRET}`));
+  if (!inspected.data.is_valid) throw new MetaApiError(190, false);
+  if (inspected.data.app_id !== process.env.META_APP_ID || inspected.data.user_id !== userId) throw new MetaApiError(200, false);
+  const pageScopes = new Set(["pages_show_list", "pages_read_engagement", "pages_manage_ads", "leads_retrieval"]);
+  const ids = [...new Set(inspected.data.granular_scopes.filter(scope => pageScopes.has(scope.scope)).flatMap(scope => scope.target_ids ?? []))];
+  if (ids.length > 25) throw new Error("Too many Pages. Reconnect and grant access only to the Page you want to connect.");
+  const pages: z.infer<typeof metaPageSchema>[] = [];
+  // Bound concurrency and skip revoked/unreadable assets without hiding other
+  // verified Pages. A transient failure remains retryable instead of no_pages.
+  for (let offset = 0; offset < ids.length; offset += 4) {
+    const batch = await Promise.all(ids.slice(offset, offset + 4).map(async id => {
+      try { return await verifiedMetaPage(id, token); }
+      catch (error) { if (error instanceof MetaPageAccessError) return null; throw error; }
+    }));
+    pages.push(...batch.filter((page): page is z.infer<typeof metaPageSchema> => page !== null));
+  }
+  return pages;
+}
+
 export async function exchangeMetaCode(code: string, requestedPageId?: string) {
   const pageId = requestedPageId === undefined ? undefined : metaId.parse(requestedPageId);
   const tokenSchema = z.object({ access_token: z.string().min(1) });
@@ -78,19 +119,7 @@ export async function exchangeMetaCode(code: string, requestedPageId?: string) {
   if (META_LEAD_PERMISSIONS.some(p => !granted.has(p))) throw new MetaApiError(200, false);
   // Business-owned Pages can be omitted by /me/accounts even when Meta grants
   // a Page token. Resolve only the requested Page, using this OAuth grant.
-  if (pageId) {
-    try {
-      const page = metaPageSchema.parse(await metaGraph(pageId, token, { fields: "id,name,access_token" }));
-      if (page.id !== pageId) throw new MetaPageAccessError();
-      const identity = z.object({ id: metaId }).parse(await metaGraph("me", page.access_token, { fields: "id" }));
-      if (identity.id !== pageId) throw new MetaPageAccessError();
-      z.object({ data: z.array(z.object({ id: metaId })) }).parse(await metaGraph(`${pageId}/leadgen_forms`, page.access_token, { fields: "id", limit: "1" }));
-      return { userId: me.id, pages: [page] };
-    } catch (error) {
-      if (error instanceof MetaApiError && error.retryable) throw error;
-      throw new MetaPageAccessError("Meta could not verify lead-form access for this Page.");
-    }
-  }
+  if (pageId) return { userId: me.id, pages: [await verifiedMetaPage(pageId, token)] };
   const pages = [];
   let after: string | undefined;
   // Pagination cursor only; never follow an upstream URL containing a token.
@@ -101,7 +130,7 @@ export async function exchangeMetaCode(code: string, requestedPageId?: string) {
     if (!after) break;
     if (i === 19) throw new Error("Too many Pages. Reconnect and grant access only to the Page you want to connect.");
   }
-  return { userId: me.id, pages };
+  return { userId: me.id, pages: pages.length ? pages : await grantedMetaPages(token, me.id) };
 }
 
 export function safeEqual(a: string, b: string) {
