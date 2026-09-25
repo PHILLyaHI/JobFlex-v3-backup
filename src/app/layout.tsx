@@ -35,6 +35,10 @@ export const metadata: Metadata = {
   description:
     "The modern operating system for contractors. AI-powered proposals, lead pipelines, scheduling, and client portals.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
+  icons: {
+    icon: "/jobflex-mark-384.png",
+    apple: "/jobflex-mark-384.png",
+  },
 };
 
 export const viewport: Viewport = {

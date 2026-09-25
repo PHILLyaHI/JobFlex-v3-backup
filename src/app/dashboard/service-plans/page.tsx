@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { canSeeEarlyAccess } from "@/lib/earlyAccess";
 import { isLimitedRole, NoOrgError, requireOrg, UnauthorizedError } from "@/lib/orgContext";
 import { appBaseUrl } from "@/lib/appUrl";
 import { loadPlansDashboard } from "@/lib/servicePlanBook";
@@ -17,6 +18,8 @@ export default async function ServicePlansPage() {
     const ctx = await requireOrg();
     organizationId = ctx.organizationId;
     if (isLimitedRole(ctx.role)) redirect("/dashboard?error=forbidden");
+    // Early access (lib/earlyAccess): hidden from every other account for now.
+    if (!canSeeEarlyAccess(ctx.user.email)) redirect("/dashboard");
   } catch (err) {
     if (err instanceof UnauthorizedError) redirect("/auth/login?next=%2Fdashboard%2Fservice-plans");
     if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");

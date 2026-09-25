@@ -20,7 +20,7 @@ import { usePathname } from "next/navigation";
 // so the mobile hamburger drawers could share them instead of carrying a
 // second, href-less copy. Re-exported here for existing importers.
 import { NAV_SECTIONS, activeHref, canOpen, isLimitedRole, navSectionsFor, type NavItem } from "./nav-map";
-import { quotaPill, useNavBadges, useNavLimits, useNavLimitsExempt, type NavLimit, useNavLocked, useNavRole } from "./nav-role";
+import { quotaPill, useNavBadges, useNavLimits, useNavLimitsExempt, type NavLimit, useNavHidden, useNavLocked, useNavRole } from "./nav-role";
 import { SignOutButton } from "./sign-out";
 
 export { NAV_SECTIONS };
@@ -99,7 +99,8 @@ export function Sidebar({
   const navRole = useNavRole();
   // Custom-plan page locks ride the same provider; empty on every other plan.
   const navLocked = useNavLocked();
-  const sections = navSectionsFor(navRole, navLocked);
+  const navHidden = useNavHidden();
+  const sections = navSectionsFor(navRole, navLocked, navHidden);
   // Unread / pending counts by href, from the layout via the nav provider.
   // Empty outside it, so nothing is drawn — a stale zero beats a wrong number.
   const badges = useNavBadges();

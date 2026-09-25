@@ -49,6 +49,7 @@ import {
   useNavIdentity,
   useNavLimits,
   useNavLimitsExempt,
+  useNavHidden,
   useNavLocked,
   type NavLimit,
 } from "@/components/v3/blueprint-shell/nav-role";
@@ -149,7 +150,8 @@ export function MobileNav() {
   const { role, name: accountName } = useNavIdentity();
   // Custom-plan page locks, from the same provider; empty on every other plan.
   const locked = useNavLocked();
-  const sections = withHandheldSurfaces(navSectionsFor(role, locked));
+  const hidden = useNavHidden();
+  const sections = withHandheldSurfaces(navSectionsFor(role, locked, hidden));
   /* Unread / pending counts by href, from the same provider the identity
      rides. Outside it (the standalone /mobile-*-v2 review URLs) the map is
      empty and no badge is drawn — exactly what those routes showed before. */

@@ -31,6 +31,9 @@ export type NavIdentity = {
   role: string | null;
   /** Display name for the account block. */
   name: string | null;
+  /** Early-access pages this account may not see (lib/earlyAccess). The nav
+   *  drops them; the pages themselves also refuse the account server-side. */
+  hidden?: string[];
 };
 
 const EMPTY: NavIdentity = { role: null, name: null };
@@ -116,6 +119,11 @@ export function NavRoleProvider({
       </NavBadgesContext.Provider>
     </NavRoleContext.Provider>
   );
+}
+
+/** Early-access hrefs this account may not see — empty outside the provider. */
+export function useNavHidden(): string[] {
+  return useContext(NavRoleContext).hidden ?? EMPTY_LOCKED;
 }
 
 /** Remaining quota by nav href, or an empty map outside the provider. */

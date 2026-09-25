@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { canSeeEarlyAccess } from "@/lib/earlyAccess";
 import { isLimitedRole, NoOrgError, requireOrg, UnauthorizedError } from "@/lib/orgContext";
 import { loadBookingDashboard } from "@/lib/bookingBook";
 import { BookingContent } from "@/components/v3/booking-blueprint/booking-content";
@@ -14,6 +15,8 @@ export default async function BookingPage() {
     const ctx = await requireOrg();
     organizationId = ctx.organizationId;
     if (isLimitedRole(ctx.role)) redirect("/dashboard?error=forbidden");
+    // Early access (lib/earlyAccess): hidden from every other account for now.
+    if (!canSeeEarlyAccess(ctx.user.email)) redirect("/dashboard");
   } catch (err) {
     if (err instanceof UnauthorizedError) redirect("/auth/login?next=%2Fdashboard%2Fbooking");
     if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");

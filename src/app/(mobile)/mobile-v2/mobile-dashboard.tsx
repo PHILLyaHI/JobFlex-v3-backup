@@ -51,6 +51,7 @@ import {
   useNavLimits,
   useNavLimitsExempt,
   quotaPill,
+  useNavHidden,
   useNavLocked,
   useNavRole,
   type NavLimit,
@@ -813,7 +814,9 @@ function DashboardView({ data }: { data: DashboardData }) {
   const navLimits = useNavLimits();
   // A platform admin in their own organization: no pills, one line in the foot.
   const navLimitsExempt = useNavLimitsExempt();
-  const navSections = navSectionsFor(navRole, navLocked);
+  // Early-access pages this account may not see (lib/earlyAccess).
+  const navHidden = useNavHidden();
+  const navSections = navSectionsFor(navRole, navLocked, navHidden);
   /* The composer this page's Help button opens is mounted by the responsive
      shell, which only wraps the authenticated route. On the standalone
      /mobile-v2 review URL there is no provider and no session, so the button

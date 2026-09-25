@@ -36,6 +36,7 @@ import { redirect } from "next/navigation";
 import type { Route } from "next";
 import { cookies, headers } from "next/headers";
 import { requireOrg } from "@/lib/orgContext";
+import { hiddenPagesFor } from "@/lib/earlyAccess";
 import { db } from "@/lib/db";
 import { SETUP_PATH, needsCompanySetup } from "@/lib/orgSetup";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
@@ -66,6 +67,10 @@ export default async function DashboardBlueprintLayout({
   // enum value ("INSTALLER"), the account block prints the pretty one.
   let role: string | null = null;
   let name: string | null = null;
+  // Early-access pages (lib/earlyAccess) this account may not see — every page
+  // on that list until the account is the allowlisted one. Hidden by default,
+  // so a failed identity read never draws them.
+  let hidden: string[] = hiddenPagesFor(null);
   // Unread / pending-action counts by nav href, for the sidebar and the
   // handheld drawer. Read HERE for the same reason the identity is: the badge
   // module is server-only (raw tenant ids, never client-invokable) and the
@@ -103,6 +108,7 @@ export default async function DashboardBlueprintLayout({
     role = ctx.role;
     organizationId = ctx.organizationId;
     name = ctx.user.name || ctx.user.email || "Account";
+    hidden = hiddenPagesFor(ctx.user.email);
     // A Google signup lands here with a placeholder org. The owner finishes
     // the company step (address + trades) before the app opens — the same
     // step 2 a password signup cannot skip.
@@ -196,7 +202,7 @@ export default async function DashboardBlueprintLayout({
     <ResponsiveDashboardShell
       sidebarFolded={sidebarFolded}
       user={user}
-      identity={{ role, name }}
+      identity={{ role, name, hidden }}
       badges={badges}
       locked={lockedPages ?? undefined}
       limits={navLimits}

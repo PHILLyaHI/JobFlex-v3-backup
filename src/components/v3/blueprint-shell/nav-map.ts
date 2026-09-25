@@ -16,6 +16,7 @@
 
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 import { isCustomBlockedPath } from "@/lib/customPlan";
+import { isHiddenHref } from "@/lib/earlyAccess";
 
 export type NavItem = {
   label: string;
@@ -312,7 +313,19 @@ export function isLimitedRole(role: string | null | undefined): boolean {
 export function navSectionsFor(
   role: string | null | undefined,
   locked?: readonly string[],
+  /** Early-access pages this account may not see (lib/earlyAccess) — dropped. */
+  hidden?: readonly string[],
 ): NavSection[] {
+  if (hidden?.length) {
+    return navSectionsFor(role, locked)
+      .map((section) => ({
+        label: section.label,
+        items: section.items
+          .filter((item) => !isHiddenHref(hidden, item.href))
+          .map((item) => (item.children ? { ...item, children: item.children.filter((c) => !isHiddenHref(hidden, c.href)) } : item)),
+      }))
+      .filter((section) => section.items.length > 0);
+  }
   // Role rules DROP an item (a worker has no business seeing Financials); the
   // custom-plan lock only MARKS it — the page exists, the plan just does not
   // include it yet, and a dimmed padlocked row that opens the upgrade offer
