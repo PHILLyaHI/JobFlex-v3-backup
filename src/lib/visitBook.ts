@@ -130,7 +130,8 @@ export async function saveVisitReport(input: SaveReportInput): Promise<{ id: str
 }
 
 /** The report goes to the client (email with the public page); the visit is done. */
-export async function sendVisitReport(appointmentId: string, organizationId: string): Promise<{ ok: boolean; emailed: boolean; href: string }> {
+/** `actorId`: the tech or office member who sent it; null when nobody is signed in. */
+export async function sendVisitReport(appointmentId: string, organizationId: string, actorId?: string | null): Promise<{ ok: boolean; emailed: boolean; href: string }> {
   const a = await db.appointment.findFirst({ where: { id: appointmentId, organizationId }, include: { client: true, lead: { select: { name: true, email: true } }, report: true, planVisit: { select: { id: true } }, organization: { select: ORG_SELECT } } });
   if (!a || !a.report) return { ok: false, emailed: false, href: "" };
   const href = `${await appBaseUrl()}/report/${a.report.publicToken}`;
@@ -164,7 +165,7 @@ export async function sendVisitReport(appointmentId: string, organizationId: str
     await tx.visitReport.update({ where: { id: a.report!.id }, data: { sentAt: new Date() } });
     await tx.appointment.update({ where: { id: a.id }, data: { status: "COMPLETED" } });
     if (a.planVisit) await tx.servicePlanVisit.update({ where: { id: a.planVisit.id }, data: { status: "DONE", doneAt: new Date() } });
-    await tx.activityEvent.create({ data: { organizationId, kind: "VISIT_REPORT_SENT", clientId: a.clientId, summary: `${name}: visit report sent — ${findings.filter((f) => f.severity === "fix" || f.severity === "urgent").length} repair${findings.filter((f) => f.severity === "fix" || f.severity === "urgent").length === 1 ? "" : "s"} recommended`, meta: JSON.stringify({ href: `/dashboard/visits/${a.id}` }) } });
+    await tx.activityEvent.create({ data: { organizationId, actorId: actorId ?? null, kind: "VISIT_REPORT_SENT", clientId: a.clientId, summary: `${name}: visit report sent — ${findings.filter((f) => f.severity === "fix" || f.severity === "urgent").length} repair${findings.filter((f) => f.severity === "fix" || f.severity === "urgent").length === 1 ? "" : "s"} recommended`, meta: JSON.stringify({ href: `/dashboard/visits/${a.id}` }) } });
   });
   return { ok: true, emailed, href };
 }

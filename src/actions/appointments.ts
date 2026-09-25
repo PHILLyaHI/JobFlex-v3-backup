@@ -6,6 +6,10 @@ import { db } from "@/lib/db";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { afterResponse } from "@/lib/server-events";
 import { crewOfAppointment, textAppointmentMoved, textCrewCancelled } from "@/lib/sms/crew";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+
+const when = (d: Date) =>
+  d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 const baseInput = z.object({
   id: z.string().optional(),
@@ -160,6 +164,16 @@ export async function createAppointment(raw: unknown) {
     await notifyNewlyStaffed(apt.id, added);
   }
   revalidatePath("/dashboard/calendar");
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.APPOINTMENT,
+    summary: `Booked ${apt.title} for ${when(apt.startsAt)}`,
+    proposalId: apt.proposalId,
+    clientId: apt.clientId,
+    leadId: apt.leadId,
+    meta: { appointmentId: apt.id, startsAt: apt.startsAt.toISOString(), endsAt: apt.endsAt.toISOString(), workers: workerIds?.length ?? 0 },
+  });
   return { id: apt.id };
 }
 
@@ -209,6 +223,27 @@ export async function updateAppointment(id: string, rawInput: Partial<z.infer<ty
     await notifyNewlyStaffed(id, added);
   }
   revalidatePath("/dashboard/calendar");
+  const changes: string[] = [];
+  if (raw.title !== undefined && raw.title !== apt.title) changes.push(`renamed to ${raw.title}`);
+  if (raw.status !== undefined && raw.status !== apt.status) changes.push(raw.status.replace("_", " ").toLowerCase());
+  if (raw.startsAt && toDate(raw.startsAt).getTime() !== apt.startsAt.getTime()) changes.push(`moved to ${when(toDate(raw.startsAt))}`);
+  else if (raw.endsAt && toDate(raw.endsAt).getTime() !== apt.endsAt.getTime()) changes.push(`ends ${when(toDate(raw.endsAt))}`);
+  if (raw.notes !== undefined && (raw.notes ?? null) !== (apt.notes ?? null)) changes.push("notes");
+  if (raw.workerIds) changes.push("staff");
+  if (raw.leadId !== undefined || raw.clientId !== undefined || raw.proposalId !== undefined) changes.push("link");
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.APPOINTMENT,
+    summary:
+      raw.status === "CANCELED" && apt.status !== "CANCELED"
+        ? `Canceled the appointment ${apt.title} (${when(apt.startsAt)})`
+        : `Updated the appointment ${apt.title}${changes.length ? ` — ${changes.join(", ")}` : ""}`,
+    proposalId: merged.proposalId,
+    clientId: merged.clientId,
+    leadId: merged.leadId,
+    meta: { appointmentId: id, changes, status: raw.status ?? undefined },
+  });
 }
 
 export async function deleteAppointment(id: string) {
@@ -221,6 +256,16 @@ export async function deleteAppointment(id: string) {
   await db.appointment.delete({ where: { id } });
   afterResponse(() => textCrewCancelled(crew));
   revalidatePath("/dashboard/calendar");
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.APPOINTMENT,
+    summary: `Deleted the appointment ${apt.title} (${when(apt.startsAt)})`,
+    proposalId: apt.proposalId,
+    clientId: apt.clientId,
+    leadId: apt.leadId,
+    meta: { appointmentId: id, startsAt: apt.startsAt.toISOString(), deleted: true },
+  });
 }
 
 export async function rescheduleAppointment(id: string, newStartISO: string) {
@@ -240,4 +285,14 @@ export async function rescheduleAppointment(id: string, newStartISO: string) {
   });
   afterResponse(() => textAppointmentMoved(id));
   revalidatePath("/dashboard/calendar");
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.APPOINTMENT,
+    summary: `Moved the appointment ${apt.title} from ${when(apt.startsAt)} to ${when(newStart)}`,
+    proposalId: apt.proposalId,
+    clientId: apt.clientId,
+    leadId: apt.leadId,
+    meta: { appointmentId: id, from: apt.startsAt.toISOString(), to: newStart.toISOString() },
+  });
 }

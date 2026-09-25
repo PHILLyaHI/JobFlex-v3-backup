@@ -16,16 +16,26 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireManager, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+
+const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
 type Fail = { ok: false; error: string };
 
 async function assignmentInOrg(assignmentId: string) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const row = await db.jobAssignment.findFirst({
     where: { id: assignmentId, job: { organizationId } },
-    select: { id: true, jobId: true, pay: true, paidAt: true },
+    select: {
+      id: true,
+      jobId: true,
+      pay: true,
+      paidAt: true,
+      worker: { select: { displayName: true } },
+      job: { select: { title: true, proposalId: true, clientId: true } },
+    },
   });
-  return row;
+  return row ? { ...row, organizationId, actorId: user.id } : null;
 }
 
 function failure(err: unknown): Fail {
@@ -47,6 +57,15 @@ export async function setAssignmentPay(
     await db.jobAssignment.update({ where: { id: row.id }, data: { pay: amount } });
     revalidatePath(`/dashboard/jobs/${row.jobId}`);
     revalidatePath("/dashboard/financials");
+    await logActivity({
+      organizationId: row.organizationId,
+      actorId: row.actorId,
+      kind: TRAIL_KINDS.PAY,
+      summary: `Set ${row.worker.displayName}'s pay on ${row.job.title} to ${money(amount)}`,
+      proposalId: row.job.proposalId,
+      clientId: row.job.clientId,
+      meta: { jobId: row.jobId, assignmentId: row.id, amount, previousAmount: row.pay ?? 0 },
+    });
     return { ok: true, pay: amount };
   } catch (err) {
     return failure(err);
@@ -65,6 +84,18 @@ export async function setAssignmentPaid(
     await db.jobAssignment.update({ where: { id: row.id }, data: { paidAt } });
     revalidatePath(`/dashboard/jobs/${row.jobId}`);
     revalidatePath("/dashboard/financials");
+    const pay = row.pay ?? 0;
+    await logActivity({
+      organizationId: row.organizationId,
+      actorId: row.actorId,
+      kind: TRAIL_KINDS.PAY,
+      summary: paid
+        ? `Marked ${row.worker.displayName}'s ${money(pay)} pay on ${row.job.title} as paid`
+        : `Took back the paid mark on ${row.worker.displayName}'s ${money(pay)} pay on ${row.job.title}`,
+      proposalId: row.job.proposalId,
+      clientId: row.job.clientId,
+      meta: { jobId: row.jobId, assignmentId: row.id, amount: pay, paid },
+    });
     return { ok: true, paidAt: paidAt ? paidAt.toISOString() : null };
   } catch (err) {
     return failure(err);

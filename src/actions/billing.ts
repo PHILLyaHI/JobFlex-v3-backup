@@ -16,6 +16,10 @@ import {
 } from "@/lib/customPlan";
 import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
 import { logServerError } from "@/lib/server-events";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+
+const billingSaved = (organizationId: string, actorId: string, summary: string, meta?: Record<string, unknown>) =>
+  logActivity({ organizationId, actorId, kind: TRAIL_KINDS.SETTINGS, summary, meta: { area: "billing", ...meta } });
 
 /**
  * Directly assign the org a plan from the catalog. One legitimate use since
@@ -26,7 +30,7 @@ import { logServerError } from "@/lib/server-events";
  * legacy FREE-status rows behaving sanely.)
  */
 export async function setOrgPlan(planSlug: string) {
-  const { organizationId } = await requireOwner();
+  const { organizationId, user } = await requireOwner();
   const plan = await getPlanBySlug(planSlug); // active plans only
   if (!plan) throw new Error("Invalid plan");
   if (!plan.isFree && isStripeEnabled()) {
@@ -59,6 +63,7 @@ export async function setOrgPlan(planSlug: string) {
   // The responsive staging build still serves this surface too; both refresh.
   revalidatePath("/dashboard/subscription-blueprint");
   revalidatePath("/dashboard");
+  await billingSaved(organizationId, user.id, `Updated billing settings — plan set to ${plan.name}`, { plan: plan.slug });
   return { ok: true };
 }
 
@@ -195,7 +200,7 @@ export type CancelSubscriptionResult =
   | { ok: false; error: string };
 
 export async function cancelSubscription(): Promise<CancelSubscriptionResult> {
-  const { organizationId } = await requireOwner();
+  const { organizationId, user } = await requireOwner();
   const sub = await db.subscription.findUnique({ where: { organizationId } });
   if (!sub) return { ok: false, error: "There's no subscription to cancel." };
   if (sub.canceledAt) return { ok: false, error: "This subscription is already set to cancel." };
@@ -220,11 +225,12 @@ export async function cancelSubscription(): Promise<CancelSubscriptionResult> {
   });
   revalidatePlanSurfaces();
   revalidatePath("/dashboard/subscription");
+  await billingSaved(organizationId, user.id, `Updated billing settings — subscription set to cancel${endsAt ? ` on ${endsAt.toLocaleDateString("en-US")}` : ""}`, { canceled: true, endsAt: endsAt?.toISOString() });
   return { ok: true, endsAt: endsAt ? endsAt.toISOString() : null };
 }
 
 export async function resumeSubscription(): Promise<CancelSubscriptionResult> {
-  const { organizationId } = await requireOwner();
+  const { organizationId, user } = await requireOwner();
   const sub = await db.subscription.findUnique({ where: { organizationId } });
   if (!sub) return { ok: false, error: "There's no subscription to resume." };
   if (!sub.canceledAt) return { ok: false, error: "This subscription isn't cancelling." };
@@ -254,6 +260,7 @@ export async function resumeSubscription(): Promise<CancelSubscriptionResult> {
   });
   revalidatePlanSurfaces();
   revalidatePath("/dashboard/subscription");
+  await billingSaved(organizationId, user.id, "Updated billing settings — subscription resumed", { canceled: false });
   return { ok: true, endsAt: endsAt ? endsAt.toISOString() : null };
 }
 
@@ -275,7 +282,7 @@ export async function changePlan(
   planSlug: string,
   interval: "MONTH" | "YEAR" = "MONTH",
 ): Promise<ChangePlanResult> {
-  const { organizationId } = await requireOwner();
+  const { organizationId, user } = await requireOwner();
   const plan = await getPlanBySlug(planSlug);
   if (!plan || !plan.active) return { ok: false, error: "That plan is not available." };
   if (plan.isFree) return { ok: false, error: "That plan can't be switched to here." };
@@ -364,6 +371,7 @@ export async function changePlan(
   }
   revalidatePlanSurfaces();
   revalidatePath("/dashboard/subscription");
+  await billingSaved(organizationId, user.id, `Updated billing settings — plan ${direction === "up" ? "upgraded" : "downgraded"} to ${plan.name}`, { plan: plan.slug, interval, direction });
   return { ok: true, mode: "switched", direction, planName: plan.name };
 }
 
@@ -382,7 +390,7 @@ export type AddCustomPagesResult =
   | { ok: false; error: string };
 
 export async function addCustomPages(rawIds: unknown): Promise<AddCustomPagesResult> {
-  const { organizationId } = await requireOwner();
+  const { organizationId, user } = await requireOwner();
   const sub = await db.subscription.findUnique({ where: { organizationId } });
   if ((sub?.plan ?? "").toUpperCase() !== CUSTOM_PLAN_SLUG.toUpperCase()) {
     return { ok: false, error: "Pages can only be added to the Custom plan." };
@@ -484,6 +492,7 @@ export async function addCustomPages(rawIds: unknown): Promise<AddCustomPagesRes
   revalidatePlanSurfaces();
   revalidatePath("/dashboard/upgrade");
   revalidatePath("/dashboard", "layout");
+  await billingSaved(organizationId, user.id, `Updated billing settings — added ${added.length} page${added.length === 1 ? "" : "s"} to the custom plan`, { pages: next, added });
   return {
     ok: true,
     pages: next,
@@ -505,7 +514,7 @@ export type RemoveCustomPagesResult =
   | { ok: false; error: string };
 
 export async function removeCustomPages(rawIds: unknown): Promise<RemoveCustomPagesResult> {
-  const { organizationId } = await requireOwner();
+  const { organizationId, user } = await requireOwner();
   const sub = await db.subscription.findUnique({ where: { organizationId } });
   if ((sub?.plan ?? "").toUpperCase() !== CUSTOM_PLAN_SLUG.toUpperCase()) {
     return { ok: false, error: "Pages can only be removed from the Custom plan." };
@@ -567,5 +576,6 @@ export async function removeCustomPages(rawIds: unknown): Promise<RemoveCustomPa
   revalidatePath("/dashboard/upgrade");
   revalidatePath("/dashboard/subscription");
   revalidatePath("/dashboard", "layout");
+  await billingSaved(organizationId, user.id, `Updated billing settings — removed ${dropping.length} page${dropping.length === 1 ? "" : "s"} from the custom plan`, { pages: next, removed: dropping });
   return { ok: true, pages: next, removed: dropping.length, monthlyCents: customPriceCents(next) };
 }

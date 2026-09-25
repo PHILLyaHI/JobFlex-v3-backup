@@ -6,6 +6,9 @@ import { db } from "@/lib/db";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+
+const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
 const expenseInput = z.object({
   category: z.string().min(1),
@@ -14,11 +17,11 @@ const expenseInput = z.object({
 });
 
 export async function addJobExpense(jobId: string, raw: unknown) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const data = expenseInput.parse(raw);
   const job = await db.job.findUnique({ where: { id: jobId } });
   if (!job || job.organizationId !== organizationId) throw new Error("Not found");
-  await db.jobExpense.create({
+  const exp = await db.jobExpense.create({
     data: {
       jobId,
       category: data.category,
@@ -27,10 +30,19 @@ export async function addJobExpense(jobId: string, raw: unknown) {
     },
   });
   revalidatePath(`/dashboard/jobs/${jobId}`);
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.EXPENSE,
+    summary: `Added a ${money(data.amount)} expense to ${job.title} — ${data.category}`,
+    proposalId: job.proposalId,
+    clientId: job.clientId,
+    meta: { jobId, expenseId: exp.id, amount: data.amount, category: data.category },
+  });
 }
 
 export async function deleteJobExpense(expenseId: string) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const ex = await db.jobExpense.findUnique({
     where: { id: expenseId },
     include: { job: true },
@@ -38,6 +50,15 @@ export async function deleteJobExpense(expenseId: string) {
   if (!ex || ex.job.organizationId !== organizationId) throw new Error("Not found");
   await db.jobExpense.delete({ where: { id: expenseId } });
   revalidatePath(`/dashboard/jobs/${ex.jobId}`);
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.EXPENSE,
+    summary: `Deleted a ${money(ex.amount)} expense from ${ex.job.title} — ${ex.category}`,
+    proposalId: ex.job.proposalId,
+    clientId: ex.job.clientId,
+    meta: { jobId: ex.jobId, expenseId, amount: ex.amount, category: ex.category, deleted: true },
+  });
 }
 
 /**
@@ -97,13 +118,13 @@ async function requireJobPhotoAccess(jobId: string) {
     });
     if (!assigned) throw new Error("You can only add photos to jobs assigned to you");
   }
-  return { organizationId };
+  return { organizationId, user, job };
 }
 
 export async function createJobPhoto(jobId: string, raw: unknown) {
-  await requireJobPhotoAccess(jobId);
+  const { organizationId, user, job } = await requireJobPhotoAccess(jobId);
   const data = photoInput.parse(raw);
-  await db.jobPhoto.create({
+  const photo = await db.jobPhoto.create({
     data: {
       jobId,
       url: data.url,
@@ -112,10 +133,19 @@ export async function createJobPhoto(jobId: string, raw: unknown) {
     },
   });
   revalidatePath(`/dashboard/jobs/${jobId}`);
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.PHOTO,
+    summary: `Added a ${data.kind.toLowerCase()} photo to ${job.title}`,
+    proposalId: job.proposalId,
+    clientId: job.clientId,
+    meta: { jobId, photoId: photo.id, kind: data.kind },
+  });
 }
 
 export async function deleteJobPhoto(photoId: string) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const p = await db.jobPhoto.findUnique({
     where: { id: photoId },
     include: { job: true },
@@ -123,6 +153,15 @@ export async function deleteJobPhoto(photoId: string) {
   if (!p || p.job.organizationId !== organizationId) throw new Error("Not found");
   await db.jobPhoto.delete({ where: { id: photoId } });
   revalidatePath(`/dashboard/jobs/${p.jobId}`);
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.PHOTO,
+    summary: `Deleted a ${p.kind.toLowerCase()} photo from ${p.job.title}`,
+    proposalId: p.job.proposalId,
+    clientId: p.job.clientId,
+    meta: { jobId: p.jobId, photoId, kind: p.kind, deleted: true },
+  });
 }
 
 /**
@@ -136,7 +175,7 @@ export async function uploadJobPhoto(
   filename: string,
   kind: "BEFORE" | "PROGRESS" | "AFTER" = "BEFORE",
 ) {
-  await requireJobPhotoAccess(jobId);
+  const { organizationId, user, job } = await requireJobPhotoAccess(jobId);
 
   // Inline image only — anything else would be stored verbatim as the photo
   // URL and rendered by every viewer of the job.
@@ -158,5 +197,14 @@ export async function uploadJobPhoto(
     data: { jobId, url, kind },
   });
   revalidatePath(`/dashboard/jobs/${jobId}`);
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.PHOTO,
+    summary: `Uploaded a ${kind.toLowerCase()} photo to ${job.title}`,
+    proposalId: job.proposalId,
+    clientId: job.clientId,
+    meta: { jobId, photoId: photo.id, kind },
+  });
   return { id: photo.id, url };
 }

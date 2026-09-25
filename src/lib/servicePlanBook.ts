@@ -50,8 +50,9 @@ async function emailClient(org: OrgRow, to: string | null | undefined, doc: Plan
   }
 }
 
-async function notice(tx: Tx | typeof db, organizationId: string, kind: string, summary: string, meta: Record<string, unknown>, clientId?: string | null) {
-  await tx.activityEvent.create({ data: { organizationId, kind, summary, meta: JSON.stringify({ href: "/dashboard/service-plans", ...meta }), clientId: clientId ?? null } });
+/** `actorId`: the member whose action this is; null for the daily run and the client's own accept. */
+async function notice(tx: Tx | typeof db, organizationId: string, kind: string, summary: string, meta: Record<string, unknown>, clientId?: string | null, actorId?: string | null) {
+  await tx.activityEvent.create({ data: { organizationId, actorId: actorId ?? null, kind, summary, meta: JSON.stringify({ href: "/dashboard/service-plans", ...meta }), clientId: clientId ?? null } });
 }
 
 // ── invoices ────────────────────────────────────────────────────────────────
@@ -92,7 +93,7 @@ function invoiceDoc(org: OrgRow, plan: { name: string; billing: string; priceCen
  * notes), the first bill is written, and the client gets a welcome. A plan
  * already active or canceled is left alone.
  */
-export async function activatePlan(planId: string, opts: { acceptedName?: string | null; startsAt?: Date } = {}): Promise<{ ok: boolean; visits: number }> {
+export async function activatePlan(planId: string, opts: { acceptedName?: string | null; startsAt?: Date; actorId?: string | null } = {}): Promise<{ ok: boolean; visits: number }> {
   const plan = await db.servicePlan.findUnique({ where: { id: planId }, include: { client: true, organization: { select: ORG_SELECT }, visits: { select: { seq: true } } } });
   if (!plan || plan.status === "ACTIVE" || plan.status === "CANCELED") return { ok: false, visits: 0 };
   const startsAt = opts.startsAt ?? new Date();
@@ -118,7 +119,7 @@ export async function activatePlan(planId: string, opts: { acceptedName?: string
     }
     const inv = await createPlanInvoice(tx, plan, startsAt);
     invoiceNumber = inv.number;
-    await notice(tx, plan.organizationId, "PLAN_ACTIVATED", `${plan.client.name} joined the ${plan.name} — ${slots.length} visit${slots.length === 1 ? "" : "s"} on the calendar, invoice ${inv.number} written`, { planId: plan.id }, plan.clientId);
+    await notice(tx, plan.organizationId, "PLAN_ACTIVATED", `${plan.client.name} joined the ${plan.name} — ${slots.length} visit${slots.length === 1 ? "" : "s"} on the calendar, invoice ${inv.number} written`, { planId: plan.id }, plan.clientId, opts.actorId);
   });
   const first = slots[0];
   await emailClient(plan.organization, plan.client.email, {
@@ -136,7 +137,7 @@ export async function activatePlan(planId: string, opts: { acceptedName?: string
 }
 
 /** The plan is sent to the client: status SENT and the email with the accept link. */
-export async function sendPlan(planId: string): Promise<{ ok: boolean; emailed: boolean; href: string }> {
+export async function sendPlan(planId: string, actorId?: string | null): Promise<{ ok: boolean; emailed: boolean; href: string }> {
   const plan = await db.servicePlan.findUnique({ where: { id: planId }, include: { client: true, organization: { select: ORG_SELECT } } });
   if (!plan || (plan.status !== "DRAFT" && plan.status !== "SENT")) return { ok: false, emailed: false, href: "" };
   const href = `${await appBaseUrl()}/plan/${plan.acceptToken}`;
@@ -150,12 +151,12 @@ export async function sendPlan(planId: string): Promise<{ ok: boolean; emailed: 
     cta: { label: "Accept the plan", href },
     after: ["Accepting starts the plan today: the visits go on our calendar and the first bill follows by email."],
   });
-  await notice(db, plan.organizationId, "PLAN_SENT", `${plan.name} sent to ${plan.client.name}${emailed ? "" : " (no email on file — share the link)"}`, { planId: plan.id, acceptHref: href }, plan.clientId);
+  await notice(db, plan.organizationId, "PLAN_SENT", `${plan.name} sent to ${plan.client.name}${emailed ? "" : " (no email on file — share the link)"}`, { planId: plan.id, acceptHref: href }, plan.clientId, actorId);
   return { ok: true, emailed, href };
 }
 
 /** Another term: from the old end (or today), new visits, a new bill. */
-export async function renewPlan(planId: string): Promise<{ ok: boolean }> {
+export async function renewPlan(planId: string, actorId?: string | null): Promise<{ ok: boolean }> {
   const plan = await db.servicePlan.findUnique({ where: { id: planId }, include: { client: true, organization: { select: ORG_SELECT }, visits: { select: { seq: true } } } });
   if (!plan || (plan.status !== "ACTIVE" && plan.status !== "EXPIRED")) return { ok: false };
   const now = new Date();
@@ -174,7 +175,7 @@ export async function renewPlan(planId: string): Promise<{ ok: boolean }> {
       await tx.servicePlanVisit.create({ data: { organizationId: plan.organizationId, planId: plan.id, seq: seq0 + s.seq, label: s.label, dueAt: s.dueAt, status: "SCHEDULED", appointmentId: appt.id } });
     }
     const inv = await createPlanInvoice(tx, plan, startsAt);
-    await notice(tx, plan.organizationId, "PLAN_RENEWED", `${plan.client.name}'s ${plan.name} renewed to ${fmtDay(endsAt)} — invoice ${inv.number}`, { planId: plan.id }, plan.clientId);
+    await notice(tx, plan.organizationId, "PLAN_RENEWED", `${plan.client.name}'s ${plan.name} renewed to ${fmtDay(endsAt)} — invoice ${inv.number}`, { planId: plan.id }, plan.clientId, actorId);
   });
   await emailClient(plan.organization, plan.client.email, {
     subject: `Your ${plan.name} is renewed`,
@@ -187,7 +188,7 @@ export async function renewPlan(planId: string): Promise<{ ok: boolean }> {
 }
 
 /** Canceled: the visits still ahead leave the calendar, unpaid plan bills are voided. */
-export async function cancelPlan(planId: string): Promise<{ ok: boolean }> {
+export async function cancelPlan(planId: string, actorId?: string | null): Promise<{ ok: boolean }> {
   const plan = await db.servicePlan.findUnique({ where: { id: planId }, include: { client: { select: { name: true } }, visits: { where: { status: "SCHEDULED" }, select: { id: true, appointmentId: true, dueAt: true } } } });
   if (!plan || plan.status === "CANCELED") return { ok: false };
   const now = new Date();
@@ -200,29 +201,31 @@ export async function cancelPlan(planId: string): Promise<{ ok: boolean }> {
       if (appts.length) await tx.appointment.updateMany({ where: { id: { in: appts } }, data: { status: "CANCELED" } });
     }
     await tx.invoice.updateMany({ where: { servicePlanId: plan.id, status: "PENDING" }, data: { status: "VOID" } });
-    await notice(tx, plan.organizationId, "PLAN_CANCELED", `${plan.client.name}'s ${plan.name} canceled — ${ahead.length} visit${ahead.length === 1 ? "" : "s"} taken off the calendar`, { planId: plan.id }, plan.clientId);
+    await notice(tx, plan.organizationId, "PLAN_CANCELED", `${plan.client.name}'s ${plan.name} canceled — ${ahead.length} visit${ahead.length === 1 ? "" : "s"} taken off the calendar`, { planId: plan.id }, plan.clientId, actorId);
   });
   return { ok: true };
 }
 
-export async function markVisitDone(visitId: string, organizationId: string): Promise<boolean> {
-  const v = await db.servicePlanVisit.findFirst({ where: { id: visitId, organizationId }, select: { id: true, appointmentId: true } });
+export async function markVisitDone(visitId: string, organizationId: string, actorId?: string | null): Promise<boolean> {
+  const v = await db.servicePlanVisit.findFirst({ where: { id: visitId, organizationId }, select: { id: true, appointmentId: true, label: true, planId: true, plan: { select: { name: true, clientId: true, client: { select: { name: true } } } } } });
   if (!v) return false;
   await db.$transaction(async (tx) => {
     await tx.servicePlanVisit.update({ where: { id: v.id }, data: { status: "DONE", doneAt: new Date() } });
     if (v.appointmentId) await tx.appointment.updateMany({ where: { id: v.appointmentId }, data: { status: "COMPLETED" } });
+    await notice(tx, organizationId, "PLAN_VISIT_DONE", `${v.plan.client.name}: ${v.label.toLowerCase()} done (${v.plan.name})`, { planId: v.planId, visitId: v.id }, v.plan.clientId, actorId);
   });
   return true;
 }
 
 /** A plan bill paid by hand: the invoice closes and a payment row lands in the books (Financials reads payments). */
-export async function markPlanInvoicePaid(invoiceId: string, organizationId: string, method = "CHECK"): Promise<boolean> {
-  const inv = await db.invoice.findFirst({ where: { id: invoiceId, organizationId, servicePlanId: { not: null }, status: "PENDING" }, select: { id: true, amount: true, clientId: true } });
+export async function markPlanInvoicePaid(invoiceId: string, organizationId: string, method = "CHECK", actorId?: string | null): Promise<boolean> {
+  const inv = await db.invoice.findFirst({ where: { id: invoiceId, organizationId, servicePlanId: { not: null }, status: "PENDING" }, select: { id: true, amount: true, clientId: true, number: true, servicePlanId: true, servicePlan: { select: { name: true, client: { select: { name: true } } } } } });
   if (!inv) return false;
   const now = new Date();
   await db.$transaction(async (tx) => {
     await tx.invoice.update({ where: { id: inv.id }, data: { status: "PAID", paidAt: now } });
-    await tx.payment.create({ data: { organizationId, invoiceId: inv.id, clientId: inv.clientId, amount: inv.amount, provider: "MANUAL", status: "PAID", method, paidAt: now, netAmount: inv.amount, livemode: true } });
+    const payment = await tx.payment.create({ data: { organizationId, invoiceId: inv.id, clientId: inv.clientId, amount: inv.amount, provider: "MANUAL", status: "PAID", method, paidAt: now, netAmount: inv.amount, livemode: true } });
+    await notice(tx, organizationId, "PLAN_INVOICE_PAID", `${inv.servicePlan?.client.name ?? "Client"}: ${inv.servicePlan?.name ?? "plan"} invoice ${inv.number} paid by ${method.toLowerCase()} — ${money(Math.round(inv.amount * 100))}`, { planId: inv.servicePlanId, invoiceId: inv.id, paymentId: payment.id, amount: inv.amount, method }, inv.clientId, actorId);
   });
   return true;
 }

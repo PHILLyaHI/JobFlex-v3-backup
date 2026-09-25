@@ -13,6 +13,7 @@ import { enforceRateLimit, clientIp, HOUR } from "@/lib/rateLimit";
 import { afterResponse } from "@/lib/server-events";
 import { sendText } from "@/lib/sms/send";
 import { welcomeText } from "@/lib/sms/format";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 
 const inviteInput = z.object({
   name: z.string().min(1),
@@ -230,6 +231,13 @@ export async function createWorkerInvite(raw: unknown) {
   }
 
   revalidatePath("/dashboard/workers");
+  await logActivity({
+    organizationId,
+    actorId: inviter.id,
+    kind: TRAIL_KINDS.TEAM,
+    summary: `Invited ${data.name} (${data.email}) to the crew as ${roleLabel(data.role).toLowerCase()}`,
+    meta: { workerId: profile.id, email: data.email, role: data.role, emailSent },
+  });
   return { id: profile.id, token: profile.token, emailSent, emailError };
 }
 
@@ -356,7 +364,8 @@ const updateWorkerInput = z.object({
 // Edit an existing worker's profile (name, phone, specialties, rate). Email is
 // the worker's login identity and is intentionally not editable here.
 export async function updateWorker(raw: unknown) {
-  const { organizationId, role: actorRole } = await requireManager();
+  const { organizationId, user, role: actorRole } = await requireManager();
+  let previousRole: string | null | undefined;
   const data = updateWorkerInput.parse(raw);
   const w = await db.workerProfile.findUnique({ where: { id: data.id } });
   if (!w || w.organizationId !== organizationId) throw new Error("Not found");
@@ -382,6 +391,7 @@ export async function updateWorker(raw: unknown) {
     // data.role is always a worker role (never OWNER), so changing an owner here
     // is always a demotion — only an owner may do that (mirrors team.ts), and
     // never to the last one.
+    previousRole = current?.role;
     if (current?.role === Role.OWNER) {
       if (!isOwnerRole(actorRole)) {
         throw new Error("Only the owner can change an owner's role.");
@@ -400,11 +410,30 @@ export async function updateWorker(raw: unknown) {
   }
   revalidatePath("/dashboard/workers");
   revalidatePath(`/dashboard/workers/${data.id}`);
+  {
+    const changes: string[] = [];
+    if (data.name !== w.displayName) changes.push(`renamed to ${data.name}`);
+    if ((data.phone ?? null) !== (w.phone ?? null)) changes.push("phone");
+    if ((data.hourlyRate ?? null) !== (w.hourlyRate ?? null)) changes.push(data.hourlyRate != null ? `rate $${data.hourlyRate}/hr` : "rate cleared");
+    if (JSON.stringify(data.specialties) !== (w.specialties ?? "[]")) changes.push("specialties");
+    if (data.smsOptIn !== undefined && data.smsOptIn !== w.smsOptIn) changes.push(data.smsOptIn ? "texts on" : "texts off");
+    if (data.role && data.role !== previousRole) changes.push(`role ${roleLabel(data.role)}`);
+    await logActivity({
+      organizationId,
+      actorId: user.id,
+      kind: TRAIL_KINDS.TEAM,
+      summary:
+        data.role && data.role !== previousRole && changes.length === 1
+          ? `Changed ${w.displayName}'s role to ${roleLabel(data.role)}`
+          : `Updated ${w.displayName}'s crew profile${changes.length ? ` — ${changes.join(", ")}` : ""}`,
+      meta: { workerId: data.id, memberUserId: w.userId, changes, role: data.role ?? undefined, previousRole: previousRole ?? undefined },
+    });
+  }
   return { id: data.id };
 }
 
 export async function revokeWorker(workerId: string) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const w = await db.workerProfile.findUnique({ where: { id: workerId } });
   if (!w || w.organizationId !== organizationId) throw new Error("Not found");
 
@@ -415,6 +444,13 @@ export async function revokeWorker(workerId: string) {
   });
   revalidatePath("/dashboard/workers");
   revalidatePath(`/dashboard/workers/${workerId}`);
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.TEAM,
+    summary: `Revoked ${w.displayName}'s portal link (a new one was issued)`,
+    meta: { workerId, memberUserId: w.userId },
+  });
 }
 
 // Fully remove a worker from the company: delete their roster profile (which
@@ -423,7 +459,7 @@ export async function revokeWorker(workerId: string) {
 // hold a worker profile is never locked out of their own org. The shared User
 // record is left intact — they may belong to other organizations.
 export async function removeWorker(workerId: string) {
-  const { organizationId, role: actorRole } = await requireManager();
+  const { organizationId, user, role: actorRole } = await requireManager();
   const w = await db.workerProfile.findUnique({ where: { id: workerId } });
   if (!w || w.organizationId !== organizationId) throw new Error("Not found");
 
@@ -448,6 +484,13 @@ export async function removeWorker(workerId: string) {
   });
 
   revalidatePath("/dashboard/workers");
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.TEAM,
+    summary: `Removed ${w.displayName} from the crew${membership ? ` (${roleLabel(membership.role).toLowerCase()})` : ""}`,
+    meta: { workerId, memberUserId: w.userId, role: membership?.role ?? undefined },
+  });
 }
 
 export async function assignWorker(jobId: string, workerId: string) {
@@ -524,14 +567,23 @@ export async function assignWorker(jobId: string, workerId: string) {
 }
 
 export async function unassignWorker(assignmentId: string) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const a = await db.jobAssignment.findUnique({
     where: { id: assignmentId },
-    include: { job: true },
+    include: { job: true, worker: { select: { displayName: true } } },
   });
   if (!a || a.job.organizationId !== organizationId) throw new Error("Not found");
   await db.jobAssignment.delete({ where: { id: assignmentId } });
   revalidatePath(`/dashboard/jobs/${a.jobId}`);
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.TEAM,
+    summary: `Took ${a.worker.displayName} off ${a.job.title}`,
+    proposalId: a.job.proposalId,
+    clientId: a.job.clientId,
+    meta: { jobId: a.jobId, workerId: a.workerId, assignmentId },
+  });
 }
 
 // (removed) updateAssignmentStatus — was an unguarded "use server" export with

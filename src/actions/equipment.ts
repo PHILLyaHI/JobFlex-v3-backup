@@ -58,7 +58,7 @@ export async function deleteClientEquipment(id: string): Promise<void> {
 
 /** The crew's report on a visit; workers write it too (their own visits). Form-driven. */
 export async function saveVisitReportForm(fd: FormData): Promise<void> {
-  const { organizationId } = await requireOrg();
+  const { organizationId, user } = await requireOrg();
   const appointmentId = String(fd.get("appointmentId") ?? "");
   const kind = String(fd.get("kind") ?? "both") as VisitKind;
   if (!appointmentId || !["cooling", "heating", "both", "other"].includes(kind)) return;
@@ -78,7 +78,7 @@ export async function saveVisitReportForm(fd: FormData): Promise<void> {
   });
   revalidatePath(`/dashboard/visits/${appointmentId}`);
   if (fd.get("then") === "send") {
-    await sendVisitReport(appointmentId, organizationId);
+    await sendVisitReport(appointmentId, organizationId, user.id);
     revalidatePath("/dashboard/service-plans");
     revalidatePath("/dashboard/calendar");
   }

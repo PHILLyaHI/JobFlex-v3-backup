@@ -16,13 +16,13 @@ import { db } from "@/lib/db";
 import { ensureReviewRequestForProposal } from "@/lib/reviews/requestForProposal";
 import { sendReviewRequestEmail } from "@/lib/reviews/email";
 
-export async function createReviewRequestInternal(jobId: string) {
+export async function createReviewRequestInternal(jobId: string, actorId?: string | null) {
   const existing = await db.reviewRequest.findFirst({ where: { jobId } });
   if (existing) return { id: existing.id };
   const job = await db.job.findUnique({ where: { id: jobId }, include: { client: true } });
   if (!job) return null;
   if (job.proposalId) {
-    const viaProposal = await ensureReviewRequestForProposal(job.proposalId, { jobId });
+    const viaProposal = await ensureReviewRequestForProposal(job.proposalId, { jobId, actorId });
     return viaProposal ? { id: viaProposal.id } : null;
   }
   const hasEmail = Boolean(job.client?.email?.trim());

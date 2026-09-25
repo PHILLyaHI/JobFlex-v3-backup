@@ -75,7 +75,8 @@ function netTermsDue(netTerms: string): Date {
   return due;
 }
 
-export async function sendInvoice(input: { proposalId: string; installmentId: string | null; method: InvoiceMethod; organizationId: string }): Promise<InvoiceReport> {
+/** `actorId`: the member who pressed Send, so the trail carries their name; null when a cron or the system sent it. */
+export async function sendInvoice(input: { proposalId: string; installmentId: string | null; method: InvoiceMethod; organizationId: string; actorId?: string | null }): Promise<InvoiceReport> {
   const fail = (error: string): InvoiceReport => ({ ok: false, error, email: "no-email", sms: "no-phone", label: "", amount: 0, href: null });
   const proposal = await db.proposal.findFirst({
     where: { id: input.proposalId, organizationId: input.organizationId },
@@ -161,9 +162,12 @@ export async function sendInvoice(input: { proposalId: string; installmentId: st
   await db.activityEvent.create({
     data: {
       organizationId: proposal.organizationId,
+      actorId: input.actorId ?? null,
       proposalId: proposal.id,
+      clientId: proposal.clientId ?? null,
       kind: "EMAIL",
       summary: `Invoice (${input.method}) · ${label} · $${amount.toFixed(2)} — email ${report.email}, text ${report.sms}`,
+      meta: JSON.stringify({ amount, method: input.method, installmentId: stageRow?.id ?? null }),
     },
   });
   // The book. An invoice that went out is a row in the Invoices tab, not just

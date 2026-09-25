@@ -94,7 +94,7 @@ export async function seedStarterPlans(): Promise<void> {
  * clientId + templateId) or the client page (bound).
  */
 export async function enrollClientInPlan(input: { clientId: string; templateId: string; send?: boolean; activate?: boolean } | FormData): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId, user } = await requireEstimatorOrManager();
   const raw = input instanceof FormData ? { clientId: String(input.get("clientId") ?? ""), templateId: String(input.get("templateId") ?? ""), send: input.get("then") === "send", activate: input.get("then") === "activate" } : input;
   const data = z.object({ clientId: z.string().min(1), templateId: z.string().min(1), send: z.boolean().optional(), activate: z.boolean().optional() }).parse(raw);
   const [client, t] = await Promise.all([
@@ -127,41 +127,41 @@ export async function enrollClientInPlan(input: { clientId: string; templateId: 
     },
     select: { id: true },
   });
-  if (data.activate) await activatePlan(plan.id);
-  else if (data.send) await sendPlan(plan.id);
+  if (data.activate) await activatePlan(plan.id, { actorId: user.id });
+  else if (data.send) await sendPlan(plan.id, user.id);
   refresh(client.id);
 }
 
 export async function sendServicePlan(planId: string): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId, user } = await requireEstimatorOrManager();
   const plan = await db.servicePlan.findFirst({ where: { id: planId, organizationId }, select: { clientId: true } });
   if (!plan) return;
-  await sendPlan(planId);
+  await sendPlan(planId, user.id);
   refresh(plan.clientId);
 }
 
 /** Signed on paper or by phone: the plan starts today. */
 export async function activateServicePlan(planId: string): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId, user } = await requireEstimatorOrManager();
   const plan = await db.servicePlan.findFirst({ where: { id: planId, organizationId }, select: { clientId: true } });
   if (!plan) return;
-  await activatePlan(planId, { acceptedName: "Signed with the office" });
+  await activatePlan(planId, { acceptedName: "Signed with the office", actorId: user.id });
   refresh(plan.clientId);
 }
 
 export async function renewServicePlan(planId: string): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId, user } = await requireEstimatorOrManager();
   const plan = await db.servicePlan.findFirst({ where: { id: planId, organizationId }, select: { clientId: true } });
   if (!plan) return;
-  await renewPlan(planId);
+  await renewPlan(planId, user.id);
   refresh(plan.clientId);
 }
 
 export async function cancelServicePlan(planId: string): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId, user } = await requireEstimatorOrManager();
   const plan = await db.servicePlan.findFirst({ where: { id: planId, organizationId }, select: { clientId: true } });
   if (!plan) return;
-  await cancelPlan(planId);
+  await cancelPlan(planId, user.id);
   refresh(plan.clientId);
 }
 
@@ -172,14 +172,14 @@ export async function setPlanAutoRenew(planId: string, autoRenew: boolean): Prom
 }
 
 export async function completePlanVisit(visitId: string): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
-  await markVisitDone(visitId, organizationId);
+  const { organizationId, user } = await requireEstimatorOrManager();
+  await markVisitDone(visitId, organizationId, user.id);
   refresh();
 }
 
 export async function markServicePlanInvoicePaid(invoiceId: string): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
-  await markPlanInvoicePaid(invoiceId, organizationId, "CHECK");
+  const { organizationId, user } = await requireEstimatorOrManager();
+  await markPlanInvoicePaid(invoiceId, organizationId, "CHECK", user.id);
   refresh();
   revalidatePath("/dashboard/financials");
 }

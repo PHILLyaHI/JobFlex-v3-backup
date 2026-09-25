@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { touchWorkerActivity } from "@/lib/workerActivity";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 
 const KINDS = ["BEFORE", "PROGRESS", "AFTER"] as const;
@@ -71,5 +72,18 @@ export async function POST(req: Request) {
     },
   });
   await touchWorkerActivity(worker.id);
+  const job = await db.job.findUnique({
+    where: { id: body.jobId },
+    select: { title: true, proposalId: true, clientId: true },
+  });
+  await logActivity({
+    organizationId: worker.organizationId,
+    actorId: worker.userId,
+    kind: TRAIL_KINDS.PHOTO,
+    summary: `Uploaded a ${kind.toLowerCase()} photo to ${job?.title ?? "a job"}`,
+    proposalId: job?.proposalId,
+    clientId: job?.clientId,
+    meta: { jobId: body.jobId, photoId: photo.id, kind, via: "worker-portal" },
+  });
   return NextResponse.json({ id: photo.id, url });
 }

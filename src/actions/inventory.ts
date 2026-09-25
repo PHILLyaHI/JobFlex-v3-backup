@@ -23,6 +23,7 @@ import { explodeLines } from "@/lib/inventoryBom";
 import { recordStockPolicy, stockItemsOf, stockPolicyOf } from "@/lib/inventoryPolicy";
 import { defaultStocked } from "@/lib/inventoryStockDefaults";
 import { NoOrgError, requireManager, requireOrg, UnauthorizedError, isWorkerRole } from "@/lib/orgContext";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 
 type Fail = { ok: false; error: string };
 const fail = (err: unknown): Fail =>
@@ -68,12 +69,26 @@ export async function upsertInventoryItem(input: {
       supplierSku: input.supplierSku?.trim() || null,
       lastCost: input.lastCost == null ? null : Math.max(0, money(input.lastCost)),
     };
+    const before = await db.inventoryItem.findUnique({
+      where: { organizationId_trade_key: { organizationId, trade: input.trade, key } },
+      select: { id: true },
+    });
     const row = await db.inventoryItem.upsert({
       where: { organizationId_trade_key: { organizationId, trade: input.trade, key } },
       create: { organizationId, trade: input.trade, key, onHand: Math.max(0, money(input.onHand ?? 0)), ...data },
       update: data,
       select: { id: true },
     });
+    if (!before) {
+      const onHand = Math.max(0, money(input.onHand ?? 0));
+      await logActivity({
+        organizationId,
+        actorId: user.id,
+        kind: TRAIL_KINDS.STOCK,
+        summary: `Added ${name} to the ${LABEL[input.trade]} stock list${onHand ? ` — ${onHand} ${data.unit} on hand` : ""}`,
+        meta: { itemId: row.id, trade: input.trade, onHand, unit: data.unit },
+      });
+    }
     if (typeof input.stocked === "boolean") {
       const policy = await stockPolicyOf(organizationId, input.trade);
       if (policy.perJob.has(key) === input.stocked) {
@@ -97,13 +112,22 @@ export async function receiveStock(itemId: string, quantity: number, note?: stri
     const { organizationId, user } = await requireManager();
     const qty = money(quantity);
     if (!qty) return { ok: false, error: "Enter a quantity" };
-    const item = await db.inventoryItem.findFirst({ where: { id: itemId, organizationId }, select: { id: true, trade: true, onHand: true } });
+    const item = await db.inventoryItem.findFirst({ where: { id: itemId, organizationId }, select: { id: true, trade: true, onHand: true, name: true, unit: true } });
     if (!item) return { ok: false, error: "That item is not on this company" };
     const [, updated] = await db.$transaction([
       db.inventoryMovement.create({ data: { itemId: item.id, kind: qty > 0 ? "RECEIVED" : "ADJUST", quantity: qty, note: note?.trim() || null, actorId: user.id } }),
       db.inventoryItem.update({ where: { id: item.id }, data: { onHand: { increment: qty } }, select: { onHand: true } }),
     ]);
     revalidatePath(boardPath(item.trade));
+    await logActivity({
+      organizationId,
+      actorId: user.id,
+      kind: TRAIL_KINDS.STOCK,
+      summary: qty > 0
+        ? `Received ${qty} ${item.unit} of ${item.name}${note?.trim() ? ` — ${note.trim()}` : ""}`
+        : `Took ${Math.abs(qty)} ${item.unit} of ${item.name} off the shelf${note?.trim() ? ` — ${note.trim()}` : ""}`,
+      meta: { itemId: item.id, trade: item.trade, quantity: qty, onHand: updated.onHand },
+    });
     return { ok: true, onHand: updated.onHand };
   } catch (err) {
     return fail(err);
@@ -115,7 +139,7 @@ export async function countStock(itemId: string, onHand: number): Promise<{ ok: 
   try {
     const { organizationId, user } = await requireManager();
     const target = Math.max(0, money(onHand));
-    const item = await db.inventoryItem.findFirst({ where: { id: itemId, organizationId }, select: { id: true, trade: true, onHand: true } });
+    const item = await db.inventoryItem.findFirst({ where: { id: itemId, organizationId }, select: { id: true, trade: true, onHand: true, name: true, unit: true } });
     if (!item) return { ok: false, error: "That item is not on this company" };
     const diff = money(target - item.onHand);
     if (diff !== 0) {
@@ -123,6 +147,13 @@ export async function countStock(itemId: string, onHand: number): Promise<{ ok: 
         db.inventoryMovement.create({ data: { itemId: item.id, kind: "ADJUST", quantity: diff, note: "Counted", actorId: user.id } }),
         db.inventoryItem.update({ where: { id: item.id }, data: { onHand: target } }),
       ]);
+      await logActivity({
+        organizationId,
+        actorId: user.id,
+        kind: TRAIL_KINDS.STOCK,
+        summary: `Counted ${target} ${item.unit} of ${item.name} (was ${item.onHand}, ${diff > 0 ? "+" : ""}${diff})`,
+        meta: { itemId: item.id, trade: item.trade, onHand: target, previous: item.onHand, diff },
+      });
     }
     revalidatePath(boardPath(item.trade));
     return { ok: true, onHand: target };
@@ -133,11 +164,18 @@ export async function countStock(itemId: string, onHand: number): Promise<{ ok: 
 
 export async function deleteInventoryItem(itemId: string): Promise<{ ok: true } | Fail> {
   try {
-    const { organizationId } = await requireManager();
-    const item = await db.inventoryItem.findFirst({ where: { id: itemId, organizationId }, select: { id: true, trade: true } });
+    const { organizationId, user } = await requireManager();
+    const item = await db.inventoryItem.findFirst({ where: { id: itemId, organizationId }, select: { id: true, trade: true, name: true, onHand: true, unit: true } });
     if (!item) return { ok: false, error: "That item is not on this company" };
     await db.inventoryItem.delete({ where: { id: item.id } });
     revalidatePath(boardPath(item.trade));
+    await logActivity({
+      organizationId,
+      actorId: user.id,
+      kind: TRAIL_KINDS.STOCK,
+      summary: `Removed ${item.name} from the ${LABEL[item.trade as TradeId] ?? item.trade} stock list${item.onHand ? ` (${item.onHand} ${item.unit} were on hand)` : ""}`,
+      meta: { itemId, trade: item.trade, onHand: item.onHand, deleted: true },
+    });
     return { ok: true };
   } catch (err) {
     return fail(err);
@@ -225,6 +263,8 @@ export async function loadJobMaterials(jobId: string): Promise<{ ok: true; taken
       where: { id: jobId, organizationId },
       select: {
         id: true,
+        title: true,
+        clientId: true,
         materialsLoadedAt: true,
         proposal: { select: { id: true, trade: true, lineItems: { where: { materialCost: { gt: 0 } }, select: { name: true, quantity: true, measurementType: true } } } },
         assignments: { select: { worker: { select: { userId: true } } } },
@@ -235,6 +275,15 @@ export async function loadJobMaterials(jobId: string): Promise<{ ok: true; taken
     if (job.materialsLoadedAt) return { ok: false, error: "Already loaded" };
     if (!job.proposal || !isTradeId(job.proposal.trade)) {
       await db.job.update({ where: { id: job.id }, data: { materialsLoadedAt: new Date() } });
+      await logActivity({
+        organizationId,
+        actorId: ctx.user.id,
+        kind: TRAIL_KINDS.MATERIALS,
+        summary: `Marked materials loaded for ${job.title}`,
+        proposalId: job.proposal?.id ?? null,
+        clientId: job.clientId,
+        meta: { jobId: job.id, taken: 0, untracked: job.proposal?.lineItems.length ?? 0 },
+      });
       return { ok: true, taken: 0, untracked: job.proposal?.lineItems.length ?? 0 };
     }
     const stock = await stockItemsOf(organizationId, job.proposal.trade);
@@ -252,6 +301,15 @@ export async function loadJobMaterials(jobId: string): Promise<{ ok: true; taken
     ]);
     revalidatePath(`/dashboard/jobs/${job.id}`);
     revalidatePath(boardPath(job.proposal.trade));
+    await logActivity({
+      organizationId,
+      actorId: ctx.user.id,
+      kind: TRAIL_KINDS.MATERIALS,
+      summary: `Loaded ${tracked.length} of ${rows.length} materials for ${job.title}`,
+      proposalId: job.proposal.id,
+      clientId: job.clientId,
+      meta: { jobId: job.id, taken: tracked.length, untracked: rows.length - tracked.length, trade: job.proposal.trade, lines: taken.map((r) => ({ itemId: r.itemId, quantity: r.take })) },
+    });
     return { ok: true, taken: tracked.length, untracked: rows.length - tracked.length };
   } catch (err) {
     return fail(err);
@@ -265,7 +323,7 @@ export async function loadJobMaterials(jobId: string): Promise<{ ok: true; taken
 export async function returnJobMaterials(jobId: string, lines: Array<{ itemId: string; quantity: number }>): Promise<{ ok: true; returned: number } | Fail> {
   try {
     const ctx = await requireOrg();
-    const job = await db.job.findFirst({ where: { id: jobId, organizationId: ctx.organizationId }, select: { id: true, materialsLoadedAt: true, assignments: { select: { worker: { select: { userId: true } } } } } });
+    const job = await db.job.findFirst({ where: { id: jobId, organizationId: ctx.organizationId }, select: { id: true, title: true, proposalId: true, clientId: true, materialsLoadedAt: true, assignments: { select: { worker: { select: { userId: true } } } } } });
     if (!job) return { ok: false, error: "Job not found" };
     if (isWorkerRole(ctx.role) && !job.assignments.some((a) => a.worker.userId === ctx.user.id)) return { ok: false, error: "You are not on this job" };
     if (!job.materialsLoadedAt) return { ok: false, error: "Nothing was loaded for this job yet" };
@@ -289,6 +347,17 @@ export async function returnJobMaterials(jobId: string, lines: Array<{ itemId: s
     if (writes.length) await db.$transaction(writes);
     revalidatePath(`/dashboard/jobs/${job.id}`);
     for (const t of ["fence", "roof", "hvac"]) revalidatePath(boardPath(t));
+    if (returned) {
+      await logActivity({
+        organizationId: ctx.organizationId,
+        actorId: ctx.user.id,
+        kind: TRAIL_KINDS.MATERIALS,
+        summary: `Returned leftovers from ${job.title} — ${plural(returned, "material")} back on the shelf`,
+        proposalId: job.proposalId,
+        clientId: job.clientId,
+        meta: { jobId: job.id, returned },
+      });
+    }
     return { ok: true, returned };
   } catch (err) {
     return fail(err);
@@ -301,7 +370,7 @@ export async function receivePurchaseOrder(eventId: string): Promise<{ ok: true;
     const { organizationId, user } = await requireManager();
     const ev = await db.activityEvent.findFirst({ where: { id: eventId, organizationId, kind: "PURCHASE_ORDER_SENT" } });
     if (!ev) return { ok: false, error: "That order is not on this company" };
-    const meta = JSON.parse(ev.meta ?? "{}") as { trade?: string; lines?: Array<{ id: string; quantity: number }>; receivedAt?: string };
+    const meta = JSON.parse(ev.meta ?? "{}") as { trade?: string; supplierId?: string; jobId?: string | null; lines?: Array<{ id: string; quantity: number }>; receivedAt?: string };
     if (meta.receivedAt) return { ok: false, error: "Already received" };
     const lines = (meta.lines ?? []).filter((l) => l.quantity > 0);
     const items = await db.inventoryItem.findMany({ where: { id: { in: lines.map((l) => l.id) }, organizationId }, select: { id: true } });
@@ -314,7 +383,16 @@ export async function receivePurchaseOrder(eventId: string): Promise<{ ok: true;
       ]);
     await db.$transaction([...writes, db.activityEvent.update({ where: { id: ev.id }, data: { meta: JSON.stringify({ ...meta, receivedAt: new Date().toISOString() }) } })]);
     if (meta.trade) revalidatePath(boardPath(meta.trade));
-    return { ok: true, received: writes.length / 2 };
+    const received = writes.length / 2;
+    const supplier = meta.supplierId ? await db.supplier.findFirst({ where: { id: meta.supplierId, organizationId }, select: { name: true } }) : null;
+    await logActivity({
+      organizationId,
+      actorId: user.id,
+      kind: TRAIL_KINDS.STOCK,
+      summary: `Received the purchase order${supplier ? ` from ${supplier.name}` : ""} — ${plural(received, "item")} on the shelf`,
+      meta: { purchaseOrderEventId: ev.id, trade: meta.trade, jobId: meta.jobId ?? undefined, received, lines: lines.filter((l) => known.has(l.id)) },
+    });
+    return { ok: true, received };
   } catch (err) {
     return fail(err);
   }

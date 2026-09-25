@@ -12,6 +12,7 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { parsePaymentSettings } from "@/lib/settings";
 import { encryptSecret, isSecretBoxConfigured } from "@/lib/crypto/secretBox";
 import { ActivityKind, PaymentConnectionStatus } from "@/lib/prismaEnums";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { enforceRateLimit, RateLimitError, MINUTE } from "@/lib/rateLimit";
 import {
   disconnectSquareFor,
@@ -338,7 +339,7 @@ export async function disconnectSquare() {
 /** "Accept ACH bank debits" — adds us_bank_account to the contractor's
  *  Stripe Checkout. Needs a Stripe connection to mean anything. */
 export async function setStripeAchEnabled(raw: unknown) {
-  const { organizationId } = await requireOwner();
+  const { organizationId, user } = await requireOwner();
   const enabled = z.boolean().parse(raw);
   const conn = await getConnection(organizationId, "STRIPE");
   if (!conn) throw new Error("Connect Stripe first");
@@ -347,6 +348,7 @@ export async function setStripeAchEnabled(raw: unknown) {
     data: { stripeAchEnabled: enabled },
   });
   revalidatePath(SETTINGS);
+  await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.SETTINGS, summary: `Updated payment settings — ACH bank debits ${enabled ? "on" : "off"}`, meta: { area: "payments", stripeAchEnabled: enabled } });
   return { ok: true, enabled };
 }
 
@@ -356,7 +358,7 @@ const offeredSchema = z.object({
   offered: z.boolean(),
 });
 export async function setProviderOffered(raw: unknown) {
-  const { organizationId } = await requireOwner();
+  const { organizationId, user } = await requireOwner();
   const { provider, offered } = offeredSchema.parse(raw);
   const org = await db.organization.findUnique({
     where: { id: organizationId },
@@ -368,6 +370,7 @@ export async function setProviderOffered(raw: unknown) {
     data: { paymentSettingsJson: JSON.stringify({ ...current, [provider]: offered }) },
   });
   revalidatePath(SETTINGS);
+  await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.SETTINGS, summary: `Updated payment settings — ${provider.charAt(0).toUpperCase()}${provider.slice(1)} ${offered ? "offered" : "hidden"} at checkout`, meta: { area: "payments", provider, offered } });
   return { ok: true };
 }
 
@@ -377,7 +380,7 @@ const bankSchema = z.object({
 });
 /** Manual path: bank details the client sees on an accepted proposal. */
 export async function saveBankTransferSettings(raw: unknown) {
-  const { organizationId } = await requireOwner();
+  const { organizationId, user } = await requireOwner();
   const data = bankSchema.parse(raw);
   const org = await db.organization.findUnique({
     where: { id: organizationId },
@@ -395,5 +398,6 @@ export async function saveBankTransferSettings(raw: unknown) {
     },
   });
   revalidatePath(SETTINGS);
+  await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.SETTINGS, summary: `Updated payment settings — bank transfer ${data.enabled && data.instructions.length > 0 ? "on" : "off"}`, meta: { area: "payments", bankTransfer: data.enabled } });
   return { ok: true };
 }

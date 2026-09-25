@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { requireSalesOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
+import { logActivity } from "@/lib/activityLog";
 
 // The Twilio-webhook internals (startInboundCall / attachRecording /
 // attachTranscript / summarizeAndMaybeCreateLead) used to live here as "use
@@ -13,7 +14,7 @@ import { enforcePlanLimit } from "@/lib/limitsEngine";
 // This file keeps the one genuinely session-guarded action below.
 
 export async function createLeadFromCall(callId: string) {
-  const { organizationId } = await requireSalesOrManager();
+  const { organizationId, user } = await requireSalesOrManager();
   const call = await db.aiPhoneCall.findUnique({ where: { id: callId } });
   if (!call || call.organizationId !== organizationId) throw new Error("Not found");
   if (call.leadId) return { leadId: call.leadId };
@@ -36,5 +37,13 @@ export async function createLeadFromCall(callId: string) {
     data: { leadId: lead.id },
   });
   revalidatePath("/dashboard/phone");
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: "CREATED",
+    summary: `Created a lead from the phone call with ${call.fromNumber}`,
+    leadId: lead.id,
+    meta: { callId, source: "phone" },
+  });
   return { leadId: lead.id };
 }

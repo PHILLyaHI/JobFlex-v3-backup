@@ -200,14 +200,14 @@ export async function getChangeOrderContext(input: { jobId?: string; proposalId?
  * instructions), or the client's choice. A credit has no stage to invoice.
  */
 export async function sendChangeOrderInvoice(id: string, method: InvoiceMethod): Promise<InvoiceReport> {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const co = await db.changeOrder.findFirst({ where: { id, organizationId }, select: { status: true, proposalId: true, jobId: true } });
   if (!co) throw new Error("Not found");
   if (co.status !== CO_STATUS.APPROVED) throw new Error("Only an approved change order can be invoiced.");
   if (!co.proposalId) throw new Error("This change order is not on a proposal, so it has no payment stage.");
   const stage = await db.installment.findUnique({ where: { changeOrderId: id }, select: { id: true } });
   if (!stage) throw new Error("This change order is a credit — nothing to invoice.");
-  const r = await sendInvoice({ proposalId: co.proposalId, installmentId: stage.id, method, organizationId });
+  const r = await sendInvoice({ proposalId: co.proposalId, installmentId: stage.id, method, organizationId, actorId: user.id });
   revalidateForChangeOrder(co.jobId, co.proposalId);
   return r;
 }
@@ -330,6 +330,16 @@ export async function updateChangeOrder(id: string, raw: unknown): Promise<{ id:
       break;
     }
   }
+  await db.activityEvent.create({
+    data: {
+      organizationId,
+      actorId: user.id,
+      proposalId: co.proposalId ?? null,
+      kind: "UPDATED",
+      summary: `Edited change order "${data.title.trim()}" — $${totals.total.toLocaleString("en-US", { maximumFractionDigits: 2 })}`,
+      meta: JSON.stringify({ jobId: co.jobId ?? undefined, changeOrderId: co.id, amount: totals.total }),
+    },
+  }).catch(() => undefined);
   let sent: SendReport | undefined;
   if (data.send) sent = await sendById(co.id, organizationId, user.id);
   revalidateForChangeOrder(co.jobId, co.proposalId);
@@ -383,12 +393,22 @@ export async function voidChangeOrder(id: string) {
 }
 
 export async function deleteChangeOrder(id: string) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const co = await db.changeOrder.findFirst({ where: { id, organizationId } });
   if (!co) throw new Error("Not found");
   if (co.status !== CO_STATUS.DRAFT) throw new Error("Only drafts can be deleted.");
   await db.changeOrder.delete({ where: { id } });
   revalidateForChangeOrder(co.jobId, co.proposalId);
+  await db.activityEvent.create({
+    data: {
+      organizationId,
+      actorId: user.id,
+      proposalId: co.proposalId ?? null,
+      kind: "DELETED",
+      summary: `Deleted the draft change order "${co.title}"`,
+      meta: JSON.stringify({ jobId: co.jobId ?? undefined, changeOrderId: id, amount: co.total }),
+    },
+  }).catch(() => undefined);
 }
 
 /** The client said yes in person: recorded as such, under the staff member who typed it. */

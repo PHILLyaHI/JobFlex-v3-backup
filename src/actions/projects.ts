@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireEstimatorOrManager, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { loadProjectBook } from "@/components/v3/projects-blueprint/project-book-load";
 import type { Project } from "@/components/v3/projects-blueprint/projects-data";
 
@@ -60,7 +61,7 @@ export async function listProjectClients(): Promise<Array<{ id: string; name: st
 }
 
 export async function createProject(raw: unknown) {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId, user } = await requireEstimatorOrManager();
   await enforcePlanLimit(organizationId, "projects");
   const data = projectInput.parse(raw);
   const clientId = await clientInOrg(organizationId, data.clientId);
@@ -77,13 +78,21 @@ export async function createProject(raw: unknown) {
     },
   });
   revalidatePath("/dashboard/projects");
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.PROJECT,
+    summary: `Created project ${p.name}`,
+    clientId,
+    meta: { projectId: p.id, budget: data.budget },
+  });
   return { id: p.id };
 }
 
 const updateInput = projectInput.partial().extend({ id: z.string() });
 
 export async function updateProject(raw: unknown) {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId, user } = await requireEstimatorOrManager();
   const data = updateInput.parse(raw);
   const existing = await db.project.findUnique({ where: { id: data.id } });
   if (!existing || existing.organizationId !== organizationId) throw new Error("Not found");
@@ -102,14 +111,34 @@ export async function updateProject(raw: unknown) {
   });
   revalidatePath("/dashboard/projects");
   revalidatePath(`/dashboard/projects/${id}`);
+  const changed = Object.keys(rest).filter((k) => rest[k as keyof typeof rest] !== undefined);
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.PROJECT,
+    summary:
+      rest.status !== undefined && rest.status !== existing.status
+        ? `Set project ${rest.name ?? existing.name} to ${rest.status.replace("_", " ").toLowerCase()}`
+        : `Updated project ${rest.name ?? existing.name}${changed.length ? ` — ${changed.join(", ")}` : ""}`,
+    clientId: rest.clientId !== undefined ? rest.clientId : existing.clientId,
+    meta: { projectId: id, changed },
+  });
 }
 
 export async function archiveProject(id: string) {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId, user } = await requireEstimatorOrManager();
   const p = await db.project.findUnique({ where: { id } });
   if (!p || p.organizationId !== organizationId) throw new Error("Not found");
   await db.project.update({ where: { id }, data: { status: "ARCHIVED" } });
   revalidatePath("/dashboard/projects");
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.PROJECT,
+    summary: `Archived project ${p.name}`,
+    clientId: p.clientId,
+    meta: { projectId: id },
+  });
 }
 
 export async function attachJob(projectId: string, jobId: string) {
