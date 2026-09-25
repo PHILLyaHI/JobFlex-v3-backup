@@ -79,14 +79,16 @@ export function ProcessorSubpane({ d, conns, mobile = false }: {
           </div>
           {!connected && <p className={styles.error} role="status">{PROCESSOR_STATE_COPY[state]}</p>}
           <div className={styles.actions}>
+            {viaKey && connectHref && <a className={primary} href={connectHref}><Link2 size={18} aria-hidden="true" />Connect with {name}</a>}
             {!connected && (viaKey || !connectHref ? keyOffered && <button className={primary} type="button" aria-expanded={keyOpen} aria-controls={keyId} onClick={() => setKeyOpen(value => !value)}><KeyRound size={18} aria-hidden="true" />Reconnect {name}</button> : <a className={primary} href={connectHref}><Link2 size={18} aria-hidden="true" />Reconnect {name}</a>)}
-            <a className={connected ? primary : styles.button} href={DASHBOARD_HREF[d.key]} target="_blank" rel="noreferrer"><ArrowUpRight size={18} aria-hidden="true" />{OPEN_DASHBOARD_LABEL[d.key]}</a>
+            <a className={connected && !(viaKey && connectHref) ? primary : styles.button} href={DASHBOARD_HREF[d.key]} target="_blank" rel="noreferrer"><ArrowUpRight size={18} aria-hidden="true" />{OPEN_DASHBOARD_LABEL[d.key]}</a>
           </div>
+          {viaKey && connectHref && <p>Authorize your account with {name} to replace your saved {isStripe ? "API key" : "access token"}. You do not need to disconnect first.</p>}
         </> : <div className={styles.intro}>
           <h3>Take payments with {name}</h3>
           <p>{state === "not_configured" ? PROCESSOR_STATE_COPY[state] : "Connect your account to collect client payments in JobFlex."}</p>
           {state === "disconnected" && <div className={layout.connectActions}>
-            {connectHref && <a className={primary} href={connectHref}><Link2 size={18} aria-hidden="true" />Connect {name}</a>}
+            {connectHref && <a className={primary} href={connectHref}><Link2 size={18} aria-hidden="true" />Connect with {name}</a>}
             {keyOffered && <button className={connectHref ? styles.button : primary} type="button" aria-expanded={keyOpen} aria-controls={keyId} onClick={() => setKeyOpen(value => !value)}><KeyRound size={18} aria-hidden="true" />{keyCopy.action.label}</button>}
           </div>}
         </div>}

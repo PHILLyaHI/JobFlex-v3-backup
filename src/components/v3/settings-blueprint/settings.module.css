@@ -437,7 +437,9 @@
    buttons share one row. The buttons size to their labels instead of
    stretching to the 152px column width; the base `.prow-act`'s
    `margin-left: auto` pins the pair to the RIGHT edge of the row. */
-.bp :global(.content .prow-act--pair) { gap: 10px; }
+.bp :global(.content .prow:has(.prow-act--pair)) { flex-wrap: wrap; }
+.bp :global(.content .prow:has(.prow-act--pair) .prow-b) { flex-basis: 40%; }
+.bp :global(.content .prow-act--pair) { gap: 10px; flex-wrap: wrap; max-width: 100%; }
 .bp :global(.content .prow-act--pair .btn-sm) { width: auto; }
 
 /* F16 — every notification event gets an icon box before its text. Box, border

@@ -87,7 +87,7 @@ type ProcState = PaymentConnectionStatusView["stripe"]["state"] | PaymentConnect
 /** One processor row: icon · name + desc (+ connection line) · actions.
  *  Stripe has two ways in — `connectHref` (OAuth, null when the platform
  *  can't offer it) and `onUseKey` (paste a key, null when it can't). A row
- *  joined by key reconnects through the key form, not the OAuth link. */
+ *  joined by key can also authorize OAuth without disconnecting first. */
 function ProcessorRow({
   row,
   state,
@@ -137,10 +137,10 @@ function ProcessorRow({
             {PROCESSOR_UNAVAILABLE_BADGE.label}
           </span>
         ) : null}
-        {state === "disconnected" && connectHref ? (
+        {!unavailable && (state === "disconnected" || viaKey) && connectHref ? (
           <a className={`btn btn-ghost btn-sm ${CONNECT_ACTION.state}`} href={connectHref}>
             <Ic name="i-plus" />
-            {CONNECT_ACTION.label}
+            Connect with {row.name}
           </a>
         ) : null}
         {state === "disconnected" && onUseKey ? (

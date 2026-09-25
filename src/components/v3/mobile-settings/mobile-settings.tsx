@@ -485,7 +485,7 @@ type ProcState =
 
 /** Stripe has two ways in — `connectHref` (OAuth, null when the platform
  *  can't offer it) and `onUseKey` (paste a key, null when it can't). A row
- *  joined by key reconnects through the key form, not the OAuth link. */
+ *  joined by key can also authorize OAuth without disconnecting first. */
 function ProcessorRow({
   row,
   state,
@@ -533,10 +533,10 @@ function ProcessorRow({
       </div>
       {unavailable ? null : (
         <div className="mst-rowAct">
-          {state === "disconnected" && connectHref ? (
+          {(state === "disconnected" || viaKey) && connectHref ? (
             <a className={`mst-btn mst-btn--ghost ${CONNECT_ACTION.state}`} href={connectHref}>
               <Ic name="i-plus" />
-              {CONNECT_ACTION.label}
+              Connect with {row.name}
             </a>
           ) : null}
           {state === "disconnected" && onUseKey ? (
