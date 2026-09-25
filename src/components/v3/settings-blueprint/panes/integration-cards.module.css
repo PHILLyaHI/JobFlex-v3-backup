@@ -15,18 +15,20 @@
 .toggleRow > div { min-width: 0; }
 .toggleRow strong { font-size: 14px; font-weight: 700; }
 .surface .toggleRow p { margin-top: 4px; color: var(--ink-muted); font-size: 13px; }
-.surface.surface :global(.tg) { display: inline-flex; align-items: center; flex-shrink: 0; width: 56px; height: 44px; padding: 0; border: 0; background: transparent; position: relative; cursor: pointer; }
+/* Include the switch role and button element so legacy checked-state rules
+   cannot paint the touch target or override the track/knob geometry. */
+.surface.surface :global(button.tg[role="switch"]) { display: inline-flex; align-items: center; flex-shrink: 0; width: 56px; height: 44px; padding: 0; border: 0; background: transparent; position: relative; cursor: pointer; }
 /* Keep the visual switch separate from its 44px touch target. The previous
    version painted a tall pale rectangle, which made the colored knob read as
    a stray square instead of a switch at normal desktop zoom. */
-.surface.surface :global(.tg)::before { content: ""; position: absolute; inset: 7px 0; border: 1px solid var(--ink); border-radius: var(--r-sm); background: color-mix(in srgb,var(--rose) 10%,var(--sheet,var(--paper-deep))); transition: background 160ms var(--ease-out); }
-.surface.surface :global(.tg)::after { content: ""; position: absolute; top: 12px; left: 5px; width: 20px; height: 20px; border: 1px solid var(--ink); border-radius: var(--r-sm); background: var(--rose); transition: transform 160ms var(--ease-out), background 160ms var(--ease-out); }
-.surface.surface :global(.tg)[aria-checked="true"]::before { background: color-mix(in srgb,var(--emerald) 12%,var(--sheet,var(--paper-deep))); }
-.surface.surface :global(.tg)[aria-checked="true"]::after { background: var(--emerald); transform: translateX(26px); }
-.surface.surface :global(.tg:hover)::before { background: color-mix(in srgb,var(--ink) 5%,var(--sheet,var(--paper-deep))); }
-.surface.surface :global(.tg:hover[aria-checked="true"])::before { background: color-mix(in srgb,var(--emerald) 18%,var(--sheet,var(--paper-deep))); }
-.surface.surface :global(.tg:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
-.surface.surface :global(.tg:disabled) { cursor: not-allowed; opacity: .55; }
+.surface.surface :global(button.tg[role="switch"])::before { content: ""; position: absolute; inset: 7px 0; border: 1px solid var(--ink); border-radius: var(--r-sm); background: color-mix(in srgb,var(--rose) 10%,var(--sheet,var(--paper-deep))); transition: background 160ms var(--ease-out); }
+.surface.surface :global(button.tg[role="switch"])::after { content: ""; position: absolute; top: 12px; left: 5px; width: 20px; height: 20px; border: 1px solid var(--ink); border-radius: var(--r-sm); background: var(--rose); transform: translateX(0); transition: transform 160ms var(--ease-out), background 160ms var(--ease-out); }
+.surface.surface :global(button.tg[role="switch"])[aria-checked="true"]::before { background: color-mix(in srgb,var(--emerald) 12%,var(--sheet,var(--paper-deep))); }
+.surface.surface :global(button.tg[role="switch"])[aria-checked="true"]::after { background: var(--emerald); transform: translateX(26px); }
+.surface.surface :global(button.tg[role="switch"]:hover)::before { background: color-mix(in srgb,var(--ink) 5%,var(--sheet,var(--paper-deep))); }
+.surface.surface :global(button.tg[role="switch"]:hover[aria-checked="true"])::before { background: color-mix(in srgb,var(--emerald) 18%,var(--sheet,var(--paper-deep))); }
+.surface.surface :global(button.tg[role="switch"]:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
+.surface.surface :global(button.tg[role="switch"]:disabled) { cursor: not-allowed; opacity: .55; }
 .surface.surface :global(.sactions) { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 8px; padding: 16px 0 0; border-top: 1px solid var(--ink-line); background: transparent; }
 .surface.surface :global(.sactions .btn), .surface.surface :global(.skf .btn), .surface.surface :global(.skf .mst-btn) { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; max-width: 100%; height: auto; padding: 10px 16px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet,var(--paper-deep)); color: var(--ink); font: 800 12px/1.4 var(--font-sans); letter-spacing: .04em; text-transform: uppercase; cursor: pointer; }
 .surface.surface :global(.sactions .btn-primary), .surface.surface :global(.skf .btn-primary), .surface.surface :global(.skf .mst-btn--primary) { background: var(--accent); color: var(--sheet,var(--paper-deep)); }
@@ -65,4 +67,4 @@
 .mobile.surface :global(.sactions .btn), .mobile.surface :global(.skf-row > button) { width: 100%; }
 .mobile.surface :global(.mono-box) { flex-wrap: wrap; }
 .mobile.surface :global(.mono-box code) { flex-basis: 100%; }
-@media (prefers-reduced-motion: reduce) { .surface.surface :global(.tg)::before, .surface.surface :global(.tg)::after { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .surface.surface :global(button.tg[role="switch"])::before, .surface.surface :global(button.tg[role="switch"])::after { transition: none; } }
