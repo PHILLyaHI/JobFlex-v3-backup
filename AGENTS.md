@@ -84,7 +84,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 <claude-mem-context>
 # Memory Context
 
-# [joblfex-v3] recent context, 2026-09-24 5:11pm PDT
+# [joblfex-v3] recent context, 2026-09-24 5:52pm PDT
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
@@ -121,16 +121,7 @@ Stats: 50 obs (17,029t read) | 639,564t work | 97% savings
 17521 " ✅ Production database schema migration from SQLite to Postgres
 17522 " 🟣 Centralized email routing with Gmail OAuth and platform fallback
 17523 " ✅ Codebase linting verified with no warnings
-S1987 Monitor and verify Vercel production deployment completion for jobflex-v3 release (Sep 20, 10:21 PM)
-S1988 Inspect Vercel build logs to validate production deployment success and identify any build issues (Sep 20, 10:21 PM)
-S1989 Monitor remaining Vercel build stages for production deployment completion (Sep 20, 10:22 PM)
-S1990 Validate responsive design of newly deployed legal pages on mobile viewport (Sep 20, 10:22 PM)
-S1991 Comprehensive validation of deployed legal pages (privacy and terms) across desktop and mobile viewports (Sep 20, 10:23 PM)
-S1992 Validate deployed terms page content and layout in production (Sep 20, 10:23 PM)
-S1993 Review Vercel build log compilation and TypeScript stages to confirm successful production build (Sep 20, 10:23 PM)
-S1994 Verify privacy page deployment and disclosure through browser-based inspection (Sep 20, 10:23 PM)
 ### Sep 22, 2026
-S1995 Verify JobFlex roofing inventory redesign through database validation and responsive browser testing (Sep 22, 4:22 PM)
 17524 7:11p 🔵 Dev Postgres setup connects to Neon and generates Prisma Client successfully
 17525 " 🔵 TypeScript executor (tsx) fails in Windows sandbox due to missing userInfo
 17526 7:12p 🟣 Inventory board model for Claude redesign
@@ -142,7 +133,6 @@ S1995 Verify JobFlex roofing inventory redesign through database validation and 
 17530 " ✅ Truck highlight icon swapped from hardhat to jobs
 17534 " 🔵 QA test account and organization identified
 17535 " 🔵 QA automation harness with session caching and control guards
-S1996 Design and implement new roofing inventory pages for desktop and mobile using Impeccable skill with 2 GPT-6 Astra agents; verify layout, forms, and proposal linkage through browser testing. (Sep 22, 7:17 PM)
 17536 7:17p 🔵 QA safety guards and forbidden control list
 17537 7:18p 🔵 Prisma schema provider mismatch: repo SQLite vs generated PostgreSQL client
 17538 " 🔵 QA sign-in failed: CredentialsSignin error
@@ -156,6 +146,25 @@ S1996 Design and implement new roofing inventory pages for desktop and mobile us
 17546 " 🟣 Mobile page route and dev preview for inventory redesign
 17547 7:23p 🟣 Codex agents built complete roofing inventory redesign implementation
 17548 " 🟣 Claude redesign preview route at /dashboard/roof-estimator/board/claude
+### Sep 24, 2026
+S2013 Enable Sergey Meta lead-import; opened editors and flows without submitting changes (Sep 24, 5:47 PM)
+S2015 Grant Sergey Meta lead-import; completed exploration and ready for submission (Sep 24, 5:47 PM)
+S2014 Final checkpoint. Verify Meta leads integration deployed and monitoring production. (Sep 24, 5:48 PM)
+S2017 Final deployment verification. Confirm Meta leads integration fully live and ready for testing. (Sep 24, 5:48 PM)
+S2016 Grant Sergey Meta lead-import; navigated to setup pages without making changes (Sep 24, 5:48 PM)
+S2018 Enable Sergey Meta lead-import; extensive inspection and preparation phase ongoing (Sep 24, 5:48 PM)
+S2020 Complete post-deployment verification. Confirm Meta leads integration stable in production. (Sep 24, 5:49 PM)
+S2019 Enable Sergey Meta lead-import; extensive exploration loop without submission (Sep 24, 5:50 PM)
+S2022 Enable Sergey Meta lead-import; exploration phase ongoing with repeated inspections (Sep 24, 5:50 PM)
+S2021 Monitor deployment and prepare for potential additional tester additions. (Sep 24, 5:51 PM)
+**Investigated**: Production deployment status. Vercel settings access for allowlist management.
+
+**Learned**: All systems stable. Deployment verified. Settings accessible for future additions if needed.
+
+**Completed**: Sergey invitation sent. Production deployed with Meta tester allowlist. All verifications pass.
+
+**Next Steps**: Await Sergey's acceptance. Once accepted, test lead import. Then JobFlex UI/UX improvements.
+
 
 Access 640k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
