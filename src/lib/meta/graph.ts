@@ -62,7 +62,10 @@ export function metaLoginUrl(state: string) {
   return url.toString();
 }
 
-export async function exchangeMetaCode(code: string) {
+export class MetaPageAccessError extends Error {}
+
+export async function exchangeMetaCode(code: string, requestedPageId?: string) {
+  const pageId = requestedPageId === undefined ? undefined : metaId.parse(requestedPageId);
   const tokenSchema = z.object({ access_token: z.string().min(1) });
   const short = tokenSchema.parse(await graphRequest("oauth/access_token", { client_id: process.env.META_APP_ID!, client_secret: process.env.META_APP_SECRET!, redirect_uri: process.env.META_REDIRECT_URI!, code }));
   const long = tokenSchema.parse(await graphRequest("oauth/access_token", { grant_type: "fb_exchange_token", client_id: process.env.META_APP_ID!, client_secret: process.env.META_APP_SECRET!, fb_exchange_token: short.access_token }));
@@ -71,6 +74,21 @@ export async function exchangeMetaCode(code: string) {
   const permissions = z.object({ data: z.array(z.object({ permission: z.string(), status: z.string() })) }).parse(await metaGraph("me/permissions", token));
   const granted = new Set(permissions.data.filter(v => v.status === "granted").map(v => v.permission));
   if (META_LEAD_PERMISSIONS.some(p => !granted.has(p))) throw new MetaApiError(200, false);
+  // Business-owned Pages can be omitted by /me/accounts even when Meta grants
+  // a Page token. Resolve only the requested Page, using this OAuth grant.
+  if (pageId) {
+    try {
+      const page = metaPageSchema.parse(await metaGraph(pageId, token, { fields: "id,name,access_token" }));
+      if (page.id !== pageId) throw new MetaPageAccessError();
+      const identity = z.object({ id: metaId }).parse(await metaGraph("me", page.access_token, { fields: "id" }));
+      if (identity.id !== pageId) throw new MetaPageAccessError();
+      z.object({ data: z.array(z.object({ id: metaId })) }).parse(await metaGraph(`${pageId}/leadgen_forms`, page.access_token, { fields: "id", limit: "1" }));
+      return { userId: me.id, pages: [page] };
+    } catch (error) {
+      if (error instanceof MetaApiError && error.retryable) throw error;
+      throw new MetaPageAccessError("Meta could not verify lead-form access for this Page.");
+    }
+  }
   const pages = [];
   let after: string | undefined;
   // Pagination cursor only; never follow an upstream URL containing a token.

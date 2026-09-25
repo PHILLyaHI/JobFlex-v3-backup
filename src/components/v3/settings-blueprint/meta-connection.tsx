@@ -10,7 +10,8 @@ import styles from "./meta-connection.module.css";
 const notices: Record<string, string> = {
   denied: "Meta authorization was canceled. You can connect again when ready.",
   invalid_state: "The connection request expired or your workspace changed. Please connect again.",
-  no_pages: "Meta returned no Pages. Check Page access, your Business Login configuration, and Leads Access in Meta Business settings.",
+  no_pages: "Meta did not list your Pages. Try your Facebook Page ID below; we’ll verify access before connecting.",
+  page_unavailable: "Meta could not verify this Page. Check the Page ID and use the Facebook account with access to its lead forms.",
   failed: "Meta could not authorize this connection. Check that the app role invitation is accepted, all required permissions are granted, and the configuration uses a User access token. Then try again.",
   choose_page: "Authorization received. Choose the Page whose leads belong in this workspace.",
 };
@@ -118,6 +119,17 @@ export function MetaConnection({ data, mobile = false }: { data: MetaData; mobil
             <button type="button" className={styles.textButton} disabled={busy || data.comingSoon || !data.canManage} onClick={() => { window.location.assign("/api/integrations/meta/connect"); }}>Use another Facebook account<ArrowUpRight size={16} aria-hidden="true" /></button>
             <button type="button" className={styles.textButton} disabled={busy || !data.canManage} onClick={() => void disconnect()}>Cancel connection</button>
           </div>}
+          {!data.comingSoon && data.canManage && <details className={styles.details} open={query.get("meta") === "no_pages" || query.get("meta") === "page_unavailable" ? true : undefined}>
+            <summary>Page missing? Use its ID<ChevronDown size={16} className={styles.chevron} aria-hidden="true" /></summary>
+            <form className={styles.choice} action="/api/integrations/meta/connect" method="get">
+              <div className={styles.field}>
+                <label htmlFor={mobile ? "meta-page-id-mobile" : "meta-page-id-desktop"}>Facebook Page ID</label>
+                <input id={mobile ? "meta-page-id-mobile" : "meta-page-id-desktop"} name="pageId" type="text" inputMode="numeric" pattern="[0-9]{1,40}" maxLength={40} required disabled={busy} autoComplete="off" aria-describedby={mobile ? "meta-page-id-help-mobile" : "meta-page-id-help-desktop"} />
+                <p id={mobile ? "meta-page-id-help-mobile" : "meta-page-id-help-desktop"} className={styles.fieldHelp}>Find it in Meta Business Settings → Accounts → Pages. Use the Page ID, not the app or business ID.</p>
+              </div>
+              <button type="submit" className={secondary} disabled={busy}>Verify Page with Facebook<ArrowUpRight size={16} aria-hidden="true" /></button>
+            </form>
+          </details>}
         </>}
         {!data.canManage && <p className={styles.notice}>Only workspace owners and managers can manage this connection.</p>}
         {feedback && <p role={error ? "alert" : "status"} aria-live="polite" className={error ? styles.error : styles.notice}>{feedback}</p>}
