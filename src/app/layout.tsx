@@ -36,7 +36,9 @@ export const metadata: Metadata = {
     "The modern operating system for contractors. AI-powered proposals, lead pipelines, scheduling, and client portals.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
   icons: {
-    icon: "/jobflex-mark-384.png",
+    // Tight crop of the mark (2026-09-24): the 384 file is two-thirds padding,
+    // which drew the J tiny in the browser tab.
+    icon: "/jobflex-mark-tab.png",
     apple: "/jobflex-mark-384.png",
   },
 };
