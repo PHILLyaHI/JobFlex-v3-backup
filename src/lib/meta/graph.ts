@@ -10,7 +10,9 @@ export const metaPageSchema = z.object({ id: metaId, name: z.string().max(500), 
 export const metaLeadSchema = z.object({
   id: metaId,
   created_time: z.string().optional(),
-  field_data: z.array(z.object({ name: z.string(), values: z.array(z.string()) })).default([]),
+  // Meta omits values for unanswered fields (including optional inbox_url).
+  // Keep those fields empty instead of rejecting every lead in the batch.
+  field_data: z.array(z.object({ name: z.string(), values: z.array(z.string()).default([]) })).default([]),
 });
 export type MetaLead = z.infer<typeof metaLeadSchema>;
 
