@@ -25,6 +25,7 @@ import { getBlockedCustomPages } from "@/lib/customPageAccess";
 import { isCustomBlockedPath } from "@/lib/customPlan";
 import { UpgradeGate } from "@/components/v3/upgrade-gate/upgrade-gate";
 import { TrialWatchMount } from "@/components/v3/trial-watch/trial-watch-mount";
+import "@/components/v3/who/who.css";
 
 /** Handheld URL prefix → the desktop route whose gates apply. */
 const DESKTOP_TWIN: Record<string, string> = {

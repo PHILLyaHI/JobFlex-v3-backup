@@ -171,6 +171,23 @@ export type JdPhoto = {
   /** "Before" / "Progress" / "After", title-cased for the plate. */
   kind: string;
   caption: string;
+  /** Who added it, when a trail row names this photo (meta.photoId); else null. */
+  by: JdWho | null;
+};
+
+/** The member behind a trail row — lib/team/who draws the mark. Null is the system. */
+export type JdWho = { id: string; name: string; role: string | null };
+
+/** One ActivityEvent on this job (lib/activityLog): what was done and by whom (2026-09-24). */
+export type JdTrailRow = {
+  id: string;
+  /** TRAIL_KINDS — "PHOTO", "EXPENSE", "JOB", … */
+  kind: string;
+  /** The one sentence the action wrote. */
+  summary: string;
+  /** "Aug 11 · 7:00 AM" — pre-formatted (see the header). */
+  at: string;
+  who: JdWho | null;
 };
 
 /** One JobExpense row. */
@@ -208,6 +225,8 @@ export type JdExpense = {
   vendor: string;
   meta: string;
   amount: number;
+  /** Who logged it, when a trail row names this expense (meta.expenseId); else null. */
+  by: JdWho | null;
 };
 
 /** A WorkerProfile the org can still put on this job. */
@@ -261,6 +280,10 @@ export type JobDetailRecord = {
   changes: JdChange[];
   photos: JdPhoto[];
   expenses: JdExpense[];
+  /** Who did what on this job, newest first, at most 40 rows — the org's
+   *  ActivityEvents whose meta names this job or whose proposal is the job's.
+   *  A field worker's record carries no EXPENSE / PAY rows (they name money). */
+  trail: JdTrailRow[];
   /** The job's own money — null on a field worker's record. */
   money: JdMoney | null;
   /** What to take from the warehouse for this job (lib/inventory pickList):

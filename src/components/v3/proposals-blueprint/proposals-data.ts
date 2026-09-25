@@ -71,6 +71,10 @@ export type ProposalRow = {
   /** When it was sent ("3d ago"), or null for a draft. */
   sentAgo?: string | null;
   owner: string;
+  /** The member who made it, for the mark (lib/team/who): id, full name and
+   *  their role on the org. Null when the owner is gone. `owner` above stays
+   *  the donor's given-name plate for the code that still prints it. */
+  ownerWho?: { id: string; name: string; role: string | null } | null;
   /** Count of shoppable material lines — the menu's "N items" hint. */
   mat: number;
   /** Prebuilt Zillow search URL, or null when the client has no address. */

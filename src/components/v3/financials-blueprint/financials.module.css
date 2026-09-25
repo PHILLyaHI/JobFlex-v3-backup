@@ -1533,6 +1533,20 @@
   .bp :global(.content .fi-table th:nth-child(4)), .bp :global(.content .fi-table td:nth-child(4)) { display: none; }
 }
 
+/* ── Who did it ──────────────────────────────────────────────────────
+   The member's mark (components/v3/who/who.css, loaded by the shell) under a
+   row's title, and the by-person strip under a book's head. The strip is a
+   wrapping row so a long roster folds rather than pushing the card wide. */
+.bp :global(.content .fi-who) { margin-top: 5px; min-width: 0; }
+.bp :global(.content .fi-who .who) { max-width: 100%; }
+.bp :global(.content .fi-by) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; min-width: 0; padding: 10px 20px; border-bottom: 1.5px solid var(--hair-soft); background: #fff; }
+.bp :global(.content .fi-by-lbl) { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .fi-by-item) { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.bp :global(.content .fi-by-amt) { font-family: var(--font-mono); font-size: 12.5px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+@media (max-width: 860px) {
+  .bp :global(.content .fi-by) { padding: 9px 12px; gap: 6px 14px; }
+}
+
 /* ── Table notes ──────────────────────────────────────────────────────
    A refused write (server-side manager gate, "Only drafts can be sent") has
    to land somewhere the user is already looking. These sit directly under the

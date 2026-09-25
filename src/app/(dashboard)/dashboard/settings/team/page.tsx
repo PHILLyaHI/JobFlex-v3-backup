@@ -1,9 +1,8 @@
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { TeamClient } from "./team-client";
-import { longDate } from "@/lib/format";
+import { lastActiveLabel } from "@/components/v3/workers-blueprint/workers-data";
 
 export default async function TeamPage() {
   const { organizationId } = await requireOrg();
@@ -21,6 +20,21 @@ export default async function TeamPage() {
     }),
   ]);
 
+  // LAST ACTIVE (2026-09-24): the newest ActivityEvent each member wrote —
+  // "does what they do reflect on the owner's side?" Best effort; the team
+  // sheet never fails on its trail.
+  const lastEventByUser = new Map<string, Date>();
+  try {
+    const rows = await db.activityEvent.groupBy({
+      by: ["actorId"],
+      where: { organizationId, actorId: { not: null } },
+      _max: { createdAt: true },
+    });
+    for (const r of rows) if (r.actorId && r._max.createdAt) lastEventByUser.set(r.actorId, r._max.createdAt);
+  } catch {
+    /* no trail, no plate */
+  }
+
   return (
     <>
       <PageHeader
@@ -36,6 +50,7 @@ export default async function TeamPage() {
           email: m.user?.email ?? "",
           role: m.role,
           joinedAt: m.createdAt,
+          lastActive: lastActiveLabel(lastEventByUser.get(m.userId) ?? null),
         }))}
         invites={invites.map((i) => ({
           id: i.id,

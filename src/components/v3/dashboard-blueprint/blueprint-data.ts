@@ -8,6 +8,8 @@
 // and the two pure helpers the page needs to describe a chart axis the donor's
 // renderer can draw.
 
+import type { WhoLike } from "@/lib/team/who";
+
 /** One scheduled block in the This Week card. `m` is minutes-from-midnight,
  *  which is what the day list sorts on. */
 export type WeekEvent = { m: number; t: string; title: string };
@@ -26,7 +28,9 @@ export type JobRow = {
 };
 
 /** One row of Recent Activity. `i` is a sprite symbol id (`i-file`, …). */
-export type ActivityRow = { i: string; t: string; m: string };
+/** One line of Recent Activity. `who` is the member who did it — null for the
+ *  system's own doing, `{id:null,name:"Client"}` for a client's portal click. */
+export type ActivityRow = { i: string; t: string; m: string; who: WhoLike | null };
 
 /** One card on the Lead Flow board. `stage` is a lowercase `LEAD_STAGES` key —
  *  the uppercase form is the database's `Lead.status`. */

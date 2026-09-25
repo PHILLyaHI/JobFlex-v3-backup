@@ -70,7 +70,7 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
       client: {
         select: { name: true, email: true, address: true, city: true, state: true, zip: true },
       },
-      owner: { select: { name: true } },
+      owner: { select: { id: true, name: true, email: true } },
       // The project a proposal is filed under (2026-09-18) — the list chains
       // a project's proposals together under its name.
       project: { select: { id: true, name: true } },
@@ -95,6 +95,13 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
       },
     },
   });
+
+  // WHO MADE IT (2026-09-24): the Owner column carries the member's mark —
+  // name, role and their color (lib/team/who). The role lives on the
+  // membership, not the user, so it is looked up once for the whole book.
+  const roleByUser = new Map(
+    (await db.membership.findMany({ where: { organizationId }, select: { userId: true, role: true } })).map((m) => [m.userId, m.role]),
+  );
 
   return proposals.map((p) => {
     const materials = p.lineItems.map((l) => ({
@@ -170,6 +177,9 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
       remindersOn: p.remindersOn ?? null,
       // The donor prints a single given name in the Owner column.
       owner: p.owner?.name?.trim().split(/\s+/)[0] || "—",
+      ownerWho: p.owner
+        ? { id: p.owner.id, name: p.owner.name?.trim() || p.owner.email || "Member", role: roleByUser.get(p.owner.id) ?? null }
+        : null,
       mat: shoppable.length,
       zillow: zillowSearchUrl(addr),
       maps: mapsUrl(addr),

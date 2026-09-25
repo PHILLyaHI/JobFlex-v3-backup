@@ -21,6 +21,7 @@
 
 import { updateLeadStatus } from "@/actions/leads";
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import { whoHtml } from "@/lib/team/who";
 import {
   LEAD_STAGES,
   leadProfileMissing,
@@ -320,11 +321,15 @@ export function initDashboardContent(content: HTMLElement, data: DashboardData):
               '<div class="act-row"><div class="act-ic"><svg class="ic"><use href="#' +
               escapeAttr(a.i) +
               '"/></svg></div>' +
-              '<div><div class="act-title">' +
+              '<div class="act-body"><div class="act-title">' +
               escapeText(a.t) +
-              '</div><div class="act-meta">' +
+              // Who did it, then the kind and the time — one line that wraps
+              // to two on a phone (owner, 2026-09-24: every row names its author).
+              '</div><div class="act-foot">' +
+              whoHtml(a.who, { compact: true }) +
+              '<span class="act-meta">' +
               escapeText(a.m) +
-              "</div></div></div>",
+              "</span></div></div></div>",
           )
           .join("")
       : '<div class="empty">No activity yet.</div>';

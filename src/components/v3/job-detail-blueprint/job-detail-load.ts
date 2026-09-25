@@ -27,6 +27,7 @@ import { isTradeId, pickList } from "@/lib/inventory";
 import { inventoryLinkOf, linkedTradeOf } from "@/lib/inventoryPick";
 import { stockItemsOf } from "@/lib/inventoryPolicy";
 import { explodeLines } from "@/lib/inventoryBom";
+import { actorsOf } from "@/lib/activityLog";
 import {
   STATUS_TO_KEY,
   type JdAssignState,
@@ -39,6 +40,8 @@ import {
   type JdPhoto,
   type JdPick,
   type JdPicked,
+  type JdTrailRow,
+  type JdWho,
   type JdWorkerOption,
   type JobDetailRecord,
 } from "./job-detail-data";
@@ -155,6 +158,59 @@ function eventMeta(startsAt: Date, endsAt: Date, notes: string | null): string |
   return sameDay(startsAt, endsAt)
     ? `until ${clock(endsAt)}`
     : `until ${day(endsAt)} · ${clock(endsAt)}`;
+}
+
+/**
+ * WHO DID WHAT ON THIS JOB (2026-09-24). ActivityEvent has no jobId column:
+ * an action ties its row to a job through `meta.jobId` (lib/activityLog), so
+ * the read is a substring match on the JSON — `"jobId":"<id>"` — plus every
+ * row filed under the job's proposal. Newest first, forty at most. The
+ * actors come from the org's memberships, so a row keeps its name and role
+ * even after the member's WorkerProfile is gone.
+ *
+ * Also hands back who touched each photo / expense, when a row named one
+ * (`meta.photoId` / `meta.expenseId`), so the lists can stamp "by <mark>".
+ */
+async function trailFor(
+  organizationId: string,
+  jobId: string,
+  proposalId: string | null,
+  opts: { noMoney: boolean },
+): Promise<{ rows: JdTrailRow[]; photoBy: Map<string, JdWho>; expenseBy: Map<string, JdWho> }> {
+  const photoBy = new Map<string, JdWho>();
+  const expenseBy = new Map<string, JdWho>();
+  try {
+    const [events, actors] = await Promise.all([
+      db.activityEvent.findMany({
+        where: {
+          organizationId,
+          OR: [{ meta: { contains: `"jobId":"${jobId}"` } }, ...(proposalId ? [{ proposalId }] : [])],
+          ...(opts.noMoney ? { kind: { notIn: ["EXPENSE", "PAY"] } } : {}),
+        },
+        orderBy: { createdAt: "desc" },
+        take: 40,
+        select: { id: true, kind: true, summary: true, createdAt: true, actorId: true, meta: true },
+      }),
+      actorsOf(organizationId),
+    ]);
+    const rows: JdTrailRow[] = events.map((e) => {
+      const who = e.actorId ? (actors.get(e.actorId) ?? { id: e.actorId, name: "Former member", role: null }) : null;
+      if (who && e.meta) {
+        try {
+          const m = JSON.parse(e.meta) as { photoId?: unknown; expenseId?: unknown };
+          if (typeof m.photoId === "string" && !photoBy.has(m.photoId)) photoBy.set(m.photoId, who);
+          if (typeof m.expenseId === "string" && !expenseBy.has(m.expenseId)) expenseBy.set(m.expenseId, who);
+        } catch {
+          /* a row without readable meta is still a row */
+        }
+      }
+      return { id: e.id, kind: e.kind, summary: e.summary, at: eventWhen(e.createdAt), who };
+    });
+    return { rows, photoBy, expenseBy };
+  } catch {
+    // The trail is a reading aid; a job page never fails on it.
+    return { rows: [], photoBy, expenseBy };
+  }
 }
 
 const ASSIGNMENT_STATE: Record<string, JdCrew["state"]> = {
@@ -355,11 +411,14 @@ export async function loadJobDetail(
     publicToken: c.publicToken,
   }));
 
+  const trail = await trailFor(organizationId, job.id, job.proposalId, { noMoney: false });
+
   const photos: JdPhoto[] = job.photos.map((p) => ({
     id: p.id,
     url: p.url,
     kind: p.kind ? p.kind.charAt(0) + p.kind.slice(1).toLowerCase() : "Photo",
     caption: p.caption?.trim() || `Added ${day(p.createdAt)}`,
+    by: trail.photoBy.get(p.id) ?? null,
   }));
 
   const expenses: JdExpense[] = job.expenses.map((e) => ({
@@ -367,6 +426,7 @@ export async function loadJobDetail(
     vendor: e.category,
     meta: e.note?.trim() || `logged ${day(e.createdAt)}`,
     amount: e.amount,
+    by: trail.expenseBy.get(e.id) ?? null,
   }));
 
   const addressLine =
@@ -408,6 +468,7 @@ export async function loadJobDetail(
     changes,
     photos,
     expenses,
+    trail: trail.rows,
     money,
     pick,
     loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
@@ -495,11 +556,15 @@ async function loadWorkerScoped(
     me: a.workerId === wp.id,
   }));
 
+  // The crew's trail: who did what on the job, minus the rows that name money.
+  const trail = await trailFor(organizationId, job.id, job.proposalId, { noMoney: true });
+
   const photos: JdPhoto[] = job.photos.map((p) => ({
     id: p.id,
     url: p.url,
     kind: p.kind ? p.kind.charAt(0) + p.kind.slice(1).toLowerCase() : "Photo",
     caption: p.caption?.trim() || `Added ${day(p.createdAt)}`,
+    by: trail.photoBy.get(p.id) ?? null,
   }));
 
   // The WHERE clause guarantees one, but `find` is still typed as optional.
@@ -533,6 +598,7 @@ async function loadWorkerScoped(
     changes: [],
     photos,
     expenses: [],
+    trail: trail.rows,
     money: null,
     pick: await pickFor(organizationId, job.proposal ? linkedTradeOf({ ...job.proposal, inventoryLinked: job.proposalId ? ((await inventoryLinkOf(organizationId, [job.proposalId])).get(job.proposalId) ?? null) : null }) : null, job.proposal?.lineItems ?? []),
     loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,

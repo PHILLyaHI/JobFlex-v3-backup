@@ -38,6 +38,7 @@
 // code, and a caveat pinned beside the actions reads as part of the actions.
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { Who } from "@/components/v3/who/who";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { type ProposalFilter, bucketOf, money } from "./client-detail-data";
@@ -452,9 +453,12 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
                   <span className={styles.aIcon} aria-hidden="true">
                     <Ic name={a.icon} />
                   </span>
-                  <span>
+                  <span className={styles.aBody}>
                     <span className={styles.aText}>{a.text}</span>
-                    <span className={styles.aStamp}>{a.stamp}</span>
+                    <span className={styles.aFoot}>
+                      <Who who={a.who} compact />
+                      <span className={styles.aStamp}>{a.stamp}</span>
+                    </span>
                   </span>
                 </div>
               ))

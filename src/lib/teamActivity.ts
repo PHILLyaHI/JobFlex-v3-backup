@@ -6,7 +6,7 @@ import type { TeamActivityRow, TeamMember } from "@/lib/teamActivityView";
 
 export async function loadTeamActivity(
   organizationId: string,
-  { take = 200 }: { take?: number } = {},
+  { take = 200, since }: { take?: number; since?: Date | null } = {},
 ): Promise<{ activities: TeamActivityRow[]; members: TeamMember[] }> {
   const [memberships, events] = await Promise.all([
     db.membership.findMany({
@@ -15,7 +15,7 @@ export async function loadTeamActivity(
       orderBy: { createdAt: "asc" },
     }),
     db.activityEvent.findMany({
-      where: { organizationId },
+      where: { organizationId, ...(since ? { createdAt: { gte: since } } : {}) },
       include: {
         actor: { select: { id: true, name: true, email: true } },
         proposal: { select: { title: true } },
@@ -27,6 +27,7 @@ export async function loadTeamActivity(
     }),
   ]);
 
+  const roleByUser = new Map(memberships.map((m) => [m.userId, m.role]));
   return {
     activities: events.map((e) => ({
       id: e.id,
@@ -35,6 +36,8 @@ export async function loadTeamActivity(
       createdAt: e.createdAt.toISOString(),
       actorId: e.actorId,
       actorName: e.actor?.name ?? e.actor?.email ?? null,
+      actorRole: e.actorId ? (roleByUser.get(e.actorId) ?? null) : null,
+      meta: e.meta,
       proposalId: e.proposalId,
       proposalTitle: e.proposal?.title ?? null,
       clientId: e.clientId,
@@ -45,6 +48,7 @@ export async function loadTeamActivity(
     members: memberships.map((m) => ({
       id: m.userId,
       name: m.user?.name ?? m.user?.email ?? "Member",
+      role: m.role,
     })),
   };
 }

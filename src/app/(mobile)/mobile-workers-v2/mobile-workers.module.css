@@ -1081,3 +1081,5 @@
   letter-spacing: 0.03em; line-height: 1.5;
   color: var(--muted-light);
 }
+/* the last-active plate on the roster row: quieter than the address */
+.wseen { display: block; color: var(--muted); }

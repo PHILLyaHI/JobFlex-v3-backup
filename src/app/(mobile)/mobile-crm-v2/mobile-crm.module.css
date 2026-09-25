@@ -580,12 +580,14 @@
 .recent::-webkit-scrollbar-track { background: transparent; }
 .recent::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 0; }
 .ritem {
-  display: flex; align-items: baseline; gap: 12px;
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px;
   padding: 11px 0;
   border-top: 1.5px solid var(--hair-soft);
 }
 .recent .ritem:first-child { border-top: none; padding-top: 0; }
 .rtxt { font-size: 14px; font-weight: 500; line-height: 1.4; min-width: 0; overflow-wrap: anywhere; }
+/* The author's mark takes the row's second line. */
+.rwho { flex: 1 0 100%; margin-top: -6px; }
 .rage {
   margin-left: auto;
   font-family: var(--font-mono);

@@ -19,8 +19,25 @@
 // handheld-only: the tab map, the page size, the per-tab filter options and the
 // client-side matchers that back the search box.
 
+import type { WhoLike } from "@/lib/team/who";
+
 /** One column pair in the revenue-vs-expenses chart. */
 export type MonthPoint = { m: string; revenue: number; expenses: number };
+
+/** WHO DID IT (2026-09-24) — the mark on a ledger row: a member (their color,
+ *  name, role), the client who paid online (grey "Client"), or the system.
+ *  Read beside the book through ./who-action.ts; a row the trail cannot place
+ *  carries none and draws nothing. Mirrors the desk's shapes. */
+export type WhoKind = "member" | "client" | "system";
+export type WhoMark = { who: WhoLike | null; whoKind: WhoKind };
+export type WhoShare = { who: WhoLike | null; whoKind: WhoKind; amount: number; count: number };
+export type FinancialsWho = {
+  expenses: Record<string, WhoMark>;
+  invoices: Record<string, WhoMark>;
+  orders: Record<string, WhoMark>;
+  byPerson: { payments: WhoShare[]; expenses: WhoShare[] };
+};
+export const EMPTY_WHO: FinancialsWho = { expenses: {}, invoices: {}, orders: {}, byPerson: { payments: [], expenses: [] } };
 
 /** The 30-day roll-up behind the gauge, the stat strip and the attention list.
  *  Mirrors `FinancialsRollup` in src/actions/financials.ts. */

@@ -13,12 +13,14 @@
 
 import {
   VERB,
+  actorLabel,
   categoryOf,
   dayLabel,
   timeOfDay,
   type TeamActivityRow,
   type TeamMember,
 } from "@/lib/teamActivityView";
+import { whoColor } from "@/lib/team/who";
 
 export type { TeamActivityRow, TeamMember };
 
@@ -68,14 +70,23 @@ export type ActCat = { key: string; label: string };
 
 // The donor's five chips ARE the classic feed's category lens, so both editions
 // take the list from one place.
-export { CATEGORIES as ACT_CATS } from "@/lib/teamActivityView";
+export { CATEGORIES as ACT_CATS, RANGES as ACT_RANGES } from "@/lib/teamActivityView";
 
 export type ActivityEntry = {
   day: string;
+  /** Epoch ms of createdAt — the range control filters on it client-side. */
+  at: number;
+  kind: string;
+  /** The person's name; "System" for a cron or webhook, "Client" for a portal
+   *  click (VIEWED / ACCEPTED / DECLINED with no actor). */
   actor: string;
   /** Membership user id, or "" for a client-side / system event. The person
    *  filter matches on this, not on the display name. */
   actorId: string;
+  /** Membership role (OWNER, ESTIMATOR, …) for the mark; null off the team. */
+  actorRole: string | null;
+  /** The person's own color (lib/team/who) — the same on every page. */
+  actorColor: string;
   cat: string;
   /** Contains inline <b> markup — written into the feed as HTML. Everything
    *  interpolated from the database is escaped by `toActivityEntries`. */
@@ -93,6 +104,13 @@ const TONE: Record<string, string> = {
   COMPLETED: "var(--success)",
   SCHEDULED: "var(--warning)",
   DECLINED: "var(--danger)",
+  PAYMENT_RECEIVED: "var(--success)",
+  PAYMENT_MARKED: "var(--success)",
+  PAY: "var(--success)",
+  PAYMENT_REFUNDED: "var(--danger)",
+  PAYMENT_ALERT: "var(--danger)",
+  STOCK_LOW: "var(--warning)",
+  STOCK_SHORT_JOB: "var(--warning)",
 };
 
 function escapeHtml(v: string): string {
@@ -105,36 +123,53 @@ function escapeHtml(v: string): string {
 
 const CAT_LABEL: Record<string, string> = {
   proposals: "Proposal",
-  leads: "Lead",
+  estimates: "Estimate",
+  money: "Money",
   jobs: "Job",
+  leads: "Lead",
+  stock: "Stock",
+  photos: "Photo",
   team: "Team",
 };
 
 /**
  * Map real ActivityEvent rows onto the donor's feed row shape.
  *
- * Same sentence the classic feed builds: actor + verb, then the object it
- * touched. When the event names no object (workspace created, password reset,
- * invite sent) the event's own summary sentence carries the line and the meta
- * falls back to the category.
+ * The STORED summary carries the line — it is the one sentence the writer
+ * chose, with the amount, the stage, the file count ("Added a $240 expense to
+ * Roof replacement — dumpster"). Until 2026-09-24 this rebuilt "verb object"
+ * from the kind and lost all of that. The object the row points at (proposal,
+ * lead, client) is appended in bold only when the sentence does not already
+ * name it; a row with no summary at all falls back to the verb.
  */
 export function toActivityEntries(rows: TeamActivityRow[]): ActivityEntry[] {
   return rows.map((row) => {
     const verb = VERB[row.kind] ?? row.kind.toLowerCase().replace(/_/g, " ");
     const cat = categoryOf(row);
     const object = row.proposalTitle ?? row.leadName ?? row.clientName ?? null;
+    const stored = (row.summary ?? "").trim();
+    const names = object ? stored.toLowerCase().includes(object.trim().toLowerCase()) : true;
+    let summary: string;
+    if (stored && names) summary = escapeHtml(stored);
+    else if (stored) summary = escapeHtml(stored) + " · <b>" + escapeHtml(object as string) + "</b>";
+    else if (object) summary = escapeHtml(verb) + " <b>" + escapeHtml(object) + "</b>";
+    else summary = escapeHtml(verb);
     const meta = object
       ? CAT_LABEL[cat] +
-        (row.proposalId && row.clientName ? " · " + row.clientName : "")
+        (row.proposalId && row.clientName && !stored.toLowerCase().includes(row.clientName.toLowerCase())
+          ? " · " + row.clientName
+          : "")
       : CAT_LABEL[cat];
     return {
       day: dayLabel(row.createdAt),
-      actor: row.actorName ?? "Client",
+      at: new Date(row.createdAt).getTime(),
+      kind: row.kind,
+      actor: actorLabel(row),
       actorId: row.actorId ?? "",
+      actorRole: row.actorId ? row.actorRole : null,
+      actorColor: whoColor(row.actorId),
       cat,
-      summary: object
-        ? escapeHtml(verb) + " <b>" + escapeHtml(object) + "</b>"
-        : escapeHtml(row.summary || verb),
+      summary,
       meta: escapeHtml(meta),
       time: timeOfDay(row.createdAt),
       tone: TONE[row.kind] ?? "",

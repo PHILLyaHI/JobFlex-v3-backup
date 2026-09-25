@@ -47,6 +47,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./mobile-crm.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
+import { Who } from "@/components/v3/who/who";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import { claimLead, deleteLead } from "@/actions/leads";
@@ -1251,6 +1252,7 @@ export function MobileCrm() {
                     <li className={styles.ritem} key={a.id}>
                       <span className={styles.rtxt}>{a.summary}</span>
                       <span className={styles.rage}>{a.age}</span>
+                      <Who who={a.who} compact className={styles.rwho} />
                     </li>
                   ))}
                 </ul>

@@ -592,6 +592,7 @@ export function MobileWorkers() {
           invite: "PENDING",
           role,
           joined: new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }),
+          lastActive: "Never",
           jobs: [],
         };
         // Appended, not prepended: the folio is the array index, so inserting at
@@ -812,6 +813,8 @@ export function MobileWorkers() {
                           not lower-case is an address you mistype. */}
                       <div className={`${styles.wmeta} ${e.email ? "" : styles.isNone}`}>
                         {e.email ?? "no email on file"}
+                        {/* when they were last in the app — the desk roster's plate (2026-09-24) */}
+                        {e.lastActive && e.lastActive !== "Never" ? <span className={styles.wseen}>{e.lastActive.replace(/^Active /, "active ")}</span> : null}
                       </div>
                     </div>
                     <button className={styles.wrowOpen} type="button"
@@ -968,6 +971,12 @@ export function MobileWorkers() {
               <div className={styles.fldRow}>
                 <div className={styles.fldLbl}>Joined</div>
                 <div className={`${styles.fldRowV} ${styles.isMono}`}>{sheetWorker.joined}</div>
+              </div>
+              <div className={styles.fldRow}>
+                <div className={styles.fldLbl}>Last active</div>
+                <div className={`${styles.fldRowV} ${sheetWorker.lastActive && sheetWorker.lastActive !== "Never" ? styles.isMono : styles.isNone}`}>
+                  {sheetWorker.lastActive && sheetWorker.lastActive !== "Never" ? sheetWorker.lastActive.replace(/^Active /, "") : "never"}
+                </div>
               </div>
               <div className={styles.fldRow}>
                 <div className={styles.fldLbl}>Active jobs ({sheetWorker.jobs.length})</div>

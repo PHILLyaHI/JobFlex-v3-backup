@@ -21,11 +21,15 @@ import { safeHref } from "@/lib/safeHref";
 import { deleteChangeOrder, sendChangeOrder } from "@/actions/changeOrders";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import { whoHtml } from "@/lib/team/who";
 import {
   EXPENSE_CATEGORIES,
   type ChangeOrder,
   type Expense,
+  type FinancialsByPerson,
   type Invoice,
+  type WhoMark,
+  type WhoShare,
   type MonthPoint,
   type OverheadMonth,
   type OverheadSheet,
@@ -55,6 +59,8 @@ export type FinancialsOptions = {
   expenses?: Expense[];
   orders?: ChangeOrder[];
   invoices?: Invoice[];
+  /** WHO DID IT — the 30-day by-person split for the two book heads. */
+  byPerson?: FinancialsByPerson;
   /** Twelve months of job money, oldest first, and every saved overhead sheet.
    *  Both belong to the Overhead tab (overhead-behavior.ts); they pass through
    *  here only because one init call owns the whole page. */
@@ -124,6 +130,7 @@ export function initFinancialsContent(
   const invoicesData: Invoice[] = options.invoices ?? [];
   const monthly: MonthPoint[] = options.monthly ?? [];
   const rollup: Rollup = { ...EMPTY_ROLLUP, ...(options.rollup ?? {}) };
+  const byPerson: FinancialsByPerson = options.byPerson ?? { payments: [], expenses: [] };
 
   // Dismiss Lead Center banners (smooth height + gap collapse) — inert on this
   // page (no banner in the markup), kept for donor parity with shared shells.
@@ -741,6 +748,61 @@ export function initFinancialsContent(
       .join("");
   }
 
+  // ================= WHO DID IT =================
+  /** The mark under a row's title: the member in their color, or the grey
+   *  "Client" when the money came in through the client's own link. A row the
+   *  trail cannot place draws nothing — a wrong name is worse than none. */
+  function whoMark(row: Partial<WhoMark>, compact?: boolean) {
+    if (row.whoKind === "client") return clientMark(compact);
+    if (row.who && row.who.id) return whoHtml(row.who, { compact });
+    return "";
+  }
+  /** Same classes as lib/team/who, so who.css dresses it: grey dot, "Client",
+   *  "online" where a member's role would sit. */
+  function clientMark(compact?: boolean) {
+    return (
+      '<span class="who who--system' +
+      (compact ? " who--compact" : "") +
+      '" style="--who:#8a8a8a" data-who="" title="Client · paid online">' +
+      '<i class="who-dot" aria-hidden="true">C</i><b class="who-name">Client</b>' +
+      (compact ? "" : '<em class="who-role">online</em>') +
+      "</span>"
+    );
+  }
+  function whoCell(row: Partial<WhoMark>) {
+    const m = whoMark(row);
+    return m ? '<div class="fi-who">' + m + "</div>" : "";
+  }
+  /** The strip under a book's head: "Recorded by" and each person's 30-day
+   *  total, their dot in their color. Hidden when the trail names nobody. */
+  function renderBy(hostId: string, verb: string, shares: WhoShare[]) {
+    const host = $("#" + hostId);
+    if (!host) return;
+    const rows = shares.filter(function (sh) {
+      return sh.amount > 0 && (sh.whoKind === "client" || (sh.who && sh.who.id));
+    });
+    host.classList.toggle("is-hidden", rows.length === 0);
+    if (!rows.length) {
+      host.innerHTML = "";
+      return;
+    }
+    host.innerHTML =
+      '<span class="fi-by-lbl">' +
+      esc(verb) +
+      " · 30d</span>" +
+      rows
+        .map(function (sh) {
+          return (
+            '<span class="fi-by-item">' +
+            whoMark(sh, true) +
+            '<b class="fi-by-amt">' +
+            money(sh.amount) +
+            "</b></span>"
+          );
+        })
+        .join("");
+  }
+
   // ================= TABLES =================
   /** The job cell is a real destination now — the same link the classic
    *  expenses table used. */
@@ -764,6 +826,7 @@ export function initFinancialsContent(
       '">' +
       "<td>" +
       jobCell(e.jobId, e.job) +
+      whoCell(e) +
       "</td>" +
       '<td><span class="pstatus cat">' +
       esc(e.category) +
@@ -793,6 +856,7 @@ export function initFinancialsContent(
 
   function renderExpenses() {
     syncExpenseTotals();
+    renderBy("expBy", "Logged by", byPerson.expenses);
     const body = $("#expBody");
     if (body) body.innerHTML = expensesData.map(expenseRowHtml).join("");
   }
@@ -825,7 +889,9 @@ export function initFinancialsContent(
             '">' +
             '<td><div class="fi-title">' +
             esc(o.title) +
-            "</div></td>" +
+            "</div>" +
+            whoCell(o) +
+            "</td>" +
             "<td>" +
             (o.jobId
               ? '<a class="fi-note fi-link" href="/dashboard/jobs/' +
@@ -866,6 +932,7 @@ export function initFinancialsContent(
     if (totalEl)
       totalEl.textContent =
         money(paid) + " collected · " + invoicesData.length + " invoices";
+    renderBy("invBy", "Recorded by", byPerson.payments);
     const body = $("#invBody");
     if (body)
       body.innerHTML = invoicesData
@@ -882,6 +949,7 @@ export function initFinancialsContent(
                 esc(i.num) +
                 "</a>"
               : '<div class="fi-title">' + esc(i.num) + "</div>") +
+            whoCell(i) +
             "</td>" +
             '<td><span class="fi-note">' +
             esc(i.client) +

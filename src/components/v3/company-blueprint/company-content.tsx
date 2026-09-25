@@ -3,7 +3,7 @@
 // Blueprint company — page CONTENT only. The donor's `.content` children,
 // verbatim; the sidebar, topbar and shared sprite come from the shell
 // (components/v3/blueprint-shell), which persists across navigation. Dynamic
-// regions (#swatches, #mailPrev, #leadState, #trades, #actCats, #actPerson,
+// regions (#swatches, #mailPrev, #leadState, #trades, #actCats, #actRange, #actPeople,
 // #actFeed and the save lines) are left empty exactly like the donor and
 // filled by the ported script on mount — same architecture, same timing.
 //
@@ -260,19 +260,22 @@ export function CompanyContent({ org, activity, members, canEdit }: CompanyConte
         <div className="card co-card">
           <div className="act-bar">
             <div className="act-cats" id="actCats"></div>
+            {/* The window the owner reads by: Today · 7 · 30 · 90 days. Filled by
+                renderActivity; filters createdAt client-side over the 90 days
+                the page loaded. */}
+            <div className="act-range" id="actRange" role="group" aria-label="Range"></div>
             <label className="lsearch">
               <svg className="ic">
                 <use href="#i-search" />
               </svg>
               <input type="text" id="actSearch" placeholder="Search activity" autoComplete="off" />
             </label>
-            {/* Shared blueprint select treatment (blueprint-global.css):
-                the wrapper draws the chevron, the control drops the OS one.
-                `#actPerson` always has a value, so no `data-empty`. */}
-            <span className="bp-sel act-person">
-              <select className="bp-sel-in" id="actPerson"></select>
-            </span>
           </div>
+          {/* WHO DID WHAT — one chip per member with their mark and the count of
+              their rows in the current window; clicking one narrows the feed to
+              that person. This IS the person filter (the select it replaced
+              held the same state). Scrolls sideways on a phone. */}
+          <div className="act-people" id="actPeople" role="group" aria-label="Team members"></div>
           <div className="act-feed" id="actFeed"></div>
           <div className="act-more is-hidden" id="actMore">
             <button className="btn btn-ghost btn--sm" type="button" id="actMoreBtn">
@@ -280,9 +283,9 @@ export function CompanyContent({ org, activity, members, canEdit }: CompanyConte
             </button>
           </div>
           <div className="pempty is-hidden" id="actEmpty">
-            <b>No activity yet</b>
+            <b>Nothing in this range</b>
             <br />
-            Team actions show up here as they happen.
+            <span>Widen the range or clear the filters.</span>
           </div>
         </div>
       </section>

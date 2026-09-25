@@ -60,6 +60,7 @@ import {
   useJobDetailActions,
   type PhotoKind,
 } from "@/components/v3/job-detail-blueprint/use-job-detail-actions";
+import { Who } from "@/components/v3/who/who";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { useRouter } from "next/navigation";
 import "./mobile-job-detail.css";
@@ -505,6 +506,31 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                     <EmptyNote>No client linked to this job.</EmptyNote>
                   )}
                 </section>
+
+                {/* WHO DID WHAT (2026-09-24): the job's trail with each
+                    member's mark — the same rows the desktop Activity card
+                    reads, one column wide. */}
+                <section className="mjd-card" data-trail>
+                  <div className="mjd-h">
+                    <h2 className="mjd-t">Activity</h2>
+                    <span className="mjd-s">{record.trail.length ? `${record.trail.length} on this job` : "who did what"}</span>
+                  </div>
+                  {record.trail.length === 0 ? (
+                    <EmptyNote>Nothing logged on this job yet.</EmptyNote>
+                  ) : (
+                    <ol className="mjd-trail">
+                      {record.trail.map((t) => (
+                        <li className="mjd-tr" key={t.id} data-kind={t.kind}>
+                          <div className="mjd-tr-h">
+                            <Who who={t.who} compact />
+                            <span className="mjd-tr-t">{t.at}</span>
+                          </div>
+                          <div className="mjd-tr-s">{t.summary}</div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </section>
               </>
             )}
 
@@ -793,7 +819,15 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                           <img src={p.url} alt={p.caption} />
                           <span className="mjd-ph-k">{p.kind}</span>
                         </div>
-                        <div className="mjd-ph-c">{p.caption}</div>
+                        <div className="mjd-ph-c">
+                          {p.caption}
+                          {p.by && (
+                            <>
+                              {" "}
+                              <Who who={p.by} compact by />
+                            </>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -861,7 +895,15 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                       >
                         <div>
                           <div className="mjd-row-n">{e.vendor}</div>
-                          <div className="mjd-row-m">{e.meta}</div>
+                          <div className="mjd-row-m">
+                            {e.meta}
+                            {e.by && (
+                              <>
+                                {" · "}
+                                <Who who={e.by} compact by />
+                              </>
+                            )}
+                          </div>
                         </div>
                         <span className="mjd-amt">{fmt(e.amount)}</span>
                       </div>

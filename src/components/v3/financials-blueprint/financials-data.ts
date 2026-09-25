@@ -11,8 +11,24 @@
 // src/app/(mobile)/mobile-financials-v2/financials-data.ts; it is a separate
 // file and is untouched by this.)
 
+import type { WhoLike } from "@/lib/team/who";
+
 /** One column pair in the revenue-vs-expenses chart. */
 export type MonthPoint = { m: string; revenue: number; expenses: number };
+
+/* ============================================================
+   WHO DID IT (2026-09-24) — the mark on a ledger row.
+
+   A member (their color, name and role), the client (paid online through
+   their link — grey "Client"), or the system. Resolved from the trail on the
+   server (src/app/dashboard/financials/financials-who.ts); a row the trail
+   cannot place carries no mark and draws nothing.
+   ============================================================ */
+export type WhoKind = "member" | "client" | "system";
+export type WhoMark = { who: WhoLike | null; whoKind: WhoKind };
+/** One person's share of a book over the 30-day window. `who` null = the client. */
+export type WhoShare = { who: WhoLike | null; whoKind: WhoKind; amount: number; count: number };
+export type FinancialsByPerson = { payments: WhoShare[]; expenses: WhoShare[] };
 
 /** The 30-day roll-up behind the gauge, the stat strip and the attention list.
  *  Mirrors `FinancialsRollup` in src/actions/financials.ts. */
@@ -61,6 +77,9 @@ export type Expense = {
   when: string;
   /** Blob (or data) URL of the attached receipt image, when there is one. */
   receiptUrl: string | null;
+  /** Who logged it — the mark. Absent when the trail cannot say. */
+  who?: WhoLike | null;
+  whoKind?: WhoKind;
 };
 
 /** A row of the change-order book — one `ChangeOrder`. */
@@ -73,6 +92,9 @@ export type ChangeOrder = {
   status: string;
   when: string;
   amount: number;
+  /** Who drafted it. Absent when the trail cannot say. */
+  who?: WhoLike | null;
+  whoKind?: WhoKind;
 };
 
 /** One line in the "New invoice" picker: a contract that still owes money.
@@ -101,6 +123,10 @@ export type Invoice = {
   billed: number | null;
   proposalId: string | null;
   overdue: boolean;
+  /** Who recorded the payment (PAID) or sent the invoice (open); the client
+   *  when they paid online. Absent when the trail cannot say. */
+  who?: WhoLike | null;
+  whoKind?: WhoKind;
 };
 
 /* ============================================================

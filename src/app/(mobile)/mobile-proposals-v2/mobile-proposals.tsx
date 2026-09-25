@@ -54,6 +54,7 @@ import { Fragment } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./mobile-proposals.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
+import { Who } from "@/components/v3/who/who";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import {
@@ -986,7 +987,9 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                       role="link" tabIndex={0} aria-label={`Open ${p.title}`}
                       onClick={(e) => openFromTap(e, p.id)} onKeyDown={(e) => { if (e.key === "Enter") router.push(`/dashboard/proposals/${p.id}`); }}>
                       <div>
-                        <div className={styles.prowId}>{p.updated} · {p.owner}</div>
+                        <div className={styles.prowId}>
+                          {p.updated} · {p.ownerWho ? <Who who={p.ownerWho} compact /> : p.owner}
+                        </div>
                         <div className={styles.prowTitle}>{p.title}</div>
                       </div>
                       <button className={styles.prowOpen} type="button"
@@ -1148,7 +1151,7 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                       <div className={styles.pcol}>
                         <div className={styles.pcolLbl}>Paid</div>
                         <div className={styles.pcolVal}>{p.paid ?? "—"}</div>
-                        <div className={styles.pcolSub}>{p.owner}</div>
+                        <div className={styles.pcolSub}>{p.ownerWho ? <Who who={p.ownerWho} compact /> : p.owner}</div>
                       </div>
                     </div>
 

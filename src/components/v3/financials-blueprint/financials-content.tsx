@@ -17,6 +17,7 @@ import { initFinancialsContent, type FinancialsJob } from "./financials-behavior
 import type {
   ChangeOrder,
   Expense,
+  FinancialsByPerson,
   Invoice,
   InvoiceTarget,
   MonthPoint,
@@ -39,6 +40,9 @@ export type FinancialsContentProps = {
   invoices: Invoice[];
   /** Contracts that still owe money — what "New invoice" may bill. */
   invoiceTargets: InvoiceTarget[];
+  /** WHO DID IT — the 30-day split of payments recorded and expenses logged,
+   *  per person; drawn under the Invoices and Expenses heads. */
+  byPerson?: FinancialsByPerson;
   /** Twelve months of job money, oldest first — the Overhead tab's month
    *  cursor walks this, so switching months costs no round trip. */
   overheadMonths: OverheadMonth[];
@@ -62,6 +66,7 @@ export function FinancialsContent(props: FinancialsContentProps) {
       expenses: d.expenses,
       orders: d.orders,
       invoices: d.invoices,
+      byPerson: d.byPerson,
       overheadMonths: d.overheadMonths,
       overheadSheets: d.overheadSheets,
     });
@@ -326,6 +331,10 @@ export function FinancialsContent(props: FinancialsContentProps) {
             <span className="kpi-lbl">Job expenses</span>
             <span className="tb-total" id="expTotal"></span>
           </div>
+          {/* WHO DID IT: who logged what over the last 30 days, each in their
+              color. Filled by the behavior module; stays hidden when the trail
+              names nobody. */}
+          <div className="fi-by is-hidden" id="expBy"></div>
           {/* A refused write says so here rather than the row silently staying
               put — `deleteJobExpense` throws "Not found" for anything outside
               the org, and the server is manager-gated. */}
@@ -390,6 +399,9 @@ export function FinancialsContent(props: FinancialsContentProps) {
             <span className="kpi-lbl">Invoices</span>
             <span className="tb-total" id="invTotal"></span>
           </div>
+          {/* WHO DID IT: who recorded the payments of the last 30 days — the
+              client's own online payments as a grey "Client". */}
+          <div className="fi-by is-hidden" id="invBy"></div>
           <table className="ptable fi-table">
             <thead>
               <tr>

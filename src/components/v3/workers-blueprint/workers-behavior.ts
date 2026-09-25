@@ -278,6 +278,8 @@ export function initWorkersContent(
           '<span class="wk-contact" style="display:block">' +
             (e.email ? escapeText(e.email) : '<i>no email</i>') +
             (e.phone ? ' · <b>' + escapeText(e.phone) + '</b>' : '') +
+            // When they last did something in the app (2026-09-24).
+            (e.lastActive ? ' · <span class="wk-seen' + (e.lastActive === 'Never' ? ' quiet' : '') + '">' + escapeText(e.lastActive.toLowerCase()) + '</span>' : '') +
           '</span>' +
         '</span>' +
         '<span class="wk-role"><span class="pstatus role-pill">' + escapeText(roleLabel(e.role).toLowerCase()) + '</span></span>' +
@@ -379,6 +381,8 @@ export function initWorkersContent(
         '<div class="fld-row"><div class="kpi-lbl">Still owed</div>' +
           (e.unpaid ? '<div class="fld-v mono">$' + e.unpaid.toLocaleString('en-US') + '</div>' : '<div class="fld-v none">nothing</div>') + '</div>' +
         '<div class="fld-row"><div class="kpi-lbl">Joined</div><div class="fld-v mono">' + escapeText(e.joined) + '</div></div>' +
+        '<div class="fld-row"><div class="kpi-lbl">Last active</div>' +
+          (e.lastActive && e.lastActive !== 'Never' ? '<div class="fld-v mono">' + escapeText(e.lastActive.replace(/^Active /, '')) + '</div>' : '<div class="fld-v none">never</div>') + '</div>' +
         '<div class="fld-row"><div class="kpi-lbl">Active jobs (' + e.jobs.length + ')</div>' +
           (e.jobs.length
             // The donor's `href="#"` went nowhere. These are real job ids, and
@@ -781,6 +785,7 @@ export function initWorkersContent(
           invite: 'PENDING',
           role,
           joined: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+          lastActive: 'Never',
           jobs: [],
         });
         arrivedId = created.id;

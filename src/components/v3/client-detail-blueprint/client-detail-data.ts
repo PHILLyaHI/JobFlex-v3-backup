@@ -17,6 +17,8 @@
 // The KPI figures are NOT stored here. They are derived from the loaded arrays
 // in the content component, so a headline number can never go stale.
 
+import type { WhoLike } from "@/lib/team/who";
+
 export type ProposalStatus = "DRAFT" | "SENT" | "VIEWED" | "ACCEPTED" | "DECLINED";
 export type PaymentStatus = "PAID" | "PENDING" | "FAILED";
 
@@ -66,6 +68,9 @@ export type ActivityRow = {
   icon: string;
   text: string;
   stamp: string;
+  /** Who did it — the member's mark (lib/team/who); the client for a portal
+   *  click; null when the system did it. */
+  who: WhoLike | null;
 };
 
 /** Which chip a proposal answers to. `open` is everything still in play. */

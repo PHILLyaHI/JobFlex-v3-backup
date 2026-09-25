@@ -63,6 +63,8 @@ import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import { safeHref } from "@/lib/safeHref";
 import { loadFinancials } from "@/actions/financialsMobile";
+import { loadFinancialsWho } from "./who-action";
+import { Who } from "@/components/v3/who/who";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { InvoiceSheet } from "@/components/billing/InvoiceSheet";
 import { scanReceipt, saveReceiptExpense } from "@/actions/receiptOcr";
@@ -73,6 +75,7 @@ import {
   ALL,
   CO_STATUSES,
   EMPTY_ROLLUP,
+  EMPTY_WHO,
   EXPENSE_CATEGORIES,
   INV_STATUSES,
   PAGE_SIZE,
@@ -85,7 +88,9 @@ import {
   type Expense,
   type FinancialsJob,
   type FinancialsSnapshot,
+  type FinancialsWho,
   type Invoice,
+  type WhoMark,
   type InvoiceTarget,
   type MonthPoint,
   type Rollup,
@@ -262,6 +267,9 @@ export function MobileFinancials() {
   /** Contracts that still owe money — the invoice picker's list, read from the
    *  proposals by the snapshot, not derived from the book. */
   const [invoiceTargets, setInvoiceTargets] = useState<InvoiceTarget[]>([]);
+  /** WHO DID IT — the marks by row id, read beside the book. Empty until it
+   *  lands and after a failed read: a missing mark is a blank, never an error. */
+  const [whoBook, setWhoBook] = useState<FinancialsWho>(EMPTY_WHO);
   const [ready, setReady] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
@@ -345,10 +353,12 @@ export function MobileFinancials() {
   const applyBookError = useCallback((err: unknown) => {
     setLoadErr(actionError(err));
   }, []);
-  const load = useCallback(
-    () => loadFinancials().then(applyBook, applyBookError),
-    [applyBook, applyBookError],
-  );
+  const load = useCallback(() => {
+    // The marks ride beside the book, not behind it — both reads leave at
+    // once, and a trail that cannot be read leaves the rows unmarked.
+    void loadFinancialsWho().then(setWhoBook, () => setWhoBook(EMPTY_WHO));
+    return loadFinancials().then(applyBook, applyBookError);
+  }, [applyBook, applyBookError]);
 
   useEffect(() => {
     void load();
@@ -1806,6 +1816,7 @@ export function MobileFinancials() {
                       {e.receiptUrl ? null : (
                         <span className={`${styles.badge} ${styles.stNone}`}>No receipt</span>
                       )}
+                      <WhoTag mark={whoBook.expenses[e.id]} />
                     </span>
                     <span className={styles.frowFigs}>
                       <span className={styles.frowMono}>{e.when}</span>
@@ -1837,6 +1848,7 @@ export function MobileFinancials() {
                   <div className={styles.frowFoot}>
                     <span className={styles.frowTags}>
                       <span className={`${styles.badge} ${CO_TONE[o.status] ?? ""}`}>{sentence(o.status)}</span>
+                      <WhoTag mark={whoBook.orders[o.id]} />
                     </span>
                     <span className={styles.frowFigs}>
                       <span className={styles.frowMono}>{o.when}</span>
@@ -1873,6 +1885,7 @@ export function MobileFinancials() {
                         <span className={`${styles.badge} ${INV_TONE[inv.status] ?? ""}`}>
                           {sentence(inv.status)}
                         </span>
+                        <WhoTag mark={whoBook.invoices[inv.id]} />
                       </span>
                       <span className={styles.frowFigs}>
                         <span className={styles.frowMono}>due {inv.due}</span>
@@ -2256,6 +2269,25 @@ export function MobileFinancials() {
    collide with the shared set or another page. Original lucide
    paths, 24×24, stroke 2, currentColor.
    ============================================================ */
+/** WHO DID IT — the mark in a row's tag line. A member in their color with
+ *  their role (lib/team/who); the client who paid online as a grey "Client";
+ *  nothing when the trail cannot place the row. Dressed by who.css, which the
+ *  (mobile) layout and the responsive shell both load. */
+function WhoTag({ mark }: { mark: WhoMark | undefined }) {
+  if (!mark) return null;
+  if (mark.whoKind === "client") {
+    return (
+      <span className="who who--system" style={{ ["--who" as string]: "#8a8a8a" }} data-who="" title="Client · paid online">
+        <i className="who-dot" aria-hidden="true">C</i>
+        <b className="who-name">Client</b>
+        <em className="who-role">online</em>
+      </span>
+    );
+  }
+  if (!mark.who?.id) return null;
+  return <Who who={mark.who} />;
+}
+
 function FinancialsIcons() {
   return (
     <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">

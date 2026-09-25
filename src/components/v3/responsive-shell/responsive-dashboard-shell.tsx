@@ -21,6 +21,7 @@
 
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
+import "@/components/v3/who/who.css";
 import { useSyncExternalStore } from "react";
 import { BlueprintShell } from "@/components/v3/blueprint-shell/blueprint-shell";
 import { BlueprintHandheldFrame } from "./blueprint-handheld-frame";

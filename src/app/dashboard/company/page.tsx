@@ -27,6 +27,13 @@ export const metadata: Metadata = {
   description: "Company — branding, team, team activity and the landing builder on one sheet.",
 };
 
+/** WHO DID WHAT (2026-09-24): the sheet reads by window — Today · 7 · 30 ·
+ *  90 days — and filters client-side, so the loader brings the whole 90 days
+ *  (capped at a thousand rows) rather than the newest two hundred of all time. */
+function activityWindowStart(): Date {
+  return new Date(Date.now() - 90 * 86400000);
+}
+
 export default async function CompanyPage() {
   let organizationId: string;
   let role: string | null;
@@ -42,7 +49,7 @@ export default async function CompanyPage() {
 
   const [org, activity] = await Promise.all([
     db.organization.findUnique({ where: { id: organizationId } }),
-    loadTeamActivity(organizationId),
+    loadTeamActivity(organizationId, { take: 1000, since: activityWindowStart() }),
   ]);
   if (!org) notFound();
 

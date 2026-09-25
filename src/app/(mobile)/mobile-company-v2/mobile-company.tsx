@@ -53,6 +53,7 @@ import styles from "./mobile-company.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
+import { roleLabel } from "@/lib/team/who";
 import {
   getCompanySeed,
   updateBranding,
@@ -1305,12 +1306,23 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
                         className={`${styles.arow} ${styles.rowIn} ${landed === e.id ? styles.landed : ""}`}
                         style={{ animationDelay: `${i * 45}ms` }}
                       >
-                        <span className={styles.aav}>
+                        {/* The mark (lib/team/who): the tile in the person's own
+                            color, the same color they wear on every page; a
+                            system or client row keeps the plain tile. */}
+                        <span
+                          className={`${styles.aav} ${e.actorId ? styles.aavWho : ""}`}
+                          style={e.actorId && e.actorColor ? { background: e.actorColor, borderColor: e.actorColor } : undefined}
+                        >
                           {monogram(e.actor)}
                           <span className={`${styles.abead} ${TONE_BEAD[tone]}`} />
                         </span>
                         <div className={styles.atxt}>
-                          <b className={styles.aactor}>{e.actor}</b>{" "}
+                          <b className={styles.aactor}>{e.actor}</b>
+                          {e.actorId && e.actorRole ? (
+                            <em className={styles.arole} style={e.actorColor ? { color: e.actorColor, borderColor: e.actorColor } : undefined}>
+                              {roleLabel(e.actorRole)}
+                            </em>
+                          ) : null}{" "}
                           {summaryParts(e.summary).map((p, n) =>
                             p.bold ? <b key={n}>{p.text}</b> : <span key={n}>{p.text}</span>,
                           )}

@@ -17,6 +17,7 @@ import { db } from "@/lib/db";
 import { longDate, relative } from "@/lib/format";
 import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { parseChannel } from "@/lib/followUps/copy";
+import { actorsOf, whoOfEvent } from "@/lib/activityLog";
 import type {
   ActivityItem,
   CrmLead,
@@ -71,6 +72,7 @@ export async function getCrmSnapshot(): Promise<CrmSnapshotResult> {
     ruleRows,
     org,
     followUps,
+    actors,
   ] = await Promise.all([
     db.lead.findMany({ where: { organizationId }, select: { status: true } }),
     db.lead.findMany({
@@ -104,6 +106,7 @@ export async function getCrmSnapshot(): Promise<CrmSnapshotResult> {
       orderBy: { runAt: "asc" },
       take: 100,
     }),
+    actorsOf(organizationId),
   ]);
 
   // The follow-up rows carry only a proposalId, so the client name and the
@@ -147,6 +150,7 @@ export async function getCrmSnapshot(): Promise<CrmSnapshotResult> {
     id: a.id,
     summary: a.summary,
     age: relative(a.createdAt),
+    who: whoOfEvent(a, actors),
   }));
 
   const customers: Customer[] = clients
