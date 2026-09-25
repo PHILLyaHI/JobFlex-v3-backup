@@ -22,8 +22,7 @@ import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 import { priceLinesForClient } from "@/lib/pricing/markup";
 import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
 import { trackActivation, trackProposalCreated } from "@/lib/activation-events";
-import { afterResponse, logServerError } from "@/lib/server-events";
-import { warmProposalAudio } from "@/lib/proposalAudio";
+import { logServerError } from "@/lib/server-events";
 import { applyMemberDiscount } from "@/lib/servicePlanBook";
 
 const lineItemSchema = z.object({
@@ -517,12 +516,6 @@ export async function sendProposal(id: string) {
   } catch (err) {
     console.warn("[sendProposal] schedule failed:", err);
   }
-  // "Listen to this proposal" (2026-09-23): read the summary now, after the
-  // response, so the client's first tap plays at once. Never blocks the send;
-  // whatever does not finish is made on the first play instead.
-  afterResponse(async () => {
-    await warmProposalAudio(id);
-  });
 
   revalidatePath("/dashboard/proposals");
   revalidatePath(`/dashboard/proposals/${id}`);

@@ -12,7 +12,8 @@
 .actions .primary { flex: 1; }
 .primary { background: var(--accent); color: var(--sheet, var(--paper-deep)); }
 .primary:hover:not(:disabled) { background: var(--accent-ink); }
-.secondary { background: var(--sheet, var(--paper-deep)); color: var(--ink); }
+.form .secondary { background: var(--rose); color: var(--sheet, var(--paper-deep)); border-color: var(--rose); }
+.form .secondary:hover:not(:disabled) { background: color-mix(in srgb, var(--rose) 85%, var(--ink)); }
 .primary:disabled, .secondary:disabled { opacity: .55; cursor: wait; }
 .field input:focus-visible, .primary:focus-visible, .secondary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .error { color: var(--rose); font-size: 13px; line-height: 1.4; }

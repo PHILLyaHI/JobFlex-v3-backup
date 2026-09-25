@@ -114,9 +114,6 @@ export function buildProposalSent(i: ProposalSentInput): EmailDoc {
     cta: { label: "Review & accept", href: i.href },
     after: [
       "Anything you'd like changed? Just reply — it comes straight to us.",
-      // The portal's "Listen to this proposal" (2026-09-23): the summary and
-      // the totals read aloud, for a client who opens this in the car.
-      "On the road? Open the same link and tap Listen — the summary and the totals, read aloud in about a minute.",
     ],
     footer: orgFooter(i.org, i.ref),
   };

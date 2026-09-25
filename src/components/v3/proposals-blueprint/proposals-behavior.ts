@@ -55,7 +55,6 @@ import { loadProposalBook } from "@/app/(mobile)/mobile-proposals-v2/proposals-a
 import { MaterialsSheet } from "@/components/proposal/MaterialsSheet";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { currentZoom, leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
-import { closeListenPanel, openListenPanel } from "./listen-panel";
 import { MDL_EXIT_MS, closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { mountIsland, type Island } from "@/components/v3/blueprint-shell/react-island";
 import { clientProposalUrl, proposalTextMessage, smsHref } from "@/lib/proposalLink";
@@ -120,8 +119,6 @@ export function initProposalsContent(
   const root = content;
   const main = content.closest<HTMLElement>(".main");
   const disposers: Array<() => void> = [];
-  // The "Listen" panel (./listen-panel) is torn down with the page.
-  disposers.push(closeListenPanel);
   const on = (
     target: EventTarget,
     ev: string,
@@ -770,9 +767,6 @@ export function initProposalsContent(
       '<button class="btn btn-ghost btn--sm" type="button" data-act="change-order"><svg class="ic"><use href="#i-plus"/></svg>' +
       (p.co && p.co.count ? "Change orders · " + p.co.count : "Change order") +
       "</button>" +
-      // Real (2026-09-23): what the client hears — the spoken summary and
-      // totals, played in the panel at the bottom right (./listen-panel).
-      '<button class="btn btn-ghost btn--sm" type="button" data-act="listen" title="Play the spoken summary the client can listen to"><svg class="ic"><use href="#i-mic"/></svg>Listen</button>' +
       // Real: the client-facing page for this proposal.
       '<a class="btn btn-ghost btn--sm" href="/portal/q/' +
       encodeURIComponent(p.publicId) +
@@ -1146,8 +1140,6 @@ export function initProposalsContent(
       menuItem("i-phone", "pmi--sky", "Text the link", "Opens your messages with the link filled in", "textlink", {
         href: smsHref(null, proposalTextMessage({ clientName: p.client, title: p.title, link: clientProposalUrl(p.publicId) })),
       }) +
-      // The spoken summary and totals the client can listen to (2026-09-23).
-      menuItem("i-mic", "pmi--sky", "Listen to the proposal", "Summary and totals, read aloud", "listen") +
       menuItem("i-dup", "", "Duplicate", "Clone &amp; edit", "dup") +
       '<div class="pmenu-div"></div>' +
       menuItem(
@@ -1480,10 +1472,6 @@ export function initProposalsContent(
         openMaterials(p);
         return;
       }
-      if (act === "listen") {
-        openListenPanel(root, { publicId: p.publicId, title: p.title, client: p.client });
-        return;
-      }
       if (act === "change-order") {
         closeMenu();
         openChangeOrder(p);
@@ -1531,10 +1519,6 @@ export function initProposalsContent(
       const p = byId(card?.dataset.id ?? null);
       if (kind === "materials" && p) {
         openMaterials(p);
-        return;
-      }
-      if (kind === "listen" && p) {
-        openListenPanel(root, { publicId: p.publicId, title: p.title, client: p.client });
         return;
       }
       if (kind === "copylink" && p) {
