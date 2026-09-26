@@ -13,7 +13,7 @@ import type { SubscriptionStatus } from "@/lib/prismaEnums";
 import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
 import { clearPlanGrant, clearSyncingMark, readPlanGrant, recordPlanActivity } from "@/lib/planGrant";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
-import { titleCaseSlug } from "@/lib/planCatalog";
+import { getPlanDisplayName } from "@/lib/planCatalogServer";
 
 /* WHICH SUBSCRIPTION THE MIRROR MAY FOLLOW NEXT. An organisation's mirror names
  * one Stripe subscription, and Stripe keeps sending events for the ones it
@@ -104,7 +104,7 @@ async function endGrantForCheckout(organizationId: string, planSlug: string, sub
   await recordPlanActivity({
     organizationId,
     actorId: null,
-    summary: `Complimentary ${titleCaseSlug(grant.plan)} ended — the organization subscribed to ${titleCaseSlug(planSlug)}`,
+    summary: `Complimentary ${await getPlanDisplayName(grant.plan)} ended — the organization subscribed to ${await getPlanDisplayName(planSlug)}`,
     meta: { mode: "grant-superseded", how: "checkout", grant, subId },
   });
 }

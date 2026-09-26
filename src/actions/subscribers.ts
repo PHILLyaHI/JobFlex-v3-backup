@@ -3,7 +3,8 @@ import type Stripe from "stripe";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
-import { getMonthlyCentsBySlugUpper } from "@/lib/planCatalogServer";
+import { getMonthlyCentsBySlugUpper, getPlanNamesBySlug } from "@/lib/planCatalogServer";
+import { planDisplayName } from "@/lib/planCatalog";
 import {
   computeMetrics,
   modalValue,
@@ -27,6 +28,8 @@ import {
 export interface SubscriberRow extends BillingFacts {
   /** Stripe subscription id when Stripe-sourced; the Subscription row id otherwise. */
   id: string;
+  /** The plan's catalog name — what the page prints; `plan` (the slug) stays a key. */
+  planName: string;
   source: "stripe" | "record";
   organizationId: string | null;
   /** Org name when linked, else the Stripe customer's name/email. */
@@ -345,6 +348,7 @@ async function fromStripe(): Promise<SubscribersData> {
   // archived rows included — an old price that still bills is still that plan.
   const ledger = await db.planPrice.findMany({ select: { stripePriceId: true, planSlug: true } });
   const slugByPrice = new Map(ledger.map((p) => [p.stripePriceId, p.planSlug.toUpperCase()]));
+  const planNames = await getPlanNamesBySlug();
 
   // The account's own currency decides what the total is denominated in. A
   // restricted key may not read the account; the commonest currency on the
@@ -428,6 +432,7 @@ async function fromStripe(): Promise<SubscribersData> {
 
     const event = lastEventOf(sub);
 
+    const plan = planFor(sub, slugByPrice);
     return {
       id: sub.id,
       source: "stripe",
@@ -435,7 +440,8 @@ async function fromStripe(): Promise<SubscribersData> {
       orgName: org?.name ?? cust?.name ?? custEmail ?? "Unknown customer",
       ownerEmail: org?.ownerEmail ?? org?.billingEmail ?? custEmail,
       customerEmail: custEmail,
-      plan: planFor(sub, slugByPrice),
+      plan,
+      planName: plan === "—" ? "—" : planDisplayName(plan, planNames),
       status,
       paid: PAID_STATUSES.has(status) && !paused,
       paused,
@@ -496,6 +502,7 @@ async function fromStripe(): Promise<SubscribersData> {
       ownerEmail: org.ownerEmail ?? org.billingEmail,
       customerEmail: null,
       plan: r.plan,
+      planName: planDisplayName(r.plan, planNames),
       status,
       // Stripe is the source on this path and it did not bill for this row.
       paid: false,
@@ -572,7 +579,7 @@ async function fromRecord(
     ...new Set(records.map((r) => r.stripePriceId).filter(Boolean) as string[]),
   ];
 
-  const [attributions, planPrices, catalogCents] = await Promise.all([
+  const [attributions, planPrices, catalogCents, planNames] = await Promise.all([
     db.attribution.findMany({
       include: {
         promoCode: { select: { code: true } },
@@ -586,6 +593,7 @@ async function fromRecord(
         })
       : Promise.resolve([]),
     getMonthlyCentsBySlugUpper(),
+    getPlanNamesBySlug(),
   ]);
 
   const attrBySub = new Map(attributions.map((a) => [a.stripeSubscriptionId, a]));
@@ -640,6 +648,7 @@ async function fromRecord(
       ownerEmail: org.ownerEmail ?? org.billingEmail,
       customerEmail: null,
       plan: r.plan,
+      planName: planDisplayName(r.plan, planNames),
       status,
       paid: PAID_STATUSES.has(status) && !comped,
       paused: false, // the record has no pause column; only Stripe knows

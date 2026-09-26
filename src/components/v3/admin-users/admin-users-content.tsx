@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 import { Search, RefreshCw } from "lucide-react";
 import { toast } from "@/components/ui/Toast";
 import { longDate } from "@/lib/format";
+import { planDisplayName } from "@/lib/planCatalog";
 import {
   updateAdminUser,
   setPlatformAdmin,
@@ -91,8 +92,7 @@ export interface PlanOption {
 type BillingSource = AdminUsersData["source"];
 
 function planLabel(plan: string, plans: PlanOption[]): string {
-  const match = plans.find((p) => p.slug.toUpperCase() === plan.toUpperCase());
-  return match?.name ?? plan.toLowerCase();
+  return planDisplayName(plan, plans);
 }
 
 export function AdminUsersContent({

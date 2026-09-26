@@ -334,7 +334,7 @@ export function AdminOverviewContent({ data, health }: { data: AdminOverviewData
                     {!r.linked && <div className={s.sub}>{unlinkedShort(r.matchedBy)}</div>}
                   </td>
                   <td data-l="Plan">
-                    <span className={`chip ${s.chipInk}`}>{r.plan}</span>
+                    <span className={`chip ${s.chipInk}`} title={r.plan}>{r.planName}</span>
                   </td>
                   <td data-l="Status">
                     <StatusChip status={r.status.toUpperCase()} />

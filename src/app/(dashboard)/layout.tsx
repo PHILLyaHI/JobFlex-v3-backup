@@ -18,6 +18,7 @@ import { SupportWidget } from "@/components/v3/support-widget/support-widget";
 import { SessionProvider } from "@/components/providers/SessionProvider";
 import { getBadgeCounts } from "@/lib/badgeCounts";
 import { getNavLimitCounters } from "@/lib/navLimits";
+import { getPlanDisplayName } from "@/lib/planCatalogServer";
 import { DashboardAnnouncementDismiss } from "./announcement-dismiss";
 import { TrafficContext } from "@/components/providers/traffic-context";
 
@@ -121,6 +122,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
       ])
     : [{}, {}];
 
+  // The sidebar's limit pill names the plan by its catalog name, never the slug.
+  const planName = subscription?.plan ? await getPlanDisplayName(subscription.plan) : undefined;
+
   return (
     <SessionProvider>
       {/* Role, plan and org id for the error reporter ($exception) — nothing personal. */}
@@ -130,14 +134,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
           role={activeRole}
           badges={badgeCounts}
           limits={navLimits}
-          plan={subscription?.plan}
+          plan={planName}
           lockedHrefs={lockedPages ?? undefined}
         />
         <main className="flex-1 min-w-0 min-h-dvh pb-24">
           <Topbar
             user={{ name: session.user.name, email: session.user.email ?? "" }}
             memberships={membershipItems}
-            plan={subscription?.plan}
+            plan={planName}
             isWorker={isWorker}
             limited={isLimited}
           />

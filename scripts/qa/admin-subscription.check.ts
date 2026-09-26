@@ -142,6 +142,9 @@ async function main() {
   orgId = org.id;
   const qaUser = await db.user.findUnique({ where: { email: "qa@acme.test" }, select: { id: true } });
   if (qaUser) ADMIN.id = qaUser.id; // actorId is a User FK on ActivityEvent
+  // Texts name the plan by its CATALOG name (owner, 2026-09-25: the enterprise slug is sold as "Advanced").
+  const ENT = (await db.pricingPlan.findFirst({ where: { slug: "enterprise" }, select: { name: true } }))?.name ?? "Enterprise";
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
   // ── snapshot QA Co ──
   const savedMirror = await mirror();
@@ -178,7 +181,7 @@ async function main() {
     ok("A grant record: term, reason, author, replaced sub", !!g && g.endsAt === endsAt.toISOString() && g.reason.includes("Partner shop") && g.actorEmail === ADMIN.email && g.replaced?.subId === SUB && g.replaced.action === "canceled_now");
     ok("A invariant holds", mirrorInvariantViolations(m, g).length === 0, mirrorInvariantViolations(m, g).join("; "));
     const act = await db.activityEvent.findFirst({ where: { organizationId: orgId, kind: "PLAN_CHANGE" }, orderBy: { createdAt: "desc" } });
-    ok("A activity event written", !!act && /Complimentary Enterprise/.test(act.summary) && JSON.parse(act.meta ?? "{}").reason?.includes("Partner shop"), act?.summary);
+    ok("A activity event written", !!act && new RegExp("Complimentary " + esc(ENT)).test(act.summary) && JSON.parse(act.meta ?? "{}").reason?.includes("Partner shop"), act?.summary);
     let ctx = await getOrgPlanContext(orgId);
     ok("A getOrgPlanContext (sidebar / entitlements) reads Enterprise", ctx.plan?.slug === "enterprise", ctx.rawPlan);
     const entLimits = await getOrgLimitUsage(orgId);
@@ -335,7 +338,7 @@ async function main() {
     await applySubscriptionChange(base({ mode: "grant", planSlug: "enterprise", endsAt: soon.toISOString(), fallback: "free", reason: "short comp" }), ADMIN);
     const j1 = await runPlanGrantExpiry();
     const mails = fs.readdirSync(OUTBOX);
-    ok("J notice sent once, to the owner, naming the date", j1.noticed === 1 && mails.length === 1 && /complimentary-Enterprise-plan-ends/i.test(mails[0]), mails.join(","));
+    ok("J notice sent once, to the owner, naming the date", j1.noticed === 1 && mails.length === 1 && new RegExp("complimentary-" + esc(ENT).replace(/\s+/g, "-") + "-plan-ends", "i").test(mails[0]), mails.join(","));
     const mail = fs.readFileSync(path.join(OUTBOX, mails[0]), "utf8");
     ok("J the email says nothing is charged and what follows", /Nothing is charged automatically/.test(mail) && /the Free plan/.test(mail) && /qa@acme\.test/.test(mail));
     const j2 = await runPlanGrantExpiry();

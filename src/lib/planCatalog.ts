@@ -58,19 +58,44 @@ export function featureTierForSlug(slug: string): Plan {
   return (PLAN_TIERS as readonly string[]).includes(upper) ? (upper as Plan) : "ENTERPRISE";
 }
 
-/** Single home for the built-in tier display labels. */
-export function labelForTier(tier: Plan | string | null | undefined): string {
-  switch (tier) {
-    case "STARTER":
-      return "Starter";
-    case "PROFESSIONAL":
-      return "Professional";
-    case "ENTERPRISE":
-      return "Enterprise";
-    default:
-      // No-subscription orgs have no tier to name (the Free tier is gone).
-      return tier ? titleCaseSlug(tier) : "—";
+/**
+ * THE ONE NAME A PLAN HAS ON SCREEN (owner, 2026-09-25). The catalog's
+ * `PricingPlan.name` is what people see — the slug `enterprise` is sold as
+ * "Advanced" — and the slug stays technical: Stripe prices, limitsJson,
+ * entitlements and the stored `Subscription.plan` keep using it, the
+ * interface never prints it. `names` is the catalog's slug → name map
+ * (lowercase slugs; planCatalogServer.getPlanNamesBySlug, or a PlanDTO list);
+ * a slug the catalog no longer knows falls back to its title-cased form.
+ */
+export function planDisplayName(
+  slug: string | null | undefined,
+  names?: ReadonlyMap<string, string> | Record<string, string> | readonly { slug: string; name: string }[] | null,
+): string {
+  if (!slug) return "—";
+  const key = slug.trim().toLowerCase();
+  if (!key) return "—";
+  if (names) {
+    if (Array.isArray(names)) {
+      const hit = (names as readonly { slug: string; name: string }[]).find((p) => p.slug.toLowerCase() === key);
+      if (hit) return hit.name;
+    } else if (names instanceof Map) {
+      const hit = names.get(key);
+      if (hit) return hit;
+    } else {
+      const hit = (names as Record<string, string>)[key];
+      if (hit) return hit;
+    }
   }
+  return titleCaseSlug(key);
+}
+
+/** Single home for the built-in tier display labels: the catalog's names. */
+export function labelForTier(
+  tier: Plan | string | null | undefined,
+  names?: ReadonlyMap<string, string> | Record<string, string> | readonly { slug: string; name: string }[] | null,
+): string {
+  // No-subscription orgs have no tier to name (the Free tier is gone).
+  return tier ? planDisplayName(tier, names) : "—";
 }
 
 /** Display fallback for a subscription pointing at a slug no longer in the catalog. */

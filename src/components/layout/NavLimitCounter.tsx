@@ -1,4 +1,5 @@
 "use client";
+import { planDisplayName } from "@/lib/planCatalog";
 import * as React from "react";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
@@ -26,9 +27,9 @@ export function NavLimitCounter({
   /** Set when a tighter resource bounds this one — drives the "tied to" copy. */
   cappedBy?: string;
 }) {
-  const planLabel = plan
-    ? plan.charAt(0).toUpperCase() + plan.slice(1).toLowerCase()
-    : "your plan";
+  // `plan` is the catalog name already (the layout resolves it); a bare slug
+  // from an older caller still reads as a name.
+  const planLabel = plan ? planDisplayName(plan) : "your plan";
   const out = remaining <= 0;
   // Estimators are bounded by proposals (each estimate becomes one). When that
   // bound is what's biting, say so instead of implying the estimate quota ran out.

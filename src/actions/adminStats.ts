@@ -94,6 +94,8 @@ export interface AdminOverviewData {
      *  id this database has no record of", and the card says which. */
     matchedBy: MatchedBy;
     plan: string;
+    /** Catalog name (what the chip prints); `plan` is the slug. */
+    planName: string;
     status: string;
     changedAt: string;
     changeKind: ChangeKind;
@@ -211,6 +213,7 @@ export async function getAdminOverview(): Promise<AdminOverviewData> {
       linked: r.organizationId !== null,
       matchedBy: r.matchedBy,
       plan: r.plan,
+      planName: r.planName,
       status: r.status,
       changedAt: r.changedAt.toISOString(),
       changeKind: r.changeKind,

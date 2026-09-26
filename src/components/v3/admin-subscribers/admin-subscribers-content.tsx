@@ -35,6 +35,8 @@ import {
 
 export interface SubscriberRowDTO extends BillingFacts {
   id: string;
+  /** The plan's catalog name; `plan` (the slug) is only a key and a title. */
+  planName: string;
   source: "stripe" | "record";
   organizationId: string | null;
   orgName: string;
@@ -79,6 +81,8 @@ export function AdminSubscribersContent({
   const [openId, setOpenId] = useState<string | null>(null);
 
   const plans = useMemo(() => Array.from(new Set(rows.map((r) => r.plan))).sort(), [rows]);
+  // Slug → the catalog name the page prints; the slug stays the filter key.
+  const nameOf = useMemo(() => new Map(rows.map((r) => [r.plan, r.planName])), [rows]);
   const statuses = useMemo(() => Array.from(new Set(rows.map((r) => r.status))).sort(), [rows]);
   const promos = useMemo(
     () => Array.from(new Set(rows.map((r) => r.promoCode).filter(Boolean) as string[])).sort(),
@@ -204,7 +208,7 @@ export function AdminSubscribersContent({
         {view.perPlan.map((p) => (
           <div key={p.plan} className={s.mixCell}>
             <div className={s.mixLbl} title={p.plan}>
-              Plan · {p.plan}
+              Plan · {nameOf.get(p.plan) ?? p.plan}
             </div>
             <div className={s.mixVal}>{p.count}</div>
           </div>
@@ -302,7 +306,7 @@ export function AdminSubscribersContent({
               <option value="">Any plan</option>
               {plans.map((p) => (
                 <option key={p} value={p}>
-                  {p}
+                  {nameOf.get(p) ?? p}
                 </option>
               ))}
             </select>
@@ -431,7 +435,7 @@ function RowPair({
           </div>
         </td>
         <td data-l="Plan">
-          <span className={`chip ${s.chipInk}`}>{r.plan}</span>
+          <span className={`chip ${s.chipInk}`} title={r.plan}>{r.planName}</span>
         </td>
         <td className={s.num} data-l="Monthly" title={pricedByLabel(r.pricedBy)}>
           {r.amountCents > 0 ? (

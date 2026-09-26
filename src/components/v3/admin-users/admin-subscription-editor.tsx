@@ -29,6 +29,7 @@ import type { AdminUserDTO, PlanOption } from "./admin-users-content";
 import shared from "./admin-shared.module.css";
 import s from "./admin-users.module.css";
 import { makeCx, Field, Select, Toggle, Note, errorMessage, toDay, fromDay } from "./admin-kit";
+import { planDisplayName } from "@/lib/planCatalog";
 
 const cx = makeCx(s, shared);
 const usd = (c: number) => "$" + (c / 100).toFixed(2);
@@ -266,7 +267,7 @@ export function SubscriptionEditor({ user, plans }: { user: AdminUserDTO; plans:
 
       {liveGrant ? (
         <Note tone="ok">
-          Complimentary <b>{user.recordPlan}</b>{" "}
+          Complimentary <b>{planDisplayName(user.recordPlan, plans)}</b>{" "}
           {grant?.endsAt ? <>until <b>{longDate(grant.endsAt)}</b></> : user.currentPeriodEnd ? <>until <b>{longDate(user.currentPeriodEnd)}</b></> : <b>with no end date</b>}
           {grant ? (
             <>
@@ -285,7 +286,8 @@ export function SubscriptionEditor({ user, plans }: { user: AdminUserDTO; plans:
 
       {!liveGrant && user.stripeStatus && (user.stripePlan !== user.recordPlan || user.stripeStatus !== user.recordStatus) ? (
         <Note>
-          Stripe says <b>{user.stripePlan || "—"}</b> · <b>{user.stripeStatus}</b>; this row says <b>{user.recordPlan}</b> ·{" "}
+          Stripe says <b>{user.stripePlan ? planDisplayName(user.stripePlan, plans) : "—"}</b> · <b>{user.stripeStatus}</b>; this row says{" "}
+          <b>{planDisplayName(user.recordPlan, plans)}</b> ·{" "}
           <b>{user.recordStatus}</b>. Sync from Stripe writes it.
         </Note>
       ) : null}
@@ -352,7 +354,7 @@ export function SubscriptionEditor({ user, plans }: { user: AdminUserDTO; plans:
       )}
 
       <Field label="Reason" htmlFor="au-reason" hint="Required — goes on the organization's activity with your email.">
-        <textarea id="au-reason" className={cx("in", "ta")} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={mode === "billed" ? "e.g. Agreed on the call: moves to Enterprise from today" : "e.g. Partner shop — complimentary until the case study ships"} />
+        <textarea id="au-reason" className={cx("in", "ta")} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={mode === "billed" ? "e.g. Agreed on the call: moves to the higher plan from today" : "e.g. Partner shop — complimentary until the case study ships"} />
       </Field>
 
       {previewErr ? <Note tone="danger">{previewErr}</Note> : null}

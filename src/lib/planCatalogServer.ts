@@ -10,7 +10,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { PLAN_TIERS, type Plan } from "@/lib/entitlements";
 import { parsePlanLimits } from "@/lib/planLimits";
-import type { PlanDTO } from "@/lib/planCatalog";
+import { planDisplayName, type PlanDTO } from "@/lib/planCatalog";
 
 /** Canonical parser for the PricingPlan.features JSON column. */
 export function parseFeatures(raw: string | null | undefined): string[] {
@@ -88,6 +88,18 @@ export async function getPlanBySlug(
 export async function getMonthlyCentsBySlugUpper(): Promise<Record<string, number>> {
   const rows = await db.pricingPlan.findMany({ select: { slug: true, priceCents: true } });
   return Object.fromEntries(rows.map((r) => [r.slug.toUpperCase(), r.priceCents]));
+}
+
+/** Lowercase slug → catalog name, every plan (archived ones included: an org
+ *  on a retired plan is still shown by its name). */
+export async function getPlanNamesBySlug(): Promise<Record<string, string>> {
+  const rows = await db.pricingPlan.findMany({ select: { slug: true, name: true } });
+  return Object.fromEntries(rows.map((r) => [r.slug.toLowerCase(), r.name]));
+}
+
+/** The name people see for a stored plan slug (any casing). */
+export async function getPlanDisplayName(slug: string | null | undefined): Promise<string> {
+  return planDisplayName(slug, await getPlanNamesBySlug());
 }
 
 /**

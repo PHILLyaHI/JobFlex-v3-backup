@@ -40,7 +40,7 @@ import { sendEmail } from "@/lib/sdk/resend";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { buildComplimentaryEnding } from "@/lib/email/build/planGrant";
 import { appBaseUrl } from "@/lib/appUrl";
-import { titleCaseSlug } from "@/lib/planCatalog";
+import { getPlanDisplayName } from "@/lib/planCatalogServer";
 
 export const planGrantKey = (organizationId: string) => `planGrant:${organizationId}`;
 export const subSyncingKey = (organizationId: string) => `subSyncing:${organizationId}`;
@@ -358,7 +358,7 @@ export async function runPlanGrantExpiry(now = new Date()): Promise<GrantExpiryR
       await recordPlanActivity({
         organizationId,
         actorId: null,
-        summary: `Complimentary ${titleCaseSlug(grant.plan)} ended — the organization is on a paid subscription`,
+        summary: `Complimentary ${await getPlanDisplayName(grant.plan)} ended — the organization is on a paid subscription`,
         meta: { mode: "grant-superseded", grant },
       });
       continue;
@@ -378,7 +378,7 @@ export async function runPlanGrantExpiry(now = new Date()): Promise<GrantExpiryR
           const base = (await appBaseUrl()).replace(/\/$/, "");
           const doc = buildComplimentaryEnding({
             name,
-            planName: titleCaseSlug(grant.plan),
+            planName: await getPlanDisplayName(grant.plan),
             endsAt,
             fallback: fallbackLabel(grant.fallback),
             href: `${base}/dashboard/subscription`,
@@ -435,13 +435,14 @@ export async function endPlanGrant(
         },
   });
   await clearPlanGrant(organizationId);
+  const planName = await getPlanDisplayName(currentPlan);
   await recordPlanActivity({
     organizationId,
     actorId: by?.id ?? null,
     summary:
       how === "expired"
-        ? `Complimentary ${titleCaseSlug(currentPlan)} ended — now on ${fallbackLabel(grant.fallback)}`
-        : `Complimentary ${titleCaseSlug(currentPlan)} ended by JobFlex support — now on ${fallbackLabel(grant.fallback)}`,
+        ? `Complimentary ${planName} ended — now on ${fallbackLabel(grant.fallback)}`
+        : `Complimentary ${planName} ended by JobFlex support — now on ${fallbackLabel(grant.fallback)}`,
     meta: { mode: "grant-ended", how, grant, actorEmail: by?.email ?? null },
   });
 }

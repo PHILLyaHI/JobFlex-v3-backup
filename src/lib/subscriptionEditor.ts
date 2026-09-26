@@ -28,7 +28,7 @@ import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { ensureRecurringPrice } from "@/lib/stripePriceCache";
 import { SubscriptionStatus } from "@/lib/prismaEnums";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
-import { titleCaseSlug, type PlanDTO } from "@/lib/planCatalog";
+import { planDisplayName, type PlanDTO } from "@/lib/planCatalog";
 import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
 import { recordMirrorReference } from "@/lib/subscriptionRecord";
 import {
@@ -221,7 +221,7 @@ function nowFacts(s: Situation): SubscriptionFacts {
     const nextAt = cancelBooked ? null : sub.status === "trialing" ? sub.trial_end : sub.current_period_end;
     return {
       plan: slug || "—",
-      planName: plan?.name ?? titleCaseSlug(slug || "—"),
+      planName: plan?.name ?? planDisplayName(slug || null, s.catalog),
       status,
       payer: "customer",
       priceCents: priceCentsOf(sub),
@@ -244,7 +244,7 @@ function nowFacts(s: Situation): SubscriptionFacts {
     const endsAt = grant?.endsAt ?? mirror.currentPeriodEnd?.toISOString() ?? null;
     return {
       plan: slug,
-      planName: plan?.name ?? titleCaseSlug(slug),
+      planName: plan?.name ?? planDisplayName(slug, s.catalog),
       status: "COMPLIMENTARY",
       payer: "nobody",
       priceCents: null,
@@ -261,7 +261,7 @@ function nowFacts(s: Situation): SubscriptionFacts {
   const plan = slug ? s.catalog.find((p) => p.slug === slug) : undefined;
   return {
     plan: slug || "—",
-    planName: plan?.name ?? (slug ? titleCaseSlug(slug) : "No plan"),
+    planName: plan?.name ?? (slug ? planDisplayName(slug, s.catalog) : "No plan"),
     status: mirror?.status ?? "NONE",
     payer: "nobody",
     priceCents: null,
