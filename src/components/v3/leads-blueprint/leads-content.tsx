@@ -90,7 +90,7 @@ export function LeadsContent({ leads: allLeads, offers: allOffers }: { leads: Le
           third tab; it still switches to the import panel. */}
       <div className="ptabs" id="lTabs">
         <button className="ptab active" type="button" data-tab="all">
-          All leads<span className="ptab-count" data-count="all">0</span>
+          My leads<span className="ptab-count" data-count="all">0</span>
         </button>
         <button className="ptab" type="button" data-tab="incoming">
           Incoming<span className="ptab-count" data-count="incoming">0</span>

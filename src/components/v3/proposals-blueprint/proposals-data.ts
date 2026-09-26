@@ -75,6 +75,8 @@ export type ProposalRow = {
    *  their role on the org. Null when the owner is gone. `owner` above stays
    *  the donor's given-name plate for the code that still prints it. */
   ownerWho?: { id: string; name: string; role: string | null } | null;
+  /** True when the signed-in member owns it — no owner mark is drawn then. */
+  mine?: boolean;
   /** Count of shoppable material lines — the menu's "N items" hint. */
   mat: number;
   /** Prebuilt Zillow search URL, or null when the client has no address. */

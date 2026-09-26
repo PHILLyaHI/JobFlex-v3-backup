@@ -125,10 +125,72 @@
 :global(.jf-blueprint .content) .hint { font-size: 12px; line-height: 1.45; color: var(--muted); }
 
 /* the estimators */
-:global(.jf-blueprint .content) .est { margin-top: 20px; padding-top: 16px; border-top: 1.5px solid var(--ink); }
-:global(.jf-blueprint .content) .est .hint { display: block; margin: 0 0 12px; }
-:global(.jf-blueprint .content) .est-row { display: flex; flex-wrap: wrap; gap: 8px; }
-:global(.jf-blueprint .content) .est-row form { margin: 0; }
+/* ESTIMATE THIS JOB (2026-09-25): the recommended way as one framed primary
+   action on a blueprint edge, every other way as a quiet row under it. */
+:global(.jf-blueprint .content) .est { margin-top: 22px; padding-top: 18px; border-top: 1.5px solid var(--ink); }
+:global(.jf-blueprint .content) .est-lead {
+  display: flex; align-items: center; gap: 16px;
+  margin: 0;
+  padding: 14px 16px 14px 18px;
+  border: 1.5px solid var(--ink);
+  border-left: 5px solid var(--blueprint);
+  border-radius: var(--radius);
+}
+:global(.jf-blueprint .content) .est-lead-txt { flex: 1 1 auto; min-width: 0; }
+:global(.jf-blueprint .content) .est-lead-n {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px;
+  font-size: 17px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2;
+}
+:global(.jf-blueprint .content) .est-tag {
+  padding: 2px 7px;
+  border: 1.5px solid var(--blueprint); border-radius: var(--radius);
+  background: var(--accent-soft);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--blueprint);
+}
+:global(.jf-blueprint .content) .est-lead .hint { display: block; margin-top: 5px; }
+:global(.jf-blueprint .content) .est-lead .btn { flex: 0 0 auto; }
+
+:global(.jf-blueprint .content) .est-alt-h {
+  margin: 20px 0 4px;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+}
+:global(.jf-blueprint .content) .est-list { list-style: none; margin: 0; padding: 0; }
+:global(.jf-blueprint .content) .est-list li { border-bottom: 1px solid var(--ink-line); }
+:global(.jf-blueprint .content) .est-list li:last-child { border-bottom: 0; }
+:global(.jf-blueprint .content) .est-list form { margin: 0; }
+:global(.jf-blueprint .content) .est-opt {
+  display: grid;
+  grid-template-columns: minmax(130px, 190px) minmax(0, 1fr) auto;
+  grid-template-areas: "n s go";
+  align-items: center; gap: 4px 14px;
+  width: 100%; min-height: 48px;
+  padding: 10px 6px 10px 8px;
+  background: none; border: 0; border-radius: var(--radius);
+  text-align: left; color: var(--ink);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+:global(.jf-blueprint .content) .est-opt-n { grid-area: n; font-size: 14px; font-weight: 700; transition: color 0.12s; }
+:global(.jf-blueprint .content) .est-opt-s { grid-area: s; min-width: 0; font-size: 12.5px; line-height: 1.4; color: var(--muted); }
+:global(.jf-blueprint .content) .est-opt-go { grid-area: go; width: 16px; height: 16px; color: var(--muted); transition: transform 0.12s, color 0.12s; }
+:global(.jf-blueprint .content) .est-opt:hover:not(:disabled) { background: var(--accent-soft); }
+:global(.jf-blueprint .content) .est-opt:hover:not(:disabled) .est-opt-n,
+:global(.jf-blueprint .content) .est-opt:hover:not(:disabled) .est-opt-go { color: var(--blueprint); }
+:global(.jf-blueprint .content) .est-opt:hover:not(:disabled) .est-opt-go { transform: translateX(2px); }
+:global(.jf-blueprint .content) .est-opt:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+/* A way that needs something first says what, in amber — not a faded button. */
+:global(.jf-blueprint .content) .est-opt:disabled { cursor: not-allowed; }
+:global(.jf-blueprint .content) .est-opt:disabled .est-opt-n { color: var(--muted); }
+:global(.jf-blueprint .content) .est-opt:disabled .est-opt-s { color: var(--warning-dark); font-weight: 600; }
+:global(.jf-blueprint .content) .est-opt:disabled .est-opt-go { opacity: 0.3; }
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint .content) .est-opt-go { transition: none; }
+  :global(.jf-blueprint .content) .est-opt:hover:not(:disabled) .est-opt-go { transform: none; }
+}
 
 @media (max-width: 900px) {
   :global(.jf-blueprint .content) .grid { grid-template-columns: 1fr; }
@@ -136,8 +198,10 @@
   :global(.jf-blueprint .content) .card { padding: 16px 16px 18px; }
 }
 
-/* The estimator buttons on a phone (2026-09-22): two to a row, thumb-sized. */
+/* On a phone (2026-09-25): the primary action takes the card's width under
+   its words; each other way stacks its note under its name, thumb-sized. */
 @media (max-width: 768px) {
-  :global(.jf-blueprint .content) .est-row form { flex: 1 1 calc(50% - 4px); }
-  :global(.jf-blueprint .content) .est-row .btn--sm { width: 100%; min-height: 44px; justify-content: center; }
+  :global(.jf-blueprint .content) .est-lead { flex-direction: column; align-items: stretch; gap: 14px; padding: 14px 14px 14px 16px; }
+  :global(.jf-blueprint .content) .est-lead .btn { width: 100%; min-height: 44px; justify-content: center; }
+  :global(.jf-blueprint .content) .est-opt { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "n go" "s go"; min-height: 56px; }
 }

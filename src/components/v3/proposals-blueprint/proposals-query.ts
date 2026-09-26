@@ -61,7 +61,7 @@ function mapsUrl(c: {
  * turn those into their own redirects.
  */
 export async function readProposalBook(): Promise<ProposalRow[]> {
-  const { organizationId, proposalScope } = await requireProposalStaff();
+  const { organizationId, proposalScope, user } = await requireProposalStaff();
 
   const proposals = await db.proposal.findMany({
     where: { organizationId, ...proposalScope },
@@ -177,6 +177,9 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
       remindersOn: p.remindersOn ?? null,
       // The donor prints a single given name in the Owner column.
       owner: p.owner?.name?.trim().split(/\s+/)[0] || "—",
+      // The reader's own proposal: the list names an owner only when it is
+      // someone else (owner, 2026-09-25).
+      mine: !!p.owner && p.owner.id === user.id,
       ownerWho: p.owner
         ? { id: p.owner.id, name: p.owner.name?.trim() || p.owner.email || "Member", role: roleByUser.get(p.owner.id) ?? null }
         : null,

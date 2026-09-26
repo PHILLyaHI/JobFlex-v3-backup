@@ -90,7 +90,7 @@ export const PAGE_SIZE = 8;
 export type TabKey = 'all' | 'pipeline' | 'incoming';
 
 export const TABS: Array<{ key: TabKey; label: string }> = [
-  { key: 'all', label: 'All leads' },
+  { key: 'all', label: 'My leads' },
   { key: 'pipeline', label: 'Pipeline' },
   { key: 'incoming', label: 'Incoming' }
 ];

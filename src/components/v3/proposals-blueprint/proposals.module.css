@@ -1274,6 +1274,11 @@
 .bp :global(.pmenu-item.is-danger .pmenu-item-t), .bp :global(.pmenu-item.is-danger .ic) { color: var(--danger); }
 .bp :global(.pmenu-item.is-danger:hover) { background: var(--danger-soft); }
 .bp :global(.pmenu-div) { height: 1.5px; background: var(--hair-soft); margin: 5px 4px; }
+/* The row menu's groups (2026-09-25): Open · Share with client · Billing ·
+   More, each under a quiet annotation and a rule. */
+.bp :global(.pmenu-grp) { padding: 9px 10px 3px; font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-light); }
+.bp :global(.pmenu-head + .pmenu-grp) { padding-top: 3px; }
+.bp :global(.pmenu-item + .pmenu-grp) { margin-top: 5px; border-top: 1.5px solid var(--hair-soft); }
 
 .bp :global(.psheets) { display: flex; flex-direction: column; gap: 22px; }
 .bp :global(.psheet) { border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 4px 4px 0 var(--shadow); }
@@ -1368,6 +1373,12 @@
 .bp :global(.pmi--warn)   { border-color: var(--warning); background: var(--warning-soft); color: var(--warning-dark); }
 .bp :global(.pmi--danger) { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
 .bp :global(.pmenu-item .pmi-ic .ic) { color: inherit; }
+/* A group's main action wears its hue solid; the rest of the group tinted.
+   Blue opens, green goes to the client, amber bills, ink is everything else. */
+.bp :global(.pmi--bp-solid)   { border-color: var(--blueprint); background: var(--blueprint); color: #fff; }
+.bp :global(.pmi--ok-solid)   { border-color: var(--success); background: var(--success); color: #fff; }
+.bp :global(.pmi--warn-solid) { border-color: var(--warning-dark); background: var(--warning-dark); color: #fff; }
+.bp :global(.pmi--ink)        { border-color: var(--ink); background: #fff; color: var(--ink); }
 
 /* Quiet bar actions: the frame appears on hover */
 .bp :global(.pjob-foot .btn:not(.btn-primary)) {
@@ -1669,8 +1680,6 @@
 .bp :global(.pco-chip--wait) { border-color: var(--warning); color: var(--warning); background: var(--warning-soft); }
 .bp :global(.pt-co) { color: var(--ink); }
 .bp :global(.pt-co--wait) { color: var(--warning); font-weight: 700; }
-.bp :global(.pt-paid) { margin-top: 2px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
-.bp :global(.pt-paid--full) { color: var(--success-dark); }
 /* The invoice dialog's three rails. */
 .bp :global(.content .pmdl .inv-opts) { display: grid; gap: 8px; margin-top: 12px; }
 .bp :global(.content .pmdl .inv-opt) { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; text-align: left; cursor: pointer; }
@@ -1679,11 +1688,15 @@
 .bp :global(.content .pmdl .inv-t) { font-size: 13.5px; font-weight: 800; color: var(--ink); }
 .bp :global(.content .pmdl .inv-sub) { font-size: 11.5px; color: var(--muted); }
 
-/* The list row's paid measure: a thin bar, then the words. */
-.bp :global(.pt-paid) { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
-.bp :global(.pt-bar) { display: inline-block; width: 54px; height: 6px; border: 1.5px solid var(--ink); border-radius: 2px; background: #fff; overflow: hidden; vertical-align: middle; }
+/* The list row's paid measure (2026-09-25): a quiet meter, the percent that
+   has landed, and what is still due on the line below. */
+.bp :global(.pt-paid) { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 5px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.bp :global(.pt-paid b) { font-size: 11.5px; font-weight: 800; letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--blueprint); }
+.bp :global(.pt-bar) { display: inline-block; width: 48px; height: 4px; border-radius: 2px; background: var(--ink-line); overflow: hidden; }
 .bp :global(.pt-bar i) { display: block; height: 100%; background: var(--blueprint); }
+.bp :global(.pt-paid--full b) { color: var(--success-dark); }
 .bp :global(.pt-paid--full .pt-bar i) { background: var(--success); }
+.bp :global(.pt-due) { margin-top: 2px; font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--warning-dark); white-space: nowrap; }
 .bp :global(.pstatus--completed) { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
 
 /* A proposal row, and an accepted or completed card's header, open the
@@ -1733,5 +1746,11 @@
 .bp :global(.content .pt-views--seen) { border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.07); }
 /* Settled another way — no warning, just the fact. */
 .bp :global(.content .pt-views--quiet) { border-color: var(--hair); color: var(--muted); }
-/* The column is right-aligned; the plate keeps its own left edge. */
-.bp :global(.content .ptable td.num .pt-views) { margin-left: auto; }
+/* The column is centered (owner, 2026-09-25), and every plate is one width,
+   so "8 · 23m ago" and "0 · not opened" stack as one tidy column. */
+.bp :global(.content .ptable th.c), .bp :global(.content .ptable td.c) { text-align: center; }
+.bp :global(.content .ptable td.c .pt-views:not(.pt-views--na)) { min-width: 126px; justify-content: center; }
+
+/* Owner names someone else (2026-09-25): a book that is all the reader's own
+   folds the column away. */
+.bp :global(.content .ptable.is-solo .th-owner), .bp :global(.content .ptable.is-solo .td-owner) { display: none; }

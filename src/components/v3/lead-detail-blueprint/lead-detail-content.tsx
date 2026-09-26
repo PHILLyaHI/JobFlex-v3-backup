@@ -6,6 +6,7 @@
 
 import Link from "next/link";
 import type { Route } from "next";
+import { ChevronRight } from "lucide-react";
 import { startEstimateFromLead, writeLeadScope } from "@/actions/leadEstimate";
 import { ESTIMATOR_LABEL, estimatorFor, looksLikeStreetAddress, type EstimatorId } from "@/lib/leadRules";
 import styles from "./lead-detail.module.css";
@@ -16,6 +17,18 @@ const cx = (...names: Array<string | false | null | undefined>) =>
 // The manual proposal last (owner, 2026-09-22): the sheet opens with the
 // lead's name, contact, address and scope already on it.
 const ENGINES: EstimatorId[] = ["roof", "fence", "hvac", "smart", "manual"];
+
+/** What each way of pricing does, in a line (the estimate list, 2026-09-25). */
+const ENGINE_NOTE: Record<EstimatorId, string> = {
+  roof: "Measures the roof from the address",
+  fence: "Draws the fence on the property lines",
+  hvac: "Sizes the system and prices the install",
+  smart: "Prices the scope of work with AI",
+  manual: "A blank proposal with the lead filled in",
+};
+
+/** Roof and fence measure off the parcel — they need a street address. */
+const needsStreet = (engine: EstimatorId) => engine === "roof" || engine === "fence";
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -55,7 +68,8 @@ export function LeadDetailContent({ lead, canEstimate, scopeFailed }: LeadDetail
     .filter((s) => s && s.trim())
     .join(", ");
   const hasStreet = looksLikeStreetAddress(lead.address);
-  const order = [primary, ...ENGINES.filter((e) => e !== primary)];
+  const others = ENGINES.filter((e) => e !== primary);
+  const primaryOff = needsStreet(primary) && !hasStreet;
   const words = (lead.description ?? "").trim();
   const canWriteScope = !lead.scope && canEstimate && words.length >= 12;
   const source = lead.source === "LEAD_CENTER" ? "Lead Center" : lead.source === "HOMEOWNER" ? "Homeowner form" : (lead.source ?? "Manual");
@@ -69,7 +83,7 @@ export function LeadDetailContent({ lead, canEstimate, scopeFailed }: LeadDetail
         </div>
         <div className={cx("page-actions")}>
           <Link className={cx("btn", "btn-ghost")} href={"/dashboard/leads" as Route}>
-            ‹ All leads
+            ‹ My leads
           </Link>
         </div>
       </div>
@@ -144,35 +158,49 @@ export function LeadDetailContent({ lead, canEstimate, scopeFailed }: LeadDetail
             </form>
           )}
 
+          {/* ESTIMATE THIS JOB (owner, 2026-09-25: "better designed, well
+              structured and minimal"): the way this lead's trade prices, as
+              the one primary action, then every other way as a quiet row —
+              each row a form posting the same startEstimateFromLead. */}
           {canEstimate && (
             <div className={cx("est")} data-lead-estimators>
               <div className={cx("sec-h")}>Estimate this job</div>
-              <span className={cx("hint")}>
-                {primary === "smart"
-                  ? "The scope lands in the Smart Proposal's brief with the location filled in."
-                  : hasStreet
-                    ? `The address goes straight into the ${ESTIMATOR_LABEL[primary]} to measure the job.`
-                    : `The ${ESTIMATOR_LABEL[primary]} measures off the address — this lead has no street address yet, so ask for it first.`}
-              </span>
-              <div className={cx("est-row")}>
-                {order.map((engine) => {
-                  const off = (engine === "roof" || engine === "fence") && !hasStreet;
+              <form action={startEstimateFromLead.bind(null, lead.id, primary)} className={cx("est-lead")}>
+                <div className={cx("est-lead-txt")}>
+                  <div className={cx("est-lead-n")}>
+                    {ESTIMATOR_LABEL[primary]}
+                    <span className={cx("est-tag")}>Recommended</span>
+                  </div>
+                  <span className={cx("hint")}>
+                    {primary === "smart"
+                      ? "The scope lands in the Smart Proposal's brief with the location filled in."
+                      : hasStreet
+                        ? `The address goes straight into the ${ESTIMATOR_LABEL[primary]} to measure the job.`
+                        : `The ${ESTIMATOR_LABEL[primary]} measures off the address — this lead has no street address yet, so ask for it first.`}
+                  </span>
+                </div>
+                <button className={cx("btn", "btn-primary")} type="submit" disabled={primaryOff} data-estimator={primary}>
+                  Start estimate
+                </button>
+              </form>
+
+              <div className={cx("est-alt-h")}>Or price it another way</div>
+              <ul className={cx("est-list")}>
+                {others.map((engine) => {
+                  const off = needsStreet(engine) && !hasStreet;
                   return (
-                    <form key={engine} action={startEstimateFromLead.bind(null, lead.id, engine)}>
-                      <button
-                        className={cx("btn", engine === primary ? "btn-primary" : "btn-ghost", "btn--sm")}
-                        type="submit"
-                        disabled={off}
-                        title={off ? "Needs the street address" : undefined}
-                        data-estimator={engine}
-                      >
-                        {ESTIMATOR_LABEL[engine]}
-                        {engine === primary ? " · recommended" : ""}
-                      </button>
-                    </form>
+                    <li key={engine}>
+                      <form action={startEstimateFromLead.bind(null, lead.id, engine)}>
+                        <button className={cx("est-opt")} type="submit" disabled={off} data-estimator={engine}>
+                          <span className={cx("est-opt-n")}>{ESTIMATOR_LABEL[engine]}</span>
+                          <span className={cx("est-opt-s")}>{off ? "Needs a street address" : ENGINE_NOTE[engine]}</span>
+                          <ChevronRight className={cx("est-opt-go")} aria-hidden="true" />
+                        </button>
+                      </form>
+                    </li>
                   );
                 })}
-              </div>
+              </ul>
             </div>
           )}
         </section>

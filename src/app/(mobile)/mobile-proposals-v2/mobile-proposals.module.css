@@ -924,6 +924,19 @@
 .pmiOk { border-color: var(--success); background: var(--success-soft); color: var(--success); }
 .pmiWarn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
 .pmiDanger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+/* The desktop menu's groups (2026-09-25): a group's main action solid, the
+   rest tinted; ink for everything else. */
+.pmiBpSolid { border-color: var(--blueprint); background: var(--blueprint); color: #fff; }
+.pmiOkSolid { border-color: var(--success); background: var(--success); color: #fff; }
+.pmiWarnSolid { border-color: var(--warning-dark, var(--warning)); background: var(--warning-dark, var(--warning)); color: #fff; }
+.pmiInk { border-color: var(--ink); background: #fff; color: var(--ink); }
+.pmenuGrp {
+  padding: 14px var(--pad-x) 6px;
+  border-bottom: 1px solid var(--hair-soft);
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted-light);
+}
 .pmenuItemT { font-size: 15px; font-weight: 700; display: block; }
 .pmenuItemS { margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); display: block; }
 .pmenuItemDanger .pmenuItemT { color: var(--danger); }

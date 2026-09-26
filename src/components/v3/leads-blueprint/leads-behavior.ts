@@ -462,11 +462,15 @@ export function initLeadsContent(
             initials(l.name) +
             "</span>" +
             // `title` carries the untruncated name — .pt-title ellipsises it.
-            '<span><span class="pt-title" title="' +
+            // The name is the row's real link (keyboard, ⌘-click); a click
+            // anywhere else on the row follows it too.
+            '<span><a class="pt-title pt-link" href="/dashboard/leads/' +
+            encodeURIComponent(l.id) +
+            '" data-act="open" title="' +
             esc(l.name) +
             '">' +
             esc(l.name) +
-            "</span>" +
+            "</a>" +
             '<span class="pt-sub" style="display:block">' +
             esc(l.email || l.phone || "—") +
             " · " +
@@ -497,9 +501,9 @@ export function initLeadsContent(
             '<td><span class="pt-mono">' +
             l.age +
             "</span></td>" +
-            '<td class="num"><button class="pt-open" type="button" data-act="open" aria-label="Open ' +
-            esc(l.name) +
-            '" title="Open — scope and estimators"><svg class="ic" style="transform:rotate(-90deg)"><use href="#i-chev"/></svg></button>' +
+            // No arrow button (owner, 2026-09-25): the whole row opens the
+            // lead, and says so on hover.
+            '<td class="num"><span class="lopen-hint" aria-hidden="true">Open<svg class="ic"><use href="#i-chev"/></svg></span>' +
             '<button class="pt-open" type="button" data-act="ask-delete" aria-label="Delete ' +
             esc(l.name) +
             '"><svg class="ic"><use href="#i-trash"/></svg></button></td>' +
@@ -1363,6 +1367,11 @@ export function initLeadsContent(
     const kind = act.dataset.act;
 
     if (kind === "open") {
+      // The name's link: ⌘ / Ctrl / Shift-click is the browser's (a new tab
+      // or window); a plain click navigates in place like the row.
+      const me = e as MouseEvent;
+      if (act.tagName === "A" && (me.metaKey || me.ctrlKey || me.shiftKey)) return;
+      e.preventDefault();
       const id = act.closest<HTMLElement>("[data-id]")?.dataset.id || "";
       if (id) options.navigate?.("/dashboard/leads/" + id);
       return;

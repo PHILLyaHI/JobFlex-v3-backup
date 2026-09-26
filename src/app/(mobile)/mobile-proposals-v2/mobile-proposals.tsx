@@ -175,6 +175,8 @@ type MenuRow = {
   sub: string;
   disabled?: boolean;
   danger?: boolean;
+  /** Set on the first row of a group: the label drawn above it. */
+  group?: string;
 };
 
 /* ============================================================
@@ -802,26 +804,28 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
     if (!p) return [];
     const isDraft = p.status === "DRAFT";
     const isAcc = p.status === "ACCEPTED";
+    // The desktop menu's groups and hues (2026-09-25): open it, share it with
+    // the client, the contract, the rest — the group's main action solid.
     return [
-      { act: "open", icon: "i-file", tone: styles.pmiBp, title: "Open proposal", sub: "Edit the full document" },
-      { act: "public", icon: "i-arrow", title: "View public page", sub: "What the client sees" },
+      { act: "open", icon: "i-file", tone: styles.pmiBpSolid, title: "Open proposal", sub: "Edit the full document", group: "Open" },
+      { act: "public", icon: "i-arrow", tone: styles.pmiBp, title: "View public page", sub: "What the client sees" },
+      { act: "send", icon: "i-send", tone: styles.pmiOkSolid, title: "Send to client",
+        sub: p.clientEmail ?? "No email on the client record", group: "Share with client" },
       // The client's link, copied or handed to the phone's messages (2026-09-24).
-      { act: "copylink", icon: "i-out", title: "Copy client link", sub: "Paste it into a text" },
-      { act: "textlink", icon: "i-msg", title: "Text the link", sub: "Opens Messages with the link filled in" },
-      { act: "dup", icon: "i-copy", title: "Duplicate", sub: "Copy into a new draft" },
-      { act: "send", icon: "i-send", tone: styles.pmiSky, title: "Send to client",
-        sub: p.clientEmail ?? "No email on the client record" },
-      { act: "remind", icon: "i-card", tone: styles.pmiSky, title: "Send payment reminder",
+      { act: "copylink", icon: "i-out", tone: styles.pmiOk, title: "Copy client link", sub: "Paste it into a text" },
+      { act: "textlink", icon: "i-msg", tone: styles.pmiOk, title: "Text the link", sub: "Opens Messages with the link filled in" },
+      { act: "accept", icon: "i-check", tone: styles.pmiWarnSolid,
+        title: isAcc ? "Already accepted" : "Mark accepted",
+        sub: isAcc ? `Signed ${p.accepted ?? ""}` : "Move it into contracts", disabled: isAcc, group: "Contract" },
+      { act: "remind", icon: "i-card", tone: styles.pmiWarn, title: "Send payment reminder",
         sub: isDraft
           ? "Draft — nothing sent yet"
           : p.clientEmail
             ? "Nudge the client by email"
             : "No email on the client record",
         disabled: isDraft || !p.clientEmail },
-      { act: "accept", icon: "i-check", tone: styles.pmiOk,
-        title: isAcc ? "Already accepted" : "Mark accepted",
-        sub: isAcc ? `Signed ${p.accepted ?? ""}` : "Move it into contracts", disabled: isAcc },
-      { act: "dir", icon: "i-pin", tone: styles.pmiWarn, title: "Get directions",
+      { act: "dup", icon: "i-copy", tone: styles.pmiInk, title: "Duplicate", sub: "Copy into a new draft", group: "More" },
+      { act: "dir", icon: "i-pin", tone: styles.pmiInk, title: "Get directions",
         sub: p.maps ? `${p.city || "Client address"} — open in maps` : "No address on client",
         disabled: !p.maps },
       { act: "del", icon: "i-trash", tone: styles.pmiDanger, title: "Delete", sub: "Remove permanently", danger: true },
@@ -988,7 +992,8 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                       onClick={(e) => openFromTap(e, p.id)} onKeyDown={(e) => { if (e.key === "Enter") router.push(`/dashboard/proposals/${p.id}`); }}>
                       <div>
                         <div className={styles.prowId}>
-                          {p.updated} · {p.ownerWho ? <Who who={p.ownerWho} compact /> : p.owner}
+                          {/* The owner only when it is someone else (2026-09-25). */}
+                          {p.updated}{p.mine ? null : <> · {p.ownerWho ? <Who who={p.ownerWho} compact /> : p.owner}</>}
                         </div>
                         <div className={styles.prowTitle}>{p.title}</div>
                       </div>
@@ -1151,7 +1156,7 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                       <div className={styles.pcol}>
                         <div className={styles.pcolLbl}>Paid</div>
                         <div className={styles.pcolVal}>{p.paid ?? "—"}</div>
-                        <div className={styles.pcolSub}>{p.ownerWho ? <Who who={p.ownerWho} compact /> : p.owner}</div>
+                        <div className={styles.pcolSub}>{p.mine ? null : p.ownerWho ? <Who who={p.ownerWho} compact /> : p.owner}</div>
                       </div>
                     </div>
 
@@ -1280,15 +1285,18 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
         ) : (
           <div className={styles.sheetBody}>
             {menuRows.map((r) => (
-              <button key={r.act} type="button" disabled={r.disabled || writing}
-                className={`${styles.pmenuItem} ${r.danger ? styles.pmenuItemDanger : ""}`}
-                onClick={() => runMenu(r.act)}>
-                <span className={`${styles.pmiIc} ${r.tone ?? ""}`}><Icon id={r.icon} /></span>
-                <span>
-                  <span className={styles.pmenuItemT}>{r.title}</span>
-                  <span className={styles.pmenuItemS}>{r.sub}</span>
-                </span>
-              </button>
+              <Fragment key={r.act}>
+                {r.group && <div className={styles.pmenuGrp}>{r.group}</div>}
+                <button type="button" disabled={r.disabled || writing}
+                  className={`${styles.pmenuItem} ${r.danger ? styles.pmenuItemDanger : ""}`}
+                  onClick={() => runMenu(r.act)}>
+                  <span className={`${styles.pmiIc} ${r.tone ?? ""}`}><Icon id={r.icon} /></span>
+                  <span>
+                    <span className={styles.pmenuItemT}>{r.title}</span>
+                    <span className={styles.pmenuItemS}>{r.sub}</span>
+                  </span>
+                </button>
+              </Fragment>
             ))}
           </div>
         )}

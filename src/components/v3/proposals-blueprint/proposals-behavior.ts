@@ -29,6 +29,7 @@
 //   Duplicate        → duplicateProposal()
 //   Send to client   → sendProposal()
 //   Order materials  → the MaterialsSheet component, mounted as a React island
+//                      (the accepted card's chip; out of the row menu 2026-09-25)
 //   View on Zillow   → zillowSearchUrl(), precomputed per row on the server
 //   Delete proposal  → bulkDeleteProposals([id])
 //
@@ -296,6 +297,28 @@ export function initProposalsContent(
       '">' + eye + "<b>" + p.views + "</b><i>" +
       (p.lastViewed ? esc(p.lastViewed) : p.views === 1 ? "view" : "views") +
       "</i></span>"
+    );
+  }
+  /**
+   * PAID, under the Total (owner, 2026-09-25: "a better way to put in the paid
+   * percentage"): the share of the contract that has landed as a number beside
+   * a quiet meter, and what is still due underneath. The dollars are in the
+   * title. A partial payment never rounds up to 100%.
+   */
+  function paidCellHtml(p: ProposalRow): string {
+    const contract = p.contract ?? p.total;
+    const paid = p.paidAmt ?? 0;
+    const full = contract > 0 && p.owed <= 0;
+    const pct = full ? 100 : Math.min(99, payPct(p));
+    const title = full
+      ? "Paid in full — " + fmtMoney(paid || contract)
+      : fmtMoney(paid) + " paid of " + fmtMoney(contract) + " · " + fmtMoney(p.owed) + " due";
+    return (
+      '<div class="pt-paid' + (full ? " pt-paid--full" : "") + '" title="' + esc(title) + '">' +
+      '<span class="pt-bar" aria-hidden="true"><i style="width:' + pct + '%"></i></span>' +
+      "<b>" + pct + "%</b>paid" +
+      "</div>" +
+      (full ? "" : '<div class="pt-due">' + fmtMoney(p.owed) + " due</div>")
     );
   }
   function coChipHtml(p: ProposalRow): string {
@@ -579,23 +602,20 @@ export function initProposalsContent(
       '<td class="num"><span class="pt-money">' +
       fmtMoney(p.contract ?? p.total) +
       "</span>" +
-      (p.status === "ACCEPTED" || p.status === "COMPLETED" || p.status === "PAID"
-        ? '<div class="pt-paid' + (p.owed <= 0 ? " pt-paid--full" : "") + '">' +
-          '<span class="pt-bar"><i style="width:' + payPct(p) + '%"></i></span>' +
-          (p.owed <= 0 ? "paid in full" : fmtMoney(p.paidAmt ?? 0) + " paid · " + fmtMoney(p.owed) + " due") +
-          "</div>"
-        : "") +
+      (p.status === "ACCEPTED" || p.status === "COMPLETED" || p.status === "PAID" ? paidCellHtml(p) : "") +
       "</td>" +
       '<td><span class="pt-mono">' +
       esc(p.updated) +
       "</span></td>" +
-      '<td class="num">' +
+      '<td class="c">' +
       viewsCellHtml(p) +
       "</td>" +
       // The member's mark — name, role and their color (lib/team/who); the
-      // given-name plate only when the owner is no longer on the org.
-      "<td>" +
-      (p.ownerWho ? whoHtml(p.ownerWho) : '<span class="pt-mono">' + esc(p.owner) + "</span>") +
+      // given-name plate only when the owner is no longer on the org. Nothing
+      // on the reader's own proposals (owner, 2026-09-25): the column names
+      // someone else, and hides itself when every proposal is the reader's.
+      '<td class="td-owner">' +
+      (p.mine ? "" : p.ownerWho ? whoHtml(p.ownerWho) : '<span class="pt-mono">' + esc(p.owner) + "</span>") +
       "</td>" +
       '<td class="num"><button class="pt-open" type="button" data-menu="' +
       esc(p.id) +
@@ -610,6 +630,9 @@ export function initProposalsContent(
   function syncAllChrome() {
     const { rows, pages } = allSlice();
     $("#allCard")?.classList.toggle("is-hidden", rows.length === 0);
+    // The Owner column names someone ELSE; when every proposal in the book is
+    // the reader's own it has nothing to say and folds away.
+    $("#allCard .ptable")?.classList.toggle("is-solo", !book().some((p) => !p.mine));
     const empty = $("#allEmpty");
     empty?.classList.toggle("is-hidden", rows.length !== 0);
     // An empty BOOK and an empty FILTER are different situations and the copy
@@ -1125,43 +1148,56 @@ export function initProposalsContent(
     if (!p || !pMenu) return;
     pstate.menuId = id;
     pstate.menuBtn = btn;
+    // Grouped the way the job goes (owner, 2026-09-25: "in order more
+    // logically, and change colors so they are different"): open it, share it
+    // with the client, bill it, the rest — one hue per group, the group's
+    // main action a solid plate. Order materials left the menu that day; the
+    // accepted card's Materials chip still opens the sheet.
+    const accepted = p.status === "ACCEPTED" || p.status === "COMPLETED";
+    const settled = (p.contract ?? p.total) > 0 && p.owed <= 0 && (accepted || p.status === "PAID");
+    const canInvoice = p.owed > 0 && accepted;
+    const invoiceSub = canInvoice
+      ? fmtMoney(p.owed) + " due · card, bank or the client's choice"
+      : settled
+        ? "Paid in full — nothing to bill"
+        : accepted || p.status === "PAID"
+          ? "Nothing owed"
+          : "After the client accepts";
     pMenu.innerHTML =
       '<div class="pmenu-head"><div class="pmenu-title">' +
       esc(p.title) +
       '</div><div class="pmenu-sub">' +
       esc(subLine(p)) +
       "</div></div>" +
-      menuItem("i-pen", "pmi--bp", "Edit proposal", "Open editor", "edit", {
+      '<div class="pmenu-grp">Open</div>' +
+      menuItem("i-pen", "pmi--bp-solid", "Edit proposal", "Open editor", "edit", {
         href: proposalHref(p.id),
       }) +
-      menuItem("i-ext", "pmi--sky", "View public page", "New tab", "view", {
+      menuItem("i-ext", "pmi--bp", "View public page", "What the client sees · new tab", "view", {
         href: "/portal/q/" + encodeURIComponent(p.publicId),
         blank: true,
       }) +
-      // The client's link, copied or handed to the phone's own messages (2026-09-24).
-      menuItem("i-link", "pmi--sky", "Copy client link", "Paste it into a text", "copylink") +
-      menuItem("i-phone", "pmi--sky", "Text the link", "Opens your messages with the link filled in", "textlink", {
-        href: smsHref(null, proposalTextMessage({ clientName: p.client, title: p.title, link: clientProposalUrl(p.publicId) })),
-      }) +
-      menuItem("i-dup", "", "Duplicate", "Clone &amp; edit", "dup") +
-      '<div class="pmenu-div"></div>' +
+      '<div class="pmenu-grp">Share with client</div>' +
       menuItem(
         "i-send",
-        "pmi--ok",
+        "pmi--ok-solid",
         "Send to client",
         p.clientEmail ? esc(p.clientEmail) : "No email on the client",
         "sendto",
       ) +
-      menuItem("i-send", "pmi--bp", "Send invoice", p.owed > 0 ? fmtMoney(p.owed) + " due · card, bank or the client's choice" : "Nothing owed", "invoice", {
-        dis: !(p.owed > 0 && (p.status === "ACCEPTED" || p.status === "COMPLETED")),
+      // The client's link, copied or handed to the phone's own messages (2026-09-24).
+      menuItem("i-link", "pmi--ok", "Copy client link", "Paste it into a text", "copylink") +
+      menuItem("i-phone", "pmi--ok", "Text the link", "Opens your messages with the link filled in", "textlink", {
+        href: smsHref(null, proposalTextMessage({ clientName: p.client, title: p.title, link: clientProposalUrl(p.publicId) })),
       }) +
-      menuItem("i-plus", "pmi--bp", "Change order", "Price extras, send for signature", "change-order") +
-      menuItem("i-box", "pmi--warn", "Order materials", (p.mat || 0) + " items", "materials", {
-        dis: p.mat === 0,
-      }) +
+      '<div class="pmenu-grp">Billing</div>' +
+      menuItem("i-send", "pmi--warn-solid", "Send invoice", invoiceSub, "invoice", { dis: !canInvoice }) +
+      menuItem("i-plus", "pmi--warn", "Change order", "Price extras, send for signature", "change-order") +
+      '<div class="pmenu-grp">More</div>' +
+      menuItem("i-dup", "pmi--ink", "Duplicate", "Clone &amp; edit", "dup") +
       menuItem(
         "i-building",
-        "",
+        "pmi--ink",
         "View on Zillow",
         p.zillow ? "Open listing" : "No address on client",
         "zillow",
