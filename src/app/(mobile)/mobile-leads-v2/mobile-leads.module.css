@@ -1304,3 +1304,4 @@
    LeadProfileNudge). The banner carries its own frame; this only gives it the
    gap the page head and the tab rail expect between blocks. */
 .leadGap { margin-bottom: 16px; }
+.leadGap :global(.jf-lead-nudge) { margin-bottom: 0; }

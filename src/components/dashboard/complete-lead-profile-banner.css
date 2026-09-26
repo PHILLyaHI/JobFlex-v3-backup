@@ -1,0 +1,91 @@
+/* Lead Center nudge — the same amber plate as the Overview banner
+   (dashboard-blueprint/blueprint.module.css → .banner), so Leads and the
+   handheld Leads read identically to Overview. Tokens come from the page's
+   blueprint scope; the fallbacks are those same token values for a mount
+   outside one. Selectors are root-scoped so the page scope's `.bp a`,
+   `.bp button` and `.bp *` resets (one class + one element) never win. */
+div.jf-lead-nudge {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+  border: 2px solid var(--warning, #b88420);
+  border-left-width: 6px;
+  border-radius: var(--radius, 2px);
+  background: linear-gradient(var(--warning-soft, rgba(184, 132, 32, 0.08)), var(--warning-soft, rgba(184, 132, 32, 0.08))),
+    var(--paper, #f2f0eb);
+  padding: 14px 18px;
+  transition: opacity 0.2s ease, transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+div.jf-lead-nudge.is-closing {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+.jf-lead-nudge .jf-lead-nudge-pin {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  color: var(--warning, #b88420);
+}
+.jf-lead-nudge .jf-lead-nudge-body {
+  min-width: 0;
+}
+.jf-lead-nudge .jf-lead-nudge-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--warning, #b88420);
+  margin-bottom: 4px;
+}
+.jf-lead-nudge .jf-lead-nudge-txt {
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--ink-soft, #2a2a2a);
+}
+.jf-lead-nudge .jf-lead-nudge-link {
+  font-weight: 700;
+  color: var(--warning-dark, #96691a);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1.5px;
+  transition: color 0.15s;
+}
+.jf-lead-nudge .jf-lead-nudge-link:hover {
+  color: var(--warning, #b88420);
+}
+/* 44px hit area (handheld Leads mounts this too); the drawn box is the
+   Overview's borderless square that rules in ink on hover. */
+.jf-lead-nudge .jf-lead-nudge-close {
+  margin-left: auto;
+  width: 44px;
+  height: 44px;
+  margin-block: -6px;
+  margin-right: -6px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: none;
+  border: 0;
+  color: var(--muted, #555);
+  cursor: pointer;
+}
+.jf-lead-nudge .jf-lead-nudge-close span {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius, 2px);
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.jf-lead-nudge .jf-lead-nudge-close:hover span {
+  border-color: var(--ink, #0a0a0a);
+  color: var(--ink, #0a0a0a);
+  background: var(--paper-deep, #ffffff);
+}
+.jf-lead-nudge .jf-lead-nudge-close svg {
+  width: 15px;
+  height: 15px;
+}
