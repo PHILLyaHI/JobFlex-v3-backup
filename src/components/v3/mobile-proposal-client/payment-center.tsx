@@ -85,11 +85,12 @@ export function PaymentCenter({ model, onClose, initialTarget = "next", method =
           </button>
         </div>}
         {available.length > 0 && <div className={styles.section}>
-          <p className={styles.label}>Pay with</p>
+          <p className={styles.label}>Choose payment provider</p>
           {available.map((provider, i) => {
             const below = isBelowMin(minor, provider.id.toUpperCase() as "STRIPE" | "SQUARE" | "STAX");
             return <div key={provider.id} className={styles.providerWrap}><button type="button" className={`${styles.provider}${i === 0 ? " " + styles.primary : ""}`} disabled={Boolean(busy) || below || minor <= 0} onClick={() => pay(provider.id)}>
-              <span>{busy === provider.id ? "Opening checkout…" : provider.name}</span><ArrowRight size={18} aria-hidden="true" />
+              <span className={styles.payAmount}>{busy === provider.id ? "Opening checkout…" : `Pay ${amount}`}</span>
+              <span className={styles.providerName}>via {provider.name}<ArrowRight size={16} aria-hidden="true" /></span>
             </button>{below && <p className={styles.note}>Below this provider’s minimum. Select the remaining balance or contact the team.</p>}</div>;
           })}
         </div>}

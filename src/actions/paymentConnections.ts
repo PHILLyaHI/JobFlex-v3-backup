@@ -5,6 +5,7 @@
 // connectStripeWithKey below; everything else is here. Owner-only — this is
 // the money.
 import { z } from "zod";
+import { isStaxRailLive } from "@/lib/payments/rails";
 import { revalidatePath } from "next/cache";
 import { requireOwner } from "@/lib/orgContext";
 import { db } from "@/lib/db";
@@ -226,9 +227,10 @@ export async function connectSquareWithToken(raw: unknown): Promise<KeyConnectRe
 /** "Use API key" for Stax: the contractor pastes their merchant API key.
  *  Checked against Stax (GET /self), stored encrypted, and one webhook per
  *  event registered with it — the target URL carries a random secret because
- *  Stax signs nothing. Built without a Stax account to test against. */
+ *  Stax signs nothing. */
 export async function connectStaxWithKey(raw: unknown): Promise<KeyConnectResult> {
   const ctx = await requireOwner();
+  if (!isStaxRailLive()) return { ok: false, message: "Stax connections are temporarily unavailable." };
   const limited = await keyAttemptLimit(ctx);
   if (limited) return { ok: false, message: limited };
   const parsed = keySchema.safeParse(raw);

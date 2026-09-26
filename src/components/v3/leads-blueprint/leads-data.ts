@@ -157,3 +157,8 @@ export function ownLeads<T extends { source: string; status: string }>(rows: T[]
 }
 
 export const PAGE_SIZE = 20;
+
+/** Meta imports have deterministic IDs; manually tagged Facebook leads do not. */
+export function isMetaImportedLead(lead: { id: string; source: string }): boolean {
+  return lead.source === "FACEBOOK" && /^meta_[a-f0-9]{40}$/.test(lead.id);
+}

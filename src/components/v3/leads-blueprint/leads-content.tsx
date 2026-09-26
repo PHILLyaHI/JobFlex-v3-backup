@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 // Blueprint leads — page CONTENT only. The donor's `.content` children,
 // verbatim; the sidebar, topbar and sprite come from the shared shell
 // (components/v3/blueprint-shell), which persists across navigation. Dynamic
@@ -16,12 +18,12 @@
 // geometry changes; leads-behavior.ts skips it in the reveal cascade and
 // leads.module.css carries the matching stacking-context rule.
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Route } from "next";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initLeadsContent, type LeadsHandle } from "./leads-behavior";
-import { STAGES, type Lead, type Offer } from "./leads-data";
+import { STAGES, isMetaImportedLead, type Lead, type Offer } from "./leads-data";
 
 /**
  * @param leads the org's real pipeline, read in the page's server component.
@@ -30,7 +32,10 @@ import { STAGES, type Lead, type Offer } from "./leads-data";
  * The behavior module takes both as its starting state and then keeps itself in
  * step with the database through the lead server actions.
  */
-export function LeadsContent({ leads, offers }: { leads: Lead[]; offers: Offer[] }) {
+export function LeadsContent({ leads: allLeads, offers: allOffers }: { leads: Lead[]; offers: Offer[] }) {
+  const metaOnly = useSearchParams().get("imported") === "meta";
+  const leads = useMemo(() => metaOnly ? allLeads.filter(isMetaImportedLead) : allLeads, [allLeads, metaOnly]);
+  const offers = useMemo(() => metaOnly ? [] : allOffers, [allOffers, metaOnly]);
   // The seed reaches `init` through refs, NOT through the callback's deps.
   // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
   // tears the page down and replays the whole reveal cascade — so the init has
@@ -74,9 +79,10 @@ export function LeadsContent({ leads, offers }: { leads: Lead[]; offers: Offer[]
     <>
       <div className="page-head">
         <div>
-          <div className="kicker">Pipeline</div>
+          <div className="kicker">{metaOnly ? "Meta imports" : "Pipeline"}</div>
           <h1 className="page-title">Leads</h1>
         </div>
+        {metaOnly && <Link className="btn btn-ghost btn-sm" href="/dashboard/leads">Show all leads</Link>}
       </div>
 
       {/* TABS: All / Incoming — with Import as the row's right-hand action.

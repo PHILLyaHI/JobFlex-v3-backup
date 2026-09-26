@@ -36,6 +36,7 @@ async function staxFetch<T>(key: string, path: string, init?: { method?: string;
     },
     body: init?.body === undefined ? undefined : JSON.stringify(init.body),
     cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
   });
   const text = await res.text();
   let json: unknown = null;
@@ -151,11 +152,11 @@ export async function registerStaxWebhooks(
   const ids: string[] = [];
   for (const event of STAX_WEBHOOK_EVENTS) {
     try {
-      const hook = await staxFetch<StaxWebhook>(key, "/webhook", {
-        method: "POST",
-        body: { target_url: targetUrl, event_name: event },
-      });
-      if (hook.id) ids.push(hook.id);
+      // The merchant endpoint uses `event` (query), unlike partner webhooks.
+      const query = new URLSearchParams({ target_url: targetUrl, event });
+      const hook = await staxFetch<StaxWebhook>(key, `/webhook?${query}`, { method: "POST" });
+      if (!hook?.id) return { ok: false, message: "Stax did not confirm the webhook registration.", ids };
+      ids.push(hook.id);
     } catch (err) {
       return { ok: false, message: staxErrorMessage(err), ids };
     }
@@ -248,6 +249,7 @@ export async function createStaxInvoice(
       total: dollars,
       url: STAX_BILL_URL,
       send_now: false,
+      is_partial_payment_enabled: false,
       meta: {
         subtotal: dollars,
         tax: 0,

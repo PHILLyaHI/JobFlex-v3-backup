@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+
+import { useEffect, useId, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowDownToLine, ArrowUpRight, Check, ChevronDown, Facebook, Link2, Pause, ShieldCheck } from "lucide-react";
 import { chooseMetaPage, disconnectMeta, importMetaLeads } from "@/actions/metaLeads";
@@ -16,6 +18,38 @@ const notices: Record<string, string> = {
   choose_page: "Authorization received. Choose the Page whose leads belong in this workspace.",
 };
 
+function MetaPagePicker({ id, pages, value, disabled, onChange }: { id: string; pages: MetaData["pages"]; value: string; disabled: boolean; onChange: (id: string) => void }) {
+  const listId = useId();
+  const root = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const selected = pages.findIndex(page => page.id === value);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [open]);
+  useEffect(() => { if (open) root.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: "nearest" }); }, [open, active]);
+  function expand() { setActive(Math.max(0, selected)); setOpen(true); }
+  function choose(index: number) { if (pages[index]) onChange(pages[index].id); setOpen(false); }
+  return <div className={styles.pagePicker} ref={root} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
+    <button id={id} type="button" role="combobox" aria-label="Facebook Page" aria-expanded={open} aria-controls={listId} aria-activedescendant={open ? listId + "-" + active : undefined} disabled={disabled} className={styles.pagePickerButton}
+      onClick={() => open ? setOpen(false) : expand()}
+      onKeyDown={event => {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); if (!open) expand(); else setActive(index => (index + (event.key === "ArrowDown" ? 1 : -1) + pages.length) % pages.length); }
+        else if (event.key === "Home" || event.key === "End") { event.preventDefault(); setOpen(true); setActive(event.key === "Home" ? 0 : pages.length - 1); }
+        else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (open) choose(active); else expand(); }
+        else if (event.key === "Escape") { event.preventDefault(); setOpen(false); }
+        else if (event.key === "Tab") setOpen(false);
+      }}><span>{pages[selected]?.name || "Choose a Page"}</span><ChevronDown size={18} aria-hidden="true" /></button>
+    {open && <div id={listId} role="listbox" aria-label="Facebook Pages" className={styles.pageOptions}>
+      {pages.map((page, index) => <div key={page.id} id={listId + "-" + index} role="option" aria-selected={page.id === value} data-active={active === index} className={styles.pageOption}
+        onMouseDown={event => event.preventDefault()} onMouseEnter={() => setActive(index)} onClick={() => choose(index)}><span>{page.name}</span>{page.id === value && <Check size={17} aria-hidden="true" />}</div>)}
+    </div>}
+  </div>;
+}
+
 export function MetaConnection({ data, mobile = false }: { data: MetaData; mobile?: boolean }) {
   const router = useRouter();
   const query = useSearchParams();
@@ -25,6 +59,7 @@ export function MetaConnection({ data, mobile = false }: { data: MetaData; mobil
   const [message, setMessage] = useState("");
   const [error, setError] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number; done: boolean } | null>(null);
   const running = useRef(false);
   useEffect(() => () => { running.current = false; }, []);
   const primary = `${styles.button} ${styles.primary}`;
@@ -58,6 +93,7 @@ export function MetaConnection({ data, mobile = false }: { data: MetaData; mobil
     if (running.current) return;
     running.current = true;
     setBusy(true); setImporting(true); setPaused(false); setError(false);
+    setImportResult(null);
     setMessage("Checking the Page's lead forms…");
     let done = false;
     try {
@@ -66,7 +102,8 @@ export function MetaConnection({ data, mobile = false }: { data: MetaData; mobil
         const result = await importMetaLeads(restart);
         restart = false;
         if (!result.ok) { setError(true); setMessage(result.error); break; }
-        setMessage(`${result.imported} imported · ${result.skipped} already imported${result.done ? " · Finished" : ""}`);
+        setImportResult({ imported: result.imported, skipped: result.skipped, done: result.done });
+        setMessage("");
         if (result.done) { done = true; break; }
       }
     } catch { setError(true); setMessage("Import interrupted. Resume to continue without duplicates."); }
@@ -102,6 +139,11 @@ export function MetaConnection({ data, mobile = false }: { data: MetaData; mobil
               {importing && <button type="button" className={secondary} onClick={() => { running.current = false; setMessage("Pausing after the current batch…"); }}><Pause size={16} aria-hidden="true" />Pause import</button>}
             </div>
           </div>
+          {importResult && <div className={styles.importResult} role="status" aria-live="polite">
+            <div className={styles.importCounts}><span className={styles.imported}><strong>{importResult.imported}</strong> imported</span><span className={styles.skipped}><strong>{importResult.skipped}</strong> already imported</span></div>
+            <span className={importResult.done ? styles.finished : styles.importProgress}>{importResult.done ? <><Check size={16} aria-hidden="true" />Finished</> : importing ? "Importing…" : "Paused"}</span>
+          </div>}
+          {!importing && (importResult || data.lastImportAt) && <div className={styles.actions}><Link className={secondary} href="/dashboard/leads?imported=meta">View imported leads<ArrowUpRight size={16} aria-hidden="true" /></Link></div>}
         </> : <>
           <div className={styles.intro}>
             <h3>{hasPages ? "Choose a Page" : "Connect your leads"}</h3>
@@ -110,7 +152,7 @@ export function MetaConnection({ data, mobile = false }: { data: MetaData; mobil
           {hasPages ? <div className={styles.choice}>
             <div className={styles.field}>
               <label htmlFor={mobile ? "meta-page-mobile" : "meta-page-desktop"}>Facebook Page</label>
-              <select id={mobile ? "meta-page-mobile" : "meta-page-desktop"} value={pageChoice} disabled={busy || !data.canManage} onChange={event => setSelected(event.target.value)}><option value="">Choose a Page</option>{data.pages.map(page => <option key={page.id} value={page.id}>{page.name}</option>)}</select>
+              <MetaPagePicker id={mobile ? "meta-page-mobile" : "meta-page-desktop"} pages={data.pages} value={pageChoice} disabled={busy || !data.canManage} onChange={setSelected} />
             </div>
             <button type="button" className={primary} disabled={!pageChoice || busy || !data.canManage || data.comingSoon} onClick={() => void choose()}><Link2 size={18} aria-hidden="true" />{busy ? "Connecting…" : "Connect Page"}</button>
           </div> : <div className={styles.connectAction}>
