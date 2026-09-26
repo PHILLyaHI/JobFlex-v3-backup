@@ -82,8 +82,7 @@ export function resolvePayOptions(input: {
   // ── Stax ──────────────────────────────────────────────────────────────
   let stax: PayOptions["stax"] = { ok: false };
   const x = input.staxConn ?? null;
-  // The rail is held off the portal until a live payment has proven it
-  // (lib/payments/rails), whatever the org has connected.
+  // Respect the operator kill switch before checking the merchant connection.
   if (!isStaxRailLive()) stax = { ok: false, reason: "not_configured" };
   else if (!input.settings.stax) stax = { ok: false, reason: "disabled" };
   else if (!x) stax = { ok: false, reason: "not_connected" };

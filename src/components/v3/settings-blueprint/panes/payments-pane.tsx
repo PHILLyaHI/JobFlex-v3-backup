@@ -332,9 +332,8 @@ export function PaymentsPane({ data, navigate, notice }: PaneProps) {
             ) : null}
           </div>
 
-          {/* Stax — key only; no deep view under Integrations. Held off the
-              page until the rail is proven live (lib/payments/rails); a row
-              that already exists stays so it can be disconnected. */}
+          {/* Stax connects with a merchant API key. Existing connections remain
+              visible for disconnecting when checkout is disabled. */}
           {c.stax.keyOffered || staxHasRow ? (
           <div className="prow-grp">
             <ProcessorRow

@@ -12,7 +12,7 @@ import { isStaxRailLive } from "./rails";
 import { platformFeeBps } from "./fees";
 import { connectClientIdFor, deauthorizeConnection } from "./stripeConnect";
 import { removeSquareWebhook, revokeSquareToken, SQUARE_SCOPES, SQUARE_TOKEN_PERMISSIONS } from "./squareConnect";
-import { removeStaxWebhooks, staxKeyFor, staxWebhookIdsOf } from "./stax";
+import { removeStaxWebhooks, staxKeyFor, staxWebhookIdsOf, STAX_WEBHOOK_EVENTS } from "./stax";
 import { expireOpenCheckoutsForOrg } from "./checkouts";
 import { stripeKeyFor } from "@/lib/stripeMode";
 
@@ -185,9 +185,8 @@ export async function getPaymentConnectionStatus(
     else squareState = "connected";
   }
 
-  // Stax — one way in: a pasted merchant API key — and only once the rail
-  // has been proven live (lib/payments/rails). An existing row is still
-  // described so it can be disconnected.
+  // Stax — a pasted merchant API key, with encrypted storage required.
+  // An existing row remains visible even when the operator disables checkout.
   const staxOffered = box && isStaxRailLive();
   let staxState: StaxConnState = staxOffered ? "disconnected" : "not_configured";
   const x = conns.stax;
@@ -250,7 +249,7 @@ export async function getPaymentConnectionStatus(
       lastError: x?.lastError ?? null,
       offered: settings.stax,
       scopes: x ? [...STAX_KEY_PERMISSIONS] : [],
-      webhookRegistered: staxWebhookIdsOf({ staxWebhookIds: x?.staxWebhookIds ?? null }).length > 0,
+      webhookRegistered: staxWebhookIdsOf({ staxWebhookIds: x?.staxWebhookIds ?? null }).length === STAX_WEBHOOK_EVENTS.length,
       keyOffered: staxOffered,
     },
     bankTransfer: {

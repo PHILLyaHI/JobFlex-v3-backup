@@ -73,3 +73,22 @@
 .mobile .footer { flex-wrap: wrap; column-gap: 12px; }
 .mobile .details { flex-basis: 180px; }
 @media (prefers-reduced-motion: reduce) { .root :is(button,.chevron) { transition: none; } }
+
+.pagePicker { position: relative; min-width: 0; }
+.root .pagePickerButton { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet, var(--paper-deep)); color: var(--ink); font: 500 16px/1.4 var(--font-sans); text-align: left; cursor: pointer; }
+.pagePickerButton span,.pageOption span { min-width: 0; overflow-wrap: anywhere; }
+.root .pagePickerButton:hover:not(:disabled),.root .pagePickerButton[aria-expanded="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.pageOptions { position: absolute; inset: calc(100% + 6px) 0 auto; z-index: 30; max-height: 240px; overflow-y: auto; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet, var(--paper-deep)); }
+.pageOption { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 12px; color: var(--ink); font-size: 14px; cursor: pointer; }
+.pageOption + .pageOption { border-top: 1px solid var(--ink-line); }
+.pageOption[data-active="true"] { background: var(--accent-soft); }
+.pageOption[aria-selected="true"] { color: var(--accent-ink); font-weight: 700; }
+.importResult { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 16px; border: 1px solid var(--ink-line); background: var(--paper); }
+.importCounts { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; }
+.importCounts strong { font-size: 22px; line-height: 1.2; font-weight: 850; font-variant-numeric: tabular-nums; }
+.imported { color: var(--emerald); }
+.skipped { color: var(--ink-muted); }
+.finished,.importProgress { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; }
+.finished { color: var(--emerald); }
+.importProgress { color: var(--accent); }
+.root a.button { text-decoration: none; }

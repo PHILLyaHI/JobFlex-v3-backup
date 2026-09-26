@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 // MOBILE LEADS (mobile-leads-v2) — Blueprint system, handheld build.
 //
 // Fourth sibling to /mobile-v2 (Overview), /mobile-proposals-v2 and
@@ -72,7 +74,7 @@
 // (written for the user) is shown rather than swallowed.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import styles from "./mobile-leads.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
@@ -84,7 +86,7 @@ import { acceptLeadOffer, declineLeadOffer } from "@/actions/leadOffers";
 // The classic import bench's CSV parser, shared with the desktop sheet rather
 // than re-written: same quote handling, same header sniffing, same column
 // guesses, so a file that stages five rows there stages the same five here.
-import { parseCsvRows, ownLeads } from "@/components/v3/leads-blueprint/leads-data";
+import { parseCsvRows, ownLeads, isMetaImportedLead } from "@/components/v3/leads-blueprint/leads-data";
 import { loadMobileLeads } from "./leads-source";
 import {
   LEAD_STATUSES,
@@ -177,14 +179,17 @@ type MenuRow = {
 
 export function MobileLeads() {
   const router = useRouter();
+  const metaOnly = useSearchParams().get("imported") === "meta";
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const pasteRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [data, setData] = useState<Lead[]>([]);
-  const [offers, setOffers] = useState<Offer[]>([]);
+  const [allData, setData] = useState<Lead[]>([]);
+  const [allOffers, setOffers] = useState<Offer[]>([]);
+  const data = useMemo(() => metaOnly ? allData.filter(isMetaImportedLead) : allData, [allData, metaOnly]);
+  const offers = useMemo(() => metaOnly ? [] : allOffers, [allOffers, metaOnly]);
   /** The signed-in user's display name — the row sheet's ownership copy. */
   const [me, setMe] = useState("You");
   const [loading, setLoading] = useState(true);
@@ -861,9 +866,10 @@ export function MobileLeads() {
         <div className={styles.content} ref={contentRef}>
           {/* PAGE HEAD */}
           <div className={styles.pageHead}>
-            <div className={styles.kicker}>Pipeline</div>
+            <div className={styles.kicker}>{metaOnly ? "Meta imports" : "Pipeline"}</div>
             <h1 className={styles.pageTitle}>Leads</h1>
             <div className={styles.pageActions}>
+              {metaOnly && <Link className={styles.btn} href="/dashboard/leads">Show all leads</Link>}
               <button className={`${styles.btn} ${styles.btnPrimary}`} type="button"
                 onClick={() => openAdd("manual")}>
                 <Icon id="i-plus" />New lead
