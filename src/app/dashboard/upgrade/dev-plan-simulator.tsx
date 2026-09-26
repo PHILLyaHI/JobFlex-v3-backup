@@ -18,6 +18,7 @@
 
 import { useState, useTransition, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import { planDisplayName } from "@/lib/planCatalog";
 import { DEV_EVENT, type DevUpgradeEvent } from "@/lib/devSimulation";
 
 const say = (detail: DevUpgradeEvent) => window.dispatchEvent(new CustomEvent(DEV_EVENT, { detail }));
@@ -33,7 +34,7 @@ const btn: CSSProperties = {
   cursor: "pointer",
 };
 
-export function DevPlanSimulator({ currentPlan }: { currentPlan: string | null }) {
+export function DevPlanSimulator({ currentPlan, plans }: { currentPlan: string | null; plans?: readonly { slug: string; name: string }[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [note, setNote] = useState<string | null>(null);
@@ -78,7 +79,7 @@ export function DevPlanSimulator({ currentPlan }: { currentPlan: string | null }
     >
       <b>Dev only</b>
       <span style={{ color: "var(--muted, #555)" }}>
-        no Stripe · current: {currentPlan?.toLowerCase() || "none"}
+        no Stripe · current: {currentPlan ? planDisplayName(currentPlan, plans) : "none"}
       </span>
       <span style={{ flexBasis: "100%", height: 0 }} />
       <button type="button" style={btn} disabled={pending} onClick={() => run("up")}>

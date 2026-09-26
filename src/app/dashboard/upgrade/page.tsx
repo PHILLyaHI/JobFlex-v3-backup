@@ -172,7 +172,7 @@ export default async function UpgradePage({
       /* TEMP (2026-09-19): the DEV ONLY block — not rendered at all unless the
          server gate is open; handed to the content so it sits inside both
          builds (above the handheld shell it fell under the fixed header). */
-      devTools={devSim ? <DevPlanSimulator currentPlan={sub?.plan ?? null} /> : undefined}
+      devTools={devSim ? <DevPlanSimulator currentPlan={sub?.plan ?? null} plans={plans} /> : undefined}
     />
   );
 }
