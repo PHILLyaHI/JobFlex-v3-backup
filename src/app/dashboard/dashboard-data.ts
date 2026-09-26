@@ -19,6 +19,7 @@ import { db } from "@/lib/db";
 import { money, relative } from "@/lib/format";
 import { parseTradeTypes } from "@/lib/tradeTypes";
 import { firstEstimateTarget } from "@/lib/firstEstimate";
+import { actorsOf, whoOfEvent } from "@/lib/activityLog";
 import {
   BOARD_STATUSES,
   activityIcon,
@@ -174,6 +175,7 @@ export async function buildDashboardData(): Promise<DashboardData> {
     upcomingRows,
     weekRows,
     leadRows,
+    actors,
   ] = await Promise.all([
     // The first-run card (landing-e pass A; every shop since 2026-09-16): a
     // shop that has not made an estimate yet. The three counts are the three
@@ -221,7 +223,7 @@ export async function buildDashboardData(): Promise<DashboardData> {
       orderBy: { createdAt: "desc" },
       // The donor's Recent Activity card shows at most ten rows.
       take: 10,
-      select: { id: true, kind: true, summary: true, createdAt: true },
+      select: { id: true, kind: true, summary: true, createdAt: true, actorId: true },
     }),
     db.jobEvent.findMany({
       where: { organizationId, startsAt: { gte: now } },
@@ -270,6 +272,8 @@ export async function buildDashboardData(): Promise<DashboardData> {
         assignedTo: { select: { name: true, email: true } },
       },
     }),
+    // The members, so every activity row can carry its author's mark.
+    actorsOf(organizationId),
   ]);
 
   // ── KPI strip ─────────────────────────────────────────────────────────────
@@ -292,6 +296,7 @@ export async function buildDashboardData(): Promise<DashboardData> {
     i: activityIcon(a.kind),
     t: a.summary,
     m: activityLabel(a.kind) + " · " + relative(a.createdAt),
+    who: whoOfEvent(a, actors),
   }));
 
   // ── This week ─────────────────────────────────────────────────────────────

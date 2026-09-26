@@ -16,8 +16,8 @@ export async function notifyPaymentReminder({
   proposalId: string;
   installmentId: string;
 }) {
-  const { organizationId } = await requireManager();
-  const r = await sendPaymentReminder({ proposalId, installmentId: installmentId || null, source: "manual", organizationId });
+  const { organizationId, user } = await requireManager();
+  const r = await sendPaymentReminder({ proposalId, installmentId: installmentId || null, source: "manual", organizationId, actorId: user.id });
   if (r.skipped === "not-found") return { skipped: true as const, reason: "unauthorized" as const };
   if (r.skipped === "no-client") return { skipped: true as const, reason: "no-client-email" as const };
   if (r.skipped === "nothing-owed") return { skipped: true as const, reason: "nothing-owed" as const };
@@ -40,8 +40,8 @@ export async function setProposalReminders(proposalId: string, on: boolean | nul
 
 /** Invoice one stage (or the remaining balance) on a chosen rail — card, bank transfer, or the client's choice. */
 export async function sendInstallmentInvoice(proposalId: string, installmentId: string | null, method: InvoiceMethod) {
-  const { organizationId } = await requireManager();
-  return sendInvoice({ proposalId, installmentId, method, organizationId });
+  const { organizationId, user } = await requireManager();
+  return sendInvoice({ proposalId, installmentId, method, organizationId, actorId: user.id });
 }
 
 export async function getInvoiceOptions() {

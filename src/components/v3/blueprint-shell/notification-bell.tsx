@@ -22,6 +22,7 @@
 
 import * as React from "react";
 import { notificationFeed, type NotificationItem } from "@/actions/notifications";
+import { Who } from "@/components/v3/who/who";
 import "./notification-bell.css";
 
 const SEEN_KEY = "jf.bell.seenAt";
@@ -224,6 +225,7 @@ export function NotificationBell({
                   <>
                     <span className="bell-kind">{n.kind.replace(/_/g, " ").toLowerCase()}</span>
                     <span className="bell-sum">{n.summary}</span>
+                    {n.actor ? <Who who={n.actor} compact className="bell-who" /> : null}
                     <span className="bell-when">{ago(at)}</span>
                   </>
                 );

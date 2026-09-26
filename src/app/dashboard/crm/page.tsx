@@ -22,6 +22,7 @@ import { db } from "@/lib/db";
 import { longDate, relative } from "@/lib/format";
 import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { parseChannel } from "@/lib/followUps/copy";
+import { actorsOf, whoOfEvent } from "@/lib/activityLog";
 import { CrmContent } from "@/components/v3/crm-blueprint/crm-content";
 import type {
   ActivityItem,
@@ -84,6 +85,7 @@ export default async function CrmPage() {
     ruleRows,
     org,
     followUps,
+    actors,
   ] = await Promise.all([
     db.lead.findMany({ where: { organizationId }, select: { status: true } }),
     db.lead.findMany({
@@ -117,6 +119,8 @@ export default async function CrmPage() {
       orderBy: { runAt: "asc" },
       take: 100,
     }),
+    // The members, so each activity line can carry its author's mark.
+    actorsOf(organizationId),
   ]);
 
   // ── Queue: the follow-up rows carry only a proposalId, so the client name and
@@ -157,6 +161,7 @@ export default async function CrmPage() {
   const activity: ActivityItem[] = activityEvents.map((a) => ({
     summary: a.summary,
     age: relative(a.createdAt),
+    who: whoOfEvent(a, actors),
   }));
 
   const customers: Customer[] = clients

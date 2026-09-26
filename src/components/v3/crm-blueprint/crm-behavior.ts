@@ -36,6 +36,7 @@ import {
   upsertFollowUpRule,
 } from "@/actions/followUps";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import { whoHtml } from "@/lib/team/who";
 import { renderEmail } from "@/lib/email/renderEmail";
 import {
   FOLLOW_UP_CHANNELS,
@@ -397,6 +398,9 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
             escapeAttr(a.summary) +
             '</span><span class="recent-age">' +
             escapeAttr(a.age) +
+            // Who did it, on its own line under the sentence (owner, 2026-09-24).
+            '</span><span class="recent-who">' +
+            whoHtml(a.who, { compact: true }) +
             "</span></li>"
           );
         })

@@ -23,6 +23,7 @@
 import { db } from "@/lib/db";
 import { requireOrg } from "@/lib/orgContext";
 import type { InviteStatus, WorkerEntry } from "./workers-data";
+import { lastActiveLabel, laterOf } from "@/components/v3/workers-blueprint/workers-data";
 
 /** `WorkerProfile.specialties` is a JSON string column. */
 function parseSpec(raw: string | null): string[] {
@@ -70,6 +71,20 @@ export async function loadRoster(): Promise<WorkerEntry[]> {
   });
   const roleByUser = new Map(memberships.map((m) => [m.userId, m.role]));
 
+  // LAST ACTIVE (2026-09-24) — the desktop page's read, duplicated in shape:
+  // the newest ActivityEvent per member, against the portal's lastSeenAt.
+  const lastEventByUser = new Map<string, Date>();
+  try {
+    const rows = await db.activityEvent.groupBy({
+      by: ["actorId"],
+      where: { organizationId, actorId: { not: null } },
+      _max: { createdAt: true },
+    });
+    for (const r of rows) if (r.actorId && r._max.createdAt) lastEventByUser.set(r.actorId, r._max.createdAt);
+  } catch {
+    /* no trail, no plate */
+  }
+
   return workers.map((w) => ({
     id: w.id,
     name: w.displayName,
@@ -81,6 +96,7 @@ export async function loadRoster(): Promise<WorkerEntry[]> {
     invite: w.inviteStatus as InviteStatus,
     role: roleByUser.get(w.userId) ?? "INSTALLER",
     joined: joinedLabel(w.createdAt),
+    lastActive: lastActiveLabel(laterOf(w.lastSeenAt, lastEventByUser.get(w.userId))),
     jobs: w.assignments.map((a) => ({ id: a.job.id, title: a.job.title })),
   }));
 }

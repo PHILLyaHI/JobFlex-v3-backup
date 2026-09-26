@@ -28,6 +28,8 @@ import { getMonthlyRollup } from "@/actions/financials";
 import { getFinancialsSnapshot } from "@/lib/financialsSnapshot";
 import { getOverheadSheets, toOverheadMonths } from "@/lib/overhead";
 import { FinancialsContent } from "@/components/v3/financials-blueprint/financials-content";
+import type { WhoMark } from "@/components/v3/financials-blueprint/financials-data";
+import { getFinancialsWho } from "./financials-who";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +50,7 @@ export default async function FinancialsPage() {
     throw err;
   }
 
-  const [snapshot, overheadSheets, monthlyRaw] = await Promise.all([
+  const [snapshot, overheadSheets, monthlyRaw, who] = await Promise.all([
     // The chart, the gauge, the stat strip, the attention list and all three
     // books — the read the handheld edition makes too.
     getFinancialsSnapshot(organizationId),
@@ -61,18 +63,26 @@ export default async function FinancialsPage() {
     // snapshot rather than through it — the snapshot's contract is the six
     // books both editions share, and the Overhead tab is desktop-side here.
     getMonthlyRollup(organizationId, 12),
+    // WHO DID IT: the trail's person on each row — who recorded the payment,
+    // logged the expense, drafted the change order — and the 30-day
+    // by-person split. Read beside the snapshot, never through it: the
+    // snapshot is the book, the marks are the initials in its margin.
+    getFinancialsWho(organizationId),
   ]);
 
   const overheadMonths = toOverheadMonths(monthlyRaw);
+  const marked = <T extends { id: string }>(rows: T[], marks: Record<string, WhoMark>) =>
+    rows.map((r) => (marks[r.id] ? { ...r, ...marks[r.id] } : r));
 
   return (
     <FinancialsContent
       jobs={snapshot.jobs}
       monthly={snapshot.monthly}
       rollup={snapshot.rollup}
-      expenses={snapshot.expenses}
-      orders={snapshot.orders}
-      invoices={snapshot.invoices}
+      expenses={marked(snapshot.expenses, who.expenses)}
+      orders={marked(snapshot.orders, who.orders)}
+      invoices={marked(snapshot.invoices, who.invoices)}
+      byPerson={who.byPerson}
       invoiceTargets={snapshot.invoiceTargets}
       overheadMonths={overheadMonths}
       overheadSheets={overheadSheets}

@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 
 const input = z.object({
   id: z.string().optional(),
@@ -13,7 +14,7 @@ const input = z.object({
 });
 
 export async function upsertEmailTemplate(raw: unknown) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const data = input.parse(raw);
 
   if (data.id) {
@@ -29,6 +30,7 @@ export async function upsertEmailTemplate(raw: unknown) {
       },
     });
     revalidatePath("/dashboard/settings/email");
+    await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.SETTINGS, summary: `Updated email template settings — edited "${data.name}"`, meta: { area: "email templates", templateId: updated.id } });
     return { id: updated.id };
   }
 
@@ -42,13 +44,15 @@ export async function upsertEmailTemplate(raw: unknown) {
     },
   });
   revalidatePath("/dashboard/settings/email");
+  await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.SETTINGS, summary: `Updated email template settings — added "${data.name}"`, meta: { area: "email templates", templateId: created.id } });
   return { id: created.id };
 }
 
 export async function deleteEmailTemplate(id: string) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const t = await db.emailTemplate.findUnique({ where: { id } });
   if (!t || t.organizationId !== organizationId) throw new Error("Not found");
   await db.emailTemplate.delete({ where: { id } });
   revalidatePath("/dashboard/settings/email");
+  await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.SETTINGS, summary: `Updated email template settings — deleted "${t.name}"`, meta: { area: "email templates", templateId: id, deleted: true } });
 }

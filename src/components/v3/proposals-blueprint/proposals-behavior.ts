@@ -58,6 +58,7 @@ import { currentZoom, leaveRow, staggerIn } from "@/components/v3/blueprint-shel
 import { MDL_EXIT_MS, closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { mountIsland, type Island } from "@/components/v3/blueprint-shell/react-island";
 import { clientProposalUrl, proposalTextMessage, smsHref } from "@/lib/proposalLink";
+import { whoHtml } from "@/lib/team/who";
 import {
   PAGE_ACC,
   PAGE_ALL,
@@ -591,9 +592,11 @@ export function initProposalsContent(
       '<td class="num">' +
       viewsCellHtml(p) +
       "</td>" +
-      '<td><span class="pt-mono">' +
-      esc(p.owner) +
-      "</span></td>" +
+      // The member's mark — name, role and their color (lib/team/who); the
+      // given-name plate only when the owner is no longer on the org.
+      "<td>" +
+      (p.ownerWho ? whoHtml(p.ownerWho) : '<span class="pt-mono">' + esc(p.owner) + "</span>") +
+      "</td>" +
       '<td class="num"><button class="pt-open" type="button" data-menu="' +
       esc(p.id) +
       '" aria-label="Actions for ' +

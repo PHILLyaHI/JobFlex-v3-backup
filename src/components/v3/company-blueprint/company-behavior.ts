@@ -26,10 +26,13 @@
 
 import { updateBranding, updateLanding, updateLeadProfile } from "@/actions/company";
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import { whoColor, whoHtml, whoInitials, roleLabel } from "@/lib/team/who";
+import { rangeStart, type RangeDays } from "@/lib/teamActivityView";
 import {
   COLOR_PRESETS,
   TRADE_TYPES,
   ACT_CATS,
+  ACT_RANGES,
   type ActivityEntry,
   type CompanyOrgState,
   type TeamMember,
@@ -150,21 +153,15 @@ export function initCompanyContent(
     publicOn: org.publicProfileEnabled,
     actCat: "all",
     actQuery: "",
-    /** Membership user id, or "" for Everyone. */
+    /** Membership user id, "" for Everyone, or SYSTEM for the actor-less rows. */
     actPerson: "",
+    /** The window, in days back from today (lib/teamActivityView RANGES). */
+    actRange: 30 as RangeDays,
     actVisible: 6,
     timers: {} as Record<string, ReturnType<typeof setTimeout> | undefined>,
     /** Per-save-line sequence number: a later save always wins the line. */
     seq: {} as Record<string, number>,
   };
-
-  function monogram(n: string) {
-    const p = n.replace(/[^A-Za-z. ]/g, "").split(" ").filter(Boolean);
-    if (!p.length) return "—";
-    return p.length === 1
-      ? p[0].slice(0, 2).toUpperCase()
-      : (p[0][0] + p[p.length - 1][0]).toUpperCase();
-  }
 
   // ================= SAVING =================
   // The donor's autosave was a 700ms timer that typed "All changes saved" and
@@ -430,6 +427,55 @@ export function initCompanyContent(
     link.textContent = "add your address";
     badge.appendChild(link);
   }
+  /** The person chip value for a row with no member on it (a cron, a webhook,
+   *  a client's own click). Not a user id, so it cannot collide with one. */
+  const SYSTEM = "system";
+
+  /** Everything the lens applies except the person pick — this is what the
+   *  member chips count, so a chip always says how many of the rows in view
+   *  are that person's. */
+  function inLens(a: ActivityEntry, q: string, from: number) {
+    if (a.at < from) return false;
+    if (co.actCat !== "all" && a.cat !== co.actCat) return false;
+    if (!q) return true;
+    return (
+      (a.actor + " " + roleLabel(a.actorRole) + " " + a.summary + " " + a.meta)
+        .toLowerCase()
+        .replace(/<[^>]+>/g, "")
+        .indexOf(q) !== -1
+    );
+  }
+  function ofPerson(a: ActivityEntry) {
+    if (!co.actPerson) return true;
+    return co.actPerson === SYSTEM ? a.actorId === "" : a.actorId === co.actPerson;
+  }
+  function personChip(id: string, name: string, role: string | null, count: number) {
+    const color = whoColor(id === SYSTEM ? null : id);
+    const on = co.actPerson === id || (id === "" && !co.actPerson);
+    const roleText = id && id !== SYSTEM ? roleLabel(role) : "";
+    return (
+      '<button class="act-who' +
+      (on ? " on" : "") +
+      (count === 0 ? " is-zero" : "") +
+      '" type="button" data-person="' +
+      esc(id) +
+      '" style="--who:' +
+      color +
+      '" aria-pressed="' +
+      (on ? "true" : "false") +
+      '" title="' +
+      esc(name + (roleText ? " · " + roleText : "")) +
+      '">' +
+      (id ? '<i class="who-dot" aria-hidden="true">' + esc(whoInitials(id === SYSTEM ? "S" : name)) + "</i>" : "") +
+      '<b class="act-who-name">' +
+      esc(name) +
+      "</b>" +
+      (roleText ? '<em class="act-who-role">' + esc(roleText) + "</em>" : "") +
+      '<span class="act-who-n">' +
+      count +
+      "</span></button>"
+    );
+  }
   function renderActivity() {
     const cats = $("#actCats");
     if (cats) {
@@ -445,29 +491,46 @@ export function initCompanyContent(
         );
       }).join("");
     }
-    const sel = $<HTMLSelectElement>("#actPerson");
-    if (sel && !sel.options.length) {
-      // Real memberships, keyed by user id — two people can share a first name.
-      sel.innerHTML =
-        '<option value="">Everyone</option>' +
-        members
-          .map(function (m) {
-            return '<option value="' + esc(m.id) + '">' + esc(m.name) + "</option>";
-          })
-          .join("");
+    const range = $("#actRange");
+    if (range) {
+      range.innerHTML = ACT_RANGES.map(function (r) {
+        return (
+          '<button class="act-rng' +
+          (co.actRange === r.days ? " on" : "") +
+          '" type="button" data-range="' +
+          r.days +
+          '" aria-pressed="' +
+          (co.actRange === r.days ? "true" : "false") +
+          '">' +
+          r.label +
+          "</button>"
+        );
+      }).join("");
     }
     const q = co.actQuery.trim().toLowerCase();
-    const rows = activityData.filter(function (a) {
-      if (co.actCat !== "all" && a.cat !== co.actCat) return false;
-      if (co.actPerson && a.actorId !== co.actPerson) return false;
-      if (!q) return true;
-      return (
-        (a.actor + " " + a.summary + " " + a.meta)
-          .toLowerCase()
-          .replace(/<[^>]+>/g, "")
-          .indexOf(q) !== -1
-      );
+    const from = rangeStart(co.actRange);
+    const inView = activityData.filter(function (a) {
+      return inLens(a, q, from);
     });
+    // The member strip: real memberships, keyed by user id — two people can
+    // share a first name. Each chip counts that person's rows in the window.
+    const people = $("#actPeople");
+    if (people) {
+      const counts = new Map<string, number>();
+      inView.forEach(function (a) {
+        const k = a.actorId || SYSTEM;
+        counts.set(k, (counts.get(k) ?? 0) + 1);
+      });
+      people.innerHTML =
+        personChip("", "Everyone", null, inView.length) +
+        members
+          .map(function (m) {
+            return personChip(m.id, m.name, m.role, counts.get(m.id) ?? 0);
+          })
+          .join("") +
+        personChip(SYSTEM, "System", null, counts.get(SYSTEM) ?? 0);
+    }
+    const rows = inView.filter(ofPerson);
     const shown = rows.slice(0, co.actVisible);
     let html = "";
     let lastDay: string | null = null;
@@ -476,20 +539,24 @@ export function initCompanyContent(
         html += '<div class="act-day">' + esc(a.day) + "</div>";
         lastDay = a.day;
       }
+      // The mark (lib/team/who): dot in the person's color, name, role pill.
+      // The row's left edge takes the same color, so a column of one person's
+      // work reads as one color down the page.
       html +=
-        '<div class="act-row">' +
-        '<span class="act-av">' +
-        monogram(a.actor) +
-        (a.tone
-          ? '<span class="act-bead" style="background:' + a.tone + '"></span>'
-          : '<span class="act-bead"></span>') +
+        '<div class="act-row" style="--who:' +
+        a.actorColor +
+        '" data-actor="' +
+        esc(a.actorId) +
+        '">' +
+        '<span class="act-txt">' +
+        '<span class="act-head">' +
+        whoHtml({ id: a.actorId || null, name: a.actor, role: a.actorRole }) +
+        (a.tone ? '<i class="act-bead" style="background:' + a.tone + '"></i>' : "") +
         "</span>" +
-        '<span class="act-txt"><span class="act-sum" style="display:block"><b>' +
-        esc(a.actor) +
-        "</b> " +
+        '<span class="act-sum">' +
         a.summary +
         "</span>" +
-        '<span class="act-meta" style="display:block">' +
+        '<span class="act-meta">' +
         a.meta +
         "</span></span>" +
         '<span class="act-time">' +
@@ -499,7 +566,17 @@ export function initCompanyContent(
     });
     const feed = $("#actFeed");
     if (feed) feed.innerHTML = html;
-    $("#actEmpty")?.classList.toggle("is-hidden", rows.length !== 0);
+    const empty = $("#actEmpty");
+    if (empty) {
+      empty.classList.toggle("is-hidden", rows.length !== 0);
+      // Two different silences: a workspace with no trail at all, and a lens
+      // that simply found nothing.
+      const none = activityData.length === 0;
+      const b = empty.querySelector("b");
+      const hint = empty.querySelector("span");
+      if (b) b.textContent = none ? "No activity yet" : "Nothing in this range";
+      if (hint) hint.textContent = none ? "Team actions show up here as they happen." : "Widen the range or clear the filters.";
+    }
     $("#actMore")?.classList.toggle("is-hidden", rows.length <= co.actVisible);
   }
   function renderCompany() {
@@ -572,16 +649,6 @@ export function initCompanyContent(
       renderActivity();
     }
   });
-  on(document, "change", (e) => {
-    const t = e.target as HTMLElement | null;
-    if (!t || !root.contains(t)) return;
-    if (t.id === "actPerson") {
-      co.actPerson = (t as HTMLSelectElement).value;
-      co.actVisible = 6;
-      renderActivity();
-    }
-  });
-
   on(document, "click", (e) => {
     const t = e.target as HTMLElement | null;
     if (!t || !root.contains(t)) return;
@@ -641,10 +708,26 @@ export function initCompanyContent(
       renderActivity();
       return;
     }
+    const rng = t.closest<HTMLElement>("[data-range]");
+    if (rng) {
+      co.actRange = (Number(rng.dataset.range) || 30) as RangeDays;
+      co.actVisible = 6;
+      renderActivity();
+      return;
+    }
+    const who = t.closest<HTMLElement>("[data-person]");
+    if (who) {
+      // Pressing the chip that is already on goes back to Everyone.
+      const id = who.dataset.person ?? "";
+      co.actPerson = id && co.actPerson === id ? "" : id;
+      co.actVisible = 6;
+      renderActivity();
+      return;
+    }
     if (t.closest("#actMoreBtn")) {
       // Count the rows on screen BEFORE the render, so only the six the click
       // adds cascade in. This is the one activity action that genuinely brings
-      // new rows — the category chips, the search box and the person select all
+      // new rows — the category chips, the range, the search box and the member chips all
       // just narrow the same feed.
       const shown = $$("#actFeed .act-row").length;
       co.actVisible += 6;

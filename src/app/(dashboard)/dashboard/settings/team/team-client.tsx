@@ -5,7 +5,7 @@ import { Plus, Trash2, Copy, Check } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Avatar } from "@/components/ui/Avatar";
+import { Who } from "@/components/v3/who/who";
 import { Select } from "@/components/ui/Select";
 import { Sheet } from "@/components/ui/Sheet";
 import { Input } from "@/components/ui/Input";
@@ -27,6 +27,9 @@ interface MemberRow {
   email: string;
   role: string;
   joinedAt: Date;
+  /** "Active 2h ago" / "Never" — from their newest ActivityEvent (2026-09-24). */
+  /** Optional: the legacy company/team page does not compute it. */
+  lastActive?: string;
 }
 
 interface InviteRow {
@@ -40,6 +43,9 @@ interface InviteRow {
 }
 
 const ROLES = ["OWNER", "ADMIN", "MANAGER", "SALES", "ESTIMATOR", "INSTALLER", "ACCOUNTANT", "USER"];
+
+/** The message of a thrown value, for the toasts. */
+const msgOf = (err: unknown): string | undefined => (err instanceof Error ? err.message : undefined);
 
 export function TeamClient({
   members,
@@ -56,8 +62,8 @@ export function TeamClient({
       await updateMembershipRole(id, role);
       toast.success("Role updated");
       router.refresh();
-    } catch (err: any) {
-      toast.error("Couldn't update", err?.message);
+    } catch (err: unknown) {
+      toast.error("Couldn't update", msgOf(err));
     }
   }
 
@@ -66,8 +72,8 @@ export function TeamClient({
       await removeMember(id);
       toast.success("Removed");
       router.refresh();
-    } catch (err: any) {
-      toast.error("Couldn't remove", err?.message);
+    } catch (err: unknown) {
+      toast.error("Couldn't remove", msgOf(err));
     }
   }
 
@@ -76,8 +82,8 @@ export function TeamClient({
       await revokeInvite(id);
       toast.success("Invite revoked");
       router.refresh();
-    } catch (err: any) {
-      toast.error("Couldn't revoke", err?.message);
+    } catch (err: unknown) {
+      toast.error("Couldn't revoke", msgOf(err));
     }
   }
 
@@ -95,13 +101,15 @@ export function TeamClient({
         </CardHeader>
         <ul className="divide-y divide-[color:var(--ink-line)]">
           {members.map((m) => (
-            <li key={m.id} className="flex items-center gap-3 py-3">
-              <Avatar name={m.name ?? m.email} size={34} />
+            <li key={m.id} className="flex items-center gap-3 py-3" data-member={m.userId}>
+              {/* The member's mark (lib/team/who): their color, name and role —
+                  the same mark every page stamps on what they did. */}
               <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-medium text-[color:var(--ink)] truncate">
-                  {m.name ?? m.email}
+                <Who who={{ id: m.userId, name: m.name ?? m.email, role: m.role }} className="max-w-full" />
+                <div className="mt-1 text-[11px] text-[color:var(--ink-muted)] truncate">
+                  {m.email} · Joined {relative(m.joinedAt)} ·{" "}
+                  <span className={m.lastActive === "Never" ? "opacity-60" : ""}>{m.lastActive ?? ""}</span>
                 </div>
-                <div className="text-[11px] text-[color:var(--ink-muted)] truncate">{m.email}</div>
               </div>
               <div className="hidden md:block">
                 <Select value={m.role} onChange={(e) => changeRole(m.id, e.target.value)}>
@@ -112,9 +120,6 @@ export function TeamClient({
                   ))}
                 </Select>
               </div>
-              <span className="text-[11px] text-[color:var(--ink-muted)] tabular">
-                Joined {relative(m.joinedAt)}
-              </span>
               <button
                 onClick={() => drop(m.id)}
                 className="h-7 w-7 grid place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-rose-50 hover:text-rose-700"
@@ -156,8 +161,8 @@ export function TeamClient({
             await createInvite(values);
             toast.success("Invite sent", "Share the magic link if email is disabled.");
             router.refresh();
-          } catch (err: any) {
-            if (!reportPlanLimit(err)) toast.error("Invite failed", err?.message);
+          } catch (err: unknown) {
+            if (!reportPlanLimit(err)) toast.error("Invite failed", msgOf(err));
           }
         }}
       />

@@ -3,6 +3,11 @@ import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+
+const estimateTotal = (d: { materials: Array<{ quantity: number; unitPrice: number }>; labor: Array<{ quantity: number; unitPrice: number }> }) =>
+  Math.round([...d.materials, ...d.labor].reduce((a, l) => a + l.quantity * l.unitPrice, 0));
+const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 import { db } from "@/lib/db";
 import { recordInventoryLink } from "@/lib/inventoryPick";
 import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
@@ -82,7 +87,7 @@ export async function estimateRoof(input: {
   | { ok: true; data: GeneratedEstimate; disabled: true }
   | { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey }
 > {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId, user } = await requireEstimatorOrManager();
 await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
   // Union failure (not a throw): thrown messages are redacted in prod, and
   // this action's callers already branch on { ok }.
@@ -98,6 +103,7 @@ await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
   if (!isOpenAIEnabled()) {
     return { ok: true, data: stubFor(input.squares, input.wastePct), disabled: true };
   }
+  const where = input.address?.trim() || (input.lat != null && input.lng != null ? `${input.lat.toFixed(5)}, ${input.lng.toFixed(5)}` : "");
   const families = (input.pitchFamilies ?? []).filter((f) => Number.isFinite(f.pitch12) && f.share > 0);
   const pitchLine =
     families.length > 1
@@ -150,6 +156,14 @@ Waste factor: ${input.wastePct}%${input.roofKind === "low-slope" ? "\nRoof kind:
     const text = completion.choices[0]?.message?.content ?? "{}";
     const parsed = estimateSchema.parse(JSON.parse(text));
     trackActivation("estimator_used", organizationId, { estimator: "roof" });
+    const total = estimateTotal(parsed);
+    await logActivity({
+      organizationId,
+      actorId: user.id,
+      kind: TRAIL_KINDS.ESTIMATE,
+      summary: `Priced a roof estimate${where ? ` at ${where}` : ""} — ${Math.round(input.squares)} squares, ${money(total)}`,
+      meta: { trade: "roof", address: where || undefined, squares: input.squares, pitch: input.pitch, amount: total },
+    });
     return { ok: true, data: parsed };
   } catch (err: unknown) {
     logServerError("roofEstimator.estimateRoof", err, { kind: "action", organizationId });

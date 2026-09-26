@@ -8,6 +8,10 @@ import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { assertLinksInOrg } from "@/lib/assertLinksInOrg";
 import { afterResponse } from "@/lib/server-events";
 import { crewOfJobEvent, textAssignmentCreated, textCrewCancelled, textJobEventMoved } from "@/lib/sms/crew";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+
+const when = (d: Date) =>
+  d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 const jobInput = z.object({
   title: z.string().min(1),
@@ -166,10 +170,10 @@ export async function createJob(raw: unknown) {
  * crew is standing in front of is not silently erased — it is unlinked.
  */
 export async function deleteJob(id: string) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const job = await db.job.findUnique({
     where: { id },
-    select: { id: true, organizationId: true },
+    select: { id: true, organizationId: true, title: true, proposalId: true, clientId: true },
   });
   if (!job || job.organizationId !== organizationId) throw new Error("Not found");
 
@@ -177,6 +181,15 @@ export async function deleteJob(id: string) {
 
   revalidatePath("/dashboard/jobs");
   revalidatePath("/dashboard/calendar");
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.JOB,
+    summary: `Deleted job ${job.title}`,
+    proposalId: job.proposalId,
+    clientId: job.clientId,
+    meta: { jobId: id, deleted: true },
+  });
 }
 
 export async function updateJob(id: string, raw: Partial<z.infer<typeof jobInput>>) {
@@ -215,7 +228,7 @@ export async function updateJob(id: string, raw: Partial<z.infer<typeof jobInput
     // request per proposal, whichever door finished it), else per job.
     try {
       const { createReviewRequestInternal } = await import("@/lib/reviewRequestInternal");
-      await createReviewRequestInternal(id);
+      await createReviewRequestInternal(id, user.id);
     } catch (err) {
       console.warn("[updateJob] review request failed:", err);
     }
@@ -227,8 +240,34 @@ export async function updateJob(id: string, raw: Partial<z.infer<typeof jobInput
         clientId: existing.clientId ?? null,
         kind: "COMPLETED",
         summary: `Completed "${existing.title}"`,
+        meta: JSON.stringify({ jobId: id }),
       },
     });
+  } else {
+    // Every other change leaves its own line in the trail: a rename, a new
+    // status, a moved date, edited notes.
+    const changes: string[] = [];
+    if (raw.title !== undefined && raw.title !== existing.title) changes.push(`renamed to ${raw.title}`);
+    if (raw.status !== undefined && raw.status !== existing.status)
+      changes.push(`status ${raw.status.replace("_", " ").toLowerCase()}`);
+    const newStart = raw.startsAt === undefined ? undefined : toDate(raw.startsAt);
+    if (newStart !== undefined && (newStart?.getTime() ?? null) !== (existing.startsAt?.getTime() ?? null))
+      changes.push(newStart ? `starts ${when(newStart)}` : "start date cleared");
+    const newEnd = raw.endsAt === undefined ? undefined : toDate(raw.endsAt);
+    if (newEnd !== undefined && (newEnd?.getTime() ?? null) !== (existing.endsAt?.getTime() ?? null))
+      changes.push(newEnd ? `ends ${when(newEnd)}` : "end date cleared");
+    if (raw.notes !== undefined && (raw.notes ?? null) !== (existing.notes ?? null)) changes.push("notes");
+    if (changes.length) {
+      await logActivity({
+        organizationId,
+        actorId: user.id,
+        kind: TRAIL_KINDS.JOB,
+        summary: `Updated ${existing.title} — ${changes.join(", ")}`,
+        proposalId: existing.proposalId,
+        clientId: existing.clientId,
+        meta: { jobId: id, changes, status: raw.status ?? undefined },
+      });
+    }
   }
 
   revalidatePath("/dashboard/jobs");
@@ -269,7 +308,7 @@ export async function setJobProgress(id: string, status: "IN_PROGRESS" | "COMPLE
     }
     try {
       const { createReviewRequestInternal } = await import("@/lib/reviewRequestInternal");
-      await createReviewRequestInternal(id);
+      await createReviewRequestInternal(id, user.id);
     } catch (err) {
       console.warn("[setJobProgress] review request failed:", err);
     }
@@ -278,11 +317,14 @@ export async function setJobProgress(id: string, status: "IN_PROGRESS" | "COMPLE
     data: {
       organizationId,
       actorId: user.id,
+      proposalId: existing.proposalId ?? null,
+      clientId: existing.clientId ?? null,
       kind: status === "COMPLETED" ? "COMPLETED" : "UPDATED",
       summary:
         status === "COMPLETED"
           ? `Completed "${existing.title}"`
           : `Started work on "${existing.title}"`,
+      meta: JSON.stringify({ jobId: id, status }),
     },
   });
   revalidatePath("/dashboard/jobs");
@@ -454,11 +496,19 @@ export async function createJobEvent(raw: unknown) {
   revalidatePath("/dashboard/calendar");
   revalidatePath("/dashboard/jobs");
   if (jobId) revalidatePath(`/dashboard/jobs/${jobId}`);
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.JOB,
+    summary: `Put ${data.title} on the calendar for ${when(startsAt)}`,
+    proposalId: data.proposalId ?? null,
+    meta: { jobId: jobId ?? undefined, jobEventId: ev.id, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString() },
+  });
   return { id: ev.id, jobId };
 }
 
 export async function rescheduleJobEvent(id: string, newStartISO: string) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const ev = await db.jobEvent.findUnique({ where: { id } });
   if (!ev || ev.organizationId !== organizationId) throw new Error("Not found");
   // Product rule: at the calendar cap, drag/drop moves are blocked too, even
@@ -478,10 +528,17 @@ export async function rescheduleJobEvent(id: string, newStartISO: string) {
   afterResponse(() => textJobEventMoved(id));
   revalidatePath("/dashboard/calendar");
   if (ev.jobId) revalidatePath(`/dashboard/jobs/${ev.jobId}`);
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.JOB,
+    summary: `Moved ${ev.title} from ${when(ev.startsAt)} to ${when(newStart)}`,
+    meta: { jobId: ev.jobId ?? undefined, jobEventId: id, from: ev.startsAt.toISOString(), to: newStart.toISOString() },
+  });
 }
 
 export async function deleteJobEvent(id: string) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const ev = await db.jobEvent.findUnique({ where: { id } });
   if (!ev || ev.organizationId !== organizationId) throw new Error("Not found");
   const crew = await crewOfJobEvent(id).catch(() => null);
@@ -489,6 +546,13 @@ export async function deleteJobEvent(id: string) {
   afterResponse(() => textCrewCancelled(crew));
   revalidatePath("/dashboard/calendar");
   if (ev.jobId) revalidatePath(`/dashboard/jobs/${ev.jobId}`);
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.JOB,
+    summary: `Took ${ev.title} (${when(ev.startsAt)}) off the calendar`,
+    meta: { jobId: ev.jobId ?? undefined, jobEventId: id, startsAt: ev.startsAt.toISOString(), deleted: true },
+  });
 }
 
 // Edit a job event's own fields (title / notes) from the calendar detail sheet.
@@ -497,7 +561,7 @@ export async function updateJobEvent(
   id: string,
   data: { title?: string; notes?: string | null },
 ) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const ev = await db.jobEvent.findUnique({ where: { id } });
   if (!ev || ev.organizationId !== organizationId) throw new Error("Not found");
   await db.jobEvent.update({
@@ -509,6 +573,19 @@ export async function updateJobEvent(
   });
   revalidatePath("/dashboard/calendar");
   if (ev.jobId) revalidatePath(`/dashboard/jobs/${ev.jobId}`);
+  const newTitle = data.title?.trim();
+  const changes: string[] = [];
+  if (newTitle && newTitle !== ev.title) changes.push(`renamed to ${newTitle}`);
+  if (data.notes !== undefined && (data.notes ?? null) !== (ev.notes ?? null)) changes.push("notes");
+  if (changes.length) {
+    await logActivity({
+      organizationId,
+      actorId: user.id,
+      kind: TRAIL_KINDS.JOB,
+      summary: `Edited the calendar entry ${ev.title} — ${changes.join(", ")}`,
+      meta: { jobId: ev.jobId ?? undefined, jobEventId: id, changes },
+    });
+  }
 }
 
 // Reschedule with explicit start AND end times (in addition to the legacy
@@ -518,7 +595,7 @@ export async function rescheduleJobEventTime(
   newStartISO: string,
   newEndISO: string,
 ) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const ev = await db.jobEvent.findUnique({ where: { id } });
   if (!ev || ev.organizationId !== organizationId) throw new Error("Not found");
   // Product rule: at the calendar cap, time moves are blocked too (see
@@ -537,6 +614,13 @@ export async function rescheduleJobEventTime(
   afterResponse(() => textJobEventMoved(id));
   revalidatePath("/dashboard/calendar");
   if (ev.jobId) revalidatePath(`/dashboard/jobs/${ev.jobId}`);
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.JOB,
+    summary: `Moved ${ev.title} from ${when(ev.startsAt)} to ${when(start)}`,
+    meta: { jobId: ev.jobId ?? undefined, jobEventId: id, from: ev.startsAt.toISOString(), to: start.toISOString(), endsAt: end.toISOString() },
+  });
 }
 
 function roundTo15(d: Date): Date {

@@ -3,6 +3,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { requireManager, requireUser, isOwnerRole, UnauthorizedError } from "@/lib/orgContext";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+
+const roleLabel = (r: string) => r.charAt(0) + r.slice(1).toLowerCase();
 import { db } from "@/lib/db";
 import { enforcePlanLimit, isManagerEquivalentRole } from "@/lib/limitsEngine";
 import { appBaseUrl } from "@/lib/appUrl";
@@ -106,6 +109,13 @@ export async function createInvite(raw: unknown) {
   await sendInviteEmail(organizationId, email, data.role, rawToken, user.name ?? user.email ?? "A teammate");
 
   revalidatePath("/dashboard/settings/team");
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.TEAM,
+    summary: `Invited ${email} to the team as ${roleLabel(data.role)}`,
+    meta: { inviteId: invite.id, email, role: data.role },
+  });
   // rawToken is returned once so the UI can show/copy the link right after
   // creation — it can never be recovered from the DB afterward (use resendInvite).
   return { id: invite.id, token: rawToken };
@@ -208,8 +218,8 @@ export async function declineInvite(token: string) {
 }
 
 export async function updateMembershipRole(membershipId: string, role: string) {
-  const { organizationId, role: actorRole } = await requireManager();
-  const m = await db.membership.findUnique({ where: { id: membershipId } });
+  const { organizationId, user, role: actorRole } = await requireManager();
+  const m = await db.membership.findUnique({ where: { id: membershipId }, include: { user: { select: { name: true, email: true } } } });
   if (!m || m.organizationId !== organizationId) throw new Error("Not found");
   if (!(TEAM_ROLES as readonly string[]).includes(role)) throw new Error("Invalid role");
   // Owner seats are owner-managed: a manager can neither demote an owner nor
@@ -224,11 +234,20 @@ export async function updateMembershipRole(membershipId: string, role: string) {
   }
   await db.membership.update({ where: { id: membershipId }, data: { role } });
   revalidatePath("/dashboard/settings/team");
+  if (m.role !== role) {
+    await logActivity({
+      organizationId,
+      actorId: user.id,
+      kind: TRAIL_KINDS.TEAM,
+      summary: `Changed ${m.user?.name?.trim() || m.user?.email || "a member"}'s role to ${roleLabel(role)}`,
+      meta: { membershipId, memberUserId: m.userId, from: m.role, to: role },
+    });
+  }
 }
 
 export async function removeMember(membershipId: string) {
-  const { organizationId, role: actorRole } = await requireManager();
-  const m = await db.membership.findUnique({ where: { id: membershipId } });
+  const { organizationId, user, role: actorRole } = await requireManager();
+  const m = await db.membership.findUnique({ where: { id: membershipId }, include: { user: { select: { name: true, email: true } } } });
   if (!m || m.organizationId !== organizationId) throw new Error("Not found");
   if (m.role === Role.OWNER && !isOwnerRole(actorRole)) {
     throw new UnauthorizedError("Only the owner can remove an owner");
@@ -249,6 +268,13 @@ export async function removeMember(membershipId: string) {
     data: { activeOrgId: null },
   });
   revalidatePath("/dashboard/settings/team");
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.TEAM,
+    summary: `Removed ${m.user?.name?.trim() || m.user?.email || "a member"} (${roleLabel(m.role)}) from the team`,
+    meta: { membershipId, memberUserId: m.userId, role: m.role },
+  });
 }
 
 export async function switchActiveOrg(organizationId: string) {

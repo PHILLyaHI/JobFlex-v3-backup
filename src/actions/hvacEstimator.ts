@@ -22,6 +22,7 @@ import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { db } from "@/lib/db";
 import { recordInventoryLink } from "@/lib/inventoryPick";
 import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
@@ -583,14 +584,24 @@ export async function saveHvacEstimate(raw: unknown): Promise<{ ok: true; id: st
     jobKind: d.draft.job ?? null,
   };
   try {
+    const trail = (id: string, updated: boolean) =>
+      logActivity({
+        organizationId,
+        actorId: userId,
+        kind: TRAIL_KINDS.ESTIMATE,
+        summary: `${updated ? "Updated" : "Saved"} an HVAC estimate at ${d.address}${sizedTons ? ` — ${sizedTons} tons` : ""}${d.draft.job ? `, ${String(d.draft.job).replace(/_/g, " ").toLowerCase()}` : ""}, $${Math.round(data.subtotal).toLocaleString("en-US")}`,
+        meta: { estimateId: id, trade: "hvac", address: d.address, amount: data.subtotal, sizedTons, updated },
+      });
     if (d.id) {
       const own = await db.hvacEstimate.findFirst({ where: { id: d.id, organizationId }, select: { id: true } });
       if (own) {
         await db.hvacEstimate.update({ where: { id: own.id }, data });
+        await trail(own.id, true);
         return { ok: true, id: own.id };
       }
     }
     const row = await db.hvacEstimate.create({ data });
+    await trail(row.id, false);
     return { ok: true, id: row.id };
   } catch (err) {
     return { ok: false, error: missingTable(err) ? "The HVAC tables aren't in this database yet — run `prisma db push` to keep estimates." : failed("save", err) };

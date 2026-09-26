@@ -26,7 +26,8 @@ export type EnsureReviewRequestResult = {
 
 export async function ensureReviewRequestForProposal(
   proposalId: string,
-  opts: { jobId?: string | null } = {},
+  /** `actorId`: the member who finished the work; null when the client's own door did. */
+  opts: { jobId?: string | null; actorId?: string | null } = {},
 ): Promise<EnsureReviewRequestResult | null> {
   const existing = await db.reviewRequest.findFirst({
     where: { OR: [{ proposalId }, { job: { proposalId } }] },
@@ -88,6 +89,7 @@ export async function ensureReviewRequestForProposal(
   await db.activityEvent.create({
     data: {
       organizationId: proposal.organizationId,
+      actorId: opts.actorId ?? null,
       proposalId,
       clientId: proposal.clientId ?? null,
       kind: "REVIEW_REQUESTED",

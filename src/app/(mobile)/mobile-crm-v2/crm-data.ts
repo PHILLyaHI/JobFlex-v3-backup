@@ -13,6 +13,7 @@
 //   leads   src/actions/leads.ts     — claimLead / deleteLead
 
 import type { FollowUpChannel } from "@/lib/followUps/copy";
+import type { WhoLike } from "@/lib/team/who";
 
 /** A pipeline lead. `id` is the real Lead row id — every action needs it. */
 export type CrmLead = {
@@ -24,7 +25,7 @@ export type CrmLead = {
   age: string;
 };
 
-export type ActivityItem = { id: string; summary: string; age: string };
+export type ActivityItem = { id: string; summary: string; age: string; who: WhoLike | null };
 
 export type Customer = {
   id: string;

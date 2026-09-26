@@ -50,7 +50,8 @@ export function dueRung(input: { anchor: Date | null; reminderCount: number; rem
   return rung;
 }
 
-export async function sendPaymentReminder(input: { proposalId: string; installmentId: string | null; source: ReminderSource; organizationId?: string }): Promise<ReminderReport> {
+/** `actorId`: the member behind a manual reminder; the auto ladder leaves it null. */
+export async function sendPaymentReminder(input: { proposalId: string; installmentId: string | null; source: ReminderSource; organizationId?: string; actorId?: string | null }): Promise<ReminderReport> {
   const proposal = await db.proposal.findUnique({
     where: { id: input.proposalId },
     include: {
@@ -126,9 +127,12 @@ export async function sendPaymentReminder(input: { proposalId: string; installme
     await db.activityEvent.create({
       data: {
         organizationId: proposal.organizationId,
+        actorId: input.actorId ?? null,
         proposalId: proposal.id,
+        clientId: proposal.clientId ?? null,
         kind: "EMAIL",
         summary: `Payment reminder (${input.source}) · ${label} · $${amount.toFixed(2)} — email ${report.email}, text ${report.sms}`,
+        meta: JSON.stringify({ amount, source: input.source, installmentId: stageRow?.id ?? null }),
       },
     });
   }

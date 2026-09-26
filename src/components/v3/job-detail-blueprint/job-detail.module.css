@@ -323,6 +323,16 @@
 :global(.jf-blueprint .content) .jd-pick-row:disabled { opacity: .5; cursor: default; }
 :global(.jf-blueprint .content) .jd-pick-row .jd-row-m { margin-top: 0; }
 
+/* WHO DID WHAT — the Activity card's rows: the member's mark and the time on
+   one line, the sentence under it (the mark itself is components/v3/who). */
+:global(.jf-blueprint .content) .jd-trail { list-style: none; margin: 0; padding: 0; }
+:global(.jf-blueprint .content) .jd-tr { padding: 10px 0; border-bottom: 1px dashed rgba(10,10,10,.16); min-width: 0; }
+:global(.jf-blueprint .content) .jd-tr:last-child { border-bottom: none; }
+:global(.jf-blueprint .content) .jd-tr-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+:global(.jf-blueprint .content) .jd-tr-t { flex: 0 0 auto; font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: .04em; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+:global(.jf-blueprint .content) .jd-tr-s { margin-top: 3px; font-size: 13.5px; line-height: 1.4; overflow-wrap: anywhere; }
+
 /* The file input is the Upload button's mechanism, never its face. */
 :global(.jf-blueprint .content) .jd-file { position: absolute; width: 1px; height: 1px;
   padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;

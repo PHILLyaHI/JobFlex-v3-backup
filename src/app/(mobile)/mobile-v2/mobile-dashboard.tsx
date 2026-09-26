@@ -80,6 +80,7 @@ import {
   type DashboardData,
 } from "@/components/v3/dashboard-blueprint/blueprint-data";
 import { NotificationBell } from "@/components/v3/blueprint-shell/notification-bell";
+import { Who } from "@/components/v3/who/who";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1020,7 +1021,10 @@ function DashboardView({ data }: { data: DashboardData }) {
                     </div>
                     <div className={styles.actBody}>
                       <div className={styles.actTitle}>{a.t}</div>
-                      <div className={styles.actMeta}>{a.m}</div>
+                      <div className={styles.actFoot}>
+                        <Who who={a.who} compact />
+                        <div className={styles.actMeta}>{a.m}</div>
+                      </div>
                     </div>
                   </div>
                 ))

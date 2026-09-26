@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { db } from "@/lib/db";
 import { recordInventoryLink } from "@/lib/inventoryPick";
 import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
@@ -1385,7 +1386,7 @@ export async function saveEstimate(raw: {
   location?: string | null;
   data: GeneratedEstimate;
 }) {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId, user } = await requireEstimatorOrManager();
   await enforcePlanLimit(organizationId, "estimatorUses");
   const total =
     raw.data.materials.reduce((a, l) => a + l.quantity * l.unitPrice, 0) +
@@ -1409,6 +1410,13 @@ export async function saveEstimate(raw: {
   });
   trackActivation("estimator_used", organizationId, { estimator: "smart" });
   revalidatePath("/dashboard/advanced-ai");
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.ESTIMATE,
+    summary: `Saved a ${raw.projectType} estimate${raw.location ? ` at ${raw.location}` : ""} — ${raw.data.title}, $${Math.round(total).toLocaleString("en-US")}`,
+    meta: { estimateId: est.id, trade: raw.projectType, amount: Math.round(total * 100) / 100, location: raw.location ?? undefined },
+  });
   return { id: est.id };
 }
 

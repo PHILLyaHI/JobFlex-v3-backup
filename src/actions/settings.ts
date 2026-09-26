@@ -8,6 +8,10 @@ import { parseGmailSettings, parsePaymentSettings } from "@/lib/settings";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { buildTestEmail } from "@/lib/email/build/platform";
 import { sendOrgEmail } from "@/lib/email/orgSend";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+
+const settingsSaved = (organizationId: string, actorId: string, area: string, meta?: Record<string, unknown>) =>
+  logActivity({ organizationId, actorId, kind: TRAIL_KINDS.SETTINGS, summary: `Updated ${area} settings`, meta: { area, ...meta } });
 
 // Org-level settings persistence. Each action validates its slice with zod and
 // writes it as a JSON-as-String column on Organization. Mirrors the canonical
@@ -24,7 +28,7 @@ const paymentSchema = z.object({
 });
 
 export async function updatePaymentSettings(raw: unknown) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const data = paymentSchema.parse(raw);
   const org = await db.organization.findUnique({
     where: { id: organizationId },
@@ -36,6 +40,7 @@ export async function updatePaymentSettings(raw: unknown) {
     data: { paymentSettingsJson: JSON.stringify({ ...current, ...data }) },
   });
   revalidatePath("/dashboard/settings");
+  await settingsSaved(organizationId, user.id, "payment", { depositPct: data.depositPct, reminderMode: data.reminderMode });
   return { ok: true };
 }
 
@@ -54,13 +59,14 @@ const leadsSchema = z.object({
 });
 
 export async function updateLeadsSettings(raw: unknown) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const data = leadsSchema.parse(raw);
   await db.organization.update({
     where: { id: organizationId },
     data: { leadsSettingsJson: JSON.stringify(data) },
   });
   revalidatePath("/dashboard/settings/leads");
+  await settingsSaved(organizationId, user.id, "lead routing", { strategy: data.strategy });
   return { ok: true };
 }
 
@@ -78,7 +84,7 @@ const gmailSchema = z.object({
 });
 
 export async function updateGmailSettings(raw: unknown) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const data = gmailSchema.parse(raw);
   const org = await db.organization.findUnique({
     where: { id: organizationId },
@@ -100,6 +106,7 @@ export async function updateGmailSettings(raw: unknown) {
     data: { gmailSettingsJson: JSON.stringify(merged) },
   });
   revalidatePath("/dashboard/settings");
+  await settingsSaved(organizationId, user.id, "email sending");
   return { ok: true };
 }
 
@@ -132,7 +139,7 @@ export async function sendGmailTestEmail() {
 // wanted (best effort), drops the stored tokens and flips the settings back
 // to disconnected. New sends fall back to Resend + reply-to.
 export async function disconnectGmail() {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const org = await db.organization.findUnique({
     where: { id: organizationId },
     select: { gmailSettingsJson: true, gmailTokensJson: true },
@@ -148,6 +155,7 @@ export async function disconnectGmail() {
     },
   });
   revalidatePath("/dashboard/settings");
+  await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.SETTINGS, summary: `Disconnected Gmail${current.connectedEmail ? ` (${current.connectedEmail})` : ""}`, meta: { area: "email sending" } });
   return { ok: true };
 }
 
@@ -164,7 +172,7 @@ const proposalDefaultsSchema = z.object({
 });
 
 export async function updateProposalDefaults(raw: unknown) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const data = proposalDefaultsSchema.parse(raw);
   await db.organization.update({
     where: { id: organizationId },
@@ -175,6 +183,7 @@ export async function updateProposalDefaults(raw: unknown) {
     },
   });
   revalidatePath("/dashboard/settings/proposals");
+  await settingsSaved(organizationId, user.id, "proposal default", { materialMarkupPct: data.materialMarkupPct, laborMarkupPct: data.laborMarkupPct, defaultTaxRate: data.defaultTaxRate });
   return { ok: true };
 }
 

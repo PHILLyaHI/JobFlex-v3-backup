@@ -68,6 +68,7 @@ import { useJobDetailActions, type PhotoKind } from "./use-job-detail-actions";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { useRouter } from "next/navigation";
 import { JD_ASSIGN, ST, STATUS_BUTTONS, fmt, type JobDetailRecord } from "./job-detail-data";
+import { Who } from "@/components/v3/who/who";
 
 /** Hashed module class, or the literal name when the module has none — which is
  *  how the fleet's global `rv` / `rv-in` / `pressed` pass through. */
@@ -343,6 +344,34 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
               )}
             </section>
           </div>
+        )}
+
+        {/* WHO DID WHAT (2026-09-24): the job's trail — every action a member
+            took on it, with their mark (lib/team/who). Read from the org's
+            ActivityEvents by meta.jobId / the job's proposal; the loader has
+            already dropped the money rows for a crew reader. */}
+        {tab === "overview" && (
+          <section className={cx("card")} data-trail>
+            <div className={cx("jd-h")}>
+              <h2 className={cx("jd-t")}>Activity</h2>
+              <span className={cx("jd-s")}>{record.trail.length ? `${record.trail.length} on this job` : "who did what"}</span>
+            </div>
+            {record.trail.length === 0 ? (
+              <EmptyNote>Nothing logged on this job yet.</EmptyNote>
+            ) : (
+              <ol className={cx("jd-trail")}>
+                {record.trail.map((t) => (
+                  <li className={cx("jd-tr")} key={t.id} data-kind={t.kind}>
+                    <div className={cx("jd-tr-h")}>
+                      <Who who={t.who} compact />
+                      <span className={cx("jd-tr-t")}>{t.at}</span>
+                    </div>
+                    <div className={cx("jd-tr-s")}>{t.summary}</div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
         )}
 
         {tab === "schedule" && (
@@ -728,7 +757,15 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                       <img src={p.url} alt={p.caption} />
                       <span className={cx("jd-ph-k")}>{p.kind}</span>
                     </div>
-                    <div className={cx("jd-ph-c")}>{p.caption}</div>
+                    <div className={cx("jd-ph-c")}>
+                      {p.caption}
+                      {p.by && (
+                        <>
+                          {" "}
+                          <Who who={p.by} compact by />
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -839,7 +876,15 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                   <div className={cx("jd-row")} key={e.id}>
                     <div>
                       <div className={cx("jd-row-n")}>{e.vendor}</div>
-                      <div className={cx("jd-row-m")}>{e.meta}</div>
+                      <div className={cx("jd-row-m")}>
+                        {e.meta}
+                        {e.by && (
+                          <>
+                            {" · "}
+                            <Who who={e.by} compact by />
+                          </>
+                        )}
+                      </div>
                     </div>
                     <span className={cx("jd-amt")}>{fmt(e.amount)}</span>
                   </div>

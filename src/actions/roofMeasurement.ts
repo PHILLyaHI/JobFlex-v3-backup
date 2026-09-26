@@ -20,6 +20,7 @@
 // pass takes only what is left of it.
 
 import { requireEstimatorOrManager } from "@/lib/orgContext";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { db } from "@/lib/db";
 import {
   isEagleViewEnabled,
@@ -936,6 +937,16 @@ export async function measureRoofInstant(
       origin,
       instant,
       provenance,
+    });
+    const where = [input.address, input.city, input.state].map((s) => s?.trim()).filter(Boolean).join(", ") || (input.lat != null && input.lng != null ? `${input.lat.toFixed(5)}, ${input.lng.toFixed(5)}` : "the map pin");
+    await logActivity({
+      organizationId,
+      actorId: userId,
+      kind: TRAIL_KINDS.ESTIMATE,
+      summary: reuse
+        ? `Measured the roof at ${where} from the ${reuse.how} aerial order`
+        : `Ordered an aerial roof measurement at ${where}`,
+      meta: { trade: "roof", measurementId: measurement.id, address: where, requestId: instant.requestId, reused: !!reuse, packs },
     });
     return { ok: true, measurement, ...(reuse ? { reusedInstant: reuse } : {}), debug };
   } catch (err) {

@@ -632,6 +632,9 @@
   margin-bottom: 8px;
 }
 .pcolVal { font-size: 21px; font-weight: 900; font-variant-numeric: tabular-nums; }
+/* The member's mark (components/v3/who) inside a mono plate keeps its own
+   case and tracking — a name is not a label. */
+.prowId :global(.who), .pcolSub :global(.who) { text-transform: none; letter-spacing: 0; max-width: 100%; }
 .pcolSub {
   margin-top: 5px;
   font-family: var(--font-mono);

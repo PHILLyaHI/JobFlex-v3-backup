@@ -1007,7 +1007,7 @@
    is the object the eye measures it by. */
 :global(.jf-blueprint) .aRow {
   display: grid;
-  grid-template-columns: 26px 1fr;
+  grid-template-columns: 26px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   padding: 12px 0;
@@ -1059,9 +1059,18 @@
   color: var(--ink);
 }
 
+/* The text column: the sentence, then the author's mark and the stamp on
+   one line that wraps to two on a phone. */
+:global(.jf-blueprint) .aBody { display: block; min-width: 0; }
+:global(.jf-blueprint) .aFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 10px;
+  margin-top: 4px;
+}
 :global(.jf-blueprint) .aStamp {
   display: block;
-  margin-top: 4px;
   font-family: var(--font-mono);
   font-size: 10.5px;
   font-weight: 600;

@@ -1,4 +1,5 @@
 "use client";
+import { clientErrorText } from "@/lib/staleDeploy";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { nanoid } from "nanoid";
@@ -253,7 +254,7 @@ export function EstimatorStudio({
       );
     } catch (err: any) {
       setGenerating(false);
-      toast.error("Generation failed", err?.message);
+      toast.error("Generation failed", clientErrorText(err));
     }
   }
 
@@ -371,7 +372,7 @@ export function EstimatorStudio({
         instructions,
       });
     } catch (err: any) {
-      toast.error("Couldn't apply", err?.message);
+      toast.error("Couldn't apply", clientErrorText(err));
     } finally {
       setRefineBusy(false);
     }
@@ -495,7 +496,7 @@ export function EstimatorStudio({
       toast.success("Proposal created");
       router.push(`/dashboard/proposals/${res.id}` as any);
     } catch (err: any) {
-      if (!reportPlanLimit(err)) toast.error("Couldn't convert", err?.message);
+      if (!reportPlanLimit(err)) toast.error("Couldn't convert", clientErrorText(err));
     } finally {
       setConvertBusy(false);
     }
@@ -525,7 +526,7 @@ export function EstimatorStudio({
       toast.success("Estimate saved");
     } catch (err: any) {
       if (reportPlanLimit(err)) return;
-      toast.error("Couldn't save", err?.message);
+      toast.error("Couldn't save", clientErrorText(err));
     } finally {
       setSaveBusy(false);
     }

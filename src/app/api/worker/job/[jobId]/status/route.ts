@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { touchWorkerActivity } from "@/lib/workerActivity";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 
 // Worker-portal job status update. Token-gated like the assignment route:
 // the supplied token must belong to a worker assigned to this job. Workers may
@@ -59,11 +60,20 @@ export async function POST(
   if (body.status === "COMPLETED") {
     try {
       const { createReviewRequestInternal } = await import("@/lib/reviewRequestInternal");
-      await createReviewRequestInternal(jobId);
+      await createReviewRequestInternal(jobId, worker.userId);
     } catch (err) {
       console.warn("[worker job status] review request failed:", err);
     }
   }
   await touchWorkerActivity(worker.id);
+  await logActivity({
+    organizationId: worker.organizationId,
+    actorId: worker.userId,
+    kind: TRAIL_KINDS.JOB,
+    summary: body.status === "COMPLETED" ? `Completed ${job.title}` : `Started ${job.title}`,
+    proposalId: job.proposalId,
+    clientId: job.clientId,
+    meta: { jobId, status: body.status, via: "worker-portal" },
+  });
   return NextResponse.json({ ok: true });
 }

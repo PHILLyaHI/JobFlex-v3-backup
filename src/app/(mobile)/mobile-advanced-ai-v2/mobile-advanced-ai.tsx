@@ -94,6 +94,7 @@ import {
 } from "@/lib/estimate/console-model";
 import { merchantUrl, usableImageUrl } from "@/lib/merchantLinks";
 import { isPlanLimitError } from "@/lib/planLimits";
+import { clientErrorText, isStaleDeployError } from "@/lib/staleDeploy";
 import {
   analyzeEstimatePrompt,
   convertEstimateToProposal,
@@ -282,8 +283,16 @@ const buyUrlFor = (l: ConsoleLine) =>
 const clampNum = (raw: string, cap: number) =>
   Math.min(cap, Math.max(0, parseFloat(raw) || 0));
 
-const errText = (err: unknown) =>
-  (err as { message?: string })?.message?.trim() || "Something went wrong. Try again.";
+const errText = (err: unknown) => clientErrorText(err);
+
+/** The page outlived a deploy: say so, and put Reload where the eye already is. */
+const STALE_BANNER = (title: string): Banner => ({
+  tone: "danger",
+  title,
+  body: errText({ message: "Minified React error #441" }),
+  href: "/mobile-advanced-ai-v2",
+  cta: "Reload",
+});
 
 const PLAN_LIMIT_BANNER = (body: string): Banner => ({
   tone: "danger",
@@ -829,7 +838,7 @@ export function MobileSmartProposal() {
       landEstimate(res.data, { disabled: Boolean(res.disabled), location, hints });
     } catch (err) {
       if (stale()) return;
-      failTo({ tone: "danger", title: "Couldn't price the job", body: errText(err) });
+      failTo(isStaleDeployError(err) ? STALE_BANNER("Couldn't price the job") : { tone: "danger", title: "Couldn't price the job", body: errText(err) });
     }
   };
 
@@ -961,7 +970,9 @@ export function MobileSmartProposal() {
       setBanner(
         isPlanLimitError(err)
           ? PLAN_LIMIT_BANNER(errText(err))
-          : { tone: "danger", title: "Couldn't create the proposal", body: errText(err) },
+          : isStaleDeployError(err)
+            ? STALE_BANNER("Couldn't create the proposal")
+            : { tone: "danger", title: "Couldn't create the proposal", body: errText(err) },
       );
     }
   };

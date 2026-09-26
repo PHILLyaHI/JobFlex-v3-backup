@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSalesOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 
 // Tight client shape returned to the v3 builder. Matches the columns the
 // inline create/edit form writes; ignore notes/customFields/tags for now.
@@ -66,7 +67,7 @@ export type ClientInput = z.infer<typeof clientInput>;
 const createClientInput = clientInput.extend({ vip: z.boolean().optional() });
 
 export async function createClient(raw: unknown): Promise<ClientRecord> {
-  const { organizationId } = await requireSalesOrManager();
+  const { organizationId, user } = await requireSalesOrManager();
   const { vip, ...data } = createClientInput.parse(raw);
   // Plan cap on live client records (absolute scope) — throws PLAN_LIMIT_MESSAGE
   // like every other gated create so the builder raises its limit dialog.
@@ -84,6 +85,14 @@ export async function createClient(raw: unknown): Promise<ClientRecord> {
     });
     await db.clientTag.create({ data: { clientId: created.id, tagId: tag.id } });
   }
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.CLIENT,
+    summary: `Added client ${created.name}${created.address ? ` at ${created.address}` : ""}${vip ? " (VIP)" : ""}`,
+    clientId: created.id,
+    meta: { vip: !!vip },
+  });
   return created;
 }
 
@@ -100,16 +109,24 @@ export async function createClient(raw: unknown): Promise<ClientRecord> {
  * it would truncate the rest. One column, one write.
  */
 export async function setClientEmail(id: string, rawEmail: unknown) {
-  const { organizationId } = await requireSalesOrManager();
+  const { organizationId, user } = await requireSalesOrManager();
   const email = z.string().trim().email("Enter a valid email address").parse(rawEmail);
   const existing = await db.client.findUnique({
     where: { id },
-    select: { organizationId: true, deletedAt: true },
+    select: { organizationId: true, deletedAt: true, name: true },
   });
   if (!existing || existing.organizationId !== organizationId || existing.deletedAt) {
     throw new Error("Client not found");
   }
   await db.client.update({ where: { id }, data: { email } });
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.CLIENT,
+    summary: `Set ${existing.name}'s email to ${email}`,
+    clientId: id,
+    meta: { field: "email" },
+  });
   return { email };
 }
 
@@ -117,10 +134,10 @@ export async function updateClient(
   id: string,
   raw: unknown,
 ): Promise<ClientRecord> {
-  const { organizationId } = await requireSalesOrManager();
+  const { organizationId, user } = await requireSalesOrManager();
   const existing = await db.client.findUnique({
     where: { id },
-    select: { organizationId: true, deletedAt: true },
+    select: { organizationId: true, deletedAt: true, name: true },
   });
   if (
     !existing ||
@@ -134,6 +151,16 @@ export async function updateClient(
     where: { id },
     data,
     select: CLIENT_SELECT,
+  });
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.CLIENT,
+    summary:
+      existing.name !== updated.name
+        ? `Updated client ${existing.name} (now ${updated.name})`
+        : `Updated client ${updated.name}`,
+    clientId: id,
   });
   return updated;
 }

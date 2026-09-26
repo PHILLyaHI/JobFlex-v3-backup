@@ -30,6 +30,8 @@ export type WorkerEntry = {
   invite: InviteStatus;
   role: string;
   joined: string;
+  /** "Active 2h ago" / "Never" — the later of lastSeenAt and their newest ActivityEvent (2026-09-24). */
+  lastActive: string | null;
   jobs: WorkerJob[];
 };
 

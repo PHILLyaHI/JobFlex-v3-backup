@@ -26,6 +26,7 @@ import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { money, planPhase, planTermsLine } from "@/lib/servicePlans";
 import { equipmentAdvice, equipmentLine } from "@/lib/equipment";
+import { actorsOf, whoOfEvent } from "@/lib/activityLog";
 import type { EquipmentRow } from "./equipment-panel";
 import {
   splitAddress,
@@ -230,10 +231,12 @@ export async function loadClientDetail(
   }
 
   // The client's plans and the shop's templates (2026-09-22).
-  const [planRows, templateRows, appUrl] = await Promise.all([
+  const [planRows, templateRows, appUrl, actors] = await Promise.all([
     db.servicePlan.findMany({ where: { clientId: row.id, organizationId }, orderBy: { createdAt: "desc" }, take: 10, include: { visits: { where: { status: "SCHEDULED" }, orderBy: { dueAt: "asc" }, take: 1, include: { appointment: { select: { startsAt: true } } } }, invoices: { where: { status: "PENDING" }, orderBy: { dueDate: "asc" }, take: 1, select: { number: true, amount: true, dueDate: true } } } }),
     db.servicePlanTemplate.findMany({ where: { organizationId, active: true }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], select: { id: true, name: true, visitsPerYear: true, termMonths: true, priceCents: true, billing: true, discountPct: true } }),
     appBaseUrl(),
+    // The members, so each activity line can carry its author's mark.
+    actorsOf(organizationId),
   ]);
   const dayOf = (d: Date | null | undefined) => (d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : null);
   const plans: ClientPlanRow[] = planRows.map((p) => {
@@ -331,6 +334,7 @@ export async function loadClientDetail(
       icon: ACTIVITY_ICON[a.kind.toUpperCase()] ?? "file",
       text: a.summary,
       stamp: stamp(a.createdAt),
+      who: whoOfEvent(a, actors),
     })),
   };
 }

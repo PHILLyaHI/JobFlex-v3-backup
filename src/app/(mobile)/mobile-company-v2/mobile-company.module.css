@@ -801,6 +801,14 @@
    rules that target a bare <b>, of which there are none. */
 .atxt b { font-weight: 800; color: var(--ink); }
 .aactor { color: var(--ink); }
+/* the mark: white initials on the person's color; the role in a small cap tag */
+.aavWho { color: #fff; }
+.arole {
+  display: inline-block; margin-left: 6px; vertical-align: 2px;
+  font-style: normal; font-family: var(--font-mono);
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  border: 1px solid currentColor; border-radius: 3px; padding: 1px 5px;
+}
 .arowOpen {
   grid-column: 3;
   grid-row: 1;

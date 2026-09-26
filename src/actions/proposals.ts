@@ -24,6 +24,7 @@ import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
 import { trackActivation, trackProposalCreated } from "@/lib/activation-events";
 import { logServerError } from "@/lib/server-events";
 import { applyMemberDiscount } from "@/lib/servicePlanBook";
+import { logActivity } from "@/lib/activityLog";
 
 const lineItemSchema = z.object({
   name: z.string().min(1),
@@ -659,7 +660,7 @@ export async function saveSnapshotManual(proposalId: string) {
 // ── Bulk operations ────────────────────────────────────────
 
 export async function bulkUpdateProposalStatus(ids: string[], status: ProposalStatus) {
-  const { organizationId, proposalScope } = await requireProposalStaff();
+  const { organizationId, user, proposalScope } = await requireProposalStaff();
   if (ids.length === 0) return { updated: 0 };
   let eligible = ids;
   if (status === "PAID") {
@@ -677,6 +678,10 @@ export async function bulkUpdateProposalStatus(ids: string[], status: ProposalSt
       .map((p) => p.id);
     if (eligible.length === 0) return { updated: 0, skipped: ids.length };
   }
+  const touched = await db.proposal.findMany({
+    where: { id: { in: eligible }, organizationId, ...proposalScope },
+    select: { id: true, title: true, clientId: true },
+  });
   const { count } = await db.proposal.updateMany({
     where: { id: { in: eligible }, organizationId, ...proposalScope },
     data: {
@@ -685,16 +690,36 @@ export async function bulkUpdateProposalStatus(ids: string[], status: ProposalSt
     },
   });
   revalidatePath("/dashboard/proposals");
+  const label = status.toLowerCase().replace("_", " ");
+  if (touched.length <= 5) {
+    for (const p of touched) {
+      await logActivity({ organizationId, actorId: user.id, kind: "UPDATED", summary: `Marked "${p.title}" ${label}`, proposalId: p.id, clientId: p.clientId, meta: { status, bulk: true } });
+    }
+  } else {
+    await logActivity({ organizationId, actorId: user.id, kind: "UPDATED", summary: `Marked ${count} proposals ${label}`, meta: { status, bulk: true, ids: touched.map((p) => p.id) } });
+  }
   return { updated: count };
 }
 
 export async function bulkDeleteProposals(ids: string[]) {
-  const { organizationId, proposalScope } = await requireProposalStaff();
+  const { organizationId, user, proposalScope } = await requireProposalStaff();
   if (ids.length === 0) return { deleted: 0 };
+  const doomed = await db.proposal.findMany({
+    where: { id: { in: ids }, organizationId, ...proposalScope },
+    select: { id: true, title: true, clientId: true, total: true },
+  });
   const { count } = await db.proposal.deleteMany({
     where: { id: { in: ids }, organizationId, ...proposalScope },
   });
   revalidatePath("/dashboard/proposals");
+  // The rows are gone, so no proposalId link — the title is what is left.
+  if (doomed.length <= 5) {
+    for (const p of doomed) {
+      await logActivity({ organizationId, actorId: user.id, kind: "DELETED", summary: `Deleted proposal "${p.title}"`, clientId: p.clientId, meta: { deletedProposalId: p.id, amount: p.total, bulk: true } });
+    }
+  } else {
+    await logActivity({ organizationId, actorId: user.id, kind: "DELETED", summary: `Deleted ${count} proposals`, meta: { bulk: true, titles: doomed.map((p) => p.title).slice(0, 50) } });
+  }
   return { deleted: count };
 }
 
@@ -755,6 +780,7 @@ export async function duplicateProposal(id: string) {
     },
   });
   revalidatePath("/dashboard/proposals");
+  await logActivity({ organizationId, actorId: user.id, kind: "CREATED", summary: `Duplicated "${p.title}" as "${dup.title}"`, proposalId: dup.id, clientId: p.clientId, meta: { sourceProposalId: p.id, amount: p.total } });
   return { id: dup.id };
 }
 

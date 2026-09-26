@@ -7,6 +7,7 @@ import { TRADE_TYPES, parseTradeTypes } from "@/lib/tradeTypes";
 import { geocodeOrgAddress } from "@/lib/leadCenter/eligibility";
 import { loadTeamActivity } from "@/lib/teamActivity";
 import { toActivityEntries } from "@/components/v3/company-blueprint/company-data";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 
 const brandingInput = z.object({
   name: z.string().min(1).optional(),
@@ -19,7 +20,7 @@ const brandingInput = z.object({
 });
 
 export async function updateBranding(raw: unknown) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const data = brandingInput.parse(raw);
 
   // Keep the Lead Center pin in sync — branding is the other surface that can
@@ -53,6 +54,14 @@ export async function updateBranding(raw: unknown) {
 
   revalidatePath("/dashboard/company");
   revalidatePath("/dashboard/settings/company");
+  const fields = Object.keys(data).filter((k) => data[k as keyof typeof data] !== undefined);
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.SETTINGS,
+    summary: `Updated company settings${fields.length ? ` — ${fields.join(", ")}` : ""}`,
+    meta: { area: "company", fields },
+  });
 }
 
 // Lead Center matching profile — address + canonical trades feed the platform
@@ -73,7 +82,7 @@ const leadProfileInput = z.object({
 export async function updateLeadProfile(
   raw: unknown,
 ): Promise<{ geocoded: boolean; reason: string | null }> {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const data = leadProfileInput.parse(raw);
 
   const current = await db.organization.findUnique({
@@ -121,6 +130,13 @@ export async function updateLeadProfile(
   revalidatePath("/dashboard/company");
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/leads");
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.SETTINGS,
+    summary: "Updated lead profile settings",
+    meta: { area: "lead profile", addressChanged, leadOffersEnabled: data.leadOffersEnabled, tradeTypes: data.tradeTypes },
+  });
   return { geocoded, reason };
 }
 
@@ -210,7 +226,7 @@ const landingInput = z.object({
 });
 
 export async function updateLanding(raw: unknown) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const data = landingInput.parse(raw);
   await db.organization.update({
     where: { id: organizationId },
@@ -228,4 +244,11 @@ export async function updateLanding(raw: unknown) {
   });
   revalidatePath("/dashboard/company/landing");
   revalidatePath("/homeowners");
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.SETTINGS,
+    summary: "Updated public landing page settings",
+    meta: { area: "landing page", publicProfileEnabled: data.publicProfileEnabled },
+  });
 }

@@ -128,6 +128,13 @@
   line-height: 1.45;
   color: var(--ink);
 }
+/* Who did it — the member's mark (components/v3/who/who.css), under the
+   sentence. Only drawn when a row has an author. */
+.bell-wrap .bell-who {
+  display: inline-flex;
+  margin-top: 5px;
+  max-width: 100%;
+}
 .bell-wrap .bell-when {
   display: block;
   margin-top: 4px;

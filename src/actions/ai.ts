@@ -6,6 +6,7 @@ import { getOpenAI, isOpenAIEnabled, samplingOptions, resolveOpenAIModel } from 
 import { checkPlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 
 const aiDraftSchema = z.object({
   title: z.string(),
@@ -58,7 +59,7 @@ export async function generateAiProposal(prompt: string): Promise<
   | { ok: true; draft: AiProposalDraft; disabled: true }
   | { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey }
 > {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId, user } = await requireEstimatorOrManager();
   await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
 
   // Plan gate
@@ -113,7 +114,7 @@ export async function generateAiProposal(prompt: string): Promise<
     const text = completion.choices[0]?.message?.content ?? "{}";
     const parsed = aiDraftSchema.parse(JSON.parse(text));
 
-    await db.aiDraft.create({
+    const draftRow = await db.aiDraft.create({
       data: {
         organizationId,
         prompt,
@@ -123,6 +124,14 @@ export async function generateAiProposal(prompt: string): Promise<
         tokensIn: completion.usage?.prompt_tokens,
         tokensOut: completion.usage?.completion_tokens,
       },
+    });
+    const total = Math.round(parsed.lineItems.reduce((a, l) => a + l.quantity * l.unitPrice, 0));
+    await logActivity({
+      organizationId,
+      actorId: user.id,
+      kind: TRAIL_KINDS.ESTIMATE,
+      summary: `Drafted an AI proposal — ${parsed.title}, $${total.toLocaleString("en-US")} over ${parsed.lineItems.length} line${parsed.lineItems.length === 1 ? "" : "s"}`,
+      meta: { draftId: draftRow.id, amount: total, prompt: prompt.slice(0, 200) },
     });
 
     return { ok: true, draft: parsed };

@@ -7,6 +7,7 @@
 // a REQUIRED prop, so the sheet has no path that paints a demo record.
 
 import type { FollowUpChannel } from "@/lib/followUps/copy";
+import type { WhoLike } from "@/lib/team/who";
 
 export type CrmLead = {
   name: string;
@@ -16,7 +17,9 @@ export type CrmLead = {
   age: string;
 };
 
-export type ActivityItem = { summary: string; age: string };
+/** One Recent-activity line. `who` is its author's mark (lib/team/who); null
+ *  means the system did it and the row draws the System mark. */
+export type ActivityItem = { summary: string; age: string; who: WhoLike | null };
 
 export type Customer = {
   id: string;

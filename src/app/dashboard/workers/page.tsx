@@ -19,7 +19,7 @@ import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { WorkersContent } from "@/components/v3/workers-blueprint/workers-content";
-import type { InviteStatus, WorkerEntry } from "@/components/v3/workers-blueprint/workers-data";
+import { lastActiveLabel, laterOf, type InviteStatus, type WorkerEntry } from "@/components/v3/workers-blueprint/workers-data";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +76,21 @@ export default async function WorkersPage() {
   });
   const roleByUser = new Map(memberships.map((m) => [m.userId, m.role]));
 
+  // LAST ACTIVE (2026-09-24): the newest thing each member did in the app
+  // (their latest ActivityEvent), or the portal's own lastSeenAt — whichever
+  // is later. Best effort: a roster never fails on its trail.
+  const lastEventByUser = new Map<string, Date>();
+  try {
+    const rows = await db.activityEvent.groupBy({
+      by: ["actorId"],
+      where: { organizationId, actorId: { not: null } },
+      _max: { createdAt: true },
+    });
+    for (const r of rows) if (r.actorId && r._max.createdAt) lastEventByUser.set(r.actorId, r._max.createdAt);
+  } catch {
+    /* no trail, no plate */
+  }
+
   const entries: WorkerEntry[] = workers.map((w) => ({
     id: w.id,
     name: w.displayName,
@@ -88,6 +103,7 @@ export default async function WorkersPage() {
     invite: w.inviteStatus as InviteStatus,
     role: roleByUser.get(w.userId) ?? "INSTALLER",
     joined: joinedLabel(w.createdAt),
+    lastActive: lastActiveLabel(laterOf(w.lastSeenAt, lastEventByUser.get(w.userId))),
     jobs: w.assignments.filter((a) => a.job.status === "SCHEDULED" || a.job.status === "IN_PROGRESS").map((a) => ({ id: a.job.id, title: a.job.title })),
     earned: Math.round(w.assignments.reduce((sum, a) => sum + a.pay, 0) * 100) / 100,
     unpaid: Math.round(w.assignments.filter((a) => !a.paidAt).reduce((sum, a) => sum + a.pay, 0) * 100) / 100,

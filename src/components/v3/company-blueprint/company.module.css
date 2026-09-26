@@ -1452,11 +1452,26 @@
 .bp :global(.content .lsearch) { display: flex; align-items: center; gap: 8px; height: var(--act-ctl-h); padding: 0 10px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; margin-left: auto; }
 .bp :global(.content .lsearch .ic) { width: 13px; height: 13px; color: var(--muted-light); flex: 0 0 auto; }
 .bp :global(.content .lsearch input) { width: 150px; border: none; background: none; outline: none; font-family: var(--font); font-size: 12px; color: var(--ink); }
-/* `.act-person` is the `.bp-sel` WRAPPER — it owns the track, the control
-   inside owns the box. The shared treatment publishes no height, so the page
-   sets it (and the room the wrapper's chevron needs on the right). */
-.bp :global(.content .act-person) { width: 148px; flex: 0 0 auto; }
-.bp :global(.content .act-person .bp-sel-in) { height: var(--act-ctl-h); padding: 0 30px 0 11px; font-size: 12px; }
+/* The range: one segmented control, four windows. Same height as the search
+   and the category chips so the bar reads as one row of instruments. */
+.bp :global(.content .act-range) { display: inline-flex; flex: 0 0 auto; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; overflow: hidden; }
+.bp :global(.content .act-rng) { height: 30px; padding: 0 10px; border: none; border-left: 1.5px solid var(--hair-soft); background: none; font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; }
+.bp :global(.content .act-rng:first-child) { border-left: none; }
+.bp :global(.content .act-rng:hover) { color: var(--ink); }
+.bp :global(.content .act-rng.on) { background: var(--ink); color: var(--paper); }
+/* WHO DID WHAT — the member strip. One chip per person: their dot (lib/team/who
+   colors, `--who`), name, role, and the count of their rows in the window.
+   The strip never wraps; on a phone it scrolls sideways under the thumb. */
+.bp :global(.content .act-people) { display: flex; gap: 6px; padding: 10px 16px; border-bottom: 1.5px solid var(--hair-soft); overflow-x: auto; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+.bp :global(.content .act-who) { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 9px 0 6px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-size: 12px; color: var(--ink); white-space: nowrap; }
+.bp :global(.content .act-who .who-dot) { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--who); color: #fff; font-family: var(--font-mono); font-size: 8px; font-weight: 800; font-style: normal; }
+.bp :global(.content .act-who-name) { font-weight: 700; }
+.bp :global(.content .act-who-role) { font-style: normal; font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--who); }
+.bp :global(.content .act-who-n) { min-width: 20px; padding: 1px 6px; border-radius: 10px; background: var(--paper-deep); font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; color: var(--muted); text-align: center; }
+.bp :global(.content .act-who:hover) { border-color: var(--who); }
+.bp :global(.content .act-who.on) { border-color: var(--who); box-shadow: inset 0 0 0 1px var(--who); }
+.bp :global(.content .act-who.on .act-who-n) { background: var(--who); color: #fff; }
+.bp :global(.content .act-who.is-zero:not(.on)) { opacity: 0.55; }
 .bp :global(.content .act-feed) { padding: 4px 0 0; }
 /* Day heading: larger and heavier than the mono annotation layer around it,
    and separated from the previous group by a clear band of paper so "Today"
@@ -1464,13 +1479,16 @@
    a margin, not padding, so the sticky header itself stays compact. */
 .bp :global(.content .act-day) { padding: 11px 16px 8px; font-family: var(--font-mono); font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink); background: #fff; position: sticky; top: 0; z-index: 1; }
 .bp :global(.content .act-day:not(:first-child)) { margin-top: 22px; }
-.bp :global(.content .act-row) { display: flex; align-items: flex-start; gap: 12px; padding: 11px 16px; border-top: 1.5px solid var(--hair-soft); }
-.bp :global(.content .act-av) { position: relative; width: 32px; height: 32px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper-deep); font-family: var(--font-mono); font-size: 11px; font-weight: 700; }
-.bp :global(.content .act-bead) { position: absolute; right: -4px; bottom: -4px; width: 9px; height: 9px; border: 1.5px solid var(--paper); border-radius: 50%; background: var(--muted-faint); }
+/* A row's left edge is the person's color (`--who`, set inline by the feed),
+   so one member's work reads as one color down the page. */
+.bp :global(.content .act-row) { display: flex; align-items: flex-start; gap: 12px; padding: 10px 16px 11px 13px; border-top: 1.5px solid var(--hair-soft); border-left: 3px solid var(--who, var(--hair-soft)); }
+.bp :global(.content .act-head) { display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 3px; }
+.bp :global(.content .act-head .who) { min-width: 0; }
+.bp :global(.content .act-bead) { flex: 0 0 auto; width: 9px; height: 9px; border: 1.5px solid var(--paper); border-radius: 50%; background: var(--muted-faint); }
 .bp :global(.content .act-txt) { min-width: 0; flex: 1; }
-.bp :global(.content .act-sum) { font-size: 13px; line-height: 1.4; }
+.bp :global(.content .act-sum) { display: block; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
 .bp :global(.content .act-sum b) { font-weight: 800; }
-.bp :global(.content .act-meta) { margin-top: 3px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+.bp :global(.content .act-meta) { display: block; margin-top: 3px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
 .bp :global(.content .act-time) { flex: 0 0 auto; font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--muted-light); }
 .bp :global(.content .act-more) { padding: 14px 16px; border-top: 1.5px solid var(--hair-soft); display: flex; justify-content: center; }
 
@@ -1480,7 +1498,11 @@
   .bp :global(.content .act-bar) { gap: 8px; }
   .bp :global(.content .lsearch) { margin-left: 0; flex: 1; }
   .bp :global(.content .lsearch input) { width: 100%; }
-  .bp :global(.content .act-person) { width: 100%; }
+  .bp :global(.content .act-range) { width: 100%; }
+  .bp :global(.content .act-rng) { flex: 1; padding: 0 6px; }
+  .bp :global(.content .act-people) { padding: 8px 12px; }
+  .bp :global(.content .act-row) { gap: 8px; padding-right: 12px; }
+  .bp :global(.content .act-head .who-role) { display: none; }
   .bp :global(.content .toggle-row) { flex-direction: column; gap: 12px; }
 }
 

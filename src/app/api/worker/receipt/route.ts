@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { touchWorkerActivity } from "@/lib/workerActivity";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -74,5 +75,18 @@ export async function POST(req: Request) {
     },
   });
   await touchWorkerActivity(worker.id);
+  const job = await db.job.findUnique({
+    where: { id: body.jobId },
+    select: { title: true, proposalId: true, clientId: true },
+  });
+  await logActivity({
+    organizationId: worker.organizationId,
+    actorId: worker.userId,
+    kind: TRAIL_KINDS.EXPENSE,
+    summary: `Added a $${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })} receipt to ${job?.title ?? "a job"} — ${category}`,
+    proposalId: job?.proposalId,
+    clientId: job?.clientId,
+    meta: { jobId: body.jobId, expenseId: expense.id, amount, category, via: "worker-portal" },
+  });
   return NextResponse.json({ id: expense.id, url: receiptUrl });
 }

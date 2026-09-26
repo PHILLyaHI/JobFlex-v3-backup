@@ -1194,8 +1194,15 @@
   color: var(--ink);
   line-height: 1.35;
 }
+/* The author's mark beside the meta; wraps to two lines on a narrow phone. */
+.actFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 10px;
+  margin-top: 5px;
+}
 .actMeta {
-  margin-top: 4px;
   font-family: var(--font-mono);
   font-size: 11px; /* mono-caps floor, 2026-09-21 (was 10) */
   font-weight: 600;

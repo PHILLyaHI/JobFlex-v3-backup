@@ -4,6 +4,8 @@ import { requireManager, requireOrg } from "@/lib/orgContext";
 import { SEEN_SURFACES, countNewForSurface, type SeenKey } from "@/lib/badgeCounts";
 import { allowsInApp, loadPrefs, prefKeyForEvent } from "@/lib/notificationPrefs";
 import { ActivityKind } from "@/lib/prismaEnums";
+import { TRAIL_ONLY, actorsOf, whoOfEvent } from "@/lib/activityLog";
+import type { WhoLike } from "@/lib/team/who";
 import { isEmailEnabled, sendEmail } from "@/lib/sdk/resend";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { buildTestEmail } from "@/lib/email/build/platform";
@@ -41,6 +43,10 @@ export interface NotificationItem {
   summary: string;
   createdAt: Date;
   href: string | null;
+  /** The member who did it (name, role, color — lib/team/who); the client for
+   *  a portal click; null when the system did it or the row is a worker's own
+   *  schedule, and the panel draws no mark. */
+  actor: WhoLike | null;
 }
 
 /** Resolve the best in-app destination for an activity row. */
@@ -132,6 +138,7 @@ export async function notificationFeed(): Promise<NotificationItem[]> {
       // popup already open (?offers=1), so the bell click reaches Accept /
       // Decline directly. Answered rows go to the job record.
       href: a.status === "PENDING" ? "/dashboard/jobs?offers=1" : `/dashboard/jobs/${a.job.id}`,
+      actor: null,
     })),
     ...appts.map((a) => ({
       id: a.id,
@@ -141,6 +148,7 @@ export async function notificationFeed(): Promise<NotificationItem[]> {
       // only timestamp there is, and it is what the worker cares about anyway.
       createdAt: a.appointment.startsAt ?? new Date(0),
       href: "/dashboard/calendar",
+      actor: null,
     })),
   ];
 
@@ -155,9 +163,11 @@ export async function notificationFeed(): Promise<NotificationItem[]> {
  */
 export async function recentNotifications(): Promise<NotificationItem[]> {
   const { organizationId, user } = await requireManager();
-  const [events, prefs] = await Promise.all([
+  const [events, prefs, actors] = await Promise.all([
     db.activityEvent.findMany({
-      where: { organizationId },
+      // The trail's own kinds (an expense, a photo, a stock count…) stay on
+      // the Overview and the job page; the bell is for what needs the office.
+      where: { organizationId, kind: { notIn: [...TRAIL_ONLY] } },
       orderBy: { createdAt: "desc" },
       take: 40,
       select: {
@@ -173,6 +183,7 @@ export async function recentNotifications(): Promise<NotificationItem[]> {
       },
     }),
     loadPrefs(user.id),
+    actorsOf(organizationId),
   ]);
 
   // The caller's own matrix decides what the bell shows. A TEST row is only
@@ -188,6 +199,7 @@ export async function recentNotifications(): Promise<NotificationItem[]> {
       summary: e.summary,
       createdAt: e.createdAt,
       href: hrefFor(e),
+      actor: whoOfEvent(e, actors),
     }));
 }
 

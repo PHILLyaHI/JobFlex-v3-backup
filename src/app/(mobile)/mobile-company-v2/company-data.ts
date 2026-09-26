@@ -86,6 +86,9 @@ export type ActivityEntry = {
   /** Membership user id, or "" for a client-side / system event. The person
    *  filter matches on this, not on the display name. */
   actorId: string;
+  /** Membership role and the person's own color (lib/team/who) — the mark. */
+  actorRole?: string | null;
+  actorColor?: string;
   cat: string;
   /** Contains inline <b> markup — donor-exact. Rendered via summaryParts(). */
   summary: string;
@@ -170,8 +173,14 @@ export function monogram(name: string): string {
 }
 
 /** "sent proposal <b>#2851</b> to …" → plain text, for kickers and clipboard. */
+/** The desk mapper escapes what it interpolates for its HTML feed; React
+ *  renders text, so the entities come back to characters here. */
+function unescapeHtml(v: string): string {
+  return v.replace(/&(quot|#39|lt|gt|amp);/g, (_, k) => ({ quot: '"', "#39": "'", lt: "<", gt: ">", amp: "&" })[k as string] ?? _);
+}
+
 export function plainSummary(summary: string): string {
-  return summary.replace(/<[^>]+>/g, "");
+  return unescapeHtml(summary.replace(/<[^>]+>/g, ""));
 }
 
 /**
@@ -186,11 +195,11 @@ export function summaryParts(summary: string): { text: string; bold: boolean }[]
   // A for-loop rather than `while ((m = re.exec()))` — no assignment in a
   // condition, so no-cond-assign stays satisfied.
   for (let m = re.exec(summary); m !== null; m = re.exec(summary)) {
-    if (m.index > last) out.push({ text: summary.slice(last, m.index), bold: false });
-    out.push({ text: m[1], bold: true });
+    if (m.index > last) out.push({ text: unescapeHtml(summary.slice(last, m.index)), bold: false });
+    out.push({ text: unescapeHtml(m[1]), bold: true });
     last = m.index + m[0].length;
   }
-  if (last < summary.length) out.push({ text: summary.slice(last), bold: false });
+  if (last < summary.length) out.push({ text: unescapeHtml(summary.slice(last)), bold: false });
   return out;
 }
 
