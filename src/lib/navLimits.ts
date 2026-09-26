@@ -37,7 +37,8 @@ const NAV_LIMIT_KEYS: Record<string, LimitKey[]> = {
   "/dashboard/advanced-ai": ["estimatorUses"],
   "/dashboard/roof-estimator": ["estimatorUses"],
   "/dashboard/fence-estimator": ["estimatorUses"],
-  "/dashboard/hvac-estimator": ["estimatorUses"],
+  // HVAC has its own meter (hvacEstimates) on top of the shared gate.
+  "/dashboard/hvac-estimator": ["hvacEstimates", "estimatorUses"],
   "/dashboard/video-estimator": ["estimatorUses"],
   // Classic-shell paths, kept for the old sidebar.
   "/dashboard/advanced-ai/roof": ["estimatorUses"],
@@ -62,6 +63,7 @@ const NAV_NOUN: Partial<Record<LimitKey, string>> = {
   aiPhoneCalls: "AI phone calls",
   reviewRequests: "review requests",
   estimatorUses: "estimator runs",
+  hvacEstimates: "HVAC estimates",
 };
 
 export async function getNavLimitCounters(

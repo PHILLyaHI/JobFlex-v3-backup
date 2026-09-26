@@ -120,7 +120,7 @@ export function useHvacWalk(aiEnabled: boolean) {
         toast.error("Estimator not configured", msg);
         return null;
       }
-      if (!(await ensureWithinLimit("estimatorUses"))) return null;
+      if (!(await ensureWithinLimit("hvacEstimates")) || !(await ensureWithinLimit("estimatorUses"))) return null;
       setError("");
       setBusy(true);
       setStage("audio");

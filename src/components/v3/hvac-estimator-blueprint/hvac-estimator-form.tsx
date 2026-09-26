@@ -944,7 +944,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
     let dataUrl = "";
     try { dataUrl = await fileToJpegDataUrl(f); } catch (err) { toast.error("Photo", errMsg(err)); return; }
     setPlates((p) => ({ ...p, [key]: { thumb: dataUrl, busy: true } }));
-    if (!(await ensureWithinLimit("estimatorUses"))) { setPlates((p) => ({ ...p, [key]: { thumb: dataUrl, error: "Plan limit reached" } })); return; }
+    if (!(await ensureWithinLimit("hvacEstimates")) || !(await ensureWithinLimit("estimatorUses"))) { setPlates((p) => ({ ...p, [key]: { thumb: dataUrl, error: "Plan limit reached" } })); return; }
     try {
       const res = await readHvacNameplate({ dataUrl, hint });
       if (!res.ok) {
@@ -1034,7 +1034,8 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
     setSaving(true);
     try {
       const res = await saveHvacEstimate({ id: savedId ?? undefined, address: site.address, siteFacts: site, model, engine, draft: draft() });
-      if (!res.ok) { toast.error("Couldn't save", res.error); reportPlanLimitResult(res); return null; }
+      // A spent HVAC meter raises the upgrade dialog on its own; any other failure is a toast.
+      if (!res.ok) { if (!reportPlanLimitResult(res)) toast.error("Couldn't save", res.error); return null; }
       setSavedId(res.id);
       toast.success("Estimate saved");
       refreshRecent();
@@ -1044,6 +1045,8 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
   const convert = async () => {
     if (!lines || !ledger) return;
     if (!(await ensureWithinLimit("proposalsCreated"))) return;
+    // Converting an unsaved estimate saves it first — a new estimate on the HVAC meter.
+    if (!savedId && !(await ensureWithinLimit("hvacEstimates"))) return;
     setConverting(true);
     try {
       const id = savedId ?? (await save());

@@ -102,7 +102,7 @@ const BLANK: HydratedPlan = {
 /** The limits grid, grouped the way the owner reads them. Every LimitKey appears once. */
 const LIMIT_GROUPS: Array<{ title: string; keys: LimitKey[] }> = [
   { title: "Proposals", keys: ["proposalsCreated", "proposalsAccepted", "proposalsCompleted"] },
-  { title: "Estimates", keys: ["estimatorUses"] },
+  { title: "Estimates", keys: ["estimatorUses", "hvacEstimates"] },
   { title: "Clients", keys: ["clients"] },
   { title: "Leads", keys: ["leads"] },
   { title: "Projects & schedules", keys: ["projects", "calendarCards", "calendarEvents"] },

@@ -348,6 +348,11 @@ async function countUsage(
       return db.client.count({ where: { organizationId, deletedAt: null } });
     case "estimatorUses":
       return db.aiEstimate.count({ where: { organizationId, createdAt: since } });
+    case "hvacEstimates":
+      // Saved HVAC estimates: a re-save updates its row, so only new ones count.
+      // A database without the HVAC tables yet counts none (the estimator
+      // answers its defaults there too) instead of failing every check.
+      return db.hvacEstimate.count({ where: { organizationId, createdAt: since } }).catch(() => 0);
     case "conversationsStarted":
       // JOB-kind threads are auto-created from a job's crew (ensureJobConversation)
       // and must not burn quota; only user-started threads count.

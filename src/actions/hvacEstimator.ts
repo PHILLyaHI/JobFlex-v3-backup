@@ -16,7 +16,9 @@
 // every write reports the failure instead of throwing — the RoofCatalog rule.
 //
 // Same gates as the other estimators: role, then the org's AI rate limit, then
-// the plan's estimatorUses meter on the calls that spend a model run.
+// the plan's estimatorUses meter on the calls that spend a model run. New
+// saved estimates (and an unsaved convert) are on the HVAC estimator's own
+// hvacEstimates meter (2026-09-25).
 
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
@@ -64,10 +66,20 @@ const failed = (what: string, err: unknown): string => {
   return `Couldn't ${what} — try again in a moment; the details are in the server log.`;
 };
 
+/** A plan-limit failure for the first of these meters that is spent, or null. */
+async function limitBlocked(organizationId: string, keys: LimitKey[]): Promise<Fail | null> {
+  for (const key of keys) {
+    const quota = await checkPlanLimit(organizationId, key);
+    if (!quota.allowed) return { ok: false, error: PLAN_LIMIT_MESSAGE, code: "PLAN_LIMIT_REACHED", resource: quota.cappedBy ?? key };
+  }
+  return null;
+}
+
+/** A model run: the shared estimator gate. The nameplate read also serves the
+ *  client's equipment panel, so the HVAC meter is checked where an estimate is
+ *  made — save and convert here, and before each run on the estimator page. */
 async function runBlocked(organizationId: string): Promise<Fail | null> {
-  const quota = await checkPlanLimit(organizationId, "estimatorUses");
-  if (quota.allowed) return null;
-  return { ok: false, error: PLAN_LIMIT_MESSAGE, code: "PLAN_LIMIT_REACHED", resource: quota.cappedBy ?? "estimatorUses" };
+  return limitBlocked(organizationId, ["estimatorUses"]);
 }
 
 // ── site facts ──────────────────────────────────────────────────────────────
@@ -600,6 +612,9 @@ export async function saveHvacEstimate(raw: unknown): Promise<{ ok: true; id: st
         return { ok: true, id: own.id };
       }
     }
+    // A NEW estimate is what the plan's HVAC meter counts; re-saving one is free.
+    const blocked = await limitBlocked(organizationId, ["hvacEstimates"]);
+    if (blocked) return blocked;
     const row = await db.hvacEstimate.create({ data });
     await trail(row.id, false);
     return { ok: true, id: row.id };
@@ -762,6 +777,10 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
   const { organizationId, user } = await requireEstimatorOrManager();
   await enforcePlanLimit(organizationId, "proposalsCreated");
   const data = convertSchema.parse(raw);
+  // Converted without a saved estimate, this is a new HVAC estimate all the
+  // same — the plan's HVAC meter applies (the client saves first, so this is
+  // the backstop).
+  if (!data.estimateId) await enforcePlanLimit(organizationId, "hvacEstimates");
 
   const named = data.clientId
     ? ((await db.client.findFirst({ where: { id: data.clientId, organizationId }, select: { id: true } }))?.id ?? null)

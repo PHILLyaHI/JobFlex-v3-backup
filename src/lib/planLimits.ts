@@ -58,6 +58,7 @@ export type LimitKey =
   | "workers"
   | "clients"
   | "estimatorUses"
+  | "hvacEstimates"
   | "conversationsStarted"
   | "messagesSent"
   | "leads"
@@ -88,6 +89,10 @@ export const LIMIT_DEFS: readonly LimitDef[] = [
   { key: "workers", label: "Total workers", scope: "absolute", hint: "Worker seats in the org (lifetime)" },
   { key: "clients", label: "Clients", scope: "absolute", hint: "Client records in the org (lifetime)" },
   { key: "estimatorUses", label: "Estimator uses", scope: "monthly", hint: "AI estimator runs per cycle" },
+  // The HVAC estimator's own meter (owner, 2026-09-25): new HVAC estimates
+  // saved per cycle. It never created AiEstimate rows, so "estimatorUses"
+  // only ever gated it — it never counted it. Absent from a plan = unlimited.
+  { key: "hvacEstimates", label: "HVAC estimates", scope: "monthly", hint: "New HVAC estimates saved per cycle" },
   { key: "conversationsStarted", label: "Conversations started", scope: "monthly", hint: "New message threads per cycle" },
   { key: "messagesSent", label: "Messages sent", scope: "monthly", hint: "Messages sent per cycle" },
   { key: "leads", label: "Leads captured", scope: "monthly", hint: "New leads per cycle (all sources)" },
@@ -121,6 +126,7 @@ export const DEFAULT_FREE_LIMITS: PlanLimits = {
   workers: 1,
   clients: 10,
   estimatorUses: 3,
+  hvacEstimates: 3,
   conversationsStarted: 5,
   messagesSent: 50,
   leads: 10,
