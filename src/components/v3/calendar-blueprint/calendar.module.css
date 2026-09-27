@@ -1,3 +1,4 @@
+/* Calendar controls use the shared ink and semantic state tokens. */
 /* ============================================================
    CALENDAR BLUEPRINT — pixel-identical port of
    jobflex-calendar-blueprint_5.html (OneDrive donor).
@@ -1801,7 +1802,7 @@
    while DIV-wrapped fields spaced correctly. */
 .bp :global(.content .sf) { display: block; margin-bottom: 22px; }
 .bp :global(.content .sf:last-of-type) { margin-bottom: 0; }
-.bp :global(.content .sf-lbl) { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 9px; }
+.bp :global(.content .sf-lbl) { display: block; font-family: var(--font-sans); font-size: 13px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink); margin-bottom: 9px; }
 .bp :global(.content .sf-hint) {
   display: flex; align-items: center; gap: 6px; margin-top: 8px;
   font-family: var(--font-mono); font-size: 10px; font-weight: 600;
@@ -1829,7 +1830,7 @@
 .bp :global(.content .sf-kind.on) { background: var(--ink); border-color: var(--ink); color: var(--paper); box-shadow: 2px 2px 0 var(--shadow); }
 .bp :global(.content .sf-crew) { display: flex; flex-wrap: wrap; gap: 6px; }
 .bp :global(.content .sf-act) { display: flex; gap: 9px; margin-top: 22px; padding-top: 16px; border-top: 2px solid var(--hair-soft); }
-.bp :global(.content .sf-act .btn) { flex: 1; justify-content: center; }
+.bp :global(.content .sf-act .btn) { flex: 1; justify-content: center; height: 40px; min-height: 40px; padding: 0 16px; }
 /* The destructive action in the detail sheet. Identical treatment to the crew
    inspector's Remove (workers-blueprint) — one treatment per control, published
    once: the ghost keeps its paper fill and takes the danger frame and label, and
@@ -2493,3 +2494,25 @@
   background: var(--danger-soft);
   font-size: 11.5px; font-weight: 700; line-height: 1.4; color: var(--danger);
 }
+
+/* Calendar readability: keep controls and the hour grid clear at a glance. */
+.bp :global(.content .cal-bar .vsw),
+.bp :global(.content .cal-bar .vsw-btn) { border-color: var(--ink); }
+.bp :global(.content .cal-bar .vsw-btn:not(.active)),
+.bp :global(.content .wg-hour),
+.bp :global(.content .wg-head span:not(.today)),
+.bp :global(.content .mg-head span),
+.bp :global(.content .wg-head .wg-corner .ic),
+.bp :global(.content .dtp-ic),
+.bp :global(.content .dtp-time-val),
+.bp :global(.content .dtp-dow span),
+.bp :global(.content .dtp-time:not(.sel)) { color: var(--ink); }
+.bp :global(.content .wg-hour),
+.bp :global(.content .wg-slot) { border-bottom-color: var(--ink); }
+.bp :global(.content .tgl) { border-color: var(--rose); background: color-mix(in srgb, var(--rose) 6%, var(--paper-deep)); }
+.bp :global(.content .tgl-track) { background: var(--rose); border-color: var(--rose); }
+.bp :global(.content .tgl.on) { border-color: var(--emerald); background: color-mix(in srgb, var(--emerald) 6%, var(--paper-deep)); }
+.bp :global(.content .tgl.on .tgl-track) { background: var(--emerald); border-color: var(--emerald); }
+.bp :global(.content #trayBtn) { position: relative; }
+.bp :global(.content #trayBtn .ic) { transform: rotate(-90deg); }
+.bp :global(.content #trayBtn.active .ic) { transform: rotate(90deg); }

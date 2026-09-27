@@ -2528,7 +2528,7 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
           <div className={styles.fld}>
             <span className={styles.fldLbl}>Span</span>
             <button
-              className={styles.fchk}
+              className={`${styles.fchk} ${styles.allDayToggle}`}
               type="button"
               aria-pressed={form.allDay}
               onClick={() => patchForm({ allDay: !form.allDay })}
@@ -2760,7 +2760,7 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
                         <div className={styles.note}>
                           {workersData.length
                             ? "Nobody on the roster matches that"
-                            : "No crew on this org yet — add workers first"}
+                            : "You have no crew."}
                         </div>
                       ) : null}
                     </div>

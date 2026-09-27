@@ -1118,9 +1118,9 @@
 .formBody { padding: var(--card-pad) var(--pad-x) 4px; display: flex; flex-direction: column; gap: 18px; }
 .fld { display: flex; flex-direction: column; }
 .fldLbl {
-  font-size: 11.5px; font-weight: 800;
+  font-size: 13px; font-weight: 800;
   letter-spacing: 0.14em; text-transform: uppercase;
-  color: var(--muted);
+  color: var(--ink);
   margin-bottom: 8px;
 }
 .req { color: var(--danger); margin-left: 3px; }
@@ -1768,3 +1768,9 @@
    strip it stands in — otherwise the last row of every list ends
    underneath it with no way to scroll clear. */
 .scroll { padding-bottom: 60px; }
+
+.allDayToggle { border-color: var(--rose); background: color-mix(in srgb, var(--rose) 6%, var(--paper-deep)); }
+.allDayToggle .fchkBox { background: var(--rose); border-color: var(--rose); }
+.allDayToggle[aria-pressed="true"] { border-color: var(--emerald); background: color-mix(in srgb, var(--emerald) 6%, var(--paper-deep)); }
+.allDayToggle[aria-pressed="true"] .fchkBox { background: var(--emerald); border-color: var(--emerald); color: var(--paper-deep); }
+.tab, .dpkLead, .dpkTgl, .tpkVal, .dpkDow span, .mgHeadCell { color: var(--ink); }

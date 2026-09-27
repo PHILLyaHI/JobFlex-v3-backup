@@ -530,6 +530,10 @@ export function initCalendarContent(
     const trayCount = byId("trayCount");
     if (trayCount) trayCount.textContent = String(trayJobs.length);
     byId("trayBtn")?.classList.toggle("active", cal.trayOpen);
+    byId("trayBtn")?.setAttribute("aria-expanded", String(cal.trayOpen));
+    byId("trayBtn")?.setAttribute("aria-label", cal.trayOpen ? "Expand calendar" : "Show unscheduled");
+    const trayLabel = byId("trayLabel");
+    if (trayLabel) trayLabel.textContent = cal.trayOpen ? "Expand calendar" : "Show unscheduled";
     byId("calWrap")?.classList.toggle("no-tray", !cal.trayOpen);
     byId("trayEmpty")?.classList.toggle("is-hidden", trayJobs.length !== 0);
   }
@@ -1455,6 +1459,7 @@ export function initCalendarContent(
         '<svg class="ic pdd-chev"><use href="#i-chev"/></svg>' +
       "</button>" +
       '<div class="pdd-menu">' +
+        (workersData.length === 0 ? '<div class="pdd-note" role="status">You have no crew.</div>' : "") +
         workersData.map(function (w) {
           const on = cal.form.crew.indexOf(w.id) !== -1;
           return '<button class="pdd-opt' + (on ? " on" : "") + '" type="button" data-crew="' + w.id + '" aria-pressed="' + on + '">' +

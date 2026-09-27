@@ -135,11 +135,12 @@ export function CalendarContent({ seed }: { seed?: CalendarSeed }) {
             </svg>
             New event
           </button>
-          <button className="cal-nav has-badge active" type="button" id="trayBtn" aria-label="Toggle unscheduled tray">
+          <button className="btn btn-ghost has-badge active" type="button" id="trayBtn" aria-label="Expand calendar" aria-expanded="true" aria-controls="tray">
             <svg className="ic">
-              <use href="#i-board" />
+              <use href="#i-chev" />
             </svg>
             <span className="cal-badge" id="trayN">0</span>
+            <span id="trayLabel">Expand calendar</span>
           </button>
         </div>
       </div>
