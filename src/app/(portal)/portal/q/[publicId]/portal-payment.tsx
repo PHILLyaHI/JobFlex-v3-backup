@@ -130,7 +130,6 @@ export function PortalPayment({
           <b>{`Remaining ${model.remaining}`}</b>
         </div>
       ) : null}
-      {paidInFull ? <div className="pv-pay-sum pv-pay-sum--done">✓ Paid in full</div> : null}
       {accepted && !model.anyWay ? (
         <div className="pv-pay-sum">The team will be in touch about payment.</div>
       ) : null}

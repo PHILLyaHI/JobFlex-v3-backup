@@ -533,9 +533,6 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
               <b>{`Remaining ${pay.remaining}`}</b>
             </div>
           ) : null}
-          {pay.remainingMinor <= 0 && pay.paidMinor > 0 ? (
-            <div className="mpc-pay-sum mpc-pay-sum--done">Paid in full</div>
-          ) : null}
           {settled === "accepted" && !pay.anyWay ? (
             <div className="mpc-pay-sum">The team will be in touch about payment.</div>
           ) : null}
