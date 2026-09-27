@@ -1,8 +1,9 @@
 "use client";
 import dynamic from "next/dynamic";
 import { useSyncExternalStore } from "react";
-import { COMPARE_COMPETITORS, COMPARE_ROWS, allAppsInclude } from "./landing-compare";
+import { COMPARE_COMPETITORS, COMPARE_ROWS } from "./landing-compare";
 import { CompareAnswer, CompareBrand, FeatureHeading } from "./compare-elements";
+import "./compare-pass.css";
 const MobileComparison = dynamic(() => import("./compare-mobile"));
 const query = "(max-width: 768px)";
 const subscribe = (onChange: () => void) => {
@@ -23,13 +24,12 @@ export function CompareSection() {
           <th scope="col" className="lp-compare-us"><CompareBrand id="jobflex" /></th>
           {COMPARE_COMPETITORS.map((brand) => <th scope="col" key={brand.id}><CompareBrand id={brand.id} /></th>)}
         </tr></thead>
-        <tbody>{COMPARE_ROWS.map((row, index) => <tr key={row.id} className={index > 0 && allAppsInclude(COMPARE_ROWS[index - 1]) && !allAppsInclude(row) ? "lp-compare-divider" : undefined}>
+        <tbody>{COMPARE_ROWS.map((row) => <tr key={row.id}>
           <th scope="row"><span>{row.label}</span>{row.detail && <small>{row.detail}</small>}</th>
           <td className="lp-compare-us"><CompareAnswer /></td>
           {COMPARE_COMPETITORS.map((brand) => <td key={brand.id}><CompareAnswer cell={row.them[brand.id]} /></td>)}
         </tr>)}</tbody>
       </table>
     </div>}
-    <p className="lp-compare-note">Yes = available on a plan. Paid = extra charge. Plan limits and feature scope vary by provider.</p>
   </div>;
 }

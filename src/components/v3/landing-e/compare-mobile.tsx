@@ -1,8 +1,7 @@
 "use client";
 import { useState } from "react";
-import { COMPARE_COMPETITORS, COMPARE_ROWS, allAppsInclude, type CompetitorId } from "./landing-compare";
+import { COMPARE_COMPETITORS, COMPARE_ROWS, type CompetitorId } from "./landing-compare";
 import { CompareAnswer, CompareBrand } from "./compare-elements";
-import "./compare-pass.css";
 
 /* The phone comparison, kept short (owner, 2026-09-26: "minimal, not take up
    too much space"): one line per feature, a tick or a cross, and only the
@@ -14,15 +13,14 @@ export default function MobileComparison() {
   const [all, setAll] = useState(false);
   const rows = all ? COMPARE_ROWS : COMPARE_ROWS.slice(0, FIRST);
   return <div className="lp-compare-mobile">
-    <p className="lp-compare-picker-label" id="compare-picker-label">Compare JobFlex with</p>
-    <div className="lp-compare-picker" role="group" aria-labelledby="compare-picker-label">
+    <div className="lp-compare-picker" role="group" aria-label="Compare JobFlex with">
       {COMPARE_COMPETITORS.map((brand) => <button key={brand.id} type="button" aria-pressed={selected === brand.id} onClick={() => setSelected(brand.id)}>{brand.name}</button>)}
     </div>
     <div className="lp-compare-plate">
       <table className="lp-compare-table lp-compare-table-mobile" id="compare-mobile-table">
         <caption className="sr-only">JobFlex feature comparison with {COMPARE_COMPETITORS.find((brand) => brand.id === selected)!.name}</caption>
         <thead><tr><th scope="col">Features</th><th scope="col" className="lp-compare-us"><CompareBrand id="jobflex" /></th><th scope="col"><CompareBrand id={selected} /></th></tr></thead>
-        <tbody>{rows.map((row, index) => <tr key={row.id} className={index > 0 && allAppsInclude(rows[index - 1]) && !allAppsInclude(row) ? "lp-compare-divider" : undefined}>
+        <tbody>{rows.map((row) => <tr key={row.id}>
           <th scope="row"><span>{row.label}</span>{row.detail && <small>{row.detail}</small>}</th>
           <td className="lp-compare-us"><CompareAnswer /></td>
           <td><CompareAnswer cell={row.them[selected]} /></td>
