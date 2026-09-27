@@ -5,7 +5,7 @@
 .guide > summary:focus-visible, .steps a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .guide > summary svg { flex-shrink: 0; transition: transform 160ms var(--ease-out); }
 .guide[open] > summary svg { transform: rotate(180deg); }
-.body { display: grid; gap: 16px; padding-block: 4px 20px; }
+.guide .body { display: grid; gap: 16px; padding-block: 4px 20px; }
 .guide .steps { display: grid; gap: 16px; margin: 0; padding-left: 24px; list-style: decimal; font: 400 14px/1.6 var(--font-sans); }
 .guide .steps > li { display: list-item; padding-left: 4px; min-width: 0; list-style: decimal; }
 .steps li::marker { color: var(--accent-ink); font-weight: 800; }

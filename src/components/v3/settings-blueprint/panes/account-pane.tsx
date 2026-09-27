@@ -120,7 +120,7 @@ export function AccountPane({ data }: PaneProps) {
             <Field label={PROFILE_LABELS.phone} value={phone} onChange={setPhone} />
           </div>
         </div>
-        <SaveBar onSave={() => updateProfile({ name, phone })} />
+        <SaveBar watch={[name, phone]} onSave={() => updateProfile({ name, phone })} />
       </section>
 
       {/* ── Business ── */}
@@ -136,6 +136,7 @@ export function AccountPane({ data }: PaneProps) {
         </div>
         <SaveBar
           disabled={!a.canEditBusiness}
+          watch={[bizName, bizAddress, bizWebsite, bizPhone]}
           onSave={() => updateBusiness({ name: bizName, address: bizAddress, website: bizWebsite, phone: bizPhone })}
         />
       </section>
@@ -211,43 +212,45 @@ export function AccountPane({ data }: PaneProps) {
         <SignOutButton className="btn btn-danger" iconClassName="ic" label={SIGN_OUT_LABEL} />
       </div>
 
-      {deleteOpen ? (
-        <Modal
-          title={DELETE_ACCOUNT_MODAL.title}
-          sub={DELETE_ACCOUNT_MODAL.sub}
-          onClose={() => (deleting ? undefined : setDeleteOpen(false))}
-          footer={
-            <>
-              <button className="btn btn-ghost" type="button" disabled={deleting} onClick={() => setDeleteOpen(false)}>
-                {DELETE_ACCOUNT_MODAL.cancelLabel}
-              </button>
-              <button
-                className="btn btn-danger"
-                type="button"
-                disabled={!emailMatches || deleting}
-                onClick={() => void runDelete()}
-              >
-                {deleting ? "Deleting…" : DELETE_ACCOUNT_MODAL.confirmLabel}
-              </button>
-            </>
-          }
-        >
-          <div className="prow-d" style={{ marginBottom: 12 }}>
-            {deleteAccountDesc(a.email, a.business.name)}
+      {/* Renders in the shell's overlay layer (not here in the pane) so its
+          scrim covers the sidebar and topbar too, and plays its exit after
+          `deleteOpen` turns false — see ui.tsx `Modal`. */}
+      <Modal
+        open={deleteOpen}
+        title={DELETE_ACCOUNT_MODAL.title}
+        sub={DELETE_ACCOUNT_MODAL.sub}
+        onClose={() => (deleting ? undefined : setDeleteOpen(false))}
+        footer={
+          <>
+            <button className="btn btn-ghost" type="button" disabled={deleting} onClick={() => setDeleteOpen(false)}>
+              {DELETE_ACCOUNT_MODAL.cancelLabel}
+            </button>
+            <button
+              className="btn btn-danger"
+              type="button"
+              disabled={!emailMatches || deleting}
+              onClick={() => void runDelete()}
+            >
+              {deleting ? "Deleting…" : DELETE_ACCOUNT_MODAL.confirmLabel}
+            </button>
+          </>
+        }
+      >
+        <div className="prow-d" style={{ marginBottom: 12 }}>
+          {deleteAccountDesc(a.email, a.business.name)}
+        </div>
+        <Field label={DELETE_ACCOUNT_MODAL.inputLabel} value={confirm} onChange={setConfirm} placeholder={a.email} />
+        {confirm && !emailMatches ? (
+          <div className="prow-d prow-warn" style={{ marginTop: 8 }}>
+            {DELETE_ACCOUNT_MODAL.mismatch}
           </div>
-          <Field label={DELETE_ACCOUNT_MODAL.inputLabel} value={confirm} onChange={setConfirm} placeholder={a.email} />
-          {confirm && !emailMatches ? (
-            <div className="prow-d prow-warn" style={{ marginTop: 8 }}>
-              {DELETE_ACCOUNT_MODAL.mismatch}
-            </div>
-          ) : null}
-          {deleteErr ? (
-            <div className="prow-d prow-warn" style={{ marginTop: 8 }}>
-              {deleteErr}
-            </div>
-          ) : null}
-        </Modal>
-      ) : null}
+        ) : null}
+        {deleteErr ? (
+          <div className="prow-d prow-warn" style={{ marginTop: 8 }}>
+            {deleteErr}
+          </div>
+        ) : null}
+      </Modal>
     </>
   );
 }

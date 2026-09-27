@@ -1,11 +1,13 @@
 /* Settings blueprint — the GLOBAL layer of the donor port (a plain
    stylesheet, NOT a CSS module).
 
-   Only keyframes live here. Turbopack's Lightning CSS rejects `@keyframes`
-   inside a CSS module, and the names have to stay literal because
-   settings.module.css references them by name. Every name is prefixed
-   `settings_` so it can never collide with another page's port — the shell
-   loads several page stylesheets into one document.
+   Keyframes live here: Turbopack's Lightning CSS rejects `@keyframes`
+   inside a CSS module. Every name is prefixed `settings_` so it can never
+   collide with another page's port — the shell loads several page
+   stylesheets into one document. A module rule that names one of them does
+   NOT reach it: the module pipeline hashes `animation-name`
+   (`settings-module__…__settings_maskIn`), so an animation has to be
+   DECLARED here too — the pop-up form's are, at the end of this file.
 
    settings-content.tsx imports this file itself, so the keyframes arrive
    with the page and leave with it.
@@ -41,3 +43,15 @@
   from { opacity: 0; transform: translateY(14px) scale(.985); }
   to   { opacity: 1; transform: none; }
 }
+
+/* The pop-up form's motion (ui.tsx `Modal`, today the Delete-account
+   dialog). It renders in the shell's overlay layer, inside `.set-layer`.
+   Until 2026-09-26 these animations were written in settings.module.css,
+   which hashed the names, so the form popped in and cut out. The exit is
+   the fleet's shared one — `mdlBgOut` / `mdlBoxOut` from blueprint-global.css
+   on mdl-motion's MDL_EXIT_MS (190ms), which `Modal` waits out before it
+   unmounts. A closing form lets clicks through to the page behind it. */
+.jf-blueprint .set-layer .mask { animation: settings_maskIn .18s var(--ease); }
+.jf-blueprint .set-layer .modal { animation: settings_modalIn .28s var(--ease-out); }
+.jf-blueprint .set-layer .mask[data-closing] { animation: mdlBgOut 190ms linear forwards; pointer-events: none; }
+.jf-blueprint .set-layer .mask[data-closing] > .modal { animation: mdlBoxOut 190ms var(--ease-out) forwards; }

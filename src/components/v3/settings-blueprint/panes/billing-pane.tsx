@@ -114,7 +114,7 @@ export function BillingPane({ data }: PaneProps) {
             />
           </div>
         </div>
-        <SaveBar disabled={!b.canEditBilling} onSave={() => updateBusiness({ billingEmail })} />
+        <SaveBar disabled={!b.canEditBilling} watch={billingEmail} onSave={() => updateBusiness({ billingEmail })} />
       </section>
     </>
   );

@@ -28,6 +28,7 @@ import { SettingsSprite } from "./sprite";
 import {
   DEFAULT_RAIL,
   PAGE_TITLE,
+  PAYMENT_SUB_KEYS,
   RAIL_ITEMS,
   RAIL_NEW_BADGE,
   type PaneProps,
@@ -70,15 +71,22 @@ export function SettingsContent({
     stripe: params.get("stripe") ?? undefined,
     square: params.get("square") ?? undefined,
   };
+  // A processor sub-tab (?sub=stripe|square|stax) always means Payments now —
+  // older links still say ?tab=integrations (owner, 2026-09-26).
+  const payProvider = Boolean(subParam && PAYMENT_SUB_KEYS.has(subParam as SubTabKey));
   const [active, setActive] = useState<RailKey>(
-    tabParam && RAIL_KEYS.has(tabParam) ? (tabParam as RailKey) : (initialPane ?? DEFAULT_RAIL),
+    payProvider
+      ? "payments"
+      : tabParam && RAIL_KEYS.has(tabParam)
+        ? (tabParam as RailKey)
+        : (initialPane ?? DEFAULT_RAIL),
   );
   const [sub, setSub] = useState<SubTabKey | undefined>(
     subParam && SUB_KEYS.has(subParam) ? (subParam as SubTabKey) : undefined,
   );
 
   const navigate = (rail: RailKey, next?: SubTabKey) => {
-    setActive(rail);
+    setActive(next && PAYMENT_SUB_KEYS.has(next) ? "payments" : rail);
     if (next) setSub(next);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };

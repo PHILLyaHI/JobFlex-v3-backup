@@ -350,6 +350,18 @@ body:has(.jf-blueprint) {
   .jf-blueprint .bp-sel--admin .bp-sel-in { height: 44px; font-size: 12px; }
 }
 
+/* ── Overlay layer (blueprint-shell/overlay-layer.tsx) ───────────────
+   The empty node every app-dimming popup portals into, after `.layout`.
+   `.content` (z-index 1) and `.main` (isolation) are stacking contexts, so a
+   fixed scrim drawn inside the page is painted under the sidebar and topbar
+   (both z-index 30) however high its own z-index. This node is a stacking
+   context of its own at 120: over the chrome, the handheld drawer (89/90) and
+   the support widget (≤95); under ⌘K and the estimator picker (200), and
+   under everything portalled to <body> (address suggestions, BlueprintSheet,
+   the plan-change confirm), which sits above the whole app. Zero-height, so
+   it never takes space or a click; its children are `position: fixed`. */
+.jf-blueprint > .bp-layer { position: relative; z-index: 120; }
+
 /* ── Command palette (blueprint-shell/command-palette.tsx) ───────────
    Lives in the shell, above the page, so it is scoped to `.jf-blueprint` and
    not to `.content`. It sits high in the sheet: a palette centred in the
@@ -614,4 +626,39 @@ body:has(.jf-blueprint) {
 }
 @media (prefers-reduced-motion: reduce) {
   .jf-blueprint .sb .sb-indicator.ready, .jf-blueprint .sb-fold-btn::before { transition: none; }
+}
+
+/* ── Sidebar in ink (owner, 2026-09-26) ──────────────────────────────
+   Section titles were --muted-light grey and row labels --ink-soft, so the
+   rail read washed out beside the page. Titles, labels and the fold buttons'
+   frames now draw in ink. The icons keep their original softer tone (owner,
+   2026-09-26: ink icons were too heavy); a locked row stays dimmed.
+   (0,3,0) outranks both page modules' `.bp .sb-*` (0,2,0), which the shell
+   applies side by side, without editing either. */
+.jf-blueprint .sb .sb-sec-label { color: var(--ink); }
+.jf-blueprint .sb .sb-link { color: var(--ink); }
+/* Icons draw in currentColor, so pin them to the label's old tone. */
+.jf-blueprint .sb .sb-link:not(:hover):not(.active) .ic { color: var(--ink-soft); }
+.jf-blueprint .sb .sb-foot-role { color: var(--ink-soft); }
+.jf-blueprint .sb .sb-fold-btn::before { border-color: var(--ink); }
+/* Hover lifts a row like the settings square at the foot of the rail: an ink
+   frame, one pixel up and left, a hard 3px shadow (owner, 2026-09-26). The
+   active row keeps its own plate. */
+.jf-blueprint .sb .sb-link { transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s, transform 0.12s; }
+.jf-blueprint .sb .sb-link:not(.active):hover { border-color: var(--ink); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+.jf-blueprint .sb .sb-link:not(.active):active { transform: none; box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { .jf-blueprint .sb .sb-link { transition: none; } }
+.jf-blueprint .sb .sb-fold-btn:hover::before,
+.jf-blueprint .sb .sb-fold-btn:focus-visible::before { border-color: var(--blueprint); }
+
+/* ── Page dialogs cover the sidebar too (owner, 2026-09-26) ──────────
+   The imperative `.mdl` dialogs (Send proposal, Delete, the create forms)
+   live inside `.content`, where their page rules are scoped, so they cannot
+   move to the overlay layer above. `.main` is a stacking context
+   (`isolation: isolate`) and the desktop sidebar sits over it at z-index 30,
+   so their scrim darkened the page and the topbar but left the sidebar
+   bright. While one is open, or playing its exit, the main column is lifted
+   over the sidebar instead. */
+@media (min-width: 861px) {
+  .jf-blueprint .main:has(.mdl.open, .mdl.mdl--closing) { z-index: 31; }
 }

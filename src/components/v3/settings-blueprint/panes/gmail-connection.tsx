@@ -77,7 +77,7 @@ export function GmailConnection({ data, notice, mobile = false }: { data: GmailD
           <div><strong>{behavior.name}</strong><p>{behavior.desc}</p></div>
           <Toggle checked={sendFromUser} onChange={setSendFromUser} ariaLabel={behavior.name} />
         </div>
-        <SaveBar onSave={() => updateGmailSettings({ connected: data.connected, displayName, replyTo, sendFromUser })} />
+        <SaveBar watch={[displayName, replyTo, sendFromUser]} onSave={() => updateGmailSettings({ connected: data.connected, displayName, replyTo, sendFromUser })} />
       </div>
       <footer className={styles.footer}>
         <details className={styles.details}>

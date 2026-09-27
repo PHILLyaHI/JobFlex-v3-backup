@@ -139,7 +139,7 @@ export const RAIL_ITEMS: readonly RailItem[] = [
   { key: 'payments', label: 'Payments', icon: 'i-card' },
   { key: 'billing', label: 'Billing', icon: 'i-receipt' },
   { key: 'integrations', label: 'Integrations', icon: 'i-globe' },
-  { key: 'notifications', label: 'Notifications', icon: 'i-bell', isNew: true },
+  { key: 'notifications', label: 'Notifications', icon: 'i-bell' },
 ];
 
 export const RAIL_NEW_BADGE = 'NEW' as const;
@@ -578,6 +578,15 @@ export function integrationSubTabs(show: { gmail: boolean }): readonly SubTab[] 
 }
 
 export const DEFAULT_SUBTAB: SubTabKey = 'stripe';
+
+/* DESKTOP SPLIT (owner, 2026-09-26): the three payment processors moved from
+   Integrations into the Payments pane; Integrations keeps Gmail and Meta. The
+   handheld build still reads integrationSubTabs() above, unchanged. */
+export const PAYMENT_SUB_KEYS: ReadonlySet<SubTabKey> = new Set<SubTabKey>(['stripe', 'square', 'stax']);
+export const PAYMENT_SUBTABS: readonly SubTab[] = INTEGRATION_SUBTABS.filter((t) => PAYMENT_SUB_KEYS.has(t.key));
+export function connectionSubTabs(show: { gmail: boolean }): readonly SubTab[] {
+  return integrationSubTabs(show).filter((t) => !PAYMENT_SUB_KEYS.has(t.key));
+}
 
 export function isVisibleSubTab(key: SubTabKey | undefined, tabs: readonly SubTab[] = INTEGRATION_SUBTABS): boolean {
   return !!key && tabs.some((t) => t.key === key);

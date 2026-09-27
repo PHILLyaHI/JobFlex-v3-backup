@@ -24,6 +24,7 @@ import { EstimatorPicker } from "@/components/v3/estimators-blueprint/estimator-
 import { FilingChip } from "@/components/v3/filing-chip/filing-chip";
 import { PlanLimitDialog } from "@/components/billing/PlanLimitDialog";
 import { SupportWidget } from "@/components/v3/support-widget/support-widget";
+import { OverlayLayer } from "./overlay-layer";
 import { Sprite } from "./sprite";
 import { Sidebar, type SidebarUser } from "./sidebar";
 import { writeSidebarFold } from "./sidebar-fold";
@@ -227,6 +228,12 @@ export function BlueprintShell({
           <div className="content">{children}</div>
         </div>
       </div>
+
+      {/* Every popup that dims the app renders HERE, through <OverlayPortal>.
+          Inside `.content` a scrim is painted under this sidebar and topbar,
+          whatever its z-index — overlay-layer.tsx has the why. Last child of
+          the root, so it stays under FLUID SCALE and the shell's tokens. */}
+      <OverlayLayer />
     </div>
   );
 }

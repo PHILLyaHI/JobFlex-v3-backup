@@ -13,6 +13,17 @@ preserve implementation lessons without carrying an older theme forward.
 - For existing imperative `.mdl` dialogs use `blueprint-shell/mdl-motion`
   (`openMdl`, `closeMdl`, `MDL_EXIT_MS`). Let exit motion finish before clearing
   fields. Use the existing in-house React sheet pattern for React surfaces.
+- A popup that dims the app (dialog, sheet, picker with a scrim) renders over
+  the shell, never inside the zoomed `.content`: `.content` (z-index 1) and
+  `.main` (isolation) are stacking contexts, so a fixed scrim there is painted
+  under the sidebar and topbar whatever its z-index. React popups go through
+  `<OverlayPortal>` (`blueprint-shell/overlay-layer`), which renders into the
+  shell's `.bp-layer` (z-index 120, still under FLUID SCALE and the shell
+  tokens); page rules scoped under `.content` do not reach it, so re-root the
+  ones it needs on a wrapper class (see settings `Modal`, `.set-layer`).
+  Imperative `.mdl` dialogs that must stay in `.content` rely on
+  `openMdl`/`closeMdl` plus the `.main:has(.mdl.open)` lift in
+  blueprint-global.css (≥861px, where the sidebar is not a drawer).
 - Use `blueprint-shell/list-motion` where that page already supports row
   transitions. Do not replay a full-list stagger on filter, input, selection
   or deletion. Never animate a hidden subtree and depend on `transitionend`

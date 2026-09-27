@@ -63,8 +63,14 @@
 
 /* ============================================================
    DESIGN TOKENS — JobFlex Blueprint System (donor :root, lines 15-56)
+
+   `.set-layer` carries them too: it is the wrapper the pop-up form
+   (ui.tsx `Modal`) renders in the shell's overlay layer, OUTSIDE
+   `.content`. Every rule the dialog needs is re-rooted on it below
+   (search `.set-layer`), so it draws exactly as it did in the page.
    ============================================================ */
-.bp :global(.content) {
+.bp :global(.content),
+.bp :global(.set-layer) {
   --paper: #f2f0eb;
   --paper-deep: #ffffff;
   --ink: #0a0a0a;
@@ -140,8 +146,10 @@
   box-shadow: 3px 3px 0 var(--shadow); margin-bottom: 18px; }
 .bp :global(.content .sc-h) { display: flex; align-items: center; gap: 12px; padding: 15px 18px;
   border-bottom: 1.5px solid var(--hair); }
-.bp :global(.content .sc-t) { font-size: 13.5px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
-.bp :global(.content .sc-s) { margin-top: 4px; font-size: 12px; color: var(--muted); }
+.bp :global(.content .sc-t),
+.bp :global(.set-layer .sc-t) { font-size: 13.5px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
+.bp :global(.content .sc-s),
+.bp :global(.set-layer .sc-s) { margin-top: 4px; font-size: 12px; color: var(--muted); }
 .bp :global(.content .sc-h > div) { min-width: 0; }
 .bp :global(.content .sc-h .badge2) { margin-left: auto; flex-shrink: 0; }
 .bp :global(.content .sc-b) { padding: 18px; }
@@ -155,13 +163,17 @@
 .bp :global(.content .bg-off) { color: var(--muted); background: var(--paper-deep); border-color: var(--hair); }
 
 .bp :global(.content .fgrid) { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.bp :global(.content .fld > span) { display: block; margin-bottom: 7px; font-family: var(--font-mono); font-size: 9.5px;
+.bp :global(.content .fld > span),
+.bp :global(.set-layer .fld > span) { display: block; margin-bottom: 7px; font-family: var(--font-mono); font-size: 9.5px;
   font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
-.bp :global(.content .fin) { display: block; width: 100%; height: 42px; padding: 0 12px; border: 1.5px solid var(--hair);
+.bp :global(.content .fin),
+.bp :global(.set-layer .fin) { display: block; width: 100%; height: 42px; padding: 0 12px; border: 1.5px solid var(--hair);
   border-radius: var(--radius); background: var(--paper-deep); font-size: 13.5px; outline: none;
   transition: border-color .15s var(--ease); }
-.bp :global(.content .fin:focus) { border-color: var(--ink); }
-.bp :global(.content .fin:disabled) { color: var(--muted); cursor: not-allowed; }
+.bp :global(.content .fin:focus),
+.bp :global(.set-layer .fin:focus) { border-color: var(--ink); }
+.bp :global(.content .fin:disabled),
+.bp :global(.set-layer .fin:disabled) { color: var(--muted); cursor: not-allowed; }
 /* Inert after F10 (every <select class="fin"> became the custom .sel dropdown),
    kept so the donor's `.fin` family ships whole. */
 .bp :global(.content .fin option) { background: #fff; }
@@ -174,7 +186,8 @@
 .bp :global(.content .prow-ic .ic) { width: 16px; height: 16px; }
 .bp :global(.content .prow-b) { flex: 1; min-width: 0; }
 .bp :global(.content .prow-n) { display: block; font-size: 13.5px; font-weight: 800; }
-.bp :global(.content .prow-d) { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
+.bp :global(.content .prow-d),
+.bp :global(.set-layer .prow-d) { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
 
 /* First `.tg` definition — superseded by the second one further down
    (donor 1809). Kept in place because the donor cascade depends on it. */
@@ -294,7 +307,8 @@
 /* added actions */
 /* First `.btn-sm` definition — superseded by the second one (donor 1797). */
 .bp :global(.content .btn-sm) { height: 34px; padding: 0 12px; font-size: 10.5px; letter-spacing: .1em; flex-shrink: 0; }
-.bp :global(.content .btn-danger) { background: var(--danger); border-color: var(--ink); color: #fff; }
+.bp :global(.content .btn-danger),
+.bp :global(.set-layer .btn-danger) { background: var(--danger); border-color: var(--ink); color: #fff; }
 .bp :global(.content .icon-sm) { flex-shrink: 0; display: grid; place-items: center; width: 32px; height: 32px;
   border: 1.5px solid var(--hair); border-radius: var(--radius); color: var(--muted);
   transition: color .15s var(--ease), border-color .15s var(--ease); }
@@ -409,7 +423,8 @@
    description's own padding (13px = the donor's `.prow` inner rhythm). */
 .bp :global(.content .seccols) { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-items: stretch; }
 .bp :global(.content .fin--area) { height: auto; min-height: 96px; padding: 10px 12px; resize: vertical; line-height: 1.45; font: inherit; }
-.bp :global(.content .prow-warn) { color: var(--bad, #a83232); }
+.bp :global(.content .prow-warn),
+.bp :global(.set-layer .prow-warn) { color: var(--bad, #a83232); }
 .bp :global(.content .prow-ok) { color: var(--ok, #3a7d44); }
 .bp :global(.content .seccol) { display: flex; flex-direction: column; align-items: flex-start; min-width: 0;
   padding: 0 18px; border-right: 1.5px solid var(--hair-soft); }
@@ -493,29 +508,33 @@
    (leads-blueprint `.mdl`): fixed inset 0, 20px gutter, rgba(10,10,10,.38)
    backdrop, a 5px 5px 0 ink shadow on the box, a paper-deep footer above a
    1.5px ink rule. Heights go through `var(--app-h, 100vh)` because FLUID SCALE
-   zooms the document and a bare 100vh would overshoot. Both keyframes live in
-   settings-global.css. No Radix — this is a plain conditionally-rendered
-   node, closed by Escape and by a click on the mask. */
-.bp :global(.content .mask) { position: fixed; inset: 0; z-index: 120; display: flex; align-items: center;
-  justify-content: center; padding: 20px; background: rgba(10,10,10,.38);
-  animation: settings_maskIn .18s var(--ease); }
-.bp :global(.content .modal) { position: relative; display: flex; flex-direction: column; width: min(440px, 100%);
+   zooms the document and a bare 100vh would overshoot. No Radix — closed by
+   Escape and by a click on the mask.
+
+   Scoped to `.set-layer`, NOT `.content` (2026-09-26): the form renders in the
+   shell's overlay layer (blueprint-shell/overlay-layer.tsx). Drawn inside
+   `.content` its mask was painted under the sidebar and the topbar, which
+   stayed bright while the page dimmed. Its enter/exit animations are in
+   settings-global.css — declared here, the module pipeline hashed the
+   keyframe names and the form never animated at all. */
+.bp :global(.set-layer .mask) { position: fixed; inset: 0; z-index: 120; display: flex; align-items: center;
+  justify-content: center; padding: 20px; background: rgba(10,10,10,.38); }
+.bp :global(.set-layer .modal) { position: relative; display: flex; flex-direction: column; width: min(440px, 100%);
   max-height: calc(var(--app-h, 100vh) - 40px); border: var(--border); border-radius: var(--radius);
-  background: #fff; box-shadow: 5px 5px 0 var(--ink);
-  animation: settings_modalIn .28s var(--ease-out); }
-.bp :global(.content .modal-h) { display: flex; align-items: flex-start; gap: 12px; padding: 15px 17px;
+  background: #fff; box-shadow: 5px 5px 0 var(--ink); }
+.bp :global(.set-layer .modal-h) { display: flex; align-items: flex-start; gap: 12px; padding: 15px 17px;
   border-bottom: 1.5px solid var(--hair); }
-.bp :global(.content .modal-t) { font-size: 15px; font-weight: 900; letter-spacing: .02em; text-transform: uppercase; }
-.bp :global(.content .modal-s) { margin-top: 4px; font-size: 12px; color: var(--muted); }
-.bp :global(.content .modal-x) { flex-shrink: 0; margin-left: auto; display: grid; place-items: center; width: 32px; height: 32px;
+.bp :global(.set-layer .modal-t) { font-size: 15px; font-weight: 900; letter-spacing: .02em; text-transform: uppercase; }
+.bp :global(.set-layer .modal-s) { margin-top: 4px; font-size: 12px; color: var(--muted); }
+.bp :global(.set-layer .modal-x) { flex-shrink: 0; margin-left: auto; display: grid; place-items: center; width: 32px; height: 32px;
   border: 1.5px solid var(--hair); border-radius: var(--radius); color: var(--muted);
   transition: color .15s var(--ease), border-color .15s var(--ease); }
-.bp :global(.content .modal-x:hover) { color: var(--ink); border-color: var(--ink); }
-.bp :global(.content .modal-x .ic) { width: 14px; height: 14px; }
-.bp :global(.content .modal-b) { display: grid; gap: 14px; padding: 17px; overflow-y: auto; }
-.bp :global(.content .modal-f) { display: flex; gap: 9px; padding: 11px 17px; border-top: 1.5px solid var(--ink);
+.bp :global(.set-layer .modal-x:hover) { color: var(--ink); border-color: var(--ink); }
+.bp :global(.set-layer .modal-x .ic) { width: 14px; height: 14px; }
+.bp :global(.set-layer .modal-b) { display: grid; gap: 14px; padding: 17px; overflow-y: auto; }
+.bp :global(.set-layer .modal-f) { display: flex; gap: 9px; padding: 11px 17px; border-top: 1.5px solid var(--ink);
   background: var(--paper-deep); }
-.bp :global(.content .modal-f .btn) { flex: 1; justify-content: center; }
+.bp :global(.set-layer .modal-f .btn) { flex: 1; justify-content: center; }
 
 /* ============================================================
    NARROW LAYOUT — the donor's `@media (max-width: 1080px)` block
@@ -552,7 +571,8 @@
   .bp :global(.content .rail-a .ic) { width: 15px; height: 15px; }
   /* 16px keeps iOS Safari from zooming the viewport on focus; height rides
      along so the taller text keeps the donor's inset rhythm. */
-  .bp :global(.content .fin) { font-size: 16px; height: 44px; }
+  .bp :global(.content .fin),
+  .bp :global(.set-layer .fin) { font-size: 16px; height: 44px; }
   /* Same 44px floor for the action buttons (Save changes was 36px). */
   .bp :global(.content .sactions .btn) { min-height: 44px; }
 }
@@ -592,16 +612,16 @@
    here, height for the horizontal one. */
 .bp :global(.content .nwrap)::-webkit-scrollbar,
 .bp :global(.content .sel-list)::-webkit-scrollbar,
-.bp :global(.content .modal-b)::-webkit-scrollbar { width: 10px; height: 10px; }
+.bp :global(.set-layer .modal-b)::-webkit-scrollbar { width: 10px; height: 10px; }
 .bp :global(.content .nwrap)::-webkit-scrollbar-track,
 .bp :global(.content .sel-list)::-webkit-scrollbar-track,
-.bp :global(.content .modal-b)::-webkit-scrollbar-track { background: var(--paper); border-top: 1px solid var(--hair-soft); }
+.bp :global(.set-layer .modal-b)::-webkit-scrollbar-track { background: var(--paper); border-top: 1px solid var(--hair-soft); }
 .bp :global(.content .nwrap)::-webkit-scrollbar-thumb,
 .bp :global(.content .sel-list)::-webkit-scrollbar-thumb,
-.bp :global(.content .modal-b)::-webkit-scrollbar-thumb { background: var(--muted-faint); border: 2px solid var(--paper); border-radius: 0; }
+.bp :global(.set-layer .modal-b)::-webkit-scrollbar-thumb { background: var(--muted-faint); border: 2px solid var(--paper); border-radius: 0; }
 .bp :global(.content .nwrap)::-webkit-scrollbar-thumb:hover,
 .bp :global(.content .sel-list)::-webkit-scrollbar-thumb:hover,
-.bp :global(.content .modal-b)::-webkit-scrollbar-thumb:hover { background: var(--muted-light); }
+.bp :global(.set-layer .modal-b)::-webkit-scrollbar-thumb:hover { background: var(--muted-light); }
 /* Page-level Log out: a bare action bar after the last card, no card frame. */
 .bp :global(.content .sactions--logout) { border: none; background: transparent; padding: 18px 0 0; justify-content: flex-start; }
 .bp :global(.content .sactions--logout .btn) { padding: 0 18px; min-height: 42px; }
@@ -769,3 +789,53 @@
   .bp :global(.content .tx-row-a), .bp :global(.content .tx-list-a) { margin-left: 0; width: 100%; }
 }
 .bp :global(.content .tx-row-a--left) { margin-left: 0; margin-top: 0; }
+
+/* ============================================================
+   OWNER PASS 2026-09-26 — field names, field frames, the rail, autosave
+   Appended as one block so it reads as one decision; same selectors as the
+   rules above, so order (not specificity) carries the change.
+   ============================================================ */
+
+/* Field names in the page's sans, bold, in ink — readable at arm's length,
+   not the faint 9.5px mono annotation they were. */
+.bp :global(.content .fld > span),
+.bp :global(.set-layer .fld > span) { margin-bottom: 8px; font-family: var(--font-sans, var(--font)); font-size: 12px; font-weight: 800;
+  letter-spacing: .08em; color: var(--ink); }
+
+/* Frames in ink, 2px, a touch taller; focus turns the frame blueprint and
+   adds a ring, so focus still reads against an ink frame at rest. */
+.bp :global(.content .fin),
+.bp :global(.set-layer .fin),
+.bp :global(.content .sel-btn) { height: 46px; border: 2px solid var(--ink); font-size: 14.5px; font-weight: 500;
+  color: var(--ink); }
+.bp :global(.content .fin:focus),
+.bp :global(.set-layer .fin:focus) { border-color: var(--blueprint); box-shadow: 0 0 0 2px color-mix(in srgb, var(--blueprint) 25%, transparent); }
+.bp :global(.content .fin:disabled),
+.bp :global(.set-layer .fin:disabled) { border-color: color-mix(in srgb, var(--ink) 30%, transparent); background: var(--paper);
+  color: var(--muted); }
+.bp :global(.content .fin--area) { height: auto; }
+.bp :global(.content .sel-btn:hover),
+.bp :global(.content .sel.on .sel-btn) { border-color: var(--blueprint); }
+@media (max-width: 1080px) {
+  .bp :global(.content .fin),
+  .bp :global(.set-layer .fin),
+  .bp :global(.content .sel-btn) { font-size: 16px; }
+}
+
+/* The rail: every tab keeps its frame; the open one adds the hard shadow and
+   its blueprint icon. */
+.bp :global(.content .rail-a) { border-color: var(--ink); background: var(--paper-deep); color: var(--ink); margin-bottom: 8px; }
+.bp :global(.content .rail-a .ic) { opacity: 1; }
+.bp :global(.content .rail-a.on) { box-shadow: 3px 3px 0 var(--ink); }
+@media (max-width: 1080px) {
+  .bp :global(.content .rail-a) { margin-bottom: 0; }
+}
+
+/* Autosave: the card's footer is a quiet status line, not a button. */
+.bp :global(.content .sactions--auto) { justify-content: flex-end; align-items: center; padding: 10px 18px; }
+.bp :global(.content .autosave) { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .autosave .ic) { width: 13px; height: 13px; }
+.bp :global(.content .autosave[data-state="saved"]) { color: var(--success); }
+.bp :global(.content .autosave[data-state="error"]) { font-family: var(--font-sans, var(--font)); font-size: 13px; letter-spacing: 0;
+  text-transform: none; color: var(--danger); }

@@ -20,6 +20,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 
+import { MDL_EXIT_MS } from "@/components/v3/blueprint-shell/mdl-motion";
+import { OverlayPortal } from "@/components/v3/blueprint-shell/overlay-layer";
+import { lockScroll } from "@/lib/scrollLock";
+
 /* ─────────────────────────────── Field ─────────────────────────────── */
 
 export interface FieldProps {
@@ -317,16 +321,24 @@ export function CopyBox({ value }: CopyBoxProps) {
 /* ────────────────────────────── SaveBar ────────────────────────────── */
 
 export interface SaveBarProps {
-  /** Extra buttons rendered between Save changes and the Saved tag. */
+  /** Extra buttons rendered before the save status. */
   extra?: ReactNode;
   /**
-   * The card's real write. Resolves → the donor's "Saved" tag; rejects → the
-   * same tag slot carries the server action's own message, verbatim.
+   * The card's real write. Resolves → "Saved"; rejects → the status slot
+   * carries the server action's own message, verbatim.
    */
   onSave?: () => Promise<unknown>;
-  /** Read-only role: the button is present but cannot be pressed. */
+  /** Read-only role: nothing saves, and the status says so. */
   disabled?: boolean;
+  /**
+   * AUTOSAVE (owner, 2026-09-26: no Save changes buttons in Settings). The
+   * card's current values; any change schedules `onSave` AUTOSAVE_MS after
+   * the last edit. Without it the card keeps the old Save changes button.
+   */
+  watch?: unknown;
 }
+
+const AUTOSAVE_MS = 900;
 
 /** Server actions reject with a message written for the user. Show that text;
  *  fall back to a generic line for anything unrecognisable. */
@@ -338,8 +350,110 @@ export function actionError(err: unknown): string {
   return msg;
 }
 
+/** A card's save footer: autosave when the card passes `watch`, else the
+ *  donor's Save changes button. */
+export function SaveBar(props: SaveBarProps) {
+  return props.watch !== undefined ? <AutoSave {...props} /> : <ManualSave {...props} />;
+}
+
+type AutoState = "idle" | "saving" | "saved" | "error";
+
+/**
+ * Saves AUTOSAVE_MS after the last edit, never on mount, and once more when
+ * the page is hidden or the card unmounts with an edit still pending. One
+ * write at a time: an edit that lands mid-write queues exactly one more. A
+ * failure shows the action's own message and the next edit tries again.
+ */
+function AutoSave({ extra, onSave, disabled, watch }: SaveBarProps) {
+  const key = JSON.stringify(watch ?? null);
+  const [state, setState] = useState<AutoState>("idle");
+  const [error, setError] = useState("");
+  const saved = useRef(key); // the values last known to be on the server
+  const latest = useRef(key); // the values on screen
+  const write = useRef<SaveBarProps["onSave"]>(undefined); // the newest closure over them
+  const inFlight = useRef(false);
+  const again = useRef(false);
+  const flush = useRef<() => Promise<void>>(async () => {});
+
+  // Declared first, so the debounce below always sees this render's values.
+  useEffect(() => {
+    write.current = disabled ? undefined : onSave;
+    latest.current = key;
+  });
+
+  useEffect(() => {
+    flush.current = async () => {
+      if (inFlight.current) {
+        again.current = true;
+        return;
+      }
+      const target = latest.current;
+      const run = write.current;
+      if (!run || target === saved.current) return;
+      inFlight.current = true;
+      setState("saving");
+      setError("");
+      try {
+        await run();
+        saved.current = target;
+        setState("saved");
+      } catch (err) {
+        setState("error");
+        setError(actionError(err));
+      } finally {
+        inFlight.current = false;
+        if (again.current) {
+          again.current = false;
+          void flush.current();
+        }
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (disabled || key === saved.current) return;
+    const t = window.setTimeout(() => void flush.current(), AUTOSAVE_MS);
+    return () => window.clearTimeout(t);
+  }, [key, disabled]);
+
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === "hidden") void flush.current();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      void flush.current();
+    };
+  }, []);
+
+  const label = disabled
+    ? "View only"
+    : state === "saving"
+      ? "Saving…"
+      : state === "saved"
+        ? "Saved"
+        : state === "error"
+          ? error
+          : "Saves automatically";
+
+  return (
+    <div className="sactions sactions--auto">
+      {extra}
+      <span className="autosave" data-state={disabled ? "off" : state} role="status" aria-live="polite">
+        {state === "saved" || state === "error" ? (
+          <svg className="ic" aria-hidden="true">
+            <use href={state === "saved" ? "#i-check" : "#i-x"} />
+          </svg>
+        ) : null}
+        {label}
+      </span>
+    </div>
+  );
+}
+
 /** `.sactions` footer; a successful save flashes the `.saved.on` tag for 2200ms. */
-export function SaveBar({ extra, onSave, disabled }: SaveBarProps) {
+function ManualSave({ extra, onSave, disabled }: SaveBarProps) {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -422,6 +536,8 @@ export function SaveBar({ extra, onSave, disabled }: SaveBarProps) {
 /* ─────────────────────────────── Modal ─────────────────────────────── */
 
 export interface ModalProps {
+  /** Shown while true. When it turns false the form plays its exit, then unmounts. */
+  open: boolean;
   title: string;
   sub?: string;
   onClose: () => void;
@@ -429,63 +545,118 @@ export interface ModalProps {
   footer: ReactNode;
 }
 
+function reducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 /**
- * F11: hand-rolled animated pop-up form. No Radix, no portal — it renders
- * inside `.content` so the module's `.bp :global(.content .mask)` scoping and
- * the settings_maskIn / settings_modalIn keyframes apply.
- * Closes on Escape and on mask click, locks body scroll, takes focus on open.
+ * F11: hand-rolled animated pop-up form. No Radix.
+ *
+ * Rendered through <OverlayPortal> into the shell's overlay layer, never
+ * inside `.content`: there its mask was painted under the sidebar and the
+ * topbar, which stayed bright while the page dimmed (owner, 2026-09-26;
+ * blueprint-shell/overlay-layer.tsx has the why). `.set-layer` is the wrapper
+ * settings.module.css re-roots the form's rules and tokens on.
+ *
+ * Enters and exits animated — the exit on mdl-motion's MDL_EXIT_MS, after
+ * which it unmounts. Closes on Escape and on a mask click, locks page scroll
+ * through lib/scrollLock, takes focus on open and hands it back to whatever
+ * opened it as the close starts.
  */
-export function Modal({ title, sub, onClose, children, footer }: ModalProps) {
-  const boxRef = useRef<HTMLDivElement | null>(null);
+export function Modal({ open, ...box }: ModalProps) {
+  // Presence outlives `open` by the exit. The flip is caught while rendering
+  // (the "previous prop" pattern), so no effect has to set state to notice it.
+  const [wasOpen, setWasOpen] = useState(open);
+  const [exiting, setExiting] = useState(false);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    setExiting(!open);
+  }
 
   useEffect(() => {
+    if (!exiting) return;
+    const t = window.setTimeout(() => setExiting(false), reducedMotion() ? 0 : MDL_EXIT_MS);
+    return () => window.clearTimeout(t);
+  }, [exiting]);
+
+  if (!open && !exiting) return null;
+  return (
+    <OverlayPortal>
+      <ModalBox {...box} closing={!open} />
+    </OverlayPortal>
+  );
+}
+
+function ModalBox({
+  title,
+  sub,
+  onClose,
+  children,
+  footer,
+  closing,
+}: Omit<ModalProps, "open"> & { closing: boolean }) {
+  const boxRef = useRef<HTMLDivElement | null>(null);
+
+  // Escape closes. Disarmed during the exit — the form is already going.
+  useEffect(() => {
+    if (closing) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [closing, onClose]);
 
+  // The page must not scroll under the form. Reference-counted, so it cannot
+  // strand the page locked when it overlaps another lock.
+  useEffect(() => lockScroll(), []);
+
+  // Focus moves in on open, and back to the opener the moment the close starts
+  // — not after the exit, while it would sit on a fading, unclickable form.
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    if (closing) return;
+    const active = document.activeElement;
+    const opener = active instanceof HTMLElement && active !== document.body ? active : null;
+    const node = boxRef.current;
+    node?.focus();
     return () => {
-      document.body.style.overflow = prev;
+      const now = document.activeElement;
+      // Unless the user has already put focus somewhere else.
+      if (opener?.isConnected && (!now || now === document.body || node?.contains(now))) opener.focus();
     };
-  }, []);
-
-  useEffect(() => {
-    boxRef.current?.focus();
-  }, []);
+  }, [closing]);
 
   return (
-    <div
-      className="mask"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
+    <div className="set-layer">
       <div
-        className="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        tabIndex={-1}
-        ref={boxRef}
+        className="mask"
+        data-closing={closing ? "" : undefined}
+        onClick={(e) => {
+          if (!closing && e.target === e.currentTarget) onClose();
+        }}
       >
-        <div className="modal-h">
-          <div>
-            <div className="sc-t">{title}</div>
-            {sub ? <div className="sc-s">{sub}</div> : null}
+        <div
+          className="modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
+          tabIndex={-1}
+          ref={boxRef}
+        >
+          <div className="modal-h">
+            <div>
+              <div className="sc-t">{title}</div>
+              {sub ? <div className="sc-s">{sub}</div> : null}
+            </div>
+            <button className="modal-x" type="button" aria-label="Close" onClick={onClose}>
+              <svg className="ic">
+                <use href="#i-x" />
+              </svg>
+            </button>
           </div>
-          <button className="modal-x" type="button" aria-label="Close" onClick={onClose}>
-            <svg className="ic">
-              <use href="#i-x" />
-            </svg>
-          </button>
+          <div className="modal-b">{children}</div>
+          <div className="modal-f">{footer}</div>
         </div>
-        <div className="modal-b">{children}</div>
-        <div className="modal-f">{footer}</div>
       </div>
     </div>
   );
