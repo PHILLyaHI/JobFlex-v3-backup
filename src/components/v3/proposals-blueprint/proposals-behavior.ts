@@ -1742,11 +1742,14 @@ export function initProposalsContent(
       email.placeholder = p.clientEmail ? "" : "No email on the client record";
       email.disabled = true;
     }
+    // Only the no-email case needs a sentence (owner, 2026-09-26: the
+    // explanation of what the branded email does was noise on every send).
     const note = $("#sendNote");
     if (note) {
       note.textContent = p.clientEmail
-        ? "A branded email with the proposal link goes to this address — the one on the client record. They can view, accept and pay from the public page."
+        ? ""
         : "This client has no email on file. The proposal will be marked Sent, but no email goes out until you add an address to the client record.";
+      note.classList.toggle("is-hidden", Boolean(p.clientEmail));
     }
     setDlgError("#sendErr", null);
     setSaving($("#sendOk"), false, "", "Send proposal");
@@ -1772,6 +1775,13 @@ export function initProposalsContent(
       setSaving($("#sendOk"), false, "", "Send proposal");
       closeDlg("sendMdl");
       syncAllAfterChange(p.id);
+      // Say it went (owner, 2026-09-26) — the row's stamp alone was easy to miss.
+      showAlert(
+        p.clientEmail ? "Proposal sent" : "Marked as sent",
+        p.clientEmail
+          ? `"${p.title}" is on its way to ${p.clientEmail}.`
+          : "No email went out: this client has no email address on file. Add one to the client record, then send it again.",
+      );
     } catch (err) {
       setSaving($("#sendOk"), false, "", "Send proposal");
       // sendProposal refuses BEFORE writing when the provider fails, so the

@@ -27,10 +27,13 @@ function statusWord(s: PortalStage, accepted: boolean): string {
   return s.payable && accepted ? "Due now" : "Due";
 }
 
-function PayReturnBanner({ publicId }: { publicId: string }) {
+function PayReturnBanner({ publicId, paidInFull }: { publicId: string; paidInFull: boolean }) {
   const state = usePayReturn(publicId);
   if (state.kind === "idle") return null;
   if (state.kind === "canceled") return null;
+  // Once the proposal is PAID the decision plate above says "Paid in full —
+  // thank you."; this section does not say it a second time (owner, 2026-09-26).
+  if (paidInFull) return null;
   return (
     <div className={`pv-payret pv-payret--${state.kind}`} role="status" aria-live="polite">
       {state.kind === "processing"
@@ -78,7 +81,7 @@ export function PortalPayment({
       <h2 className="pv-sec-h">Payment schedule</h2>
       {target && <PaymentCenter model={model} initialTarget={target} method={method} onClose={() => setTarget(null)} />}
       <Suspense fallback={null}>
-        <PayReturnBanner publicId={model.publicId} />
+        <PayReturnBanner publicId={model.publicId} paidInFull={model.status === "PAID"} />
       </Suspense>
 
       <div className="pv-pay">

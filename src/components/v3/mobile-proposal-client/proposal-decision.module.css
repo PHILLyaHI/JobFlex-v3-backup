@@ -1,22 +1,75 @@
-.inline { margin-top: 20px; }
-.settled { display: flex; align-items: stretch; gap: 12px; width: 100%; }
-.confirmation { flex: 1; min-width: 0; display: flex; align-items: center; }
-.inline .confirmation > div { margin-top: 0; width: fit-content; max-width: 100%; }
-.settled .primary { flex: 0 0 auto; align-self: center; max-width: 45%; }
-.form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; width: 100%; }
-.field { display: grid; gap: 8px; flex: 1 1 220px; min-width: 0; }
-.field label { font-size: 14px; font-weight: 700; color: var(--ink); }
-.field input { width: 100%; min-height: 48px; padding: 10px 12px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet, var(--paper-deep)); color: var(--ink); font: inherit; font-size: 16px; }
-.actions { display: flex; gap: 8px; flex: 1 1 260px; }
-.inline .primary, .bar .primary, .form .primary, .form .secondary { min-height: 48px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); padding: 12px 16px; font: inherit; font-size: 14px; font-weight: 800; cursor: pointer; }
-.actions .primary { flex: 1; }
+/* The client's decision — Blueprint, like the rest of the proposal page
+   (owner, 2026-09-26): an ink-bold uppercase label, a white field in a 2px ink
+   frame, and uppercase stamp buttons in the same voice as the page's own
+   "Download PDF" and pay buttons (.pv-btn in proposal-portal.css). Class
+   selectors only, so nothing here can reach outside the component.
+
+   Every value is a token both trees and <body> resolve: the desktop portal
+   (.jf-proposal-portal), the handheld build (.jf-mobile-proposal-client) and
+   the bar, which is portalled to <body> and sees only :root.
+
+   SPECIFICITY. Both pages open with `.<root> * { margin: 0; padding: 0 }`
+   (0,1,0). Every rule here that sets a margin or a padding is therefore at
+   least (0,1,1) or (0,2,0), so the reset cannot win on stylesheet order. */
+
+div.inline { margin-top: 22px; }
+
+/* ── The form ───────────────────────────────────────────────────────────── */
+.form { display: block; width: 100%; }
+.form .label { display: block; margin: 0 0 8px; font-family: var(--font-sans); font-size: 12px; font-weight: 800; line-height: 1.2; letter-spacing: .14em; text-transform: uppercase; color: var(--ink); }
+.row { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; }
+.form .input { flex: 1 1 240px; min-width: 0; height: 50px; margin: 0; padding: 0 14px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet, var(--paper-deep)); color: var(--ink); font-family: var(--font-sans); font-size: 16px; font-weight: 600; box-shadow: none; appearance: none; }
+.form .input::placeholder { color: var(--ink-muted); font-weight: 500; opacity: 1; }
+.form .input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.form .input[aria-invalid="true"] { border-color: var(--rose); }
+.actions { display: flex; flex: 1 1 300px; gap: 10px; min-width: 0; }
+.actions .primary { flex: 1 1 auto; }
+.actions .decline { flex: 0 0 auto; }
+.form .error { margin: 8px 0 0; font-family: var(--font-sans); font-size: 13px; font-weight: 700; line-height: 1.4; color: var(--rose); }
+
+/* ── Stamp buttons ──────────────────────────────────────────────────────── */
+.form .btn, .settled .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; height: 50px; margin: 0; padding: 0 22px; border: 2px solid var(--ink); border-radius: var(--r-sm); font-family: var(--font-sans); font-size: 12px; font-weight: 800; line-height: 1; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; cursor: pointer; box-shadow: none; transition: transform 120ms var(--ease-out), box-shadow 120ms var(--ease-out), background-color 120ms var(--ease-out); }
+.btn:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+.btn:active:not(:disabled) { transform: none; box-shadow: 1px 1px 0 var(--ink); }
+.btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.btn:disabled { cursor: wait; opacity: .6; }
 .primary { background: var(--accent); color: var(--sheet, var(--paper-deep)); }
 .primary:hover:not(:disabled) { background: var(--accent-ink); }
-.form .secondary { background: var(--rose); color: var(--sheet, var(--paper-deep)); border-color: var(--rose); }
-.form .secondary:hover:not(:disabled) { background: color-mix(in srgb, var(--rose) 85%, var(--ink)); }
-.primary:disabled, .secondary:disabled { opacity: .55; cursor: wait; }
-.field input:focus-visible, .primary:focus-visible, .secondary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
-.error { color: var(--rose); font-size: 13px; line-height: 1.4; }
-.bar { position: fixed; inset: auto 0 0; z-index: 50; padding: 12px 20px max(12px, env(safe-area-inset-bottom)); background: var(--paper-deep); border-top: 2px solid var(--ink); color: var(--ink); font-family: var(--font-sans); }
-.barInner { max-width: 960px; margin-inline: auto; }
+/* Declining is the destructive answer: red, but a white plate, so it never
+   outweighs Accept beside it. */
+.form .decline { background: var(--sheet, var(--paper-deep)); color: var(--rose); border-color: var(--rose); }
+.decline:hover:not(:disabled) { box-shadow: 3px 3px 0 var(--rose); }
+.decline:active:not(:disabled) { box-shadow: 1px 1px 0 var(--rose); }
+
+/* ── Settled: the page's own confirmation plate, and Pay when it is due ── */
+.settled { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; width: 100%; }
+.confirmation { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; }
+div.inline .confirmation > div { margin-top: 0; width: fit-content; max-width: 100%; }
+.settled .primary { flex: 0 0 auto; }
+.settled .stamp { display: inline-flex; align-items: center; min-height: 50px; padding: 0 16px; border: 2px solid var(--emerald); border-radius: var(--r-sm); background: color-mix(in srgb, var(--emerald) 8%, var(--sheet, var(--paper-deep))); color: var(--emerald); font-family: var(--font-sans); font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+
+/* ── The bar ────────────────────────────────────────────────────────────
+   A framed sheet at the foot of the screen, a little wider than the proposal
+   it serves (the page's sheet is 716px; this is 780px). Always mounted, it
+   slides below the viewport edge when down; visibility follows the slide out,
+   so it is gone once it is out of sight and there at once on the way in. It
+   lives in <body>, outside both pages' own resets. */
+.bar { position: fixed; left: 50%; bottom: 0; z-index: 50; box-sizing: border-box; width: min(780px, 100%); margin: 0; padding: 14px 20px max(14px, env(safe-area-inset-bottom)); border: 2px solid var(--ink); border-bottom: 0; border-radius: var(--r-sm) var(--r-sm) 0 0; background: var(--sheet, var(--paper-deep)); color: var(--ink); font-family: var(--font-sans); line-height: normal; font-feature-settings: normal; text-rendering: auto; transform: translate(-50%, calc(100% + 4px)); visibility: hidden; transition: transform 280ms var(--ease-out), visibility 0s linear 280ms; }
+.bar[data-shown] { transform: translate(-50%, 0); visibility: visible; transition: transform 280ms var(--ease-out), visibility 0s linear 0s; }
+.bar * { box-sizing: border-box; }
+
+/* Too narrow for the sheet to show its sides: edge to edge. */
+@media (max-width: 800px) {
+  .bar { border-left: 0; border-right: 0; border-radius: 0; }
+}
+@media (max-width: 560px) {
+  .bar { padding: 12px 16px max(12px, env(safe-area-inset-bottom)); }
+  .form .input, .form .btn, .settled .btn { height: 48px; }
+  .form .btn, .settled .btn { padding: 0 16px; }
+  .settled .stamp { min-height: 48px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar, .bar[data-shown] { transition: none; }
+  .form .btn, .settled .btn { transition: none; }
+}
 @media print { .bar { display: none; } }

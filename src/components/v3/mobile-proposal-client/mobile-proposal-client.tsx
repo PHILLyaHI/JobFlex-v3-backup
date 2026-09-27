@@ -26,9 +26,12 @@ type Provider = "stripe" | "square" | "stax";
    the contractor's call, in the dashboard. */
 type Revert = { token: string; kind: "decline" };
 
-function PayReturnBanner({ publicId }: { publicId: string }) {
+function PayReturnBanner({ publicId, paidInFull }: { publicId: string; paidInFull: boolean }) {
   const state = usePayReturn(publicId);
   if (state.kind === "idle" || state.kind === "canceled") return null;
+  // Once the proposal is PAID the decision plate just below says "Paid in full
+  // — thank you."; the banner does not say it a second time (owner, 2026-09-26).
+  if (paidInFull) return null;
   return (
     <div className={`mpc-payret mpc-payret--${state.kind}`} role="status" aria-live="polite">
       {state.kind === "processing"
@@ -372,7 +375,7 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
                 the proposal settles, paying became unreachable at exactly the
                 point it starts to make sense. */}
             <Suspense fallback={null}>
-              <PayReturnBanner publicId={view.publicId} />
+              <PayReturnBanner publicId={view.publicId} paidInFull={view.status === "PAID"} />
             </Suspense>
             <ProposalDecision settled={settled} busy={busy !== null} model={pay}
               acceptedMessage={

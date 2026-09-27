@@ -1,13 +1,23 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { PortalPayModel } from "@/lib/payments/portalModel";
 import { proposalAcceptanceSchema } from "@/lib/proposalAcceptance";
 import { PaymentCenter, paymentActionLabel } from "./payment-center";
 import styles from "./proposal-decision.module.css";
 
-/** The same decision and typed name follow the reader when the inline form leaves view. */
+const noSubscription = () => () => {};
+
+/**
+ * The client's decision — typed name, Accept, Decline — inline in the intro
+ * card, and the same decision in a bar at the foot of the screen once the
+ * reader has scrolled PAST the inline form (owner, 2026-09-26). The bar used
+ * to rise whenever the form was not fully in view, so on a proposal with
+ * pictures it covered the page at the very top, before the reader had reached
+ * the decision at all. It stays mounted and slides in and out on a CSS
+ * transition; `inert` keeps it out of the tab order while it is down.
+ */
 export function ProposalDecision({ settled, busy, model, acceptedMessage, onAccept, onDecline }: {
   settled: string | null;
   busy: boolean;
@@ -18,19 +28,26 @@ export function ProposalDecision({ settled, busy, model, acceptedMessage, onAcce
 }) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
-  const [offscreen, setOffscreen] = useState(false);
+  const [past, setPast] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const anchor = useRef<HTMLDivElement>(null);
   const id = useId();
+  // The bar is portalled to <body>, which the server render does not have.
+  const isClient = useSyncExternalStore(noSubscription, () => true, () => false);
   const canPay = settled === "accepted" && model.remainingMinor > 0 && model.anyWay;
   const positive = settled === "accepted" || settled === "paid";
   const visible = !settled || positive;
   const stickyAvailable = !settled || canPay;
+  const shown = past && stickyAvailable;
 
   useEffect(() => {
     const el = anchor.current;
     if (!el || !stickyAvailable || !("IntersectionObserver" in window)) return;
-    const observer = new IntersectionObserver(([entry]) => setOffscreen(entry.intersectionRatio < 1), { threshold: 1 });
+    // PAST = wholly above the viewport. A form still below the fold has not
+    // been reached yet, so it does not raise the bar.
+    const observer = new IntersectionObserver(([entry]) => {
+      setPast(!entry.isIntersecting && entry.boundingClientRect.bottom <= (entry.rootBounds?.top ?? 0));
+    }, { threshold: 0 });
     observer.observe(el);
     return () => observer.disconnect();
   }, [stickyAvailable, settled]);
@@ -50,29 +67,34 @@ export function ProposalDecision({ settled, busy, model, acceptedMessage, onAcce
 
   function content(sticky: boolean) {
     if (positive) return <div className={styles.settled}>
-      <div className={styles.confirmation}>{sticky ? <span>Accepted — thank you.</span> : acceptedMessage}</div>
-      {canPay && <button type="button" className={styles.primary} disabled={busy} onClick={() => setPayOpen(true)} aria-haspopup="dialog">{paymentActionLabel(model)}</button>}
+      <div className={styles.confirmation}>{sticky ? <span className={styles.stamp}>✓ Accepted — thank you</span> : acceptedMessage}</div>
+      {canPay && <button type="button" className={`${styles.btn} ${styles.primary}`} disabled={busy} onClick={() => setPayOpen(true)} aria-haspopup="dialog">{paymentActionLabel(model)}</button>}
     </div>;
     const fieldId = id + (sticky ? "-sticky" : "-inline");
     return <form className={styles.form} onSubmit={submit} noValidate>
-      <div className={styles.field}>
-        <label htmlFor={fieldId}>Your full name</label>
-        <input id={fieldId} name="acceptanceName" autoComplete="name" required maxLength={120} value={name} disabled={busy}
+      <label className={styles.label} htmlFor={fieldId}>Your full name</label>
+      <div className={styles.row}>
+        <input id={fieldId} className={styles.input} name="acceptanceName" autoComplete="name" required maxLength={120} value={name} disabled={busy}
           placeholder="Type your name to accept" aria-invalid={Boolean(error)} aria-describedby={error ? fieldId + "-error" : undefined}
           onChange={(event) => { setName(event.target.value); setError(""); }} />
-        {error && <p className={styles.error} id={fieldId + "-error"} role="alert">{error}</p>}
+        <div className={styles.actions}>
+          <button type="submit" className={`${styles.btn} ${styles.primary}`} disabled={busy}>{busy ? "Accepting…" : "Accept proposal"}</button>
+          <button type="button" className={`${styles.btn} ${styles.decline}`} disabled={busy} onClick={onDecline}>Decline</button>
+        </div>
       </div>
-      <div className={styles.actions}>
-        <button type="submit" className={styles.primary} disabled={busy}>{busy ? "Saving…" : "Accept proposal"}</button>
-        <button type="button" className={styles.secondary} disabled={busy} onClick={onDecline}>Decline</button>
-      </div>
+      {error && <p className={styles.error} id={fieldId + "-error"} role="alert">{error}</p>}
     </form>;
   }
 
   if (!visible) return null;
   return <>
     <div ref={anchor} className={styles.inline}>{content(false)}</div>
-    {offscreen && stickyAvailable && createPortal(<div className={styles.bar} aria-label="Proposal actions"><div className={styles.barInner}>{content(true)}</div></div>, document.body)}
+    {isClient && stickyAvailable && createPortal(
+      <div className={styles.bar} data-shown={shown ? "" : undefined} inert={!shown} role="region" aria-label="Proposal actions">
+        {content(true)}
+      </div>,
+      document.body,
+    )}
     {payOpen && <PaymentCenter model={model} onClose={() => setPayOpen(false)} />}
   </>;
 }
