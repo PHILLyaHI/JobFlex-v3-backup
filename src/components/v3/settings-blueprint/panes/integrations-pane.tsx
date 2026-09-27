@@ -4,6 +4,7 @@ import { useState } from "react";
 import { MetaConnection } from "../meta-connection";
 import { GmailConnection } from "./gmail-connection";
 import { ProcessorSubpane } from "./processor-subpane";
+import { StaxSubpane } from "./stax-subpane";
 import {
   COMING_SOON_TAB, DEFAULT_SUBTAB, comingSoonNote, integrationSubTabs, isVisibleSubTab,
   type PaneProps, type SubTabKey,
@@ -19,8 +20,8 @@ export function IntegrationsPane({ data, sub: wanted, notice }: PaneProps) {
     setSeenWanted(wanted);
     if (wanted) setSub(wanted);
   }
-  const soon: Record<SubTabKey, boolean> = { gmail: gmail.comingSoon, meta: meta.comingSoon, stripe: stripe.comingSoon, square: square.comingSoon };
-  const names: Record<SubTabKey, string> = { gmail: "Gmail sending", meta: "Meta business", stripe: "Stripe", square: "Square" };
+  const soon: Record<SubTabKey, boolean> = { gmail: gmail.comingSoon, meta: meta.comingSoon, stripe: stripe.comingSoon, square: square.comingSoon, stax: false };
+  const names: Record<SubTabKey, string> = { gmail: "Gmail sending", meta: "Meta business", stripe: "Stripe", square: "Square", stax: "Stax" };
 
   return <>
     {soon[sub] && <div className="note note--soon" style={{ marginBottom: "14px" }}>
@@ -36,5 +37,6 @@ export function IntegrationsPane({ data, sub: wanted, notice }: PaneProps) {
     <div className={sub === "meta" ? "subpane on" : "subpane"}><MetaConnection data={meta} /></div>
     <div className={sub === "stripe" ? "subpane on" : "subpane"}><ProcessorSubpane d={stripe} conns={connections} /></div>
     <div className={sub === "square" ? "subpane on" : "subpane"}><ProcessorSubpane d={square} conns={connections} /></div>
+    <div className={sub === "stax" ? "subpane on" : "subpane"}><StaxSubpane conns={connections} /></div>
   </>;
 }

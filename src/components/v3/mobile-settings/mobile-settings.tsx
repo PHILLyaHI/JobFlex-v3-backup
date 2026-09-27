@@ -2,6 +2,7 @@
 
 import { GmailConnection } from "@/components/v3/settings-blueprint/panes/gmail-connection";
 import { ProcessorSubpane } from "@/components/v3/settings-blueprint/panes/processor-subpane";
+import { StaxSubpane } from "@/components/v3/settings-blueprint/panes/stax-subpane";
 import { MetaConnection } from "@/components/v3/settings-blueprint/meta-connection";
 
 // SETTINGS · HANDHELD — /dashboard/settings on a phone, and the standalone
@@ -961,6 +962,9 @@ function IntegrationsPane({
       <div className={sub === "square" ? "mst-subpane is-on" : "mst-subpane"}>
         <ProcessorSubpane d={square} conns={connections} mobile />
       </div>
+      <div className={sub === "stax" ? "mst-subpane is-on" : "mst-subpane"}>
+        <StaxSubpane conns={connections} mobile />
+      </div>
     </>
   );
 }
@@ -1156,7 +1160,7 @@ function NotificationsPane({ data }: { data: SettingsData }) {
 /* ═════════════════════════════ THE PAGE ═════════════════════════════ */
 
 const RAIL_KEYS = new Set<string>(RAIL_ITEMS.map((r) => r.key));
-const SUB_KEYS = new Set<string>(["gmail", "meta", "stripe", "square"]);
+const SUB_KEYS = new Set<string>(["gmail", "meta", "stripe", "square", "stax"]);
 
 const RAIL_ICON: Record<RailKey, IconName> = {
   account: "i-users",

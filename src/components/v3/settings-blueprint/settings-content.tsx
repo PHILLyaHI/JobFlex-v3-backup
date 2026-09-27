@@ -50,7 +50,7 @@ const PANE_BODIES: Record<RailKey, ComponentType<PaneProps>> = {
 };
 
 const RAIL_KEYS = new Set<string>(RAIL_ITEMS.map((r) => r.key));
-const SUB_KEYS = new Set<string>(["gmail", "meta", "stripe", "square"]);
+const SUB_KEYS = new Set<string>(["gmail", "meta", "stripe", "square", "stax"]);
 
 export function SettingsContent({
   data,

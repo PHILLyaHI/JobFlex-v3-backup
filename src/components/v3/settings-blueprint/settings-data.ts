@@ -541,7 +541,7 @@ export const BILLING_CONTACT_LABELS = { billingEmail: 'Billing email' } as const
 /* Integrations pane — subtabs                                         */
 /* ------------------------------------------------------------------ */
 
-export type SubTabKey = 'gmail' | 'meta' | 'stripe' | 'square';
+export type SubTabKey = 'gmail' | 'meta' | 'stripe' | 'square' | 'stax';
 
 export interface SubTab {
   readonly key: SubTabKey;
@@ -567,6 +567,7 @@ export const INTEGRATION_SUBTABS: readonly SubTab[] = [
   { key: 'meta', label: 'Meta business' },
   { key: 'stripe', label: 'Stripe' },
   { key: 'square', label: 'Square' },
+  { key: 'stax', label: 'Stax' },
 ];
 
 /** Add Gmail for viewers who can use or reconnect it. */
