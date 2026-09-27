@@ -26,11 +26,9 @@
 }
 .jf-lp .lp-compare-mobile .lp-compare-more:focus-visible { outline: 3px solid var(--accent, #1854a0); outline-offset: -3px; }
 
-/* Owner, 2026-09-27: a narrower comparison card on the desk, and on a phone
-   the heading stands alone — the intro line under it goes. */
+/* Owner, 2026-09-27: a narrower comparison card on the desk. */
 @media (min-width: 769px) {
   .jf-lp .lp-cmp-body > .lp-compare-plate { max-width: 960px; }
 }
-@media (max-width: 768px) {
-  .jf-lp .lp-compare-heading .lp-compare-intro { display: none; }
-}
+/* The heading opens the section now (no eyebrow, no intro line). */
+.jf-lp .lp-compare-heading > h2:first-child { margin-top: 0; }
