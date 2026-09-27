@@ -778,18 +778,21 @@
 
 .bp :global(.content .card--table) { padding: 0; overflow: hidden; }
 .bp :global(.content .ptable) { width: 100%; border-collapse: collapse; }
+/* Column names in full ink, a size up (owner, 2026-09-26): they were a pale
+   10px grey the eye slid past. */
 .bp :global(.content .ptable th) {
   font-family: var(--font-mono);
-  font-size: 10px; font-weight: 600;
-  letter-spacing: 0.14em; text-transform: uppercase;
-  color: var(--muted-light);
+  font-size: 12px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink);
   text-align: left;
   padding: 13px 16px;
   border-bottom: 2px solid var(--ink);
   white-space: nowrap;
 }
 .bp :global(.content .ptable th.num), .bp :global(.content .ptable td.num) { text-align: right; }
-.bp :global(.content .ptable th.th-open) { width: 124px; }
+/* Only the delete button lives here now: the column shrinks to it. */
+.bp :global(.content .ptable th.th-open) { width: 1%; }
 /* A lead row opens the lead (2026-09-22): the scope, the homeowner's words
    and the estimator buttons live on its page. The excerpt under the project
    is the first line of the scope. */
@@ -1808,27 +1811,13 @@
 
 /* ── A LEAD ROW IS THE WAY IN (owner, 2026-09-25) ──────────────────────────
    No arrow button: on hover the row tints (above), a blueprint edge rules its
-   left side, the name reads as the link it is, and "Open" appears where the
-   arrow was. The name is a real link, so the keyboard shows the same cues. */
+   left side and the name reads as the link it is. The name is a real link, so
+   the keyboard shows the same cues. The "Open" hint that used to appear by the
+   delete button is gone with the gap it held open (owner, 2026-09-26). */
 .bp :global(.content .ptable tbody tr.prow--link:hover td:first-child),
 .bp :global(.content .ptable tbody tr.prow--link:has(a.pt-link:focus-visible) td:first-child) { box-shadow: inset 3px 0 0 var(--blueprint); }
 .bp :global(.content .cname a.pt-link) { color: var(--ink); text-decoration: none; }
 .bp :global(.content .ptable tbody tr.prow--link:hover .cname a.pt-link),
 .bp :global(.content .cname a.pt-link:focus-visible) { color: var(--blueprint); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 2px; }
 .bp :global(.content .cname a.pt-link:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
-.bp :global(.content .lopen-hint) {
-  display: inline-flex; align-items: center; gap: 3px;
-  margin-right: 10px; vertical-align: middle;
-  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
-  letter-spacing: 0.14em; text-transform: uppercase;
-  color: var(--blueprint);
-  opacity: 0; transform: translateX(-4px);
-  transition: opacity 0.15s var(--ease), transform 0.15s var(--ease);
-}
-.bp :global(.content .lopen-hint .ic) { width: 12px; height: 12px; transform: rotate(-90deg); }
 .bp :global(.content .ptable tbody tr.prow--link td.num) { white-space: nowrap; }
-.bp :global(.content .ptable tbody tr.prow--link:hover .lopen-hint),
-.bp :global(.content .ptable tbody tr.prow--link:has(a.pt-link:focus-visible) .lopen-hint) { opacity: 1; transform: none; }
-@media (prefers-reduced-motion: reduce) {
-  .bp :global(.content .lopen-hint) { transition: none; transform: none; }
-}

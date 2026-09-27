@@ -502,8 +502,9 @@ export function initLeadsContent(
             l.age +
             "</span></td>" +
             // No arrow button (owner, 2026-09-25): the whole row opens the
-            // lead, and says so on hover.
-            '<td class="num"><span class="lopen-hint" aria-hidden="true">Open<svg class="ic"><use href="#i-chev"/></svg></span>' +
+            // lead. Only the delete button here — no "Open" hint beside it,
+            // and no gap held open for one (owner, 2026-09-26).
+            '<td class="num">' +
             '<button class="pt-open" type="button" data-act="ask-delete" aria-label="Delete ' +
             esc(l.name) +
             '"><svg class="ic"><use href="#i-trash"/></svg></button></td>' +

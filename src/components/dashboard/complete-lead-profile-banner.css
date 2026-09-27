@@ -3,7 +3,12 @@
    handheld Leads read identically to Overview. Tokens come from the page's
    blueprint scope; the fallbacks are those same token values for a mount
    outside one. Selectors are root-scoped so the page scope's `.bp a`,
-   `.bp button` and `.bp *` resets (one class + one element) never win. */
+   `.bp button` and `.bp *` resets (one class + one element) never win.
+   The desktop Leads page resets harder — margin and padding to 0 on every
+   element under `.bp .content`, two classes — which stripped the plate of its
+   padding (owner, 2026-09-26). So padding and the inner margins are set from
+   `div.jf-lead-nudge` plus a second class, out of that reset's reach; the
+   outer margin stays one class, for that reset and the handheld slot to set. */
 div.jf-lead-nudge {
   display: flex;
   align-items: center;
@@ -14,8 +19,10 @@ div.jf-lead-nudge {
   border-radius: var(--radius, 2px);
   background: linear-gradient(var(--warning-soft, rgba(184, 132, 32, 0.08)), var(--warning-soft, rgba(184, 132, 32, 0.08))),
     var(--paper, #f2f0eb);
-  padding: 14px 18px;
   transition: opacity 0.2s ease, transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+div.jf-lead-nudge.jf-lead-nudge {
+  padding: 14px 18px;
 }
 div.jf-lead-nudge.is-closing {
   opacity: 0;
@@ -30,7 +37,7 @@ div.jf-lead-nudge.is-closing {
 .jf-lead-nudge .jf-lead-nudge-body {
   min-width: 0;
 }
-.jf-lead-nudge .jf-lead-nudge-kicker {
+div.jf-lead-nudge .jf-lead-nudge-kicker {
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.2em;
@@ -44,7 +51,9 @@ div.jf-lead-nudge.is-closing {
   line-height: 1.45;
   color: var(--ink-soft, #2a2a2a);
 }
-.jf-lead-nudge .jf-lead-nudge-link {
+/* `a` in the selector: the Leads page's `.bp .content a` reset (two classes
+   and an element) otherwise wins and the link loses its amber underline. */
+div.jf-lead-nudge a.jf-lead-nudge-link {
   font-weight: 700;
   color: var(--warning-dark, #96691a);
   text-decoration: underline;
@@ -52,12 +61,12 @@ div.jf-lead-nudge.is-closing {
   text-decoration-thickness: 1.5px;
   transition: color 0.15s;
 }
-.jf-lead-nudge .jf-lead-nudge-link:hover {
+div.jf-lead-nudge a.jf-lead-nudge-link:hover {
   color: var(--warning, #b88420);
 }
 /* 44px hit area (handheld Leads mounts this too); the drawn box is the
    Overview's borderless square that rules in ink on hover. */
-.jf-lead-nudge .jf-lead-nudge-close {
+div.jf-lead-nudge .jf-lead-nudge-close {
   margin-left: auto;
   width: 44px;
   height: 44px;
