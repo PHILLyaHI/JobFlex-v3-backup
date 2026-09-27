@@ -3,15 +3,18 @@
 import { useState } from "react";
 import type { LandingVariantKey } from "./landing-variants";
 import { Reveal } from "./reveal";
+import "./pricing-faq.css";
 
-/* Six questions as a spec sheet (CRO stage 2, 2026-09-09): mono numbers
-   01–06 on hairline rows, the same lettering as the proposal table. The
-   fourth row is the trade's: the roofing and fencing heroes promise a
-   measurement, so they get "where do the figures come from" (aerial data,
-   never a provider's name); every other trade gets how a description is
-   priced. Static markup, no state. Type floors (2026-09-10): the numbers
-   11 px mono caps, the answers 15 px, slate-600 so both clear 4.5:1 on the
-   paper ground (slate-500 on paper is 4.47). */
+/* Six questions (CRO stage 2, 2026-09-09). The fourth is the trade's: the
+   roofing and fencing heroes promise a measurement, so they get "where do
+   the figures come from" (aerial data, never a provider's name); every other
+   trade gets how a description is priced.
+   FAQ CARDS (owner, 2026-09-26): Blueprint cards — white, 2px ink frame, hard
+   ink offset — that show only the question. Hover (or keyboard focus) turns
+   the card to ink with the answer in white; with no hover (a phone) a tap
+   toggles it. The question layer and the answer layer share ONE grid cell,
+   so the card is always as tall as its answer and nothing moves when it
+   opens (pricing-faq.css, .lp-faq-*). */
 type Faq = { q: string; a: string };
 
 const DATA_Q: Record<"roofing" | "fencing" | "other", Faq> = {
@@ -58,10 +61,9 @@ function questions(variant: LandingVariantKey | undefined): Faq[] {
 
 export function LandingFaq({ variant, registerHref = "/auth/register", cta = "Start my free trial" }: { variant?: LandingVariantKey; registerHref?: string; cta?: string }) {
   const items = questions(variant);
-  /* On a phone the questions fold (owner, 2026-09-14): all closed on load,
-     each opens on its own and stays open while another is opened, a mono
-     + / − at the right. From 768 px the sheet is the spec sheet it was —
-     every answer open, the toggle inert and its mark hidden. */
+  /* Opened by a click, a tap, Enter or Space; each card on its own. Hover and
+     keyboard focus only SHOW the answer (CSS); this set is what aria-expanded
+     reports and what keeps an answer up on a touch screen. */
   const [open, setOpen] = useState<Set<number>>(() => new Set());
   const toggle = (i: number) =>
     setOpen((prev) => {
@@ -74,47 +76,47 @@ export function LandingFaq({ variant, registerHref = "/auth/register", cta = "St
     <section id="faq" className="relative overflow-hidden bg-lp-paper px-5 py-[8vmin] sm:px-6">
       <div className="mx-auto lp-wrap">
         <Reveal>
-          <h2 className="lp-eyebrow text-[#555555]">Questions</h2>
-          <p className="mt-6 max-w-[44rem] text-[clamp(26px,2.8vw,40px)] font-bold leading-[1.2] tracking-[-0.015em] text-ink">
-            The six things every shop asks first.
-          </p>
+          <h2 className="lp-sec-title">FAQ</h2>
+          <p className="lp-sec-lede">The six things every shop asks first.</p>
         </Reveal>
-        <Reveal delay={120} className="mt-10">
-          <dl className="border-t-[1.5px] border-lp-ink">
+        <Reveal delay={120} className="mt-9 sm:mt-11">
+          <div className="lp-faq-grid">
             {items.map((item, i) => {
               const isOpen = open.has(i);
               return (
-                <div
-                  key={item.q}
-                  className="grid grid-cols-[44px_minmax(0,1fr)] gap-x-4 border-b border-black/10 py-5 md:grid-cols-[64px_minmax(0,22rem)_minmax(0,1fr)] md:gap-x-8"
-                >
-                  <span className="pt-[3px] font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[#555555] lg:text-[12px]">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <dt className="text-[16px] font-bold leading-[1.35] tracking-[-0.01em] text-ink sm:text-[17px]">
-                    <button
-                      type="button"
-                      className="flex w-full items-start justify-between gap-4 text-left md:pointer-events-none"
-                      aria-expanded={isOpen}
-                      aria-controls={`faq-a-${i}`}
-                      onClick={() => toggle(i)}
-                    >
-                      <span>{item.q}</span>
-                      <span className="mt-[1px] shrink-0 font-mono text-[16px] font-bold leading-none text-[#555555] md:hidden" aria-hidden>
-                        {isOpen ? "\u2212" : "+"}
+                <div key={item.q} className={"lp-faq-card" + (isOpen ? " is-open" : "")}>
+                  <button
+                    type="button"
+                    id={`faq-q-${i}`}
+                    className="lp-faq-q"
+                    aria-expanded={isOpen}
+                    aria-controls={`faq-a-${i}`}
+                    onClick={() => toggle(i)}
+                  >
+                    <span className="lp-faq-q-text">{item.q}</span>
+                    <span className="lp-faq-hint" aria-hidden>
+                      <span className="lp-faq-mark">
+                        <svg viewBox="0 0 24 24">
+                          <path d="M12 5v14M5 12h14" />
+                        </svg>
                       </span>
-                    </button>
-                  </dt>
-                  <dd id={`faq-a-${i}`} className={`col-start-2 mt-2 text-[15px] leading-[1.6] text-[#555555] md:col-start-3 md:mt-0 ${isOpen ? "block" : "hidden md:block"}`}>
-                    {item.a}
-                  </dd>
+                      <span className="lp-faq-hint-hover">Hover for the answer</span>
+                      <span className="lp-faq-hint-tap">Tap for the answer</span>
+                    </span>
+                  </button>
+                  <div id={`faq-a-${i}`} className="lp-faq-a" aria-hidden={!isOpen}>
+                    <p className="lp-faq-a-q" aria-hidden>
+                      {item.q}
+                    </p>
+                    <p className="lp-faq-a-text">{item.a}</p>
+                  </div>
                 </div>
               );
             })}
-          </dl>
+          </div>
         </Reveal>
         {/* The section's CTA (pass B). */}
-        <Reveal delay={160} className="mt-10">
+        <Reveal delay={160} className="mt-10 sm:mt-12">
           <a href={registerHref} className="lp-btn-lime w-full sm:w-auto" data-cta="faq">
             {cta}
             <span aria-hidden>→</span>

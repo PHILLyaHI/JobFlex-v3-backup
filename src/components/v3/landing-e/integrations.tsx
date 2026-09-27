@@ -2,101 +2,41 @@
 
 import { useEffect, useRef } from "react";
 import { loadGsap } from "./gsap-lazy";
-import { IntegrationsMobile } from "./integrations-mobile";
+import { BRAND_TILE, BrandMark, BrandSprite, IntegrationsMobile, type Brand } from "./integrations-mobile";
 import { Reveal } from "./reveal";
+import { REGISTER } from "./routes";
 
-const TILE = "float-tile flex items-center justify-center lp-int-tile bg-white shadow-lp-tile ring-1 ring-lp-blue/25";
+const TILE = "float-tile absolute flex items-center justify-center lp-int-tile shadow-lp-tile ring-1 ring-lp-blue/25";
+
+/* The five real integrations (owner, 2026-09-26), three on one side of the
+   headline and two on the other, sized and spaced so both sides weigh alike. */
+const SPOTS: Record<"left" | "right", { name: Brand; size: number; mark: number; pos: React.CSSProperties }[]> = {
+  left: [
+    { name: "stripe", size: 88, mark: 44, pos: { left: "6%", top: "12%" } },
+    { name: "meta", size: 76, mark: 40, pos: { left: "44%", top: "36%" } },
+    { name: "stax", size: 80, mark: 44, pos: { left: "14%", top: "66%" } },
+  ],
+  right: [
+    { name: "square", size: 84, mark: 42, pos: { right: "10%", top: "18%" } },
+    { name: "gmail", size: 88, mark: 46, pos: { right: "34%", top: "58%" } },
+  ],
+};
 
 function Tiles({ side }: { side: "left" | "right" }) {
-  const L = side === "left";
   return (
-    <div className="pointer-events-auto absolute inset-y-0 hidden w-[30%] lg:block" style={L ? { left: 0 } : { right: 0 }}>
-      {/* payments */}
-      <span className={`${TILE} absolute h-20 w-20`} style={L ? { left: "2%", top: "18%" } : { right: "4%", top: "6%" }}>
-        {L ? (
-          <span className="flex h-full w-full items-center justify-center lp-int-tile bg-indigo-500 text-[34px] font-bold italic text-white">S</span>
-        ) : (
-          <svg viewBox="0 0 40 40" className="h-9 w-9 text-ink" aria-hidden>
-            <rect x="6" y="6" width="28" height="28" rx="7" fill="currentColor" />
-            <rect x="15" y="15" width="10" height="10" rx="3" fill="#fff" />
-          </svg>
-        )}
-      </span>
-      {/* comms */}
-      <span className={`${TILE} absolute h-[72px] w-[72px]`} style={L ? { left: "38%", top: "4%" } : { right: "40%", top: "26%" }}>
-        {L ? (
-          <span className="flex h-full w-full items-center justify-center lp-int-tile bg-[#f22f46]">
-            <svg viewBox="0 0 32 32" className="h-8 w-8" aria-hidden>
-              <circle cx="16" cy="16" r="11" fill="none" stroke="#fff" strokeWidth="3.5" />
-              <circle cx="12.5" cy="12.5" r="2.4" fill="#fff" />
-              <circle cx="19.5" cy="12.5" r="2.4" fill="#fff" />
-              <circle cx="12.5" cy="19.5" r="2.4" fill="#fff" />
-              <circle cx="19.5" cy="19.5" r="2.4" fill="#fff" />
-            </svg>
+    <div className="pointer-events-auto absolute inset-y-0 hidden w-[30%] lg:block" style={side === "left" ? { left: 0 } : { right: 0 }}>
+      {SPOTS[side].map((s) => (
+        <span key={s.name} className={`${TILE} ${BRAND_TILE[s.name]}`} style={{ ...s.pos, width: s.size, height: s.size }}>
+          <span className="block" style={{ width: s.mark, height: s.mark }}>
+            <BrandMark name={s.name} className="block h-full w-full" />
           </span>
-        ) : (
-          <svg viewBox="0 0 40 40" className="h-9 w-9" aria-hidden>
-            <rect x="5" y="9" width="30" height="22" rx="4" fill="#e2e8f0" />
-            <path d="M5 13l15 10 15-10" fill="none" stroke="#64748b" strokeWidth="2.5" />
-            <path d="M5 12a3 3 0 013-3h24a3 3 0 013 3l-15 10L5 12z" fill="#ef4444" />
-          </svg>
-        )}
-      </span>
-      {/* money / files */}
-      <span className={`${TILE} absolute h-[84px] w-[84px]`} style={L ? { left: "12%", top: "52%" } : { right: "14%", top: "48%" }}>
-        {L ? (
-          <span className="flex h-full w-full items-center justify-center lp-int-tile bg-[#0070e0] text-[30px] font-black text-white">P</span>
-        ) : (
-          <span className="flex h-full w-full items-center justify-center lp-int-tile bg-[#2ca01c] text-[26px] font-black text-white">qb</span>
-        )}
-      </span>
-      {/* calendar / sheets */}
-      <span className={`${TILE} absolute h-16 w-16`} style={L ? { left: "52%", top: "40%" } : { right: "52%", top: "66%" }}>
-        {L ? (
-          <span className="flex h-full w-full flex-col overflow-hidden lp-int-tile">
-            <span className="bg-[#1a73e8] py-1 text-center text-[8px] font-bold uppercase text-white">Jul</span>
-            <span className="flex flex-1 items-center justify-center bg-white text-[22px] font-bold text-ink">14</span>
-          </span>
-        ) : (
-          <svg viewBox="0 0 40 40" className="h-8 w-8" aria-hidden>
-            <rect x="8" y="5" width="24" height="30" rx="3" fill="#188038" />
-            <path d="M13 14h14M13 20h14M13 26h14M20 11v18" stroke="#fff" strokeWidth="1.8" />
-          </svg>
-        )}
-      </span>
-      {/* zap / camera */}
-      <span className={`${TILE} absolute h-[70px] w-[70px]`} style={L ? { left: "30%", top: "76%" } : { right: "2%", top: "80%" }}>
-        {L ? (
-          <span className="flex h-full w-full items-center justify-center lp-int-tile bg-[#ff4f00]">
-            <svg viewBox="0 0 24 24" className="h-7 w-7 text-white" aria-hidden>
-              <path d="M13 2L4.5 13.5H11L10 22l8.5-11.5H12L13 2z" fill="currentColor" />
-            </svg>
-          </span>
-        ) : (
-          <svg viewBox="0 0 40 40" className="h-8 w-8 text-sky-500" aria-hidden>
-            <rect x="4" y="11" width="32" height="22" rx="4" fill="currentColor" />
-            <path d="M14 11l3-4h6l3 4" fill="none" stroke="currentColor" strokeWidth="2.5" />
-            <circle cx="20" cy="22" r="6" fill="#fff" />
-            <circle cx="20" cy="22" r="3" fill="currentColor" />
-          </svg>
-        )}
-      </span>
-      {/* mail brand / bank */}
-      <span className={`${TILE} absolute h-14 w-14`} style={L ? { left: "62%", top: "72%" } : { right: "34%", top: "0%" }}>
-        {L ? (
-          <span className="text-[24px] font-black tracking-tight text-ink">R</span>
-        ) : (
-          <svg viewBox="0 0 40 40" className="h-8 w-8 text-[#555555]" aria-hidden>
-            <path d="M6 16L20 7l14 9" fill="none" stroke="currentColor" strokeWidth="2.5" />
-            <path d="M9 18v12M16 18v12M24 18v12M31 18v12M5 32h30" stroke="currentColor" strokeWidth="2.5" />
-          </svg>
-        )}
-      </span>
+        </span>
+      ))}
     </div>
   );
 }
 
-export function Integrations() {
+export function Integrations({ registerHref = REGISTER }: { registerHref?: string }) {
   const fieldRef = useRef<HTMLDivElement>(null);
 
   // Cursor repulsion: tiles drift away from an approaching pointer, then settle back
@@ -154,21 +94,21 @@ export function Integrations() {
   return (
     <section id="integrations" className="relative flex flex-col items-center bg-white px-5 pb-[10vmin] pt-[6vmin] max-sm:pb-[18vmin] max-sm:pt-[12vmin] sm:px-6 lg:pt-[4vmin]">
       <div ref={fieldRef} className="relative mx-auto w-full max-w-[92rem]">
+        <BrandSprite />
         <Tiles side="left" />
         <Tiles side="right" />
         <Reveal>
-          <IntegrationsMobile />
+          <IntegrationsMobile registerHref={registerHref} />
           <div className="mx-auto hidden max-w-[36rem] flex-col items-center justify-center text-center lg:flex lg:min-h-[420px]">
             <h2 className="lp-eyebrow text-[#666666]">Integrations</h2>
-            <p className="mt-4 text-[clamp(30px,3vw,42px)] font-bold tracking-[-0.015em] text-ink">
-              Works with your back office.
+            <p className="mt-4 text-[clamp(30px,3vw,42px)] font-bold leading-[1.15] tracking-[-0.015em] text-ink">
+              Integrate your apps&rsquo; data into JobFlex.
             </p>
             <p className="mt-5 text-[19px] leading-[1.55] text-[#555555]">
-              Payments, texting, email, calendar and books — already connected.
+              Payments through Stripe, Square or Stax. Leads from Meta. Email from your own Gmail.
             </p>
-            {/* A link to the tiles, not a register button (pass B). */}
-            <a href="#integrations" className="mt-7 inline-flex items-center gap-2 text-[16px] font-semibold text-lp-blue underline underline-offset-4 hover:text-lp-blueDark" data-cta="integrations">
-              Browse integrations
+            <a href={registerHref} className="lp-btn-lime mt-8" data-cta="integrations">
+              Connect your app to JobFlex
               <span aria-hidden>→</span>
             </a>
           </div>

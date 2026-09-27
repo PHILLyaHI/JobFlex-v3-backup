@@ -15,31 +15,45 @@ const KITCHEN: PortalContent = {
   totalUpgraded: "$28,500",
 };
 
-export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) {
+/* Who signs the tap-to-approve box. The built-in kitchen is M. Nguyen; a
+   trade group's portal carries no client field (landing-groups.ts), so the
+   page may hand one in (`client`) and otherwise the surname that opens the
+   job title is written — never an invented initial. */
+const KITCHEN_CLIENT = "M. Nguyen";
+function signerFor(portal: PortalContent, client?: string) {
+  if (client) return client;
+  if (portal.title === KITCHEN.title) return KITCHEN_CLIENT;
+  return portal.title.split(/\s+/)[0] ?? "";
+}
+
+export function PortalSection({ portal = KITCHEN, client }: { portal?: PortalContent; client?: string }) {
   const { ref, inView } = useInView<HTMLDivElement>(0.3);
-  // 0 idle · 1 upgrade picked · 2 signing · 3 signed
+  // 0 idle · 1 upgrade picked · 2 tapped — the name writes in · 3 accepted
   const [step, setStep] = useState(0);
+  const signer = signerFor(portal, client);
 
   useEffect(() => {
     if (!inView) return;
-    let alive = true;
+    // Reduced motion gets the outcome: picked, signed, accepted — no loop.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const id = requestAnimationFrame(() => setStep(3));
+      return () => cancelAnimationFrame(id);
+    }
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
     const run = () => {
-      if (!alive) return;
       setStep(1);
-      setTimeout(() => alive && setStep(2), 1300);
-      setTimeout(() => alive && setStep(3), 3100);
-      setTimeout(() => alive && setStep(0), 5600);
+      at(1400, () => setStep(2));
+      at(3300, () => setStep(3));
+      at(6200, () => setStep(0));
+      at(7400, run);
     };
-    const t0 = setTimeout(run, 900);
-    const t = setInterval(run, 6800);
-    return () => {
-      alive = false;
-      clearTimeout(t0);
-      clearInterval(t);
-    };
+    at(900, run);
+    return () => timers.forEach(clearTimeout);
   }, [inView]);
 
   const upgraded = step >= 1;
+  const signed = step >= 2;
 
   return (
     // THE BLUEPRINT SHEET (owner, 2026-09-10): flat blueprint blue under the
@@ -63,7 +77,9 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
                   2026-08-25). */}
               <div className="lp-portal-mock w-full max-w-[360px] rounded-[12px] bg-white p-5 sm:max-w-[330px] sm:rounded-[10px] sm:p-6">
                 <div className="text-center">
-                  <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-lp-blue/10">
+                  {/* A 2 px blueprint ring (owner, 2026-09-26): without it the
+                      pale disc melted into the white card. */}
+                  <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full border-2 border-lp-blue bg-lp-blue/10">
                     {/* A tick, not a pen. The pen said "sign this" over a flow
                         that records an online approval and no signature. */}
                     <svg viewBox="0 0 20 20" className="h-5 w-5 text-lp-blue" aria-hidden>
@@ -126,28 +142,44 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
                   </span>
                 </div>
 
-                {/* Approval */}
-                <div className="relative mt-4 h-[74px] rounded-lg border border-dashed border-slate-300 bg-slate-50">
-                  <span className="absolute left-3 top-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[#666666]">
-                    Tap to approve
+                {/* Tap to approve (owner, 2026-09-26). The dashed box is the
+                    signature: the client taps it and their name is written in
+                    — a tick, then the name in a hand-set serif italic, as the
+                    change order signs. There is no separate name field. */}
+                <div
+                  className={`relative mt-4 h-[74px] overflow-hidden rounded-lg border border-dashed transition-colors duration-300 ${
+                    signed ? "border-lp-blue bg-lp-blue/[0.04]" : "border-slate-400 bg-slate-50"
+                  }`}
+                >
+                  <span className="absolute left-3 top-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[#555555]">
+                    {signed ? "Approved by" : "Tap to approve"}
                   </span>
-                  <svg viewBox="0 0 260 60" className="absolute inset-0 h-full w-full" aria-hidden>
-                    <path
-                      d="M108 28 l14 14 l40 -28"
-                      fill="none"
-                      stroke="#0a0a0a"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      pathLength={1}
-                      strokeDasharray={1}
-                      strokeDashoffset={step >= 2 ? 0 : 1}
+                  {step === 2 && <span className="lp-tap-ring" aria-hidden />}
+                  <div className="absolute inset-x-3 bottom-2.5 flex items-center justify-center gap-2.5">
+                    <svg viewBox="0 0 24 24" className="h-6 w-6 shrink-0" aria-hidden>
+                      <path
+                        d="M4 12.5l5 5L20 6"
+                        fill="none"
+                        stroke="#1854A0"
+                        strokeWidth="2.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        pathLength={1}
+                        strokeDasharray={1}
+                        strokeDashoffset={signed ? 0 : 1}
+                        style={{ transition: signed ? "stroke-dashoffset .45s cubic-bezier(.4,0,.2,1) .15s" : "none" }}
+                      />
+                    </svg>
+                    <span
+                      className="whitespace-nowrap font-serif text-[27px] italic leading-none text-ink"
                       style={{
-                        transition: step >= 2 ? "stroke-dashoffset 1.5s ease-in-out" : "none",
-                        opacity: step >= 2 ? 1 : 0,
+                        clipPath: signed ? "inset(-10% -4% -30% 0)" : "inset(-10% 100% -30% 0)",
+                        transition: signed ? "clip-path 1s cubic-bezier(.45,.05,.55,.95) .55s" : "none",
                       }}
-                    />
-                  </svg>
+                    >
+                      {signer}
+                    </span>
+                  </div>
                 </div>
 
                 {/* CTA */}
@@ -161,10 +193,10 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
                       <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
                         <path d="M3 8.5l3.2 3L13 5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
-                      Approved — deposit paid
+                      Accepted — deposit paid
                     </>
                   ) : (
-                    "Approve online"
+                    "Accept proposal"
                   )}
                 </div>
               </div>
@@ -172,7 +204,7 @@ export function PortalSection({ portal = KITCHEN }: { portal?: PortalContent }) 
               {/* approved-doc badge */}
               {step === 3 && (
                 <span
-                  className="lp-portal-mock absolute right-[14%] top-[12%] flex h-12 w-12 items-center justify-center rounded-2xl bg-white"
+                  className="lp-portal-mock absolute right-[14%] top-[12%] max-sm:right-0 max-sm:top-0 flex h-12 w-12 items-center justify-center rounded-2xl bg-white"
                   style={{ animation: "envelope-pop .5s cubic-bezier(.2,.6,.2,1)" }}
                 >
                   <svg viewBox="0 0 24 24" className="h-6 w-6 text-ink" aria-hidden>

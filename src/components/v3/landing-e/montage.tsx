@@ -41,7 +41,7 @@ function DocRows({ rows }: { rows: [string, string][] }) {
     <div className="space-y-[7px]">
       {rows.map(([l, r]) => (
         <div key={l} className="flex items-center justify-between text-[10.5px]">
-          <span className="text-[#666666]">{l}</span>
+          <span className="text-[color:var(--mt-mute,#666666)]">{l}</span>
           <span className="font-semibold text-ink">{r}</span>
         </div>
       ))}
@@ -57,7 +57,7 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
     node: (
       <div className="p-4">
         <div className="text-[11px] font-bold text-ink">Estimate #E-2214</div>
-        <div className="text-[9.5px] text-[#6a6a6a]">Ortiz hall bath · Standard tier</div>
+        <div className="text-[9.5px] text-[color:var(--mt-mute,#6a6a6a)]">Ortiz hall bath · Standard tier</div>
         <div className="mt-3">
           <DocRows
             rows={[
@@ -70,7 +70,7 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
           />
         </div>
         <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5">
-          <span className="text-[10px] text-[#6a6a6a]">Total</span>
+          <span className="text-[10px] text-[color:var(--mt-mute,#6a6a6a)]">Total</span>
           <span className="text-[13px] font-bold text-ink">$11,400</span>
         </div>
       </div>
@@ -111,7 +111,7 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
             ["FRI", "Punch list + walkthrough", "bg-emerald-100 text-emerald-700"],
           ].map(([d, t, c]) => (
             <div key={d} className="flex items-center gap-2">
-              <span className="w-7 text-[9px] font-bold text-[#6a6a6a]">{d}</span>
+              <span className="w-7 text-[9px] font-bold text-[color:var(--mt-mute,#6a6a6a)]">{d}</span>
               <span className={`flex-1 rounded px-2 py-[5px] text-[10px] font-medium ${c}`}>{t}</span>
             </div>
           ))}
@@ -129,10 +129,17 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
         <div className="bg-gradient-to-b from-[#e3edfb] to-[#c3d8f2] p-4">
           <div className="rounded-lg bg-white p-3.5 shadow-sm">
             <div className="text-[11px] font-bold text-ink">Review &amp; approve</div>
-            <div className="mt-1 text-[9.5px] text-[#6a6a6a]">Deck rebuild — $16,900</div>
-            <div className="mt-2.5 h-8 rounded border border-dashed border-slate-300 bg-slate-50" />
+            <div className="mt-1 text-[9.5px] text-[color:var(--mt-mute,#6a6a6a)]">Deck rebuild — $16,900</div>
+            {/* Tap to approve, as the portal section plays it (owner,
+                2026-09-26): the dashed box is where the client taps and
+                their name is written; the button accepts. */}
+            <div className="relative mt-2.5 h-9 rounded border border-dashed border-slate-400 bg-slate-50">
+              <span className="absolute left-2 top-1.5 font-mono text-[8px] font-bold uppercase tracking-[0.14em] text-[color:var(--mt-mute,#555555)]">
+                Tap to approve
+              </span>
+            </div>
             <div className="mt-2 rounded bg-lp-base py-1.5 text-center text-[10px] font-semibold text-white">
-              Approve online
+              Accept proposal
             </div>
           </div>
         </div>
@@ -160,7 +167,7 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
             Perfect, thank you!
           </div>
         </div>
-        <div className="mt-2.5 text-[9px] text-slate-300">via SMS · logged to job</div>
+        <div className="mt-2.5 text-[9px] text-[color:var(--mt-faint,#cbd5e1)]">via SMS · logged to job</div>
       </div>
     ),
   },
@@ -175,9 +182,9 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
             PAID
           </span>
         </div>
-        <div className="mt-1 text-[9.5px] text-[#6a6a6a]">Progress draw 2 of 3</div>
+        <div className="mt-1 text-[9.5px] text-[color:var(--mt-mute,#6a6a6a)]">Progress draw 2 of 3</div>
         <div className="mt-3 text-[22px] font-bold tracking-tight text-ink">$6,400</div>
-        <div className="mt-2 text-[9.5px] text-[#6a6a6a]">Paid by card · 2 hrs after sending</div>
+        <div className="mt-2 text-[9.5px] text-[color:var(--mt-mute,#6a6a6a)]">Paid by card · 2 hrs after sending</div>
       </div>
     ),
   },
@@ -205,7 +212,7 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
     node: (
       <div className="p-4">
         <div className="text-[11px] font-bold text-ink">Receipt scanned</div>
-        <div className="mt-1 text-[9.5px] text-[#6a6a6a]">Big-box run · 8:12 AM</div>
+        <div className="mt-1 text-[9.5px] text-[color:var(--mt-mute,#6a6a6a)]">Big-box run · 8:12 AM</div>
         <div className="mt-3">
           <DocRows
             rows={[
@@ -231,14 +238,14 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
     node: (
       <div className="p-4">
         <div className="text-[11px] font-bold text-ink">Change order #3</div>
-        <div className="mt-1 text-[9.5px] text-[#6a6a6a]">Add recessed lighting ×6</div>
+        <div className="mt-1 text-[9.5px] text-[color:var(--mt-mute,#6a6a6a)]">Add recessed lighting ×6</div>
         <div className="mt-3 flex items-center justify-between">
           <span className="text-[13px] font-bold text-ink">+$1,240</span>
           <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[9px] font-bold text-sky-700">
             APPROVED
           </span>
         </div>
-        <div className="mt-2.5 font-serif text-[15px] italic text-[#6a6a6a]">M. Nguyen</div>
+        <div className="mt-2.5 font-serif text-[15px] italic text-[color:var(--mt-mute,#6a6a6a)]">M. Nguyen</div>
       </div>
     ),
   },
@@ -280,24 +287,22 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
 
 export function Montage() {
   return (
-    <section className="bg-white py-[9vmin]">
+    /* No vertical padding on a phone (owner, 2026-09-26): the columns run to
+       both edges of the section and fade there, instead of fading into a
+       band of empty white above the next section. */
+    <section className="bg-white py-[9vmin] max-sm:py-0">
       <Reveal>
-        {/* Mobile: 3 vertical columns, each an infinite top-to-bottom loop
+        {/* Mobile: 2 vertical columns, each an infinite top-to-bottom loop
             (GSAP, velocity-reactive) */}
         <div className="sm:hidden">
           <MontageColumns
             columns={(() => {
-              /* Every column runs the FULL deck, each starting at a different
-                 tile (owner, 2026-08-25). Round-robining eight tiles into
-                 threes and then doubling each column put the same card two
-                 rows above itself; a rotation of the whole set means a column
-                 never repeats inside one pass, and the columns never line up
-                 on the same card either. */
+              /* Two columns since 2026-09-26 (owner: the three at half size
+                 were blurry): the deck is dealt alternately, so between them
+                 the columns show every tile once, a column never repeats
+                 inside one pass, and the two never show the same card. */
               const nodes = TILES.map((t) => t.node);
-              const per = 9;
-              return [0, 1, 2].map((c) =>
-                Array.from({ length: per }, (_, j) => nodes[(c * 5 + j * 3) % nodes.length]),
-              );
+              return [0, 1].map((c) => nodes.filter((_, i) => i % 2 === c));
             })()}
           />
         </div>

@@ -13,7 +13,7 @@
      Fence          — map → cursor clicks the layer on → parcel → run →
                       the ground tips and walls stand on the run itself
      Video          — recording → pulls back → the read lands as notes on
-                      the footage → proposal
+                      the footage and the takeoff in the rail
 
    Timing lives in one place per shot (PHASES), and one hook drives them, so a
    sequence can be retimed without touching the markup. Everything moves on
@@ -31,9 +31,8 @@ import { useInView } from "./use-in-view";
 
 import {
   AppFrame,
-  Beat,
   EASE,
-  HAIR,
+  READ_HOLD,
   Rail,
   SKY,
   STAGE,
@@ -42,13 +41,11 @@ import {
   usePhases,
   useTyped,
 } from "./showcase-kit";
-import { FenceShot } from "./fence-shot";
+import { FENCE_TIMELINE, FenceShot } from "./fence-shot";
 import type { ShowcaseSlideKey } from "./landing-variants";
-
-const SLIDE_MS = 9000;
-
-import { RoofShot } from "./roof-shot";
-import { SmartProposalShot } from "./smart-proposal-shot";
+import { ROOF_TIMELINE, RoofShot } from "./roof-shot";
+import { SmartProposalShot, smartTimeline } from "./smart-proposal-shot";
+import "./showcase-pass.css";
 import { SMART_SCENARIOS, type SmartScenarioKey } from "./smart-scenarios";
 import { REGISTER } from "./routes";
 
@@ -65,22 +62,20 @@ const V_NOTES: { label: string; left: string; top: string }[] = [
   { label: "Granite countertop", left: "30%", top: "74%" },
 ];
 
-const V_LINES: [string, string][] = [
-  ["Semi-custom uppers, 12 ln ft", "3,240"],
-  ["Quartz countertop, 26 sf", "1,508"],
-  ["Demo and install, 64 hrs", "5,120"],
-];
-
 /* The notes are pinned to things in the FRAME, so they are only right while
    the clip is showing that frame. This is the point in the footage where the
    camera is on the uppers and the backsplash. */
 const V_NOTES_IN = 2.6;
 const V_NOTES_OUT = 9.5;
 
+const V_PHASES = [1500, 2600, 4600];
+
 function VideoShot({ active }: { active: boolean }) {
-  const phase = usePhases([1500, 2600, 4600], active);
+  const phase = usePhases(V_PHASES, active);
   const pulled = phase >= 1;
-  const priced = phase >= 3;
+  // once the read is in, the caption steps off the footage so the notes
+  // (and the frame) are clear
+  const heard = phase >= 3;
   const caption = useTyped("…remodel the whole kitchen — the run here is about twelve feet…", active, 24);
   // The clip loops; the notes belong to the read of THIS pass, so they leave
   // and land again each time the footage restarts.
@@ -115,7 +110,7 @@ function VideoShot({ active }: { active: boolean }) {
   const notesOn = read && clipT >= V_NOTES_IN && clipT <= V_NOTES_OUT;
 
   return (
-    <AppFrame path="app.jobflex.com/estimators/video" action="Send as proposal" body="#0f172a">
+    <AppFrame path="app.jobflex.com/estimators/video" body="#0f172a">
       <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_260px]">
         <div className={STAGE} style={{ background: "#0f172a" }}>
           {/* the footage, which pulls back once it has been watched */}
@@ -173,7 +168,7 @@ function VideoShot({ active }: { active: boolean }) {
             className="absolute inset-x-0 bottom-0 z-20 flex items-start gap-2 px-4 pb-4 pt-8"
             style={{
               background: "linear-gradient(to top, rgba(15,23,42,.96), rgba(15,23,42,0))",
-              opacity: priced ? 0 : 1,
+              opacity: heard ? 0 : 1,
               transition: "opacity .5s ease",
             }}
           >
@@ -181,29 +176,8 @@ function VideoShot({ active }: { active: boolean }) {
             <span className="text-[14px] font-semibold leading-[1.4] text-white">{caption}</span>
           </div>
 
-          <div
-            className="absolute inset-x-0 bottom-0 z-30 rounded-t-[3px] bg-white px-5 pb-5 pt-4"
-            style={{
-              transform: priced ? "translateY(0)" : "translateY(102%)",
-              transition: `transform 1s ${EASE}`,
-              boxShadow: "0 -18px 40px -18px rgba(0,0,0,.5)",
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-[9px] font-black uppercase tracking-[0.18em] text-[#6a6a6a]">Priced from the clip</span>
-              <span className="h-px flex-1" style={{ background: HAIR }} />
-            </div>
-            {priced &&
-              V_LINES.map(([name, price], i) => (
-                <Beat key={name} delay={200 + i * 160}>
-                  <div className="flex items-baseline gap-3 border-b border-black/[0.07] py-2">
-                    <span className="w-4 shrink-0 font-mono text-[10px] text-[#6a6a6a]">{String(i + 1).padStart(2, "0")}</span>
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">{name}</span>
-                    <span className="w-[64px] shrink-0 text-right font-mono text-[12px] font-bold text-ink">{price}</span>
-                  </div>
-                </Beat>
-              ))}
-          </div>
+          {/* The "Priced from the clip" sheet that slid over the footage is
+              gone (owner, 2026-09-26); the takeoff lives in the rail. */}
         </div>
 
         <Rail title="Read from clip" shown={read}>
@@ -211,7 +185,7 @@ function VideoShot({ active }: { active: boolean }) {
           <Stat k="Ceiling" v="8 ft" />
           <Stat k="Uppers" v="2 walls" />
           <Stat k="Labor" v="$5,120" />
-          <TotalPlate total="$9,868" note="Estimate total" />
+          <TotalPlate total="$9,868" note="Estimate total" play={read} />
         </Rail>
       </div>
     </AppFrame>
@@ -228,14 +202,8 @@ const SLIDE_LABEL: Record<ShowcaseSlideKey, string> = {
   fence: "Fence estimator",
   video: "Video estimator",
 };
-/** The tab's one-word label under 640 px (owner, 2026-09-14): four tabs in
- *  one row on a phone, no scrolling, no clipping. */
-const SLIDE_SHORT: Record<ShowcaseSlideKey, string> = {
-  smart: "Smart",
-  roof: "Roof",
-  fence: "Fence",
-  video: "Video",
-};
+/** Floor for any slide, and the video's own length. */
+const SLIDE_MIN_MS = 9000;
 /** The four, in the order they always ran. */
 const DEFAULT_SLIDES: ShowcaseSlideKey[] = ["smart", "roof", "fence", "video"];
 
@@ -256,7 +224,16 @@ export function EstimatorsShowcase({
 }) {
   const { ref, inView } = useInView<HTMLDivElement>(0.15);
   const own = ownSlide && ownSlide !== "smart" ? ownSlide : undefined;
-  const SLIDES = (own ? ["smart" as const, own, ...DEFAULT_SLIDES.filter((k) => k !== "smart" && k !== own)] : DEFAULT_SLIDES).map((key) => ({ key, label: SLIDE_LABEL[key], short: SLIDE_SHORT[key] }));
+  const SLIDES = (own ? ["smart" as const, own, ...DEFAULT_SLIDES.filter((k) => k !== "smart" && k !== own)] : DEFAULT_SLIDES).map((key) => ({ key, label: SLIDE_LABEL[key] }));
+  /* Each slide lasts as long as its own sequence plus the reading hold
+     (owner, 2026-09-26) — the timer bar runs for exactly this long. */
+  const smartScenario = SMART_SCENARIOS[scenario ?? "kitchen"];
+  const SLIDE_MS: Record<ShowcaseSlideKey, number> = {
+    smart: Math.max(SLIDE_MIN_MS, smartTimeline(smartScenario).slide),
+    roof: Math.max(SLIDE_MIN_MS, ROOF_TIMELINE.slide),
+    fence: Math.max(SLIDE_MIN_MS, FENCE_TIMELINE.slide),
+    video: Math.max(SLIDE_MIN_MS, V_PHASES[2] + READ_HOLD),
+  };
   const [slide, setSlide] = useState(0);
   const [run, setRun] = useState(0);
   const [reduced, setReduced] = useState(false);
@@ -308,12 +285,11 @@ export function EstimatorsShowcase({
           </Reveal>
 
           <Reveal delay={80}>
-            {/* Four across on a phone (owner, 2026-09-14): one-word labels at
-                12 px, 8 px padding, the timer bar the full width of the tab —
-                all four fit at 360 px with nothing to scroll or cut. From 640 px
-                the strip wraps with the full labels as before. */}
+            {/* Two by two on a phone (owner, 2026-09-26): the full labels, a
+                timer bar under each, every tab at least 48 px tall. From 640 px
+                the strip is one row as before. */}
             <div
-              className="grid grid-cols-4 items-stretch gap-1.5 sm:flex sm:flex-wrap sm:gap-2"
+              className="grid grid-cols-2 items-stretch gap-1.5 sm:flex sm:flex-wrap sm:gap-2"
               role="tablist"
               aria-label="Estimators"
             >
@@ -328,15 +304,14 @@ export function EstimatorsShowcase({
                   // 2026-09-10): ground 0.02 -> 0.04, text ~0.60 -> 0.80, track
                   // 0.15 -> 0.30. The active tab is unchanged. From 1024px the
                   // label is 2px larger and the track and padding follow.
-                  className={`relative overflow-hidden rounded-[2px] p-2 text-left transition-colors duration-200 sm:flex-1 sm:px-4 sm:pb-3.5 sm:pt-3 lg:px-5 lg:pb-4 lg:pt-3.5 ${
+                  className={`relative min-h-[48px] overflow-hidden rounded-[2px] px-3 pb-3 pt-2.5 text-left transition-colors duration-200 sm:flex-1 sm:px-4 sm:pb-3.5 sm:pt-3 lg:px-5 lg:pb-4 lg:pt-3.5 ${
                     i === slide ? "bg-white/[0.08] text-white" : "bg-white/[0.04] text-white/80 hover:bg-white/[0.06] hover:text-white/95"
                   }`}
                 >
-                  <span className="block text-[12px] font-semibold sm:text-[13.5px] lg:text-[15.5px]">
-                    <span className="sm:hidden">{sl.short}</span>
-                    <span className="hidden sm:inline">{sl.label}</span>
+                  <span className="block text-[13px] font-semibold leading-tight sm:text-[13.5px] lg:text-[15.5px]">
+                    {sl.label}
                   </span>
-                  <span className="-mx-2 mt-2 block h-[3px] overflow-hidden rounded-full bg-white/30 sm:mx-0 sm:mt-2.5 lg:mt-3 lg:h-[4px]">
+                  <span className="mt-2 block h-[3px] overflow-hidden rounded-full bg-white/30 sm:mx-0 sm:mt-2.5 lg:mt-3 lg:h-[4px]">
                     {i === slide && (
                       <span
                         key={`${slide}-${run}`}
@@ -346,7 +321,7 @@ export function EstimatorsShowcase({
                           reduced
                             ? { width: "100%" }
                             : {
-                                animation: `slide-fill ${SLIDE_MS}ms linear forwards`,
+                                animation: `slide-fill ${SLIDE_MS[sl.key]}ms linear forwards`,
                                 // Nothing pauses this but scrolling away — a
                                 // hover-pause kept freezing the bar (and with
                                 // it the whole rotation) mid-play.
@@ -362,8 +337,12 @@ export function EstimatorsShowcase({
           </Reveal>
 
           <Reveal delay={120}>
-            <div className="mt-6 sm:mt-9" key={`${s.key}-${run}`} style={{ animation: `toast-in .5s ${EASE}` }}>
-              {s.key === "smart" && <SmartProposalShot active={inView} scenario={SMART_SCENARIOS[scenario ?? "kitchen"]} />}
+            {/* The new slide is there from its first frame (owner, 2026-09-26):
+                the old fade from transparent blinked the whole card out and
+                back, which on Smart read as a white page flashing up. It only
+                settles 6 px into place now (lp-est-swap, showcase-pass.css). */}
+            <div className="lp-est-swap mt-6 sm:mt-9" key={`${s.key}-${run}`}>
+              {s.key === "smart" && <SmartProposalShot active={inView} scenario={smartScenario} />}
               {s.key === "roof" && <RoofShot active={inView} />}
               {s.key === "fence" && <FenceShot active={inView} />}
               {s.key === "video" && <VideoShot active={inView} />}

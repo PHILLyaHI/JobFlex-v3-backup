@@ -18,11 +18,16 @@ import {
   Rail,
   SKY,
   STAGE,
+  READ_HOLD,
   Stat,
+  TYPE_BEAT,
+  TYPE_LEAD,
+  TYPE_MS,
   TotalPlate,
   pctX,
   pctY,
   planBoxStyle,
+  typedAt,
   useCompact,
   usePhases,
   useTyped,
@@ -164,6 +169,20 @@ const HERO_DIMS: typeof ROOF_DIMS = [
   { label: "43'-6\"", x: 56, y: 170, tx: "translate(-100%, -50%)" }, // left of the west eave, 17.6 units off
 ];
 
+/* THE ROOF'S CLOCK (owner, 2026-09-26: slower, and a beat after the address
+   is typed before anything happens). Derived from the typed length so the
+   bar never lifts mid-typing: lift + aerial → trace → tilt → takeoff, then
+   the callouts draw (~1.8 s) and the finished takeoff holds for READ_HOLD.
+   The showcase times the slide and its bar from `slide`. */
+const ROOF_ADDRESS = "142 Alder Ridge Rd";
+const ROOF_LIFT = typedAt(ROOF_ADDRESS.length) + TYPE_BEAT;
+const ROOF_MARKS_MS = [ROOF_LIFT, ROOF_LIFT + 1100, ROOF_LIFT + 2800, ROOF_LIFT + 4500];
+export const ROOF_TIMELINE = {
+  marks: ROOF_MARKS_MS,
+  done: ROOF_MARKS_MS[3] + 1800,
+  slide: ROOF_MARKS_MS[3] + 1800 + READ_HOLD,
+};
+
 /** 0 → flat bird's eye (the trace), 1 → tilted camera on the same model. */
 function useTiltT(on: boolean) {
   const [t, setT] = useState(0);
@@ -207,13 +226,14 @@ export function RoofShot({ active, instant = false, hero = false }: { active: bo
   const marks = hero ? HERO_MARKS : ROOF_MARKS;
   const callouts = hero ? (compact ? HERO_CALLOUTS_PHONE : HERO_CALLOUTS_DESK) : ROOF_CALLOUTS;
   const dims = hero ? (wide ? HERO_DIMS : []) : ROOF_DIMS;
-  const phase = usePhases([1100, 2000, 3400, 4800], active, instant);
-  const typed = useTyped("142 Alder Ridge Rd", active, 20, instant);
-  const lifted = phase >= 1;
-  const aerial = phase >= 1;
-  const traced = phase >= 2;
-  const tilted = phase >= 3;
-  const measured = phase >= 4;
+  const phase = usePhases(ROOF_TIMELINE.marks, active, instant);
+  const typed = useTyped(ROOF_ADDRESS, active, TYPE_MS, instant, TYPE_LEAD);
+  // nothing moves on until the whole address is in
+  const lifted = phase >= 1 && typed.length >= ROOF_ADDRESS.length;
+  const aerial = lifted;
+  const traced = lifted && phase >= 2;
+  const tilted = lifted && phase >= 3;
+  const measured = lifted && phase >= 4;
   const t = useTiltT(tilted);
 
   /* Orthographic camera rotating about the model's centre. At t=0 this is the
@@ -231,13 +251,13 @@ export function RoofShot({ active, instant = false, hero = false }: { active: bo
   return (
     <AppFrame
       path="app.jobflex.com/estimators/roof"
-      action="Send as proposal"
       body={tilted ? "#f6f7f5" : aerial ? "#3b4034" : "#e9eae6"}
     >
       <div className="relative">
         <Prompt label="Address" value={typed} lifted={lifted} search compact={compact} />
         <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_260px]">
-        <div className={hero ? `${STAGE} lp-hero-stage` : STAGE} style={{ background: tilted ? "#f6f7f5" : "#e9eae6", transition: "background .9s ease" }}>
+        {/* lp-roof-stage: the showcase roof's own plate on a phone (showcase-pass.css) */}
+        <div className={hero ? `${STAGE} lp-hero-stage` : `${STAGE} lp-roof-stage`} style={{ background: tilted ? "#f6f7f5" : "#e9eae6", transition: "background .9s ease" }}>
           <div style={planBoxStyle({ transform: "translateY(-50%)" })}>
             <div
               className="absolute inset-0"
@@ -316,15 +336,10 @@ export function RoofShot({ active, instant = false, hero = false }: { active: bo
             ))}
           </div>
 
-          <span
-            className="absolute bottom-4 left-4 z-20 flex items-center gap-1.5 rounded-[2px] bg-ink px-2 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-white"
-            style={{ opacity: aerial ? 1 : 0, transition: "opacity .5s ease" }}
-          >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: SKY }} />
-            {tilted ? "Wireframe · aerial geometry" : traced ? "Tracing facets" : "Orthophoto located"}
-          </span>
 
           {/* the callouts draw once the camera has settled and the takeoff is in */}
+          {/* The status chip that sat bottom-left ("Orthophoto located /
+              Tracing facets / Wireframe") is gone (owner, 2026-09-26). */}
           <MockCallouts specs={callouts} armed={measured && t >= 1} />
         </div>
 
@@ -336,7 +351,7 @@ export function RoofShot({ active, instant = false, hero = false }: { active: bo
           <Stat k="Eave" v="96 lf" />
           <Stat k="Bundles" v="56" />
           <Stat k="Labor" v="$6,610" />
-          <TotalPlate total="$13,190" note="Estimate total" />
+          <TotalPlate total="$13,190" note="Estimate total" play={measured} />
         </Rail>
         </div>
       </div>

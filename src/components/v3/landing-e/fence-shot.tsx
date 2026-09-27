@@ -19,6 +19,7 @@ import {
   pctX,
   pctY,
   planBoxStyle,
+  READ_HOLD,
   usePhases,
 } from "./showcase-kit";
 import { MockCallouts, type CalloutSpec } from "./mock-callouts";
@@ -43,7 +44,7 @@ const WALL_H = 30;
    point on the fence line — markers placed on the boundary inside the
    tilted plane, so their measured positions are the projected ones — to a
    pocket of the stage. The top-left pocket sits under the View parcels
-   button (dy 44); the bottom-left one is the status chip's. */
+   button (dy 44). */
 const FENCE_MARKS: Record<string, [number, number]> = {
   run: [(LOT.left + LOT.right) / 2, LOT.bottom],
   fall: [LOT.left, (LOT.top + LOT.bottom) / 2],
@@ -55,11 +56,16 @@ const FENCE_CALLOUTS: CalloutSpec[] = [
   { key: "posts", text: "16 posts", pocket: "tr", elbow: "v" },
 ];
 
+/* The fence's clock. `slide` = the grade landing, the callouts drawing
+   (~1.8 s), then the finished takeoff held for READ_HOLD. */
+const FENCE_PHASES = [700, 1420, 1560, 2700, 4100, 5500];
+export const FENCE_TIMELINE = { marks: FENCE_PHASES, slide: FENCE_PHASES[5] + 1800 + READ_HOLD };
+
 export function FenceShot({ active, instant = false }: { active: boolean; instant?: boolean }) {
   // A press beat of its own between the cursor arriving and the layer coming
   // on (owner, 2026-08-25). The colour used to flip with nothing moving, so
   // the button never looked pressed — it just changed.
-  const phase = usePhases([700, 1420, 1560, 2700, 4100, 5500], active, instant);
+  const phase = usePhases(FENCE_PHASES, active, instant);
   const seeking = phase >= 1;
   const pressing = phase === 2;
   const clicked = phase >= 2;
@@ -72,7 +78,7 @@ export function FenceShot({ active, instant = false }: { active: boolean; instan
   const sideBays = 5;
 
   return (
-    <AppFrame path="app.jobflex.com/estimators/fence" action="Send as proposal" body="#20222a">
+    <AppFrame path="app.jobflex.com/estimators/fence" body="#20222a">
       <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_260px]">
         <div className={STAGE} style={{ background: "#20222a" }}>
           <span className="absolute left-4 top-4 z-30">
@@ -246,13 +252,9 @@ export function FenceShot({ active, instant = false }: { active: boolean; instan
             </div>
           </div>
 
-          <span
-            className="absolute bottom-4 left-4 z-20 flex items-center gap-1.5 rounded-[2px] bg-ink px-2 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-white"
-            style={{ opacity: parcel ? 1 : 0, transition: "opacity .5s ease" }}
-          >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: SKY }} />
-            {graded ? "Grade · panels stepped" : tilted ? "Fence placed · 6 ft" : run ? "Drawing the run" : "Parcel from Regrid"}
-          </span>
+          {/* The status chip that sat bottom-left ("Parcel from Regrid … Grade ·
+              panels stepped") is gone (owner, 2026-09-26): it lay over the
+              fence itself on a phone. */}
 
           {/* the callouts draw once the fence stands and the grade is in */}
           <MockCallouts specs={FENCE_CALLOUTS} armed={graded} />
@@ -266,7 +268,7 @@ export function FenceShot({ active, instant = false }: { active: boolean; instan
           <Stat k="Gates" v="2" />
           <Stat k="Concrete" v="32 bags" />
           <Stat k="Labor" v="$2,900" />
-          <TotalPlate total="$6,540" note="Estimate total" />
+          <TotalPlate total="$6,540" note="Estimate total" play={graded} />
         </Rail>
       </div>
     </AppFrame>

@@ -1,0 +1,398 @@
+/* ============================================================
+   PRICING + FAQ — owner, 2026-09-26
+   Plain CSS, every selector under `.jf-lp` (the landing's scope). The plan
+   cards are a port of the register's step 3 (auth-register.module.css,
+   `.pw-*`): the landing is not inside that page's `.bp` token scope, so the
+   values are written out — paper #f2f0eb, paper-deep #ebe8e1, ink #0a0a0a,
+   muted #555, blueprint #1854a0, hair #d5d1c8, 2px corners, 2px ink frame.
+   ============================================================ */
+
+/* ── Section headlines: the title IS the label (no eyebrow) ──────────── */
+.jf-lp .lp-sec-title {
+  font-size: clamp(44px, 6vw, 88px);
+  font-weight: 800;
+  line-height: 0.98;
+  letter-spacing: -0.035em;
+  color: #0a0a0a;
+  text-wrap: balance;
+}
+.jf-lp .lp-sec-title--on-ink { color: #fff; }
+.jf-lp .lp-sec-lede {
+  margin-top: 16px;
+  max-width: 40rem;
+  font-size: clamp(17px, 1.5vw, 21px);
+  font-weight: 500;
+  line-height: 1.45;
+  color: #555;
+}
+.jf-lp .lp-sec-lede--on-ink { color: rgba(255, 255, 255, 0.78); }
+
+/* ── Plan cards (register step 3) ────────────────────────────────────── */
+.jf-lp .lp-pw-plans {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+  /* room for the "Most picked" tag pinned above its card's top edge */
+  padding-top: 13px;
+}
+.jf-lp .lp-pw-plan {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 22px 20px 20px;
+  border: 2px solid #0a0a0a;
+  border-radius: 2px;
+  background: #f2f0eb;
+  color: #0a0a0a;
+  text-align: left;
+}
+/* The recommended card is lifted by its offset. On the register's paper the
+   offset is ink; on this ink sheet ink would vanish, so it is blueprint blue
+   — the same blue as its tag and every start button. */
+.jf-lp .lp-pw-plan--hero {
+  background: #ebe8e1;
+  box-shadow: 6px 6px 0 #1854a0;
+}
+.jf-lp .lp-pw-tag {
+  position: absolute;
+  top: -12px;
+  left: 16px;
+  z-index: 2;
+  padding: 4px 10px;
+  border: 2px solid #0a0a0a;
+  border-radius: 2px;
+  background: #1854a0;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: 2px 2px 0 #0a0a0a;
+}
+.jf-lp .lp-pw-plan-n {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #555;
+  overflow-wrap: anywhere;
+}
+.jf-lp .lp-pw-price {
+  font-size: 44px;
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.jf-lp .lp-pw-price i {
+  margin-left: 2px;
+  font-style: normal;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0;
+  color: #555;
+}
+.jf-lp .lp-pw-feats {
+  display: flex;
+  flex-direction: column;
+  margin: 6px 0 10px;
+  padding-top: 2px;
+  border-top: 1.5px solid #d5d1c8;
+}
+.jf-lp .lp-pw-f {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 0;
+  border-bottom: 1px solid #d5d1c8;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #0a0a0a;
+  overflow-wrap: anywhere;
+}
+.jf-lp .lp-pw-f:last-child { border-bottom: none; }
+.jf-lp .lp-pw-ic {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: #1854a0;
+}
+/* Not included: the row still prints, greyed, with a dash. #666 rather than
+   the register's #888 so the text clears 4.5:1 on both card papers. */
+.jf-lp .lp-pw-f--no { color: #666; font-weight: 500; }
+.jf-lp .lp-pw-f--no .lp-pw-ic { color: #888; }
+/* "Show all" is a phone control; a desk card lists every row. */
+.jf-lp .lp-pw-more { display: none; }
+.jf-lp .lp-pw-go {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  width: 100%;
+  min-height: 42px;
+  margin-top: auto;
+  padding: 0 14px;
+  border: 2px solid #0a0a0a;
+  border-radius: 2px;
+  background: #1854a0;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.12em;
+  text-indent: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+  box-shadow: 3px 3px 0 #0a0a0a;
+  transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.jf-lp .lp-pw-go:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 #0a0a0a; }
+.jf-lp .lp-pw-go:active { transform: none; box-shadow: 1px 1px 0 #0a0a0a; }
+.jf-lp .lp-pw-go:focus-visible { outline: 2px solid #1854a0; outline-offset: 2px; }
+.jf-lp .lp-pw-dots { display: none; }
+
+/* Three narrow columns between the tablet break and a desk. */
+@media (min-width: 769px) and (max-width: 1023px) {
+  .jf-lp .lp-pw-plans { gap: 14px; }
+  .jf-lp .lp-pw-plan { padding: 20px 16px 16px; }
+  .jf-lp .lp-pw-price { font-size: 36px; }
+}
+
+/* ── Phone: the register's swipe carousel ────────────────────────────── */
+@media (max-width: 768px) {
+  .jf-lp .lp-pw-plans {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 12px;
+    /* edge to edge: out of the column to the viewport, the first card
+       still starting on the column's edge */
+    margin-inline: calc(50% - 50vw);
+    padding: 14px calc(50vw - 50%) 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    /* a vertical pan that starts on a card still scrolls the page */
+    touch-action: pan-x pan-y;
+    scrollbar-width: none;
+  }
+  .jf-lp .lp-pw-plans::-webkit-scrollbar { display: none; }
+  .jf-lp .lp-pw-plan {
+    flex: 0 0 min(84vw, 340px);
+    scroll-snap-align: center;
+    padding: 16px 16px 14px;
+  }
+  .jf-lp .lp-pw-plan--hero { box-shadow: 4px 4px 0 #1854a0; }
+  /* whole rows only: six of them, then "Show all" */
+  .jf-lp .lp-pw-feats { margin-bottom: 4px; }
+  .jf-lp .lp-pw-feats:not(.is-open) .lp-pw-f:nth-child(n + 7) { display: none; }
+  .jf-lp .lp-pw-feats:not(.is-open) .lp-pw-f:nth-child(6) { border-bottom: none; }
+  .jf-lp .lp-pw-f { padding: 6px 0; }
+  .jf-lp .lp-pw-more {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    min-height: 44px;
+    margin: -10px 0 -4px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #1854a0;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .jf-lp .lp-pw-more:focus-visible { outline: 2px solid #1854a0; outline-offset: 2px; }
+  .jf-lp .lp-pw-go { min-height: 44px; font-size: 12px; }
+  .jf-lp .lp-pw-dots {
+    display: flex;
+    justify-content: center;
+    margin-top: 2px;
+  }
+  .jf-lp .lp-pw-dot {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .jf-lp .lp-pw-dot span {
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid rgba(255, 255, 255, 0.6);
+    border-radius: 1px;
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+  .jf-lp .lp-pw-dot[aria-current="true"] span { background: #fff; border-color: #fff; }
+  .jf-lp .lp-pw-dot:focus-visible { outline: 2px solid #fff; outline-offset: -8px; }
+}
+
+/* ── FAQ cards ───────────────────────────────────────────────────────── */
+.jf-lp .lp-faq-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+.jf-lp .lp-faq-card {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  border: 2px solid #0a0a0a;
+  border-radius: 2px;
+  background: #fff;
+  color: #0a0a0a;
+  box-shadow: 4px 4px 0 #0a0a0a;
+  transition: box-shadow 0.15s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+/* ONE cell, two layers: the card is as tall as the taller of the question
+   and the answer, so revealing the answer never moves the grid. */
+.jf-lp .lp-faq-q,
+.jf-lp .lp-faq-a {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+.jf-lp .lp-faq-q {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  padding: 24px;
+  text-align: left;
+  color: #0a0a0a;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.jf-lp .lp-faq-q:focus-visible { outline: none; }
+.jf-lp .lp-faq-q-text {
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.jf-lp .lp-faq-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #555;
+}
+.jf-lp .lp-faq-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 1.5px solid #0a0a0a;
+  border-radius: 2px;
+}
+.jf-lp .lp-faq-mark svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: #0a0a0a;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.jf-lp .lp-faq-hint-tap { display: none; }
+@media (hover: none) {
+  .jf-lp .lp-faq-hint-hover { display: none; }
+  .jf-lp .lp-faq-hint-tap { display: inline; }
+}
+/* The answer: ink ground, white type, wiped up from the bottom edge. It
+   never takes a pointer — a click or tap on it lands on the question's
+   button underneath, which is what toggles the card. */
+.jf-lp .lp-faq-a {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 24px;
+  background: #0a0a0a;
+  color: #fff;
+  pointer-events: none;
+  visibility: hidden;
+  clip-path: inset(100% 0 0 0);
+  transition:
+    clip-path 0.2s cubic-bezier(0.22, 0.61, 0.36, 1),
+    visibility 0s linear 0.2s;
+}
+.jf-lp .lp-faq-a-q {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.64);
+}
+.jf-lp .lp-faq-a-text {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: #fff;
+}
+.jf-lp .lp-faq-card.is-open .lp-faq-a,
+.jf-lp .lp-faq-q:focus-visible + .lp-faq-a {
+  visibility: visible;
+  clip-path: inset(0 0 0 0);
+  transition:
+    clip-path 0.2s cubic-bezier(0.22, 0.61, 0.36, 1),
+    visibility 0s;
+}
+.jf-lp .lp-faq-card.is-open,
+.jf-lp .lp-faq-card:has(> .lp-faq-q:focus-visible) { box-shadow: 4px 4px 0 #1854a0; }
+.jf-lp .lp-faq-card:has(> .lp-faq-q:focus-visible) { outline: 3px solid #1854a0; outline-offset: 4px; }
+@media (hover: hover) {
+  .jf-lp .lp-faq-card:hover .lp-faq-a {
+    visibility: visible;
+    clip-path: inset(0 0 0 0);
+    transition:
+      clip-path 0.2s cubic-bezier(0.22, 0.61, 0.36, 1),
+      visibility 0s;
+  }
+  .jf-lp .lp-faq-card:hover { box-shadow: 4px 4px 0 #1854a0; }
+}
+
+@media (max-width: 1023px) {
+  .jf-lp .lp-faq-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 639px) {
+  .jf-lp .lp-faq-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .jf-lp .lp-faq-q,
+  .jf-lp .lp-faq-a { padding: 20px; }
+  .jf-lp .lp-faq-q { gap: 20px; }
+  .jf-lp .lp-faq-q-text { font-size: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-lp .lp-pw-go,
+  .jf-lp .lp-pw-dot span,
+  .jf-lp .lp-faq-card,
+  .jf-lp .lp-faq-a,
+  .jf-lp .lp-faq-card.is-open .lp-faq-a,
+  .jf-lp .lp-faq-q:focus-visible + .lp-faq-a { transition: none; }
+  .jf-lp .lp-pw-go:hover { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) and (hover: hover) {
+  .jf-lp .lp-faq-card:hover .lp-faq-a { transition: none; }
+}

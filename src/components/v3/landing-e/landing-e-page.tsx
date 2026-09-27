@@ -62,6 +62,7 @@ import { MobileCta } from "./mobile-cta";
 import { GoogleOneTap } from "@/components/auth/google-one-tap";
 import { Nav } from "./nav";
 import { REGISTER } from "./routes";
+import { SmoothWheel } from "./smooth-wheel";
 import "./landing-e.css";
 
 export interface LandingEProps {
@@ -110,7 +111,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {} }: L
         <div className="lp-cv lp-cv--showcase"><EstimatorsShowcase ownSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} scenario={smart} registerHref={register} cta={top} /></div>
         {(g?.montage ?? true) && <div className="lp-cv lp-cv--montage"><Montage /></div>}
         <div className="lp-cv lp-cv--proposals"><ProposalsSection proposal={g?.proposal} registerHref={register} cta={low} /></div>
-        <div className="lp-cv lp-cv--portal"><PortalSection portal={g?.portal} /></div>
+        <div className="lp-cv lp-cv--portal"><PortalSection portal={g?.portal} client={g?.proposal?.client} /></div>
         {/* One content-visibility box for the two sections the guide line runs
             through, so both are laid out together and the line can be measured. */}
         <div className="lp-cv lp-cv--crew">
@@ -119,7 +120,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {} }: L
             <FlowFeatures />
           </CrewGuide>
         </div>
-        <div className="lp-cv lp-cv--integrations"><Integrations /></div>
+        <div className="lp-cv lp-cv--integrations"><Integrations registerHref={register} /></div>
         <div className="lp-cv lp-cv--stats"><StatsSection rows={g?.stats} /></div>
         <div className="lp-cv lp-cv--built"><BuiltSection jobs={g?.jobs} phoneJobs={g?.phoneJobs} /></div>
         <div className="lp-cv lp-cv--pricing"><LandingPricing plans={plans} registerHref={register} cta={low} /></div>
@@ -128,6 +129,8 @@ export async function LandingE({ variant, explicitVariant = false, utm = {} }: L
       </main>
       <MobileCta registerHref={register} cta={top} />
       <ScrollFx />
+      {/* Mouse-wheel notches glide, 0.7× the browser's step (smooth-wheel.tsx). */}
+      <SmoothWheel />
       <LazyBg />
       <WarmLayout />
       <CtaTracker industry={variant} />

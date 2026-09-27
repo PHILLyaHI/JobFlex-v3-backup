@@ -33,6 +33,18 @@ export function useCompact() {
   return compact;
 }
 
+/** True when the visitor asked for reduced motion (read after mount). */
+export function useReduced() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() =>
+      setReduced(window.matchMedia("(prefers-reduced-motion: reduce)").matches),
+    );
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return reduced;
+}
+
 /** Advances through a sequence on its own clock, and rewinds when it restarts. */
 export function usePhases(marks: number[], active: boolean, instant = false) {
   const [phase, setPhase] = useState(0);
@@ -61,8 +73,25 @@ export function usePhases(marks: number[], active: boolean, instant = false) {
   return phase;
 }
 
-/** Types a string out on a fixed cadence once it is allowed to start. */
-export function useTyped(text: string, active: boolean, speed = 20, instant = false) {
+/* TYPING PACE (owner, 2026-09-26): the prompts type slowly enough to read,
+   the finished line sits for a beat, and only then does the estimate come.
+   A shot derives its phase marks from these — never a literal that could
+   lift the prompt while it is still typing. */
+/** ms per character. */
+export const TYPE_MS = 52;
+/** The caret blinks in the empty field this long before the first key. */
+export const TYPE_LEAD = 450;
+/** The typed line stays put this long before the prompt lifts. */
+export const TYPE_BEAT = 1000;
+/** How long the finished estimate stays up before the next slide. */
+export const READ_HOLD = 3600;
+/** When a prompt of `len` characters has finished typing. */
+export const typedAt = (len: number) => TYPE_LEAD + len * TYPE_MS;
+
+/** Types a string out on a fixed cadence once it is allowed to start. The
+    count is read off a wall clock from the start (not a chain of timeouts,
+    which drifted ~30 % slow), so a phase mark from `typedAt` is exact. */
+export function useTyped(text: string, active: boolean, speed = 20, instant = false, delay = 0) {
   const [n, setN] = useState(0);
   const [reduced, setReduced] = useState(false);
 
@@ -79,10 +108,16 @@ export function useTyped(text: string, active: boolean, speed = 20, instant = fa
       const id = requestAnimationFrame(() => setN(text.length));
       return () => cancelAnimationFrame(id);
     }
-    if (n >= text.length) return;
-    const t = setTimeout(() => setN((v) => v + 1), speed);
-    return () => clearTimeout(t);
-  }, [active, reduced, instant, n, text.length, speed]);
+    const t0 = performance.now() + delay;
+    let timer = 0;
+    const tick = () => {
+      const k = Math.min(text.length, Math.max(0, Math.floor((performance.now() - t0) / speed) + 1));
+      setN(k);
+      if (k < text.length) timer = window.setTimeout(tick, Math.max(8, t0 + k * speed - performance.now()));
+    };
+    timer = window.setTimeout(tick, Math.max(0, delay));
+    return () => clearTimeout(timer);
+  }, [active, reduced, instant, text, speed, delay]);
 
   return text.slice(0, n);
 }
@@ -93,12 +128,13 @@ export function useTyped(text: string, active: boolean, speed = 20, instant = fa
 
 export function AppFrame({
   path,
-  action,
   body = "#ffffff",
   children,
 }: {
   path: string;
-  action: string;
+  /** Retired (owner, 2026-09-26): the chrome no longer carries a "Send …"
+   *  pill. Still accepted so an old caller compiles; nothing renders. */
+  action?: string;
   body?: string;
   children: React.ReactNode;
 }) {
@@ -113,9 +149,6 @@ export function AppFrame({
         <span className="grid h-5 w-5 place-items-center rounded-[2px] bg-ink text-[10px] font-black text-white">J</span>
         <span className="min-w-0 flex-1 truncate rounded-[2px] border border-black/10 bg-lp-paper px-2.5 py-1 font-mono text-[10.5px] text-ink-muted">
           {path}
-        </span>
-        <span className="shrink-0 rounded-[2px] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-white" style={{ background: BLUE }}>
-          {action}
         </span>
       </div>
       {children}
@@ -257,12 +290,14 @@ export function Stat({ k, v, accent }: { k: string; v: string; accent?: boolean 
   );
 }
 
-export function TotalPlate({ total, note }: { total: string; note: string }) {
+export function TotalPlate({ total, note, play = true }: { total: string; note: string; play?: boolean }) {
   return (
     <div className="mt-4 rounded-[2px] bg-ink px-3 py-2.5">
       <div className="text-[9px] font-black uppercase tracking-[0.16em] text-white/45">{note}</div>
-      {/* The total counts up once it is on screen (pass C, counter.tsx). */}
-      <div className="mt-0.5 font-mono text-[19px] font-black text-white"><Counter value={total} /></div>
+      {/* The total counts up once it is on screen (pass C, counter.tsx).
+          `play` holds the count until the rail is actually shown — the rail
+          keeps its room while hidden, so the count used to run unseen. */}
+      <div className="mt-0.5 font-mono text-[19px] font-black text-white">{play ? <Counter value={total} /> : total}</div>
     </div>
   );
 }

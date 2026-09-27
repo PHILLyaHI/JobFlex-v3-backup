@@ -4,19 +4,9 @@ import { Logo } from "./logo";
 import { LOGIN, REGISTER } from "./routes";
 import Link from "next/link";
 
-/* Product, Features and Resources have no pages yet and pointed at "#";
-   hidden until they exist (CRO stage 2, 2026-09-09). */
-const LINKS = ["Pricing"];
-
-const HREFS: Record<string, string> = { Pricing: "/pricing" };
-
-function Caret() {
-  return (
-    <svg viewBox="0 0 10 6" className="h-1.5 w-2.5 opacity-50" aria-hidden>
-      <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  );
-}
+/* No text links in the bar (owner, 2026-09-26): Pricing came out of the nav
+   and the footer; Product, Features and Resources never had pages. The
+   /pricing route itself stays. */
 
 export function Nav({ registerHref = REGISTER, cta }: { registerHref?: string; cta?: string }) {
   return (
@@ -29,23 +19,9 @@ export function Nav({ registerHref = REGISTER, cta }: { registerHref?: string; c
           which is what sets 80px as the floor. `scroll-padding-top` in
           landing-e.css follows this number — move them together. */}
       <div className="mx-auto flex h-[64px] max-w-[86rem] items-center justify-between px-5 sm:px-6 lg:h-[80px]">
-        <div className="flex items-center gap-10">
-          <Link href="/" aria-label="JobFlex home">
-            <Logo className="lp-brand--lg" />
-          </Link>
-          <nav className="hidden items-center gap-7 lg:flex">
-            {LINKS.map((l) => (
-              <a
-                key={l}
-                href={HREFS[l] ?? "#"}
-                className="inline-flex items-center gap-1.5 text-[15px] font-medium text-black/70 transition-colors hover:text-black"
-              >
-                {l}
-                {(l === "Product" || l === "Resources") && <Caret />}
-              </a>
-            ))}
-          </nav>
-        </div>
+        <Link href="/" aria-label="JobFlex home">
+          <Logo className="lp-brand--lg" />
+        </Link>
 
         <div className="hidden items-center gap-6 lg:flex">
           <a href={LOGIN} className="text-[15px] font-medium text-black/70 transition-colors hover:text-black">

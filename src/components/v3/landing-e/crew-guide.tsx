@@ -16,8 +16,11 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
    edge, across to the Change order's top centre. Phone (stacked, owner
    2026-09-14): the same route down the column — out of each mock's bottom
    centre, into the next one's top centre, a 90° jog where their centres
-   differ — with a node at every one of those points, and a gap of 12 px
-   either side of any copy block ([data-guide-avoid]) the line would cross.
+   differ — with a node at every one of those points, and the line cut
+   where it crosses a title ([data-guide-avoid]): since 2026-09-26 (owner:
+   "closer to the titles") the cut is 7 px clear of the title's INK — the
+   glyphs' top and bottom, measured — not 12 px round its line-height box,
+   which left the line stopping ~25 px short of the words.
 
    The line draws with the scroll: a mask path's dashoffset follows a
    reference line at 85 % of the viewport, so the line is drawn to where the
@@ -41,6 +44,52 @@ function rectIn(el: HTMLElement, root: HTMLElement) {
     e = e.offsetParent as HTMLElement | null;
   }
   return { left: x, top: y, right: x + el.offsetWidth, bottom: y + el.offsetHeight, width: el.offsetWidth, height: el.offsetHeight };
+}
+
+/* The ink of a text block, in root coordinates: the union of its line
+   boxes, trimmed from the font's ascent/descent to the glyphs actually
+   drawn (canvas metrics for the block's own font and text). The line rects
+   are taken relative to the element's own rect, so a transform on an
+   ancestor (the reveal lift) cancels out; the element's place comes from
+   the offset chain like every other measurement here. */
+type Box = { left: number; top: number; right: number; bottom: number };
+let ctx2d: CanvasRenderingContext2D | null = null;
+function inkBox(el: HTMLElement, root: HTMLElement): Box {
+  const base = rectIn(el, root);
+  const own = el.getBoundingClientRect();
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const lines = Array.from(range.getClientRects()).filter((r) => r.width > 0 && r.height > 0);
+  if (!lines.length || own.width === 0) return base;
+  let top = Infinity, bottom = -Infinity, left = Infinity, right = -Infinity;
+  for (const r of lines) {
+    top = Math.min(top, r.top);
+    bottom = Math.max(bottom, r.bottom);
+    left = Math.min(left, r.left);
+    right = Math.max(right, r.right);
+  }
+  // A line rect spans the font's ascent + descent; the glyphs sit inside it.
+  let trimTop = 0, trimBottom = 0;
+  try {
+    ctx2d ??= document.createElement("canvas").getContext("2d");
+    const cs = getComputedStyle(el);
+    if (ctx2d) {
+      ctx2d.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const m = ctx2d.measureText(el.textContent ?? "");
+      if (m.fontBoundingBoxAscent && m.actualBoundingBoxAscent) {
+        trimTop = Math.max(0, m.fontBoundingBoxAscent - m.actualBoundingBoxAscent);
+        trimBottom = Math.max(0, m.fontBoundingBoxDescent - m.actualBoundingBoxDescent);
+      }
+    }
+  } catch {
+    /* no canvas metrics: cut round the line boxes */
+  }
+  return {
+    left: base.left + (left - own.left),
+    right: base.left + (right - own.left),
+    top: base.top + (top - own.top) + trimTop,
+    bottom: base.top + (bottom - own.top) - trimBottom,
+  };
 }
 
 /** The visible element for a role: the desk and the phone build each carry one. */
@@ -80,22 +129,26 @@ function measure(root: HTMLElement): Geometry | null {
   if (stacked) {
     // Phone: the same route as the desk, down the column. Between two mocks
     // the line runs from the upper one's bottom centre to the lower one's top
-    // centre, jogging sideways below any copy that sits between them, and it
-    // is cut 12 px clear of that copy's box rather than drawn across it.
-    const GAP = 12;
+    // centre, jogging sideways below any title that sits between them, and it
+    // stops GAP px above the title's ink and resumes GAP px under it rather
+    // than being drawn across the words.
+    const GAP = 7;
     const avoid = Array.from(root.querySelectorAll<HTMLElement>("[data-guide-avoid]"))
       .filter((el) => el.offsetParent !== null && el.offsetWidth > 0)
-      .map((el) => rectIn(el, root));
+      .map((el) => inkBox(el, root));
     const run = (x1: number, y1: number, x2: number, y2: number) => {
       const between = avoid.filter((a) => a.top >= y1 && a.bottom <= y2).sort((a, b) => a.top - b.top);
       const last = between[between.length - 1];
-      // the jog sits in the clear space under the last copy block
+      // the jog sits in the clear space under the last title
       const jogY = Math.round(last ? (last.bottom + GAP + y2) / 2 : (y1 + y2) / 2);
       const pieces: string[] = [];
       let length = 0;
-      // vertical from y1 down to the jog, broken around every copy block
+      // vertical from y1 down to the jog, broken where it crosses a title
       let y = y1;
-      const cuts = between.map((a) => ({ from: a.top - GAP, to: a.bottom + GAP })).filter((c) => c.to < jogY);
+      const cuts = between
+        .filter((a) => x1 >= a.left - GAP && x1 <= a.right + GAP)
+        .map((a) => ({ from: Math.round(a.top - GAP), to: Math.round(a.bottom + GAP) }))
+        .filter((c) => c.to < jogY);
       for (const c of cuts) {
         if (c.from > y) { pieces.push(`M${x1} ${y} V${c.from}`); length += c.from - y; }
         y = c.to;
@@ -172,6 +225,8 @@ export function CrewGuide({ children }: { children: ReactNode }) {
     root.querySelectorAll<HTMLElement>("[data-guide]").forEach((el) => ro.observe(el));
     window.addEventListener("resize", update);
     window.addEventListener("load", update);
+    // The title cuts follow the glyphs, so re-measure once the fonts are in.
+    void document.fonts?.ready.then(update);
     update();
     return () => {
       cancelAnimationFrame(raf);

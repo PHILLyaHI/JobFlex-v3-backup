@@ -3,122 +3,95 @@
 import { useEffect, useRef } from "react";
 import { loadGsap, whenNear } from "./gsap-lazy";
 
-/* Mobile integrations: two counter-scrolling icon marquees + one headline */
+/* THE FIVE REAL INTEGRATIONS (owner, 2026-09-26). Stripe, Square and Stax take
+   the client's payments, Meta brings the leads in, and email goes out through
+   the contractor's own Gmail — nothing else is drawn, so the tiles never claim
+   an app the product does not connect to. The marks are the brands' own
+   (sources and colours: public/integrations/README.md). They are drawn once,
+   as symbols in <BrandSprite />, and every tile — the desktop field and both
+   phone marquees — points at them with <use>, so the marquee's repeats cost a
+   line of markup each rather than a copy of the path. Brand colours are brand
+   data, kept here and nowhere else. */
 
-const TILE =
-  "flex h-16 w-16 shrink-0 items-center justify-center lp-int-tile bg-white ring-1 ring-lp-blue/25 shadow-[0_1px_2px_rgb(15_23_42/0.04),0_10px_24px_-12px_rgb(15_23_42/0.16)]";
+export type Brand = "stripe" | "square" | "stax" | "meta" | "gmail";
 
-function Icon({ name }: { name: string }) {
-  switch (name) {
-    case "gmail":
-      return (
-        <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden>
-          <path d="M2 7v11h4v-7l6 4.5L18 11v7h4V7l-10 7.5L2 7z" fill="#ea4335" />
-          <path d="M2 7l10 7.5L22 7l-2-1.5-8 6-8-6L2 7z" fill="#c5221f" opacity=".4" />
-          <path d="M2 7l2-1.5 8 6 8-6L22 7" fill="none" />
-        </svg>
-      );
-    case "gcal":
-      return (
-        <span className="flex h-8 w-8 flex-col overflow-hidden rounded-md ring-1 ring-slate-200">
-          <span className="bg-[#1a73e8] py-[2px] text-center text-[6px] font-bold uppercase leading-none text-white">
-            Jul
-          </span>
-          <span className="flex flex-1 items-center justify-center bg-white text-[13px] font-bold text-[#1a73e8]">
-            31
-          </span>
-        </span>
-      );
-    case "drive":
-      return (
-        <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden>
-          <path d="M8.5 3h7l6 10.5h-7L8.5 3z" fill="#ffc107" />
-          <path d="M8.5 3l-6 10.5 3.5 6L12 9 8.5 3z" fill="#1e8e3e" />
-          <path d="M6 19.5h12l3.5-6h-12L6 19.5z" fill="#1a73e8" />
-        </svg>
-      );
-    case "dropbox":
-      return (
-        <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden>
-          <path
-            d="M7 3l5 3.2L7 9.4 2 6.2 7 3zm10 0l5 3.2-5 3.2-5-3.2L17 3zM2 12.6l5-3.2 5 3.2-5 3.2-5-3.2zm15-3.2l5 3.2-5 3.2-5-3.2 5-3.2zM7 17l5-3.2L17 17l-5 3.2L7 17z"
-            fill="#0061ff"
-          />
-        </svg>
-      );
-    case "github":
-      return (
-        <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden>
-          <path
-            d="M12 2a10 10 0 00-3.16 19.5c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.1.39-1.99 1.03-2.69-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.58 9.58 0 015 0c1.91-1.3 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.6 1.03 2.69 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85V21c0 .27.18.58.69.48A10 10 0 0012 2z"
-            fill="#0f172a"
-          />
-        </svg>
-      );
-    case "figma":
-      return (
-        <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden>
-          <path d="M8.5 2h3.5v6.7H8.5a3.35 3.35 0 010-6.7z" fill="#f24e1e" />
-          <path d="M12 2h3.5a3.35 3.35 0 010 6.7H12V2z" fill="#ff7262" />
-          <path d="M8.5 8.7H12v6.6H8.5a3.3 3.3 0 010-6.6z" fill="#a259ff" />
-          <path d="M12 8.7h3.5a3.3 3.3 0 11-3.5 3.3V8.7z" fill="#1abcfe" />
-          <path d="M8.5 15.3H12v3.4A3.35 3.35 0 118.5 15.3z" fill="#0acf83" />
-        </svg>
-      );
-    case "slack":
-      return (
-        <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden>
-          <rect x="9.5" y="2" width="3.4" height="8" rx="1.7" fill="#36c5f0" />
-          <rect x="14" y="9.5" width="8" height="3.4" rx="1.7" fill="#2eb67d" />
-          <rect x="11" y="14" width="3.4" height="8" rx="1.7" fill="#ecb22e" />
-          <rect x="2" y="11" width="8" height="3.4" rx="1.7" fill="#e01e5a" />
-        </svg>
-      );
-    case "stripe":
-      return (
-        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[#635bff] text-[17px] font-black italic text-white">
-          S
-        </span>
-      );
-    case "square":
-      return (
-        <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden>
-          <rect x="3" y="3" width="18" height="18" rx="4.5" fill="#0f172a" />
-          <rect x="9" y="9" width="6" height="6" rx="1.2" fill="#fff" />
-        </svg>
-      );
-    case "qb":
-      return (
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2ca01c] text-[13px] font-black text-white">
-          qb
-        </span>
-      );
-    case "zapier":
-      return (
-        <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden>
-          <path
-            d="M12 4v5.1L15.6 5.5l2.9 2.9L14.9 12H20v4h-5.1l3.6 3.6-2.9 2.9L12 18.9V24h-4v-5.1L4.4 22.5 1.5 19.6 5.1 16H0v-4h5.1L1.5 8.4l2.9-2.9L8 9.1V4h4z"
-            fill="#ff4f00"
-            transform="scale(.85) translate(2 0)"
-          />
-        </svg>
-      );
-    case "sheets":
-      return (
-        <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden>
-          <rect x="5" y="2" width="14" height="20" rx="2" fill="#188038" />
-          <path d="M8.5 9h7M8.5 13h7M8.5 17h7M12 9v8" stroke="#fff" strokeWidth="1.3" />
-        </svg>
-      );
-    default:
-      return null;
-  }
+/** Tile ground: Stripe and Stax wear their app icons (mark on a brand fill);
+ *  the other three sit on the white tile in their own colours. */
+export const BRAND_TILE: Record<Brand, string> = {
+  stripe: "bg-[#635BFF]",
+  stax: "bg-[#062333]",
+  square: "bg-white",
+  meta: "bg-white",
+  gmail: "bg-white",
+};
+
+/** The brand's mark, sized by the caller. Needs <BrandSprite /> on the page. */
+export function BrandMark({ name, className = "" }: { name: Brand; className?: string }) {
+  return (
+    <svg className={className} aria-hidden focusable="false">
+      <use href={`#lp-int-${name}`} />
+    </svg>
+  );
 }
 
-const ROW_A = ["gmail", "gcal", "drive", "dropbox", "github", "figma"];
-const ROW_B = ["slack", "stripe", "square", "qb", "zapier", "sheets"];
+/** The five symbols, rendered once by the Integrations section. */
+export function BrandSprite() {
+  return (
+    <svg width="0" height="0" className="absolute" aria-hidden focusable="false">
+      <defs>
+        <symbol id="lp-int-stripe" viewBox="0 0 24 24">
+          <path
+            fill="#fff"
+            d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697 0 12.165 0 9.667 0 7.589.654 6.104 1.872 4.56 3.147 3.757 4.992 3.757 7.218c0 4.039 2.467 5.76 6.476 7.219 2.585.92 3.445 1.574 3.445 2.583 0 .98-.84 1.545-2.354 1.545-1.875 0-4.965-.921-6.99-2.109l-.9 5.555C5.175 22.99 8.385 24 11.714 24c2.641 0 4.843-.624 6.328-1.813 1.664-1.305 2.525-3.236 2.525-5.732 0-4.128-2.524-5.851-6.594-7.305h.003z"
+          />
+        </symbol>
+        <symbol id="lp-int-square" viewBox="0 0 24 24">
+          <path
+            fill="#3E4348"
+            d="M4.01 0A4.01 4.01 0 000 4.01v15.98c0 2.21 1.8 4 4.01 4.01h15.98C22.2 24 24 22.2 24 19.99V4A4.01 4.01 0 0019.99 0H4zm1.62 4.36h12.74c.7 0 1.26.57 1.26 1.27v12.74c0 .7-.56 1.27-1.26 1.27H5.63c-.7 0-1.26-.57-1.26-1.27V5.63a1.27 1.27 0 011.26-1.27zm3.83 4.35a.73.73 0 00-.73.73v5.09c0 .4.32.72.72.72h5.1a.73.73 0 00.73-.72V9.44a.73.73 0 00-.73-.73h-5.1Z"
+          />
+        </symbol>
+        {/* Stax's striped X, the `stax-logo-x` path of the staxpayments.com
+            header logo, framed square on its own centre. */}
+        <symbol id="lp-int-stax" viewBox="103.107 -0.473 15.4 15.4">
+          <path
+            fill="#B93BE4"
+            d="M103.627 5.5172V6.75118L107.083 8.47579L103.627 10.2004V11.4344L109.571 8.47579L103.627 5.5172ZM103.627 12.6535V13.8875L110.807 10.3193L117.988 13.8875V12.6535L110.807 9.08534L103.627 12.6535ZM110.807 4.13455L103.627 0.566406V1.80039L110.807 5.36853L117.988 1.80039V0.566406L110.807 4.13455ZM117.988 8.95154V7.71756L114.532 5.99295L117.988 4.26835V3.03437L112.044 5.99295L117.988 8.95154ZM103.627 4.26835L117.988 11.4195V10.1855L103.627 3.03437V4.26835Z"
+          />
+        </symbol>
+        <symbol id="lp-int-meta" viewBox="0 0 24 24">
+          <path
+            fill="#0467DF"
+            d="M6.915 4.03c-1.968 0-3.683 1.28-4.871 3.113C.704 9.208 0 11.883 0 14.449c0 .706.07 1.369.21 1.973a6.624 6.624 0 0 0 .265.86 5.297 5.297 0 0 0 .371.761c.696 1.159 1.818 1.927 3.593 1.927 1.497 0 2.633-.671 3.965-2.444.76-1.012 1.144-1.626 2.663-4.32l.756-1.339.186-.325c.061.1.121.196.183.3l2.152 3.595c.724 1.21 1.665 2.556 2.47 3.314 1.046.987 1.992 1.22 3.06 1.22 1.075 0 1.876-.355 2.455-.843a3.743 3.743 0 0 0 .81-.973c.542-.939.861-2.127.861-3.745 0-2.72-.681-5.357-2.084-7.45-1.282-1.912-2.957-2.93-4.716-2.93-1.047 0-2.088.467-3.053 1.308-.652.57-1.257 1.29-1.82 2.05-.69-.875-1.335-1.547-1.958-2.056-1.182-.966-2.315-1.303-3.454-1.303zm10.16 2.053c1.147 0 2.188.758 2.992 1.999 1.132 1.748 1.647 4.195 1.647 6.4 0 1.548-.368 2.9-1.839 2.9-.58 0-1.027-.23-1.664-1.004-.496-.601-1.343-1.878-2.832-4.358l-.617-1.028a44.908 44.908 0 0 0-1.255-1.98c.07-.109.141-.224.211-.327 1.12-1.667 2.118-2.602 3.358-2.602zm-10.201.553c1.265 0 2.058.791 2.675 1.446.307.327.737.871 1.234 1.579l-1.02 1.566c-.757 1.163-1.882 3.017-2.837 4.338-1.191 1.649-1.81 1.817-2.486 1.817-.524 0-1.038-.237-1.383-.794-.263-.426-.464-1.13-.464-2.046 0-2.221.63-4.535 1.66-6.088.454-.687.964-1.226 1.533-1.533a2.264 2.264 0 0 1 1.088-.285z"
+          />
+        </symbol>
+        {/* Google's own four-colour Gmail mark (2020), cropped to the M. */}
+        <symbol id="lp-int-gmail" viewBox="6 6 180 180">
+          <path d="M8,46v16l18.35,17.76L48,92l4-26.93L48,40l-11.2-8.4C24.93,22.7,8,31.17,8,46" fill="#C5221F" />
+          <path d="M144,40l-4,25.4l4,26.6l19.65-9.73L184,62V46c0-14.83-16.93-23.3-28.8-14.4L144,40z" fill="#FBBC04" />
+          <path d="M20,160h28V92L8,62v86C8,154.63,13.37,160,20,160" fill="#4285F4" />
+          <path d="M144,160h28c6.63,0,12-5.37,12-12V62l-40,30V160z" fill="#34A853" />
+          <polygon fill="#EA4335" points="96,76 48,40 48,92 96,128 144,92 144,40" />
+        </symbol>
+      </defs>
+    </svg>
+  );
+}
 
-function Marquee({ names, reverse }: { names: string[]; reverse?: boolean }) {
+/* Phone: two counter-scrolling rows of the five marks + the headline */
+
+const TILE =
+  "flex h-16 w-16 shrink-0 items-center justify-center lp-int-tile ring-1 ring-lp-blue/25 shadow-[0_1px_2px_rgb(15_23_42/0.04),0_10px_24px_-12px_rgb(15_23_42/0.16)]";
+
+const ROW_A: Brand[] = ["stripe", "meta", "square", "gmail", "stax"];
+const ROW_B: Brand[] = ["gmail", "stax", "stripe", "square", "meta"];
+/* Five tiles are 380 px — narrower than a phone. Each half of a track repeats
+   the row three times (1,140 px), so the loop never shows its end on any
+   screen that gets this layout (under 1024 px). */
+const REPEAT = 3;
+
+function Marquee({ names, reverse }: { names: Brand[]; reverse?: boolean }) {
+  const run = Array.from({ length: REPEAT }, () => names).flat();
   return (
     /* The vertical padding is load-bearing (owner, 2026-08-25): overflow-hidden
        clips on every axis, so with the row exactly one tile tall the ring and
@@ -127,15 +100,15 @@ function Marquee({ names, reverse }: { names: string[]; reverse?: boolean }) {
        layout so the two rows keep their spacing. */
     <div className="-my-4 overflow-hidden py-4">
       <div
-        className={`flex w-max items-center gap-3 will-change-transform ${
+        className={`flex w-max items-center will-change-transform ${
           reverse ? "int-track-b" : "int-track-a"
         }`}
       >
         {[0, 1].map((copy) => (
-          <div key={copy} aria-hidden={copy === 1} className="flex items-center gap-3 pr-3">
-            {names.map((n) => (
-              <span key={n} className={TILE}>
-                <Icon name={n} />
+          <div key={copy} className="flex items-center gap-3 pr-3">
+            {run.map((n, i) => (
+              <span key={`${n}-${i}`} className={`${TILE} ${BRAND_TILE[n]}`}>
+                <BrandMark name={n} className="h-8 w-8" />
               </span>
             ))}
           </div>
@@ -145,7 +118,7 @@ function Marquee({ names, reverse }: { names: string[]; reverse?: boolean }) {
   );
 }
 
-export function IntegrationsMobile() {
+export function IntegrationsMobile({ registerHref }: { registerHref: string }) {
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -157,14 +130,15 @@ export function IntegrationsMobile() {
     if (!a || !b) return;
 
     // The marquees are built when the section comes near, with gsap from the
-    // first move (gsap-lazy.ts) — not all at once on the first scroll.
+    // first move (gsap-lazy.ts) — not all at once on the first scroll. The
+    // durations keep the old drift (~15 px/s) over the longer tracks.
     let alive = true;
     const created: { kill(): void }[] = [];
     void whenNear(root).then(loadGsap).then(({ gsap, ScrollTrigger }) => {
       if (!alive) return;
-      const loopA = gsap.to(a, { xPercent: -50, ease: "none", duration: 30, repeat: -1 });
+      const loopA = gsap.to(a, { xPercent: -50, ease: "none", duration: 75, repeat: -1 });
       gsap.set(b, { xPercent: -50 });
-      const loopB = gsap.to(b, { xPercent: 0, ease: "none", duration: 34, repeat: -1 });
+      const loopB = gsap.to(b, { xPercent: 0, ease: "none", duration: 85, repeat: -1 });
       const loops = [loopA, loopB];
       created.push(...loops);
 
@@ -193,21 +167,21 @@ export function IntegrationsMobile() {
 
   return (
     <div ref={rootRef} className="w-full lg:hidden">
-      {/* Counter-scrolling tile rows */}
-      <div className="-mx-5 space-y-4 pb-1 pt-2">
+      {/* Counter-scrolling tile rows — decoration; the paragraph names the apps */}
+      <div className="-mx-5 space-y-4 pb-1 pt-2" aria-hidden>
         <Marquee names={ROW_A} />
         <Marquee names={ROW_B} reverse />
       </div>
 
       <div className="mt-9 text-center">
-        <h2 className="text-[24px] font-bold tracking-[-0.015em] text-ink">
-          Connected to 50+ apps
+        <h2 className="text-[24px] font-bold leading-[1.2] tracking-[-0.015em] text-ink">
+          Integrate your apps&rsquo; data into JobFlex.
         </h2>
-        <p className="mt-2 text-[15px] text-[#666666]">
-          Payments, calendars, files and books, synced to every job.
+        <p className="mx-auto mt-3 max-w-[22rem] text-[15px] leading-[1.5] text-[#555555]">
+          Payments through Stripe, Square or Stax. Leads from Meta. Email from your own Gmail.
         </p>
-        <a href="#integrations" className="mt-4 inline-flex items-center gap-2 text-[16px] font-semibold text-lp-blue underline underline-offset-4" data-cta="integrations">
-          Browse integrations
+        <a href={registerHref} className="lp-btn-lime mt-6 w-full sm:w-auto" data-cta="integrations">
+          Connect your app to JobFlex
           <span aria-hidden>→</span>
         </a>
       </div>

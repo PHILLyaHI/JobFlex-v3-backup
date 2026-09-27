@@ -1,0 +1,26 @@
+/* ============================================================
+   ESTIMATORS SHOWCASE — pass of 2026-09-26 (owner)
+   ============================================================
+   Imported by estimators-showcase.tsx. Plain CSS, every rule under .jf-lp. */
+
+/* A tab switch: the new slide is on screen from its first frame and only
+   settles into place — no fade from transparent, which blinked the whole
+   card out and back (on Smart it read as a white page flashing up). */
+@keyframes lpEstSettle {
+  from { transform: translateY(6px); }
+  to { transform: none; }
+}
+.jf-lp .lp-est-swap { animation: lpEstSettle 0.3s cubic-bezier(0.22, 0.61, 0.36, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .jf-lp .lp-est-swap { animation: none; }
+}
+
+/* The roof on a phone, zoomed out: the plate used to bleed 17 % past each
+   side of the stage (landing-e.css, .lp-est-stage), cropping the wireframe
+   and its figures and blowing the aerial up until it looked fake. Here the
+   whole roof — outline, dimensions, callouts — sits inside the stage with a
+   margin. Roof only: the fence keeps the bleed, its photo has to fill the
+   floor. */
+@media (max-width: 639px) {
+  .jf-lp .lp-est-stage.lp-roof-stage { --plan-inset: 2%; --plan-y: 55%; }
+}

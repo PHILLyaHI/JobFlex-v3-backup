@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { FileText } from "lucide-react";
 import { AppWindow } from "./app-window";
 import { InvoiceMobile } from "./invoice-mobile";
 import type { ProposalContent } from "./landing-groups";
 import { Reveal } from "./reveal";
 import { Counter } from "./counter";
-import { StampIn } from "./stamp-in";
 import { useInView } from "./use-in-view";
+import "./proposals-pass.css";
 
 /* The document as it shipped — the kitchen — is the default page's and the
    interior trades'; the other groups hand in their own (landing-groups.ts). */
@@ -360,18 +361,20 @@ function ReceiptCluster() {
   );
 }
 
-/* THE TITLE SHEET (owner, 2026-09-10): paper, no grid, a double ink line
-   round the content width with the sheet stamp and corner ticks; the mocks
-   carry a 1 px ink line and a hard offset shadow (landing-e.css, .lp-props).
-   CSS only — no gradient, no image. */
+/* THE PAPER SHEET (owner, 2026-09-26): the section is the paper ground and
+   the content lies on one white sheet of paper — a hairline edge and a
+   slight lift at the bottom corners (proposals-pass.css). It replaced the
+   2026-09-10 title sheet's double ink rule, corner ticks and SHEET 03 stamp,
+   all removed. On a phone there is no sheet and no frame. The mocks keep a
+   1 px ink line and a hard offset shadow (landing-e.css, .lp-props). */
 export function ProposalsSection({ proposal = KITCHEN, registerHref = "/auth/register", cta = "Start my free trial" }: { proposal?: ProposalContent; registerHref?: string; cta?: string }) {
   return (
     <section
       id="proposals"
       className="lp-props relative overflow-hidden px-5 py-[8vmin] max-sm:pb-[16vmin] max-sm:pt-[16vmin] sm:px-6"
     >
-      <div className="lp-props-wrap relative z-[1] mx-auto lp-wrap">
-        <SheetFrame />
+      <div className="lp-props-wrap relative z-[1] mx-auto lp-wrap sm:py-14">
+        <PaperSheet />
         <Reveal className="lp-props-copy">
           {/* The eyebrow is desktop-only: on a phone it just crowded the
               headline it was labelling (owner, 2026-08-25). */}
@@ -431,8 +434,10 @@ export function ProposalsSection({ proposal = KITCHEN, registerHref = "/auth/reg
             public/samples/jobflex-sample-proposal.pdf, exported from the app's
             own proposal export so the page shows the real thing rather than a
             drawing of it. Opens in a new tab: a visitor reading the page is not
-            done with it. */}
-        <Reveal className="mt-[12vmin] flex flex-col items-start gap-4 sm:mt-[8vmin] sm:flex-row sm:items-center sm:gap-6">
+            done with it. Two buttons since 2026-09-26 (owner): the sample is
+            the bordered secondary, the trial stays the blue primary; on a
+            phone they stack full width, primary first. */}
+        <Reveal className="mt-[12vmin] flex flex-col items-stretch gap-3 sm:mt-[8vmin] sm:flex-row sm:items-center sm:gap-4">
           <a href={registerHref} className="lp-btn-lime w-full sm:w-auto" data-cta="proposals">
             {cta}
             <span aria-hidden>→</span>
@@ -441,34 +446,28 @@ export function ProposalsSection({ proposal = KITCHEN, registerHref = "/auth/reg
             href="/samples/jobflex-sample-proposal.pdf"
             target="_blank"
             rel="noopener"
-            className="inline-flex items-center gap-2 text-[16px] font-semibold text-ink underline underline-offset-4 hover:text-lp-blue"
+            className="lp-btn-sheet w-full sm:w-auto"
             data-cta="sample_pdf"
+            aria-label="See a sample proposal (PDF, opens in a new tab)"
           >
-            See a sample proposal (PDF)
+            <FileText className="h-5 w-5 shrink-0" strokeWidth={1.9} aria-hidden />
+            See a sample proposal
+            <span className="lp-btn-sheet-tag" aria-hidden>PDF</span>
           </a>
         </Reveal>
-        {/* On a phone the sheet stamp sat on the sample link (owner's
-            screenshot, 2026-09-14): there it is its own row under the link,
-            at the right, and the frame's corner stamp is hidden. */}
-        <div className="mt-4 flex justify-end sm:hidden">
-          <StampIn className="lp-props-stamp lp-props-stamp--flow">Sheet 03 · Proposals &amp; Contracts</StampIn>
-        </div>
       </div>
     </section>
   );
 }
 
-/* The title sheet's frame: a double ink line (1 px + 4 px gap + 1 px)
-   round the content width, corner ticks, and the sheet stamp bottom right.
-   Drawn with borders and an outline; positioned by .lp-props-frame. */
-function SheetFrame() {
+/* The white sheet the section's content lies on, and — a sibling beneath
+   it, since a child cannot paint under its parent's background — the shadow
+   of its two lifted bottom corners. Both fill the wrap; hidden on a phone. */
+function PaperSheet() {
   return (
-    <div className="lp-props-frame" aria-hidden>
-      <span className="lp-props-tick lp-props-tick--tl" />
-      <span className="lp-props-tick lp-props-tick--tr" />
-      <span className="lp-props-tick lp-props-tick--bl" />
-      <span className="lp-props-tick lp-props-tick--br" />
-      <StampIn className="lp-props-stamp">Sheet 03 · Proposals &amp; Contracts</StampIn>
-    </div>
+    <>
+      <div className="lp-props-lift" aria-hidden />
+      <div className="lp-props-sheet" aria-hidden />
+    </>
   );
 }

@@ -1,0 +1,112 @@
+/* ============================================================
+   PROPOSALS PASS (owner, 2026-09-26) — imported by proposals-section.tsx.
+   Plain CSS, every selector under .jf-lp. Holds the proposals paper sheet,
+   the sample-proposal button, the portal tap-to-approve ring and the phone
+   montage's crisp tiles. landing-e.css keeps the section's paper ground and
+   the mocks' hard ink shadow.
+   ============================================================ */
+
+/* ── The proposals sheet: a white sheet of paper lying on the paper ground.
+   It replaced the drafting double rule, its corner ticks and the SHEET 03
+   stamp. A crisp hairline edge, a contact shadow, and the two bottom corners
+   lifted a touch — the only soft shadow on the page, asked for by the owner
+   ("make the border look like it's paper"). The sheet is the wrap's own box
+   and sits under the content (z-index −1 inside the wrap's stacking
+   context); the lift sits under the sheet. Desktop and tablet only: on a
+   phone the section has no frame at all. */
+.jf-lp .lp-props-sheet,
+.jf-lp .lp-props-lift {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.jf-lp .lp-props-sheet {
+  z-index: -1;
+  background: #fff;
+  border-radius: 1px;
+  box-shadow:
+    0 0 0 1px rgba(10, 10, 10, 0.11),
+    0 1px 1px rgba(10, 10, 10, 0.05),
+    0 3px 6px -3px rgba(10, 10, 10, 0.1);
+}
+.jf-lp .lp-props-lift { z-index: -2; }
+.jf-lp .lp-props-lift::before,
+.jf-lp .lp-props-lift::after {
+  content: "";
+  position: absolute;
+  bottom: 12px;
+  width: 44%;
+  height: 160px;
+  box-shadow: 0 14px 14px rgba(10, 10, 10, 0.17);
+}
+.jf-lp .lp-props-lift::before { left: 10px; transform: rotate(-1.4deg); transform-origin: right bottom; }
+.jf-lp .lp-props-lift::after { right: 10px; transform: rotate(1.4deg); transform-origin: left bottom; }
+@media (max-width: 639px) {
+  .jf-lp .lp-props-sheet,
+  .jf-lp .lp-props-lift { display: none; }
+}
+
+/* ── The sample proposal: the primary's secondary. Same height, corner,
+   type and hover lift as .lp-btn-lime; white with a 1.5 px ink edge drawn
+   inset so the two buttons measure the same. */
+.jf-lp .lp-btn-sheet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: var(--lp-r-md);
+  background: #fff;
+  box-shadow: inset 0 0 0 1.5px #0a0a0a;
+  padding: 16px 26px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #0a0a0a;
+  white-space: nowrap;
+  transition: transform 0.2s, background-color 0.2s;
+}
+.jf-lp .lp-btn-sheet:hover { background: var(--paper, #f2f0eb); transform: scale(1.02); }
+.jf-lp .lp-btn-sheet:focus-visible,
+.jf-lp .lp-props .lp-btn-lime:focus-visible { outline: 2px solid #1854a0; outline-offset: 3px; }
+.jf-lp .lp-btn-sheet-tag {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #555;
+}
+@media (prefers-reduced-motion: reduce) {
+  .jf-lp .lp-btn-sheet:hover { transform: none; }
+}
+
+/* ── Portal: the tap that lands on the tap-to-approve box. */
+@keyframes lpTapRing {
+  0% { transform: translate(-50%, -50%) scale(0.35); opacity: 0.55; }
+  100% { transform: translate(-50%, -50%) scale(2.4); opacity: 0; }
+}
+.jf-lp .lp-tap-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40px;
+  height: 40px;
+  border-radius: 9999px;
+  background: rgba(24, 84, 160, 0.28);
+  pointer-events: none;
+  animation: lpTapRing 0.65s cubic-bezier(0.2, 0.6, 0.3, 1) forwards;
+}
+
+/* ── Phone montage (montage-carousel.tsx): crisp tiles. A hairline drawn
+   inside the tile instead of the soft two-layer shadow (which, scaled down,
+   read as blur between the cards), no hover lift on touch, and the tiles'
+   greys a step darker — the tile colours read these variables, and the
+   desktop masonry keeps its own values. */
+.jf-lp .lp-mont-cols {
+  --mt-mute: #3f3f3f;
+  --mt-faint: #6b6b6b;
+}
+.jf-lp .lp-mont-cols .lp-tile {
+  box-shadow: none;
+  outline: 1px solid rgba(10, 10, 10, 0.16);
+  outline-offset: -1px;
+}
+.jf-lp .lp-mont-cols .lp-tile:hover { transform: none; box-shadow: none; }

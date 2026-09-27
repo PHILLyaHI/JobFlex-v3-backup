@@ -60,6 +60,7 @@ export interface CompareRow {
   id: string;
   /** Neutral, a fact — no comparative adjectives, no slogan. */
   label: string;
+  detail?: string;
   them: Record<CompetitorId, CompareCell>;
 }
 
@@ -72,7 +73,7 @@ export const COMPARE_COMPETITORS: { id: CompetitorId; name: string }[] = [
 const D1 = "2026-09-18";
 const D2 = "2026-09-19";
 
-export const COMPARE_ROWS: CompareRow[] = [
+const EXISTING_ROWS: CompareRow[] = [
   {
     id: "flat-price",
     label: "Flat monthly price, no per-seat fees",
@@ -380,3 +381,38 @@ export const COMPARE_ROWS: CompareRow[] = [
     },
   },
 ];
+
+// New core rows checked against vendor documentation on 2026-09-26.
+const CORE_ROWS: CompareRow[] = [
+  {
+    id: "proposals", label: "Proposals", detail: "Create, send and approve quotes",
+    them: {
+      jobber: { status: "yes", quote: "Customers approve, request changes, and pay deposits right in the client hub.", sourceUrl: "https://www.getjobber.com/features/quotes/", verifiedAt: "2026-09-26" },
+      housecall: { status: "yes", quote: "Create polished, detailed estimates in minutes", sourceUrl: "https://www.housecallpro.com/features/estimating-software/", verifiedAt: "2026-09-26" },
+      roofr: { status: "yes", quote: "Send a signature-ready, PDF proposal to your customer", sourceUrl: "https://roofr.com/proposals", verifiedAt: "2026-09-26" },
+    },
+  },
+  {
+    id: "financials", label: "Financials", detail: "Revenue reporting and business performance",
+    them: {
+      jobber: { status: "yes", quote: "Reports Basics", sourceUrl: "https://help.getjobber.com/en/articles/reports-basics/", verifiedAt: "2026-09-26", note: "Financial reports cover revenue and invoices; this row does not claim identical accounting functionality." },
+      housecall: { status: "yes", quote: "Job Revenue Earned Dashboard Report", sourceUrl: "https://help.housecallpro.com/en/articles/690728-dashboard-reports-overview", verifiedAt: "2026-09-26" },
+      roofr: { status: "yes", quote: "revenue trends at the top of every report", sourceUrl: "https://roofr.com/performance-dashboard", verifiedAt: "2026-09-26" },
+    },
+  },
+];
+const FEATURE_LABELS: Record<string, string> = {
+  "plain-description": "Smart estimator",
+  "fence-takeoff": "Fence estimator",
+  "roof-report": "Roof estimator",
+  "flat-price": "No per-user team fees",
+  "video-estimate": "Video estimator",
+};
+const PRIORITY = ["proposals", "plain-description", "fence-takeoff", "roof-report", "flat-price", "video-estimate", "financials"];
+const rank = (id: string) => PRIORITY.includes(id) ? PRIORITY.indexOf(id) : PRIORITY.length;
+export const allAppsInclude = (row: CompareRow) => COMPARE_COMPETITORS.every((c) => row.them[c.id].status === "yes");
+// Shared features first, then the owner's priorities. Stable sort preserves
+// the existing order of the remaining supporting features.
+export const COMPARE_ROWS = [...CORE_ROWS, ...EXISTING_ROWS.map((row) =>
+  FEATURE_LABELS[row.id] ? { ...row, label: FEATURE_LABELS[row.id], detail: row.label } : row,
+)].sort((a, b) => Number(allAppsInclude(b)) - Number(allAppsInclude(a)) || rank(a.id) - rank(b.id));
