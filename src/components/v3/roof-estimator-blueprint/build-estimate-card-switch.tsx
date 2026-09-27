@@ -11,6 +11,7 @@
 //   ?builder=current  the incumbent card (build-estimate-card.tsx)
 //   ?builder=a | b    the two variants that were not picked
 //   ?builder=codex-a  the Codex Impeccable card (another session's preview)
+//   ?builder=d | e | f  the 2026-09-26 high-contrast round, one per agent
 // Any other value, or none, renders variant C.
 
 import * as React from "react";
@@ -24,6 +25,9 @@ const PREVIEWS = {
   a: dynamic(() => import("./build-estimate-card-a"), { ssr: false }),
   b: dynamic(() => import("./build-estimate-card-b"), { ssr: false }),
   "codex-a": dynamic(() => import("../roof-estimator-codex/impeccable-preview"), { ssr: false }),
+  d: dynamic(() => import("./build-estimate-card-d"), { ssr: false }),
+  e: dynamic(() => import("./build-estimate-card-e"), { ssr: false }),
+  f: dynamic(() => import("./build-estimate-card-f"), { ssr: false }),
 } as const;
 
 export function BuildEstimateCardSwitch(props: BuildEstimateCardProps) {

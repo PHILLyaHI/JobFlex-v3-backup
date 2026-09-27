@@ -1,0 +1,1040 @@
+/* ============================================================
+   BUILD AN ESTIMATE — VARIANT D · the HVAC mirror (2026-09-26)
+   /dashboard/roof-estimator?builder=d
+
+   Plain CSS (not a module) so the portalled dropdown list can be reached by
+   name. Every rule is scoped under `.jf-blueprint .content .rbd…`; the card
+   root is `.card.rbd` so its own rules outrank the page's `.card`. Colours,
+   type and corners are the DESIGN.md tokens (--ink, --ink-soft, --ink-muted,
+   --paper, --paper-deep, --accent, --accent-ink, --accent-soft, --amber,
+   --emerald, --rose, --font-sans, --font-mono, --r-sm, --ease-out); the few
+   values of the card's own are custom properties on the root.
+
+   THE READ, top to bottom:
+     HEAD      title in bold caps; the build switch as one framed control.
+     SECTIONS  a heading button per part of the roof — bold caps name, a
+               plain sentence of what is picked, a framed chevron. Open: the
+               fields under full-ink labels, the rates on the paper tone at
+               the section's foot.
+     ESTIMATE  the rail: total, materials, labor, Review, Convert. Beside the
+               sections on a wide card (and it follows the scroll); on a
+               narrow card it rides the bottom of the screen as one block.
+
+   Contrast is the brief: every label and title is full ink at 700–900;
+   --ink-muted only for the unit annotations and a secondary hint.
+   ============================================================ */
+
+.jf-blueprint .content .card.rbd {
+  --rbd-x: 24px;                 /* horizontal inset of every band */
+  --rbd-h: 44px;                 /* every control: one height, a 44px target */
+  --rbd-f-min: 172px;            /* the narrowest field */
+  --rbd-side-w: 320px;           /* the ESTIMATE rail */
+  --rbd-rule: var(--ink);        /* major boundaries */
+  --rbd-quiet: color-mix(in srgb, var(--ink) 16%, transparent);   /* repeated rows */
+  --rbd-warn-ink: color-mix(in srgb, var(--amber) 68%, var(--ink)); /* amber, dark enough to read */
+  --rbd-warn-soft: color-mix(in srgb, var(--amber) 10%, var(--paper-deep));
+  container: rbd / inline-size;
+  padding: 0;
+  background: var(--paper-deep);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* ── HEAD ─────────────────────────────────────────────────── */
+.jf-blueprint .content .rbd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  padding: 18px var(--rbd-x);
+  border-bottom: 1px solid var(--rbd-rule);
+}
+.jf-blueprint .content .rbd-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+/* The build switch: one ink frame, the picked way filled with ink. */
+.jf-blueprint .content .rbd-mode {
+  display: inline-flex;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--paper-deep);
+}
+.jf-blueprint .content .rbd-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 18px;
+  border: 0;
+  border-right: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+.jf-blueprint .content .rbd-mode-btn:last-child { border-right: 0; }
+.jf-blueprint .content .rbd-mode-btn.is-on { background: var(--ink); color: var(--paper-deep); cursor: default; }
+.jf-blueprint .content .rbd-mode-btn:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── CAUTION · RECON ──────────────────────────────────────── */
+/* The figures may be an outbuilding's: it warns, everything stays live. */
+.jf-blueprint .content .rbd-caution {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 14px var(--rbd-x);
+  border-bottom: 1px solid var(--rbd-rule);
+  background: var(--rbd-warn-soft);
+  box-shadow: inset 4px 0 0 var(--amber);
+}
+.jf-blueprint .content .rbd-caution .rbd-stamp { white-space: normal; }
+.jf-blueprint .content .rbd-caution-t {
+  flex: 1 1 340px;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.jf-blueprint .content .rbd-recon { display: grid; justify-items: start; gap: 10px; padding: 18px var(--rbd-x) 22px; }
+.jf-blueprint .content .rbd-recon p { margin: 0; max-width: 68ch; font-size: 14.5px; font-weight: 500; line-height: 1.55; color: var(--ink); }
+.jf-blueprint .content .rbd-recon b { font-weight: 800; }
+
+/* ── BODY: sections + the ESTIMATE rail ───────────────────── */
+.jf-blueprint .content .rbd-body { display: grid; grid-template-columns: minmax(0, 1fr); }
+.jf-blueprint .content .rbd-main {
+  container: rbdm / inline-size;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.jf-blueprint .content .rbd-secs { display: grid; }
+
+/* The pitch, when the measurement carried none: it leads, it blocks pricing. */
+.jf-blueprint .content .rbd-lead { padding: 18px var(--rbd-x) 20px; border-bottom: 1px solid var(--rbd-rule); }
+.jf-blueprint .content .rbd-lead.is-needed { background: var(--rbd-warn-soft); box-shadow: inset 4px 0 0 var(--amber); }
+.jf-blueprint .content .rbd-pitch { display: grid; gap: 8px; }
+.jf-blueprint .content .rbd-pitch-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 18px; }
+.jf-blueprint .content .rbd-pitch-sel { width: 220px; max-width: 100%; }
+.jf-blueprint .content .rbd-pitch-msg {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+/* ── SECTIONS ─────────────────────────────────────────────── */
+.jf-blueprint .content .rbd-sec { position: relative; }
+.jf-blueprint .content .rbd-sec + .rbd-sec { border-top: 1px solid var(--rbd-quiet); }
+/* Open: a blue edge down the section says "you are editing this". */
+.jf-blueprint .content .rbd-sec.is-open::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.jf-blueprint .content .rbd-sec-h { margin: 0; font: inherit; }
+.jf-blueprint .content .rbd-sec-btn {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  align-items: center;
+  column-gap: 16px;
+  width: 100%;
+  min-height: 76px;
+  padding: 14px var(--rbd-x);
+  border: 0;
+  background: none;
+  font-family: var(--font-sans);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms var(--ease-out);
+}
+.jf-blueprint .content .rbd-sec-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.jf-blueprint .content .rbd-sec-txt { display: grid; gap: 5px; min-width: 0; }
+.jf-blueprint .content .rbd-sec-top { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; min-width: 0; }
+.jf-blueprint .content .rbd-sec-t {
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.jf-blueprint .content .rbd-sec-s {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.jf-blueprint .content .rbd-sec-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--paper-deep);
+  color: var(--ink);
+  transition: background 120ms var(--ease-out), color 120ms var(--ease-out), border-color 120ms var(--ease-out);
+}
+.jf-blueprint .content .rbd .rbd-sec-go .ic { width: 17px; height: 17px; stroke-width: 2.4; transition: transform 180ms var(--ease-out); }
+.jf-blueprint .content .rbd-sec.is-open .rbd-sec-go { background: var(--ink); color: var(--paper-deep); }
+.jf-blueprint .content .rbd-sec.is-open .rbd-sec-go .ic { transform: rotate(180deg); }
+@media (hover: hover) {
+  .jf-blueprint .content .rbd-sec-btn:hover { background: var(--accent-soft); }
+  .jf-blueprint .content .rbd-sec-btn:hover .rbd-sec-go { border-color: var(--accent); color: var(--accent); }
+  .jf-blueprint .content .rbd-sec.is-open .rbd-sec-btn:hover .rbd-sec-go { border-color: var(--accent); background: var(--accent); color: var(--paper-deep); }
+}
+.jf-blueprint .content .rbd-sec-body {
+  display: grid;
+  gap: 22px;
+  padding: 6px var(--rbd-x) 24px;
+}
+
+/* ── GROUPS AND FIELDS ────────────────────────────────────── */
+.jf-blueprint .content .rbd-g { display: grid; gap: 12px; min-width: 0; }
+.jf-blueprint .content .rbd-g + .rbd-g { padding-top: 20px; border-top: 1px solid var(--rbd-quiet); }
+.jf-blueprint .content .rbd-g-h {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 900;
+  line-height: 1.3;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+/* YOUR RATES: the contractor's own prices, set once and kept — a band on the
+   paper tone at the foot of the open section, so the two kinds of number
+   (this roof's, and the price list's) sit in two places. */
+.jf-blueprint .content .rbd-g.rbd-g--rates {
+  margin: 2px calc(-1 * var(--rbd-x)) -24px;
+  padding: 18px var(--rbd-x) 24px;
+  border-top: 1px solid var(--rbd-quiet);
+  background: var(--paper);
+}
+.jf-blueprint .content .rbd-g-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 22px; min-width: 0; }
+
+/* Fields share a grid: equal cells, controls on one floor line even when a
+   label wraps to two lines. */
+.jf-blueprint .content .rbd-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--rbd-f-min), 1fr));
+  align-items: end;
+  gap: 16px;
+  min-width: 0;
+}
+.jf-blueprint .content .rbd-f {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 7px;
+  min-width: 0;
+}
+.jf-blueprint .content .rbd-f--wide { grid-column: span 2; }
+.jf-blueprint .content .rbd-f--full { grid-column: 1 / -1; }
+.jf-blueprint .content .rbd-fields > .rbd-check { grid-column: span 2; }
+/* The commercial switch heads the fields it opens. */
+.jf-blueprint .content .rbd-sec--commercial .rbd-fields > .rbd-check:first-child { grid-column: 1 / -1; }
+.jf-blueprint .content .rbd-lbl {
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+/* A number with its unit: the FRAME is the box, the unit a flex sibling of
+   the input, so a long unit ($/sq·layer) takes its own room and the figure
+   never hides behind it, in a wide field or a narrow table cell. */
+.jf-blueprint .content .rbd-box {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: var(--rbd-h);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--paper-deep);
+  transition: border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
+}
+.jf-blueprint .content .rbd-box > .rbd-in {
+  flex: 1 1 auto;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.jf-blueprint .content .rbd-box > .rbd-in:focus,
+.jf-blueprint .content .rbd-box > .rbd-in:focus-visible { outline: none; box-shadow: none; }
+.jf-blueprint .content .rbd-box:focus-within { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); outline: 2px solid var(--accent); outline-offset: 1px; }
+.jf-blueprint .content .rbd-box:has(> .rbd-in:disabled) { border-color: color-mix(in srgb, var(--ink) 30%, transparent); background: var(--paper); }
+@media (hover: hover) {
+  .jf-blueprint .content .rbd-box:hover:not(:focus-within):not(:has(> .rbd-in:disabled)) { border-color: var(--accent); }
+}
+.jf-blueprint .content .rbd-in {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: var(--rbd-h);
+  padding: 0 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--paper-deep);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  transition: border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
+}
+.jf-blueprint .content .rbd-in::placeholder { color: var(--ink-muted); font-weight: 500; }
+.jf-blueprint .content .rbd-box.has-unit > .rbd-in { padding-right: 6px; }
+.jf-blueprint .content .rbd-unit {
+  flex: none;
+  padding-right: 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  cursor: text;
+}
+@media (hover: hover) {
+  .jf-blueprint .content .rbd-in:hover:not(:disabled):not(:focus) { border-color: var(--accent); }
+}
+.jf-blueprint .content .rbd-in:focus { outline: none; border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.jf-blueprint .content .rbd-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.jf-blueprint .content .rbd-in:disabled {
+  border-color: color-mix(in srgb, var(--ink) 30%, transparent);
+  background: var(--paper);
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+
+.jf-blueprint .content .rbd-note {
+  margin: 0;
+  max-width: 72ch;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.jf-blueprint .content .rbd-note.is-diff { font-weight: 700; color: var(--rbd-warn-ink); }
+
+/* Status stamps: a near-square frame, bold caps, a semantic border + fill. */
+.jf-blueprint .content .rbd-stamp {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--paper-deep);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.jf-blueprint .content .rbd-stamp.is-ok { border-color: var(--emerald); background: color-mix(in srgb, var(--emerald) 9%, var(--paper-deep)); color: var(--emerald); }
+.jf-blueprint .content .rbd-stamp.is-warn { border-color: var(--amber); background: var(--rbd-warn-soft); color: var(--rbd-warn-ink); }
+.jf-blueprint .content .rbd-stamp.is-bad { border-color: var(--rose); background: color-mix(in srgb, var(--rose) 8%, var(--paper-deep)); color: var(--rose); }
+
+/* A quiet action in words: bold blue, underlined, a full touch height. */
+.jf-blueprint .content .rbd-text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--accent);
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+.jf-blueprint .content .rbd .rbd-text-btn .ic { width: 15px; height: 15px; stroke-width: 2.4; }
+.jf-blueprint .content .rbd-text-btn:hover:not(:disabled) { color: var(--accent-ink); }
+.jf-blueprint .content .rbd-text-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.jf-blueprint .content .rbd-note .rbd-text-btn { display: inline; min-height: 0; padding: 0; font-size: inherit; }
+
+/* ── ROOF-TYPE TILES — the HVAC job picker's selection language ── */
+.jf-blueprint .content .rbd-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+.jf-blueprint .content .rbd-tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 10px 44px 10px 14px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--paper-deep);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms var(--ease-out), border-color 120ms var(--ease-out);
+}
+.jf-blueprint .content .rbd-tile-t { min-width: 0; overflow-wrap: anywhere; }
+.jf-blueprint .content .rbd-tile.is-on { border-color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); cursor: default; }
+.jf-blueprint .content .rbd-tile-mark {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  transform: translateY(-50%);
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--paper-deep);
+}
+.jf-blueprint .content .rbd .rbd-tile-mark .ic { width: 14px; height: 14px; stroke-width: 2.8; }
+.jf-blueprint .content .rbd-tile.is-on .rbd-tile-mark { display: inline-flex; }
+@media (hover: hover) {
+  .jf-blueprint .content .rbd-tile:not(.is-on):not(:disabled):hover { background: var(--paper); border-color: var(--accent); }
+}
+.jf-blueprint .content .rbd-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.jf-blueprint .content .rbd-tile:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── CHECKBOX — a drawn square, the native input kept for keys and readers ── */
+.jf-blueprint .content .rbd-check {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--rbd-h);
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+}
+.jf-blueprint .content .rbd-check input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.jf-blueprint .content .rbd-check-box {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--paper-deep);
+  transition: background 120ms var(--ease-out), border-color 120ms var(--ease-out);
+}
+.jf-blueprint .content .rbd-check-box svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--paper-deep);
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  visibility: hidden;
+}
+.jf-blueprint .content .rbd-check-t { min-width: 0; overflow-wrap: anywhere; }
+.jf-blueprint .content .rbd-check.is-on .rbd-check-box { border-color: var(--accent); background: var(--accent); }
+.jf-blueprint .content .rbd-check.is-on .rbd-check-box svg { visibility: visible; }
+.jf-blueprint .content .rbd-check input:focus-visible + .rbd-check-box { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (hover: hover) {
+  .jf-blueprint .content .rbd-check:not(.is-off):hover .rbd-check-box { border-color: var(--accent); }
+}
+.jf-blueprint .content .rbd-check.is-off { opacity: 0.5; cursor: not-allowed; }
+
+/* ── BUTTONS ──────────────────────────────────────────────── */
+.jf-blueprint .content .rbd-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: var(--rbd-h);
+  padding: 0 18px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 120ms var(--ease-out), box-shadow 120ms var(--ease-out), background 120ms var(--ease-out);
+}
+.jf-blueprint .content .rbd .rbd-btn .ic { width: 16px; height: 16px; }
+.jf-blueprint .content .rbd-btn--primary { background: var(--accent); color: var(--paper-deep); }
+.jf-blueprint .content .rbd-btn--ghost { background: var(--paper-deep); color: var(--ink); }
+.jf-blueprint .content .rbd-btn--ink { background: var(--ink); color: var(--paper-deep); }
+.jf-blueprint .content .rbd-btn--sm { padding: 0 14px; font-size: 11.5px; }
+@media (hover: hover) {
+  .jf-blueprint .content .rbd-btn:not(:disabled):hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+  .jf-blueprint .content .rbd-btn--primary:not(:disabled):hover { background: var(--accent-ink); }
+  .jf-blueprint .content .rbd-btn--ghost:not(:disabled):hover { background: var(--paper); }
+}
+.jf-blueprint .content .rbd-btn:not(:disabled):active { transform: none; box-shadow: none; }
+.jf-blueprint .content .rbd-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.jf-blueprint .content .rbd-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.jf-blueprint .content .rbd-add { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; }
+
+/* ── EDGES: an option's checkbox heads the fields it opens, which hang
+   under its label ── */
+.jf-blueprint .content .rbd-opts { display: grid; }
+.jf-blueprint .content .rbd-opt {
+  display: grid;
+  gap: 8px;
+  padding: 6px 0 16px;
+  border-bottom: 1px solid var(--rbd-quiet);
+}
+.jf-blueprint .content .rbd-opt:last-child { border-bottom: 0; padding-bottom: 4px; }
+.jf-blueprint .content .rbd-opt > .rbd-check { justify-self: start; }
+.jf-blueprint .content .rbd-opt > .rbd-fields,
+.jf-blueprint .content .rbd-opt > .rbd-opt-rows { padding-left: 34px; }
+.jf-blueprint .content .rbd-opt-rows { display: grid; gap: 16px; min-width: 0; }
+.jf-blueprint .content .rbd-details { border-top: 1px solid var(--rbd-quiet); padding-top: 4px; }
+.jf-blueprint .content .rbd-details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--ink);
+  cursor: pointer;
+  list-style: none;
+}
+.jf-blueprint .content .rbd-details > summary::-webkit-details-marker { display: none; }
+.jf-blueprint .content .rbd-details > summary::before {
+  content: "+";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+.jf-blueprint .content .rbd-details[open] > summary::before { content: "−"; }
+.jf-blueprint .content .rbd-details > summary:hover { color: var(--accent); }
+.jf-blueprint .content .rbd-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.jf-blueprint .content .rbd-details-b { display: grid; gap: 10px; padding: 4px 0 2px 30px; }
+.jf-blueprint .content .rbd-offer { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; }
+.jf-blueprint .content .rbd-offer .rbd-note { max-width: 52ch; }
+
+/* ── VENTS: the attic check as four framed figures ─────────── */
+.jf-blueprint .content .rbd-figs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+}
+.jf-blueprint .content .rbd-fig { display: grid; align-content: start; gap: 6px; min-width: 0; padding: 12px 14px 14px; border-left: 1px solid var(--rbd-quiet); }
+.jf-blueprint .content .rbd-fig:first-child { border-left: 0; }
+.jf-blueprint .content .rbd-fig-l { font-size: 12px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); }
+.jf-blueprint .content .rbd-fig-v {
+  font-size: 21px;
+  font-weight: 900;
+  line-height: 1.1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.jf-blueprint .content .rbd-fig-v small {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  color: var(--ink-muted);
+}
+.jf-blueprint .content .rbd-add--vents { justify-content: space-between; }
+.jf-blueprint .content .rbd-f--add { width: 260px; max-width: 100%; }
+
+/* ── SMALL TABLES: picked vents, the list editors, custom lines ──
+   Wide: a header row in bold caps, bare fields under it. Narrow: each row is
+   a block and every field carries its own label. */
+.jf-blueprint .content .rbd-tbl { display: grid; min-width: 0; }
+.jf-blueprint .content .rbd-tr {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rbd-quiet);
+}
+.jf-blueprint .content .rbd-tr.rbd-th {
+  padding: 0 0 8px;
+  border-bottom: 1.5px solid var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.jf-blueprint .content .rbd-th-r { text-align: right; }
+.jf-blueprint .content .rbd-tr:not(.rbd-th) .rbd-f > .rbd-lbl { display: none; }
+.jf-blueprint .content .rbd-tr--vent { grid-template-columns: minmax(150px, 1.4fr) minmax(104px, 0.7fr) minmax(112px, 0.7fr) minmax(112px, 0.7fr) minmax(84px, 0.5fr) 44px; }
+.jf-blueprint .content .rbd-tr--sys { grid-template-columns: minmax(170px, 2fr) 164px 100px 100px 78px 92px 44px; }
+.jf-blueprint .content .rbd-tr--und { grid-template-columns: minmax(200px, 2fr) 140px 44px; max-width: 540px; }
+.jf-blueprint .content .rbd-tr--custom { grid-template-columns: minmax(170px, 2fr) 88px 124px 116px 150px 44px; }
+/* Table cells are narrow: the figures a size down, the frame's insides tighter. */
+.jf-blueprint .content .rbd-tr .rbd-in,
+.jf-blueprint .content .rbd .rbd-tr .rbd-sel-btn { font-size: 14px; }
+.jf-blueprint .content .rbd-tr .rbd-in { padding-left: 10px; }
+.jf-blueprint .content .rbd .rbd-tr .rbd-sel-btn { padding: 6px 10px; gap: 8px; }
+.jf-blueprint .content .rbd-tr .rbd-unit { padding-right: 9px; font-size: 10.5px; }
+.jf-blueprint .content .rbd-vname { display: grid; gap: 2px; min-width: 0; font-size: 14px; font-weight: 800; line-height: 1.3; color: var(--ink); overflow-wrap: anywhere; }
+.jf-blueprint .content .rbd-vname em { font-style: normal; font-size: 12.5px; font-weight: 500; color: var(--ink-muted); }
+.jf-blueprint .content .rbd-vent-total { font-size: 15px; font-weight: 800; text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+.jf-blueprint .content .rbd-vent-total > span { display: none; }
+.jf-blueprint .content .rbd-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--paper-deep);
+  color: var(--ink);
+  cursor: pointer;
+  transition: color 120ms var(--ease-out), border-color 120ms var(--ease-out), background 120ms var(--ease-out);
+}
+.jf-blueprint .content .rbd .rbd-x .ic { width: 16px; height: 16px; stroke-width: 2.4; }
+@media (hover: hover) {
+  .jf-blueprint .content .rbd-x:not(:disabled):hover { border-color: var(--rose); background: color-mix(in srgb, var(--rose) 8%, var(--paper-deep)); color: var(--rose); }
+}
+.jf-blueprint .content .rbd-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.jf-blueprint .content .rbd-x:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ── YOUR RATES · the save ────────────────────────────────── */
+.jf-blueprint .content .rbd-defaults {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin-top: auto;
+  padding: 16px var(--rbd-x);
+  border-top: 1px solid var(--rbd-rule);
+  background: var(--paper);
+}
+.jf-blueprint .content .rbd-defaults-t { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; min-width: 0; }
+.jf-blueprint .content .rbd-defaults-k { font-size: 13px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); }
+.jf-blueprint .content .rbd-defaults-v { font-size: 14px; font-weight: 600; color: var(--ink-soft); }
+.jf-blueprint .content .rbd-save-error {
+  margin: 0;
+  padding: 12px var(--rbd-x);
+  border-top: 1px solid var(--rose);
+  background: color-mix(in srgb, var(--rose) 8%, var(--paper-deep));
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--rose);
+  overflow-wrap: anywhere;
+}
+
+/* ── ESTIMATE — the rail ──────────────────────────────────── */
+.jf-blueprint .content .rbd-sum {
+  display: grid;
+  gap: 16px;
+  padding: 20px var(--rbd-x) 24px;
+  background: var(--paper-deep);
+}
+.jf-blueprint .content .rbd-sum-k {
+  margin: 0;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--ink);
+  font-size: 13.5px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.jf-blueprint .content .rbd-sum-total { display: grid; gap: 6px; min-width: 0; }
+.jf-blueprint .content .rbd-sum-l { font-size: 12.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); }
+.jf-blueprint .content .rbd-sum-v {
+  justify-self: start;
+  max-width: 100%;
+  margin: 0 -4px;
+  padding: 0 4px;
+  font-size: 38px;
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  animation: rbd-flash 600ms var(--ease-out);
+}
+@keyframes rbd-flash {
+  from { background: var(--accent-soft); }
+  to { background: transparent; }
+}
+/* Not priced (no pitch yet, or the packs still on their way): words, not a
+   blue dash that reads like a rule. */
+.jf-blueprint .content .rbd-sum-v.is-blank { font-size: 20px; font-weight: 800; letter-spacing: 0; color: var(--ink-soft); animation: none; }
+.jf-blueprint .content .rbd-sum-why {
+  margin: 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--rbd-quiet);
+  border-bottom: 1px solid var(--rbd-quiet);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--rbd-warn-ink);
+  overflow-wrap: anywhere;
+}
+.jf-blueprint .content .rbd-sum-split { display: grid; margin: 0; border-top: 1px solid var(--rbd-quiet); }
+.jf-blueprint .content .rbd-sum-r {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rbd-quiet);
+}
+.jf-blueprint .content .rbd-sum-r dt { font-size: 12.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); }
+.jf-blueprint .content .rbd-sum-r dd { margin: 0; font-size: 17px; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+.jf-blueprint .content .rbd-sum-acts { display: grid; gap: 10px; }
+.jf-blueprint .content .rbd-sum-acts .rbd-btn { width: 100%; }
+.jf-blueprint .content .rbd-sum-acts .rbd-btn--primary { min-height: 52px; font-size: 13px; }
+
+/* ── SMART ESTIMATE ───────────────────────────────────────── */
+.jf-blueprint .content .rbd-smart-b { display: grid; gap: 20px; padding: 22px var(--rbd-x) 24px; }
+.jf-blueprint .content .rbd-smart .rbd-fields { grid-template-columns: repeat(auto-fill, minmax(180px, 220px)); }
+.jf-blueprint .content .rbd-next {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--rbd-quiet);
+}
+.jf-blueprint .content .rbd-next .rbd-btn { min-height: 48px; }
+.jf-blueprint .content .rbd-next-note { flex: 1 1 280px; max-width: 62ch; margin: 0; font-size: 14px; font-weight: 500; line-height: 1.5; color: var(--ink-soft); }
+.jf-blueprint .content .rbd-next-note.is-reason { font-weight: 700; color: var(--rbd-warn-ink); }
+
+/* ── THE DROPDOWN ─────────────────────────────────────────────
+   advanced-ai-blueprint/blueprint-select, drawn here: the trigger is framed
+   like the text boxes beside it; the LIST is portalled into .content and
+   placed in viewport coordinates, so its rules are scoped to .content. */
+.jf-blueprint .content .rbd .rbd-sel { display: block; position: relative; width: 100%; min-width: 0; }
+.jf-blueprint .content .rbd .rbd-sel-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--rbd-h);
+  padding: 6px 14px 6px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--paper-deep);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
+}
+.jf-blueprint .content .rbd .rbd-sel-val { min-width: 0; overflow-wrap: anywhere; }
+.jf-blueprint .content .rbd .rbd-sel-caret {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 180ms var(--ease-out), border-color 120ms var(--ease-out);
+}
+@media (hover: hover) {
+  .jf-blueprint .content .rbd .rbd-sel-btn:not(:disabled):hover { border-color: var(--accent); }
+  .jf-blueprint .content .rbd .rbd-sel-btn:not(:disabled):hover .rbd-sel-caret { border-color: var(--accent); }
+}
+.jf-blueprint .content .rbd .rbd-sel-btn[data-open="1"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.jf-blueprint .content .rbd .rbd-sel-btn[data-open="1"] .rbd-sel-caret { border-color: var(--accent); transform: translateY(2px) rotate(225deg); }
+.jf-blueprint .content .rbd .rbd-sel-btn:focus:not(:focus-visible) { outline: none; }
+.jf-blueprint .content .rbd .rbd-sel-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.jf-blueprint .content .rbd .rbd-sel-btn:disabled {
+  border-color: color-mix(in srgb, var(--ink) 30%, transparent);
+  background: var(--paper);
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+.jf-blueprint .content .rbd .rbd-sel-btn[data-empty="1"] .rbd-sel-val { font-weight: 500; color: var(--ink-muted); }
+/* "+ Add vent…" is an action, not an empty value: drawn as one. */
+.jf-blueprint .content .rbd .rbd-f--add .rbd-sel-btn { border-style: dashed; }
+.jf-blueprint .content .rbd .rbd-f--add .rbd-sel-btn[data-empty="1"] .rbd-sel-val { font-weight: 800; color: var(--accent); }
+.jf-blueprint .content .rbd-sel-list {
+  position: fixed;
+  z-index: 70;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 340px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--paper-deep);
+  box-shadow: 4px 4px 0 color-mix(in srgb, var(--ink) 14%, transparent);
+  animation: rbd-list-in 140ms var(--ease-out);
+}
+@keyframes rbd-list-in {
+  from { transform: translateY(-4px); }
+  to { transform: none; }
+}
+.jf-blueprint .content .rbd-sel-opt {
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0;
+  color: var(--ink);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.jf-blueprint .content .rbd-sel-opt[data-on="1"] { background: var(--accent-soft); }
+.jf-blueprint .content .rbd-sel-opt[data-picked="1"] { font-weight: 800; color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+
+/* ── THE ESTIMATE TABLES (the data form's output node) inside this card ──
+   Placed as C places them; here they only start on an ink rule and take the
+   card's full-ink section names. */
+.jf-blueprint .content .rbd > .build-out:not(.is-hidden) { border-top: 2px solid var(--ink); }
+.jf-blueprint .content .rbd > .build-out .bo-head .kpi-lbl { margin: 0; font-size: 13.5px; font-weight: 900; letter-spacing: 0.1em; color: var(--ink); }
+.jf-blueprint .content .rbd > .build-out .bo-head .bo-sum { font-family: var(--font-sans); font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+/* Colour and type only — the tables' layout stays the data form's. */
+.jf-blueprint .content .rbd > .build-out .bo-table th {
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+.jf-blueprint .content .rbd > .build-out .bo-edit .bo-in { border-color: var(--ink); font-size: 14px; }
+.jf-blueprint .content .rbd > .build-out .bo-edit .bo-in:hover:not(:disabled) { border-color: var(--accent); }
+.jf-blueprint .content .rbd > .build-out .bo-edit .bo-table td::before { font-family: var(--font-sans); font-size: 11.5px; font-weight: 800; letter-spacing: 0.06em; color: var(--ink); }
+.jf-blueprint .content .rbd > .build-out .bo-edit .bo-x-btn { color: var(--ink); }
+.jf-blueprint .content .rbd > .build-out .bo-assume .kpi-lbl,
+.jf-blueprint .content .rbd > .build-out .bo-total .kpi-lbl { color: var(--ink); }
+.jf-blueprint .content .rbd > .build-out .bo-assume li { color: var(--ink-soft); }
+
+/* ════════════════════════════════════════════════════════════
+   LAYOUT BY THE CARD'S OWN WIDTH (container queries — the shell zooms,
+   so the card's width, not the window's, decides)
+   ════════════════════════════════════════════════════════════ */
+
+/* WIDE: the rail beside the sections, following the scroll. */
+@container rbd (min-width: 960px) {
+  .jf-blueprint .content .rbd-body { grid-template-columns: minmax(0, 1fr) var(--rbd-side-w); }
+  .jf-blueprint .content .rbd-side { border-left: 1px solid var(--rbd-rule); }
+  .jf-blueprint .content .rbd-sum { position: sticky; top: calc(var(--topbar-h, 62px) + 20px); }
+}
+
+/* NARROW: one column; the ESTIMATE block rides the bottom of the screen
+   while the card is in view, and settles under the sections at its end. */
+@container rbd (max-width: 959.98px) {
+  .jf-blueprint .content .rbd-side { display: contents; }
+  .jf-blueprint .content .rbd-sum {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px 16px;
+    padding: 10px var(--rbd-x) calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top: 2px solid var(--ink);
+  }
+  .jf-blueprint .content .rbd-sum-k { display: none; }
+  .jf-blueprint .content .rbd-sum-total { gap: 2px; }
+  .jf-blueprint .content .rbd-sum-l { font-size: 11.5px; }
+  .jf-blueprint .content .rbd-sum-v { font-size: 27px; }
+  .jf-blueprint .content .rbd-sum-split { gap: 2px; border: 0; }
+  .jf-blueprint .content .rbd-sum-r { justify-content: flex-end; gap: 10px; padding: 0; border: 0; }
+  .jf-blueprint .content .rbd-sum-r dt { font-size: 11.5px; }
+  .jf-blueprint .content .rbd-sum-r dd { min-width: 72px; font-size: 15px; text-align: right; }
+  .jf-blueprint .content .rbd-sum-v.is-blank { font-size: 17px; }
+  .jf-blueprint .content .rbd-sum-why { max-width: 24ch; padding: 0; border: 0; font-size: 13px; text-align: right; }
+  .jf-blueprint .content .rbd-sum-acts { grid-column: 1 / -1; grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
+  .jf-blueprint .content .rbd-sum-acts .rbd-btn { min-height: 46px; padding: 0 12px; font-size: 11.5px; letter-spacing: 0.04em; }
+  .jf-blueprint .content .rbd-sum-acts .rbd-btn--primary { min-height: 46px; font-size: 11.5px; }
+  .jf-blueprint .content .rbd-defaults { border-bottom: 0; }
+}
+
+/* A phone-width card: tighter insets, the switch across the full width. */
+@container rbd (max-width: 560px) {
+  .jf-blueprint .content .rbd > * { --rbd-x: 16px; }
+  .jf-blueprint .content .rbd-head { flex-direction: column; align-items: stretch; gap: 14px; padding: 16px var(--rbd-x); }
+  .jf-blueprint .content .rbd-mode { display: flex; }
+  .jf-blueprint .content .rbd-mode-btn { flex: 1 1 0; min-width: 0; min-height: var(--rbd-h); padding: 0 8px; }
+  .jf-blueprint .content .rbd-caution .rbd-btn { width: 100%; }
+  .jf-blueprint .content .rbd-pitch-sel { width: 100%; }
+  .jf-blueprint .content .rbd-smart .rbd-fields { grid-template-columns: minmax(0, 1fr); }
+  .jf-blueprint .content .rbd-next .rbd-btn { width: 100%; }
+  .jf-blueprint .content .rbd-sum-acts .rbd-btn .ic { display: none; }
+  .jf-blueprint .content .rbd-defaults .rbd-btn { width: 100%; }
+}
+
+/* Inside the sections column: fields, tables and the edge rows by ITS width. */
+@container rbdm (max-width: 520px) {
+  .jf-blueprint .content .rbd-sec-btn { min-height: 72px; padding: 14px var(--rbd-x); column-gap: 12px; }
+  .jf-blueprint .content .rbd-sec-body { padding: 4px var(--rbd-x) 22px; }
+  .jf-blueprint .content .rbd-g.rbd-g--rates { margin: 2px calc(-1 * var(--rbd-x)) -22px; padding: 16px var(--rbd-x) 22px; }
+  .jf-blueprint .content .rbd-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 12px; }
+  /* A dropdown takes the whole line on a phone so its value reads whole;
+     the short ones (12%, 2 in face) keep a half cell beside a number. */
+  .jf-blueprint .content .rbd-f--wide,
+  .jf-blueprint .content .rbd-fields > .rbd-f--sel:not(.rbd-f--short),
+  .jf-blueprint .content .rbd-fields > .rbd-check { grid-column: 1 / -1; }
+  .jf-blueprint .content .rbd-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .jf-blueprint .content .rbd-tile { padding: 10px 38px 10px 12px; font-size: 12.5px; letter-spacing: 0.04em; }
+  .jf-blueprint .content .rbd-tile-mark { right: 8px; }
+  .jf-blueprint .content .rbd-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .jf-blueprint .content .rbd-fig:nth-child(3) { border-left: 0; }
+  .jf-blueprint .content .rbd-fig:nth-child(n + 3) { border-top: 1px solid var(--rbd-quiet); }
+  .jf-blueprint .content .rbd-add--vents .rbd-check,
+  .jf-blueprint .content .rbd-f--add { width: 100%; }
+  .jf-blueprint .content .rbd-add .rbd-btn { flex: 1 1 auto; }
+  .jf-blueprint .content .rbd-details-b { padding-left: 0; }
+  .jf-blueprint .content .rbd-defaults { padding: 16px var(--rbd-x); }
+}
+@container rbdm (max-width: 520px) {
+  .jf-blueprint .content .rbd-opt > .rbd-fields,
+  .jf-blueprint .content .rbd-opt > .rbd-opt-rows { padding-left: 0; }
+}
+@container rbdm (max-width: 900px) {
+  /* The small tables: every row a block — its name and the remove button on
+     the first line, then the fields two to a line, each with its own label. */
+  .jf-blueprint .content .rbd-tr.rbd-th { display: none; }
+  .jf-blueprint .content .rbd-tr:not(.rbd-th) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    max-width: none;
+    padding: 14px 0;
+  }
+  .jf-blueprint .content .rbd-tr:not(.rbd-th) .rbd-f > .rbd-lbl { display: block; }
+  .jf-blueprint .content .rbd-tr > * { order: 2; flex: 0 1 calc(50% - 6px); }
+  .jf-blueprint .content .rbd-tr > .rbd-tn { order: 0; flex: 1 1 calc(100% - 56px); }
+  .jf-blueprint .content .rbd-tr > .rbd-x { order: 1; flex: 0 0 44px; }
+  .jf-blueprint .content .rbd-tr > .rbd-tn .rbd-in { font-weight: 700; }
+  /* A vent: Qty beside its Total, then the two rates. */
+  .jf-blueprint .content .rbd-tr--vent > .rbd-vname { align-self: center; }
+  .jf-blueprint .content .rbd-tr--vent > .rbd-vent-total { order: 3; }
+  .jf-blueprint .content .rbd-tr--vent > .rbd-f:nth-child(3),
+  .jf-blueprint .content .rbd-tr--vent > .rbd-f:nth-child(4) { order: 4; }
+  /* The total reads like a field: its label on the labels' line, the sum
+     level with the middle of the Qty box beside it. */
+  .jf-blueprint .content .rbd-vent-total {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: calc(var(--rbd-h) + 23px);
+    padding-bottom: 10px;
+    font-size: 17px;
+    line-height: 1.2;
+    text-align: left;
+  }
+  .jf-blueprint .content .rbd-vent-total > span {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 800;
+    line-height: 1.25;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+}
+
+/* ── MOTION OFF ───────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .jf-blueprint .content .rbd-sum-v,
+  .jf-blueprint .content .rbd-sel-list { animation: none; }
+  .jf-blueprint .content .rbd-mode-btn,
+  .jf-blueprint .content .rbd-sec-btn,
+  .jf-blueprint .content .rbd-sec-go,
+  .jf-blueprint .content .rbd .rbd-sec-go .ic,
+  .jf-blueprint .content .rbd-in,
+  .jf-blueprint .content .rbd-tile,
+  .jf-blueprint .content .rbd-check-box,
+  .jf-blueprint .content .rbd-btn,
+  .jf-blueprint .content .rbd-x,
+  .jf-blueprint .content .rbd .rbd-sel-btn,
+  .jf-blueprint .content .rbd .rbd-sel-caret { transition: none; }
+}
