@@ -37,6 +37,10 @@
 
 .bp {
   --paper: #f2f0eb; --paper-deep: #ebe8e1;
+  /* The white card surface (DESIGN.md's `--sheet`). This scope's
+     `--paper-deep` is the donor's recessed cream, not white, so the plan
+     cards (owner, 2026-09-26: white, ink frame, hard offset) read this. */
+  --sheet: #ffffff;
   --ink: #0a0a0a; --ink-soft: #2a2a2a;
   --muted: #555; --muted-light: #888; --muted-faint: #aaa;
   --blueprint: #1854a0; --blueprint-dark: #0e3d7a; --sky: #4a9eff;
@@ -586,29 +590,36 @@
      is the feature list, and that scrolls itself. */
   overflow: visible;
   border: var(--border); border-radius: var(--radius);
-  background: var(--paper); color: var(--ink);
-  transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease);
+  color: var(--ink);
+  /* THE CARD (owner, 2026-09-26 — the landing's plan cards wear the same):
+     white, a 2px ink frame and a hard offset, no blur. The offset is the
+     card's own and never changes with selection; its colour says what the
+     card is (ink; blueprint for the most-picked one), its length only grows
+     under a mouse. Selection is the FRAME — see `.on` below — so the
+     most-picked card's standing blue can never be read as "the one you
+     clicked". Composed from three variables so every state states only
+     what it changes. */
+  --pw-cast: var(--ink);
+  --pw-off: 6px;
+  --pw-ring: 0 0 0 0 transparent;
+  background: var(--sheet);
+  box-shadow: var(--pw-ring), var(--pw-off) var(--pw-off) 0 var(--pw-cast);
+  transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease), border-color 0.1s var(--ease);
 }
-.bp :global(.pw-plan:hover) { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--ink); }
-.bp :global(.pw-plan.on) { border-color: var(--blueprint); box-shadow: 6px 6px 0 var(--blueprint); }
-/* The recommended column has to LOOK recommended before the badge is read: a
-   tint alone put it at the same weight as the $1 tier next to it. An ink rule
-   across the top and the standing offset shadow lift it out of the row without
-   changing its size — which would break the feature rows' alignment across the
-   four columns, and that alignment is the whole comparison. */
-.bp :global(.pw-plan--hero) {
-  background: var(--paper-deep);
-  /* ONE shadow, ink, cast down-right like every other plate in this system.
-     The inset rule that used to sit along the top edge read as a SECOND shadow
-     on the opposite side of the card (owner, 2026-08-29) — two light sources on
-     one object. The tint, the badge and the offset carry the emphasis instead,
-     and none of them cost layout: a thicker border would push every feature row
-     out of line with the same row in the columns beside it. */
-  box-shadow: 4px 4px 0 var(--ink);
+/* A lift under a real pointer only: a finger leaves :hover stuck on the card
+   it last touched. */
+@media (hover: hover) and (pointer: fine) {
+  .bp :global(.pw-plan:hover) { transform: translate(-2px, -2px); --pw-off: 8px; }
 }
-/* Ink here too, not blueprint: this is the one card whose shadow the owner
-   called black, and the blue border is already what says "selected". */
-.bp :global(.pw-plan--hero.on) { box-shadow: 6px 6px 0 var(--ink); }
+/* SELECTED: a blue frame, 4px deep — the 2px border plus an inset ring, so
+   no row of the comparison moves. The card that was clicked last is the one
+   that wears it (owner, 2026-09-26). */
+.bp :global(.pw-plan.on) { border-color: var(--blueprint); --pw-ring: inset 0 0 0 2px var(--blueprint); }
+/* The recommended column LOOKS recommended before the badge is read: its
+   standing offset is blueprint blue instead of ink (owner, 2026-09-26), on the
+   same white as the rest. Colour, not size — a thicker border would push every
+   feature row out of line with the same row in the columns beside it. */
+.bp :global(.pw-plan--hero) { --pw-cast: var(--blueprint); }
 .bp :global(.pw-tag) {
   position: absolute; top: -12px; left: 16px; z-index: 2; padding: 4px 10px;
   border: var(--border); border-radius: var(--radius);
@@ -697,9 +708,10 @@
 /* FOOT — promo and the primary on one line, the promo's Apply inside its own
    frame so the row is two objects, not three. */
 /* THE CUSTOM CARD. Same frame, one extra affordance: the row that says the
-   price is built from ticks, and the control that opens the picker. */
-.bp :global(.pw-plan--custom) { border-style: dashed; }
-.bp :global(.pw-plan--custom.on) { border-style: solid; }
+   price is built from ticks, and the control that opens the picker. The frame
+   is solid now like every card's (owner, 2026-09-26) — a dashed outline over
+   a hard offset read as a card that had failed to draw; the dashed "Select
+   pages" control still says this one is built by hand. */
 .bp :global(.pw-f--add) { color: var(--blueprint); font-weight: 800; }
 .bp :global(.pw-f--add .ic) { color: var(--blueprint); }
 .bp :global(.pw-edit) {
@@ -762,8 +774,10 @@
   margin-top: 12px; font-family: var(--font-mono); font-size: 11px; font-weight: 600;
   line-height: 1.6; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
 }
+/* Under the cards since 2026-09-26: a little extra air above, so the line
+   clears the cards' 6px offset instead of reading as part of it. */
 .bp :global(.pw-terms) {
-  margin: 0 0 16px; font-size: 13.5px; line-height: 1.5; color: var(--ink-soft, var(--muted));
+  margin: 6px 0 0; max-width: 92ch; font-size: 13.5px; line-height: 1.5; color: var(--ink-soft, var(--muted));
 }
 
 .bp :global(.pw-skip) {
@@ -832,13 +846,25 @@
   letter-spacing: 0.18em; text-transform: uppercase; color: var(--blueprint);
 }
 .bp :global(.pwp-h) { margin-top: 5px; font-size: 22px; font-weight: 900; letter-spacing: -0.02em; }
-.bp :global(.pwp-x) { font-size: 22px; line-height: 1; color: var(--muted); padding: 2px 6px; }
+/* 44×44 to the finger, the same small × to the eye: the negative margin keeps
+   the glyph where it sat in the head. */
+.bp :global(.pwp-x) {
+  display: grid; place-items: center; flex: 0 0 auto;
+  width: 44px; height: 44px; margin: -10px -12px 0 0;
+  font-size: 22px; line-height: 1; color: var(--muted);
+}
 .bp :global(.pwp-x:hover) { color: var(--ink); }
+.bp :global(.pwp-box:focus) { outline: none; }
+.bp :global(.pwp-x:focus-visible), .bp :global(.pwp-row:focus-visible) {
+  outline: 2px solid var(--blueprint); outline-offset: 2px;
+}
 .bp :global(.pwp-lede) { padding: 14px 22px 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
 .bp :global(.pwp-list) { padding: 12px 22px 4px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .bp :global(.pwp-row) {
   display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
-  padding: 11px 13px; border: 1.5px solid var(--hair); border-radius: var(--radius);
+  /* `--hair-soft`: this scope never defined `--hair`, so the declaration was
+     dropped and the rows drew no frame at all. */
+  padding: 11px 13px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
   background: var(--paper); cursor: pointer;
   transition: border-color 0.1s var(--ease), background 0.1s var(--ease);
 }
@@ -1220,9 +1246,13 @@
     min-height: 440px;
     padding: 16px 16px 14px;
     transition: none;
+    /* A 4px offset on a phone, as the landing's plan cards (2026-09-26). */
+    --pw-off: 4px;
   }
-  .bp :global(.pw-plan:hover) { transform: none; box-shadow: none; }
-  .bp :global(.pw-plan.on) { box-shadow: 4px 4px 0 var(--blueprint); }
+  /* No lift inside the carousel — and the card keeps its offset: this used to
+     be `box-shadow: none`, which a finger's stuck :hover turned into a card
+     with no shadow. Selection is the blue frame here too (2026-09-26). */
+  .bp :global(.pw-plan:hover) { transform: none; --pw-off: 4px; }
   .bp :global(.pw-feats) {
     flex: 0 1 auto; overflow: hidden !important; overscroll-behavior: auto;
     max-height: 250px; margin-bottom: 4px;
@@ -1391,4 +1421,51 @@
   .bp :global(.auth-form) { padding-top: clamp(22px, 4vh, 40px); }
   .bp :global(.auth-form .brand) { position: static; top: auto; left: auto; margin: 0 0 var(--gap-brand); }
   .bp :global(.plan-sheet .brand) { margin-bottom: var(--gap-brand); }
+}
+
+/* ============================================================
+   OWNER PASS — 2026-09-26.
+   · Step 1: the confirm-password field's own error line.
+   · Step 3: the steps row stands clear, and "Pick a plan." sits on
+     the cards it asks about.
+   · Step 3: the start button that was pressed keeps the active state.
+   Last in the file so it outranks the blocks above at equal specificity.
+   ============================================================ */
+.bp :global(.fld-note--err) { color: var(--danger); font-size: 11.5px; font-weight: 700; }
+.bp :global(.fld-in[aria-invalid="true"]) { border-color: var(--danger); }
+
+/* "Pick a plan." sat 19px under the steps and ~80px over the cards, so it
+   read as a caption of the steps. Now the steps have air on both sides and
+   the heading is nearer the cards (its gap there is #stepPlan's, plus the
+   rail's band for the "Most picked" tag) than it is to the steps. */
+.bp :global(.plan-sheet .brand) { margin-bottom: clamp(24px, 4.4vh, 40px); }
+.bp :global(.plan-sheet .stepper) { margin-bottom: clamp(32px, 6.2vh, 56px); }
+
+/* THE PRESSED START BUTTON. The in-card rule (`.pw-plan .pw-go.pw-go`)
+   out-ranks `.btn:hover` / `.btn:active`, so a press never showed on it.
+   Now it does, and the clicked button STAYS pressed — full strength, in the
+   darker blue, "Opening checkout…" — while checkout opens; every other start
+   button is disabled and dims behind it (`.btn[disabled]`). */
+@media (hover: hover) and (pointer: fine) {
+  .bp :global(.pw-plan) :global(.pw-go.pw-go:hover) { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+}
+.bp :global(.pw-plan) :global(.pw-go.pw-go:active),
+.bp :global(.pw-plan) :global(.pw-go.pw-go.is-busy) { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+.bp :global(.pw-plan) :global(.pw-go.pw-go.is-busy) { opacity: 1; background: var(--blueprint-dark); }
+
+@media (max-width: 768px) {
+  .bp :global(.plan-sheet .brand) { margin-bottom: clamp(24px, 4vh, 36px); }
+  .bp :global(.plan-sheet .stepper) { margin-bottom: clamp(28px, 4.8vh, 44px); }
+  /* Each password field's eye is a 44px target on a phone; no hover wash
+     for a finger to leave behind. */
+  .bp :global(.pw-toggle) { width: 44px; height: 44px; right: 1px; }
+  .bp :global(.pw-toggle):hover { background: none; }
+  /* "Show all" keeps its place and look but takes a 44px-tall target: the
+     negative margins give back exactly the height the target adds. */
+  .bp :global(.pw-more) { display: inline-flex; align-items: center; min-height: 44px; margin: -14px 0 -4px; }
+}
+.bp :global(.pw-more:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.pw-plan), .bp :global(.pw-plan) :global(.pw-go.pw-go) { transition: none; }
 }

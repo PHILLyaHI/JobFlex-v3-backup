@@ -94,16 +94,15 @@ function stItem(index: 0 | 1 | 2, step: Step): string {
   return "st-item" + (step === 3 ? " on" : step > 3 ? " done" : "");
 }
 
-/* THE CUSTOM PLAN IS NOT OFFERED AT SIGNUP (owner, 2026-09-17). The plan step
-   shows the catalogue only — Starter, Professional, Enterprise — so a visitor
-   who has not used the product yet is not asked to assemble one. Custom stays
-   where it makes sense: /dashboard/subscription, where a shop that knows which
-   pages it works in can build the plan and switch to it. Nothing server-side
-   changed; completePendingSignup still accepts the custom slug, so flipping
-   this back to true restores the card and its page picker as they were.
-   Typed `boolean` on purpose: a bare `false` would make every branch below a
-   constant condition. */
-const OFFER_CUSTOM_AT_SIGNUP: boolean = false;
+/* THE CUSTOM PLAN IS OFFERED AT SIGNUP AGAIN (owner, 2026-09-26: "the custom
+   plan disappeared"). It was taken off the plan step on 2026-09-17 so a
+   first-time visitor saw the catalogue only; the owner wants it back beside
+   the catalogue cards, with its page picker. Nothing server-side changed in
+   either direction — completePendingSignup and the checkout route always
+   accepted the custom slug. /dashboard/subscription still offers it too.
+   Typed `boolean` on purpose, so flipping it never turns a branch below into
+   a constant condition. */
+const OFFER_CUSTOM_AT_SIGNUP: boolean = true;
 
 // Donor `#tradeNote`, verbatim.
 function tradeNote(n: number): string {
@@ -136,12 +135,11 @@ export function RegisterContent({
      no pending-signup intent to park: the account already exists. */
   const setupMode = setup !== null;
   /* THE FORM (landing-e pass A, 2026-09-11; the only form since 2026-09-16):
-     step 1 is three fields — name, email, password; the business name is on
-     step 2 and there is no confirmation field — the progress shows all three
-     steps from the first screen, the card terms are said out loud under the
-     button and above the plans, every analytics event carries
-     `variant: "e"` and the pending signup records it (the admin's d-vs-e
-     history reads on). */
+     step 1 is name, email, password and — since 2026-09-26 (owner) — a
+     password confirmation, checked here in the browser only; the business
+     name is on step 2 — the progress shows all three steps from the first
+     screen, every analytics event carries `variant: "e"` and the pending
+     signup records it (the admin's d-vs-e history reads on). */
   const rootRef = React.useRef<HTMLDivElement>(null);
   const addrRef = React.useRef<HTMLInputElement>(null);
 
@@ -263,6 +261,28 @@ export function RegisterContent({
      is being created before anything else can be clicked. Initial state rather
      than a setState inside the effect below. */
   const [payBusy, setPayBusy] = React.useState(Boolean(ret?.sessionId && !ret.cancelled));
+  /* THE CARD WHOSE START BUTTON WAS PRESSED (owner, 2026-09-26: the active
+     state landed on another card, not the one clicked). That button — and
+     only that one — wears the pressed, busy state while checkout opens; the
+     other start buttons dim behind it. Kept apart from `planSlug` so "Skip for
+     now", which is busy too, never labels a card "Opening checkout…". */
+  const [startingSlug, setStartingSlug] = React.useState<string | null>(null);
+  /* Set once the browser has been handed Stripe's URL. The busy state then
+     stays up until checkout's page replaces this one — resetting it straight
+     away put every button back to idle (and clickable) for the second the
+     browser spends loading Stripe. A page brought back by the Back button
+     from the back/forward cache returns idle. */
+  const leavingRef = React.useRef(false);
+  React.useEffect(() => {
+    const onShow = (e: PageTransitionEvent) => {
+      if (!e.persisted || !leavingRef.current) return;
+      leavingRef.current = false;
+      setPayBusy(false);
+      setStartingSlug(null);
+    };
+    window.addEventListener("pageshow", onShow);
+    return () => window.removeEventListener("pageshow", onShow);
+  }, []);
   /* THE CUSTOM PLAN. Not a catalog row — a base price plus the add-on pages
      the shop picks, so it is held here and priced by lib/customPlan (the same
      module the checkout route re-prices with, because a client number is never
@@ -278,12 +298,18 @@ export function RegisterContent({
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [pickerOn, setPickerOn] = React.useState(false);
   const pickerExit = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* FOCUS GOES INTO THE PICKER AND COMES BACK OUT. The dialog is portalled to
+     <body>, so with focus left on the card that opened it, Escape (heard on
+     the dialog) did nothing and Tab walked the page behind the scrim. */
+  const pickerBoxRef = React.useRef<HTMLDivElement>(null);
+  const pickerReturn = React.useRef<HTMLElement | null>(null);
 
   const openPicker = React.useCallback(() => {
     if (pickerExit.current) {
       clearTimeout(pickerExit.current);
       pickerExit.current = null;
     }
+    pickerReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setPickerOpen(true);
   }, []);
 
@@ -292,6 +318,8 @@ export function RegisterContent({
     pickerExit.current = setTimeout(() => {
       setPickerOpen(false);
       pickerExit.current = null;
+      pickerReturn.current?.focus({ preventScroll: true });
+      pickerReturn.current = null;
     }, PICKER_EXIT_MS);
   }, []);
 
@@ -300,7 +328,10 @@ export function RegisterContent({
   // transition from.
   React.useEffect(() => {
     if (!pickerOpen) return;
-    const id = requestAnimationFrame(() => setPickerOn(true));
+    const id = requestAnimationFrame(() => {
+      setPickerOn(true);
+      pickerBoxRef.current?.focus({ preventScroll: true });
+    });
     return () => cancelAnimationFrame(id);
   }, [pickerOpen]);
 
@@ -432,6 +463,21 @@ export function RegisterContent({
   const [email, setEmail] = React.useState(setup?.email ?? googlePrefill?.email ?? "");
   const [password, setPassword] = React.useState("");
   const [showPw, setShowPw] = React.useState(false);
+  /* THE CONFIRMATION (owner, 2026-09-26). Checked here in the browser only —
+     the server still receives the one password. Its error belongs to the
+     field and prints under it: shown once the visitor leaves the field having
+     typed something, or presses Continue, and gone the moment the two match. */
+  const [password2, setPassword2] = React.useState("");
+  const [showPw2, setShowPw2] = React.useState(false);
+  const [pw2Checked, setPw2Checked] = React.useState(false);
+  const pw2Ref = React.useRef<HTMLInputElement>(null);
+  const pw2Err = !pw2Checked
+    ? null
+    : !password2
+      ? "Type your password again to confirm it."
+      : password2 !== password
+        ? "Passwords do not match."
+        : null;
   // Step 1 is now gated on a server answer (is this email free?), so it has a
   // pending state the Continue button reads.
   const [checking, setChecking] = React.useState(false);
@@ -582,6 +628,7 @@ export function RegisterContent({
       : plans.find((p) => p.slug === slug)?.trialDays ?? 0;
     trackTraffic(TRAFFIC_EVENTS.attempt, { plan: slug, interval, intent: clickedTrialDays > 0 ? "trial" : "purchase", flow: trafficFlow });
     setPayBusy(true);
+    setStartingSlug(slug);
     setPlansErr(null);
     try {
       /* THE INTENT IS RE-STAMPED WITH THE PAGES FIRST. It was parked at the
@@ -612,7 +659,16 @@ export function RegisterContent({
       const body = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
       if (res.ok && body.url) {
         trackTraffic(TRAFFIC_EVENTS.opened, { plan: slug, interval, flow: trafficFlow });
+        leavingRef.current = true;
         window.location.href = body.url;
+        /* A hand-off that never happens (blocked, cancelled) must not leave
+           the page stuck on "Opening checkout…" with every button off. */
+        window.setTimeout(() => {
+          if (!leavingRef.current) return;
+          leavingRef.current = false;
+          setPayBusy(false);
+          setStartingSlug(null);
+        }, 15000);
         return;
       }
       trackTraffic(TRAFFIC_EVENTS.error, { step: 3, reason: "checkout_rejected" });
@@ -621,7 +677,10 @@ export function RegisterContent({
       trackTraffic(TRAFFIC_EVENTS.error, { step: 3, reason: "checkout_unavailable" });
       setPlansErr("Couldn't reach checkout — your account has not been created.");
     } finally {
-      setPayBusy(false);
+      if (!leavingRef.current) {
+        setPayBusy(false);
+        setStartingSlug(null);
+      }
     }
   }
 
@@ -770,6 +829,15 @@ export function RegisterContent({
         setErr1("Password must be at least 8 characters.");
         return;
       }
+      /* The two must match before anything is asked of the server. The
+         message is the confirmation field's own (pw2Err), so the general
+         error block is cleared rather than saying it twice. */
+      if (password2 !== password) {
+        setPw2Checked(true);
+        setErr1(null);
+        pw2Ref.current?.focus();
+        return;
+      }
     }
     setErr1(null);
     setChecking(true);
@@ -909,14 +977,15 @@ export function RegisterContent({
           <span className="st-h">Required</span>
         </span>
       </div>
-      {/* All three steps from the first screen (pass A): the note under the
-          step-1 button already says "Step 1 of 3" and names the card. */}
+      {/* All three steps from the first screen (pass A). The sub-line names
+          no number: the trial's length is set per plan in /admin/plans (7
+          days as of 2026-09-26), and "14 days free" had gone stale. */}
       <span className="st-line"></span>
       <div className={stItem(2, step)} data-step="3">
         <span className="st-n">3</span>
         <span className="st-txt">
           <span className="st-t">Plan</span>
-          <span className="st-h">14 days free</span>
+          <span className="st-h">Free trial</span>
         </span>
       </div>
     </div>
@@ -1010,17 +1079,57 @@ export function RegisterContent({
                   <button
                     className="pw-toggle"
                     type="button"
-                    aria-label="Show password"
+                    aria-label={showPw ? "Hide password" : "Show password"}
+                    aria-pressed={showPw}
                     onClick={() => setShowPw((v) => !v)}
                   >
-                    <svg className="ic">
+                    <svg className="ic" aria-hidden="true">
                       <use href={showPw ? "#i-eye-off" : "#i-eye"} />
                     </svg>
                   </button>
                 </span>
                 <span className="fld-note">At least 8 characters.</span>
               </label>
-              {/* No confirmation field (pass A): three fields, no more. */}
+              {/* CONFIRM PASSWORD (owner, 2026-09-26): the same field, the
+                  same eye, and its own error line under it. */}
+              <label className="fld">
+                <span className="fld-lbl">Confirm password</span>
+                <span className="pw-wrap">
+                  <input
+                    ref={pw2Ref}
+                    className="fld-in"
+                    type={showPw2 ? "text" : "password"}
+                    id="password2"
+                    placeholder="••••••••"
+                    autoComplete="new-password"
+                    value={password2}
+                    aria-invalid={pw2Err ? true : undefined}
+                    aria-describedby="password2Note"
+                    onChange={(e) => setPassword2(e.target.value)}
+                    onBlur={() => {
+                      if (password2) setPw2Checked(true);
+                    }}
+                  />
+                  <button
+                    className="pw-toggle"
+                    type="button"
+                    aria-label={showPw2 ? "Hide confirmation password" : "Show confirmation password"}
+                    aria-pressed={showPw2}
+                    onClick={() => setShowPw2((v) => !v)}
+                  >
+                    <svg className="ic" aria-hidden="true">
+                      <use href={showPw2 ? "#i-eye-off" : "#i-eye"} />
+                    </svg>
+                  </button>
+                </span>
+                <span
+                  className={pw2Err ? "fld-note fld-note--err" : "fld-note"}
+                  id="password2Note"
+                  aria-live="polite"
+                >
+                  {pw2Err ?? "Type it again to confirm."}
+                </span>
+              </label>
               </>
               ) : null}
 
@@ -1030,11 +1139,9 @@ export function RegisterContent({
                   <use href="#i-arrow-r" />
                 </svg>
               </button>
-              {/* The terms, said out loud (pass A): where the card comes in
-                  and when the first charge is, before anyone types. */}
-              <p className="step-note" id="stepNote">
-                Step 1 of 3 · 14 days free · card at step 3, not charged until day 15
-              </p>
+              {/* The "Step 1 of 3 · 14 days free · card at step 3" line that
+                  sat here is gone (owner, 2026-09-26). The trial terms are
+                  stated on the plan step, beside the cards they apply to. */}
               <div className={err1 ? "err" : "err is-hidden"} id="err1">
                 {err1}
               </div>
@@ -1296,17 +1403,14 @@ export function RegisterContent({
                 the question, not stacked under it where it read as a third
                 heading. The trial sentence moved to the fine print above the
                 CTA, where the rest of the terms are. */}
+            {/* THE HEADING SITS ON THE CARDS (owner, 2026-09-26): "Pick a
+                plan." stands clear of the stepper and directly over the cards
+                it asks about. The terms paragraph that used to sit between
+                the two moved under the cards, beside the start buttons it
+                speaks for. */}
             <div className="pw-head">
               <h1 className="auth-h1">Pick a plan.</h1>
             </div>
-            {/* The card terms, once more, where the card is asked for (pass A). */}
-            <p className="pw-terms" id="pwTerms">
-              Your card won&apos;t be charged until day 15. Cancel anytime from Subscription.
-              {" "}By starting a trial, you agree to our{" "}
-              <Link href="/terms" target="_blank" rel="noopener noreferrer"><u>Terms of service</u></Link>
-              {" "}and acknowledge our{" "}
-              <Link href="/privacy" target="_blank" rel="noopener noreferrer"><u>Privacy policy</u></Link>.
-            </p>
 
             {plansErr ? (
               <div className="err" role="alert">
@@ -1419,7 +1523,8 @@ export function RegisterContent({
                         a button. */}
                     <button
                       type="button"
-                      className="btn pw-go"
+                      className={"btn pw-go" + (startingSlug === p.slug ? " is-busy" : "")}
+                      aria-busy={startingSlug === p.slug || undefined}
                       onClick={(e) => {
                         e.stopPropagation();
                         setPlanSlug(p.slug);
@@ -1427,7 +1532,7 @@ export function RegisterContent({
                       }}
                       disabled={payBusy || !checkoutReady}
                     >
-                      {payBusy && on
+                      {startingSlug === p.slug
                         ? "Opening checkout…"
                         : checkoutReady
                           ? `Start ${p.trialDays || DEFAULT_TRIAL_DAYS}-day trial`
@@ -1438,8 +1543,12 @@ export function RegisterContent({
               })}
               {/* THE CUSTOM PLAN — the same card shape, priced by what is
                   ticked rather than by a tier somebody else drew. Drawn only
-                  when OFFER_CUSTOM_AT_SIGNUP says so; see the flag. */}
-              {OFFER_CUSTOM_AT_SIGNUP ? (
+                  when OFFER_CUSTOM_AT_SIGNUP says so (see the flag), and only
+                  once the catalogue has answered: drawn alone before it, it
+                  was the card the phone carousel snapped to, and on a desk it
+                  jumped from the first column to the last when the rest
+                  arrived. */}
+              {OFFER_CUSTOM_AT_SIGNUP && plans.length > 0 ? (
               <div
                 role="button"
                 tabIndex={0}
@@ -1473,7 +1582,10 @@ export function RegisterContent({
                     {((customPriceCents(customPages) * 12 - customCents) / 100).toFixed(0)}
                   </span>
                 ) : null}
-                <span className="pw-feats">
+                <span
+                  className={"pw-feats" + (openFeats.has(CUSTOM_PLAN_SLUG) ? " is-open" : "")}
+                  data-cut={openFeats.has(CUSTOM_PLAN_SLUG) ? "0" : undefined}
+                >
                   {CUSTOM_BASE_FEATURES.map((f) => (
                     <span key={f} className="pw-f">
                       <svg className="ic">
@@ -1502,6 +1614,31 @@ export function RegisterContent({
                     ) : null;
                   })}
                 </span>
+                {/* A phone cuts every list at six whole rows; the custom list
+                    grows with each page ticked, so it gets the same "Show all"
+                    as the catalogue cards once it passes six. */}
+                {CUSTOM_BASE_FEATURES.length + 1 + customPages.length > 6 ? (
+                  <span
+                    className="pw-more"
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFeats(CUSTOM_PLAN_SLUG);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleFeats(CUSTOM_PLAN_SLUG);
+                      }
+                    }}
+                  >
+                    {openFeats.has(CUSTOM_PLAN_SLUG)
+                      ? "Show less"
+                      : `Show all ${CUSTOM_BASE_FEATURES.length + 1 + customPages.length}`}
+                  </span>
+                ) : null}
                 {/* TWO CONTROLS, two looks (owner, 2026-09-04): the page
                     picker is the ghost, the plan's state label is the blue
                     plate every other card ends on. */}
@@ -1518,7 +1655,8 @@ export function RegisterContent({
                 </span>
                 <button
                   type="button"
-                  className="btn pw-go"
+                  className={"btn pw-go" + (startingSlug === CUSTOM_PLAN_SLUG ? " is-busy" : "")}
+                  aria-busy={startingSlug === CUSTOM_PLAN_SLUG || undefined}
                   onClick={(e) => {
                     e.stopPropagation();
                     setPlanSlug(CUSTOM_PLAN_SLUG);
@@ -1526,7 +1664,7 @@ export function RegisterContent({
                   }}
                   disabled={payBusy || !checkoutReady}
                 >
-                  {payBusy && planSlug === CUSTOM_PLAN_SLUG
+                  {startingSlug === CUSTOM_PLAN_SLUG
                     ? "Opening checkout…"
                     : checkoutReady
                       ? `Start ${customTrialDays}-day trial`
@@ -1539,6 +1677,18 @@ export function RegisterContent({
                 <div className="fld-note">Loading plans…</div>
               ) : null}
             </div>
+
+            {/* The card terms, where the card is asked for (pass A) — under
+                the cards now, beside the start buttons they speak for. No
+                day is named: the trial's length is per plan (the note below
+                and each button say it), and "day 15" had gone stale. */}
+            <p className="pw-terms" id="pwTerms">
+              Your card won&apos;t be charged until the free trial ends. Cancel anytime from Subscription.
+              {" "}By starting a trial, you agree to our{" "}
+              <Link href="/terms" target="_blank" rel="noopener noreferrer"><u>Terms of service</u></Link>
+              {" "}and acknowledge our{" "}
+              <Link href="/privacy" target="_blank" rel="noopener noreferrer"><u>Privacy policy</u></Link>.
+            </p>
 
             <div className={"pw-foot" + (planSlug ? " is-armed" : "")}>
               {/* PROMO — the same codes the ?promo / ?ref links carry. Applying
@@ -1610,7 +1760,7 @@ export function RegisterContent({
                 }}
               >
                 <div className="pwp-scrim" onClick={() => closePicker()} />
-                <div className="pwp-box">
+                <div className="pwp-box" ref={pickerBoxRef} tabIndex={-1}>
                   <div className="pwp-head">
                     <div>
                       <div className="pwp-kick">Custom plan</div>
