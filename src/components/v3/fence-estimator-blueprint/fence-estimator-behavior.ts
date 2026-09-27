@@ -1279,13 +1279,7 @@ export function initFenceEstimatorContent(
     }
     const md = target.closest<HTMLElement>('[data-mode]');
     if (md) {
-      fs.mode = md.dataset.mode || '';
-      $$('#modeSwitch .vsw-btn').forEach(function (b) { b.classList.toggle('active', b === md); });
-      // An armed tool with the map hidden has nothing to click on.
-      if (fs.mode === '3d' && armed) setArmed(null);
-      // Swaps the panels AND, the first time 3D is opened with something traced,
-      // loads and mounts the scene.
-      syncStage();
+      setStageMode(md.dataset.mode || '');
       return;
     }
     // Material / height / demo change the PRICE, not the lists. Mark the picked
@@ -1497,10 +1491,23 @@ export function initFenceEstimatorContent(
       // Contours on the land — on by default, a MODE like Lot lines. Turning it
       // off hides the lines, labels, legend and side grades; turning it back on
       // reads the ground if it has not been read for this lot yet.
-      // House — the house LAYER's visibility (outline, hatch, area label).
-      // Editing lives inside the visible layer: click an outline to pick it
-      // up; "Trace outline" in the Buildings panel draws a new one.
+      // House — with no house drawn yet it DRAWS the house: the layer shows
+      // and the outline tool is armed, so the next clicks on the map are the
+      // house's corners. (2026-09-27: a contractor pressed House, clicked round
+      // the roof, and got a fence — the button only showed the layer, and the
+      // tool lived in the panel under the map.) Pressed again while tracing it
+      // puts the tool down. With a house drawn it shows and hides the layer
+      // (outline, tint, area label); a click on the outline picks it up, and
+      // "Trace outline" in the Buildings panel adds another.
       if (kind === 'house') {
+        if (houseMode) { setHouseMode(false); return; }
+        if (!houses.length && mapOrigin) {
+          // The corners are clicked on the photo: the 3D view gives way to the map.
+          if (fs.mode === '3d') showDrawView();
+          setHouseLayer(true, true);
+          setHouseMode(true);
+          return;
+        }
         setHouseLayer(!houseLayer, true);
         return;
       }
@@ -2092,16 +2099,22 @@ export function initFenceEstimatorContent(
     return out as FenceDrawMapProps['parcelPalette'];
   }
 
-  /** The house outline: an ink core on a paper edge, the snapped wall in
-   *  blueprint; ?house=2 hatches the inside. Tokens off `.content`. */
+  /** The house outline: its own colour on a paper edge, with a light tint
+   *  inside (owner, 2026-09-27: "whatever I draw on the picture, fence or
+   *  house outline, show it in colour" — the fence is blueprint blue, the lot
+   *  line sky, so the house takes a hue neither of them has); the snapped wall
+   *  in blueprint; ?house=2 hatches the inside. Tokens off `.content`. */
   function housePalette(): FenceDrawMapProps['housePalette'] {
-    const out: Record<string, string | boolean> = { hatched: candidate('house') === 2 };
+    const out: Record<string, string | boolean | number> = { hatched: candidate('house') === 2 };
     const pick: Array<[string, string]> = [
       ['line', '--house-line'],
       ['edge', '--house-edge'],
       ['active', '--house-active'],
+      ['fill', '--house-fill'],
     ];
     pick.forEach(function (p) { const c = token(p[1]); if (c) out[p[0]] = c; });
+    const op = parseFloat(token('--house-fill-opacity') || '');
+    if (isFinite(op)) out.fillOpacity = op;
     return out as FenceDrawMapProps['housePalette'];
   }
 
@@ -2495,9 +2508,14 @@ export function initFenceEstimatorContent(
       b.classList.toggle('on', houseLayer);
       b.setAttribute('aria-pressed', String(houseLayer));
       b.dataset.state = houseLookup;
+      b.dataset.tracing = String(houseMode);
       if (houseLookup === 'loading') b.setAttribute('aria-busy', 'true');
       else b.removeAttribute('aria-busy');
-      b.title = HOUSE_STATE_TEXT[houseLookup];
+      b.title = houseMode
+        ? 'Drawing the house — click each corner on the map · press again to stop'
+        : !houses.length && mapOrigin
+          ? 'Draw the house — press, then click each corner on the map'
+          : HOUSE_STATE_TEXT[houseLookup];
     });
   }
   function setHouseLookup(next: HouseLookup) {
@@ -2753,6 +2771,11 @@ export function initFenceEstimatorContent(
   function setHouseMode(on: boolean) {
     if (houseMode === on) return;
     houseMode = on;
+    // A passing notice (six seconds, not a held failure) gives way to the
+    // tool's own instruction: the contractor just picked the tool up and
+    // needs to read what it does now.
+    if (on && hintNote && !held) hintNote = null;
+    syncHouseButton();
     if (on && !houseLayer) setHouseLayer(true, true);
     if (on) {
       if (armed) setArmed(null);
@@ -2798,6 +2821,7 @@ export function initFenceEstimatorContent(
    *  panel rows are patched, not re-listed. */
   function afterHousesChanged(quiet?: boolean) {
     autoShowHouseLayer();
+    syncHouseButton();
     if (quiet) paintHouseRows();
     else renderHousePanel();
     pushMap();
@@ -3042,6 +3066,18 @@ export function initFenceEstimatorContent(
    *  outline is being aligned it says what THAT mode does, then returns to the
    *  donor's tracing copy. A transient note (a parcel result) outranks both. */
   let hintNote: string | null = null;
+  /** Draw or 3D: marks the switch, drops a tool the hidden map could not
+   *  serve, and swaps the panels (the first 3D open with a trace loads the
+   *  scene). */
+  function setStageMode(m: string) {
+    fs.mode = m;
+    $$('#modeSwitch .vsw-btn').forEach(function (b) { b.classList.toggle('active', (b as HTMLElement).dataset.mode === m); });
+    // An armed tool with the map hidden has nothing to click on.
+    if (fs.mode === '3d' && armed) setArmed(null);
+    syncStage();
+  }
+  function showDrawView() { setStageMode('draw'); }
+
   function syncHint() {
     if (!hintEl) return;
     const tip = aimTip && !!mapOrigin && !hintNote && !armed && !aligning && !houseMode && !houseSel;
@@ -3349,10 +3385,15 @@ export function initFenceEstimatorContent(
       gates: modelGates(),
       // No segment-selection UI on this page, so nothing is ever highlighted.
       selectedSegment: null,
-      buildings: modelBuildings(),
+      // The houses drawn by hand, and only those: no building is ever shown
+      // that the contractor did not outline (owner, 2026-09-27).
+      buildings: modelHouses(),
       terrain: modelTerrain(),
       segClasses: modelClasses(),
       wallMounts: wallMounts().ft,
+      // The property line on the land, in the map's lot colour.
+      lots: modelLots(),
+      lotColor: token('--parcel-line'),
       active: fs.mode === '3d',
       className: 'model-live-in',
     };
@@ -3361,6 +3402,23 @@ export function initFenceEstimatorContent(
   function pushModel() {
     if (!modelIsland) return;
     modelIsland.update(modelProps());
+  }
+
+  /** The buildings the scene stands up: the traced houses — identity-stable,
+   *  so a push that changed nothing rebuilds nothing. Detected footprints stay
+   *  map context and never reach the 3D. */
+  let housesMemo: { houses: DrawnHouse[]; view: BuildingFootprint[] } | null = null;
+  function modelHouses(): BuildingFootprint[] {
+    if (housesMemo && housesMemo.houses === houses) return housesMemo.view;
+    housesMemo = { houses: houses, view: mergeBuildings(houses, []) };
+    return housesMemo.view;
+  }
+  /** This address's lot rings in local feet; one empty list when there is no
+   *  lot, so the scene is not re-laid for a fresh `[]` on every push. */
+  const NO_LOT_RINGS: PathPoint[][] = [];
+  function modelLots(): PathPoint[][] {
+    const rings = mapOrigin ? lotRingsFt(mapOrigin) : NO_LOT_RINGS;
+    return rings.length ? rings : NO_LOT_RINGS;
   }
 
   /** The lot's lattice for the scene — this address's, identity-stable. */
@@ -3412,25 +3470,45 @@ export function initFenceEstimatorContent(
     return view;
   }
 
-  /** The note in the 3D corner: what the ground in the scene is. */
+  /** The note in the 3D corner: what the ground in the scene is, what the lot
+   *  line looks like, and — when no house is drawn — why there is none and
+   *  how to add it. Under the "Live · 3D" stamp, clear of the walking hint. */
   function renderModelNote() {
     const note = $('#modelNote');
     if (!note) return;
     if (!modelIsland) { note.classList.add('is-hidden'); return; }
     const g = modelTerrain();
+    const mounts = wallMounts().ft.length;
+    const ground: string[] = [];
     if (!g || !topoGrid) {
-      note.textContent = 'Terrain not shown — ground rendered flat';
+      ground.push('Terrain not shown — ground rendered flat');
     } else {
       const report = usableTerrain();
       const steps = report ? report.segs.reduce(function (a, sg) { return a + (sg.cls === 'stepped' ? sg.steps ?? 0 : 0); }, 0) : 0;
       const racked = report ? report.segs.filter(function (sg) { return sg.cls === 'racked'; }).length : 0;
-      const mounts = wallMounts().ft.length;
-      const bits = ['Real ground · ' + sourceLabel(topoGrid)];
-      if (steps) bits.push(steps + ' steps');
-      if (racked) bits.push(racked + (racked === 1 ? ' run racked' : ' runs racked'));
-      if (mounts) bits.push(mounts + (mounts === 1 ? ' wall mount' : ' wall mounts'));
-      note.textContent = bits.join(' · ');
+      ground.push('Real ground · ' + sourceLabel(topoGrid));
+      if (steps) ground.push(steps + ' steps');
+      if (racked) ground.push(racked + (racked === 1 ? ' run racked' : ' runs racked'));
     }
+    if (mounts) ground.push(mounts + (mounts === 1 ? ' wall mount' : ' wall mounts'));
+    const rows: HTMLElement[] = [];
+    const row = function (text: string, cls: string) {
+      const el = document.createElement('span');
+      el.className = 'mn-row ' + cls;
+      el.textContent = text;
+      rows.push(el);
+      return el;
+    };
+    row(ground.join(' · '), 'mn-ground');
+    if (modelLots().length) {
+      const lot = row('Lot line', 'mn-lot');
+      const sw = document.createElement('i');
+      sw.className = 'mn-sw';
+      sw.setAttribute('aria-hidden', 'true');
+      lot.prepend(sw);
+    }
+    if (!houses.length) row('No house drawn · press House, then click its corners', 'mn-house');
+    note.replaceChildren(...rows);
     note.classList.remove('is-hidden');
   }
 
@@ -3674,6 +3752,8 @@ export function initFenceEstimatorContent(
       // First resolved address is what brings the surface into existence.
       mountMap();
       pushMap();
+      pushModel();
+      renderModelNote();
       // The parcel lookup keys off the same point. Fired here — not from a
       // button — so the boundary and the sides list are already waiting by the
       // time the contractor looks down from the address field. Cache-first on
@@ -3806,6 +3886,8 @@ export function initFenceEstimatorContent(
     parcelRoads = [];
     $('#parcelPanel')?.classList.add('is-hidden');
     syncFenceBtn();
+    pushModel();
+    renderModelNote();
   }
 
   /** "Put down the fence" is only an offer while there is a property line to lay
@@ -3905,6 +3987,8 @@ export function initFenceEstimatorContent(
         return;
       }
       pushMap();
+      pushModel();
+      renderModelNote();
       // The buildings may have beaten the lot here: which one is "on the lot"
       // can only be said now.
       settleHouseLookup(o);
@@ -3918,6 +4002,7 @@ export function initFenceEstimatorContent(
       parcelOrigin = o;
       renderParcelPanel();
       pushMap();
+      pushModel();
       if (parcelLots.length > 1) {
         sayHint('This property is recorded as ' + parcelLots.length +
           ' lots — every one of them is drawn, and every side is listed below.');

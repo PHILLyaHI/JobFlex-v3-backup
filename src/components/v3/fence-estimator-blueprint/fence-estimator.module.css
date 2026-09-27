@@ -91,12 +91,19 @@
   --parcel-casing: var(--ink);
   --parcel-vertex: var(--paper-deep);
   --parcel-active: var(--blueprint);
-  /* House outlines and detected footprints (2026-09-20): an ink core on a
-     paper edge, the wall a dot snaps to in blueprint; the hatch is the core
-     colour at 11 %. */
-  --house-line: var(--ink);
+  /* House outlines and detected footprints (2026-09-20): a core on a paper
+     edge, the wall a dot snaps to in blueprint; the hatch is the core colour
+     at 11 %. The core was ink until 2026-09-27, when the owner asked for what
+     is drawn on the photo to show in colour: the fence is blueprint blue and
+     the lot line sky, so the house takes a hue neither has and no slope mark
+     uses (amber, red) — a berry that holds on grass, roof and asphalt — with
+     a light tint of it inside a traced house. A map layer's colour, like the
+     topo cream: not a status. */
+  --house-line: #d6336c;
   --house-edge: var(--paper-deep);
   --house-active: var(--blueprint);
+  --house-fill: #d6336c;
+  --house-fill-opacity: 0.18;
   /* Slope classes — the same amber / red the map's slope overlay draws. */
   --slope-racked: #c47f17;
   --slope-stepped: #b3261e;
@@ -1432,8 +1439,14 @@
    filled by the behavior module once the terrain profile lands */
 
 /* the 3D scene draws the ground flat — the note says so while it is mounted */
-.bp :global(.content .model-note) { position: absolute; left: 12px; bottom: 12px; z-index: 3; padding: 5px 9px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .model-note) { position: absolute; left: 12px; top: 44px; z-index: 3; display: grid; gap: 4px; max-width: calc(100% - 24px); padding: 5px 9px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .bp :global(.content .model-note.is-hidden) { display: none; }
+/* Under the "Live · 3D" stamp (it sat bottom-left and ran under the walking
+   hint on a narrow stage): the ground, the lot line's key, and — with no house
+   drawn — how to add one. */
+.bp :global(.content .model-note .mn-row) { display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.bp :global(.content .model-note .mn-sw) { flex: 0 0 auto; width: 16px; height: 3px; background: var(--parcel-line); }
+.bp :global(.content .model-note .mn-house) { color: var(--ink-soft); }
 
 /* Finish / Undo strip while tracing — directly under the map (never over it);
    on a phone it is the only way to end a run or an outline. */

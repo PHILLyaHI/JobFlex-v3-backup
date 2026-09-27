@@ -81,8 +81,12 @@ export interface HousePalette {
   active: string;
   /** Variant 2: diagonal hatching inside a traced house. */
   hatched: boolean;
+  /** A tint over a traced house (empty = none), so the drawn house reads as
+   *  an area in its own colour, apart from the fence (2026-09-27). */
+  fill: string;
+  fillOpacity: number;
 }
-const DEFAULT_HOUSE: HousePalette = { line: "#0a0a0a", edge: "#ffffff", active: "#1854a0", hatched: false };
+const DEFAULT_HOUSE: HousePalette = { line: "#0a0a0a", edge: "#ffffff", active: "#1854a0", hatched: false, fill: "", fillOpacity: 0 };
 /** Core width and edge width of the house line at this zoom. */
 const houseWeights = (zoom: number | undefined) =>
   typeof zoom === "number" && zoom <= 18 ? { core: 1, edge: 0 } : { core: 1.5, edge: 1 };
@@ -974,7 +978,9 @@ export function FenceDrawMap({
             const icon = {
               path: 0,
               scale: closable ? 7 : 4,
-              fillColor: closable ? ACCENT : "#ffffff",
+              // The house's own colour, not the fence's: what is being drawn
+              // is a house, and the dot that closes it says so.
+              fillColor: closable ? hpal().line : "#ffffff",
               fillOpacity: 1,
               strokeColor: "#0a0a0a",
               strokeWeight: 1.5,
@@ -2625,6 +2631,22 @@ export function FenceDrawMap({
     });
     for (const h of houses ?? []) {
       if (h.ring.length < 3) continue;
+      if (pal.fill && pal.fillOpacity > 0) {
+        // Under the outline, over the photo; never takes a click — a tap on a
+        // house is a fence dot snapping to its wall, as anywhere else.
+        objs.push(
+          new maps.Polygon({
+            map,
+            paths: h.ring,
+            clickable: false,
+            fillColor: pal.fill,
+            fillOpacity: pal.fillOpacity,
+            strokeOpacity: 0,
+            strokeWeight: 0,
+            zIndex: Z.house,
+          }),
+        );
+      }
       const o = outline(h.ring, false, selHouse === h.id);
       editablePoly(h.id, h.ring, o, true, (now) =>
         onHouseChangeRef.current?.(

@@ -18,6 +18,13 @@
 // gates hang level, houses sit on their lowest corner, and a run that ends on a
 // house wall gets a wall mount instead of a post. Without `terrain` the scene
 // is the original flat one.
+//
+// Buildings are only ever the ones handed in (owner, 2026-09-27: "show a house
+// only when I outline it; if I don't, show no buildings"). The invented house
+// and neighbour boxes that used to fill an empty lot are gone. The lot line
+// (`lots`) is drawn on the land in the map's own lot colour with a stake at
+// each corner, so the fence reads against the property line here as it does
+// on the photo.
 import * as React from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -69,7 +76,12 @@ interface ViewSpec {
   terrain: FenceTerrain3D | null;
   segClasses: Record<number, BayClass> | null; // priced slope class per segment index
   wallMounts: PathPoint[]; // run ends that sit on a house wall
+  lots: PathPoint[][]; // the lot's rings (local feet)
+  lotColor: string; // the map's lot-line colour
 }
+
+const NO_LOTS: PathPoint[][] = [];
+const DEFAULT_LOT_COLOR = "#4a9eff";
 
 function webglSupported(): boolean {
   if (typeof document === "undefined") return true;
@@ -94,6 +106,10 @@ export const FenceModel3D = React.forwardRef<
     terrain?: FenceTerrain3D | null;
     segClasses?: Record<number, BayClass> | null;
     wallMounts?: PathPoint[];
+    /** The lot's rings in the same local-feet frame; drawn on the land. */
+    lots?: PathPoint[][];
+    /** The lot line's colour — the map's, so the two views agree. */
+    lotColor?: string;
     active?: boolean;
     className?: string;
   }
@@ -109,6 +125,8 @@ export const FenceModel3D = React.forwardRef<
     terrain = null,
     segClasses = null,
     wallMounts = NO_MOUNTS,
+    lots = NO_LOTS,
+    lotColor = DEFAULT_LOT_COLOR,
     active = true,
     className,
   },
@@ -137,8 +155,8 @@ export const FenceModel3D = React.forwardRef<
 
   const applyRef = React.useRef<(s: ViewSpec) => void>(() => {});
   React.useEffect(() => {
-    applyRef.current({ points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts });
-  }, [points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts]);
+    applyRef.current({ points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts, lots, lotColor });
+  }, [points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts, lots, lotColor]);
 
   // When the studio hides this panel (Draw view), release pointer-lock/keys so a
   // fly session can't keep driving an invisible scene; on re-show, re-frame if the
@@ -533,10 +551,12 @@ export const FenceModel3D = React.forwardRef<
       while (g.children.length) g.remove(g.children[0]);
     };
 
-    // ── Contextual scenery: an approximate home in the parcel + trees + neighbours.
-    // Deliberately rough (the user asked for "something to show", not accuracy) and
-    // cheap: a handful of meshes with shared materials, rebuilt only on big size
-    // changes and placed deterministically so it never jitters.
+    // ── Dressing: a few trees round the yard, and nothing else invented. No
+    // building is ever made up here (owner, 2026-09-27) — a house appears only
+    // as the footprint it was drawn as (rebuildBuildings). A tree never stands
+    // on the fence, in or against a house, or on the lot line: each one tries a
+    // few spots near its seeded place and keeps the first clear one. Placed
+    // from a fixed seed, so the same yard always gets the same trees.
     const sceneryGroup = new THREE.Group();
     scene.add(sceneryGroup);
     const houseWallMat = new THREE.MeshStandardMaterial({ color: 0xd8cdba, roughness: 0.85 });
@@ -553,42 +573,7 @@ export const FenceModel3D = React.forwardRef<
       t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
-    const clampN = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-    const addRoofedBox = (
-      w: number,
-      d: number,
-      wallH: number,
-      roofH: number,
-      wallMat: THREE.Material,
-      roofMat: THREE.Material,
-      x: number,
-      z: number,
-      rotY: number,
-    ) => {
-      // Founded at its lowest corner, full height over the middle of its
-      // ground — the same rule as a real footprint (rebuildBuildings).
-      let gLo = Infinity;
-      let gHi = -Infinity;
-      const cr = Math.cos(rotY);
-      const sr = Math.sin(rotY);
-      for (const [lx, lz] of [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]]) {
-        const gv = sceneGround(x + lx * cr + lz * sr, z - lx * sr + lz * cr);
-        if (gv < gLo) gLo = gv;
-        if (gv > gHi) gHi = gv;
-      }
-      const h = wallH + (gHi - gLo) / 2;
-      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
-      body.position.set(x, gLo + h / 2, z);
-      body.rotation.y = rotY;
-      body.castShadow = true;
-      body.receiveShadow = true;
-      const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(w, d) / 2, roofH, 4), roofMat);
-      roof.position.set(x, gLo + h + roofH / 2, z);
-      roof.rotation.y = Math.PI / 4 + rotY;
-      roof.castShadow = true;
-      sceneryGroup.add(body, roof);
-    };
     const addTree = (x: number, z: number, s: number) => {
       const gy = sceneGround(x, z);
       const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28 * s, 0.4 * s, 3.2 * s, 6), trunkMat);
@@ -600,87 +585,187 @@ export const FenceModel3D = React.forwardRef<
       sceneryGroup.add(trunk, canopy);
     };
 
-    let scenerySpan = -1;
-    let sceneryHadReal = false;
-    let sceneryTerrain: FenceTerrain3D | null = null;
-    let sceneryZRef = 0;
-    let sceneryCx = 0;
-    let sceneryCy = 0;
-    // Scenery is authored around the scene origin; the land under a scene
-    // point is the ground at that plan point.
+    /** Plan distance from (px, py) to the segment a–b. */
+    const segDist = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
+      const dx = bx - ax;
+      const dy = by - ay;
+      const l2 = dx * dx + dy * dy;
+      const t = l2 > 1e-9 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
+      return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+    };
+    const inRing = (px: number, py: number, ring: PathPoint[]) => {
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[i];
+        const b = ring[j];
+        if (a.y > py !== b.y > py && px < ((b.x - a.x) * (py - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+      }
+      return inside;
+    };
+    /** A canopy of radius `r` at plan (px, py) touches nothing real. */
+    const treeClear = (px: number, py: number, r: number, spec: ViewSpec) => {
+      const pts = spec.points;
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const b = pts[i + 1];
+        if (b.gap) continue;
+        if (segDist(px, py, pts[i].x, pts[i].y, b.x, b.y) < r + 2) return false;
+      }
+      for (const b of spec.buildings) {
+        const ring = b.ring;
+        if (ring.length < 3) continue;
+        if (inRing(px, py, ring)) return false;
+        for (let i = 0; i < ring.length; i++) {
+          const a = ring[i];
+          const c = ring[(i + 1) % ring.length];
+          if (segDist(px, py, a.x, a.y, c.x, c.y) < r + 3) return false;
+        }
+      }
+      for (const ring of spec.lots) {
+        for (let i = 0; i < ring.length; i++) {
+          const a = ring[i];
+          const c = ring[(i + 1) % ring.length];
+          if (segDist(px, py, a.x, a.y, c.x, c.y) < r + 1) return false;
+        }
+      }
+      return true;
+    };
+
+    // Scenery is authored around the scene origin (the fence's centre); the
+    // land under a scene point is the ground at that plan point.
     let sceneCx = 0;
     let sceneCy = 0;
     const sceneGround = (x: number, z: number) => groundAt(x + sceneCx, sceneCy - z);
-    // `hasReal`: real building footprints are loaded, so the invented house +
-    // neighbour boxes are suppressed (trees stay — they're soft dressing, not
-    // spatial claims).
-    const buildScenery = (l: FenceLayout, hasReal: boolean) => {
+    let sceneryKey: unknown[] = [];
+    const buildScenery = (l: FenceLayout, spec: ViewSpec) => {
       clearGroup(sceneryGroup, false); // dispose geometries, keep shared materials
       const w = Math.max(6, l.bounds.maxX - l.bounds.minX);
       const d = Math.max(6, l.bounds.maxY - l.bounds.minY);
       const span = Math.max(w, d);
-      const minDim = Math.min(w, d);
       const rnd = mulberry32(1337);
-      if (!hasReal) {
-        // Main house, centred in the parcel (the fence is centred at scene origin).
-        addRoofedBox(
-          clampN(minDim * 0.5, 8, 60),
-          clampN(minDim * 0.42, 8, 50),
-          clampN(minDim * 0.35, 9, 16),
-          clampN(minDim * 0.2, 5, 10),
-          houseWallMat,
-          houseRoofMat,
-          0,
-          0,
-          0,
-        );
-      }
       const trees = 6;
       for (let i = 0; i < trees; i++) {
-        const ang = (i / trees) * Math.PI * 2 + rnd() * 0.7;
-        const r = span * (0.62 + rnd() * 0.2);
-        addTree(Math.cos(ang) * r, Math.sin(ang) * r, 0.8 + rnd() * 0.7);
-      }
-      if (!hasReal) {
-        const neighbors = 3;
-        for (let i = 0; i < neighbors; i++) {
-          const ang = (i / neighbors) * Math.PI * 2 + 0.8 + rnd() * 0.5;
-          const r = span * (1.25 + rnd() * 0.5);
-          const nw = clampN(minDim * (0.4 + rnd() * 0.3), 8, 40);
-          addRoofedBox(
-            nw,
-            nw * 0.8,
-            clampN(minDim * 0.3, 8, 14),
-            6,
-            neighborWallMat,
-            houseRoofMat,
-            Math.cos(ang) * r,
-            Math.sin(ang) * r,
-            rnd() * Math.PI,
-          );
+        const ang0 = (i / trees) * Math.PI * 2 + rnd() * 0.7;
+        const r0 = span * (0.62 + rnd() * 0.2);
+        const s = 0.8 + rnd() * 0.7;
+        const canopy = 1.8 * s;
+        // Up to six tries per tree: a little further round and further out.
+        for (let k = 0; k < 6; k++) {
+          const ang = ang0 + k * 0.33;
+          const r = r0 + k * span * 0.12;
+          const dx = Math.cos(ang) * r;
+          const dy = Math.sin(ang) * r;
+          if (treeClear(sceneCx + dx, sceneCy + dy, canopy, spec)) {
+            addTree(dx, -dy, s);
+            break;
+          }
         }
       }
-      scenerySpan = span;
-      sceneryHadReal = hasReal;
-      sceneryTerrain = terrainRef;
-      sceneryZRef = zRef;
-      sceneryCx = sceneCx;
-      sceneryCy = sceneCy;
     };
-    const buildSceneryIfNeeded = (l: FenceLayout, hasReal: boolean) => {
-      const span = Math.max(6, l.bounds.maxX - l.bounds.minX, l.bounds.maxY - l.bounds.minY);
+    const syncScenery = (l: FenceLayout, spec: ViewSpec) => {
       sceneCx = (l.bounds.minX + l.bounds.maxX) / 2;
       sceneCy = (l.bounds.minY + l.bounds.maxY) / 2;
-      if (
-        scenerySpan < 0 ||
-        Math.abs(span - scenerySpan) > scenerySpan * 0.15 ||
-        hasReal !== sceneryHadReal ||
-        sceneryTerrain !== terrainRef ||
-        // On land, a moved datum or centre re-seats every tree and stand-in
-        // house — kept, they would sink or float after a trace edit.
-        (terrainRef !== null && (sceneryZRef !== zRef || sceneryCx !== sceneCx || sceneryCy !== sceneCy))
-      ) {
-        buildScenery(l, hasReal);
+      // Everything a tree reads: the yard's size and centre, the land, and
+      // the fence, houses and lot line it has to keep clear of.
+      const key = [sceneCx, sceneCy, l.bounds.maxX - l.bounds.minX, l.bounds.maxY - l.bounds.minY, terrainRef, zRef, spec.points, spec.buildings, spec.lots];
+      if (key.length === sceneryKey.length && key.every((v, i) => v === sceneryKey[i])) return;
+      sceneryKey = key;
+      buildScenery(l, spec);
+    };
+
+    // ── The lot line: a flat band on the land in the map's lot colour, with a
+    // stake at each real corner (a turn sharper than 28°, the map's own rule
+    // for a corner square). It follows the ground, so on a slope it lies on
+    // the hill rather than cutting through it. Unlit, so it reads the same
+    // colour as the line on the photo.
+    const lotGroup = new THREE.Group();
+    scene.add(lotGroup);
+    // Not tone-mapped: the band shows the map's exact lot colour, where the
+    // scene's filmic curve would grey it.
+    const lotMat = new THREE.MeshBasicMaterial({
+      color: DEFAULT_LOT_COLOR,
+      toneMapped: false,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+    const stakeMat = new THREE.MeshStandardMaterial({ color: 0xf2efe8, roughness: 0.8 });
+    const stakeCapMat = new THREE.MeshBasicMaterial({ color: DEFAULT_LOT_COLOR, toneMapped: false });
+    const LOT_CORNER_DEG = 28;
+    /** Farthest lot vertex from the scene centre — the land has to reach it. */
+    let lotReach = 0;
+    let lotKey: unknown[] = [];
+    const openRing = (ring: PathPoint[]) =>
+      ring.length > 3 && Math.hypot(ring[0].x - ring[ring.length - 1].x, ring[0].y - ring[ring.length - 1].y) < 0.05
+        ? ring.slice(0, -1)
+        : ring;
+    const rebuildLots = (lots: PathPoint[][], color: string, cx: number, cy: number, sp: number) => {
+      const key = [lots, color, cx, cy, terrainRef, zRef];
+      if (key.every((v, i) => v === lotKey[i])) return;
+      lotKey = key;
+      clearGroup(lotGroup, false);
+      lotMat.color.set(color || DEFAULT_LOT_COLOR);
+      stakeCapMat.color.set(color || DEFAULT_LOT_COLOR);
+      lotReach = 0;
+      // Wide enough to read from the framing distance, never a road stripe.
+      const half = Math.min(1.1, Math.max(0.35, sp * 0.0045));
+      const pos: number[] = [];
+      const idx: number[] = [];
+      let base = 0;
+      for (const raw of lots) {
+        const ring = openRing(raw);
+        if (ring.length < 2) continue;
+        for (const q of ring) lotReach = Math.max(lotReach, Math.hypot(q.x - cx, q.y - cy));
+        const n = ring.length;
+        const closed = n >= 3;
+        for (let e = 0; e < (closed ? n : n - 1); e++) {
+          const a = ring[e];
+          const b = ring[(e + 1) % n];
+          const len = Math.hypot(b.x - a.x, b.y - a.y);
+          if (len < 0.05) continue;
+          const ux = (b.x - a.x) / len;
+          const uy = (b.y - a.y) / len;
+          // Each band runs `half` past both ends so corners close without a notch.
+          const steps = Math.max(1, Math.ceil((len + 2 * half) / 3));
+          for (let k = 0; k <= steps; k++) {
+            const t = -half + ((len + 2 * half) * k) / steps;
+            const px = a.x + ux * t;
+            const py = a.y + uy * t;
+            const gy = groundAt(px, py) + 0.05;
+            pos.push(px - uy * half - cx, gy, -(py + ux * half - cy), px + uy * half - cx, gy, -(py - ux * half - cy));
+            if (k > 0) {
+              const v = base + k * 2;
+              idx.push(v - 2, v - 1, v, v - 1, v + 1, v);
+            }
+          }
+          base += (steps + 1) * 2;
+        }
+        if (!closed) continue;
+        for (let i = 0; i < n; i++) {
+          const p0 = ring[(i - 1 + n) % n];
+          const p1 = ring[i];
+          const p2 = ring[(i + 1) % n];
+          const a1 = Math.atan2(p1.y - p0.y, p1.x - p0.x);
+          const a2 = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+          let turn = Math.abs(a2 - a1);
+          if (turn > Math.PI) turn = 2 * Math.PI - turn;
+          if ((turn * 180) / Math.PI < LOT_CORNER_DEG) continue;
+          const gy = groundAt(p1.x, p1.y);
+          const stake = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.5, 0.3), stakeMat);
+          stake.position.set(p1.x - cx, gy + 0.75, -(p1.y - cy));
+          stake.castShadow = true;
+          const cap = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.34, 0.42), stakeCapMat);
+          cap.position.set(p1.x - cx, gy + 1.5, -(p1.y - cy));
+          lotGroup.add(stake, cap);
+        }
+      }
+      if (idx.length) {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+        geo.setIndex(idx);
+        const band = new THREE.Mesh(geo, lotMat);
+        band.renderOrder = 1;
+        lotGroup.add(band);
       }
     };
 
@@ -976,6 +1061,12 @@ export const FenceModel3D = React.forwardRef<
     let lastFramedSpan = span;
     const layoutSpan = (l: FenceLayout) =>
       Math.max(l.bounds.maxX - l.bounds.minX, l.bounds.maxY - l.bounds.minY, 10);
+    /** How far the lot reaches from the scene centre (0 without a lot). */
+    const reachOf = (lots: PathPoint[][], cx: number, cy: number) => {
+      let r = 0;
+      for (const ring of lots) for (const q of ring) r = Math.max(r, Math.hypot(q.x - cx, q.y - cy));
+      return r;
+    };
     const applyWorldScale = (sp: number) => {
       camera.far = sp * 40;
       camera.updateProjectionMatrix();
@@ -989,7 +1080,7 @@ export const FenceModel3D = React.forwardRef<
       shadowCam.far = sp * 8;
       shadowCam.updateProjectionMatrix();
       key.shadow.normalBias = sp * 0.0015;
-      ground.scale.setScalar(sp / span);
+      ground.scale.setScalar(Math.max(sp, lotReach * 0.6) / span);
       orbit.minDistance = sp * 0.25;
       orbit.maxDistance = sp * 12;
       worldSpan = sp;
@@ -1144,8 +1235,7 @@ export const FenceModel3D = React.forwardRef<
         rebuildGates(l, next.height, cx, cy);
         rebuildChain(l, next.height, next.material, cx, cy);
         rebuildMounts(l, next.height, next.material, next.materialColor, cx, cy);
-        rebuildTerrain(cx, cy, Math.max(worldSpan, layoutSpan(l)));
-        buildSceneryIfNeeded(l, next.buildings.length > 0);
+        rebuildTerrain(cx, cy, Math.max(worldSpan, layoutSpan(l), reachOf(next.lots, cx, cy)));
         built = l;
         prevPts = next.points;
         prevGates = next.gates;
@@ -1185,15 +1275,20 @@ export const FenceModel3D = React.forwardRef<
           zRef !== builtBZRef
         ) {
           rebuildBuildings(next.buildings, cx, cy);
-          // Scenery decides fake-vs-real by footprint presence even when fence
-          // geometry didn't change (e.g. buildings arrive after Load Property Lines).
-          buildSceneryIfNeeded(built, next.buildings.length > 0);
         }
+        // The lot line, and land and ground wide enough to carry it (a lot can
+        // reach well past the fence, and it can land after the fence did).
+        const reach = reachOf(next.lots, cx, cy);
+        if (terrainRef && reach > 0) rebuildTerrain(cx, cy, Math.max(worldSpan, layoutSpan(built), reach));
+        rebuildLots(next.lots, next.lotColor, cx, cy, layoutSpan(built));
+        ground.scale.setScalar(Math.max(worldSpan, lotReach * 0.6) / span);
+        // Trees last: they keep clear of the fence, the houses and the lot line.
+        syncScenery(built, next);
         updateHighlight(next.points, next.selectedSegment, next.height, cx, cy);
       }
     };
 
-    applySpec({ points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts });
+    applySpec({ points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts, lots, lotColor });
     applyRef.current = applySpec;
 
     activateRef.current = () => {
@@ -1287,7 +1382,11 @@ export const FenceModel3D = React.forwardRef<
       contourMat.dispose();
       clearGroup(sceneryGroup, false);
       clearGroup(buildingsGroup, false);
+      clearGroup(lotGroup, false);
       for (const m of sceneryMats) m.dispose();
+      lotMat.dispose();
+      stakeMat.dispose();
+      stakeCapMat.dispose();
       postGeo.dispose();
       picketGeo.dispose();
       railGeo.dispose();
