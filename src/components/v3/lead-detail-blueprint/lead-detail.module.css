@@ -4,6 +4,9 @@
    list it opens from: page head, two hairline cards, mono labels.
    Head and button rules are the project-detail module's, verbatim,
    so the two pages read as one design.
+   Type in ink and a size up across the sheet (owner, 2026-09-26: "more
+   contrasty, darker, some things bigger") — labels, values, the scope,
+   the homeowner's words; nothing reads in pale grey any more.
    ── NO @keyframes (Lightning CSS rejects them in a module) ──
    ── Light mode only. ──
    ============================================================ */
@@ -17,9 +20,9 @@
 }
 :global(.jf-blueprint .content) .kicker {
   display: inline-flex; align-items: center; gap: 8px;
-  font-size: 11px; font-weight: 800;
+  font-size: 12px; font-weight: 800;
   letter-spacing: 0.2em; text-transform: uppercase;
-  color: var(--muted);
+  color: var(--ink-soft);
   margin-bottom: 10px;
 }
 :global(.jf-blueprint .content) .kicker::before {
@@ -87,19 +90,19 @@
   font-family: var(--font-mono); font-size: 13px; font-weight: 800; letter-spacing: 0.08em;
   background: var(--paper);
 }
-:global(.jf-blueprint .content) .who-n { font-size: 19px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
-:global(.jf-blueprint .content) .who-s { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+:global(.jf-blueprint .content) .who-n { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+:global(.jf-blueprint .content) .who-s { font-family: var(--font-mono); font-size: 13px; color: var(--ink-soft); margin-top: 5px; }
 
-/* key / value */
+/* key / value — the labels in full ink, the values a size up under them */
 :global(.jf-blueprint .content) .kv { margin: 0; }
 :global(.jf-blueprint .content) .kv dt {
-  font-size: 10.5px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase;
-  color: var(--muted); margin-top: 14px; margin-bottom: 4px;
+  font-size: 12px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink); margin-top: 16px; margin-bottom: 5px;
 }
 :global(.jf-blueprint .content) .kv dt:first-child { margin-top: 0; }
-:global(.jf-blueprint .content) .kv dd { margin: 0; font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; }
-:global(.jf-blueprint .content) .kv .mono { font-family: var(--font-mono); font-size: 12.5px; }
-:global(.jf-blueprint .content) .soft { color: var(--muted); }
+:global(.jf-blueprint .content) .kv dd { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .kv .mono { font-family: var(--font-mono); font-size: 14px; }
+:global(.jf-blueprint .content) .soft { color: var(--ink-soft); }
 
 /* plates */
 :global(.jf-blueprint .content) .plates { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
@@ -107,39 +110,98 @@
   display: inline-flex; align-items: center; gap: 6px;
   padding: 3px 9px;
   border: 1.5px solid var(--ink); border-radius: var(--radius);
-  font-family: var(--font-mono); font-size: 10.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
   background: #fff;
 }
 :global(.jf-blueprint .content) .plate--status { color: var(--blueprint); border-color: var(--blueprint); }
 :global(.jf-blueprint .content) .plate b { font-weight: 800; color: var(--blueprint); }
 
-/* sections */
+/* sections — SCOPE OF WORK, IN THE HOMEOWNER'S WORDS, ESTIMATE THIS JOB */
 :global(.jf-blueprint .content) .sec-h {
-  font-size: 11px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase;
-  color: var(--muted); margin: 0 0 8px;
+  font-size: 13px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink); margin: 0 0 10px;
 }
 :global(.jf-blueprint .content) .sec-h + .sec-h { margin-top: 18px; }
-:global(.jf-blueprint .content) .scope { font-size: 15px; line-height: 1.6; white-space: pre-wrap; margin: 0 0 18px; }
-:global(.jf-blueprint .content) .words { font-size: 13.5px; line-height: 1.55; color: var(--muted); white-space: pre-wrap; margin: 0; }
+:global(.jf-blueprint .content) .scope { font-size: 16px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; margin: 0 0 22px; }
+:global(.jf-blueprint .content) .words { font-size: 15px; line-height: 1.6; color: var(--ink-soft); white-space: pre-wrap; margin: 0; }
 :global(.jf-blueprint .content) .write { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
-:global(.jf-blueprint .content) .hint { font-size: 12px; line-height: 1.45; color: var(--muted); }
+:global(.jf-blueprint .content) .hint { font-size: 13px; line-height: 1.45; color: var(--ink-soft); }
 
-/* the estimators */
-/* ESTIMATE THIS JOB (2026-09-25): the recommended way as one framed primary
-   action on a blueprint edge, every other way as a quiet row under it. */
-:global(.jf-blueprint .content) .est { margin-top: 22px; padding-top: 18px; border-top: 1.5px solid var(--ink); }
-:global(.jf-blueprint .content) .est-lead {
+/* A Meta form's answers, one question over its answer. Scoped like the rest
+   of the sheet so the page's margin/padding reset (two classes) cannot flatten
+   the spacing between them. */
+:global(.jf-blueprint .content) .form-answers { margin: 0; display: grid; gap: 16px; }
+:global(.jf-blueprint .content) .form-answers > div { min-width: 0; padding-bottom: 16px; border-bottom: 1px solid var(--ink-line); }
+:global(.jf-blueprint .content) .form-answers > div:last-child { padding-bottom: 0; border-bottom: 0; }
+:global(.jf-blueprint .content) .form-answers dt { color: var(--ink-soft); font-size: 13px; line-height: 1.5; margin-bottom: 4px; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .form-answers dd { margin: 0; color: var(--ink); font-size: 16px; font-weight: 600; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .inbox-link { display: inline-flex; align-items: center; min-height: 44px; margin-top: 12px; color: var(--accent); font-size: 13px; font-weight: 600; text-underline-offset: 4px; }
+:global(.jf-blueprint .content) .inbox-link:hover { color: var(--accent-ink); }
+:global(.jf-blueprint .content) .inbox-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+
+/* ESTIMATE THIS JOB (owner, 2026-09-26: every way "shown the same as the
+   Smart Proposal", each with a different-coloured icon). One framed card per
+   estimator, the whole card its form's button: a hue on the left edge and on
+   the icon plate, the name, what it does, and Start estimate. The lead's own
+   trade comes first and wears the Recommended tag; roof and fence without a
+   street address open all the same and say, in amber, what they will ask for.
+   Hues are identity only — Smart Proposal blueprint, roof brick, fence green,
+   HVAC sky, the manual proposal ink. */
+:global(.jf-blueprint .content) .est { margin-top: 24px; padding-top: 20px; border-top: 1.5px solid var(--ink); }
+:global(.jf-blueprint .content) .est-sub { margin: 0 0 14px; font-size: 14px; line-height: 1.45; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .est-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+:global(.jf-blueprint .content) .est-cards form { margin: 0; }
+:global(.jf-blueprint .content) .est-card {
+  --est-hue: var(--blueprint);
   display: flex; align-items: center; gap: 16px;
-  margin: 0;
-  padding: 14px 16px 14px 18px;
+  width: 100%;
+  padding: 14px 16px 14px 14px;
+  background: #fff;
   border: 1.5px solid var(--ink);
-  border-left: 5px solid var(--blueprint);
+  border-left: 5px solid var(--est-hue);
   border-radius: var(--radius);
+  font: inherit; text-align: left; color: var(--ink);
+  cursor: pointer;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
-:global(.jf-blueprint .content) .est-lead-txt { flex: 1 1 auto; min-width: 0; }
-:global(.jf-blueprint .content) .est-lead-n {
+:global(.jf-blueprint .content) .est-card--roof { --est-hue: var(--danger); }
+:global(.jf-blueprint .content) .est-card--fence { --est-hue: var(--success); }
+:global(.jf-blueprint .content) .est-card--hvac { --est-hue: var(--sky); }
+:global(.jf-blueprint .content) .est-card--manual { --est-hue: var(--ink); }
+:global(.jf-blueprint .content) .est-ic {
+  width: 44px; height: 44px; flex-shrink: 0;
+  display: grid; place-items: center;
+  border-radius: var(--radius);
+  background: var(--est-hue); color: #fff;
+}
+:global(.jf-blueprint .content) .est-ic svg { width: 22px; height: 22px; }
+:global(.jf-blueprint .content) .est-txt { display: block; flex: 1 1 auto; min-width: 0; }
+:global(.jf-blueprint .content) .est-n {
   display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px;
   font-size: 17px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2;
+}
+:global(.jf-blueprint .content) .est-s { display: block; margin-top: 5px; font-size: 14px; line-height: 1.45; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .est-need { display: block; margin-top: 3px; font-weight: 700; color: var(--warning-dark); }
+:global(.jf-blueprint .content) .est-go {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 40px; padding: 0 16px;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--blueprint); color: #fff;
+  font-size: 12px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+:global(.jf-blueprint .content) .est-card:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint .content) .est-card:hover:not(:disabled) .est-go { background: var(--blueprint-dark); }
+:global(.jf-blueprint .content) .est-card:active:not(:disabled) { transform: none; box-shadow: none; }
+:global(.jf-blueprint .content) .est-card:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+/* Busy while the hand-off files the client and redirects (estimate-card-button). */
+:global(.jf-blueprint .content) .est-card:disabled { cursor: progress; }
+:global(.jf-blueprint .content) .est-card:disabled .est-go { background: var(--blueprint-dark); }
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint .content) .est-card { transition: none; }
+  :global(.jf-blueprint .content) .est-card:hover:not(:disabled) { transform: none; }
 }
 :global(.jf-blueprint .content) .est-tag {
   padding: 2px 7px;
@@ -149,48 +211,6 @@
   letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--blueprint);
 }
-:global(.jf-blueprint .content) .est-lead .hint { display: block; margin-top: 5px; }
-:global(.jf-blueprint .content) .est-lead .btn { flex: 0 0 auto; }
-
-:global(.jf-blueprint .content) .est-alt-h {
-  margin: 20px 0 4px;
-  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
-  letter-spacing: 0.14em; text-transform: uppercase;
-  color: var(--muted);
-}
-:global(.jf-blueprint .content) .est-list { list-style: none; margin: 0; padding: 0; }
-:global(.jf-blueprint .content) .est-list li { border-bottom: 1px solid var(--ink-line); }
-:global(.jf-blueprint .content) .est-list li:last-child { border-bottom: 0; }
-:global(.jf-blueprint .content) .est-list form { margin: 0; }
-:global(.jf-blueprint .content) .est-opt {
-  display: grid;
-  grid-template-columns: minmax(130px, 190px) minmax(0, 1fr) auto;
-  grid-template-areas: "n s go";
-  align-items: center; gap: 4px 14px;
-  width: 100%; min-height: 48px;
-  padding: 10px 6px 10px 8px;
-  background: none; border: 0; border-radius: var(--radius);
-  text-align: left; color: var(--ink);
-  cursor: pointer;
-  transition: background 0.12s;
-}
-:global(.jf-blueprint .content) .est-opt-n { grid-area: n; font-size: 14px; font-weight: 700; transition: color 0.12s; }
-:global(.jf-blueprint .content) .est-opt-s { grid-area: s; min-width: 0; font-size: 12.5px; line-height: 1.4; color: var(--muted); }
-:global(.jf-blueprint .content) .est-opt-go { grid-area: go; width: 16px; height: 16px; color: var(--muted); transition: transform 0.12s, color 0.12s; }
-:global(.jf-blueprint .content) .est-opt:hover:not(:disabled) { background: var(--accent-soft); }
-:global(.jf-blueprint .content) .est-opt:hover:not(:disabled) .est-opt-n,
-:global(.jf-blueprint .content) .est-opt:hover:not(:disabled) .est-opt-go { color: var(--blueprint); }
-:global(.jf-blueprint .content) .est-opt:hover:not(:disabled) .est-opt-go { transform: translateX(2px); }
-:global(.jf-blueprint .content) .est-opt:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
-/* A way that needs something first says what, in amber — not a faded button. */
-:global(.jf-blueprint .content) .est-opt:disabled { cursor: not-allowed; }
-:global(.jf-blueprint .content) .est-opt:disabled .est-opt-n { color: var(--muted); }
-:global(.jf-blueprint .content) .est-opt:disabled .est-opt-s { color: var(--warning-dark); font-weight: 600; }
-:global(.jf-blueprint .content) .est-opt:disabled .est-opt-go { opacity: 0.3; }
-@media (prefers-reduced-motion: reduce) {
-  :global(.jf-blueprint .content) .est-opt-go { transition: none; }
-  :global(.jf-blueprint .content) .est-opt:hover:not(:disabled) .est-opt-go { transform: none; }
-}
 
 @media (max-width: 900px) {
   :global(.jf-blueprint .content) .grid { grid-template-columns: 1fr; }
@@ -198,10 +218,10 @@
   :global(.jf-blueprint .content) .card { padding: 16px 16px 18px; }
 }
 
-/* On a phone (2026-09-25): the primary action takes the card's width under
-   its words; each other way stacks its note under its name, thumb-sized. */
+/* On a phone: each estimate card keeps its icon beside its words, and Start
+   estimate takes the card's full width under them, thumb-sized. */
 @media (max-width: 768px) {
-  :global(.jf-blueprint .content) .est-lead { flex-direction: column; align-items: stretch; gap: 14px; padding: 14px 14px 14px 16px; }
-  :global(.jf-blueprint .content) .est-lead .btn { width: 100%; min-height: 44px; justify-content: center; }
-  :global(.jf-blueprint .content) .est-opt { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "n go" "s go"; min-height: 56px; }
+  :global(.jf-blueprint .content) .est-card { flex-wrap: wrap; gap: 12px 14px; padding: 14px 14px 14px 12px; }
+  :global(.jf-blueprint .content) .est-txt { flex: 1 1 0; }
+  :global(.jf-blueprint .content) .est-go { flex: 1 0 100%; min-height: 44px; }
 }

@@ -14,7 +14,7 @@ import { isEstimatorRole, requireEstimatorOrManager } from "@/lib/orgContext";
 import { ESTIMATOR_PATH, writeProfessionalScope, type EstimatorId } from "@/lib/leadScope";
 import { writeEstimateSeed } from "@/lib/estimateSeed";
 import { ensureClientForLead } from "@/lib/leadClient";
-import { FILING_COOKIE, FILING_MAX_AGE_S } from "@/lib/filingCookie";
+import { FILING_COOKIE, FILING_MAX_AGE_S, type Filing } from "@/lib/filingCookie";
 
 const ENGINES = new Set<string>(["roof", "fence", "hvac", "smart", "manual"]);
 
@@ -35,9 +35,18 @@ export async function startEstimateFromLead(leadId: string, estimator: string): 
   // The estimate files under it through the same cookie the estimator picker
   // writes (lib/filingCookie), so the chip on the estimator says so and every
   // convert-to-proposal action reads it. Not httpOnly: the chip reads it.
+  // The lead rides in it too (2026-09-26): the seed below is spent the moment
+  // the estimator opens, and the proposal must still get the lead's client
+  // and scope of work however long the estimate takes, address or no address
+  // (lib/filingContext). The manual proposal reads the seed instead.
   const client = await ensureClientForLead(organizationId, lead, { create: !isEstimatorRole(role) });
-  if (client) {
-    (await cookies()).set(FILING_COOKIE, JSON.stringify({ clientId: client.id, clientName: client.name }), { path: "/", maxAge: FILING_MAX_AGE_S, sameSite: "lax" });
+  const carriesLead = engine !== "manual";
+  if (client || carriesLead) {
+    const filing: Filing = {
+      ...(client ? { clientId: client.id, clientName: client.name } : {}),
+      ...(carriesLead ? { leadId: lead.id, leadName: lead.name } : {}),
+    };
+    (await cookies()).set(FILING_COOKIE, JSON.stringify(filing), { path: "/", maxAge: FILING_MAX_AGE_S, sameSite: "lax" });
   }
   await writeEstimateSeed({
     leadId: lead.id,

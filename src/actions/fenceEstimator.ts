@@ -9,7 +9,7 @@ const estimateTotal = (d: { materials: Array<{ quantity: number; unitPrice: numb
 const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 import { db } from "@/lib/db";
 import { recordInventoryLink } from "@/lib/inventoryPick";
-import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
+import { clearFilingContext, filedClientId, leadProposalText, readFilingContext } from "@/lib/filingContext";
 import { sellUnitPrice, resolveMarkupRates } from "@/lib/pricing/markup";
 import { uploadBlob, isBlobEnabled } from "@/lib/sdk/blob";
 import { getOpenAI, isOpenAIEnabled, samplingOptions, resolveOpenAIModel } from "@/lib/sdk/openai";
@@ -137,7 +137,7 @@ export async function convertFenceEstimateToProposal(raw: unknown): Promise<Fenc
     if (err instanceof NoOrgError) return { ok: false, code: "FORBIDDEN", error: "Sign in to an organization to create a proposal." };
     throw err;
   }
-  const { organizationId, user } = ctx;
+  const { organizationId, user, role } = ctx;
   const quota = await checkPlanLimit(organizationId, "proposalsCreated");
   if (!quota.allowed) {
     return { ok: false, code: "PLAN_LIMIT_REACHED", error: PLAN_LIMIT_MESSAGE, resource: quota.cappedBy ?? "proposalsCreated" };
@@ -145,7 +145,7 @@ export async function convertFenceEstimateToProposal(raw: unknown): Promise<Fenc
   const parsed = fenceConvertSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, code: "INVALID", error: firstIssue(parsed.error) };
   try {
-    return { ok: true, id: await writeProposal(organizationId, user.id, parsed.data) };
+    return { ok: true, id: await writeProposal(organizationId, user.id, role, parsed.data) };
   } catch (err) {
     // The cause goes to the log and to PostHog (server_error, scope fence-convert); the page gets one plain line.
     logServerError("fence-convert", err, { kind: "action", organizationId });
@@ -153,7 +153,7 @@ export async function convertFenceEstimateToProposal(raw: unknown): Promise<Fenc
   }
 }
 
-async function writeProposal(organizationId: string, userId: string, data: FenceConvertInput): Promise<string> {
+async function writeProposal(organizationId: string, userId: string, role: string, data: FenceConvertInput): Promise<string> {
   const user = { id: userId };
 
   // Never trust a client id from the browser — it must belong to this org.
@@ -166,10 +166,13 @@ async function writeProposal(organizationId: string, userId: string, data: Fence
       )?.id ?? null
     : null;
   // Started from a project or a client's page, the picker recorded where this
-  // estimate files (lib/filingContext); an explicit client still wins.
+  // estimate files (lib/filingContext); an explicit client still wins. Started
+  // from a lead, the filing carries the lead: its client, and its scope as the
+  // proposal's overview beside the fence scope written here.
   const filing = await readFilingContext(organizationId);
-  const clientId = named ?? filing?.clientId ?? null;
+  const clientId = named ?? (await filedClientId(organizationId, role, filing));
   const projectId = filing?.projectId ?? null;
+  const text = leadProposalText(filing?.lead ?? null, data.scope ?? "");
 
   // Hidden profit markup: seed from the org-wide default, then apply so each
   // line's unitPrice is the SELL price (0% → equals cost).
@@ -256,7 +259,8 @@ async function writeProposal(organizationId: string, userId: string, data: Fence
       title: data.title,
       // Scope only — assumptions stay on the estimate, never baked into the
       // proposal's scope (keeps the preview / calendar / job detail clean).
-      scopeOfWork: data.scope ?? "",
+      scopeOfWork: text.scopeOfWork,
+      description: text.overview,
       address,
       status: ProposalStatus.DRAFT,
       subtotal,

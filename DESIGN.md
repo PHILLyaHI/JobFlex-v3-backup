@@ -62,6 +62,11 @@ Inspect the consuming scope; use `var(--sheet, var(--paper-deep))` for a shared
 white card where appropriate. Do not globally repurpose a token to fix one card.
 Use existing semantic status tones where available; otherwise derive a soft
 fill from the status token. Status color conveys state, not decoration.
+One owner-approved exception (September 26, 2026): where the estimators sit
+side by side as choices (the lead page's Estimate this job), each wears one
+identity hue on its card edge and icon plate — Smart Proposal `--blueprint`,
+roof `--danger`, fence `--success`, HVAC `--sky`, manual proposal `--ink`.
+Amber stays reserved there for what an estimator still needs.
 
 Light mode only. Keep the existing drafting grid behind content, never over
 type. Resting cards have no shadow (`--shadow-sm` and `--shadow-md` are `none`).

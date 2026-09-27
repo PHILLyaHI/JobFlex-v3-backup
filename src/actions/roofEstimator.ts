@@ -10,7 +10,7 @@ const estimateTotal = (d: { materials: Array<{ quantity: number; unitPrice: numb
 const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 import { db } from "@/lib/db";
 import { recordInventoryLink } from "@/lib/inventoryPick";
-import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
+import { clearFilingContext, filedClientId, leadProposalText, readFilingContext } from "@/lib/filingContext";
 import { getOpenAI, isOpenAIEnabled, samplingOptions, resolveOpenAIModel } from "@/lib/sdk/openai";
 import { estimateSchema, type GeneratedEstimate } from "@/lib/estimatorSchema";
 import { ProposalStatus } from "@/lib/prismaEnums";
@@ -203,7 +203,7 @@ const convertSchema = z.object({
 });
 
 export async function convertRoofEstimateToProposal(raw: unknown) {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user, role } = await requireEstimatorOrManager();
   await enforcePlanLimit(organizationId, "proposalsCreated");
   const data = convertSchema.parse(raw);
 
@@ -217,10 +217,13 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
       )?.id ?? null
     : null;
   // Started from a project or a client's page, the picker recorded where this
-  // estimate files (lib/filingContext); an explicit client still wins.
+  // estimate files (lib/filingContext); an explicit client still wins. Started
+  // from a lead, the filing carries the lead: its client, and its scope as the
+  // proposal's overview beside the roof scope written here.
   const filing = await readFilingContext(organizationId);
-  const clientId = named ?? filing?.clientId ?? null;
+  const clientId = named ?? (await filedClientId(organizationId, role, filing));
   const projectId = filing?.projectId ?? null;
+  const text = leadProposalText(filing?.lead ?? null, data.scope ?? "");
 
   const lines = [
     ...data.materials.map((l) => ({
@@ -279,7 +282,8 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
       title: data.title,
       // Scope only — assumptions stay on the estimate, never baked into the
       // proposal's scope (keeps the preview / calendar / job detail clean).
-      scopeOfWork: data.scope ?? "",
+      scopeOfWork: text.scopeOfWork,
+      description: text.overview,
       address,
       status: ProposalStatus.DRAFT,
       subtotal,

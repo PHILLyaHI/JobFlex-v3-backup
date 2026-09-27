@@ -10,7 +10,19 @@ import Link from "next/link";
 import type { Route } from "next";
 import { consumeEstimateSeed } from "@/actions/estimateSeed";
 
-export type SeedStripData = { leadId: string; name: string; address: string | null; phone?: string | null; email?: string | null };
+export type SeedStripData = {
+  leadId: string;
+  name: string;
+  address: string | null;
+  phone?: string | null;
+  email?: string | null;
+  /** The lead's scope (else the homeowner's words) and the estimator it was handed to (lib/estimateSeed). */
+  brief?: string | null;
+  estimator?: string;
+};
+
+/** The estimators that never show the lead's words anywhere else on their page. */
+const SHOWS_SCOPE = new Set(["roof", "fence", "hvac"]);
 
 /**
  * Rendered by the estimator page on EVERY visit, with the seed or null. The
@@ -26,6 +38,11 @@ export function EstimateSeedStrip({ seed }: { seed: SeedStripData | null }) {
   }, [kept]);
   if (!kept) return null;
   const { leadId, name, address, phone, email } = kept;
+  // Roof, fence and HVAC measure; nothing on them shows what the homeowner
+  // asked for. The lead's scope is here to read while estimating, and it goes
+  // on the proposal as its overview (lib/filingContext, 2026-09-26). The Smart
+  // Proposal has it in its brief already, the manual proposal on its sheet.
+  const brief = kept.brief?.trim() && SHOWS_SCOPE.has(kept.estimator ?? "") ? kept.brief.trim() : null;
   return (
     <div
       className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--r-md)] border border-[color:var(--line)] bg-black/[0.03] px-3 py-2 text-[12.5px] dark:bg-white/[0.04]"
@@ -42,6 +59,14 @@ export function EstimateSeedStrip({ seed }: { seed: SeedStripData | null }) {
       <Link href={`/dashboard/leads/${leadId}` as Route} className="ml-auto underline underline-offset-4">
         Back to the lead
       </Link>
+      {brief ? (
+        <details style={{ flexBasis: "100%", marginTop: 4 }} data-estimate-seed-scope>
+          <summary style={{ cursor: "pointer", fontWeight: 600, minHeight: 28, display: "list-item" }}>
+            The lead&rsquo;s scope of work — it goes on the proposal
+          </summary>
+          <p style={{ margin: "4px 0 2px", whiteSpace: "pre-wrap", lineHeight: 1.55, color: "var(--ink-soft, #2a2a2a)" }}>{brief}</p>
+        </details>
+      ) : null}
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { db } from "@/lib/db";
 import { recordInventoryLink } from "@/lib/inventoryPick";
-import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
+import { clearFilingContext, filedClientId, leadProposalText, readFilingContext } from "@/lib/filingContext";
 import {
   friendlyAIError,
   getOpenAI,
@@ -1474,7 +1474,7 @@ function measurementForUnit(unit: string | null | undefined): string {
 }
 
 export async function convertEstimateToProposal(raw: unknown) {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user, role } = await requireEstimatorOrManager();
   await enforcePlanLimit(organizationId, "proposalsCreated");
   const data = convertInput.parse(raw);
 
@@ -1488,9 +1488,11 @@ export async function convertEstimateToProposal(raw: unknown) {
       )?.id ?? null
     : null;
   // Started from a project or a client's page, the picker recorded where this
-  // estimate files (lib/filingContext); an explicit client still wins.
+  // estimate files (lib/filingContext); an explicit client still wins. Started
+  // from a lead, the filing carries the lead: its client, and its scope as the
+  // proposal's overview beside the scope this estimate wrote.
   const filing = await readFilingContext(organizationId);
-  const clientId = named ?? filing?.clientId ?? null;
+  const clientId = named ?? (await filedClientId(organizationId, role, filing));
   const projectId = filing?.projectId ?? null;
 
   // Hidden profit markup: seed this proposal from the org-wide default, then
@@ -1561,7 +1563,7 @@ export async function convertEstimateToProposal(raw: unknown) {
 
   // Scope only — assumptions stay on the estimate (AiEstimate), never baked into
   // the proposal's scope, so the preview / calendar / job detail stay clean.
-  const scope = (data.scope ?? "").trim();
+  const text = leadProposalText(filing?.lead ?? null, (data.scope ?? "").trim());
 
   const proposal = await db.proposal.create({
     data: {
@@ -1571,7 +1573,8 @@ export async function convertEstimateToProposal(raw: unknown) {
       clientId,
       projectId,
       title: data.title,
-      scopeOfWork: scope || null,
+      scopeOfWork: text.scopeOfWork || null,
+      description: text.overview,
       address,
       status: ProposalStatus.DRAFT,
       // A Smart Proposal for a fence, a roof or HVAC belongs to that trade's

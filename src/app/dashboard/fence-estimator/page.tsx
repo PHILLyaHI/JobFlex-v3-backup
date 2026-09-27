@@ -12,6 +12,7 @@ import { auth } from "@/lib/auth";
 import { FenceEstimatorContent } from "@/components/v3/fence-estimator-blueprint/fence-estimator-content";
 import { readEstimateSeed } from "@/lib/estimateSeed";
 import { EstimateSeedStrip } from "@/components/v3/estimate-seed-strip";
+import { looksLikeStreetAddress } from "@/lib/leadRules";
 import { requireOrg } from "@/lib/orgContext";
 
 /** The hand-off seed for this company's fence estimator, or null — never an error. */
@@ -45,11 +46,14 @@ export default async function FenceEstimatorPage() {
 
   // A fence lead handed over from its page (lib/estimateSeed): the address
   // is typed into the search bar and Find is pressed for the contractor.
+  // Only a street address, though (2026-09-26): a lead with just a town or a
+  // ZIP opens here too now, and Find on "Everett, WA" would put a whole city
+  // on the map as if it were the site. The strip still shows what the lead gave.
   const seed = await readFenceSeed();
   return (
     <>
       <EstimateSeedStrip seed={seed} />
-      <FenceEstimatorContent initialAddress={seed?.address ?? undefined} />
+      <FenceEstimatorContent initialAddress={seed?.address && looksLikeStreetAddress(seed.address) ? seed.address : undefined} />
     </>
   );
 }

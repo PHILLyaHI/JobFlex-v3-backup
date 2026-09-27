@@ -18,6 +18,7 @@ import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { RoofEstimatorContent } from "@/components/v3/roof-estimator-blueprint/roof-estimator-content";
 import { readEstimateSeed } from "@/lib/estimateSeed";
 import { EstimateSeedStrip } from "@/components/v3/estimate-seed-strip";
+import { looksLikeStreetAddress } from "@/lib/leadRules";
 import { requireOrg } from "@/lib/orgContext";
 
 /** The hand-off seed for this company's roof estimator, or null — never an error. */
@@ -63,7 +64,9 @@ export default async function RoofEstimatorPage() {
   // have. A deploy with no flag now gets the same page as local dev.
   const drawingEnabled = process.env.ROOF_DRAWING_ENABLED === "true";
   // A roof lead handed over from its page (lib/estimateSeed): the address is
-  // already in the search field when the contractor arrives.
+  // already in the search field when the contractor arrives — a street
+  // address only (2026-09-26). A lead with just a town or a ZIP opens here too
+  // now; its field starts empty for the street, and the strip shows the rest.
   const seed = await readRoofSeed();
 
   return (
@@ -73,7 +76,7 @@ export default async function RoofEstimatorPage() {
         evEnabled={isEagleViewEnabled()}
         aiEnabled={isOpenAIEnabled()}
         drawingEnabled={drawingEnabled}
-        initialAddress={seed?.address ?? undefined}
+        initialAddress={seed?.address && looksLikeStreetAddress(seed.address) ? seed.address : undefined}
       />
     </>
   );

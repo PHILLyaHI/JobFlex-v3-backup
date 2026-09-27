@@ -27,7 +27,7 @@ import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { db } from "@/lib/db";
 import { recordInventoryLink } from "@/lib/inventoryPick";
-import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
+import { clearFilingContext, filedClientId, leadProposalText, readFilingContext } from "@/lib/filingContext";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
@@ -774,7 +774,7 @@ const convertSchema = z.object({
 /** The roof estimator's convert, line for line: proposal + line items + the
  *  30/70 schedule + the activity row. Assumptions stay on the estimate. */
 export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id: string }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user, role } = await requireEstimatorOrManager();
   await enforcePlanLimit(organizationId, "proposalsCreated");
   const data = convertSchema.parse(raw);
   // Converted without a saved estimate, this is a new HVAC estimate all the
@@ -786,10 +786,13 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
     ? ((await db.client.findFirst({ where: { id: data.clientId, organizationId }, select: { id: true } }))?.id ?? null)
     : null;
   // Started from a project or a client's page, the picker recorded where this
-  // estimate files (lib/filingContext); an explicit client still wins.
+  // estimate files (lib/filingContext); an explicit client still wins. Started
+  // from a lead, the filing carries the lead: its client, and its scope as the
+  // proposal's overview beside the HVAC scope written here.
   const filing = await readFilingContext(organizationId);
-  const clientId = named ?? filing?.clientId ?? null;
+  const clientId = named ?? (await filedClientId(organizationId, role, filing));
   const projectId = filing?.projectId ?? null;
+  const text = leadProposalText(filing?.lead ?? null, [data.scope ?? "", data.permitNote ?? ""].filter(Boolean).join("\n\n"));
 
   const lines = [
     ...data.materials.map((l) => ({ name: l.name, measurementType: unitToType(l.unit), quantity: l.quantity, unitPrice: l.unitPrice, materialCost: l.unitPrice, laborCost: 0, total: l.quantity * l.unitPrice })),
@@ -819,7 +822,8 @@ export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id:
       clientId,
       projectId,
       title: data.title,
-      scopeOfWork: [data.scope ?? "", data.permitNote ?? ""].filter(Boolean).join("\n\n"),
+      scopeOfWork: text.scopeOfWork,
+      description: text.overview,
       address,
       status: ProposalStatus.DRAFT,
       subtotal,

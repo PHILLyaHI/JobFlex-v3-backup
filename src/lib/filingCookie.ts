@@ -14,11 +14,16 @@ export type Filing = {
   clientName?: string | null;
   projectId?: string | null;
   projectName?: string | null;
+  /** The lead an estimate was started from (2026-09-26): its client and its
+   *  scope of work ride to the proposal (lib/filingContext). Written by the
+   *  lead page's hand-off only; the picker never sets it. */
+  leadId?: string | null;
+  leadName?: string | null;
 };
 
 export function writeFiling(f: Filing): void {
   if (typeof document === "undefined") return;
-  if (!f.clientId && !f.projectId) return clearFiling();
+  if (!f.clientId && !f.projectId && !f.leadId) return clearFiling();
   const value = encodeURIComponent(JSON.stringify(f));
   document.cookie = `${FILING_COOKIE}=${value}; path=/; max-age=${FILING_MAX_AGE_S}; samesite=lax`;
   window.dispatchEvent(new Event(FILING_CHANGED_EVENT));
@@ -36,7 +41,7 @@ export function readFiling(): Filing | null {
   if (!hit) return null;
   try {
     const f = JSON.parse(decodeURIComponent(hit.slice(FILING_COOKIE.length + 1))) as Filing;
-    return f.clientId || f.projectId ? f : null;
+    return f.clientId || f.projectId || f.leadId ? f : null;
   } catch {
     return null;
   }

@@ -1,15 +1,17 @@
 // ONE LEAD ON THE BLUEPRINT SHEET (2026-09-22). The page the Leads list
 // opens: who it is, the scope of work (or the homeowner's words with a
 // button that writes the scope), and the estimators — the lead's own trade
-// first, roof and fence waiting for a street address. Server-rendered;
-// the forms bind server actions (actions/leadEstimate), nothing to hydrate.
+// first. Server-rendered; the forms bind server actions (actions/leadEstimate)
+// and only the estimate cards' busy state hydrates (estimate-card-button).
 
 import Link from "next/link";
 import type { Route } from "next";
-import { ChevronRight } from "lucide-react";
+import { AirVent, Fence, FilePen, type LucideIcon } from "lucide-react";
 import { startEstimateFromLead, writeLeadScope } from "@/actions/leadEstimate";
 import { ESTIMATOR_LABEL, estimatorFor, looksLikeStreetAddress, type EstimatorId } from "@/lib/leadRules";
+import { EstimateCardButton } from "./estimate-card-button";
 import styles from "./lead-detail.module.css";
+import { metaLeadPresentation } from "@/lib/meta/leadPresentation";
 
 const cx = (...names: Array<string | false | null | undefined>) =>
   names.filter(Boolean).map((n) => styles[n as string] ?? n).join(" ");
@@ -23,11 +25,38 @@ const ENGINE_NOTE: Record<EstimatorId, string> = {
   roof: "Measures the roof from the address",
   fence: "Draws the fence on the property lines",
   hvac: "Sizes the system and prices the install",
-  smart: "Prices the scope of work with AI",
+  smart: "Prices the scope of work — it opens in the brief",
   manual: "A blank proposal with the lead filled in",
 };
 
-/** Roof and fence measure off the parcel — they need a street address. */
+/** Each way of pricing wears its own icon, in its own hue (owner, 2026-09-26).
+ *  Smart Proposal and the roof estimator draw the sidebar's own marks — the
+ *  shell sprite's lightbulb and roof (blueprint-shell/sprite, mounted by both
+ *  the desk shell and the handheld frame); the rest are Lucide. */
+const ENGINE_ICON: Record<EstimatorId, LucideIcon | "i-bulb" | "i-roof"> = {
+  roof: "i-roof",
+  fence: Fence,
+  hvac: AirVent,
+  smart: "i-bulb",
+  manual: FilePen,
+};
+
+function EngineIcon({ engine }: { engine: EstimatorId }) {
+  const icon = ENGINE_ICON[engine];
+  if (typeof icon === "string") {
+    return (
+      <svg className={cx("ic")}>
+        <use href={`#${icon}`} />
+      </svg>
+    );
+  }
+  const Icon = icon;
+  return <Icon strokeWidth={2} />;
+}
+
+/** Roof and fence measure off the parcel — they need a street address. They
+ *  open without one all the same (owner, 2026-09-26): the contractor types it
+ *  in there, and the lead's client and scope ride along either way. */
 const needsStreet = (engine: EstimatorId) => engine === "roof" || engine === "fence";
 
 function initials(name: string): string {
@@ -68,11 +97,12 @@ export function LeadDetailContent({ lead, canEstimate, scopeFailed }: LeadDetail
     .filter((s) => s && s.trim())
     .join(", ");
   const hasStreet = looksLikeStreetAddress(lead.address);
-  const others = ENGINES.filter((e) => e !== primary);
-  const primaryOff = needsStreet(primary) && !hasStreet;
+  // The lead's own trade first, then every other way in the usual order.
+  const ways: EstimatorId[] = [primary, ...ENGINES.filter((e) => e !== primary)];
   const words = (lead.description ?? "").trim();
-  const canWriteScope = !lead.scope && canEstimate && words.length >= 12;
-  const source = lead.source === "LEAD_CENTER" ? "Lead Center" : lead.source === "HOMEOWNER" ? "Homeowner form" : (lead.source ?? "Manual");
+  const meta = metaLeadPresentation(lead);
+  const canWriteScope = !lead.scope && canEstimate && words.length >= 12 && (!meta || meta.answers.length > 0);
+  const source = lead.source === "FACEBOOK" ? "Facebook" : lead.source === "LEAD_CENTER" ? "Lead Center" : lead.source === "HOMEOWNER" ? "Homeowner form" : (lead.source ?? "Manual");
 
   return (
     <>
@@ -136,12 +166,20 @@ export function LeadDetailContent({ lead, canEstimate, scopeFailed }: LeadDetail
               <p className={cx("scope")} data-lead-scope>
                 {lead.scope}
               </p>
-              <div className={cx("sec-h")}>In the homeowner&apos;s words</div>
+              <div className={cx("sec-h")}>{meta ? "Form responses" : "In the homeowner’s words"}</div>
             </>
           ) : (
-            <div className={cx("sec-h")}>Project description</div>
+            <div className={cx("sec-h")}>{meta ? "Project details" : "Project description"}</div>
           )}
-          <p className={cx("words")}>{words || "No description provided."}</p>
+          {meta ? <>
+            {meta.answers.length ? <dl className={cx("form-answers")}>
+              {meta.answers.map((answer, index) => <div key={index}>
+                <dt>{answer.label}</dt>
+                <dd>{answer.value}</dd>
+              </div>)}
+            </dl> : <p className={cx("words")}>No project details provided.</p>}
+            {meta.inboxUrl && <a className={cx("inbox-link")} href={meta.inboxUrl} target="_blank" rel="noopener noreferrer">Open Facebook conversation ↗</a>}
+          </> : <p className={cx("words")}>{words || "No description provided."}</p>}
 
           {/* A lead without a scope — a request from before the scope
               existed, an import, a hand-typed lead: one click writes it. */}
@@ -158,44 +196,51 @@ export function LeadDetailContent({ lead, canEstimate, scopeFailed }: LeadDetail
             </form>
           )}
 
-          {/* ESTIMATE THIS JOB (owner, 2026-09-25: "better designed, well
-              structured and minimal"): the way this lead's trade prices, as
-              the one primary action, then every other way as a quiet row —
-              each row a form posting the same startEstimateFromLead. */}
+          {/* ESTIMATE THIS JOB (owner, 2026-09-26: every way "shown the same
+              as the Smart Proposal", each with its own coloured icon): one
+              framed card per estimator — icon, name, what it does, Start
+              estimate — the lead's own trade first and tagged. Every card is
+              a form posting startEstimateFromLead; none waits on an address. */}
           {canEstimate && (
             <div className={cx("est")} data-lead-estimators>
               <div className={cx("sec-h")}>Estimate this job</div>
-              <form action={startEstimateFromLead.bind(null, lead.id, primary)} className={cx("est-lead")}>
-                <div className={cx("est-lead-txt")}>
-                  <div className={cx("est-lead-n")}>
-                    {ESTIMATOR_LABEL[primary]}
-                    <span className={cx("est-tag")}>Recommended</span>
-                  </div>
-                  <span className={cx("hint")}>
-                    {primary === "smart"
-                      ? "The scope lands in the Smart Proposal's brief with the location filled in."
-                      : hasStreet
-                        ? `The address goes straight into the ${ESTIMATOR_LABEL[primary]} to measure the job.`
-                        : `The ${ESTIMATOR_LABEL[primary]} measures off the address — this lead has no street address yet, so ask for it first.`}
-                  </span>
-                </div>
-                <button className={cx("btn", "btn-primary")} type="submit" disabled={primaryOff} data-estimator={primary}>
-                  Start estimate
-                </button>
-              </form>
-
-              <div className={cx("est-alt-h")}>Or price it another way</div>
-              <ul className={cx("est-list")}>
-                {others.map((engine) => {
-                  const off = needsStreet(engine) && !hasStreet;
+              <p className={cx("est-sub")}>
+                Whichever way you price it, the proposal keeps this lead&rsquo;s client and scope of work.
+              </p>
+              <ul className={cx("est-cards")}>
+                {ways.map((engine) => {
+                  const recommended = engine === primary;
+                  const needsAddress = needsStreet(engine) && !hasStreet;
+                  const noteId = `est-note-${engine}`;
                   return (
                     <li key={engine}>
                       <form action={startEstimateFromLead.bind(null, lead.id, engine)}>
-                        <button className={cx("est-opt")} type="submit" disabled={off} data-estimator={engine}>
-                          <span className={cx("est-opt-n")}>{ESTIMATOR_LABEL[engine]}</span>
-                          <span className={cx("est-opt-s")}>{off ? "Needs a street address" : ENGINE_NOTE[engine]}</span>
-                          <ChevronRight className={cx("est-opt-go")} aria-hidden="true" />
-                        </button>
+                        <EstimateCardButton
+                          className={cx("est-card", `est-card--${engine}`)}
+                          goClassName={cx("est-go")}
+                          engine={engine}
+                          label={`${ESTIMATOR_LABEL[engine]}${recommended ? ", recommended" : ""} — start estimate`}
+                          describedBy={noteId}
+                        >
+                          <span className={cx("est-ic")} aria-hidden="true">
+                            <EngineIcon engine={engine} />
+                          </span>
+                          <span className={cx("est-txt")}>
+                            <span className={cx("est-n")}>
+                              {ESTIMATOR_LABEL[engine]}
+                              {recommended && <span className={cx("est-tag")}>Recommended</span>}
+                            </span>
+                            <span className={cx("est-s")} id={noteId}>
+                              {ENGINE_NOTE[engine]}
+                              {needsAddress && (
+                                <>
+                                  {/* the space keeps the two lines apart when read aloud */}{" "}
+                                  <span className={cx("est-need")}>Needs a street address — type it in the estimator</span>
+                                </>
+                              )}
+                            </span>
+                          </span>
+                        </EstimateCardButton>
                       </form>
                     </li>
                   );

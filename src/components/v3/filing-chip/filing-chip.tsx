@@ -51,7 +51,9 @@ export function FilingChip() {
   if (!raw || typeof document === "undefined" || !ESTIMATOR_ROUTES.some((r) => pathname.startsWith(r))) return null;
   const f: Filing | null = readFiling();
   if (!f) return null;
-  const where = f.projectName ?? f.clientName ?? "the chosen client";
+  // Started from a lead (2026-09-26): the lead's client and scope ride to the
+  // proposal — named by the lead when no client record could be made for it.
+  const where = f.projectName ?? f.clientName ?? f.leadName ?? "the chosen client";
 
   return createPortal(
     <div className={s.chip} role="status">
@@ -62,6 +64,7 @@ export function FilingChip() {
         <span className={s.lbl}>{f.projectName ? "Files to project" : "Files for"}</span>
         <b className={s.name}>{where}</b>
         {f.projectName && f.clientName ? <span className={s.sub}>{f.clientName}</span> : null}
+        {!f.projectName && f.leadId ? <span className={s.sub}>with the lead&rsquo;s scope</span> : null}
       </span>
       <button type="button" className={s.x} onClick={clearFiling} aria-label={`Don't file this estimate under ${where}`} title="Don't file it there">
         <svg viewBox="0 0 24 24" aria-hidden="true">
