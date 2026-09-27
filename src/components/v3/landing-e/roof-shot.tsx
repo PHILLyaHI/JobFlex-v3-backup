@@ -254,7 +254,7 @@ export function RoofShot({ active, instant = false, hero = false }: { active: bo
       body={tilted ? "#f6f7f5" : aerial ? "#3b4034" : "#e9eae6"}
     >
       <div className="relative">
-        <Prompt label="Address" value={typed} lifted={lifted} search compact={compact} />
+        <Prompt label="Address" value={typed} lifted={lifted} search />
         <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_260px]">
         {/* lp-roof-stage: the showcase roof's own plate on a phone (showcase-pass.css) */}
         <div className={hero ? `${STAGE} lp-hero-stage` : `${STAGE} lp-roof-stage`} style={{ background: tilted ? "#f6f7f5" : "#e9eae6", transition: "background .9s ease" }}>

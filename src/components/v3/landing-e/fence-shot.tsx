@@ -21,6 +21,7 @@ import {
   planBoxStyle,
   READ_HOLD,
   usePhases,
+  useReduced,
 } from "./showcase-kit";
 import { MockCallouts, type CalloutSpec } from "./mock-callouts";
 
@@ -66,6 +67,12 @@ export function FenceShot({ active, instant = false }: { active: boolean; instan
   // on (owner, 2026-08-25). The colour used to flip with nothing moving, so
   // the button never looked pressed — it just changed.
   const phase = usePhases(FENCE_PHASES, active, instant);
+  // Opening filled (hero on a phone) or under reduced motion the phases jump
+  // straight to the end, so the plane must not ease into its tilt either: the
+  // callouts measure their anchors as soon as they are armed, and mid-ease
+  // they were measured on the flat plane (the run's node ~50 px under the
+  // fence at 1440).
+  const still = useReduced() || instant;
   const seeking = phase >= 1;
   const pressing = phase === 2;
   const clicked = phase >= 2;
@@ -80,7 +87,8 @@ export function FenceShot({ active, instant = false }: { active: boolean; instan
   return (
     <AppFrame path="app.jobflex.com/estimators/fence" body="#20222a">
       <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_260px]">
-        <div className={STAGE} style={{ background: "#20222a" }}>
+        {/* lp-fence-stage: the showcase fence's own framing (showcase-pass.css) */}
+        <div className={`${STAGE} lp-fence-stage`} style={{ background: "#20222a" }}>
           <span className="absolute left-4 top-4 z-30">
             <span
               className={`relative flex items-center gap-1.5 rounded-[2px] border-2 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] ${
@@ -118,15 +126,20 @@ export function FenceShot({ active, instant = false }: { active: boolean; instan
           </svg>
 
           <div className="absolute inset-0" style={{ perspective: "1100px" }}>
-            {/* the ground: the map itself tips, and stays visible throughout */}
+            {/* the ground: the map itself tips, and stays visible throughout.
+                The tilted framing — how far the plane sits down the stage
+                and how large it is once tipped — is two variables with the
+                original values as defaults (--fence-tilt-y -47 %,
+                --fence-tilt-zoom 1.12); the showcase sets its own
+                (showcase-pass.css, .lp-fence-stage). */}
             <div
               style={planBoxStyle({
                 transform: tilted
-                  ? `translateY(-47%) rotateX(${TILT}deg) scale(1.12)`
+                  ? `translateY(var(--fence-tilt-y, -47%)) rotateX(${TILT}deg) scale(var(--fence-tilt-zoom, 1.12))`
                   : "translateY(-50%)",
                 transformOrigin: "50% 62%",
                 transformStyle: "preserve-3d",
-                transition: `transform 1.25s ${EASE}`,
+                transition: still ? "none" : `transform 1.25s ${EASE}`,
               })}
             >
               <Image src="/landing-d/aerial-lot.png" alt="" fill priority sizes="(max-width: 640px) 100vw, 60vw" className="object-cover" />

@@ -12,13 +12,22 @@
    a SmartScenario (smart-scenarios.ts). The showcase passes the kitchen; the
    trade heroes pass their own.
 
-   2026-09-26 (owner): "when I click on Smart the whole white page appears".
-   The stage no longer starts as an empty white slab: it is the app's paper
-   ground with the proposal sheet already on it — ruled, numbered rows and a
-   ghost of the rail — and the lines write INTO those rows. The prompt types
-   slowly, sits for a beat once typed, and only then lifts; the lines follow
-   one at a time and the total lands last. Every mark is derived from the
-   prompt's length (smartTimeline), so it can never lift mid-typing. */
+   2026-09-26 (owner, earlier): the prompt types slowly, sits for a beat once
+   typed, and only then lifts; the lines follow one at a time and the total
+   lands last. Every mark is derived from the prompt's length
+   (smartTimeline), so it can never lift mid-typing. The "white page" that
+   flashed up on a tab click was the whole card fading in from transparent —
+   gone (lp-est-swap, showcase-pass.css).
+
+   2026-09-26 (owner, later): "an empty white screen behind the zoomed search
+   bar, and only after it has searched and moved, the list of materials and
+   the Proposal Review." The ruled, numbered placeholder rows and the ghost
+   rail that stood behind the field (the paper-sheet pass) are gone: while
+   the field is zoomed the card is plain white, and nothing of the written
+   list or the review exists until the field has lifted. The rail is the
+   grid's own cell again, like the roof's, fence's and video's, so its 2 px
+   rule runs the full height of the card — inside a wrapper it only ran as
+   tall as its rows and stopped halfway down. */
 
 import type { SmartScenario } from "./smart-scenarios";
 import {
@@ -36,19 +45,14 @@ import {
   TYPE_MS,
   TotalPlate,
   typedAt,
-  useCompact,
   usePhases,
   useReduced,
   useTyped,
 } from "./showcase-kit";
 
-/** The drafting paper the proposal sheet lies on. */
-const PAPER = "#f2f0eb";
-/** One written line every LINE_MS once the sheet starts filling. */
+/** One written line every LINE_MS once the list starts filling. */
 const LINE_MS = 420;
 const LINE_LEAD = 150;
-/** Ghost bar widths for the unwritten line names — varied, like text. */
-const GHOST_W = ["62%", "48%", "70%", "40%", "56%"];
 
 /** The Smart sequence's clock, from the prompt it types. marks: lift, write,
  *  rail. `done` is when the total has finished counting; `slide` adds the
@@ -62,7 +66,6 @@ export function smartTimeline(scenario: SmartScenario) {
 }
 
 export function SmartProposalShot({ active, scenario, instant = false }: { active: boolean; scenario: SmartScenario; instant?: boolean }) {
-  const compact = useCompact();
   const reduced = useReduced();
   const { marks } = smartTimeline(scenario);
   const phase = usePhases(marks, active, instant);
@@ -78,48 +81,33 @@ export function SmartProposalShot({ active, scenario, instant = false }: { activ
   const stagger = instant || reduced ? 0 : 1;
 
   return (
-    <AppFrame path="app.jobflex.com/proposals/new" body={PAPER}>
+    // White card, white stage: all there is while the field is zoomed.
+    <AppFrame path="app.jobflex.com/proposals/new">
       <div className="relative">
-        <Prompt label="Scope" value={typed} lifted={lifted} attach compact={compact} />
+        <Prompt label="Scope" value={typed} lifted={lifted} attach />
         <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_260px]">
-        <div className={STAGE} style={{ background: PAPER }}>
-          {/* the proposal sheet — on the paper from the first frame, its rows
-              ruled and numbered, waiting under the prompt. Same wrapper
-              padding and max-width as the prompt, so the two edges register. */}
-          <div className="absolute inset-x-0 bottom-0 px-3 sm:px-5" style={{ top: compact ? 50 : 74 }}>
-            <div className="mx-auto h-full w-full max-w-[640px] border border-b-0 bg-white px-3 pt-3 sm:px-5 sm:pt-4" style={{ borderColor: HAIR }}>
-              <div className="relative flex h-[14px] items-center gap-2">
-                <span
-                  className="text-[9px] font-black uppercase tracking-[0.18em] text-[#6a6a6a]"
+          <div className={STAGE}>
+            {/* The written list, under the lifted field: the same gutters and
+                max-width as the field, so the two edges register. Every row
+                is laid out from the first frame (nothing reflows as lines
+                land) but none of it — not the heading, not a row's rule — is
+                visible until the field has lifted; then the lines write in
+                one at a time. */}
+            <div className="absolute inset-x-0 bottom-0 top-[54px] px-3 sm:top-[78px] sm:px-5">
+              <div className="mx-auto w-full max-w-[640px]">
+                <div
+                  className="flex items-center gap-2"
                   style={{ opacity: writing ? 1 : 0, transition: "opacity .4s ease" }}
                 >
-                  Written
-                </span>
-                <span
-                  aria-hidden
-                  className="absolute left-0 top-1/2 h-[6px] w-14 -translate-y-1/2 bg-black/[0.07]"
-                  style={{ opacity: writing ? 0 : 1, transition: "opacity .3s ease" }}
-                />
-                <span className="h-px flex-1" style={{ background: HAIR }} />
-              </div>
-              {lines.map(([name, qty, price], i) => {
-                const delay = stagger * (LINE_LEAD + i * LINE_MS);
-                return (
-                  <div key={name} className="relative border-b border-black/[0.07]">
-                    {/* the row before it is written: its number and grey bars */}
+                  <span className="text-[9px] font-black uppercase tracking-[0.18em] text-[#6a6a6a]">Written</span>
+                  <span className="h-px flex-1" style={{ background: HAIR }} />
+                </div>
+                {lines.map(([name, qty, price], i) => {
+                  const delay = stagger * (LINE_LEAD + i * LINE_MS);
+                  return (
                     <div
-                      aria-hidden
-                      className="absolute inset-0 flex items-center gap-3"
-                      style={{ opacity: writing ? 0 : 1, transition: `opacity .3s ease ${delay}ms` }}
-                    >
-                      <span className="w-4 shrink-0 font-mono text-[10px] text-black/25">{String(i + 1).padStart(2, "0")}</span>
-                      <span className="h-[7px] bg-black/[0.07]" style={{ width: GHOST_W[i % GHOST_W.length] }} />
-                      <span className="ml-auto hidden h-[7px] w-10 shrink-0 bg-black/[0.05] sm:block" />
-                      <span className="ml-auto h-[7px] w-[50px] shrink-0 bg-black/[0.08] sm:ml-0" />
-                    </div>
-                    {/* the written line, landing in the same row */}
-                    <div
-                      className="flex items-baseline gap-3 py-2.5"
+                      key={name}
+                      className="flex items-baseline gap-3 border-b border-black/[0.07] py-2.5"
                       data-written-line={writing ? "on" : "off"}
                       style={{
                         opacity: writing ? 1 : 0,
@@ -134,48 +122,31 @@ export function SmartProposalShot({ active, scenario, instant = false }: { activ
                       <span className="hidden shrink-0 font-mono text-[10.5px] text-[#6a6a6a] sm:inline">{qty}</span>
                       <span className="w-[62px] shrink-0 text-right font-mono text-[12px] font-bold text-ink sm:w-[68px] sm:text-[13px]">{price}</span>
                     </div>
-                  </div>
-                );
-              })}
-              <div
-                className="flex items-center gap-2 py-2.5"
-                style={{
-                  opacity: writing ? 1 : 0,
-                  transition: `opacity .45s ease ${stagger * (LINE_LEAD + lines.length * LINE_MS)}ms`,
-                }}
-              >
-                <span className="h-[3px] w-24 rounded-full" style={{ background: SKY, opacity: 0.5 }} />
-                <span className="font-mono text-[10px] text-[#6a6a6a]">writing…</span>
+                  );
+                })}
+                <div
+                  className="flex items-center gap-2 py-2.5"
+                  style={{
+                    opacity: writing ? 1 : 0,
+                    transition: `opacity .45s ease ${stagger * (LINE_LEAD + lines.length * LINE_MS)}ms`,
+                  }}
+                >
+                  <span className="h-[3px] w-24 rounded-full" style={{ background: SKY, opacity: 0.5 }} />
+                  <span className="font-mono text-[10px] text-[#6a6a6a]">writing…</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* the rail's cell: a ghost of the takeoff until the real one lands on it */}
-        <div className="relative">
-          <div
-            aria-hidden
-            className="absolute inset-0 border-t border-black/[0.08] p-4 sm:border-l sm:border-t-0"
-            style={{ opacity: railOn ? 0 : 1, transition: "opacity .4s ease" }}
-          >
-            <span className="block h-[6px] w-16 bg-black/[0.08]" />
-            <div className="mt-4 space-y-2.5">
-              {scenario.rail.map(([k]) => (
-                <div key={k} className="flex items-center justify-between gap-3 border-b border-black/[0.06] pb-2.5">
-                  <span className="h-[6px] w-20 bg-black/[0.06]" />
-                  <span className="h-[7px] w-12 bg-black/[0.08]" />
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 h-[58px] rounded-[2px] bg-black/[0.06]" />
-          </div>
+          {/* The review: the grid's own cell, so it stretches to the stage's
+              height and its rule runs unbroken top to bottom, as on the other
+              estimators. Nothing of it shows until it lands. */}
           <Rail title="Proposal" shown={railOn}>
             {scenario.rail.map(([k, v]) => (
               <Stat key={k} k={k} v={v} />
             ))}
             <TotalPlate total={scenario.total} note={scenario.note} play={railOn} />
           </Rail>
-        </div>
         </div>
       </div>
     </AppFrame>

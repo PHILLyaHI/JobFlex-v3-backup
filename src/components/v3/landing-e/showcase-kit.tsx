@@ -158,37 +158,50 @@ export function AppFrame({
 
 /** The prompt. Centre stage first, then it lifts and becomes a header bar.
     It keeps its size on the way up — scaling it left the written block a
-    different width from the field it came out of. */
+    different width from the field it came out of.
+
+    WHERE IT SITS (owner, 2026-09-26: "the left side of the zoomed search bar
+    is offset"). The box used to be laid out across the whole card and then
+    slid half the rail's width left on lift. Its width came from the card, not
+    from the column it lands in, so from 640 to ~870 px the zoomed field was
+    wider than the card (its left end, "SCOPE", cut off by the frame) and
+    below ~1050 px the lifted bar ran off the card's left edge (by 13 px at
+    1024). Now the box
+    is laid out in the column it lands in — the stage, i.e. the card minus
+    the 260 px rail — so it can never be wider than that column, and at rest
+    it slides half the rail's width RIGHT and zooms, which centres it on the
+    card with the same margin each side at any width. Lifted, it sits in the
+    stage column with the stage's own gutters, over the written lines.
+    Every figure is a CSS variable set per breakpoint on the element, so the
+    first frame is already right on a phone — the old JS `compact` flag was
+    false for the first paint and the field shrank in from the desktop zoom
+    each time a slide began. */
 export function Prompt({
   label,
   value,
   lifted,
   attach,
   search,
-  compact,
 }: {
   label: string;
   value: string;
   lifted: boolean;
   attach?: boolean;
   search?: boolean;
+  /** Retired (2026-09-26): the breakpoint is read by the stylesheet now.
+   *  Still accepted so an old caller compiles. */
   compact?: boolean;
 }) {
   return (
     <div
-      className="absolute inset-x-0 z-20 px-3 sm:px-5"
+      className="absolute left-0 right-0 z-20 px-3 [--prompt-dx:0px] [--prompt-top:74px] [--prompt-zoom:1] sm:right-[260px] sm:px-5 sm:[--prompt-dx:130px] sm:[--prompt-top:148px] sm:[--prompt-zoom:1.15]"
       style={{
         // The box sits at its rest position; the lift is a transform
         // (pass C, 2026-09-11) — nothing here animates a layout property.
-        top: compact ? 74 : 148,
-        // The prompt overlays the whole frame, so at rest it centres on the
-        // card the viewer actually sees. On lift it rises to 8 px and slides
-        // half the rail's width left, into the stage column where the work
-        // lands — except on a handheld, where the rail is stacked underneath
-        // and there is nothing to move out of.
+        top: "var(--prompt-top)",
         transform: lifted
-          ? `translate(${compact ? 0 : -130}px, ${8 - (compact ? 74 : 148)}px) scale(1)`
-          : `translate(0, 0) scale(${compact ? 1 : 1.15})`,
+          ? "translate(0, calc(8px - var(--prompt-top))) scale(1)"
+          : "translate(var(--prompt-dx), 0) scale(var(--prompt-zoom))",
         transformOrigin: "center top",
         transition: `transform .8s ${EASE}`,
       }}

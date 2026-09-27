@@ -20,9 +20,15 @@
    transform/opacity so it stays on the compositor; the 3D moments are a real
    rotateX on a perspective stage, not a fake skew.
 
-   Hovering the section pauses only the slide auto-advance — never the shot
-   itself. Gating the shots on hover froze them mid-sequence the moment the
-   cursor wandered in, which read as the animation breaking.
+   ONE CLOCK (owner, 2026-09-26: "the progress bar lags"). A slide's shot and
+   its tab's timer bar start in the same commit and nothing pauses either, so
+   the bar is always exactly as far along as the sequence it stands for, and
+   the bar's own end is what moves to the next slide. Nothing stops the bar
+   on hover or touch: pass B's hold paused the BAR alone while the shot kept
+   playing, so with the pointer resting on the card (i.e. after clicking a
+   tab) the bar sat still, fell behind the animation and the next slide came
+   late. Gating the shots too was tried in August and froze them mid-sequence
+   the moment the cursor wandered in, which read as the animation breaking.
    ============================================================ */
 
 import { useEffect, useRef, useState } from "react";
@@ -237,9 +243,8 @@ export function EstimatorsShowcase({
   const [slide, setSlide] = useState(0);
   const [run, setRun] = useState(0);
   const [reduced, setReduced] = useState(false);
-  /* Auto-advance pauses while the pointer is over the showcase or a finger
-     is on it; a horizontal swipe on the stage moves one slide (pass B). */
-  const [held, setHeld] = useState(false);
+  /* A horizontal swipe on the stage moves one slide (pass B). A finger or a
+     pointer on the showcase no longer holds the timer (see ONE CLOCK). */
   const touchX = useRef<number | null>(null);
 
   useEffect(() => {
@@ -267,16 +272,13 @@ export function EstimatorsShowcase({
         <div
           ref={ref}
           className="relative z-[1] mx-auto lp-wrap"
-          onPointerEnter={(e) => { if (e.pointerType === "mouse") setHeld(true); }}
-          onPointerLeave={(e) => { if (e.pointerType === "mouse") setHeld(false); }}
-          onTouchStart={(e) => { setHeld(true); touchX.current = e.touches[0]?.clientX ?? null; }}
+          onTouchStart={(e) => { touchX.current = e.touches[0]?.clientX ?? null; }}
           onTouchEnd={(e) => {
-            setHeld(false);
             const x0 = touchX.current; touchX.current = null;
             const x1 = e.changedTouches[0]?.clientX;
             if (x0 !== null && x1 !== undefined && Math.abs(x1 - x0) > 40) goTo(slide + (x1 < x0 ? 1 : -1));
           }}
-          onTouchCancel={() => { setHeld(false); touchX.current = null; }}
+          onTouchCancel={() => { touchX.current = null; }}
         >
           <Reveal>
             <h2 className="mb-5 text-[clamp(34px,3.6vw,54px)] font-bold leading-[1.04] tracking-[-0.02em] text-white sm:mb-7">
@@ -315,17 +317,22 @@ export function EstimatorsShowcase({
                     {i === slide && (
                       <span
                         key={`${slide}-${run}`}
-                        onAnimationEnd={() => goTo(slide + 1)}
+                        // only the fill's own end advances — never a bubbled
+                        // animationend from inside the tab
+                        onAnimationEnd={(e) => { if (e.target === e.currentTarget) goTo(slide + 1); }}
                         className="block h-full origin-left rounded-full bg-white"
                         style={
                           reduced
                             ? { width: "100%" }
                             : {
+                                // A scaleX from the left on the compositor
+                                // (slide-fill, landing-e.css), for exactly as
+                                // long as the slide's own sequence. It waits
+                                // only for the section to come on screen —
+                                // the same `inView` that starts the shot, so
+                                // the two set off together (ONE CLOCK).
                                 animation: `slide-fill ${SLIDE_MS[sl.key]}ms linear forwards`,
-                                // Nothing pauses this but scrolling away — a
-                                // hover-pause kept freezing the bar (and with
-                                // it the whole rotation) mid-play.
-                                animationPlayState: inView && !held ? "running" : "paused",
+                                animationPlayState: inView ? "running" : "paused",
                               }
                         }
                       />

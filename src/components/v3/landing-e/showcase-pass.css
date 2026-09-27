@@ -24,3 +24,29 @@
 @media (max-width: 639px) {
   .jf-lp .lp-est-stage.lp-roof-stage { --plan-inset: 2%; --plan-y: 55%; }
 }
+
+/* THE FENCE, ZOOMED OUT (owner, 2026-09-26: "too zoomed in"). Its framing
+   had not changed since it was built (2026-08-25); what read as zoomed in is
+   the shot itself. When the ground tipped, the plane also grew 12 %
+   (scale 1.12) and dropped 3 % down the stage, so with the perspective the
+   front run landed on the stage's bottom edge — the camera pushed IN on the
+   tilt — and on a phone the photo was already blown up to 134 % of the
+   stage's width (the -17 % bleed, landing-e.css), so the View parcels
+   button sat on the parcel's corner. Now:
+   - from 640 px the tipped plane is 0.96 of the flat one and sits a little
+     higher, so the camera eases back as the ground tips and the whole fence
+     stands clear of the edges (front run ~70 px off the floor at 1440);
+   - on a phone the photo bleeds 6 % a side instead of 17 %, with a strip of
+     the stage's own ground along the top for the button, and the plane
+     tips at its own size.
+   Showcase only (.lp-est): the fencing hero keeps its framing (fence-shot.tsx
+   defaults). */
+.jf-lp .lp-est .lp-fence-stage { --fence-tilt-zoom: 0.96; --fence-tilt-y: -55%; }
+@media (max-width: 639px) {
+  .jf-lp .lp-est .lp-fence-stage {
+    --plan-inset: -6%;
+    --plan-y: 55.5%;
+    --fence-tilt-zoom: 1;
+    --fence-tilt-y: -53%;
+  }
+}
