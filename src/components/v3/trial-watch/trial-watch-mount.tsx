@@ -1,14 +1,11 @@
 // WHAT A SIGNED-IN LAYOUT MOUNTS FOR THE TRIAL WATCH (2026-09-24).
 //
-// Two reads, one component, both signed-in layouts (dashboard and the
-// handheld twins): the page-view beacon while the company is in its first
-// WATCH_DAYS, and the watermark while it has not paid — a subscription that
-// is not ACTIVE or PAST_DUE. A failed read costs both, never the page.
+// Both signed-in layouts retain the page-view beacon while the company is
+// in its first WATCH_DAYS. The diagonal trial watermark is no longer mounted.
 
 import { db } from "@/lib/db";
 import { WATCH_DAYS, watermarkText } from "@/lib/trialWatch";
 import { PageViewBeacon } from "./page-view-beacon";
-import { TrialWatermark } from "./trial-watermark";
 
 /** The two reads, outside the component so the clock is read in plain code. */
 async function readTrialWatch(organizationId: string, email: string | null | undefined): Promise<{ watch: boolean; mark: string | null }> {
@@ -28,11 +25,6 @@ async function readTrialWatch(organizationId: string, email: string | null | und
 }
 
 export async function TrialWatchMount({ organizationId, email }: { organizationId: string; email: string | null | undefined }) {
-  const { watch, mark } = await readTrialWatch(organizationId, email);
-  return (
-    <>
-      {watch && <PageViewBeacon />}
-      {mark && <TrialWatermark text={mark} />}
-    </>
-  );
+  const { watch } = await readTrialWatch(organizationId, email);
+  return watch ? <PageViewBeacon /> : null;
 }

@@ -24,7 +24,7 @@ export function parseTrafficFilters(input: Record<string, unknown> = {}, now = n
     audience: input.audience === "new" || input.audience === "returning" ? input.audience : "all",
     environment: input.environment === "production" || input.environment === "development" ? input.environment : "all",
     page: text("page", 240), source: text("source", 160), device: text("device", 80), host: text("host", 253),
-    flow: input.flow === "google" ? "google" : "standard",
+    flow: input.flow === "google" || input.flow === "standard" ? input.flow : "all",
     windowDays: [1, 7, 14].includes(Number(input.windowDays)) ? Number(input.windowDays) : 7,
     billingMode: input.billingMode === "test" || input.billingMode === "all" ? input.billingMode : "live",
   };
@@ -34,14 +34,14 @@ export function parseTrafficFilters(input: Record<string, unknown> = {}, now = n
 export const literal = (s: string) => "'" + s.replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "'";
 
 export interface FunnelStageSpec { id: string; label: string; where: string }
-/** The cohort stages, in order. The Google flow skips the account step. */
+/** All flows use shared stages and distinct visitors, so Google need not pass the email-only Account step. */
 export function funnelStages(f: TrafficFilters): FunnelStageSpec[] {
   const q = literal;
   return [
     { id: "landing", label: "Landing", where: "event = '$pageview' AND pathname = '/'" },
     { id: "registration", label: "Registration", where: "event = '$pageview' AND pathname = '/auth/register'" },
-    ...(f.flow === "google" ? [] : [{ id: "account", label: "1 / Account", where: `event = ${q(E.step)} AND step = '1'` }]),
-    { id: "company", label: "2 / Company", where: `event = ${q(E.step)} AND step = '2'${f.flow === "google" ? " AND flow = 'google'" : " AND flow = 'standard'"}` },
+    ...(f.flow === "standard" ? [{ id: "account", label: "1 / Account", where: `event = ${q(E.step)} AND step = '1'` }] : []),
+    { id: "company", label: "2 / Company", where: `event = ${q(E.step)} AND step = '2'${f.flow === "all" ? "" : ` AND flow = ${q(f.flow)}`}` },
     { id: "plan", label: "3 / Plan", where: `event = ${q(E.step)} AND step = '3'` },
     { id: "attempt", label: "Trial / purchase attempt", where: `event = ${q(E.attempt)}` },
     { id: "checkout", label: "Checkout opened", where: `event = ${q(E.opened)}` },

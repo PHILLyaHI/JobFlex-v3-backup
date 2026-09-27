@@ -32,8 +32,9 @@
 .root .disconnect:hover:not(:disabled) { color: var(--rose); }
 .choice { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; }
 .field { flex: 1 1 260px; min-width: 0; display: grid; gap: 8px; }
-.field label { font: 500 10px/1.5 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; }
-.root .field :is(select,input) { width: 100%; min-width: 0; min-height: 46px; padding: 10px 12px; border: 1px solid var(--ink-muted); border-radius: var(--r-sm); color: var(--ink); background: var(--sheet, var(--paper-deep)); font: 16px/1.4 var(--font-sans); }
+/* Field names bold in ink, frames 2px ink (owner, 2026-09-26). */
+.field label { color: var(--ink); font: 800 12px/1.4 var(--font-sans); letter-spacing: .08em; text-transform: uppercase; }
+.root .field :is(select,input) { width: 100%; min-width: 0; min-height: 46px; padding: 10px 12px; border: 2px solid var(--ink); border-radius: var(--r-sm); color: var(--ink); background: var(--sheet, var(--paper-deep)); font: 16px/1.4 var(--font-sans); }
 .root .fieldHelp { color: var(--ink-muted); font-size: 12px; max-width: 56ch; }
 .connectAction { display: grid; justify-items: start; gap: 8px; }
 .connectAction p { color: var(--ink-muted); font-size: 13px; }
@@ -75,7 +76,7 @@
 @media (prefers-reduced-motion: reduce) { .root :is(button,.chevron) { transition: none; } }
 
 .pagePicker { position: relative; min-width: 0; }
-.root .pagePickerButton { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet, var(--paper-deep)); color: var(--ink); font: 500 16px/1.4 var(--font-sans); text-align: left; cursor: pointer; }
+.root .pagePickerButton { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 46px; padding: 10px 12px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet, var(--paper-deep)); color: var(--ink); font: 500 16px/1.4 var(--font-sans); text-align: left; cursor: pointer; }
 .pagePickerButton span,.pageOption span { min-width: 0; overflow-wrap: anywhere; }
 .root .pagePickerButton:hover:not(:disabled),.root .pagePickerButton[aria-expanded="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .pageOptions { position: absolute; inset: calc(100% + 6px) 0 auto; z-index: 30; max-height: 240px; overflow-y: auto; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet, var(--paper-deep)); }

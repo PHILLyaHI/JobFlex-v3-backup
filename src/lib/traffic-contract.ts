@@ -10,7 +10,7 @@ export interface TrafficFilters {
   source: string;
   device: string;
   host: string;
-  flow: "standard" | "google";
+  flow: "all" | "standard" | "google";
   windowDays: number;
   billingMode: "live" | "test" | "all";
 }

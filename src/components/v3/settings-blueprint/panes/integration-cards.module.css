@@ -6,8 +6,9 @@
 .surface .sectionTitle { margin: 0 0 20px; font-size: 14px; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
 .fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
 .field { min-width: 0; display: grid; gap: 8px; }
-.field > span { color: var(--ink-muted); font: 500 10px/1.5 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; }
-.surface.surface .field input { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--ink-muted); border-radius: var(--r-sm); background: var(--sheet,var(--paper-deep)); color: var(--ink); font: 14px/1.4 var(--font-sans); }
+/* Field names bold in ink, frames 2px ink (owner, 2026-09-26). */
+.field > span { color: var(--ink); font: 800 12px/1.4 var(--font-sans); letter-spacing: .08em; text-transform: uppercase; }
+.surface.surface .field input { width: 100%; min-width: 0; min-height: 46px; padding: 10px 12px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet,var(--paper-deep)); color: var(--ink); font: 500 14.5px/1.4 var(--font-sans); }
 .surface input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .surface .toggleRow { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-block: 16px; }
 .fields + .toggleRow { margin-top: 16px; }
@@ -35,6 +36,12 @@
 .surface.surface :global(.btn-primary:hover:not(:disabled)), .surface.surface :global(.mst-btn--primary:hover:not(:disabled)) { background: var(--accent-ink); }
 .surface.surface :global(.sactions .ic) { width: 16px; height: 16px; }
 .surface.surface :global(.saved) { display: none; font-size: 12px; color: var(--emerald); }
+/* Autosave status (Settings has no Save buttons since 2026-09-26). */
+.surface.surface :global(.sactions--auto) { justify-content: flex-end; }
+.surface.surface :global(.autosave) { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-muted); font: 600 11px/1.4 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
+.surface.surface :global(.autosave .ic) { width: 13px; height: 13px; }
+.surface.surface :global(.autosave[data-state="saved"]) { color: var(--emerald); }
+.surface.surface :global(.autosave[data-state="error"]) { color: var(--rose); font: 600 13px/1.4 var(--font-sans); letter-spacing: 0; text-transform: none; }
 .surface.surface :global(.saved.on) { display: inline-flex; }
 .surface.surface :global(.saved-err) { font-size: 13px; color: var(--rose); }
 .scopes { display: grid; gap: 12px; padding: 0; margin: 0; list-style: none; }
@@ -50,7 +57,7 @@
 .surface .keyForm { border-top: 1px solid var(--ink-line); padding-top: 24px; }
 .surface.surface :global(.skf) { display: grid; gap: 16px; padding: 0; margin: 0; border: 0; background: transparent; }
 .surface.surface :global(.skf .fld), .surface.surface :global(.skf .mst-fld) { display: grid; min-width: 0; gap: 8px; }
-.surface.surface :global(.skf .fin), .surface.surface :global(.skf .mst-in) { min-height: 44px; height: auto; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--ink-muted); border-radius: var(--r-sm); background: var(--sheet,var(--paper-deep)); color: var(--ink); font: 16px/1.4 var(--font-sans); }
+.surface.surface :global(.skf .fin), .surface.surface :global(.skf .mst-in) { min-height: 46px; height: auto; width: 100%; min-width: 0; padding: 10px 12px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet,var(--paper-deep)); color: var(--ink); font: 16px/1.4 var(--font-sans); }
 .surface.surface :global(.skf-row) { display: flex; flex-wrap: wrap; gap: 12px; }
 .surface.surface :global(.skf-show) { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 13px; }
 .surface.surface :global(.skf-show input) { accent-color: var(--accent); }
