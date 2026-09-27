@@ -3,6 +3,58 @@ import type { StatsRow } from "./landing-groups";
 import { Reveal } from "./reveal";
 import { Counter } from "./counter";
 
+// Illustrative trade scenes, not portraits of the named businesses.
+const COMPANY_IMAGES: Record<string, { src: string; alt: string }> = {
+  "Reyes & Sons": {
+    "src": "/landing-e/companies/remodel-bathroom.webp",
+    "alt": "AI-generated illustration: Remodelers installing tile in a bathroom"
+  },
+  "Golden Hour Kitchens": {
+    "src": "/landing-e/companies/kitchen-install.webp",
+    "alt": "AI-generated illustration: Kitchen installers aligning oak cabinets"
+  },
+  "Hartwell Renovations": {
+    "src": "/landing-e/companies/renovation-crew.webp",
+    "alt": "AI-generated illustration: Home renovation crew together at a jobsite"
+  },
+  "Casa Verde Builds": {
+    "src": "/landing-e/companies/design-build.webp",
+    "alt": "AI-generated illustration: Design-build team reviewing plans"
+  },
+  "Meridian Tile & Stone": {
+    "src": "/landing-e/companies/tile-setters.webp",
+    "alt": "AI-generated illustration: Tile crew laying a bathroom floor"
+  },
+  "Volt & Vine Electric": {
+    "src": "/landing-e/companies/electricians.webp",
+    "alt": "AI-generated illustration: Electricians working in a framed home"
+  },
+  "Bluewater Plumbing": {
+    "src": "/landing-e/companies/plumbers.webp",
+    "alt": "AI-generated illustration: Plumbers installing a bathroom vanity drain"
+  },
+  "Summit Drywall Co.": {
+    "src": "/landing-e/companies/drywall-crew.webp",
+    "alt": "AI-generated illustration: Drywall crew finishing wall seams"
+  },
+  "Whitfield Outdoor Living": {
+    "src": "/landing-e/companies/deck-builders.webp",
+    "alt": "AI-generated illustration: Carpenters building a cedar deck"
+  },
+  "North Fork Additions": {
+    "src": "/landing-e/companies/addition-framing.webp",
+    "alt": "AI-generated illustration: Crew framing a home addition"
+  },
+  "Iron Gate Garage Co.": {
+    "src": "/landing-e/companies/garage-crew.webp",
+    "alt": "AI-generated illustration: Garage construction crew together at their jobsite"
+  },
+  "Prairie Wind Homes": {
+    "src": "/landing-e/companies/custom-home.webp",
+    "alt": "AI-generated illustration: Custom home builders reviewing framing and plans"
+  }
+};
+
 const ROWS: StatsRow[] = [
   {
     label: "Remodelers",
@@ -89,12 +141,12 @@ export function StatsSection({ rows = ROWS }: { rows?: StatsRow[] }) {
                     <figure key={c.name} className="group">
                       <div className="relative overflow-hidden rounded-lg">
                         <Image
-                          src={c.src}
-                          alt={`${c.name} — ${c.tag}`}
+                          src={COMPANY_IMAGES[c.name]?.src ?? c.src}
+                          alt={COMPANY_IMAGES[c.name]?.alt ?? `${c.name} — ${c.tag}`}
                           width={640}
                           height={420}
                           sizes="(max-width: 1024px) 50vw, 22vw"
-                          className={`aspect-[4/3] w-full object-cover transition-transform duration-500 group-hover:scale-[1.04] sm:aspect-[3/2] ${c.cls ?? ""}`}
+                          className={`aspect-[4/3] w-full object-cover transition-transform duration-500 group-hover:scale-[1.04] sm:aspect-[3/2] ${COMPANY_IMAGES[c.name] ? "" : c.cls ?? ""}`}
                         />
                         {/* Mobile attribution overlay */}
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent px-2.5 pb-2 pt-8 sm:hidden">
