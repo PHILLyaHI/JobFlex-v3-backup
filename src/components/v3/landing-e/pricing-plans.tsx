@@ -51,40 +51,57 @@ export function PricingPlans({ plans, registerHref }: { plans: PlanDTO[]; regist
       return next;
     });
 
+  /* The rail is `position: relative` (pricing-faq.css), so a card's
+     offsetLeft is measured from the rail itself, in its scroll space. */
   const cardLeft = (rail: HTMLElement, i: number) => {
     const card = rail.children[i] as HTMLElement | undefined;
     if (!card) return 0;
     return Math.max(0, card.offsetLeft - (rail.clientWidth - card.offsetWidth) / 2);
   };
 
-  /* Arrive on the most-picked card, centred — the register does the same.
-     The section sits under content-visibility:auto, so the first pass may
-     run before it is laid out; the observer repeats it as the rail comes
-     near the viewport, unless the visitor has already swiped. */
+  /* ARRIVE ON THE MOST-PICKED CARD, CENTRED (owner, 2026-09-26) — the
+     register does the same. One pass on mount was not enough: the section
+     sits under content-visibility:auto and fades in, and a page first laid
+     out wide (a desk window narrowed to phone size, a turned tablet) had
+     already spent its one pass, so the rail opened on the first card. It is
+     set again whenever the rail gets a size, comes into view or turns into
+     a carousel, each time with two follow-ups while the fade settles (the
+     register's 120/520 ms), until the visitor touches, scrolls or tabs into
+     it — after that it is theirs. */
   useEffect(() => {
     const rail = railRef.current;
     if (!rail) return;
+    const phone = window.matchMedia(PHONE);
+    const timers: number[] = [];
     const settle = () => {
-      if (touched.current || !window.matchMedia(PHONE).matches) return;
-      rail.scrollLeft = cardLeft(rail, heroIndex);
+      if (touched.current || !phone.matches || !rail.clientWidth) return;
+      const left = cardLeft(rail, heroIndex);
+      if (Math.abs(rail.scrollLeft - left) > 1) rail.scrollLeft = left;
     };
-    const mark = () => {
+    const settleSoon = () => {
+      settle();
+      timers.push(window.setTimeout(settle, 120), window.setTimeout(settle, 520));
+    };
+    /* Only a hand on the carousel counts: not a click on the desk grid, and
+       not a vertical wheel that is scrolling the page past it. */
+    const mark = (e: Event) => {
+      if (!phone.matches) return;
+      if (e instanceof WheelEvent && !e.shiftKey && Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
       touched.current = true;
     };
-    settle();
+    settleSoon();
+    const ro = new ResizeObserver(() => settle());
+    ro.observe(rail);
     const io = new IntersectionObserver(
       (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          settle();
-          io.disconnect();
-        }
+        if (entries.some((e) => e.isIntersecting)) settleSoon();
       },
       { rootMargin: "0px 0px 400px 0px" },
     );
     io.observe(rail);
-    rail.addEventListener("pointerdown", mark, { passive: true });
-    rail.addEventListener("touchstart", mark, { passive: true });
-    rail.addEventListener("wheel", mark, { passive: true });
+    phone.addEventListener("change", settleSoon);
+    const MARKS = ["pointerdown", "touchstart", "wheel", "keydown", "focusin"] as const;
+    for (const ev of MARKS) rail.addEventListener(ev, mark, { passive: true });
     let frame = 0;
     const onScroll = () => {
       cancelAnimationFrame(frame);
@@ -106,10 +123,11 @@ export function PricingPlans({ plans, registerHref }: { plans: PlanDTO[]; regist
     rail.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       io.disconnect();
+      ro.disconnect();
+      timers.forEach(clearTimeout);
       cancelAnimationFrame(frame);
-      rail.removeEventListener("pointerdown", mark);
-      rail.removeEventListener("touchstart", mark);
-      rail.removeEventListener("wheel", mark);
+      phone.removeEventListener("change", settleSoon);
+      for (const ev of MARKS) rail.removeEventListener(ev, mark);
       rail.removeEventListener("scroll", onScroll);
     };
   }, [heroIndex]);

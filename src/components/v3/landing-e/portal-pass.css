@@ -1,0 +1,61 @@
+/* ============================================================
+   PORTAL CARD — owner, 2026-09-26
+   Plain CSS under `.jf-lp` (the landing's scope), for the Review & approve
+   card in portal-section.tsx. The card and the document that pops at its
+   corner are framed in 2px ink; the white hairline landing-e.css gives
+   `.lp-portal-mock` is replaced here (a light line outside an ink frame read
+   as a halo on the blue sheet), and the hard ink offset stays.
+   ============================================================ */
+
+.jf-lp .lp-portal .lp-portal-mock.lp-pt-card {
+  border: 2px solid #0a0a0a;
+  box-shadow: 6px 6px 0 #0a0a0a;
+}
+.jf-lp .lp-portal .lp-portal-mock.lp-pt-doc {
+  border: 2px solid #0a0a0a;
+  box-shadow: 4px 4px 0 #0a0a0a;
+}
+
+/* The sign box's prompt. Each wording is its own node, so "Approved by"
+   lands with a short rise the moment the box is tapped — before a letter of
+   the signature is written. */
+@keyframes lpPtLabel {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.jf-lp .lp-pt-label { animation: lpPtLabel 0.3s cubic-bezier(0.2, 0.6, 0.2, 1) both; }
+
+/* The signature: written left to right under its label. The clip runs past
+   every edge of the name at the end (italic overhang, descenders), so the
+   last letter is never cut; hidden, it is an empty rectangle. It is taken
+   away at once when the loop resets. */
+.jf-lp .lp-pt-name {
+  clip-path: inset(-0.4em calc(100% + 0.4em) -0.5em -0.3em);
+}
+.jf-lp .lp-pt-name.is-written {
+  clip-path: inset(-0.4em -0.8em -0.5em -0.3em);
+  transition: clip-path 1.05s cubic-bezier(0.45, 0.05, 0.55, 0.95);
+}
+
+/* The tap that lands on the box. */
+@keyframes lpPtTap {
+  0% { transform: translate(-50%, -50%) scale(0.35); opacity: 0.55; }
+  100% { transform: translate(-50%, -50%) scale(2.4); opacity: 0; }
+}
+.jf-lp .lp-pt-tap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40px;
+  height: 40px;
+  border-radius: 9999px;
+  background: rgba(24, 84, 160, 0.28);
+  pointer-events: none;
+  animation: lpPtTap 0.65s cubic-bezier(0.2, 0.6, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-lp .lp-pt-label,
+  .jf-lp .lp-pt-tap { animation: none; }
+  .jf-lp .lp-pt-name.is-written { transition: none; }
+}

@@ -71,7 +71,10 @@ Amber stays reserved there for what an estimator still needs.
 Light mode only. Keep the existing drafting grid behind content, never over
 type. Resting cards have no shadow (`--shadow-sm` and `--shadow-md` are `none`).
 An existing hard ink hover treatment may be retained on interactive controls;
-do not give static cards decorative elevation.
+do not give static cards decorative elevation. One owner-approved exception
+(2026-09-26): the subscription plan cards on the landing pricing section and
+on signup step 3 are white with a hard offset shadow, no blur: ink on every
+plan, blueprint blue on the "Most picked" one.
 
 ## Typography
 

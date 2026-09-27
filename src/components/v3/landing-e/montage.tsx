@@ -127,15 +127,17 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
             tile is the client portal, and the portal is blue everywhere else
             on the page. */}
         <div className="bg-gradient-to-b from-[#e3edfb] to-[#c3d8f2] p-4">
-          <div className="rounded-lg bg-white p-3.5 shadow-sm">
+          {/* Framed like the portal section's card (owner, 2026-09-26): a
+              2px ink line and a hard ink offset, not a soft shadow. */}
+          <div className="rounded-lg border-2 border-ink bg-white p-3.5 shadow-[3px_3px_0_#0a0a0a]">
             <div className="text-[11px] font-bold text-ink">Review &amp; approve</div>
             <div className="mt-1 text-[9.5px] text-[color:var(--mt-mute,#6a6a6a)]">Deck rebuild — $16,900</div>
-            {/* Tap to approve, as the portal section plays it (owner,
-                2026-09-26): the dashed box is where the client taps and
-                their name is written; the button accepts. */}
+            {/* Sign, as the portal section plays it (owner, 2026-09-26): the
+                dashed box is where the client taps and their name is written
+                under "Approved by"; the button accepts. */}
             <div className="relative mt-2.5 h-9 rounded border border-dashed border-slate-400 bg-slate-50">
               <span className="absolute left-2 top-1.5 font-mono text-[8px] font-bold uppercase tracking-[0.14em] text-[color:var(--mt-mute,#555555)]">
-                Tap to approve
+                Sign
               </span>
             </div>
             <div className="mt-2 rounded bg-lp-base py-1.5 text-center text-[10px] font-semibold text-white">

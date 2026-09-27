@@ -14,7 +14,9 @@ import "./pricing-faq.css";
    the card to ink with the answer in white; with no hover (a phone) a tap
    toggles it. The question layer and the answer layer share ONE grid cell,
    so the card is always as tall as its answer and nothing moves when it
-   opens (pricing-faq.css, .lp-faq-*). */
+   opens (pricing-faq.css, .lp-faq-*). The wipe is a calm 0.4s (2026-09-26).
+   On a phone (≤768px) the six cards are a two-row swipe carousel, three
+   columns of two, with the next column showing at the right edge. */
 type Faq = { q: string; a: string };
 
 const DATA_Q: Record<"roofing" | "fencing" | "other", Faq> = {
@@ -79,7 +81,9 @@ export function LandingFaq({ variant, registerHref = "/auth/register", cta = "St
           <h2 className="lp-sec-title">FAQ</h2>
           <p className="lp-sec-lede">The six things every shop asks first.</p>
         </Reveal>
-        <Reveal delay={120} className="mt-9 sm:mt-11">
+        {/* lp-faq-rail: on a phone the grid is a two-row swipe carousel
+            that runs edge to edge (pricing-faq.css). */}
+        <Reveal delay={120} className="lp-faq-rail mt-9 sm:mt-11">
           <div className="lp-faq-grid">
             {items.map((item, i) => {
               const isOpen = open.has(i);

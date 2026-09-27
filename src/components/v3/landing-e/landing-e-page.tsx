@@ -129,7 +129,9 @@ export async function LandingE({ variant, explicitVariant = false, utm = {} }: L
       </main>
       <MobileCta registerHref={register} cta={top} />
       <ScrollFx />
-      {/* Mouse-wheel notches glide, 0.7× the browser's step (smooth-wheel.tsx). */}
+      {/* Mouse-wheel notches glide, 0.7× the browser's step — on a desk only
+          (hover, fine pointer, wider than 768px); phones, tablets and touch
+          scroll natively (smooth-wheel.tsx). */}
       <SmoothWheel />
       <LazyBg />
       <WarmLayout />

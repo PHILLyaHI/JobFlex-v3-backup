@@ -8,8 +8,11 @@
    ============================================================ */
 
 /* ── Section headlines: the title IS the label (no eyebrow) ──────────── */
+/* A size down (owner, 2026-09-26: "Subscription plans" and "FAQ" read as
+   huge): 64px on a desk, 32px on a phone — beside the page's other section
+   heads (58–64 / 30) rather than twice them. */
 .jf-lp .lp-sec-title {
-  font-size: clamp(44px, 6vw, 88px);
+  font-size: clamp(32px, 4.4vw, 64px);
   font-weight: 800;
   line-height: 0.98;
   letter-spacing: -0.035em;
@@ -28,7 +31,10 @@
 .jf-lp .lp-sec-lede--on-ink { color: rgba(255, 255, 255, 0.78); }
 
 /* ── Plan cards (register step 3) ────────────────────────────────────── */
+/* Positioned so each card's offsetLeft is measured from the rail — the
+   phone carousel centres the most-picked card by it (pricing-plans.tsx). */
 .jf-lp .lp-pw-plans {
+  position: relative;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
@@ -46,15 +52,16 @@
   padding: 22px 20px 20px;
   border: 2px solid #0a0a0a;
   border-radius: 2px;
-  background: #f2f0eb;
+  background: #fff;
   color: #0a0a0a;
   text-align: left;
+  box-shadow: 6px 6px 0 #0a0a0a;
 }
-/* The recommended card is lifted by its offset. On the register's paper the
-   offset is ink; on this ink sheet ink would vanish, so it is blueprint blue
-   — the same blue as its tag and every start button. */
+/* WHITE CARDS, HARD OFFSETS (owner, 2026-09-26): every card is white on a
+   2px ink frame with a hard ink offset, no blur; the recommended card's
+   offset is blueprint blue instead — the same blue as its tag and every
+   start button. */
 .jf-lp .lp-pw-plan--hero {
-  background: #ebe8e1;
   box-shadow: 6px 6px 0 #1854a0;
 }
 .jf-lp .lp-pw-tag {
@@ -134,7 +141,7 @@
   color: #1854a0;
 }
 /* Not included: the row still prints, greyed, with a dash. #666 rather than
-   the register's #888 so the text clears 4.5:1 on both card papers. */
+   the register's #888 so the text clears 4.5:1 on the white card. */
 .jf-lp .lp-pw-f--no { color: #666; font-weight: 500; }
 .jf-lp .lp-pw-f--no .lp-pw-ic { color: #888; }
 /* "Show all" is a phone control; a desk card lists every row. */
@@ -198,6 +205,7 @@
     flex: 0 0 min(84vw, 340px);
     scroll-snap-align: center;
     padding: 16px 16px 14px;
+    box-shadow: 4px 4px 0 #0a0a0a;
   }
   .jf-lp .lp-pw-plan--hero { box-shadow: 4px 4px 0 #1854a0; }
   /* whole rows only: six of them, then "Show all" */
@@ -248,7 +256,12 @@
 }
 
 /* ── FAQ cards ───────────────────────────────────────────────────────── */
+/* The wipe from question to answer is CALM (owner, 2026-09-26: it was
+   fast): 0.4s, twice the old 0.2s, on the same ease-out curve. One knob for
+   every state that runs it. */
 .jf-lp .lp-faq-grid {
+  --lp-faq-wipe: 0.4s;
+  --lp-faq-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
@@ -262,7 +275,7 @@
   background: #fff;
   color: #0a0a0a;
   box-shadow: 4px 4px 0 #0a0a0a;
-  transition: box-shadow 0.15s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition: box-shadow var(--lp-faq-wipe) var(--lp-faq-ease);
 }
 /* ONE cell, two layers: the card is as tall as the taller of the question
    and the answer, so revealing the answer never moves the grid. */
@@ -336,8 +349,8 @@
   visibility: hidden;
   clip-path: inset(100% 0 0 0);
   transition:
-    clip-path 0.2s cubic-bezier(0.22, 0.61, 0.36, 1),
-    visibility 0s linear 0.2s;
+    clip-path var(--lp-faq-wipe) var(--lp-faq-ease),
+    visibility 0s linear var(--lp-faq-wipe);
 }
 .jf-lp .lp-faq-a-q {
   font-size: 13px;
@@ -356,7 +369,7 @@
   visibility: visible;
   clip-path: inset(0 0 0 0);
   transition:
-    clip-path 0.2s cubic-bezier(0.22, 0.61, 0.36, 1),
+    clip-path var(--lp-faq-wipe) var(--lp-faq-ease),
     visibility 0s;
 }
 .jf-lp .lp-faq-card.is-open,
@@ -367,7 +380,7 @@
     visibility: visible;
     clip-path: inset(0 0 0 0);
     transition:
-      clip-path 0.2s cubic-bezier(0.22, 0.61, 0.36, 1),
+      clip-path var(--lp-faq-wipe) var(--lp-faq-ease),
       visibility 0s;
   }
   .jf-lp .lp-faq-card:hover { box-shadow: 4px 4px 0 #1854a0; }
@@ -376,8 +389,41 @@
 @media (max-width: 1023px) {
   .jf-lp .lp-faq-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ── Phone: a two-row swipe carousel (owner, 2026-09-26) ─────────────────
+   Columns of two cards, filled top then bottom, edge to edge like the plan
+   rail. Each column is narrower than the screen, so the next one shows at
+   the right edge — the cue that there is more to swipe. A row is as tall as
+   its tallest card (question or answer, whichever is taller), so opening an
+   answer still moves nothing. */
+@media (max-width: 768px) {
+  /* The wrapper is the column; as a size container it lets the gutter be
+     written in lengths (cqw), which scroll-padding needs — a percentage
+     there is of the scroller, not of the column. */
+  .jf-lp .lp-faq-rail { container-type: inline-size; }
+  .jf-lp .lp-faq-grid {
+    --lp-faq-edge: calc(50vw - 50cqw);
+    grid-template-columns: none;
+    grid-template-rows: repeat(2, auto);
+    grid-auto-flow: column;
+    grid-auto-columns: min(78vw, 320px);
+    gap: 14px 12px;
+    /* out of the column to the viewport; each column snaps to the page's
+       left edge, and there is room for the offset and the focus ring
+       inside the scroller */
+    margin-inline: calc(-1 * var(--lp-faq-edge));
+    padding: 8px var(--lp-faq-edge) 14px;
+    scroll-padding-inline: var(--lp-faq-edge);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .jf-lp .lp-faq-grid::-webkit-scrollbar { display: none; }
+  .jf-lp .lp-faq-card { scroll-snap-align: start; }
+}
 @media (max-width: 639px) {
-  .jf-lp .lp-faq-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .jf-lp .lp-faq-q,
   .jf-lp .lp-faq-a { padding: 20px; }
   .jf-lp .lp-faq-q { gap: 20px; }

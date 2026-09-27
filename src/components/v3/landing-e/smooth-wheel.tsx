@@ -6,10 +6,19 @@ import { useEffect } from "react";
    will be smooth and a bit slower … they wouldn't scroll too far". Renders
    nothing; mounted once by LandingE.
 
+   DESKTOP ONLY (owner, 2026-09-26: "not … for mobile versions, only for
+   desktop"). Nothing is listened to unless the device hovers with a fine
+   pointer AND the window is wider than the 768px handheld break (DESKTOP,
+   re-read whenever it changes, e.g. a desk window narrowed to phone size).
+   Anywhere else the page scrolls natively — the wheel
+   listener, which is not passive, is not even attached, and the landing's
+   `html { scroll-behavior: smooth }` (landing-e.css) is set back to `auto`,
+   so an anchor or a script scroll jumps instead of gliding too.
+
    Only a mouse wheel's notches are taken over, and only where nothing else
    should have them:
-   - a fine pointer and no reduced-motion preference (read on every event, so
-     a change of either takes effect at once); touch never sends wheels;
+   - no reduced-motion preference (read on every event, so a change takes
+     effect at once); touch never sends wheels;
    - no ctrl/meta (zoom, pinch), shift or alt, and a mainly vertical delta;
    - not over a form field or anything marked [data-native-wheel], and not
      inside an element that can itself scroll that way (walked up from the
@@ -34,6 +43,8 @@ import { useEffect } from "react";
    a mouse button, a touch or a hash change stops it before the browser's own
    scroll begins, so the two never fight. */
 
+/* A desk: hovers, a fine pointer, wider than the handheld break. */
+const DESKTOP = "(hover: hover) and (pointer: fine) and (min-width: 769px)";
 const MULT = 0.7; // share of the browser's own notch distance (100 px in Chromium → 70 px)
 const MAX_EVENT = 120; // px per event before MULT: a wheel set to 5+ lines scrolls like 3.6
 const LINE_PX = 100 / 3; // deltaMode 1: three lines make one 100 px notch
@@ -99,7 +110,7 @@ function setScroll(y: number) {
 
 export function SmoothWheel() {
   useEffect(() => {
-    const fine = window.matchMedia("(pointer: fine)");
+    const desk = window.matchMedia(DESKTOP);
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
     let pos = 0;
     let target = 0;
@@ -138,7 +149,7 @@ export function SmoothWheel() {
 
     const onWheel = (e: WheelEvent) => {
       if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-      if (!fine.matches || reduce.matches) return;
+      if (!desk.matches || reduce.matches) return;
       const mode = e.deltaMode; // read first: Firefox then reports a wheel in lines, a touchpad in pixels
       const dy = e.deltaY;
       if (!dy || Math.abs(e.deltaX) > Math.abs(dy)) return;
@@ -172,13 +183,38 @@ export function SmoothWheel() {
       }
     };
 
-    window.addEventListener("wheel", onWheel, { passive: false });
     const interrupts = ["keydown", "mousedown", "touchstart", "hashchange"] as const;
-    for (const ev of interrupts) window.addEventListener(ev, stop, { passive: true, capture: true });
-    return () => {
+    const root = document.documentElement;
+    const ownBehavior = root.style.scrollBehavior; // what was inline before us
+    let on = false;
+    const enable = () => {
+      if (on) return;
+      on = true;
+      window.addEventListener("wheel", onWheel, { passive: false });
+      for (const ev of interrupts) window.addEventListener(ev, stop, { passive: true, capture: true });
+    };
+    const disable = () => {
       stop();
+      if (!on) return;
+      on = false;
       window.removeEventListener("wheel", onWheel);
       for (const ev of interrupts) window.removeEventListener(ev, stop, { capture: true });
+    };
+    const sync = () => {
+      if (desk.matches) {
+        enable();
+        root.style.scrollBehavior = ownBehavior;
+      } else {
+        disable();
+        root.style.scrollBehavior = "auto";
+      }
+    };
+    sync();
+    desk.addEventListener("change", sync);
+    return () => {
+      desk.removeEventListener("change", sync);
+      disable();
+      root.style.scrollBehavior = ownBehavior;
     };
   }, []);
 
