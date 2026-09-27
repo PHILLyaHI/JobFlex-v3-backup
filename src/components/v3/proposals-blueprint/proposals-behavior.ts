@@ -58,7 +58,7 @@ import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { currentZoom, leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { MDL_EXIT_MS, closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { mountIsland, type Island } from "@/components/v3/blueprint-shell/react-island";
-import { clientProposalUrl, proposalTextMessage, smsHref } from "@/lib/proposalLink";
+import { clientProposalUrl } from "@/lib/proposalLink";
 import { whoHtml } from "@/lib/team/who";
 import {
   PAGE_ACC,
@@ -70,6 +70,7 @@ import {
   type ProposalRow,
   chainsOf,
   chained,
+  paidTier,
   type Chain,
 } from "./proposals-data";
 
@@ -231,11 +232,7 @@ export function initProposalsContent(
     }
     return out;
   }
-  /** The paid track — a dimension line across the payment strip: PAID on the
-   *  left, BALANCE (or the paid-in-full tag) on the right, and between them
-   *  the track, ticked at every stage boundary and filled to what has landed.
-   *  The fill is money, not stages, so it lands exactly on a tick when a stage
-   *  settles and never claims more than the ledger does. */
+  /** Compact dollar summary beneath the card's headline amount. */
   function payBarHtml(p: ProposalRow): string {
     const contract = p.contract ?? p.total;
     const paid = p.paidAmt ?? 0;
@@ -243,8 +240,10 @@ export function initProposalsContent(
     const full = contract > 0 && p.owed <= 0;
     return (
       '<div class="ppay-line">' +
-      '<span class="ppay-paid">Paid <b>' + fmtMoney(paid) + "</b> · " + pct + "%</span>" +
-      '<div class="ppay-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' +
+      '<span class="ppay-paid">Paid <b>' + fmtMoney(paid) + "</b></span>" +
+      // The fill's hue says how far the client has paid (owner, 2026-09-26):
+      // red short of the first stage, amber past it, green in full.
+      '<div class="ppay-bar ppay-bar--' + paidTier(p) + '" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' +
       pct +
       '" aria-valuetext="' +
       esc(fmtMoney(paid) + " paid of " + fmtMoney(contract)) +
@@ -255,20 +254,15 @@ export function initProposalsContent(
         .map((t) => '<i class="ppay-tick" style="left:' + t + '%"></i>')
         .join("") +
       "</div>" +
-      (full
-        ? '<span class="ppay-tag ppay-tag--ok"><svg class="ic"><use href="#i-check"/></svg>Paid in full</span>'
-        : '<span class="ppay-tag">Balance <b>' + fmtMoney(p.owed) + "</b></span>") +
+      (full ? "" : '<span class="ppay-tag"><b>' + fmtMoney(p.owed) + "</b> due</span>") +
       "</div>"
     );
   }
-  /** The payment strip: the one zone between a card's head and its foot. It
-   *  holds, top to bottom, the change-order chip, the stage columns (or the
-   *  6+ row table), and the paid track as their footing — so the ledger and
-   *  its measure read as one drawing instead of a bar floating on white. */
+  /** Payment stages and change orders between the card's head and foot. */
   function payStripHtml(p: ProposalRow, blocks: string): string {
     const contract = p.contract ?? p.total;
     const full = contract > 0 && p.owed <= 0;
-    return '<div class="ppay' + (full ? " ppay--full" : "") + '">' + blocks + payBarHtml(p) + "</div>";
+    return '<div class="ppay' + (full ? " ppay--full" : "") + '">' + blocks + "</div>";
   }
   /** "2 change orders · +$1,080 approved · 1 awaiting approval" — or nothing. */
   /**
@@ -279,7 +273,6 @@ export function initProposalsContent(
    */
   function viewsCellHtml(p: ProposalRow): string {
     if (p.status === "DRAFT") return '<span class="pt-views pt-views--na" title="A draft has not gone out yet">—</span>';
-    const eye = '<svg class="ic" aria-hidden="true"><use href="#i-eye"/></svg>';
     if (p.views <= 0) {
       // Amber is for a proposal still WAITING on the client. One that is
       // already accepted, paid or declined was settled another way (signed at
@@ -288,38 +281,20 @@ export function initProposalsContent(
       return (
         '<span class="pt-views ' + (waiting ? "pt-views--none" : "pt-views--quiet") + '" title="Not opened online' +
         (p.sentAgo ? esc(" — sent " + p.sentAgo) : "") +
-        '">' + eye + "<b>0</b><i>not opened</i></span>"
+        '">' + "<b>0</b><i>not opened</i></span>"
       );
     }
     return (
       '<span class="pt-views pt-views--seen" title="' +
       (p.lastViewed ? esc("Last opened " + p.lastViewed) : "Opened by the client") +
-      '">' + eye + "<b>" + p.views + "</b><i>" +
+      '">' + "<b>" + p.views + "</b><i>" +
       (p.lastViewed ? esc(p.lastViewed) : p.views === 1 ? "view" : "views") +
       "</i></span>"
     );
   }
-  /**
-   * PAID, under the Total (owner, 2026-09-25: "a better way to put in the paid
-   * percentage"): the share of the contract that has landed as a number beside
-   * a quiet meter, and what is still due underneath. The dollars are in the
-   * title. A partial payment never rounds up to 100%.
-   */
+  /** A quiet amount paid beneath the contract total. */
   function paidCellHtml(p: ProposalRow): string {
-    const contract = p.contract ?? p.total;
-    const paid = p.paidAmt ?? 0;
-    const full = contract > 0 && p.owed <= 0;
-    const pct = full ? 100 : Math.min(99, payPct(p));
-    const title = full
-      ? "Paid in full — " + fmtMoney(paid || contract)
-      : fmtMoney(paid) + " paid of " + fmtMoney(contract) + " · " + fmtMoney(p.owed) + " due";
-    return (
-      '<div class="pt-paid' + (full ? " pt-paid--full" : "") + '" title="' + esc(title) + '">' +
-      '<span class="pt-bar" aria-hidden="true"><i style="width:' + pct + '%"></i></span>' +
-      "<b>" + pct + "%</b>paid" +
-      "</div>" +
-      (full ? "" : '<div class="pt-due">' + fmtMoney(p.owed) + " due</div>")
-    );
+    return '<div class="pt-paid">' + fmtMoney(p.paidAmt ?? 0) + ' paid</div>';
   }
   function coChipHtml(p: ProposalRow): string {
     const co = p.co;
@@ -599,17 +574,13 @@ export function initProposalsContent(
       '">' +
       esc(st.label) +
       "</span></td>" +
-      '<td class="num"><span class="pt-money">' +
+      '<td class="c pt-total"><span class="pt-money">' +
       fmtMoney(p.contract ?? p.total) +
       "</span>" +
       (p.status === "ACCEPTED" || p.status === "COMPLETED" || p.status === "PAID" ? paidCellHtml(p) : "") +
       "</td>" +
-      '<td><span class="pt-mono">' +
-      esc(p.updated) +
-      "</span></td>" +
-      '<td class="c">' +
-      viewsCellHtml(p) +
-      "</td>" +
+      '<td class="c">' + viewsCellHtml(p) + '</td>' +
+      '<td><span class="pt-mono">' + esc(p.updated) + '</span></td>' +
       // The member's mark — name, role and their color (lib/team/who); the
       // given-name plate only when the owner is no longer on the org. Nothing
       // on the reader's own proposals (owner, 2026-09-25): the column names
@@ -766,6 +737,7 @@ export function initProposalsContent(
       (p.co && p.co.approvedTotal
         ? '<span class="pt-mono pjob-total-sub">' + fmtMoney(p.total) + " + " + fmtMoney(p.co.approvedTotal) + " in changes</span>"
         : "") +
+      payBarHtml(p) +
       "</div>" +
       "</div>" +
       payStripHtml(p, (p.co && p.co.count ? '<div class="pjob-cos">' + coChipHtml(p) + "</div>" : "") + payBlock) +
@@ -779,10 +751,6 @@ export function initProposalsContent(
       '<button class="btn btn--accent btn--sm" type="button" data-act="invoice"' +
       (p.owed > 0 ? "" : " disabled") +
       '><svg class="ic"><use href="#i-send"/></svg>Send invoice</button>' +
-      // Real: opens the same materials sheet the row menu opens.
-      '<button class="btn btn-ghost btn--sm" type="button" data-act="materials"><svg class="ic"><use href="#i-box"/></svg>Materials · ' +
-      (p.mat || 0) +
-      "</button>" +
       // Real (2026-09-13): this proposal's automatic reminders — on / off /
       // the company's mode (Settings → Payments). Cycles on click.
       '<button class="btn btn-ghost btn--sm" type="button" data-act="reminders" title="Automatic payment reminders for this proposal">' +
@@ -883,12 +851,10 @@ export function initProposalsContent(
       esc(subLine(p)) +
       (p.projectId ? ' · <a class="pt-proj" href="/dashboard/projects/' + encodeURIComponent(p.projectId) + '">' + esc(p.projectName ?? "Project") + "</a>" : "") +
       "</div></div>" +
-      '<div><span class="psheet-banklbl">Banked</span><span class="pt-money banked big">' +
+      '<div class="pjob-total psheet-total"><span class="psheet-banklbl">Banked</span><span class="pt-money banked big">' +
       fmtMoney(p.paidAmt ?? 0) +
       "</span>" +
-      (p.owed > 0
-        ? '<span class="pt-mono pjob-total-sub">of ' + fmtMoney(p.contract ?? p.total) + " · " + fmtMoney(p.owed) + " still due</span>"
-        : '<span class="pt-mono pjob-total-sub">paid in full</span>') +
+      payBarHtml(p) +
       "</div>" +
       "</div>" +
       payStripHtml(
@@ -908,7 +874,7 @@ export function initProposalsContent(
           '">' +
           esc(p.paid || "—") +
           '</div><div class="pcol-sub">' +
-          (p.owed > 0 ? fmtMoney(p.owed) + " still owed" : "Paid in full") +
+          (p.owed > 0 ? "Payment outstanding" : "Paid in full") +
           "</div></div>" +
           "</div>",
       ) +
@@ -922,27 +888,30 @@ export function initProposalsContent(
       "</div>" +
       "</div>" +
       '<div class="psheet-foot">' +
-      '<div class="psheet-send">' +
+      '<div class="psheet-foot-l">' +
+
       // The donor's "Send paid receipt to <email>" box was decoration: there is
       // no receipt transport in the app (no builder in lib/email/build, no
       // action), so the input and its Send button were removed rather than left
       // pretending to mail something. The proposal PDF — the document a paid
       // client actually asks for — is a real route, so that is what ships here.
-      '<span class="kpi-lbl">Paid record</span>' +
-      '<a class="btn btn-primary btn--sm" href="/api/proposals/' +
+
+      '<a class="btn btn-ghost btn--sm" href="/api/proposals/' +
       encodeURIComponent(p.id) +
       '/pdf" target="_blank" rel="noopener noreferrer"><svg class="ic"><use href="#i-download"/></svg>Download PDF</a>' +
-      "</div>" +
+
       '<button class="btn btn-ghost btn--sm" type="button" data-act="invoice"' +
       (p.owed > 0 ? "" : " disabled") +
       '><svg class="ic"><use href="#i-send"/></svg>Send invoice</button>' +
       '<button class="btn btn-ghost btn--sm" type="button" data-act="change-order"><svg class="ic"><use href="#i-plus"/></svg>' +
       (p.co && p.co.count ? "Change orders · " + p.co.count : "Change order") +
       "</button>" +
+      '</div><div class="psheet-foot-r">' +
+      '<button class="btn btn-ghost btn--sm" type="button" data-act="unmark"><svg class="ic"><use href="#i-undo"/></svg>Reopen job</button>' +
       (p.owed > 0
         ? '<button class="btn btn-primary btn--sm" type="button" data-act="paidfull" title="Record the whole balance as paid by hand (bank, cash, check)"><svg class="ic"><use href="#i-check"/></svg>Mark paid in full</button>'
         : "") +
-      '<button class="btn btn-ghost btn--sm" type="button" data-act="unmark"><svg class="ic"><use href="#i-undo"/></svg>Reopen job</button>' +
+      "</div>" +
       "</div>" +
       "</div>"
     );
@@ -1187,14 +1156,10 @@ export function initProposalsContent(
       ) +
       // The client's link, copied or handed to the phone's own messages (2026-09-24).
       menuItem("i-link", "pmi--ok", "Copy client link", "Paste it into a text", "copylink") +
-      menuItem("i-phone", "pmi--ok", "Text the link", "Opens your messages with the link filled in", "textlink", {
-        href: smsHref(null, proposalTextMessage({ clientName: p.client, title: p.title, link: clientProposalUrl(p.publicId) })),
-      }) +
       '<div class="pmenu-grp">Billing</div>' +
       menuItem("i-send", "pmi--warn-solid", "Send invoice", invoiceSub, "invoice", { dis: !canInvoice }) +
       menuItem("i-plus", "pmi--warn", "Change order", "Price extras, send for signature", "change-order") +
       '<div class="pmenu-grp">More</div>' +
-      menuItem("i-dup", "pmi--ink", "Duplicate", "Clone &amp; edit", "dup") +
       menuItem(
         "i-building",
         "pmi--ink",

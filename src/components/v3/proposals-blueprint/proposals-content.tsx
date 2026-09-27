@@ -131,9 +131,9 @@ export function ProposalsContent({ rows }: { rows: ProposalRow[] }) {
               <tr>
                 <th>Proposal</th>
                 <th>Status</th>
-                <th className="num">Total</th>
-                <th>Updated</th>
+                <th className="c">Total</th>
                 <th className="c">Views</th>
+                <th>Updated</th>
                 <th className="th-owner">Owner</th>
                 <th className="th-open"></th>
               </tr>

@@ -105,6 +105,28 @@ export type ProposalRow = {
   after: ProposalPhoto[];
 };
 
+/** How far the client has paid, for the hue of the paid bar. */
+export type PaidTier = "low" | "part" | "full";
+
+/**
+ * HOW FAR THE CLIENT HAS PAID (owner, 2026-09-26: the paid bar should show
+ * whether the client paid little, is on track, or paid it all). "low" until
+ * the payments cover the schedule's first stage — the deposit — "part" once
+ * they do, "full" when nothing is owed. A schedule of one stage or none is
+ * measured against 30%, the default deposit. Shared by the desk cards and
+ * the handheld sheet so the two bars never disagree.
+ */
+export function paidTier(p: Pick<ProposalRow, "total" | "owed" | "paidAmt" | "contract" | "inst">): PaidTier {
+  const contract = p.contract ?? p.total;
+  if (contract > 0 && p.owed <= 0) return "full";
+  const paid = p.paidAmt ?? 0;
+  if (contract <= 0 || paid <= 0) return "low";
+  const insts = p.inst ?? [];
+  const firstStage = insts.length >= 2 ? instDollars(p, insts[0]) : contract * 0.3;
+  // A cent of slack: a deposit settled to the cent is covered.
+  return paid + 0.005 >= firstStage ? "part" : "low";
+}
+
 /** Deep-enough clone so a mount's runtime edits never leak into the next one. */
 export function cloneRows(rows: ProposalRow[]): ProposalRow[] {
   return rows.map((p) => ({

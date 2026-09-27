@@ -1062,3 +1062,21 @@
 .viewsSeen { border-color: var(--blueprint, #1854a0); color: var(--blueprint, #1854a0); background: rgba(24, 84, 160, 0.07); }
 .viewsNa { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-light, #999); }
 .viewsQuiet { border-color: var(--hair, rgba(10,10,10,.14)); color: var(--muted, #666); }
+
+/* Compact payment summaries and unboxed views. */
+.views { display: inline-grid; gap: 2px; padding: 0; border: 0; background: transparent; color: var(--ink); }
+.views b { font-size: 15px; }
+.viewsSeen b { color: var(--accent); }
+.views i { color: var(--ink-soft); opacity: 1; }
+.paidAmount { display: block; margin-top: 4px; color: var(--ink-soft); font: 500 11px/1.4 var(--font-sans); text-align: right; }
+.paymentSummary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; max-width: 280px; margin-top: 12px; color: var(--ink-soft); font: 500 12px/1.4 var(--font-sans); }
+.paymentTrack { flex-basis: 100%; height: 4px; background: var(--ink-line); overflow: hidden; }
+.paymentTrack > span { display: block; height: 100%; background: var(--accent); }
+/* How far the client has paid (owner, 2026-09-26): red short of the first
+   stage, amber past it, green in full (proposals-data → paidTier). */
+.paymentTrack.trackLow > span { background: var(--danger); }
+.paymentTrack.trackPart > span { background: var(--warning); }
+.paymentTrack.trackFull > span { background: var(--success); }
+.bankedSummary { padding: var(--card-pad); border-top: 1px solid var(--ink-line); }
+.bankedSummary .psheetBanklbl { color: var(--ink); font-weight: 700; }
+.bankedSummary .pjobTotalV { color: var(--emerald); }

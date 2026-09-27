@@ -80,7 +80,7 @@ import {
   type ProposalRow,
   type TabKey,
 } from "./proposals-data";
-import { chainsOf, chained } from "@/components/v3/proposals-blueprint/proposals-data";
+import { chainsOf, chained, paidTier, type PaidTier } from "@/components/v3/proposals-blueprint/proposals-data";
 import { clientProposalUrl, proposalTextMessage, smsHref } from "@/lib/proposalLink";
 
 /**
@@ -95,7 +95,6 @@ function Views({ p }: { p: ProposalRow }) {
     const waiting = p.status === "SENT" || p.status === "VIEWED";
     return (
       <span className={`${styles.views} ${waiting ? styles.viewsNone : styles.viewsQuiet}`}>
-        <Icon id="i-eye" className={styles.viewsIc} />
         <b>0</b>
         <i>not opened</i>
       </span>
@@ -103,11 +102,26 @@ function Views({ p }: { p: ProposalRow }) {
   }
   return (
     <span className={`${styles.views} ${styles.viewsSeen}`}>
-      <Icon id="i-eye" className={styles.viewsIc} />
       <b>{p.views}</b>
       <i>{p.lastViewed ?? (p.views === 1 ? "view" : "views")}</i>
     </span>
   );
+}
+
+/** The paid bar's hue by how far the client has paid (proposals-data → paidTier). */
+const TRACK_TIER: Record<PaidTier, "trackLow" | "trackPart" | "trackFull"> = { low: "trackLow", part: "trackPart", full: "trackFull" };
+
+function PaymentSummary({ p }: { p: ProposalRow }) {
+  const total = p.contract ?? p.total;
+  const paid = p.paidAmt ?? 0;
+  const percentage = total > 0 ? Math.max(0, Math.min(100, paid / total * 100)) : 0;
+  return <div className={styles.paymentSummary}>
+    <span>{money(paid)} paid</span>
+    {p.owed > 0 && <span>{money(p.owed)} due</span>}
+    <div className={`${styles.paymentTrack} ${styles[TRACK_TIER[paidTier(p)]]}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percentage} aria-valuetext={money(paid) + " paid of " + money(total)}>
+      <span style={{ width: percentage + "%" }} />
+    </div>
+  </div>;
 }
 
 const prefersReducedMotion = () =>
@@ -526,7 +540,7 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
   );
   const chains = useMemo(() => chainsOf(listAll), [listAll]);
   const listAcc = useMemo(() => data.filter((p) => p.status === "ACCEPTED"), [data]);
-  const listDone = useMemo(() => data.filter((p) => p.status === "PAID"), [data]);
+  const listDone = useMemo(() => data.filter((p) => p.status === "COMPLETED" || p.status === "PAID"), [data]);
 
   const counts = useMemo(
     () => ({ all: data.length, accepted: listAcc.length, completed: listDone.length }),
@@ -813,7 +827,6 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
         sub: p.clientEmail ?? "No email on the client record", group: "Share with client" },
       // The client's link, copied or handed to the phone's messages (2026-09-24).
       { act: "copylink", icon: "i-out", tone: styles.pmiOk, title: "Copy client link", sub: "Paste it into a text" },
-      { act: "textlink", icon: "i-msg", tone: styles.pmiOk, title: "Text the link", sub: "Opens Messages with the link filled in" },
       { act: "accept", icon: "i-check", tone: styles.pmiWarnSolid,
         title: isAcc ? "Already accepted" : "Mark accepted",
         sub: isAcc ? `Signed ${p.accepted ?? ""}` : "Move it into contracts", disabled: isAcc, group: "Contract" },
@@ -824,7 +837,6 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
             ? "Nudge the client by email"
             : "No email on the client record",
         disabled: isDraft || !p.clientEmail },
-      { act: "dup", icon: "i-copy", tone: styles.pmiInk, title: "Duplicate", sub: "Copy into a new draft", group: "More" },
       { act: "dir", icon: "i-pin", tone: styles.pmiInk, title: "Get directions",
         sub: p.maps ? `${p.city || "Client address"} — open in maps` : "No address on client",
         disabled: !p.maps },
@@ -1010,7 +1022,9 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                       <div className={styles.prowFoot}>
                         <span className={`${styles.pstatus} ${st.cls ? styles[st.cls] : ""}`}>{st.label}</span>
                         <Views p={p} />
-                        <span className={styles.prowMoney}>{money(p.total)}</span>
+                        <span className={styles.prowMoney}>{money(p.contract ?? p.total)}
+                          {["ACCEPTED", "COMPLETED", "PAID"].includes(p.status) && <small className={styles.paidAmount}>{money(p.paidAmt ?? 0)} paid</small>}
+                        </span>
                       </div>
                     </div>
                     </Fragment>
@@ -1042,7 +1056,8 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                         </div>
                         <div className={styles.pjobTotal}>
                           <div className={styles.pjobTotalL}>Contract value</div>
-                          <div className={styles.pjobTotalV}>{money(p.total)}</div>
+                          <div className={styles.pjobTotalV}>{money(p.contract ?? p.total)}</div>
+                          <PaymentSummary p={p} />
                         </div>
                       </div>
 
@@ -1132,7 +1147,7 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                     <div className={styles.psheetHead}>
                       <div className={styles.psheetStamp}>
                         <Icon id="i-check" />
-                        {p.owed > 0 ? `Completed · ${money(p.owed)} owed` : "Paid in full"}
+                        {p.owed > 0 ? "Completed" : "Paid in full"}
                       </div>
                       <div className={styles.pjobTitle}>{p.title}</div>
                       <div className={styles.pjobSub}>
@@ -1141,11 +1156,17 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                       </div>
                     </div>
 
+                    <div className={styles.bankedSummary}>
+                      <div className={styles.psheetBanklbl}>Banked</div>
+                      <div className={styles.pjobTotalV}>{money(p.paidAmt ?? 0)}</div>
+                      <PaymentSummary p={p} />
+                    </div>
+
                     {/* Same .pcols/.pcol classes as Accepted — no parallel set */}
                     <div className={`${styles.pcols} ${styles.pcolsSheet}`}>
                       <div className={styles.pcol}>
                         <div className={styles.pcolLbl}>Contract</div>
-                        <div className={styles.pcolVal}>{money(p.total)}</div>
+                        <div className={styles.pcolVal}>{money(p.contract ?? p.total)}</div>
                         <div className={styles.pcolSub}>{p.mat} material lines</div>
                       </div>
                       <div className={styles.pcol}>
@@ -1212,7 +1233,7 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                           pretending to mail something. The proposal PDF, which
                           IS a real route, is what a paid client actually asks
                           for, and un-marking the payment is a real write. */}
-                      <div className={styles.psheetBanklbl}>Paid record</div>
+
                       <div className={styles.psheetSend}>
                         <a className={`${styles.btnStamp} ${styles.btnStampAccent}`}
                           href={`/api/proposals/${p.id}/pdf`} target="_blank" rel="noopener noreferrer">

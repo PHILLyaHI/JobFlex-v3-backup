@@ -1754,3 +1754,47 @@
 /* Owner names someone else (2026-09-25): a book that is all the reader's own
    folds the column away. */
 .bp :global(.content .ptable.is-solo .th-owner), .bp :global(.content .ptable.is-solo .td-owner) { display: none; }
+
+/* Proposal money is one compact summary; actions form consistent groups. */
+.bp :global(.content .ptable th), .bp :global(.content .ptable td) { padding-inline: 20px; }
+.bp :global(.content .ptable th:first-child) { width: 38%; }
+.bp :global(.content .ptable .pt-total) { min-width: 144px; }
+.bp :global(.content .pt-paid) { display: block; margin-top: 4px; color: var(--ink-soft); font: 500 12px/1.4 var(--font-sans); letter-spacing: 0; text-transform: none; }
+.bp :global(.content .pt-views) { display: inline-grid; gap: 4px; padding: 0; border: 0; background: transparent; color: var(--ink); }
+.bp :global(.content .pt-views b) { font: 800 16px/1.2 var(--font-sans); font-variant-numeric: tabular-nums; }
+.bp :global(.content .pt-views i) { color: var(--ink-soft); opacity: 1; }
+.bp :global(.content .pt-views--seen b) { color: var(--accent); }
+.bp :global(.content .ptable td.c .pt-views:not(.pt-views--na)) { min-width: 96px; }
+.bp :global(.content .pjob-head), .bp :global(.content .psheet-head) { align-items: flex-start; padding: 20px; gap: 24px; }
+.bp :global(.content .pjob-head > :first-child), .bp :global(.content .psheet-head > :first-child) { min-width: 0; flex: 1; }
+.bp :global(.content .pjob-total) { flex: 0 0 240px; text-align: right; min-width: 0; }
+.bp :global(.content .pjob-total > .pt-money) { display: block; margin: 4px 0 0; line-height: 1.2; }
+.bp :global(.content .psheet-banklbl) { color: var(--ink); font-weight: 700; }
+.bp :global(.content .psheet-total > .pt-money) { color: var(--emerald); }
+.bp :global(.content .pjob-total .ppay-line) { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 12px 0 0; font-size: 10px; letter-spacing: 0; text-transform: none; text-align: left; }
+.bp :global(.content .pjob-total .ppay-bar) { grid-column: 1 / -1; grid-row: 2; height: 4px; width: 100%; min-width: 0; border: 0; border-radius: 0; background: var(--ink-line); }
+.bp :global(.content .pjob-total .ppay-tag) { grid-column: 2; grid-row: 1; justify-self: end; }
+.bp :global(.content .ppay-tick) { display: none; }
+.bp :global(.content .ppay .pcols), .bp :global(.content .ppay .psched) { border-bottom: 0; }
+.bp :global(.content .pjob .pcol) { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; align-content: start; padding: 20px; }
+.bp :global(.content .pjob .pcol > :not(.pinst-acts)) { grid-column: 1; }
+.bp :global(.content .pjob .pcol .pinst-acts) { grid-column: 2; grid-row: 1 / span 3; display: grid; gap: 8px; margin: 0; }
+.bp :global(.content .pinst-acts .btn) { min-height: 36px; padding: 8px 12px; justify-content: center; }
+.bp :global(.content .pinst-acts [data-act="invoice"]) { color: var(--accent); border-color: var(--accent); }
+.bp :global(.content .pinst-acts [data-act="remind"]) { color: var(--ink-soft); border-color: transparent; background: transparent; }
+.bp :global(.content .pjob-foot), .bp :global(.content .psheet-foot) { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px; padding: 16px 20px; background: var(--paper-deep); }
+.bp :global(.content .pjob-foot .pjob-foot-l), .bp :global(.content .pjob-foot .pjob-foot-r) { padding: 0; gap: 8px; flex-wrap: wrap; align-items: center; }
+.bp :global(.content .pjob-foot .pjob-foot-r) { margin-left: auto; }
+.bp :global(.content .pjob-foot .btn), .bp :global(.content .psheet-foot .btn) { min-height: 40px; margin: 0; padding: 10px 12px; box-shadow: none; justify-content: center; }
+.bp :global(.content .psheet-foot-l), .bp :global(.content .psheet-foot-r) { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.bp :global(.content .psheet-foot-r) { margin-left: auto; }
+.bp :global(.content .pjob .pcols) { grid-auto-flow: row; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+.bp :global(.content .psheet-body:has(.psheet-check:empty)) { grid-template-columns: 1fr; }
+.bp :global(.content .psheet-check:empty) { display: none; }
+
+/* The paid bar says how far the client has paid (owner, 2026-09-26): red
+   short of the schedule's first stage, amber once it is covered, green when
+   nothing is owed (proposals-data → paidTier). */
+.bp :global(.content .ppay-bar--low > span) { background: var(--danger); }
+.bp :global(.content .ppay-bar--part > span) { background: var(--warning); }
+.bp :global(.content .ppay-bar--full > span) { background: var(--success); }
