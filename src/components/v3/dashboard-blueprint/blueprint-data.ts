@@ -27,10 +27,12 @@ export type JobRow = {
   today: boolean;
 };
 
-/** One row of Recent Activity. `i` is a sprite symbol id (`i-file`, …). */
-/** One line of Recent Activity. `who` is the member who did it — null for the
- *  system's own doing, `{id:null,name:"Client"}` for a client's portal click. */
-export type ActivityRow = { i: string; t: string; m: string; who: WhoLike | null };
+/** One line of Recent Activity. `i` is a sprite symbol id (`i-file`, …).
+ *  `who` is the member who did it — null for the system's own doing,
+ *  `{id:null,name:"Client"}` for a client's portal click. `mine` is set on the
+ *  server from the signed-in user's id: the reader's own rows carry no author
+ *  mark, and neither do the system's (owner, 2026-09-26). */
+export type ActivityRow = { i: string; t: string; m: string; who: WhoLike | null; mine: boolean };
 
 /** One card on the Lead Flow board. `stage` is a lowercase `LEAD_STAGES` key —
  *  the uppercase form is the database's `Lead.status`. */

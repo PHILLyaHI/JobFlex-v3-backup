@@ -297,6 +297,9 @@ export async function buildDashboardData(): Promise<DashboardData> {
     t: a.summary,
     m: activityLabel(a.kind) + " · " + relative(a.createdAt),
     who: whoOfEvent(a, actors),
+    // The reader's own doing: the row names an author only when it is
+    // someone else (owner, 2026-09-26) — decided here, by id, never by name.
+    mine: !!a.actorId && a.actorId === userId,
   }));
 
   // ── This week ─────────────────────────────────────────────────────────────

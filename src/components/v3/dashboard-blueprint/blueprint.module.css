@@ -741,8 +741,10 @@
 }
 
 /* RECENT ACTIVITY */
+/* The icon plate sits on the middle of its text block (owner, 2026-09-26):
+   pinned to the top, it hung beside the first line of a three-line row. */
 .bp :global(.act-row) {
-  display: flex; align-items: flex-start; gap: 13px;
+  display: flex; align-items: center; gap: 13px;
   padding: 11px 0;
   border-bottom: 1px solid var(--hair-soft);
 }
@@ -762,12 +764,18 @@
   line-height: 1.35;
 }
 .bp :global(.act-body) { flex: 1 1 auto; min-width: 0; }
-/* The author's mark and the meta share one line and wrap to two at phone width. */
+/* Someone else's mark, then the kind · time, on one line. The name yields
+   first — an ellipsis, the full name in the mark's tooltip — down to about six
+   letters; only a kind too long for that drops the meta, whole, to a line of
+   its own under the mark. */
 .bp :global(.act-foot) {
   display: flex; flex-wrap: wrap; align-items: center;
   gap: 3px 10px;
-  margin-top: 5px;
+  margin-top: 2px; /* tight under the title (owner, 2026-09-26; was 5px) */
 }
+.bp :global(.act-foot .who) { flex: 1 1 64px; max-width: max-content; }
+/* The name alone, no initials disc (owner, 2026-09-26). */
+.bp :global(.act-foot .who-dot) { display: none; }
 .bp :global(.act-meta) {
   font-family: var(--font-mono);
   font-size: 11px; font-weight: 600; /* mono-caps floor, 2026-09-21 (was 10.5) */

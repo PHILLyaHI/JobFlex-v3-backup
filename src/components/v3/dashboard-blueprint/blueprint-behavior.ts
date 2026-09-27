@@ -323,10 +323,11 @@ export function initDashboardContent(content: HTMLElement, data: DashboardData):
               '"/></svg></div>' +
               '<div class="act-body"><div class="act-title">' +
               escapeText(a.t) +
-              // Who did it, then the kind and the time — one line that wraps
-              // to two on a phone (owner, 2026-09-24: every row names its author).
+              // Who did it, then the kind and the time. The author only when it
+              // is someone else — the reader's own rows and the system's carry
+              // no mark (owner, 2026-09-26; `mine` is decided on the server).
               '</div><div class="act-foot">' +
-              whoHtml(a.who, { compact: true }) +
+              (a.mine || !a.who ? "" : whoHtml(a.who, { compact: true })) +
               '<span class="act-meta">' +
               escapeText(a.m) +
               "</span></div></div></div>",

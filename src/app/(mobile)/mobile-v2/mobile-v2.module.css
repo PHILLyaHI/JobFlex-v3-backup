@@ -1160,9 +1160,11 @@
 /* ============================================================
    RECENT ACTIVITY
    ============================================================ */
+/* The icon plate sits on the middle of its text block (owner, 2026-09-26):
+   pinned to the top, it hung beside the first line of a three-line row. */
 .actRow {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
   padding: 10px 0;
   border-bottom: 1px solid var(--hair-soft);
@@ -1186,6 +1188,7 @@
   height: 15px;
 }
 .actBody {
+  flex: 1 1 auto;
   min-width: 0;
 }
 .actTitle {
@@ -1194,13 +1197,20 @@
   color: var(--ink);
   line-height: 1.35;
 }
-/* The author's mark beside the meta; wraps to two lines on a narrow phone. */
+/* Someone else's mark, then the kind · time, on one line. The name yields
+   first — an ellipsis, the full name in the mark's tooltip — down to about six
+   letters; only a kind too long for that drops the meta, whole, to a line of
+   its own under the mark. */
 .actFoot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 3px 10px;
   margin-top: 5px;
+}
+.actFoot :global(.who) {
+  flex: 1 1 64px;
+  max-width: max-content;
 }
 .actMeta {
   font-family: var(--font-mono);

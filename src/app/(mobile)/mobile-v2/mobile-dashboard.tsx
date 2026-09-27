@@ -1022,7 +1022,9 @@ function DashboardView({ data }: { data: DashboardData }) {
                     <div className={styles.actBody}>
                       <div className={styles.actTitle}>{a.t}</div>
                       <div className={styles.actFoot}>
-                        <Who who={a.who} compact />
+                        {/* The author only when it is someone else — not the
+                            reader, not the system (owner, 2026-09-26). */}
+                        {a.mine || !a.who ? null : <Who who={a.who} compact />}
                         <div className={styles.actMeta}>{a.m}</div>
                       </div>
                     </div>
