@@ -12,7 +12,7 @@ export function CtaNote({ tone = "light", className = "" }: { tone?: "light" | "
         tone === "dark" ? "text-white/60" : "text-[#666666]"
       } ${className}`}
     >
-      14 days free · Cancel anytime
+      7 days free · Cancel anytime
     </span>
   );
 }

@@ -45,7 +45,7 @@ export type LandingVariant = {
 /** The hero as it shipped on 2026-08-25 — the page with no `?industry=`. */
 export const DEFAULT_LANDING: LandingVariant = {
   h1: ["Turn your trade", "into a business."],
-  primaryCta: "Start 14-Day Free Trial",
+  primaryCta: "Start 7-Day Free Trial",
   showcaseSlide: "smart",
   visual: "dashboard",
 };

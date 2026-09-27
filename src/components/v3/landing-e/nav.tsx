@@ -30,7 +30,7 @@ export function Nav({ registerHref = REGISTER, cta }: { registerHref?: string; c
           {/* No note under this one (owner, 2026-09-10): the bar stays a bar.
               The trial line lives under the hero pair. */}
           <a href={registerHref} className="lp-btn-dark" data-cta="nav">
-            {cta ?? "Start 14-Day Free Trial"}
+            {cta ?? "Start 7-Day Free Trial"}
           </a>
         </div>
 

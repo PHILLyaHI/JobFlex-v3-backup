@@ -45,7 +45,7 @@ export function CtaFooter({
               on one accent and is the only colour in this black section. */}
           <div className="mt-10 w-full sm:mt-12 sm:w-auto">
             <a href={registerHref} className="lp-btn-lime w-full sm:w-auto" data-cta="footer">
-              {cta ?? "Start 14-Day Free Trial"}
+              {cta ?? "Start 7-Day Free Trial"}
               <span aria-hidden>→</span>
             </a>
             <CtaNote tone="dark" className="mt-3 text-center" />

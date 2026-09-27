@@ -39,7 +39,7 @@ function questions(variant: LandingVariantKey | undefined): Faq[] {
   return [
     {
       q: "Do I need a credit card to start?",
-      a: "Yes, at step 3 of signup, when you pick a plan. The 14 days are free and the first charge comes on day 15. Cancel in one click from Subscription before then and you pay nothing.",
+      a: "Yes, at step 3 of signup, when you pick a plan. The 7 days are free and the first charge comes on day 8. Cancel in one click from Subscription before then and you pay nothing.",
     },
     {
       q: "How long does it take to learn?",
@@ -51,7 +51,7 @@ function questions(variant: LandingVariantKey | undefined): Faq[] {
     },
     data,
     {
-      q: "What happens after 14 days?",
+      q: "What happens after 7 days?",
       a: "Pick a plan or don't. Nothing is charged until you do, and everything you made stays in the account.",
     },
     {

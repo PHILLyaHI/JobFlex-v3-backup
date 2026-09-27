@@ -59,7 +59,7 @@ export interface WelcomeFirstEstimateInput {
 
 /** landing-e pass A (2026-09-11): the welcome for the test variant. One
  *  button — the trade's first estimate — and the trial's terms in the box:
- *  14 days free, the date of the first charge, cancel from Subscription. */
+ *  7 days free, the date of the first charge, cancel from Subscription. */
 export function buildWelcomeFirstEstimate(i: WelcomeFirstEstimateInput): EmailDoc {
   const first = i.name.trim().split(/\s+/)[0] || "there";
   const job =
@@ -69,7 +69,7 @@ export function buildWelcomeFirstEstimate(i: WelcomeFirstEstimateInput): EmailDo
         ? "Draw the fence line on the map, pick the style and height, and the footage, posts, gates and price are on a proposal — two minutes, no tape."
         : "Type the job the way you'd say it to a customer, and the estimate writes itself: line items, quantities, a priced proposal — two minutes.";
   const box: BoxRow[] = [
-    { type: "field", label: "Trial", value: "14 days free" },
+    { type: "field", label: "Trial", value: "7 days free" },
     { type: "field", label: "First charge", value: i.firstChargeDate },
     { type: "cond", label: "Cancel", chip: "Anytime, from Subscription", tone: "ok" },
   ];
