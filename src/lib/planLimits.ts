@@ -42,6 +42,19 @@ export function isPlanLimitFailure(v: unknown): v is PlanLimitFailure {
   );
 }
 
+/**
+ * A returned `{ ok: false }` failure as a client-side Error, so a caller's
+ * existing catch block handles it unchanged: a plan limit becomes the error
+ * reportPlanLimit recognises (with its resource), anything else carries the
+ * server's own words — which a thrown server-action error would not.
+ */
+export function failureAsError(res: { error: string; code?: string; resource?: string }): Error {
+  if (res.code === "PLAN_LIMIT_REACHED") {
+    return Object.assign(new Error(PLAN_LIMIT_MESSAGE), { code: res.code, resource: res.resource });
+  }
+  return new Error(res.error);
+}
+
 /** How a limit's usage window is computed. */
 export type LimitScope =
   | "monthly" // counted within the current billing cycle

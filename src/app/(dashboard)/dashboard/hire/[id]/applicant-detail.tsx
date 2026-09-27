@@ -79,7 +79,11 @@ export function ApplicantDetail({ applicant }: { applicant: Applicant }) {
     if (!confirm(`Convert ${applicant.fullName} into an active worker?`)) return;
     setBusy("convert");
     try {
-      await convertApplicantToWorker(applicant.id);
+      const res = await convertApplicantToWorker(applicant.id);
+      if (!res.ok) {
+        toast.error("Couldn't convert", "error" in res ? res.error : undefined);
+        return;
+      }
       toast.success("Converted to worker", "They'll get a magic-link invite next.");
       router.push("/dashboard/workers" as any);
     } catch (err: any) {

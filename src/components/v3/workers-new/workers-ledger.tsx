@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/Input";
 import { Dialog } from "@/components/ui/Dialog";
 import { toast } from "@/components/ui/Toast";
 import { createWorkerInvite, updateWorker, removeWorker } from "@/actions/workers";
+import { failureAsError } from "@/lib/planLimits";
 import { WORKER_ROLES, roleLabel } from "@/lib/prismaEnums";
 import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 
@@ -819,6 +820,7 @@ function InviteSheet({
         role,
         phone: phone.trim() || undefined,
       });
+      if (!res.ok) throw failureAsError(res);
       setCreated({ token: res.token, name: name.trim() });
       onInvited();
       toast.success("Worker invited", "Dashboard link ready to share.");

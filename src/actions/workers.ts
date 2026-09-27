@@ -35,7 +35,34 @@ async function welcomeByText(organizationId: string, phone: string | null | unde
   await sendText({ organizationId, to: phone, body: welcomeText(org?.name ?? null), kind: "welcome" });
 }
 
-export async function createWorkerInvite(raw: unknown) {
+/** A refusal the manager must read: thrown inside the invite, returned to the
+ *  page by createWorkerInvite. A thrown server-action message is redacted in
+ *  production (a generic 500 in the browser), so these never leave as throws. */
+class InviteRefusal extends Error {}
+
+export type WorkerInviteResult =
+  | { ok: true; id: string; token: string; emailSent: boolean; emailError: string | null }
+  | { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: string };
+
+/**
+ * Invite a crew member. Refusals (your own email, an already-joined worker, an
+ * office account, crew of another company) and a reached plan limit come back
+ * as `{ ok: false }` with the words to show — in production a throw reached the
+ * browser as a bare 500 and the manager never learned why (2026-09-26).
+ */
+export async function createWorkerInvite(raw: unknown): Promise<WorkerInviteResult> {
+  try {
+    return { ok: true, ...(await inviteWorker(raw)) };
+  } catch (err) {
+    if (err instanceof InviteRefusal) return { ok: false, error: err.message };
+    if (err instanceof Error && (err as { code?: string }).code === "PLAN_LIMIT_REACHED") {
+      return { ok: false, code: "PLAN_LIMIT_REACHED", error: err.message, resource: (err as { resource?: string }).resource };
+    }
+    throw err;
+  }
+}
+
+async function inviteWorker(raw: unknown) {
   const { organizationId, user: inviter } = await requireManager();
   const data = inviteInput.parse(raw);
 
@@ -62,7 +89,7 @@ export async function createWorkerInvite(raw: unknown) {
   // reset them to PENDING and allow acceptWorkerInvite to set a NEW password —
   // an account-takeover path. Managers must Edit or Remove instead.
   if (alreadyAWorker?.inviteStatus === "ACCEPTED") {
-    throw new Error("That worker has already joined. Use Edit or Remove instead.");
+    throw new InviteRefusal("That worker has already joined. Use Edit or Remove instead.");
   }
   // The absolute "workers" seat cap, charged only when this invite adds a
   // seat. The comment above promised this since 2026-07; the call was missing
@@ -85,7 +112,7 @@ export async function createWorkerInvite(raw: unknown) {
   // old buggy path, or by a seed) would otherwise skip both guards and demote
   // their own seat by re-inviting themselves.
   if (existingUserForLimit?.id === inviter.id) {
-    throw new Error("That's your own email address — you can't invite yourself to the crew.");
+    throw new InviteRefusal("That's your own email address — you can't invite yourself to the crew.");
   }
   if (existingUserForLimit && !alreadyAWorker) {
     const officeSeat = await db.membership.findUnique({
@@ -95,7 +122,7 @@ export async function createWorkerInvite(raw: unknown) {
       select: { role: true },
     });
     if (officeSeat) {
-      throw new Error(
+      throw new InviteRefusal(
         `${data.email} already has a ${roleLabel(officeSeat.role)} account in this company. ` +
           "Inviting them as a crew member would overwrite that access — change their role instead.",
       );
@@ -122,7 +149,7 @@ export async function createWorkerInvite(raw: unknown) {
       select: { organization: { select: { name: true } } },
     });
     if (elsewhere) {
-      throw new Error(
+      throw new InviteRefusal(
         `${data.email} is already on the crew at ${elsewhere.organization.name}. ` +
           "A person can only be a crew member of one company right now — remove them there first, " +
           "or invite them from a different email address.",

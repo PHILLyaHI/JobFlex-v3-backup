@@ -23,7 +23,7 @@ import {
 } from "@/actions/workers";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
-import { isPlanLimitError } from "@/lib/planLimits";
+import { failureAsError, isPlanLimitError } from "@/lib/planLimits";
 import { roleAccess } from "@/lib/roleAccess";
 import {
   WORKER_ROLES,
@@ -772,6 +772,7 @@ export function initWorkersContent(
           specialties,
           hourlyRate: rate,
         });
+        if (!created.ok) throw failureAsError(created);
         // The action returns the real profile id and magic-link token, so the
         // row it appends is the database row — including a working portal link.
         workersData.push({

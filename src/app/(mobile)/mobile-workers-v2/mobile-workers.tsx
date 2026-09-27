@@ -50,6 +50,7 @@ import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import { createWorkerInvite, removeWorker, updateWorker } from "@/actions/workers";
+import { failureAsError } from "@/lib/planLimits";
 import { roleAccess } from "@/lib/roleAccess";
 import { loadRoster } from "./workers-roster";
 import {
@@ -581,6 +582,7 @@ export function MobileWorkers() {
           specialties,
           hourlyRate: rate,
         });
+        if (!created.ok) throw failureAsError(created);
         const rec: WorkerEntry = {
           id: created.id,
           name,

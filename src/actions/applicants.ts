@@ -96,12 +96,13 @@ export async function convertApplicantToWorker(id: string) {
   const a = await db.applicant.findUnique({ where: { id } });
   if (!a || a.organizationId !== organizationId) throw new Error("Not found");
   const { createWorkerInvite } = await import("./workers");
-  await createWorkerInvite({
+  const invited = await createWorkerInvite({
     name: a.fullName,
     email: a.email,
     phone: a.phone,
     specialties: a.role ? [a.role] : [],
   });
+  if (!invited.ok) return { ok: false, error: invited.error };
   await db.applicant.update({ where: { id }, data: { status: ApplicantStatus.HIRED } });
   revalidatePath("/dashboard/hire");
   revalidatePath("/dashboard/workers");
