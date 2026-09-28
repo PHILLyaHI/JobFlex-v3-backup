@@ -7,6 +7,7 @@
 // user-invoked sender (notifyPaymentReminder) stays a guarded action in
 // src/actions/notify.ts.
 import { db } from "@/lib/db";
+import { FENCE_PLAN_EVENT } from "@/lib/fence/planSvg";
 import { contractSchedule } from "@/lib/contractTotal";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
@@ -147,6 +148,16 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
     .map((p) => p.replace(/\n/g, " ").trim())
     .filter((p) => p && !isBareUrlParagraph(p));
 
+  // A fence traced on the map (2026-09-27): the client's page stands it up in
+  // 3D and draws it on the lot — the email says so, so they go and look.
+  let after: string[] | undefined;
+  try {
+    const drawn = await db.activityEvent.findFirst({ where: { proposalId: proposal.id, kind: FENCE_PLAN_EVENT }, select: { id: true } });
+    if (drawn) after = ["Your fence is drawn on your lot and stands in 3D on your page — open it and drag to look around.", "Anything you'd like changed? Just reply — it comes straight to us."];
+  } catch {
+    after = undefined;
+  }
+
   const { subject: subj, html } = renderEmail(
     buildProposalSent({
       org: {
@@ -163,6 +174,7 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
       validUntil: proposal.validUntil,
       href: `${appUrl}/portal/q/${proposal.publicId}`,
       prose,
+      after,
     }),
   );
 

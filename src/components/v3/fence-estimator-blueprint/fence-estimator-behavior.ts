@@ -74,6 +74,7 @@ import type {
 // stays off the initial bundle of a page whose primary surface is a map.
 import type { FenceModel3D, FenceTerrain3D } from "@/components/estimator/fence/FenceModel3D";
 import type { FencePlan } from "@/lib/fence/planSvg";
+import { capTerrain, familySwatch, type FencePlanScene } from "@/lib/fence/scene";
 import {
   CATEGORY_LABEL,
   DEFAULT_FENCE_TYPE,
@@ -3657,13 +3658,45 @@ export function initFenceEstimatorContent(
         const op = fs.openings.find(function (x) { return x.id === g.id; });
         return { segmentIndex: g.segmentIndex, t: g.t, widthFt: g.widthFt, kind: g.kind, label: op ? opType(op.type).label : undefined, x: g.x, y: g.y };
       }),
-      buildings: modelBuildings().slice(0, 40).map(function (b) { return { ring: b.ring.slice(0, 300).map(pt), role: b.role }; }),
+      buildings: modelBuildings().slice(0, 40).map(function (b) { return { ring: b.ring.slice(0, 300).map(pt), role: b.role, heightFt: Math.min(80, Math.max(6, Math.round(b.heightFt))) }; }),
       lots: (o ? lotRingsFt(o) : []).slice(0, 10).map(function (r) { return r.slice(0, 400).map(pt); }),
       origin: o,
       heightFt: pk.builtHeightFt,
       typeLabel: pk.resolved.label,
       totalLf: lf,
       address: where || null,
+      scene: sceneForProposal(),
+    };
+  }
+
+  /** The studio's 3D beyond the plan (lib/fence/scene, 2026-09-27): what the
+   *  client's page and the saved proposal stand up — the look and colour,
+   *  the gates with their variants, the priced slope class per run, the wall
+   *  mounts, the land's lattice (thinned to the stored cap) and the lot
+   *  line's colour. No picture is uploaded: the scene is rebuilt from this. */
+  function sceneForProposal(): FencePlanScene {
+    const r1 = function (n: number) { return Math.round(n * 10) / 10; };
+    const r2 = function (n: number) { return Math.round(n * 100) / 100; };
+    const t = modelTerrain();
+    const terrain = t ? capTerrain({ plan: t.plan, grid: t.grid.map(function (row) { return row.map(r2); }) }) : null;
+    const classes = modelClasses();
+    const seg: Record<number, BayClass> = {};
+    if (classes) Object.keys(classes).forEach(function (k) { seg[Number(k)] = classes[Number(k)]; });
+    const family = currentType().type.family;
+    const swatch = typeRow(fs.material).color;
+    const hex6 = /^#[0-9a-f]{6}$/i;
+    const hex3 = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i;
+    const m3 = hex3.exec(swatch || '');
+    const color = hex6.test(swatch || '') ? swatch : m3 ? '#' + m3[1] + m3[1] + m3[2] + m3[2] + m3[3] + m3[3] : familySwatch(family);
+    const lot = token('--parcel-line');
+    return {
+      family: family,
+      color: color,
+      gates: modelGates().slice(0, 40).map(function (g) { return { id: g.id, segmentIndex: g.segmentIndex, t: g.t, widthFt: g.widthFt, kind: g.kind, variant: g.variant, x: g.x, y: g.y }; }),
+      segClasses: seg,
+      wallMounts: wallMounts().ft.slice(0, 40).map(function (q) { return { x: r1(q.x), y: r1(q.y) }; }),
+      terrain: terrain,
+      lotColor: lot && hex6.test(lot) ? lot : null,
     };
   }
 

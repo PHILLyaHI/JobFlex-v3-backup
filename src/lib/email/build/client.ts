@@ -61,6 +61,8 @@ function formatTaxRate(fraction: number): string {
 }
 
 export interface ProposalSentInput {
+  /** Lines after the box; the default asks for changes by reply. */
+  after?: string[];
   org: OrgBrand;
   clientName: string;
   title: string;
@@ -112,7 +114,7 @@ export function buildProposalSent(i: ProposalSentInput): EmailDoc {
     ],
     box,
     cta: { label: "Review & accept", href: i.href },
-    after: [
+    after: i.after ?? [
       "Anything you'd like changed? Just reply — it comes straight to us.",
     ],
     footer: orgFooter(i.org, i.ref),

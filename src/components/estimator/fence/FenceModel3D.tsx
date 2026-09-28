@@ -110,6 +110,9 @@ export const FenceModel3D = React.forwardRef<
     lots?: PathPoint[][];
     /** The lot line's colour — the map's, so the two views agree. */
     lotColor?: string;
+    /** "full": orbit, and a click walks through (pointer lock, WASD). "orbit":
+     *  orbit and zoom only — a phone, or a page where walking is not wanted. */
+    controls?: "full" | "orbit";
     active?: boolean;
     className?: string;
   }
@@ -127,6 +130,7 @@ export const FenceModel3D = React.forwardRef<
     wallMounts = NO_MOUNTS,
     lots = NO_LOTS,
     lotColor = DEFAULT_LOT_COLOR,
+    controls = "full",
     active = true,
     className,
   },
@@ -140,6 +144,10 @@ export const FenceModel3D = React.forwardRef<
   React.useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
+  const controlsRef = React.useRef(controls);
+  React.useEffect(() => {
+    controlsRef.current = controls;
+  }, [controls]);
 
   React.useImperativeHandle(ref, () => ({
     capture: () => {
@@ -1153,7 +1161,7 @@ export const FenceModel3D = React.forwardRef<
       downY = e.clientY;
     };
     const onCanvasClick = (e: MouseEvent) => {
-      if (modeRef.current !== "orbit") return;
+      if (modeRef.current !== "orbit" || controlsRef.current !== "full") return;
       if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) return;
       try {
         plc.lock();
@@ -1449,7 +1457,7 @@ export const FenceModel3D = React.forwardRef<
             data-fm3d="hint"
             className="rounded-full bg-white/85 backdrop-blur hairline px-3 py-1 text-[11px] text-[color:var(--ink-muted)]"
           >
-            Click to walk through · WASD move · Q/E up·down · Esc exit · drag to orbit
+            {controls === "full" ? "Click to walk through · WASD move · Q/E up·down · Esc exit · drag to orbit" : "Drag to look around · pinch or scroll to zoom"}
           </span>
         </div>
       ) : (

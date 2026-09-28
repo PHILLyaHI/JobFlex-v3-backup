@@ -28,14 +28,19 @@ export interface FencePlanGate {
 export interface FencePlan {
   points: PlanPoint[];
   gates: FencePlanGate[];
-  buildings: Array<{ ring: PlanPoint[]; role: "subject" | "neighbor" }>;
+  /** `heightFt` (2026-09-27): the wall height the 3D stands the house up to. */
+  buildings: Array<{ ring: PlanPoint[]; role: "subject" | "neighbor"; heightFt?: number }>;
   lots: PlanPoint[][];
   origin: { lat: number; lng: number } | null;
   heightFt: number;
   typeLabel: string;
   totalLf: number;
   address: string | null;
+  /** The studio's 3D beyond the plan (lib/fence/scene, 2026-09-27); absent on older plans. */
+  scene?: FencePlanScene;
 }
+
+import { parseFencePlanScene, type FencePlanScene } from "./scene";
 
 export const FENCE_PLAN_EVENT = "FENCE_PLAN";
 
@@ -62,7 +67,8 @@ export function parseFencePlan(raw: unknown): FencePlan | null {
   const buildings = (Array.isArray(r.buildings) ? r.buildings : []).slice(0, 40).flatMap((b) => {
     const q = (b && typeof b === "object" ? b : {}) as Record<string, unknown>;
     const ring = pts(q.ring, 300);
-    return ring.length >= 3 ? [{ ring, role: q.role === "subject" ? ("subject" as const) : ("neighbor" as const) }] : [];
+    const heightFt = num(q.heightFt) ? Math.min(80, Math.max(6, q.heightFt)) : undefined;
+    return ring.length >= 3 ? [{ ring, role: q.role === "subject" ? ("subject" as const) : ("neighbor" as const), ...(heightFt !== undefined ? { heightFt } : {}) }] : [];
   });
   const lots = (Array.isArray(r.lots) ? r.lots : []).slice(0, 10).map((l) => pts(l, 400)).filter((l) => l.length >= 3);
   const o = (r.origin && typeof r.origin === "object" ? r.origin : null) as Record<string, unknown> | null;
@@ -76,6 +82,7 @@ export function parseFencePlan(raw: unknown): FencePlan | null {
     typeLabel: typeof r.typeLabel === "string" ? r.typeLabel.slice(0, 120) : "Fence",
     totalLf: num(r.totalLf) ? r.totalLf : 0,
     address: typeof r.address === "string" && r.address.trim() ? r.address.slice(0, 300) : null,
+    ...(function () { const sc = parseFencePlanScene(r.scene); return sc ? { scene: sc } : {}; })(),
   };
 }
 

@@ -105,6 +105,7 @@ import type { LineItemsProps } from "../lines-lab/lines-contract";
 import { PaymentBlock } from "./bp-money";
 import { MarkupBlock } from "./bp-markup";
 import { PrintOptions, FilesBlock } from "./bp-blocks";
+import { FenceSceneFigure } from "@/components/v3/fence-scene/fence-scene-figure";
 import { TheirCopy } from "./bp-proof";
 // Card 11. The same proposal as PAPER — see the header of bp-pdf.tsx for why
 // the file is produced by print CSS rather than by a PDF library.
@@ -242,6 +243,10 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
   const [savedId, setSavedId] = useState<string | null>(data.proposal?.id ?? null);
   /** The client's page exists once the proposal is saved — the link to copy or text (2026-09-24). */
   const [publicId, setPublicId] = useState<string | null>(data.proposal?.publicId ?? null);
+  // A fence traced on the map gets a card of its own after the line items;
+  // the cards after it move down one number.
+  const drawing = !!data.proposal?.fenceDrawing;
+  const N = (k: number) => String(drawing && k >= 4 ? k + 1 : k).padStart(2, "0");
   // The page's own host, for the link shown and copied: "" on the server and
   // on the first client paint (so they agree), the real origin right after.
   const origin = useSyncExternalStore(noSubscribe, () => window.location.origin, () => "");
@@ -793,6 +798,25 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
           />
         </Card>
 
+        {/* 04 (a fence traced on the map) — THE DRAWING. The 3D the estimator
+            showed and the fence on the lot, both from the stored plan — the two
+            the client's page carries (2026-09-27: "when I open the fence
+            proposal after saving, it shows no 3D and no layout"). */}
+        {drawing && publicId ? (
+          <Card num="04" title="The drawing" id="q-drawing">
+            <div className={styles.drawing}>
+              <FenceSceneFigure className={styles.drawingScene} src={`/api/public-quote/${publicId}/fence-scene`} caption="In 3D" facts="Drag to look around · click to walk through" />
+              <figure className={styles.drawingPlan}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- drawn by this app's own route */}
+                <img src={`/api/public-quote/${publicId}/fence-plan`} alt="The fence on the lot" loading="lazy" />
+                <figcaption>On the lot</figcaption>
+              </figure>
+            </div>
+            <p className={styles.drawingNote}>The client&apos;s page carries both — the 3D to look around, the layout to keep.</p>
+          </Card>
+        ) : null}
+
+
         {/* 04 — SIX controls on the left, an ESTIMATE plate on the right, and
             a margin badge. The plate now runs the WHOLE chain and ends on the
             grand total, so discount and tax had to come with it: a card that
@@ -802,7 +826,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
             Still deliberately NOT merged with the deposits below — the split is
             by question ("what am I charging?" vs "when do they pay it?"), not
             by arithmetic. ------------------------------------------- */}
-        <Card num="04" title="Cost adjustment" id="q-04">
+        <Card num={N(4)} title="Cost adjustment" id="q-04">
           <MarkupBlock
             materialMarkupPct={draft.materialMarkupPct}
             laborMarkupPct={draft.laborMarkupPct}
@@ -830,7 +854,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
         </Card>
 
         {/* 05 ------------------------------------------------------- */}
-        <Card num="05" title="Scope & notes" id="q-05">
+        <Card num={N(5)} title="Scope & notes" id="q-05">
           <Field label="Scope of work" htmlFor="q-scope">
             <TextArea
               id="q-scope"
@@ -850,12 +874,12 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
         </Card>
 
         {/* 06 ------------------------------------------------------- */}
-        <Card num="06" title="Show to client" id="q-06">
+        <Card num={N(6)} title="Show to client" id="q-06">
           <PrintOptions options={draft.options} onPatch={patchOptions} />
         </Card>
 
         {/* 07 ------------------------------------------------------- */}
-        <Card num="07" title="Terms" id="q-07">
+        <Card num={N(7)} title="Terms" id="q-07">
           <Field
             label="Terms & conditions"
             htmlFor="q-terms"
@@ -883,7 +907,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
             authoritative — was the one-number-many-places failure at its
             worst. The schedule divides a figure produced up there; the coverage
             meter is what says whether the division adds up. ------------ */}
-        <Card num="08" title="Payment & deposits" id="q-08">
+        <Card num={N(8)} title="Payment & deposits" id="q-08">
           <PaymentBlock
             installments={draft.installments}
             total={contractValue}
@@ -897,7 +921,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
         </Card>
 
         {/* 09 ------------------------------------------------------- */}
-        <Card num="09" title="Files" id="q-09">
+        <Card num={N(9)} title="Files" id="q-09">
           <FilesBlock
             files={draft.files}
             onAdd={addFiles}
@@ -906,7 +930,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
         </Card>
 
         {/* 10 ------------------------------------------------------- */}
-        <Card num="10" title="Their copy" id="q-10" sheet>
+        <Card num={N(10)} title="Their copy" id="q-10" sheet>
           {publicId ? (
             <div className={styles.shareRow} data-client-link>
               <Btn
@@ -962,7 +986,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
             It carries `sheet` as card 10 does: the column now ends on a
             two-card coda, the same artifact in two media, and both are
             documents rather than forms. */}
-        <Card num="11" title="The PDF" id="q-11" sheet>
+        <Card num={N(11)} title="The PDF" id="q-11" sheet>
           <PdfBlock
             setup={pdf}
             onPatch={(p) => {

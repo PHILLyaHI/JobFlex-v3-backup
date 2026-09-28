@@ -3,8 +3,13 @@
 // Owner: the client should receive the fence's 3D and layout, and a picture
 // of the roof, on the phone and on the desk. One read for both portal
 // builds: what pictures this proposal has and where each one is served.
+//   fence-scene the fence stood up in 3D on the page itself (2026-09-27):
+//               the stored plan and its scene block, served by
+//               /api/public-quote/[publicId]/fence-scene and mounted by
+//               components/v3/fence-scene — no picture upload, no Blob;
 //   fence-3d    the estimator's 3D snapshot (Proposal.beforePhotos, a Blob
-//               URL under fence-preview/), when one was taken and stored;
+//               URL under fence-preview/) — the scene's poster when there is
+//               a plan, the only 3D there is when a proposal predates plans;
 //   fence-plan  the traced layout (an ActivityEvent FENCE_PLAN), drawn on
 //               request by /api/public-quote/[publicId]/fence-plan;
 //   roof-photo  the aerial (EagleView ortho, else Google satellite) with the
@@ -37,16 +42,21 @@ export async function proposalPictures(p: { id: string; publicId: string; trade?
 
   // ── the fence
   const preview = fencePreviewUrl(p.beforePhotos);
-  if (preview) out.push({ kind: "fence-3d", src: preview, alt: "Your fence, in 3D", caption: "Your fence, as it will stand", facts: null, overlay: null });
+  let plan = null;
   try {
     const ev = await db.activityEvent.findFirst({ where: { proposalId: p.id, kind: FENCE_PLAN_EVENT }, orderBy: { createdAt: "desc" }, select: { meta: true } });
-    const plan = ev?.meta ? parseFencePlan(JSON.parse(ev.meta)) : null;
-    if (plan) {
-      const gates = plan.gates.length;
-      out.push({ kind: "fence-plan", src: `${base}/fence-plan`, alt: "Your fence on the lot", caption: "Your fence on the lot", facts: `${plan.typeLabel} · ${plan.heightFt} ft · ${Math.round(plan.totalLf)} ft${gates ? ` · ${gates} ${gates === 1 ? "gate" : "gates"}` : ""}`, overlay: null });
-    }
+    plan = ev?.meta ? parseFencePlan(JSON.parse(ev.meta)) : null;
   } catch {
-    /* no plan, or the table is not there */
+    plan = null; /* no plan, or the table is not there */
+  }
+  if (plan) {
+    const gates = plan.gates.length;
+    const facts = `${plan.typeLabel} · ${plan.heightFt} ft · ${Math.round(plan.totalLf)} ft${gates ? ` · ${gates} ${gates === 1 ? "gate" : "gates"}` : ""}`;
+    // The scene first: the page stands the fence up where the picture was.
+    out.push({ kind: "fence-scene", src: `${base}/fence-scene`, alt: "Your fence, in 3D", caption: "Your fence, as it will stand", facts, overlay: null, poster: preview });
+    out.push({ kind: "fence-plan", src: `${base}/fence-plan`, alt: "Your fence on the lot", caption: "Your fence on the lot", facts, overlay: null });
+  } else if (preview) {
+    out.push({ kind: "fence-3d", src: preview, alt: "Your fence, in 3D", caption: "Your fence, as it will stand", facts: null, overlay: null });
   }
 
   // ── the roof

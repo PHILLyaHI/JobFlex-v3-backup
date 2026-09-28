@@ -61,13 +61,34 @@ export const fenceConvertSchema = z.object({
     .object({
       points: z.array(planPoint).min(2).max(600),
       gates: z.array(z.object({ segmentIndex: z.number().int().min(0).max(600), t: z.number().min(0).max(1), widthFt: z.number().min(0).max(40), kind: z.enum(["gate", "door"]), label: z.string().max(60).optional(), x: z.number().finite().optional(), y: z.number().finite().optional() })).max(40),
-      buildings: z.array(z.object({ ring: z.array(planPoint).min(3).max(300), role: z.enum(["subject", "neighbor"]) })).max(40),
+      buildings: z.array(z.object({ ring: z.array(planPoint).min(3).max(300), role: z.enum(["subject", "neighbor"]), heightFt: z.number().min(6).max(80).optional() })).max(40),
       lots: z.array(z.array(planPoint).min(3).max(400)).max(10),
       origin: z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) }).nullable(),
       heightFt: z.number().min(0).max(20),
       typeLabel: z.string().max(120),
       totalLf: z.number().min(0).max(100_000),
       address: z.string().max(300).nullable(),
+      // The studio's 3D beyond the plan (lib/fence/scene, 2026-09-27): the
+      // look, the gates with their variants, the slope class per run, the
+      // wall mounts, the land's lattice, the lot line's colour. Bounded like
+      // the plan: the lattice is at most 80 × 80 and 2,500 points.
+      scene: z
+        .object({
+          family: z.enum(["cedar", "vinyl", "chain-link", "aluminum", "composite"]),
+          color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+          gates: z.array(z.object({ id: z.string().max(40), segmentIndex: z.number().int().min(-1).max(600), t: z.number().min(0).max(1), widthFt: z.number().min(0).max(40), kind: z.enum(["gate", "door"]), variant: z.string().max(20), x: z.number().finite().optional(), y: z.number().finite().optional() })).max(40),
+          segClasses: z.record(z.string().regex(/^\d{1,3}$/), z.enum(["level", "racked", "stepped"])).refine((o) => Object.keys(o).length <= 600, "too many segments"),
+          wallMounts: z.array(planPoint).max(40),
+          terrain: z
+            .object({
+              plan: z.object({ x0: z.number().finite(), y0: z.number().finite(), dx: z.number().positive().max(10_000), dy: z.number().positive().max(10_000), cols: z.number().int().min(2).max(80), rows: z.number().int().min(2).max(80) }),
+              grid: z.array(z.array(z.number().finite()).min(2).max(80)).min(2).max(80),
+            })
+            .refine((t) => t.plan.cols * t.plan.rows <= 2500 && t.grid.length === t.plan.rows && t.grid.every((row) => row.length === t.plan.cols), "lattice shape")
+            .nullable(),
+          lotColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
+        })
+        .optional(),
     })
     .optional(),
   // Pre-links the proposal to a client when converted from a client's page.

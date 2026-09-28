@@ -1258,6 +1258,9 @@ body:has(.jf-mobile-proposal-client)::before { content: none; }
 /* ── THE CLIENT'S HOUSE — the measurement's satellite photo, framed like a
       drawing, under the two facts. Same photo as the desktop tree and the
       PDF; it was simply never on the handheld page. ── */
+/* The fence in 3D (components/v3/fence-scene, 2026-09-27): a still's frame, the scene inside. */
+.jf-mobile-proposal-client .mpc-scene { margin: 18px 0 0; border: 1.5px solid var(--hair); border-radius: 12px; }
+.jf-mobile-proposal-client .mpc-scene figcaption { border-top: 1.5px solid var(--hair-soft); font-size: 10px; font-weight: 600; }
 .jf-mobile-proposal-client .mpc-site {
   margin: 18px 0 0;
   border: 1.5px solid var(--hair);

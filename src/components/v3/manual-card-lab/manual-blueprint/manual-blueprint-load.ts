@@ -21,6 +21,7 @@
 // this replaces carried a hard-coded date string.
 
 import { db } from "@/lib/db";
+import { FENCE_PLAN_EVENT } from "@/lib/fence/planSvg";
 import type { EstimateSeed } from "@/lib/estimateSeed";
 import { isEstimatorRole, isSalesRole } from "@/lib/orgContext";
 import { APPROVED_CO_SELECT } from "@/lib/contractTotal";
@@ -207,10 +208,21 @@ export async function loadManualBuilder({
     laborMarkupPct: org?.laborMarkupPct ?? 0,
   };
 
+  // The fence drawing (2026-09-27): a FENCE_PLAN row means the drawing card
+  // has something to show — the 3D and the plan come off the public routes.
+  let fenceDrawing = false;
+  if (proposalRow) {
+    try {
+      fenceDrawing = !!(await db.activityEvent.findFirst({ where: { proposalId: proposalRow.id, kind: FENCE_PLAN_EVENT }, select: { id: true } }));
+    } catch {
+      fenceDrawing = false;
+    }
+  }
   const proposal: ManualProposal | null = proposalRow
     ? {
         id: proposalRow.id,
         publicId: proposalRow.publicId,
+        fenceDrawing,
         ref: proposalRef(proposalRow.publicId),
         status: proposalRow.status,
         clientId: proposalRow.clientId,

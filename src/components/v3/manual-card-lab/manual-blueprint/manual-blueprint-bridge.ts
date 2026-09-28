@@ -147,6 +147,9 @@ export type ManualDefaults = {
 
 /** One proposal, already flattened for the builder. */
 export type ManualProposal = {
+  /** The proposal carries a fence traced on the map (a FENCE_PLAN row): the
+   *  drawing card shows it in 3D and on the lot (2026-09-27). */
+  fenceDrawing?: boolean;
   id: string;
   publicId: string;
   /** "PRO-4C1B" — the reference a client would ever be asked to quote. */

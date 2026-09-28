@@ -195,6 +195,9 @@ body:has(.jf-proposal-portal)::before { content: none; }
   background: #ffffff; padding: 28px 30px 26px; }
 /* The client's job in pictures — the fence's 3D and layout, the roof from the
    air with the measured outline drawn over it — framed like drawings (2026-09-23). */
+/* The fence in 3D (components/v3/fence-scene, 2026-09-27): the same frame as a still, full width, above them. */
+.jf-proposal-portal .pv-scene { margin: 18px 0 0; border: var(--border); border-radius: var(--radius); }
+.jf-proposal-portal .pv-scene figcaption { border-top: var(--border); }
 .jf-proposal-portal .pv-pics { display: grid; grid-template-columns: 1fr; gap: 14px; margin: 18px 0 0; }
 .jf-proposal-portal .pv-pics--two { grid-template-columns: 1fr 1fr; }
 .jf-proposal-portal .pv-site { margin: 0; border: var(--border); border-radius: var(--radius); overflow: hidden; background: #f2f0eb; }

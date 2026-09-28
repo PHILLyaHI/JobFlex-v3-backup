@@ -3534,3 +3534,13 @@
   gap: 10px;
   margin-top: 20px;
 }
+
+/* 04 — THE DRAWING (2026-09-27): the fence in 3D beside its plan on the lot;
+   stacked at handheld width. The figure component owns its inner frame. */
+.drawing { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+.drawingScene { margin: 0; border: 1.5px solid var(--hair, rgba(10, 10, 10, 0.55)); border-radius: 2px; }
+.drawingPlan { margin: 0; border: 1.5px solid var(--hair, rgba(10, 10, 10, 0.55)); border-radius: 2px; overflow: hidden; background: #f7f6f2; }
+.drawingPlan img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; }
+.drawingPlan figcaption { padding: 8px 12px; border-top: 1.5px solid var(--hair-soft, rgba(10, 10, 10, 0.3)); font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted, #6b6b6b); }
+.drawingNote { margin: 12px 0 0; font-size: 13px; line-height: 1.5; color: var(--muted, #6b6b6b); }
+@media (max-width: 900px) { .drawing { grid-template-columns: 1fr; } }

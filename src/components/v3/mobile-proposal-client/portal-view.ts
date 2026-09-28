@@ -69,12 +69,15 @@ export type PortalRating = {
  *  the fence's 3D snapshot or traced layout, the roof from the air or as a
  *  plan. `overlay` is the measured outline in a 0…1000 square over `src`. */
 export type PortalPicture = {
-  kind: "fence-3d" | "fence-plan" | "roof-photo" | "roof-plan";
+  /** fence-scene (2026-09-27): the fence stood up in 3D on the page; `src` is
+   *  the scene's JSON route and `poster` the studio's snapshot, when stored. */
+  kind: "fence-3d" | "fence-scene" | "fence-plan" | "roof-photo" | "roof-plan";
   src: string;
   alt: string;
   caption: string;
   facts: string | null;
   overlay: string[] | null;
+  poster?: string | null;
 };
 
 export type PortalView = {
