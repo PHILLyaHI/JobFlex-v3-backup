@@ -146,10 +146,25 @@ export type ManualDefaults = {
 };
 
 /** One proposal, already flattened for the builder. */
+export type CrewMediaItem = {
+  id: string;
+  url: string;
+  /** "Before" / "Progress" / "After". */
+  kind: string;
+  media: "photo" | "video";
+  /** "Sep 27" */
+  when: string;
+  by: string | null;
+  jobId: string;
+};
+
 export type ManualProposal = {
   /** The proposal carries a fence traced on the map (a FENCE_PLAN row): the
    *  drawing card shows it in 3D and on the lot (2026-09-27). */
   fenceDrawing?: boolean;
+  /** Photos and videos the crew shot on the proposal's job (2026-09-27):
+   *  the Files card lists them under "From the crew". */
+  media?: CrewMediaItem[];
   id: string;
   publicId: string;
   /** "PRO-4C1B" — the reference a client would ever be asked to quote. */

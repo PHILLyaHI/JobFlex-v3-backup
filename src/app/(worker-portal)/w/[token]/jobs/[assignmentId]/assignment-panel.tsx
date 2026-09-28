@@ -4,12 +4,27 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Sheet";
 import { safeHref } from "@/lib/safeHref";
-import { PhotoUploadDrawer, type PhotoDraft } from "@/components/jobs/PhotoUploadDrawer";
+import { MediaUploadSheet } from "@/components/jobs/MediaUploadSheet";
 import { JobStatusBadge } from "@/components/jobs/JobStatusBadge";
 import { toast } from "@/components/ui/Toast";
 import { money } from "@/lib/format";
 import { cn } from "@/lib/cn";
-import { Play, Check, Upload, Receipt, Camera, Plus } from "lucide-react";
+import { onSiteLine } from "@/lib/jobProgressShared";
+import { Play, Check, Upload, Receipt, Camera, Plus, Film, RotateCcw } from "lucide-react";
+
+export interface JobMediaItem {
+  id: string;
+  url: string;
+  kind: "BEFORE" | "PROGRESS" | "AFTER";
+  media: "photo" | "video";
+  caption?: string;
+}
+
+export interface JobProgressInfo {
+  day: number;
+  startedToday: boolean;
+  daysSoFar: number;
+}
 
 interface JobReceipt {
   id: string;
@@ -24,22 +39,30 @@ interface WorkerJobPanelProps {
   jobId: string;
   token: string;
   jobStatus: string;
-  photos: PhotoDraft[];
+  photos: JobMediaItem[];
   receipts: JobReceipt[];
+  /** Where the job stands for the buttons: the day, whether today is on the clock. */
+  progress: JobProgressInfo;
+  /** The company's file store is on: videos and big photos go straight to it. */
+  blobEnabled: boolean;
 }
 
 const CATEGORIES = ["Materials", "Fuel", "Tools", "Subcontractor", "Other"];
 
 // Everything interactive below the fold: move the job forward, log receipts,
-// and post site photos. Workers can only push status forward (start / complete);
-// reschedule and reassignment stay with the office.
-export function WorkerJobPanel({ jobId, token, jobStatus, photos, receipts }: WorkerJobPanelProps) {
+// and post photos and videos of the work. Workers can only push status
+// forward — Start work, Back on site for another day (2026-09-27), Mark
+// completed; reschedule and reassignment stay with the office. Each press
+// texts the owner and the manager (lib/jobProgress).
+export function WorkerJobPanel({ jobId, token, jobStatus, photos, receipts, progress, blobEnabled }: WorkerJobPanelProps) {
   const router = useRouter();
   const [busy, setBusy] = React.useState<string | null>(null);
   const [drawer, setDrawer] = React.useState(false);
   const [receiptOpen, setReceiptOpen] = React.useState(false);
+  const [askAfter, setAskAfter] = React.useState(false);
+  const afterCount = photos.filter((p) => p.kind === "AFTER").length;
 
-  async function updateJobStatus(newStatus: "IN_PROGRESS" | "COMPLETED") {
+  async function updateJobStatus(newStatus: "IN_PROGRESS" | "CONTINUE" | "COMPLETED") {
     try {
       setBusy(newStatus);
       const res = await fetch(`/api/worker/job/${jobId}/status`, {
@@ -47,8 +70,11 @@ export function WorkerJobPanel({ jobId, token, jobStatus, photos, receipts }: Wo
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, status: newStatus }),
       });
-      if (!res.ok) throw new Error(await res.text());
-      toast.success(newStatus === "COMPLETED" ? "Marked complete" : "Work started");
+      if (!res.ok) throw new Error((await res.json().catch(() => ({ error: "" })) as { error?: string }).error || "Couldn't update");
+      const r = (await res.json()) as { day?: number; what?: string };
+      toast.success(
+        newStatus === "COMPLETED" ? "Marked complete — the office knows" : r.what === "continued" ? `Back on site — day ${r.day ?? ""}`.trim() : "Work started — the office knows",
+      );
       router.refresh();
     } catch (err) {
       toast.error("Couldn't update", err instanceof Error ? err.message : undefined);
@@ -57,21 +83,12 @@ export function WorkerJobPanel({ jobId, token, jobStatus, photos, receipts }: Wo
     }
   }
 
-  async function uploadPhoto(file: File, kind: "BEFORE" | "PROGRESS" | "AFTER") {
-    const reader = new FileReader();
-    const dataUrl: string = await new Promise((resolve, reject) => {
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-    const res = await fetch("/api/worker/upload", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, jobId, dataUrl, filename: file.name, kind }),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    router.refresh();
+  /** Completing with no finished-work shot: ask for one first, never block. */
+  function complete() {
+    if (afterCount === 0 && photos.length >= 0) setAskAfter(true);
+    else void updateJobStatus("COMPLETED");
   }
+  const line = onSiteLine(progress, jobStatus);
 
   return (
     <>
@@ -81,7 +98,8 @@ export function WorkerJobPanel({ jobId, token, jobStatus, photos, receipts }: Wo
           <SectionLabel>Job status</SectionLabel>
           <JobStatusBadge status={jobStatus} />
         </div>
-        <div className="mt-3.5">
+        {line ? <p className="mt-2 text-[12.5px] font-medium text-[color:var(--ink-soft)]" data-onsite>{line}</p> : null}
+        <div className="mt-3.5 space-y-2.5">
           {jobStatus === "SCHEDULED" && (
             <Button
               size="lg"
@@ -89,17 +107,32 @@ export function WorkerJobPanel({ jobId, token, jobStatus, photos, receipts }: Wo
               loading={busy === "IN_PROGRESS"}
               onClick={() => updateJobStatus("IN_PROGRESS")}
               icon={<Play className="h-4 w-4" />}
+              data-progress="start"
             >
               Start work
+            </Button>
+          )}
+          {jobStatus === "IN_PROGRESS" && !progress.startedToday && (
+            <Button
+              size="lg"
+              className="w-full"
+              loading={busy === "CONTINUE"}
+              onClick={() => updateJobStatus("CONTINUE")}
+              icon={<RotateCcw className="h-4 w-4" />}
+              data-progress="continue"
+            >
+              Back on site today · day {progress.day}
             </Button>
           )}
           {jobStatus === "IN_PROGRESS" && (
             <Button
               size="lg"
+              variant={progress.startedToday ? "primary" : "outline"}
               className="w-full"
               loading={busy === "COMPLETED"}
-              onClick={() => updateJobStatus("COMPLETED")}
+              onClick={complete}
               icon={<Check className="h-4 w-4" />}
+              data-progress="complete"
             >
               Mark completed
             </Button>
@@ -174,11 +207,11 @@ export function WorkerJobPanel({ jobId, token, jobStatus, photos, receipts }: Wo
         )}
       </section>
 
-      {/* Site photos ────────────────────────────────────────────── */}
-      <section className="mt-4 paper-card p-5">
+      {/* Photos & videos of the work ───────────────────────────── */}
+      <section className="mt-4 paper-card p-5" data-media>
         <div className="flex items-center justify-between">
-          <SectionLabel>
-            Site photos{" "}
+          <SectionLabel icon={<Camera className="h-3.5 w-3.5" />}>
+            Photos &amp; videos{" "}
             <span className="tabular text-[color:var(--ink-faint)]">{photos.length}</span>
           </SectionLabel>
           <Button
@@ -186,22 +219,31 @@ export function WorkerJobPanel({ jobId, token, jobStatus, photos, receipts }: Wo
             variant="outline"
             onClick={() => setDrawer(true)}
             icon={<Upload className="h-3.5 w-3.5" />}
+            data-media-add
           >
-            Upload
+            Add
           </Button>
         </div>
         {photos.length === 0 ? (
-          <p className="mt-3 text-[13px] text-[color:var(--ink-muted)]">No photos yet.</p>
+          <p className="mt-3 text-[13px] leading-relaxed text-[color:var(--ink-muted)]">
+            Nothing yet. Shoot the work as it goes and when it&apos;s done — it lands on the job, in the proposal&apos;s files, and the office is told.
+          </p>
         ) : (
           <div className="mt-3 grid grid-cols-3 gap-2">
             {photos.map((p) => (
               <div
                 key={p.id}
                 className="relative aspect-square overflow-hidden rounded-[var(--r-sm)] hairline bg-black/[0.03]"
+                data-media-item={p.media}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.url} alt={p.kind} className="h-full w-full object-cover" />
-                <div className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.1em] text-white">
+                {p.media === "video" ? (
+                  <video src={p.url} className="h-full w-full object-cover" preload="metadata" muted playsInline controls />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.url} alt={p.kind} className="h-full w-full object-cover" />
+                )}
+                <div className="absolute left-1 top-1 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.1em] text-white">
+                  {p.media === "video" ? <Film className="h-2.5 w-2.5" /> : null}
                   {p.kind.toLowerCase()}
                 </div>
               </div>
@@ -220,12 +262,38 @@ export function WorkerJobPanel({ jobId, token, jobStatus, photos, receipts }: Wo
           router.refresh();
         }}
       />
-      <PhotoUploadDrawer
+      <MediaUploadSheet
         open={drawer}
-        onClose={() => setDrawer(false)}
-        existing={photos}
-        onUpload={uploadPhoto}
+        onClose={() => {
+          setDrawer(false);
+          router.refresh();
+        }}
+        jobId={jobId}
+        door={{ token }}
+        blobEnabled={blobEnabled}
+        defaultKind={jobStatus === "SCHEDULED" ? "BEFORE" : "AFTER"}
       />
+      {/* No finished-work shot yet: a nudge, not a wall. */}
+      <Sheet
+        open={askAfter}
+        onClose={() => setAskAfter(false)}
+        title="Add a photo of the finished work?"
+        description="The office and the client like to see it. You can still complete without one."
+        footer={
+          <div className="grid grid-cols-2 gap-2">
+            <Button size="lg" variant="outline" onClick={() => { setAskAfter(false); void updateJobStatus("COMPLETED"); }} data-complete-anyway>
+              Complete anyway
+            </Button>
+            <Button size="lg" onClick={() => { setAskAfter(false); setDrawer(true); }} icon={<Camera className="h-4 w-4" />} data-add-first>
+              Add photos first
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-[13.5px] leading-relaxed text-[color:var(--ink-soft)]">
+          Tag them <b>After</b> — they go to the job, the proposal&apos;s files, and the office is told.
+        </p>
+      </Sheet>
     </>
   );
 }

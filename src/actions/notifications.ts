@@ -57,6 +57,16 @@ function hrefFor(e: {
   clientId: string | null;
   leadId: string | null;
 }): string | null {
+  // The crew on site (2026-09-27): a start, a day back, a completion or
+  // photos from the field open the job itself.
+  if (e.kind && /^(STARTED|MEDIA|COMPLETED|JOB)$/.test(e.kind) && e.meta) {
+    try {
+      const jobId = (JSON.parse(e.meta) as { jobId?: string }).jobId;
+      if (typeof jobId === "string" && jobId) return `/dashboard/jobs/${jobId}`;
+    } catch {
+      /* fall through to the row's own links */
+    }
+  }
   // A stock notice, a purchase order (2026-09-20) or a service-plan notice
   // (2026-09-22) names its own page in meta.
   if (e.kind && /^(STOCK_|PURCHASE_ORDER_|PLAN_|SMS_)/.test(e.kind) && e.meta) {

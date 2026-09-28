@@ -22,6 +22,9 @@
 
 import { db } from "@/lib/db";
 import { FENCE_PLAN_EVENT } from "@/lib/fence/planSvg";
+import { mediaOf } from "@/lib/jobMediaShared";
+import { actorsOf } from "@/lib/activityLog";
+import type { CrewMediaItem } from "./manual-blueprint-bridge";
 import type { EstimateSeed } from "@/lib/estimateSeed";
 import { isEstimatorRole, isSalesRole } from "@/lib/orgContext";
 import { APPROVED_CO_SELECT } from "@/lib/contractTotal";
@@ -211,6 +214,38 @@ export async function loadManualBuilder({
   // The fence drawing (2026-09-27): a FENCE_PLAN row means the drawing card
   // has something to show — the 3D and the plan come off the public routes.
   let fenceDrawing = false;
+  // What the crew shot on this proposal's job (2026-09-27): the newest 24
+  // files, with who added each from the trail rows that name them.
+  let media: CrewMediaItem[] = [];
+  if (proposalRow) {
+    try {
+      const [rows, events, actors] = await Promise.all([
+        db.jobPhoto.findMany({ where: { job: { proposalId: proposalRow.id, organizationId } }, orderBy: { createdAt: "desc" }, take: 24, select: { id: true, url: true, kind: true, analysis: true, createdAt: true, jobId: true } }),
+        db.activityEvent.findMany({ where: { organizationId, kind: "PHOTO", proposalId: proposalRow.id }, orderBy: { createdAt: "desc" }, take: 100, select: { actorId: true, meta: true } }),
+        actorsOf(organizationId),
+      ]);
+      const by = new Map<string, string>();
+      for (const e of events) {
+        try {
+          const m = JSON.parse(e.meta ?? "{}") as { photoId?: string };
+          if (m.photoId && e.actorId && !by.has(m.photoId)) by.set(m.photoId, actors.get(e.actorId)?.name ?? "Former member");
+        } catch {
+          /* a row without readable meta */
+        }
+      }
+      media = rows.map((r) => ({
+        id: r.id,
+        url: r.url,
+        kind: r.kind ? r.kind.charAt(0) + r.kind.slice(1).toLowerCase() : "Photo",
+        media: mediaOf(r).media,
+        when: r.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        by: by.get(r.id) ?? null,
+        jobId: r.jobId,
+      }));
+    } catch {
+      media = [];
+    }
+  }
   if (proposalRow) {
     try {
       fenceDrawing = !!(await db.activityEvent.findFirst({ where: { proposalId: proposalRow.id, kind: FENCE_PLAN_EVENT }, select: { id: true } }));
@@ -223,6 +258,7 @@ export async function loadManualBuilder({
         id: proposalRow.id,
         publicId: proposalRow.publicId,
         fenceDrawing,
+        media,
         ref: proposalRef(proposalRow.publicId),
         status: proposalRow.status,
         clientId: proposalRow.clientId,

@@ -37,7 +37,8 @@ import { parsePaymentSettings } from "@/lib/settings";
 import { resolveSchedule, fromMinor } from "@/lib/paymentSchedule";
 import { resolveEmailRecipients, sendToMembersByPref, sendToUserByPref } from "@/lib/notificationPrefs";
 import { textOffice } from "@/lib/sms/send";
-import { acceptedLine, dayLabel, leadLine, leadOfferLine, paymentLine, workerRespondedLine } from "@/lib/sms/format";
+import { acceptedLine, dayLabel, jobBackLine, jobCompletedLine, jobMediaLine, jobStartedLine, leadLine, leadOfferLine, paymentLine, workerRespondedLine } from "@/lib/sms/format";
+import type { ProgressWhat } from "@/lib/jobProgressShared";
 import { textAppointmentAssigned, textAssignmentCreated } from "@/lib/sms/crew";
 import { textClientProposalSent } from "@/lib/sms/clients";
 import { ActivityKind } from "@/lib/prismaEnums";
@@ -1387,4 +1388,83 @@ export async function notifyPaymentIssue(input: {
     console.warn("[notifyPaymentIssue] email failed", err),
   );
   return { skipped: false as const };
+}
+
+// ── the crew on site (2026-09-27) ──────────────────────────────────────
+
+/**
+ * Work started, a crew back for another day, or the job done: one line to
+ * the owner and the manager by text (their Text cell for "Crew on site" /
+ * "Job completed", quiet hours honoured), never to the crew member who
+ * pressed the button. The bell already has the STARTED / COMPLETED row.
+ */
+export async function notifyJobProgress(jobId: string, actor: { userId: string; name: string }, what: ProgressWhat, day: number) {
+  const job = await db.job.findUnique({ where: { id: jobId }, select: { id: true, title: true, organizationId: true } });
+  if (!job) return { skipped: true as const };
+  const appUrl = await appBaseUrl();
+  const link = `${appUrl}/dashboard/jobs/${job.id}`;
+  const line =
+    what === "completed"
+      ? jobCompletedLine(actor.name, job.title, day, link)
+      : what === "continued"
+        ? jobBackLine(actor.name, job.title, day, link)
+        : jobStartedLine(actor.name, job.title, link);
+  const r = await textOffice(job.organizationId, what === "completed" ? "job-completed" : "job-started", line, { excludeUserIds: [actor.userId] });
+  return { skipped: false as const, ...r };
+}
+
+/** How long a run of uploads counts as one batch for the office. */
+const MEDIA_BATCH_MS = 20 * 60_000;
+
+/**
+ * Photos or a video came in from the field. The first file of a batch — one
+ * crew member, one job, twenty minutes — puts a MEDIA row on the bell and a
+ * text on the office phones; the rest of the batch adds to the same count
+ * (the job page and the trail carry every file). A crew that shoots thirty
+ * pictures is not thirty texts.
+ */
+export async function notifyJobMedia(jobId: string, actor: { userId: string; name: string }, media: "photo" | "video") {
+  const job = await db.job.findUnique({ where: { id: jobId }, select: { id: true, title: true, organizationId: true, proposalId: true, clientId: true } });
+  if (!job) return { skipped: true as const };
+  const since = new Date(Date.now() - MEDIA_BATCH_MS);
+  const recent = await db.activityEvent.findFirst({
+    where: { organizationId: job.organizationId, kind: "MEDIA", actorId: actor.userId, createdAt: { gte: since }, meta: { contains: `"jobId":"${job.id}"` } },
+    select: { id: true },
+  });
+  if (recent) return { skipped: true as const, reason: "batched" };
+  // What the batch has so far — the files this member added to the job in the window.
+  const rows = await db.activityEvent.findMany({
+    where: { organizationId: job.organizationId, kind: "PHOTO", actorId: actor.userId, createdAt: { gte: since }, meta: { contains: `"jobId":"${job.id}"` } },
+    select: { meta: true },
+  });
+  let photos = 0;
+  let videos = 0;
+  for (const r of rows) {
+    try {
+      const m = JSON.parse(r.meta ?? "{}") as { media?: string };
+      if (m.media === "video") videos++;
+      else photos++;
+    } catch {
+      photos++;
+    }
+  }
+  if (!photos && !videos) {
+    if (media === "video") videos = 1;
+    else photos = 1;
+  }
+  const appUrl = await appBaseUrl();
+  const link = `${appUrl}/dashboard/jobs/${job.id}`;
+  await db.activityEvent.create({
+    data: {
+      organizationId: job.organizationId,
+      actorId: actor.userId,
+      proposalId: job.proposalId,
+      clientId: job.clientId,
+      kind: "MEDIA",
+      summary: `${actor.name} is adding ${videos && !photos ? "video" : "photos"} of ${job.title}`,
+      meta: JSON.stringify({ jobId: job.id, photos, videos }),
+    },
+  });
+  const r = await textOffice(job.organizationId, "job-photos", jobMediaLine(actor.name, job.title, photos, videos, link), { excludeUserIds: [actor.userId] });
+  return { skipped: false as const, ...r };
 }

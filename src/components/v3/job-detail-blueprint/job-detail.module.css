@@ -350,8 +350,11 @@
 /* The donor's box was the drawing hatch alone — there was no photo to put in
    it. A real JobPhoto fills it and the hatch stays as the backing, so a broken
    or still-loading image reads as the donor's plate rather than as a hole. */
-:global(.jf-blueprint .content) .jd-ph-img img { position: absolute; inset: 0;
+:global(.jf-blueprint .content) .jd-ph-img img, :global(.jf-blueprint .content) .jd-ph-img video { position: absolute; inset: 0;
   width: 100%; height: 100%; object-fit: cover; display: block; }
+:global(.jf-blueprint .content) .jd-ph-img video { background: #0a0a0a; }
+/* The crew's days on site under the status buttons (2026-09-27). */
+:global(.jf-blueprint .content) .jd-onsite { margin-top: 8px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 :global(.jf-blueprint .content) .jd-ph-k { position: absolute; left: 7px; bottom: 7px; padding: 2px 8px;
   background: var(--ink); color: var(--paper); font-family: var(--font-mono);
   font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }

@@ -31,7 +31,8 @@
 
 import { useCallback, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { updateJob, createJobEvent, setJobProgress } from "@/actions/jobs";
+import { updateJob, createJobEvent, setJobProgress, continueJobDay } from "@/actions/jobs";
+import { uploadJobMedia, type UploadDoor } from "@/lib/media/uploadJobMedia";
 import { assignWorker, unassignAssignment } from "@/actions/workers";
 import { setAssignmentPaid, setAssignmentPay } from "@/actions/jobPay";
 import { loadJobMaterials, returnJobMaterials } from "@/actions/inventory";
@@ -39,12 +40,9 @@ import { uploadJobPhoto } from "@/actions/jobMedia";
 import { sendChangeOrder, markChangeOrderApproved } from "@/actions/changeOrders";
 import { KEY_TO_STATUS, type JdBooking, type StatusKey } from "./job-detail-data";
 
-/** Photos travel to the action as a base64 data URL, so the encoded body is
- *  ~4/3 of the file. The server action body limit is 8MB (next.config.ts), and
- *  5MB of JPEG is already a bigger photo than any jobsite record needs. */
-const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
-
 export type PhotoKind = "BEFORE" | "PROGRESS" | "AFTER";
+
+const SESSION_DOOR: UploadDoor = { session: true };
 
 /** Which control is mid-flight, so exactly that one can say so. */
 export type JobBusy =
@@ -57,6 +55,7 @@ export type JobBusy =
   | { kind: "load"; id: string }
   | { kind: "return"; id: string }
   | { kind: "upload" }
+  | { kind: "continue" }
   | { kind: "change"; id: string };
 
 export function useJobDetailActions(
@@ -66,6 +65,9 @@ export function useJobDetailActions(
   // Worker edition: the status picker writes through setJobProgress (the
   // crew-gated, forward-only action) instead of the manager-only updateJob.
   workerViewer = false,
+  // The company's file store is on (the loader read the server's env): a
+  // video or a big photo goes straight from the browser to the store.
+  blobEnabled = false,
 ) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -205,23 +207,29 @@ export function useJobDetailActions(
     [jobId, run],
   );
 
+  // A photo or a video of the work (2026-09-27, lib/media/uploadJobMedia):
+  // shrunk in the browser; through the store when it is on, else inline.
   const upload = useCallback(
-    async (file: File, kind: PhotoKind) => {
-      if (file.size > MAX_PHOTO_BYTES) {
-        setError(`${file.name} is over 5 MB — shrink it or shoot at a lower resolution.`);
-        return false;
-      }
-      let dataUrl: string;
-      try {
-        dataUrl = await readAsDataUrl(file);
-      } catch {
-        setError("Could not read that file.");
-        return false;
-      }
-      return run({ kind: "upload" }, "Could not upload that photo.", async () => {
-        await uploadJobPhoto(jobId, dataUrl, file.name, kind);
-      });
-    },
+    (file: File, kind: PhotoKind) =>
+      run({ kind: "upload" }, "Could not upload that file.", async () => {
+        await uploadJobMedia({
+          jobId,
+          door: SESSION_DOOR,
+          file,
+          kind,
+          blobEnabled,
+          inlineUpload: (dataUrl, filename, k) => uploadJobPhoto(jobId, dataUrl, filename, k),
+        });
+      }),
+    [blobEnabled, jobId, run],
+  );
+
+  // "Back on site" — a new day on a job that runs more than one (2026-09-27).
+  const backOnSite = useCallback(
+    () =>
+      run({ kind: "continue" }, "Could not mark the day.", async () => {
+        await continueJobDay(jobId);
+      }),
     [jobId, run],
   );
 
@@ -260,16 +268,8 @@ export function useJobDetailActions(
     loadMaterials,
     returnMaterials,
     upload,
+    backOnSite,
     sendChange,
     approveChange,
   };
-}
-
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
 }

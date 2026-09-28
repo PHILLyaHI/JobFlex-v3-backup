@@ -170,6 +170,8 @@ export type JdPhoto = {
   url: string;
   /** "Before" / "Progress" / "After", title-cased for the plate. */
   kind: string;
+  /** A picture, or a video the crew shot (2026-09-27, lib/jobMediaShared). */
+  media: "photo" | "video";
   caption: string;
   /** Who added it, when a trail row names this photo (meta.photoId); else null. */
   by: JdWho | null;
@@ -280,6 +282,11 @@ export type JobDetailRecord = {
   changes: JdChange[];
   photos: JdPhoto[];
   expenses: JdExpense[];
+  /** Where the job stands for the crew's buttons (lib/jobProgress, 2026-09-27):
+   *  the day a press lands on, whether today is on the clock, days so far. */
+  progress: { day: number; startedToday: boolean; daysSoFar: number };
+  /** The company's file store is on: videos and big photos go straight to it. */
+  blobEnabled: boolean;
   /** Who did what on this job, newest first, at most 40 rows — the org's
    *  ActivityEvents whose meta names this job or whose proposal is the job's.
    *  A field worker's record carries no EXPENSE / PAY rows (they name money). */

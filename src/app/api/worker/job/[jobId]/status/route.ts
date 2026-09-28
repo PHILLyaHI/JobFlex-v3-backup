@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { touchWorkerActivity } from "@/lib/workerActivity";
-import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+import { recordJobProgress } from "@/lib/jobProgress";
 
 // Worker-portal job status update. Token-gated like the assignment route:
-// the supplied token must belong to a worker assigned to this job. Workers may
-// only move work forward through the active lifecycle (start / complete) — they
-// cannot reschedule, reassign, or cancel.
+// the supplied token must belong to a worker assigned to this job. Workers
+// may only move work forward: start it, mark a new day on site (CONTINUE,
+// 2026-09-27) or complete it — they cannot reschedule, reassign, or cancel.
+// The rule itself lives in lib/jobProgress, shared with the dashboard door,
+// and texts the owner and the manager after the response.
 export async function POST(
   req: Request,
   ctx: { params: Promise<{ jobId: string }> },
@@ -33,47 +35,21 @@ export async function POST(
   });
   if (!assignment) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const ALLOWED = ["IN_PROGRESS", "COMPLETED"];
-  if (!ALLOWED.includes(body.status)) {
-    return NextResponse.json({ error: "Invalid status" }, { status: 400 });
-  }
+  const WHAT = { IN_PROGRESS: "started", CONTINUE: "continued", COMPLETED: "completed" } as const;
+  const what = WHAT[body.status as keyof typeof WHAT];
+  if (!what) return NextResponse.json({ error: "Invalid status" }, { status: 400 });
 
-  const current = await db.job.findFirst({
-    where: { id: jobId, organizationId: worker.organizationId },
-    select: { status: true },
+  const r = await recordJobProgress({
+    organizationId: worker.organizationId,
+    jobId,
+    actor: { userId: worker.userId, name: worker.displayName },
+    what,
+    via: "worker-portal",
   });
-  if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (current.status === "CANCELED" || current.status === "COMPLETED") {
-    return NextResponse.json({ error: "Job is closed" }, { status: 409 });
-  }
-
-  const job = await db.job.update({ where: { id: jobId }, data: { status: body.status } });
-  // Same promotion updateJob does: the ACCEPTED proposal behind a finished
-  // job reads COMPLETED, no matter which door completed the work.
-  if (body.status === "COMPLETED" && job.proposalId) {
-    await db.proposal.updateMany({
-      where: { id: job.proposalId, organizationId: job.organizationId, status: "ACCEPTED" },
-      data: { status: "COMPLETED" },
-    });
-  }
-  // And the client's review link goes out — this door used to skip it.
-  if (body.status === "COMPLETED") {
-    try {
-      const { createReviewRequestInternal } = await import("@/lib/reviewRequestInternal");
-      await createReviewRequestInternal(jobId, worker.userId);
-    } catch (err) {
-      console.warn("[worker job status] review request failed:", err);
-    }
+  if (!r.ok) {
+    const status = r.code === "not-found" ? 404 : 409;
+    return NextResponse.json({ error: r.error }, { status });
   }
   await touchWorkerActivity(worker.id);
-  await logActivity({
-    organizationId: worker.organizationId,
-    actorId: worker.userId,
-    kind: TRAIL_KINDS.JOB,
-    summary: body.status === "COMPLETED" ? `Completed ${job.title}` : `Started ${job.title}`,
-    proposalId: job.proposalId,
-    clientId: job.clientId,
-    meta: { jobId, status: body.status, via: "worker-portal" },
-  });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, status: r.status, day: r.day, what: r.what });
 }

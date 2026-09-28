@@ -257,18 +257,36 @@ async function loadSmsSettings(organizationId: string, smsPhone: string | null, 
     canManage: ["OWNER", "ADMIN", "MANAGER"].includes(role),
     clientsOn: true,
     ownNumber: null,
+    roster: [],
   };
   try {
     const monthStart = new Date();
     monthStart.setUTCDate(1);
     monthStart.setUTCHours(0, 0, 0, 0);
     const orgSms = await db.organization.findUnique({ where: { id: organizationId }, select: { smsClientsOn: true, smsFromNumber: true } });
-    const [extras, stops, monthCount] = await Promise.all([
+    const [extras, stops, monthCount, members] = await Promise.all([
       db.notificationPhone.findMany({ where: { organizationId }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, phone: true, active: true } }),
       db.smsOptOut.findMany({ where: { phone: { in: [smsPhone ?? "", ...(await db.notificationPhone.findMany({ where: { organizationId }, select: { phone: true } })).map((x) => x.phone)] } }, select: { phone: true } }),
       db.smsMessage.count({ where: { organizationId, direction: "OUT", status: { in: ["SENT", "DELIVERED", "QUEUED"] }, createdAt: { gte: monthStart } } }),
+      // Who gets texted (2026-09-27): the office members, each with their
+      // mobile's state and the three group switches read off their matrix.
+      db.membership.findMany({
+        where: { organizationId, role: { in: ["OWNER", "ADMIN", "MANAGER"] } },
+        orderBy: { createdAt: "asc" },
+        select: { role: true, user: { select: { id: true, name: true, email: true, smsPhone: true, smsVerifiedAt: true, notificationPrefsJson: true } } },
+      }),
     ]);
+    const { parseNotificationPrefs, smsGroupsOf } = await import("@/lib/notificationPrefsShared");
     const stopped = new Set(stops.map((x) => x.phone));
+    const roster = members
+      .filter((m) => m.user)
+      .map((m) => ({
+        userId: m.user!.id,
+        name: m.user!.name?.trim() || m.user!.email || "Member",
+        role: m.role,
+        phone: m.user!.smsPhone && m.user!.smsVerifiedAt ? prettyPhone(m.user!.smsPhone) : null,
+        groups: smsGroupsOf(parseNotificationPrefs(m.user!.notificationPrefsJson)),
+      }));
     return {
       ...base,
       stopped: Boolean(smsPhone && stopped.has(smsPhone)),
@@ -276,6 +294,7 @@ async function loadSmsSettings(organizationId: string, smsPhone: string | null, 
       monthCount,
       clientsOn: orgSms?.smsClientsOn ?? true,
       ownNumber: orgSms?.smsFromNumber ? prettyPhone(orgSms.smsFromNumber) : null,
+      roster,
     };
   } catch {
     return base;

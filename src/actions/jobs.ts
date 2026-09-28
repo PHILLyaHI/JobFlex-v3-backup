@@ -9,6 +9,7 @@ import { assertLinksInOrg } from "@/lib/assertLinksInOrg";
 import { afterResponse } from "@/lib/server-events";
 import { crewOfJobEvent, textAssignmentCreated, textCrewCancelled, textJobEventMoved } from "@/lib/sms/crew";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+import { recordJobProgress } from "@/lib/jobProgress";
 
 const when = (d: Date) =>
   d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -285,7 +286,7 @@ export async function updateJob(id: string, raw: Partial<z.infer<typeof jobInput
 export async function setJobProgress(id: string, status: "IN_PROGRESS" | "COMPLETED") {
   if (status !== "IN_PROGRESS" && status !== "COMPLETED") throw new Error("Invalid status");
   const { organizationId, user, role } = await requireOrg();
-  const existing = await db.job.findUnique({ where: { id } });
+  const existing = await db.job.findUnique({ where: { id }, select: { organizationId: true } });
   if (!existing || existing.organizationId !== organizationId) throw new Error("Not found");
   if (isWorkerRole(role)) {
     const assigned = await db.jobAssignment.findFirst({
@@ -294,44 +295,51 @@ export async function setJobProgress(id: string, status: "IN_PROGRESS" | "COMPLE
     });
     if (!assigned) throw new Error("You can only update jobs assigned to you");
   }
-  await db.job.update({ where: { id }, data: { status } });
-
-  if (status === "COMPLETED" && existing.status !== "COMPLETED") {
-    // Same finish-line side effects as updateJob: the ACCEPTED proposal reads
-    // COMPLETED, the review request goes out, the office bell hears about it.
-    if (existing.proposalId) {
-      await db.proposal.updateMany({
-        where: { id: existing.proposalId, organizationId, status: "ACCEPTED" },
-        data: { status: "COMPLETED" },
-      });
-      revalidatePath("/dashboard/proposals");
-    }
-    try {
-      const { createReviewRequestInternal } = await import("@/lib/reviewRequestInternal");
-      await createReviewRequestInternal(id, user.id);
-    } catch (err) {
-      console.warn("[setJobProgress] review request failed:", err);
-    }
-  }
-  await db.activityEvent.create({
-    data: {
-      organizationId,
-      actorId: user.id,
-      proposalId: existing.proposalId ?? null,
-      clientId: existing.clientId ?? null,
-      kind: status === "COMPLETED" ? "COMPLETED" : "UPDATED",
-      summary:
-        status === "COMPLETED"
-          ? `Completed "${existing.title}"`
-          : `Started work on "${existing.title}"`,
-      meta: JSON.stringify({ jobId: id, status }),
-    },
+  // One rule for both doors (lib/jobProgress, 2026-09-27): the status, the
+  // day count, the trail row, the proposal promotion, the review request and
+  // the text to the owner and the manager.
+  const r = await recordJobProgress({
+    organizationId,
+    jobId: id,
+    actor: { userId: user.id, name: await actorName(user.id) },
+    what: status === "COMPLETED" ? "completed" : "started",
+    via: "dashboard",
   });
-  revalidatePath("/dashboard/jobs");
+  if (!r.ok) throw new Error(r.error);
   revalidatePath(`/dashboard/jobs/${id}`);
-  revalidatePath("/dashboard/calendar");
-  if (status === "COMPLETED") revalidatePath("/dashboard/reviews");
-  return { ok: true };
+  revalidatePath("/dashboard/jobs");
+  return { ok: true as const, day: r.day, what: r.what };
+}
+
+/**
+ * "Back on site" (2026-09-27): a crew member on a job that runs more than a
+ * day marks the new day. Crew-gated like setJobProgress; the office may
+ * press it too. Refused when today is already on the clock.
+ */
+export async function continueJobDay(id: string) {
+  const { organizationId, user, role } = await requireOrg();
+  const existing = await db.job.findUnique({ where: { id }, select: { organizationId: true } });
+  if (!existing || existing.organizationId !== organizationId) throw new Error("Not found");
+  if (isWorkerRole(role)) {
+    const assigned = await db.jobAssignment.findFirst({
+      where: { jobId: id, worker: { userId: user.id }, status: { not: "DECLINED" } },
+      select: { id: true },
+    });
+    if (!assigned) throw new Error("You can only update jobs assigned to you");
+  }
+  const r = await recordJobProgress({ organizationId, jobId: id, actor: { userId: user.id, name: await actorName(user.id) }, what: "continued", via: "dashboard" });
+  if (!r.ok) throw new Error(r.error);
+  revalidatePath(`/dashboard/jobs/${id}`);
+  return { ok: true as const, day: r.day };
+}
+
+/** The name the trail and the text call this member by: the crew profile's, else the account's. */
+async function actorName(userId: string): Promise<string> {
+  const [wp, u] = await Promise.all([
+    db.workerProfile.findUnique({ where: { userId }, select: { displayName: true } }),
+    db.user.findUnique({ where: { id: userId }, select: { name: true, email: true } }),
+  ]);
+  return wp?.displayName?.trim() || u?.name?.trim() || u?.email || "A member";
 }
 
 export async function createJobFromProposal(proposalId: string) {

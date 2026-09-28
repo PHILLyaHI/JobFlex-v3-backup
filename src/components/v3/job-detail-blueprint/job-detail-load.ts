@@ -21,6 +21,9 @@
 
 import { db } from "@/lib/db";
 import { isOwnerOrManager, isWorkerRole } from "@/lib/orgContext";
+import { jobProgressInfo } from "@/lib/jobProgress";
+import { mediaOf } from "@/lib/jobMediaShared";
+import { isBlobEnabled } from "@/lib/sdk/blob";
 import { contractTotal } from "@/lib/contractTotal";
 import { crewTotals, jobMoney } from "@/lib/jobCosting";
 import { isTradeId, pickList } from "@/lib/inventory";
@@ -417,6 +420,7 @@ export async function loadJobDetail(
     id: p.id,
     url: p.url,
     kind: p.kind ? p.kind.charAt(0) + p.kind.slice(1).toLowerCase() : "Photo",
+    media: mediaOf(p).media,
     caption: p.caption?.trim() || `Added ${day(p.createdAt)}`,
     by: trail.photoBy.get(p.id) ?? null,
   }));
@@ -469,6 +473,8 @@ export async function loadJobDetail(
     photos,
     expenses,
     trail: trail.rows,
+    progress: await jobProgressInfo(organizationId, job.id),
+    blobEnabled: isBlobEnabled(),
     money,
     pick,
     loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
@@ -563,6 +569,7 @@ async function loadWorkerScoped(
     id: p.id,
     url: p.url,
     kind: p.kind ? p.kind.charAt(0) + p.kind.slice(1).toLowerCase() : "Photo",
+    media: mediaOf(p).media,
     caption: p.caption?.trim() || `Added ${day(p.createdAt)}`,
     by: trail.photoBy.get(p.id) ?? null,
   }));
@@ -599,6 +606,8 @@ async function loadWorkerScoped(
     photos,
     expenses: [],
     trail: trail.rows,
+    progress: await jobProgressInfo(organizationId, job.id),
+    blobEnabled: isBlobEnabled(),
     money: null,
     pick: await pickFor(organizationId, job.proposal ? linkedTradeOf({ ...job.proposal, inventoryLinked: job.proposalId ? ((await inventoryLinkOf(organizationId, [job.proposalId])).get(job.proposalId) ?? null) : null }) : null, job.proposal?.lineItems ?? []),
     loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,

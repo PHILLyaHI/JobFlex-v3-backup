@@ -18,7 +18,9 @@ export type PrefKey =
   | "payment-received"
   | "change-order"
   | "job-scheduled"
+  | "job-started"
   | "job-completed"
+  | "job-photos"
   | "worker-responded"
   | "review-received"
   | "trade-reply";
@@ -47,7 +49,12 @@ export const PREF_EVENTS: readonly PrefEventMeta[] = [
   { key: "payment-received", name: "Payment received", sub: "A stage was paid — card, Square or recorded by hand", emailAvailable: true, smsAvailable: true, seed: [true, true, true] },
   { key: "change-order", name: "Change order answered", sub: "The client approved or declined it", emailAvailable: true, smsAvailable: true, seed: [true, true, true] },
   { key: "job-scheduled", name: "Job scheduled", sub: "A crew is booked for a date", emailAvailable: false, smsAvailable: false, seed: [true, false, false] },
-  { key: "job-completed", name: "Job completed", sub: "Crew marked the work done", emailAvailable: false, smsAvailable: false, seed: [true, false, false] },
+  // The crew on site (2026-09-27): the office hears when work starts, when a
+  // crew is back for another day, when it is done, and when photos or a
+  // video of the work come in — by text to the owner and the manager.
+  { key: "job-started", name: "Crew on site", sub: "Work started, or a crew back for another day", emailAvailable: false, smsAvailable: true, seed: [true, false, true] },
+  { key: "job-completed", name: "Job completed", sub: "Crew marked the work done", emailAvailable: false, smsAvailable: true, seed: [true, false, true] },
+  { key: "job-photos", name: "Photos & videos from the crew", sub: "How the job was done, as it comes in", emailAvailable: false, smsAvailable: true, seed: [true, false, true] },
   { key: "worker-responded", name: "Worker responded", sub: "Accepted or declined an assignment", emailAvailable: true, smsAvailable: true, seed: [true, true, false] },
   { key: "review-received", name: "Review received", sub: "A homeowner left a rating", emailAvailable: false, smsAvailable: false, seed: [true, false, false] },
   { key: "trade-reply", name: "Trade board reply", sub: "Someone answered your post", emailAvailable: true, smsAvailable: false, seed: [true, true, false] },
@@ -59,6 +66,23 @@ export type PrefCells = [inApp: boolean, email: boolean, sms: boolean];
 
 /** Texts that never wait for the morning: a lead waits for no one. */
 export const SMS_URGENT_KEYS: readonly PrefKey[] = ["lead-assigned"];
+
+/** The three switches the owner sets per office member in Settings → Texting
+ *  (2026-09-27): each one flips the Text cell of every event in its group. */
+export type SmsGroupKey = "crew" | "sales" | "money";
+export const SMS_GROUPS: readonly { key: SmsGroupKey; label: string; sub: string; keys: readonly PrefKey[] }[] = [
+  { key: "crew", label: "Crew on site", sub: "Started, back for another day, completed, photos and videos", keys: ["job-started", "job-completed", "job-photos", "worker-responded"] },
+  { key: "sales", label: "Sales & leads", sub: "A new lead, a proposal accepted or declined", keys: ["lead-assigned", "proposal-accepted", "proposal-declined"] },
+  { key: "money", label: "Money", sub: "A payment, a change order answered", keys: ["payment-received", "change-order"] },
+];
+/** Which groups a member's stored matrix has on: a group is on when any of
+ *  its texting events is (the seeds leave "proposal declined" off, and a
+ *  member who hears about leads and acceptances is on for Sales). */
+export function smsGroupsOf(prefs: { matrix: Record<PrefKey, PrefCells> }): Record<SmsGroupKey, boolean> {
+  const out = { crew: false, sales: false, money: false } as Record<SmsGroupKey, boolean>;
+  for (const g of SMS_GROUPS) out[g.key] = g.keys.some((k) => prefs.matrix[k]?.[2] === true);
+  return out;
+}
 
 export interface NotificationPrefs {
   matrix: Record<PrefKey, PrefCells>;
@@ -168,6 +192,10 @@ export function prefKeyForEvent(e: EventLike): PrefKey | null {
       return e.leadId ? "lead-assigned" : null;
     case "SCHEDULED":
       return "job-scheduled";
+    case "STARTED":
+      return "job-started";
+    case "MEDIA":
+      return "job-photos";
     case "COMPLETED":
       return "job-completed";
     case "TRADE_CONTACT":

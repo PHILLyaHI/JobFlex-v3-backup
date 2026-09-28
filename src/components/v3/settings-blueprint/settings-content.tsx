@@ -41,6 +41,7 @@ import { PaymentsPane } from "./panes/payments-pane";
 import { BillingPane } from "./panes/billing-pane";
 import { IntegrationsPane } from "./panes/integrations-pane";
 import { NotificationsPane } from "./panes/notifications-pane";
+import { TextingPane } from "./panes/texting-pane";
 
 const PANE_BODIES: Record<RailKey, ComponentType<PaneProps>> = {
   account: AccountPane,
@@ -48,6 +49,7 @@ const PANE_BODIES: Record<RailKey, ComponentType<PaneProps>> = {
   billing: BillingPane,
   integrations: IntegrationsPane,
   notifications: NotificationsPane,
+  texting: TextingPane,
 };
 
 const RAIL_KEYS = new Set<string>(RAIL_ITEMS.map((r) => r.key));

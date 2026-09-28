@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { touchWorkerActivity } from "@/lib/workerActivity";
-import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
+import { authorizeJobMedia, recordJobMedia } from "@/lib/jobMedia";
 
 const KINDS = ["BEFORE", "PROGRESS", "AFTER"] as const;
 // Vercel caps request bodies at 4.5 MB; base64 inflates ~4/3, so this is the
@@ -34,18 +33,8 @@ export async function POST(req: Request) {
     : "BEFORE";
 
   // Token-gate: the worker (via token) must be assigned to this job.
-  const worker = await db.workerProfile.findUnique({ where: { token: body.token } });
-  if (!worker) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const assigned = await db.jobAssignment.findFirst({
-    where: {
-      jobId: body.jobId,
-      workerId: worker.id,
-      job: { organizationId: worker.organizationId },
-      status: { not: "DECLINED" },
-    },
-  });
-  if (!assigned) return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  const caller = await authorizeJobMedia(body.jobId, body.token);
+  if (!caller) return NextResponse.json({ error: "Not authorized" }, { status: 403 });
 
   const buf = Buffer.from(match[2], "base64");
   if (buf.byteLength > MAX_IMAGE_BYTES) {
@@ -64,26 +53,8 @@ export async function POST(req: Request) {
     url = res.url;
   }
 
-  const photo = await db.jobPhoto.create({
-    data: {
-      jobId: body.jobId,
-      url,
-      kind,
-    },
-  });
-  await touchWorkerActivity(worker.id);
-  const job = await db.job.findUnique({
-    where: { id: body.jobId },
-    select: { title: true, proposalId: true, clientId: true },
-  });
-  await logActivity({
-    organizationId: worker.organizationId,
-    actorId: worker.userId,
-    kind: TRAIL_KINDS.PHOTO,
-    summary: `Uploaded a ${kind.toLowerCase()} photo to ${job?.title ?? "a job"}`,
-    proposalId: job?.proposalId,
-    clientId: job?.clientId,
-    meta: { jobId: body.jobId, photoId: photo.id, kind, via: "worker-portal" },
-  });
+  // The row, the trail and the office's note — the same record as the store path.
+  const photo = await recordJobMedia({ caller, url, kind, meta: { media: "photo", contentType: match[1].toLowerCase(), bytes: buf.byteLength }, via: "worker-portal" });
+  if (caller.workerId) await touchWorkerActivity(caller.workerId);
   return NextResponse.json({ id: photo.id, url });
 }

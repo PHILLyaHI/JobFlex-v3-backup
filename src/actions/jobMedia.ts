@@ -7,6 +7,7 @@ import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+import { authorizeJobMedia, recordJobMedia } from "@/lib/jobMedia";
 
 const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
@@ -167,7 +168,8 @@ export async function deleteJobPhoto(photoId: string) {
 /**
  * uploadJobPhoto — called from the client with a data URL (base64).
  * If Vercel Blob is configured, push to Blob; otherwise persist the data URL inline
- * so the demo keeps working with zero external dependencies.
+ * so the demo keeps working with zero external dependencies. (A video, and a
+ * photo through the store, go straight from the browser: api/jobs/media.)
  */
 export async function uploadJobPhoto(
   jobId: string,
@@ -175,7 +177,8 @@ export async function uploadJobPhoto(
   filename: string,
   kind: "BEFORE" | "PROGRESS" | "AFTER" = "BEFORE",
 ) {
-  const { organizationId, user, job } = await requireJobPhotoAccess(jobId);
+  const caller = await authorizeJobMedia(jobId, null);
+  if (!caller) throw new Error("You can only add photos to jobs assigned to you");
 
   // Inline image only — anything else would be stored verbatim as the photo
   // URL and rendered by every viewer of the job.
@@ -183,8 +186,8 @@ export async function uploadJobPhoto(
   if (!match || !IMAGE_DATA_URL.test(dataUrl)) throw new Error("Photo must be an image");
 
   let url = dataUrl;
+  const buf = Buffer.from(match[2], "base64");
   if (isBlobEnabled()) {
-    const buf = Buffer.from(match[2], "base64");
     const res = await uploadBlob(
       `jobs/${jobId}/${Date.now()}-${safeFilename(filename, "photo")}`,
       buf,
@@ -192,19 +195,8 @@ export async function uploadJobPhoto(
     );
     url = res.url;
   }
-
-  const photo = await db.jobPhoto.create({
-    data: { jobId, url, kind },
-  });
+  // The row, the trail row that names it, and the office's note (lib/jobMedia).
+  const photo = await recordJobMedia({ caller, url, kind, meta: { media: "photo", contentType: match[1].toLowerCase(), bytes: buf.byteLength, name: filename }, via: "dashboard" });
   revalidatePath(`/dashboard/jobs/${jobId}`);
-  await logActivity({
-    organizationId,
-    actorId: user.id,
-    kind: TRAIL_KINDS.PHOTO,
-    summary: `Uploaded a ${kind.toLowerCase()} photo to ${job.title}`,
-    proposalId: job.proposalId,
-    clientId: job.clientId,
-    meta: { jobId, photoId: photo.id, kind },
-  });
   return { id: photo.id, url };
 }

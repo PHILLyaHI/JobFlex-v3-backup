@@ -65,9 +65,11 @@ import Link from "next/link";
 import s from "./job-detail.module.css";
 import { useJobDetailMotion } from "./job-detail-motion";
 import { useJobDetailActions, type PhotoKind } from "./use-job-detail-actions";
+import { onSiteLine } from "@/lib/jobProgressShared";
+import { MEDIA_ACCEPT } from "@/lib/jobMediaShared";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { useRouter } from "next/navigation";
-import { JD_ASSIGN, ST, STATUS_BUTTONS, fmt, type JobDetailRecord } from "./job-detail-data";
+import { JD_ASSIGN, ST, STATUS_BUTTONS, fmt, type JobDetailRecord, KEY_TO_STATUS } from "./job-detail-data";
 import { Who } from "@/components/v3/who/who";
 
 /** Hashed module class, or the literal name when the module has none — which is
@@ -113,6 +115,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
     record.booking,
     record.status,
     record.viewer === "worker",
+    record.blobEnabled,
   );
 
   useJobDetailMotion(s.btn);
@@ -227,7 +230,24 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                         {label}
                       </button>
                     ))}
+                    {/* Back on site (2026-09-27): a new day on a job that runs
+                        more than one — offered once per day, to the crew and
+                        the office alike; the owner and the manager are texted. */}
+                    {a.status === "prog" && !record.progress.startedToday && (
+                      <button
+                        className={cx("jd-sbtn", "jd-sbtn--prog")}
+                        type="button"
+                        disabled={a.busy?.kind === "continue"}
+                        onClick={() => a.backOnSite()}
+                        data-progress="continue"
+                      >
+                        {a.busy?.kind === "continue" ? "Marking…" : `Back on site · day ${record.progress.day}`}
+                      </button>
+                    )}
                   </div>
+                  {onSiteLine(record.progress, KEY_TO_STATUS[a.status]) ? (
+                    <div className={cx("jd-onsite")} data-onsite>{onSiteLine(record.progress, KEY_TO_STATUS[a.status])}</div>
+                  ) : null}
                 </div>
               )}
 
@@ -753,9 +773,13 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                       {/* A JobPhoto url is a data: URL whenever Vercel Blob is
                           not configured (uploadJobPhoto's fallback), which
                           next/image cannot take — so a plain img. */}
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={p.url} alt={p.caption} />
-                      <span className={cx("jd-ph-k")}>{p.kind}</span>
+                      {p.media === "video" ? (
+                        <video src={p.url} preload="metadata" controls playsInline data-media="video" />
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.url} alt={p.caption} />
+                      )}
+                      <span className={cx("jd-ph-k")}>{p.media === "video" ? `Video · ${p.kind}` : p.kind}</span>
                     </div>
                     <div className={cx("jd-ph-c")}>
                       {p.caption}
@@ -789,7 +813,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                   ref={fileRef}
                   className={cx("jd-file")}
                   type="file"
-                  accept="image/*"
+                  accept={record.blobEnabled ? MEDIA_ACCEPT : "image/*"}
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     // Cleared before the await: the same file picked twice in a

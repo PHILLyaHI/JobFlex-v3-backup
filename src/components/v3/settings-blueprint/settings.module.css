@@ -839,3 +839,21 @@
 .bp :global(.content .autosave[data-state="saved"]) { color: var(--success); }
 .bp :global(.content .autosave[data-state="error"]) { font-family: var(--font-sans, var(--font)); font-size: 13px; letter-spacing: 0;
   text-transform: none; color: var(--danger); }
+
+/* Texting → Who gets texted (2026-09-27): the office roster, one row per
+   member, a switch per group; on a narrow pane the switches wrap under
+   the name. */
+.bp :global(.content .tx-roster) { border: var(--border); border-radius: var(--radius); background: #fff; margin: 0 0 10px; }
+.bp :global(.content .tx-roster-h), .bp :global(.content .tx-roster-r) { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 118px); align-items: center; gap: 8px; padding: 9px 12px; }
+.bp :global(.content .tx-roster-h) { border-bottom: 1.5px solid var(--hair, rgba(10,10,10,.55)); font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .tx-roster-h span:not(:first-child)), .bp :global(.content .tx-roster-c) { text-align: center; justify-self: center; }
+.bp :global(.content .tx-roster-r + .tx-roster-r) { border-top: 1px solid var(--hair, rgba(10,10,10,.12)); }
+.bp :global(.content .tx-roster-who) { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; font-size: 13px; }
+.bp :global(.content .tx-roster-who b) { font-weight: 700; }
+.bp :global(.content .tx-roster-who em) { font-style: normal; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+@media (max-width: 720px) {
+  .bp :global(.content .tx-roster-h) { display: none; }
+  .bp :global(.content .tx-roster-r) { grid-template-columns: 1fr; }
+  .bp :global(.content .tx-roster-c) { display: flex; justify-content: space-between; justify-self: stretch; }
+  .bp :global(.content .tx-roster-c::before) { content: attr(data-label); font-size: 12.5px; color: var(--ink-soft); }
+}

@@ -124,3 +124,9 @@ tick); `src/actions/sms.ts` (verify, extras, test); hooks in
 - Invoice-paid and payment-due texts to clients.
 - Billing the overage and the own-number cost through Stripe automatically
   (today: counts in the table, the note in the card).
+
+## The crew on site (2026-09-27)
+
+Work started, a crew back for another day, the job done, and the first
+photos or video of a batch text the owner and the manager; the owner sets
+who gets which texts on Settings → Texting. See `docs/crew-onsite.md`.

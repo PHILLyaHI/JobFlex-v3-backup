@@ -18,6 +18,9 @@ import {
   Users,
 } from "lucide-react";
 import { inventoryLinkOf, pickForProposal } from "@/lib/inventoryPick";
+import { jobProgressInfo } from "@/lib/jobProgress";
+import { mediaOf } from "@/lib/jobMediaShared";
+import { isBlobEnabled } from "@/lib/sdk/blob";
 
 export default async function WorkerAssignmentPage({
   params,
@@ -74,6 +77,8 @@ export default async function WorkerAssignmentPage({
   const address =
     [job.client?.address, job.client?.city, job.client?.state].filter(Boolean).join(", ") || null;
   const scope = job.scopeOfWork ?? job.notes ?? null;
+  // Where the job stands for the crew's buttons (lib/jobProgress, 2026-09-27).
+  const progress = await jobProgressInfo(worker.organizationId, job.id);
 
   return (
     <>
@@ -231,8 +236,11 @@ export default async function WorkerAssignmentPage({
           id: p.id,
           url: p.url,
           kind: (p.kind as "BEFORE" | "PROGRESS" | "AFTER") ?? "BEFORE",
+          media: mediaOf(p).media,
           caption: p.caption ?? undefined,
         }))}
+        progress={progress}
+        blobEnabled={isBlobEnabled()}
         receipts={job.expenses.map((e) => ({
           id: e.id,
           category: e.category,

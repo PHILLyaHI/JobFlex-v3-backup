@@ -18,6 +18,9 @@ import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { testText, verifyText, welcomeText } from "@/lib/sms/format";
 import { sendText } from "@/lib/sms/send";
 import { claimNumberFor, releaseNumberFor } from "@/lib/sms/numbers";
+import { SMS_GROUPS, parseNotificationPrefs, type PrefCells, type PrefKey, type SmsGroupKey } from "@/lib/notificationPrefsShared";
+
+const OFFICE_ROLES = ["OWNER", "ADMIN", "MANAGER"];
 
 const SETTINGS_PATH = "/dashboard/settings";
 const CODE_TTL_MS = 10 * 60_000;
@@ -171,4 +174,37 @@ export async function releaseOwnNumber(): Promise<SmsActionResult> {
   const r = await releaseNumberFor(organizationId);
   revalidatePath(SETTINGS_PATH);
   return r.ok ? { ok: true, note: `${pretty(r.number)} released. Texts go from the JobFlex number again.` } : { ok: false, error: r.error };
+}
+
+/**
+ * Settings → Texting → Who gets texted (2026-09-27, the owner's roster, the
+ * way SmartSpace Pro does it): a manager switches a member's texts on or
+ * off by group — crew on site, sales & leads, money. It writes the Text cell
+ * of every event in the group on THAT member's stored matrix, which is what
+ * `textOffice` already reads, so nothing else changes. Only office members
+ * are on the roster: the office is who the texts are for.
+ */
+export async function setMemberTextGroups(userId: string, groups: Partial<Record<SmsGroupKey, boolean>>): Promise<SmsActionResult> {
+  const { organizationId } = await requireManager();
+  const m = await db.membership.findUnique({
+    where: { userId_organizationId: { userId, organizationId } },
+    select: { role: true, user: { select: { id: true, notificationPrefsJson: true, smsPhone: true, smsVerifiedAt: true } } },
+  });
+  if (!m || !m.user) return { ok: false, error: "Not on the team." };
+  if (!OFFICE_ROLES.includes(m.role)) return { ok: false, error: "Only the office is texted about the company's events." };
+  const prefs = parseNotificationPrefs(m.user.notificationPrefsJson);
+  const matrix = { ...prefs.matrix } as Record<PrefKey, PrefCells>;
+  for (const g of SMS_GROUPS) {
+    const on = groups[g.key];
+    if (typeof on !== "boolean") continue;
+    for (const key of g.keys) {
+      const cells = matrix[key] ?? [true, false, false];
+      matrix[key] = [cells[0], cells[1], on];
+    }
+  }
+  await db.user.update({ where: { id: m.user.id }, data: { notificationPrefsJson: JSON.stringify({ ...prefs, matrix }) } });
+  revalidatePath(SETTINGS_PATH);
+  const anyOn = SMS_GROUPS.some((g) => g.keys.some((k) => matrix[k]?.[2]));
+  const noPhone = !m.user.smsPhone || !m.user.smsVerifiedAt;
+  return { ok: true, note: anyOn && noPhone ? "Saved — they will get texts once they verify a mobile (Settings → Texting on their account)." : "Saved." };
 }

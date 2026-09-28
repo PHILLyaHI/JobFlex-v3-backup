@@ -124,7 +124,8 @@ export type RailKey =
   | 'payments'
   | 'billing'
   | 'integrations'
-  | 'notifications';
+  | 'notifications'
+  | 'texting';
 
 export interface RailItem {
   readonly key: RailKey;
@@ -140,6 +141,9 @@ export const RAIL_ITEMS: readonly RailItem[] = [
   { key: 'billing', label: 'Billing', icon: 'i-receipt' },
   { key: 'integrations', label: 'Integrations', icon: 'i-globe' },
   { key: 'notifications', label: 'Notifications', icon: 'i-bell' },
+  // Texting (2026-09-27): who gets texted, your mobile, the company's
+  // numbers — the owner's own place for it, the way SmartSpace Pro has one.
+  { key: 'texting', label: 'Texting', icon: 'i-phone' },
 ];
 
 export const RAIL_NEW_BADGE = 'NEW' as const;
@@ -737,7 +741,9 @@ export const NOTIFICATION_ICONS: Record<PrefKey, IconName> = {
   'payment-received': 'i-bank',
   'change-order': 'i-pen',
   'job-scheduled': 'i-cal',
+  'job-started': 'i-clock',
   'job-completed': 'i-box',
+  'job-photos': 'i-file',
   'worker-responded': 'i-hardhat',
   'review-received': 'i-thumb',
   'trade-reply': 'i-board',
@@ -842,7 +848,29 @@ export interface SmsSettingsData {
   clientsOn: boolean;
   /** The company's own number, pretty, when it claimed one. */
   ownNumber: string | null;
+  /** Who gets texted (2026-09-27): the office members with their verified
+   *  mobile (pretty, or null) and the three group switches. */
+  roster: SmsRosterRow[];
 }
+
+export interface SmsRosterRow {
+  userId: string;
+  name: string;
+  role: string;
+  phone: string | null;
+  groups: Record<'crew' | 'sales' | 'money', boolean>;
+}
+
+export const TEXTING_COPY = {
+  rosterTitle: 'Who gets texted',
+  rosterSub: 'The office, by event. A member is texted only after they verify a mobile on their own account.',
+  noMobile: 'no mobile yet',
+  mineTitle: 'Your mobile',
+  mineSub: 'The number your texts go to. A six-digit code proves it is yours.',
+  companyTitle: 'The company',
+  companySub: 'Texts to clients, the number they see, and the numbers outside the team that hear about everything.',
+  notConfiguredLong: 'Texting is not switched on for this server yet. Everything here is kept and nothing is sent until it is.',
+} as const;
 
 export const TEST_RESULT_COPY = {
   sent: 'Sent to the bell and to your email.',

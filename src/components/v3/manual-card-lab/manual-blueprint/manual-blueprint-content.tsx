@@ -927,6 +927,32 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
             onAdd={addFiles}
             onRemove={(id) => edit((d) => ({ ...d, files: d.files.filter((f) => f.id !== id) }))}
           />
+          {/* FROM THE CREW (2026-09-27): the photos and videos shot on this
+              proposal's job, as they come in from the phones. Each opens the
+              job's Photos tab; nothing here is staged or removed — the job
+              page is where the office manages them. */}
+          {data.proposal?.media && data.proposal.media.length > 0 ? (
+            <div className={styles.crewMedia} data-crew-media>
+              <div className={styles.crewMediaH}>
+                <b>From the crew</b>
+                <span>{data.proposal.media.length} {data.proposal.media.length === 1 ? "file" : "files"} on the job</span>
+              </div>
+              <div className={styles.crewMediaGrid}>
+                {data.proposal.media.map((m) => (
+                  <a key={m.id} className={styles.crewMediaItem} href={`/dashboard/jobs/${m.jobId}`} title={`${m.kind} · ${m.when}${m.by ? ` · ${m.by}` : ""}`} data-media={m.media}>
+                    {m.media === "video" ? (
+                      <video src={m.url} preload="metadata" muted playsInline />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element -- a data: URL or the store; next/image adds nothing
+                      <img src={m.url} alt={m.kind} loading="lazy" />
+                    )}
+                    <span className={styles.crewMediaTag}>{m.media === "video" ? "video · " : ""}{m.kind}</span>
+                    <span className={styles.crewMediaBy}>{m.when}{m.by ? ` · ${m.by}` : ""}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </Card>
 
         {/* 10 ------------------------------------------------------- */}

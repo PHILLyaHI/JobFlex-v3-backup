@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import { Badge } from "@/components/ui/Badge";
 import { WorkerInviteContent } from "@/components/v3/worker-invite-blueprint/worker-invite-content";
 import { JobResponseCard } from "./job-response";
+import { TodayActions } from "./today-actions";
+import { jobProgressInfo } from "@/lib/jobProgress";
 import { longDate, shortDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { ChevronRight } from "lucide-react";
@@ -112,7 +114,7 @@ export default async function WorkerDashboard({
         Hi, {worker.displayName.split(" ")[0]}.
       </h1>
       <p className="mt-2 text-[14px] text-[color:var(--ink-muted)]">
-        Confirm the jobs sent your way, get directions, and log receipts — no login needed.
+        Confirm the jobs sent your way, get directions, start and finish the work, and send photos of it — no login needed.
       </p>
 
       {needsResponse.length > 0 && (
@@ -148,9 +150,20 @@ export default async function WorkerDashboard({
           </p>
         ) : (
           <div className="space-y-2.5">
-            {today.map((a) => (
-              <AssignmentCard key={a.id} a={a} token={token} />
-            ))}
+            {await Promise.all(
+              today.map(async (a) => (
+                <AssignmentCard
+                  key={a.id}
+                  a={a}
+                  token={token}
+                  actions={
+                    a.status !== "PENDING" && a.job.status !== "CANCELED" ? (
+                      <TodayActions token={token} jobId={a.job.id} status={a.job.status} progress={await jobProgressInfo(worker.organizationId, a.job.id)} />
+                    ) : null
+                  }
+                />
+              )),
+            )}
           </div>
         )}
       </section>
@@ -194,6 +207,7 @@ function AssignmentCard({
   a,
   token,
   muted,
+  actions,
 }: {
   a: {
     id: string;
@@ -207,6 +221,8 @@ function AssignmentCard({
   };
   token: string;
   muted?: boolean;
+  /** Today's one-tap Start / Back on site / Complete row (2026-09-27). */
+  actions?: React.ReactNode;
 }) {
   const start = a.job.startsAt;
   const [mon, day] = start ? shortDate(start).split(" ") : ["—", ""];
@@ -214,7 +230,7 @@ function AssignmentCard({
     <Link
       href={`/w/${token}/jobs/${a.id}` as Route}
       className={cn(
-        "group flex items-center gap-3.5 paper-card p-3.5 transition-all hover:shadow-pop hover:-translate-y-0.5",
+        "group flex flex-wrap items-center gap-3.5 paper-card p-3.5 transition-all hover:shadow-pop hover:-translate-y-0.5",
         muted && "opacity-70",
       )}
     >
@@ -252,6 +268,7 @@ function AssignmentCard({
         {a.status.toLowerCase()}
       </Badge>
       <ChevronRight className="h-4 w-4 shrink-0 text-[color:var(--ink-faint)]" />
+      {actions ? <div className="basis-full">{actions}</div> : null}
     </Link>
   );
 }

@@ -70,6 +70,9 @@ import {
   setStripeAchEnabled,
 } from "@/actions/paymentConnections";
 import { sendTestNotification } from "@/actions/notifications";
+import { addNotificationPhone, confirmPhoneVerification, removeNotificationPhone, removeSmsPhone, sendTestText, setMemberTextGroups, startPhoneVerification } from "@/actions/sms";
+import { SMS_GROUPS } from "@/lib/notificationPrefsShared";
+import { roleLabel } from "@/lib/team/who";
 import type { PaymentConnectionStatusView } from "@/lib/payments/connections";
 import type {
   Badge,
@@ -144,6 +147,8 @@ import {
   squareConnLine,
   staxConnLine,
   stripeConnLine,
+  TEXTING_COPY,
+  TEXTS_COPY,
 } from "@/components/v3/settings-blueprint/settings-data";
 import { ProviderKeyForm } from "@/components/v3/settings-blueprint/panes/stripe-key-form";
 import { MobileSettingsSprite } from "./sprite";
@@ -1157,6 +1162,147 @@ function NotificationsPane({ data }: { data: SettingsData }) {
   );
 }
 
+/* ══════════════════════════════ TEXTING ══════════════════════════════ */
+
+// Texting (2026-09-27) — the handheld build of the desk pane: who gets
+// texted (the office roster, a switch per group), your own mobile, the extra
+// numbers. Same actions as the desk; the copy comes from settings-data.
+function TextingPane({ data }: { data: SettingsData }) {
+  const sms = data.notifications.sms;
+  const router = useRouter();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState("");
+  const [rows, setRows] = useState(sms.roster);
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [stage, setStage] = useState<"idle" | "code">("idle");
+  const [extraName, setExtraName] = useState("");
+  const [extraPhone, setExtraPhone] = useState("");
+  async function run(label: string, fn: () => Promise<{ ok: true; note?: string } | { ok: false; error: string }>, after?: () => void) {
+    setBusy(label);
+    setNote("");
+    setErr("");
+    try {
+      const r = await fn();
+      if (r.ok) {
+        setNote(r.note ?? "Done.");
+        after?.();
+        router.refresh();
+      } else setErr(r.error);
+    } catch (e) {
+      setErr(actionError(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+  return (
+    <>
+      {!sms.configured ? <div className="mst-note">{TEXTING_COPY.notConfiguredLong}</div> : null}
+      {sms.canManage ? (
+        <section className="mst-card" data-roster>
+          <CardHeader card={{ title: TEXTING_COPY.rosterTitle, sub: TEXTING_COPY.rosterSub }} />
+          <div className="mst-cardB">
+            {rows.map((r) => (
+              <div key={r.userId} className="mst-grp" data-member={r.userId}>
+                <div className="mst-trow">
+                  <span className="mst-trowB">
+                    <span className="mst-trowN">{r.name}</span>
+                    <span className="mst-trowD">{roleLabel(r.role)} · {r.phone ?? TEXTING_COPY.noMobile}</span>
+                  </span>
+                </div>
+                {SMS_GROUPS.map((g) => (
+                  <div className="mst-trow" key={g.key}>
+                    <span className="mst-trowB">
+                      <span className="mst-trowN">{g.label}</span>
+                      <span className="mst-trowD">{g.sub}</span>
+                    </span>
+                    <Toggle
+                      checked={r.groups[g.key]}
+                      onChange={(next) => {
+                        setRows((rs) => rs.map((x) => (x.userId === r.userId ? { ...x, groups: { ...x.groups, [g.key]: next } } : x)));
+                        void run(`${r.userId}:${g.key}`, () => setMemberTextGroups(r.userId, { [g.key]: next }));
+                      }}
+                      ariaLabel={`${g.label} texts to ${r.name}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            ))}
+            {rows.length === 0 ? <div className="mst-note">Nobody in the office yet.</div> : null}
+          </div>
+        </section>
+      ) : null}
+      <section className="mst-card">
+        <CardHeader card={{ title: TEXTING_COPY.mineTitle, sub: TEXTING_COPY.mineSub }} />
+        <div className="mst-cardB">
+          {sms.phone && stage === "idle" ? (
+            <>
+              <div className="mst-trow">
+                <span className="mst-trowB">
+                  <span className="mst-trowN">{sms.phone}</span>
+                  <span className="mst-trowD">{sms.stopped ? TEXTS_COPY.stopped : TEXTS_COPY.verified}</span>
+                </span>
+              </div>
+              <button className="mst-btn mst-btn--ghost mst-btn--wide" type="button" disabled={busy !== null} onClick={() => run("test", sendTestText)}>
+                {TEXTS_COPY.testText}
+              </button>
+              <button className="mst-btn mst-btn--ghost mst-btn--wide" type="button" disabled={busy !== null} onClick={() => run("remove", removeSmsPhone)}>
+                {TEXTS_COPY.remove}
+              </button>
+            </>
+          ) : (
+            <>
+              {!sms.phone ? <div className="mst-note">{TEXTS_COPY.noPhone}</div> : null}
+              <Field label={TEXTS_COPY.mobileLabel} value={phone} placeholder={TEXTS_COPY.mobilePlaceholder} onChange={setPhone} disabled={stage === "code"} inputMode="tel" />
+              {stage === "code" ? <Field label={TEXTS_COPY.codeLabel} value={code} placeholder="482913" onChange={(v) => setCode(v.replace(/\D/g, "").slice(0, 6))} inputMode="tel" /> : null}
+              {stage === "idle" ? (
+                <button className="mst-btn mst-btn--primary mst-btn--wide" type="button" disabled={busy !== null || phone.replace(/\D/g, "").length < 10} onClick={() => run("code", () => startPhoneVerification(phone), () => setStage("code"))}>
+                  {busy === "code" ? "Sending…" : TEXTS_COPY.sendCode}
+                </button>
+              ) : (
+                <>
+                  <button className="mst-btn mst-btn--primary mst-btn--wide" type="button" disabled={busy !== null || code.length !== 6} onClick={() => run("verify", () => confirmPhoneVerification(code), () => { setStage("idle"); setCode(""); setPhone(""); })}>
+                    {busy === "verify" ? "Checking…" : TEXTS_COPY.verify}
+                  </button>
+                  <button className="mst-btn mst-btn--ghost mst-btn--wide" type="button" disabled={busy !== null} onClick={() => { setStage("idle"); setCode(""); }}>
+                    {TEXTS_COPY.change}
+                  </button>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </section>
+      {sms.canManage ? (
+        <section className="mst-card">
+          <CardHeader card={{ title: TEXTS_COPY.extrasTitle, sub: TEXTS_COPY.extrasSub }} />
+          <div className="mst-cardB">
+            {sms.extras.map((x) => (
+              <div className="mst-trow" key={x.id}>
+                <span className="mst-trowB">
+                  <span className="mst-trowN">{x.name}</span>
+                  <span className="mst-trowD">{x.phone}{x.stopped ? ` · ${TEXTS_COPY.stopped}` : !x.active ? " · paused" : ""}</span>
+                </span>
+                <button className="mst-btn mst-btn--ghost" type="button" disabled={busy !== null} onClick={() => run("drop", () => removeNotificationPhone(x.id))}>
+                  {TEXTS_COPY.removeExtra}
+                </button>
+              </div>
+            ))}
+            <Field label={TEXTS_COPY.extraName} value={extraName} placeholder="Dispatch" onChange={setExtraName} />
+            <Field label={TEXTS_COPY.extraPhone} value={extraPhone} placeholder={TEXTS_COPY.mobilePlaceholder} onChange={setExtraPhone} inputMode="tel" />
+            <button className="mst-btn mst-btn--ghost mst-btn--wide" type="button" disabled={busy !== null || !extraName.trim() || extraPhone.replace(/\D/g, "").length < 10} onClick={() => run("add", () => addNotificationPhone({ name: extraName, phone: extraPhone }), () => { setExtraName(""); setExtraPhone(""); })}>
+              {busy === "add" ? "Adding…" : TEXTS_COPY.addExtra}
+            </button>
+          </div>
+        </section>
+      ) : null}
+      {note ? <div className="mst-note" role="status">{note}</div> : null}
+      {err ? <div className="mst-note" role="alert">{err}</div> : null}
+    </>
+  );
+}
+
 /* ═════════════════════════════ THE PAGE ═════════════════════════════ */
 
 const RAIL_KEYS = new Set<string>(RAIL_ITEMS.map((r) => r.key));
@@ -1168,6 +1314,7 @@ const RAIL_ICON: Record<RailKey, IconName> = {
   billing: "i-receipt",
   integrations: "i-globe",
   notifications: "i-bell",
+  texting: "i-phone",
 };
 
 export function MobileSettings({
@@ -1400,6 +1547,9 @@ export function MobileSettings({
             </div>
             <div className={active === "notifications" ? "mst-pane is-on" : "mst-pane"}>
               <NotificationsPane data={data} />
+            </div>
+            <div className={active === "texting" ? "mst-pane is-on" : "mst-pane"}>
+              <TextingPane data={data} />
             </div>
           </div>
 

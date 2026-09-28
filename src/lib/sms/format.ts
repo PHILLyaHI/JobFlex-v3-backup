@@ -183,6 +183,22 @@ export function changeOrderLine(client: string, approved: boolean, number: numbe
 export function workerRespondedLine(worker: string, accepted: boolean, job: string, when: string | null): string {
   return `${worker} ${accepted ? "accepted" : "declined"} "${clip(job, 50)}"${when ? ` on ${when}` : ""}.`;
 }
+// the crew on site (2026-09-27) — to the owner and the manager
+export function jobStartedLine(worker: string, job: string, link: string | null): string {
+  return `${worker} started "${clip(job, 50)}".${link ? ` ${link}` : ""}`;
+}
+export function jobBackLine(worker: string, job: string, day: number, link: string | null): string {
+  return `${worker} is back on "${clip(job, 50)}" — day ${day}.${link ? ` ${link}` : ""}`;
+}
+export function jobCompletedLine(worker: string, job: string, days: number, link: string | null): string {
+  return `${worker} marked "${clip(job, 50)}" complete${days > 1 ? ` after ${days} days` : ""}.${link ? ` Photos: ${link}` : ""}`;
+}
+export function jobMediaLine(worker: string, job: string, photos: number, videos: number, link: string | null): string {
+  const bits: string[] = [];
+  if (photos) bits.push(`${photos} ${photos === 1 ? "photo" : "photos"}`);
+  if (videos) bits.push(`${videos} ${videos === 1 ? "video" : "videos"}`);
+  return `${worker} added ${bits.join(" and ") || "pictures"} of "${clip(job, 50)}".${link ? ` See them: ${link}` : ""}`;
+}
 export function replyForwardLine(who: string, what: string, body: string): string {
   return `${who}${what ? ` (${what})` : ""} texted: "${clip(body, 200)}"`;
 }
