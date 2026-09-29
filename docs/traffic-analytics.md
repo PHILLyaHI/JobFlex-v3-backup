@@ -108,3 +108,42 @@ References: [PostHog attribution](https://posthog.com/docs/data/utm-segmentation
 [Query API](https://posthog.com/docs/api/queries),
 [Experiments](https://posthog.com/docs/experiments),
 [Search Console API](https://developers.google.com/webmaster-tools/v1/searchanalytics/query).
+
+## Live now (2026-09-28)
+
+Owner: "add to the statistics at admin a way to look at live users coming
+from advertisements and looking at the app; if they sign up, a different
+colour — make it smart."
+
+A plate at the top of `/admin/traffic`, `LivePanel`
+(`components/v3/admin-traffic/live-panel.tsx`), fed by `getLiveTraffic`
+(`actions/trafficDashboard`) → `lib/traffic-server fetchLiveEvents` → ONE
+HogQL query (`lib/traffic-live buildLiveQuery`): the last 30 minutes of
+`$pageview` and the registration / checkout / signup events. The server
+keeps the rows for 25 s for every admin; the panel polls every 45 s while
+its tab is in front and refreshes when the tab comes back — the query
+endpoint's budget is small and shared with the reports.
+
+`lib/traffic-live shapeLive` (pure) turns the rows into one line per
+PostHog person: **where from** (the first event of the latest visit:
+`utm_*` first — a paid medium is an *ad*, an ad platform tagged with no
+medium is counted as one and says so, `medium=social` is a post; then the
+referrer — a Facebook / Instagram / TikTok / YouTube referrer with no tag is
+"untagged, most likely an ad", search engines are search, the rest referral
+or Direct), **what they are looking at** (the last pageview, pages this
+visit, the trail), **how far they got** (browsing → on the sign-up form → at
+checkout → **signed up**; a person on `/dashboard…` is a *member*), and
+whether they are **on the site now** (an event in the last 5 minutes) or
+just left (dimmer, up to 30 minutes). A verified signup is tied to the
+organization the database created within 15 minutes of it with the same
+campaign tag (`freshSignups`, last 24 h, the first member as the owner),
+so the green line names the company and the email; a row nobody matched
+is listed under the table with its own source. KPIs: on the site now, of
+those from ads, signing up, signed up in the window, members in the app,
+and today's signups with how many came from ads (database).
+
+Localhost visits are hidden unless "Include localhost" is on; "From ads
+only" keeps the ad visitors and the signups. In a non-production build
+`POSTHOG_HOST` may point at `http://127.0.0.1:<port>` so a stand can answer
+as PostHog (`scripts/qa/traffic-live.check.ts` covers the shaping; the
+stand walk `$SP/live/walk.js` the page).

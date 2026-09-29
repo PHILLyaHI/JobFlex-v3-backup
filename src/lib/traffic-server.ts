@@ -1,5 +1,35 @@
 import type { StageVisitor, StageVisitorsReport, TrafficBreakdown, TrafficFilters, TrafficReport, TrafficTotals } from "./traffic-contract";
 import { buildStageVisitorsQuery, buildTrafficQueries, funnelStages, shiftDate } from "./traffic-query";
+import { buildLiveQuery, liveEventFromRow, shapeLive, type FreshSignup, type LiveEvent, type LiveReport } from "./traffic-live";
+
+/** The last half hour of events, one PostHog query, shared by every admin
+ *  looking for LIVE_CACHE_MS — the query endpoint's budget is small, and the
+ *  panel polls. */
+const LIVE_CACHE_MS = 25_000;
+let liveEvents: { at: number; promise: Promise<LiveEvent[]> } | null = null;
+export async function fetchLiveEvents(): Promise<LiveEvent[]> {
+  const now = Date.now();
+  if (liveEvents && now - liveEvents.at < LIVE_CACHE_MS) return liveEvents.promise;
+  const promise = runTrafficQuery(buildLiveQuery(), "live").then((rows) => rows.map(liveEventFromRow).filter((e): e is LiveEvent => !!e));
+  promise.catch(() => { if (liveEvents?.promise === promise) liveEvents = null; });
+  liveEvents = { at: now, promise };
+  return promise;
+}
+
+/** The live report: the window's visitors shaped with the day's signups. */
+export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDevelopment?: boolean } = {}): Promise<LiveReport> {
+  const fetchedAt = new Date().toISOString();
+  try {
+    if (!posthogApiConfig()) return { ...shapeLive([], signups, Date.now(), opts), status: "disabled", message: "Connect a PostHog personal key with query:read and a numeric project ID.", fetchedAt };
+  } catch (err) { return { ...shapeLive([], signups, Date.now(), opts), status: "error", message: (err as Error).message, fetchedAt }; }
+  try {
+    const events = await fetchLiveEvents();
+    return { ...shapeLive(events, signups, Date.now(), opts), status: "ok", fetchedAt };
+  } catch (err) {
+    const msg = err instanceof Error && err.name === "TimeoutError" ? "PostHog took too long. Try again shortly." : err instanceof Error ? err.message : "Live view unavailable.";
+    return { ...shapeLive([], signups, Date.now(), opts), status: "error", message: msg, fetchedAt };
+  }
+}
 
 type Rows = unknown[][];
 const cache = new Map<string, { at: number; promise: Promise<TrafficReport> }>();
@@ -8,7 +38,9 @@ const totals = (r: unknown[]): TrafficTotals => ({ visitors: numeric(r[0]), newV
 
 export function posthogApiConfig() {
   const host = (process.env.POSTHOG_HOST || "https://us.posthog.com").trim().replace(/\/+$/, "");
-  if (!["https://us.posthog.com", "https://eu.posthog.com"].includes(host)) throw new Error("POSTHOG_HOST must be https://us.posthog.com or https://eu.posthog.com.");
+  // A local stand may answer as PostHog (a fixture server) — never production.
+  const local = process.env.NODE_ENV !== "production" && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(host);
+  if (!local && !["https://us.posthog.com", "https://eu.posthog.com"].includes(host)) throw new Error("POSTHOG_HOST must be https://us.posthog.com or https://eu.posthog.com.");
   const key = process.env.POSTHOG_PERSONAL_API_KEY;
   const id = process.env.POSTHOG_PROJECT_ID?.trim();
   if (!key || !id) return null;

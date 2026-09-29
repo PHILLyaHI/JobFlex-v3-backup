@@ -8,6 +8,8 @@ import { dateInZone, shiftDate } from "@/lib/traffic-query";
 import { Sheet, useMdl } from "@/components/v3/admin-influencers/admin-ui";
 import { TrafficChart } from "./traffic-chart";
 import { TrafficDatePicker } from "./traffic-date-picker";
+import { LivePanel } from "./live-panel";
+import type { LiveReport } from "@/lib/traffic-live";
 import s from "./traffic.module.css";
 
 const n = (v: number | null | undefined) => v == null ? "--" : v.toLocaleString("en-US");
@@ -63,7 +65,7 @@ function exportReport(report: TrafficReport) {
 const signupDimensions = { landingIndustry: "Landing trade", signupVariant: "Landing variant", utmSource: "utm_source", utmMedium: "utm_medium", utmCampaign: "utm_campaign", utmContent: "utm_content" } as const;
 type SignupDimension = keyof typeof signupDimensions;
 
-export function AdminTrafficContent({ data, signups: initialSignups = null }: { data: TrafficReport; signups?: SignupAttribution | null }) {
+export function AdminTrafficContent({ data, signups: initialSignups = null, live = null }: { data: TrafficReport; signups?: SignupAttribution | null; live?: LiveReport | null }) {
   const [report, setReport] = useState(data);
   const [signups, setSignups] = useState(initialSignups);
   const [signupDimension, setSignupDimension] = useState<SignupDimension>("landingIndustry");
@@ -143,6 +145,9 @@ export function AdminTrafficContent({ data, signups: initialSignups = null }: { 
     </header>
 
     <div className={s.lifetime}><span>All-time visitors <strong>{n(report.lifetime)}</strong></span><span>Today <strong>{n(report.today)}</strong></span><span className={s.scope}>Site-wide / selected host &amp; environment</span><span className={s.updated}>{pending ? "Querying PostHog..." : `Updated ${new Date(report.fetchedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: filters.timezone })}`}</span></div>
+
+    {/* Who is on the site this minute, where from, how far they got (2026-09-28). */}
+    {live && <LivePanel initial={live} timezone={filters.timezone}/>}
 
     <section className={s.filterPanel} aria-label="Traffic filters">
       <div className={s.rangeRow}><div className={s.filterCaption}><SlidersHorizontal size={16}/><span>Report scope</span></div><TrafficDatePicker from={draft.from} to={draft.to} timezone={draft.timezone} onChange={(from, to) => update({ from, to })}/>

@@ -345,3 +345,73 @@
 @media (prefers-reduced-motion:reduce) {
   :global(.jf-blueprint) .root > :is(.header,.filterPanel,.metrics,.card), :global(.jf-blueprint) .spin, :global(.jf-blueprint) .drillSkeleton span { animation:none; }
 }
+
+/* ── Live now (2026-09-28) ──────────────────────────────────────
+   One plate above the filters: who is on the site this minute. Each line
+   is coloured by how far the visitor got — paper for a look around, amber
+   on the sign-up form, blueprint at checkout, GREEN once the account exists,
+   grey for a member already in the app — and carries an AD mark when the
+   visit came off an advertisement. Nothing pulses but the one dot. */
+:global(.jf-blueprint) .live { --live-ok: var(--success); --live-ok-soft: var(--success-soft); --live-warm: var(--warning); --live-warm-soft: var(--warning-soft); --live-ad: #7c3aed; border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); }
+:global(.jf-blueprint) .liveHead { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:18px 24px; border-bottom:1px solid var(--traffic-line); flex-wrap:wrap; }
+:global(.jf-blueprint) .liveTitle { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+:global(.jf-blueprint) .liveTitle .micro { margin:0; }
+:global(.jf-blueprint) .livePulse { width:10px; height:10px; background:var(--muted-faint); border:1px solid var(--ink); flex-shrink:0; }
+:global(.jf-blueprint) .livePulse[data-on="true"] { background:var(--live-ok); animation:livePulse 1.6s ease-in-out infinite; }
+@keyframes livePulse { 0%,100% { box-shadow:0 0 0 0 rgba(58,125,68,.45); } 50% { box-shadow:0 0 0 6px rgba(58,125,68,0); } }
+:global(.jf-blueprint) .liveTools { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+:global(.jf-blueprint) .liveToggle { display:flex; align-items:center; gap:8px; min-height:44px; font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); cursor:pointer; }
+:global(.jf-blueprint) .liveToggle input { width:18px; height:18px; accent-color:var(--blueprint); margin:0; }
+:global(.jf-blueprint) .liveKpis { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); border-bottom:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .liveKpis > div { display:flex; flex-direction:column; gap:6px; padding:16px 20px; border-right:1px solid var(--traffic-line); min-width:0; }
+:global(.jf-blueprint) .liveKpis > div:last-child { border-right:0; }
+:global(.jf-blueprint) .liveKpis span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); }
+:global(.jf-blueprint) .liveKpis strong { font:850 30px/1 var(--font); letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .liveKpis small { font:600 11px/1.4 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .liveKpis > div[data-tone="ok"] strong { color:var(--success-dark); }
+:global(.jf-blueprint) .liveKpis > div[data-tone="warm"] strong { color:var(--warning-dark); }
+:global(.jf-blueprint) .liveKpis > div[data-tone="ad"] strong { color:var(--live-ad); }
+:global(.jf-blueprint) .liveKpis > div[data-tone="mute"] strong { color:var(--muted); }
+:global(.jf-blueprint) .liveKpis > div[data-tone="today"] { background:var(--paper); }
+:global(.jf-blueprint) .liveEmpty { padding:22px 24px; font:600 13px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .liveList { list-style:none; margin:0; padding:0; }
+:global(.jf-blueprint) .liveRow { display:grid; grid-template-columns:6px minmax(220px,1.3fr) minmax(180px,1fr) minmax(170px,.9fr); gap:0 18px; align-items:start; padding:14px 20px 14px 0; border-bottom:1px solid var(--traffic-line); background:var(--traffic-plate); }
+:global(.jf-blueprint) .liveRow:last-child { border-bottom:0; }
+:global(.jf-blueprint) .liveRow[data-active="false"] { color:var(--muted); }
+:global(.jf-blueprint) .liveRow[data-active="false"] .liveWho b, :global(.jf-blueprint) .liveRow[data-active="false"] .liveWhere b { color:var(--muted); }
+:global(.jf-blueprint) .liveMark { align-self:stretch; background:var(--muted-faint); }
+:global(.jf-blueprint) .liveRow[data-stage="registering"] .liveMark { background:var(--live-warm); }
+:global(.jf-blueprint) .liveRow[data-stage="checkout"] .liveMark { background:var(--blueprint); }
+:global(.jf-blueprint) .liveRow[data-stage="member"] .liveMark { background:var(--muted); }
+:global(.jf-blueprint) .liveRow[data-stage="registering"] { background:var(--live-warm-soft); }
+:global(.jf-blueprint) .liveRow[data-stage="checkout"] { background:var(--chart-fill); }
+/* The one that signed up: green, edge to edge. */
+:global(.jf-blueprint) .liveRow[data-stage="signed-up"] { background:var(--live-ok-soft); }
+:global(.jf-blueprint) .liveRow[data-stage="signed-up"] .liveMark { background:var(--live-ok); }
+:global(.jf-blueprint) .liveRow[data-stage="signed-up"] .liveWho b { color:var(--success-dark); }
+:global(.jf-blueprint) .liveWho, :global(.jf-blueprint) .liveWhere, :global(.jf-blueprint) .liveWhen { display:flex; flex-direction:column; gap:4px; min-width:0; }
+:global(.jf-blueprint) .liveWho b, :global(.jf-blueprint) .liveWhere b, :global(.jf-blueprint) .liveWhen b { font:800 13px/1.35 var(--font); letter-spacing:-.01em; color:var(--ink); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .liveWho span, :global(.jf-blueprint) .liveWhere span, :global(.jf-blueprint) .liveWhen span { font:600 11px/1.5 var(--font-mono); color:var(--muted); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .liveSignup { color:var(--success-dark) !important; }
+:global(.jf-blueprint) .liveSource { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+:global(.jf-blueprint) .liveAd { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1.5px solid var(--live-ad); color:var(--live-ad); font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; font-style:normal; }
+:global(.jf-blueprint) .liveRow[data-active="true"] .liveWhen b { color:var(--success-dark); }
+:global(.jf-blueprint) .liveOthers { display:flex; flex-direction:column; gap:6px; padding:14px 24px; border-top:1px solid var(--traffic-line); background:var(--paper); }
+:global(.jf-blueprint) .liveOther { font:600 11px/1.5 var(--font-mono); color:var(--ink-soft); }
+:global(.jf-blueprint) .live .footnote { padding:12px 24px 16px; margin:0; }
+@media (max-width: 900px) {
+  :global(.jf-blueprint) .liveKpis { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  :global(.jf-blueprint) .liveKpis > div:nth-child(3n) { border-right:0; }
+  :global(.jf-blueprint) .liveKpis > div:nth-child(-n+3) { border-bottom:1px solid var(--traffic-line); }
+  :global(.jf-blueprint) .liveRow { grid-template-columns:6px minmax(0,1fr); gap:6px 14px; padding-right:14px; }
+  :global(.jf-blueprint) .liveMark { grid-row:1 / span 3; }
+}
+@media (max-width: 560px) {
+  :global(.jf-blueprint) .liveKpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  :global(.jf-blueprint) .liveKpis > div:nth-child(3n) { border-right:1px solid var(--traffic-line); }
+  :global(.jf-blueprint) .liveKpis > div:nth-child(2n) { border-right:0; }
+  :global(.jf-blueprint) .liveKpis > div:nth-child(-n+4) { border-bottom:1px solid var(--traffic-line); }
+  :global(.jf-blueprint) .liveKpis strong { font-size:26px; }
+  :global(.jf-blueprint) .liveHead { padding:14px 16px; }
+  :global(.jf-blueprint) .live .footnote, :global(.jf-blueprint) .liveOthers, :global(.jf-blueprint) .liveEmpty { padding-left:16px; padding-right:16px; }
+}

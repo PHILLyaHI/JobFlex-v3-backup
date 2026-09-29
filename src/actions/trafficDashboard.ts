@@ -2,9 +2,41 @@
 
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { getStageVisitors, getTrafficReport } from "@/lib/traffic-server";
+import { getLiveTraffic as liveTraffic, getStageVisitors, getTrafficReport } from "@/lib/traffic-server";
 import { parseTrafficFilters } from "@/lib/traffic-query";
 import type { SignupAttribution } from "@/lib/traffic-contract";
+import type { FreshSignup, LiveReport } from "@/lib/traffic-live";
+
+/** The organizations made in the last day, with the owner who made them —
+ *  the rows a live signup is tied back to (lib/traffic-live). */
+async function freshSignups(): Promise<FreshSignup[]> {
+  try {
+    const rows = await db.organization.findMany({
+      where: { createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }, deletedAt: null },
+      orderBy: { createdAt: "desc" },
+      take: 60,
+      select: {
+        id: true, name: true, createdAt: true, utmSource: true, utmMedium: true, utmCampaign: true, landingIndustry: true,
+        memberships: { orderBy: { createdAt: "asc" }, take: 1, select: { user: { select: { email: true, name: true } } } },
+      },
+    });
+    return rows.map((r) => ({
+      orgId: r.id, orgName: r.name, createdAt: r.createdAt.toISOString(),
+      ownerEmail: r.memberships[0]?.user.email ?? "", ownerName: r.memberships[0]?.user.name ?? "",
+      utmSource: r.utmSource ?? "", utmMedium: r.utmMedium ?? "", utmCampaign: r.utmCampaign ?? "", landingIndustry: r.landingIndustry ?? "",
+    }));
+  } catch {
+    return []; // the live panel still shows the visitors
+  }
+}
+
+/** Who is on the site now, where from, how far they got — and the signups
+ *  among them named (2026-09-28). `includeDevelopment` shows localhost too. */
+export async function getLiveTraffic(input: Record<string, unknown> = {}): Promise<LiveReport> {
+  await requirePlatformAdmin();
+  const signups = await freshSignups();
+  return liveTraffic(signups, { includeDevelopment: input.includeDevelopment === true });
+}
 
 /** Signups by what the landing recorded on the organization — the trade hero
  *  and the utm_* — straight from the database, so campaign results do not
