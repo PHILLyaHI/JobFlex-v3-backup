@@ -16,6 +16,7 @@
 delete process.env.STRIPE_SECRET_KEY;
 delete process.env.STRIPE_SECRET_KEY_TEST;
 
+import "./_server-only";
 import { PrismaClient } from "@prisma/client";
 import { processApprovedPayouts, type TransferApi } from "../../src/lib/payouts";
 import { payoutRequestRefusal } from "../../src/lib/payouts";

@@ -10,6 +10,7 @@ process.env.GMAIL_OAUTH_CLIENT_ID = "test";
 process.env.GMAIL_OAUTH_CLIENT_SECRET = "test";
 process.env.GMAIL_OAUTH_REDIRECT_URI = "http://localhost/cb";
 
+import "./_server-only";
 import { db } from "../../src/lib/db";
 import { sealGmailTokens } from "../../src/lib/sdk/gmail";
 import { noteGmailFallback, sendOrgEmail } from "../../src/lib/email/orgSend";

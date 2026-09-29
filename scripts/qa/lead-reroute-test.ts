@@ -14,6 +14,7 @@
 //   5. idempotency — a second unmatch against the same org is a no-op
 //   6. race — the "shop converts while the client clicks" shape: once the
 //      lead is no longer MATCHED to that org, the client's write refuses
+import "./_server-only";
 import { readFileSync } from "node:fs";
 
 // dotenv is not a dependency here — a five-line reader covers the harness.

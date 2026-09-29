@@ -5,6 +5,7 @@
 //   npx tsx --tsconfig tsconfig.json scripts/qa/gmail-tokens.check.ts
 process.env.TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
 
+import "./_server-only";
 import { gmailErrorText, isGmailGrantDead, isLegacyPlainTokens, openGmailTokens, sealGmailTokens } from "../../src/lib/sdk/gmail";
 
 let failures = 0;

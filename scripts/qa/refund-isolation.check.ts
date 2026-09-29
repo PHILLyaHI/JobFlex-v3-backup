@@ -4,6 +4,7 @@
 // endpoint context must be ignored, and under org B's it must be recorded.
 //   npx tsx --tsconfig tsconfig.json scripts/qa/refund-isolation.check.ts
 // Writes to the local dev database and removes everything it created.
+import "./_server-only";
 import type Stripe from "stripe";
 import { db } from "../../src/lib/db";
 import { dispatchStripeEvent } from "../../src/lib/payments/stripeEvents";

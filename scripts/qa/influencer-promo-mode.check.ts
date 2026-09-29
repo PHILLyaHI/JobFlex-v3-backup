@@ -15,6 +15,7 @@
 delete process.env.STRIPE_SECRET_KEY;
 delete process.env.STRIPE_SECRET_KEY_TEST;
 
+import "./_server-only";
 import { PrismaClient } from "@prisma/client";
 import {
   promotionCodeIdForMode,
