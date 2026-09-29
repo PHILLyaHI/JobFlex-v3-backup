@@ -55,3 +55,33 @@ house. The Align button is gone — there is nothing to align. The lookups
 and `lib/solarHouses` stay in the code, one constant away, for the day the
 decision changes; the street centrelines from the same OSM answer still
 decide which side of the lot faces the street.
+
+## Getting back (2026-09-28)
+
+Owner: "when I outline the house I can delete the lines or just go back and
+delete the outline — make it smart to get back." A triangle had closed on
+the third click (it landed on the first corner) and there was no way back
+but the × in the Buildings panel.
+
+- **Undo is one button for everything on the map**, newest first: while an
+  outline is being traced it takes back the last corner; right after an
+  outline closes it **reopens it** — the house goes, its corners come back
+  as the draft with the tool in hand, so one more Undo drops the wrong
+  corner and the first corner or Close outline finishes it; after a house
+  was removed it puts it back; otherwise the last fence dot. Fence edits and
+  house actions are ordered by a sequence stamp (`houseUndo` / `fenceSeq`
+  in the behavior), and Undo's own fence commit is not counted as a new
+  action. The button's `title` and `data-undo` say what it will do.
+- **Clear while tracing a house drops that outline only**; the fence is
+  untouched (pressed again, it clears the fence).
+- **Editing an outline** (Edit house, or a long press on it): the strip under
+  the map offers Done · **Redraw outline** (removes it and arms the tool for
+  a fresh one) · **Remove**; **right-click a corner** takes that corner out
+  (never below three); **Backspace / Delete** removes the outline. Every one
+  of them is undone by Undo.
+- After an outline closes the hint says how to get back; a three-corner
+  close says so ("Undo reopens it if the house has more").
+- Map API: `openHouseDraft(ring)` puts a ring back as the draft; prop
+  `onHouseRemove` carries Backspace to the host.
+
+Walk: `$SP/fence3d/undo.js` on the stand (see [[jobflex-local-stand]]).

@@ -87,6 +87,27 @@ export interface HousePalette {
   fillOpacity: number;
 }
 const DEFAULT_HOUSE: HousePalette = { line: "#0a0a0a", edge: "#ffffff", active: "#1854a0", hatched: false, fill: "", fillOpacity: 0 };
+
+/** The drawn fence (2026-09-28, owner: "when I draw the fence lines, show
+ *  them in a different colour — it's hard to see if it's been drawn or
+ *  not"). A core in its own colour on a CASING either side, so the line
+ *  reads on grass, roof, concrete and shadow alike; a dot at every placed
+ *  corner in the same pairing; and the rubber band to the cursor dashed in
+ *  the core colour, so what is drawn (solid) and what is not yet (dashed)
+ *  never look the same. An empty casing is the old single line. */
+export interface FencePalette {
+  /** The line itself. */
+  line: string;
+  /** The edge either side of it (empty = none). */
+  casing: string;
+  /** A placed corner's fill … */
+  dot: string;
+  /** … and its ring. */
+  dotRing: string;
+}
+/** Core width and casing width of the fence line at this zoom. */
+const fenceWeights = (zoom: number | undefined) =>
+  typeof zoom === "number" && zoom <= 17 ? { core: 2, casing: 1 } : { core: 3, casing: 1.5 };
 /** Core width and edge width of the house line at this zoom. */
 const houseWeights = (zoom: number | undefined) =>
   typeof zoom === "number" && zoom <= 18 ? { core: 1, edge: 0 } : { core: 1.5, edge: 1 };
@@ -171,6 +192,10 @@ export type FenceDrawMapApi = {
   cancelDraft: () => void;
   /** House tool on/off (the `houseMode` prop drives it). */
   setHouseMode: (on: boolean) => void;
+  /** Put a closed outline back on the surface as the draft being traced
+   *  (its corners, the tool armed) — the host's Undo after an outline closed
+   *  by mistake. The host removes the house itself. */
+  openHouseDraft: (ring: PathPoint[]) => void;
 };
 
 /** What is being traced right now, for a host that renders its own controls. */
@@ -227,6 +252,8 @@ export type FenceDrawMapProps = {
   parcelPalette?: Partial<ParcelPalette>;
   /** Host colours for house outlines and detected footprints. */
   housePalette?: Partial<HousePalette>;
+  /** Host colours for the drawn fence (core on a casing, corner dots). */
+  fencePalette?: Partial<FencePalette>;
   /**
    * Measured slope per NON-LEVEL traced segment (fenceTerrain classes). Each
    * entry recolours its segment on the map — amber for racked, red for
@@ -269,6 +296,8 @@ export type FenceDrawMapProps = {
   /** The surface asks for an outline to be edited (a long press on its line)
    *  or put down (Escape). A plain click or tap never does: it is a fence dot. */
   onHouseSelect?: (key: string | null) => void;
+  /** Backspace / Delete on the outline being edited: the host removes it. */
+  onHouseRemove?: (id: string) => void;
   /** Run ends fixed to a house wall — labelled on the map. */
   wallMounts?: LatLng[];
   /** What is being traced, whenever it changes. */
@@ -327,6 +356,7 @@ const Z = {
   parcelCasing: 5,
   parcelLine: 6,
   house: 7,
+  fenceCasing: 7.5,
   fence: 8,
   highlight: 9,
   terrain: 9,
@@ -527,12 +557,14 @@ export function FenceDrawMap({
   fitPadding = 48,
   parcelPalette,
   housePalette,
+  fencePalette,
   detectedBuildings,
   houses,
   houseMode = false,
   onDetectedShift,
   houseEdit = null,
   onHouseSelect,
+  onHouseRemove,
   onTouchAim,
   onHouseAdd,
   onHouseChange,
@@ -580,12 +612,14 @@ export function FenceDrawMap({
   const fitPaddingRef = React.useRef(fitPadding);
   const parcelPaletteRef = React.useRef(parcelPalette);
   const housePaletteRef = React.useRef(housePalette);
+  const fencePaletteRef = React.useRef(fencePalette);
   /** Set by the parcel layer: fills the corner square the snap ring sits on. */
   const parcelActiveRef = React.useRef<((ll: GMaps | null) => void) | null>(null);
   const onHouseAddRef = React.useRef(onHouseAdd);
   const onHouseChangeRef = React.useRef(onHouseChange);
   const onDetectedShiftRef = React.useRef(onDetectedShift);
   const onHouseSelectRef = React.useRef(onHouseSelect);
+  const onHouseRemoveRef = React.useRef(onHouseRemove);
   const onTouchAimRef = React.useRef(onTouchAim);
   const aimRef = React.useRef<HTMLDivElement>(null);
   const flashRef = React.useRef<HTMLDivElement>(null);
@@ -636,10 +670,12 @@ export function FenceDrawMap({
     fitPaddingRef.current = fitPadding;
     parcelPaletteRef.current = parcelPalette;
     housePaletteRef.current = housePalette;
+    fencePaletteRef.current = fencePalette;
     onHouseAddRef.current = onHouseAdd;
     onHouseChangeRef.current = onHouseChange;
     onDetectedShiftRef.current = onDetectedShift;
     onHouseSelectRef.current = onHouseSelect;
+    onHouseRemoveRef.current = onHouseRemove;
     onTouchAimRef.current = onTouchAim;
     onDraftChangeRef.current = onDraftChange;
     siteRef.current = { parcel, houses, detected: detectedBuildings };
@@ -713,6 +749,7 @@ export function FenceDrawMap({
         // Host-supplied palette, resolved once per map build.
         const ACCENT = accentRef.current;
         const DOOR_INK = doorRef.current;
+        const fpal: FencePalette = { line: ACCENT, casing: "", dot: "#ffffff", dotRing: ACCENT, ...(fencePaletteRef.current ?? {}) };
         // No address yet → open on a real sample lot so the surface is never blank.
         const origin: LatLng = typeof lat === "number" && typeof lng === "number" ? { lat, lng } : DEFAULT_CENTER;
         const map = new maps.Map(mountRef.current, {
@@ -735,18 +772,19 @@ export function FenceDrawMap({
         // disconnected fences coexist (store encoding: `gap` on each run's first
         // point). Tracing appends to the ACTIVE run; ending a trace and clicking
         // elsewhere starts a fresh run instead of chaining to the old fence.
-        type Run = { line: GMaps; listeners: GMaps[] };
+        type Run = { line: GMaps; listeners: GMaps[]; casing: GMaps | null; dots: GMaps[] };
         const runs: Run[] = [];
         let activeIdx = -1;
 
-        // Rubber-band preview from the last dot to the cursor (dashed accent).
+        // Rubber-band preview from the last dot to the cursor: dashed, in the
+        // fence colour — what is not yet drawn never looks like what is.
         const previewLine = new maps.Polyline({
           map,
           clickable: false,
           strokeOpacity: 0,
           icons: [
             {
-              icon: { path: "M 0,-1 0,1", strokeColor: ACCENT, strokeOpacity: 0.9, strokeWeight: 2, scale: 3 },
+              icon: { path: "M 0,-1 0,1", strokeColor: fpal.line, strokeOpacity: 0.95, strokeWeight: fpal.casing ? 2.5 : 2, scale: 3 },
               offset: "0",
               repeat: "12px",
             },
@@ -754,6 +792,22 @@ export function FenceDrawMap({
           path: [],
           zIndex: Z.preview,
         });
+        // A placed corner answers at once: a ring that lands on the dot and
+        // settles — on a photo, the click had nothing else to show for itself.
+        const pulseAt = (ll: GMaps) => {
+          const ring = new Marker({ map, clickable: false, zIndex: 40, position: ll, icon: { path: 0, scale: 16, fillOpacity: 0, strokeColor: fpal.line, strokeOpacity: 0.9, strokeWeight: 3 } });
+          const t0 = performance.now();
+          const tick = () => {
+            const k = Math.min(1, (performance.now() - t0) / 380);
+            if (k >= 1) {
+              ring.setMap(null);
+              return;
+            }
+            ring.setIcon({ path: 0, scale: 16 - 11 * k, fillOpacity: 0, strokeColor: fpal.line, strokeOpacity: 0.9 * (1 - k * 0.7), strokeWeight: 3 - 1.5 * k });
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        };
 
         const ll2ft = (ll: GMaps) => latLngToLocalFeet(origin, { lat: ll.lat(), lng: ll.lng() });
         const ft2ll = (p: PathPoint) => {
@@ -1055,6 +1109,8 @@ export function FenceDrawMap({
           if (ri < 0) return;
           for (const l of run.listeners) l?.remove?.();
           run.line.setMap(null);
+          run.casing?.setMap(null);
+          for (const d of run.dots) d.setMap(null);
           runs.splice(ri, 1);
           if (ri === activeIdx) {
             drawing = false;
@@ -1065,23 +1121,70 @@ export function FenceDrawMap({
           }
         };
 
+        // The casing under a run and the dot on each of its corners follow the
+        // run's own path — on every edit, not only on commit, so a corner
+        // being dragged keeps its edge and its dot under the hand.
+        const dotIcon = () => ({
+          path: 0,
+          scale: fenceWeights(map.getZoom()).core + 3.5,
+          fillColor: fpal.dot,
+          fillOpacity: 1,
+          strokeColor: fpal.dotRing,
+          strokeWeight: 2,
+        });
+        const syncDeco = (run: Run) => {
+          const pa = run.line.getPath().getArray();
+          run.casing?.setPath(pa);
+          if (!fpal.casing) return;
+          while (run.dots.length > pa.length) run.dots.pop()?.setMap(null);
+          pa.forEach((ll: GMaps, i: number) => {
+            if (!run.dots[i]) run.dots[i] = new Marker({ map, clickable: false, zIndex: 20, position: ll, icon: dotIcon() });
+            else run.dots[i].setPosition(ll);
+          });
+        };
+        const reweighRuns = () => {
+          const w = fenceWeights(map.getZoom());
+          for (const r of runs) {
+            r.line.setOptions({ strokeWeight: fpal.casing ? w.core : 2 });
+            r.casing?.setOptions({ strokeWeight: w.core + 2 * w.casing });
+            for (const d of r.dots) d.setIcon(dotIcon());
+          }
+        };
         const newRun = (initial: GMaps[]): Run => {
+          const w = fenceWeights(map.getZoom());
           const line = new maps.Polyline({
             map,
             editable: !aligningRef.current,
             draggable: aligningRef.current,
             path: initial,
-            strokeColor: ACCENT,
-            strokeWeight: 2,
+            strokeColor: fpal.line,
+            strokeWeight: fpal.casing ? w.core : 2,
             strokeOpacity: 1,
             zIndex: Z.fence,
           });
-          const run: Run = { line, listeners: [] };
+          const casing = fpal.casing
+            ? new maps.Polyline({
+                map,
+                clickable: false,
+                path: initial,
+                strokeColor: fpal.casing,
+                strokeWeight: w.core + 2 * w.casing,
+                strokeOpacity: 1,
+                zIndex: Z.fenceCasing,
+              })
+            : null;
+          const run: Run = { line, listeners: [], casing, dots: [] };
           const pa = line.getPath();
+          syncDeco(run);
           run.listeners.push(
             pa.addListener("set_at", (i: number, prev: GMaps) => onVertexDragged(run, i, prev)),
+            pa.addListener("set_at", () => syncDeco(run)),
+            pa.addListener("insert_at", () => syncDeco(run)),
+            pa.addListener("remove_at", () => syncDeco(run)),
             pa.addListener("insert_at", commit),
             pa.addListener("remove_at", commit),
+            line.addListener("drag", () => syncDeco(run)),
+            line.addListener("dragend", () => syncDeco(run)),
             line.addListener("dragend", commit),
             // Polylines swallow the map's mousemove when hovered — without this the
             // rubber band froze the moment the cursor neared a dot. (fix: same handler)
@@ -1675,6 +1778,7 @@ export function FenceDrawMap({
               const last = ap.getLength() ? ap.getAt(ap.getLength() - 1) : null;
               if (last && distFt(last, place) < 3 * ftPerPx()) return;
               ap.push(place);
+              pulseAt(place);
               commit();
               return;
             }
@@ -1692,6 +1796,7 @@ export function FenceDrawMap({
               return;
             }
             startRun(place);
+            pulseAt(place);
           };
 
         function onDoubleClick() {
@@ -2143,10 +2248,13 @@ export function FenceDrawMap({
           const mount = mountRef.current;
           if (!mount || mount.offsetParent === null) return;
           const el = document.activeElement as HTMLElement | null;
-          const onControl =
-            !!el && el !== document.body && !mount.contains(el) &&
-            (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(el.tagName));
-          if (onControl) return;
+          const outside = !!el && el !== document.body && !mount.contains(el);
+          const typing = outside && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+          const onControl = typing || (outside && /^(BUTTON|A)$/.test(el.tagName));
+          // Backspace / Delete are the surface's unless a field is being typed
+          // in: a hand that just pressed the toolbar's Undo and reaches for
+          // Backspace is still drawing (a button does nothing with Backspace).
+          if (typing || (onControl && ev.key !== "Backspace" && ev.key !== "Delete")) return;
           if (ev.key === "Escape") {
             if (houseDraft.length) cancelHouse();
             else stopTrace();
@@ -2166,10 +2274,24 @@ export function FenceDrawMap({
             } else if (drawing) {
               ev.preventDefault();
               apiRef.current?.undo();
+            } else if (selHouseRef.current && !selHouseRef.current.startsWith("det:")) {
+              // The outline being edited goes, as a selected thing does.
+              ev.preventDefault();
+              onHouseRemoveRef.current?.(selHouseRef.current);
             }
           }
         };
         window.addEventListener("keydown", onKey);
+        listeners.push(map.addListener("zoom_changed", reweighRuns));
+
+        const setHouseModeOn = (on: boolean) => {
+          houseModeRef.current = on;
+          if (!on && houseDraft.length) cancelHouse();
+          if (on) stopTrace();
+          showRing(null);
+          previewLine.setPath([]);
+          map.setOptions({ draggableCursor: aligningRef.current ? "move" : "crosshair" });
+        };
 
         apiRef.current = {
           clear: () => {
@@ -2239,13 +2361,13 @@ export function FenceDrawMap({
             if (houseDraft.length) cancelHouse();
             else stopTrace();
           },
-          setHouseMode: (on: boolean) => {
-            houseModeRef.current = on;
-            if (!on && houseDraft.length) cancelHouse();
-            if (on) stopTrace();
-            showRing(null);
-            previewLine.setPath([]);
-            map.setOptions({ draggableCursor: aligningRef.current ? "move" : "crosshair" });
+          setHouseMode: setHouseModeOn,
+          openHouseDraft: (ring: PathPoint[]) => {
+            setHouseModeOn(true);
+            houseDraft.length = 0;
+            for (const p of ring) houseDraft.push(ft2ll(p));
+            paintHouseDraft(null);
+            notifyDraft();
           },
         };
 
@@ -2593,7 +2715,14 @@ export function FenceDrawMap({
         poly.addListener("mousemove", (e: GMaps) => drawHandlersRef.current?.move(e)),
         poly.addListener("dblclick", () => drawHandlersRef.current?.dblclick()),
         poly.addListener("rightclick", (e: GMaps) => {
-          if (e?.vertex == null) drawHandlersRef.current?.rightclick();
+          if (e?.vertex == null) {
+            drawHandlersRef.current?.rightclick();
+            return;
+          }
+          // A right-click on a corner of the outline being edited takes that
+          // corner out (never below a triangle) — the wrong click, undone in
+          // place rather than by redrawing the house.
+          if (handles && picked && !dragging && path.getLength() > 3) path.removeAt(e.vertex);
         }),
         // While it moves the polygon draws itself; the two-line outline stays
         // behind and is rebuilt where the hand lets go.

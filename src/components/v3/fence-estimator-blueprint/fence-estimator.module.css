@@ -104,6 +104,19 @@
   --house-active: var(--blueprint);
   --house-fill: #d6336c;
   --house-fill-opacity: 0.18;
+  /* The drawn fence (2026-09-28). The owner could not tell on the photo
+     whether a line had been drawn: a 2 px blueprint stroke vanished on a
+     dark roof and in shadow. Now a violet core on a paper casing — a hue
+     nothing on an aerial photo has, that none of the other layers use (lot
+     sky, house berry, slope amber / red, topo cream) and that DESIGN.md's
+     refusal of safety yellow leaves open — with a paper dot ringed in the
+     core colour at every placed corner. The casing is what carries it over
+     dark ground; the core carries it over light. A map layer's colour, not
+     a status. */
+  --fence-line: #7c3aed;
+  --fence-casing: var(--paper-deep);
+  --fence-dot: var(--paper-deep);
+  --fence-dot-ring: #7c3aed;
   /* Slope classes — the same amber / red the map's slope overlay draws. */
   --slope-racked: #c47f17;
   --slope-stepped: #b3261e;
@@ -1455,6 +1468,8 @@
 .bp :global(.content .draw-ctl .tool) { box-shadow: 2px 2px 0 var(--ink); border-color: var(--ink); color: var(--ink); }
 .bp :global(.content .draw-ctl .tool-primary) { background: var(--blueprint); border-color: var(--blueprint-dark); color: #fff; }
 .bp :global(.content .draw-ctl .tool:disabled) { opacity: 0.45; box-shadow: none; }
+/* Remove, in the editing strip: a plain tool until the hand is on it. */
+.bp :global(.content .draw-ctl .tool-remove:hover) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 @media (max-width: 860px), (pointer: coarse) {
   .bp :global(.content .draw-ctl .tool) { min-height: 44px; padding: 0 14px; }
 }
@@ -1955,6 +1970,27 @@
   background: var(--blueprint);
   color: var(--paper);
   border: 1.5px solid var(--blueprint-dark);
+}
+/* "Walk through" — the one button on the scene: a tool, in the toolbar's
+   own shape, standing on the hint's row. */
+.bp :global(.content .model-live [data-fm3d="walk"]) {
+  border-radius: var(--r-xs);
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  background: var(--blueprint);
+  color: var(--paper);
+  border: 1.5px solid var(--blueprint-dark);
+  box-shadow: 2px 2px 0 var(--ink);
+  cursor: pointer;
+}
+.bp :global(.content .model-live [data-fm3d="walk"]:hover) { background: var(--blueprint-dark); }
+.bp :global(.content .model-live [data-fm3d="walk"]:active) { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--ink); }
+@media (pointer: coarse) {
+  .bp :global(.content .model-live [data-fm3d="walk"]) { min-height: 44px; padding: 0 14px; }
 }
 
 /* Align is a MODE, not a one-shot action: the tool has to rest in an active

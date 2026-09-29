@@ -17,6 +17,7 @@
 // the contractor's proposal.
 
 import type { FencePlan, PlanPoint } from "./planSvg";
+import { fenceBuildForFamily, parseFenceBuild, type FenceBuild } from "./build";
 
 export type SceneBayClass = "level" | "racked" | "stepped";
 
@@ -47,6 +48,10 @@ export interface FencePlanScene {
   wallMounts: PlanPoint[];
   terrain: FenceSceneTerrain | null;
   lotColor: string | null;
+  /** What the fence is built from (lib/fence/build, 2026-09-28) — the
+   *  client's 3D stands up the same posts, rails and boards as the studio's.
+   *  Absent on plans stored before; the look's default build stands in. */
+  build?: FenceBuild | null;
 }
 
 export const SCENE_FAMILIES = ["cedar", "vinyl", "chain-link", "aluminum", "composite"] as const;
@@ -95,7 +100,8 @@ export function parseFencePlanScene(raw: unknown): FencePlanScene | null {
   const wallMounts = readPts(r.wallMounts, 40);
   const terrain = parseTerrain(r.terrain);
   const lotColor = typeof r.lotColor === "string" && HEX.test(r.lotColor) ? r.lotColor : null;
-  return { family, color, gates, segClasses, wallMounts, terrain, lotColor };
+  const build = parseFenceBuild(r.build);
+  return { family, color, gates, segClasses, wallMounts, terrain, lotColor, build };
 }
 
 function parseTerrain(raw: unknown): FenceSceneTerrain | null {
@@ -166,6 +172,8 @@ export interface FenceSceneProps {
   wallMounts: PlanPoint[];
   lots: PlanPoint[][];
   lotColor: string;
+  /** The parts the fence is built from. */
+  build: FenceBuild;
   /** What the client reads under the scene. */
   facts: string;
 }
@@ -192,6 +200,7 @@ export function fenceSceneFromPlan(plan: FencePlan): FenceSceneProps | null {
     wallMounts: s?.wallMounts ?? [],
     lots: plan.lots,
     lotColor: s?.lotColor ?? SCENE_DEFAULT_LOT_COLOR,
+    build: s?.build ?? fenceBuildForFamily(material, plan.heightFt),
     facts: `${plan.typeLabel} · ${plan.heightFt} ft · ${Math.round(plan.totalLf)} ft${gates ? ` · ${gates} ${gates === 1 ? "gate" : "gates"}` : ""}`,
   };
 }

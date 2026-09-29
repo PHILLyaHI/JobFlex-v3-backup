@@ -87,6 +87,29 @@ export const fenceConvertSchema = z.object({
             .refine((t) => t.plan.cols * t.plan.rows <= 2500 && t.grid.length === t.plan.rows && t.grid.every((row) => row.length === t.plan.cols), "lattice shape")
             .nullable(),
           lotColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable(),
+          // What the fence is built from (lib/fence/build, 2026-09-28): read
+          // back defensively there; here only the shape and the ranges.
+          build: z
+            .object({
+              spacingFt: z.number().min(2).max(24),
+              kind: z.enum(["stick", "panel", "mesh", "rail"]),
+              rails: z.number().int().min(0).max(8),
+              infill: z.enum(["boards", "board-on-board", "shadowbox", "pickets", "horizontal", "bars", "mesh", "none"]),
+              boardWidthFt: z.number().min(0.01).max(2),
+              boardGapFt: z.number().min(-1).max(2),
+              boardDepthFt: z.number().min(0.005).max(0.5),
+              railHeightFt: z.number().min(0.01).max(1),
+              railDepthFt: z.number().min(0.01).max(1),
+              postWidthFt: z.number().min(0.05).max(1.5),
+              terminalWidthFt: z.number().min(0.05).max(1.5),
+              postProfile: z.enum(["square", "round"]),
+              postCap: z.enum(["flat", "pyramid", "gothic", "dome", "loop", "none"]),
+              postProudFt: z.number().min(0).max(2),
+              meshDiamondFt: z.number().min(0.05).max(1).optional(),
+              rackMaxDeg: z.number().min(0).max(45),
+            })
+            .nullable()
+            .optional(),
         })
         .optional(),
     })

@@ -4,12 +4,22 @@
 // effect pushes spec changes through `applyRef` so the imperative scene mutates
 // without tearing down the renderer.
 //
-// Posts / pickets / rails are each a single InstancedMesh authored at unit height
-// and aligned by yaw (rotation.y = atan2(dy,dx) maps a member's local +X onto the
-// run in three-space). Height changes only re-write matrices; material changes
-// only swap the shared material; only a change in instance COUNT rebuilds.
-// Gates, chain-link infill, and the selected-run highlight are small groups
-// rebuilt on demand (few objects). `capture()` returns a PNG data URL.
+// Posts / pickets / rails / caps are each a single InstancedMesh authored at
+// unit size and aligned by yaw (rotation.y = atan2(dy,dx) maps a member's local
+// +X onto the run in three-space); every member is scaled to the size its
+// `build` says (lib/fence/build — the catalog type's own parts, 2026-09-28:
+// posts at the type's spacing and face width, its rails at their heights, the
+// boards, pickets, bars or mesh it is really infilled with, the cap it ships
+// with). Height changes only re-write matrices; material changes only swap the
+// shared material; only a change in instance COUNT rebuilds. Gates, chain-link
+// infill, and the selected-run highlight are small groups rebuilt on demand
+// (few objects). `capture()` returns a PNG data URL.
+//
+// Looking closer: orbit zooms toward the cursor down to arm's length from a
+// post, a double-click re-aims the orbit at what was clicked, and "Walk
+// through" (a button, never a bare click — a click used to lock the pointer
+// and the cursor seemed gone for good) walks the yard at eye height; a click
+// or Esc steps back out.
 //
 // Ground: with `terrain` (the lot's elevation lattice, local feet) the flat
 // plane gives way to a mesh of the real land in the SAME material, and the
@@ -31,25 +41,24 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { cn } from "@/lib/cn";
-import { computeFenceLayout, type BayClass, type FenceLayout, type GateUnit } from "./fenceGeometry";
+import { computeFenceLayout, railRowsFor, type BayClass, type FenceLayout, type GateUnit } from "./fenceGeometry";
 import { contourChains, elevationAt, pickTopoInterval, type TopoGridPlan } from "./fenceTopo";
 import { makeFenceTextures, makeChainLinkAlpha, type FenceMaterialTextures } from "./fenceTexture";
 import { isBuiltinMaterial, type PathPoint, type GateSpec, type BuildingFootprint } from "./fenceTypes";
+import { DEFAULT_FENCE_BUILD, fenceBuildForFamily, type FenceBuild } from "@/lib/fence/build";
 
-// Member authoring dimensions (feet). Horizontal axis is local +X so a single
+// Member authoring: every member is a UNIT box (or cylinder) scaled to the
+// build's own dimensions per instance. Horizontal axis is local +X so a single
 // rotation.y = yaw aligns every member with its run.
-const POST_SIZE = 0.34;
-const POST_CAP = 0.25; // posts stand this much proud of the pickets
-const PICKET_WIDTH = 0.46;
-const PICKET_DEPTH = 0.09;
-const RAIL_H = 0.12;
-const RAIL_D = 0.3;
-const RAIL_TOP_DROP = 0.55; // top rail sits this far below the fence top
-const RAIL_BOTTOM = 0.5; // bottom rail centre height
-const GATE_POST_SIZE = 0.42;
+const POST_CAP = 0.25; // the old studio's posts stand this much proud (no build given)
+const GATE_POST_MIN = 0.3; // a gate post never renders thinner than this
 const BAR_T = 0.12; // gate frame bar thickness
 const BAR_D = 0.13;
-const DIAMOND_FT = 0.4; // chain-link diamond size for alpha tiling
+const DIAMOND_FT = 0.4; // chain-link diamond size for alpha tiling (no build given)
+/** Eye height while walking, and how fast a walk and a run go (ft/s). */
+const EYE_FT = 5.5;
+const WALK_FT_S = 8;
+const RUN_FT_S = 22;
 
 const ACCENT = 0x1f7a52; // Pressed Sage (locked accent)
 
@@ -78,6 +87,7 @@ interface ViewSpec {
   wallMounts: PathPoint[]; // run ends that sit on a house wall
   lots: PathPoint[][]; // the lot's rings (local feet)
   lotColor: string; // the map's lot-line colour
+  build: FenceBuild | null; // what the fence is built from; null = the look's default
 }
 
 const NO_LOTS: PathPoint[][] = [];
@@ -110,8 +120,12 @@ export const FenceModel3D = React.forwardRef<
     lots?: PathPoint[][];
     /** The lot line's colour — the map's, so the two views agree. */
     lotColor?: string;
-    /** "full": orbit, and a click walks through (pointer lock, WASD). "orbit":
-     *  orbit and zoom only — a phone, or a page where walking is not wanted. */
+    /** What the fence is built from (lib/fence/build). Without it the look's
+     *  own default build stands in. */
+    build?: FenceBuild | null;
+    /** "full": orbit, and "Walk through" walks the yard (pointer lock, WASD).
+     *  "orbit": orbit and zoom only — a phone, or a page where walking is not
+     *  wanted. */
     controls?: "full" | "orbit";
     active?: boolean;
     className?: string;
@@ -130,6 +144,7 @@ export const FenceModel3D = React.forwardRef<
     wallMounts = NO_MOUNTS,
     lots = NO_LOTS,
     lotColor = DEFAULT_LOT_COLOR,
+    build = null,
     controls = "full",
     active = true,
     className,
@@ -163,8 +178,11 @@ export const FenceModel3D = React.forwardRef<
 
   const applyRef = React.useRef<(s: ViewSpec) => void>(() => {});
   React.useEffect(() => {
-    applyRef.current({ points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts, lots, lotColor });
-  }, [points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts, lots, lotColor]);
+    applyRef.current({ points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts, lots, lotColor, build });
+  }, [points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts, lots, lotColor, build]);
+  /** Walking is not possible here (the browser refused the pointer lock). */
+  const [walkNote, setWalkNote] = React.useState<string | null>(null);
+  const walkRef = React.useRef<() => void>(() => {});
 
   // When the studio hides this panel (Draw view), release pointer-lock/keys so a
   // fly session can't keep driving an invisible scene; on re-show, re-frame if the
@@ -380,10 +398,22 @@ export const FenceModel3D = React.forwardRef<
       terrainBuiltFor = { t, cx, cy, zRef, span: sp };
     };
 
-    // ── Fence assets ──
-    const postGeo = new THREE.BoxGeometry(POST_SIZE, 1, POST_SIZE);
-    const picketGeo = new THREE.BoxGeometry(PICKET_WIDTH, 1, PICKET_DEPTH);
-    const railGeo = new THREE.BoxGeometry(1, RAIL_H, RAIL_D);
+    // ── Fence assets: unit members, scaled per instance to the build ──
+    const postGeo = new THREE.BoxGeometry(1, 1, 1);
+    const postRoundGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 14);
+    const picketGeo = new THREE.BoxGeometry(1, 1, 1);
+    const railGeo = new THREE.BoxGeometry(1, 1, 1);
+    // Post caps at unit post width, standing on y = 0.
+    const capGeos: Record<FenceBuild["postCap"], THREE.BufferGeometry | null> = {
+      flat: new THREE.BoxGeometry(1.3, 0.12, 1.3).translate(0, 0.06, 0),
+      pyramid: new THREE.ConeGeometry(0.95, 0.5, 4).rotateY(Math.PI / 4).translate(0, 0.25, 0),
+      gothic: new THREE.ConeGeometry(0.62, 1.1, 10).translate(0, 0.55, 0),
+      dome: new THREE.SphereGeometry(0.58, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+      // The loop cap a chain-link top rail threads through: a ring standing
+      // across the run, its axis along the rail.
+      loop: new THREE.TorusGeometry(0.62, 0.16, 8, 18).rotateY(Math.PI / 2).translate(0, 0.62, 0),
+      none: null,
+    };
 
     // Cache keyed by material id. Built-in materials get authored textures; custom
     // materials render as a solid MeshStandardMaterial tinted to their swatch colour.
@@ -440,7 +470,9 @@ export const FenceModel3D = React.forwardRef<
     let postMesh: THREE.InstancedMesh | null = null;
     let picketMesh: THREE.InstancedMesh | null = null;
     let railMesh: THREE.InstancedMesh | null = null;
+    let capMesh: THREE.InstancedMesh | null = null;
     let built: FenceLayout | null = null;
+    let builtRows = 0; // rail rows per bay the rail mesh was sized for
     let curMaterial: string | null = null;
     let framed = false;
     // Last geometry-affecting inputs (by reference). selectedSegment is NOT here:
@@ -456,66 +488,93 @@ export const FenceModel3D = React.forwardRef<
     });
 
     const disposeInstances = () => {
-      for (const m of [postMesh, picketMesh, railMesh]) {
+      for (const m of [postMesh, picketMesh, railMesh, capMesh]) {
         if (m) {
           fenceGroup.remove(m);
           m.dispose();
         }
       }
-      postMesh = picketMesh = railMesh = null;
+      postMesh = picketMesh = railMesh = capMesh = null;
     };
 
-    const buildInstances = (l: FenceLayout, m: string, color: string) => {
+    const buildInstances = (l: FenceLayout, m: string, color: string, rows: number) => {
       const mat = getMaterial(m, color);
-      postMesh = new THREE.InstancedMesh(postGeo, mat, Math.max(1, l.postCount));
+      const b = l.build;
+      postMesh = new THREE.InstancedMesh(b.postProfile === "round" ? postRoundGeo : postGeo, mat, Math.max(1, l.postCount));
       picketMesh = new THREE.InstancedMesh(picketGeo, mat, Math.max(1, l.picketCount));
-      railMesh = new THREE.InstancedMesh(railGeo, mat, Math.max(1, l.bayCount * 2));
-      for (const mm of [postMesh, picketMesh, railMesh]) {
+      railMesh = new THREE.InstancedMesh(railGeo, mat, Math.max(1, l.bayCount * rows));
+      const capGeo = capGeos[b.postCap];
+      // Loop caps are galvanized fittings on any chain-link colour.
+      capMesh = capGeo ? new THREE.InstancedMesh(capGeo, b.postCap === "loop" ? gatePostMat : mat, Math.max(1, l.postCount)) : null;
+      for (const mm of [postMesh, picketMesh, railMesh, capMesh]) {
+        if (!mm) continue;
         mm.castShadow = true;
         mm.receiveShadow = true;
         fenceGroup.add(mm);
       }
+      builtRows = rows;
       curMaterial = m;
     };
+
+    /** Ground-plane point offset ACROSS a run (negative = the outside face). */
+    const across = (x: number, y: number, yaw: number, off: number) => ({ x: x - Math.sin(yaw) * off, y: y + Math.cos(yaw) * off });
 
     const writeMatrices = (l: FenceLayout, fenceH: number, cx: number, cy: number) => {
       if (!postMesh || !picketMesh || !railMesh) return;
       const tx = (x: number) => x - cx;
       const tz = (y: number) => -(y - cy);
+      const b = l.build;
+      const proud = l.build === DEFAULT_FENCE_BUILD ? POST_CAP : b.postProudFt;
 
       postMesh.count = l.postCount;
+      if (capMesh) capMesh.count = l.postCount;
       for (let i = 0; i < l.postCount; i++) {
-        // From the ground under the post to POST_CAP above the highest panel it
+        // From the ground under the post to `proud` above the highest panel it
         // carries — at a step that is the taller post.
         const base = l.postBase[i];
-        const top = l.postPanel[i] + fenceH + POST_CAP;
+        const top = l.postPanel[i] + fenceH + proud;
         const h = Math.max(0.5, top - base);
         const mounted = l.postMount[i] === 1;
+        const w = l.postTerminal[i] === 1 ? b.terminalWidthFt : b.postWidthFt;
+        const yaw = l.posts[i * 3 + 2];
         dummy.position.set(tx(l.posts[i * 3]), base + h / 2, tz(l.posts[i * 3 + 1]));
-        dummy.rotation.set(0, l.posts[i * 3 + 2], 0);
+        dummy.rotation.set(0, yaw, 0);
         // A wall mount has no post in the ground (see rebuildMounts).
-        dummy.scale.set(mounted ? 0.0001 : 1, mounted ? 0.0001 : h, mounted ? 0.0001 : 1);
+        dummy.scale.set(mounted ? 0.0001 : w, mounted ? 0.0001 : h, mounted ? 0.0001 : w);
         dummy.updateMatrix();
         postMesh.setMatrixAt(i, dummy.matrix);
+        if (capMesh) {
+          dummy.position.set(tx(l.posts[i * 3]), base + h, tz(l.posts[i * 3 + 1]));
+          dummy.scale.set(mounted ? 0.0001 : w, mounted ? 0.0001 : w, mounted ? 0.0001 : w);
+          dummy.updateMatrix();
+          capMesh.setMatrixAt(i, dummy.matrix);
+        }
       }
       postMesh.instanceMatrix.needsUpdate = true;
       postMesh.computeBoundingSphere();
+      if (capMesh) {
+        capMesh.instanceMatrix.needsUpdate = true;
+        capMesh.computeBoundingSphere();
+      }
 
       picketMesh.count = l.picketCount;
       for (let i = 0; i < l.picketCount; i++) {
-        dummy.position.set(tx(l.pickets[i * 3]), l.picketBase[i] + fenceH / 2, tz(l.pickets[i * 3 + 1]));
-        dummy.rotation.set(0, l.pickets[i * 3 + 2], 0);
-        dummy.scale.set(1, fenceH, 1);
+        const yaw = l.pickets[i * 3 + 2];
+        const p = across(l.pickets[i * 3], l.pickets[i * 3 + 1], yaw, l.picketOffset[i]);
+        dummy.position.set(tx(p.x), l.picketBase[i] + fenceH / 2, tz(p.y));
+        dummy.rotation.set(0, yaw, 0);
+        dummy.scale.set(b.boardWidthFt, fenceH, b.boardDepthFt);
         dummy.updateMatrix();
         picketMesh.setMatrixAt(i, dummy.matrix);
       }
       picketMesh.instanceMatrix.needsUpdate = true;
       picketMesh.computeBoundingSphere();
 
-      // Rails per BAY, pitched with the bay's base line: parallel to the grade
-      // on a racked bay, level on a stepped one.
-      railMesh.count = l.bayCount * 2;
-      const topOff = Math.max(RAIL_BOTTOM + 0.4, fenceH - RAIL_TOP_DROP);
+      // Horizontal members per BAY — the build's rails at their heights, or its
+      // stacked boards — pitched with the bay's base line: parallel to the
+      // grade on a racked bay, level on a stepped one.
+      const rows = railRowsFor(b, fenceH);
+      railMesh.count = Math.min(l.bayCount * rows.length, l.bayCount * builtRows);
       dummy.rotation.order = "YZX";
       for (let i = 0; i < l.bayCount; i++) {
         const o = i * 7;
@@ -530,12 +589,14 @@ export const FenceModel3D = React.forwardRef<
         const yaw = Math.atan2(y1 - y0, x1 - x0);
         const pitch = Math.atan2(dz, plan);
         const len = Math.hypot(plan, dz);
-        for (const [k, off] of [[0, RAIL_BOTTOM], [1, topOff]] as const) {
-          dummy.position.set(tx((x0 + x1) / 2), (z0 + z1) / 2 + off, tz((y0 + y1) / 2));
+        for (let k = 0; k < rows.length && k < builtRows; k++) {
+          const row = rows[k];
+          const p = across((x0 + x1) / 2, (y0 + y1) / 2, yaw, row.z);
+          dummy.position.set(tx(p.x), (z0 + z1) / 2 + row.off, tz(p.y));
           dummy.rotation.set(0, yaw, pitch);
-          dummy.scale.set(len, 1, 1);
+          dummy.scale.set(len, row.h, row.d);
           dummy.updateMatrix();
-          railMesh.setMatrixAt(i * 2 + k, dummy.matrix);
+          railMesh.setMatrixAt(i * builtRows + k, dummy.matrix);
         }
       }
       dummy.rotation.order = "XYZ";
@@ -857,9 +918,10 @@ export const FenceModel3D = React.forwardRef<
     const rebuildGates = (l: FenceLayout, fenceH: number, cx: number, cy: number) => {
       // Geometries are unique per build (dispose them); materials are shared.
       clearGroup(gateGroup, false);
-      const postH = fenceH + POST_CAP;
+      const postH = fenceH + Math.max(POST_CAP, l.build.postProudFt);
+      const postW = Math.max(GATE_POST_MIN, l.build.terminalWidthFt);
       for (const gu of l.gateUnits) {
-        buildOpening(gu, fenceH, postH, cx, cy);
+        buildOpening(gu, fenceH, postH, postW, cx, cy);
       }
     };
 
@@ -937,7 +999,7 @@ export const FenceModel3D = React.forwardRef<
       return g;
     };
 
-    const buildOpening = (gu: GateUnit, fenceH: number, postH: number, cx: number, cy: number) => {
+    const buildOpening = (gu: GateUnit, fenceH: number, postH: number, postW: number, cx: number, cy: number) => {
       const leafMat = gu.kind === "door" ? doorLeafMat : gateLeafMat;
       const cos = Math.cos(gu.yaw);
       const sin = Math.sin(gu.yaw);
@@ -945,14 +1007,15 @@ export const FenceModel3D = React.forwardRef<
       const tx = (x: number) => x - cx;
       const tz = (y: number) => -(y - cy);
 
-      // Two heavier posts at the opening edges (own geometry per build).
+      // Two heavier posts at the opening edges (own geometry per build), at
+      // the build's terminal-post width.
       for (const sEdge of [-half, half]) {
         const px = gu.x + cos * sEdge;
         const py = gu.y + sin * sEdge;
         // Gate posts stand on the ground at each edge and reach the level leaf.
         const gy = groundAt(px, py);
         const h = Math.max(0.5, gu.base + postH - gy);
-        const geo = new THREE.BoxGeometry(GATE_POST_SIZE, h, GATE_POST_SIZE);
+        const geo = new THREE.BoxGeometry(postW, h, postW);
         const mesh = addBox(gateGroup, geo, gatePostMat, tx(px), gy + h / 2, tz(py));
         mesh.rotation.y = gu.yaw;
       }
@@ -966,14 +1029,17 @@ export const FenceModel3D = React.forwardRef<
       gateGroup.add(leaf);
     };
 
-    const rebuildChain = (l: FenceLayout, fenceH: number, m: string, cx: number, cy: number) => {
+    const rebuildChain = (l: FenceLayout, fenceH: number, isMesh: boolean, cx: number, cy: number) => {
       clearGroup(chainGroup, true);
-      if (m !== "chain-link" || l.bayCount === 0) return;
+      if (!isMesh || l.bayCount === 0) return;
       const tx = (x: number) => x - cx;
       const tz = (y: number) => -(y - cy);
+      // The build's own diamond (2" on residential fabric); the old studio's
+      // coarser tiling without a build.
+      const diamond = l.build === DEFAULT_FENCE_BUILD ? DIAMOND_FT : Math.max(0.08, l.build.meshDiamondFt ?? DIAMOND_FT);
       // One mesh for the whole fence: a quad per bay from its base line up by
       // the fence height — a parallelogram on a racked bay, a rectangle on a
-      // stepped one. The diamond tiling lives in the UVs (units of DIAMOND_FT),
+      // stepped one. The diamond tiling lives in the UVs (units of the diamond),
       // so every bay shares one material and one alpha map.
       const pos = new Float32Array(l.bayCount * 4 * 3);
       const uv = new Float32Array(l.bayCount * 4 * 2);
@@ -986,8 +1052,8 @@ export const FenceModel3D = React.forwardRef<
         const x1 = tx(l.bays[o + 3]);
         const zz1 = tz(l.bays[o + 4]);
         const b1 = l.bays[o + 5];
-        const len = Math.hypot(x1 - x0, zz1 - zz0) / DIAMOND_FT;
-        const hh = fenceH / DIAMOND_FT;
+        const len = Math.hypot(x1 - x0, zz1 - zz0) / diamond;
+        const hh = fenceH / diamond;
         const v = i * 4;
         pos.set([x0, b0, zz0, x1, b1, zz1, x1, b1 + fenceH, zz1, x0, b0 + fenceH, zz0], v * 3);
         uv.set([0, 0, len, 0, len, hh, 0, hh], v * 2);
@@ -1021,7 +1087,8 @@ export const FenceModel3D = React.forwardRef<
     const rebuildMounts = (l: FenceLayout, fenceH: number, m: string, color: string, cx: number, cy: number) => {
       clearGroup(mountGroup, false);
       const boardMat = getMaterial(m, color);
-      const topOff = Math.max(RAIL_BOTTOM + 0.4, fenceH - RAIL_TOP_DROP);
+      // A bracket per rail the build carries (a chain-link tension wire gets none).
+      const rows = railRowsFor(l.build, fenceH).filter((r) => r.h >= 0.05);
       for (let i = 0; i < l.postCount; i++) {
         if (l.postMount[i] !== 1) continue;
         const x = l.posts[i * 3] - cx;
@@ -1030,17 +1097,16 @@ export const FenceModel3D = React.forwardRef<
         const base = l.postPanel[i];
         const board = addBox(mountGroup, new THREE.BoxGeometry(0.62, fenceH + 0.2, 0.12), boardMat, x, base + (fenceH + 0.2) / 2, z);
         board.rotation.y = yaw + Math.PI / 2; // flat against a wall the fence meets square
-        for (const off of [RAIL_BOTTOM, topOff]) {
-          const br = addBox(mountGroup, new THREE.BoxGeometry(0.42, 0.14, 0.34), gatePostMat, x, base + off, z);
+        for (const row of rows) {
+          const br = addBox(mountGroup, new THREE.BoxGeometry(0.42, Math.max(0.14, row.h), 0.34), gatePostMat, x, base + row.off, z);
           br.rotation.y = yaw;
         }
       }
     };
 
-    const applyVisibility = (m: string) => {
-      const isChain = m === "chain-link";
-      if (picketMesh) picketMesh.visible = !isChain;
-      chainGroup.visible = isChain;
+    const applyVisibility = (isMesh: boolean) => {
+      if (picketMesh) picketMesh.visible = !isMesh;
+      chainGroup.visible = isMesh;
     };
 
     const updateHighlight = (pts: PathPoint[], sel: number | null, fenceH: number, cx: number, cy: number) => {
@@ -1058,7 +1124,7 @@ export const FenceModel3D = React.forwardRef<
         return;
       }
       highlight.visible = true;
-      highlight.position.set((a.x + dx / 2) - cx, groundAt(a.x + dx / 2, a.y + dy / 2) + fenceH + POST_CAP + 0.2, -((a.y + dy / 2) - cy));
+      highlight.position.set((a.x + dx / 2) - cx, groundAt(a.x + dx / 2, a.y + dy / 2) + fenceH + 0.45, -((a.y + dy / 2) - cy));
       highlight.rotation.set(0, Math.atan2(dy, dx), 0);
       highlight.scale.set(len, 1, 1);
     };
@@ -1089,7 +1155,8 @@ export const FenceModel3D = React.forwardRef<
       shadowCam.updateProjectionMatrix();
       key.shadow.normalBias = sp * 0.0015;
       ground.scale.setScalar(Math.max(sp, lotReach * 0.6) / span);
-      orbit.minDistance = sp * 0.25;
+      // Close enough to read a post cap, however big the lot.
+      orbit.minDistance = 1.5;
       orbit.maxDistance = sp * 12;
       worldSpan = sp;
     };
@@ -1116,14 +1183,37 @@ export const FenceModel3D = React.forwardRef<
     const orbit = new OrbitControls(camera, renderer.domElement);
     orbit.enableDamping = true;
     orbit.dampingFactor = 0.08;
-    orbit.minDistance = span * 0.25;
+    orbit.minDistance = 1.5;
     orbit.maxDistance = span * 12;
     orbit.maxPolarAngle = Math.PI * 0.495;
+    // The wheel zooms toward what the cursor is on — a post, a gate — rather
+    // than the centre of the yard.
+    orbit.zoomToCursor = true;
     orbit.target.set(0, 2, 0);
     orbit.update();
 
-    // First-person fly-through: click the canvas to enter pointer lock, WASD to
-    // move, Q/E (or Space/Shift) up·down, mouse to look, Esc to exit to orbit.
+    // A double-click re-aims the orbit at what was clicked (fence, house, land):
+    // the wheel then zooms in on THAT, and a drag circles it.
+    const caster = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    const onDblClick = (e: MouseEvent) => {
+      if (modeRef.current !== "orbit") return;
+      const r = renderer.domElement.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      caster.setFromCamera(ndc, camera);
+      const hits = caster.intersectObjects([fenceGroup, buildingsGroup, ...(terrainMesh ? [terrainMesh] : [ground])], true);
+      const hit = hits.find((h) => h.object.visible);
+      if (!hit) return;
+      orbit.target.copy(hit.point);
+      orbit.update();
+    };
+    renderer.domElement.addEventListener("dblclick", onDblClick);
+
+    // Walking: "Walk through" locks the pointer — WASD to move, Q/E (or
+    // Space/Shift) up·down, mouse to look, a click or Esc to step back out to
+    // orbit. Never a bare click: a click that locked the pointer left people
+    // with no cursor and no idea how to get it back (owner, 2026-09-28).
     const plc = new PointerLockControls(camera, renderer.domElement);
     plc.enabled = false;
     plc.minPolarAngle = Math.PI * 0.04;
@@ -1135,6 +1225,7 @@ export const FenceModel3D = React.forwardRef<
       plc.enabled = true;
       modeRef.current = "fly";
       setMode("fly");
+      setWalkNote(null);
     };
     const onUnlock = () => {
       plc.enabled = false;
@@ -1152,24 +1243,40 @@ export const FenceModel3D = React.forwardRef<
     };
     plc.addEventListener("lock", onLock);
     plc.addEventListener("unlock", onUnlock);
-    // Track pointer travel so a drag-to-orbit that ends as a click doesn't drop
-    // the user into fly mode — only a near-stationary click enters pointer lock.
-    let downX = 0;
-    let downY = 0;
-    const onPointerDown = (e: PointerEvent) => {
-      downX = e.clientX;
-      downY = e.clientY;
+    const onLockError = () => {
+      setWalkNote("Walking is not available in this browser — drag to orbit, scroll to zoom");
     };
-    const onCanvasClick = (e: MouseEvent) => {
+    renderer.domElement.ownerDocument.addEventListener("pointerlockerror", onLockError);
+    // Start a walk: drop to eye height where the orbit stands, facing what it
+    // was looking at, then lock the pointer.
+    const startWalk = () => {
       if (modeRef.current !== "orbit" || controlsRef.current !== "full") return;
-      if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) return;
+      const bc = built ? center(built) : { cx: 0, cy: 0 };
+      const eye = groundAt(camera.position.x + bc.cx, bc.cy - camera.position.z) + EYE_FT;
+      const t = orbit.target;
+      const dx = t.x - camera.position.x;
+      const dz = t.z - camera.position.z;
+      // Stand a stride back from the target along the line of sight, at eye
+      // height; when the orbit is over the target, step back along -z.
+      const flat = Math.hypot(dx, dz);
+      if (flat > 6) {
+        const k = (flat - 6) / flat;
+        camera.position.x += dx * k;
+        camera.position.z += dz * k;
+      }
+      camera.position.y = groundAt(camera.position.x + bc.cx, bc.cy - camera.position.z) + EYE_FT;
+      camera.lookAt(t.x, Math.min(t.y, eye), t.z);
       try {
         plc.lock();
       } catch {
-        /* needs a user gesture / pointer-lock permission */
+        onLockError();
       }
     };
-    renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    walkRef.current = startWalk;
+    // While walking, a click is the way out for a hand that is on the mouse.
+    const onCanvasClick = () => {
+      if (modeRef.current === "fly" && plc.isLocked) plc.unlock();
+    };
     renderer.domElement.addEventListener("click", onCanvasClick);
     const onKeyDown = (e: KeyboardEvent) => {
       if (modeRef.current !== "fly") return;
@@ -1189,6 +1296,7 @@ export const FenceModel3D = React.forwardRef<
     let prevTerrain: FenceTerrain3D | null = null;
     let prevClasses: Record<number, BayClass> | null = null;
     let prevMounts: PathPoint[] | null = null;
+    let prevBuild: FenceBuild | null = null;
     const applySpec = (next: ViewSpec) => {
       const geoChanged =
         next.points !== prevPts ||
@@ -1197,7 +1305,8 @@ export const FenceModel3D = React.forwardRef<
         next.material !== prevMat ||
         next.terrain !== prevTerrain ||
         next.segClasses !== prevClasses ||
-        next.wallMounts !== prevMounts;
+        next.wallMounts !== prevMounts ||
+        next.build !== prevBuild;
 
       if (geoChanged) {
         // Where the ground under the scene centre sat BEFORE this change — the
@@ -1216,32 +1325,43 @@ export const FenceModel3D = React.forwardRef<
           zRef = 0;
         }
         const classes = next.segClasses;
+        // The parts: the host's build, else the look's own (a chain-link look
+        // is mesh on round posts even when no type is known); the old studio's
+        // privacy run for a custom material.
+        const build = next.build ?? (isBuiltinMaterial(next.material) ? fenceBuildForFamily(next.material, next.height) : DEFAULT_FENCE_BUILD);
         const l = computeFenceLayout(next.points, next.gates, {
           groundAt: terrainRef ? groundAt : undefined,
           segClass: classes ? (i: number) => classes[i] : undefined,
           wallMounts: next.wallMounts,
+          build,
         });
         const { cx, cy } = center(l);
+        const rows = Math.max(1, railRowsFor(build, next.height).length);
         const countsChanged =
           !built ||
           !postMesh ||
           built.postCount !== l.postCount ||
           built.picketCount !== l.picketCount ||
-          built.bayCount !== l.bayCount;
+          built.bayCount !== l.bayCount ||
+          builtRows !== rows ||
+          built.build.postProfile !== build.postProfile ||
+          built.build.postCap !== build.postCap;
         if (countsChanged) {
           disposeInstances();
-          buildInstances(l, next.material, next.materialColor);
+          buildInstances(l, next.material, next.materialColor, rows);
         } else if (next.material !== curMaterial) {
           const mat = getMaterial(next.material, next.materialColor);
           if (postMesh) postMesh.material = mat;
           if (picketMesh) picketMesh.material = mat;
           if (railMesh) railMesh.material = mat;
+          if (capMesh && build.postCap !== "loop") capMesh.material = mat;
           curMaterial = next.material;
         }
+        const isMesh = build.infill === "mesh";
         writeMatrices(l, next.height, cx, cy);
-        applyVisibility(next.material);
+        applyVisibility(isMesh);
         rebuildGates(l, next.height, cx, cy);
-        rebuildChain(l, next.height, next.material, cx, cy);
+        rebuildChain(l, next.height, isMesh, cx, cy);
         rebuildMounts(l, next.height, next.material, next.materialColor, cx, cy);
         rebuildTerrain(cx, cy, Math.max(worldSpan, layoutSpan(l), reachOf(next.lots, cx, cy)));
         built = l;
@@ -1252,6 +1372,7 @@ export const FenceModel3D = React.forwardRef<
         prevTerrain = next.terrain;
         prevClasses = next.segClasses;
         prevMounts = next.wallMounts;
+        prevBuild = next.build;
         if (!framed) {
           frameCamera(l);
           framed = true;
@@ -1296,7 +1417,7 @@ export const FenceModel3D = React.forwardRef<
       }
     };
 
-    applySpec({ points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts, lots, lotColor });
+    applySpec({ points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts, lots, lotColor, build });
     applyRef.current = applySpec;
 
     activateRef.current = () => {
@@ -1313,20 +1434,20 @@ export const FenceModel3D = React.forwardRef<
 
     let raf = 0;
     let prev = performance.now();
-    const baseSpeed = span * 0.6;
     const animate = (now: number) => {
       raf = requestAnimationFrame(animate);
       const dt = Math.min((now - prev) / 1000, 0.05);
       prev = now;
       if (modeRef.current === "fly" && plc.isLocked) {
-        const v = baseSpeed * dt;
-        if (keys.has("KeyW")) plc.moveForward(v);
-        if (keys.has("KeyS")) plc.moveForward(-v);
-        if (keys.has("KeyD")) plc.moveRight(v);
-        if (keys.has("KeyA")) plc.moveRight(-v);
+        // A walking pace, so a post can be looked at; Shift runs.
+        const v = (keys.has("ShiftLeft") || keys.has("ShiftRight") ? RUN_FT_S : WALK_FT_S) * dt;
+        if (keys.has("KeyW") || keys.has("ArrowUp")) plc.moveForward(v);
+        if (keys.has("KeyS") || keys.has("ArrowDown")) plc.moveForward(-v);
+        if (keys.has("KeyD") || keys.has("ArrowRight")) plc.moveRight(v);
+        if (keys.has("KeyA") || keys.has("ArrowLeft")) plc.moveRight(-v);
         let dy = 0;
         if (keys.has("KeyE") || keys.has("Space")) dy += v;
-        if (keys.has("KeyQ") || keys.has("ShiftLeft")) dy -= v;
+        if (keys.has("KeyQ") || keys.has("KeyC")) dy -= v;
         const bc = built ? center(built) : { cx: 0, cy: 0 };
         const floor = groundAt(camera.position.x + bc.cx, bc.cy - camera.position.z) + 1.2;
         camera.position.y = Math.max(camera.position.y + dy, terrainRef ? floor : Math.max(floor, span * 0.02));
@@ -1375,8 +1496,10 @@ export const FenceModel3D = React.forwardRef<
       orbit.dispose();
       plc.removeEventListener("lock", onLock);
       plc.removeEventListener("unlock", onUnlock);
-      renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+      renderer.domElement.ownerDocument.removeEventListener("pointerlockerror", onLockError);
+      renderer.domElement.removeEventListener("dblclick", onDblClick);
       renderer.domElement.removeEventListener("click", onCanvasClick);
+      walkRef.current = () => {};
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
@@ -1396,8 +1519,10 @@ export const FenceModel3D = React.forwardRef<
       stakeMat.dispose();
       stakeCapMat.dispose();
       postGeo.dispose();
+      postRoundGeo.dispose();
       picketGeo.dispose();
       railGeo.dispose();
+      for (const g of Object.values(capGeos)) g?.dispose();
       highlightGeo.dispose();
       highlightMat.dispose();
       gatePostMat.dispose();
@@ -1452,13 +1577,23 @@ export const FenceModel3D = React.forwardRef<
         </span>
       </div>
       {mode === "orbit" ? (
-        <div className="absolute inset-x-0 bottom-3 flex justify-center pointer-events-none">
+        <div className="absolute inset-x-0 bottom-3 flex justify-center items-center gap-2 pointer-events-none">
           <span
             data-fm3d="hint"
             className="rounded-full bg-white/85 backdrop-blur hairline px-3 py-1 text-[11px] text-[color:var(--ink-muted)]"
           >
-            {controls === "full" ? "Click to walk through · WASD move · Q/E up·down · Esc exit · drag to orbit" : "Drag to look around · pinch or scroll to zoom"}
+            {walkNote ?? (controls === "full" ? "Drag to orbit · scroll to zoom in on a post · double-click to look at a spot" : "Drag to look around · pinch or scroll to zoom")}
           </span>
+          {controls === "full" ? (
+            <button
+              type="button"
+              data-fm3d="walk"
+              className="pointer-events-auto rounded-full bg-[color:var(--accent)] text-white px-3 py-1 text-[11px] font-medium shadow-[var(--shadow-sm)]"
+              onClick={() => walkRef.current()}
+            >
+              Walk through
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="absolute inset-x-0 bottom-3 flex justify-center pointer-events-none">
@@ -1466,7 +1601,7 @@ export const FenceModel3D = React.forwardRef<
             data-fm3d="hint-on"
             className="rounded-full bg-[color:var(--accent)] text-white px-3 py-1 text-[11px] shadow-[var(--shadow-sm)]"
           >
-            Walking · move mouse to look · WASD · Esc to exit
+            Walking · move the mouse to look · W A S D to move, Shift to run, Q/E down·up · click or Esc to stop
           </span>
         </div>
       )}

@@ -92,6 +92,7 @@ import {
 import { resolveMarket, type MarketSnapshot } from "@/lib/fence/market";
 import { RATE_LIMITS, sanitizeRateBook, standardRate, type RateBook } from "@/lib/fence/rates";
 import { summarizeSlope, type SlopeSummary } from "@/lib/fence/slope";
+import { fenceBuildFor, type FenceBuild } from "@/lib/fence/build";
 import type { FenceLayoutInput, FenceOpeningInput, FenceRunInput } from "@/lib/fence/takeoff";
 import { polylinesToRuns, typedRuns } from "@/lib/fence/layout";
 import {
@@ -1447,9 +1448,16 @@ export function initFenceEstimatorContent(
         renderFigures();
         return;
       }
-      // Undo drops the last run — one row leaving, so it leaves like one.
+      // Undo takes back the LAST thing done on the map, whatever it was
+      // (2026-09-28, owner: "when I outline the house I want to go back or
+      // delete the outline"): a corner of the house being traced, then the
+      // outline that just closed (its corners come back as the draft), a
+      // house just removed, or the last fence dot — whichever is newest.
       if (kind === 'undo') {
-        if (mapOwnsRuns && mapApi) { mapApi.undo(); return; }
+        if (mapApi && draftState.houseCorners > 0) { mapApi.undoDraft(); return; }
+        const entry = houseUndo[houseUndo.length - 1];
+        if (entry && mapApi && (entry.seq > fenceSeq || !mapPoints.length)) { undoHouse(); return; }
+        if (mapOwnsRuns && mapApi) { holdStamp(); mapApi.undo(); return; }
         // The donor stopped at one run because an empty ledger was not a state
         // it could render. It is now (`#runsEmpty`), so undo goes all the way.
         if (!fs.runs.length) return;
@@ -1463,7 +1471,14 @@ export function initFenceEstimatorContent(
         return;
       }
       // Clear and Reset genuinely re-list everything, so those DO cascade.
+      // While a house is being traced, Clear drops THAT outline and nothing
+      // else — the fence is not what the hand was on.
       if (kind === 'clear') {
+        if (mapApi && draftState.houseCorners > 0) {
+          mapApi.cancelDraft();
+          sayHint('Outline dropped · House starts another · Clear again clears the fence');
+          return;
+        }
         fs.runs = []; fs.openings = []; renderStudio(); playStagger?.();
         setArmed(null);
         mapApi?.clear();
@@ -1531,9 +1546,17 @@ export function initFenceEstimatorContent(
     }
     const delHouse = target.closest<HTMLElement>('[data-del-house]');
     if (delHouse) {
-      if (houseSel === delHouse.dataset.delHouse) houseSel = null;
-      houses = houses.filter(function (h) { return h.id !== delHouse.dataset.delHouse; });
-      afterHousesChanged();
+      removeHouse(delHouse.dataset.delHouse ?? '');
+      return;
+    }
+    // Redraw: the outline goes and the tool is back in hand for a fresh one.
+    const redrawHouse = target.closest<HTMLElement>('[data-redraw-house]');
+    if (redrawHouse) {
+      removeHouse(redrawHouse.dataset.redrawHouse ?? '');
+      if (fs.mode === '3d') showDrawView();
+      setHouseLayer(true, true);
+      setHouseMode(true);
+      sayHint('Outline removed — click each corner of the house again · Undo brings the old one back');
       return;
     }
     if (target.closest('[data-house-trace]')) {
@@ -1622,6 +1645,7 @@ export function initFenceEstimatorContent(
       mapPoints = [];
       setSiteBuildings([]);
       houses = [];
+      houseUndo.length = 0;
       resetHouseLookup();
       setHouseMode(false);
       houseLayerTouched = false;
@@ -1857,6 +1881,9 @@ export function initFenceEstimatorContent(
   // slope facts. Debounced so a vertex drag costs ONE request, not sixty.
   // Failure is a state, not a throw: the price falls back to plan footage and
   // the proposal's assumptions say so.
+  /** The ground as the Elevation API answered it — re-read under the type's
+   *  own rules by `classifiedTerrain`. */
+  let terrainRaw: { segs: ReturnType<typeof sampleFencePath>['segs']; elevFt: number[] } | null = null;
   let terrainReport: FenceTerrainReport | null = null;
   let terrainStatus: 'idle' | 'busy' | 'ok' | 'failed' = 'idle';
   /** Bumped on every trace commit; an answer for an older stamp is dropped. */
@@ -1880,6 +1907,7 @@ export function initFenceEstimatorContent(
     const stamp = terrainStamp;
     const o = mapOrigin;
     if (!o || !tracedSegments(mapPoints).length) {
+      terrainRaw = null;
       terrainReport = null;
       terrainStatus = 'idle';
       paintTerrain();
@@ -1891,20 +1919,38 @@ export function initFenceEstimatorContent(
       const res = await fetchElevationProfile(sampling.samples);
       if (stamp !== terrainStamp) return; // the line moved on — a newer request is queued
       if (res.ok) {
-        terrainReport = terrainFromProfile(sampling.segs, res.elevFt);
+        terrainRaw = { segs: sampling.segs, elevFt: res.elevFt };
+        terrainReport = null;
         terrainStatus = 'ok';
       } else {
+        terrainRaw = null;
         terrainReport = null;
         terrainStatus = 'failed';
         console.warn('[fence-estimator] elevation profile failed:', res.error);
       }
     } catch (err) {
       if (stamp !== terrainStamp) return;
+      terrainRaw = null;
       terrainReport = null;
       terrainStatus = 'failed';
       console.warn('[fence-estimator] elevation profile failed:', err);
     }
     paintTerrain();
+  }
+
+  /** The profile read under the CURRENT type's rules — its post spacing
+   *  (steps are one per bay) and how steep its build can rack — so a change
+   *  of type, height or spacing re-reads the same ground without another
+   *  Elevation call. */
+  let terrainRulesKey = '';
+  function classifiedTerrain(): FenceTerrainReport | null {
+    if (!terrainRaw) return null;
+    const b = currentBuild();
+    const key = b.spacingFt + '|' + b.rackMaxDeg;
+    if (terrainReport && terrainRulesKey === key) return terrainReport;
+    terrainRulesKey = key;
+    terrainReport = terrainFromProfile(terrainRaw.segs, terrainRaw.elevFt, { sectionFt: b.spacingFt, rackMaxDeg: b.rackMaxDeg });
+    return terrainReport;
   }
 
   /** Everything the measured ground repaints: the figures (billed footage),
@@ -2105,6 +2151,26 @@ export function initFenceEstimatorContent(
    *  house outline, show it in colour" — the fence is blueprint blue, the lot
    *  line sky, so the house takes a hue neither of them has); the snapped wall
    *  in blueprint; ?house=2 hatches the inside. Tokens off `.content`. */
+  /** The drawn fence: its core on a casing, and the corner dots (owner,
+   *  2026-09-28: "show the fence lines in a different colour — it's hard to
+   *  see if it's been drawn or not"). Tokens off `.content`, memoised: the
+   *  surface rebuilds nothing for an equal object, and `pushMap` runs on
+   *  every hover. */
+  let fencePaletteMemo: FenceDrawMapProps['fencePalette'] | null = null;
+  function fencePalette(): FenceDrawMapProps['fencePalette'] {
+    if (fencePaletteMemo) return fencePaletteMemo;
+    const out: Record<string, string> = {};
+    const pick: Array<[string, string]> = [
+      ['line', '--fence-line'],
+      ['casing', '--fence-casing'],
+      ['dot', '--fence-dot'],
+      ['dotRing', '--fence-dot-ring'],
+    ];
+    pick.forEach(function (p) { const c = token(p[1]); if (c) out[p[0]] = c; });
+    fencePaletteMemo = out as FenceDrawMapProps['fencePalette'];
+    return fencePaletteMemo;
+  }
+
   function housePalette(): FenceDrawMapProps['housePalette'] {
     const out: Record<string, string | boolean | number> = { hatched: candidate('house') === 2 };
     const pick: Array<[string, string]> = [
@@ -2224,17 +2290,19 @@ export function initFenceEstimatorContent(
    *  an add/remove of a segment (and until the refetch lands) the per-segment
    *  indices no longer line up, and pricing off them would be a lie. */
   function usableTerrain(): FenceTerrainReport | null {
-    if (terrainStatus !== 'ok' || !terrainReport || !mapOwnsRuns) return null;
+    if (terrainStatus !== 'ok' || !mapOwnsRuns) return null;
+    const report = classifiedTerrain();
+    if (!report) return null;
     // Compared against the segments the sampler actually profiles (it skips
     // slivers under MIN_PROFILED_SEG_FT, which the ledger keeps), segment by
     // segment — a vertex inserted mid-line shifts every index after it while
     // leaving counts that could still happen to agree.
     const profiled = tracedSegments(mapPoints).filter(function (s) { return s.ft >= MIN_PROFILED_SEG_FT; });
-    if (terrainReport.segs.length !== profiled.length) return null;
+    if (report.segs.length !== profiled.length) return null;
     for (let i = 0; i < profiled.length; i++) {
-      if (terrainReport.segs[i].seg !== profiled[i].seg) return null;
+      if (report.segs[i].seg !== profiled[i].seg) return null;
     }
-    return terrainReport;
+    return report;
   }
 
   /** The measured segment behind a ledger run — by the run's own identity
@@ -2284,7 +2352,9 @@ export function initFenceEstimatorContent(
       tag.title =
         (s.riseFt >= 0 ? 'Rises ' : 'Falls ') + Math.abs(s.riseFt).toFixed(1) + ' ft over ' + Math.round(s.planFt) +
         ' ft · ' + s.thetaDeg.toFixed(0) + '° · ' +
-        (s.cls === 'stepped' ? 'stepped, ' + (s.steps ?? 1) + ' steps' : s.cls === 'racked' ? 'racked' : 'level');
+        (s.cls === 'stepped'
+          ? 'stepped, ' + (s.steps ?? 1) + ' steps' + (s.rolling ? ' — the ground rolls under it, a racked panel would not sit' : '')
+          : s.cls === 'racked' ? 'racked — one line following the grade' : 'level');
     });
   }
 
@@ -2409,6 +2479,84 @@ export function initFenceEstimatorContent(
   let houses: DrawnHouse[] = [];
   let houseSeq = 0;
   let draftState: DraftState = { fence: false, houseCorners: 0 };
+  // What Undo can take back on the houses, newest last: an outline that
+  // closed (reopened as the draft, corners and all) or a house removed (put
+  // back where it was). Ordered against the fence by `seq`: the toolbar's
+  // Undo goes for whichever is newer, the last house action or the last
+  // fence edit. An undo of the fence commits a trace change of its own, so
+  // the stamp is held through it — that change is not a new action.
+  type HouseUndo =
+    | { kind: 'closed'; id: string; seq: number }
+    | { kind: 'removed'; house: DrawnHouse; index: number; seq: number };
+  const houseUndo: HouseUndo[] = [];
+  let actionSeq = 0;
+  let fenceSeq = 0;
+  let stampHeldUntil = 0;
+  function holdStamp() { stampHeldUntil = performance.now() + 400; }
+  function pushHouseUndo(entry: HouseUndo) {
+    houseUndo.push(entry);
+    if (houseUndo.length > 20) houseUndo.shift();
+    syncUndoButton();
+  }
+  function undoHouse() {
+    const entry = houseUndo.pop();
+    if (!entry || !mapApi) return;
+    if (entry.kind === 'closed') {
+      const h = houses.find(function (x) { return x.id === entry.id; });
+      if (!h) { undoHouse(); return; } // already gone by hand — the one before it
+      if (houseSel === h.id) houseSel = null;
+      houses = houses.filter(function (x) { return x.id !== entry.id; });
+      if (fs.mode === '3d') showDrawView();
+      afterHousesChanged();
+      setHouseLayer(true, true);
+      // The corners come back as the draft with the tool in hand: Undo again
+      // takes back a corner, the first corner or Close outline finishes it.
+      houseMode = true;
+      syncHouseButton();
+      mapApi.openHouseDraft(h.ring);
+      pushMap();
+      sayHint('Outline reopened — Undo takes back a corner · click the first corner or Close outline to finish · Clear drops it');
+      return;
+    }
+    const at = Math.min(entry.index, houses.length);
+    houses = houses.slice(0, at).concat([entry.house], houses.slice(at));
+    afterHousesChanged();
+    sayHint('House put back');
+  }
+  /** Remove a traced house — the row's ×, Redraw, or Backspace on the one
+   *  being edited. Undo brings it back. */
+  function removeHouse(id: string) {
+    const index = houses.findIndex(function (h) { return h.id === id; });
+    if (index < 0) return;
+    const house = houses[index];
+    if (houseSel === id) houseSel = null;
+    houses = houses.filter(function (h) { return h.id !== id; });
+    pushHouseUndo({ kind: 'removed', house: house, index: index, seq: ++actionSeq });
+    afterHousesChanged();
+    renderDraftControls();
+    syncHint();
+  }
+  /** The toolbar's Undo says what it will take back. */
+  function syncUndoButton() {
+    const entry = houseUndo[houseUndo.length - 1];
+    const what = draftState.houseCorners > 0
+      ? 'corner'
+      : entry && (entry.seq > fenceSeq || !mapPoints.length)
+        ? entry.kind === 'closed' ? 'outline' : 'removed-house'
+        : mapPoints.length ? 'dot' : 'none';
+    $$('[data-act="undo"]').forEach(function (b) {
+      b.dataset.undo = what;
+      b.title = what === 'corner'
+        ? 'Undo — takes back the last corner of the house'
+        : what === 'outline'
+          ? 'Undo — reopens the house outline that just closed'
+          : what === 'removed-house'
+            ? 'Undo — puts the removed house back'
+            : what === 'dot'
+              ? 'Undo — takes back the last fence dot'
+              : 'Undo';
+    });
+  }
   // The house LAYER (the House button): outline, hatch and area label on the
   // map, and the walls a fence dot snaps to. On by itself as soon as the site
   // has an outline — until the contractor has used the button, after which it
@@ -2608,6 +2756,9 @@ export function initFenceEstimatorContent(
     if (key && !houseLayer) setHouseLayer(true, true);
     if (key && houseMode) setHouseMode(false);
     if (key && armed) setArmed(null);
+    // A passing notice ("House outlined · Undo reopens it…") gives way to
+    // the editing instruction the moment the outline is picked up.
+    if (key && hintNote && !held) hintNote = null;
     syncHint();
     renderDraftControls();
     renderHousePanel();
@@ -2793,11 +2944,19 @@ export function initFenceEstimatorContent(
 
   function onHouseAdd(ring: PathPoint[]) {
     houseSeq += 1;
-    houses = houses.concat([{ id: 'h' + houseSeq, ring: ring, stories: 1 }]);
+    const id = 'h' + houseSeq;
+    houses = houses.concat([{ id: id, ring: ring, stories: 1 }]);
     // The outline is drawn: the tool goes back in the drawer, the house stays.
     houseMode = false;
+    pushHouseUndo({ kind: 'closed', id: id, seq: ++actionSeq });
     afterHousesChanged();
     syncHint();
+    // A closed outline is not the end of the road: say how to get back —
+    // and a triangle is almost never a house (the third click landed on the
+    // first corner and closed it early).
+    sayHint(ring.length <= 3
+      ? 'Closed with 3 corners — Undo reopens it if the house has more · Edit house drags a corner'
+      : 'House outlined · Undo reopens it corner by corner · Edit house drags a corner · × removes it');
   }
   function onHouseChange(id: string, ring: PathPoint[]) {
     const was = houses.find(function (h) { return h.id === id; });
@@ -2832,6 +2991,7 @@ export function initFenceEstimatorContent(
   function onDraftChange(state: DraftState) {
     draftState = state;
     renderDraftControls();
+    syncUndoButton();
   }
 
   /** The largest detected footprint on the lot, if the page has one that no
@@ -2903,8 +3063,15 @@ export function initFenceEstimatorContent(
     const refocus = focused && box.contains(focused) ? focused.dataset.draft : null;
     const house = draftState.houseCorners > 0;
     if (houseSel && !draftState.fence && !house) {
+      // Editing an outline: Done, or the two ways back — draw it again, or
+      // take it off the map (Undo returns it either way).
+      const own = !houseSel.startsWith('det:');
       box.classList.remove('is-hidden');
-      box.innerHTML = '<button class="tool tool-primary" type="button" data-house-done><svg class="ic"><use href="#i-check"/></svg>Done</button>';
+      box.innerHTML = '<button class="tool tool-primary" type="button" data-house-done><svg class="ic"><use href="#i-check"/></svg>Done</button>' +
+        (own
+          ? '<button class="tool" type="button" data-redraw-house="' + houseSel + '"><svg class="ic"><use href="#i-undo"/></svg>Redraw outline</button>' +
+            '<button class="tool tool-remove" type="button" data-del-house="' + houseSel + '"><svg class="ic"><use href="#i-trash"/></svg>Remove</button>'
+          : '');
       return;
     }
     if (!draftState.fence && !house) {
@@ -3039,11 +3206,13 @@ export function initFenceEstimatorContent(
       onDetectedShift: onDetectedShift,
       houseEdit: houseLayer ? houseSel : null,
       onHouseSelect: onHouseSelect,
+      onHouseRemove: removeHouse,
       wallMounts: wallMountView(),
       onDraftChange: onDraftChange,
       onTouchAim: onTouchAim,
       parcelPalette: parcelPalette(),
       housePalette: housePalette(),
+      fencePalette: fencePalette(),
       terrain: terrainOverlay(),
       topo: topoOn ? currentLotTopo()?.overlay ?? null : null,
       topoPalette: topoPalette(),
@@ -3108,7 +3277,9 @@ export function initFenceEstimatorContent(
                 ? 'Trace the house: tap each corner — tap the first corner or Finish to close · hold and drag to aim · Cancel drops it'
                 : 'Trace the house: click each corner — click the first corner, double-click or press Enter to close · drag a corner to adjust · Esc cancels')
             : houseSel
-              ? 'Editing the house: drag it onto the roof, drag a corner to reshape it — fence dots snap to where you leave it · Done when finished'
+              ? (coarse
+                  ? 'Editing the house: drag it onto the roof, drag a corner to reshape it · Redraw or Remove below · Done when finished'
+                  : 'Editing the house: drag it onto the roof, drag a corner to reshape it, right-click a corner to remove it · Backspace removes the outline · Done when finished')
 
               : !houseLayer && (houses.length || siteBuildings.length)
                 ? hintIdle + ' · House layer is hidden — dots do not snap to house walls'
@@ -3202,6 +3373,9 @@ export function initFenceEstimatorContent(
    *  the ledger — and therefore the price. */
   function onTraceChange(pts: PathPoint[]) {
     mapPoints = pts;
+    // A fence edit is the newest action — unless it is Undo's own commit.
+    if (performance.now() > stampHeldUntil) fenceSeq = ++actionSeq;
+    syncUndoButton();
     dropHeldHint();
     const segs = tracedSegments(pts);
     if (!mapOwnsRuns) {
@@ -3395,9 +3569,23 @@ export function initFenceEstimatorContent(
       // The property line on the land, in the map's lot colour.
       lots: modelLots(),
       lotColor: token('--parcel-line'),
+      // The parts the type is really built from, at this height and spacing.
+      build: currentBuild(),
       active: fs.mode === '3d',
       className: 'model-live-in',
     };
+  }
+
+  /** What the fence is built from — the picked type at the picked height
+   *  and post spacing; one object per distinct answer, so the scene and the
+   *  ground rules see a change only when there is one. */
+  let buildMemo: { key: string; build: FenceBuild } | null = null;
+  function currentBuild(): FenceBuild {
+    const t = currentType().type;
+    const key = t.id + '|' + fs.height + '|' + (fs.spacing ?? '');
+    if (buildMemo && buildMemo.key === key) return buildMemo.build;
+    buildMemo = { key: key, build: fenceBuildFor(t, fs.height, fs.spacing) };
+    return buildMemo.build;
   }
 
   function pushModel() {
@@ -3487,8 +3675,9 @@ export function initFenceEstimatorContent(
       const report = usableTerrain();
       const steps = report ? report.segs.reduce(function (a, sg) { return a + (sg.cls === 'stepped' ? sg.steps ?? 0 : 0); }, 0) : 0;
       const racked = report ? report.segs.filter(function (sg) { return sg.cls === 'racked'; }).length : 0;
+      const rolling = report ? report.segs.filter(function (sg) { return sg.cls === 'stepped' && sg.rolling; }).length : 0;
       ground.push('Real ground · ' + sourceLabel(topoGrid));
-      if (steps) ground.push(steps + ' steps');
+      if (steps) ground.push(steps + ' steps' + (rolling ? ' (' + rolling + (rolling === 1 ? ' run' : ' runs') + ' on rolling ground)' : ''));
       if (racked) ground.push(racked + (racked === 1 ? ' run racked' : ' runs racked'));
     }
     if (mounts) ground.push(mounts + (mounts === 1 ? ' wall mount' : ' wall mounts'));
@@ -3697,6 +3886,7 @@ export function initFenceEstimatorContent(
       wallMounts: wallMounts().ft.slice(0, 40).map(function (q) { return { x: r1(q.x), y: r1(q.y) }; }),
       terrain: terrain,
       lotColor: lot && hex6.test(lot) ? lot : null,
+      build: currentBuild(),
     };
   }
 

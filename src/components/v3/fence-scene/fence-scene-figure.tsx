@@ -118,6 +118,7 @@ export function FenceSceneFigure({
             wallMounts={scene.wallMounts}
             lots={scene.lots}
             lotColor={scene.lotColor}
+            build={scene.build}
             controls={controls}
             className="jf-fs-canvas"
           />

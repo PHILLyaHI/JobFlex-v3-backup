@@ -19,6 +19,18 @@
 // plan length. The grade LENGTH, by contrast, integrates every sample step
 // (√(ds² + dz²)), so a dip inside a segment still buys its true footage even
 // when the net angle reads flat.
+//
+// THE SHAPE OF THE GROUND (2026-09-28, owner: "a gradual slope going down
+// with no up and down — one line that follows the slope; up and down — step
+// it"). Racking is one straight line from post to post: it only fits ground
+// that runs straight too. So a segment RACKS when its profile is gradual AND
+// keeps to one line — every sample within ROLLING_FT of the chord between
+// its ends and no more than ROLLING_FT of travel against the net grade — and
+// STEPS when the ground rolls, however small the net rise, or when the grade
+// is steeper than the fence's own build can rack (`rackMaxDeg`, from the
+// type: a stick-built run follows a hill, a prefab privacy panel takes almost
+// none). LEVEL is a gradual segment under LEVEL_MAX_DEG that keeps to its
+// line. Steps are counted per bay at the type's post spacing.
 import type { PathPoint } from "./fenceTypes";
 import { localFeetToLatLng, type LatLng } from "./mapProjection";
 import { POST_SPACING_FT } from "./fenceGeometry";
@@ -34,9 +46,20 @@ export const MAX_PROFILE_SAMPLES = 750;
 export const MIN_PROFILED_SEG_FT = 0.5;
 export const LEVEL_MAX_DEG = 5;
 export const RACKED_MAX_DEG = 25;
-
+/** Ground that leaves the straight line between a segment's ends by more
+ *  than this — or climbs back against its own grade by more than this — is
+ *  rolling ground: a racked panel would bury one end or hang the other, so
+ *  the run steps. A foot: past what a crew shims or trims a panel to. */
+export const ROLLING_FT = 1.0;
 
 export type SlopeClass = "level" | "racked" | "stepped";
+
+export interface TerrainRules {
+  /** Post spacing the steps are counted at (one level panel per bay). */
+  sectionFt?: number;
+  /** Steeper than this the fence's build cannot rack and must step. */
+  rackMaxDeg?: number;
+}
 
 export interface SegSampling {
   /** Index into the traced `points` array (segment = points[seg]→points[seg+1]). */
@@ -105,10 +128,15 @@ export interface SegTerrain {
   /** Net grade angle: atan(|rise| / plan). */
   thetaDeg: number;
   cls: SlopeClass;
-  /** Stepped only: one step per bay (posts at POST_SPACING_FT centres). */
+  /** Stepped only: one step per bay (posts at the type's spacing). */
   steps?: number;
   /** Stepped only: the drop each step takes, |rise| / steps. */
   stepDropFt?: number;
+  /** The ground rolls under this segment (up and down inside it): it steps
+   *  for its shape, not its grade. */
+  rolling?: boolean;
+  /** How far the ground leaves the straight line between the ends, ft. */
+  offLineFt?: number;
 }
 
 export interface FenceTerrainReport {
@@ -121,8 +149,29 @@ export interface FenceTerrainReport {
   maxElevFt: number;
 }
 
+/** How far a profile strays from one straight line between its ends, and how
+ *  far it travels back against its own net grade. Both in feet. */
+export function profileShape(z: readonly number[]): { offLineFt: number; backFt: number } {
+  const n = z.length;
+  if (n < 2) return { offLineFt: 0, backFt: 0 };
+  const z0 = z[0];
+  const rise = z[n - 1] - z0;
+  const dir = rise >= 0 ? 1 : -1;
+  let off = 0;
+  let back = 0;
+  for (let k = 0; k < n; k++) {
+    const chord = z0 + (rise * k) / (n - 1);
+    off = Math.max(off, Math.abs(z[k] - chord));
+    if (k > 0) {
+      const dz = z[k] - z[k - 1];
+      if (dz * dir < 0) back += Math.abs(dz);
+    }
+  }
+  return { offLineFt: off, backFt: back };
+}
+
 /** Turn the profile the Elevation API answered into per-segment slope facts. */
-export function terrainFromProfile(segs: SegSampling[], elevFt: number[]): FenceTerrainReport {
+export function terrainFromProfile(segs: SegSampling[], elevFt: number[], rules: TerrainRules = {}): FenceTerrainReport {
   const out: SegTerrain[] = [];
   let planFt = 0;
   let gradeFt = 0;
@@ -130,6 +179,8 @@ export function terrainFromProfile(segs: SegSampling[], elevFt: number[]): Fence
   let steppedFt = 0;
   let minElevFt = Infinity;
   let maxElevFt = -Infinity;
+  const sectionFt = rules.sectionFt && rules.sectionFt > 0 ? rules.sectionFt : POST_SPACING_FT;
+  const rackMax = rules.rackMaxDeg != null && rules.rackMaxDeg >= 0 ? Math.min(rules.rackMaxDeg, RACKED_MAX_DEG) : RACKED_MAX_DEG;
 
   for (const s of segs) {
     const ds = s.planFt / (s.count - 1);
@@ -145,8 +196,15 @@ export function terrainFromProfile(segs: SegSampling[], elevFt: number[]): Fence
     }
     const riseFt = elevFt[s.start + s.count - 1] - elevFt[s.start];
     const thetaDeg = (Math.atan2(Math.abs(riseFt), s.planFt) * 180) / Math.PI;
-    const cls: SlopeClass =
-      thetaDeg < LEVEL_MAX_DEG ? "level" : thetaDeg <= RACKED_MAX_DEG ? "racked" : "stepped";
+    const shape = profileShape(elevFt.slice(s.start, s.start + s.count));
+    const rolling = shape.offLineFt > ROLLING_FT || shape.backFt > ROLLING_FT;
+    const cls: SlopeClass = rolling
+      ? "stepped"
+      : thetaDeg < LEVEL_MAX_DEG
+        ? "level"
+        : thetaDeg <= rackMax
+          ? "racked"
+          : "stepped";
     const t: SegTerrain = {
       seg: s.seg,
       planFt: s.planFt,
@@ -154,10 +212,12 @@ export function terrainFromProfile(segs: SegSampling[], elevFt: number[]): Fence
       riseFt,
       thetaDeg,
       cls,
+      rolling,
+      offLineFt: Math.round(shape.offLineFt * 100) / 100,
     };
     if (cls === "stepped") {
       // One level panel per bay; the run drops between posts.
-      const steps = Math.max(1, Math.ceil(s.planFt / POST_SPACING_FT));
+      const steps = Math.max(1, Math.ceil(s.planFt / sectionFt));
       t.steps = steps;
       t.stepDropFt = Math.abs(riseFt) / steps;
     }
