@@ -87,19 +87,22 @@ export function AdminTwilioContent({ data }: { data: TwilioPageData }) {
         <div className={i.form}>
           <label className={i.field}>
             <span>Account SID</span>
-            <input value={accountSid} onChange={(e) => setAccountSid(e.target.value)} placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" spellCheck={false} />
+            {/* A text box above a password box reads as a login form to the
+                browser, which filled the admin's email in here (2026-09-29).
+                `new-password` on the token is the one value browsers honour. */}
+            <input value={accountSid} onChange={(e) => setAccountSid(e.target.value)} placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" spellCheck={false} autoComplete="off" name="twilio-account-sid" />
           </label>
           <label className={i.field}>
             <span>Auth Token{data.stored ? ` — saved, ends in ${data.stored.tokenTail}; blank keeps it` : ""}</span>
-            <input value={authToken} onChange={(e) => setAuthToken(e.target.value)} placeholder={data.stored ? "••••••••" : "the 32-character token"} type="password" autoComplete="off" spellCheck={false} />
+            <input value={authToken} onChange={(e) => setAuthToken(e.target.value)} placeholder={data.stored ? "••••••••" : "the 32-character token"} type="password" autoComplete="new-password" name="twilio-auth-token" spellCheck={false} />
           </label>
           <label className={i.field}>
             <span>Messaging Service SID (preferred — carries the A2P registration)</span>
-            <input value={messagingServiceSid} onChange={(e) => setMessagingServiceSid(e.target.value)} placeholder="MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" spellCheck={false} />
+            <input value={messagingServiceSid} onChange={(e) => setMessagingServiceSid(e.target.value)} placeholder="MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" spellCheck={false} autoComplete="off" name="twilio-messaging-service-sid" />
           </label>
           <label className={i.field}>
             <span>Sending number (only without a Messaging Service, or as its default)</span>
-            <input value={fromNumber} onChange={(e) => setFromNumber(e.target.value)} placeholder="+12065550100" spellCheck={false} />
+            <input value={fromNumber} onChange={(e) => setFromNumber(e.target.value)} placeholder="+12065550100" spellCheck={false} autoComplete="off" name="twilio-from-number" />
           </label>
           <label className={i.check}>
             <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
