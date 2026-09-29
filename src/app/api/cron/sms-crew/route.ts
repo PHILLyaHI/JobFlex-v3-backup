@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/cronAuth";
 import { runCrewTexts } from "@/lib/sms/crew";
 import { runClientReminders } from "@/lib/sms/clients";
+import { runTimedTextRules } from "@/lib/sms/rulesEngine";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -15,5 +16,8 @@ export async function GET(req: Request) {
   const now = new Date();
   const r = await runCrewTexts(now);
   const clientReminders = await runClientReminders(now);
-  return NextResponse.json({ ok: true, ...r, clientReminders });
+  // The company's own timed texts (2026-09-29): hours before a visit or a crew
+  // day, days with no answer on a proposal.
+  const ownTexts = await runTimedTextRules(now).catch(() => 0);
+  return NextResponse.json({ ok: true, ...r, clientReminders, ownTexts });
 }

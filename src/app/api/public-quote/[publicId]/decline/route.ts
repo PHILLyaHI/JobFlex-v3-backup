@@ -4,6 +4,7 @@ import { rateLimitShared, ipFromRequest, HOUR } from "@/lib/rateLimit";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendToMembersByPref } from "@/lib/notificationPrefs";
 import { textOffice } from "@/lib/sms/send";
+import { fireTextRules, proposalContext } from "@/lib/sms/rulesEngine";
 import { declinedLine } from "@/lib/sms/format";
 import { buildOwnerDeclined } from "@/lib/email/build/operator";
 import { signRevert } from "@/lib/quoteRevert";
@@ -79,7 +80,8 @@ export async function POST(
   // Office heads-up, gated by each member's "Proposal declined" email pref.
   try {
     const appUrl = await appBaseUrl();
-    await textOffice(proposal.organizationId, "proposal-declined", declinedLine(proposal.client?.name ?? "A client", proposal.title, safeNote || null));
+    await textOffice(proposal.organizationId, "proposal-declined", declinedLine(proposal.client?.name ?? "A client", proposal.title, safeNote || null), { alsoUserIds: [proposal.ownerId] });
+    await fireTextRules("proposal.declined", proposalContext(proposal.id, { note: safeNote }));
     await sendToMembersByPref(
       proposal.organizationId,
       "proposal-declined",

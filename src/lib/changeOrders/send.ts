@@ -11,6 +11,8 @@ import { buildChangeOrder } from "@/lib/email/build/client";
 import { buildOwnerChangeOrderAnswered } from "@/lib/email/build/operator";
 import { sendToMembersByPref } from "@/lib/notificationPrefs";
 import { textOffice } from "@/lib/sms/send";
+import { fireTextRules, jobContext, proposalContext } from "@/lib/sms/rulesEngine";
+import { money } from "@/lib/sms/format";
 import { changeOrderLine } from "@/lib/sms/format";
 import { isTwilioEnabled, sendSMS } from "@/lib/sdk/twilio";
 import { toE164 } from "@/lib/phone";
@@ -29,8 +31,8 @@ async function loadForSend(coId: string) {
     where: { id: coId },
     include: {
       organization: { select: ORG_SELECT },
-      job: { include: { client: true, proposal: { select: { id: true, title: true, total: true, changeOrders: { where: { status: "APPROVED" }, select: { id: true, status: true, total: true } } } } } },
-      proposal: { select: { id: true, title: true, total: true, client: true, changeOrders: { where: { status: "APPROVED" }, select: { id: true, status: true, total: true } } } },
+      job: { include: { client: true, proposal: { select: { id: true, title: true, total: true, ownerId: true, changeOrders: { where: { status: "APPROVED" }, select: { id: true, status: true, total: true } } } } } },
+      proposal: { select: { id: true, title: true, total: true, ownerId: true, client: true, changeOrders: { where: { status: "APPROVED" }, select: { id: true, status: true, total: true } } } },
     },
   });
 }
@@ -120,7 +122,18 @@ export async function notifyOfficeChangeOrderAnswered(coId: string, approved: bo
     co.organizationId,
     "change-order",
     changeOrderLine(client?.name ?? "Your client", approved, co.number ?? null, co.title, co.total ?? co.amount, co.proposal?.title ?? co.job?.title ?? "the job"),
+    // …and the rep who sold the job, when they ticked it (2026-09-29).
+    { alsoUserIds: [proposal?.ownerId] },
   );
+  {
+    // The company's own texts (2026-09-29): the deal's facts, the change order's amount.
+    const amount = money(co.total ?? co.amount);
+    const ctx = co.proposalId ? await proposalContext(co.proposalId, { amount }) : co.jobId ? await jobContext(co.jobId) : null;
+    if (ctx) {
+      ctx.vars.amount = amount;
+      await fireTextRules("change_order.answered", ctx);
+    }
+  }
   await sendToMembersByPref(
     co.organizationId,
     "change-order",

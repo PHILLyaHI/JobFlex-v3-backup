@@ -199,6 +199,22 @@ export function jobMediaLine(worker: string, job: string, photos: number, videos
   if (videos) bits.push(`${videos} ${videos === 1 ? "video" : "videos"}`);
   return `${worker} added ${bits.join(" and ") || "pictures"} of "${clip(job, 50)}".${link ? ` See them: ${link}` : ""}`;
 }
+// the calendar (2026-09-29) — to the office and the rep whose visit or job it is
+export function appointmentBookedLine(title: string, who: string | null, when: string, where: string | null, by: "online" | string | null): string {
+  const bits = [clip(title, 40), who, when, where ? streetOf(where) : null].filter(Boolean);
+  return `Booked: ${bits.join(" · ")}${by === "online" ? " · online" : by ? ` · by ${by}` : ""}.`;
+}
+export function appointmentMovedLine(title: string, who: string | null, wasWhen: string | null, nowWhen: string): string {
+  const what = [clip(title, 40), who].filter(Boolean).join(" · ");
+  return wasWhen ? `Moved: ${what} — was ${wasWhen}, now ${nowWhen}.` : `Moved: ${what} — now ${nowWhen}.`;
+}
+export function appointmentCancelledLine(title: string, who: string | null, when: string, by: "online" | null): string {
+  const what = [clip(title, 40), who].filter(Boolean).join(" · ");
+  return `Cancelled: ${what} — ${when}${by === "online" ? ", by the client" : ""}.`;
+}
+export function jobScheduledLine(title: string, when: string, where: string | null, link: string | null): string {
+  return `Scheduled: "${clip(title, 50)}" — ${when}${where ? ` at ${streetOf(where)}` : ""}.${link ? ` ${link}` : ""}`;
+}
 export function replyForwardLine(who: string, what: string, body: string): string {
   return `${who}${what ? ` (${what})` : ""} texted: "${clip(body, 200)}"`;
 }

@@ -2767,3 +2767,31 @@ model PageView {
   @@index([organizationId, at])
   @@index([uaHash, ipHash, at])
 }
+
+/// Your own texts (2026-09-29): a company's own rule — WHEN something happens
+/// (or so many hours before a visit / days after a job), WHO hears it, WHAT it
+/// says with {fields} filled from the job. lib/sms/textRules (the catalog,
+/// pure) and lib/sms/rulesEngine (the sends). No relation back to anything
+/// the app already reads, so the table reaches production on its own.
+model TextRule {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  /// lib/sms/textRules RuleTriggerKey — "proposal.accepted", "appointment.before", …
+  trigger        String
+  /// Timed triggers: hours before / days after; null for the moment itself.
+  offset         Int?
+  toClient       Boolean  @default(false)
+  toOffice       Boolean  @default(false)
+  toRep          Boolean  @default(false)
+  toCrew         Boolean  @default(false)
+  /// Named members, a JSON array of user ids.
+  toUserIdsJson  String?
+  body           String
+  active         Boolean  @default(true)
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId, trigger])
+}

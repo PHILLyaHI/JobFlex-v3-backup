@@ -25,8 +25,7 @@ import {
   parseNotificationPrefs,
   SMS_URGENT_KEYS,
   smsDecision,
-  type PrefKey,
-} from "@/lib/notificationPrefsShared";
+  type PrefKey, allowsSms, audienceForRole, textEventsFor } from "@/lib/notificationPrefsShared";
 import { brand, clip, heldDigestText, SMS_MAX, unbrand } from "./format";
 
 const CAP_PER_NUMBER_PER_DAY = 25;
@@ -120,8 +119,11 @@ function msg(err: unknown): string {
 // ── the office ────────────────────────────────────────────────────────────
 
 export type OfficeTextOptions = {
-  /** Default: owner + admin + manager. */
+  /** Default: owner + admin + manager. An empty list: nobody by role. */
   roles?: readonly string[];
+  /** Members texted whatever their role — the rep whose proposal it is, the
+   *  one who booked the visit — through their own Text cells (2026-09-29). */
+  alsoUserIds?: readonly (string | null | undefined)[];
   /** Members who must not get it (the actor, the worker who answered). */
   excludeUserIds?: readonly string[];
   now?: Date;
@@ -136,6 +138,7 @@ export type OfficeTextOptions = {
 export async function textOffice(organizationId: string, key: PrefKey, line: string, opts: OfficeTextOptions = {}): Promise<{ sent: number; held: number }> {
   const now = opts.now ?? new Date();
   const roles = opts.roles ?? OFFICE_ROLES;
+  const also = [...new Set((opts.alsoUserIds ?? []).filter((x): x is string => Boolean(x)))];
   const exclude = new Set(opts.excludeUserIds ?? []);
   let sent = 0;
   let held = 0;
@@ -143,8 +146,8 @@ export async function textOffice(organizationId: string, key: PrefKey, line: str
     const [org, members, extras] = await Promise.all([
       db.organization.findUnique({ where: { id: organizationId }, select: { name: true, timezone: true } }),
       db.membership.findMany({
-        where: { organizationId, role: { in: [...roles] } },
-        select: { user: { select: { id: true, smsPhone: true, smsVerifiedAt: true, notificationPrefsJson: true } } },
+        where: { organizationId, OR: [{ role: { in: [...roles] } }, ...(also.length ? [{ userId: { in: also } }] : [])] },
+        select: { role: true, user: { select: { id: true, smsPhone: true, smsVerifiedAt: true, notificationPrefsJson: true } } },
       }),
       db.notificationPhone.findMany({ where: { organizationId, active: true }, select: { phone: true } }),
     ]);
@@ -160,9 +163,13 @@ export async function textOffice(organizationId: string, key: PrefKey, line: str
     for (const m of members) {
       const u = m.user;
       if (!u?.smsPhone || !u.smsVerifiedAt || exclude.has(u.id)) continue;
+      // A member only ever hears the events their own roster lists: a crew
+      // member staffed on a visit gets the crew's text, not the office's.
+      const audience = audienceForRole(m.role);
+      if (!audience || !textEventsFor(audience).some((e) => e.key === key)) continue;
       const to = toE164(u.smsPhone);
       if (!to || seen.has(to)) continue;
-      const prefs = parseNotificationPrefs(u.notificationPrefsJson);
+      const prefs = parseNotificationPrefs(u.notificationPrefsJson, m.role);
       const decision = smsDecision(prefs, key, now, tz);
       if (decision === "skip") continue;
       seen.add(to);
@@ -213,11 +220,14 @@ export async function textOfficeNow(organizationId: string, line: string, opts: 
 
 // ── a worker ──────────────────────────────────────────────────────────────
 
-export type WorkerLike = { phone: string | null; smsOptIn: boolean; organizationId: string };
+export type WorkerLike = { phone: string | null; smsOptIn: boolean; organizationId: string; user?: { notificationPrefsJson: string | null } | null };
 
-/** A text to one worker who has a phone and the schedule switch on. */
-export async function textWorker(w: WorkerLike, body: string, kind: string): Promise<SendTextResult | null> {
+/** A text to one worker who has a phone and the schedule switch on — and,
+ *  when the text has a key, that switch on in their own Text cells
+ *  (Settings → Texting, 2026-09-29). */
+export async function textWorker(w: WorkerLike, body: string, kind: string, key?: PrefKey): Promise<SendTextResult | null> {
   if (!w.phone || !w.smsOptIn) return null;
+  if (key && !allowsSms(parseNotificationPrefs(w.user?.notificationPrefsJson ?? null, "INSTALLER"), key)) return null;
   return sendText({ organizationId: w.organizationId, to: w.phone, body, kind });
 }
 
@@ -239,7 +249,8 @@ export async function flushHeldTexts(now = new Date()): Promise<number> {
   const orgs = new Map((await db.organization.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } })).map((o) => [o.id, o.name]));
   const groups = new Map<string, typeof due>();
   for (const r of due) {
-    const k = `${r.organizationId ?? "-"}|${r.to}`;
+    // A company's own text (kind "rule:…") stands alone: it may be for a client.
+    const k = r.kind?.startsWith("rule:") ? `rule|${r.id}` : `${r.organizationId ?? "-"}|${r.to}`;
     groups.set(k, [...(groups.get(k) ?? []), r]);
   }
   let out = 0;

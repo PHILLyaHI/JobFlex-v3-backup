@@ -7,6 +7,7 @@ import { JobStatus } from "@/lib/prismaEnums";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { assertLinksInOrg } from "@/lib/assertLinksInOrg";
 import { afterResponse } from "@/lib/server-events";
+import { textJobScheduled } from "@/lib/sms/schedule";
 import { crewOfJobEvent, textAssignmentCreated, textCrewCancelled, textJobEventMoved } from "@/lib/sms/crew";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { recordJobProgress } from "@/lib/jobProgress";
@@ -104,6 +105,7 @@ export async function createJob(raw: unknown) {
         summary: `Scheduled "${job.title}" — starts ${starts.toLocaleDateString()}`,
       },
     });
+    afterResponse(() => textJobScheduled(job.id, starts, ends ?? null, user.id));
   }
 
   // Crew picked at creation. Only workers that belong to this org are attached
@@ -399,6 +401,7 @@ export async function createJobFromProposal(proposalId: string) {
       summary: `Scheduled "${proposal.title}" — starts ${startsAt.toLocaleDateString()}`,
     },
   });
+  afterResponse(() => textJobScheduled(job.id, startsAt, endsAt, user.id));
 
   revalidatePath("/dashboard/jobs");
   revalidatePath("/dashboard/calendar");
@@ -680,6 +683,7 @@ export async function scheduleJobFromTray(jobId: string, dateISO: string) {
       summary: `Scheduled "${job.title}" for ${day.toLocaleDateString()}`,
     },
   });
+  afterResponse(() => textJobScheduled(job.id, startsAt, endsAt, user.id));
 
   revalidatePath("/dashboard/calendar");
   revalidatePath("/dashboard/jobs");

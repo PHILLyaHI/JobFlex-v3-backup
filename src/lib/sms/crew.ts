@@ -21,7 +21,9 @@ import { flushHeldTexts, textWorker } from "./send";
 const DIGEST_EVENING_HOUR = 18;
 const DIGEST_MORNING_HOUR = 7;
 
-type Crew = { organizationId: string; phone: string | null; smsOptIn: boolean; token: string };
+type Crew = { organizationId: string; phone: string | null; smsOptIn: boolean; token: string; user?: { notificationPrefsJson: string | null } | null };
+/** The worker's phone, consent and their own Text switches, in one select. */
+const CREW_SELECT = { organizationId: true, phone: true, smsOptIn: true, token: true, user: { select: { notificationPrefsJson: true } } } as const;
 export type CrewSnapshot = { orgName: string | null; tz: string; slot: CrewSlot; workers: Crew[] };
 
 function log(what: string, err: unknown) {
@@ -40,7 +42,7 @@ export async function textAssignmentCreated(assignmentId: string): Promise<void>
     const a = await db.jobAssignment.findUnique({
       where: { id: assignmentId },
       select: {
-        worker: { select: { organizationId: true, phone: true, smsOptIn: true, token: true } },
+        worker: { select: CREW_SELECT },
         job: {
           select: {
             title: true,
@@ -61,7 +63,7 @@ export async function textAssignmentCreated(assignmentId: string): Promise<void>
     const body = when
       ? crewAssignedText(a.job.organization.name, slot, await linkFor(a.worker.token), tz)
       : crewAssignedText(a.job.organization.name, { ...slot, startsAt: new Date() }, await linkFor(a.worker.token), tz).replace(/ \w{3} \w{3} \d{1,2}, [^.]*\./, ", date to follow.");
-    await textWorker(a.worker, body, "crew-assigned");
+    await textWorker(a.worker, body, "crew-assigned", "crew-assigned");
   } catch (err) {
     log("assignment", err);
   }
@@ -79,7 +81,7 @@ export async function crewOfAppointment(appointmentId: string, workerIds?: strin
       client: { select: { address: true } },
       lead: { select: { address: true } },
       organization: { select: { name: true, timezone: true } },
-      assignments: { select: { worker: { select: { id: true, organizationId: true, phone: true, smsOptIn: true, token: true } } } },
+      assignments: { select: { worker: { select: { id: true, ...CREW_SELECT } } } },
     },
   });
   if (!apt) return null;
@@ -96,7 +98,7 @@ export async function textAppointmentAssigned(appointmentId: string, workerIds: 
   try {
     const snap = await crewOfAppointment(appointmentId, workerIds);
     if (!snap) return;
-    for (const w of snap.workers) await textWorker(w, crewAssignedText(snap.orgName, snap.slot, await linkFor(w.token), snap.tz), "crew-assigned");
+    for (const w of snap.workers) await textWorker(w, crewAssignedText(snap.orgName, snap.slot, await linkFor(w.token), snap.tz), "crew-assigned", "crew-assigned");
   } catch (err) {
     log("appointment assigned", err);
   }
@@ -106,7 +108,7 @@ export async function textAppointmentMoved(appointmentId: string): Promise<void>
   try {
     const snap = await crewOfAppointment(appointmentId);
     if (!snap) return;
-    for (const w of snap.workers) await textWorker(w, crewMovedText(snap.orgName, snap.slot, await linkFor(w.token), snap.tz), "crew-moved");
+    for (const w of snap.workers) await textWorker(w, crewMovedText(snap.orgName, snap.slot, await linkFor(w.token), snap.tz), "crew-moved", "crew-moved");
   } catch (err) {
     log("appointment moved", err);
   }
@@ -116,7 +118,7 @@ export async function textAppointmentMoved(appointmentId: string): Promise<void>
 export async function textCrewCancelled(snap: CrewSnapshot | null): Promise<void> {
   if (!snap) return;
   try {
-    for (const w of snap.workers) await textWorker(w, crewCancelledText(snap.orgName, snap.slot, snap.tz), "crew-cancelled");
+    for (const w of snap.workers) await textWorker(w, crewCancelledText(snap.orgName, snap.slot, snap.tz), "crew-cancelled", "crew-moved");
   } catch (err) {
     log("cancelled", err);
   }
@@ -136,7 +138,7 @@ export async function crewOfJobEvent(eventId: string): Promise<CrewSnapshot | nu
         select: {
           client: { select: { address: true } },
           proposal: { select: { address: true } },
-          assignments: { select: { worker: { select: { organizationId: true, phone: true, smsOptIn: true, token: true } } } },
+          assignments: { select: { worker: { select: CREW_SELECT } } },
         },
       },
     },
@@ -154,7 +156,7 @@ export async function textJobEventMoved(eventId: string): Promise<void> {
   try {
     const snap = await crewOfJobEvent(eventId);
     if (!snap) return;
-    for (const w of snap.workers) await textWorker(w, crewMovedText(snap.orgName, snap.slot, await linkFor(w.token), snap.tz), "crew-moved");
+    for (const w of snap.workers) await textWorker(w, crewMovedText(snap.orgName, snap.slot, await linkFor(w.token), snap.tz), "crew-moved", "crew-moved");
   } catch (err) {
     log("event moved", err);
   }
@@ -192,7 +194,7 @@ export async function runCrewTexts(now = new Date()): Promise<{ flushed: number;
   let digests = 0;
   const workers = await db.workerProfile.findMany({
     where: { smsOptIn: true, phone: { not: null } },
-    select: { id: true, organizationId: true, phone: true, smsOptIn: true, token: true, organization: { select: { name: true, timezone: true } } },
+    select: { id: true, ...CREW_SELECT, organization: { select: { name: true, timezone: true } } },
   });
   for (const w of workers) {
     try {
@@ -212,7 +214,7 @@ export async function runCrewTexts(now = new Date()): Promise<{ flushed: number;
       const slots = await slotsFor(w.id, from, to);
       if (!slots.length) continue;
       const body = crewDigestText(w.organization.name, which, slots, await linkFor(w.token), tz);
-      const r = await textWorker(w, body, kind);
+      const r = await textWorker(w, body, kind, which === "tomorrow" ? "crew-tomorrow" : "crew-today");
       if (r?.ok) digests++;
     } catch (err) {
       log(`digest for worker ${w.id}`, err);

@@ -82,7 +82,7 @@ export async function POST(
   // the event it cancels.
   try {
     const appUrl = await appBaseUrl();
-    await textOffice(proposal.organizationId, "proposal-declined", revertedLine(proposal.client?.name ?? "A client", proposal.title, "decline"));
+    await textOffice(proposal.organizationId, "proposal-declined", revertedLine(proposal.client?.name ?? "A client", proposal.title, "decline"), { alsoUserIds: [proposal.ownerId] });
     await sendToMembersByPref(
       proposal.organizationId,
       "proposal-declined",

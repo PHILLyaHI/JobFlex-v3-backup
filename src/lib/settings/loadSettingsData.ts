@@ -37,7 +37,7 @@ import {
   parseGmailSettings,
   parsePaymentSettings,
 } from "@/lib/settings";
-import type { Badge, SettingsData, SmsSettingsData } from "@/components/v3/settings-blueprint/settings-data";
+import type { Badge, SettingsData, SmsRosterRow, SmsSettingsData } from "@/components/v3/settings-blueprint/settings-data";
 
 /** Emails allowed to use the Gmail connector while the Google app is still in
  *  Testing — GMAIL_OAUTH_TEST_USERS, comma-separated, case-insensitive. */
@@ -229,7 +229,7 @@ export async function loadSettingsData(ctx: SettingsOrgContext): Promise<Setting
     },
     notifications: {
       prefs: parseNotificationPrefs(me?.notificationPrefsJson),
-      sms: await loadSmsSettings(organizationId, me?.smsPhone ?? null, me?.smsVerifiedAt ?? null, role, sub?.plan ?? null),
+      sms: await loadSmsSettings(organizationId, me?.smsPhone ?? null, me?.smsVerifiedAt ?? null, role, sub?.plan ?? null, user.id),
     },
   };
 }
@@ -243,7 +243,7 @@ function prettyPhone(e164: string): string {
 /** The Text messages card (2026-09-24): the member's mobile, the company's
  *  extra numbers, this month's count. A missing table costs the card, never
  *  the page. */
-async function loadSmsSettings(organizationId: string, smsPhone: string | null, smsVerifiedAt: Date | null, role: string, plan: string | null): Promise<SmsSettingsData> {
+async function loadSmsSettings(organizationId: string, smsPhone: string | null, smsVerifiedAt: Date | null, role: string, plan: string | null, myUserId: string | null = null): Promise<SmsSettingsData> {
   const { isTwilioEnabled } = await import("@/lib/sdk/twilio");
   const { smsAllowanceFor } = await import("@/lib/entitlements");
   const base: SmsSettingsData = {
@@ -258,35 +258,61 @@ async function loadSmsSettings(organizationId: string, smsPhone: string | null, 
     clientsOn: true,
     ownNumber: null,
     roster: [],
+    rules: [],
+    companyName: "",
   };
   try {
     const monthStart = new Date();
     monthStart.setUTCDate(1);
     monthStart.setUTCHours(0, 0, 0, 0);
-    const orgSms = await db.organization.findUnique({ where: { id: organizationId }, select: { smsClientsOn: true, smsFromNumber: true } });
-    const [extras, stops, monthCount, members] = await Promise.all([
+    const orgSms = await db.organization.findUnique({ where: { id: organizationId }, select: { name: true, smsClientsOn: true, smsFromNumber: true } });
+    // Who gets texted (2026-09-29): every member who can be — the office,
+    // sales and estimators, the crew — with their mobile, whether they typed
+    // it themselves or the office did, and their own Text switches.
+    const [extras, monthCount, members, workers] = await Promise.all([
       db.notificationPhone.findMany({ where: { organizationId }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, phone: true, active: true } }),
-      db.smsOptOut.findMany({ where: { phone: { in: [smsPhone ?? "", ...(await db.notificationPhone.findMany({ where: { organizationId }, select: { phone: true } })).map((x) => x.phone)] } }, select: { phone: true } }),
       db.smsMessage.count({ where: { organizationId, direction: "OUT", status: { in: ["SENT", "DELIVERED", "QUEUED"] }, createdAt: { gte: monthStart } } }),
-      // Who gets texted (2026-09-27): the office members, each with their
-      // mobile's state and the three group switches read off their matrix.
       db.membership.findMany({
-        where: { organizationId, role: { in: ["OWNER", "ADMIN", "MANAGER"] } },
+        where: { organizationId, role: { in: ["OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "SALES", "ESTIMATOR", "INSTALLER"] } },
         orderBy: { createdAt: "asc" },
         select: { role: true, user: { select: { id: true, name: true, email: true, smsPhone: true, smsVerifiedAt: true, notificationPrefsJson: true } } },
       }),
+      db.workerProfile.findMany({ where: { organizationId }, select: { userId: true, displayName: true, phone: true, smsOptIn: true } }),
     ]);
-    const { parseNotificationPrefs, smsGroupsOf } = await import("@/lib/notificationPrefsShared");
+    // Your own texts (2026-09-29) — absent before the table reaches a database.
+    const ruleRows = await db.textRule.findMany({ where: { organizationId }, orderBy: { createdAt: "asc" } }).catch(() => []);
+    const workerOf = new Map(workers.map((w) => [w.userId, w]));
+    const { parseNotificationPrefs, smsGroupsOf, audienceForRole, textCellsFor } = await import("@/lib/notificationPrefsShared");
+    const { toE164 } = await import("@/lib/phone");
+    const phonesToCheck = [smsPhone ?? "", ...extras.map((x) => x.phone), ...members.map((m) => m.user?.smsPhone ?? ""), ...workers.map((w) => (w.phone ? toE164(w.phone) ?? "" : ""))].filter(Boolean);
+    const stops = await db.smsOptOut.findMany({ where: { phone: { in: phonesToCheck } }, select: { phone: true } });
     const stopped = new Set(stops.map((x) => x.phone));
-    const roster = members
-      .filter((m) => m.user)
-      .map((m) => ({
-        userId: m.user!.id,
-        name: m.user!.name?.trim() || m.user!.email || "Member",
+    const roster: SmsRosterRow[] = [];
+    for (const m of members) {
+      const u = m.user;
+      const audience = audienceForRole(m.role);
+      if (!u || !audience) continue;
+      const prefs = parseNotificationPrefs(u.notificationPrefsJson, m.role);
+      const w = workerOf.get(u.id) ?? null;
+      // The crew's number is the one its texts go to: the worker profile's,
+      // when texting is on there. Everyone else: the member's own mobile.
+      const workerPhone = w?.phone ? toE164(w.phone) : null;
+      const live = audience === "crew" && w ? (w.smsOptIn && workerPhone ? workerPhone : null) : u.smsPhone && u.smsVerifiedAt ? u.smsPhone : null;
+      const known = live ?? workerPhone ?? u.smsPhone ?? null;
+      roster.push({
+        userId: u.id,
+        name: u.name?.trim() || w?.displayName?.trim() || u.email || "Member",
         role: m.role,
-        phone: m.user!.smsPhone && m.user!.smsVerifiedAt ? prettyPhone(m.user!.smsPhone) : null,
-        groups: smsGroupsOf(parseNotificationPrefs(m.user!.notificationPrefsJson)),
-      }));
+        audience,
+        phone: live ? prettyPhone(live) : null,
+        phoneOnFile: !live && known ? prettyPhone(known) : null,
+        phoneBy: live ? (prefs.smsAddedBy ? "office" : audience === "crew" && w && !u.smsVerifiedAt ? "office" : "self") : null,
+        stopped: Boolean(live && stopped.has(live)),
+        isMe: u.id === myUserId,
+        cells: textCellsFor(prefs, audience) as Record<string, boolean>,
+        groups: smsGroupsOf(prefs),
+      });
+    }
     return {
       ...base,
       stopped: Boolean(smsPhone && stopped.has(smsPhone)),
@@ -295,6 +321,17 @@ async function loadSmsSettings(organizationId: string, smsPhone: string | null, 
       clientsOn: orgSms?.smsClientsOn ?? true,
       ownNumber: orgSms?.smsFromNumber ? prettyPhone(orgSms.smsFromNumber) : null,
       roster,
+      companyName: orgSms?.name ?? "",
+      rules: ruleRows.map((r) => {
+        let toUserIds: string[] = [];
+        try {
+          const v: unknown = r.toUserIdsJson ? JSON.parse(r.toUserIdsJson) : [];
+          if (Array.isArray(v)) toUserIds = v.filter((x): x is string => typeof x === "string");
+        } catch {
+          /* an unreadable list names nobody */
+        }
+        return { id: r.id, name: r.name, trigger: r.trigger, offset: r.offset, toClient: r.toClient, toOffice: r.toOffice, toRep: r.toRep, toCrew: r.toCrew, toUserIds, body: r.body, active: r.active };
+      }),
     };
   } catch {
     return base;

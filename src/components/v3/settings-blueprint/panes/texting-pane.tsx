@@ -27,15 +27,14 @@ import {
   removeSmsPhone,
   sendTestText,
   setClientTextsOn,
-  setMemberTextGroups,
   setNotificationPhoneActive,
   startPhoneVerification,
   type SmsActionResult,
 } from "@/actions/sms";
-import { SMS_GROUPS, type SmsGroupKey } from "@/lib/notificationPrefsShared";
-import { roleLabel } from "@/lib/team/who";
-import { Field, Toggle, actionError } from "../ui";
-import type { PaneProps, SmsRosterRow, SmsSettingsData } from "../settings-data";
+import { TextingPeople } from "@/components/v3/texting-people/texting-people";
+import { TextRules } from "@/components/v3/texting-people/text-rules";
+import { Field, actionError } from "../ui";
+import type { PaneProps, SmsSettingsData } from "../settings-data";
 import { TEXTING_COPY, TEXTS_COPY } from "../settings-data";
 
 export function TextingPane({ data }: PaneProps) {
@@ -49,7 +48,20 @@ export function TextingPane({ data }: PaneProps) {
           </div>
         </section>
       ) : null}
-      {sms.canManage ? <RosterCard sms={sms} /> : null}
+      {sms.canManage ? <PeopleCard sms={sms} /> : null}
+      {sms.canManage ? (
+        <section className="sc" id="texting-rules">
+          <div className="sc-h">
+            <div>
+              <div className="sc-t">{TEXTING_COPY.rulesTitle}</div>
+              <div className="sc-s">{TEXTING_COPY.rulesSub}</div>
+            </div>
+          </div>
+          <div className="sc-b">
+            <TextRules rules={sms.rules} roster={sms.roster} clientsOn={sms.clientsOn} company={sms.companyName || "Your company"} />
+          </div>
+        </section>
+      ) : null}
       <MobileCard sms={sms} />
       {sms.canManage ? <CompanyCard sms={sms} /> : null}
     </>
@@ -88,50 +100,20 @@ function useRun() {
   return { busy, run, notes };
 }
 
-/* ── who gets texted ─────────────────────────────────────────────────── */
+/* ── who gets texted, person by person (2026-09-29) ─────────────────── */
 
-function RosterCard({ sms }: { sms: SmsSettingsData }) {
-  const { busy, run, notes } = useRun();
-  const [rows, setRows] = useState<SmsRosterRow[]>(sms.roster);
-  const flip = (row: SmsRosterRow, key: SmsGroupKey, on: boolean) => {
-    setRows((rs) => rs.map((r) => (r.userId === row.userId ? { ...r, groups: { ...r.groups, [key]: on } } : r)));
-    void run(`${row.userId}:${key}`, () => setMemberTextGroups(row.userId, { [key]: on }));
-  };
+function PeopleCard({ sms }: { sms: SmsSettingsData }) {
   return (
     <section className="sc" id="texting-roster" data-roster>
       <div className="sc-h">
         <div>
-          <div className="sc-t">{TEXTING_COPY.rosterTitle}</div>
-          <div className="sc-s">{TEXTING_COPY.rosterSub}</div>
+          <div className="sc-t">{TEXTING_COPY.peopleTitle}</div>
+          <div className="sc-s">{TEXTING_COPY.peopleSub}</div>
         </div>
         <span className="sc-badge" title={TEXTS_COPY.overage}>{TEXTS_COPY.usage(sms.monthCount, sms.allowance)}</span>
       </div>
       <div className="sc-b">
-        <div className="tx-roster" role="table" aria-label="Who gets texted">
-          <div className="tx-roster-h" role="row">
-            <span role="columnheader">Member</span>
-            {SMS_GROUPS.map((g) => (
-              <span key={g.key} role="columnheader" title={g.sub}>{g.label}</span>
-            ))}
-          </div>
-          {rows.map((r) => (
-            <div key={r.userId} className="tx-roster-r" role="row" data-member={r.userId}>
-              <span className="tx-roster-who" role="cell">
-                <b>{r.name}</b>
-                <em>{roleLabel(r.role)}</em>
-                <span className={`tx-tag${r.phone ? "" : " tx-tag--warn"}`}>{r.phone ?? TEXTING_COPY.noMobile}</span>
-              </span>
-              {SMS_GROUPS.map((g) => (
-                <span key={g.key} role="cell" className="tx-roster-c" data-label={g.label}>
-                  <Toggle checked={r.groups[g.key]} onChange={(on) => flip(r, g.key, on)} ariaLabel={`${g.label} texts to ${r.name}`} />
-                </span>
-              ))}
-            </div>
-          ))}
-          {rows.length === 0 ? <p className="tx-note">Nobody in the office yet.</p> : null}
-        </div>
-        <p className="tx-note">{SMS_GROUPS.map((g) => `${g.label}: ${g.sub.toLowerCase()}`).join(" · ")}</p>
-        {busy ? null : notes}
+        <TextingPeople roster={sms.roster} />
       </div>
     </section>
   );

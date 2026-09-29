@@ -747,6 +747,13 @@ export const NOTIFICATION_ICONS: Record<PrefKey, IconName> = {
   'worker-responded': 'i-hardhat',
   'review-received': 'i-thumb',
   'trade-reply': 'i-board',
+  'appointment-booked': 'i-cal',
+  'appointment-moved': 'i-clock',
+  // Text-only crew events (never in the matrix) — listed so the map is total.
+  'crew-assigned': 'i-hardhat',
+  'crew-moved': 'i-clock',
+  'crew-tomorrow': 'i-cal',
+  'crew-today': 'i-cal',
 };
 
 export const EMAIL_UNAVAILABLE_TITLE = 'In-app only — nothing in the app emails this yet.' as const;
@@ -851,24 +858,79 @@ export interface SmsSettingsData {
   /** Who gets texted (2026-09-27): the office members with their verified
    *  mobile (pretty, or null) and the three group switches. */
   roster: SmsRosterRow[];
+  /** Your own texts (2026-09-29): the company's rules, oldest first. */
+  rules: TextRuleRow[];
+  /** The company's name, as its texts are signed. */
+  companyName: string;
+}
+
+export interface TextRuleRow {
+  id: string;
+  name: string;
+  trigger: string;
+  offset: number | null;
+  toClient: boolean;
+  toOffice: boolean;
+  toRep: boolean;
+  toCrew: boolean;
+  toUserIds: string[];
+  body: string;
+  active: boolean;
 }
 
 export interface SmsRosterRow {
   userId: string;
   name: string;
   role: string;
+  /** The roster the member sits on (2026-09-29): office, sales or crew. */
+  audience: 'office' | 'sales' | 'crew';
+  /** The mobile texts go to, pretty — null when nothing is texted to them. */
   phone: string | null;
+  /** A number on file that is not being texted (a worker with texting off). */
+  phoneOnFile: string | null;
+  /** Verified by them with a code, or typed in by the office. */
+  phoneBy: 'self' | 'office' | null;
+  /** The number replied STOP. */
+  stopped: boolean;
+  isMe: boolean;
+  /** Their Text switch per event of their roster. */
+  cells: Record<string, boolean>;
+  /** The three office switches (the handheld page still shows them). */
   groups: Record<'crew' | 'sales' | 'money', boolean>;
 }
 
 export const TEXTING_COPY = {
   rosterTitle: 'Who gets texted',
   rosterSub: 'The office, by event. A member is texted only after they verify a mobile on their own account.',
+  peopleTitle: 'Who gets texted',
+  peopleSub: 'Everyone on the team, by what they do. Type a mobile in, tick what they should hear about — the first text they get is a welcome with the STOP line.',
+  sections: {
+    office: { title: 'Office', sub: 'Owner, managers, admin and accounting — the whole company.' },
+    sales: { title: 'Sales & estimators', sub: 'Their own leads, visits and deals — nobody else’s.' },
+    crew: { title: 'Crew', sub: 'Their own days: the jobs they are put on, changes, and the daily list.' },
+  },
+  addMobile: 'Add mobile',
+  changeMobile: 'Change',
+  saveMobile: 'Save',
+  cancel: 'Cancel',
+  stopTexts: 'Stop texts',
+  turnOn: 'Text this number',
+  all: 'All',
+  none: 'None',
+  byOffice: 'added by the office',
+  bySelf: 'verified',
+  noMobileLong: 'No mobile — nothing is texted',
+  onFileOff: 'on file, texts off',
+  examplesTitle: 'What the texts say',
+  emptySection: 'Nobody here yet — invite them from Company or Workers.',
+  whoMe: 'you',
   noMobile: 'no mobile yet',
   mineTitle: 'Your mobile',
   mineSub: 'The number your texts go to. A six-digit code proves it is yours.',
   companyTitle: 'The company',
   companySub: 'Texts to clients, the number they see, and the numbers outside the team that hear about everything.',
+  rulesTitle: 'Your own texts',
+  rulesSub: 'Write a text for any moment — when it goes out, who gets it, what it says. {Fields} fill in from the job; clients always get your company name and the STOP line.',
   notConfiguredLong: 'Texting is not switched on for this server yet. Everything here is kept and nothing is sent until it is.',
 } as const;
 

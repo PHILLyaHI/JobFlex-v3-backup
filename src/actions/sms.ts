@@ -18,7 +18,8 @@ import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { testText, verifyText, welcomeText } from "@/lib/sms/format";
 import { sendText } from "@/lib/sms/send";
 import { claimNumberFor, releaseNumberFor } from "@/lib/sms/numbers";
-import { SMS_GROUPS, parseNotificationPrefs, type PrefCells, type PrefKey, type SmsGroupKey } from "@/lib/notificationPrefsShared";
+import { SMS_GROUPS, audienceForRole, parseNotificationPrefs, textEventsFor, type PrefCells, type PrefKey, type SmsGroupKey } from "@/lib/notificationPrefsShared";
+import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 
 const OFFICE_ROLES = ["OWNER", "ADMIN", "MANAGER"];
 
@@ -208,3 +209,86 @@ export async function setMemberTextGroups(userId: string, groups: Partial<Record
   const noPhone = !m.user.smsPhone || !m.user.smsVerifiedAt;
   return { ok: true, note: anyOn && noPhone ? "Saved — they will get texts once they verify a mobile (Settings → Texting on their account)." : "Saved." };
 }
+
+// ── the roster, person by person (2026-09-29) ──────────────────────────────
+//
+// Owner: "if I have managers I just add their name and phone number and the
+// list of what they will receive". The owner (or a manager) types a member's
+// mobile in; the member gets a welcome text with the STOP line — that text is
+// the notice, and the trail records who added the number. A worker's number
+// is the one the crew texts use (WorkerProfile.phone + smsOptIn), so it is
+// written there too.
+
+/** Who may be texted, and the row that holds their switches. */
+async function memberFor(organizationId: string, userId: string) {
+  const m = await db.membership.findUnique({
+    where: { userId_organizationId: { userId, organizationId } },
+    select: { role: true, user: { select: { id: true, name: true, email: true, notificationPrefsJson: true, smsPhone: true, smsVerifiedAt: true } } },
+  });
+  if (!m?.user) return null;
+  const audience = audienceForRole(m.role);
+  if (!audience) return null;
+  const worker = await db.workerProfile.findFirst({ where: { userId, organizationId }, select: { id: true, phone: true, smsOptIn: true } });
+  // The number texts go to: the crew's is on its worker profile.
+  const texted = audience === "crew" && worker ? Boolean(worker.phone && worker.smsOptIn) : Boolean(m.user.smsPhone && m.user.smsVerifiedAt);
+  return { role: m.role, audience, user: m.user, workerId: worker?.id ?? null, texted };
+}
+
+export async function setMemberMobile(userId: string, raw: string): Promise<SmsActionResult> {
+  const { organizationId, user: me } = await requireManager();
+  const m = await memberFor(organizationId, userId);
+  if (!m) return { ok: false, error: "Only the office, sales and crew can be texted." };
+  const phone = toE164(raw);
+  if (!phone) return { ok: false, error: "That doesn't look like a US or Canadian mobile number." };
+  if (await db.smsOptOut.findUnique({ where: { phone }, select: { phone: true } })) {
+    return { ok: false, error: `${pretty(phone)} replied STOP to JobFlex texts. They text START to our number from that phone first.` };
+  }
+  const prefs = parseNotificationPrefs(m.user.notificationPrefsJson, m.role);
+  const now = new Date();
+  await db.user.update({
+    where: { id: userId },
+    data: { smsPhone: phone, smsVerifiedAt: now, notificationPrefsJson: JSON.stringify({ ...prefs, smsAddedBy: me.id === userId ? null : me.id }) },
+  });
+  if (m.workerId) await db.workerProfile.update({ where: { id: m.workerId }, data: { phone, smsOptIn: true, smsOptedInAt: now } });
+  const name = m.user.name?.trim() || m.user.email || "They";
+  await logActivity({ organizationId, actorId: me.id, kind: TRAIL_KINDS.TEAM, summary: `Added ${name}'s mobile …${phone.slice(-4)} for job texts`, meta: { userId, texting: true } });
+  const org = await db.organization.findUnique({ where: { id: organizationId }, select: { name: true } });
+  const r = await sendText({ organizationId, to: phone, body: welcomeText(org?.name ?? null), kind: "welcome" });
+  revalidatePath(SETTINGS_PATH);
+  return { ok: true, note: r.ok && r.status === "SENT" ? `Saved — ${name} got a welcome text with the STOP line.` : `Saved for ${name}.` };
+}
+
+export async function clearMemberMobile(userId: string): Promise<SmsActionResult> {
+  const { organizationId, user: me } = await requireManager();
+  const m = await memberFor(organizationId, userId);
+  if (!m) return { ok: false, error: "Not on the team." };
+  const prefs = parseNotificationPrefs(m.user.notificationPrefsJson, m.role);
+  await db.user.update({ where: { id: userId }, data: { smsPhone: null, smsVerifiedAt: null, notificationPrefsJson: JSON.stringify({ ...prefs, smsAddedBy: null }) } });
+  if (m.workerId) await db.workerProfile.update({ where: { id: m.workerId }, data: { smsOptIn: false } });
+  const name = m.user.name?.trim() || m.user.email || "They";
+  await logActivity({ organizationId, actorId: me.id, kind: TRAIL_KINDS.TEAM, summary: `Stopped job texts to ${name}`, meta: { userId, texting: false } });
+  revalidatePath(SETTINGS_PATH);
+  return { ok: true, note: `${name} won't be texted.` };
+}
+
+/** One member's Text switches — only the events their roster shows. */
+export async function setMemberTextEvents(userId: string, cells: Partial<Record<string, boolean>>): Promise<SmsActionResult> {
+  const { organizationId } = await requireManager();
+  const m = await memberFor(organizationId, userId);
+  if (!m) return { ok: false, error: "Only the office, sales and crew can be texted." };
+  const allowed = new Set(textEventsFor(m.audience).map((e) => e.key));
+  const prefs = parseNotificationPrefs(m.user.notificationPrefsJson, m.role);
+  const matrix = { ...prefs.matrix } as Record<PrefKey, PrefCells>;
+  let changed = 0;
+  for (const [key, on] of Object.entries(cells)) {
+    if (typeof on !== "boolean" || !allowed.has(key as PrefKey)) continue;
+    const prev = matrix[key as PrefKey] ?? [true, false, false];
+    matrix[key as PrefKey] = [prev[0], prev[1], on];
+    changed++;
+  }
+  if (!changed) return { ok: false, error: "Nothing to change." };
+  await db.user.update({ where: { id: userId }, data: { notificationPrefsJson: JSON.stringify({ ...prefs, matrix }) } });
+  revalidatePath(SETTINGS_PATH);
+  return { ok: true, note: m.texted ? "Saved." : "Saved — add their mobile and these start going out." };
+}
+

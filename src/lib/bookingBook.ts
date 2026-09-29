@@ -9,6 +9,8 @@ import { sendOrgEmail } from "@/lib/email/orgSend";
 import { renderEmail } from "@/lib/email/renderEmail";
 import type { EmailDoc } from "@/lib/email/doc";
 import { appBaseUrl } from "@/lib/appUrl";
+import { afterResponse } from "@/lib/server-events";
+import { textAppointmentBooked, textAppointmentCancelled, textAppointmentMoved as textVisitMoved, visitFacts } from "@/lib/sms/schedule";
 import { parseTradeTypes } from "@/lib/tradeTypes";
 import { availableSlots, bookingScope, parseBookingSettings, slotLabel, type BookingService, type BookingSettings, type Busy, type DaySlots } from "@/lib/booking";
 
@@ -112,6 +114,7 @@ export async function createBooking(org: OrgRow, input: NewBooking, now = new Da
   const when = slotLabel(slot, tz, settings.arrivalWindow);
   const priceText = member && service.memberPriceText ? service.memberPriceText : service.priceText;
   let manageToken = "";
+  let bookedAppointmentId: string | null = null;
   await db.$transaction(async (tx) => {
     let leadId: string | null = null;
     if (!client) {
@@ -139,8 +142,14 @@ export async function createBooking(org: OrgRow, input: NewBooking, now = new Da
       select: { manageToken: true },
     });
     manageToken = booking.manageToken;
+    bookedAppointmentId = appt.id;
     await tx.activityEvent.create({ data: { organizationId: org.id, kind: "BOOKING_NEW", clientId: client?.id ?? null, leadId, summary: `${input.name} booked ${service.label.toLowerCase()} — ${when}${member ? " · member" : leadId ? " · new lead" : ""}`, meta: JSON.stringify({ href: "/dashboard/booking", appointmentId: appt.id }) } });
   });
+  // The office hears about it by text (2026-09-29): "Booked: … · online."
+  if (bookedAppointmentId) {
+    const id = bookedAppointmentId;
+    afterResponse(() => textAppointmentBooked(id, null, "online"));
+  }
   const manageHref = `${await appBaseUrl()}/book/manage/${manageToken}`;
   await emailCustomer(org, email, {
     subject: `Booked: ${service.label} — ${when}`,
@@ -174,6 +183,11 @@ export async function rescheduleBooking(token: string, startsAtISO: string, now 
     if (b.appointmentId) await tx.appointment.update({ where: { id: b.appointmentId }, data: { startsAt: slot.startsAt, endsAt: slot.endsAt, status: "SCHEDULED" } });
     await tx.activityEvent.create({ data: { organizationId: b.organizationId, kind: "BOOKING_MOVED", clientId: b.clientId, leadId: b.leadId, summary: `${b.name} moved their ${b.serviceLabel.toLowerCase()} to ${when}`, meta: JSON.stringify({ href: "/dashboard/booking", appointmentId: b.appointmentId }) } });
   });
+  if (b.appointmentId) {
+    const id = b.appointmentId;
+    const was = b.startsAt;
+    afterResponse(() => textVisitMoved(id, was, null));
+  }
   await emailCustomer(b.organization, b.email, { subject: `Moved: ${b.serviceLabel} — ${when}`, kicker: { text: "Your visit" }, headline: when, prose: [`Your ${b.serviceLabel.toLowerCase()} with ${b.organization.name ?? "us"} is now ${when}.`], cta: { label: "Change or cancel this visit", href: `${await appBaseUrl()}/book/manage/${b.manageToken}` } });
   return { ok: true, when };
 }
@@ -181,11 +195,13 @@ export async function rescheduleBooking(token: string, startsAtISO: string, now 
 export async function cancelBooking(token: string): Promise<{ ok: boolean }> {
   const b = await bookingByToken(token);
   if (!b || b.status === "CANCELED") return { ok: false };
+  const visit = b.appointmentId ? await visitFacts(b.appointmentId).catch(() => null) : null;
   await db.$transaction(async (tx) => {
     await tx.booking.update({ where: { id: b.id }, data: { status: "CANCELED", canceledAt: new Date() } });
     if (b.appointmentId) await tx.appointment.update({ where: { id: b.appointmentId }, data: { status: "CANCELED" } });
     await tx.activityEvent.create({ data: { organizationId: b.organizationId, kind: "BOOKING_CANCELED", clientId: b.clientId, leadId: b.leadId, summary: `${b.name} canceled their ${b.serviceLabel.toLowerCase()}`, meta: JSON.stringify({ href: "/dashboard/booking" }) } });
   });
+  afterResponse(() => textAppointmentCancelled(visit, null, "online"));
   await emailCustomer(b.organization, b.email, { subject: `Canceled: ${b.serviceLabel}`, kicker: { text: "Your visit" }, headline: "Your visit is canceled", prose: [`We have taken your ${b.serviceLabel.toLowerCase()} off the calendar. Book again any time.`], link: { label: "Book a visit", href: `${await appBaseUrl()}/book/${b.organization.slug}` } });
   return { ok: true };
 }

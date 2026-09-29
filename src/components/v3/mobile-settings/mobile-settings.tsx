@@ -70,9 +70,9 @@ import {
   setStripeAchEnabled,
 } from "@/actions/paymentConnections";
 import { sendTestNotification } from "@/actions/notifications";
-import { addNotificationPhone, confirmPhoneVerification, removeNotificationPhone, removeSmsPhone, sendTestText, setMemberTextGroups, startPhoneVerification } from "@/actions/sms";
-import { SMS_GROUPS } from "@/lib/notificationPrefsShared";
-import { roleLabel } from "@/lib/team/who";
+import { addNotificationPhone, confirmPhoneVerification, removeNotificationPhone, removeSmsPhone, sendTestText, startPhoneVerification } from "@/actions/sms";
+import { TextingPeople } from "@/components/v3/texting-people/texting-people";
+import { TextRules } from "@/components/v3/texting-people/text-rules";
 import type { PaymentConnectionStatusView } from "@/lib/payments/connections";
 import type {
   Badge,
@@ -1173,7 +1173,6 @@ function TextingPane({ data }: { data: SettingsData }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
-  const [rows, setRows] = useState(sms.roster);
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [stage, setStage] = useState<"idle" | "code">("idle");
@@ -1201,35 +1200,18 @@ function TextingPane({ data }: { data: SettingsData }) {
       {!sms.configured ? <div className="mst-note">{TEXTING_COPY.notConfiguredLong}</div> : null}
       {sms.canManage ? (
         <section className="mst-card" data-roster>
-          <CardHeader card={{ title: TEXTING_COPY.rosterTitle, sub: TEXTING_COPY.rosterSub }} />
+          <CardHeader card={{ title: TEXTING_COPY.peopleTitle, sub: TEXTING_COPY.peopleSub }} />
           <div className="mst-cardB">
-            {rows.map((r) => (
-              <div key={r.userId} className="mst-grp" data-member={r.userId}>
-                <div className="mst-trow">
-                  <span className="mst-trowB">
-                    <span className="mst-trowN">{r.name}</span>
-                    <span className="mst-trowD">{roleLabel(r.role)} · {r.phone ?? TEXTING_COPY.noMobile}</span>
-                  </span>
-                </div>
-                {SMS_GROUPS.map((g) => (
-                  <div className="mst-trow" key={g.key}>
-                    <span className="mst-trowB">
-                      <span className="mst-trowN">{g.label}</span>
-                      <span className="mst-trowD">{g.sub}</span>
-                    </span>
-                    <Toggle
-                      checked={r.groups[g.key]}
-                      onChange={(next) => {
-                        setRows((rs) => rs.map((x) => (x.userId === r.userId ? { ...x, groups: { ...x.groups, [g.key]: next } } : x)));
-                        void run(`${r.userId}:${g.key}`, () => setMemberTextGroups(r.userId, { [g.key]: next }));
-                      }}
-                      ariaLabel={`${g.label} texts to ${r.name}`}
-                    />
-                  </div>
-                ))}
-              </div>
-            ))}
-            {rows.length === 0 ? <div className="mst-note">Nobody in the office yet.</div> : null}
+            <TextingPeople roster={sms.roster} />
+            <div className="mst-note">{TEXTS_COPY.usage(sms.monthCount, sms.allowance)}</div>
+          </div>
+        </section>
+      ) : null}
+      {sms.canManage ? (
+        <section className="mst-card" data-rules>
+          <CardHeader card={{ title: TEXTING_COPY.rulesTitle, sub: TEXTING_COPY.rulesSub }} />
+          <div className="mst-cardB">
+            <TextRules rules={sms.rules} roster={sms.roster} clientsOn={sms.clientsOn} company={sms.companyName || "Your company"} />
           </div>
         </section>
       ) : null}

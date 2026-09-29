@@ -17,13 +17,24 @@ export type PrefKey =
   | "proposal-declined"
   | "payment-received"
   | "change-order"
+  | "appointment-booked"
+  | "appointment-moved"
   | "job-scheduled"
   | "job-started"
   | "job-completed"
   | "job-photos"
   | "worker-responded"
   | "review-received"
-  | "trade-reply";
+  | "trade-reply"
+  | "crew-assigned"
+  | "crew-moved"
+  | "crew-tomorrow"
+  | "crew-today";
+
+/** Who a text is for (2026-09-29): the office runs the company, sales hears
+ *  about its own deals and visits, the crew hears about its own days. A
+ *  member's audience follows their role (audienceForRole). */
+export type TextAudience = "office" | "sales" | "crew";
 
 export interface PrefEventMeta {
   key: PrefKey;
@@ -37,28 +48,82 @@ export interface PrefEventMeta {
   /** Seed [inApp, email, sms] for a user who has never saved. The sms seed
    *  only matters once a mobile is verified — verifying is the opt-in. */
   seed: [boolean, boolean, boolean];
+  /** Which rosters on Settings → Texting show this event, and the Text seed
+   *  for each (a sales rep hears about a declined proposal; the office is
+   *  seeded off it). Absent = the office only, with `seed[2]`. */
+  audience?: Partial<Record<TextAudience, boolean>>;
+  /** The text as it will read, with sample facts — shown under the switch. */
+  example?: string;
 }
 
 /** Every key here has a real producer (an ActivityEvent kind or a notify*
  *  sender). Anything without one was cut from the matrix. */
 export const PREF_EVENTS: readonly PrefEventMeta[] = [
-  { key: "lead-assigned", name: "New lead", sub: "A platform or web lead lands in your pipeline", emailAvailable: true, smsAvailable: true, seed: [true, true, true] },
+  { key: "lead-assigned", name: "New lead", sub: "A platform or web lead lands in your pipeline", emailAvailable: true, smsAvailable: true, seed: [true, true, true], audience: { office: true, sales: true }, example: "New lead: Sarah Mitchell, roof replacement in Bothell, WA ((425) 555-0142). Open: jobflex.app/…" },
   { key: "proposal-viewed", name: "Proposal viewed", sub: "The client opened your estimate", emailAvailable: false, smsAvailable: false, seed: [true, false, false] },
-  { key: "proposal-accepted", name: "Proposal accepted", sub: "Signed and ready to schedule", emailAvailable: true, smsAvailable: true, seed: [true, true, true] },
-  { key: "proposal-declined", name: "Proposal declined", sub: "With the reason the client gave", emailAvailable: true, smsAvailable: true, seed: [true, true, false] },
-  { key: "payment-received", name: "Payment received", sub: "A stage was paid — card, Square or recorded by hand", emailAvailable: true, smsAvailable: true, seed: [true, true, true] },
-  { key: "change-order", name: "Change order answered", sub: "The client approved or declined it", emailAvailable: true, smsAvailable: true, seed: [true, true, true] },
-  { key: "job-scheduled", name: "Job scheduled", sub: "A crew is booked for a date", emailAvailable: false, smsAvailable: false, seed: [true, false, false] },
+  { key: "proposal-accepted", name: "Proposal accepted", sub: "Signed and ready to schedule", emailAvailable: true, smsAvailable: true, seed: [true, true, true], audience: { office: true, sales: true }, example: "Sarah Mitchell accepted \"Standing-seam metal · 18412 92nd Ave NE\" — $27,926. Schedule it: jobflex.app/…" },
+  { key: "proposal-declined", name: "Proposal declined", sub: "With the reason the client gave", emailAvailable: true, smsAvailable: true, seed: [true, true, false], audience: { office: false, sales: true }, example: "Sarah Mitchell declined \"Architectural shingles · 18412 92nd Ave NE\": \"Going with a lower bid.\"" },
+  { key: "payment-received", name: "Payment received", sub: "A stage was paid — card, Square or recorded by hand", emailAvailable: true, smsAvailable: true, seed: [true, true, true], audience: { office: true, sales: false }, example: "Sarah Mitchell paid $8,378 on \"Standing-seam metal · 18412 92nd Ave NE\" — $19,548 still due." },
+  { key: "change-order", name: "Change order answered", sub: "The client approved or declined it", emailAvailable: true, smsAvailable: true, seed: [true, true, true], audience: { office: true, sales: false }, example: "Sarah Mitchell approved change order #2 \"Skylight flashing\" ($640) on \"Standing-seam metal · 18412 92nd Ave NE\"." },
+  { key: "appointment-booked", name: "Appointment booked", sub: "A visit goes on the calendar — by the team or online", emailAvailable: false, smsAvailable: true, seed: [true, false, true], audience: { office: true, sales: true }, example: "Booked: Roof inspection · Sarah Mitchell · Tue Oct 7, 9 AM–10 AM · 18412 92nd Ave NE · online." },
+  { key: "appointment-moved", name: "Appointment moved or cancelled", sub: "A visit changes day or time, or comes off the calendar", emailAvailable: false, smsAvailable: true, seed: [true, false, true], audience: { office: true, sales: true }, example: "Moved: Roof inspection · Sarah Mitchell — was Tue Oct 7, 9 AM, now Thu Oct 9, 1 PM." },
+  { key: "job-scheduled", name: "Job scheduled", sub: "A job gets its install date", emailAvailable: false, smsAvailable: true, seed: [true, false, true], audience: { office: true, sales: true }, example: "Scheduled: \"Standing-seam metal · 18412 92nd Ave NE\" — Mon Oct 13, 8 AM at 18412 92nd Ave NE." },
   // The crew on site (2026-09-27): the office hears when work starts, when a
   // crew is back for another day, when it is done, and when photos or a
   // video of the work come in — by text to the owner and the manager.
-  { key: "job-started", name: "Crew on site", sub: "Work started, or a crew back for another day", emailAvailable: false, smsAvailable: true, seed: [true, false, true] },
-  { key: "job-completed", name: "Job completed", sub: "Crew marked the work done", emailAvailable: false, smsAvailable: true, seed: [true, false, true] },
-  { key: "job-photos", name: "Photos & videos from the crew", sub: "How the job was done, as it comes in", emailAvailable: false, smsAvailable: true, seed: [true, false, true] },
-  { key: "worker-responded", name: "Worker responded", sub: "Accepted or declined an assignment", emailAvailable: true, smsAvailable: true, seed: [true, true, false] },
+  { key: "job-started", name: "Crew on site", sub: "Work started, or a crew back for another day", emailAvailable: false, smsAvailable: true, seed: [true, false, true], audience: { office: true }, example: "Marcus Bell started \"Standing-seam metal · 18412 92nd Ave NE\". jobflex.app/…" },
+  { key: "job-completed", name: "Job completed", sub: "Crew marked the work done", emailAvailable: false, smsAvailable: true, seed: [true, false, true], audience: { office: true, sales: false }, example: "Marcus Bell marked \"Standing-seam metal · 18412 92nd Ave NE\" complete after 2 days. Photos: jobflex.app/…" },
+  { key: "job-photos", name: "Photos & videos from the crew", sub: "How the job was done, as it comes in", emailAvailable: false, smsAvailable: true, seed: [true, false, true], audience: { office: true }, example: "Marcus Bell added 6 photos and 1 video of \"Standing-seam metal · 18412 92nd Ave NE\". See them: jobflex.app/…" },
+  { key: "worker-responded", name: "Worker responded", sub: "Accepted or declined an assignment", emailAvailable: true, smsAvailable: true, seed: [true, true, false], audience: { office: false }, example: "Marcus Bell accepted \"Standing-seam metal · 18412 92nd Ave NE\" on Mon Oct 13." },
   { key: "review-received", name: "Review received", sub: "A homeowner left a rating", emailAvailable: false, smsAvailable: false, seed: [true, false, false] },
   { key: "trade-reply", name: "Trade board reply", sub: "Someone answered your post", emailAvailable: true, smsAvailable: false, seed: [true, true, false] },
 ];
+
+/** The crew's texts (2026-09-29): what a worker with a phone hears, one
+ *  switch each. Text-only and never in the bell, so they stay out of the
+ *  Notifications matrix (PREF_EVENTS); they ride on the worker's own
+ *  account, while the phone and the consent live on WorkerProfile. */
+export const CREW_TEXT_EVENTS: readonly PrefEventMeta[] = [
+  { key: "crew-assigned", name: "Put on a job", sub: "A job or an appointment, with the day, the hours and the link to confirm", emailAvailable: false, smsAvailable: true, seed: [true, false, true], audience: { crew: true }, example: "Ridgeline Roofing Co.: you're on \"Standing-seam metal · 18412 92nd Ave NE\" Mon Oct 13, 8 AM–4 PM at 18412 92nd Ave NE. Details + confirm: jobflex.app/w/…" },
+  { key: "crew-moved", name: "Job moved or cancelled", sub: "The day or time changed, or the job is off", emailAvailable: false, smsAvailable: true, seed: [true, false, true], audience: { crew: true }, example: "Ridgeline Roofing Co.: \"Standing-seam metal · 18412 92nd Ave NE\" moved to Tue Oct 14, 8 AM–4 PM at 18412 92nd Ave NE. Details: jobflex.app/w/…" },
+  { key: "crew-tomorrow", name: "Tomorrow's list, 6 PM", sub: "The evening before: every stop for tomorrow, in order", emailAvailable: false, smsAvailable: true, seed: [true, false, true], audience: { crew: true }, example: "Ridgeline Roofing Co. — tomorrow (Mon Oct 13): 8 AM Standing-seam metal · 18412 92nd Ave NE. Details: jobflex.app/w/…" },
+  { key: "crew-today", name: "Today's list, 7 AM", sub: "The morning of: the same list, in case it changed overnight", emailAvailable: false, smsAvailable: true, seed: [true, false, true], audience: { crew: true }, example: "Ridgeline Roofing Co. — today (Mon Oct 13): 8 AM Standing-seam metal · 18412 92nd Ave NE. Details: jobflex.app/w/…" },
+];
+
+/** The roster a role sits on: office, sales, crew — or none (a plain member
+ *  is not texted about the company). ACCOUNTANT is office: the money lines
+ *  are theirs. */
+export function audienceForRole(role: string | null | undefined): TextAudience | null {
+  switch (role) {
+    case "OWNER":
+    case "ADMIN":
+    case "MANAGER":
+    case "ACCOUNTANT":
+      return "office";
+    case "SALES":
+    case "ESTIMATOR":
+      return "sales";
+    case "INSTALLER":
+      return "crew";
+    default:
+      return null;
+  }
+}
+
+/** Every event a member's blob can hold: the matrix and the crew's texts. */
+export const ALL_PREF_EVENTS: readonly PrefEventMeta[] = [...PREF_EVENTS, ...CREW_TEXT_EVENTS];
+
+/** The events a roster shows, in the order they are listed. */
+export function textEventsFor(audience: TextAudience): readonly PrefEventMeta[] {
+  return ALL_PREF_EVENTS.filter((e) => e.smsAvailable && e.audience && audience in e.audience);
+}
+
+/** The Text seed of an event for a roster: the audience's own, else `seed[2]`. */
+export function smsSeedFor(e: PrefEventMeta, audience: TextAudience | null): boolean {
+  if (!e.smsAvailable) return false;
+  if (audience && e.audience && typeof e.audience[audience] === "boolean") return e.audience[audience]!;
+  return e.seed[2];
+}
 
 /** [in-app, email, text]. The third cell came back on 2026-09-24 with the
  *  platform's own Twilio number; a stored pair from before reads as the seed. */
@@ -89,22 +154,28 @@ export interface NotificationPrefs {
   quietFrom: string; // "20:00"
   quietTo: string; // "07:00"
   muteWeekends: boolean;
+  /** The office member who typed this mobile in on Settings → Texting
+   *  (2026-09-29), or null when the member verified it with a code. */
+  smsAddedBy?: string | null;
 }
 
 export const QUIET_FROM_DEFAULT = "20:00";
 export const QUIET_TO_DEFAULT = "07:00";
 
-export function defaultNotificationPrefs(): NotificationPrefs {
+/** `role` picks the Text seeds (a sales rep is seeded onto its declined
+ *  proposals, the office is not); without it the office seeds apply. */
+export function defaultNotificationPrefs(role?: string | null): NotificationPrefs {
+  const audience = audienceForRole(role);
   const matrix = {} as Record<PrefKey, PrefCells>;
-  for (const e of PREF_EVENTS) matrix[e.key] = [e.seed[0], e.seed[1], e.seed[2]];
-  return { matrix, quietFrom: QUIET_FROM_DEFAULT, quietTo: QUIET_TO_DEFAULT, muteWeekends: false };
+  for (const e of ALL_PREF_EVENTS) matrix[e.key] = [e.seed[0], e.seed[1], smsSeedFor(e, audience)];
+  return { matrix, quietFrom: QUIET_FROM_DEFAULT, quietTo: QUIET_TO_DEFAULT, muteWeekends: false, smsAddedBy: null };
 }
 
 /** Accepts the triple and the older [inApp, email] pair — a pair's text cell
  *  is the seed, since that user never had the choice. Unknown keys are
- *  ignored; missing ones seed. */
-export function parseNotificationPrefs(json: string | null | undefined): NotificationPrefs {
-  const base = defaultNotificationPrefs();
+ *  ignored; missing ones seed (by `role`, see defaultNotificationPrefs). */
+export function parseNotificationPrefs(json: string | null | undefined, role?: string | null): NotificationPrefs {
+  const base = defaultNotificationPrefs(role);
   if (!json) return base;
   let raw: Record<string, unknown>;
   try {
@@ -115,10 +186,10 @@ export function parseNotificationPrefs(json: string | null | undefined): Notific
     return base;
   }
   const stored = raw.matrix && typeof raw.matrix === "object" ? (raw.matrix as Record<string, unknown>) : {};
-  for (const e of PREF_EVENTS) {
+  for (const e of ALL_PREF_EVENTS) {
     const cells = stored[e.key];
     if (Array.isArray(cells) && cells.length >= 2 && typeof cells[0] === "boolean" && typeof cells[1] === "boolean") {
-      const sms = typeof cells[2] === "boolean" ? cells[2] : e.seed[2];
+      const sms = typeof cells[2] === "boolean" ? cells[2] : base.matrix[e.key][2];
       base.matrix[e.key] = [cells[0], e.emailAvailable ? cells[1] : false, e.smsAvailable ? sms : false];
     }
   }
@@ -128,7 +199,15 @@ export function parseNotificationPrefs(json: string | null | undefined): Notific
     quietFrom: str(raw.quietFrom, base.quietFrom),
     quietTo: str(raw.quietTo, base.quietTo),
     muteWeekends: typeof raw.muteWeekends === "boolean" ? raw.muteWeekends : false,
+    smsAddedBy: typeof raw.smsAddedBy === "string" ? raw.smsAddedBy : null,
   };
+}
+
+/** The Text cells of one roster, as the settings page shows them. */
+export function textCellsFor(prefs: NotificationPrefs, audience: TextAudience): Partial<Record<PrefKey, boolean>> {
+  const out: Partial<Record<PrefKey, boolean>> = {};
+  for (const e of textEventsFor(audience)) out[e.key] = prefs.matrix[e.key]?.[2] ?? smsSeedFor(e, audience);
+  return out;
 }
 
 
@@ -142,7 +221,9 @@ export function mergeMatrixSave(
   stored: NotificationPrefs,
 ): Record<PrefKey, PrefCells> {
   const out = {} as Record<PrefKey, PrefCells>;
-  for (const e of PREF_EVENTS) {
+  // Every key, not only the matrix's: a save from the Notifications page
+  // must keep the crew's switches it does not show.
+  for (const e of ALL_PREF_EVENTS) {
     const cells = incoming[e.key];
     const prev = stored.matrix[e.key] ?? [e.seed[0], e.seed[1], e.seed[2]];
     if (!cells || cells.length < 2) {
@@ -192,6 +273,11 @@ export function prefKeyForEvent(e: EventLike): PrefKey | null {
       return e.leadId ? "lead-assigned" : null;
     case "SCHEDULED":
       return "job-scheduled";
+    case "BOOKING_NEW":
+      return "appointment-booked";
+    case "BOOKING_MOVED":
+    case "BOOKING_CANCELED":
+      return "appointment-moved";
     case "STARTED":
       return "job-started";
     case "MEDIA":

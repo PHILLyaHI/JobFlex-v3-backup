@@ -28,6 +28,8 @@
 // /api/checkout/[provider] contracts as the page this replaces.
 
 import type { Metadata } from "next";
+import { fireTextRules, proposalContext } from "@/lib/sms/rulesEngine";
+import { afterResponse } from "@/lib/server-events";
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -173,6 +175,9 @@ export default async function PublicProposalPortal({
         summary: `${proposal.client?.name ?? "Client"} opened the proposal`,
       },
     });
+    // The company's own texts on the first opening (2026-09-29).
+    const openedId = proposal.id;
+    afterResponse(() => fireTextRules("proposal.viewed", proposalContext(openedId)));
   }
 
   const org = proposal.organization;

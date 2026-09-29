@@ -5,6 +5,7 @@ import { requireSalesOrManager, isSalesRole, UnauthorizedError } from "@/lib/org
 import { db } from "@/lib/db";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { afterResponse } from "@/lib/server-events";
+import { textAppointmentBooked, textAppointmentCancelled, textAppointmentMoved as textVisitMoved, visitFacts } from "@/lib/sms/schedule";
 import { crewOfAppointment, textAppointmentMoved, textCrewCancelled } from "@/lib/sms/crew";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 
@@ -174,6 +175,8 @@ export async function createAppointment(raw: unknown) {
     leadId: apt.leadId,
     meta: { appointmentId: apt.id, startsAt: apt.startsAt.toISOString(), endsAt: apt.endsAt.toISOString(), workers: workerIds?.length ?? 0 },
   });
+  // The office and the rep hear about the visit by text (2026-09-29).
+  afterResponse(() => textAppointmentBooked(apt.id, user.id));
   return { id: apt.id };
 }
 
@@ -217,6 +220,9 @@ export async function updateAppointment(id: string, rawInput: Partial<z.infer<ty
   // A moved appointment texts its crew (2026-09-24), after the response.
   if (raw.startsAt) afterResponse(() => textAppointmentMoved(id));
   if (raw.status === "CANCELED" && apt.status !== "CANCELED") afterResponse(async () => textCrewCancelled(await crewOfAppointment(id)));
+  // …and the office and the rep (2026-09-29): a real move says from → to.
+  if (raw.startsAt && toDate(raw.startsAt).getTime() !== apt.startsAt.getTime() && raw.status !== "CANCELED") afterResponse(() => textVisitMoved(id, apt.startsAt, user.id));
+  if (raw.status === "CANCELED" && apt.status !== "CANCELED") afterResponse(async () => textAppointmentCancelled(await visitFacts(id), user.id));
   if (raw.workerIds) {
     const workerIds = await filterWorkerIdsForRole(role, user.id, raw.workerIds);
     const { added } = await syncAssignments(organizationId, id, workerIds ?? []);
@@ -253,8 +259,10 @@ export async function deleteAppointment(id: string) {
   if (isSalesRole(role)) await assertSalesCanTouchAppointment(id, user.id);
   // The crew is read before the row goes, and texted after the response.
   const crew = await crewOfAppointment(id).catch(() => null);
+  const visit = apt.status === "CANCELED" ? null : await visitFacts(id).catch(() => null);
   await db.appointment.delete({ where: { id } });
   afterResponse(() => textCrewCancelled(crew));
+  afterResponse(() => textAppointmentCancelled(visit, user.id));
   revalidatePath("/dashboard/calendar");
   await logActivity({
     organizationId,
@@ -284,6 +292,7 @@ export async function rescheduleAppointment(id: string, newStartISO: string) {
     data: { startsAt: newStart, endsAt: newEnd },
   });
   afterResponse(() => textAppointmentMoved(id));
+  if (newStart.getTime() !== apt.startsAt.getTime()) afterResponse(() => textVisitMoved(id, apt.startsAt, user.id));
   revalidatePath("/dashboard/calendar");
   await logActivity({
     organizationId,

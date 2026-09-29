@@ -154,3 +154,27 @@ tick); `src/actions/sms.ts` (verify, extras, test); hooks in
 Work started, a crew back for another day, the job done, and the first
 photos or video of a batch text the owner and the manager; the owner sets
 who gets which texts on Settings → Texting. See `docs/crew-onsite.md`.
+
+## Who gets texted, person by person (2026-09-29)
+
+Owner: "I just add their name and phone number and the list of what they will receive… for sales most of it is appointments or their proposal sold, for installers when they get the job or we reschedule it." Settings → Texting (desk and handheld, one component: `src/components/v3/texting-people/`) lists every member who can be texted in three rosters, by role (`audienceForRole`):
+
+| Roster | Roles | What they can get (Text seed on unless noted) |
+|---|---|---|
+| Office | OWNER, ADMIN, MANAGER, ACCOUNTANT | New lead · Proposal accepted · Proposal declined (off) · Payment received · Change order answered · Appointment booked · Appointment moved or cancelled · Job scheduled · Crew on site · Job completed · Photos & videos · Worker responded (off) |
+| Sales & estimators | SALES, ESTIMATOR | Only their own: lead assigned to them · their proposal accepted / declined · payment (off) / change order (off) / job completed (off) on their deal · visits they booked or are staffed on (booked, moved, cancelled) · their job scheduled |
+| Crew | INSTALLER | Put on a job · Job moved or cancelled · Tomorrow's list 6 PM · Today's list 7 AM |
+
+- Each person: their mobile (verified by them, or **typed in by the office** — `setMemberMobile`, which sends the welcome text with the STOP line and writes a TEAM trail row; `smsAddedBy` in the prefs blob), Change / Stop texts, a number on file with texting off gets "Text this number", and one switch per event (`setMemberTextEvents`, only keys of their roster). Under each roster, "What the texts say" shows every text with sample facts (`PrefEventMeta.example`).
+- A crew member's number is `WorkerProfile.phone` + `smsOptIn` (the Workers sheet box and this page write the same fields); their switches live in their own `User.notificationPrefsJson` under `crew-*` keys (`CREW_TEXT_EVENTS`, kept out of the Notifications matrix; `mergeMatrixSave` keeps them).
+- Targeting: `textOffice(org, key, line, { alsoUserIds })` texts the office by role plus named members (the proposal's `ownerId`, the lead's `assignedToId`, the appointment's `createdById` and staffed members), each through their own cells, never the actor, and **only for keys on their own roster** (a crew member named on a visit gets the crew's text, not the office's).
+- New texts (`src/lib/sms/schedule.ts`, words in `format.ts`): `Booked: Roof inspection · Sarah Mitchell · Wed Oct 7, 9 AM–10 AM · 18412 92nd Ave NE · online.` / `Moved: … — was Wed Oct 7, 9 AM, now Fri Oct 9, 1 PM–2 PM.` / `Cancelled: … — Fri Oct 9, 1 PM–2 PM, by the client.` / `Scheduled: "<job>" — Tue Oct 13, 8 AM–4 PM at 18412 92nd Ave NE. <link>`. Hooks: `createAppointment`, `updateAppointment` (a real move / a cancel), `deleteAppointment`, `rescheduleAppointment`, online `createBooking` / `rescheduleBooking` / `cancelBooking`, `createJob` with a date, `createJobFromProposal`, `scheduleJobFromTray`.
+- No schema change.
+
+## Your own texts (2026-09-29)
+
+Owner: "make option for user to create new text situation by themselves." Settings → Texting → **Your own texts** (desk and handheld, `components/v3/texting-people/text-rules.tsx`): a list of the company's texts (on/off switch, Edit, Delete with a second tap), eight ready-made ideas, and an editor — **When** (17 moments; four are timed: hours before an appointment, hours before a crew day, days with no answer on a proposal, days after a job), **Who** (the client, owner & managers, the rep on it, the crew on it, plus named people), **The text** with `{fields}` chips (`{client} {first} {company} {phone} {job} {when} {address} {total} {amount} {rep} {link} {note}` — only the ones the moment can fill), a live "How it reads" preview for the client and for the team, and "Send me a test".
+
+- Catalog, fields, ideas, renderer: `src/lib/sms/textRules.ts` (pure). Sends: `src/lib/sms/rulesEngine.ts` — `fireTextRules(trigger, context)` from the hooks, `runTimedTextRules(now)` from the hourly `/api/cron/sms-crew`. Actions: `src/actions/textRules.ts` (save/switch/delete/test, managers only, trail rows). Table `TextRule` (additive, no relations).
+- Rules: clients only when Text clients is on, always signed with the company (once — not when the words already name it) and the STOP line; client texts never 9 PM–8 AM, team texts never 8 PM–7 AM (they wait); a delayed text that would land at night waits for the morning; the person who clicked is not texted; a rule says a thing once per proposal / visit / job day (`SmsMessage.kind = rule:<rule>:<thing>`); held rule texts are never folded into the overnight digest. Up to 30 texts per company, 300 characters each.
+- Hooks: new lead, proposal sent / first opened / accepted / declined, payment, change order answered, appointment booked / moved / cancelled, job scheduled / started / completed (+ days after).

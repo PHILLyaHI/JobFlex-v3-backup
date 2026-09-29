@@ -37,7 +37,8 @@ import { parsePaymentSettings } from "@/lib/settings";
 import { resolveSchedule, fromMinor } from "@/lib/paymentSchedule";
 import { resolveEmailRecipients, sendToMembersByPref, sendToUserByPref } from "@/lib/notificationPrefs";
 import { textOffice } from "@/lib/sms/send";
-import { acceptedLine, dayLabel, jobBackLine, jobCompletedLine, jobMediaLine, jobStartedLine, leadLine, leadOfferLine, paymentLine, workerRespondedLine } from "@/lib/sms/format";
+import { fireTextRules, jobContext, leadContext, proposalContext } from "@/lib/sms/rulesEngine";
+import { acceptedLine, dayLabel, money as smsMoney, jobBackLine, jobCompletedLine, jobMediaLine, jobStartedLine, leadLine, leadOfferLine, paymentLine, workerRespondedLine } from "@/lib/sms/format";
 import type { ProgressWhat } from "@/lib/jobProgressShared";
 import { textAppointmentAssigned, textAssignmentCreated } from "@/lib/sms/crew";
 import { textClientProposalSent } from "@/lib/sms/clients";
@@ -197,6 +198,7 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
   // The client's phone gets the link too (2026-09-24), when the company
   // texts clients and the client has a number.
   await textClientProposalSent(proposal.id);
+  await fireTextRules("proposal.sent", proposalContext(proposal.id));
 
   return {
     skipped: false as const,
@@ -264,7 +266,8 @@ export async function notifyProposalAccepted({ proposalId }: { proposalId: strin
   // 2) Internal heads-up to the office — every owner/manager whose
   //    "Proposal accepted" email pref is on (quiet hours respected) — and
   //    the same line by text to those who ticked Text (2026-09-24).
-  await textOffice(proposal.organizationId, "proposal-accepted", acceptedLine(proposal.client?.name ?? "A client", proposal.title, proposal.total, `${appUrl}/dashboard/proposals/${proposal.id}`));
+  await textOffice(proposal.organizationId, "proposal-accepted", acceptedLine(proposal.client?.name ?? "A client", proposal.title, proposal.total, `${appUrl}/dashboard/proposals/${proposal.id}`), { alsoUserIds: [proposal.ownerId] });
+  await fireTextRules("proposal.accepted", proposalContext(proposal.id));
   await sendToMembersByPref(
     proposal.organizationId,
     "proposal-accepted",
@@ -334,8 +337,9 @@ export async function notifyLeadCreated(leadId: string) {
       lead.organizationId,
       "lead-assigned",
       leadLine(lead.name, lead.projectType ?? null, [lead.city, lead.state].filter(Boolean).join(", ") || null, lead.phone ?? lead.email ?? null, `${appUrl}/dashboard/leads/${lead.id}`),
-      { roles: ["OWNER"] },
+      { roles: ["OWNER"], alsoUserIds: [lead.assignedToId] },
     );
+    await fireTextRules("lead.created", leadContext(lead.id));
     await sendToMembersByPref(
       lead.organizationId,
       "lead-assigned",
@@ -1323,7 +1327,8 @@ export async function notifyPaymentReceived({ paymentId }: { paymentId: string }
     );
   }
 
-  await textOffice(payment.organizationId, "payment-received", paymentLine(clientName, proposal.title, payment.amount, remaining));
+  await textOffice(payment.organizationId, "payment-received", paymentLine(clientName, proposal.title, payment.amount, remaining), { alsoUserIds: [payment.proposal?.ownerId] });
+  if (payment.proposalId) await fireTextRules("payment.received", proposalContext(payment.proposalId, { amount: smsMoney(payment.amount) }));
   await sendToMembersByPref(
     payment.organizationId,
     "payment-received",
@@ -1399,7 +1404,7 @@ export async function notifyPaymentIssue(input: {
  * pressed the button. The bell already has the STARTED / COMPLETED row.
  */
 export async function notifyJobProgress(jobId: string, actor: { userId: string; name: string }, what: ProgressWhat, day: number) {
-  const job = await db.job.findUnique({ where: { id: jobId }, select: { id: true, title: true, organizationId: true } });
+  const job = await db.job.findUnique({ where: { id: jobId }, select: { id: true, title: true, organizationId: true, proposal: { select: { ownerId: true } } } });
   if (!job) return { skipped: true as const };
   const appUrl = await appBaseUrl();
   const link = `${appUrl}/dashboard/jobs/${job.id}`;
@@ -1409,7 +1414,10 @@ export async function notifyJobProgress(jobId: string, actor: { userId: string; 
       : what === "continued"
         ? jobBackLine(actor.name, job.title, day, link)
         : jobStartedLine(actor.name, job.title, link);
-  const r = await textOffice(job.organizationId, what === "completed" ? "job-completed" : "job-started", line, { excludeUserIds: [actor.userId] });
+  // The rep who sold it hears "completed" when they ticked it; "started" is the office's (2026-09-29).
+  const r = await textOffice(job.organizationId, what === "completed" ? "job-completed" : "job-started", line, { excludeUserIds: [actor.userId], alsoUserIds: what === "completed" ? [job.proposal?.ownerId] : [] });
+  // The company's own texts on the moment (a day-two restart is not a start).
+  if (what !== "continued") await fireTextRules(what === "completed" ? "job.completed" : "job.started", jobContext(job.id), { actorUserId: actor.userId });
   return { skipped: false as const, ...r };
 }
 
