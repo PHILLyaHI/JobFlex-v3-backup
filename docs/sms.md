@@ -31,6 +31,30 @@ change their day.
 Without the keys the app works the same: every text is a `SKIPPED` row in
 `SmsMessage`, which is how the local stand shows what would have gone.
 
+## Production record (2026-09-29)
+
+- Twilio account **Jobflex LLC**, ISV Reseller compliance profile
+  `BUb28368a569264579990ef6a0a5de1279` (approved 2026-09-29).
+- Platform number **+1 866 897 5760** (`PNbb44dd70d0f505e1c88ae59eef4c1254`,
+  toll-free, SMS + Voice; voice webhook → `/api/twilio/voice`).
+- Messaging Service **JobFlex** `MG837450cfa0296fc503c810b0699dfa69`:
+  inbound webhook `/api/twilio/sms` (POST), sticky sender, use case
+  notifications, the number in its pool. Set in /admin/integrations/twilio
+  with the Account SID and Auth Token.
+- Toll-free verification `HH46f4f5318f2309024fd8c84e8db70819`, submitted
+  through the API (`Tollfree/Verifications`): categories account
+  notifications + customer care, opt-in type web form, 10,000/month, the
+  opt-in pictures at `/twilio/opt-in-settings.png` and
+  `/twilio/opt-in-worker.png` (public/twilio — a real capture of the
+  Settings → Texting consent card and the worker sheet's checkbox).
+  Twilio caps the summary, sample and additional-information fields at
+  500 characters and wants `BusinessType=PRIVATE_PROFIT` plus the EIN as
+  registration number/authority. Until it is approved US carriers return
+  undelivered (30034); the admin page shows those rows.
+- The number was bought in the console by the owner (a purchase is not
+  something an assistant session may make); everything after it was done
+  with the REST API.
+
 ## What the contractor does
 
 - Settings → Notifications: the matrix has a third column, **Text**. The
