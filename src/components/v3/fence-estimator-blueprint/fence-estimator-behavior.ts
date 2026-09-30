@@ -3928,8 +3928,7 @@ export function initFenceEstimatorContent(
         onPick(p) {
           // Free typing reports `typed`; only a resolved place is a site.
           if (p.typed) return;
-          sitePlace = p;
-          showSite(p);
+          setSite(p);
         },
         // Google refused to suggest (browser key not entitled to Places (New),
         // referrer not allowed, SDK failed to load). The bar still works as a
@@ -3952,6 +3951,17 @@ export function initFenceEstimatorContent(
   /** Moves the draw surface to the resolved address, and keeps the placeholder
    *  underneath it in step — that placeholder is the only feedback there is when
    *  no browser key is configured and no surface mounted. */
+  /**
+   * THE ONE WAY A SITE ARRIVES (a picked suggestion or Find). The site is the
+   * job's market (market() → priceOpts() → pkg()), so the studio re-renders
+   * from the same package at once: the ticket, the type rows and the convert
+   * all read pkg(), whatever order the runs and the address came in.
+   */
+  function setSite(p: PickedPlace) {
+    sitePlace = p;
+    showSite(p);
+    renderStudio();
+  }
   function showSite(p: PickedPlace) {
     const t = $('.map-slot-in .ms-t');
     const h = $('.map-slot-in .ms-h');
@@ -4008,7 +4018,7 @@ export function initFenceEstimatorContent(
       if (r) {
         const formatted = String(r.formatted_address ?? q).replace(/,\s*USA$/, '');
         const loc = r.geometry?.location;
-        sitePlace = {
+        const place: PickedPlace = {
           address: formatted.split(',')[0] || formatted,
           city: '', state: '', zip: '', formatted,
           // Without these the Find button would resolve an address the map
@@ -4017,7 +4027,7 @@ export function initFenceEstimatorContent(
           lng: loc ? loc.lng() : undefined,
         };
         if (addrInput) addrInput.value = formatted;
-        showSite(sitePlace);
+        setSite(place);
         btn.innerHTML = '<svg class="ic"><use href="#i-check"/></svg>Found';
       } else {
         btn.innerHTML = '<svg class="ic"><use href="#i-search"/></svg>No match';
