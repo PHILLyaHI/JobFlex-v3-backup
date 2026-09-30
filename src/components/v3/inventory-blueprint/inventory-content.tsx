@@ -16,7 +16,7 @@ import { useCallback, useMemo, useState, useTransition, type ReactNode } from "r
 import Link from "next/link";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
-import { Download, Plus, Search, Upload, X } from "lucide-react";
+import { Download, Pencil, Plus, Search, Upload, X } from "lucide-react";
 import { toast } from "@/components/ui/Toast";
 import { saveFenceCatalog } from "@/actions/fenceCatalog";
 import { saveRoofCatalog } from "@/actions/roofCatalog";
@@ -97,11 +97,11 @@ export function InventoryContent({ data, canEditBook, canWriteStock }: Inventory
         </div>
       </div>
 
-      <nav className={cx("tabs")} aria-label="Inventory sections">
+      <nav className="ptabs" aria-label="Inventory sections">
         {tabs.map((t) => (
-          <Link key={t} href={hrefFor(trade, t)} className={cx("tab")} aria-current={t === tab ? "page" : undefined} id={t === "book" ? "book" : undefined}>
+          <Link key={t} href={hrefFor(trade, t)} className={cx("ptab", t === tab && "active")} aria-current={t === tab ? "page" : undefined} id={t === "book" ? "book" : undefined}>
             {TAB_LABEL[t]}
-            {counts[t] !== undefined && (t !== "stock" || counts[t]! > 0) && <span className={cx("n")}>{counts[t]}</span>}
+            {counts[t] !== undefined && (t !== "stock" || counts[t]! > 0) && <span className="ptab-count">{counts[t]}</span>}
           </Link>
         ))}
       </nav>
@@ -172,10 +172,10 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
 
       <section className={cx("card")} aria-label="Schedule">
         <div className={cx("card-head")}>
-          <div><div className={cx("card-title")}>Price schedule</div><div className={cx("card-sub")}>{allGroups.length} groups · a row you save becomes the company default; the rest stays at the catalog figure.</div></div>
+          <div><div className={cx("card-title")}>Price schedule</div></div>
         </div>
         <div className={cx("tools")}>
-          <label className={cx("search")}><Search size={16} aria-hidden="true" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find an item" aria-label="Find an item" />{q && <button type="button" className={cx("link")} onClick={() => setQ("")} aria-label="Clear search"><X size={14} /></button>}</label>
+          <label className="search"><Search className="ic" aria-hidden="true" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find an item" aria-label="Find an item" />{q && <button type="button" className={cx("link")} onClick={() => setQ("")} aria-label="Clear search"><X size={14} /></button>}</label>
           <Segmented label="Jump to a group" value={group} items={[{ id: "", label: "All", n: rows.length }, ...allGroups.map((g) => ({ id: g.label, label: g.label, n: g.rows.length }))]} onChange={jumpTo} />
         </div>
 
@@ -187,14 +187,14 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
           <div role="list">
             {groups.map((g) => (
               <div key={g.label}>
-                <div className={cx("grp-h", group === g.label && "on")} id={`grp-${slugId(g.label, [])}`}>{g.label}<span>{g.rows.length}</span></div>
+                <div className={cx("grp-h", group === g.label && "grp-on")} id={`grp-${slugId(g.label, [])}`}><div className="pgrp"><span className="pgrp-name">{g.label}</span><span className="pgrp-meta">{g.rows.length} items</span></div></div>
                 {g.rows.map((r) => {
                   const key = `${r.kind}:${r.id}`;
                   const isOpen = open === key;
                   return (
                     <div key={key} role="listitem"><div className={cx("rowi")} role="button" tabIndex={0} aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : key)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(isOpen ? null : key); } }}>
                       <div className={cx("l1")}>{r.color && <span style={{ display: "inline-block", width: 12, height: 12, background: r.color, border: "1px solid var(--ink)" }} aria-hidden="true" />}<span className={cx("t")}>{r.name}</span><span className={cx("p")}>{r.price === null ? "—" : usd2(r.price)}</span></div>
-                      <div className={cx("l2")}><span>{r.specs}</span><span>/ {r.unit}</span>{r.companyDefault && <span className={cx("stamp", "stamp-ok")}>Default</span>}</div>
+                      <div className={cx("l2")}><span>{r.specs}</span><span>/ {r.unit}</span>{r.companyDefault && <span className={cx("pstatus", "pstatus--accepted")}>Default</span>}</div>
                       {isOpen && (
                         <div className={cx("more")}>
                           {r.labor !== null && <div className={cx("kv")}><span>Labor</span><b>{usd2(r.labor)} / {r.unit}</b></div>}
@@ -210,14 +210,14 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
           </div>
         ) : (
           <div className={cx("tbl-wrap")}>
-            <table className={cx("spec")}>
+            <table className="ptable">
               <thead>
                 <tr>
-                  <th scope="col">No.</th><th scope="col">Item</th><th scope="col">Specification</th><th scope="col">Unit</th>
-                  <th scope="col" className={cx("num")}>{trade === "hvac" ? "Shop cost" : "Material"}</th>
-                  {trade !== "hvac" && <th scope="col" className={cx("num")}>Labor</th>}
-                  <th scope="col" className={cx("ctr")}>Standing</th>
-                  {canEdit && <th scope="col" className={cx("acts")}><span style={{ position: "absolute", left: -9999 }}>Actions</span></th>}
+                  <th scope="col" className={cx("no")}>No.</th><th scope="col">Item</th><th scope="col">Specification</th><th scope="col">Unit</th>
+                  <th scope="col" className="num">{trade === "hvac" ? "Shop cost" : "Material"}</th>
+                  {trade !== "hvac" && <th scope="col" className="num">Labor</th>}
+                  <th scope="col" className="c">Standing</th>
+                  {canEdit && <th scope="col" className="th-open"><span style={{ position: "absolute", left: -9999 }}>Actions</span></th>}
                 </tr>
               </thead>
               <tbody>
@@ -226,15 +226,15 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
                     {g.rows.map((r, ri) => {
                       const n = groupStart[gi] + ri + 1;
                       return (
-                        <tr key={`${r.kind}:${r.id}`} className={cx("row")} onClick={() => openRow(r)} tabIndex={canEdit ? 0 : undefined} onKeyDown={(e) => { if (e.key === "Enter") openRow(r); }}>
-                          <td className={cx("no")}>{String(n).padStart(2, "0")}</td>
-                          <td className={cx("name")}>{r.color && <span className={cx("sw")} style={{ background: r.color }} aria-hidden="true" />}{r.name}</td>
-                          <td className={cx("mono")}>{r.specs}</td>
-                          <td className={cx("unit")}>{r.unit}</td>
-                          <td className={cx("num")}><b>{r.price === null ? "—" : usd2(r.price)}</b></td>
-                          {trade !== "hvac" && <td className={cx("num")}>{r.labor === null ? "—" : usd2(r.labor)}</td>}
-                          <td className={cx("ctr")}>{r.companyDefault ? <span className={cx("stamp", "stamp-ok", "stamp-w")}>Company</span> : <span className={cx("stamp", "stamp-quiet", "stamp-w")}>{r.kind === "hvac-rate" ? "typical" : "catalog"}</span>}</td>
-                          {canEdit && <td className={cx("acts")}><button type="button" className={cx("btn-row")} onClick={(e) => { e.stopPropagation(); openRow(r); }} aria-label={`Edit ${r.name}`}>Edit</button></td>}
+                        <tr key={`${r.kind}:${r.id}`} className="prow" onClick={() => openRow(r)} tabIndex={canEdit ? 0 : undefined} onKeyDown={(e) => { if (e.key === "Enter") openRow(r); }}>
+                          <td className={cx("pt-mono", "no")}>{String(n).padStart(2, "0")}</td>
+                          <td className="pt-title">{r.color && <span className={cx("sw")} style={{ background: r.color }} aria-hidden="true" />}{r.name}</td>
+                          <td className="pt-mono">{r.specs}</td>
+                          <td className="pt-mono">{r.unit}</td>
+                          <td className="num"><span className="pt-money">{r.price === null ? "—" : usd2(r.price)}</span></td>
+                          {trade !== "hvac" && <td className="num"><span className="pt-money">{r.labor === null ? "—" : usd2(r.labor)}</span></td>}
+                          <td className="c">{r.companyDefault ? <span className="pstatus pstatus--accepted">Company</span> : <span className="pstatus">{r.kind === "hvac-rate" ? "typical" : "catalog"}</span>}</td>
+                          {canEdit && <td className="num"><button type="button" className="pt-open" onClick={(e) => { e.stopPropagation(); openRow(r); }} aria-label={`Edit ${r.name}`} title="Edit"><Pencil className="ic" aria-hidden="true" /></button></td>}
                         </tr>
                       );
                     })}
@@ -254,7 +254,7 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
 
 function GroupRows({ label, count, cols, on, children }: { label: string; count: number; cols: number; on?: boolean; children: ReactNode }) {
   return <>
-    <tr className={cx("grp", on && "on")} id={`grp-${slugId(label, [])}`}><th colSpan={cols} scope="rowgroup">{label}<span>{count} items</span></th></tr>
+    <tr className={cx("prow-grp", on && "grp-on")} id={`grp-${slugId(label, [])}`}><td colSpan={cols}><div className="pgrp"><span className="pgrp-name">{label}</span><span className="pgrp-meta">{count} items</span></div></td></tr>
     {children}
   </>;
 }
@@ -277,7 +277,7 @@ function BookSettings({ book, canEdit }: { book: PriceBookData; canEdit: boolean
       <div className={cx("card-head")}><div><div className={cx("card-title")}>Book settings</div><div className={cx("card-sub")}>The studio reads them on every estimate.</div></div></div>
       <div className={cx("card-body")}>
         <div className={cx("fields")}>
-          <label className={cx("fld")}><span className={cx("lbl")}>Removal of the old fence</span><span><MoneyInput value={doc?.removalPerLf ?? 6} disabled={!canEdit || pending} onCommit={(v) => save({ removalPerLf: v })} label="Removal per linear foot" /> <span className={cx("mono")}>per lf</span></span></label>
+          <label className={cx("fld")}><span className={cx("lbl")}>Removal of the old fence</span><span><MoneyInput value={doc?.removalPerLf ?? 6} disabled={!canEdit || pending} onCommit={(v) => save({ removalPerLf: v })} label="Removal per linear foot" /> <span className="pt-mono">per lf</span></span></label>
           <label className={cx("fld")}><span className={cx("lbl")}>Waste on materials</span><span><MoneyInput value={doc?.wastePct ?? 10} disabled={!canEdit || pending} onCommit={(v) => save({ wastePct: v })} label="Waste percent" sign="%" /></span></label>
         </div>
       </div>

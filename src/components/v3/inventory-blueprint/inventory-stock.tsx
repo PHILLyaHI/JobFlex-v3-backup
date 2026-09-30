@@ -13,7 +13,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import type { Route } from "next";
-import { ArrowRight, Check, ChevronDown, ChevronRight, Plus, Search, X } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronRight, PackagePlus, Pencil, Plus, Search, X } from "lucide-react";
 import { InventoryItemForm, InventorySupplierForm } from "@/components/v3/roofing-inventory/roofing-inventory-forms";
 import { StockListEditor } from "@/components/v3/roofing-inventory/stock-list-editor";
 import { ago, dayOf, materialsOf, moveLabel, qty, statusLabel, stockStatus, useRoofingInventory, usd, type InventoryRow, type InventoryTab as StockSection, type InventoryWorkspace } from "@/components/v3/roofing-inventory/roofing-inventory-model";
@@ -109,7 +109,7 @@ function StockSchedule({ w, handheld, addMaterials }: { w: InventoryWorkspace; h
       </div>
       {w.data.rows.length > 0 && (
         <div className={cx("tools")}>
-          <label className={cx("search")}><Search size={16} aria-hidden="true" /><input value={w.q} onChange={(e) => w.setQ(e.target.value)} placeholder="Find an item, a supplier, a SKU" aria-label="Find an item" />{w.q && <button type="button" className={cx("link")} onClick={() => w.setQ("")} aria-label="Clear search"><X size={14} /></button>}</label>
+          <label className="search"><Search className="ic" aria-hidden="true" /><input value={w.q} onChange={(e) => w.setQ(e.target.value)} placeholder="Find an item, a supplier, a SKU" aria-label="Find an item" />{w.q && <button type="button" className={cx("link")} onClick={() => w.setQ("")} aria-label="Clear search"><X size={14} /></button>}</label>
           <Segmented label="Filter" value={w.filter} items={w.chips.filter((c) => c.id === "ALL" || c.n > 0)} onChange={w.setFilter} />
           <div className={cx("tools-r")}>
             <select className={cx("sel")} value={w.view} onChange={(e) => w.setView(e.target.value as "urgency" | "category")} aria-label="Order the schedule by"><option value="urgency">By urgency</option><option value="category">By category</option></select>
@@ -125,7 +125,7 @@ function StockSchedule({ w, handheld, addMaterials }: { w: InventoryWorkspace; h
         <div role="list">
           {w.sections.map((sec) => (
             <div key={sec.label ?? "all"}>
-              {sec.label && <div className={cx("grp-h")}>{sec.label}<span>{sec.items.length}</span></div>}
+              {sec.label && <div className={cx("grp-h")}><div className="pgrp"><span className="pgrp-name">{sec.label}</span><span className="pgrp-meta">{sec.items.length} items</span></div></div>}
               {sec.items.map((x) => <StockListRow key={x.r.id} x={x} w={w} open={open === x.r.id} onToggle={() => setOpen(open === x.r.id ? null : x.r.id)} />)}
             </div>
           ))}
@@ -133,13 +133,13 @@ function StockSchedule({ w, handheld, addMaterials }: { w: InventoryWorkspace; h
         </div>
       ) : (
         <div className={cx("tbl-wrap")}>
-          <table className={cx("spec")}>
+          <table className="ptable">
             <thead>
               <tr>
-                <th scope="col">No.</th><th scope="col">Item</th><th scope="col">Specification</th>
-                <th scope="col" className={cx("num")}>On hand</th><th scope="col" className={cx("num")}>Reserved</th><th scope="col" className={cx("num")}>Forecast</th>
-                <th scope="col" className={cx("ctr")}>Status</th>
-                {w.canWrite && <th scope="col" className={cx("acts")}><span style={{ position: "absolute", left: -9999 }}>Actions</span></th>}
+                <th scope="col" className={cx("no")}>No.</th><th scope="col">Item</th><th scope="col">Specification</th>
+                <th scope="col" className="num">On hand</th><th scope="col" className="num">Reserved</th><th scope="col" className="num">Forecast</th>
+                <th scope="col" className="c">Status</th>
+                {w.canWrite && <th scope="col" className="th-open"><span style={{ position: "absolute", left: -9999 }}>Actions</span></th>}
               </tr>
             </thead>
             <tbody>
@@ -164,7 +164,7 @@ function StockSchedule({ w, handheld, addMaterials }: { w: InventoryWorkspace; h
 
 function SectionRows({ label, count, cols, children }: { label: string | null; count: number; cols: number; children: ReactNode }) {
   return <>
-    {label && <tr className={cx("grp")}><th colSpan={cols} scope="rowgroup">{label}<span>{count} items</span></th></tr>}
+    {label && <tr className="prow-grp"><td colSpan={cols}><div className="pgrp"><span className="pgrp-name">{label}</span><span className="pgrp-meta">{count} items</span></div></td></tr>}
     {children}
   </>;
 }
@@ -173,11 +173,11 @@ function SectionRows({ label, count, cols, children }: { label: string | null; c
 function PerJobFold({ w, cols, handheld, list }: { w: InventoryWorkspace; cols?: number; handheld?: boolean; list: (rows: InventoryRow[]) => ReactNode }) {
   const toggle = <button type="button" className={cx("link")} onClick={() => w.setShowPerJob(!w.showPerJob)}>{w.showPerJob ? "Hide" : "Show"}</button>;
   if (handheld) return <>
-    <div className={cx("grp-h")}>Bought per job<span>{w.folded.length}</span> {toggle}</div>
+    <div className={cx("grp-h")}><div className="pgrp"><span className="pgrp-name">Bought per job</span><span className="pgrp-meta">{w.folded.length} items</span>{toggle}</div></div>
     {w.showPerJob && list(w.folded)}
   </>;
   return <>
-    <tr className={cx("grp")}><th colSpan={cols} scope="rowgroup">Bought per job<span>{w.folded.length} items · nothing to count</span> <span>{toggle}</span></th></tr>
+    <tr className="prow-grp"><td colSpan={cols}><div className="pgrp"><span className="pgrp-name">Bought per job</span><span className="pgrp-meta">{w.folded.length} items · nothing to count</span>{toggle}</div></td></tr>
     {w.showPerJob && list(w.folded)}
   </>;
 }
@@ -189,18 +189,18 @@ function StockTableRow({ x, n, w, dim }: { x: InventoryRow; n: number; w: Invent
   const st = stockStatus(r, x.st);
   const perJob = x.st === "perjob";
   return (
-    <tr className={cx("row", dim && "dim")} onClick={() => w.canWrite && w.setItemPanel({ mode: "edit", itemId: r.id })} tabIndex={w.canWrite ? 0 : undefined} onKeyDown={(e) => { if (e.key === "Enter" && w.canWrite) w.setItemPanel({ mode: "edit", itemId: r.id }); }}>
-      <td className={cx("no")}>{String(n).padStart(2, "0")}</td>
-      <td className={cx("name")}>{r.name}</td>
-      <td className={cx("mono")}>{specsOf(r) || "—"}</td>
-      <td className={cx("num")} onClick={(e) => e.stopPropagation()}>{perJob ? <span className={cx("mono")}>—</span> : <OnHand r={r} w={w} />}</td>
-      <td className={cx("num")}>{r.reserved > 0 ? qty(r.reserved) : <span className={cx("mono")}>—</span>}</td>
-      <td className={cx("num")}>{r.forecast > 0 ? qty(r.forecast) : <span className={cx("mono")}>—</span>}</td>
-      <td className={cx("ctr")}><span className={cx("stamp", STAMP_TONE[st.tone])}>{st.text}</span></td>
+    <tr className={cx("prow", dim && "dim")} onClick={() => w.canWrite && w.setItemPanel({ mode: "edit", itemId: r.id })} tabIndex={w.canWrite ? 0 : undefined} onKeyDown={(e) => { if (e.key === "Enter" && w.canWrite) w.setItemPanel({ mode: "edit", itemId: r.id }); }}>
+      <td className={cx("pt-mono", "no")}>{String(n).padStart(2, "0")}</td>
+      <td className="pt-title">{r.name}</td>
+      <td className="pt-mono">{specsOf(r) || "—"}</td>
+      <td className="num" onClick={(e) => e.stopPropagation()}>{perJob ? <span className="pt-mono">—</span> : <OnHand r={r} w={w} />}</td>
+      <td className="num">{r.reserved > 0 ? qty(r.reserved) : <span className="pt-mono">—</span>}</td>
+      <td className="num">{r.forecast > 0 ? qty(r.forecast) : <span className="pt-mono">—</span>}</td>
+      <td className="c"><span className={cx("pstatus", STAMP_TONE[st.tone])}>{st.text}</span></td>
       {w.canWrite && (
-        <td className={cx("acts")} onClick={(e) => e.stopPropagation()}>
-          {!perJob && <button type="button" className={cx("btn-row")} onClick={() => w.setItemPanel({ mode: "receive", itemId: r.id })} aria-label={`Receive ${r.name}`}>Receive</button>}
-          <button type="button" className={cx("btn-row")} onClick={() => w.setItemPanel({ mode: "edit", itemId: r.id })} aria-label={`Edit ${r.name}`}>Edit</button>
+        <td className={cx("num", "acts")} onClick={(e) => e.stopPropagation()}>
+          {!perJob && <button type="button" className="pt-open" onClick={() => w.setItemPanel({ mode: "receive", itemId: r.id })} aria-label={`Receive ${r.name}`} title="Receive"><PackagePlus className="ic" aria-hidden="true" /></button>}
+          <button type="button" className="pt-open" onClick={() => w.setItemPanel({ mode: "edit", itemId: r.id })} aria-label={`Edit ${r.name}`} title="Edit"><Pencil className="ic" aria-hidden="true" /></button>
         </td>
       )}
     </tr>
@@ -217,7 +217,7 @@ function OnHand({ r, w }: { r: StockRow; w: InventoryWorkspace }) {
   return (
     <span className={cx("cell-edit")}>
       <input autoFocus inputMode="decimal" value={text} aria-label={`Counted on hand, ${r.unit}`} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }} />
-      <span className={cx("mono")}>{r.unit}</span>
+      <span className="pt-mono">{r.unit}</span>
     </span>
   );
 }
@@ -229,7 +229,7 @@ function StockListRow({ x, w, open, onToggle }: { x: InventoryRow; w: InventoryW
   return (
     <div role="listitem"><div className={cx("rowi")} role="button" tabIndex={0} aria-expanded={open} onClick={onToggle} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}>
       <div className={cx("l1")}><span className={cx("t")}>{r.name}</span><span className={cx("p")}>{perJob ? "—" : `${qty(r.onHand)} ${r.unit}`}</span></div>
-      <div className={cx("l2")}><span>{specsOf(r) || r.unit}</span><span className={cx("stamp", STAMP_TONE[st.tone])}>{st.text}</span></div>
+      <div className={cx("l2")}><span>{specsOf(r) || r.unit}</span><span className={cx("pstatus", STAMP_TONE[st.tone])}>{st.text}</span></div>
       {open && (
         <div className={cx("more")} onClick={(e) => e.stopPropagation()}>
           <div className={cx("kv")}><span>Reserved</span><b>{qty(r.reserved)} {r.unit}</b></div>
@@ -269,7 +269,7 @@ function Orders({ w, handheld, addMaterials, onNew }: { w: InventoryWorkspace; h
             {w.data.orders.map((o) => (
               <div key={o.id} role="listitem"><div className={cx("rowi")} role="button" tabIndex={0} aria-expanded={open === o.id} onClick={() => setOpen(open === o.id ? null : o.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(open === o.id ? null : o.id); } }}>
                 <div className={cx("l1")}><span className={cx("t")}>{o.supplier}</span><span className={cx("p")}>{amountOf(o) > 0 ? usd(amountOf(o)) : `${o.lines.length} lines`}</span></div>
-                <div className={cx("l2")}><span>sent {dayOf(o.sentAt)}{jobTitle(o.jobId) ? ` · ${jobTitle(o.jobId)}` : ""}</span><span className={cx("stamp", "stamp-bp")}>Sent</span></div>
+                <div className={cx("l2")}><span>sent {dayOf(o.sentAt)}{jobTitle(o.jobId) ? ` · ${jobTitle(o.jobId)}` : ""}</span><span className={cx("pstatus", "pstatus--sent")}>Sent</span></div>
                 {open === o.id && (
                   <div className={cx("more")} onClick={(e) => e.stopPropagation()}>
                     {o.lines.map((l, i) => <div key={i} className={cx("kv")}><span>{l.name}</span><b>{qty(l.quantity)}</b></div>)}
@@ -281,18 +281,18 @@ function Orders({ w, handheld, addMaterials, onNew }: { w: InventoryWorkspace; h
           </div>
         ) : (
           <div className={cx("tbl-wrap")}>
-            <table className={cx("spec")}>
-              <thead><tr><th scope="col">Supplier</th><th scope="col">Lines</th><th scope="col" className={cx("num")}>Amount</th><th scope="col" className={cx("ctr")}>Status</th><th scope="col">Sent</th><th scope="col">Job</th>{w.canWrite && <th scope="col" className={cx("acts")}><span style={{ position: "absolute", left: -9999 }}>Actions</span></th>}</tr></thead>
+            <table className="ptable">
+              <thead><tr><th scope="col">Supplier</th><th scope="col">Lines</th><th scope="col" className="num">Amount</th><th scope="col" className="c">Status</th><th scope="col">Sent</th><th scope="col">Job</th>{w.canWrite && <th scope="col" className="th-open"><span style={{ position: "absolute", left: -9999 }}>Actions</span></th>}</tr></thead>
               <tbody>
                 {w.data.orders.map((o) => (
                   <tr key={o.id}>
-                    <td className={cx("name")}>{o.supplier}</td>
-                    <td className={cx("mono")}>{o.lines.map((l) => `${qty(l.quantity)} × ${l.name}`).join(" · ")}</td>
-                    <td className={cx("num")}>{amountOf(o) > 0 ? <b>{usd(amountOf(o))}</b> : <span className={cx("mono")}>no cost on file</span>}</td>
-                    <td className={cx("ctr")}><span className={cx("stamp", "stamp-bp")}>Sent</span></td>
-                    <td className={cx("mono")}>{dayOf(o.sentAt)} · {ago(o.sentAt)}</td>
-                    <td>{jobTitle(o.jobId) ? <Link href={`/dashboard/jobs/${o.jobId}` as Route} className={cx("link")}>{jobTitle(o.jobId)}</Link> : <span className={cx("mono")}>restock</span>}</td>
-                    {w.canWrite && <td className={cx("acts")}><button type="button" className={cx("btn-row")} disabled={w.pending} onClick={() => w.receiveOrder(o.id)}>Receive all</button></td>}
+                    <td className="pt-title">{o.supplier}</td>
+                    <td className="pt-mono">{o.lines.map((l) => `${qty(l.quantity)} × ${l.name}`).join(" · ")}</td>
+                    <td className="num">{amountOf(o) > 0 ? <span className="pt-money">{usd(amountOf(o))}</span> : <span className="pt-mono">no cost on file</span>}</td>
+                    <td className="c"><span className={cx("pstatus", "pstatus--sent")}>Sent</span></td>
+                    <td className="pt-mono">{dayOf(o.sentAt)} · {ago(o.sentAt)}</td>
+                    <td>{jobTitle(o.jobId) ? <Link href={`/dashboard/jobs/${o.jobId}` as Route} className={cx("link")}>{jobTitle(o.jobId)}</Link> : <span className="pt-mono">restock</span>}</td>
+                    {w.canWrite && <td className="num"><button type="button" className={cx("btn-row")} disabled={w.pending} onClick={() => w.receiveOrder(o.id)}>Receive all</button></td>}
                   </tr>
                 ))}
               </tbody>
@@ -305,13 +305,13 @@ function Orders({ w, handheld, addMaterials, onNew }: { w: InventoryWorkspace; h
         <section className={cx("card")} aria-label="Restock">
           <div className={cx("card-head")}><div><div className={cx("card-title")}>Restock</div><div className={cx("card-sub")}>{w.needs.length} item{w.needs.length === 1 ? "" : "s"} below the reorder line or needed for open work{w.orderCost > 0 ? ` · about ${usd(w.orderCost)} at last cost` : ""}</div></div></div>
           <div className={cx("tbl-wrap")}>
-            <table className={cx("spec")}>
-              <thead><tr><th scope="col">Item</th><th scope="col" className={cx("num")}>On hand</th><th scope="col" className={cx("num")}>Order</th><th scope="col" className={cx("num")}>Last cost</th><th scope="col" className={cx("ctr")}>Status</th>{w.canWrite && <th scope="col" className={cx("acts")}><span style={{ position: "absolute", left: -9999 }}>Actions</span></th>}</tr></thead>
+            <table className="ptable">
+              <thead><tr><th scope="col">Item</th><th scope="col" className="num">On hand</th><th scope="col" className="num">Order</th><th scope="col" className="num">Last cost</th><th scope="col" className="c">Status</th>{w.canWrite && <th scope="col" className="th-open"><span style={{ position: "absolute", left: -9999 }}>Actions</span></th>}</tr></thead>
               <tbody>
                 {groups.map((g) => (
                   <SectionRows key={g.id} label={`${g.supplier?.name ?? "Supplier"}${g.supplier?.email ? "" : " · no email on file"}`} count={g.rows.length} cols={w.canWrite ? 6 : 5}>
                     {g.rows.map((r) => <RestockRow key={r.id} r={r} w={w} />)}
-                    {w.canWrite && <tr><td colSpan={w.canWrite ? 6 : 5} className={cx("acts")}><button type="button" className={cx("btn", "btn-primary")} disabled={w.pending || !g.supplier?.email} onClick={() => w.sendOrder(g.id, g.rows)}>Send order to {g.supplier?.name ?? "supplier"}</button></td></tr>}
+                    {w.canWrite && <tr><td colSpan={w.canWrite ? 6 : 5} className="num"><button type="button" className={cx("btn", "btn-primary")} disabled={w.pending || !g.supplier?.email} onClick={() => w.sendOrder(g.id, g.rows)}>Send order to {g.supplier?.name ?? "supplier"}</button></td></tr>}
                   </SectionRows>
                 ))}
                 {w.unassigned.length > 0 && (
@@ -329,22 +329,22 @@ function Orders({ w, handheld, addMaterials, onNew }: { w: InventoryWorkspace; h
         <section className={cx("card")} aria-label="Shopping lists">
           <div className={cx("card-head")}><div><div className={cx("card-title")}>Shopping lists for sold jobs</div><div className={cx("card-sub")}>Bought per job, not shelf stock · {w.buyLines} line{w.buyLines === 1 ? "" : "s"} still to buy{w.buyCost > 0 ? ` · about ${usd(w.buyCost)} at last cost` : ""}</div></div></div>
           <div className={cx("tbl-wrap")}>
-            <table className={cx("spec")}>
-              <thead><tr><th scope="col">Item</th><th scope="col" className={cx("num")}>Needed</th><th scope="col" className={cx("num")}>Arrived</th><th scope="col" className={cx("num")}>To buy</th><th scope="col" className={cx("ctr")}>Status</th></tr></thead>
+            <table className="ptable">
+              <thead><tr><th scope="col">Item</th><th scope="col" className="num">Needed</th><th scope="col" className="num">Arrived</th><th scope="col" className="num">To buy</th><th scope="col" className="c">Status</th></tr></thead>
               <tbody>
                 {w.buy.map((j) => (
                   <SectionRows key={j.job.id} label={`${j.job.title}${j.job.startsAt ? ` · ${dayOf(j.job.startsAt)}` : ""}`} count={j.lines.length} cols={5}>
                     {j.lines.map((l) => (
                       <tr key={l.itemId}>
-                        <td className={cx("name")}>{l.name}<span className={cx("sub")}>{l.supplierName ?? "no supplier"}{l.supplierSku ? ` · ${l.supplierSku}` : ""}</span></td>
-                        <td className={cx("num")}>{qty(l.quantity)} <span className={cx("unit")}>{l.unit}</span></td>
-                        <td className={cx("num")}>{qty(l.have)}</td>
-                        <td className={cx("num")}><b>{qty(l.toBuy)}</b></td>
-                        <td className={cx("ctr")}><span className={cx("stamp", l.toBuy === 0 ? "stamp-ok" : l.onTheWay ? "stamp-bp" : "stamp-warn")}>{l.toBuy === 0 ? "Arrived" : l.onTheWay ? "On the way" : "To buy"}</span></td>
+                        <td><div className="pt-title">{l.name}</div><div className="pt-sub">{l.supplierName ?? "no supplier"}{l.supplierSku ? ` · ${l.supplierSku}` : ""}</div></td>
+                        <td className="num">{qty(l.quantity)} <span className="pt-mono">{l.unit}</span></td>
+                        <td className="num">{qty(l.have)}</td>
+                        <td className="num"><span className="pt-money">{qty(l.toBuy)}</span></td>
+                        <td className="c"><span className={cx("pstatus", l.toBuy === 0 ? "pstatus--accepted" : l.onTheWay ? "pstatus--sent" : "pstatus--expired")}>{l.toBuy === 0 ? "Arrived" : l.onTheWay ? "On the way" : "To buy"}</span></td>
                       </tr>
                     ))}
                     {w.canWrite && j.bySupplier.filter((g) => g.toBuy > 0).map((g) => (
-                      <tr key={g.supplierId ?? "none"}><td colSpan={5} className={cx("acts")}>{g.supplierId ? <button type="button" className={cx("btn", "btn-primary")} disabled={w.pending || !g.supplier?.email} onClick={() => w.sendJobOrder(j, g.supplierId!, g.lines)}>Email {g.supplier?.name} · {g.toBuy} line{g.toBuy === 1 ? "" : "s"}</button> : <span className={cx("mono")}>{g.toBuy} line{g.toBuy === 1 ? "" : "s"} with no supplier — set one on the item</span>}</td></tr>
+                      <tr key={g.supplierId ?? "none"}><td colSpan={5} className="num">{g.supplierId ? <button type="button" className={cx("btn", "btn-primary")} disabled={w.pending || !g.supplier?.email} onClick={() => w.sendJobOrder(j, g.supplierId!, g.lines)}>Email {g.supplier?.name} · {g.toBuy} line{g.toBuy === 1 ? "" : "s"}</button> : <span className="pt-mono">{g.toBuy} line{g.toBuy === 1 ? "" : "s"} with no supplier — set one on the item</span>}</td></tr>
                     ))}
                   </SectionRows>
                 ))}
@@ -362,13 +362,13 @@ function RestockRow({ r, w, assign }: { r: StockRow; w: InventoryWorkspace; assi
   const cost = w.facts.items[r.id]?.lastCost ?? null;
   return (
     <tr>
-      <td className={cx("name")}>{r.name}{r.supplierSku && <span className={cx("sub")}>{r.supplierSku}</span>}</td>
-      <td className={cx("num")}>{qty(r.onHand)} <span className={cx("unit")}>{r.unit}</span></td>
-      <td className={cx("num")}><b>{qty(r.suggestedOrder)}</b></td>
-      <td className={cx("num")}>{cost === null ? <span className={cx("mono")}>—</span> : usd(cost)}</td>
-      <td className={cx("ctr")}><span className={cx("stamp", STAMP_TONE[st.tone])}>{st.text}</span></td>
+      <td><div className="pt-title">{r.name}</div>{r.supplierSku && <div className="pt-sub">{r.supplierSku}</div>}</td>
+      <td className="num">{qty(r.onHand)} <span className="pt-mono">{r.unit}</span></td>
+      <td className="num"><span className="pt-money">{qty(r.suggestedOrder)}</span></td>
+      <td className="num">{cost === null ? <span className="pt-mono">—</span> : <span className="pt-money">{usd(cost)}</span>}</td>
+      <td className="c"><span className={cx("pstatus", STAMP_TONE[st.tone])}>{st.text}</span></td>
       {w.canWrite && (
-        <td className={cx("acts")}>
+        <td className="num">
           {assign ? (
             w.data.suppliers.length ? <select className={cx("sel")} defaultValue="" aria-label={`Supplier for ${r.name}`} disabled={w.pending} onChange={(e) => { if (e.target.value) w.assignSupplier(r, e.target.value); }}><option value="">Assign supplier…</option>{w.data.suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select> : <button type="button" className={cx("link")} onClick={() => w.setSupplierOpen(true)}>Add a supplier</button>
           ) : <button type="button" className={cx("btn-row")} onClick={() => w.setItemPanel({ mode: "receive", itemId: r.id })}>Receive</button>}
@@ -440,12 +440,12 @@ function JobRow({ p, w, open, onToggle }: { p: BoardProposal; w: InventoryWorksp
   const m = materialsOf(p, w.data.rows);
   const pct = !p.linked || pick.length === 0 ? 0 : Math.round((covered / pick.length) * 100);
   const fill = m.tone === "danger" ? "bad" : m.tone === "warning" ? "warn" : m.tone === "success" ? "ok" : "";
-  const statusTone = p.status === "ACCEPTED" ? "stamp-bp" : p.status === "COMPLETED" || p.status === "PAID" ? "stamp-ok" : p.status === "DECLINED" ? "stamp-quiet" : "stamp-quiet";
+  const statusTone = p.status === "ACCEPTED" ? "pstatus--sent" : p.status === "COMPLETED" || p.status === "PAID" ? "pstatus--accepted" : p.status === "DECLINED" ? "" : "";
   return (
     <li className={cx("job")}>
       <button type="button" className={cx("job-h")} aria-expanded={open} onClick={onToggle}>
         <span><span className={cx("job-t")}>{p.title}</span><span className={cx("job-s")}>{p.client ?? "No client"} · {dayOf(p.createdAt)}{p.jobStartsAt ? ` · starts ${dayOf(p.jobStartsAt)}` : ""}</span></span>
-        <span className={cx("stamp", statusTone)}>{statusLabel(p.status)}{p.loaded ? " · loaded" : ""}</span>
+        <span className={cx("pstatus", statusTone)}>{statusLabel(p.status)}{p.loaded ? " · loaded" : ""}</span>
         <span className={cx("cov")} aria-label={m.text} title={m.text}><span className={cx("cov-track")}><span className={cx("cov-fill", fill)} style={{ width: `${pct}%` }} /></span><span className={cx("cov-n")}>{p.linked ? `${covered}/${pick.length}` : "est. only"}</span></span>
         <span className={cx("job-total")}>{usd(p.total)}</span>
         {open ? <ChevronDown className={cx("ic")} aria-hidden="true" /> : <ChevronRight className={cx("ic")} aria-hidden="true" />}
@@ -457,13 +457,13 @@ function JobRow({ p, w, open, onToggle }: { p: BoardProposal; w: InventoryWorksp
             <ul className={cx("check")} aria-label="Materials for this job">
               {pick.map((x) => {
                 const state = x.enough ? (x.perJob ? "Arrived" : "On the shelf") : x.perJob ? "To buy" : x.itemId ? `Short · ${qty(x.onHand ?? 0)} on hand` : "Not tracked";
-                const tone = x.enough ? "stamp-ok" : x.perJob ? "stamp-bp" : x.itemId ? "stamp-bad" : "stamp-quiet";
+                const tone = x.enough ? "pstatus--accepted" : x.perJob ? "pstatus--sent" : x.itemId ? "pstatus--declined" : "";
                 return (
                   <li key={x.name}>
                     <span className={cx("box", x.enough && "on")} aria-hidden="true">{x.enough && <Check size={12} />}</span>
                     <span>{x.name}</span>
                     <span className={cx("q")}>{qty(x.quantity)} {x.unit}</span>
-                    {!x.itemId && w.canWrite ? <button type="button" className={cx("link")} disabled={w.pending} onClick={() => w.trackItem({ name: x.name, quantity: x.quantity, unit: x.unit })}>Track</button> : <span className={cx("stamp", tone)}>{state}</span>}
+                    {!x.itemId && w.canWrite ? <button type="button" className={cx("link")} disabled={w.pending} onClick={() => w.trackItem({ name: x.name, quantity: x.quantity, unit: x.unit })}>Track</button> : <span className={cx("pstatus", tone)}>{state}</span>}
                   </li>
                 );
               })}
@@ -497,7 +497,7 @@ function Suppliers({ w }: { w: InventoryWorkspace }) {
             const o = lastOrder(s.id);
             return (
               <article key={s.id} className={cx("sup")}>
-                <div className={cx("sup-t")}>{s.name}<span className={cx("stamp", "stamp-quiet")}>{s.itemCount} item{s.itemCount === 1 ? "" : "s"}</span></div>
+                <div className={cx("sup-t")}>{s.name}<span className={cx("pstatus", "")}>{s.itemCount} item{s.itemCount === 1 ? "" : "s"}</span></div>
                 <div className={cx("sup-l")}><span>Email</span>{s.email ? <a href={`mailto:${s.email}`}>{s.email}</a> : <i className={cx("none")}>none · orders cannot be sent</i>}</div>
                 <div className={cx("sup-l")}><span>Phone</span>{s.phone ? <a href={`tel:${s.phone}`}>{s.phone}</a> : <i className={cx("none")}>—</i>}</div>
                 <div className={cx("sup-l")}><span>Web</span>{s.website ? <a href={/^https?:/.test(s.website) ? s.website : `https://${s.website}`} target="_blank" rel="noreferrer">{s.website.replace(/^https?:\/\//, "")}</a> : <i className={cx("none")}>—</i>}</div>

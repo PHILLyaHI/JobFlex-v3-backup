@@ -37,11 +37,11 @@ export function Sheet({ id = "inv-sheet-title", kicker, title, onClose, footer, 
   );
 }
 
-/** A row of text filters (the status filters' kin): mono caps, the chosen one blueprint with a 2px rule, a muted counter after each label. */
+/** The Proposals page's status filters (.pchips / .pchip, proposals.module.css), re-used as they are: a label and a bold counter. */
 export function Segmented<T extends string>({ label, value, items, onChange }: { label: string; value: T; items: Array<{ id: T; label: string; n?: number }>; onChange: (id: T) => void }) {
   return (
-    <div className={cx("flt")} role="group" aria-label={label}>
-      {items.map((it) => <button key={it.id} type="button" className={cx("flt-btn", value === it.id && "on")} aria-pressed={value === it.id} onClick={() => onChange(it.id)}>{it.label}{it.n !== undefined && <b>{it.n}</b>}</button>)}
+    <div className="pchips" role="group" aria-label={label}>
+      {items.map((it) => <button key={it.id} type="button" className={cx("pchip", value === it.id && "active")} aria-pressed={value === it.id} onClick={() => onChange(it.id)}>{it.label} {it.n !== undefined && <b>{it.n}</b>}</button>)}
     </div>
   );
 }
@@ -51,4 +51,5 @@ export function Empty({ text, action }: { text: string; action?: ReactNode }) {
   return <div className={cx("empty")}><span>{text}</span>{action}</div>;
 }
 
-export const STAMP_TONE: Record<"danger" | "warning" | "success" | "neutral", string> = { danger: "stamp-bad", warning: "stamp-warn", success: "stamp-ok", neutral: "stamp-quiet" };
+/** The Proposals .pstatus tones (proposals.module.css) for the stock's three states; neutral is the plain pill. */
+export const STAMP_TONE: Record<"danger" | "warning" | "success" | "neutral", string> = { danger: "pstatus--declined", warning: "pstatus--expired", success: "pstatus--accepted", neutral: "" };
