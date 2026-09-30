@@ -115,8 +115,8 @@
 :global(.jf-blueprint .content) .cardi .stamp { position: absolute; top: 10px; right: 10px; }
 
 /* ── the sheet (edit) — hand-rolled, InboxSheet style ── */
-:global(.jf-blueprint .content) .sh-bg { position: fixed; inset: 0; z-index: 60; background: rgba(20, 24, 33, 0.42); }
-:global(.jf-blueprint .content) .sh { position: fixed; top: 0; right: 0; bottom: 0; z-index: 61; width: min(460px, 100%); background: #fff; border-left: 2px solid var(--ink); box-shadow: -6px 0 0 var(--shadow); display: flex; flex-direction: column; transition: transform 0.24s var(--ease); }
+:global(.jf-blueprint .content) .sh-bg { position: fixed; inset: 0; z-index: 90; background: rgba(20, 24, 33, 0.42); }
+:global(.jf-blueprint .content) .sh { position: fixed; top: 0; right: 0; bottom: 0; z-index: 91; width: min(460px, 100%); background: #fff; border-left: 2px solid var(--ink); box-shadow: -6px 0 0 var(--shadow); display: flex; flex-direction: column; transition: transform 0.24s var(--ease); }
 :global(.jf-blueprint .content) .sh-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px 14px; border-bottom: 1.5px solid var(--ink); }
 :global(.jf-blueprint .content) .sh-k { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
 :global(.jf-blueprint .content) .sh-t { font-size: 20px; font-weight: 900; letter-spacing: -0.01em; text-transform: uppercase; line-height: 1.05; overflow-wrap: anywhere; }
@@ -160,7 +160,11 @@
   :global(.jf-blueprint .content) .tools-r .sel { height: 44px; flex: 1; }
   :global(.jf-blueprint .content) .cards { grid-template-columns: 1fr; }
   :global(.jf-blueprint .content) .sh { width: 100%; border-left: 0; top: auto; max-height: 92vh; border-top: 2px solid var(--ink); }
+  :global(.jf-blueprint .content) .sh-f { flex-wrap: wrap; }
+  :global(.jf-blueprint .content) .sh-f .r { width: 100%; margin-left: 0; }
+  :global(.jf-blueprint .content) .sh-f .r .btn { flex: 1; justify-content: center; }
   :global(.jf-blueprint .content) .sh-f .btn { height: 44px; }
+  :global(.jf-blueprint .content) .sh-f > .btn-danger { width: 100%; justify-content: center; }
   :global(.jf-blueprint .content) .two, :global(.jf-blueprint .content) .three { grid-template-columns: 1fr; }
   /* the list */
   :global(.jf-blueprint .content) .rows { display: block; }
