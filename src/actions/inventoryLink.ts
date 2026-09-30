@@ -24,7 +24,8 @@ type Fail = { ok: false; error: string };
 const fail = (err: unknown): Fail =>
   err instanceof UnauthorizedError ? { ok: false, error: "Estimator or manager access required" } : err instanceof NoOrgError ? { ok: false, error: "No organization" } : { ok: false, error: err instanceof Error ? err.message : "Could not save" };
 
-const BOARDS: Record<TradeId, string> = { fence: "/dashboard/fence-estimator/board", roof: "/dashboard/roof-estimator/board", hvac: "/dashboard/hvac-estimator/board" };
+// One page since 2026-09-29; revalidated once, whichever trade the proposal is.
+const BOARDS: Record<TradeId, string> = { fence: "/dashboard/inventory", roof: "/dashboard/inventory", hvac: "/dashboard/inventory" };
 
 export async function inventoryLinkDefault(trade?: string | null): Promise<{ linked: boolean; items: number; /** Of those, bought per job (lib/inventoryPolicy); 0 when the trade is not known. */ perJob: number }> {
   try {

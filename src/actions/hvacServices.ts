@@ -26,7 +26,7 @@ async function loadCard(organizationId: string): Promise<HvacRateCard> {
 async function storeCard(organizationId: string, card: HvacRateCard): Promise<void> {
   const rateCardJson = JSON.stringify(card);
   await db.hvacSettings.upsert({ where: { organizationId }, create: { organizationId, rateCardJson }, update: { rateCardJson } });
-  revalidatePath("/dashboard/hvac-estimator/services");
+  revalidatePath("/dashboard/inventory");
   revalidatePath("/dashboard/hvac-estimator");
 }
 const fail = (err: unknown): Fail => ({ ok: false, error: err instanceof Error && /no such table|does not exist/i.test(err.message) ? "The settings table isn't in this database yet." : err instanceof Error && err.message ? err.message : "Could not save" });
@@ -150,7 +150,7 @@ export async function deleteHvacServiceTask(id: string): Promise<Ok | Fail> {
 export async function addHvacServiceTask(raw: unknown): Promise<(Ok & { id: string }) | Fail> {
   const res = await saveHvacServiceTask(raw);
   if (!res.ok) return res;
-  revalidatePath("/dashboard/hvac-estimator/services");
+  revalidatePath("/dashboard/inventory");
   revalidatePath("/dashboard/hvac-estimator");
   return { ok: true, card: res.card, id: res.id };
 }
@@ -171,6 +171,6 @@ export async function addHvacServiceTaskForm(fd: FormData): Promise<void> {
     partCost: partName ? num("partCost") : undefined,
     brands: brands.length ? brands : undefined,
   });
-  revalidatePath("/dashboard/hvac-estimator/services");
+  revalidatePath("/dashboard/inventory");
   revalidatePath("/dashboard/hvac-estimator");
 }

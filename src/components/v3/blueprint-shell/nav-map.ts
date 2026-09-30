@@ -94,20 +94,12 @@ export const NAV_SECTIONS: NavSection[] = [
       // decision you make on your way somewhere else. The engines themselves
       // keep their items below.
       { label: "Smart Proposal", icon: "i-bulb", href: "/dashboard/advanced-ai" },
-      // Each estimator folds its inventory under it (2026-09-20): that
-      // trade's proposals, its warehouse stock and its suppliers.
-      {
-        label: "Roof estimator",
-        icon: "i-roof",
-        href: "/dashboard/roof-estimator",
-        children: [{ label: "Roofing inventory", icon: "i-roof", href: "/dashboard/roof-estimator/board" }],
-      },
-      {
-        label: "Fence estimator",
-        icon: "i-fence",
-        href: "/dashboard/fence-estimator",
-        children: [{ label: "Fence inventory", icon: "i-fence", href: "/dashboard/fence-estimator/board" }],
-      },
+      // The inventory used to fold under each estimator (2026-09-20: three
+      // "<trade> inventory" children). Since 2026-09-29 it is ONE page,
+      // /dashboard/inventory, with the trade as a segmented control — the item
+      // sits right after the estimators, below.
+      { label: "Roof estimator", icon: "i-roof", href: "/dashboard/roof-estimator" },
+      { label: "Fence estimator", icon: "i-fence", href: "/dashboard/fence-estimator" },
       // Added 2026-08-22 with the Video estimator port. Its position — directly
       // after the other two engines — is the donor's own
       // (jobflex-videoestimator-blueprint.html sidebar). Not in ESTIMATOR's
@@ -118,15 +110,10 @@ export const NAV_SECTIONS: NavSection[] = [
       // Added 2026-09-15; the heat pump glyph on 2026-09-18 (until then the
       // item asked for `i-bolt`, which only the Financials sprite carries, so
       // the sidebar drew a blank beside it on every other page).
-      {
-        label: "HVAC estimator",
-        icon: "i-heatpump",
-        href: "/dashboard/hvac-estimator",
-        children: [
-          { label: "HVAC service menu", icon: "i-heatpump", href: "/dashboard/hvac-estimator/services" },
-          { label: "HVAC inventory", icon: "i-heatpump", href: "/dashboard/hvac-estimator/board" },
-        ],
-      },
+      { label: "HVAC estimator", icon: "i-heatpump", href: "/dashboard/hvac-estimator" },
+      // Price book + stock for every trade (owner, 2026-09-29). The HVAC
+      // service menu is a tab of it (trade=hvac).
+      { label: "Inventory", icon: "i-folder", href: "/dashboard/inventory" },
       { label: "Phone", icon: "i-phone", href: "/dashboard/phone" },
       { label: "Messages", icon: "i-msg", href: "/dashboard/messages" },
       { label: "Reviews", icon: "i-thumb", href: "/dashboard/reviews" },

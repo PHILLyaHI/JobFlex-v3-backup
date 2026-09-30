@@ -39,8 +39,28 @@ const REMOVED_LANDINGS = new Set([
   "/mobile-landing-v2",
 ]);
 
+/* THE INVENTORY PAGES THAT MOVED (owner, 2026-09-29). One page,
+   /dashboard/inventory, with the trade in the query; the three per-trade
+   boards, the HVAC service menu page and the handheld HVAC preview are gone.
+   308 by exact path, the query string kept (nothing there was ever read). */
+const MOVED_INVENTORY: Record<string, string> = {
+  "/dashboard/roof-estimator/board": "/dashboard/inventory?trade=roof&tab=stock",
+  "/dashboard/fence-estimator/board": "/dashboard/inventory?trade=fence&tab=stock",
+  "/dashboard/hvac-estimator/board": "/dashboard/inventory?trade=hvac&tab=stock",
+  "/dashboard/hvac-estimator/services": "/dashboard/inventory?trade=hvac&tab=services",
+  "/mobile-hvac-inventory-v1": "/dashboard/inventory?trade=hvac&tab=stock",
+};
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  const moved = MOVED_INVENTORY[pathname];
+  if (moved) {
+    const url = req.nextUrl.clone();
+    const [path, query] = moved.split("?");
+    url.pathname = path;
+    url.search = `?${query}`;
+    return NextResponse.redirect(url, 308);
+  }
   if (REMOVED_LANDINGS.has(pathname)) {
     const url = req.nextUrl.clone();
     url.pathname = "/";

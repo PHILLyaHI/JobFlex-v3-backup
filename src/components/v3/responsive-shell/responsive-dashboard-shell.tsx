@@ -289,11 +289,10 @@ const BLUEPRINT_HANDHELD = new Set([
   // The three inventory dashboards (2026-09-20): one responsive component
   // (trade-board) whose stylesheet collapses to a single column at ≤768px, so
   // a phone keeps the page and gets the handheld nav around it.
-  "/dashboard/roof-estimator/board",
-  "/dashboard/fence-estimator/board",
-  "/dashboard/hvac-estimator/board",
-  // The HVAC service menu (2026-09-23): its tables stack to cards at ≤768px.
-  "/dashboard/hvac-estimator/services",
+  // …since 2026-09-29 one page for all three, /dashboard/inventory: the book
+  // becomes a list of rows that open, the sheet fills the width, and the
+  // stock tab is the same responsive workspace it always was.
+  "/dashboard/inventory",
 ]);
 
 export function ResponsiveDashboardShell({

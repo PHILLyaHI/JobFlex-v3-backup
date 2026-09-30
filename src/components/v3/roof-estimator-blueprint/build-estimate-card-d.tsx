@@ -1008,9 +1008,9 @@ function PackageLedger({
           )}
         </p>
       )}
-      <TextBtn plus disabled={disabled} onClick={() => setManage("systems")}>
-        Add roof type
-      </TextBtn>
+      <a className="rbd-text-btn" href="/dashboard/inventory?trade=roof#book">
+        Manage roof types
+      </a>
     </div>
   );
 
@@ -1153,9 +1153,9 @@ function PackageLedger({
                   <Group
                     note={
                       <div className="rbd-g-foot">
-                        <TextBtn plus disabled={disabled} onClick={() => setManage("underlayments")}>
-                          Add underlayment
-                        </TextBtn>
+                        <a className="rbd-text-btn" href="/dashboard/inventory?trade=roof#book">
+                          Manage underlayments
+                        </a>
                       </div>
                     }
                   >
@@ -1844,6 +1844,9 @@ function PackageLedger({
           >
             {saving ? "Saving…" : "Save as defaults"}
           </button>
+          <a className="rbd-btn rbd-btn--sm rbd-btn--ghost" href="/dashboard/inventory?trade=roof#book">
+            Price book
+          </a>
         </div>
         {saveError && (
           <p className="rbd-save-error" role="alert">

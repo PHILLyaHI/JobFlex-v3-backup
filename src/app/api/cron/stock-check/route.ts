@@ -16,7 +16,7 @@ export const runtime = "nodejs";
 //                      (lib/inventoryPolicy). Said once per job.
 // Fail-closed cron auth, like the other cron routes. Never throws past one
 // company: a bad org is logged and the rest still run.
-const BOARD: Record<string, string> = { fence: "/dashboard/fence-estimator/board", roof: "/dashboard/roof-estimator/board", hvac: "/dashboard/hvac-estimator/board" };
+const BOARD: Record<string, string> = { fence: "/dashboard/inventory?trade=fence&tab=stock", roof: "/dashboard/inventory?trade=roof&tab=stock", hvac: "/dashboard/inventory?trade=hvac&tab=stock" };
 const LABEL: Record<string, string> = { fence: "Fence", roof: "Roofing", hvac: "HVAC" };
 
 export async function GET(req: Request) {

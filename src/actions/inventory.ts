@@ -33,7 +33,9 @@ const fail = (err: unknown): Fail =>
       ? { ok: false, error: "No organization" }
       : { ok: false, error: err instanceof Error ? err.message : "Could not save" };
 
-const boardPath = (trade: string) => `/dashboard/${trade === "roof" ? "roof" : trade}-estimator/board`;
+// The boards moved to one page (2026-09-29): revalidate it, link into its stock tab.
+const boardPath = () => "/dashboard/inventory";
+const boardHref = (trade: string) => `/dashboard/inventory?trade=${trade}&tab=stock`;
 const money = (n: unknown) => Math.round((Number(n) || 0) * 100) / 100;
 const LABEL: Record<TradeId, string> = { fence: "Fence", roof: "Roofing", hvac: "HVAC" };
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -98,7 +100,7 @@ export async function upsertInventoryItem(input: {
         await recordStockPolicy(organizationId, input.trade, perJob, user.id, input.stocked ? `${name} is kept in stock from now on` : `${name} is bought per job from now on — not counted as shelf stock`);
       }
     }
-    revalidatePath(boardPath(input.trade));
+    revalidatePath(boardPath());
     revalidatePath("/dashboard/jobs");
     return { ok: true, id: row.id };
   } catch (err) {
@@ -118,7 +120,7 @@ export async function receiveStock(itemId: string, quantity: number, note?: stri
       db.inventoryMovement.create({ data: { itemId: item.id, kind: qty > 0 ? "RECEIVED" : "ADJUST", quantity: qty, note: note?.trim() || null, actorId: user.id } }),
       db.inventoryItem.update({ where: { id: item.id }, data: { onHand: { increment: qty } }, select: { onHand: true } }),
     ]);
-    revalidatePath(boardPath(item.trade));
+    revalidatePath(boardPath());
     await logActivity({
       organizationId,
       actorId: user.id,
@@ -155,7 +157,7 @@ export async function countStock(itemId: string, onHand: number): Promise<{ ok: 
         meta: { itemId: item.id, trade: item.trade, onHand: target, previous: item.onHand, diff },
       });
     }
-    revalidatePath(boardPath(item.trade));
+    revalidatePath(boardPath());
     return { ok: true, onHand: target };
   } catch (err) {
     return fail(err);
@@ -168,7 +170,7 @@ export async function deleteInventoryItem(itemId: string): Promise<{ ok: true } 
     const item = await db.inventoryItem.findFirst({ where: { id: itemId, organizationId }, select: { id: true, trade: true, name: true, onHand: true, unit: true } });
     if (!item) return { ok: false, error: "That item is not on this company" };
     await db.inventoryItem.delete({ where: { id: item.id } });
-    revalidatePath(boardPath(item.trade));
+    revalidatePath(boardPath());
     await logActivity({
       organizationId,
       actorId: user.id,
@@ -198,7 +200,7 @@ export async function upsertSupplier(input: { id?: string | null; name: string; 
     } else {
       id = (await db.supplier.create({ data: { organizationId, ...data }, select: { id: true } })).id;
     }
-    for (const t of ["fence", "roof", "hvac"]) revalidatePath(boardPath(t));
+    revalidatePath(boardPath());
     return { ok: true, id };
   } catch (err) {
     return fail(err);
@@ -240,10 +242,10 @@ export async function sendPurchaseOrder(input: { trade: string; supplierId: stri
         actorId: user.id,
         kind: "PURCHASE_ORDER_SENT",
         summary: `Purchase order emailed to ${supplier.name} — ${items.length} ${input.trade} item(s)${job ? ` for ${job.title}` : ""}`,
-        meta: JSON.stringify({ supplierId: supplier.id, trade: input.trade, jobId: job?.id ?? null, href: boardPath(input.trade), lines: items.map((it) => ({ id: it.id, name: it.name, quantity: wanted.get(it.id) ?? 0 })) }),
+        meta: JSON.stringify({ supplierId: supplier.id, trade: input.trade, jobId: job?.id ?? null, href: boardHref(input.trade), lines: items.map((it) => ({ id: it.id, name: it.name, quantity: wanted.get(it.id) ?? 0 })) }),
       },
     });
-    revalidatePath(boardPath(input.trade));
+    revalidatePath(boardPath());
     return { ok: true, to: supplier.email, count: items.length };
   } catch (err) {
     return fail(err);
@@ -300,7 +302,7 @@ export async function loadJobMaterials(jobId: string): Promise<{ ok: true; taken
       db.job.update({ where: { id: job.id }, data: { materialsLoadedAt: new Date() } }),
     ]);
     revalidatePath(`/dashboard/jobs/${job.id}`);
-    revalidatePath(boardPath(job.proposal.trade));
+    revalidatePath(boardPath());
     await logActivity({
       organizationId,
       actorId: ctx.user.id,
@@ -346,7 +348,7 @@ export async function returnJobMaterials(jobId: string, lines: Array<{ itemId: s
     }
     if (writes.length) await db.$transaction(writes);
     revalidatePath(`/dashboard/jobs/${job.id}`);
-    for (const t of ["fence", "roof", "hvac"]) revalidatePath(boardPath(t));
+    revalidatePath(boardPath());
     if (returned) {
       await logActivity({
         organizationId: ctx.organizationId,
@@ -382,7 +384,7 @@ export async function receivePurchaseOrder(eventId: string): Promise<{ ok: true;
         db.inventoryItem.update({ where: { id: l.id }, data: { onHand: { increment: l.quantity } } }),
       ]);
     await db.$transaction([...writes, db.activityEvent.update({ where: { id: ev.id }, data: { meta: JSON.stringify({ ...meta, receivedAt: new Date().toISOString() }) } })]);
-    if (meta.trade) revalidatePath(boardPath(meta.trade));
+    if (meta.trade) revalidatePath(boardPath());
     const received = writes.length / 2;
     const supplier = meta.supplierId ? await db.supplier.findFirst({ where: { id: meta.supplierId, organizationId }, select: { name: true } }) : null;
     await logActivity({
@@ -423,7 +425,7 @@ export async function seedTradeItems(trade: string): Promise<{ ok: true; added: 
       }
       if (suggestedPerJob) await recordStockPolicy(organizationId, trade, perJob, user.id, `${LABEL[trade]} standard items added — ${plural(missing.length - suggestedPerJob, "item")} kept in stock, ${suggestedPerJob} bought per job (suggested; change any on the board)`);
     }
-    revalidatePath(boardPath(trade));
+    revalidatePath(boardPath());
     return { ok: true, added: missing.length, total: presets.length };
   } catch (err) {
     return fail(err);
@@ -457,7 +459,7 @@ export async function saveStockList(input: { trade: string; stocked: string[]; p
     for (const k of perJobKeys) if (have.has(k)) perJob.add(k);
     const perJobCount = [...perJob].filter((k) => have.has(k)).length;
     await recordStockPolicy(organizationId, trade, perJob, user.id, `${LABEL[trade]} stock list saved — ${plural(have.size - perJobCount, "item")} kept in stock, ${perJobCount} bought per job`);
-    revalidatePath(boardPath(trade));
+    revalidatePath(boardPath());
     revalidatePath("/dashboard/jobs");
     return { ok: true, added: toCreate.length, stocked: have.size - perJobCount, perJob: perJobCount };
   } catch (err) {

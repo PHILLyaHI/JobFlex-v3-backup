@@ -480,18 +480,15 @@ export function FenceEstimatorContent({ initialAddress }: { initialAddress?: str
             <div className="ledger-head ledger-head--acts">
               <span>Fence type</span>
               <div className="mats-add mats-add--head">
-                <button className="btn btn-ghost btn--sm" type="button" id="matAdd" title="Add a type of your own" aria-label="Add a type of your own">
-                  <svg className="ic">
-                    <use href="#i-plus" />
-                  </svg>
-                  Add type
-                </button>
-                <button className="btn btn-ghost btn--sm" type="button" id="saveBook" aria-label="Save as company defaults" title="Your rates and types become the company's defaults for every estimator on this account">
+                {/* Types of your own and the company's defaults are managed on
+                    the Inventory page since 2026-09-29; a rate typed here still
+                    prices THIS estimate. */}
+                <a className="btn btn-ghost btn--sm" href="/dashboard/inventory?trade=fence#book" id="matBook" title="Add types of your own and set the company's default rates on the Inventory page">
                   <svg className="ic">
                     <use href="#i-check" />
                   </svg>
-                  Save defaults
-                </button>
+                  Price book
+                </a>
               </div>
               </div>
             <ul className="mats" id="matList"></ul>
