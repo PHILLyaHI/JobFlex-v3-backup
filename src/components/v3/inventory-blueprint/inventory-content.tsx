@@ -2,10 +2,10 @@
 
 // INVENTORY — the page (owner, second pass, 2026-09-29). One route, three trades.
 //
-// The hierarchy, top down: the head (a mono kicker, the title, one line, the
-// primary action on the right — nothing else beside the title); a full-width
-// toolbar card with the trade segments on the left and the secondary actions
-// on the right; the main tabs in the Financials treatment (mono caps, a count
+// The hierarchy, top down: the head (a mono kicker and the title, the primary
+// action on the right — nothing under the title); one row with the trade
+// switch (one joined segmented control, no card around it) on the left and
+// the secondary actions on the right; the main tabs in the Financials treatment (mono caps, a count
 // chip, a 3px blueprint rule); then the tab — the PRICE BOOK the estimator
 // prices from (a specification schedule), the STOCK (inventory-stock.tsx),
 // and the HVAC SERVICE MENU when the trade is HVAC. Every write goes through
@@ -38,11 +38,6 @@ import { InventoryStock } from "./inventory-stock";
 import { cx, Empty, Segmented, Sheet, useHandheld } from "./inventory-shared";
 
 const TAB_LABEL: Record<InventoryTab, string> = { book: "Price book", stock: "Stock", services: "Service menu" };
-const TAB_SUB: Record<InventoryTab, string> = {
-  book: "What the estimator prices from — catalog rates until you save your own.",
-  stock: "What the warehouse holds, what the sold jobs reserve, what to order.",
-  services: "The visit's menu — every task the estimator can put on a service job.",
-};
 const GROUP_ORDER: Record<TradeId, string[]> = {
   fence: ["Wood", "Vinyl", "Composite", "Chain link", "Aluminum", "Steel", "Rail", "Your own"],
   roof: ["Asphalt shingle", "Metal", "Tile", "Wood shake", "Slate", "Synthetic", "Flat / low slope", "Underlayment"],
@@ -78,7 +73,6 @@ export function InventoryContent({ data, canEditBook, canWriteStock }: Inventory
         <div>
           <div className={cx("kicker")}>Automation · Inventory</div>
           <h1 className={cx("page-title")}>Inventory</h1>
-          <p className={cx("page-sub")}>{TAB_SUB[tab]}</p>
         </div>
         <div className={cx("page-actions")} ref={setPrimarySlot}>
           {tab === "book" && canEditBook && (
@@ -90,9 +84,9 @@ export function InventoryContent({ data, canEditBook, canWriteStock }: Inventory
       </div>
 
       <div className={cx("toolbar")}>
-        <nav className={cx("seg")} aria-label="Trade">
+        <nav className={cx("trade")} aria-label="Trade">
           {data.trades.map((t) => (
-            <Link key={t.id} href={hrefFor(t.id, tab === "services" ? "book" : tab)} className={cx("seg-btn", t.id === trade && "on")} aria-current={t.id === trade ? "true" : undefined} onClick={() => void rememberInventoryTrade(t.id)}>
+            <Link key={t.id} href={hrefFor(t.id, tab === "services" ? "book" : tab)} className={cx("trade-btn", t.id === trade && "on")} aria-current={t.id === trade ? "true" : undefined} onClick={() => void rememberInventoryTrade(t.id)}>
               {t.label}
             </Link>
           ))}

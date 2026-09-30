@@ -1,7 +1,8 @@
 /* ============================================================
    INVENTORY — blueprint sheet, second pass (owner, 2026-09-29)
-   Hierarchy: head (kicker · h1 · one line · the primary action) →
-   toolbar card (trade segments left, secondary actions right) →
+   Hierarchy: head (kicker · h1 · the primary action, nothing under h1) →
+   one bare row (the trade switch, one joined segmented control, left;
+   the secondary actions right) →
    main tabs (Financials' treatment: mono caps, count chip, 3px blueprint
    rule) → the tab's masthead (four plates, value 26px / 900, mono label
    under) → a card per system. Body text 14px, mono 11–12px for labels
@@ -18,7 +19,6 @@
 :global(.jf-blueprint :is(.content, .inv-layer)) .kicker { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .kicker::before { content: ''; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .page-title { font-size: 46px; font-weight: 900; letter-spacing: -0.03em; text-transform: uppercase; line-height: 0.95; overflow-wrap: anywhere; }
-:global(.jf-blueprint :is(.content, .inv-layer)) .page-sub { margin-top: 10px; font-size: 14px; color: var(--muted); }
 :global(.jf-blueprint :is(.content, .inv-layer)) .page-actions { display: flex; gap: 12px; flex-shrink: 0; padding-bottom: 4px; }
 
 :global(.jf-blueprint :is(.content, .inv-layer)) svg.ic { width: 16px; height: 16px; flex-shrink: 0; }
@@ -34,9 +34,15 @@
 :global(.jf-blueprint :is(.content, .inv-layer)) .btn:disabled:hover { transform: none; box-shadow: none; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
-/* ── the toolbar card: the trade, and the secondary actions ── */
-:global(.jf-blueprint :is(.content, .inv-layer)) .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 12px 14px; margin-bottom: 18px; background: #fff; border: var(--border); border-radius: var(--radius); box-shadow: 3px 3px 0 var(--shadow); }
-:global(.jf-blueprint :is(.content, .inv-layer)) .seg { display: flex; gap: 7px; }
+/* ── the trade row: the trade switch (one joined control, no card), the secondary actions ── */
+:global(.jf-blueprint :is(.content, .inv-layer)) .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 2px; /* the shell's .content is a flex column with a 22px gap: 22 + 2 = 24 to the main tabs */ }
+:global(.jf-blueprint :is(.content, .inv-layer)) .trade { display: inline-flex; flex: 0 0 auto; height: 40px; border: 1px solid var(--ink); border-radius: var(--radius); background: var(--paper); overflow: hidden; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; height: 100%; padding: 0 22px; border-left: 1px solid var(--ink); background: var(--paper); font: inherit; font-size: 14px; font-weight: 800; letter-spacing: 0.02em; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap; transition: background 0.12s; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn:first-child { border-left: 0; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn:hover { background: var(--paper-deep); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn.on { background: var(--ink); color: var(--paper); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -3px; }
+/* The stock's section buttons (.seg2) keep the outlined tile. */
 :global(.jf-blueprint :is(.content, .inv-layer)) .seg-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 120px; height: 40px; padding: 0 18px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font: inherit; font-size: 13px; font-weight: 800; letter-spacing: 0.04em; color: var(--muted); text-decoration: none; cursor: pointer; white-space: nowrap; transition: border-color 0.12s, color 0.12s, background 0.12s; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .seg-btn:hover { border-color: var(--ink); color: var(--ink); }
 :global(.jf-blueprint :is(.content, .inv-layer)) .seg-btn.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
@@ -250,9 +256,10 @@
   :global(.jf-blueprint :is(.content, .inv-layer)) .page-title { font-size: 34px; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .page-head { flex-direction: column; align-items: stretch; gap: 12px; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .page-actions .btn { flex: 1; height: 44px; }
-  :global(.jf-blueprint :is(.content, .inv-layer)) .toolbar { padding: 10px 12px; }
-  :global(.jf-blueprint :is(.content, .inv-layer)) .seg { width: 100%; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
-  :global(.jf-blueprint :is(.content, .inv-layer)) .seg-btn { flex: 1 0 auto; min-width: 100px; height: 44px; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .toolbar { gap: 12px; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .trade { max-width: 100%; height: 44px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .trade::-webkit-scrollbar { display: none; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn { padding: 0 18px; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .toolbar-acts { width: 100%; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .toolbar-acts .btn { flex: 1; height: 44px; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .tabs { overflow-x: auto; flex-wrap: nowrap; }
