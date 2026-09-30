@@ -37,6 +37,15 @@ export function Sheet({ id = "inv-sheet-title", kicker, title, onClose, footer, 
   );
 }
 
+/** One joined segmented control: the chosen segment ink-filled, a muted counter beside each label. */
+export function Segmented<T extends string>({ label, value, items, onChange }: { label: string; value: T; items: Array<{ id: T; label: string; n?: number }>; onChange: (id: T) => void }) {
+  return (
+    <div className={cx("segc")} role="group" aria-label={label}>
+      {items.map((it) => <button key={it.id} type="button" className={cx("segc-btn", value === it.id && "on")} aria-pressed={value === it.id} onClick={() => onChange(it.id)}>{it.label}{it.n !== undefined && <b>{it.n}</b>}</button>)}
+    </div>
+  );
+}
+
 /** One dashed frame, one phrase, one button — the same everywhere on the page. */
 export function Empty({ text, action }: { text: string; action?: ReactNode }) {
   return <div className={cx("empty")}><span>{text}</span>{action}</div>;

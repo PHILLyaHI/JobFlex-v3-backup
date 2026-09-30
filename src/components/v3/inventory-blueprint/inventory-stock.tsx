@@ -20,7 +20,7 @@ import { ago, dayOf, materialsOf, moveLabel, qty, statusLabel, stockStatus, useR
 import type { BoardOrder, BoardProposal, TradeBoardData } from "@/lib/inventoryBoard";
 import type { StockFacts } from "@/lib/inventoryDashboard";
 import { pickList, type StockRow } from "@/lib/inventory";
-import { cx, Empty, Sheet, STAMP_TONE, useHandheld } from "./inventory-shared";
+import { cx, Empty, Segmented, Sheet, STAMP_TONE, useHandheld } from "./inventory-shared";
 
 export type StockSlots = { primary: HTMLElement | null; toolbar: HTMLElement | null };
 
@@ -110,9 +110,7 @@ function StockSchedule({ w, handheld, addMaterials }: { w: InventoryWorkspace; h
       {w.data.rows.length > 0 && (
         <div className={cx("tools")}>
           <label className={cx("search")}><Search size={16} aria-hidden="true" /><input value={w.q} onChange={(e) => w.setQ(e.target.value)} placeholder="Find an item, a supplier, a SKU" aria-label="Find an item" />{w.q && <button type="button" className={cx("link")} onClick={() => w.setQ("")} aria-label="Clear search"><X size={14} /></button>}</label>
-          <div className={cx("chips")} role="group" aria-label="Filter">
-            {w.chips.filter((c) => c.id === "ALL" || c.n > 0).map((c) => <button key={c.id} type="button" className={cx("chip", w.filter === c.id && "on")} onClick={() => w.setFilter(c.id)}>{c.label} <b>{c.n}</b></button>)}
-          </div>
+          <Segmented label="Filter" value={w.filter} items={w.chips.filter((c) => c.id === "ALL" || c.n > 0)} onChange={w.setFilter} />
           <div className={cx("tools-r")}>
             <select className={cx("sel")} value={w.view} onChange={(e) => w.setView(e.target.value as "urgency" | "category")} aria-label="Order the schedule by"><option value="urgency">By urgency</option><option value="category">By category</option></select>
           </div>
@@ -201,8 +199,8 @@ function StockTableRow({ x, n, w, dim }: { x: InventoryRow; n: number; w: Invent
       <td><span className={cx("stamp", STAMP_TONE[st.tone])}>{st.text}</span></td>
       {w.canWrite && (
         <td className={cx("acts")} onClick={(e) => e.stopPropagation()}>
-          {!perJob && <button type="button" className={cx("link")} onClick={() => w.setItemPanel({ mode: "receive", itemId: r.id })}>Receive</button>}
-          <button type="button" className={cx("link")} onClick={() => w.setItemPanel({ mode: "edit", itemId: r.id })}>Edit</button>
+          {!perJob && <button type="button" className={cx("btn-row")} onClick={() => w.setItemPanel({ mode: "receive", itemId: r.id })} aria-label={`Receive ${r.name}`}>Receive</button>}
+          <button type="button" className={cx("btn-row")} onClick={() => w.setItemPanel({ mode: "edit", itemId: r.id })} aria-label={`Edit ${r.name}`}>Edit</button>
         </td>
       )}
     </tr>
@@ -294,7 +292,7 @@ function Orders({ w, handheld, addMaterials, onNew }: { w: InventoryWorkspace; h
                     <td><span className={cx("stamp", "stamp-bp")}>Sent</span></td>
                     <td className={cx("mono")}>{dayOf(o.sentAt)} · {ago(o.sentAt)}</td>
                     <td>{jobTitle(o.jobId) ? <Link href={`/dashboard/jobs/${o.jobId}` as Route} className={cx("link")}>{jobTitle(o.jobId)}</Link> : <span className={cx("mono")}>restock</span>}</td>
-                    {w.canWrite && <td className={cx("acts")}><button type="button" className={cx("link")} disabled={w.pending} onClick={() => w.receiveOrder(o.id)}>Receive all</button></td>}
+                    {w.canWrite && <td className={cx("acts")}><button type="button" className={cx("btn-row")} disabled={w.pending} onClick={() => w.receiveOrder(o.id)}>Receive all</button></td>}
                   </tr>
                 ))}
               </tbody>
@@ -373,7 +371,7 @@ function RestockRow({ r, w, assign }: { r: StockRow; w: InventoryWorkspace; assi
         <td className={cx("acts")}>
           {assign ? (
             w.data.suppliers.length ? <select className={cx("sel")} defaultValue="" aria-label={`Supplier for ${r.name}`} disabled={w.pending} onChange={(e) => { if (e.target.value) w.assignSupplier(r, e.target.value); }}><option value="">Assign supplier…</option>{w.data.suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select> : <button type="button" className={cx("link")} onClick={() => w.setSupplierOpen(true)}>Add a supplier</button>
-          ) : <button type="button" className={cx("link")} onClick={() => w.setItemPanel({ mode: "receive", itemId: r.id })}>Receive</button>}
+          ) : <button type="button" className={cx("btn-row")} onClick={() => w.setItemPanel({ mode: "receive", itemId: r.id })}>Receive</button>}
         </td>
       )}
     </tr>
@@ -420,7 +418,7 @@ function Jobs({ w }: { w: InventoryWorkspace }) {
       <div className={cx("card-head")}><div><div className={cx("card-title")}>Jobs & proposals</div><div className={cx("card-sub")}>{w.connected} of {w.data.proposals.length} connected to the stock · a connected proposal reserves its materials when it sells</div></div></div>
       {w.data.proposals.length > 0 && (
         <div className={cx("tools")}>
-          <div className={cx("chips")} role="group" aria-label="Filter proposals">{w.ptabs.filter((t) => t.id === "ALL" || t.n > 0).map((t) => <button key={t.id} type="button" className={cx("chip", w.ptab === t.id && "on")} onClick={() => w.setPtab(t.id)}>{t.label} <b>{t.n}</b></button>)}</div>
+          <Segmented label="Filter proposals" value={w.ptab} items={w.ptabs.filter((t) => t.id === "ALL" || t.n > 0)} onChange={w.setPtab} />
         </div>
       )}
       {w.data.proposals.length === 0 ? (

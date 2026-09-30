@@ -35,7 +35,7 @@ import {
   type BookRow,
 } from "@/lib/priceBook";
 import { InventoryStock } from "./inventory-stock";
-import { cx, Empty, Sheet, useHandheld } from "./inventory-shared";
+import { cx, Empty, Segmented, Sheet, useHandheld } from "./inventory-shared";
 
 const TAB_LABEL: Record<InventoryTab, string> = { book: "Price book", stock: "Stock", services: "Service menu" };
 const TAB_SUB: Record<InventoryTab, string> = {
@@ -147,7 +147,7 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
   const [q, setQ] = useState("");
   const [group, setGroup] = useState<string>("");
   const [open, setOpen] = useState<string | null>(null);
-  const shown = useMemo(() => filterRows(rows, q).filter((r) => !group || r.group === group), [rows, q, group]);
+  const shown = useMemo(() => filterRows(rows, q), [rows, q]);
   const groups = useMemo(() => groupRows(shown, GROUP_ORDER[trade]), [shown, trade]);
   const allGroups = useMemo(() => groupRows(rows, GROUP_ORDER[trade]), [rows, trade]);
   const defaults = rows.filter((r) => r.companyDefault).length;
@@ -158,6 +158,12 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
     if (!canEdit) return;
     setSheet({ row: r, kind: r.kind, isNew: false, title: r.name, fields: { ...r.fields, id: r.id } });
   }, [canEdit, setSheet]);
+  // A group picked on the strip scrolls its kicker into view and lights it; every group stays on the sheet.
+  const jumpTo = useCallback((label: string) => {
+    setGroup(label);
+    const el = document.getElementById(label ? `grp-${slugId(label, [])}` : "catalog");
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
   // The schedule's running number, per group start.
   const groupStart = useMemo(() => { const at: number[] = []; let n = 0; for (const g of groups) { at.push(n); n += g.rows.length; } return at; }, [groups]);
 
@@ -176,10 +182,7 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
         </div>
         <div className={cx("tools")}>
           <label className={cx("search")}><Search size={16} aria-hidden="true" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find an item" aria-label="Find an item" />{q && <button type="button" className={cx("link")} onClick={() => setQ("")} aria-label="Clear search"><X size={14} /></button>}</label>
-          <div className={cx("chips")} role="group" aria-label="Filter by group">
-            <button type="button" className={cx("chip", !group && "on")} onClick={() => setGroup("")}>All <b>{rows.length}</b></button>
-            {allGroups.map((g) => <button key={g.label} type="button" className={cx("chip", group === g.label && "on")} onClick={() => setGroup(group === g.label ? "" : g.label)}>{g.label} <b>{g.rows.length}</b></button>)}
-          </div>
+          <Segmented label="Jump to a group" value={group} items={[{ id: "", label: "All", n: rows.length }, ...allGroups.map((g) => ({ id: g.label, label: g.label, n: g.rows.length }))]} onChange={jumpTo} />
         </div>
 
         {shown.length === 0 ? (
@@ -190,7 +193,7 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
           <div role="list">
             {groups.map((g) => (
               <div key={g.label}>
-                <div className={cx("grp-h")}>{g.label}<span>{g.rows.length}</span></div>
+                <div className={cx("grp-h", group === g.label && "on")} id={`grp-${slugId(g.label, [])}`}>{g.label}<span>{g.rows.length}</span></div>
                 {g.rows.map((r) => {
                   const key = `${r.kind}:${r.id}`;
                   const isOpen = open === key;
@@ -225,7 +228,7 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
               </thead>
               <tbody>
                 {groups.map((g, gi) => (
-                  <GroupRows key={g.label} label={g.label} count={g.rows.length} cols={canEdit ? (trade === "hvac" ? 7 : 8) : trade === "hvac" ? 6 : 7}>
+                  <GroupRows key={g.label} label={g.label} count={g.rows.length} on={group === g.label} cols={canEdit ? (trade === "hvac" ? 7 : 8) : trade === "hvac" ? 6 : 7}>
                     {g.rows.map((r, ri) => {
                       const n = groupStart[gi] + ri + 1;
                       return (
@@ -236,8 +239,8 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
                           <td className={cx("unit")}>{r.unit}</td>
                           <td className={cx("num")}><b>{r.price === null ? "—" : usd2(r.price)}</b></td>
                           {trade !== "hvac" && <td className={cx("num")}>{r.labor === null ? "—" : usd2(r.labor)}</td>}
-                          <td>{r.companyDefault ? <span className={cx("stamp", "stamp-ok")}>Company default</span> : <span className={cx("stamp", "stamp-quiet")}>{r.kind === "hvac-rate" ? "typical" : "catalog"}</span>}</td>
-                          {canEdit && <td className={cx("acts")}><button type="button" className={cx("link")} onClick={(e) => { e.stopPropagation(); openRow(r); }}>Edit</button></td>}
+                          <td>{r.companyDefault ? <span className={cx("stamp", "stamp-ok", "stamp-w")}>Company</span> : <span className={cx("stamp", "stamp-quiet", "stamp-w")}>{r.kind === "hvac-rate" ? "typical" : "catalog"}</span>}</td>
+                          {canEdit && <td className={cx("acts")}><button type="button" className={cx("btn-row")} onClick={(e) => { e.stopPropagation(); openRow(r); }} aria-label={`Edit ${r.name}`}>Edit</button></td>}
                         </tr>
                       );
                     })}
@@ -255,9 +258,9 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
   );
 }
 
-function GroupRows({ label, count, cols, children }: { label: string; count: number; cols: number; children: ReactNode }) {
+function GroupRows({ label, count, cols, on, children }: { label: string; count: number; cols: number; on?: boolean; children: ReactNode }) {
   return <>
-    <tr className={cx("grp")}><th colSpan={cols} scope="rowgroup">{label}<span>{count} items</span></th></tr>
+    <tr className={cx("grp", on && "on")} id={`grp-${slugId(label, [])}`}><th colSpan={cols} scope="rowgroup">{label}<span>{count} items</span></th></tr>
     {children}
   </>;
 }

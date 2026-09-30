@@ -85,10 +85,18 @@
 :global(.jf-blueprint :is(.content, .inv-layer)) .search input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; font-size: 14px; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .search input:focus-visible { outline: none; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .search:focus-within { outline: 2px solid var(--blueprint); outline-offset: 1px; }
-:global(.jf-blueprint :is(.content, .inv-layer)) .chips { display: flex; flex-wrap: wrap; gap: 7px; min-width: 0; }
-:global(.jf-blueprint :is(.content, .inv-layer)) .chip { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); cursor: pointer; white-space: nowrap; }
-:global(.jf-blueprint :is(.content, .inv-layer)) .chip:hover { border-color: var(--ink); color: var(--ink); }
-:global(.jf-blueprint :is(.content, .inv-layer)) .chip.on { border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.06); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .tools { gap: 12px; flex-wrap: nowrap; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .tools .search { height: 36px; }
+/* One joined segmented control (the trade switch's kin): no gaps, one ink rule, the chosen one ink-filled. */
+:global(.jf-blueprint :is(.content, .inv-layer)) .segc { display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: calc(100% - 332px); height: 36px; border: 1px solid var(--ink); border-radius: var(--radius); background: var(--paper); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .segc::-webkit-scrollbar { display: none; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .segc-btn { display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; height: 100%; padding: 0 12px; border: 0; border-left: 1px solid var(--ink); background: var(--paper); font-family: var(--font-mono); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); cursor: pointer; white-space: nowrap; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .segc-btn:first-child { border-left: 0; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .segc-btn b { font-weight: 700; color: var(--muted); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .segc-btn:hover { background: var(--paper-deep); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .segc-btn.on { background: var(--ink); color: var(--paper); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .segc-btn.on b { color: var(--paper); opacity: 0.7; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .segc-btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -3px; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .tools-r { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .sel { font: inherit; font-size: 13px; height: 36px; padding: 0 10px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; color: var(--ink); }
 
@@ -97,11 +105,15 @@
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec { width: 100%; border-collapse: collapse; font-size: 14px; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec thead th { background: var(--paper-deep); text-align: left; font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); padding: 12px 14px; border-bottom: 1.5px solid var(--ink); white-space: nowrap; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec thead th.num { text-align: right; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .spec th:first-child, :global(.jf-blueprint :is(.content, .inv-layer)) .spec td:first-child { padding-left: 24px; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .spec th:last-child, :global(.jf-blueprint :is(.content, .inv-layer)) .spec td:last-child { padding-right: 24px; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec td { padding: 12px 14px; border-bottom: 1px solid var(--hair-soft, #e3e1da); vertical-align: middle; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec tbody tr:last-child td { border-bottom: none; }
 /* Category groups: a mono kicker on its own line, not a grey slab. */
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.grp th { text-align: left; padding: 18px 14px 6px; border-bottom: 1.5px solid var(--ink); background: #fff; font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink); }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.grp th span { margin-left: 10px; font-weight: 600; color: var(--muted); letter-spacing: 0.06em; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.grp.on th { color: var(--blueprint); border-bottom-color: var(--blueprint); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.grp { scroll-margin-top: 80px; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec .no { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); width: 52px; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec .name { font-weight: 700; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec .name .sub { display: block; margin-top: 3px; font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; color: var(--muted); }
@@ -111,6 +123,15 @@
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec .num b { font-weight: 800; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec .unit { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec .acts { text-align: right; white-space: nowrap; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .spec th.acts, :global(.jf-blueprint :is(.content, .inv-layer)) .spec td.acts { width: 96px; min-width: 96px; box-sizing: border-box; }
+/* A row's action: a small outlined button, the system's, not an underlined link. */
+:global(.jf-blueprint :is(.content, .inv-layer)) .btn-row { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; color: var(--ink); font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .btn-row:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .btn-row:active { transform: none; box-shadow: none; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .btn-row:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .btn-row + .btn-row { margin-left: 6px; }
+/* Standing chips, one width, so the column does not shiver. */
+:global(.jf-blueprint :is(.content, .inv-layer)) .stamp-w { width: 96px; justify-content: center; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.row { cursor: pointer; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.row:hover td, :global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.row:focus-within td { background: rgba(24, 84, 160, 0.05); }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.dim td { color: var(--muted); }
@@ -248,8 +269,9 @@
   :global(.jf-blueprint :is(.content, .inv-layer)) .card-body { padding: 14px 16px 16px; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .tools { padding: 12px 16px; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .search { flex-basis: 100%; height: 44px; }
-  :global(.jf-blueprint :is(.content, .inv-layer)) .chips { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
-  :global(.jf-blueprint :is(.content, .inv-layer)) .chip { height: 44px; flex: 0 0 auto; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .tools { flex-wrap: wrap; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .tools .search { height: 44px; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .segc { flex: 1 1 100%; width: 100%; max-width: 100%; height: 44px; -webkit-overflow-scrolling: touch; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .tools-r { margin-left: 0; width: 100%; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .tools-r .sel { height: 44px; flex: 1; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .cards { grid-template-columns: 1fr; padding: 14px 16px 16px; }
@@ -273,6 +295,8 @@
   /* the list that stands in for a table */
   :global(.jf-blueprint :is(.content, .inv-layer)) .grp-h { padding: 16px 16px 6px; border-bottom: 1.5px solid var(--ink); font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .grp-h span { margin-left: 10px; color: var(--muted); font-weight: 600; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .grp-h { scroll-margin-top: 72px; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .grp-h.on { color: var(--blueprint); border-bottom-color: var(--blueprint); }
   :global(.jf-blueprint :is(.content, .inv-layer)) .rowi { display: block; width: 100%; padding: 14px 16px; border: 0; border-bottom: 1px solid var(--hair-soft, #e3e1da); background: #fff; text-align: left; font: inherit; color: inherit; cursor: pointer; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .rowi .l1 { display: flex; align-items: center; gap: 10px; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .rowi .t { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
@@ -285,4 +309,6 @@
   :global(.jf-blueprint :is(.content, .inv-layer)) .rowi .more .kv span { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
   :global(.jf-blueprint :is(.content, .inv-layer)) .rowi .more .btn { height: 44px; flex: 1; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .rowi .more .acts2 { display: flex; gap: 8px; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .spec th:first-child, :global(.jf-blueprint :is(.content, .inv-layer)) .spec td:first-child { padding-left: 16px; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .spec th:last-child, :global(.jf-blueprint :is(.content, .inv-layer)) .spec td:last-child { padding-right: 16px; }
 }
