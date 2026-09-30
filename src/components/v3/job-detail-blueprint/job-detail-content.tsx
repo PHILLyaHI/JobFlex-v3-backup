@@ -66,7 +66,7 @@ import s from "./job-detail.module.css";
 import { useJobDetailMotion } from "./job-detail-motion";
 import { useJobDetailActions, type PhotoKind } from "./use-job-detail-actions";
 import { onSiteLine } from "@/lib/jobProgressShared";
-import { MEDIA_ACCEPT } from "@/lib/jobMediaShared";
+import { IMAGE_ACCEPT, MEDIA_ACCEPT } from "@/lib/jobMediaShared";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { useRouter } from "next/navigation";
 import { JD_ASSIGN, ST, STATUS_BUTTONS, fmt, type JobDetailRecord, KEY_TO_STATUS } from "./job-detail-data";
@@ -813,7 +813,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                   ref={fileRef}
                   className={cx("jd-file")}
                   type="file"
-                  accept={record.blobEnabled ? MEDIA_ACCEPT : "image/*"}
+                  accept={record.blobEnabled ? MEDIA_ACCEPT : IMAGE_ACCEPT}
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     // Cleared before the await: the same file picked twice in a

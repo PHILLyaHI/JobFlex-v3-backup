@@ -20,6 +20,7 @@ import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { isLimitedRole, requireOrg } from "@/lib/orgContext";
 import { mediaMetaJson, type MediaKind, type MediaMeta } from "@/lib/jobMediaShared";
 import { openDayOf } from "@/lib/workDays";
+import { deleteStored } from "@/lib/media/privateStore";
 
 export interface MediaCaller {
   organizationId: string;
@@ -76,10 +77,17 @@ export async function recordJobMedia(input: {
   meta: MediaMeta;
   caption?: string | null;
   via: "worker-portal" | "dashboard";
+  /** A day being closed late ("2026-09-29"): the file hangs on that day, if it is not closed yet. */
+  workDate?: string | null;
 }): Promise<{ id: string; workDayId: string | null }> {
   const { caller, url, kind, meta, via } = input;
-  // The day on site the file belongs to: the one open on the job today.
-  const day = await openDayOf(caller.organizationId, caller.job.id).catch(() => null);
+  // The day on site the file belongs to: the one named (a day being closed
+  // late), else the one open on the job today.
+  const day = input.workDate
+    ? await db.workDay
+        .findFirst({ where: { organizationId: caller.organizationId, jobId: caller.job.id, date: input.workDate, status: { not: "CLOSED" } }, select: { id: true, date: true, dayNumber: true } })
+        .catch(() => null)
+    : await openDayOf(caller.organizationId, caller.job.id).catch(() => null);
   const row = await db.jobPhoto.create({
     data: {
       jobId: caller.job.id,
@@ -154,6 +162,9 @@ export async function deleteJobMediaFor(actor: MediaActor, photoId: string): Pro
     throw new Error("This is the only file of a closed day with no note — add a note to the day first.");
   }
   await db.jobPhoto.delete({ where: { id: photoId } });
+  // The file goes with its row (stage B): the private store, the local
+  // fallback or the older public store — a data URL has nothing to remove.
+  await deleteStored(p.url);
   await logActivity({
     organizationId: actor.organizationId,
     actorId: actor.userId,

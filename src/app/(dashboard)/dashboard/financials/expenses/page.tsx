@@ -1,5 +1,6 @@
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { mediaHref } from "@/lib/media/signedLink";
 import { ReceiptDropzone } from "@/components/financials/ReceiptDropzone";
 import { ExpensesTable, type ExpenseRow } from "@/components/financials/ExpensesTable";
 
@@ -28,7 +29,7 @@ export default async function ExpensesPage() {
     category: e.category,
     amount: e.amount,
     note: e.note,
-    receiptUrl: e.receiptUrl,
+    receiptUrl: mediaHref(e.receiptUrl),
     createdAt: e.createdAt,
   }));
 

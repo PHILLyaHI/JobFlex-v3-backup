@@ -1320,7 +1320,7 @@ export function MobileFinancials() {
               ref={fileRef}
               style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp,image/gif"
               tabIndex={-1}
               aria-hidden="true"
               onChange={(e) => void onPickFile(e)}

@@ -14,6 +14,7 @@ import { db } from "@/lib/db";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { isLimitedRole } from "@/lib/orgContext";
 import { ExpensePaidBy, ExpenseStatus } from "@/lib/prismaEnums";
+import { deleteStored } from "@/lib/media/privateStore";
 
 export interface ExpenseActor {
   organizationId: string;
@@ -165,6 +166,8 @@ export async function editJobExpense(actor: ExpenseActor, id: string, patch: Exp
   // A worker's correction of a rejected receipt puts it back on review.
   if (!manager && ex.status === ExpenseStatus.REJECTED) Object.assign(data, { status: ExpenseStatus.SUBMITTED, rejectReason: null, reviewedById: null, reviewedAt: null });
   const row = await db.jobExpense.update({ where: { id }, data });
+  // A replaced receipt picture leaves the store with the edit (stage B).
+  if (patch.receiptUrl !== undefined && ex.receiptUrl && ex.receiptUrl !== patch.receiptUrl) await deleteStored(ex.receiptUrl);
   await logActivity({
     organizationId: actor.organizationId,
     actorId: actor.userId,
@@ -187,6 +190,7 @@ export async function deleteJobExpense(actor: ExpenseActor, id: string) {
     if (ex.status === ExpenseStatus.APPROVED || ex.status === ExpenseStatus.REIMBURSED) throw new Error("An approved receipt can no longer be deleted");
   }
   await db.jobExpense.delete({ where: { id } });
+  await deleteStored(ex.receiptUrl);
   await logActivity({
     organizationId: actor.organizationId,
     actorId: actor.userId,

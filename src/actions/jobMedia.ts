@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { isLimitedRole, requireManager, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
+import { putPrivate } from "@/lib/media/privateStore";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
@@ -150,16 +150,10 @@ export async function uploadJobPhoto(
   const match = dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
   if (!match || !IMAGE_DATA_URL.test(dataUrl)) throw new Error("Photo must be an image");
 
-  let url = dataUrl;
+  // The private store, the local fallback, or — production before the store
+  // exists — the data URL on the row, as before (lib/media/privateStore).
   const buf = Buffer.from(match[2], "base64");
-  if (isBlobEnabled()) {
-    const res = await uploadBlob(
-      `jobs/${jobId}/${Date.now()}-${safeFilename(filename, "photo")}`,
-      buf,
-      { contentType: match[1].toLowerCase() },
-    );
-    url = res.url;
-  }
+  const { url } = await putPrivate(`jobs/${jobId}/${Date.now()}-${safeFilename(filename, "photo")}`, buf, match[1].toLowerCase());
   // The row, the trail row that names it, and the office's note (lib/jobMedia).
   const photo = await recordJobMedia({ caller, url, kind, meta: { media: "photo", contentType: match[1].toLowerCase(), bytes: buf.byteLength, name: filename }, via: "dashboard" });
   revalidatePath(`/dashboard/jobs/${jobId}`);

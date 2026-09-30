@@ -3,10 +3,11 @@ import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 import { revalidatePath } from "next/cache";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { putPrivate } from "@/lib/media/privateStore";
+import { mediaHref } from "@/lib/media/signedLink";
 import { createJobExpense } from "@/lib/jobExpenses";
 import { friendlyAIError, isOpenAIEnabled } from "@/lib/sdk/openai";
 import { runVisionJson } from "@/lib/sdk/openaiVision";
-import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 
 export interface OcrResult {
@@ -132,16 +133,9 @@ export async function saveReceiptExpense(input: {
   // the financials ledger for every manager.
   const match = input.dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
   if (!match || !IMAGE_DATA_URL.test(input.dataUrl)) throw new Error("Receipt must be an image");
-  let receiptUrl = input.dataUrl;
-  if (isBlobEnabled()) {
-    const buf = Buffer.from(match[2], "base64");
-    const res = await uploadBlob(
-      `receipts/${input.jobId}/${Date.now()}-${safeFilename(input.filename, "receipt")}`,
-      buf,
-      { contentType: match[1].toLowerCase() },
-    );
-    receiptUrl = res.url;
-  }
+  // A receipt is private (stage B): the private store, the local fallback,
+  // or — production before the store exists — the data URL, as before.
+  const { url: receiptUrl } = await putPrivate(`receipts/${input.jobId}/${Date.now()}-${safeFilename(input.filename, "receipt")}`, Buffer.from(match[2], "base64"), match[1].toLowerCase());
 
   // The id and the resolved receipt URL come back so a caller that keeps its
   // own on-screen copy of the book can append the REAL row — one that its
@@ -165,5 +159,6 @@ export async function saveReceiptExpense(input: {
   revalidatePath(`/dashboard/jobs/${input.jobId}`);
   revalidatePath("/dashboard/financials");
   revalidatePath("/dashboard/financials/expenses");
-  return { ok: true, id: created.id, receiptUrl };
+  // The page keeps its own copy of the book: it gets the short signed link.
+  return { ok: true, id: created.id, receiptUrl: mediaHref(receiptUrl) ?? receiptUrl };
 }

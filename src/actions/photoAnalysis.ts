@@ -2,6 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { readStoredAsDataUrl } from "@/lib/media/privateStore";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { runVisionJson } from "@/lib/sdk/openaiVision";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
@@ -46,7 +47,8 @@ export async function analyzeJobPhoto(photoId: string): Promise<
       systemPrompt:
         'You are a senior construction estimator analyzing a job-site photo. Return JSON strictly: {materials: string[] (3-6 items), estimatedMeasurements: string (like "~2400 sqft" or "~180 linear ft"), conditionNotes: string (one sentence), suggestedScope: string (one sentence, what work would make sense).} No markdown.',
       userPrompt: "Analyze this job photo for a contractor estimate.",
-      imageUrl: photo.url,
+      // A private photo (stage B) is not fetchable by the model: its bytes go instead.
+      imageUrl: (await readStoredAsDataUrl(photo.url)) ?? photo.url,
     });
     if (!result) return { ok: false, error: "No analysis returned" };
     await db.jobPhoto.update({

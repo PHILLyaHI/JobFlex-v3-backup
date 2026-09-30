@@ -189,7 +189,7 @@ export function FinancialsContent(props: FinancialsContentProps) {
               <input
                 type="file"
                 id="rcFile"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp,image/gif"
                 className="is-hidden"
               />
               {/* Progress and failure both land here — "Reading the receipt…",

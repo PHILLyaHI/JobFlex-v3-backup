@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
+import { putPrivate } from "@/lib/media/privateStore";
 import { touchWorkerActivity } from "@/lib/workerActivity";
 import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 import { createJobExpense } from "@/lib/jobExpenses";
@@ -54,15 +54,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Receipt is too large (4 MB max)" }, { status: 413 });
   }
 
-  let receiptUrl = body.dataUrl;
-  if (isBlobEnabled()) {
-    const res = await uploadBlob(
-      `receipts/${body.jobId}/${Date.now()}-${safeFilename(body.filename, "receipt")}`,
-      buf,
-      { contentType: match[1].toLowerCase() },
-    );
-    receiptUrl = res.url;
-  }
+  // The older base64 door, kept for a cached portal page: the file goes to
+  // the private store now (stage B). The new pages upload straight from the
+  // phone and record through /api/crew/<jobId>/receipts.
+  const { url: receiptUrl } = await putPrivate(`receipts/${body.jobId}/${Date.now()}-${safeFilename(body.filename, "receipt")}`, buf, match[1].toLowerCase());
 
   // The one rule (lib/jobExpenses, stage A 2026-09-30): a worker's receipt is
   // SUBMITTED — on review, in no total — until the office approves it. The

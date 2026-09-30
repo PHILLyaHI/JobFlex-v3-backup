@@ -16,6 +16,7 @@
 // never this file.
 
 import { db } from "@/lib/db";
+import { mediaHref } from "@/lib/media/signedLink";
 import { getFinancialsRollup, getMonthlyRollup } from "@/actions/financials";
 import { contractSchedule } from "@/lib/contractTotal";
 import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
@@ -134,7 +135,8 @@ export async function getFinancialsSnapshot(
     amount: e.amount,
     note: e.note ?? "",
     when: plate(e.spentAt ?? e.createdAt),
-    receiptUrl: e.receiptUrl,
+    // A private receipt is read through a short signed link (stage B).
+    receiptUrl: mediaHref(e.receiptUrl),
     status: e.status,
     paidBy: e.paidBy,
     vendor: e.vendor,

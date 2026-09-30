@@ -14,11 +14,16 @@ export async function uploadBlob(
   // The key never carries path separators from user input (callers pass
   // safeFilename output), and the content type is stated explicitly so the
   // store cannot infer text/html from a crafted extension and serve a page.
+  // @vercel/blob 2.x (stage B, 2026-09-30): `access` is required and the
+  // random suffix is off by default — it stays ON here, as 0.x had it, so a
+  // repeated name never throws on an existing blob. This is the PUBLIC store
+  // (proposal photos, reviews, change orders); the crew's files and receipts
+  // go to the private one (lib/media/privateStore).
   return put(name.replace(/\.\.+/g, "."), body as Parameters<typeof put>[1], {
     access: "public",
     token: process.env.BLOB_READ_WRITE_TOKEN!,
+    addRandomSuffix: opts?.addRandomSuffix ?? true,
     ...(opts?.contentType ? { contentType: opts.contentType } : {}),
-    ...(opts?.addRandomSuffix != null ? { addRandomSuffix: opts.addRandomSuffix } : {}),
   });
 }
 

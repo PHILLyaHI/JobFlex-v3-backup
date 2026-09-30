@@ -60,7 +60,7 @@ import {
   type PhotoKind,
 } from "@/components/v3/job-detail-blueprint/use-job-detail-actions";
 import { onSiteLine } from "@/lib/jobProgressShared";
-import { MEDIA_ACCEPT } from "@/lib/jobMediaShared";
+import { IMAGE_ACCEPT, MEDIA_ACCEPT } from "@/lib/jobMediaShared";
 import { Who } from "@/components/v3/who/who";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { useRouter } from "next/navigation";
@@ -876,7 +876,7 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                       ref={fileRef}
                       className="mjd-file"
                       type="file"
-                      accept={record.blobEnabled ? MEDIA_ACCEPT : "image/*"}
+                      accept={record.blobEnabled ? MEDIA_ACCEPT : IMAGE_ACCEPT}
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         // Cleared before the await: the same file picked twice

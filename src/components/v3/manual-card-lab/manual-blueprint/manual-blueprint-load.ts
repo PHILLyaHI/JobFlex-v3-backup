@@ -21,6 +21,7 @@
 // this replaces carried a hard-coded date string.
 
 import { db } from "@/lib/db";
+import { mediaHref } from "@/lib/media/signedLink";
 import { FENCE_PLAN_EVENT } from "@/lib/fence/planSvg";
 import { mediaOf } from "@/lib/jobMediaShared";
 import { actorsOf } from "@/lib/activityLog";
@@ -235,7 +236,9 @@ export async function loadManualBuilder({
       }
       media = rows.map((r) => ({
         id: r.id,
-        url: r.url,
+        // Private files are read through a short signed link (stage B); the
+        // office reading this proposal was checked by the page.
+        url: mediaHref(r.url) ?? r.url,
         kind: r.kind ? r.kind.charAt(0) + r.kind.slice(1).toLowerCase() : "Photo",
         media: mediaOf(r).media,
         when: r.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric" }),

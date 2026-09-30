@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
+import { putPrivate } from "@/lib/media/privateStore";
 import { touchWorkerActivity } from "@/lib/workerActivity";
 import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 import { authorizeJobMedia, recordJobMedia } from "@/lib/jobMedia";
@@ -17,6 +17,7 @@ export async function POST(req: Request) {
     dataUrl?: string;
     filename?: string;
     kind?: string;
+    date?: string | null;
   };
   if (!body.token || !body.jobId || !body.dataUrl) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
@@ -41,20 +42,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Photo is too large (4 MB max)" }, { status: 413 });
   }
 
-  let url = body.dataUrl;
-  if (isBlobEnabled()) {
-    // With a blob store configured the upload must succeed — never fall back
-    // to persisting a multi-megabyte data URL in the row.
-    const res = await uploadBlob(
-      `jobs/${body.jobId}/${Date.now()}-${safeFilename(body.filename, "photo")}`,
-      buf,
-      { contentType: match[1].toLowerCase() },
-    );
-    url = res.url;
-  }
+  // The private store (stage B), the local fallback, or — production before
+  // the store exists — the data URL on the row, as before.
+  const { url } = await putPrivate(`jobs/${body.jobId}/${Date.now()}-${safeFilename(body.filename, "photo")}`, buf, match[1].toLowerCase());
 
   // The row, the trail and the office's note — the same record as the store path.
-  const photo = await recordJobMedia({ caller, url, kind, meta: { media: "photo", contentType: match[1].toLowerCase(), bytes: buf.byteLength }, via: "worker-portal" });
+  const photo = await recordJobMedia({ caller, url, kind, meta: { media: "photo", contentType: match[1].toLowerCase(), bytes: buf.byteLength }, via: "worker-portal", workDate: typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : null });
   if (caller.workerId) await touchWorkerActivity(caller.workerId);
   return NextResponse.json({ id: photo.id, url });
 }

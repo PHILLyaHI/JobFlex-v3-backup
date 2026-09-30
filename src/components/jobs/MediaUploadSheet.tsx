@@ -13,7 +13,7 @@ import { Camera, Check, Film, Upload } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
-import { MEDIA_ACCEPT, MEDIA_KINDS, fileSize, type MediaKind } from "@/lib/jobMediaShared";
+import { IMAGE_ACCEPT, MEDIA_ACCEPT, MEDIA_KINDS, fileSize, type MediaKind } from "@/lib/jobMediaShared";
 import { MediaUploadError, uploadJobMedia, type UploadDoor } from "@/lib/media/uploadJobMedia";
 
 interface QueueItem {
@@ -102,7 +102,7 @@ export function MediaUploadSheet({
         ))}
       </div>
 
-      <input ref={inputRef} type="file" accept={blobEnabled ? MEDIA_ACCEPT : "image/*"} multiple className="hidden" onChange={(e) => { void take(e.target.files); e.target.value = ""; }} />
+      <input ref={inputRef} type="file" accept={blobEnabled ? MEDIA_ACCEPT : IMAGE_ACCEPT} multiple className="hidden" onChange={(e) => { void take(e.target.files); e.target.value = ""; }} />
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
