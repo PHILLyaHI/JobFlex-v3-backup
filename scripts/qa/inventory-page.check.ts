@@ -10,8 +10,8 @@
 // (lib/priceBook); the writes here go through the same tables the actions
 // write (fenceCatalog.saveFenceCatalog, roofCatalog.saveRoofCatalog,
 // hvacEstimator.saveHvacCatalogItem / saveHvacRateCard). The redirects are
-// checked against a dev server when one answers on QA_BASE_URL (default
-// :3000), and reported as skipped otherwise.
+// checked against the dev server QA_BASE_URL names, and skipped when it is
+// not set (this machine's :3000 may be another project's).
 
 import "./_server-only";
 import { PrismaClient } from "@prisma/client";
@@ -119,7 +119,9 @@ async function main() {
 
     /* ── E. the old URLs answer 308 (when a dev server is up) ── */
     head("E · the old URLs");
-    const base = process.env.QA_BASE_URL || "http://localhost:3000";
+    // Only against a server named explicitly: :3000 on this machine may be
+    // another project's, which answers 404, not 308.
+    const base = process.env.QA_BASE_URL || "";
     const moved: Array<[string, string]> = [
       ["/dashboard/roof-estimator/board", "/dashboard/inventory?trade=roof&tab=stock"],
       ["/dashboard/fence-estimator/board", "/dashboard/inventory?trade=fence&tab=stock"],
@@ -127,9 +129,9 @@ async function main() {
       ["/dashboard/hvac-estimator/services", "/dashboard/inventory?trade=hvac&tab=services"],
       ["/mobile-hvac-inventory-v1", "/dashboard/inventory?trade=hvac&tab=stock"],
     ];
-    let up = true;
-    try { await fetch(base + "/auth/login", { redirect: "manual" }); } catch { up = false; }
-    if (!up) console.log(`skip  no dev server on ${base} — the 308s are not checked here`);
+    let up = Boolean(base);
+    if (up) { try { await fetch(base + "/auth/login", { redirect: "manual" }); } catch { up = false; } }
+    if (!up) console.log(`skip  ${base ? `no dev server on ${base}` : "QA_BASE_URL not set"} — the 308s are not checked here`);
     else for (const [from, to] of moved) {
       const r = await fetch(base + from, { redirect: "manual" });
       ok(`E 308 ${from}`, r.status === 308 && (r.headers.get("location") ?? "").endsWith(to), `${r.status} → ${r.headers.get("location")}`);

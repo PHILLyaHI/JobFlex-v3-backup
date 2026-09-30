@@ -23,6 +23,7 @@ import { clearHvacCatalog, importHvacCatalogCsv, loadUsCatalog, saveHvacCatalogI
 import { deleteHvacCatalogItem, rememberInventoryTrade } from "@/actions/inventoryPage";
 import { RoofingInventory } from "@/components/v3/roofing-inventory/roofing-inventory";
 import { HvacServicesContent } from "@/components/v3/hvac-services-blueprint/hvac-services-content";
+import { OverlayPortal } from "@/components/v3/blueprint-shell/overlay-layer";
 import type { InventoryPageData, InventoryTab, InventoryVariant, PriceBookData } from "@/lib/inventoryPage";
 import type { TradeId } from "@/lib/inventory";
 import { CATALOG_CSV_COLUMNS, STARTER_CATALOG } from "@/lib/hvac/ledger";
@@ -445,8 +446,11 @@ function EditSheet({ state, book, rows, onClose }: { state: SheetState; book: Pr
   const kicker = state.kind === "hvac-rate" ? "Rate card" : state.kind === "hvac-unit" ? "Catalog unit" : state.kind === "roof-underlayment" ? "Underlayment" : state.kind === "roof-system" ? "Roof system" : "Fence type";
   const removeLabel = state.row ? (state.row.custom ? "Delete" : state.row.companyDefault ? "Reset to catalog" : null) : null;
 
+  // Portalled into the shell's overlay layer: drawn inside `.content` the
+  // scrim painted under the sidebar, the topbar and the support button.
   return (
-    <>
+    <OverlayPortal>
+      <div className="inv-layer">
       <div className={cx("sh-bg")} onClick={onClose} aria-hidden="true" />
       <aside className={cx("sh")} role="dialog" aria-modal="true" aria-labelledby="inv-sheet-title">
         <div className={cx("sh-h")}>
@@ -470,7 +474,8 @@ function EditSheet({ state, book, rows, onClose }: { state: SheetState; book: Pr
           </div>
         </div>
       </aside>
-    </>
+      </div>
+    </OverlayPortal>
   );
 }
 
