@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Info, Megaphone, RefreshCw } from "lucide-react";
 import { getLiveTraffic } from "@/actions/trafficDashboard";
 import type { LiveReport, LiveStage, LiveVisitor } from "@/lib/traffic-live";
+import { LiveMap } from "./live-map";
 import s from "./traffic.module.css";
 
 const POLL_MS = 45_000;
@@ -31,6 +32,10 @@ export function LivePanel({ initial, timezone }: { initial: LiveReport; timezone
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Date.now());
+  /** Who the map shows: the last 5 minutes (on the site now) or the whole window. */
+  const [span, setSpan] = useState<5 | 30>(30);
+  /** The visitor opened on the map — from a pin, or from a row of the list. */
+  const [selected, setSelected] = useState<string | null>(null);
   const request = useRef(0);
   // Stable: it takes the one thing that changes as an argument, so the poll
   // below is armed once per setting, not once per tick of the clock.
@@ -58,6 +63,7 @@ export function LivePanel({ initial, timezone }: { initial: LiveReport; timezone
 
   const c = report.counts;
   const rows = report.visitors.filter((v) => !adsOnly || v.fromAd || v.stage === "signed-up");
+  const onMap = rows.filter((v) => span === 30 || v.active);
   const live = report.status === "ok";
   return <section className={s.live} aria-label="Live now" data-state={report.status} aria-busy={pending}>
     <div className={s.liveHead}>
@@ -77,17 +83,29 @@ export function LivePanel({ initial, timezone }: { initial: LiveReport; timezone
       <div data-tone="today"><span>Today</span><strong>{report.today.signups}</strong><small>{report.today.signups === 1 ? "signup" : "signups"} · {report.today.fromAds} from ads</small></div>
     </div>
     {(error || report.message) && <div className={s.notice} role="status"><Info size={16}/><div><strong>{error || report.message}</strong></div></div>}
+    {live && <>
+      {/* The map: where everyone is, a pin per visitor in the stage colours. */}
+      <div className={s.liveSpan} role="group" aria-label="Who the map shows">
+        <div className={s.dimensionTabs} style={{ margin: 0 }}>
+          <button type="button" aria-pressed={span === 5} onClick={() => setSpan(5)}>Now · 5 min</button>
+          <button type="button" aria-pressed={span === 30} onClick={() => setSpan(30)}>Last 30 min</button>
+        </div>
+        <span>{onMap.length} {onMap.length === 1 ? "visitor" : "visitors"} on the map</span>
+      </div>
+      <LiveMap visitors={onMap} now={now} selected={selected} onSelect={setSelected} timezone={timezone}/>
+    </>}
     {live && !rows.length && <div className={s.liveEmpty}>{report.visitors.length ? "Nobody from an ad in the last half hour — turn off the ads filter to see everyone." : `Nobody on the site in the last ${report.windowMinutes} minutes.`}</div>}
     {rows.length > 0 && <ol className={s.liveList} aria-label="Visitors on the site">
-      {rows.map((v) => <LiveRow key={v.id + v.firstAt} v={v} now={now} timezone={timezone}/>)}
+      {rows.map((v) => <LiveRow key={v.id + v.firstAt} v={v} now={now} timezone={timezone} selected={selected === v.id} onSelect={() => setSelected(selected === v.id ? null : v.id)}/>)}
     </ol>}
     {report.otherSignups.length > 0 && <div className={s.liveOthers}><span className={s.micro}>Also signed up today, before this window or with analytics blocked:</span>{report.otherSignups.map((o) => <span key={o.orgName + o.at} className={s.liveOther}><b>{o.orgName}</b> · {o.ownerEmail || "no owner yet"} · {o.source} · {clock(o.at, timezone)}</span>)}</div>}
-    <p className={s.footnote}>One line per browser (a PostHog person), newest move first, signups on top. Source is what the first page of the visit carried: a tagged paid medium is an ad; a Facebook, Instagram or TikTok referrer with no tag is called an ad too. Colour is how far they got. A signup is named after the organization created within fifteen minutes of it with the same campaign tag.</p>
+    <p className={s.footnote}>One line per browser (a PostHog person), newest move first, signups on top; a click on a line shows it on the map. Source is what the first page of the visit carried: a tagged paid medium is an ad; a Facebook, Instagram or TikTok referrer with no tag is called an ad too. Colour is how far they got. Places come from PostHog&apos;s GeoIP reading of the browser&apos;s address — the town is usually right, the street never known. A signup is named after the organization created within fifteen minutes of it with the same campaign tag.</p>
   </section>;
 }
 
-function LiveRow({ v, now, timezone }: { v: LiveVisitor; now: number; timezone: string }) {
-  return <li className={s.liveRow} data-stage={v.stage} data-active={v.active} data-ad={v.fromAd}>
+function LiveRow({ v, now, timezone, selected, onSelect }: { v: LiveVisitor; now: number; timezone: string; selected: boolean; onSelect: () => void }) {
+  // A row is a click away from its pin on the map (and back).
+  return <li className={s.liveRow} data-stage={v.stage} data-active={v.active} data-ad={v.fromAd} data-selected={selected} onClick={onSelect} title={v.lat !== null ? "Show on the map" : "No known place for this visitor"}>
     <div className={s.liveMark} aria-hidden="true"/>
     <div className={s.liveWho}>
       <b>{STAGE[v.stage]}{v.signup ? ` → ${v.signup.orgName}` : ""}</b>

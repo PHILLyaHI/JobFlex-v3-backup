@@ -58,6 +58,11 @@ export interface LiveEvent {
   outcome: string;
   plan: string;
   verified: string;
+  /** PostHog's GeoIP guess at the browser's place (null when it has none). */
+  lat: number | null;
+  lon: number | null;
+  countryCode: string;
+  regionCode: string;
 }
 
 /** An organization created today, from the database. */
@@ -99,6 +104,14 @@ export interface LiveVisitor {
   device: string;
   browser: string;
   place: string;
+  /** For the map: where the browser is, as GeoIP reads it (null = not on the map). */
+  lat: number | null;
+  lon: number | null;
+  city: string;
+  region: string;
+  regionCode: string;
+  country: string;
+  countryCode: string;
   environment: "production" | "development";
   hostname: string;
   /** The account this visitor made, when the database row could be tied to it. */
@@ -304,6 +317,9 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
         signup = { orgName: best.s.orgName, ownerEmail: best.s.ownerEmail, ownerName: best.s.ownerName, at: best.s.createdAt, plan, outcome };
       }
     }
+    // Where they are: the latest event that carries a GeoIP place.
+    const located = [...list].reverse().find((e) => e.lat !== null && e.lon !== null);
+    const geo = located ? { lat: located.lat, lon: located.lon, city: located.city, region: located.region, regionCode: located.regionCode, country: located.country, countryCode: located.countryCode } : null;
     // The trail: every screen and step in order, a repeat folded into its
     // neighbour; the last six.
     const trail: string[] = [];
@@ -329,6 +345,13 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
       device: lastView.device || first.device || "",
       browser: lastView.browser || first.browser || "",
       place: [first.city, first.region, first.country].filter(Boolean).join(", "),
+      lat: geo?.lat ?? null,
+      lon: geo?.lon ?? null,
+      city: geo?.city ?? first.city,
+      region: geo?.region ?? first.region,
+      regionCode: geo?.regionCode ?? first.regionCode,
+      country: geo?.country ?? first.country,
+      countryCode: geo?.countryCode ?? first.countryCode,
       environment: envOf(first),
       hostname: first.hostname || domainOf(first.url),
       signup,
@@ -378,7 +401,9 @@ export function buildLiveQuery(windowMinutes = LIVE_WINDOW_MINUTES): string {
     ${prop("$referring_domain")},
     ${prop("$device_type")}, ${prop("$browser")}, ${prop("$os")},
     ${prop("$geoip_country_name")}, ${prop("$geoip_subdivision_1_name")}, ${prop("$geoip_city_name")},
-    ${prop("step")}, ${prop("outcome")}, ${prop("plan")}, ${prop("verified")}
+    ${prop("step")}, ${prop("outcome")}, ${prop("plan")}, ${prop("verified")},
+    toFloat64OrNull(toString(properties.$geoip_latitude)), toFloat64OrNull(toString(properties.$geoip_longitude)),
+    ${prop("$geoip_country_code")}, ${prop("$geoip_subdivision_1_code")}
     FROM events
     WHERE timestamp > now() - INTERVAL ${Math.max(5, Math.min(120, Math.round(windowMinutes)))} MINUTE AND event IN (${events})
     ORDER BY timestamp DESC LIMIT 4000`;
@@ -391,11 +416,21 @@ export function liveEventFromRow(row: unknown[]): LiveEvent | null {
   if (!Number.isFinite(at) || at <= 0) return null;
   const event = str(2);
   if (!event) return null;
+  const coord = (i: number, limit: number) => {
+    const v = typeof row[i] === "number" ? (row[i] as number) : row[i] == null || row[i] === "" ? NaN : Number(row[i]);
+    return Number.isFinite(v) && Math.abs(v) <= limit && v !== 0 ? v : null;
+  };
+  const lat = coord(24, 90);
+  const lon = coord(25, 180);
   return {
     person: str(0), distinctId: str(1), event, at,
     pathname: str(4), url: str(5), sessionId: str(6), hostname: str(7), environment: str(8),
     utmSource: str(9), utmMedium: str(10), utmCampaign: str(11), utmContent: str(12), referrer: str(13),
     device: str(14), browser: str(15), os: str(16), country: str(17), region: str(18), city: str(19),
     step: str(20), outcome: str(21), plan: str(22), verified: str(23),
+    lat: lat !== null && lon !== null ? lat : null,
+    lon: lat !== null && lon !== null ? lon : null,
+    countryCode: str(26).toUpperCase().slice(0, 2),
+    regionCode: str(27).toUpperCase().slice(0, 3),
   };
 }

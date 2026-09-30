@@ -16,7 +16,8 @@ const min = (m: number) => NOW - m * 60_000;
 const ev = (p: Partial<LiveEvent> & { person: string; at: number }): LiveEvent => ({
   distinctId: p.person, event: "$pageview", pathname: "/", url: "https://jobflex.app/", sessionId: "s-" + p.person, hostname: "jobflex.app", environment: "production",
   utmSource: "", utmMedium: "", utmCampaign: "", utmContent: "", referrer: "$direct", device: "Desktop", browser: "Chrome", os: "Mac OS X",
-  country: "United States", region: "Texas", city: "Dallas", step: "", outcome: "", plan: "", verified: "", ...p,
+  country: "United States", region: "Texas", city: "Dallas", step: "", outcome: "", plan: "", verified: "",
+  lat: 32.78, lon: -96.8, countryCode: "US", regionCode: "TX", ...p,
 });
 
 // ── where a visit came from
@@ -86,6 +87,12 @@ check("with localhost included the developer shows, marked development", dev.vis
 const wrongTag = shapeLive(events.map((e) => (e.person === "p-ana" ? { ...e, utmCampaign: "other-campaign" } : e)), signups, NOW);
 check("a different campaign tag keeps the signup from being tied to the wrong row (still green, unnamed)", wrongTag.visitors[0].stage === "signed-up" && wrongTag.visitors[0].signup === null && wrongTag.otherSignups.length === 3);
 check("an empty window is an empty report, not a crash", shapeLive([], [], NOW).visitors.length === 0 && shapeLive([], [], NOW).counts.onSite === 0);
+// ── the map: where each one is
+check("a visitor carries the place GeoIP gave the browser", ana.lat === 32.78 && ana.lon === -96.8 && ana.countryCode === "US" && ana.regionCode === "TX" && ana.city === "Dallas");
+const unplaced = shapeLive([ev({ person: "p-u", at: min(1), lat: null, lon: null, countryCode: "", regionCode: "" })], [], NOW).visitors[0];
+check("a visitor without a place is counted but has no pin", unplaced.lat === null && unplaced.lon === null && unplaced.active);
+const moved = shapeLive([ev({ person: "p-m2", at: min(9), lat: 47.61, lon: -122.33, city: "Seattle", regionCode: "WA" }), ev({ person: "p-m2", at: min(1), lat: null, lon: null, city: "" })], [], NOW).visitors[0];
+check("the place is the latest event that had one", moved.lat === 47.61 && moved.city === "Seattle" && moved.regionCode === "WA");
 
 // ── the query and its rows
 const sql = buildLiveQuery();
@@ -93,7 +100,12 @@ check("the live query reads the last 30 minutes of the events that matter", /INT
 check("the window is clamped", /INTERVAL 5 MINUTE/.test(buildLiveQuery(1)) && /INTERVAL 120 MINUTE/.test(buildLiveQuery(999)));
 const row = ["person-1", "anon-1", "$pageview", 1_790_000_000_000, "/", "https://jobflex.app/", "s1", "jobflex.app", "production", "facebook", "paid", "camp", "", "l.facebook.com", "Mobile", "Mobile Safari", "iOS", "United States", "Texas", "Dallas", "", "", "", ""];
 const e1 = liveEventFromRow(row);
-check("a query row becomes an event", !!e1 && e1.person === "person-1" && e1.at === 1_790_000_000_000 && e1.utmSource === "facebook" && e1.city === "Dallas");
+check("a query row becomes an event", !!e1 && e1.person === "person-1" && e1.at === 1_790_000_000_000 && e1.utmSource === "facebook" && e1.city === "Dallas" && e1.lat === null && e1.countryCode === "");
+const e2 = liveEventFromRow([...row, 32.7767, -96.797, "us", "tx"]);
+check("the GeoIP columns ride along: numbers for the place, codes upper-cased", !!e2 && e2.lat === 32.7767 && e2.lon === -96.797 && e2.countryCode === "US" && e2.regionCode === "TX");
+const e3 = liveEventFromRow([...row, "0", "0", "", ""]);
+check("0,0 is no place (GeoIP's nothing), and a lone latitude is dropped too", !!e3 && e3.lat === null && liveEventFromRow([...row, 32.7, null, "US", "TX"])?.lat === null);
+check("the query asks for the GeoIP columns", /\$geoip_latitude/.test(sql) && /\$geoip_longitude/.test(sql) && /\$geoip_country_code/.test(sql));
 check("a row without a time or an event is skipped", liveEventFromRow(["p", "d", "$pageview", "x"]) === null && liveEventFromRow(["p", "d", "", 1]) === null);
 check("a short id is the tail of the person id", shortId("0192abcd-1234-5678-9abc-def012345678") === "345678" && shortId("abc") === "abc");
 

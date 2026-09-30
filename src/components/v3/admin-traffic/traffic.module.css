@@ -415,3 +415,82 @@
   :global(.jf-blueprint) .liveHead { padding:14px 16px; }
   :global(.jf-blueprint) .live .footnote, :global(.jf-blueprint) .liveOthers, :global(.jf-blueprint) .liveEmpty { padding-left:16px; padding-right:16px; }
 }
+
+/* ── Live map (2026-09-29, from AVACO's statistics, in this sheet's skin) ──
+   The world as a plate inside the Live now section: paper ocean tinted sky,
+   ink-washed land, countries shaded blueprint by their visitors, a pin per
+   visitor in the stage colours of the list above. Controls are drawn tools,
+   the card is a white plate with an ink frame. */
+:global(.jf-blueprint) .map { --map-visitor:#e5484d; --map-signing:var(--warning); --map-signed:var(--success); --map-member:var(--muted); --map-ad:#7c3aed; padding:0 24px 8px; }
+:global(.jf-blueprint) .mapLoading { margin:0 24px 8px; aspect-ratio:2.26; display:grid; place-items:center; border:1.5px solid var(--hair-soft); background:color-mix(in oklab, var(--sky) 16%, var(--paper-deep)); font:600 12px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .mapBox { position:relative; overflow:hidden; border:2px solid var(--ink); border-radius:2px; background:var(--paper-deep); }
+:global(.jf-blueprint) .mapSvg { display:block; width:100%; touch-action:none; user-select:none; cursor:grab; }
+:global(.jf-blueprint) .mapSvg:active { cursor:grabbing; }
+:global(.jf-blueprint) .mapOcean { fill:color-mix(in oklab, var(--sky) 18%, var(--paper-deep)); }
+:global(.jf-blueprint) .mapGrid { stroke:color-mix(in oklab, var(--ink) 12%, transparent); }
+:global(.jf-blueprint) .mapLand { fill:color-mix(in oklab, var(--ink) 9%, var(--paper-deep)); stroke:var(--paper-deep); stroke-linejoin:round; }
+:global(.jf-blueprint) .mapState { fill:transparent; stroke:color-mix(in oklab, var(--paper-deep) 60%, var(--ink)); stroke-linejoin:round; }
+:global(.jf-blueprint) .mapPin { cursor:pointer; }
+:global(.jf-blueprint) .mapLabel { font-family:var(--font); font-weight:700; fill:var(--ink); stroke:var(--paper-deep); }
+@keyframes livePing { 0% { transform:scale(1); opacity:.75; } 100% { transform:scale(3.4); opacity:0; } }
+:global(.jf-blueprint) .livePing { transform-box:fill-box; transform-origin:center; animation:livePing 1.8s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { :global(.jf-blueprint) .livePing { animation:none; } }
+:global(.jf-blueprint) .mapZoom { position:absolute; left:10px; top:10px; display:flex; flex-direction:column; border:1.5px solid var(--ink); background:var(--paper-deep); box-shadow:2px 2px 0 var(--ink); }
+:global(.jf-blueprint) .mapZoom button { width:32px; height:32px; border:0; border-bottom:1px solid var(--traffic-line); background:transparent; color:var(--ink); font:700 15px var(--font); display:grid; place-items:center; }
+:global(.jf-blueprint) .mapZoom button:last-child { border-bottom:0; }
+:global(.jf-blueprint) .mapZoom button:hover { background:var(--paper); }
+:global(.jf-blueprint) .mapZoomLevel { position:absolute; left:10px; bottom:10px; padding:3px 8px; border:1.5px solid var(--hair-soft); background:var(--paper-deep); font:700 10.5px var(--font-mono); color:var(--ink-soft); }
+:global(.jf-blueprint) .mapTip { position:absolute; z-index:20; pointer-events:none; white-space:nowrap; padding:4px 8px; background:var(--ink); color:var(--paper); font:700 11px var(--font-mono); border-radius:2px; }
+:global(.jf-blueprint) .mapCard { z-index:10; margin:10px; display:flex; flex-direction:column; max-height:70vh; border:2px solid var(--ink); border-radius:2px; background:var(--paper-deep); box-shadow:3px 3px 0 var(--ink); padding:14px 16px; }
+:global(.jf-blueprint) .mapCardHead { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+:global(.jf-blueprint) .mapCardHead b { display:block; font:800 14px/1.35 var(--font); letter-spacing:-.01em; }
+:global(.jf-blueprint) .mapCardHead span { display:block; margin-top:2px; font:600 11px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .mapCardHead button { width:28px; height:28px; border:1.5px solid var(--hair-soft); background:transparent; color:var(--muted); font:700 16px var(--font); display:grid; place-items:center; }
+:global(.jf-blueprint) .mapCardHead button:hover { border-color:var(--ink); color:var(--ink); }
+:global(.jf-blueprint) .mapCardBody { margin-top:12px; min-height:0; flex:1; overflow:auto; }
+:global(.jf-blueprint) .mapVisitor { border:1.5px solid var(--blueprint); padding:12px; font:500 13px/1.5 var(--font); }
+:global(.jf-blueprint) .mapVisitorTop { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; margin:0; }
+:global(.jf-blueprint) .mapVisitorTop em { font:700 10px var(--font-mono); font-style:normal; text-transform:uppercase; letter-spacing:.08em; color:#fff; padding:3px 7px; white-space:nowrap; }
+:global(.jf-blueprint) .mapVisitorTop b { font-weight:800; }
+:global(.jf-blueprint) .mapVisitorTop > span { font:600 11px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .mapWhen { margin-left:auto; }
+:global(.jf-blueprint) .mapWhen[data-active="true"] { color:var(--success-dark) !important; font-weight:700 !important; text-transform:uppercase; letter-spacing:.06em; }
+:global(.jf-blueprint) .mapSignup { margin:10px 0 0; font:600 12px var(--font-mono); color:var(--success-dark); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .mapNow { margin-top:12px; padding:10px 12px; background:var(--chart-fill); border-left:3px solid var(--blueprint); }
+:global(.jf-blueprint) .mapNow span { display:block; font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.14em; color:var(--blueprint); }
+:global(.jf-blueprint) .mapNow b { display:block; margin-top:2px; font:800 14px var(--font); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .mapNow small { display:block; margin-top:2px; font:600 11px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .mapTrail { list-style:none; margin:12px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:4px 6px; font:600 11px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .mapTrail li + li::before { content:"→ "; }
+:global(.jf-blueprint) .mapTrail li[data-last="true"] { color:var(--ink); font-weight:800; }
+:global(.jf-blueprint) .mapMeta { margin:10px 0 0; font:600 11px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .mapOthers { list-style:none; margin:8px 0 0; padding:0; display:flex; flex-direction:column; gap:4px; }
+:global(.jf-blueprint) .mapOthers button { width:100%; display:flex; align-items:center; gap:8px; padding:8px 10px; border:1.5px solid var(--hair-soft); background:var(--paper-deep); text-align:left; font:600 11px var(--font-mono); color:var(--ink); }
+:global(.jf-blueprint) .mapOthers button:hover { border-color:var(--blueprint); }
+:global(.jf-blueprint) .mapOthers i { width:8px; height:8px; flex:0 0 auto; }
+:global(.jf-blueprint) .mapOthers span { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); }
+:global(.jf-blueprint) .mapOthers small { flex:0 0 auto; color:var(--muted); }
+:global(.jf-blueprint) .mapLegend { display:flex; flex-wrap:wrap; align-items:center; gap:6px 18px; margin-top:12px; font:600 11px var(--font-mono); color:var(--ink-soft); }
+:global(.jf-blueprint) .mapLegend > span { display:inline-flex; align-items:center; gap:6px; }
+:global(.jf-blueprint) .mapLegend svg { width:12px; height:16px; }
+:global(.jf-blueprint) .mapLegend b { color:var(--ink); }
+:global(.jf-blueprint) .mapAdRing { width:12px; height:12px; border:2px solid var(--map-ad); border-radius:50%; }
+:global(.jf-blueprint) .mapLegendNote { color:var(--muted); }
+:global(.jf-blueprint) .mapChips { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
+:global(.jf-blueprint) .mapChips > span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+:global(.jf-blueprint) .mapChips button { min-height:36px; border:1.5px solid var(--traffic-line); border-radius:2px; padding:6px 12px; background:var(--traffic-plate); color:var(--ink); font:700 11px var(--font-mono); }
+:global(.jf-blueprint) .mapChips button:hover { border-color:var(--blueprint); }
+:global(.jf-blueprint) .mapNote { margin:10px 0 0; font:600 11px/1.6 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .liveSpan { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:14px 24px 10px; }
+:global(.jf-blueprint) .liveSpan > span { font:600 11px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .liveRow[data-selected="true"] { outline:2px solid var(--blueprint); outline-offset:-2px; }
+:global(.jf-blueprint) .liveRow { cursor:pointer; }
+@media (min-width: 720px) {
+  :global(.jf-blueprint) .mapCard { position:absolute; right:12px; top:12px; margin:0; width:24rem; max-width:calc(100% - 5rem); max-height:calc(100% - 24px); }
+  :global(.jf-blueprint) .mapZoomLevel[data-card="true"] { display:none; }
+}
+@media (max-width: 560px) {
+  :global(.jf-blueprint) .map { padding:0 16px 8px; }
+  :global(.jf-blueprint) .mapLoading { margin:0 16px 8px; }
+  :global(.jf-blueprint) .liveSpan { padding:12px 16px 8px; }
+}

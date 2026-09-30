@@ -147,3 +147,26 @@ only" keeps the ad visitors and the signups. In a non-production build
 `POSTHOG_HOST` may point at `http://127.0.0.1:<port>` so a stand can answer
 as PostHog (`scripts/qa/traffic-live.check.ts` covers the shaping; the
 stand walk `$SP/live/walk.js` the page).
+
+### The live map (2026-09-29)
+
+Owner: "make the same live map statistic as in AVACO and adopt it to the
+JobFlex admin." `components/v3/admin-traffic/live-map.tsx` is AVACO's
+`LiveMap` brought over and re-skinned: the world in Natural Earth
+projection from pre-drawn files (`public/maps/world-110m.json`,
+`world-50m.json` once zoomed, `us-states.json` over North America — Natural
+Earth and us-atlas, loaded only on this page), countries and states shaded
+blueprint by their visitors, a pin per visitor at the place PostHog's
+GeoIP gives the browser (`$geoip_latitude/longitude`, country and state
+codes, now in the live query), coloured by stage — red looking around,
+amber on the sign-up form or at checkout, green signed up, grey a member —
+with a violet ring for a visit off an ad and a pulse while active. Scroll,
+pinch or the buttons zoom; drag moves; hover names; a click on a pin, a
+country chip or a row of the list opens who is there: the stage, the
+source and campaign, the page they are on now, the trail, the device, the
+signup's organization when there is one, and the others at the same place.
+"Now · 5 min" keeps the map to the people on the site now. Visitors
+without a GeoIP place are counted but not drawn (the legend says how
+many). Where AVACO polls its own visit log every two seconds, this map
+rides the same 45-second PostHog poll as the panel.
+
