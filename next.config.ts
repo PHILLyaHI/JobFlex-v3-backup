@@ -161,7 +161,7 @@ export default function config(phase: string): NextConfig {
   return {
     ...nextConfig,
     experimental: { ...nextConfig.experimental, workerThreads: dev },
-    ...(dev ? { webpack: relaxCssModules } : {}),
+    ...(dev ? { webpack: relaxCssModules, allowedDevOrigins: ["192.168.88.*"] } : {}), // dev only: a phone on the LAN gets HMR, so the page hydrates
   };
 }
 
