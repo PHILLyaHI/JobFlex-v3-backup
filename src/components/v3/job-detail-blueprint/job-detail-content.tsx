@@ -70,7 +70,7 @@ import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { useRouter } from "next/navigation";
 import { JD_ASSIGN, ST, STATUS_BUTTONS, fmt, type JobDetailRecord, KEY_TO_STATUS } from "./job-detail-data";
 import { Who } from "@/components/v3/who/who";
-import { CrewDays, CrewPendingBanner, CrewReceipts } from "@/components/v3/crew-board/crew-board";
+import { CrewActions, CrewDays, CrewPendingBanner, CrewReceipts } from "@/components/v3/crew-board/crew-board";
 
 /** Hashed module class, or the literal name when the module has none — which is
  *  how the fleet's global `rv` / `rv-in` / `pressed` pass through. */
@@ -158,6 +158,10 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
         </div>
       </div>
 
+      {/* The crew's own actions (2026-10-01): Start / Back on site / Close day /
+          Mark completed. The office keeps its status picker on Overview. */}
+      {worker && <CrewActions data={record.board} door={record.door} />}
+
       {/* Days that passed without being closed — on top, whatever the tab. */}
       <CrewPendingBanner data={record.board} door={record.door} />
 
@@ -214,7 +218,8 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
               {/* Crew progress control (2026-08-21): an ACCEPTED worker moves
                   the job forward — In progress / Completed only. Office roles
                   keep the full four-state picker. */}
-              {(record.canWrite || (worker && record.assignment === "ok")) && (
+              {/* The office's status picker — the owner's and the manager's. */}
+              {record.canWrite && (
                 <div className={cx("jd-status")}>
                   <div className={cx("jd-sec-l")}>Set up the status</div>
                   <div className={cx("jd-status-row")}>

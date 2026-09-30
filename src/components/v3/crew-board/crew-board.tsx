@@ -413,6 +413,89 @@ function DayStamp({ status }: { status: CrewDay["status"] }) {
   return <span className={cx("stamp", `stamp-${t.tone}`)}>{t.l}</span>;
 }
 
+/** Where today stands, in one line — the day card and the crew's actions say the same. */
+function todayLine(data: CrewBoardData): string {
+  const t = data.todayDay;
+  const doneDays = data.days.length;
+  if (data.jobStatus === "CANCELED") return "This job is canceled.";
+  if (t && t.status === "OPEN") return `Day ${t.dayNumber} on site · opened by ${t.openedBy ?? "—"}${t.byOffice ? " (office)" : ""}`;
+  if (t && t.status === "CLOSED") return `Day ${t.dayNumber} closed by ${t.closedBy ?? "—"}${t.closedAt ? ` at ${t.closedAt}` : ""}`;
+  if (data.jobStatus === "COMPLETED") return doneDays ? `Job completed after ${doneDays} ${doneDays === 1 ? "day" : "days"} on site` : "Job completed";
+  if (data.jobStatus === "IN_PROGRESS") return `Not on site today · ${doneDays} ${doneDays === 1 ? "day" : "days"} so far`;
+  return "Not started yet";
+}
+
+// ── the crew's own actions, first thing on the page ────────────────────────
+
+/**
+ * THE CREW'S DAY, AS BUTTONS (2026-10-01, owner after the iPhone check): a
+ * worker does not "set up a status" — they start, come back, close the day,
+ * complete. Big, full-width, one under another, only the ones that apply now:
+ *   Start work       — a scheduled job, nothing opened today
+ *   Back on site     — a job in progress, nobody on site yet today
+ *   Close day        — today is open (note or files, the same sheet)
+ *   Mark completed   — a job in progress (it asks first)
+ * The office's four-state picker stays the owner's and the manager's.
+ */
+export function CrewActions({ data, door }: { data: CrewBoardData; door: CrewDoor }) {
+  const { call, busy, error, setError } = useCrewCalls(door);
+  const [closeOpen, setCloseOpen] = useState(false);
+  if (!data.canWork) return null;
+  const t = data.todayDay;
+  const next = data.days.length + 1;
+  const canStart = !t && data.jobStatus === "SCHEDULED";
+  const canBack = !t && data.jobStatus === "IN_PROGRESS";
+  const openToday = !!t && t.status === "OPEN";
+  const canComplete = data.jobStatus === "IN_PROGRESS";
+  const any = canStart || canBack || openToday || canComplete;
+  return (
+    <div className={cx("root")}>
+    <section className={cx("card", "crewActs")} aria-label="Your day on this job" data-crew-actions>
+      <div className={cx("crewActsHead")}>
+        <span className={cx("label")}>Your day</span>
+        <p className={cx("line")} data-crew-line>
+          {todayLine(data)}
+        </p>
+      </div>
+      {any && (
+        <div className={cx("bigActs")}>
+          {canStart && (
+            <button type="button" className={cx("btn", "btnPrimary", "bigBtn")} disabled={busy === "start"} onClick={() => void call("start", `/api/crew/${data.jobId}/day`, "POST", { action: "start" })} data-crew-act="start">
+              {busy === "start" ? "Starting…" : "Start work"}
+            </button>
+          )}
+          {canBack && (
+            <button type="button" className={cx("btn", "btnPrimary", "bigBtn")} disabled={busy === "continue"} onClick={() => void call("continue", `/api/crew/${data.jobId}/day`, "POST", { action: "continue" })} data-crew-act="continue">
+              {busy === "continue" ? "Marking…" : `Back on site · day ${next}`}
+            </button>
+          )}
+          {openToday && (
+            <button type="button" className={cx("btn", "btnPrimary", "bigBtn")} onClick={() => setCloseOpen(true)} data-crew-act="close">
+              Close day {t!.dayNumber}
+            </button>
+          )}
+          {canComplete && (
+            <button
+              type="button"
+              className={cx("btn", "bigBtn")}
+              disabled={busy === "complete"}
+              data-crew-act="complete"
+              onClick={() => {
+                if (window.confirm("Mark the whole job completed? The office is told.")) void call("complete", `/api/crew/${data.jobId}/day`, "POST", { action: "complete" });
+              }}
+            >
+              <Check aria-hidden="true" /> {busy === "complete" ? "Completing…" : "Mark completed"}
+            </button>
+          )}
+        </div>
+      )}
+      <ErrorLine text={error} onClose={() => setError(null)} />
+      <CloseDaySheet data={data} door={door} day={openToday ? t : null} open={closeOpen} onClose={() => setCloseOpen(false)} />
+    </section>
+    </div>
+  );
+}
+
 export function CrewDays({ data, door }: { data: CrewBoardData; door: CrewDoor }) {
   const { call, busy, error, setError } = useCrewCalls(door);
   const up = useUploads(data.jobId, door);
@@ -423,14 +506,7 @@ export function CrewDays({ data, door }: { data: CrewBoardData; door: CrewDoor }
   const uploading = up.queue.some((q) => q.state === "up");
   const accept = data.storage === "inline" ? IMAGE_ACCEPT : MEDIA_ACCEPT;
   const doneDays = data.days.length;
-
-  let line: string;
-  if (data.jobStatus === "CANCELED") line = "This job is canceled.";
-  else if (t && t.status === "OPEN") line = `Day ${t.dayNumber} on site · opened by ${t.openedBy ?? "—"}${t.byOffice ? " (office)" : ""}`;
-  else if (t && t.status === "CLOSED") line = `Day ${t.dayNumber} closed by ${t.closedBy ?? "—"}${t.closedAt ? ` at ${t.closedAt}` : ""}`;
-  else if (data.jobStatus === "COMPLETED") line = doneDays ? `Job completed after ${doneDays} ${doneDays === 1 ? "day" : "days"} on site` : "Job completed";
-  else if (data.jobStatus === "IN_PROGRESS") line = `Not on site today · ${doneDays} ${doneDays === 1 ? "day" : "days"} so far`;
-  else line = "Not started yet";
+  const line = todayLine(data);
 
   const canStart = data.canWork && !t && data.jobStatus === "SCHEDULED";
   const canBack = data.canWork && !t && data.jobStatus === "IN_PROGRESS";

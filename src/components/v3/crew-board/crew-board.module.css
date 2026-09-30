@@ -165,8 +165,14 @@
   :is(.root, .layer):is(.root, .layer) .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   :is(.root, .layer):is(.root, .layer) .acts .btn { flex: 1 1 100%; }
   :is(.root, .layer):is(.root, .layer) .sheetFoot .btn { flex: 1 1 0; }
-  :is(.root, .layer):is(.root, .layer) .pendList li { flex-wrap: wrap; }
-  :is(.root, .layer):is(.root, .layer) .pendList li .btn { flex: 1 1 100%; min-height: 44px; }
+  /* Compact on a phone (owner, 2026-10-01): one line of head, the day and its
+     Close button side by side. */
+  :is(.root, .layer):is(.root, .layer) .pendHead { padding: 10px var(--pad); gap: 10px; }
+  :is(.root, .layer):is(.root, .layer) .pendHead > svg { width: 18px; height: 18px; margin-top: 1px; }
+  :is(.root, .layer):is(.root, .layer) .pendTitle { font-size: 13px; }
+  :is(.root, .layer):is(.root, .layer) .pendSub { display: none; }
+  :is(.root, .layer):is(.root, .layer) .pendList li { padding: 10px var(--pad); }
+  :is(.root, .layer):is(.root, .layer) .pendList li .btn { flex: 0 0 auto; min-height: 44px; }
   :is(.root, .layer):is(.root, .layer) .rcActs .btnSm { min-height: 44px; }
   :is(.root, .layer):is(.root, .layer) .totals b { font-size: 15px; }
   :is(.root, .layer):is(.root, .layer) .kinds .mono { flex-basis: 100%; margin: 6px 0 0; }
@@ -219,3 +225,11 @@
   :is(.root, .layer):is(.root, .layer) .filter .seg { min-height: 44px; margin-top: -1.5px; }
   :is(.root, .layer):is(.root, .layer) .batch .btn, :is(.root, .layer):is(.root, .layer) .owActs .btn { min-height: 44px; }
 }
+
+/* ── the crew's own actions (2026-10-01): big, full-width, under the thumb ── */
+:is(.root, .layer):is(.root, .layer) .crewActsHead { display: grid; gap: 2px; padding: 12px var(--pad); border-bottom: 1.5px solid var(--ink); background: var(--paper); }
+:is(.root, .layer):is(.root, .layer) .crewActsHead .label { margin-bottom: 0; }
+:is(.root, .layer):is(.root, .layer) .crewActsHead .line { font-size: 15px; }
+:is(.root, .layer):is(.root, .layer) .bigActs { display: grid; gap: 10px; padding: 14px var(--pad) 16px; }
+:is(.root, .layer):is(.root, .layer) .bigBtn { width: 100%; min-height: 56px; font-size: 14px; }
+:is(.root, .layer):is(.root, .layer) .crewActs > .err { margin: 0 var(--pad) 14px; }

@@ -50,7 +50,7 @@ import type { Route } from "next";
 import Link from "next/link";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { PortalBar } from "@/components/v3/mobile-shell/portal-bar";
-import { CrewDays, CrewPendingBanner, CrewReceipts } from "@/components/v3/crew-board/crew-board";
+import { CrewActions, CrewDays, CrewPendingBanner, CrewReceipts } from "@/components/v3/crew-board/crew-board";
 import {
   JD_ASSIGN,
   ST,
@@ -95,10 +95,9 @@ const rowVar = (i: number) => ({ "--i": i }) as React.CSSProperties;
 export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const pickerRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLElement>(null);
 
   const [tab, setTab] = useState<TabKey>("overview");
-  const [pickOpen, setPickOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
   // The row arrival plays on a REAL view change only, never on the first paint
   // (where the block reveal already carries the entrance) and never on a
@@ -152,29 +151,11 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
     setSwitched(true);
   }, []);
 
-  /** The picker's closed face. TABS is built from the record every render and
-   *  always contains `tab`, so this cannot miss. */
-  const activeTab = TABS.find(([k]) => k === tab)!;
-
-  /* ---------- Dismiss the section picker --------------------------------
-     Pointerdown rather than click so a tap that starts outside closes the
-     list before it can activate whatever is underneath, and Escape for the
-     keyboard. Both are bound only while the list is open. */
+  /* The section rail keeps the picked tab in view (it scrolls sideways). */
   useEffect(() => {
-    if (!pickOpen) return;
-    const onDown = (e: PointerEvent) => {
-      if (!pickerRef.current?.contains(e.target as Node)) setPickOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPickOpen(false);
-    };
-    document.addEventListener("pointerdown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [pickOpen]);
+    const on = tabsRef.current?.querySelector<HTMLElement>('[aria-selected="true"]');
+    on?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [tab]);
 
   /* ---------- Motion: reveal on load + adaptive reveal on scroll ---------- */
   useEffect(() => {
@@ -261,7 +242,7 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
   const onRootClick = useCallback((e: React.MouseEvent) => {
     if (prefersReducedMotion()) return;
     const el = (e.target as HTMLElement | null)?.closest<HTMLElement>(
-      ".mjd-btn, .mjd-pickbtn, .mjd-pickitem, .mjd-sbtn, .mjd-pick-row",
+      ".mjd-btn, .mjd-tab, .mjd-sbtn, .mjd-pick-row",
     );
     if (!el) return;
     el.classList.remove("mjd-pressed");
@@ -300,50 +281,34 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
             <div className="mjd-dates">{record.dates}</div>
           </div>
 
+          {/* THE CREW'S DAY (2026-10-01, after the owner's iPhone check): the
+              worker's own actions — Start / Back on site / Close day / Mark
+              completed — big, right under the title. The office keeps its
+              status picker on Overview. Then the days left unclosed. */}
+          {worker && <CrewActions data={record.board} door={record.door} />}
+
           {/* Days that passed without being closed — on top, whatever the tab. */}
           <CrewPendingBanner data={record.board} door={record.door} />
 
-          {/* ============ SECTION PICKER ============
-              Was a horizontally scrolling six-tab rail; the owner asked for a
-              dropdown. It shows the current section (Overview by default) and
-              opens the other five. A listbox rather than a <select>: the rows
-              carry the mono count annotation, which a native option cannot,
-              and the OS picker would not be the drawing's own furniture. */}
-          <div className="mjd-picker" ref={pickerRef}>
-            <button
-              type="button"
-              className={`mjd-pickbtn${pickOpen ? " mjd-open" : ""}`}
-              aria-haspopup="listbox"
-              aria-expanded={pickOpen}
-              onClick={() => setPickOpen((o) => !o)}
-            >
-              <span className="mjd-picklabel">{activeTab[1]}</span>
-              {activeTab[2] !== null && <i>{activeTab[2]}</i>}
-              <span className="mjd-pickcaret" aria-hidden="true" />
-            </button>
-
-            {pickOpen && (
-              <ul className="mjd-picklist" role="listbox" aria-label="Job sections">
-                {TABS.map(([key, label, count]) => (
-                  <li key={key} role="none">
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={tab === key}
-                      className={`mjd-pickitem${tab === key ? " mjd-on" : ""}`}
-                      onClick={() => {
-                        selectTab(key);
-                        setPickOpen(false);
-                      }}
-                    >
-                      {label}
-                      {count !== null && <i>{count}</i>}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          {/* ============ SECTIONS ============
+              One row that scrolls sideways (owner, 2026-10-01, after the iPhone
+              check — it replaces the dropdown): every section and its count in
+              sight, the picked one inked, nothing wraps into a half-empty grid. */}
+          <nav className="mjd-tabs" ref={tabsRef} role="tablist" aria-label="Job sections" data-job-tabs>
+            {TABS.map(([key, label, count]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={tab === key}
+                className={`mjd-tab${tab === key ? " mjd-on" : ""}`}
+                onClick={() => selectTab(key)}
+              >
+                {label}
+                {count !== null && <i>{count}</i>}
+              </button>
+            ))}
+          </nav>
 
           {/* Write failures land here rather than in an alert() — one line, in
               the page's own voice, dismissible. */}
@@ -370,7 +335,10 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                   {/* Crew progress control (2026-08-21): an ACCEPTED worker
                       moves the job forward — In progress / Completed only.
                       Office roles keep the full four-state picker. */}
-                  {(record.canWrite || (worker && record.assignment === "ok")) && (
+                  {/* The office's status picker — the owner's and the manager's
+                      (canWrite). The crew moves the job with its own actions
+                      above the tabs (CrewActions). */}
+                  {record.canWrite && (
                     <div className="mjd-status">
                       <div className="mjd-sec-l">Set up the status</div>
                       <div className="mjd-status-row">
