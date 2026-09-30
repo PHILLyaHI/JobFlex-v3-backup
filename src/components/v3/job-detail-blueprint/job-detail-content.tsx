@@ -59,18 +59,18 @@
 // upload controls and the change-order buttons were withheld before this
 // component knew what a worker was.
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import s from "./job-detail.module.css";
 import { useJobDetailMotion } from "./job-detail-motion";
-import { useJobDetailActions, type PhotoKind } from "./use-job-detail-actions";
+import { useJobDetailActions } from "./use-job-detail-actions";
 import { onSiteLine } from "@/lib/jobProgressShared";
-import { IMAGE_ACCEPT, MEDIA_ACCEPT } from "@/lib/jobMediaShared";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { useRouter } from "next/navigation";
 import { JD_ASSIGN, ST, STATUS_BUTTONS, fmt, type JobDetailRecord, KEY_TO_STATUS } from "./job-detail-data";
 import { Who } from "@/components/v3/who/who";
+import { CrewDays, CrewPendingBanner, CrewReceipts } from "@/components/v3/crew-board/crew-board";
 
 /** Hashed module class, or the literal name when the module has none — which is
  *  how the fleet's global `rv` / `rv-in` / `pressed` pass through. */
@@ -81,13 +81,11 @@ function cx(...names: Array<string | false | null | undefined>): string {
     .join(" ");
 }
 
-type TabKey = "overview" | "schedule" | "crew" | "changes" | "photos" | "expenses";
+// "days" replaced "photos" (stage C, 2026-09-30): the crew's days on site and
+// the photos and videos of each day. "receipts" is the crew's; the office
+// reads the same receipts inside "expenses", beside the job's money.
+type TabKey = "overview" | "schedule" | "crew" | "changes" | "days" | "receipts" | "expenses";
 
-const PHOTO_KINDS: Array<[PhotoKind, string]> = [
-  ["BEFORE", "Before"],
-  ["PROGRESS", "Progress"],
-  ["AFTER", "After"],
-];
 
 function Ic({ id }: { id: string }) {
   return (
@@ -105,10 +103,8 @@ function EmptyNote({ children }: { children: React.ReactNode }) {
 export function JobDetailContent({ record }: { record: JobDetailRecord }) {
   const [tab, setTab] = useState<TabKey>("overview");
   const [rosterOpen, setRosterOpen] = useState(false);
-  const [photoKind, setPhotoKind] = useState<PhotoKind>("BEFORE");
   const [coOpen, setCoOpen] = useState(false);
   const router = useRouter();
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const a = useJobDetailActions(
     record.id,
@@ -116,11 +112,14 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
     record.status,
     record.viewer === "worker",
     record.blobEnabled,
+    record.door,
   );
 
   useJobDetailMotion(s.btn);
 
-  const expTotal = record.expenses.reduce((sum, e) => sum + e.amount, 0);
+  // What counts (lib/expenseTotals): approved and reimbursed receipts only.
+  const expTotal = record.board.totals.counted;
+  const fileCount = record.board.days.reduce((n, d) => n + d.files.length, 0) + record.board.looseFiles.length;
   const scheduled = record.events.length > 0;
   const worker = record.viewer === "worker";
   const assign = record.assignment ? JD_ASSIGN[record.assignment] : null;
@@ -137,10 +136,10 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
       : ([["changes", "Changes", record.changes.length]] as Array<
           [TabKey, string, number | null]
         >)),
-    ["photos", "Photos", record.photos.length],
+    ["days", "Days & photos", fileCount],
     ...(worker
-      ? []
-      : ([["expenses", "Expenses", record.expenses.length]] as Array<
+      ? ([["receipts", "Receipts", record.board.receipts.length]] as Array<[TabKey, string, number | null]>)
+      : ([["expenses", "Expenses", record.board.receipts.length]] as Array<
           [TabKey, string, number | null]
         >)),
   ];
@@ -158,6 +157,9 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
           <div className={cx("jd-dates")}>{record.dates}</div>
         </div>
       </div>
+
+      {/* Days that passed without being closed — on top, whatever the tab. */}
+      <CrewPendingBanner data={record.board} door={record.door} />
 
       {/* ТАБЫ */}
       <div className={cx("jd-tabbar")}>
@@ -289,8 +291,18 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                   <div className={cx("jd-sec-l")}>Your assignment</div>
                   <p>
                     <span className={cx("jd-b", `jd-b--${assign.tone}`)}>{assign.stamp}</span>{" "}
-                    {assign.line}
+                    {record.door.kind === "token" && record.assignment === "wait" ? "The office sent you this job. Can you take it?" : assign.line}
                   </p>
+                  {record.door.kind === "token" && record.assignment === "wait" && record.myAssignmentId && (
+                    <div className={cx("jd-status-row")} data-respond>
+                      <button className={cx("btn", "btn-primary")} type="button" disabled={a.busy?.kind === "respond"} onClick={() => void a.respond(record.myAssignmentId!, "ACCEPTED")}>
+                        Accept job
+                      </button>
+                      <button className={cx("btn", "btn-ghost")} type="button" disabled={a.busy?.kind === "respond"} onClick={() => void a.respond(record.myAssignmentId!, "DECLINED")}>
+                        Decline
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -531,7 +543,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                 </div>
               </form>
             )}
-            {!record.loadedAt && (
+            {!record.loadedAt && record.door.kind === "session" && (
               <div className={cx("jd-row")}>
                 <div className={cx("jd-row-m")}>Tap when the truck is loaded — the warehouse count comes down and the office sees it.</div>
                 <div className={cx("jd-row-act")}>
@@ -757,84 +769,11 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
           </section>
         )}
 
-        {tab === "photos" && (
-          <section className={cx("card")}>
-            <div className={cx("jd-h")}>
-              <h2 className={cx("jd-t")}>Photos</h2>
-              <span className={cx("jd-s")}>Before · Progress · After</span>
-            </div>
-            {record.photos.length === 0 ? (
-              <EmptyNote>No photos on this job yet.</EmptyNote>
-            ) : (
-              <div className={cx("jd-photos")}>
-                {record.photos.map((p) => (
-                  <div className={cx("jd-ph")} key={p.id}>
-                    <div className={cx("jd-ph-img")}>
-                      {/* A JobPhoto url is a data: URL whenever Vercel Blob is
-                          not configured (uploadJobPhoto's fallback), which
-                          next/image cannot take — so a plain img. */}
-                      {p.media === "video" ? (
-                        <video src={p.url} preload="metadata" controls playsInline data-media="video" />
-                      ) : (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={p.url} alt={p.caption} />
-                      )}
-                      <span className={cx("jd-ph-k")}>{p.media === "video" ? `Video · ${p.kind}` : p.kind}</span>
-                    </div>
-                    <div className={cx("jd-ph-c")}>
-                      {p.caption}
-                      {p.by && (
-                        <>
-                          {" "}
-                          <Who who={p.by} compact by />
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {record.canPhotos && (
-              <div className={cx("jd-total", "jd-total--foot14")}>
-                <div className={cx("jd-status-row")}>
-                  {PHOTO_KINDS.map(([key, label]) => (
-                    <button
-                      key={key}
-                      className={cx("jd-sbtn", photoKind === key && "on", "jd-sbtn--sch")}
-                      type="button"
-                      aria-pressed={photoKind === key}
-                      onClick={() => setPhotoKind(key)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  ref={fileRef}
-                  className={cx("jd-file")}
-                  type="file"
-                  accept={record.blobEnabled ? MEDIA_ACCEPT : IMAGE_ACCEPT}
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    // Cleared before the await: the same file picked twice in a
-                    // row fires no change event otherwise.
-                    e.target.value = "";
-                    if (file) await a.upload(file, photoKind);
-                  }}
-                />
-                <button
-                  className={cx("btn", "btn-ghost")}
-                  type="button"
-                  disabled={a.busy?.kind === "upload"}
-                  onClick={() => fileRef.current?.click()}
-                >
-                  <Ic id="i-plus" />
-                  {a.busy?.kind === "upload" ? "Uploading…" : "Upload"}
-                </button>
-              </div>
-            )}
-          </section>
-        )}
+        {/* DAYS ON SITE (stage C, 2026-09-30): today (Start · Back on site ·
+            Close day), then every day with its photos and videos, who opened
+            and who closed it — the same board in the portal. */}
+        {tab === "days" && <CrewDays data={record.board} door={record.door} />}
+        {tab === "receipts" && <CrewReceipts data={record.board} door={record.door} />}
 
         {tab === "expenses" && record.money && (
           <section className={cx("card")}>
@@ -865,6 +804,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                 <div className={cx("jd-row-m")}>
                   crew {fmt(record.money.crew)}
                   {record.money.crewUnpaid > 0 ? ` (${fmt(record.money.crewUnpaid)} unpaid)` : ""} · receipts {fmt(record.money.expenses)}
+                  {record.money.expensesPending > 0 ? ` (${fmt(record.money.expensesPending)} on review, not counted)` : ""}
                   {record.money.stock > 0 ? ` · from the warehouse ${fmt(record.money.stock)}` : ""} · estimate said {fmt(record.money.plannedCost)}
                 </div>
               </div>
@@ -886,41 +826,9 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
             </div>
           </section>
         )}
-        {tab === "expenses" && (
-          <section className={cx("card")}>
-            <div className={cx("jd-h")}>
-              <h2 className={cx("jd-t")}>Expenses</h2>
-              <span className={cx("jd-s")}>logged on this job</span>
-            </div>
-            {record.expenses.length === 0 ? (
-              <EmptyNote>Nothing logged against this job yet.</EmptyNote>
-            ) : (
-              <>
-                {record.expenses.map((e) => (
-                  <div className={cx("jd-row")} key={e.id}>
-                    <div>
-                      <div className={cx("jd-row-n")}>{e.vendor}</div>
-                      <div className={cx("jd-row-m")}>
-                        {e.meta}
-                        {e.by && (
-                          <>
-                            {" · "}
-                            <Who who={e.by} compact by />
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    <span className={cx("jd-amt")}>{fmt(e.amount)}</span>
-                  </div>
-                ))}
-                <div className={cx("jd-total")}>
-                  <span>Total</span>
-                  <b>{fmt(expTotal)}</b>
-                </div>
-              </>
-            )}
-          </section>
-        )}
+        {/* The receipts, with the office's approve / reject / reimbursed in
+            place (stage C). Only approved ones are in the card above. */}
+        {tab === "expenses" && <CrewReceipts data={record.board} door={record.door} />}
       </div>
     </>
   );

@@ -39,6 +39,7 @@ import { loadJobMaterials, returnJobMaterials } from "@/actions/inventory";
 import { uploadJobPhoto } from "@/actions/jobMedia";
 import { sendChangeOrder, markChangeOrderApproved } from "@/actions/changeOrders";
 import { KEY_TO_STATUS, type JdBooking, type StatusKey } from "./job-detail-data";
+import type { CrewDoor } from "@/components/v3/crew-board/crew-board-data";
 
 export type PhotoKind = "BEFORE" | "PROGRESS" | "AFTER";
 
@@ -56,6 +57,7 @@ export type JobBusy =
   | { kind: "return"; id: string }
   | { kind: "upload" }
   | { kind: "continue" }
+  | { kind: "respond" }
   | { kind: "change"; id: string };
 
 export function useJobDetailActions(
@@ -68,6 +70,10 @@ export function useJobDetailActions(
   // The company's file store is on (the loader read the server's env): a
   // video or a big photo goes straight from the browser to the store.
   blobEnabled = false,
+  // How writes are authenticated (stage C, 2026-09-30): the dashboard session,
+  // or — in the worker portal, which renders these same editions — the
+  // magic-link token, sent to the crew routes that take either.
+  door: CrewDoor = { kind: "session" },
 ) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -77,6 +83,24 @@ export function useJobDetailActions(
   // write fails, so a rejected status never sticks on screen.
   const [status, setStatus] = useState<StatusKey>(initial);
   const lastGood = useRef<StatusKey>(initial);
+
+  /** A crew route through the portal's token: the same rule as the session actions. */
+  const viaToken = useCallback(
+    async (url: string, body: Record<string, unknown>) => {
+      if (door.kind !== "token") throw new Error("No token");
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, token: door.token }) });
+      if (!res.ok) {
+        let msg = "That did not go through.";
+        try {
+          msg = ((await res.json()) as { error?: string }).error ?? msg;
+        } catch {
+          /* keep */
+        }
+        throw new Error(msg);
+      }
+    },
+    [door],
+  );
 
   /** Server actions redact their message in production; in dev this is the
    *  real one (including the plan-limit copy), which is what a contractor
@@ -112,7 +136,9 @@ export function useJobDetailActions(
       const previous = lastGood.current;
       setStatus(key);
       const ok = await run({ kind: "status" }, "Could not change the status.", async () => {
-        if (workerViewer) {
+        if (door.kind === "token") {
+          await viaToken(`/api/crew/${jobId}/day`, { action: key === "done" ? "complete" : "start" });
+        } else if (workerViewer) {
           await setJobProgress(jobId, KEY_TO_STATUS[key] as "IN_PROGRESS" | "COMPLETED");
         } else {
           await updateJob(jobId, { status: KEY_TO_STATUS[key] });
@@ -121,7 +147,7 @@ export function useJobDetailActions(
       if (ok) lastGood.current = key;
       else setStatus(previous);
     },
-    [jobId, run, status, workerViewer],
+    [door.kind, jobId, run, status, viaToken, workerViewer],
   );
 
   /** Books the window the server picked, then LEAVES for the calendar, where
@@ -214,23 +240,36 @@ export function useJobDetailActions(
       run({ kind: "upload" }, "Could not upload that file.", async () => {
         await uploadJobMedia({
           jobId,
-          door: SESSION_DOOR,
+          door: door.kind === "token" ? { token: door.token } : SESSION_DOOR,
           file,
           kind,
           blobEnabled,
           inlineUpload: (dataUrl, filename, k) => uploadJobPhoto(jobId, dataUrl, filename, k),
         });
       }),
-    [blobEnabled, jobId, run],
+    [blobEnabled, door, jobId, run],
   );
 
   // "Back on site" — a new day on a job that runs more than one (2026-09-27).
   const backOnSite = useCallback(
     () =>
       run({ kind: "continue" }, "Could not mark the day.", async () => {
-        await continueJobDay(jobId);
+        if (door.kind === "token") await viaToken(`/api/crew/${jobId}/day`, { action: "continue" });
+        else await continueJobDay(jobId);
       }),
-    [jobId, run],
+    [door.kind, jobId, run, viaToken],
+  );
+
+  // The portal's Accept / Decline on the reader's own assignment — the
+  // token-gated route the portal always used (a session has no such action).
+  const respond = useCallback(
+    (assignmentId: string, answer: "ACCEPTED" | "DECLINED") =>
+      run({ kind: "respond" }, "Could not send your answer.", async () => {
+        if (door.kind !== "token") throw new Error("Open the crew link from your invite to answer.");
+        const res = await fetch(`/api/worker/assignment/${assignmentId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: door.token, status: answer }) });
+        if (!res.ok) throw new Error((await res.text().catch(() => "")) || "Could not send your answer.");
+      }),
+    [door, run],
   );
 
   const sendChange = useCallback(
@@ -269,6 +308,7 @@ export function useJobDetailActions(
     returnMaterials,
     upload,
     backOnSite,
+    respond,
     sendChange,
     approveChange,
   };

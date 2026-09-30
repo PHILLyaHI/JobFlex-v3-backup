@@ -69,7 +69,7 @@ function hrefFor(e: {
   }
   // A stock notice, a purchase order (2026-09-20) or a service-plan notice
   // (2026-09-22) names its own page in meta.
-  if (e.kind && /^(STOCK_|PURCHASE_ORDER_|PLAN_|SMS_)/.test(e.kind) && e.meta) {
+  if (e.kind && /^(STOCK_|PURCHASE_ORDER_|PLAN_|SMS_|EXPENSE_SUBMITTED)/.test(e.kind) && e.meta) {
     try {
       const href = (JSON.parse(e.meta) as { href?: string }).href;
       if (href) return href;

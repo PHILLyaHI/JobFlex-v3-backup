@@ -23,6 +23,7 @@ export type PrefKey =
   | "job-started"
   | "job-completed"
   | "job-photos"
+  | "expense-submitted"
   | "worker-responded"
   | "review-received"
   | "trade-reply"
@@ -74,6 +75,8 @@ export const PREF_EVENTS: readonly PrefEventMeta[] = [
   { key: "job-started", name: "Crew on site", sub: "Work started, or a crew back for another day", emailAvailable: false, smsAvailable: true, seed: [true, false, true], audience: { office: true }, example: "Marcus Bell started \"Standing-seam metal · 18412 92nd Ave NE\". jobflex.app/…" },
   { key: "job-completed", name: "Job completed", sub: "Crew marked the work done", emailAvailable: false, smsAvailable: true, seed: [true, false, true], audience: { office: true, sales: false }, example: "Marcus Bell marked \"Standing-seam metal · 18412 92nd Ave NE\" complete after 2 days. Photos: jobflex.app/…" },
   { key: "job-photos", name: "Photos & videos from the crew", sub: "How the job was done, as it comes in", emailAvailable: false, smsAvailable: true, seed: [true, false, true], audience: { office: true }, example: "Marcus Bell added 6 photos and 1 video of \"Standing-seam metal · 18412 92nd Ave NE\". See them: jobflex.app/…" },
+  // A crew member's receipt waiting for approval (2026-09-30): the bell and mail, no text.
+  { key: "expense-submitted", name: "Receipt on review", sub: "A crew member sent a receipt — it counts once you approve it", emailAvailable: true, smsAvailable: false, seed: [true, true, false] },
   { key: "worker-responded", name: "Worker responded", sub: "Accepted or declined an assignment", emailAvailable: true, smsAvailable: true, seed: [true, true, false], audience: { office: false }, example: "Marcus Bell accepted \"Standing-seam metal · 18412 92nd Ave NE\" on Mon Oct 13." },
   { key: "review-received", name: "Review received", sub: "A homeowner left a rating", emailAvailable: false, smsAvailable: false, seed: [true, false, false] },
   { key: "trade-reply", name: "Trade board reply", sub: "Someone answered your post", emailAvailable: true, smsAvailable: false, seed: [true, true, false] },
@@ -284,6 +287,8 @@ export function prefKeyForEvent(e: EventLike): PrefKey | null {
       return "job-photos";
     case "COMPLETED":
       return "job-completed";
+    case "EXPENSE_SUBMITTED":
+      return "expense-submitted";
     case "TRADE_CONTACT":
     case "TRADE_INTEREST":
     case "TRADE_HIRED":

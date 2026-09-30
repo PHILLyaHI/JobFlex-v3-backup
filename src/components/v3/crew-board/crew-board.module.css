@@ -1,0 +1,176 @@
+/* ============================================================
+   THE CREW BOARD (stage C, 2026-09-30) — days on site, the photos
+   and videos of each day, the receipts. DESIGN.md: white framed
+   cards, ink rules, uppercase heavy headings, mono annotations,
+   near-square controls, status stamps, one primary action.
+
+   It renders in three places — the desk job page (inside `.content`,
+   whose donor reset is (0,2,1) on `.content button` and (0,2,0) on
+   `.content *`), the handheld job page (`.jf-mobile-job-detail`), and
+   the overlay layer (sheets) — so every rule is rooted on the board's
+   own root or sheet layer, doubled, at (0,3,0). Tokens are the global
+   ones (globals.css), with a white-surface fallback for scopes where
+   `--paper-deep` is recessed.
+   ============================================================ */
+
+:is(.root, .layer):is(.root, .layer) { --pad: 20px; color: var(--ink); font: 14px/1.5 var(--font-sans); min-width: 0; }
+:is(.root, .layer):is(.root, .layer) { display: grid; gap: 18px; }
+:is(.root, .layer):is(.root, .layer) :is(h2, p, figure, ul, ol, fieldset) { margin: 0; padding: 0; }
+:is(.root, .layer):is(.root, .layer) svg { width: 16px; height: 16px; flex-shrink: 0; }
+:is(.root, .layer):is(.root, .layer) :is(button, input, select, textarea, a):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── card ── */
+:is(.root, .layer):is(.root, .layer) .card { background: var(--sheet, #fff); border: 2px solid var(--ink); border-radius: var(--r-sm); min-width: 0; }
+:is(.root, .layer):is(.root, .layer) .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px var(--pad); border-bottom: 1.5px solid var(--ink); background: var(--paper); flex-wrap: wrap; }
+:is(.root, .layer):is(.root, .layer) .head > div { min-width: 0; }
+:is(.root, .layer):is(.root, .layer) .title { font-size: 16px; font-weight: 900; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1.2; }
+:is(.root, .layer):is(.root, .layer) .label { display: block; color: var(--ink-muted); font: 600 10px/1.5 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 4px; }
+:is(.root, .layer):is(.root, .layer) .mono { color: var(--ink-muted); font: 500 11px/1.5 var(--font-mono); letter-spacing: 0.04em; }
+:is(.root, .layer):is(.root, .layer) .body { display: grid; gap: 14px; padding: 18px var(--pad) 20px; }
+:is(.root, .layer):is(.root, .layer) .line { font-size: 16px; font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; }
+:is(.root, .layer):is(.root, .layer) .note { color: var(--ink-soft); font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; padding-left: 12px; border-left: 3px solid var(--ink-line); }
+:is(.root, .layer):is(.root, .layer) .hint { color: var(--ink-muted); font-size: 13px; }
+:is(.root, .layer):is(.root, .layer) .empty { margin: 18px var(--pad) 20px; padding: 22px 16px; border: 1.5px dashed var(--ink-line); color: var(--ink-muted); font-size: 13px; text-align: center; }
+
+/* ── controls ── */
+:is(.root, .layer):is(.root, .layer) .acts { display: flex; flex-wrap: wrap; gap: 8px; }
+:is(.root, .layer):is(.root, .layer) .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 16px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet, #fff); color: var(--ink); font: 800 12px/1.3 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; text-decoration: none; transition: background-color 150ms var(--ease-out, ease), transform 150ms var(--ease-out, ease), box-shadow 150ms var(--ease-out, ease); }
+:is(.root, .layer):is(.root, .layer) .btn:hover:not(:disabled) { background: var(--paper); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:is(.root, .layer):is(.root, .layer) .btn:active:not(:disabled) { transform: none; box-shadow: none; }
+:is(.root, .layer):is(.root, .layer) .btnPrimary { background: var(--accent); color: #fff; }
+:is(.root, .layer):is(.root, .layer) .btnPrimary:hover:not(:disabled) { background: var(--accent-ink); }
+:is(.root, .layer):is(.root, .layer) .btnDanger { background: var(--rose); color: #fff; }
+:is(.root, .layer):is(.root, .layer) .btnDanger:hover:not(:disabled) { background: #8c2828; }
+:is(.root, .layer):is(.root, .layer) .btnSm { min-height: 36px; padding: 6px 12px; font-size: 11px; }
+:is(.root, .layer):is(.root, .layer) .btnBlock { width: 100%; }
+:is(.root, .layer):is(.root, .layer) :is(.btn, .textBtn, .seg, .iconBtn):disabled { opacity: 0.5; cursor: not-allowed; }
+:is(.root, .layer):is(.root, .layer) .textBtn { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 2px; border: 0; background: transparent; color: var(--ink-muted); font: 600 12px/1.3 var(--font-sans); cursor: pointer; }
+:is(.root, .layer):is(.root, .layer) .textBtn svg { width: 14px; height: 14px; }
+:is(.root, .layer):is(.root, .layer) .textBtn:hover:not(:disabled) { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+:is(.root, .layer):is(.root, .layer) .danger:hover:not(:disabled) { color: var(--rose); }
+:is(.root, .layer):is(.root, .layer) .iconBtn { display: inline-grid; place-items: center; width: 44px; height: 44px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet, #fff); color: var(--ink); cursor: pointer; }
+:is(.root, .layer):is(.root, .layer) .file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+:is(.root, .layer):is(.root, .layer) .kinds { display: flex; flex-wrap: wrap; align-items: center; gap: 0; }
+:is(.root, .layer):is(.root, .layer) .kinds .mono { margin-left: 12px; }
+:is(.root, .layer):is(.root, .layer) .seg { min-height: 40px; padding: 6px 14px; border: 1.5px solid var(--ink); margin-left: -1.5px; background: var(--sheet, #fff); color: var(--ink); font: 700 12px/1.2 var(--font-sans); cursor: pointer; }
+:is(.root, .layer):is(.root, .layer) .seg:first-child { margin-left: 0; }
+:is(.root, .layer):is(.root, .layer) .segOn { background: var(--ink); color: #fff; }
+
+/* ── stamps ── */
+:is(.root, .layer):is(.root, .layer) .stamp { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1.5px solid currentColor; border-radius: var(--r-sm); font: 800 10px/1.2 var(--font-sans); letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; }
+:is(.root, .layer):is(.root, .layer) .stamp-open { color: var(--accent); background: var(--accent-soft); }
+:is(.root, .layer):is(.root, .layer) .stamp-ok { color: var(--emerald); background: color-mix(in srgb, var(--emerald) 8%, #fff); }
+:is(.root, .layer):is(.root, .layer) .stamp-wait { color: var(--amber); background: color-mix(in srgb, var(--amber) 9%, #fff); }
+:is(.root, .layer):is(.root, .layer) .stamp-no { color: var(--rose); background: color-mix(in srgb, var(--rose) 7%, #fff); }
+:is(.root, .layer):is(.root, .layer) .stamp-done { color: var(--ink-muted); background: var(--paper); }
+
+/* ── pending days ── */
+:is(.root, .layer):is(.root, .layer).pending { gap: 0; background: color-mix(in srgb, var(--amber) 8%, #fff); border: 2px solid var(--amber); border-radius: var(--r-sm); }
+:is(.root, .layer):is(.root, .layer) .pendHead { display: flex; gap: 12px; align-items: flex-start; padding: 16px var(--pad); border-bottom: 1.5px solid var(--amber); }
+:is(.root, .layer):is(.root, .layer) .pendHead > svg { width: 22px; height: 22px; color: var(--amber); margin-top: 2px; }
+:is(.root, .layer):is(.root, .layer) .pendTitle { font-size: 16px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.25; }
+:is(.root, .layer):is(.root, .layer) .pendSub { color: var(--ink-soft); font-size: 13px; margin-top: 2px; }
+:is(.root, .layer):is(.root, .layer) .pendList { list-style: none; }
+:is(.root, .layer):is(.root, .layer) .pendList li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px var(--pad); }
+:is(.root, .layer):is(.root, .layer) .pendList li + li { border-top: 1px solid color-mix(in srgb, var(--amber) 40%, transparent); }
+:is(.root, .layer):is(.root, .layer) .pendList li > div { display: grid; gap: 2px; min-width: 0; }
+:is(.root, .layer):is(.root, .layer) .pendList b { font-size: 14px; font-weight: 800; }
+
+/* ── days and files ── */
+:is(.root, .layer):is(.root, .layer) .days { display: grid; }
+:is(.root, .layer):is(.root, .layer) .day { padding: 16px var(--pad) 18px; display: grid; gap: 12px; }
+:is(.root, .layer):is(.root, .layer) .day + .day { border-top: 1px solid var(--ink); }
+:is(.root, .layer):is(.root, .layer) .dayHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+:is(.root, .layer):is(.root, .layer) .dayHead > div { min-width: 0; display: grid; gap: 2px; }
+:is(.root, .layer):is(.root, .layer) .dayTitle { font-size: 14px; font-weight: 900; letter-spacing: 0.04em; text-transform: uppercase; }
+:is(.root, .layer):is(.root, .layer) .dayEmpty { padding: 4px 0; }
+:is(.root, .layer):is(.root, .layer) .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
+:is(.root, .layer):is(.root, .layer) .tile { display: grid; grid-template-rows: auto 1fr; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet, #fff); min-width: 0; }
+:is(.root, .layer):is(.root, .layer) .media { position: relative; aspect-ratio: 4 / 3; background: var(--paper); border-bottom: 1px solid var(--ink); overflow: hidden; }
+:is(.root, .layer):is(.root, .layer) .media :is(img, video) { display: block; width: 100%; height: 100%; object-fit: cover; background: #000; }
+:is(.root, .layer):is(.root, .layer) .media img { background: var(--paper); }
+:is(.root, .layer):is(.root, .layer) .kind { position: absolute; left: 6px; top: 6px; padding: 2px 6px; background: var(--ink); color: #fff; font: 600 10px/1.4 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+:is(.root, .layer):is(.root, .layer) .noPlay { display: grid; place-content: center; justify-items: center; gap: 6px; height: 100%; padding: 12px; color: var(--ink); text-align: center; text-decoration: none; font-size: 12px; }
+:is(.root, .layer):is(.root, .layer) .noPlay svg { width: 22px; height: 22px; }
+:is(.root, .layer):is(.root, .layer) .noPlay b { padding: 6px 12px; border: 1.5px solid var(--ink); background: var(--sheet, #fff); font: 800 11px/1.3 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; }
+:is(.root, .layer):is(.root, .layer) .noPlay:hover b { background: var(--paper); }
+:is(.root, .layer):is(.root, .layer) .cap { display: grid; gap: 4px; padding: 8px 10px 6px; min-width: 0; }
+:is(.root, .layer):is(.root, .layer) .capText { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+:is(.root, .layer):is(.root, .layer) .meta { color: var(--ink-muted); font-size: 12px; overflow-wrap: anywhere; }
+:is(.root, .layer):is(.root, .layer) .edited { font-style: italic; }
+:is(.root, .layer):is(.root, .layer) .tileActs { display: flex; flex-wrap: wrap; gap: 0 12px; }
+:is(.root, .layer):is(.root, .layer) .capEdit { display: grid; gap: 6px; }
+
+/* ── inputs ── */
+:is(.root, .layer):is(.root, .layer) .field { display: grid; gap: 6px; min-width: 0; border: 0; }
+:is(.root, .layer):is(.root, .layer) .fieldLabel { color: var(--ink); font: 800 11px/1.4 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; padding: 0; }
+:is(.root, .layer):is(.root, .layer) .input { width: 100%; min-width: 0; min-height: 46px; padding: 10px 12px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet, #fff); color: var(--ink); font: 16px/1.4 var(--font-sans); }
+:is(.root, .layer):is(.root, .layer) .area { resize: vertical; min-height: 96px; }
+:is(.root, .layer):is(.root, .layer) .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+:is(.root, .layer):is(.root, .layer) .radios { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+:is(.root, .layer):is(.root, .layer) .radios legend { margin-bottom: 6px; }
+:is(.root, .layer):is(.root, .layer) .radio { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 8px 12px; border: 2px solid var(--ink-line); border-radius: var(--r-sm); font-size: 14px; font-weight: 600; cursor: pointer; }
+:is(.root, .layer):is(.root, .layer) .radioOn { border-color: var(--ink); background: var(--accent-soft); }
+:is(.root, .layer):is(.root, .layer) .radio input { accent-color: var(--accent); width: 18px; height: 18px; }
+
+/* ── uploads ── */
+:is(.root, .layer):is(.root, .layer) .uploads { list-style: none; display: grid; gap: 8px; }
+:is(.root, .layer):is(.root, .layer) .uploads li { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid var(--ink-line); }
+:is(.root, .layer):is(.root, .layer) .uploads li[data-state="failed"] { border-color: var(--rose); }
+:is(.root, .layer):is(.root, .layer) .upRow { display: flex; justify-content: space-between; gap: 10px; }
+:is(.root, .layer):is(.root, .layer) .upName { min-width: 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 600; }
+:is(.root, .layer):is(.root, .layer) .upErr { color: var(--rose); font-size: 12px; font-weight: 600; }
+:is(.root, .layer):is(.root, .layer) .bar { height: 6px; border: 1px solid var(--ink); background: var(--paper); }
+:is(.root, .layer):is(.root, .layer) .bar i { display: block; height: 100%; background: var(--accent); transition: width 160ms linear; }
+:is(.root, .layer):is(.root, .layer) .err { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1.5px solid var(--rose); color: var(--rose); background: color-mix(in srgb, var(--rose) 6%, #fff); font-size: 13px; font-weight: 600; }
+:is(.root, .layer):is(.root, .layer) .err span { flex: 1; min-width: 0; }
+:is(.root, .layer):is(.root, .layer) .err button { border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0; min-width: 24px; }
+
+/* ── receipts ── */
+:is(.root, .layer):is(.root, .layer) .totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--ink); }
+:is(.root, .layer):is(.root, .layer) .totals > div { padding: 12px var(--pad); display: grid; gap: 2px; }
+:is(.root, .layer):is(.root, .layer) .totals > div + div { border-left: 1px solid var(--ink-line); }
+:is(.root, .layer):is(.root, .layer) .totals b { font-size: 18px; font-weight: 900; font-variant-numeric: tabular-nums; }
+:is(.root, .layer):is(.root, .layer) .rcList { list-style: none; }
+:is(.root, .layer):is(.root, .layer) .rc { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 12px; padding: 14px var(--pad); }
+:is(.root, .layer):is(.root, .layer) .rc + .rc { border-top: 1px solid var(--ink-line); }
+:is(.root, .layer):is(.root, .layer) .rc[data-status="SUBMITTED"] { background: color-mix(in srgb, var(--amber) 5%, #fff); }
+:is(.root, .layer):is(.root, .layer) .rcThumb { width: 56px; height: 56px; border: 1.5px solid var(--ink); display: grid; place-items: center; background: var(--paper); overflow: hidden; }
+:is(.root, .layer):is(.root, .layer) .rcThumb a { display: grid; place-items: center; width: 100%; height: 100%; color: var(--ink); }
+:is(.root, .layer):is(.root, .layer) .rcThumb img { width: 100%; height: 100%; object-fit: cover; }
+:is(.root, .layer):is(.root, .layer) .rcThumb svg { width: 22px; height: 22px; color: var(--ink-muted); }
+:is(.root, .layer):is(.root, .layer) .rcMain { display: grid; gap: 4px; min-width: 0; }
+:is(.root, .layer):is(.root, .layer) .rcTop { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+:is(.root, .layer):is(.root, .layer) .rcName { font-size: 15px; font-weight: 800; overflow-wrap: anywhere; min-width: 0; }
+:is(.root, .layer):is(.root, .layer) .rcAmt { font-size: 16px; font-weight: 900; font-variant-numeric: tabular-nums; white-space: nowrap; }
+:is(.root, .layer):is(.root, .layer) .rcNote { color: var(--ink-soft); font-size: 13px; overflow-wrap: anywhere; }
+:is(.root, .layer):is(.root, .layer) .reason { padding: 6px 10px; border-left: 3px solid var(--rose); background: color-mix(in srgb, var(--rose) 6%, #fff); color: var(--rose); font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+:is(.root, .layer):is(.root, .layer) .rcActs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 4px; }
+
+/* ── the sheet (overlay layer) ── */
+:is(.root, .layer):is(.root, .layer).layer { position: fixed; inset: 0; z-index: 150; display: grid; align-items: end; justify-items: center; }
+:is(.root, .layer):is(.root, .layer) .scrim { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.42); }
+:is(.root, .layer):is(.root, .layer) .sheet { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: 100%; max-height: 92dvh; background: var(--sheet, #fff); border-top: 2px solid var(--ink); animation: none; }
+:is(.root, .layer):is(.root, .layer) .sheetHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px var(--pad); border-bottom: 1.5px solid var(--ink); background: var(--paper); }
+:is(.root, .layer):is(.root, .layer) .sheetTitle { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2; overflow-wrap: anywhere; }
+:is(.root, .layer):is(.root, .layer) .sheetBody { display: grid; gap: 16px; padding: 18px var(--pad); overflow-y: auto; overscroll-behavior: contain; }
+:is(.root, .layer):is(.root, .layer) .sheetFoot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px var(--pad) calc(12px + env(safe-area-inset-bottom, 0px)); border-top: 1.5px solid var(--ink); background: var(--paper); }
+
+@media (min-width: 769px) {
+  :is(.root, .layer):is(.root, .layer) { --pad: 24px; }
+  :is(.root, .layer):is(.root, .layer).layer { align-items: center; }
+  :is(.root, .layer):is(.root, .layer) .sheet { width: min(560px, calc(100vw - 48px)); max-height: 86vh; border: 2px solid var(--ink); }
+}
+@media (max-width: 768px) {
+  :is(.root, .layer):is(.root, .layer) .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  :is(.root, .layer):is(.root, .layer) .acts .btn { flex: 1 1 100%; }
+  :is(.root, .layer):is(.root, .layer) .sheetFoot .btn { flex: 1 1 0; }
+  :is(.root, .layer):is(.root, .layer) .pendList li { flex-wrap: wrap; }
+  :is(.root, .layer):is(.root, .layer) .pendList li .btn { flex: 1 1 100%; min-height: 44px; }
+  :is(.root, .layer):is(.root, .layer) .rcActs .btnSm { min-height: 44px; }
+  :is(.root, .layer):is(.root, .layer) .totals b { font-size: 15px; }
+  :is(.root, .layer):is(.root, .layer) .kinds .mono { flex-basis: 100%; margin: 6px 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.root, .layer):is(.root, .layer) :is(.btn, .bar i) { transition: none; }
+}

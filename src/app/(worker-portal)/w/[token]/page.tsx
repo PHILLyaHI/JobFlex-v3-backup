@@ -4,6 +4,7 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Badge } from "@/components/ui/Badge";
+import { WorkerPortalHeader } from "@/components/workers/WorkerPortalHeader";
 import { WorkerInviteContent } from "@/components/v3/worker-invite-blueprint/worker-invite-content";
 import { JobResponseCard } from "./job-response";
 import { TodayActions } from "./today-actions";
@@ -107,8 +108,12 @@ export default async function WorkerDashboard({
         !sameDay(a.job.startsAt, now)),
   );
 
+  // The portal's header and column, moved here from the layout (stage C): the
+  // job page is the blueprint job page now and brings its own bar.
   return (
-    <>
+    <div className="min-h-dvh bg-[color:var(--paper)]">
+      <WorkerPortalHeader workerName={worker.displayName} orgName={worker.organization?.name} />
+      <main className="max-w-[720px] mx-auto px-5 py-8">
       <div className="quiet-caps mb-2">Your jobs</div>
       <h1 className="font-display text-[34px] tracking-[-0.02em] leading-[1.05]">
         Hi, {worker.displayName.split(" ")[0]}.
@@ -191,7 +196,8 @@ export default async function WorkerDashboard({
           </div>
         </section>
       )}
-    </>
+      </main>
+    </div>
   );
 }
 

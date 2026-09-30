@@ -1,4 +1,5 @@
 // JOB DETAIL — BLUEPRINT · the shapes both editions read, and nothing else.
+import type { CrewBoardData, CrewDoor } from "@/components/v3/crew-board/crew-board-data";
 //
 // ── THIS FILE USED TO BE THE DONOR'S FIXTURE ───────────────────────────────
 // It held the demo job ("Roof tear-off & reroof — 4812 Maple Ave"), its crew,
@@ -329,4 +330,14 @@ export type JobDetailRecord = {
   /** The reader's own standing on this job. Set on the worker edition only;
    *  null for the office, which has no assignment of its own to report. */
   assignment: JdAssignState | null;
+  /** The reader's own assignment row (worker edition), for Accept / Decline in the portal. */
+  myAssignmentId: string | null;
+  /** Days on site, the photos and videos by day, the receipts (stage C, 2026-09-30). */
+  board: CrewBoardData;
+  /** How writes are authenticated: the dashboard session, or the portal's token. */
+  door: CrewDoor;
+  /** Which frame the page is in: the dashboard (MobileNav on a phone) or the worker portal. */
+  chrome: "dashboard" | "portal";
+  /** The portal's own bar: whose portal, which company, where "All jobs" is. */
+  portal: { workerName: string; orgName: string | null; backHref: string } | null;
 };

@@ -20,10 +20,12 @@
 // terse "Aug 11 → Aug 14, 2026".
 
 import { db } from "@/lib/db";
-import { isOwnerOrManager, isWorkerRole } from "@/lib/orgContext";
+import { isLimitedRole, isOwnerOrManager, isWorkerRole } from "@/lib/orgContext";
 import { jobProgressInfo } from "@/lib/jobProgress";
 import { mediaOf } from "@/lib/jobMediaShared";
-import { isBlobEnabled } from "@/lib/sdk/blob";
+import { storageMode } from "@/lib/media/privateStore";
+import { mediaHref } from "@/lib/media/signedLink";
+import { loadCrewBoard } from "@/components/v3/crew-board/crew-board-load";
 import { contractTotal } from "@/lib/contractTotal";
 import { crewTotals, jobMoney } from "@/lib/jobCosting";
 import { countsInTotals, isPending } from "@/lib/expenseTotals";
@@ -422,7 +424,8 @@ export async function loadJobDetail(
 
   const photos: JdPhoto[] = job.photos.map((p) => ({
     id: p.id,
-    url: p.url,
+    // Private files are read through a short signed link (stage B).
+    url: mediaHref(p.url) ?? p.url,
     kind: p.kind ? p.kind.charAt(0) + p.kind.slice(1).toLowerCase() : "Photo",
     media: mediaOf(p).media,
     caption: p.caption?.trim() || `Added ${day(p.createdAt)}`,
@@ -481,7 +484,7 @@ export async function loadJobDetail(
     expenses,
     trail: trail.rows,
     progress: await jobProgressInfo(organizationId, job.id),
-    blobEnabled: isBlobEnabled(),
+    blobEnabled: storageMode() !== "inline",
     money,
     pick,
     loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
@@ -492,6 +495,13 @@ export async function loadJobDetail(
     canPhotos: isOwnerOrManager(role),
     viewer: "manager",
     assignment: null,
+    myAssignmentId: null,
+    // The office reads the board as the office; a sales or estimator seat reads
+    // it and works nothing (the loader was opened to them read-only).
+    board: await loadCrewBoard(organizationId, job.id, { userId: userId ?? "", office: !isLimitedRole(role), canWork: !isLimitedRole(role) }),
+    door: { kind: "session" },
+    chrome: "dashboard",
+    portal: null,
   };
 }
 
@@ -574,7 +584,8 @@ async function loadWorkerScoped(
 
   const photos: JdPhoto[] = job.photos.map((p) => ({
     id: p.id,
-    url: p.url,
+    // Private files are read through a short signed link (stage B).
+    url: mediaHref(p.url) ?? p.url,
     kind: p.kind ? p.kind.charAt(0) + p.kind.slice(1).toLowerCase() : "Photo",
     media: mediaOf(p).media,
     caption: p.caption?.trim() || `Added ${day(p.createdAt)}`,
@@ -614,7 +625,7 @@ async function loadWorkerScoped(
     expenses: [],
     trail: trail.rows,
     progress: await jobProgressInfo(organizationId, job.id),
-    blobEnabled: isBlobEnabled(),
+    blobEnabled: storageMode() !== "inline",
     money: null,
     pick: await pickFor(organizationId, job.proposal ? linkedTradeOf({ ...job.proposal, inventoryLinked: job.proposalId ? ((await inventoryLinkOf(organizationId, [job.proposalId])).get(job.proposalId) ?? null) : null }) : null, job.proposal?.lineItems ?? []),
     loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
@@ -630,6 +641,33 @@ async function loadWorkerScoped(
     canPhotos: true,
     viewer: "worker",
     assignment: OWN_ASSIGNMENT_STATE[own] ?? "wait",
+    myAssignmentId: job.assignments.find((a) => a.workerId === wp.id)?.id ?? null,
+    // The crew reads the board as crew; a declined assignment reads it and works nothing.
+    board: await loadCrewBoard(organizationId, job.id, { userId, office: false, canWork: own !== "DECLINED" }),
+    door: { kind: "session" },
+    chrome: "dashboard",
+    portal: null,
+  };
+}
+
+/**
+ * The worker's record for the PORTAL (stage C, 2026-09-30): the same read as
+ * the dashboard's worker branch — the job found only through the worker's own
+ * assignment, no money — keyed by the magic link instead of a session, and
+ * framed for the portal. Null when the token or the assignment does not hold.
+ */
+export async function loadJobDetailForPortal(token: string, assignmentId: string): Promise<JobDetailRecord | null> {
+  const worker = await db.workerProfile.findUnique({ where: { token }, select: { id: true, userId: true, organizationId: true, displayName: true, organization: { select: { name: true } } } });
+  if (!worker) return null;
+  const a = await db.jobAssignment.findUnique({ where: { id: assignmentId }, select: { workerId: true, jobId: true } });
+  if (!a || a.workerId !== worker.id) return null;
+  const record = await loadWorkerScoped(a.jobId, worker.organizationId, worker.userId);
+  if (!record) return null;
+  return {
+    ...record,
+    door: { kind: "token", token },
+    chrome: "portal",
+    portal: { workerName: worker.displayName, orgName: worker.organization?.name ?? null, backHref: `/w/${token}` },
   };
 }
 

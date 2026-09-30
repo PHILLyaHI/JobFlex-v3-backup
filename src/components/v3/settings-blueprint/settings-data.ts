@@ -744,6 +744,7 @@ export const NOTIFICATION_ICONS: Record<PrefKey, IconName> = {
   'job-started': 'i-clock',
   'job-completed': 'i-box',
   'job-photos': 'i-file',
+  'expense-submitted': 'i-bank',
   'worker-responded': 'i-hardhat',
   'review-received': 'i-thumb',
   'trade-reply': 'i-board',

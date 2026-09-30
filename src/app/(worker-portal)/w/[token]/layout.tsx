@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { WorkerPortalHeader } from "@/components/workers/WorkerPortalHeader";
 import { touchWorkerActivity } from "@/lib/workerActivity";
 
 export default async function WorkerPortalLayout({
@@ -11,33 +10,16 @@ export default async function WorkerPortalLayout({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const worker = await db.workerProfile.findUnique({
-    where: { token },
-    include: {
-      organization: { select: { name: true } },
-    },
-  });
+  const worker = await db.workerProfile.findUnique({ where: { token }, select: { id: true } });
   if (!worker) return notFound();
 
   // Worker opened their portal — record activity for the 6-month inactivity cron.
   await touchWorkerActivity(worker.id);
 
-  // An unanswered invite is not a page INSIDE the portal — it is the public
-  // landing page the invite email points at, and it owns the whole viewport
-  // (components/v3/worker-invite-blueprint). The portal header would be chrome
-  // for an account that does not exist yet, and its 720px column would crop the
-  // drafting panel, so the invite gate is rendered bare.
-  if (worker.inviteStatus === "PENDING" || worker.inviteStatus === "DECLINED") {
-    return <>{children}</>;
-  }
-
-  return (
-    <div className="min-h-dvh bg-[color:var(--paper)]">
-      <WorkerPortalHeader
-        workerName={worker.displayName}
-        orgName={worker.organization?.name}
-      />
-      <main className="max-w-[720px] mx-auto px-5 py-8">{children}</main>
-    </div>
-  );
+  // The layout draws no chrome (stage C, 2026-09-30). Each page brings its
+  // own: the invite gate owns the whole viewport (worker-invite-blueprint),
+  // the job list keeps the portal header and its 720px column (./page.tsx),
+  // and a job is the dashboard's blueprint job page with the portal's bar
+  // (./jobs/[assignmentId]) — a 720px column would crop its desk edition.
+  return <>{children}</>;
 }

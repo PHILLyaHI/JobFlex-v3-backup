@@ -49,18 +49,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
+import { PortalBar } from "@/components/v3/mobile-shell/portal-bar";
+import { CrewDays, CrewPendingBanner, CrewReceipts } from "@/components/v3/crew-board/crew-board";
 import {
   JD_ASSIGN,
   ST,
   STATUS_BUTTONS,
   fmt,
   type JobDetailRecord, KEY_TO_STATUS } from "@/components/v3/job-detail-blueprint/job-detail-data";
-import {
-  useJobDetailActions,
-  type PhotoKind,
-} from "@/components/v3/job-detail-blueprint/use-job-detail-actions";
+import { useJobDetailActions } from "@/components/v3/job-detail-blueprint/use-job-detail-actions";
 import { onSiteLine } from "@/lib/jobProgressShared";
-import { IMAGE_ACCEPT, MEDIA_ACCEPT } from "@/lib/jobMediaShared";
 import { Who } from "@/components/v3/who/who";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { useRouter } from "next/navigation";
@@ -69,14 +67,9 @@ import "./mobile-job-detail.css";
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/** Same six sections, same order, same counts as the desktop's `TABS`. */
-type TabKey = "overview" | "schedule" | "crew" | "changes" | "photos" | "expenses";
-
-const PHOTO_KINDS: Array<[PhotoKind, string]> = [
-  ["BEFORE", "Before"],
-  ["PROGRESS", "Progress"],
-  ["AFTER", "After"],
-];
+/** Same sections, same order, same counts as the desktop's `TABS`. "days"
+ *  replaced "photos" (stage C, 2026-09-30); "receipts" is the crew's. */
+type TabKey = "overview" | "schedule" | "crew" | "changes" | "days" | "receipts" | "expenses";
 
 /* The head's status badge (and its `ST_MOD` class map) was removed at the
    owner's request. Status itself is unchanged — it is set and shown on the
@@ -103,12 +96,10 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const [tab, setTab] = useState<TabKey>("overview");
   const [pickOpen, setPickOpen] = useState(false);
   const [rosterOpen, setRosterOpen] = useState(false);
-  const [photoKind, setPhotoKind] = useState<PhotoKind>("BEFORE");
   // The row arrival plays on a REAL view change only, never on the first paint
   // (where the block reveal already carries the entrance) and never on a
   // repaint such as approving a change order.
@@ -122,9 +113,13 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
     record.status,
     record.viewer === "worker",
     record.blobEnabled,
+    record.door,
   );
 
-  const expTotal = record.expenses.reduce((sum, e) => sum + e.amount, 0);
+  // What counts (lib/expenseTotals): approved and reimbursed receipts only.
+  const expTotal = record.board.totals.counted;
+  const fileCount = record.board.days.reduce((n, d) => n + d.files.length, 0) + record.board.looseFiles.length;
+  const portal = record.door.kind === "token";
   const scheduled = record.events.length > 0;
   // The field worker's edition — see the block on `JdViewer` in
   // ../job-detail-blueprint/job-detail-data.ts, and the same three consts in
@@ -144,10 +139,10 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
       : ([["changes", "Changes", record.changes.length]] as Array<
           [TabKey, string, number | null]
         >)),
-    ["photos", "Photos", record.photos.length],
+    ["days", "Days & photos", fileCount],
     ...(worker
-      ? []
-      : ([["expenses", "Expenses", record.expenses.length]] as Array<
+      ? ([["receipts", "Receipts", record.board.receipts.length]] as Array<[TabKey, string, number | null]>)
+      : ([["expenses", "Expenses", record.board.receipts.length]] as Array<
           [TabKey, string, number | null]
         >)),
   ];
@@ -285,8 +280,14 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
       onAnimationEnd={onRootAnimEnd}
     >
       {/* Shared handheld chrome: dark topbar + slide-out drawer + icon sprite.
-          It owns its own state and reads its token contract off this root. */}
-      <MobileNav />
+          It owns its own state and reads its token contract off this root.
+          The worker portal has no dashboard to navigate: its own bar, same
+          plate, with "All jobs" where the burger is (stage C). */}
+      {record.chrome === "portal" && record.portal ? (
+        <PortalBar workerName={record.portal.workerName} orgName={record.portal.orgName} backHref={record.portal.backHref} />
+      ) : (
+        <MobileNav />
+      )}
 
       <main className="mjd-scroll" ref={scrollRef}>
         <div className="mjd-content" ref={contentRef}>
@@ -298,6 +299,9 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
             <h1 className="mjd-title">{record.title}</h1>
             <div className="mjd-dates">{record.dates}</div>
           </div>
+
+          {/* Days that passed without being closed — on top, whatever the tab. */}
+          <CrewPendingBanner data={record.board} door={record.door} />
 
           {/* ============ SECTION PICKER ============
               Was a horizontally scrolling six-tab rail; the owner asked for a
@@ -426,7 +430,7 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                       <div className="mjd-f">
                         <span>Expenses</span>
                         <b>
-                          {fmt(expTotal)} · {record.expenses.length}
+                          {fmt(expTotal)} · {record.board.receipts.length}
                         </b>
                       </div>
                     )}
@@ -443,8 +447,18 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                       <div className="mjd-sec-l">Your assignment</div>
                       <p>
                         <span className={`mjd-b mjd-b--${assign.tone}`}>{assign.stamp}</span>{" "}
-                        {assign.line}
+                        {portal && record.assignment === "wait" ? "The office sent you this job. Can you take it?" : assign.line}
                       </p>
+                      {portal && record.assignment === "wait" && record.myAssignmentId && (
+                        <div className="mjd-status-row" data-respond>
+                          <button className="mjd-btn mjd-btn-primary" type="button" disabled={a.busy?.kind === "respond"} onClick={() => void a.respond(record.myAssignmentId!, "ACCEPTED")}>
+                            Accept job
+                          </button>
+                          <button className="mjd-btn mjd-btn-ghost" type="button" disabled={a.busy?.kind === "respond"} onClick={() => void a.respond(record.myAssignmentId!, "DECLINED")}>
+                            Decline
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -813,131 +827,12 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
               </section>
             )}
 
-            {tab === "photos" && (
-              <section className="mjd-card">
-                <div className="mjd-h">
-                  <h2 className="mjd-t">Photos</h2>
-                  <span className="mjd-s">Before · Progress · After</span>
-                </div>
-                {record.photos.length === 0 ? (
-                  <EmptyNote>No photos on this job yet.</EmptyNote>
-                ) : (
-                  <div className="mjd-photos">
-                    {record.photos.map((p, i) => (
-                      <div
-                        className={`mjd-ph${switched ? " mjd-rowin" : ""}`}
-                        style={rowVar(i)}
-                        key={p.id}
-                      >
-                        <div className="mjd-ph-img">
-                          {/* A JobPhoto url is a data: URL whenever Vercel Blob
-                              is not configured (uploadJobPhoto's fallback),
-                              which next/image cannot take — so a plain img. */}
-                          {p.media === "video" ? (
-                            <video src={p.url} preload="metadata" controls playsInline data-media="video" />
-                          ) : (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={p.url} alt={p.caption} />
-                          )}
-                          <span className="mjd-ph-k">{p.media === "video" ? `Video · ${p.kind}` : p.kind}</span>
-                        </div>
-                        <div className="mjd-ph-c">
-                          {p.caption}
-                          {p.by && (
-                            <>
-                              {" "}
-                              <Who who={p.by} compact by />
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {record.canPhotos && (
-                  <div className="mjd-total mjd-foot14">
-                    <div className="mjd-status-row">
-                      {PHOTO_KINDS.map(([key, label]) => (
-                        <button
-                          key={key}
-                          className={`mjd-sbtn mjd-sbtn--sch${photoKind === key ? " mjd-on" : ""}`}
-                          type="button"
-                          aria-pressed={photoKind === key}
-                          onClick={() => setPhotoKind(key)}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                    {/* `accept` only, no `capture`: a phone still offers the
-                        camera in its own sheet, and forcing it would block
-                        picking a photo the crew already took. */}
-                    <input
-                      ref={fileRef}
-                      className="mjd-file"
-                      type="file"
-                      accept={record.blobEnabled ? MEDIA_ACCEPT : IMAGE_ACCEPT}
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        // Cleared before the await: the same file picked twice
-                        // in a row fires no change event otherwise.
-                        e.target.value = "";
-                        if (file) await a.upload(file, photoKind);
-                      }}
-                    />
-                    <button
-                      className="mjd-btn mjd-btn-ghost mjd-btn-block"
-                      type="button"
-                      disabled={a.busy?.kind === "upload"}
-                      onClick={() => fileRef.current?.click()}
-                    >
-                      <Icon id="i-plus" />
-                      {a.busy?.kind === "upload" ? "Uploading…" : "Upload"}
-                    </button>
-                  </div>
-                )}
-              </section>
-            )}
-
-            {tab === "expenses" && (
-              <section className="mjd-card">
-                <div className="mjd-h">
-                  <h2 className="mjd-t">Expenses</h2>
-                  <span className="mjd-s">logged on this job</span>
-                </div>
-                {record.expenses.length === 0 ? (
-                  <EmptyNote>Nothing logged against this job yet.</EmptyNote>
-                ) : (
-                  <>
-                    {record.expenses.map((e, i) => (
-                      <div
-                        className={`mjd-row${switched ? " mjd-rowin" : ""}`}
-                        style={rowVar(i)}
-                        key={e.id}
-                      >
-                        <div>
-                          <div className="mjd-row-n">{e.vendor}</div>
-                          <div className="mjd-row-m">
-                            {e.meta}
-                            {e.by && (
-                              <>
-                                {" · "}
-                                <Who who={e.by} compact by />
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        <span className="mjd-amt">{fmt(e.amount)}</span>
-                      </div>
-                    ))}
-                    <div className="mjd-total">
-                      <span>Total</span>
-                      <b>{fmt(expTotal)}</b>
-                    </div>
-                  </>
-                )}
-              </section>
-            )}
+            {/* DAYS ON SITE (stage C, 2026-09-30): today, then every day with
+                its photos and videos — the same board in the portal. The office
+                reads the receipts under Expenses, with review in place. */}
+            {tab === "days" && <CrewDays data={record.board} door={record.door} />}
+            {tab === "receipts" && <CrewReceipts data={record.board} door={record.door} />}
+            {tab === "expenses" && <CrewReceipts data={record.board} door={record.door} />}
           </div>
         </div>
       </main>

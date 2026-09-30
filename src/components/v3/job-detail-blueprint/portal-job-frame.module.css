@@ -1,0 +1,28 @@
+/* PORTAL JOB FRAME — the desk frame of the worker portal's job page.
+   No sidebar here, so `.layout` is one column. Doubled class so it
+   out-specifies `.bp .layout { grid-template-columns: var(--sidebar-w) 1fr }`. */
+.frame.frame :global(.layout) {
+  grid-template-columns: 1fr;
+}
+
+/* Who is reading, where the dashboard's search sits. */
+.who {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  margin-left: auto;
+  text-align: right;
+}
+.who b {
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+.who span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-muted);
+}
