@@ -19,11 +19,11 @@ const TABS: Array<{ id: InventoryTab; label: string; icon: LucideIcon }> = [
   { id: "activity", label: "Activity", icon: Clock3 },
 ];
 
-export default function RoofingInventoryDesktop({ workspace: w }: { workspace: InventoryWorkspace }) {
+export default function RoofingInventoryDesktop({ workspace: w, embedded }: { workspace: InventoryWorkspace; embedded?: boolean }) {
   return <div className={s.workspace}>
-    <Link href={w.estimatorHref} className={s.back}><ArrowLeft size={16} />{w.tradeLabel} estimator</Link>
+    {!embedded && <Link href={w.estimatorHref} className={s.back}><ArrowLeft size={16} />{w.tradeLabel} estimator</Link>}
     <header className={s.header}>
-      <h1>{w.tradeLabel} inventory</h1>
+      {embedded ? <h2>{w.tradeLabel} stock</h2> : <h1>{w.tradeLabel} inventory</h1>}
       <div className={s.headerActions}>{!w.canWrite && <span className={s.readOnly}>View only</span>}{w.canWrite && <button className={s.primary} type="button" onClick={() => { w.setTab("stock"); w.setItemPanel({ mode: "add" }); }}><Plus size={18} />Add item</button>}</div>
     </header>
     <div className={s.summary}>

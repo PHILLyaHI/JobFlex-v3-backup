@@ -53,7 +53,8 @@ function PriceInput({ value, onSave, label, disabled, id }: { value: number; onS
   );
 }
 
-export function HvacServicesContent({ card: initial, factor, place }: { card: HvacRateCard; factor: number; place: string }) {
+/** `embedded`: a tab of /dashboard/inventory (trade=hvac), which owns the page head. */
+export function HvacServicesContent({ card: initial, factor, place, embedded }: { card: HvacRateCard; factor: number; place: string; embedded?: boolean }) {
   const [card, setCard] = useState(initial);
   const [pending, start] = useTransition();
   const [note, setNote] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
@@ -106,16 +107,18 @@ export function HvacServicesContent({ card: initial, factor, place }: { card: Hv
 
   return (
     <>
-      <div className={cx("page-head")}>
-        <div>
-          <div className={cx("kicker")}>Automation · HVAC estimator</div>
-          <h1 className={cx("page-title")}>Service menu</h1>
+      {!embedded && (
+        <div className={cx("page-head")}>
+          <div>
+            <div className={cx("kicker")}>Automation · HVAC estimator</div>
+            <h1 className={cx("page-title")}>Service menu</h1>
+          </div>
+          <div className={cx("page-actions")}>
+            <Link className={cx("btn", "btn-primary")} href={"/dashboard/hvac-estimator" as Route}>Price a visit</Link>
+            <Link className={cx("btn", "btn-ghost")} href={"/dashboard/inventory?trade=hvac&tab=stock" as Route}>HVAC stock</Link>
+          </div>
         </div>
-        <div className={cx("page-actions")}>
-          <Link className={cx("btn", "btn-primary")} href={"/dashboard/hvac-estimator" as Route}>Price a visit</Link>
-          <Link className={cx("btn", "btn-ghost")} href={"/dashboard/hvac-estimator/board" as Route}>HVAC inventory</Link>
-        </div>
-      </div>
+      )}
 
       <div className={cx("kpis")} data-menu-kpis>
         <div className={cx("kpi")}><div className={cx("kpi-lbl")}>Tasks offered</div><div className={cx("kpi-val")} data-kpi="tasks">{offered}</div><div className={cx("kpi-sub")}>{groups.length} groups · {custom.length} of your own{hidden ? ` · ${hidden} hidden` : ""}</div></div>

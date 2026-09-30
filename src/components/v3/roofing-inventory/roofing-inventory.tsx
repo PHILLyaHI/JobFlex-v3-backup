@@ -18,5 +18,5 @@ const getServerSnapshot = () => false;
 export function RoofingInventory(props: RoofingInventoryProps) {
   const handheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const workspace = useRoofingInventory(props);
-  return handheld ? <RoofingInventoryMobile workspace={workspace} /> : <RoofingInventoryDesktop workspace={workspace} />;
+  return handheld ? <RoofingInventoryMobile workspace={workspace} embedded={props.embedded} /> : <RoofingInventoryDesktop workspace={workspace} embedded={props.embedded} />;
 }

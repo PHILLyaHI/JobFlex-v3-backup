@@ -12,7 +12,7 @@ import { StockListEditor } from "./stock-list-editor";
 import { ago, dayOf, materialsOf, moveLabel, perJobStatus, qty, statusLabel, usd, type InventoryWorkspace } from "./roofing-inventory-model";
 import s from "./roofing-inventory-mobile.module.css";
 
-type Props = { workspace: InventoryWorkspace };
+type Props = { workspace: InventoryWorkspace; embedded?: boolean };
 type InventoryRow = InventoryWorkspace["rows"][number];
 
 const destinations = [
@@ -276,14 +276,14 @@ function Sheet({ title, children, onClose, pending, returnFocus }: { title: stri
   </motion.div>;
 }
 
-export function RoofingInventoryMobile({ workspace: w }: Props) {
+export function RoofingInventoryMobile({ workspace: w, embedded }: Props) {
   const returnFocus = useRef<HTMLElement | null>(null);
   const item = w.itemPanel?.itemId ? w.data.rows.find((row) => row.id === w.itemPanel?.itemId) : undefined;
   const sheetOpen = w.canWrite && Boolean(w.itemPanel || w.supplierOpen);
   const sheetTitle = w.supplierOpen ? "Supplier details" : w.itemPanel?.mode === "add" ? "Add stock item" : w.itemPanel?.mode === "receive" ? "Receive stock" : w.itemPanel?.mode === "count" ? "Count stock" : "Edit stock item";
   const closeSheet = () => { w.setItemPanel(null); w.setSupplierOpen(false); };
   return <div className={s.mobile} aria-busy={w.pending} onFocusCapture={(event) => { if (event.target instanceof HTMLElement && event.currentTarget.contains(event.target)) returnFocus.current = event.target; }}>
-    <header className={s.header}><h1>{w.tradeLabel} inventory</h1>{w.canWrite && <button type="button" className={s.addButton} aria-label="Add inventory item" disabled={w.pending} onClick={() => w.setItemPanel({ mode: "add" })}><Plus size={20} aria-hidden="true" /></button>}</header>
+    <header className={s.header}>{embedded ? <h2>{w.tradeLabel} stock</h2> : <h1>{w.tradeLabel} inventory</h1>}{w.canWrite && <button type="button" className={s.addButton} aria-label="Add inventory item" disabled={w.pending} onClick={() => w.setItemPanel({ mode: "add" })}><Plus size={20} aria-hidden="true" /></button>}</header>
     {!w.canWrite && <p className={s.readOnly}>View only · Stock changes are managed by your office.</p>}
     {w.needs.length > 0 ? <div className={s.attention}>
       <div><h2>{w.needs.length} {w.needs.length === 1 ? "item needs" : "items need"} ordering</h2><p>{w.soldShort ? `${w.soldShort} short for sold jobs` : "Keep the next job supplied"}{w.data.orders.length ? ` · ${w.data.orders.length} ${w.data.orders.length === 1 ? "order" : "orders"} on the way` : ""}</p></div>
