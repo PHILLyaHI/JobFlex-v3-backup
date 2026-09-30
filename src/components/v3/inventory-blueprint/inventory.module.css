@@ -36,8 +36,8 @@
 
 /* ── the trade row: the trade switch (one joined control, no card), the secondary actions ── */
 :global(.jf-blueprint :is(.content, .inv-layer)) .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 2px; /* the shell's .content is a flex column with a 22px gap: 22 + 2 = 24 to the main tabs */ }
-:global(.jf-blueprint :is(.content, .inv-layer)) .trade { display: inline-flex; flex: 0 0 auto; height: 40px; border: 1px solid var(--ink); border-radius: var(--radius); background: var(--paper); overflow: hidden; }
-:global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; height: 100%; padding: 0 22px; border-left: 1px solid var(--ink); background: var(--paper); font: inherit; font-size: 14px; font-weight: 800; letter-spacing: 0.02em; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap; transition: background 0.12s; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .trade { display: inline-flex; flex: 0 0 auto; height: 40px; border: 1px solid var(--ink); border-radius: var(--radius); background: #fff; overflow: hidden; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; height: 100%; padding: 0 22px; border-left: 1px solid var(--ink); background: #fff; font: inherit; font-size: 14px; font-weight: 800; letter-spacing: 0.02em; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap; transition: background 0.12s; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn:first-child { border-left: 0; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn:hover { background: var(--paper-deep); }
 :global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn.on { background: var(--ink); color: var(--paper); }
@@ -50,13 +50,13 @@
 :global(.jf-blueprint :is(.content, .inv-layer)) .toolbar-acts { display: flex; gap: 8px; flex-wrap: wrap; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .toolbar-acts .btn { height: 40px; }
 
-/* ── main tabs (Financials): mono caps, a count chip, the blueprint rule ── */
-:global(.jf-blueprint :is(.content, .inv-layer)) .tabs { display: flex; gap: 4px; border-bottom: 1.5px solid var(--ink); margin-bottom: 18px; }
-:global(.jf-blueprint :is(.content, .inv-layer)) .tab { display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 16px; margin-bottom: -1.5px; border-bottom: 3px solid transparent; font-family: var(--font-mono); font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); text-decoration: none; white-space: nowrap; }
+/* ── main tabs: one 1px ink rule, 13px caps, the active one heavy with a 3px blueprint rule, a small count chip ── */
+:global(.jf-blueprint :is(.content, .inv-layer)) .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--ink); margin-bottom: 18px; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .tab { display: inline-flex; align-items: center; height: 46px; padding: 0 16px; margin-bottom: -1px; border-bottom: 3px solid transparent; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: color-mix(in srgb, var(--ink) 70%, transparent); text-decoration: none; white-space: nowrap; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .tab:hover { color: var(--ink); }
-:global(.jf-blueprint :is(.content, .inv-layer)) .tab[aria-current="page"] { color: var(--ink); border-bottom-color: var(--blueprint); }
-:global(.jf-blueprint :is(.content, .inv-layer)) .tab .n { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); font-size: 11px; font-weight: 700; color: var(--muted); background: #fff; }
-:global(.jf-blueprint :is(.content, .inv-layer)) .tab[aria-current="page"] .n { border-color: var(--blueprint); color: var(--blueprint); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .tab[aria-current="page"] { color: var(--ink); font-weight: 800; border-bottom-color: var(--blueprint); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .tab .n { display: inline-flex; align-items: center; height: 18px; margin-left: 6px; padding: 0 6px; border: 0; border-radius: 0; font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.02em; color: var(--muted); background: var(--paper-deep); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .tab[aria-current="page"] .n { color: #fff; background: var(--blueprint); }
 
 /* ── masthead: four plates ── */
 :global(.jf-blueprint :is(.content, .inv-layer)) .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); border: var(--border); border-radius: var(--radius); background: #fff; overflow: hidden; box-shadow: 3px 3px 0 var(--shadow); margin-bottom: 18px; }
@@ -93,16 +93,15 @@
 :global(.jf-blueprint :is(.content, .inv-layer)) .search:focus-within { outline: 2px solid var(--blueprint); outline-offset: 1px; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .tools { gap: 12px; flex-wrap: nowrap; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .tools .search { height: 36px; }
-/* One joined segmented control (the trade switch's kin): no gaps, one ink rule, the chosen one ink-filled. */
-:global(.jf-blueprint :is(.content, .inv-layer)) .segc { display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: calc(100% - 332px); height: 36px; border: 1px solid var(--ink); border-radius: var(--radius); background: var(--paper); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
-:global(.jf-blueprint :is(.content, .inv-layer)) .segc::-webkit-scrollbar { display: none; }
-:global(.jf-blueprint :is(.content, .inv-layer)) .segc-btn { display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; height: 100%; padding: 0 12px; border: 0; border-left: 1px solid var(--ink); background: var(--paper); font-family: var(--font-mono); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); cursor: pointer; white-space: nowrap; }
-:global(.jf-blueprint :is(.content, .inv-layer)) .segc-btn:first-child { border-left: 0; }
-:global(.jf-blueprint :is(.content, .inv-layer)) .segc-btn b { font-weight: 700; color: var(--muted); }
-:global(.jf-blueprint :is(.content, .inv-layer)) .segc-btn:hover { background: var(--paper-deep); }
-:global(.jf-blueprint :is(.content, .inv-layer)) .segc-btn.on { background: var(--ink); color: var(--paper); }
-:global(.jf-blueprint :is(.content, .inv-layer)) .segc-btn.on b { color: var(--paper); opacity: 0.7; }
-:global(.jf-blueprint :is(.content, .inv-layer)) .segc-btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -3px; }
+/* A row of text filters (the status filters' kin): no frames, mono caps, the chosen one blueprint with a 2px rule, 20px between. */
+:global(.jf-blueprint :is(.content, .inv-layer)) .flt { display: flex; align-items: center; gap: 20px; flex: 1 1 auto; min-width: 0; height: 36px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .flt::-webkit-scrollbar { display: none; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .flt-btn { display: inline-flex; align-items: baseline; flex: 0 0 auto; height: 100%; padding: 0; border: 0; border-bottom: 2px solid transparent; background: none; font-family: var(--font-mono); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); cursor: pointer; white-space: nowrap; transition: color 0.12s; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .flt-btn b { margin-left: 6px; font-weight: 600; color: var(--muted-light, var(--muted)); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .flt-btn:hover { color: var(--ink); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .flt-btn.on { color: var(--blueprint); border-bottom-color: var(--blueprint); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .flt-btn.on b { color: var(--blueprint); opacity: 0.75; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .flt-btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .tools-r { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .sel { font: inherit; font-size: 13px; height: 36px; padding: 0 10px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; color: var(--ink); }
 
@@ -115,10 +114,12 @@
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec th:last-child, :global(.jf-blueprint :is(.content, .inv-layer)) .spec td:last-child { padding-right: 24px; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec td { padding: 12px 14px; border-bottom: 1px solid var(--hair-soft, #e3e1da); vertical-align: middle; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec tbody tr:last-child td { border-bottom: none; }
-/* Category groups: a mono kicker on its own line, not a grey slab. */
-:global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.grp th { text-align: left; padding: 18px 14px 6px; border-bottom: 1.5px solid var(--ink); background: #fff; font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink); }
-:global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.grp th span { margin-left: 10px; font-weight: 600; color: var(--muted); letter-spacing: 0.06em; }
-:global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.grp.on th { color: var(--blueprint); border-bottom-color: var(--blueprint); }
+/* Category groups: one divider row — paper-deep across the table, a 1px ink rule on top, 8px of air above it between groups. */
+:global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.grp th { height: 48px; box-sizing: border-box; text-align: left; padding: 0 14px; border-top: 8px solid #fff; /* 40 of fill + the 8px of air */ border-bottom: 0; box-shadow: inset 0 1px 0 var(--ink); background: var(--paper-deep); font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); line-height: 1; white-space: nowrap; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .spec tbody tr.grp:first-child th { height: 40px; border-top: 0; box-shadow: none; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.grp th span { font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; color: var(--muted); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.grp th span::before { content: '\B7'; margin: 0 8px; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.grp.on th { color: var(--blueprint); }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec tr.grp { scroll-margin-top: 80px; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec .no { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); width: 52px; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec .name { font-weight: 700; }
@@ -128,6 +129,7 @@
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec .num b { font-weight: 800; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec .unit { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .spec .ctr { text-align: center; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec .acts { text-align: right; white-space: nowrap; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .spec th.acts, :global(.jf-blueprint :is(.content, .inv-layer)) .spec td.acts { width: 96px; min-width: 96px; box-sizing: border-box; }
 /* A row's action: a small outlined button, the system's, not an underlined link. */
@@ -278,7 +280,7 @@
   :global(.jf-blueprint :is(.content, .inv-layer)) .search { flex-basis: 100%; height: 44px; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .tools { flex-wrap: wrap; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .tools .search { height: 44px; }
-  :global(.jf-blueprint :is(.content, .inv-layer)) .segc { flex: 1 1 100%; width: 100%; max-width: 100%; height: 44px; -webkit-overflow-scrolling: touch; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .flt { flex: 1 1 100%; width: 100%; height: 44px; -webkit-overflow-scrolling: touch; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .tools-r { margin-left: 0; width: 100%; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .tools-r .sel { height: 44px; flex: 1; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .cards { grid-template-columns: 1fr; padding: 14px 16px 16px; }
@@ -300,10 +302,12 @@
   :global(.jf-blueprint :is(.content, .inv-layer)) .two, :global(.jf-blueprint :is(.content, .inv-layer)) .three { grid-template-columns: 1fr; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .fields { grid-template-columns: 1fr; }
   /* the list that stands in for a table */
-  :global(.jf-blueprint :is(.content, .inv-layer)) .grp-h { padding: 16px 16px 6px; border-bottom: 1.5px solid var(--ink); font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
-  :global(.jf-blueprint :is(.content, .inv-layer)) .grp-h span { margin-left: 10px; color: var(--muted); font-weight: 600; }
-  :global(.jf-blueprint :is(.content, .inv-layer)) .grp-h { scroll-margin-top: 72px; }
-  :global(.jf-blueprint :is(.content, .inv-layer)) .grp-h.on { color: var(--blueprint); border-bottom-color: var(--blueprint); }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .grp-h { display: flex; align-items: center; height: 40px; margin-top: 8px; padding: 0 16px; border-top: 1px solid var(--ink); background: var(--paper-deep); font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); white-space: nowrap; scroll-margin-top: 72px; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) [role="list"] > div:first-child > .grp-h:first-child { margin-top: 0; border-top: 0; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .grp-h span { font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; color: var(--muted); }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .grp-h span::before { content: '\B7'; margin: 0 8px; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .grp-h .link { margin-left: auto; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .grp-h.on { color: var(--blueprint); }
   :global(.jf-blueprint :is(.content, .inv-layer)) .rowi { display: block; width: 100%; padding: 14px 16px; border: 0; border-bottom: 1px solid var(--hair-soft, #e3e1da); background: #fff; text-align: left; font: inherit; color: inherit; cursor: pointer; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .rowi .l1 { display: flex; align-items: center; gap: 10px; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .rowi .t { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }

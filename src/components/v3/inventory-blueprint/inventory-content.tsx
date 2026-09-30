@@ -101,7 +101,7 @@ export function InventoryContent({ data, canEditBook, canWriteStock }: Inventory
         {tabs.map((t) => (
           <Link key={t} href={hrefFor(trade, t)} className={cx("tab")} aria-current={t === tab ? "page" : undefined} id={t === "book" ? "book" : undefined}>
             {TAB_LABEL[t]}
-            {counts[t] !== undefined && <span className={cx("n")}>{counts[t]}</span>}
+            {counts[t] !== undefined && (t !== "stock" || counts[t]! > 0) && <span className={cx("n")}>{counts[t]}</span>}
           </Link>
         ))}
       </nav>
@@ -216,7 +216,7 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
                   <th scope="col">No.</th><th scope="col">Item</th><th scope="col">Specification</th><th scope="col">Unit</th>
                   <th scope="col" className={cx("num")}>{trade === "hvac" ? "Shop cost" : "Material"}</th>
                   {trade !== "hvac" && <th scope="col" className={cx("num")}>Labor</th>}
-                  <th scope="col">Standing</th>
+                  <th scope="col" className={cx("ctr")}>Standing</th>
                   {canEdit && <th scope="col" className={cx("acts")}><span style={{ position: "absolute", left: -9999 }}>Actions</span></th>}
                 </tr>
               </thead>
@@ -233,7 +233,7 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
                           <td className={cx("unit")}>{r.unit}</td>
                           <td className={cx("num")}><b>{r.price === null ? "—" : usd2(r.price)}</b></td>
                           {trade !== "hvac" && <td className={cx("num")}>{r.labor === null ? "—" : usd2(r.labor)}</td>}
-                          <td>{r.companyDefault ? <span className={cx("stamp", "stamp-ok", "stamp-w")}>Company</span> : <span className={cx("stamp", "stamp-quiet", "stamp-w")}>{r.kind === "hvac-rate" ? "typical" : "catalog"}</span>}</td>
+                          <td className={cx("ctr")}>{r.companyDefault ? <span className={cx("stamp", "stamp-ok", "stamp-w")}>Company</span> : <span className={cx("stamp", "stamp-quiet", "stamp-w")}>{r.kind === "hvac-rate" ? "typical" : "catalog"}</span>}</td>
                           {canEdit && <td className={cx("acts")}><button type="button" className={cx("btn-row")} onClick={(e) => { e.stopPropagation(); openRow(r); }} aria-label={`Edit ${r.name}`}>Edit</button></td>}
                         </tr>
                       );

@@ -37,11 +37,11 @@ export function Sheet({ id = "inv-sheet-title", kicker, title, onClose, footer, 
   );
 }
 
-/** One joined segmented control: the chosen segment ink-filled, a muted counter beside each label. */
+/** A row of text filters (the status filters' kin): mono caps, the chosen one blueprint with a 2px rule, a muted counter after each label. */
 export function Segmented<T extends string>({ label, value, items, onChange }: { label: string; value: T; items: Array<{ id: T; label: string; n?: number }>; onChange: (id: T) => void }) {
   return (
-    <div className={cx("segc")} role="group" aria-label={label}>
-      {items.map((it) => <button key={it.id} type="button" className={cx("segc-btn", value === it.id && "on")} aria-pressed={value === it.id} onClick={() => onChange(it.id)}>{it.label}{it.n !== undefined && <b>{it.n}</b>}</button>)}
+    <div className={cx("flt")} role="group" aria-label={label}>
+      {items.map((it) => <button key={it.id} type="button" className={cx("flt-btn", value === it.id && "on")} aria-pressed={value === it.id} onClick={() => onChange(it.id)}>{it.label}{it.n !== undefined && <b>{it.n}</b>}</button>)}
     </div>
   );
 }
