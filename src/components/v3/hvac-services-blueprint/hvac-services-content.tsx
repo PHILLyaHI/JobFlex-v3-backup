@@ -112,6 +112,9 @@ export function HvacServicesContent({ card: initial, factor, place, embedded }: 
     const ownPart = !!t.ownPart;
     return { t, o, isHidden, typicalLabor, labor, part, ownLabor, ownPart, total: labor === null ? null : labor + part };
   };
+  // What the search and the strip leave on the menu; nothing left says so, with the way back.
+  const listed = (r: ReturnType<typeof rowOf>) => matches(r.t) && (showHidden || !r.isHidden) && (!onlyMine || r.ownLabor || r.ownPart);
+  const nothingListed = !SERVICE_MENU.some((t) => listed(rowOf(t))) && !(needle && custom.some(matches));
 
   return (
     <>
@@ -178,8 +181,17 @@ export function HvacServicesContent({ card: initial, factor, place, embedded }: 
           )}
         </section>
 
+        {nothingListed && (
+          <section className={cx("card")} data-menu-none>
+            <div className={cx("none")}>
+              <span>{needle ? "No task matches the search" : onlyMine ? "No task priced by you yet — type a price on any row" : "Nothing hidden"}</span>
+              <button type="button" className={cx("btn", "btn-ghost", "btn--sm")} onClick={() => { setQ(""); setView("all"); }}>Show all</button>
+            </div>
+          </section>
+        )}
+
         {groups.map((g) => {
-          const rows = g.tasks.map(rowOf).filter((r) => matches(r.t) && (showHidden || !r.isHidden) && (!onlyMine || r.ownLabor || r.ownPart));
+          const rows = g.tasks.map(rowOf).filter(listed);
           if (!rows.length) return null;
           const hiddenHere = g.tasks.filter((t) => over[t.id]?.hidden).length;
           return (

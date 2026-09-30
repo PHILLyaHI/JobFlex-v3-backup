@@ -69,17 +69,20 @@ export function InventoryItemForm({ workspace: w, compact = false }: { workspace
   );
 }
 
+/** A new supplier, or `w.supplierEdit`'s details prefilled and saved over it. */
 export function InventorySupplierForm({ workspace: w, compact = false }: { workspace: InventoryWorkspace; compact?: boolean }) {
-  if (!w.canWrite || !w.supplierOpen) return null;
-  return <form className={`${s.form} ${compact ? s.compact : ""}`} onSubmit={(event) => {
+  const sup = w.supplierEdit;
+  if (!w.canWrite || (!w.supplierOpen && !sup)) return null;
+  const close = () => { w.setSupplierOpen(false); w.setSupplierEdit(null); };
+  return <form key={sup?.id ?? "new"} className={`${s.form} ${compact ? s.compact : ""}`} onSubmit={(event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const value = (key: string) => String(form.get(key) ?? "").trim();
-    w.saveSupplier({ name: value("name"), email: value("email"), phone: value("phone"), website: value("website") });
+    w.saveSupplier({ id: sup?.id ?? null, name: value("name"), email: value("email"), phone: value("phone"), website: value("website") });
   }}><div className={s.grid}>
-    <label className={s.field}>Supplier name<input name="name" autoFocus required maxLength={120} placeholder="ABC Supply" /></label>
-    <label className={s.field}>Email for purchase orders<input name="email" type="email" placeholder="orders@supplier.com" /></label>
-    <label className={s.field}>Phone<input name="phone" type="tel" placeholder="Optional" /></label>
-    <label className={s.field}>Website<input name="website" placeholder="Optional" /></label>
-  </div><div className={s.actions}><button className={s.primary} type="submit" disabled={w.pending}>{w.pending ? "Saving…" : "Add supplier"}</button><button className={s.secondary} type="button" disabled={w.pending} onClick={() => w.setSupplierOpen(false)}>Cancel</button></div></form>;
+    <label className={s.field}>Supplier name<input name="name" autoFocus required maxLength={120} placeholder="ABC Supply" defaultValue={sup?.name ?? ""} /></label>
+    <label className={s.field}>Email for purchase orders<input name="email" type="email" placeholder="orders@supplier.com" defaultValue={sup?.email ?? ""} /></label>
+    <label className={s.field}>Phone<input name="phone" type="tel" placeholder="Optional" defaultValue={sup?.phone ?? ""} /></label>
+    <label className={s.field}>Website<input name="website" placeholder="Optional" defaultValue={sup?.website ?? ""} /></label>
+  </div><div className={s.actions}><button className={s.primary} type="submit" disabled={w.pending}>{w.pending ? "Saving…" : sup ? "Save supplier" : "Add supplier"}</button><button className={s.secondary} type="button" disabled={w.pending} onClick={close}>Cancel</button></div></form>;
 }

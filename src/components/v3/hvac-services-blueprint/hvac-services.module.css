@@ -87,6 +87,8 @@
 :global(.jf-blueprint .content) .sec-h { font-size: 11px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
 :global(.jf-blueprint .content) .hint { font-size: 13px; line-height: 1.5; color: var(--muted); }
 :global(.jf-blueprint .content) .empty { padding: 14px 0 4px; font-size: 13px; color: var(--muted); }
+/* Nothing to list under the search or the strip: the Inventory page's dashed frame, one phrase, one button. */
+:global(.jf-blueprint .content) .none { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 32px 18px; border: 1.5px dashed var(--muted-faint, #b9b4a8); border-radius: var(--radius); text-align: center; font-size: 14px; font-weight: 500; color: var(--muted); }
 
 /* ── tables ── */
 :global(.jf-blueprint .content) .tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -135,6 +137,7 @@
   :global(.jf-blueprint .content) .two, :global(.jf-blueprint .content) .frm { grid-template-columns: 1fr; }
   :global(.jf-blueprint .content) .page-title { font-size: 34px; }
   :global(.jf-blueprint .content) .card { padding: 14px 14px 16px; }
+  :global(.jf-blueprint .content) .none .btn { height: 44px; }
   :global(.jf-blueprint .content) .tbl-wrap { overflow-x: auto; }
 }
 

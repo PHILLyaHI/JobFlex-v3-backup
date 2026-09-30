@@ -84,8 +84,8 @@ export function InventoryStock({ data, facts, canWrite, slots }: { data: TradeBo
           <InventoryItemForm key={`${w.itemPanel.mode}:${w.itemPanel.itemId ?? ""}`} workspace={w} compact />
         </Sheet>
       )}
-      {canWrite && w.supplierOpen && (
-        <Sheet id="inv-stock-sheet-title" kicker="Supplier" title="Add supplier" onClose={() => w.setSupplierOpen(false)}>
+      {canWrite && (w.supplierOpen || w.supplierEdit) && (
+        <Sheet id="inv-stock-sheet-title" kicker="Supplier" title={w.supplierEdit ? w.supplierEdit.name : "Add supplier"} onClose={() => { w.setSupplierOpen(false); w.setSupplierEdit(null); }}>
           <InventorySupplierForm workspace={w} compact />
         </Sheet>
       )}
@@ -150,12 +150,12 @@ function StockSchedule({ w, handheld, addMaterials, pickFilter }: { w: Inventory
                 const start = w.sections.slice(0, si).reduce((n, s) => n + s.items.length, 0);
                 return (
                   <SectionRows key={sec.label ?? "all"} label={sec.label} count={sec.items.length} cols={cols}>
-                    {sec.items.map((x, i) => <StockTableRow key={x.r.id} x={x} n={start + i + 1} w={w} />)}
+                    {sec.items.map((x, i) => <StockTableRow key={x.r.id} x={x} n={w.numbers.get(x.r.id) ?? start + i + 1} w={w} />)}
                   </SectionRows>
                 );
               })}
               {w.folded.length > 0 && (
-                <PerJobFold w={w} cols={cols} list={(rows) => rows.map((x, i) => <StockTableRow key={x.r.id} x={x} n={w.shown.length + i + 1} w={w} dim />)} />
+                <PerJobFold w={w} cols={cols} list={(rows) => rows.map((x, i) => <StockTableRow key={x.r.id} x={x} n={w.numbers.get(x.r.id) ?? w.shown.length + i + 1} w={w} dim />)} />
               )}
             </tbody>
           </table>
@@ -505,6 +505,7 @@ function Suppliers({ w }: { w: InventoryWorkspace }) {
                 <div className={cx("sup-l")}><span>Phone</span>{s.phone ? <a href={`tel:${s.phone}`}>{s.phone}</a> : <i className={cx("none")}>—</i>}</div>
                 <div className={cx("sup-l")}><span>Web</span>{s.website ? <a href={/^https?:/.test(s.website) ? s.website : `https://${s.website}`} target="_blank" rel="noreferrer">{s.website.replace(/^https?:\/\//, "")}</a> : <i className={cx("none")}>—</i>}</div>
                 <div className={cx("sup-l")}><span>Last order</span>{o ? <b>{dayOf(o.sentAt)} · {o.lines.length} line{o.lines.length === 1 ? "" : "s"}</b> : <i className={cx("none")}>none yet</i>}</div>
+                {w.canWrite && <div className={cx("sup-acts")}><button type="button" className={cx("btn-row")} onClick={() => w.setSupplierEdit(s)} aria-label={`Edit ${s.name}`}><Pencil className="ic" aria-hidden="true" />Edit</button></div>}
               </article>
             );
           })}
@@ -530,7 +531,7 @@ function Activity({ w }: { w: InventoryWorkspace }) {
             return (
               <li key={m.id}>
                 <time dateTime={m.at}>{dayOf(m.at)}</time>
-                <div><div className={cx("t")}>{moveLabel(m)} · {m.itemName}</div><div className={cx("s")}>{[m.jobTitle, m.note && m.note !== "Counted" ? m.note : null, m.actor, ago(m.at)].filter(Boolean).join(" · ")}</div></div>
+                <div><div className={cx("t")}>{moveLabel(m)} · {m.itemName}</div><div className={cx("s")}>{m.jobId && m.jobTitle && <><Link href={`/dashboard/jobs/${m.jobId}` as Route} className={cx("link")}>{m.jobTitle}</Link> · </>}{[m.note && m.note !== "Counted" ? m.note : null, m.actor, ago(m.at)].filter(Boolean).join(" · ")}</div></div>
                 <span className={cx("q", inn && "q-in", out && "q-out")}>{inn ? "+" : out ? "−" : ""}{qty(Math.abs(m.quantity))} {m.unit}</span>
               </li>
             );

@@ -7,7 +7,7 @@ import { setProposalInventoryLink } from "@/actions/inventoryLink";
 import type { BoardBuyJob, BoardProposal, BoardSupplier, TradeBoardData } from "@/lib/inventoryBoard";
 import type { StockFacts, StockMove } from "@/lib/inventoryDashboard";
 import { groupByCategory } from "@/lib/inventoryCategories";
-import { isStocked, pickList, type BuyLine, type StockLine, type StockRow } from "@/lib/inventory";
+import { isStocked, pickList, stockMatches, type BuyLine, type StockLine, type StockRow } from "@/lib/inventory";
 
 /** `embedded`: drawn inside /dashboard/inventory, which owns the page head — no back link, no h1. */
 export type RoofingInventoryProps = { data: TradeBoardData; facts: StockFacts; canWrite: boolean; embedded?: boolean };
@@ -101,6 +101,8 @@ export function useRoofingInventory({ data, facts, canWrite }: RoofingInventoryP
   const estimatorHref = `/dashboard/${data.trade}-estimator` as const;
   const [itemPanel, setItemPanel] = useState<ItemPanel | null>(null);
   const [supplierOpen, setSupplierOpen] = useState(false);
+  // A supplier being edited (its details prefilled in the same form), or null.
+  const [supplierEdit, setSupplierEdit] = useState<BoardSupplier | null>(null);
   // The "What we stock" checklist: open on request, and open by itself for a
   // company whose list is still empty (2026-09-23).
   const [setupOpen, setSetupOpen] = useState(false);
@@ -138,11 +140,15 @@ export function useRoofingInventory({ data, facts, canWrite }: RoofingInventoryP
     // Stocked items that never moved and show zero: the shelf still has to be counted.
     const uncounted = rows.filter((x) => x.r.onHand === 0 && !facts.items[x.r.id]?.lastMoveAt).length;
     const needle = search.trim().toLowerCase();
-    const matches = (x: InventoryRow) => !needle || x.r.name.toLowerCase().includes(needle) || (x.r.supplierName ?? "").toLowerCase().includes(needle) || (x.r.supplierSku ?? "").toLowerCase().includes(needle);
+    const matches = (x: InventoryRow) => stockMatches(x.r, needle);
     const listed = filter === "PERJOB" ? perJobRows.filter(matches) : rows.filter((x) => (filter === "ALL" || (filter === "ORDER" ? NEEDS.has(x.st) : filter === "RESERVED" ? x.r.reserved > 0 : filter === "STOCKED" ? x.r.onHand > 0 : filter === "IDLE" ? x.idle : x.st === "empty")) && matches(x));
     // A search reaches the per-job items too; otherwise they sit folded under the shelf.
     const shown = filter === "ALL" && needle ? [...listed, ...perJobRows.filter(matches)] : listed;
     const folded = filter === "ALL" && !needle ? perJobRows : [];
+    // The schedule's running number over the whole shelf in the chosen order, the per-job rows after it:
+    // a row keeps its number under a search or a filter.
+    const fullOrder = view === "category" ? groupByCategory(data.trade, rows, (x) => x.r.name).flatMap((g) => g.items) : rows;
+    const numbers = new Map([...fullOrder, ...perJobRows].map((x, i) => [x.r.id, i + 1]));
     const sections: Array<{ label: string | null; items: InventoryRow[]; needs: number }> = view === "category" ? groupByCategory(data.trade, shown, (x) => x.r.name).map((g) => ({ label: g.label, items: g.items, needs: g.items.filter((x) => NEEDS.has(x.st)).length })) : [{ label: null, items: shown, needs: 0 }];
     // The strip's counters follow the search: each is what that pick would list.
     const chips: Array<{ id: StockFilter; label: string; n: number }> = [
@@ -183,12 +189,12 @@ export function useRoofingInventory({ data, facts, canWrite }: RoofingInventoryP
     const listedProposals = proposals.filter((p) => ptab === "ALL" || (ptab === "OPEN" ? p.linked && OPEN.has(p.status) : ptab === "SOLD" ? p.linked && p.status === "ACCEPTED" : ptab === "DONE" ? rank(p) === 2 : !p.linked));
 
     const connected = data.proposals.filter((p) => p.linked).length;
-    return { shown, folded, sections, chips, needs, soldShort, stocked, emptyCount, uncounted, idle, idleValue, bySupplier, unassigned, orderCost, buy, buyLines, buyCost, next, nextPick, nextShort, nextBuy, orderBadge, proposals, listedProposals, ptabs, connected };
+    return { shown, folded, numbers, sections, chips, needs, soldShort, stocked, emptyCount, uncounted, idle, idleValue, bySupplier, unassigned, orderCost, buy, buyLines, buyCost, next, nextPick, nextShort, nextBuy, orderBadge, proposals, listedProposals, ptabs, connected };
   }, [rows, perJobRows, data, facts, search, filter, view, ptab]);
 
   return {
     tradeLabel, estimatorHref, data, facts, canWrite, pending, error, note, dismissFeedback: () => { setError(null); setNote(null); },
-    tab, setTab, filter, setFilter, view, setView, ptab, setPtab, q, setQ, itemPanel, setItemPanel, supplierOpen, setSupplierOpen,
+    tab, setTab, filter, setFilter, view, setView, ptab, setPtab, q, setQ, itemPanel, setItemPanel, supplierOpen, setSupplierOpen, supplierEdit, setSupplierEdit,
     setupOpen, setSetupOpen, showPerJob, setShowPerJob,
     rows, perJobRows, ...derived,
     saveStockList: (stocked: string[], perJob: string[]) => run(() => saveStockList({ trade: data.trade, stocked, perJob }), (r) => r.ok ? `Stock list saved — ${r.stocked} kept in stock, ${r.perJob} bought per job${r.added ? ` · ${r.added} standard items added at zero on hand` : ""}. Now count what is on the shelf.` : "", () => { setSetupOpen(false); setFilter("ALL"); }),
@@ -197,7 +203,7 @@ export function useRoofingInventory({ data, facts, canWrite }: RoofingInventoryP
     removeItem: (r: StockRow) => run(() => deleteInventoryItem(r.id), () => `${r.name} removed.`, () => setItemPanel(null)),
     receiveItem: (r: StockRow, n: number) => run(() => receiveStock(r.id, n), () => `${qty(n)} ${r.unit} of ${r.name} received.`, () => setItemPanel(null)),
     countItem: (r: StockRow, n: number) => run(() => countStock(r.id, n), () => `${r.name} counted at ${qty(n)} ${r.unit}.`, () => setItemPanel(null)),
-    saveSupplier: (input: SupplierInput) => run(() => upsertSupplier(input), () => `${input.name} saved.`, () => setSupplierOpen(false)),
+    saveSupplier: (input: SupplierInput) => run(() => upsertSupplier(input), () => `${input.name} saved.`, () => { setSupplierOpen(false); setSupplierEdit(null); }),
     assignSupplier: (r: StockRow, supplierId: string) => run(() => upsertInventoryItem({ trade: data.trade, name: r.name, unit: r.unit, reorderPoint: r.reorderPoint, supplierId, supplierSku: r.supplierSku ?? null, lastCost: facts.items[r.id]?.lastCost ?? null }), () => `Supplier assigned to ${r.name}.`),
     sendOrder: (supplierId: string, list: StockRow[]) => run(() => sendPurchaseOrder({ trade: data.trade, supplierId, lines: list.map((r) => ({ itemId: r.id, quantity: r.suggestedOrder })) }), (r) => r.ok ? `Purchase order emailed to ${r.to} · ${r.count} lines.` : ""),
     receiveOrder: (id: string) => run(() => receivePurchaseOrder(id), (r) => r.ok ? `${r.received} lines received into stock.` : ""),
