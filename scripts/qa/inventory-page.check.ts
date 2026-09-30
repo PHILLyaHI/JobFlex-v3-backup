@@ -1,6 +1,8 @@
 // The unified Inventory page (2026-09-29): the price book's rows and writes for
 // the three trades, the company's documents the estimators read, who may
-// write, and the old URLs answering 308.
+// write, and the old URLs answering 308. Since the audit of 2026-09-30 also:
+// what leaves the shelf for a job and at what price, the stock search, the
+// schedule's numbers under 600 rows, the service menu pricing the estimate.
 //
 //   npx tsx --tsconfig tsconfig.json scripts/qa/inventory-page.check.ts
 //
@@ -9,7 +11,8 @@
 // the end, pass or fail. The row builders and document updaters are pure
 // (lib/priceBook); the writes here go through the same tables the actions
 // write (fenceCatalog.saveFenceCatalog, roofCatalog.saveRoofCatalog,
-// hvacEstimator.saveHvacCatalogItem / saveHvacRateCard). The redirects are
+// hvacEstimator.saveHvacCatalogItem / saveHvacRateCard). Section G makes one
+// item and one job of its own in QA Co and removes them. The redirects are
 // checked against the dev server QA_BASE_URL names, and skipped when it is
 // not set (this machine's :3000 may be another project's).
 
@@ -26,6 +29,11 @@ import { ROOF_SYSTEMS, UNDERLAYMENTS } from "../../src/lib/roofPackage/catalog";
 import { DEFAULT_RATE_CARD, STARTER_CATALOG, normalizeRateCard } from "../../src/lib/hvac/ledger";
 import { parseTab } from "../../src/lib/inventoryPage";
 import { isPathAllowed, ROLE_ROUTE_GATES } from "../../src/lib/roleRoutes";
+import { issueFromShelf, pickList, stockMatches, type StockItem } from "../../src/lib/inventory";
+import { jobCostOf, movementPrice } from "../../src/lib/jobCost";
+import { runEngine } from "../../src/lib/hvac/engine";
+import { buildLedger } from "../../src/lib/hvac/ledger";
+import { modelFromSite } from "../../src/lib/hvac/intake";
 
 const db = new PrismaClient();
 let passes = 0;
@@ -126,6 +134,70 @@ async function main() {
     ok("D tab: services only for hvac, book by default", parseTab("services", "hvac") === "services" && parseTab("services", "fence") === "book" && parseTab(undefined, "roof") === "book" && parseTab("stock", "roof") === "stock");
     ok("D an unknown tab and a services tab off hvac fall back to the book", parseTab("cards", "hvac") === "book" && parseTab("services", "roof") === "book");
 
+    /* ── F. what leaves the shelf for a job, the stock search ── */
+    head("F · stock: the truck takes what the shelf has, never below zero; the search reads name, supplier, SKU");
+    const shelf: StockItem[] = [
+      { id: "i-sh", name: "Shingles", key: "shingles", unit: "bundle", onHand: 40, reorderPoint: null, supplierId: "s1", supplierName: "ABC Supply", supplierSku: "SH-01" },
+      { id: "i-ul", name: "Underlayment", key: "underlayment", unit: "roll", onHand: 2, reorderPoint: null, supplierId: "s1", supplierName: "ABC Supply", supplierSku: "UL-02" },
+      { id: "i-rc", name: "Ridge cap", key: "ridge cap", unit: "bundle", onHand: 0, reorderPoint: null, supplierId: null },
+      { id: "i-dr", name: "Drip edge", key: "drip edge", unit: "piece", onHand: 3, reorderPoint: null, supplierId: null, stocked: false },
+    ];
+    const pick = pickList(shelf, [{ name: "Shingles", quantity: 12 }, { name: "Underlayment", quantity: 5 }, { name: "Ridge cap", quantity: 3 }, { name: "Drip edge", quantity: 8 }, { name: "Sealant nobody tracks", quantity: 2 }]);
+    const issue = issueFromShelf(pick);
+    const takeOf = (id: string) => issue.taken.find((r) => r.itemId === id)?.take ?? 0;
+    ok("F a covered line leaves whole (12 shingles)", takeOf("i-sh") === 12);
+    ok("F a short stocked line leaves only what is on the shelf (2 of 5 rolls)", takeOf("i-ul") === 2);
+    ok("F an empty shelf gives nothing and books nothing (ridge cap)", !issue.taken.some((r) => r.itemId === "i-rc"));
+    ok("F a per-job item leaves as far as it arrived (3 of 8)", takeOf("i-dr") === 3);
+    ok("F an untracked line never leaves the warehouse", issue.taken.length === 3 && issue.taken.every((r) => r.itemId));
+    ok("F no line takes more than is on hand — the count stays at 0 or above", issue.taken.every((r) => r.take <= Math.max(0, shelf.find((i) => i.id === r.itemId)!.onHand)));
+    ok("F the short stocked lines are counted (underlayment, ridge cap; not the per-job item)", issue.short === 2, String(issue.short));
+    ok("F search by name, supplier and SKU", stockMatches(shelf[0], "shing") && stockMatches(shelf[0], "abc supply") && stockMatches(shelf[1], "ul-02") && !stockMatches(shelf[2], "abc") && stockMatches(shelf[2], "  "));
+
+    /* ── G. a job's stock cost at the issue price (QA Co rows of its own) ── */
+    head("G · stock cost: the price stamped at issue holds when the price moves; leftovers come back at it");
+    const gItem = await db.inventoryItem.create({ data: { organizationId: orgId, trade: "roof", name: "QA check issue price", key: "qa check issue price", unit: "each", onHand: 20, lastCost: 10 } });
+    const gJob = await db.job.create({ data: { organizationId: orgId, title: "QA check stock cost" } });
+    try {
+      await db.inventoryMovement.create({ data: { itemId: gItem.id, kind: "PICKED", quantity: -5, jobId: gJob.id, unitCost: 10 } });
+      ok("G 5 issued at $10 cost the job $50", (await jobCostOf(orgId, gJob.id)).stock === 50);
+      await db.inventoryItem.update({ where: { id: gItem.id }, data: { lastCost: 20 } });
+      ok("G the item's price moves to $20 — the job still costs $50", (await jobCostOf(orgId, gJob.id)).stock === 50);
+      await db.inventoryMovement.create({ data: { itemId: gItem.id, kind: "RETURNED", quantity: 2, jobId: gJob.id, unitCost: 10 } });
+      const gc = await jobCostOf(orgId, gJob.id);
+      ok("G 2 back at the issue price: $30, taken 5, returned 2", gc.stock === 30 && gc.stockLines[0]?.taken === 5 && gc.stockLines[0]?.returned === 2, JSON.stringify(gc.stockLines));
+      ok("G an older movement without a price reads the item's last cost; a bare one reads 0 and says so", movementPrice(null, 20).price === 20 && !movementPrice(null, null).priced);
+    } finally {
+      await db.inventoryItem.delete({ where: { id: gItem.id } });
+      await db.job.delete({ where: { id: gJob.id } });
+    }
+
+    /* ── H. search and filter over a big book ── */
+    head("H · 600 rows: the filter and the search stay instant, the numbers stay put");
+    const base15 = fenceBookRows(null);
+    const big = Array.from({ length: 600 }, (_, i) => ({ ...base15[i % 15], id: `r${i}`, name: `Row ${String(i).padStart(3, "0")} ${i % 3 ? "cedar" : "vinyl"}` }));
+    const t0 = performance.now();
+    const bigNums = bookNumbers(big, ORDER);
+    const hit = shownGroups(big, ORDER, "cedar", "Wood").flatMap((g) => g.rows);
+    const took = performance.now() - t0;
+    ok("H numbering, search and a filter over 600 rows in under 50 ms", took < 50, `${took.toFixed(1)} ms`);
+    ok("H a filtered row keeps the number it has in the whole book", hit.length > 0 && hit.every((r, i) => (bigNums.get(rowKey(r)) ?? 0) > 0 && (i === 0 || bigNums.get(rowKey(r))! > bigNums.get(rowKey(hit[i - 1]))!)), `${hit.length} rows`);
+    const bigStock = Array.from({ length: 600 }, (_, i) => ({ name: `Item ${i}`, supplierName: i % 2 ? "ABC Supply" : null, supplierSku: `SKU-${i}` }));
+    const t1 = performance.now();
+    const found = bigStock.filter((r) => stockMatches(r, "sku-42"));
+    const took1 = performance.now() - t1;
+    ok("H the stock search over 600 rows in under 20 ms", took1 < 20 && found.length === 11, `${found.length} hits, ${took1.toFixed(1)} ms`);
+
+    /* ── I. the service menu prices the estimate ── */
+    head("I · service menu → the HVAC estimate");
+    const m = modelFromSite({ address: "4518 Bluestem Hollow Dr, Frisco, TX 75034", state: "TX", county: "Collin", footprintSqft: 2000, storeys: 1, yearBuilt: 1998, sources: {} });
+    m.existing = { kind: "split-ac-furnace", tons: 3.5, fuel: "gas", refrigerant: "R-410A", yearMade: 2008 };
+    const svcCard = normalizeRateCard({ ...DEFAULT_RATE_CARD, serviceOverrides: { capacitor: { laborUsd: 199 } } });
+    const svcIn = { service: { tasks: ["capacitor"] } };
+    const svc = buildLedger(runEngine(m, { catalog: STARTER_CATALOG, job: "service", input: svcIn }), m, svcCard, STARTER_CATALOG, { job: "service", input: svcIn });
+    const cap = svc.labor.find((l) => l.id === "l-svc-capacitor");
+    ok("I a price typed on the menu is the estimate's line, marked as the shop's", cap?.unitPrice === 199 && /your menu price/.test(cap?.note ?? ""), JSON.stringify(cap));
+
     /* ── E. the old URLs answer 308 (when a dev server is up) ── */
     head("E · the old URLs");
     // Only against a server named explicitly: :3000 on this machine may be
@@ -141,9 +213,14 @@ async function main() {
     let up = Boolean(base);
     if (up) { try { await fetch(base + "/auth/login", { redirect: "manual" }); } catch { up = false; } }
     if (!up) console.log(`skip  ${base ? `no dev server on ${base}` : "QA_BASE_URL not set"} — the 308s are not checked here`);
-    else for (const [from, to] of moved) {
-      const r = await fetch(base + from, { redirect: "manual" });
-      ok(`E 308 ${from}`, r.status === 308 && (r.headers.get("location") ?? "").endsWith(to), `${r.status} → ${r.headers.get("location")}`);
+    else {
+      for (const [from, to] of moved) {
+        const r = await fetch(base + from, { redirect: "manual" });
+        ok(`E 308 ${from}`, r.status === 308 && (r.headers.get("location") ?? "").endsWith(to), `${r.status} → ${r.headers.get("location")}`);
+      }
+      const r = await fetch(base + "/dashboard/fence-estimator/board?group=ORDER&trade=roof", { redirect: "manual" });
+      const loc = r.headers.get("location") ?? "";
+      ok("E the old link's own query rides along; the trade and the tab are the new page's", /group=ORDER/.test(loc) && /trade=fence/.test(loc) && !/trade=roof/.test(loc) && /tab=stock/.test(loc), loc);
     }
   } finally {
     await db.fenceCatalog.deleteMany({ where: { organizationId: orgId } });
