@@ -20,7 +20,8 @@ const BASE = process.env.QA_BASE_URL || `http://localhost:${process.env.QA_PORT 
 const EMAIL = "qa@acme.test";
 const PASSWORD = "qa-pass-2026";
 const QA_ORG_SLUG = "qa-co";
-const SESSION_FILE = path.join(os.tmpdir(), "jobflex-qa-session.json");
+// One kept session per server: cookies are per host, so localhost's session is no use on the LAN address.
+const SESSION_FILE = path.join(os.tmpdir(), "jobflex-qa-session" + (new URL(BASE).host === "localhost:3000" ? "" : "-" + new URL(BASE).host.replace(/[^a-z0-9]/gi, "_")) + ".json");
 
 async function launch(opts = {}) {
   const { chromium } = require("playwright"); // here, not at the top: ./_world uses this file without a browser
@@ -78,8 +79,19 @@ async function signIn(page) {
   } catch { /* a stale file is not a reason to fail */ }
   await page.goto(BASE + "/dashboard", { waitUntil: "domcontentloaded" });
   if (!/\/auth\/login/.test(page.url())) return assertSignedInAsQa(page);
-  await page.fill('input[type="email"]', EMAIL);
-  await page.fill('input[type="password"]', PASSWORD);
+  // In development the login form's state starts on owner@acme.test (the owner's own manual
+  // account). Filled before React hydrates, the field is put back to it — and the press signs
+  // in as the OWNER with a wrong password, spending the owner's brake (it happened, 2026-09-30).
+  // So: wait for the form to settle, fill, and never press unless the field holds EMAIL.
+  await page.waitForLoadState("load").catch(() => {});
+  await page.waitForTimeout(2500);
+  for (let i = 0; i < 6; i++) {
+    await page.fill('input[type="email"]', EMAIL);
+    await page.fill('input[type="password"]', PASSWORD);
+    await page.waitForTimeout(500);
+    if ((await page.inputValue('input[type="email"]')) === EMAIL) break;
+  }
+  if ((await page.inputValue('input[type="email"]')) !== EMAIL) throw new Error("QA guard: the email field would not hold " + EMAIL + " — nothing was submitted");
   // By PATH: the login URL itself carries "?next=/dashboard", which a /dashboard/ regex matches at once.
   await Promise.all([
     page.waitForURL((u) => !u.pathname.startsWith("/auth/login"), { timeout: 30000 }).catch(() => {}),
