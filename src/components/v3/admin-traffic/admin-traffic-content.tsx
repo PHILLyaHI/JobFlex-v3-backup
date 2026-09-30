@@ -9,6 +9,7 @@ import { Sheet, useMdl } from "@/components/v3/admin-influencers/admin-ui";
 import { TrafficChart } from "./traffic-chart";
 import { TrafficDatePicker } from "./traffic-date-picker";
 import { LivePanel } from "./live-panel";
+import { AdLinks } from "./ad-links";
 import type { LiveReport } from "@/lib/traffic-live";
 import s from "./traffic.module.css";
 
@@ -148,6 +149,8 @@ export function AdminTrafficContent({ data, signups: initialSignups = null, live
 
     {/* Who is on the site this minute, where from, how far they got (2026-09-28). */}
     {live && <LivePanel initial={live} timezone={filters.timezone}/>}
+    {/* The tagged link for every ad and post, so the cards above tell them apart (2026-09-29). */}
+    <AdLinks/>
 
     <section className={s.filterPanel} aria-label="Traffic filters">
       <div className={s.rangeRow}><div className={s.filterCaption}><SlidersHorizontal size={16}/><span>Report scope</span></div><TrafficDatePicker from={draft.from} to={draft.to} timezone={draft.timezone} onChange={(from, to) => update({ from, to })}/>

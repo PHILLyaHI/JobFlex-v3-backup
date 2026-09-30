@@ -9,6 +9,7 @@ import { Info, Megaphone, RefreshCw } from "lucide-react";
 import { getLiveTraffic } from "@/actions/trafficDashboard";
 import type { LiveReport, LiveStage, LiveVisitor } from "@/lib/traffic-live";
 import { LiveMap } from "./live-map";
+import { LivePlatforms } from "./live-platforms";
 import s from "./traffic.module.css";
 
 const POLL_MS = 45_000;
@@ -36,6 +37,8 @@ export function LivePanel({ initial, timezone }: { initial: LiveReport; timezone
   const [span, setSpan] = useState<5 | 30>(30);
   /** The visitor opened on the map — from a pin, or from a row of the list. */
   const [selected, setSelected] = useState<string | null>(null);
+  /** A platform card pressed: the map and the list keep only its people. */
+  const [platform, setPlatform] = useState<string | null>(null);
   const request = useRef(0);
   // Stable: it takes the one thing that changes as an argument, so the poll
   // below is armed once per setting, not once per tick of the clock.
@@ -62,7 +65,7 @@ export function LivePanel({ initial, timezone }: { initial: LiveReport; timezone
   }, [includeDev, load]);
 
   const c = report.counts;
-  const rows = report.visitors.filter((v) => !adsOnly || v.fromAd || v.stage === "signed-up");
+  const rows = report.visitors.filter((v) => (!adsOnly || v.fromAd || v.stage === "signed-up") && (!platform || v.platform === platform));
   const onMap = rows.filter((v) => span === 30 || v.active);
   const live = report.status === "ok";
   return <section className={s.live} aria-label="Live now" data-state={report.status} aria-busy={pending}>
@@ -84,17 +87,20 @@ export function LivePanel({ initial, timezone }: { initial: LiveReport; timezone
     </div>
     {(error || report.message) && <div className={s.notice} role="status"><Info size={16}/><div><strong>{error || report.message}</strong></div></div>}
     {live && <>
+      {/* The platforms: a card each, the ad platforms always; pressed, a filter. */}
+      <LivePlatforms platforms={report.platforms} selected={platform} onSelect={setPlatform}/>
       {/* The map: where everyone is, a pin per visitor in the stage colours. */}
       <div className={s.liveSpan} role="group" aria-label="Who the map shows">
         <div className={s.dimensionTabs} style={{ margin: 0 }}>
           <button type="button" aria-pressed={span === 5} onClick={() => setSpan(5)}>Now · 5 min</button>
           <button type="button" aria-pressed={span === 30} onClick={() => setSpan(30)}>Last 30 min</button>
         </div>
-        <span>{onMap.length} {onMap.length === 1 ? "visitor" : "visitors"} on the map</span>
+        <span>{onMap.length} {onMap.length === 1 ? "visitor" : "visitors"} on the map{platform ? ` · ${report.platforms.find((p) => p.platform === platform)?.name ?? platform} only` : ""}</span>
+        {platform && <button type="button" className={s.textButton} onClick={() => setPlatform(null)}>Show everyone</button>}
       </div>
       <LiveMap visitors={onMap} now={now} selected={selected} onSelect={setSelected} timezone={timezone}/>
     </>}
-    {live && !rows.length && <div className={s.liveEmpty}>{report.visitors.length ? "Nobody from an ad in the last half hour — turn off the ads filter to see everyone." : `Nobody on the site in the last ${report.windowMinutes} minutes.`}</div>}
+    {live && !rows.length && <div className={s.liveEmpty}>{report.visitors.length ? (platform ? "Nobody from this platform in the last half hour — press the card again to see everyone." : "Nobody from an ad in the last half hour — turn off the ads filter to see everyone.") : `Nobody on the site in the last ${report.windowMinutes} minutes.`}</div>}
     {rows.length > 0 && <ol className={s.liveList} aria-label="Visitors on the site">
       {rows.map((v) => <LiveRow key={v.id + v.firstAt} v={v} now={now} timezone={timezone} selected={selected === v.id} onSelect={() => setSelected(selected === v.id ? null : v.id)}/>)}
     </ol>}

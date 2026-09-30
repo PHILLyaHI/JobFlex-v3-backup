@@ -494,3 +494,38 @@
   :global(.jf-blueprint) .mapLoading { margin:0 16px 8px; }
   :global(.jf-blueprint) .liveSpan { padding:12px 16px 8px; }
 }
+
+/* ── The ad platforms, live (2026-09-29) — cards in each platform's colour ── */
+:global(.jf-blueprint) .platforms { display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:12px; padding:14px 24px 4px; }
+:global(.jf-blueprint) .platform { display:flex; flex-direction:column; gap:8px; text-align:left; padding:14px 14px 12px; border:1.5px solid var(--hair-soft); border-top:4px solid var(--platform); border-radius:2px; background:var(--traffic-plate); color:var(--ink); min-height:0; transition:border-color .12s var(--ease), box-shadow .12s var(--ease); }
+:global(.jf-blueprint) .platform:hover { border-color:var(--ink); border-top-color:var(--platform); }
+:global(.jf-blueprint) .platform[aria-pressed="true"] { border-color:var(--ink); border-top-color:var(--platform); box-shadow:2px 2px 0 var(--ink); background:var(--paper); }
+:global(.jf-blueprint) .platformName { display:flex; align-items:center; gap:8px; font:800 13px var(--font); }
+:global(.jf-blueprint) .platformName i { width:10px; height:10px; background:var(--platform); flex:0 0 auto; }
+:global(.jf-blueprint) .platformName em { margin-left:auto; font:700 9.5px var(--font-mono); font-style:normal; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); border:1px solid var(--hair-soft); padding:2px 5px; }
+:global(.jf-blueprint) .platformCount { font:850 30px/1 var(--font); letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .platformCount small { font:600 11px var(--font-mono); letter-spacing:0; color:var(--success-dark); margin-left:4px; }
+:global(.jf-blueprint) .platformSplit { font:600 11px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .platformSplit b { color:var(--ink); }
+:global(.jf-blueprint) .platformBar { display:flex; height:6px; background:var(--paper); border:1px solid var(--hair-soft); overflow:hidden; }
+:global(.jf-blueprint) .platformBar i { display:block; height:100%; background:var(--platform); }
+:global(.jf-blueprint) .platformOutcomes { display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
+:global(.jf-blueprint) .platformOutcomes > span { display:flex; flex-direction:column; align-items:center; gap:1px; padding:6px 4px; background:var(--chart-fill); text-align:center; }
+:global(.jf-blueprint) .platformOutcomes > span[data-tone="ok"] { background:var(--success-soft); }
+:global(.jf-blueprint) .platformOutcomes > span[data-tone="today"] { background:var(--paper); }
+:global(.jf-blueprint) .platformOutcomes small { font:700 9.5px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+:global(.jf-blueprint) .platformOutcomes b { font:850 16px var(--font); font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .platformOutcomes > span[data-tone="ok"] b { color:var(--success-dark); }
+:global(.jf-blueprint) .platformCampaigns { display:flex; flex-direction:column; gap:2px; font:600 10.5px/1.5 var(--font-mono); color:var(--muted); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .platformCampaigns b { color:var(--ink); }
+/* Links for the ads: a row per link, the address in a mono well, a copy button beside. */
+:global(.jf-blueprint) .linksForm { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:14px; margin-bottom:18px; }
+:global(.jf-blueprint) .linksInput { min-height:44px; padding:8px 12px; border:1.5px solid var(--ink); border-radius:2px; font:600 13px var(--font); background:var(--traffic-plate); }
+:global(.jf-blueprint) .linksRow { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px 12px; align-items:center; margin-top:12px; }
+:global(.jf-blueprint) .linksRow > span { grid-column:1 / -1; font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.07em; color:var(--traffic-label); }
+:global(.jf-blueprint) .linksRow code { display:block; min-width:0; padding:10px 12px; border:1.5px solid var(--hair-soft); background:var(--paper); font:600 12px/1.5 var(--font-mono); color:var(--ink); overflow-wrap:anywhere; }
+@media (max-width: 560px) {
+  :global(.jf-blueprint) .platforms { padding:12px 16px 4px; grid-template-columns:1fr; }
+  :global(.jf-blueprint) .linksRow { grid-template-columns:1fr; }
+  :global(.jf-blueprint) .linksRow button { width:100%; }
+}

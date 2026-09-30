@@ -170,3 +170,39 @@ without a GeoIP place are counted but not drawn (the legend says how
 many). Where AVACO polls its own visit log every two seconds, this map
 rides the same 45-second PostHog poll as the panel.
 
+### The ad platforms, live, and the links for the ads (2026-09-29)
+
+Owner: "statistics from Twitter, Instagram, Facebook, TikTok, Google Ads
+cards like AVACO has, that track exactly where it came from — we're going
+to run the advertisement." Two more pieces of AVACO's statistics, brought
+over:
+
+- **Platform cards** (`live-platforms.tsx`, `lib/traffic-live
+  platformCards`) sit under the KPIs of Live now: a card each for
+  Facebook, Instagram, TikTok, X and Google Ads — always, in that order,
+  even at zero — then any other platform that sent someone in the window
+  (YouTube, LinkedIn, Yelp…), and Search / Direct / Other sites last. Each
+  card, in the platform's own colour: visitors in the window and how many
+  are on the site now, from ads vs organic (a bar), signing up and signed
+  up in the window, today's signups the database credits to the platform
+  (the organization's `utmSource`), and the campaigns and ads seen
+  (`utm_campaign` · `utm_content`, with their signups). A card pressed is a
+  filter: the map and the list keep only that platform's people.
+- **Platform reading** got sharper: Meta's own `{{site_source_name}}`
+  values (`fb`, `ig`, `msg`, `an`) are credited to Facebook / Instagram; the
+  ad platforms' **click ids** are read from the events (`gclid`/`gbraid`/
+  `wbraid` Google, `ttclid` TikTok, `twclid` X, `msclkid` Bing, `li_fat_id`
+  LinkedIn — each a paid click even with no tag; `fbclid` names Facebook
+  without proving an ad, and with no referrer means the in-app browser).
+  Every visitor now carries `platform` and `content` (the ad).
+- **Links for your ads** (`ad-links.tsx`, a card under Live now): the link
+  to put in each ad or post. Meta and TikTok presets carry the placeholders
+  those platforms fill in themselves (`{{site_source_name}}`,
+  `{{campaign.name}}`, `{{ad.name}}`; `__CAMPAIGN_NAME__`, `__CID_NAME__`)
+  as the "URL parameters" beside a plain website address; Google Ads uses
+  ValueTrack (`{campaignid}`, `{creative}`, `{keyword}`) in the final URL
+  suffix; X and organic posts take a typed campaign name (slugged). The
+  link can open the landing on a trade's hero (`?industry=roofing`…), which
+  the signup keeps as its landing trade. Copy buttons for the address, the
+  parameters and the full link.
+
