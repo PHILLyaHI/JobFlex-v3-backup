@@ -1,85 +1,147 @@
-// Functional pass over /dashboard/subscription.
+// Functional pass over /dashboard/subscription — rewritten 2026-10-01 for the rebuilt page:
+// the current-plan hero, the upgrade page's own plan cards embedded (#plans), usage, billing,
+// refer & earn, the comparison table, and the handheld build at 390.
+//
+// Nothing here reaches Stripe: a plan button opens the confirmation dialog and the script
+// CANCELS it (a request to /api/checkout or a plan change fails the run); the page picker is
+// opened, ticked and closed. The account is qa@acme.test, OWNER of QA Co.
 // The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
 const QA_BASE = require("./_qa").BASE;
-const { chromium } = require("playwright");
-const { launch, signIn, stale } = require("./_qa");
-stale("the Subscription page was rebuilt (plan grid, upgrade flow, billing) after this was written: #specGrid and the 'Upgrade plan' anchor no longer exist. Needs a rewrite");
-const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
+const { launch, signIn } = require("./_qa");
+
+let fails = 0;
+const log = (ok, name, extra = "") => {
+  if (!ok) fails++;
+  console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
   const browser = await launch();
   const ctx = await browser.newContext({ viewport: { width: 1728, height: 1000 }, permissions: ["clipboard-read", "clipboard-write"] });
   const page = await ctx.newPage();
   const errors = [];
+  const billing = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
+  page.on("request", (r) => { if (/\/api\/checkout|stripe\.com/.test(r.url()) ) billing.push(r.method() + " " + r.url().slice(0, 90)); });
 
   await signIn(page);
 
-  // Sidebar link reaches the page.
-  await page.goto(QA_BASE + "/dashboard", { waitUntil: "networkidle" });
-  const sbLink = page.locator('.sb a[href="/dashboard/subscription"], .sb-link[href="/dashboard/subscription"]');
-  log(await sbLink.count() > 0, "sidebar: Subscription link present");
-  if (await sbLink.count()) { await sbLink.first().click(); await page.waitForURL(/subscription/, { timeout: 15000 }); }
-  else await page.goto(QA_BASE + "/dashboard/subscription");
-  await page.waitForLoadState("networkidle");
-  await page.waitForTimeout(1600);
+  // ---- the sidebar reaches the page ----
+  await page.goto(QA_BASE + "/dashboard", { waitUntil: "domcontentloaded" });
+  await sleep(2500);
+  const sbLink = page.locator('.sb a[href="/dashboard/subscription"]');
+  log((await sbLink.count()) > 0, "sidebar: Subscription link present");
+  await page.goto(QA_BASE + "/dashboard/subscription", { waitUntil: "domcontentloaded" });
+  await sleep(3500);
 
-  // ---- render checks ----
-  log((await page.locator("text=Professional").count()) > 0, "hero: current plan renders");
-  const cells = await page.locator("#specGrid > div").count();
-  log(cells === 4, "plans: 4 tier cells", String(cells));
-  const bars = await page.locator("#usList .us-bar span, #usList [class*=us-fill]").evaluateAll(
-    (els) => els.map((e) => e.style.width || getComputedStyle(e).width));
-  log(bars.length > 0 && bars.every((w) => w && w !== "0px"), "usage: bars animated to widths", bars.join(","));
-  const invRows = await page.locator("#invList > div").count();
-  log(invRows > 0, "billing: invoice rows render", String(invRows));
-  const kpiVals = await page.locator("[class*=kpi-val]").allTextContents();
-  log(kpiVals.some((t) => t.trim() !== "0" && t.trim() !== ""), "refer: KPI count-ups landed", kpiVals.join("/"));
-  const mxRows = await page.locator("#mxTable tbody tr").count();
-  log(mxRows > 0, "compare: feature matrix rows", String(mxRows));
+  // ---- hero ----
+  const planName = ((await page.locator("[class*=sub-hero-name]").first().textContent().catch(() => "")) || "").trim();
+  log(planName.length > 0, "hero: current plan named", planName);
+  const stamp = ((await page.locator("[class*=sub-stamp]").first().textContent().catch(() => "")) || "").trim();
+  log(stamp.length > 0 && stamp !== "—", "hero: status stamp", stamp);
 
-  // ---- Upgrade plan: custom smooth scroll to #plans ----
-  const scrollTop0 = await page.evaluate(() => document.querySelector(".main").scrollTop);
-  await page.click('a[href="#plans"]:has-text("Upgrade plan")');
-  await page.waitForTimeout(1300);
-  const scrollTop1 = await page.evaluate(() => document.querySelector(".main").scrollTop);
-  const plansVisible = await page.locator("#plans").isVisible();
-  log(scrollTop1 > scrollTop0 && plansVisible, "upgrade-plan: scrolls to tiers", `${scrollTop0} -> ${scrollTop1}`);
+  // ---- plan cards (the upgrade page's own) ----
+  const cards = page.locator("#plans .jf-up-plan");
+  const nCards = await cards.count();
+  log(nCards >= 3, "plans: cards render (catalog + build-your-own)", String(nCards));
+  log((await page.locator("#plans .jf-up-plan.cur, #plans .jf-up-curlbl").count()) > 0 || /^(Free|None)$/i.test(planName), "plans: the current plan is marked (or the org has no paid plan)", planName);
+  const go = page.locator("#plans .jf-up-plan:not(.custom) .jf-up-go:not([disabled])").first();
+  if (await go.count()) {
+    const label = ((await go.textContent()) || "").trim();
+    const before = page.url();
+    await go.click();
+    await sleep(700);
+    const dlg = page.locator(".jf-confirm.is-on");
+    const open = (await dlg.count()) > 0;
+    const title = open ? ((await dlg.locator(".jf-confirm-h").textContent()) || "").trim() : "";
+    log(open && title.length > 0, `plans: "${label}" asks first (confirmation dialog)`, title);
+    if (open) {
+      await dlg.locator(".jf-confirm-btn:not(.primary)").click();
+      await sleep(500);
+    }
+    log((await page.locator(".jf-confirm.is-on").count()) === 0 && page.url() === before, "plans: Cancel closes it and nothing moves");
+  } else log(false, "plans: no plan button to press");
+  const custom = page.locator("#plans .jf-up-plan.custom .jf-up-go");
+  if (await custom.count()) {
+    await custom.click();
+    await sleep(600);
+    const pick = page.locator(".jf-up-pick.is-on");
+    log((await pick.count()) > 0, "plans: Choose pages opens the page picker");
+    const rows = pick.locator(".jf-up-pick-row");
+    const nRows = await rows.count();
+    if (nRows) {
+      const cls0 = await rows.first().getAttribute("class");
+      await rows.first().click();
+      await sleep(300);
+      const cls1 = await rows.first().getAttribute("class");
+      log(cls0 !== cls1, "plans: a page ticks in the picker", `${nRows} pages`);
+      await rows.first().click();
+      await sleep(200);
+    } else log(false, "plans: the picker lists no pages");
+    await pick.locator(".jf-up-pick-x").click();
+    await sleep(500);
+    log((await page.locator(".jf-up-pick.is-on").count()) === 0, "plans: the picker closes");
+  } else log(false, "plans: no Build-your-plan card");
 
-  // back to top, then Change plan link
-  await page.evaluate(() => { document.querySelector(".main").scrollTop = 0; });
-  await page.waitForTimeout(300);
-  await page.click('#usageCard a[href="#plans"]');
-  await page.waitForTimeout(1300);
-  const scrollTop2 = await page.evaluate(() => document.querySelector(".main").scrollTop);
-  log(scrollTop2 > 0, "change-plan: scrolls to tiers", String(scrollTop2));
+  // ---- usage ----
+  const usRows = await page.locator("#usList [class*=us-row]").count();
+  const usNote = await page.locator("#usList [class*=us-note]").count();
+  log(usRows > 0 || usNote > 0, "usage: rows or an honest note", `${usRows} rows`);
+  if (usRows) {
+    const widths = await page.locator("#usList [class*=us-fill]").evaluateAll((els) => els.map((e) => [e.getAttribute("data-w"), e.style.width]));
+    log(widths.every(([w, s]) => s && (Number(w) === 0 || s !== "0px")), "usage: bars drawn to their share", JSON.stringify(widths.slice(0, 4)));
+  }
+  await page.evaluate(() => { const m = document.querySelector(".main"); if (m) m.scrollTop = 0; });
+  await page.locator('#usageCard a[href="#plans"]').click();
+  await sleep(1200);
+  const plansTop = await page.evaluate(() => document.querySelector("#plans").getBoundingClientRect().top);
+  log(plansTop < 400, "usage: Change plan brings the plans into view", `top ${Math.round(plansTop)}px`);
 
-  // ---- Copy button ----
-  await page.click("#refCopy");
-  await page.waitForTimeout(300);
-  const lbl = (await page.textContent("#refCopyLbl"))?.trim();
+  // ---- billing ----
+  log(await page.locator("#billCard").isVisible(), "billing: card renders");
+
+  // ---- refer & earn ----
+  const code = ((await page.locator("#refCode").textContent()) || "").trim();
+  log(code.length > 0, "refer: the org's code is shown", code);
+  await page.locator("#refCopy").click();
+  await sleep(300);
+  const lbl = ((await page.locator("#refCopyLbl").textContent()) || "").trim();
   let clip = "";
   try { clip = await page.evaluate(() => navigator.clipboard.readText()); } catch {}
-  log(lbl === "Copied", "refer: Copy flips label", `label=${lbl} clipboard=${clip}`);
-  await page.waitForTimeout(1700);
-  const lblBack = (await page.textContent("#refCopyLbl"))?.trim();
-  log(lblBack === "Copy", "refer: label resets after 1.6s", `label=${lblBack}`);
+  log(lbl === "Copied" && clip === code, "refer: Copy puts the code on the clipboard", `label=${lbl} clipboard=${clip}`);
+  await sleep(1800);
+  log(((await page.locator("#refCopyLbl").textContent()) || "").trim() === "Copy", "refer: the label comes back");
 
-  // ---- Tier CTA buttons: do they do anything? ----
-  const ctas = page.locator("#specGrid button");
-  const nCta = await ctas.count();
-  for (let i = 0; i < nCta; i++) {
-    const label = (await ctas.nth(i).textContent())?.trim();
-    const urlBefore = page.url();
-    const domBefore = await page.evaluate(() => document.body.innerHTML.length);
-    await ctas.nth(i).click();
-    await page.waitForTimeout(600);
-    const changed = page.url() !== urlBefore || Math.abs((await page.evaluate(() => document.body.innerHTML.length)) - domBefore) > 50;
-    log(true, `tier CTA "${label}" click`, changed ? "DOES something" : "INERT (no handler)");
-  }
+  // ---- compare ----
+  const mx = await page.locator("#mxTable tbody tr").count();
+  log(mx > 0, "compare: feature table rows", String(mx));
 
-  console.log("CONSOLE ERRORS: " + (errors.length ? "\n  " + errors.join("\n  ") : "none"));
-  await page.screenshot({ path: "subscription_final.png", fullPage: true });
+  // ---- the head's Upgrade plan goes to the upgrade page ----
+  await page.locator('a[href="/dashboard/upgrade"]', { hasText: /Upgrade plan/i }).first().click();
+  const toUpgrade = await page.waitForURL(/\/dashboard\/upgrade/, { timeout: 15000 }).then(() => true).catch(() => false);
+  log(toUpgrade, "head: Upgrade plan opens /dashboard/upgrade");
+  await sleep(2500);
+  log((await page.locator(".jf-up-plan").count()) >= 3, "upgrade page: the same plan cards");
+
+  log(billing.length === 0, "nothing reached Stripe or changed the plan", billing.join(" · "));
+  log(errors.length === 0, "no console errors", errors.join(" / "));
+  await page.screenshot({ path: "subscription_final.png", fullPage: false });
+
+  // ---- the handheld build ----
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await phone.addCookies(await ctx.cookies());
+  const m = await phone.newPage();
+  await m.goto(QA_BASE + "/dashboard/subscription", { waitUntil: "domcontentloaded" });
+  await sleep(4000);
+  const body = await m.evaluate(() => document.body.innerText);
+  // innerText is the rendered text: the handheld hero is set in capitals.
+  log(planName ? body.toUpperCase().includes(planName.toUpperCase()) : body.length > 200, "phone: the handheld build shows the plan", planName);
+  log(!(await m.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)), "phone: no sideways scroll");
+  await m.screenshot({ path: "subscription_phone.png" });
+
   await browser.close();
+  console.log(`\n${fails ? fails + " failed" : "all passed"}`);
+  if (fails) process.exit(1);
 })().catch((e) => { console.error("HARNESS FAIL:", e.message); process.exit(1); });

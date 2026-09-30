@@ -10,15 +10,15 @@ npm install            # ставит playwright из package.json
 npx playwright install chromium
 ```
 
-## Запуск (dev-сервер должен работать на localhost:3000)
+## Запуск (dev-сервер на localhost:$QA_PORT, по умолчанию 3000; или QA_BASE_URL целиком)
 ```bash
 node fin-test.js       # Financials — 21 проверка
 node sub-test.js       # Subscription
-node roof-test.js      # Roof (нужен стенд: node seed-roof.js up + stub-креды, см. ниже)
+node roof-test.js      # Roof: node seed-roof.js up → сохранённый замер в QA Co, открывается из Recent без покупки
 node fence-test.js     # Fence
 node phone-test.js     # Phone (сначала node seed-phone.js up, после — down)
 node messages-test.js  # Messages
-node ann-test.js       # Announcements
+node ann-test.js       # Announcements — /admin/announcements (cookie jf_admin); ничего не публикует
 node reviews-test.js   # Reviews (+ reviews-chips.js)
 node trade-test.js     # Trade (+ trade-tail.js)
 node ref-test.js       # Referrals (сид конверсий — внутри инструкции сессии)
@@ -50,7 +50,8 @@ node scripts/qa/run-all.js            # из корня проекта; --checks
   Создаются в QA Co перед скриптом и удаляются после него, прошёл он или нет.
 - `seed-phone.js`, `seed-roof.js` — тоже в QA Co (организация ищется по slug).
 - Платного не делаем: чтение чека в `fin-test.js` обрывается на сети (это vision-вызов), адрес в
-  `fence-test.js` — из кэша участков, `roof-test.js` с боевыми ключами EagleView не запускается.
+  `fence-test.js` — из кэша участков, `roof-test.js` работает с сохранённым замером; кнопки покупки
+  (Measure this roof, Re-measure) — в `FORBIDDEN_CONTROLS`, нажатие гасится и роняет прогон.
 
 ## Страховка (2026-09-21)
 Перед любым действием `_world.js`, `run-all.js` и общий вход `_qa.js` проверяют три вещи, и при

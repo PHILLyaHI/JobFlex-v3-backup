@@ -1,141 +1,202 @@
-// Functional pass over /dashboard/fence-estimator (keyless mode: manual runs).
+// Functional pass over the rebuilt Fence Studio (/dashboard/fence-estimator) — rewritten
+// 2026-10-01: typed run rows, the materials catalogue, heights and job options, gates and
+// doors from the canvas toolbar, 3D, the price-book link, a lot from the parcel CACHE, convert
+// to a proposal, and Reset. Good / Better / Best has its own pass (fence-tiers-test.js).
+//
+// No uncached address is ever searched (that is a paid property lookup, and QA Co has 30 an
+// hour): Find uses a lot already in the parcel cache. Convert makes a real proposal in QA Co;
+// it is found by this run's start time and removed at the end, pass or fail.
 // The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
 const QA_BASE = require("./_qa").BASE;
-const { chromium } = require("playwright");
-const { launch, signIn, stale } = require("./_qa");
-stale('Fence Studio was rebuilt after this was written (materials catalogue, run rows, no keyless notice). Its address step now uses a cached lot, the rest needs a rewrite; the studio is covered by the fence-*.check.ts files');
-const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
+const { PrismaClient } = require("@prisma/client");
+const { launch, signIn, qaOrg } = require("./_qa");
+
+let fails = 0;
+const log = (ok, name, extra = "") => {
+  if (!ok) fails++;
+  console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const money = (s) => Number(String(s || "").replace(/[^0-9.]/g, ""));
+const URL = QA_BASE + "/dashboard/fence-estimator";
+const CACHED_LOT = "12117 202nd St SE, Snohomish, WA 98296";
 
 (async () => {
+  const prisma = new PrismaClient();
+  const org = await qaOrg(prisma);
+  const startedAt = new Date();
   const browser = await launch();
-  const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
-  const total = async () => ((await page.locator("text=ESTIMATED TOTAL").locator("xpath=following::*[1]").textContent().catch(() => "")) || "").trim();
-  const bodyTotal = async () => {
-    const t = await page.locator(".content").innerText();
-    const m = t.match(/ESTIMATED TOTAL\s*·?\s*\$?([\d,]+)/);
-    return m ? m[1] : "—";
+  // The summary counts up to its number: read it once it has stopped moving.
+  const total = async () => {
+    let last = -1;
+    for (let i = 0; i < 14; i++) {
+      const now = money(await page.locator("#tkTotal").textContent());
+      if (now === last) return now;
+      last = now;
+      await sleep(220);
+    }
+    return last;
+  };
+  const stat = async (label) => (await page.locator("#statStrip .stat-cell", { hasText: label }).locator(".stat-v").textContent().catch(() => "")).trim();
+  const addRun = async (ft) => {
+    await page.locator('[data-act="add-run"]').click();
+    await sleep(300);
+    const input = page.locator("#runsList [data-run-ft]").last();
+    await input.fill(String(ft));
+    await input.press("Tab");
+    await sleep(600);
   };
 
-  await signIn(page);
-  await page.goto(QA_BASE + "/dashboard/fence-estimator", { waitUntil: "networkidle" });
-  await page.waitForTimeout(2000);
+  try {
+    await signIn(page);
+    await page.goto(URL, { waitUntil: "domcontentloaded" });
+    await sleep(3500);
+    await page.locator('button:has-text("Essential only")').click({ timeout: 1500 }).catch(() => {});
+    await page.locator("#resetBtn").click();
+    await sleep(600);
 
-  // ---- 1. Keyless degradation is honest ----
-  log((await page.locator("text=/Map surface unavailable/i").count()) > 0, "map: honest keyless notice shown");
+    log(await page.locator("#addrInput").isVisible(), "studio: opens on the address step and the canvas");
+    log((await page.locator("#runsList [data-run]").count()) === 0 && (await page.locator("#runsEmpty").isVisible()), "runs: an empty studio says so");
 
-  // ---- 2. Add run + type length -> total appears ----
-  const t0 = await bodyTotal();
-  await page.click('button:has-text("Add run")');
-  await page.waitForTimeout(400);
-  const runInput = page.locator(".content input[type='number'], .content input").last();
-  await runInput.fill("100");
-  await runInput.press("Enter");
-  await page.waitForTimeout(600);
-  const t1 = await bodyTotal();
-  log(t1 !== t0 && t1 !== "—", "runs: manual 100ft run prices the job", `${t0} -> $${t1}`);
+    // ---- runs ----
+    await addRun(100);
+    const t1 = await total();
+    log((await stat("Total")) === "100 ft" && (await stat("Runs")) === "1" && t1 > 0, "runs: a 100 ft run is measured and priced", `${await stat("Total")} · $${t1}`);
+    await addRun(50);
+    const t2 = await total();
+    log((await stat("Total")) === "150 ft" && t2 > t1, "runs: a second 50 ft run adds to both", `${await stat("Total")} · $${t1} → $${t2}`);
+    await page.locator("#runsList [data-run]").last().locator("[data-del-run]").click();
+    await sleep(600);
+    const t3 = await total();
+    log((await stat("Runs")) === "1" && t3 === t1, "runs: removing it puts the total back", `$${t2} → $${t3}`);
 
-  // second run
-  await page.click('button:has-text("Add run")');
-  await page.waitForTimeout(300);
-  await page.locator(".content input").last().fill("50");
-  await page.locator(".content input").last().press("Enter");
-  await page.waitForTimeout(600);
-  const t2 = await bodyTotal();
-  log(t2 !== t1, "runs: second 50ft run raises total", `$${t1} -> $${t2}`);
+    // ---- materials, heights, options ----
+    const mats = await page.evaluate(() => Array.from(document.querySelectorAll("#matList [data-mat]")).map((li) => ({ id: li.dataset.mat, on: li.classList.contains("on") })));
+    log(mats.length >= 5 && mats.filter((m) => m.on).length === 1, "materials: the catalogue lists types, one picked", `${mats.length} types`);
+    const other = mats.find((m) => !m.on);
+    await page.locator(`#matList [data-mat="${other.id}"]`).click();
+    await sleep(600);
+    const t4 = await total();
+    log((await page.locator(`#matList [data-mat="${other.id}"]`).getAttribute("class")).includes("on") && t4 !== t3, `materials: ${other.id} picks and reprices`, `$${t3} → $${t4}`);
+    await page.locator('#heights [data-h="8"]').click();
+    await sleep(600);
+    const t5 = await total();
+    log((await page.locator('#heights [data-h="8"]').getAttribute("class")).includes("on") && t5 !== t4, "heights: 8 ft picks and reprices", `$${t4} → $${t5}`);
+    for (const [id, name] of [["#demoTgl", "tear-out of the old fence"], ["#clearTgl", "clearing the line"], ["#haulTgl", "hauling the soil"]]) {
+      const tgl = page.locator(id);
+      if (!(await tgl.isVisible().catch(() => false))) { log(false, `options: ${name} switch missing`); continue; }
+      const before = await total();
+      await tgl.click(); await sleep(600);
+      const on = await total();
+      await tgl.click(); await sleep(600);
+      const off = await total();
+      log(on !== before && off === before, `options: ${name} adds and comes off again`, `$${before} → $${on} → $${off}`);
+    }
+    const terrain = page.locator("#groundRow [data-terrain]").last();
+    if (await terrain.count()) {
+      const before = await total();
+      await terrain.click(); await sleep(600);
+      log((await terrain.getAttribute("class")).includes("on"), "options: ground can be set", `${await terrain.textContent()} · $${before} → $${await total()}`);
+      await page.locator('#groundRow [data-terrain="auto"]').click().catch(() => {});
+      await sleep(400);
+    }
 
-  // ---- 3. Remove run row ----
-  const rowX = page.locator('.content button[aria-label*="Remove"], .row-x').last();
-  if (await rowX.count()) {
-    await rowX.click(); await page.waitForTimeout(600);
-    const t3 = await bodyTotal();
-    log(t3 === t1, "runs: removing the 50ft row restores total", `$${t2} -> $${t3}`);
-  } else log(false, "runs: no remove (.row-x) button found");
-
-  // ---- 4. Material switch changes price ----
-  const before = await bodyTotal();
-  await page.locator(".mats li", { hasText: "Vinyl" }).click();
-  await page.waitForTimeout(600);
-  const afterMat = await bodyTotal();
-  const matOn = await page.locator(".mats li.on", { hasText: "Vinyl" }).count();
-  log(matOn === 1 && afterMat !== before, "materials: Vinyl selects and reprices", `$${before} -> $${afterMat}`);
-
-  // ---- 5. Height segment changes price ----
-  await page.locator(".seg-btn", { hasText: "8 ft" }).click();
-  await page.waitForTimeout(600);
-  const afterH = await bodyTotal();
-  const segOn = await page.locator(".seg-btn.on", { hasText: "8 ft" }).count();
-  log(segOn === 1 && afterH !== afterMat, "heights: 8ft selects and reprices", `$${afterMat} -> $${afterH}`);
-
-  // ---- 6. Demo toggle ----
-  const tgl = page.locator(".tgl").first();
-  if (await tgl.count()) {
-    const b = await bodyTotal();
-    await tgl.click(); await page.waitForTimeout(600);
-    const a = await bodyTotal();
-    log(a !== b, "toggle: tear-out/demo toggle reprices", `$${b} -> $${a}`);
-    await tgl.click(); await page.waitForTimeout(400);
-  } else log(true, "toggle: not present", "");
-
-  // ---- 7. Gate/Door popovers open ----
-  for (const t of ["Gate", "Door"]) {
-    await page.click(`.tool:has-text("${t}")`);
-    await page.waitForTimeout(400);
-    const pop = await page.locator(".tool-pop:visible, .tp-item:visible").count();
-    log(pop > 0, `tools: ${t} popover opens`, `options=${pop}`);
+    // ---- gates and doors from the canvas toolbar ----
+    const beforeGate = await total();
+    await page.locator('[data-menu="gate"]').click();
+    await sleep(400);
+    const gateItems = await page.locator("#popGate.open [data-add-open]").count();
+    log(gateItems > 0, "gates: the Gate menu lists gate types", String(gateItems));
+    await page.locator("#popGate.open [data-add-open]").first().click();
+    await sleep(600);
+    const afterGate = await total();
+    log((await page.locator("#openList [data-op]").count()) === 1 && (await stat("Openings")) === "1" && afterGate > beforeGate, "gates: one gate goes on the job and on the price", `$${beforeGate} → $${afterGate}`);
+    await page.locator('[data-menu="door"]').click();
+    await sleep(400);
+    log((await page.locator("#popDoor.open [data-add-open]").count()) > 0, "doors: the Door menu lists door types");
     await page.keyboard.press("Escape");
-    await page.click("h1").catch(() => {});
-    await page.waitForTimeout(300);
+    await page.locator("h1").first().click().catch(() => {});
+    await sleep(300);
+    await page.locator("#openList [data-op] [data-del-op]").click();
+    await sleep(600);
+    log((await page.locator("#openList [data-op]").count()) === 0 && (await total()) === beforeGate, "gates: removing it takes it off the price");
+
+    // ---- 3D before anything is traced: an honest empty state ----
+    await page.locator('#modeSwitch [data-mode="3d"]').click();
+    await sleep(1200);
+    log(/Nothing traced yet/i.test(await page.locator("#stage3d").innerText()) && (await page.locator("#stage3d canvas").count()) === 0, "3D: with typed runs only it says nothing is traced yet");
+    await page.locator('#modeSwitch [data-mode="draw"]').click();
+    await sleep(600);
+
+    // ---- the price book lives on the Inventory page ----
+    log(((await page.locator("#matBook").getAttribute("href")) || "").startsWith("/dashboard/inventory?trade=fence"), "price book: links to the fence price book on Inventory");
+
+    // ---- a lot from the parcel cache ----
+    await page.locator("#addrInput").fill(CACHED_LOT);
+    await page.locator("#findBtn").click();
+    const sides = await page.waitForFunction(() => document.querySelectorAll("#parcelPanel [data-side]").length > 0, null, { timeout: 60000 }).then(() => true).catch(() => false);
+    log(sides, "find: the cached lot loads and lists its sides", String(await page.locator("#parcelPanel [data-side]").count()));
+
+    // ---- convert, 1: the typed run, with the lot now loaded ----
+    // What the summary shows is what the proposal must carry. (2026-10-01: it does not —
+    // once a lot is loaded the convert prices the typed run at the lot's regional rate
+    // while the summary keeps the default one.)
+    const convert = async () => {
+      const t0 = new Date();
+      await page.locator("#convertBtn").click();
+      const ok = await page.waitForURL(/\/dashboard\/(proposals\/|manual-blueprint\?proposal=)/, { timeout: 40000 }).then(() => true).catch(() => false);
+      const row = await prisma.proposal.findFirst({ where: { organizationId: org.id, createdAt: { gte: t0 } }, orderBy: { createdAt: "desc" } });
+      return { ok, row };
+    };
+    const typedPrice = await total();
+    const c1 = await convert();
+    log(c1.ok, "convert: a proposal opens", page.url().replace(QA_BASE, ""));
+    log(!!c1.row && Math.round(c1.row.subtotal) === Math.round(typedPrice), "convert: a typed run on a loaded lot — the proposal carries the price the summary shows", `proposal ${c1.row ? Math.round(c1.row.subtotal) : "none"} / summary ${typedPrice}`);
+
+    // ---- the fence on the lot: runs from its sides, 3D, convert, 2 ----
+    await page.goto(URL, { waitUntil: "domcontentloaded" });
+    await sleep(3000);
+    await page.locator("#resetBtn").click();
+    await sleep(500);
+    await page.locator("#addrInput").fill(CACHED_LOT);
+    await page.locator("#findBtn").click();
+    await page.waitForFunction(() => document.querySelectorAll("#parcelPanel [data-side]").length > 0, null, { timeout: 60000 }).catch(() => {});
+    await sleep(2500);
+    await page.locator("#fenceBtn").click();
+    await sleep(3000);
+    const traced = Number(await stat("Runs"));
+    log(traced > 0 && (await total()) > 0, "lot: Put down the fence traces runs along the lot lines", `${traced} runs · ${await stat("Total")}`);
+    await page.locator('#modeSwitch [data-mode="3d"]').click();
+    await sleep(4000);
+    log((await page.locator("#stage3d canvas").count()) > 0, "3D: the traced fence mounts on the ground model");
+    await page.locator('#modeSwitch [data-mode="draw"]').click();
+    await sleep(600);
+    const lotPrice = await total();
+    const c2 = await convert();
+    log(c2.ok && !!c2.row && Math.round(c2.row.subtotal) === Math.round(lotPrice), "convert: the traced fence's proposal carries the summary's price, in QA Co", `proposal ${c2.row ? Math.round(c2.row.subtotal) : "none"} / summary ${lotPrice}`);
+
+    // ---- Reset: this property over ----
+    await page.goto(URL, { waitUntil: "domcontentloaded" });
+    await sleep(3000);
+    await addRun(40);
+    await page.locator("#resetBtn").click();
+    await sleep(700);
+    log((await page.locator("#runsList [data-run]").count()) === 0 && (await page.locator('#heights [data-h="6"]').getAttribute("class")).includes("on"), "reset: runs cleared, the spec back to its defaults");
+
+    log(errors.length === 0, "no console errors", errors.join(" / "));
+    await page.screenshot({ path: "fence_final.png" });
+  } finally {
+    const mine = await prisma.proposal.findMany({ where: { organizationId: org.id, createdAt: { gte: startedAt } }, select: { id: true } });
+    for (const p of mine) await prisma.proposal.delete({ where: { id: p.id } }).catch(() => {});
+    log(true, "cleanup: this run's proposals removed", String(mine.length));
+    await prisma.$disconnect();
+    await browser.close();
   }
-
-  // ---- 8. 3D sandbox works without key ----
-  await page.click('.vsw-btn:has-text("3D")');
-  await page.waitForTimeout(2500);
-  const canvas = await page.locator("canvas").count();
-  log(canvas > 0, "3D: sandbox canvas mounts keyless");
-  await page.click('.vsw-btn:has-text("Draw")');
-  await page.waitForTimeout(500);
-
-  // ---- 9. Find: an address that is ALREADY in the parcel cache ----
-  // Never an uncached one: with the provider keys present that is a real ReportAll lookup (the
-  // quota is all-time). The lot loads by itself on Find — the old "Load property lines" button is gone.
-  await page.locator("#addrInput").fill("12117 202nd St SE, Snohomish, WA 98296");
-  await page.click("#findBtn");
-  const sides = await page.waitForFunction(() => document.querySelectorAll("#parcelPanel [data-side]").length > 0, null, { timeout: 60000 }).then(() => true).catch(() => false);
-  log(sides, "find: the cached lot loads and lists its sides", String(await page.locator("#parcelPanel [data-side]").count()));
-
-  // ---- 10. Convert to proposal + cleanup ----
-  const conv = page.locator('button:has-text("Convert to proposal")');
-  log(await conv.count() === 1, "convert: button present");
-  await conv.click();
-  const navigated = await page.waitForURL(/\/dashboard\/proposals\//, { timeout: 25000 }).then(() => true).catch(() => false);
-  log(navigated, "convert: creates proposal and navigates", page.url().replace(QA_BASE, ""));
-  if (navigated) {
-    const propId = page.url().split("/").pop();
-    try {
-      await page.goto(QA_BASE + "/dashboard/proposals", { waitUntil: "networkidle" });
-      await page.waitForTimeout(1500);
-      const row = page.locator(`[data-id="${propId}"]`).first();
-      const opener = (await row.count()) ? row.locator(".pt-open") : page.locator(".ptable tbody tr").first().locator(".pt-open");
-      await opener.first().click();
-      await page.waitForTimeout(500);
-      await page.locator(".pmenu .pmenu-item.is-danger").first().click();
-      await page.waitForTimeout(600);
-      const ok = page.locator('.mdl.open .btn-primary, [id*="onfirm"] .btn-primary').first();
-      if (await ok.count()) { await ok.click(); await page.waitForTimeout(2000); }
-      log((await page.locator(`[data-id="${propId}"]`).count()) === 0, "cleanup: proposal deleted via UI", "id=" + propId);
-    } catch (e) { log(false, "cleanup failed (left in dev DB)", e.message.slice(0, 80)); }
-  }
-
-  // ---- 11. Reset clears runs ----
-  await page.goto(QA_BASE + "/dashboard/fence-estimator", { waitUntil: "networkidle" });
-  await page.waitForTimeout(1500);
-  log(true, "note: state after reload", "total=" + (await bodyTotal()));
-
-  console.log("CONSOLE ERRORS: " + (errors.length ? "\n  " + errors.join("\n  ") : "none"));
-  await page.screenshot({ path: "fence_final.png", fullPage: true });
-  await browser.close();
+  console.log(`\n${fails ? fails + " failed" : "all passed"}`);
+  if (fails) process.exit(1);
 })().catch((e) => { console.error("HARNESS FAIL:", e.message); process.exit(1); });

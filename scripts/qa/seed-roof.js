@@ -1,5 +1,7 @@
-// Seeds/unseeds a cached EagleView report so the roof estimator's full UI flow
-// can run offline (evRoofModel serves the cache before touching the API).
+// Seeds/unseeds what the roof estimator's UI flow needs, in QA Co, with nothing to buy:
+//   · a cached EagleView report (evRoofModel serves the cache before touching the API);
+//   · a saved Instant measurement (fixtures/roof-measurement.json — a real Kirkland roof,
+//     ids stripped) that the page lists under "Recent measurements" and reopens for free.
 // Usage: node seed-roof.js up | down   (run from the project root's node_modules context)
 const { PrismaClient } = require("@prisma/client");
 const p = new PrismaClient();
@@ -7,6 +9,9 @@ const p = new PrismaClient();
 // QA Co, resolved by slug at run time — never an organisation a person works in.
 let ORG = "";
 const REPORT_ID = 69153261;
+// The saved measurement's fixed id, so `down` removes exactly it.
+const MEASUREMENT_ID = "qa-roof-measurement-12629";
+const measurement = require("./fixtures/roof-measurement.json");
 
 // A clean 40x30ft gable: 2 facets @ 6/12, ridge along X. All numbers consistent.
 const rake = Math.hypot(15, 7.5); // 16.7705
@@ -61,9 +66,18 @@ const model = {
       update: { modelJson: JSON.stringify(model), status: "Completed" },
     });
     console.log("seeded cache row for report", REPORT_ID);
+    const owner = await p.membership.findFirst({ where: { organizationId: ORG, role: "OWNER" }, select: { userId: true } });
+    await p.roofMeasurement.upsert({
+      where: { id: MEASUREMENT_ID },
+      create: { ...measurement, id: MEASUREMENT_ID, organizationId: ORG, createdById: owner ? owner.userId : null },
+      update: { ...measurement, organizationId: ORG },
+    });
+    console.log("seeded saved measurement", MEASUREMENT_ID, measurement.address);
   } else if (mode === "down") {
     await p.eagleViewReport.deleteMany({ where: { organizationId: ORG, reportId: REPORT_ID } });
     console.log("removed cache row for report", REPORT_ID);
+    await p.roofMeasurement.deleteMany({ where: { id: MEASUREMENT_ID, organizationId: ORG } });
+    console.log("removed saved measurement", MEASUREMENT_ID);
   } else {
     console.log("usage: node seed-roof.js up|down");
   }

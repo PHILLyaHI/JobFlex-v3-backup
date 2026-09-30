@@ -73,6 +73,8 @@ const FORBIDDEN_CONTROLS = {
     '[data-act="cancel-subscription"]', "#cancelSubBtn", '[data-mdl-ok="cancel-plan"]',
     // paid lookups: an EagleView order
     '[data-act="ev-order"]', '[data-act="order-report"]', "#orderReportBtn",
+    // paid lookups: the roof page's Instant measure and its re-measure (2026-10-01)
+    "#instantBtn", "#remeasureBtn",
   ],
   // matched against the control's own visible text and its aria-label, from the start, case-insensitive
   labels: [
@@ -82,6 +84,7 @@ const FORBIDDEN_CONTROLS = {
     /^(e-?mail|send) (it )?to (the )?(client|customer|homeowner)\b/i,
     /^(order|buy|purchase) (a |the )?(roof |eagleview |measurement )?(report|measurement)\b/i,
     /^measure (this |the )?roof\b/i,
+    /^re-?measure\b/i,
   ],
 };
 
