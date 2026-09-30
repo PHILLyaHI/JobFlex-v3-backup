@@ -22,7 +22,6 @@ import { locationIndex } from "@/lib/estimate/location-index";
 export const TRADE_COOKIE = "jf_inventory_trade";
 
 export type InventoryTab = "book" | "stock" | "services";
-export type InventoryVariant = 1 | 2;
 
 export type PriceBookData =
   | { trade: "fence"; doc: FenceCatalogDoc | null; updatedAt: string | null }
@@ -33,7 +32,6 @@ export type InventoryPageData = {
   trade: TradeId;
   trades: typeof TRADES;
   tab: InventoryTab;
-  variant: InventoryVariant;
   book: PriceBookData;
   stock: { data: TradeBoardData; facts: StockFacts } | null;
 };
@@ -61,10 +59,6 @@ export function parseTab(raw: string | null | undefined, trade: TradeId): Invent
   if (raw === "stock") return "stock";
   if (raw === "services" && trade === "hvac") return "services";
   return "book";
-}
-
-export function parseVariant(raw: string | null | undefined): InventoryVariant {
-  return raw === "2" ? 2 : 1;
 }
 
 async function fenceBook(organizationId: string): Promise<PriceBookData> {
@@ -120,7 +114,7 @@ async function hvacBook(organizationId: string): Promise<PriceBookData> {
   return { trade: "hvac", items, own, card, cardOwn, defaults: DEFAULT_RATE_CARD, updatedAt: updatedAt?.toISOString() ?? null, factor: idx.factor, place: idx.place };
 }
 
-export async function loadInventoryPage(organizationId: string, trade: TradeId, tab: InventoryTab, variant: InventoryVariant): Promise<InventoryPageData> {
+export async function loadInventoryPage(organizationId: string, trade: TradeId, tab: InventoryTab): Promise<InventoryPageData> {
   const book = trade === "fence" ? await fenceBook(organizationId) : trade === "roof" ? await roofBook(organizationId) : await hvacBook(organizationId);
   let stock: InventoryPageData["stock"] = null;
   if (tab === "stock") {
@@ -130,5 +124,5 @@ export async function loadInventoryPage(organizationId: string, trade: TradeId, 
       stock = { data, facts };
     }
   }
-  return { trade, trades: TRADES, tab, variant, book, stock };
+  return { trade, trades: TRADES, tab, book, stock };
 }

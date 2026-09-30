@@ -1,17 +1,18 @@
 "use client";
 
-// INVENTORY — the page (owner, 2026-09-29). One route, three trades.
+// INVENTORY — the page (owner, second pass, 2026-09-29). One route, three trades.
 //
-// The head carries the trade (a segmented control at the title's height) and
-// the actions; under it two tabs — the PRICE BOOK the estimator prices from,
-// first, and the STOCK the proposals draw on — plus the HVAC SERVICE MENU when
-// the trade is HVAC. The book is drawn two ways for the owner to pick from:
-//   ?inv=1  a specification schedule — one table, grouped, inline numbers;
-//   ?inv=2  cards, three across (one on a phone), each opening the sheet.
-// Every write goes through the estimators' own actions (fenceCatalog,
-// roofCatalog, hvacEstimator), so the estimators read what this page saved.
+// The hierarchy, top down: the head (a mono kicker, the title, one line, the
+// primary action on the right — nothing else beside the title); a full-width
+// toolbar card with the trade segments on the left and the secondary actions
+// on the right; the main tabs in the Financials treatment (mono caps, a count
+// chip, a 3px blueprint rule); then the tab — the PRICE BOOK the estimator
+// prices from (a specification schedule), the STOCK (inventory-stock.tsx),
+// and the HVAC SERVICE MENU when the trade is HVAC. Every write goes through
+// the estimators' own actions (fenceCatalog, roofCatalog, hvacEstimator), so
+// the estimators read what this page saved.
 
-import { useCallback, useMemo, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
+import { useCallback, useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
@@ -21,28 +22,27 @@ import { saveFenceCatalog } from "@/actions/fenceCatalog";
 import { saveRoofCatalog } from "@/actions/roofCatalog";
 import { clearHvacCatalog, importHvacCatalogCsv, loadUsCatalog, saveHvacCatalogItem, saveHvacRateCard } from "@/actions/hvacEstimator";
 import { deleteHvacCatalogItem, rememberInventoryTrade } from "@/actions/inventoryPage";
-import { RoofingInventory } from "@/components/v3/roofing-inventory/roofing-inventory";
 import { HvacServicesContent } from "@/components/v3/hvac-services-blueprint/hvac-services-content";
-import { OverlayPortal } from "@/components/v3/blueprint-shell/overlay-layer";
-import type { InventoryPageData, InventoryTab, InventoryVariant, PriceBookData } from "@/lib/inventoryPage";
+import type { InventoryPageData, InventoryTab, PriceBookData } from "@/lib/inventoryPage";
 import type { TradeId } from "@/lib/inventory";
 import { CATALOG_CSV_COLUMNS, STARTER_CATALOG } from "@/lib/hvac/ledger";
 import { FENCE_TYPES } from "@/lib/fence/catalog";
+import { SERVICE_MENU } from "@/lib/hvac/serviceMenu";
 import {
   FENCE_RATE_LIMITS, FENCE_TYPE_IDS, HVAC_KINDS, ROOF_FAMILY_OPTIONS,
   fenceBookRows, fenceDocWith, fenceDocWithout, filterRows, groupRows, hvacBookRows, hvacCardWith, hvacRateRows,
   nextCustomFenceId, roofBookRows, roofDocWith, roofDocWithout, roofLists, slugId, usd2,
   type BookRow,
 } from "@/lib/priceBook";
-import styles from "./inventory.module.css";
-
-const cx = (...names: Array<string | false | null | undefined>) => names.filter(Boolean).map((n) => styles[n as string] ?? n).join(" ");
-
-const HANDHELD = "(max-width: 768px)";
-const subscribe = (cb: () => void) => { const q = window.matchMedia(HANDHELD); q.addEventListener("change", cb); return () => q.removeEventListener("change", cb); };
-const useHandheld = () => useSyncExternalStore(subscribe, () => window.matchMedia(HANDHELD).matches, () => false);
+import { InventoryStock } from "./inventory-stock";
+import { cx, Empty, Sheet, useHandheld } from "./inventory-shared";
 
 const TAB_LABEL: Record<InventoryTab, string> = { book: "Price book", stock: "Stock", services: "Service menu" };
+const TAB_SUB: Record<InventoryTab, string> = {
+  book: "What the estimator prices from — catalog rates until you save your own.",
+  stock: "What the warehouse holds, what the sold jobs reserve, what to order.",
+  services: "The visit's menu — every task the estimator can put on a service job.",
+};
 const GROUP_ORDER: Record<TradeId, string[]> = {
   fence: ["Wood", "Vinyl", "Composite", "Chain link", "Aluminum", "Steel", "Rail", "Your own"],
   roof: ["Asphalt shingle", "Metal", "Tile", "Wood shake", "Slate", "Synthetic", "Flat / low slope", "Underlayment"],
@@ -52,59 +52,68 @@ const FENCE_COLORS = ["#c4914a", "#a86e2d", "#7c5a3a", "#d9d3c4", "#f0ede6", "#5
 
 export type InventoryContentProps = { data: InventoryPageData; canEditBook: boolean; canWriteStock: boolean };
 
-function hrefFor(trade: TradeId, tab: InventoryTab, inv: InventoryVariant, hash = ""): Route {
+function hrefFor(trade: TradeId, tab: InventoryTab, hash = ""): Route {
   const q = new URLSearchParams({ trade });
   if (tab !== "book") q.set("tab", tab);
-  if (inv !== 1) q.set("inv", String(inv));
   return `/dashboard/inventory?${q.toString()}${hash}` as Route;
 }
 
 const numOr = (v: unknown, d = 0) => { const n = typeof v === "number" ? v : parseFloat(String(v ?? "")); return Number.isFinite(n) ? n : d; };
-const dateOf = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "never");
+const dateOf = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "never");
 
 export function InventoryContent({ data, canEditBook, canWriteStock }: InventoryContentProps) {
-  const { trade, tab, variant } = data;
+  const { trade, tab } = data;
   const tabs: InventoryTab[] = trade === "hvac" ? ["book", "stock", "services"] : ["book", "stock"];
   const [sheet, setSheet] = useState<SheetState | null>(null);
   const rows = useMemo(() => bookRowsOf(data.book), [data.book]);
+  // The stock tab fills the head's action and the toolbar's right side through these.
+  const [primarySlot, setPrimarySlot] = useState<HTMLElement | null>(null);
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
+  const counts: Partial<Record<InventoryTab, number>> = { book: rows.filter((r) => r.kind !== "hvac-rate").length, stock: data.stock?.data.rows.length, services: trade === "hvac" ? SERVICE_MENU.length : undefined };
+  const estimatorHref = `/dashboard/${trade}-estimator` as Route;
 
   return (
     <>
       <div className={cx("page-head")}>
-        <div className={cx("head-l")}>
-          <div>
-            <div className={cx("kicker")}>Automation · Inventory</div>
-            <h1 className={cx("page-title")}>Inventory</h1>
-          </div>
-          <nav className={cx("seg")} aria-label="Trade">
-            {data.trades.map((t) => (
-              <Link key={t.id} href={hrefFor(t.id, tab === "services" ? "book" : tab, variant)} aria-current={t.id === trade ? "true" : undefined} onClick={() => void rememberInventoryTrade(t.id)}>
-                {t.label}
-              </Link>
-            ))}
-          </nav>
+        <div>
+          <div className={cx("kicker")}>Automation · Inventory</div>
+          <h1 className={cx("page-title")}>Inventory</h1>
+          <p className={cx("page-sub")}>{TAB_SUB[tab]}</p>
         </div>
-        <div className={cx("page-actions")}>
+        <div className={cx("page-actions")} ref={setPrimarySlot}>
           {tab === "book" && canEditBook && (
             <button type="button" className={cx("btn", "btn-primary")} onClick={() => setSheet(newRowSheet(trade, data.book))}>
               <Plus className={cx("ic")} aria-hidden="true" />Add item
             </button>
           )}
+        </div>
+      </div>
+
+      <div className={cx("toolbar")}>
+        <nav className={cx("seg")} aria-label="Trade">
+          {data.trades.map((t) => (
+            <Link key={t.id} href={hrefFor(t.id, tab === "services" ? "book" : tab)} className={cx("seg-btn", t.id === trade && "on")} aria-current={t.id === trade ? "true" : undefined} onClick={() => void rememberInventoryTrade(t.id)}>
+              {t.label}
+            </Link>
+          ))}
+        </nav>
+        <div className={cx("toolbar-acts")} ref={setToolbarSlot}>
           {tab === "book" && trade === "hvac" && canEditBook && <HvacCatalogActions book={data.book} />}
+          {tab !== "stock" && <Link href={estimatorHref} className={cx("btn", "btn-ghost")}>Open the estimator</Link>}
         </div>
       </div>
 
       <nav className={cx("tabs")} aria-label="Inventory sections">
         {tabs.map((t) => (
-          <Link key={t} href={hrefFor(trade, t, variant)} aria-current={t === tab ? "page" : undefined} id={t === "book" ? "book" : undefined}>
+          <Link key={t} href={hrefFor(trade, t)} className={cx("tab")} aria-current={t === tab ? "page" : undefined} id={t === "book" ? "book" : undefined}>
             {TAB_LABEL[t]}
-            {t === "book" && <span className={cx("n")}>{rows.length}</span>}
+            {counts[t] !== undefined && <span className={cx("n")}>{counts[t]}</span>}
           </Link>
         ))}
       </nav>
 
       {tab === "book" && <PriceBook data={data} rows={rows} canEdit={canEditBook} sheet={sheet} setSheet={setSheet} />}
-      {tab === "stock" && (data.stock ? <RoofingInventory key={trade} data={data.stock.data} facts={data.stock.facts} canWrite={canWriteStock} embedded /> : <div className={cx("empty")}>No {trade} board yet</div>)}
+      {tab === "stock" && (data.stock ? <InventoryStock key={trade} data={data.stock.data} facts={data.stock.facts} canWrite={canWriteStock} slots={{ primary: primarySlot, toolbar: toolbarSlot }} /> : <Empty text={`No ${trade} board yet`} />)}
       {tab === "services" && data.book.trade === "hvac" && <HvacServicesContent card={data.book.card} factor={data.book.factor} place={data.book.place} embedded />}
     </>
   );
@@ -133,7 +142,7 @@ function newRowSheet(trade: TradeId, book: PriceBookData): SheetState {
 /* ── THE PRICE BOOK ─────────────────────────────────────────────────── */
 
 function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPageData; rows: BookRow[]; canEdit: boolean; sheet: SheetState | null; setSheet: (s: SheetState | null) => void }) {
-  const { trade, variant, book } = data;
+  const { trade, book } = data;
   const handheld = useHandheld();
   const [q, setQ] = useState("");
   const [group, setGroup] = useState<string>("");
@@ -143,6 +152,7 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
   const allGroups = useMemo(() => groupRows(rows, GROUP_ORDER[trade]), [rows, trade]);
   const defaults = rows.filter((r) => r.companyDefault).length;
   const catalogRows = rows.filter((r) => r.kind !== "hvac-rate").length;
+  const standing = book.trade === "hvac" ? (book.own ? "Yours" : "Starter") : book.doc ? "Yours" : "Catalog";
 
   const openRow = useCallback((r: BookRow) => {
     if (!canEdit) return;
@@ -153,75 +163,55 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
 
   return (
     <section aria-label={`${trade} price book`} id="catalog">
-      <div className={cx("summary")}>
-        <span><b>{catalogRows}</b> items</span>
-        <span><b>{defaults}</b> company defaults</span>
-        <span>last updated <b>{dateOf(book.updatedAt)}</b></span>
-        {book.trade === "hvac" && !book.own && <span className={cx("stamp", "stamp-warn")}>starter ladder · not yours yet</span>}
-        {book.trade !== "hvac" && !book.doc && <span className={cx("stamp", "stamp-quiet")}>catalog rates · nothing saved yet</span>}
-      </div>
-      <div className={cx("tools")}>
-        <label className={cx("search")}><Search size={16} aria-hidden="true" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find an item" aria-label="Find an item" />{q && <button type="button" className={cx("link")} onClick={() => setQ("")} aria-label="Clear search"><X size={14} /></button>}</label>
-        <div className={cx("chips")} role="group" aria-label="Filter by group">
-          <button type="button" className={cx("chip", !group && "on")} onClick={() => setGroup("")}>All <b>{rows.length}</b></button>
-          {allGroups.map((g) => <button key={g.label} type="button" className={cx("chip", group === g.label && "on")} onClick={() => setGroup(group === g.label ? "" : g.label)}>{g.label} <b>{g.rows.length}</b></button>)}
-        </div>
-        <div className={cx("tools-r")}>
-          <span className={cx("mono")}>Layout</span>
-          <Link href={hrefFor(trade, "book", 1)} className={cx("chip", variant === 1 && "on")} aria-current={variant === 1 ? "true" : undefined}>1 · Schedule</Link>
-          <Link href={hrefFor(trade, "book", 2)} className={cx("chip", variant === 2 && "on")} aria-current={variant === 2 ? "true" : undefined}>2 · Cards</Link>
-        </div>
+      <div className={cx("kpi-grid")} data-book-kpis>
+        <div className={cx("kpi")}><div className={cx("kpi-val")}>{catalogRows}</div><div className={cx("kpi-lbl")}>items</div></div>
+        <div className={cx("kpi")}><div className={cx("kpi-val", defaults > 0 && "accent")}>{defaults}</div><div className={cx("kpi-lbl")}>company defaults</div></div>
+        <div className={cx("kpi")}><div className={cx("kpi-val")}>{standing}</div><div className={cx("kpi-lbl")}>{book.trade === "hvac" ? "unit catalog" : "the book in force"}</div></div>
+        <div className={cx("kpi")}><div className={cx("kpi-val")}>{dateOf(book.updatedAt)}</div><div className={cx("kpi-lbl")}>last saved</div></div>
       </div>
 
-      {shown.length === 0 ? (
-        <div className={cx("empty")}>{rows.length === 0 ? "Nothing in this book yet — add an item" : "Nothing matches"}</div>
-      ) : variant === 2 ? (
-        groups.map((g) => (
-          <div key={g.label}>
-            <div className={cx("grp-h")}>{g.label}<span>{g.rows.length}</span></div>
-            <div className={cx("cards")}>
-              {g.rows.map((r) => (
-                <button key={`${r.kind}:${r.id}`} type="button" className={cx("cardi")} onClick={() => openRow(r)} disabled={!canEdit} aria-label={`${canEdit ? "Edit" : "View"} ${r.name}`}>
-                  <span className={cx("plate", r.color && "sw")} style={r.color ? { background: r.color } : undefined} aria-hidden="true">{r.color ? "" : r.unit}</span>
-                  <span className={cx("t")}>{r.name}</span>
-                  <span className={cx("s")}>{r.specs}</span>
-                  <span className={cx("p")}><b>{r.price === null ? "—" : usd2(r.price)}</b><span className={cx("unit")}>/ {r.unit}</span>{r.labor !== null && <span className={cx("lab")}>labor {usd2(r.labor)} / {r.unit}</span>}</span>
-                  {r.companyDefault && <span className={cx("stamp", "stamp-ok")}>Company default</span>}
-                </button>
-              ))}
-            </div>
+      <section className={cx("card")} aria-label="Schedule">
+        <div className={cx("card-head")}>
+          <div><div className={cx("card-title")}>Price schedule</div><div className={cx("card-sub")}>{allGroups.length} groups · a row you save becomes the company default; the rest stays at the catalog figure.</div></div>
+        </div>
+        <div className={cx("tools")}>
+          <label className={cx("search")}><Search size={16} aria-hidden="true" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find an item" aria-label="Find an item" />{q && <button type="button" className={cx("link")} onClick={() => setQ("")} aria-label="Clear search"><X size={14} /></button>}</label>
+          <div className={cx("chips")} role="group" aria-label="Filter by group">
+            <button type="button" className={cx("chip", !group && "on")} onClick={() => setGroup("")}>All <b>{rows.length}</b></button>
+            {allGroups.map((g) => <button key={g.label} type="button" className={cx("chip", group === g.label && "on")} onClick={() => setGroup(group === g.label ? "" : g.label)}>{g.label} <b>{g.rows.length}</b></button>)}
           </div>
-        ))
-      ) : handheld ? (
-        <div className={cx("sheet")}>
-          {groups.map((g) => (
-            <div key={g.label}>
-              <div className={cx("grp-h")} style={{ padding: "0 14px" }}>{g.label}<span>{g.rows.length}</span></div>
-              <div className={cx("rows")} role="list">
+        </div>
+
+        {shown.length === 0 ? (
+          rows.length === 0
+            ? <Empty text="Nothing in this book yet" action={canEdit && <button type="button" className={cx("btn", "btn-primary")} onClick={() => setSheet(newRowSheet(trade, book))}>Add item</button>} />
+            : <Empty text="Nothing matches" action={<button type="button" className={cx("btn", "btn-ghost")} onClick={() => { setQ(""); setGroup(""); }}>Show all</button>} />
+        ) : handheld ? (
+          <div role="list">
+            {groups.map((g) => (
+              <div key={g.label}>
+                <div className={cx("grp-h")}>{g.label}<span>{g.rows.length}</span></div>
                 {g.rows.map((r) => {
                   const key = `${r.kind}:${r.id}`;
                   const isOpen = open === key;
                   return (
                     <div key={key} role="listitem"><div className={cx("rowi")} role="button" tabIndex={0} aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : key)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(isOpen ? null : key); } }}>
-                      <div className={cx("l1")}>{r.color && <span className={cx("sw")} style={{ display: "inline-block", width: 12, height: 12, background: r.color, border: "1px solid var(--ink)" }} aria-hidden="true" />}<span className={cx("t")}>{r.name}</span><span className={cx("p")}>{r.price === null ? "—" : usd2(r.price)}</span></div>
+                      <div className={cx("l1")}>{r.color && <span style={{ display: "inline-block", width: 12, height: 12, background: r.color, border: "1px solid var(--ink)" }} aria-hidden="true" />}<span className={cx("t")}>{r.name}</span><span className={cx("p")}>{r.price === null ? "—" : usd2(r.price)}</span></div>
                       <div className={cx("l2")}><span>{r.specs}</span><span>/ {r.unit}</span>{r.companyDefault && <span className={cx("stamp", "stamp-ok")}>Default</span>}</div>
                       {isOpen && (
                         <div className={cx("more")}>
                           {r.labor !== null && <div className={cx("kv")}><span>Labor</span><b>{usd2(r.labor)} / {r.unit}</b></div>}
                           <div className={cx("kv")}><span>Group</span><b>{r.group}</b></div>
-                          {canEdit && <button type="button" className={cx("btn", "btn-primary")} onClick={(e) => { e.stopPropagation(); openRow(r); }}>Edit</button>}
+                          {canEdit && <div className={cx("acts2")}><button type="button" className={cx("btn", "btn-primary")} onClick={(e) => { e.stopPropagation(); openRow(r); }}>Edit</button></div>}
                         </div>
                       )}
                     </div></div>
                   );
                 })}
               </div>
-            </div>
-          ))}
-          <BookSettings book={book} canEdit={canEdit} />
-        </div>
-      ) : (
-        <div className={cx("sheet")}>
+            ))}
+          </div>
+        ) : (
           <div className={cx("tbl-wrap")}>
             <table className={cx("spec")}>
               <thead>
@@ -229,7 +219,7 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
                   <th scope="col">No.</th><th scope="col">Item</th><th scope="col">Specification</th><th scope="col">Unit</th>
                   <th scope="col" className={cx("num")}>{trade === "hvac" ? "Shop cost" : "Material"}</th>
                   {trade !== "hvac" && <th scope="col" className={cx("num")}>Labor</th>}
-                  <th scope="col">Company default</th>
+                  <th scope="col">Standing</th>
                   {canEdit && <th scope="col" className={cx("acts")}><span style={{ position: "absolute", left: -9999 }}>Actions</span></th>}
                 </tr>
               </thead>
@@ -256,10 +246,9 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
               </tbody>
             </table>
           </div>
-          <BookSettings book={book} canEdit={canEdit} />
-        </div>
-      )}
-      {variant === 2 && <div className={cx("sheet")} style={{ marginTop: 14 }}><BookSettings book={book} canEdit={canEdit} /></div>}
+        )}
+      </section>
+      <BookSettings book={book} canEdit={canEdit} />
 
       {sheet && <EditSheet state={sheet} book={book} rows={rows} onClose={() => setSheet(null)} />}
     </section>
@@ -273,7 +262,7 @@ function GroupRows({ label, count, cols, children }: { label: string; count: num
   </>;
 }
 
-/* Under the book: the figures that are not a row — removal and waste (fence), nothing (roof), the note (hvac). */
+/* Under the schedule: the figures that are not a row — removal and waste (fence), nothing (roof, hvac). */
 function BookSettings({ book, canEdit }: { book: PriceBookData; canEdit: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -287,11 +276,15 @@ function BookSettings({ book, canEdit }: { book: PriceBookData; canEdit: boolean
     router.refresh();
   });
   return (
-    <div className={cx("settings")} id="settings">
-      <label><span className={cx("lbl")}>Removal</span><MoneyInput value={doc?.removalPerLf ?? 6} disabled={!canEdit || pending} onCommit={(v) => save({ removalPerLf: v })} label="Removal per linear foot" /> <span className={cx("mono")}>/ lf</span></label>
-      <label><span className={cx("lbl")}>Waste</span><MoneyInput value={doc?.wastePct ?? 10} disabled={!canEdit || pending} onCommit={(v) => save({ wastePct: v })} label="Waste percent" sign="%" /></label>
-      <span className={cx("mono")}>Fence book settings — the studio reads them on every estimate.</span>
-    </div>
+    <section className={cx("card")} id="settings" aria-label="Book settings">
+      <div className={cx("card-head")}><div><div className={cx("card-title")}>Book settings</div><div className={cx("card-sub")}>The studio reads them on every estimate.</div></div></div>
+      <div className={cx("card-body")}>
+        <div className={cx("fields")}>
+          <label className={cx("fld")}><span className={cx("lbl")}>Removal of the old fence</span><span><MoneyInput value={doc?.removalPerLf ?? 6} disabled={!canEdit || pending} onCommit={(v) => save({ removalPerLf: v })} label="Removal per linear foot" /> <span className={cx("mono")}>per lf</span></span></label>
+          <label className={cx("fld")}><span className={cx("lbl")}>Waste on materials</span><span><MoneyInput value={doc?.wastePct ?? 10} disabled={!canEdit || pending} onCommit={(v) => save({ wastePct: v })} label="Waste percent" sign="%" /></span></label>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -446,36 +439,24 @@ function EditSheet({ state, book, rows, onClose }: { state: SheetState; book: Pr
   const kicker = state.kind === "hvac-rate" ? "Rate card" : state.kind === "hvac-unit" ? "Catalog unit" : state.kind === "roof-underlayment" ? "Underlayment" : state.kind === "roof-system" ? "Roof system" : "Fence type";
   const removeLabel = state.row ? (state.row.custom ? "Delete" : state.row.companyDefault ? "Reset to catalog" : null) : null;
 
-  // Portalled into the shell's overlay layer: drawn inside `.content` the
-  // scrim painted under the sidebar, the topbar and the support button.
   return (
-    <OverlayPortal>
-      <div className="inv-layer">
-      <div className={cx("sh-bg")} onClick={onClose} aria-hidden="true" />
-      <aside className={cx("sh")} role="dialog" aria-modal="true" aria-labelledby="inv-sheet-title">
-        <div className={cx("sh-h")}>
-          <div><div className={cx("sh-k")}>{kicker}</div><h2 className={cx("sh-t")} id="inv-sheet-title">{state.title}</h2></div>
-          <button type="button" className={cx("sh-x")} onClick={onClose} aria-label="Close"><X size={18} /></button>
+    <Sheet kicker={kicker} title={state.title} onClose={onClose} footer={
+      <>
+        {removeLabel && <button type="button" className={cx("btn", "btn-danger")} onClick={remove} disabled={pending}>{removeLabel}</button>}
+        <div className={cx("r")}>
+          <button type="button" className={cx("btn", "btn-ghost")} onClick={onClose} disabled={pending}>Cancel</button>
+          <button type="button" className={cx("btn", "btn-primary")} onClick={save} disabled={pending}>{pending ? "Saving…" : "Save to company"}</button>
         </div>
-        <div className={cx("sh-b")}>
-          {err && <div className={cx("note", "note-err")} role="alert">{err}</div>}
-          {state.kind === "fence-type" && <FenceFields f={f} set={set} isCustom={!(FENCE_TYPE_IDS as string[]).includes(str("id"))} />}
-          {(state.kind === "roof-system" || state.kind === "roof-underlayment") && <RoofFields f={f} set={set} isNew={state.isNew} kind={state.kind} />}
-          {state.kind === "hvac-unit" && <HvacUnitFields f={f} set={set} />}
-          {state.kind === "hvac-rate" && (
-            <div className={cx("fld")}><span className={cx("lbl")}>{state.title}</span><input className={cx("in", "in-mono")} inputMode="decimal" value={str("value")} onChange={(e) => set("value", e.target.value)} aria-label={state.title} /><span className={cx("hint")}>{String(state.row?.specs ?? "")}</span></div>
-          )}
-        </div>
-        <div className={cx("sh-f")}>
-          {removeLabel && <button type="button" className={cx("btn", "btn-danger")} onClick={remove} disabled={pending}>{removeLabel}</button>}
-          <div className={cx("r")}>
-            <button type="button" className={cx("btn", "btn-ghost")} onClick={onClose} disabled={pending}>Cancel</button>
-            <button type="button" className={cx("btn", "btn-primary")} onClick={save} disabled={pending}>{pending ? "Saving…" : "Save to company"}</button>
-          </div>
-        </div>
-      </aside>
-      </div>
-    </OverlayPortal>
+      </>
+    }>
+      {err && <div className={cx("note", "note-err")} role="alert">{err}</div>}
+      {state.kind === "fence-type" && <FenceFields f={f} set={set} isCustom={!(FENCE_TYPE_IDS as string[]).includes(str("id"))} />}
+      {(state.kind === "roof-system" || state.kind === "roof-underlayment") && <RoofFields f={f} set={set} isNew={state.isNew} kind={state.kind} />}
+      {state.kind === "hvac-unit" && <HvacUnitFields f={f} set={set} />}
+      {state.kind === "hvac-rate" && (
+        <div className={cx("fld")}><span className={cx("lbl")}>{state.title}</span><input className={cx("in", "in-mono")} inputMode="decimal" value={str("value")} onChange={(e) => set("value", e.target.value)} aria-label={state.title} /><span className={cx("hint")}>{String(state.row?.specs ?? "")}</span></div>
+      )}
+    </Sheet>
   );
 }
 

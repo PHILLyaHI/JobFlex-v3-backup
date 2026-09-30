@@ -1,18 +1,18 @@
 // INVENTORY — one page for the three trades (owner, 2026-09-29).
 //
-// /dashboard/inventory?trade=roof|fence|hvac&tab=book|stock|services&inv=1|2
+// /dashboard/inventory?trade=roof|fence|hvac&tab=book|stock|services
 //
 // What the estimators price from (the price book) and what the warehouse
 // holds (the stock), for the trade the segmented control picks. The old
 // per-trade boards (/dashboard/<trade>-estimator/board), the HVAC service menu
 // page and the handheld HVAC preview answer 308 to this route (middleware).
-// The stock tab is the maintained RoofingInventory workspace, embedded; the
-// service menu (HVAC) is the HvacServicesContent page, embedded.
+// The stock tab is drawn by inventory-stock.tsx on the roofing-inventory
+// workspace hook; the service menu (HVAC) is the HvacServicesContent page, embedded.
 
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { isLimitedRole, NoOrgError, requireOrg, UnauthorizedError } from "@/lib/orgContext";
-import { loadInventoryPage, parseTab, parseVariant, resolveInventoryTrade } from "@/lib/inventoryPage";
+import { loadInventoryPage, parseTab, resolveInventoryTrade } from "@/lib/inventoryPage";
 import { canEditBook } from "@/lib/priceBook";
 import { InventoryContent } from "@/components/v3/inventory-blueprint/inventory-content";
 
@@ -37,7 +37,6 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   }
   const trade = await resolveInventoryTrade(organizationId, one(sp.trade));
   const tab = parseTab(one(sp.tab), trade);
-  const variant = parseVariant(one(sp.inv));
-  const data = await loadInventoryPage(organizationId, trade, tab, variant);
+  const data = await loadInventoryPage(organizationId, trade, tab);
   return <InventoryContent key={`${trade}-${tab}`} data={data} canEditBook={canEditBook(role)} canWriteStock={!isLimitedRole(role)} />;
 }

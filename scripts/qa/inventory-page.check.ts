@@ -24,7 +24,7 @@ import { roofCatalogSchema } from "../../src/lib/roofPackage/catalogSchema";
 import { effectiveRate, standardRate } from "../../src/lib/fence/rates";
 import { ROOF_SYSTEMS, UNDERLAYMENTS } from "../../src/lib/roofPackage/catalog";
 import { DEFAULT_RATE_CARD, STARTER_CATALOG, normalizeRateCard } from "../../src/lib/hvac/ledger";
-import { parseTab, parseVariant } from "../../src/lib/inventoryPage";
+import { parseTab } from "../../src/lib/inventoryPage";
 import { isPathAllowed, ROLE_ROUTE_GATES } from "../../src/lib/roleRoutes";
 
 const db = new PrismaClient();
@@ -115,7 +115,7 @@ async function main() {
     ok("D INSTALLER and SALES may not (the estimators' own rule)", !canEditBook("INSTALLER") && !canEditBook("SALES"));
     ok("D the route is allowed to the estimator role, not to sales or installers", isPathAllowed(ROLE_ROUTE_GATES.ESTIMATOR, "/dashboard/inventory") && !isPathAllowed(ROLE_ROUTE_GATES.SALES, "/dashboard/inventory") && !isPathAllowed(ROLE_ROUTE_GATES.INSTALLER, "/dashboard/inventory"));
     ok("D tab: services only for hvac, book by default", parseTab("services", "hvac") === "services" && parseTab("services", "fence") === "book" && parseTab(undefined, "roof") === "book" && parseTab("stock", "roof") === "stock");
-    ok("D layout: 2 on request, 1 otherwise", parseVariant("2") === 2 && parseVariant("3") === 1 && parseVariant(undefined) === 1);
+    ok("D an unknown tab and a services tab off hvac fall back to the book", parseTab("cards", "hvac") === "book" && parseTab("services", "roof") === "book");
 
     /* ── E. the old URLs answer 308 (when a dev server is up) ── */
     head("E · the old URLs");
