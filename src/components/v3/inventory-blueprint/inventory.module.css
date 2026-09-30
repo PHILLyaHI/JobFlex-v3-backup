@@ -83,7 +83,7 @@
 /* Tools in a card: the search, filter chips, a select. */
 :global(.jf-blueprint :is(.content, .inv-layer)) .tools { display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; padding: 12px 20px 16px; border-bottom: 1.5px solid var(--hair-soft); }
 /* One row of tools: the shell's .search box (the topbar's, plated white here), the Jobs status strip (.jtabs) beside it; the stock's order stays an Add expense .pinput select. */
-:global(.jf-blueprint :is(.content, .inv-layer)) .tools :global(.search) { flex: 0 0 320px; max-width: 320px; background: #fff; padding: 0 14px; gap: 10px; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .tools :global(.search) { flex: 0 0 320px; max-width: 320px; background: #fff; padding: 0 12px; gap: 10px; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .tools :global(.search .ic) { width: 16px; height: 16px; flex: 0 0 16px; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .tools :global(.jtabs) { flex: 1 1 0; min-width: 0; margin-bottom: 0; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .tools :global(.search):focus-within { outline: 2px solid var(--blueprint); outline-offset: -1px; }
