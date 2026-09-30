@@ -59,8 +59,10 @@ export function HvacServicesContent({ card: initial, factor, place, embedded }: 
   const [pending, start] = useTransition();
   const [note, setNote] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [q, setQ] = useState("");
-  const [showHidden, setShowHidden] = useState(false);
-  const [onlyMine, setOnlyMine] = useState(false);
+  // One select: every task, the ones priced by this shop, or the hidden ones.
+  const [view, setView] = useState<"all" | "mine" | "hidden">("all");
+  const showHidden = view === "hidden";
+  const onlyMine = view === "mine";
   const [adjText, setAdjText] = useState(String(card.serviceLaborAdjustPct ?? 0));
   const [editing, setEditing] = useState<string | null>(null);
   const [sure, setSure] = useState<string | null>(null);
@@ -134,11 +136,15 @@ export function HvacServicesContent({ card: initial, factor, place, embedded }: 
 
         <section className={cx("card", "tools")} data-menu-tools>
           <div className={cx("tools-row")}>
-            <label className={cx("search")}>
-              <input className={cx("in")} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a task or a part" aria-label="Find a task" />
+            <label className="search">
+              <svg className="ic" aria-hidden="true"><use href="#i-search" /></svg>
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a task or a part" aria-label="Find a task" />
             </label>
-            <button type="button" className={cx("chip", onlyMine && "on")} aria-pressed={onlyMine} onClick={() => setOnlyMine((v) => !v)}>Priced by you <b>{priced}</b></button>
-            <button type="button" className={cx("chip", showHidden && "on")} aria-pressed={showHidden} onClick={() => setShowHidden((v) => !v)} data-toggle-hidden>Hidden <b>{hidden}</b></button>
+            <select className="pinput" aria-label="Show" value={view} onChange={(e) => setView(e.target.value as "all" | "mine" | "hidden")} data-toggle-hidden>
+              <option value="all">All tasks</option>
+              <option value="mine">Priced by you · {priced}</option>
+              <option value="hidden">Hidden · {hidden}</option>
+            </select>
             <form
               className={cx("adjust")}
               data-menu-adjust

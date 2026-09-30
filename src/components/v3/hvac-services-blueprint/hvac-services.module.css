@@ -140,12 +140,12 @@
 
 /* ── the editable book (2026-09-23) ── */
 :global(.jf-blueprint .content) .tools { padding: 14px 18px; }
-:global(.jf-blueprint .content) .tools-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-:global(.jf-blueprint .content) .search { flex: 0 1 280px; min-width: 200px; }
-:global(.jf-blueprint .content) .search .in { height: 36px; padding: 0 10px; }
-:global(.jf-blueprint .content) .chip { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 11px; border: 1.5px solid var(--hair); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); cursor: pointer; }
-:global(.jf-blueprint .content) .chip.on { border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.06); }
-:global(.jf-blueprint .content) .chip b { font-weight: 700; }
+/* The row of tools: the shell's .search box, then the Add expense form's .pinput select, 12px apart, 40px tall. */
+:global(.jf-blueprint .content) .tools-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+:global(.jf-blueprint .content) .tools-row :global(.search) { flex: 0 0 320px; max-width: 320px; }
+:global(.jf-blueprint .content) .tools-row :global(.search):focus-within { outline: 2px solid var(--blueprint); outline-offset: -1px; }
+:global(.jf-blueprint .content) .tools-row :global(.search) input:focus-visible { outline: none; }
+:global(.jf-blueprint .content) .tools-row :global(.pinput) { width: auto; max-width: 240px; height: 40px; padding: 0 10px; box-sizing: border-box; }
 :global(.jf-blueprint .content) .adjust { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 :global(.jf-blueprint .content) .adjust .lbl { white-space: nowrap; }
 :global(.jf-blueprint .content) .money { display: inline-flex; align-items: center; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; }
@@ -181,8 +181,9 @@
 :global(.jf-blueprint .content) .note-x { margin-left: auto; width: 28px; height: 28px; border: 0; background: none; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; }
 
 @media (max-width: 768px) {
-  :global(.jf-blueprint .content) .search { flex-basis: 100%; }
-  :global(.jf-blueprint .content) .search .in, :global(.jf-blueprint .content) .in-money, :global(.jf-blueprint .content) .in-pct, :global(.jf-blueprint .content) .chip { height: 44px; }
+  :global(.jf-blueprint .content) .tools-row :global(.search) { flex: 1 1 100%; max-width: none; height: 44px; }
+  :global(.jf-blueprint .content) .tools-row :global(.pinput) { height: 44px; max-width: 100%; }
+  :global(.jf-blueprint .content) .in-money, :global(.jf-blueprint .content) .in-pct { height: 44px; }
   :global(.jf-blueprint .content) .adjust { margin-left: 0; width: 100%; flex-wrap: wrap; }
   :global(.jf-blueprint .content) .adjust .btn--sm { height: 44px; }
   :global(.jf-blueprint .content) .tbl-wrap { overflow: visible; }

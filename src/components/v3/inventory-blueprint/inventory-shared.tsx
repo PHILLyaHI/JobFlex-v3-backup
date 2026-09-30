@@ -37,12 +37,12 @@ export function Sheet({ id = "inv-sheet-title", kicker, title, onClose, footer, 
   );
 }
 
-/** The Proposals page's status filters (.pchips / .pchip, proposals.module.css), re-used as they are: a label and a bold counter. */
-export function Segmented<T extends string>({ label, value, items, onChange }: { label: string; value: T; items: Array<{ id: T; label: string; n?: number }>; onChange: (id: T) => void }) {
+/** The Add expense form's select (.pinput, the Proposals / Financials sheets), one choice per row, a counter after the label. */
+export function Picker<T extends string>({ label, value, items, onChange }: { label: string; value: T; items: Array<{ id: T; label: string; n?: number }>; onChange: (id: T) => void }) {
   return (
-    <div className="pchips" role="group" aria-label={label}>
-      {items.map((it) => <button key={it.id} type="button" className={cx("pchip", value === it.id && "active")} aria-pressed={value === it.id} onClick={() => onChange(it.id)}>{it.label} {it.n !== undefined && <b>{it.n}</b>}</button>)}
-    </div>
+    <select className="pinput" aria-label={label} value={value} onChange={(e) => onChange(e.target.value as T)}>
+      {items.map((it) => <option key={it.id} value={it.id}>{it.label}{it.n !== undefined ? ` · ${it.n}` : ""}</option>)}
+    </select>
   );
 }
 

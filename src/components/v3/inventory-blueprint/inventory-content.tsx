@@ -16,7 +16,7 @@ import { useCallback, useMemo, useState, useTransition, type ReactNode } from "r
 import Link from "next/link";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
-import { Download, Pencil, Plus, Search, Upload, X } from "lucide-react";
+import { Download, Pencil, Plus, Upload, X } from "lucide-react";
 import { toast } from "@/components/ui/Toast";
 import { saveFenceCatalog } from "@/actions/fenceCatalog";
 import { saveRoofCatalog } from "@/actions/roofCatalog";
@@ -35,7 +35,7 @@ import {
   type BookRow,
 } from "@/lib/priceBook";
 import { InventoryStock } from "./inventory-stock";
-import { cx, Empty, Segmented, Sheet, useHandheld } from "./inventory-shared";
+import { cx, Empty, Picker, Sheet, useHandheld } from "./inventory-shared";
 
 const TAB_LABEL: Record<InventoryTab, string> = { book: "Price book", stock: "Stock", services: "Service menu" };
 const GROUP_ORDER: Record<TradeId, string[]> = {
@@ -175,8 +175,8 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
           <div><div className={cx("card-title")}>Price schedule</div></div>
         </div>
         <div className={cx("tools")}>
-          <label className="search"><Search className="ic" aria-hidden="true" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find an item" aria-label="Find an item" />{q && <button type="button" className={cx("link")} onClick={() => setQ("")} aria-label="Clear search"><X size={14} /></button>}</label>
-          <Segmented label="Jump to a group" value={group} items={[{ id: "", label: "All", n: rows.length }, ...allGroups.map((g) => ({ id: g.label, label: g.label, n: g.rows.length }))]} onChange={jumpTo} />
+          <label className="search"><svg className="ic" aria-hidden="true"><use href="#i-search" /></svg><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find an item" aria-label="Find an item" />{q && <button type="button" className={cx("link")} onClick={() => setQ("")} aria-label="Clear search"><X size={14} /></button>}</label>
+          <Picker label="Group" value={group} items={[{ id: "", label: "All groups" }, ...allGroups.map((g) => ({ id: g.label, label: g.label, n: g.rows.length }))]} onChange={jumpTo} />
         </div>
 
         {shown.length === 0 ? (
