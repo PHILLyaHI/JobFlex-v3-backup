@@ -183,6 +183,26 @@ export function pickList(items: readonly StockItem[], lines: readonly StockLine[
   return [...merged.values()];
 }
 
+/**
+ * What leaves the warehouse when the truck is loaded (actions/inventory
+ * loadJobMaterials): each tracked line as far as the shelf has it — a per-job
+ * item only what arrived for the job, a stocked item short on the shelf only
+ * what is there (the rest is bought for the job). The count never goes below
+ * zero. `short` counts the stocked lines the shelf could not cover.
+ */
+export function issueFromShelf(rows: readonly PickRow[]): { taken: Array<PickRow & { itemId: string; take: number }>; short: number } {
+  const tracked = rows.filter((r): r is PickRow & { itemId: string } => !!r.itemId);
+  const taken = tracked.map((r) => ({ ...r, take: Math.min(r.quantity, Math.max(0, r.onHand ?? 0)) })).filter((r) => r.take > 0);
+  const short = tracked.filter((r) => !r.perJob && r.quantity > Math.max(0, r.onHand ?? 0)).length;
+  return { taken, short };
+}
+
+/** The stock schedule's search: the item's name, its supplier or its SKU. */
+export function stockMatches(r: Pick<StockItem, "name" | "supplierName" | "supplierSku">, needle: string): boolean {
+  const n = needle.trim().toLowerCase();
+  return !n || r.name.toLowerCase().includes(n) || (r.supplierName ?? "").toLowerCase().includes(n) || (r.supplierSku ?? "").toLowerCase().includes(n);
+}
+
 export type BuyLine = {
   itemId: string;
   key: string;

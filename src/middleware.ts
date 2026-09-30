@@ -58,7 +58,8 @@ export async function middleware(req: NextRequest) {
     const url = req.nextUrl.clone();
     const [path, query] = moved.split("?");
     url.pathname = path;
-    url.search = `?${query}`;
+    // The old address's own query rides along (?group=…); the trade and the tab are the new page's.
+    for (const [k, v] of new URLSearchParams(query)) url.searchParams.set(k, v);
     return NextResponse.redirect(url, 308);
   }
   if (REMOVED_LANDINGS.has(pathname)) {

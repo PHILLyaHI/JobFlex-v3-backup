@@ -17,7 +17,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { sendOrgEmail } from "@/lib/email/orgSend";
-import { isTradeId, pickList, purchaseOrderText, stockKey, type TradeId } from "@/lib/inventory";
+import { isTradeId, issueFromShelf, pickList, purchaseOrderText, stockKey, type TradeId } from "@/lib/inventory";
 import { presetItems } from "@/lib/inventoryPresets";
 import { explodeLines } from "@/lib/inventoryBom";
 import { recordStockPolicy, stockItemsOf, stockPolicyOf } from "@/lib/inventoryPolicy";
@@ -116,6 +116,8 @@ export async function receiveStock(itemId: string, quantity: number, note?: stri
     if (!qty) return { ok: false, error: "Enter a quantity" };
     const item = await db.inventoryItem.findFirst({ where: { id: itemId, organizationId }, select: { id: true, trade: true, onHand: true, name: true, unit: true } });
     if (!item) return { ok: false, error: "That item is not on this company" };
+    // Taking off the shelf stops at what is there — the count never goes below zero.
+    if (qty < 0 && item.onHand + qty < 0) return { ok: false, error: `Only ${Math.max(0, item.onHand)} ${item.unit} of ${item.name} on hand` };
     const [, updated] = await db.$transaction([
       db.inventoryMovement.create({ data: { itemId: item.id, kind: qty > 0 ? "RECEIVED" : "ADJUST", quantity: qty, note: note?.trim() || null, actorId: user.id } }),
       db.inventoryItem.update({ where: { id: item.id }, data: { onHand: { increment: qty } }, select: { onHand: true } }),
@@ -291,13 +293,13 @@ export async function loadJobMaterials(jobId: string): Promise<{ ok: true; taken
     const stock = await stockItemsOf(organizationId, job.proposal.trade);
     const rows = pickList(stock, explodeLines(job.proposal.trade, job.proposal.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType }))));
     const tracked = rows.filter((r) => r.itemId);
-    // A per-job item leaves the warehouse only as far as it was there: what
-    // was bought straight for the job never touched the shelf.
-    const taken = tracked.map((r) => ({ ...r, take: r.perJob ? Math.min(r.quantity, Math.max(0, r.onHand ?? 0)) : r.quantity })).filter((r) => r.take > 0);
+    // Every item leaves the warehouse only as far as it was there (lib/inventory
+    // issueFromShelf): the count never goes below zero, the rest is bought.
+    const { taken, short } = issueFromShelf(rows);
     // The price the stock leaves at (stage D): the item's last cost today,
     // stamped on the movement so the job's cost does not move when the price
     // does later (lib/jobCost).
-    const priceOf = new Map((await db.inventoryItem.findMany({ where: { id: { in: taken.map((r) => r.itemId!) }, organizationId }, select: { id: true, lastCost: true } })).map((i) => [i.id, i.lastCost]));
+    const priceOf = new Map((await db.inventoryItem.findMany({ where: { id: { in: taken.map((r) => r.itemId) }, organizationId }, select: { id: true, lastCost: true } })).map((i) => [i.id, i.lastCost]));
     await db.$transaction([
       ...taken.flatMap((r) => [
         db.inventoryMovement.create({ data: { itemId: r.itemId!, kind: "PICKED", quantity: -r.take, jobId: job.id, proposalId: job.proposal!.id, actorId: ctx.user.id, unitCost: priceOf.get(r.itemId!) ?? null } }),
@@ -311,10 +313,10 @@ export async function loadJobMaterials(jobId: string): Promise<{ ok: true; taken
       organizationId,
       actorId: ctx.user.id,
       kind: TRAIL_KINDS.MATERIALS,
-      summary: `Loaded ${tracked.length} of ${rows.length} materials for ${job.title}`,
+      summary: `Loaded ${tracked.length} of ${rows.length} materials for ${job.title}${short ? ` — ${plural(short, "line")} short on the shelf, the rest to buy` : ""}`,
       proposalId: job.proposal.id,
       clientId: job.clientId,
-      meta: { jobId: job.id, taken: tracked.length, untracked: rows.length - tracked.length, trade: job.proposal.trade, lines: taken.map((r) => ({ itemId: r.itemId, quantity: r.take })) },
+      meta: { jobId: job.id, taken: tracked.length, untracked: rows.length - tracked.length, short, trade: job.proposal.trade, lines: taken.map((r) => ({ itemId: r.itemId, quantity: r.take })) },
     });
     return { ok: true, taken: tracked.length, untracked: rows.length - tracked.length };
   } catch (err) {
