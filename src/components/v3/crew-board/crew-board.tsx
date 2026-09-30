@@ -100,13 +100,28 @@ function ErrorLine({ text, onClose }: { text: string | null; onClose: () => void
 function Sheet({ open, title, kicker, onClose, children, footer }: { open: boolean; title: string; kicker?: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
   const labelId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  // The latest onClose, read at the moment of use. It is NOT an effect
+  // dependency: callers pass a new function on every render, and with it in the
+  // deps every keystroke in the sheet re-ran the open effect — scroll unlocked
+  // and relocked, focus handed back and taken again. On an iPhone that closed
+  // the keyboard after each letter and opened the photo picker (the hidden
+  // file input was the first "input" the refocus found). 2026-10-01.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
   useEffect(() => {
     if (!open) return;
     const unlock = lockScroll();
     const prev = document.activeElement as HTMLElement | null;
-    const t = window.setTimeout(() => panelRef.current?.querySelector<HTMLElement>("textarea, input, button")?.focus(), 30);
+    // Once, on open: the first TEXT field — never a file input (focusing one
+    // opens the photo picker on iOS), never a radio.
+    const t = window.setTimeout(
+      () => panelRef.current?.querySelector<HTMLElement>('textarea, input:not([type="file"]):not([type="hidden"]):not([type="radio"]):not([type="checkbox"])')?.focus(),
+      30,
+    );
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
     document.addEventListener("keydown", onKey);
     return () => {
@@ -115,7 +130,7 @@ function Sheet({ open, title, kicker, onClose, children, footer }: { open: boole
       unlock();
       prev?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <OverlayPortal>

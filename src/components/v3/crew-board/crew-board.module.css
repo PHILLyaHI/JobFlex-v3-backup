@@ -106,7 +106,7 @@
 :is(.root, .layer):is(.root, .layer) .fieldLabel { color: var(--ink); font: 800 11px/1.4 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; padding: 0; }
 :is(.root, .layer):is(.root, .layer) .input { width: 100%; min-width: 0; min-height: 46px; padding: 10px 12px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet, #fff); color: var(--ink); font: 16px/1.4 var(--font-sans); }
 :is(.root, .layer):is(.root, .layer) .area { resize: vertical; min-height: 96px; }
-:is(.root, .layer):is(.root, .layer) .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+:is(.root, .layer):is(.root, .layer) .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 :is(.root, .layer):is(.root, .layer) .radios { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 :is(.root, .layer):is(.root, .layer) .radios legend { margin-bottom: 6px; }
 :is(.root, .layer):is(.root, .layer) .radio { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 8px 12px; border: 2px solid var(--ink-line); border-radius: var(--r-sm); font-size: 14px; font-weight: 600; cursor: pointer; }
@@ -153,7 +153,7 @@
 :is(.root, .layer):is(.root, .layer) .sheet { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: 100%; max-height: 92dvh; background: var(--sheet, #fff); border-top: 2px solid var(--ink); animation: none; }
 :is(.root, .layer):is(.root, .layer) .sheetHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px var(--pad); border-bottom: 1.5px solid var(--ink); background: var(--paper); }
 :is(.root, .layer):is(.root, .layer) .sheetTitle { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2; overflow-wrap: anywhere; }
-:is(.root, .layer):is(.root, .layer) .sheetBody { display: grid; gap: 16px; padding: 18px var(--pad); overflow-y: auto; overscroll-behavior: contain; }
+:is(.root, .layer):is(.root, .layer) .sheetBody { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 18px var(--pad); overflow-y: auto; overscroll-behavior: contain; }
 :is(.root, .layer):is(.root, .layer) .sheetFoot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px var(--pad) calc(12px + env(safe-area-inset-bottom, 0px)); border-top: 1.5px solid var(--ink); background: var(--paper); }
 
 @media (min-width: 769px) {
@@ -233,3 +233,19 @@
 :is(.root, .layer):is(.root, .layer) .bigActs { display: grid; gap: 10px; padding: 14px var(--pad) 16px; }
 :is(.root, .layer):is(.root, .layer) .bigBtn { width: 100%; min-height: 56px; font-size: 14px; }
 :is(.root, .layer):is(.root, .layer) .crewActs > .err { margin: 0 var(--pad) 14px; }
+
+/* ── forms at 390 (2026-10-01, the owner's iPhone): no field wider than its sheet.
+   iOS gives date and number inputs an intrinsic width of their own, which a
+   plain 1fr track honours and the row overflows; the tracks are minmax(0, 1fr)
+   above, and the controls drop the native box. ── */
+:is(.root, .layer):is(.root, .layer) .field > * { min-width: 0; max-width: 100%; }
+:is(.root, .layer):is(.root, .layer) .input { max-width: 100%; box-sizing: border-box; }
+:is(.root, .layer):is(.root, .layer) .input:is([type="date"], [type="number"], [type="time"]) { -webkit-appearance: none; appearance: none; display: block; }
+:is(.root, .layer):is(.root, .layer) .input[type="date"]::-webkit-date-and-time-value { text-align: left; margin: 0; }
+:is(.root, .layer):is(.root, .layer) .input[type="date"]::-webkit-calendar-picker-indicator { margin: 0; }
+:is(.root, .layer):is(.root, .layer) .radios { min-width: 0; min-inline-size: 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+:is(.root, .layer):is(.root, .layer) .radio { min-width: 0; overflow-wrap: anywhere; }
+:is(.root, .layer):is(.root, .layer) .capEdit > * { min-width: 0; }
+:is(.root, .layer):is(.root, .layer) .sheetFoot .btn { min-width: 0; }
+:is(.root, .layer):is(.root, .layer) .rejectRow { min-width: 0; }
+:is(.root, .layer):is(.root, .layer) .rejectRow .input { min-width: 0; }
