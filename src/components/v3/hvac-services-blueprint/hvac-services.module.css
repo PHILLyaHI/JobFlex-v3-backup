@@ -142,7 +142,8 @@
 :global(.jf-blueprint .content) .tools { padding: 14px 18px; }
 /* The row of tools: the shell's .search box, then the Add expense form's .pinput select, 12px apart, 40px tall. */
 :global(.jf-blueprint .content) .tools-row { display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; }
-:global(.jf-blueprint .content) .tools-row :global(.search) { flex: 0 0 320px; max-width: 320px; background: #fff; }
+:global(.jf-blueprint .content) .tools-row :global(.search) { flex: 0 0 320px; max-width: 320px; background: #fff; padding: 0 14px; gap: 10px; }
+:global(.jf-blueprint .content) .tools-row :global(.search .ic) { width: 16px; height: 16px; flex: 0 0 16px; }
 :global(.jf-blueprint .content) .tools-row :global(.jtabs) { flex: 1 1 0; min-width: 0; margin-bottom: 0; }
 :global(.jf-blueprint .content) .tools-row :global(.search):focus-within { outline: 2px solid var(--blueprint); outline-offset: -1px; }
 :global(.jf-blueprint .content) .tools-row :global(.search) input:focus-visible { outline: none; }

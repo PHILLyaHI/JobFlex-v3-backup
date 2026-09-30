@@ -24,6 +24,7 @@ import type { Route } from "next";
 import { addHvacServiceTask, deleteHvacServiceTask, resetHvacServiceOverride, setHvacServiceLaborAdjust, setHvacServiceOverride, updateHvacServiceTask } from "@/actions/hvacServices";
 import { SERVICE_GROUPS, SERVICE_MENU, applyOverride, indexedLabor, type ServiceOverride, type ServiceTask } from "@/lib/hvac/serviceMenu";
 import type { HvacRateCard } from "@/lib/hvac/ledger";
+import { useUrlParam } from "@/components/v3/inventory-blueprint/inventory-shared";
 import styles from "./hvac-services.module.css";
 
 const cx = (...names: Array<string | false | null | undefined>) =>
@@ -59,8 +60,10 @@ export function HvacServicesContent({ card: initial, factor, place, embedded }: 
   const [pending, start] = useTransition();
   const [note, setNote] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [q, setQ] = useState("");
-  // One select: every task, the ones priced by this shop, or the hidden ones.
-  const [view, setView] = useState<"all" | "mine" | "hidden">("all");
+  // The strip: every task, the ones priced by this shop, or the hidden ones — kept in the URL (?group=).
+  const [urlView, setUrlView] = useUrlParam("group");
+  const view: "all" | "mine" | "hidden" = urlView === "mine" || urlView === "hidden" ? urlView : "all";
+  const setView = (v: "all" | "mine" | "hidden") => setUrlView(v === "all" ? "" : v);
   const showHidden = view === "hidden";
   const onlyMine = view === "mine";
   const [adjText, setAdjText] = useState(String(card.serviceLaborAdjustPct ?? 0));
@@ -91,7 +94,10 @@ export function HvacServicesContent({ card: initial, factor, place, embedded }: 
         .filter((g) => g.tasks.length),
     [],
   );
-  const priced = SERVICE_MENU.filter((t) => { const o = over[t.id]; return o && (typeof o.laborUsd === "number" || typeof o.partCostUsd === "number"); }).length;
+  const isPriced = (t: ServiceTask) => { const o = over[t.id]; return Boolean(o && (typeof o.laborUsd === "number" || typeof o.partCostUsd === "number")); };
+  // The strip's counters follow the search.
+  const priced = SERVICE_MENU.filter((t) => matches(t) && isPriced(t)).length;
+  const hiddenShown = SERVICE_MENU.filter((t) => matches(t) && over[t.id]?.hidden).length;
   const hidden = SERVICE_MENU.filter((t) => over[t.id]?.hidden).length;
   const offered = SERVICE_MENU.length - hidden + custom.length;
 
@@ -142,7 +148,7 @@ export function HvacServicesContent({ card: initial, factor, place, embedded }: 
             </label>
             {/* The Jobs status strip (.jtabs / .jtab / .jtab-n), as it is. */}
             <div className="jtabs" role="group" aria-label="Show" data-toggle-hidden>
-              {([["all", "All", SERVICE_MENU.length], ["mine", "Priced by you", priced], ["hidden", "Hidden", hidden]] as const).map(([id, label, n]) => (
+              {([["all", "All", SERVICE_MENU.filter(matches).length], ["mine", "Priced by you", priced], ["hidden", "Hidden", hiddenShown]] as const).map(([id, label, n]) => (
                 <button key={id} type="button" className={cx("jtab", view === id && "on")} aria-pressed={view === id} onClick={() => setView(id)}>{label}<span className="jtab-n">{n}</span></button>
               ))}
             </div>

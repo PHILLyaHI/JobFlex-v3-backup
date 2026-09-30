@@ -9,27 +9,32 @@
 // sendPurchaseOrder, receivePurchaseOrder, upsertSupplier, saveStockList,
 // setProposalInventoryLink — the same actions the estimators' boards used.
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import type { Route } from "next";
 import { ArrowRight, Check, ChevronDown, ChevronRight, PackagePlus, Pencil, Plus, X } from "lucide-react";
 import { InventoryItemForm, InventorySupplierForm } from "@/components/v3/roofing-inventory/roofing-inventory-forms";
 import { StockListEditor } from "@/components/v3/roofing-inventory/stock-list-editor";
-import { ago, dayOf, materialsOf, moveLabel, qty, statusLabel, stockStatus, useRoofingInventory, usd, type InventoryRow, type InventoryTab as StockSection, type InventoryWorkspace } from "@/components/v3/roofing-inventory/roofing-inventory-model";
+import { ago, dayOf, materialsOf, moveLabel, qty, statusLabel, stockStatus, useRoofingInventory, usd, type InventoryRow, type InventoryTab as StockSection, type InventoryWorkspace, type StockFilter } from "@/components/v3/roofing-inventory/roofing-inventory-model";
 import type { BoardOrder, BoardProposal, TradeBoardData } from "@/lib/inventoryBoard";
 import type { StockFacts } from "@/lib/inventoryDashboard";
 import { pickList, type StockRow } from "@/lib/inventory";
-import { cx, Empty, Filters, Sheet, STAMP_TONE, useHandheld } from "./inventory-shared";
+import { cx, Empty, Filters, Sheet, STAMP_TONE, useHandheld, useUrlParam } from "./inventory-shared";
 
 export type StockSlots = { primary: HTMLElement | null; toolbar: HTMLElement | null };
 
+const STOCK_FILTERS = new Set(["ALL", "ORDER", "RESERVED", "STOCKED", "IDLE", "EMPTY", "PERJOB"]);
 const SECTIONS: Array<{ id: StockSection; label: string }> = [
   { id: "stock", label: "Stock" }, { id: "orders", label: "Orders" }, { id: "proposals", label: "Jobs & proposals" }, { id: "suppliers", label: "Suppliers" }, { id: "activity", label: "Activity" },
 ];
 
 export function InventoryStock({ data, facts, canWrite, slots }: { data: TradeBoardData; facts: StockFacts; canWrite: boolean; slots: StockSlots }) {
   const w = useRoofingInventory({ data, facts, canWrite });
+  // The state filter lives in the URL (?group=): read once on arrival, written on every pick.
+  const [urlFilter, setUrlFilter] = useUrlParam("group");
+  useEffect(() => { if (urlFilter && urlFilter !== w.filter && STOCK_FILTERS.has(urlFilter)) w.setFilter(urlFilter as StockFilter); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const pickFilter = (id: StockFilter) => { w.setFilter(id); setUrlFilter(id === "ALL" ? "" : id); };
   const handheld = useHandheld();
   const [orderOpen, setOrderOpen] = useState(false);
   const counts: Record<StockSection, number> = { stock: w.rows.length, orders: w.data.orders.length + w.needs.length, proposals: w.data.proposals.length, suppliers: w.data.suppliers.length, activity: w.facts.recent.length };
@@ -68,7 +73,7 @@ export function InventoryStock({ data, facts, canWrite, slots }: { data: TradeBo
         ))}
       </nav>
 
-      {w.tab === "stock" && <StockSchedule w={w} handheld={handheld} addMaterials={addMaterials} />}
+      {w.tab === "stock" && <StockSchedule w={w} handheld={handheld} addMaterials={addMaterials} pickFilter={pickFilter} />}
       {w.tab === "orders" && <Orders w={w} handheld={handheld} addMaterials={addMaterials} onNew={() => setOrderOpen(true)} />}
       {w.tab === "proposals" && <Jobs w={w} />}
       {w.tab === "suppliers" && <Suppliers w={w} />}
@@ -96,7 +101,7 @@ export function InventoryStock({ data, facts, canWrite, slots }: { data: TradeBo
 
 /* ── STOCK: the schedule ─────────────────────────────────────────────── */
 
-function StockSchedule({ w, handheld, addMaterials }: { w: InventoryWorkspace; handheld: boolean; addMaterials: () => void }) {
+function StockSchedule({ w, handheld, addMaterials, pickFilter }: { w: InventoryWorkspace; handheld: boolean; addMaterials: () => void; pickFilter: (id: StockFilter) => void }) {
   // The "what we stock" checklist opens in a sheet (the toolbar, or "Add materials" on an empty shelf).
   const [open, setOpen] = useState<string | null>(null);
   const cols = w.canWrite ? 8 : 7;
@@ -110,7 +115,7 @@ function StockSchedule({ w, handheld, addMaterials }: { w: InventoryWorkspace; h
       {w.data.rows.length > 0 && (
         <div className={cx("tools")}>
           <label className="search"><svg className="ic" aria-hidden="true"><use href="#i-search" /></svg><input value={w.q} onChange={(e) => w.setQ(e.target.value)} placeholder="Find an item, a supplier, a SKU" aria-label="Find an item" />{w.q && <button type="button" className={cx("link")} onClick={() => w.setQ("")} aria-label="Clear search"><X size={14} /></button>}</label>
-          <Filters label="Show" value={w.filter} items={w.chips.filter((c) => c.id === "ALL" || c.n > 0)} onChange={w.setFilter} />
+          <Filters label="Show" value={w.filter} items={w.chips.filter((c) => c.id === "ALL" || c.n > 0)} onChange={pickFilter} />
           <select className="pinput" value={w.view} onChange={(e) => w.setView(e.target.value as "urgency" | "category")} aria-label="Order the schedule by"><option value="urgency">By urgency</option><option value="category">By category</option></select>
         </div>
       )}
@@ -118,7 +123,7 @@ function StockSchedule({ w, handheld, addMaterials }: { w: InventoryWorkspace; h
       {w.data.rows.length === 0 ? (
         <Empty text="No materials in stock yet" action={w.canWrite && <button type="button" className={cx("btn", "btn-primary")} onClick={addMaterials}>Add materials</button>} />
       ) : w.shown.length === 0 && w.folded.length === 0 ? (
-        <Empty text="Nothing matches" action={<button type="button" className={cx("btn", "btn-ghost")} onClick={() => { w.setQ(""); w.setFilter("ALL"); }}>Show all</button>} />
+        <Empty text="Nothing matches" action={<button type="button" className={cx("btn", "btn-ghost")} onClick={() => { w.setQ(""); pickFilter("ALL"); }}>Show all</button>} />
       ) : handheld ? (
         <div role="list">
           {w.sections.map((sec) => (

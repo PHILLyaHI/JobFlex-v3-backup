@@ -30,12 +30,12 @@ import { FENCE_TYPES } from "@/lib/fence/catalog";
 import { SERVICE_MENU } from "@/lib/hvac/serviceMenu";
 import {
   FENCE_RATE_LIMITS, FENCE_TYPE_IDS, HVAC_KINDS, ROOF_FAMILY_OPTIONS,
-  fenceBookRows, fenceDocWith, fenceDocWithout, filterRows, groupRows, hvacBookRows, hvacCardWith, hvacRateRows,
-  nextCustomFenceId, roofBookRows, roofDocWith, roofDocWithout, roofLists, slugId, usd2,
+  bookNumbers, fenceBookRows, fenceDocWith, fenceDocWithout, filterRows, groupRows, hvacBookRows, hvacCardWith, hvacRateRows,
+  nextCustomFenceId, roofBookRows, roofDocWith, roofDocWithout, roofLists, rowKey, shownGroups, slugId, usd2,
   type BookRow,
 } from "@/lib/priceBook";
 import { InventoryStock } from "./inventory-stock";
-import { cx, Empty, Filters, Sheet, useHandheld } from "./inventory-shared";
+import { cx, Empty, Filters, Sheet, useHandheld, useUrlParam } from "./inventory-shared";
 
 const TAB_LABEL: Record<InventoryTab, string> = { book: "Price book", stock: "Stock", services: "Service menu" };
 const GROUP_ORDER: Record<TradeId, string[]> = {
@@ -142,11 +142,16 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
   const { trade, book } = data;
   const handheld = useHandheld();
   const [q, setQ] = useState("");
-  const [group, setGroup] = useState<string>("");
+  // The group filter lives in the URL (?group=): it survives a reload, and the trade links carry none, so a trade switch resets it.
+  const [group, setGroup] = useUrlParam("group");
   const [open, setOpen] = useState<string | null>(null);
   const shown = useMemo(() => filterRows(rows, q), [rows, q]);
-  const groups = useMemo(() => groupRows(shown, GROUP_ORDER[trade]), [shown, trade]);
+  // The search and the filter together; the strip's counters count the search's rows per group.
+  const groups = useMemo(() => shownGroups(rows, GROUP_ORDER[trade], q, group), [rows, trade, q, group]);
+  const searchGroups = useMemo(() => groupRows(shown, GROUP_ORDER[trade]), [shown, trade]);
   const allGroups = useMemo(() => groupRows(rows, GROUP_ORDER[trade]), [rows, trade]);
+  // The schedule's running number, over the whole book: a row keeps its number under a search or a filter.
+  const numbers = useMemo(() => bookNumbers(rows, GROUP_ORDER[trade]), [rows, trade]);
   const defaults = rows.filter((r) => r.companyDefault).length;
   const catalogRows = rows.filter((r) => r.kind !== "hvac-rate").length;
   const standing = book.trade === "hvac" ? (book.own ? "Yours" : "Starter") : book.doc ? "Yours" : "Catalog";
@@ -155,14 +160,6 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
     if (!canEdit) return;
     setSheet({ row: r, kind: r.kind, isNew: false, title: r.name, fields: { ...r.fields, id: r.id } });
   }, [canEdit, setSheet]);
-  // A group picked on the strip scrolls its kicker into view and lights it; every group stays on the sheet.
-  const jumpTo = useCallback((label: string) => {
-    setGroup(label);
-    const el = document.getElementById(label ? `grp-${slugId(label, [])}` : "catalog");
-    el?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
-  // The schedule's running number, per group start.
-  const groupStart = useMemo(() => { const at: number[] = []; let n = 0; for (const g of groups) { at.push(n); n += g.rows.length; } return at; }, [groups]);
 
   return (
     <section aria-label={`${trade} price book`} id="catalog">
@@ -179,10 +176,10 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
         </div>
         <div className={cx("tools")}>
           <label className="search"><svg className="ic" aria-hidden="true"><use href="#i-search" /></svg><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find an item" aria-label="Find an item" />{q && <button type="button" className={cx("link")} onClick={() => setQ("")} aria-label="Clear search"><X size={14} /></button>}</label>
-          <Filters label="Group" value={group} items={[{ id: "", label: "All", n: rows.length }, ...allGroups.map((g) => ({ id: g.label, label: g.label, n: g.rows.length }))]} onChange={jumpTo} />
+          <Filters label="Group" value={group} items={[{ id: "", label: "All", n: shown.length }, ...allGroups.map((g) => ({ id: g.label, label: g.label, n: searchGroups.find((x) => x.label === g.label)?.rows.length ?? 0 }))]} onChange={setGroup} />
         </div>
 
-        {shown.length === 0 ? (
+        {groups.length === 0 ? (
           rows.length === 0
             ? <Empty text="Nothing in this book yet" action={canEdit && <button type="button" className={cx("btn", "btn-primary")} onClick={() => setSheet(newRowSheet(trade, book))}>Add item</button>} />
             : <Empty text="Nothing matches" action={<button type="button" className={cx("btn", "btn-ghost")} onClick={() => { setQ(""); setGroup(""); }}>Show all</button>} />
@@ -190,7 +187,7 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
           <div role="list">
             {groups.map((g) => (
               <div key={g.label}>
-                <div className={cx("grp-h", group === g.label && "grp-on")} id={`grp-${slugId(g.label, [])}`}><div className="pgrp"><span className="pgrp-name">{g.label}</span><span className="pgrp-meta">{g.rows.length} items</span></div></div>
+                <div className={cx("grp-h")} id={`grp-${slugId(g.label, [])}`}><div className="pgrp"><span className="pgrp-name">{g.label}</span><span className="pgrp-meta">{g.rows.length} items</span></div></div>
                 {g.rows.map((r) => {
                   const key = `${r.kind}:${r.id}`;
                   const isOpen = open === key;
@@ -224,10 +221,10 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
                 </tr>
               </thead>
               <tbody>
-                {groups.map((g, gi) => (
-                  <GroupRows key={g.label} label={g.label} count={g.rows.length} on={group === g.label} cols={canEdit ? (trade === "hvac" ? 7 : 8) : trade === "hvac" ? 6 : 7}>
-                    {g.rows.map((r, ri) => {
-                      const n = groupStart[gi] + ri + 1;
+                {groups.map((g) => (
+                  <GroupRows key={g.label} label={g.label} count={g.rows.length} cols={canEdit ? (trade === "hvac" ? 7 : 8) : trade === "hvac" ? 6 : 7}>
+                    {g.rows.map((r) => {
+                      const n = numbers.get(rowKey(r)) ?? 0;
                       return (
                         <tr key={`${r.kind}:${r.id}`} className="prow" onClick={() => openRow(r)} tabIndex={canEdit ? 0 : undefined} onKeyDown={(e) => { if (e.key === "Enter") openRow(r); }}>
                           <td className={cx("pt-mono", "no")}>{String(n).padStart(2, "0")}</td>
@@ -255,9 +252,9 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
   );
 }
 
-function GroupRows({ label, count, cols, on, children }: { label: string; count: number; cols: number; on?: boolean; children: ReactNode }) {
+function GroupRows({ label, count, cols, children }: { label: string; count: number; cols: number; children: ReactNode }) {
   return <>
-    <tr className={cx("prow-grp", on && "grp-on")} id={`grp-${slugId(label, [])}`}><td colSpan={cols}><div className="pgrp"><span className="pgrp-name">{label}</span><span className="pgrp-meta">{count} items</span></div></td></tr>
+    <tr className="prow-grp" id={`grp-${slugId(label, [])}`}><td colSpan={cols}><div className="pgrp"><span className="pgrp-name">{label}</span><span className="pgrp-meta">{count} items</span></div></td></tr>
     {children}
   </>;
 }

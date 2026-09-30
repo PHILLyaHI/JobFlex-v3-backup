@@ -3,7 +3,8 @@
 // What the Inventory page's parts share: the class joiner, the handheld
 // switch, the sheet and the empty state (owner, 2026-09-29).
 
-import { useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import { X } from "lucide-react";
 import { OverlayPortal } from "@/components/v3/blueprint-shell/overlay-layer";
 import styles from "./inventory.module.css";
@@ -35,6 +36,26 @@ export function Sheet({ id = "inv-sheet-title", kicker, title, onClose, footer, 
       </div>
     </OverlayPortal>
   );
+}
+
+/**
+ * A value kept in the URL (`?name=`), so it survives a reload and a link copies it. Written with
+ * the history API, which Next's router observes — no server round trip, no scroll. The trade
+ * links carry no such key, so a trade switch drops it.
+ */
+export function useUrlParam(name: string): [string, (v: string) => void] {
+  const params = useSearchParams();
+  const fromUrl = params.get(name) ?? "";
+  // Local state carries the value between renders; the URL is the record — read on arrival, and again when the router moves it (back / forward).
+  const [state, setState] = useState({ url: fromUrl, value: fromUrl });
+  if (state.url !== fromUrl) setState({ url: fromUrl, value: fromUrl });
+  const set = useCallback((v: string) => {
+    setState((s) => ({ ...s, value: v }));
+    const url = new URL(window.location.href);
+    if (v) url.searchParams.set(name, v); else url.searchParams.delete(name);
+    window.history.replaceState(window.history.state, "", url.toString());
+  }, [name]);
+  return [state.url !== fromUrl ? fromUrl : state.value, set];
 }
 
 /** The Jobs page's status strip (.jtabs / .jtab / .jtab-n, jobs.module.css), re-used as it is: a label and a mono counter, the chosen one ink-filled. */

@@ -16,8 +16,8 @@
 import "./_server-only";
 import { PrismaClient } from "@prisma/client";
 import {
-  canEditBook, fenceBookRows, fenceDocWith, fenceDocWithout, groupRows, hvacBookRows, hvacCardWith, hvacRateRows, nextCustomFenceId,
-  roofBookRows, roofDocWith, roofDocWithout, roofLists, slugId, FENCE_TYPE_IDS,
+  bookNumbers, canEditBook, fenceBookRows, fenceDocWith, fenceDocWithout, groupRows, hvacBookRows, hvacCardWith, hvacRateRows, nextCustomFenceId,
+  roofBookRows, roofDocWith, roofDocWithout, roofLists, rowKey, shownGroups, slugId, FENCE_TYPE_IDS,
 } from "../../src/lib/priceBook";
 import { fenceCatalogSchema } from "../../src/lib/fence/catalogSchema";
 import { roofCatalogSchema } from "../../src/lib/roofPackage/catalogSchema";
@@ -53,7 +53,16 @@ async function main() {
     head("A · fence: 15 catalog types as rows, a rate override, a type of our own, back to the catalog");
     let rows = fenceBookRows(null);
     ok("A 15 catalog types, none a company default", rows.length === 15 && rows.every((r) => !r.companyDefault && r.unit === "lf" && r.price === standardRate(r.id as never).materialPerLf));
-    ok("A grouped by category in the studio's order", groupRows(rows, ["Wood", "Vinyl", "Composite", "Chain link", "Aluminum", "Steel", "Rail", "Your own"]).map((g) => g.label).join(",") === "Wood,Vinyl,Composite,Chain link,Aluminum,Steel,Rail");
+    const ORDER = ["Wood", "Vinyl", "Composite", "Chain link", "Aluminum", "Steel", "Rail", "Your own"];
+    ok("A grouped by category in the studio's order", groupRows(rows, ORDER).map((g) => g.label).join(",") === "Wood,Vinyl,Composite,Chain link,Aluminum,Steel,Rail");
+    // The group filter (owner, 2026-09-30): the group's rows and its divider only; a row keeps the number it has in the whole book.
+    const nums = bookNumbers(rows, ORDER);
+    const wood = shownGroups(rows, ORDER, "", "Wood");
+    ok("A the Wood filter keeps its 6 rows and its divider only", wood.length === 1 && wood[0].label === "Wood" && wood[0].rows.length === 6, `${wood.length} groups, ${wood[0]?.rows.length} rows`);
+    ok("A the filtered rows keep the book's own No. (Wood 1–6, Vinyl 7–8)", wood[0].rows.map((r) => nums.get(rowKey(r))).join(",") === "1,2,3,4,5,6" && shownGroups(rows, ORDER, "", "Vinyl")[0].rows.map((r) => nums.get(rowKey(r))).join(",") === "7,8");
+    const cedarWood = shownGroups(rows, ORDER, "cedar", "Wood").flatMap((g) => g.rows);
+    ok("A the search and the filter intersect", cedarWood.length > 0 && cedarWood.every((r) => r.group === "Wood" && /cedar/i.test(r.name)) && shownGroups(rows, ORDER, "cedar", "Vinyl").length === 0, `${cedarWood.length} cedar rows in Wood`);
+    ok("A an empty group filter is every group", shownGroups(rows, ORDER, "", "").length === 7);
     let doc = fenceDocWith(null, { id: "cedar-privacy", materialPerLf: 25, laborPerLf: standardRate("cedar-privacy").laborPerLf, gateSingle: standardRate("cedar-privacy").gateSingle });
     ok("A an override keeps only the field that differs", JSON.stringify(doc.rates) === JSON.stringify({ "cedar-privacy": { materialPerLf: 25 } }), JSON.stringify(doc.rates));
     ok("A the studio's own reader prices it at 25", effectiveRate("cedar-privacy", doc.rates as never).materialPerLf === 25);

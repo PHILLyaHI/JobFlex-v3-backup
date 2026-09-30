@@ -144,8 +144,9 @@ export function useRoofingInventory({ data, facts, canWrite }: RoofingInventoryP
     const shown = filter === "ALL" && needle ? [...listed, ...perJobRows.filter(matches)] : listed;
     const folded = filter === "ALL" && !needle ? perJobRows : [];
     const sections: Array<{ label: string | null; items: InventoryRow[]; needs: number }> = view === "category" ? groupByCategory(data.trade, shown, (x) => x.r.name).map((g) => ({ label: g.label, items: g.items, needs: g.items.filter((x) => NEEDS.has(x.st)).length })) : [{ label: null, items: shown, needs: 0 }];
+    // The strip's counters follow the search: each is what that pick would list.
     const chips: Array<{ id: StockFilter; label: string; n: number }> = [
-      { id: "ALL", label: "All items", n: rows.length }, { id: "ORDER", label: "Needs ordering", n: needs.length }, { id: "RESERVED", label: "Reserved", n: rows.filter((x) => x.r.reserved > 0).length }, { id: "STOCKED", label: "In stock", n: stocked }, { id: "IDLE", label: "Idle", n: idle.length }, { id: "EMPTY", label: "Nothing on hand", n: emptyCount }, { id: "PERJOB", label: "Bought per job", n: perJobRows.length },
+      { id: "ALL", label: "All items", n: rows.filter(matches).length }, { id: "ORDER", label: "Needs ordering", n: rows.filter((x) => NEEDS.has(x.st) && matches(x)).length }, { id: "RESERVED", label: "Reserved", n: rows.filter((x) => x.r.reserved > 0 && matches(x)).length }, { id: "STOCKED", label: "In stock", n: rows.filter((x) => x.r.onHand > 0 && matches(x)).length }, { id: "IDLE", label: "Idle", n: idle.filter(matches).length }, { id: "EMPTY", label: "Nothing on hand", n: rows.filter((x) => x.st === "empty" && matches(x)).length }, { id: "PERJOB", label: "Bought per job", n: perJobRows.filter(matches).length },
     ];
     const bySupplier = new Map<string, StockRow[]>();
     const unassigned: StockRow[] = [];

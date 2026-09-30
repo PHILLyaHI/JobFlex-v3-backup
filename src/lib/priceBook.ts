@@ -355,6 +355,21 @@ export function filterRows(rows: BookRow[], q: string): BookRow[] {
   return rows.filter((r) => `${r.name} ${r.specs} ${r.group} ${r.id}`.toLowerCase().includes(s));
 }
 
+export const rowKey = (r: BookRow) => `${r.kind}:${r.id}`;
+
+/** The schedule's running number of every row, over the whole book in the groups' order — a row keeps it under a search or a group filter. */
+export function bookNumbers(rows: BookRow[], order?: string[]): Map<string, number> {
+  const at = new Map<string, number>();
+  let n = 0;
+  for (const g of groupRows(rows, order)) for (const r of g.rows) at.set(rowKey(r), ++n);
+  return at;
+}
+
+/** The groups on the sheet: the search and the group filter together (their intersection); "" is every group. */
+export function shownGroups(rows: BookRow[], order: string[] | undefined, q: string, group: string): BookGroup[] {
+  return groupRows(filterRows(rows, q), order).filter((g) => !group || g.label === group);
+}
+
 export const usd2 = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** Who may edit the book: the estimator's own rule (actions/fenceCatalog, roofCatalog, hvacEstimator: requireEstimatorOrManager). */
