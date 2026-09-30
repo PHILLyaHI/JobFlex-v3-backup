@@ -308,6 +308,8 @@ export type JobDetailRecord = {
    *  every material line of the proposal in whole units, with whether the
    *  shelf has it. Both audiences see it — the crew is who loads the truck. */
   pick: JdPick[];
+  /** The trade whose shelf the pick list reads (the Inventory link), else null. */
+  pickTrade: "roof" | "fence" | "hvac" | null;
   /** ISO time the truck was marked loaded, else null. */
   loadedAt: string | null;
   /** The warehouse items out on this job once loaded (for leftovers back). */

@@ -295,9 +295,13 @@ export function JobCostCard({ costs, stockPurchases30d }: { costs: JobCostRow[];
             <span className={cx("label")}>What each job consumed</span>
             <h2 className={cx("title")}>Cost by job</h2>
           </div>
-          <span className={cx("mono")}>
-            bought for stock, 30 days: {money2(stockPurchases30d)} — counted once, above; a job pays for stock when it is issued
-          </span>
+          <div className={cx("headSide")}>
+            <span className={cx("mono")}>
+              bought for stock, 30 days: {money2(stockPurchases30d)} — counted once, above; a job pays for stock when it is issued
+            </span>
+            {/* The warehouse those purchases went to: the Inventory page's stock tab, the trade the visitor last chose. */}
+            <a className={cx("headLink")} href="/dashboard/inventory?tab=stock" data-stock-link>Open the stock</a>
+          </div>
         </div>
         {costs.length === 0 ? (
           <p className={cx("empty")}>No job has a cost booked yet.</p>

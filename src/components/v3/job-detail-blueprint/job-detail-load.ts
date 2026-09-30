@@ -402,7 +402,8 @@ export async function loadJobDetail(
   // An estimate only (inventoryLinked false) has no pick list; an unstamped
   // proposal is placed by its materials or title (lib/inventoryPick).
   const linkChoice = job.proposalId ? ((await inventoryLinkOf(organizationId, [job.proposalId])).get(job.proposalId) ?? null) : null;
-  const pick = await pickFor(organizationId, job.proposal ? linkedTradeOf({ ...job.proposal, inventoryLinked: linkChoice, lineItems: job.proposal.lineItems.filter((l) => l.materialCost > 0) }) : null, job.proposal?.lineItems.filter((l) => l.materialCost > 0) ?? []);
+  const pickTrade = job.proposal ? linkedTradeOf({ ...job.proposal, inventoryLinked: linkChoice, lineItems: job.proposal.lineItems.filter((l) => l.materialCost > 0) }) : null;
+  const pick = await pickFor(organizationId, pickTrade, job.proposal?.lineItems.filter((l) => l.materialCost > 0) ?? []);
 
   // A change order amends the proposal (the contract) or, legacy, the job
   // itself; the job page shows both sets as one list, oldest first.
@@ -490,6 +491,7 @@ export async function loadJobDetail(
     blobEnabled: storageMode() !== "inline",
     money,
     pick,
+    pickTrade,
     loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
     picked: pickedRows(cost),
     roster,
@@ -584,6 +586,7 @@ async function loadWorkerScoped(
 
   // The crew's trail: who did what on the job, minus the rows that name money.
   const trail = await trailFor(organizationId, job.id, job.proposalId, { noMoney: true });
+  const pickTrade = job.proposal ? linkedTradeOf({ ...job.proposal, inventoryLinked: job.proposalId ? ((await inventoryLinkOf(organizationId, [job.proposalId])).get(job.proposalId) ?? null) : null }) : null;
 
   const photos: JdPhoto[] = job.photos.map((p) => ({
     id: p.id,
@@ -630,7 +633,8 @@ async function loadWorkerScoped(
     progress: await jobProgressInfo(organizationId, job.id),
     blobEnabled: storageMode() !== "inline",
     money: null,
-    pick: await pickFor(organizationId, job.proposal ? linkedTradeOf({ ...job.proposal, inventoryLinked: job.proposalId ? ((await inventoryLinkOf(organizationId, [job.proposalId])).get(job.proposalId) ?? null) : null }) : null, job.proposal?.lineItems ?? []),
+    pick: await pickFor(organizationId, pickTrade, job.proposal?.lineItems ?? []),
+    pickTrade,
     loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
     picked: pickedRows(await jobCostOf(organizationId, job.id)),
     roster: [],

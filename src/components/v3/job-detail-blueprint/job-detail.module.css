@@ -281,6 +281,8 @@
   padding: 14px 16px; font-size: 13.5px; line-height: 1.6; color: var(--muted); }
 :global(.jf-blueprint .content) .jd-link { color: var(--blueprint); font-weight: 800;
   text-decoration: underline; text-underline-offset: 3px; }
+/* A link in a card head (the pick list's way to the stock): after the note, never wrapped. */
+:global(.jf-blueprint .content) .jd-hlink { font-size: 13px; white-space: nowrap; }
 
 /* Write failure — the warning banner shape from DESIGN.md: base-amber frame
    with a 6px left edge, soft fill, no ink frame and no offset shadow. */
@@ -361,6 +363,7 @@
 :global(.jf-blueprint .content) .jd-ph-c { padding: 8px 10px; font-size: 12.5px; font-weight: 700; }
 
 @media (max-width: 1000px) {
+  :global(.jf-blueprint .content) .jd-hlink { display: inline-flex; align-items: center; min-height: 44px; }
   :global(.jf-blueprint .content) .jd-grid { grid-template-columns: 1fr; }
   :global(.jf-blueprint .content) .jd-fields { grid-template-columns: 1fr 1fr; }
   :global(.jf-blueprint .content) .jd-photos { grid-template-columns: 1fr 1fr; }

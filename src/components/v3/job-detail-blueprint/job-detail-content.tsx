@@ -479,6 +479,12 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
             <div className={cx("jd-h")}>
               <h2 className={cx("jd-t")}>Take from the warehouse</h2>
               <span className={cx("jd-s")}>{record.loadedAt ? `loaded ${new Date(record.loadedAt).toLocaleDateString("en-US")}` : "what this job needs on the truck"}</span>
+              {/* The office's way to the shelf this list reads; the crew has no Inventory page. */}
+              {!worker && record.pickTrade && (
+                <Link className={cx("jd-link", "jd-hlink")} href={`/dashboard/inventory?trade=${record.pickTrade}&tab=stock` as Route} data-pick-stock>
+                  Open the stock
+                </Link>
+              )}
             </div>
             {/* The crew's list (lib/inventory pickList): every material line of
                 the proposal in whole units, and whether the shelf has it. "Loaded"
