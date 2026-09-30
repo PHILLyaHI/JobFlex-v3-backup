@@ -277,7 +277,16 @@ export function MobileFinancials() {
   const [ready, setReady] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
-  const [tab, setTab] = useState<TabKey>("overview");
+  // The book to open on: ?tab= as the desk reads it, and ?review=1 — where the
+  // "receipt on review" bell and email land (stage D) — opens Expenses, whose
+  // top is the review queue. Client-only (the shell mounts this ssr: false).
+  const [tab, setTab] = useState<TabKey>(() => {
+    if (typeof window === "undefined") return "overview";
+    const q = new URLSearchParams(window.location.search);
+    const want = q.get("tab");
+    if (q.get("review") || want === "expenses") return "expenses";
+    return want === "orders" || want === "invoices" ? want : "overview";
+  });
   const [filter, setFilter] = useState<string>(ALL);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);

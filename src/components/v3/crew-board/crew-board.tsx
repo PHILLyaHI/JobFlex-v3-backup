@@ -339,7 +339,8 @@ function CloseDaySheet({ data, door, day, open, onClose }: { data: CrewBoardData
           multiple
           accept={data.storage === "inline" ? IMAGE_ACCEPT : MEDIA_ACCEPT}
           onChange={async (e) => {
-            const files = e.target.files;
+            // Copied out BEFORE the input is cleared: clearing it empties the live FileList.
+            const files = Array.from(e.target.files ?? []);
             e.target.value = "";
             if (!files?.length) return;
             const n = await up.run(files, "PROGRESS", day.date);
@@ -483,7 +484,8 @@ export function CrewDays({ data, door }: { data: CrewBoardData; door: CrewDoor }
             multiple
             accept={accept}
             onChange={async (e) => {
-              const files = e.target.files;
+              // Copied out BEFORE the input is cleared: clearing it empties the live FileList.
+              const files = Array.from(e.target.files ?? []);
               e.target.value = "";
               if (files?.length) await up.run(files, kind, null);
               if (files?.length) setError(null);
@@ -501,7 +503,7 @@ export function CrewDays({ data, door }: { data: CrewBoardData; door: CrewDoor }
             <div className={cx("label")}>Photos & videos</div>
             <h2 className={cx("title")}>Day by day</h2>
           </div>
-          <span className={cx("mono")}>{data.days.reduce((a, d) => a + d.files.length, 0) + data.looseFiles.length} files</span>
+          <span className={cx("mono")}>{((n) => `${n} ${n === 1 ? "file" : "files"}`)(data.days.reduce((a, d) => a + d.files.length, 0) + data.looseFiles.length)}</span>
         </div>
         {data.days.length === 0 && data.looseFiles.length === 0 ? (
           <div className={cx("empty")}>No days on site yet. Start work to open day 1.</div>
