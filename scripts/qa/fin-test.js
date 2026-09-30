@@ -1,4 +1,6 @@
 // Functional pass over /dashboard/financials: exercises every button.
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { chromium } = require("playwright");
 const { launch, signIn, withWorld } = require("./_qa");
 const fs = require("fs");
@@ -19,7 +21,7 @@ withWorld(async (world) => {
   page.on("pageerror", (e) => consoleErrors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
   await signIn(page);
-  await page.goto("http://localhost:3000/dashboard/financials", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/financials", { waitUntil: "networkidle" });
   await page.waitForTimeout(1500);
 
   // ---- 1. Overview renders (chart, gauge, stats, attention) ----

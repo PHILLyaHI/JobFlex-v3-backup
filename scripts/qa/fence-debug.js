@@ -1,3 +1,5 @@
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { chromium } = require("playwright");
 const { launch, signIn } = require("./_qa");
 (async () => {
@@ -7,7 +9,7 @@ const { launch, signIn } = require("./_qa");
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 250)); });
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 250)));
   await signIn(page);
-  await page.goto("http://localhost:3000/dashboard/fence-estimator", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/fence-estimator", { waitUntil: "networkidle" });
   await page.waitForTimeout(2500);
   console.log("h1:", await page.locator("h1").allTextContents());
   console.log("buttons:", (await page.locator(".content button:visible").allTextContents()).map(t => t.trim().replace(/\s+/g, " ")).filter(Boolean));

@@ -26,6 +26,8 @@
 //   --fresh     ignore the cached session and log in again
 //
 // Prints console errors and the card's rendered size.
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -48,7 +50,7 @@ const squares = args.squares || "24";
 const pitch = args.pitch || "6/12";
 const email = args.email || "qa@acme.test";
 const password = args.password || "qa-pass-2026";
-const base = args.base || "http://localhost:3000";
+const base = args.base || QA_BASE;
 const hides = ["header.topbar", ...multi.hide];
 
 const exe = [

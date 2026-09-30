@@ -1,4 +1,6 @@
 // Functional pass over /dashboard/phone (Twilio unconfigured + 3 seeded calls).
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { chromium } = require("playwright");
 const { launch, signIn } = require("./_qa");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
@@ -12,7 +14,7 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
   await signIn(page);
-  await page.goto("http://localhost:3000/dashboard/phone", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/phone", { waitUntil: "networkidle" });
   await page.waitForTimeout(1800);
 
   // ---- 1. Twilio-unconfigured banner + webhook copy ----

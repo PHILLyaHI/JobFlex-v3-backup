@@ -3,7 +3,8 @@
 //    network; the few that write to the dev database do it in throwaway organisations.
 //  · pages  — the Playwright passes. They sign in as qa@acme.test, work ONLY in QA Co, make
 //    the records they need there (./_world, seed-phone) and remove them. Needs the dev server
-//    on localhost:3000 and `playwright` resolvable (npm i here, or NODE_PATH to a copy).
+//    on localhost:$QA_PORT (default 3000; or QA_BASE_URL in full) and `playwright` resolvable
+//    (npm i here, or NODE_PATH to a copy).
 // Left out on purpose: *.live.ts and trade-detect-check.ts (real provider / OpenAI calls).
 const { spawnSync } = require("child_process");
 const fs = require("fs");

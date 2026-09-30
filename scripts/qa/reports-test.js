@@ -1,4 +1,6 @@
 // Functional pass over /dashboard/reports (last page of the sweep).
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { chromium } = require("playwright");
 const { launch, signIn } = require("./_qa");
 const fs = require("fs");
@@ -12,7 +14,7 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
   await signIn(page);
-  await page.goto("http://localhost:3000/dashboard/reports", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/reports", { waitUntil: "networkidle" });
   await page.waitForTimeout(2000);
 
   // ---- 1. Sheet renders ----

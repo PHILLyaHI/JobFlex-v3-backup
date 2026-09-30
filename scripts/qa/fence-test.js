@@ -1,4 +1,6 @@
 // Functional pass over /dashboard/fence-estimator (keyless mode: manual runs).
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { chromium } = require("playwright");
 const { launch, signIn, stale } = require("./_qa");
 stale('Fence Studio was rebuilt after this was written (materials catalogue, run rows, no keyless notice). Its address step now uses a cached lot, the rest needs a rewrite; the studio is covered by the fence-*.check.ts files');
@@ -19,7 +21,7 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   };
 
   await signIn(page);
-  await page.goto("http://localhost:3000/dashboard/fence-estimator", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/fence-estimator", { waitUntil: "networkidle" });
   await page.waitForTimeout(2000);
 
   // ---- 1. Keyless degradation is honest ----
@@ -110,11 +112,11 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   log(await conv.count() === 1, "convert: button present");
   await conv.click();
   const navigated = await page.waitForURL(/\/dashboard\/proposals\//, { timeout: 25000 }).then(() => true).catch(() => false);
-  log(navigated, "convert: creates proposal and navigates", page.url().replace("http://localhost:3000", ""));
+  log(navigated, "convert: creates proposal and navigates", page.url().replace(QA_BASE, ""));
   if (navigated) {
     const propId = page.url().split("/").pop();
     try {
-      await page.goto("http://localhost:3000/dashboard/proposals", { waitUntil: "networkidle" });
+      await page.goto(QA_BASE + "/dashboard/proposals", { waitUntil: "networkidle" });
       await page.waitForTimeout(1500);
       const row = page.locator(`[data-id="${propId}"]`).first();
       const opener = (await row.count()) ? row.locator(".pt-open") : page.locator(".ptable tbody tr").first().locator(".pt-open");
@@ -129,7 +131,7 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   }
 
   // ---- 11. Reset clears runs ----
-  await page.goto("http://localhost:3000/dashboard/fence-estimator", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/fence-estimator", { waitUntil: "networkidle" });
   await page.waitForTimeout(1500);
   log(true, "note: state after reload", "total=" + (await bodyTotal()));
 

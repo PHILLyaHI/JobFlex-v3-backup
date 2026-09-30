@@ -1,4 +1,6 @@
 // Functional pass over /dashboard/announcements.
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { chromium } = require("playwright");
 const { launch, signIn, stale } = require("./_qa");
 stale("announcements left the contractor dashboard for the platform console (9fa8b94): /dashboard/announcements is a 404, and the console's announcements reach every organisation — not something a test publishes");
@@ -12,7 +14,7 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
   await signIn(page);
-  await page.goto("http://localhost:3000/dashboard/announcements", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/announcements", { waitUntil: "networkidle" });
   await page.waitForTimeout(1800);
 
   // ---- 1. Initial state: no active, 1 archived ----

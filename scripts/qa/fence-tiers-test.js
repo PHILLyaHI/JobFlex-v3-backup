@@ -5,11 +5,13 @@
 // base type (composite, black chain-link, steel, 3-rail).
 // No address is searched (a typed run is enough for a price), so no property lookup is spent.
 // Convert makes a real proposal in QA Co; it is found by its title and removed at the end.
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { PrismaClient } = require("@prisma/client");
 const { launch, signIn, qaOrg } = require("./_qa");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
 const MOBILE = process.argv.includes("--mobile");
-const URL = "http://localhost:3000/dashboard/fence-estimator";
+const URL = QA_BASE + "/dashboard/fence-estimator";
 const money = (s) => Number(String(s || "").replace(/[^0-9.]/g, ""));
 
 (async () => {
@@ -108,7 +110,7 @@ const money = (s) => Number(String(s || "").replace(/[^0-9.]/g, ""));
     const goodTotal = await total();
     await page.locator("#convertBtn").click();
     const navigated = await page.waitForURL(/\/dashboard\/(proposals\/|manual-blueprint\?proposal=)/, { timeout: 40000 }).then(() => true).catch(() => false);
-    log(navigated, tag + "convert: a proposal opens", page.url().replace("http://localhost:3000", ""));
+    log(navigated, tag + "convert: a proposal opens", page.url().replace(QA_BASE, ""));
     const made = await prisma.proposal.findFirst({ where: { organizationId: org.id, createdAt: { gte: startedAt } }, orderBy: { createdAt: "desc" } });
     log(!!made && Math.round(made.subtotal) === Math.round(goodTotal), tag + "convert: the proposal's subtotal is the picked tier's price", `proposal ${made ? Math.round(made.subtotal) : "none"} / Good ${goodTotal}`);
     await page.goto(URL, { waitUntil: "networkidle" });

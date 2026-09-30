@@ -1,4 +1,6 @@
 // Functional pass over /dashboard/trade + the /dashboard/trade/[id] thread page.
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { chromium } = require("playwright");
 const { launch, signIn, withWorld } = require("./_qa");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
@@ -11,7 +13,7 @@ withWorld(async () => {
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
   await signIn(page);
-  await page.goto("http://localhost:3000/dashboard/trade", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/trade", { waitUntil: "networkidle" });
   await page.waitForTimeout(1800);
 
   // ---- 1. Initial: empty board, category chips ----
@@ -62,7 +64,7 @@ withWorld(async () => {
   await page.locator(".pmenu .pmenu-item", { hasText: /Open thread/i }).click();
   await page.waitForURL(/\/dashboard\/trade\/[a-z0-9]+/i, { timeout: 15000 });
   await page.waitForTimeout(1500);
-  log(true, "thread: navigates", page.url().replace("http://localhost:3000", ""));
+  log(true, "thread: navigates", page.url().replace(QA_BASE, ""));
   log((await page.locator("text=QA Trade Post").count()) > 0, "thread: post renders");
   const ta = page.locator("textarea");
   log(await ta.count() >= 1, "thread: reply form present (OPEN post)");
@@ -72,7 +74,7 @@ withWorld(async () => {
   log((await page.locator("text=First reply from QA run.").count()) > 0, "thread: reply posts and renders");
 
   // ---- 6. Back to board: reply count, then Close thread ----
-  await page.goto("http://localhost:3000/dashboard/trade", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/trade", { waitUntil: "networkidle" });
   await page.waitForTimeout(1500);
   await card.locator(".pt-open").click();
   await page.waitForTimeout(500);
@@ -95,7 +97,7 @@ withWorld(async () => {
   log((await page.locator("textarea:not([class*=jfsup]):not(.jfsup *)").count()) === 0, "thread: closed post hides reply form");
 
   // ---- 7. Delete (cleanup) ----
-  await page.goto("http://localhost:3000/dashboard/trade", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/trade", { waitUntil: "networkidle" });
   await page.waitForTimeout(1500);
   await card.locator(".pt-open").click();
   await page.waitForTimeout(500);

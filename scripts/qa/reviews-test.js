@@ -1,4 +1,6 @@
 // Full-cycle functional pass: /dashboard/reviews + public /review/[token].
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { chromium } = require("playwright");
 const { launch, signIn, withWorld } = require("./_qa");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
@@ -12,7 +14,7 @@ withWorld(async (world) => {
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
   await signIn(page);
-  await page.goto("http://localhost:3000/dashboard/reviews", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/reviews", { waitUntil: "networkidle" });
   await page.waitForTimeout(1800);
 
   // ---- 1. Initial state ----
@@ -65,7 +67,7 @@ withWorld(async (world) => {
   log((await page.locator('button:has-text("Submit review")').count()) === 0, "public: reload shows submitted state (no resubmit)");
 
   // ---- 5. Back to dashboard: review card + chips ----
-  await page.goto("http://localhost:3000/dashboard/reviews", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/reviews", { waitUntil: "networkidle" });
   await page.waitForTimeout(1500);
   log((await page.locator("text=Great crew, clean site").count()) > 0, "dashboard: completed review card renders");
   const chip5 = page.locator('.rv-chip[data-f="5"]');

@@ -15,7 +15,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const BASE = process.env.QA_BASE_URL || "http://localhost:3000";
+// The server under test: QA_BASE_URL in full, else localhost on QA_PORT (default 3000).
+const BASE = process.env.QA_BASE_URL || `http://localhost:${process.env.QA_PORT || 3000}`;
 const EMAIL = "qa@acme.test";
 const PASSWORD = "qa-pass-2026";
 const QA_ORG_SLUG = "qa-co";

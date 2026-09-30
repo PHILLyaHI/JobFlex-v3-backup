@@ -1,4 +1,6 @@
 // Functional pass over /dashboard/roof-estimator (full flow incl. convert + cleanup).
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { chromium } = require("playwright");
 const { launch, signIn, stale } = require("./_qa");
 stale('needs a stand with STUB EagleView credentials (README). With the live keys in .env.local it must not run: measuring a roof there is a purchase');
@@ -13,7 +15,7 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
 
   await signIn(page);
 
-  await page.goto("http://localhost:3000/dashboard/roof-estimator", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/roof-estimator", { waitUntil: "networkidle" });
   await page.waitForTimeout(1500);
 
   // ---- 1. Intake renders ----
@@ -111,14 +113,14 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   log(await convert.count() === 1, "summary: Convert button present");
   await convert.click();
   const navigated = await page.waitForURL(/\/dashboard\/proposals\//, { timeout: 25000 }).then(() => true).catch(() => false);
-  log(navigated, "convert: creates proposal and navigates", page.url().replace("http://localhost:3000", ""));
+  log(navigated, "convert: creates proposal and navigates", page.url().replace(QA_BASE, ""));
 
   if (navigated) {
     const propUrl = page.url();
     const propId = propUrl.split("/").pop();
     // Cleanup: delete the freshly created proposal via the proposals list UI.
     try {
-      await page.goto("http://localhost:3000/dashboard/proposals", { waitUntil: "networkidle" });
+      await page.goto(QA_BASE + "/dashboard/proposals", { waitUntil: "networkidle" });
       await page.waitForTimeout(1500);
       const row = page.locator(`tr[data-id="${propId}"], [data-id="${propId}"]`).first();
       const rowFound = (await row.count()) > 0;

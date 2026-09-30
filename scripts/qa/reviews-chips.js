@@ -1,3 +1,5 @@
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { chromium } = require("playwright");
 const { launch, signIn, withWorld } = require("./_qa");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
@@ -5,7 +7,7 @@ withWorld(async (world) => {
   const b = await launch();
   const p = await b.newPage({ viewport: { width: 1728, height: 1000 } });
   await signIn(p);
-  await p.goto("http://localhost:3000/dashboard/reviews", { waitUntil: "networkidle" });
+  await p.goto(QA_BASE + "/dashboard/reviews", { waitUntil: "networkidle" });
   await p.waitForTimeout(1500);
 
   const cardVisible = () => p.locator("text=Great crew, clean site").count();

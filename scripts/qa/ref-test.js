@@ -1,4 +1,6 @@
 // Functional pass over /dashboard/referrals. The code and its 3 conversions are QA Co fixtures (./_world).
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { chromium } = require("playwright");
 const { launch, signIn, withWorld } = require("./_qa");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
@@ -13,7 +15,7 @@ withWorld(async (world) => {
   const clip = async () => { try { return await page.evaluate(() => navigator.clipboard.readText()); } catch { return ""; } };
 
   await signIn(page);
-  await page.goto("http://localhost:3000/dashboard/referrals", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/referrals", { waitUntil: "networkidle" });
   await page.waitForTimeout(1800);
 
   // ---- 1. Hero: real code + copy paths ----

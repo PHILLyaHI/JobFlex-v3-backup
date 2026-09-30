@@ -1,4 +1,6 @@
 // Live smoke test of the button fix-pass.
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { chromium } = require("playwright");
 const { launch, signIn, withWorld } = require("./_qa");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
@@ -23,13 +25,13 @@ withWorld(async (world) => {
   log(/24, 84, 160/.test(ringCol), "focus: ring color is blueprint", ringCol);
 
   // 3. Financials: .fi-tab press class fires via delegation
-  await page.goto("http://localhost:3000/dashboard/financials", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/financials", { waitUntil: "networkidle" });
   await page.waitForTimeout(1200);
   const tabPressed = await page.locator('.fi-tab[data-tab="expenses"]').evaluate((el) => { el.click(); return el.classList.contains("pressed"); });
   log(tabPressed, "press: .fi-tab gets 'pressed' (new list entry + delegation)");
 
   // 4. Messages: dynamically-built pmenu item gets press feedback
-  await page.goto("http://localhost:3000/dashboard/messages", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/messages", { waitUntil: "networkidle" });
   await page.waitForTimeout(1200);
   await page.locator(".conv-row").first().click();
   await page.waitForTimeout(600);
@@ -67,7 +69,7 @@ withWorld(async (world) => {
   } else log(true, "press: no own message visible to open menu (skipped)", "");
 
   // 5. Phone: pt-open is a real button now
-  await page.goto("http://localhost:3000/dashboard/phone", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/phone", { waitUntil: "networkidle" });
   await page.waitForTimeout(1200);
   const rows = await page.locator(".ph-table tbody tr").count();
   if (rows > 0) {

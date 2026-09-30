@@ -1,4 +1,6 @@
 // Functional pass over /dashboard/subscription.
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { chromium } = require("playwright");
 const { launch, signIn, stale } = require("./_qa");
 stale("the Subscription page was rebuilt (plan grid, upgrade flow, billing) after this was written: #specGrid and the 'Upgrade plan' anchor no longer exist. Needs a rewrite");
@@ -15,11 +17,11 @@ const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | "
   await signIn(page);
 
   // Sidebar link reaches the page.
-  await page.goto("http://localhost:3000/dashboard", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard", { waitUntil: "networkidle" });
   const sbLink = page.locator('.sb a[href="/dashboard/subscription"], .sb-link[href="/dashboard/subscription"]');
   log(await sbLink.count() > 0, "sidebar: Subscription link present");
   if (await sbLink.count()) { await sbLink.first().click(); await page.waitForURL(/subscription/, { timeout: 15000 }); }
-  else await page.goto("http://localhost:3000/dashboard/subscription");
+  else await page.goto(QA_BASE + "/dashboard/subscription");
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(1600);
 

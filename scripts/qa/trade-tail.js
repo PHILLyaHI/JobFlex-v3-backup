@@ -1,4 +1,6 @@
 // Continuation: verify closed state, thread lock, then delete (cleanup).
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { chromium } = require("playwright");
 const { launch, signIn, withWorld } = require("./_qa");
 const log = (ok, name, extra = "") => console.log((ok ? "PASS" : "FAIL") + " | " + name + (extra ? " | " + extra : ""));
@@ -11,7 +13,7 @@ withWorld(async () => {
   page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
 
   await signIn(page);
-  await page.goto("http://localhost:3000/dashboard/trade", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/trade", { waitUntil: "networkidle" });
   await page.waitForTimeout(1800);
 
   const card = page.locator(".post", { hasText: "QA Trade Post" });
@@ -32,7 +34,7 @@ withWorld(async () => {
   log((await page.locator("textarea:not([class*=jfsup]):not(.jfsup *)").count()) === 0, "thread: closed post hides reply form");
   log((await page.locator("text=First reply from QA run.").count()) > 0, "thread: existing reply still visible");
 
-  await page.goto("http://localhost:3000/dashboard/trade", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/trade", { waitUntil: "networkidle" });
   await page.waitForTimeout(1500);
   await card.locator(".pt-open").click();
   await page.waitForTimeout(500);

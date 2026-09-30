@@ -1,10 +1,12 @@
+// The server under test: QA_BASE_URL, else localhost:QA_PORT (default 3000) — see ./_qa.js.
+const QA_BASE = require("./_qa").BASE;
 const { chromium } = require("playwright");
 const { launch, signIn } = require("./_qa");
 (async () => {
   const browser = await launch();
   const page = await browser.newPage({ viewport: { width: 1728, height: 1000 } });
   await signIn(page);
-  await page.goto("http://localhost:3000/dashboard/beige", { waitUntil: "networkidle" });
+  await page.goto(QA_BASE + "/dashboard/beige", { waitUntil: "networkidle" });
   const info = await page.evaluate(() => {
     const wrap = document.querySelector(".beige-skin");
     const card = document.querySelector(".card");
