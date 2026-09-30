@@ -17,6 +17,8 @@
 
 import { db } from "@/lib/db";
 import { mediaHref } from "@/lib/media/signedLink";
+import { getOfficeMoney } from "@/lib/officeMoney";
+import type { OfficeMoney } from "@/components/v3/crew-board/office-review-data";
 import { getFinancialsRollup, getMonthlyRollup } from "@/actions/financials";
 import { contractSchedule } from "@/lib/contractTotal";
 import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
@@ -44,6 +46,9 @@ export type FinancialsSnapshot = {
   invoices: Invoice[];
   /** What "New invoice" can bill — read from the CONTRACTS, not from the book. */
   invoiceTargets: InvoiceTarget[];
+  /** The review queue, what is owed to workers, the cost of each job and the
+   *  purchases for stock (stage D, lib/officeMoney). */
+  office: OfficeMoney;
 };
 
 /** The ledger plate the tables print: "Jul 22", never a full date. Formatted
@@ -56,11 +61,12 @@ function plate(d: Date | null): string {
 export async function getFinancialsSnapshot(
   organizationId: string,
 ): Promise<FinancialsSnapshot> {
-  const [rollupRaw, monthlyRaw, expenseRows, orderRows, invoiceRows, jobs, openContracts] = await Promise.all([
+  const [rollupRaw, monthlyRaw, expenseRows, orderRows, invoiceRows, jobs, openContracts, office] = await Promise.all([
     getFinancialsRollup(organizationId),
     getMonthlyRollup(organizationId, 12),
+    // Receipts for jobs AND purchases for stock (no job) — stage D.
     db.jobExpense.findMany({
-      where: { job: { organizationId } },
+      where: { OR: [{ organizationId }, { job: { organizationId } }] },
       orderBy: { createdAt: "desc" },
       take: 200,
       include: { job: { select: { id: true, title: true } } },
@@ -105,6 +111,7 @@ export async function getFinancialsSnapshot(
         changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } },
       },
     }),
+    getOfficeMoney(organizationId),
   ]);
 
   // Invoices carry a clientId, not a client relation, so the names are looked
@@ -130,7 +137,7 @@ export async function getFinancialsSnapshot(
   const expenses: Expense[] = expenseRows.map((e) => ({
     id: e.id,
     jobId: e.jobId,
-    job: e.job.title,
+    job: e.job?.title ?? "Stock purchase",
     category: e.category,
     amount: e.amount,
     note: e.note ?? "",
@@ -140,6 +147,7 @@ export async function getFinancialsSnapshot(
     status: e.status,
     paidBy: e.paidBy,
     vendor: e.vendor,
+    purpose: e.purpose,
   }));
 
   const orders: ChangeOrder[] = orderRows.map((c) => ({
@@ -191,5 +199,5 @@ export async function getFinancialsSnapshot(
     })
     .filter((t) => t.owed > 0);
 
-  return { jobs, monthly, rollup, expenses, orders, invoices, invoiceTargets };
+  return { jobs, monthly, rollup, expenses, orders, invoices, invoiceTargets, office };
 }

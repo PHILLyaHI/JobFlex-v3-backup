@@ -8,6 +8,13 @@ import { EXPENSE_COUNTED, cents, expenseDate } from "@/lib/expenseTotals";
 // lib/expenseTotals), so a job's figure is exactly its share of these.
 const COUNTED = [...EXPENSE_COUNTED];
 
+// JOB OR STOCK (stage D, 2026-09-30): the company's money counts once, the
+// day it is spent — a receipt for a job AND a purchase for stock (no job) are
+// both expenses here. Stock issued to a job later is that job's cost
+// (lib/jobCost) and never a second expense here.
+const ofOrg = (organizationId: string) => ({ OR: [{ organizationId }, { job: { organizationId } }] });
+const spentSince = (since: Date) => ({ OR: [{ spentAt: { gte: since } }, { spentAt: null, createdAt: { gte: since } }] });
+
 export interface MonthBucket {
   key: string;        // "2026-04"
   label: string;      // "Apr"
@@ -38,7 +45,7 @@ export async function getMonthlyRollup(
       select: { amount: true, paidAt: true },
     }),
     db.jobExpense.findMany({
-      where: { job: { organizationId }, status: { in: COUNTED }, OR: [{ spentAt: { gte: start } }, { spentAt: null, createdAt: { gte: start } }] },
+      where: { status: { in: COUNTED }, AND: [ofOrg(organizationId), spentSince(start)] },
       select: { amount: true, createdAt: true, spentAt: true },
     }),
     // The crew's pay lands in the month it was handed over.
@@ -111,7 +118,7 @@ export async function getFinancialsRollup(organizationId: string): Promise<Finan
       select: { amount: true },
     }),
     db.jobExpense.findMany({
-      where: { job: { organizationId }, status: { in: COUNTED }, OR: [{ spentAt: { gte: since } }, { spentAt: null, createdAt: { gte: since } }] },
+      where: { status: { in: COUNTED }, AND: [ofOrg(organizationId), spentSince(since)] },
       select: { amount: true },
     }),
     // The crew's pay is money out too (2026-09-20): it counts on the day the
@@ -136,8 +143,8 @@ export async function getFinancialsRollup(organizationId: string): Promise<Finan
       where: { project: { organizationId }, spentAt: { gte: since } },
       select: { amount: true },
     }),
-    db.jobExpense.findMany({ where: { job: { organizationId }, status: "SUBMITTED" }, select: { amount: true } }),
-    db.jobExpense.findMany({ where: { job: { organizationId }, status: "APPROVED", paidBy: "WORKER" }, select: { amount: true } }),
+    db.jobExpense.findMany({ where: { ...ofOrg(organizationId), status: "SUBMITTED" }, select: { amount: true } }),
+    db.jobExpense.findMany({ where: { ...ofOrg(organizationId), status: "APPROVED", paidBy: "WORKER", reimbursedAt: null }, select: { amount: true } }),
   ]);
 
   const revenue30d = cents(paid.reduce((a, p) => a + p.amount, 0));

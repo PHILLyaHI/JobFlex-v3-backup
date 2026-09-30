@@ -19,6 +19,7 @@
 // handheld-only: the tab map, the page size, the per-tab filter options and the
 // client-side matchers that back the search box.
 
+import type { OfficeMoney } from "@/components/v3/crew-board/office-review-data";
 import type { WhoLike } from "@/lib/team/who";
 
 /** One column pair in the revenue-vs-expenses chart. */
@@ -69,7 +70,7 @@ export const EXPENSE_CATEGORIES = [
 export type Expense = {
   /** The real `JobExpense.id`; `deleteJobExpense` is called with it. */
   id: string;
-  jobId: string;
+  jobId: string | null;
   job: string;
   category: string;
   amount: number;
@@ -78,6 +79,12 @@ export type Expense = {
   when: string;
   /** Blob (or data) URL of the attached receipt image, when there is one. */
   receiptUrl: string | null;
+  /** Stage A: SUBMITTED | APPROVED | REJECTED | REIMBURSED — only APPROVED and REIMBURSED count. */
+  status?: string;
+  paidBy?: string;
+  vendor?: string | null;
+  /** Stage D: JOB or STOCK. */
+  purpose?: string;
 };
 
 /** A row of the change-order book — one `ChangeOrder`. */
@@ -131,6 +138,8 @@ export type FinancialsSnapshot = {
   orders: ChangeOrder[];
   invoices: Invoice[];
   invoiceTargets: InvoiceTarget[];
+  /** Stage D: the review queue, owed to workers, cost by job (lib/officeMoney). */
+  office?: OfficeMoney;
 };
 
 /** The honest starting state: no revenue, no expenses, no pipeline. What the

@@ -805,7 +805,8 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                   crew {fmt(record.money.crew)}
                   {record.money.crewUnpaid > 0 ? ` (${fmt(record.money.crewUnpaid)} unpaid)` : ""} · receipts {fmt(record.money.expenses)}
                   {record.money.expensesPending > 0 ? ` (${fmt(record.money.expensesPending)} on review, not counted)` : ""}
-                  {record.money.stock > 0 ? ` · from the warehouse ${fmt(record.money.stock)}` : ""} · estimate said {fmt(record.money.plannedCost)}
+                  {record.money.stock > 0 ? ` · from the warehouse ${fmt(record.money.stock)}` : ""}
+                  {record.money.stockUnpriced.length > 0 ? ` (no price on ${record.money.stockUnpriced.join(", ")} — counted at $0)` : ""} · estimate said {fmt(record.money.plannedCost)}
                 </div>
               </div>
               <div className={cx("jd-row-act")}>

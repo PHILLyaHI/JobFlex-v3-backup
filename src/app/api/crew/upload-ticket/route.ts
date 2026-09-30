@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   if (!allowed.includes(type)) return NextResponse.json({ error: "That kind of file is not accepted here." }, { status: 415 });
   const bytes = Number(body.bytes);
   if (!Number.isFinite(bytes) || bytes <= 0) return NextResponse.json({ error: "The file is empty." }, { status: 400 });
-  if (bytes > MAX_FILE_BYTES) return NextResponse.json({ error: `That file is ${fileSize(bytes)} — files up to ${fileSize(MAX_FILE_BYTES)}.` }, { status: 413 });
+  if (bytes > MAX_FILE_BYTES) return NextResponse.json({ error: `That file is larger than ${fileSize(MAX_FILE_BYTES)} — send a shorter video or a smaller picture.` }, { status: 413 });
 
   const mode = storageMode();
   const pathname = safePathname(blobPathFor(body.jobId, body.name, type.startsWith("video/") ? "video.mp4" : type === "application/pdf" ? "receipt.pdf" : "photo.jpg").replace(/^jobs\//, `${folder}/`));

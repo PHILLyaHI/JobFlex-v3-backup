@@ -30,6 +30,29 @@ export type ExpenseAccess = "manager" | "worker";
 
 const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
+// ── JOB OR STOCK (stage D, 2026-09-30) ─────────────────────────────────────
+// Every expense is money the company spent, once, the day it was spent — in
+// the company's totals. What it bought decides the rest: a receipt FOR A JOB
+// (purpose JOB, jobId) is also that job's cost; a purchase FOR STOCK (purpose
+// STOCK, no job) is the warehouse's value and reaches a job only when stock is
+// issued to it (lib/jobCost, at the movement's unit price) — never a second
+// company expense.
+export const EXPENSE_PURPOSE = { JOB: "JOB", STOCK: "STOCK" } as const;
+
+/** A row of this company's, whether it hangs off a job or not. */
+const ofOrg = (organizationId: string) => ({ OR: [{ organizationId }, { job: { organizationId } }] });
+const withJob = { job: { select: { title: true, proposalId: true, clientId: true } } } as const;
+/** What the trail calls the row's home: the job's title, or the stock. */
+const homeOf = (ex: { job: { title: string } | null }) => ex.job?.title ?? "stock";
+
+/** Once a stock purchase counts, its item's last price is what it cost per
+ *  unit — the price stock issued to a job goes by from then on. */
+async function stampStockCost(ex: { purpose: string; stockItemId: string | null; stockQty: number | null; amount: number }, organizationId: string) {
+  if (ex.purpose !== EXPENSE_PURPOSE.STOCK || !ex.stockItemId || !ex.stockQty || ex.stockQty <= 0) return;
+  const unit = Math.round((ex.amount / ex.stockQty) * 10000) / 10000;
+  await db.inventoryItem.updateMany({ where: { id: ex.stockItemId, organizationId }, data: { lastCost: unit } });
+}
+
 /** May this actor see and add to this job's expenses? A manager: any job of
  *  the company. A limited role: only a job they hold a live assignment on. */
 export async function expenseJobAccess(actor: ExpenseActor, jobId: string): Promise<{ access: ExpenseAccess; job: { id: string; title: string; proposalId: string | null; clientId: string | null } } | null> {
@@ -97,38 +120,96 @@ export async function createJobExpense(actor: ExpenseActor, input: NewExpense) {
   return row;
 }
 
+export interface NewStockPurchase {
+  category: string;
+  amount: number;
+  note?: string | null;
+  receiptUrl?: string | null;
+  vendor?: string | null;
+  spentAt?: Date | null;
+  paidBy?: "WORKER" | "COMPANY" | null;
+  /** The warehouse item it bought, and how many — sets the item's lastCost. */
+  stockItemId?: string | null;
+  stockQty?: number | null;
+}
+
+/** A purchase for the warehouse: the office's, APPROVED at once, no job. */
+export async function createStockPurchase(actor: ExpenseActor, input: NewStockPurchase) {
+  if (isLimitedRole(actor.role) || actor.role === "WORKER_TOKEN") throw new Error("Manager access required");
+  const amount = Number.isFinite(input.amount) ? Math.min(Math.max(input.amount, 0), 1_000_000) : 0;
+  const category = (input.category?.trim() || "Materials").slice(0, 60);
+  let stockItemId: string | null = null;
+  if (input.stockItemId) {
+    const item = await db.inventoryItem.findFirst({ where: { id: input.stockItemId, organizationId: actor.organizationId }, select: { id: true } });
+    if (!item) throw new Error("That stock item is not in this company's warehouse.");
+    stockItemId = item.id;
+  }
+  const qty = input.stockQty && Number.isFinite(input.stockQty) && input.stockQty > 0 ? input.stockQty : null;
+  const now = new Date();
+  const row = await db.jobExpense.create({
+    data: {
+      jobId: null,
+      purpose: EXPENSE_PURPOSE.STOCK,
+      stockItemId,
+      stockQty: stockItemId ? qty : null,
+      organizationId: actor.organizationId,
+      submittedById: actor.userId,
+      category,
+      amount,
+      note: input.note?.trim().slice(0, 2000) || null,
+      receiptUrl: input.receiptUrl ?? null,
+      vendor: input.vendor?.trim().slice(0, 120) || null,
+      spentAt: input.spentAt ?? now,
+      paidBy: input.paidBy ?? ExpensePaidBy.COMPANY,
+      status: ExpenseStatus.APPROVED,
+      reviewedById: actor.userId,
+      reviewedAt: now,
+    },
+  });
+  await stampStockCost(row, actor.organizationId);
+  await logActivity({
+    organizationId: actor.organizationId,
+    actorId: actor.userId,
+    kind: TRAIL_KINDS.EXPENSE,
+    summary: `Added a ${money(amount)} purchase for stock — ${category}`,
+    meta: { expenseId: row.id, amount, category, status: row.status, purpose: EXPENSE_PURPOSE.STOCK, stockItemId, via: "dashboard" },
+  });
+  return row;
+}
+
 export type ReviewDecision = "approve" | "reject" | "reimburse";
 
 /** Approve, reject (with a reason) or mark reimbursed — the office only. The
  *  transitions are guarded in the query, so two reviewers cannot both win. */
 export async function reviewJobExpense(actor: ExpenseActor, id: string, decision: ReviewDecision, reason?: string | null) {
   if (isLimitedRole(actor.role) || actor.role === "WORKER_TOKEN") throw new Error("Manager access required");
-  const ex = await db.jobExpense.findFirst({ where: { id, job: { organizationId: actor.organizationId } }, include: { job: { select: { title: true, proposalId: true, clientId: true } } } });
+  const ex = await db.jobExpense.findFirst({ where: { id, ...ofOrg(actor.organizationId) }, include: withJob });
   if (!ex) throw new Error("Not found");
   const now = new Date();
   let r: { count: number };
   let summary: string;
   if (decision === "approve") {
     r = await db.jobExpense.updateMany({ where: { id, status: { in: [ExpenseStatus.SUBMITTED, ExpenseStatus.REJECTED] } }, data: { status: ExpenseStatus.APPROVED, reviewedById: actor.userId, reviewedAt: now, rejectReason: null } });
-    summary = `Approved a ${money(ex.amount)} receipt on ${ex.job.title} — ${ex.category}`;
+    summary = `Approved a ${money(ex.amount)} receipt on ${homeOf(ex)} — ${ex.category}`;
   } else if (decision === "reject") {
     const why = (reason ?? "").trim().slice(0, 500);
     if (!why) throw new Error("Give a reason for rejecting it.");
     r = await db.jobExpense.updateMany({ where: { id, status: { in: [ExpenseStatus.SUBMITTED, ExpenseStatus.APPROVED] } }, data: { status: ExpenseStatus.REJECTED, reviewedById: actor.userId, reviewedAt: now, rejectReason: why } });
-    summary = `Rejected a ${money(ex.amount)} receipt on ${ex.job.title} — ${why}`;
+    summary = `Rejected a ${money(ex.amount)} receipt on ${homeOf(ex)} — ${why}`;
   } else {
     if (ex.paidBy !== ExpensePaidBy.WORKER) throw new Error("Only a receipt the worker paid for can be reimbursed.");
     r = await db.jobExpense.updateMany({ where: { id, status: ExpenseStatus.APPROVED }, data: { status: ExpenseStatus.REIMBURSED, reimbursedAt: now } });
-    summary = `Marked a ${money(ex.amount)} receipt on ${ex.job.title} reimbursed`;
+    summary = `Marked a ${money(ex.amount)} receipt on ${homeOf(ex)} reimbursed`;
   }
   if (r.count === 0) throw new Error("That expense cannot be moved from where it stands.");
+  if (decision === "approve") await stampStockCost(ex, actor.organizationId);
   await logActivity({
     organizationId: actor.organizationId,
     actorId: actor.userId,
     kind: TRAIL_KINDS.EXPENSE,
     summary,
-    proposalId: ex.job.proposalId,
-    clientId: ex.job.clientId,
+    proposalId: ex.job?.proposalId ?? null,
+    clientId: ex.job?.clientId ?? null,
     meta: { jobId: ex.jobId, expenseId: id, amount: ex.amount, category: ex.category, decision, reason: reason ?? undefined },
   });
   return db.jobExpense.findUniqueOrThrow({ where: { id } });
@@ -148,7 +229,7 @@ export interface ExpensePatch {
  *  SUBMITTED or REJECTED (a rejected one goes back on review). The row keeps
  *  an "edited" mark. */
 export async function editJobExpense(actor: ExpenseActor, id: string, patch: ExpensePatch) {
-  const ex = await db.jobExpense.findFirst({ where: { id, job: { organizationId: actor.organizationId } }, include: { job: { select: { title: true, proposalId: true, clientId: true } } } });
+  const ex = await db.jobExpense.findFirst({ where: { id, ...ofOrg(actor.organizationId) }, include: withJob });
   if (!ex) throw new Error("Not found");
   const manager = !isLimitedRole(actor.role) && actor.role !== "WORKER_TOKEN";
   if (!manager) {
@@ -166,15 +247,17 @@ export async function editJobExpense(actor: ExpenseActor, id: string, patch: Exp
   // A worker's correction of a rejected receipt puts it back on review.
   if (!manager && ex.status === ExpenseStatus.REJECTED) Object.assign(data, { status: ExpenseStatus.SUBMITTED, rejectReason: null, reviewedById: null, reviewedAt: null });
   const row = await db.jobExpense.update({ where: { id }, data });
+  // An approved stock purchase whose amount moved re-prices its item.
+  if (manager && row.status === ExpenseStatus.APPROVED) await stampStockCost(row, actor.organizationId);
   // A replaced receipt picture leaves the store with the edit (stage B).
   if (patch.receiptUrl !== undefined && ex.receiptUrl && ex.receiptUrl !== patch.receiptUrl) await deleteStored(ex.receiptUrl);
   await logActivity({
     organizationId: actor.organizationId,
     actorId: actor.userId,
     kind: TRAIL_KINDS.EXPENSE,
-    summary: `Edited a ${money(row.amount)} expense on ${ex.job.title} — ${row.category}`,
-    proposalId: ex.job.proposalId,
-    clientId: ex.job.clientId,
+    summary: `Edited a ${money(row.amount)} expense on ${homeOf(ex)} — ${row.category}`,
+    proposalId: ex.job?.proposalId ?? null,
+    clientId: ex.job?.clientId ?? null,
     meta: { jobId: ex.jobId, expenseId: id, amount: row.amount, category: row.category, edited: true },
   });
   return row;
@@ -182,7 +265,7 @@ export async function editJobExpense(actor: ExpenseActor, id: string, patch: Exp
 
 /** Delete one. The office deletes any; a worker their own, never once approved. */
 export async function deleteJobExpense(actor: ExpenseActor, id: string) {
-  const ex = await db.jobExpense.findFirst({ where: { id, job: { organizationId: actor.organizationId } }, include: { job: { select: { title: true, proposalId: true, clientId: true } } } });
+  const ex = await db.jobExpense.findFirst({ where: { id, ...ofOrg(actor.organizationId) }, include: withJob });
   if (!ex) throw new Error("Not found");
   const manager = !isLimitedRole(actor.role) && actor.role !== "WORKER_TOKEN";
   if (!manager) {
@@ -195,9 +278,9 @@ export async function deleteJobExpense(actor: ExpenseActor, id: string) {
     organizationId: actor.organizationId,
     actorId: actor.userId,
     kind: TRAIL_KINDS.EXPENSE,
-    summary: `Deleted a ${money(ex.amount)} expense from ${ex.job.title} — ${ex.category}`,
-    proposalId: ex.job.proposalId,
-    clientId: ex.job.clientId,
+    summary: `Deleted a ${money(ex.amount)} expense from ${homeOf(ex)} — ${ex.category}`,
+    proposalId: ex.job?.proposalId ?? null,
+    clientId: ex.job?.clientId ?? null,
     meta: { jobId: ex.jobId, expenseId: id, amount: ex.amount, category: ex.category, deleted: true },
   });
   return { jobId: ex.jobId };
@@ -209,4 +292,20 @@ export async function listJobExpensesFor(actor: ExpenseActor, jobId: string) {
   const gate = await expenseJobAccess(actor, jobId);
   if (!gate) return null;
   return db.jobExpense.findMany({ where: { jobId }, orderBy: { createdAt: "desc" } });
+}
+
+/** The office's batch: the same decision on several receipts, each through
+ *  the one rule above. A receipt that cannot move is reported, not fatal. */
+export async function reviewJobExpenses(actor: ExpenseActor, ids: string[], decision: ReviewDecision, reason?: string | null) {
+  const done: string[] = [];
+  const failed: Array<{ id: string; error: string }> = [];
+  for (const id of [...new Set(ids)].slice(0, 200)) {
+    try {
+      await reviewJobExpense(actor, id, decision, reason);
+      done.push(id);
+    } catch (err) {
+      failed.push({ id, error: err instanceof Error ? err.message : "Could not review it." });
+    }
+  }
+  return { done, failed };
 }

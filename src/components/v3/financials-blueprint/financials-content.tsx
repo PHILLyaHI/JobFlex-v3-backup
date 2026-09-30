@@ -26,6 +26,9 @@ import type {
   Rollup,
 } from "./financials-data";
 import { FinancialsActions } from "./financials-actions";
+import { DeskExpenseFilter } from "./desk-expense-filter";
+import { JobCostCard, OfficeReview } from "@/components/v3/crew-board/office-review";
+import { EMPTY_OFFICE_MONEY, type OfficeMoney } from "@/components/v3/crew-board/office-review-data";
 import { FinancialsSprite } from "./sprite";
 
 export type FinancialsContentProps = {
@@ -48,7 +51,14 @@ export type FinancialsContentProps = {
   overheadMonths: OverheadMonth[];
   /** Every overhead sheet the org has saved, keyed "YYYY-MM". */
   overheadSheets: Record<string, OverheadSheet>;
+  /** Stage D: the receipts on review, what is owed to workers, the cost of
+   *  each job and the purchases for stock (lib/officeMoney). */
+  office?: OfficeMoney;
 };
+
+/** After a review the books are read again — they are built once from the
+ *  payload (see landOn in ./financials-actions.tsx) — landing on Expenses. */
+const reloadExpenses = () => window.location.assign("/dashboard/financials?tab=expenses");
 
 export function FinancialsContent(props: FinancialsContentProps) {
   // Reaches `init` through a write-once ref, NOT the callback's deps:
@@ -83,7 +93,7 @@ export function FinancialsContent(props: FinancialsContentProps) {
         {/* The four things this page could never do: book an expense, raise a
             change order, invoice a balance, scan a receipt. Each drives an
             action that already existed elsewhere. */}
-        <FinancialsActions jobs={props.jobs} invoiceTargets={props.invoiceTargets} />
+        <FinancialsActions jobs={props.jobs} invoiceTargets={props.invoiceTargets} stockItems={(props.office ?? EMPTY_OFFICE_MONEY).stockItems} />
       </div>
 
       <nav className="fi-tabs" id="fiTabs">
@@ -326,11 +336,15 @@ export function FinancialsContent(props: FinancialsContentProps) {
 
       {/* ========== EXPENSES ========== */}
       <section className="ppanel is-hidden" data-panel="expenses">
+        {/* Stage D (2026-09-30): the crew's receipts waiting for the owner or a
+            manager, and what is owed to workers — on top, where the work is. */}
+        <OfficeReview data={props.office ?? EMPTY_OFFICE_MONEY} onChanged={reloadExpenses} />
         <div className="card card--table">
           <div className="tb-head">
-            <span className="kpi-lbl">Job expenses</span>
+            <span className="kpi-lbl">Expenses</span>
             <span className="tb-total" id="expTotal"></span>
           </div>
+          <DeskExpenseFilter expenses={props.expenses} />
           {/* WHO DID IT: who logged what over the last 30 days, each in their
               color. Filled by the behavior module; stays hidden when the trail
               names nobody. */}
@@ -358,6 +372,8 @@ export function FinancialsContent(props: FinancialsContentProps) {
           <br />
           Drop a receipt above or add one manually from any job&apos;s Expenses tab.
         </div>
+        {/* What each job consumed (lib/jobCost) — the job page's own figure. */}
+        <JobCostCard costs={(props.office ?? EMPTY_OFFICE_MONEY).costs} stockPurchases30d={(props.office ?? EMPTY_OFFICE_MONEY).stockPurchases30d} />
       </section>
 
       {/* ========== CHANGE ORDERS ========== */}

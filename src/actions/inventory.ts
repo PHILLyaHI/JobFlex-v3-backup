@@ -294,9 +294,13 @@ export async function loadJobMaterials(jobId: string): Promise<{ ok: true; taken
     // A per-job item leaves the warehouse only as far as it was there: what
     // was bought straight for the job never touched the shelf.
     const taken = tracked.map((r) => ({ ...r, take: r.perJob ? Math.min(r.quantity, Math.max(0, r.onHand ?? 0)) : r.quantity })).filter((r) => r.take > 0);
+    // The price the stock leaves at (stage D): the item's last cost today,
+    // stamped on the movement so the job's cost does not move when the price
+    // does later (lib/jobCost).
+    const priceOf = new Map((await db.inventoryItem.findMany({ where: { id: { in: taken.map((r) => r.itemId!) }, organizationId }, select: { id: true, lastCost: true } })).map((i) => [i.id, i.lastCost]));
     await db.$transaction([
       ...taken.flatMap((r) => [
-        db.inventoryMovement.create({ data: { itemId: r.itemId!, kind: "PICKED", quantity: -r.take, jobId: job.id, proposalId: job.proposal!.id, actorId: ctx.user.id } }),
+        db.inventoryMovement.create({ data: { itemId: r.itemId!, kind: "PICKED", quantity: -r.take, jobId: job.id, proposalId: job.proposal!.id, actorId: ctx.user.id, unitCost: priceOf.get(r.itemId!) ?? null } }),
         db.inventoryItem.update({ where: { id: r.itemId! }, data: { onHand: { decrement: r.take } } }),
       ]),
       db.job.update({ where: { id: job.id }, data: { materialsLoadedAt: new Date() } }),
@@ -329,11 +333,17 @@ export async function returnJobMaterials(jobId: string, lines: Array<{ itemId: s
     if (!job) return { ok: false, error: "Job not found" };
     if (isWorkerRole(ctx.role) && !job.assignments.some((a) => a.worker.userId === ctx.user.id)) return { ok: false, error: "You are not on this job" };
     if (!job.materialsLoadedAt) return { ok: false, error: "Nothing was loaded for this job yet" };
-    const moves = await db.inventoryMovement.findMany({ where: { jobId: job.id, kind: { in: ["PICKED", "RETURNED"] } }, select: { itemId: true, kind: true, quantity: true } });
+    const moves = await db.inventoryMovement.findMany({ where: { jobId: job.id, kind: { in: ["PICKED", "USED", "RETURNED"] } }, orderBy: { createdAt: "asc" }, select: { itemId: true, kind: true, quantity: true, unitCost: true } });
     const taken = new Map<string, number>();
+    // What left for the job left at a price; leftovers come back at the same
+    // one, so a return takes off the job exactly what the issue put on.
+    const issuedAt = new Map<string, number | null>();
     // PICKED rows are stored negative and RETURNED rows positive, so negating
     // both gives what is still out on the job.
-    for (const m of moves) taken.set(m.itemId, (taken.get(m.itemId) ?? 0) - m.quantity);
+    for (const m of moves) {
+      taken.set(m.itemId, (taken.get(m.itemId) ?? 0) - m.quantity);
+      if (m.kind !== "RETURNED" && m.unitCost != null) issuedAt.set(m.itemId, m.unitCost);
+    }
     const writes = [];
     let returned = 0;
     for (const l of lines) {
@@ -341,7 +351,7 @@ export async function returnJobMaterials(jobId: string, lines: Array<{ itemId: s
       const qty = Math.min(Math.max(0, money(l.quantity)), Math.max(0, room));
       if (!qty) continue;
       writes.push(
-        db.inventoryMovement.create({ data: { itemId: l.itemId, kind: "RETURNED", quantity: qty, jobId: job.id, actorId: ctx.user.id, note: "Leftovers back" } }),
+        db.inventoryMovement.create({ data: { itemId: l.itemId, kind: "RETURNED", quantity: qty, jobId: job.id, actorId: ctx.user.id, note: "Leftovers back", unitCost: issuedAt.get(l.itemId) ?? null } }),
         db.inventoryItem.update({ where: { id: l.itemId }, data: { onHand: { increment: qty } } }),
       );
       returned++;

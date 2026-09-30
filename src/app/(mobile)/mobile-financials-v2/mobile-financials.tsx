@@ -63,6 +63,8 @@ import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import { safeHref } from "@/lib/safeHref";
 import { loadFinancials } from "@/actions/financialsMobile";
+import { JobCostCard, OfficeReview } from "@/components/v3/crew-board/office-review";
+import { EMPTY_OFFICE_MONEY, EXPENSE_STATUS_FILTERS, type OfficeMoney } from "@/components/v3/crew-board/office-review-data";
 import { loadFinancialsWho } from "./who-action";
 import { Who } from "@/components/v3/who/who";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
@@ -262,6 +264,8 @@ export function MobileFinancials() {
   const [monthly, setMonthly] = useState<MonthPoint[]>([]);
   const [rollup, setRollup] = useState<Rollup>(EMPTY_ROLLUP);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  // Stage D: the review queue, owed to workers, cost by job (lib/officeMoney).
+  const [office, setOffice] = useState<OfficeMoney>(EMPTY_OFFICE_MONEY);
   const [orders, setOrders] = useState<ChangeOrder[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   /** Contracts that still owe money — the invoice picker's list, read from the
@@ -344,6 +348,7 @@ export function MobileFinancials() {
     setMonthly(snap.monthly);
     setRollup(snap.rollup);
     setExpenses(snap.expenses);
+    setOffice(snap.office ?? EMPTY_OFFICE_MONEY);
     setOrders(snap.orders);
     setInvoices(snap.invoices);
     setInvoiceTargets(snap.invoiceTargets);
@@ -776,6 +781,12 @@ export function MobileFinancials() {
     if (tab === "expenses") {
       return [
         { k: ALL, l: "All", n: expenses.length },
+        // Where each receipt stands (stage D), then what it was for.
+        ...EXPENSE_STATUS_FILTERS.filter((f) => f.key !== "ALL").map((f) => ({
+          k: `st:${f.key}`,
+          l: f.label,
+          n: expenses.filter((e) => (e.status ?? "APPROVED") === f.key).length,
+        })),
         ...withPresent(EXPENSE_CATEGORIES, expenses.map((e) => e.category)).map((c) => ({
           k: c,
           l: c,
@@ -806,7 +817,12 @@ export function MobileFinancials() {
 
   /* ---------- the visible ledger -------------------------------------- */
   const expView = useMemo(
-    () => expenses.filter((e) => (filter === ALL || e.category === filter) && matchesExpense(e, query)),
+    () =>
+      expenses.filter(
+        (e) =>
+          (filter === ALL || (filter.startsWith("st:") ? (e.status ?? "APPROVED") === filter.slice(3) : e.category === filter)) &&
+          matchesExpense(e, query),
+      ),
     [expenses, filter, query],
   );
   const coView = useMemo(
@@ -1668,6 +1684,12 @@ export function MobileFinancials() {
             </div>
           )}
 
+          {/* ============ EXPENSES: the office's side (stage D) ============
+              The crew's receipts waiting for review and what is owed to
+              workers — on top, where the work is; the same component the desk
+              draws. A review re-reads the book. */}
+          {tab === "expenses" && ready && <OfficeReview data={office} onChanged={() => void load()} />}
+
           {/* ============ FIND BAR — the three ledgers ============ */}
           {tab !== "overview" && (
             <div className={styles.find}>
@@ -1813,6 +1835,10 @@ export function MobileFinancials() {
                   <div className={styles.frowFoot}>
                     <span className={styles.frowTags}>
                       <span className={`${styles.badge} ${styles.stCat}`}>{e.category}</span>
+                      {e.status === "SUBMITTED" ? <span className={`${styles.badge} ${styles.stPending}`}>On review</span> : null}
+                      {e.status === "REJECTED" ? <span className={`${styles.badge} ${styles.stDeclined}`}>Rejected</span> : null}
+                      {e.status === "REIMBURSED" ? <span className={`${styles.badge} ${styles.stPaid}`}>Reimbursed</span> : null}
+                      {e.purpose === "STOCK" ? <span className={`${styles.badge} ${styles.stNone}`}>For stock</span> : null}
                       {e.receiptUrl ? null : (
                         <span className={`${styles.badge} ${styles.stNone}`}>No receipt</span>
                       )}
@@ -1928,6 +1954,9 @@ export function MobileFinancials() {
               </span>
             </div>
           )}
+
+          {/* What each job consumed (lib/jobCost) — the job page's own figure. */}
+          {tab === "expenses" && ready && <JobCostCard costs={office.costs} stockPurchases30d={office.stockPurchases30d} />}
         </div>
       </main>
 

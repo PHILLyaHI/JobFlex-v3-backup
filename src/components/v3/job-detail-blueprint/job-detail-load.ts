@@ -28,7 +28,7 @@ import { mediaHref } from "@/lib/media/signedLink";
 import { loadCrewBoard } from "@/components/v3/crew-board/crew-board-load";
 import { contractTotal } from "@/lib/contractTotal";
 import { crewTotals, jobMoney } from "@/lib/jobCosting";
-import { countsInTotals, isPending } from "@/lib/expenseTotals";
+import { jobCostOf, type JobCost } from "@/lib/jobCost";
 import { isTradeId, pickList } from "@/lib/inventory";
 import { inventoryLinkOf, linkedTradeOf } from "@/lib/inventoryPick";
 import { stockItemsOf } from "@/lib/inventoryPolicy";
@@ -368,16 +368,18 @@ export async function loadJobDetail(
   // the contract is the proposal plus its approved change orders, the planned
   // cost is the estimate's material and labor COST columns, and the actual
   // cost is the crew's pay plus the booked receipts (lib/jobCosting).
-  const out = await pickedFor(job.id);
+  // The booked cost is lib/jobCost's — the ONE function Financials' "Cost by
+  // job" reads too (stage D), so the two agree to the cent: crew pay, approved
+  // receipts, and stock issued to the job at the movements' prices.
+  const cost = await jobCostOf(organizationId, job.id);
   const m = jobMoney({
     contract: job.proposal ? contractTotal(job.proposal.total, job.proposal.changeOrders) : 0,
     collected: job.proposal ? job.proposal.payments.reduce((a, p) => a + p.amount, 0) : 0,
     lines: job.proposal?.lineItems ?? [],
-    crewPay: job.assignments.map((a) => a.pay),
-    // Only what is approved is a cost; a receipt on review stands apart (lib/expenseTotals).
-    expenses: job.expenses.filter((e) => countsInTotals(e.status)).map((e) => e.amount),
-    pendingExpenses: job.expenses.filter((e) => isPending(e.status)).map((e) => e.amount),
-    stock: out.cost,
+    crewPay: [cost.crew],
+    expenses: [cost.receipts],
+    pendingExpenses: [cost.receiptsPending],
+    stock: cost.stock,
   });
   const money: JdMoney = {
     contract: m.contract,
@@ -389,6 +391,7 @@ export async function loadJobDetail(
     expenses: m.expenses,
     expensesPending: m.expensesPending,
     stock: m.stock,
+    stockUnpriced: cost.unpriced,
     cost: m.cost,
     costIsPlanned: m.costIsPlanned,
     profit: m.profit,
@@ -488,7 +491,7 @@ export async function loadJobDetail(
     money,
     pick,
     loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
-    picked: out.rows,
+    picked: pickedRows(cost),
     roster,
     booking: bookingWindow(job.startsAt, job.endsAt),
     canWrite: isOwnerOrManager(role),
@@ -629,7 +632,7 @@ async function loadWorkerScoped(
     money: null,
     pick: await pickFor(organizationId, job.proposal ? linkedTradeOf({ ...job.proposal, inventoryLinked: job.proposalId ? ((await inventoryLinkOf(organizationId, [job.proposalId])).get(job.proposalId) ?? null) : null }) : null, job.proposal?.lineItems ?? []),
     loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
-    picked: (await pickedFor(job.id)).rows,
+    picked: pickedRows(await jobCostOf(organizationId, job.id)),
     roster: [],
     // Never read — `canWrite` is false, so nothing on this edition books
     // anything — but the shape is the shape.
@@ -691,25 +694,8 @@ async function pickFor(organizationId: string, trade: string | null, lines: Arra
   }));
 }
 
-/**
- * What is out on the job from the warehouse: the PICKED rows (stored
- * negative) less the RETURNED rows, per item, and their cost at the item's
- * last known price — the job's "materials from stock" line.
- */
-async function pickedFor(jobId: string): Promise<{ rows: JdPicked[]; cost: number }> {
-  const moves = await db.inventoryMovement.findMany({
-    where: { jobId, kind: { in: ["PICKED", "RETURNED"] } },
-    select: { itemId: true, kind: true, quantity: true, item: { select: { name: true, unit: true, lastCost: true } } },
-  });
-  if (!moves.length) return { rows: [], cost: 0 };
-  const byItem = new Map<string, JdPicked & { lastCost: number }>();
-  for (const mv of moves) {
-    const row = byItem.get(mv.itemId) ?? { itemId: mv.itemId, name: mv.item.name, unit: mv.item.unit, taken: 0, returned: 0, lastCost: mv.item.lastCost ?? 0 };
-    if (mv.kind === "PICKED") row.taken += -mv.quantity;
-    else row.returned += mv.quantity;
-    byItem.set(mv.itemId, row);
-  }
-  const rows = [...byItem.values()];
-  const cost = Math.round(rows.reduce((a, r) => a + Math.max(0, r.taken - r.returned) * r.lastCost, 0) * 100) / 100;
-  return { rows: rows.map((r) => ({ itemId: r.itemId, name: r.name, unit: r.unit, taken: r.taken, returned: r.returned })), cost };
+/** What is out on the job from the warehouse — issued (PICKED + USED) and
+ *  returned, per item — off the job's cost (lib/jobCost). */
+function pickedRows(cost: JobCost): JdPicked[] {
+  return cost.stockLines.map((l) => ({ itemId: l.itemId, name: l.name, unit: l.unit, taken: l.taken, returned: l.returned }));
 }

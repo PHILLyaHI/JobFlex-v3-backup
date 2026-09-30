@@ -174,3 +174,43 @@
 @media (prefers-reduced-motion: reduce) {
   :is(.root, .layer):is(.root, .layer) :is(.btn, .bar i) { transition: none; }
 }
+
+/* ── the office's side (stage D, 2026-09-30): review queue, owed to workers,
+      cost by job, the status filter — Financials → Expenses, both editions ── */
+:is(.root, .layer):is(.root, .layer) .rc.rcPick { grid-template-columns: 28px 56px minmax(0, 1fr); }
+:is(.root, .layer):is(.root, .layer) .chk { width: 22px; height: 22px; margin: 17px 0 0; accent-color: var(--ink); cursor: pointer; }
+:is(.root, .layer):is(.root, .layer) .batch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px var(--pad); border-bottom: 1px solid var(--ink-line); background: var(--paper); }
+:is(.root, .layer):is(.root, .layer) .chkLabel { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font: 800 12px/1.3 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+:is(.root, .layer):is(.root, .layer) .chkLabel .chk { margin: 0; }
+:is(.root, .layer):is(.root, .layer) .rejectBox { display: grid; gap: 8px; width: 100%; }
+:is(.root, .layer):is(.root, .layer) .rejectRow { display: flex; flex-wrap: wrap; gap: 8px; }
+:is(.root, .layer):is(.root, .layer) .rejectRow .input { flex: 1 1 220px; }
+:is(.root, .layer):is(.root, .layer) .ow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 16px; padding: 14px var(--pad); }
+:is(.root, .layer):is(.root, .layer) .ow + .ow { border-top: 1px solid var(--ink-line); }
+:is(.root, .layer):is(.root, .layer) .owName { font-size: 15px; font-weight: 800; overflow-wrap: anywhere; }
+:is(.root, .layer):is(.root, .layer) .owAmt { font-size: 18px; font-weight: 900; font-variant-numeric: tabular-nums; text-align: right; }
+:is(.root, .layer):is(.root, .layer) .owItems { grid-column: 1 / -1; display: grid; gap: 2px; list-style: none; }
+:is(.root, .layer):is(.root, .layer) .owActs { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+:is(.root, .layer):is(.root, .layer) .tableWrap { overflow-x: auto; }
+:is(.root, .layer):is(.root, .layer) .costTable { width: 100%; border-collapse: collapse; font-size: 13px; }
+:is(.root, .layer):is(.root, .layer) .costTable th { padding: 10px 12px; text-align: left; color: var(--ink-muted); font: 600 10px/1.4 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; border-bottom: 1.5px solid var(--ink); white-space: nowrap; }
+:is(.root, .layer):is(.root, .layer) .costTable td { padding: 11px 12px; border-top: 1px solid var(--ink-line); vertical-align: top; }
+:is(.root, .layer):is(.root, .layer) .costTable :is(th, td):first-child { padding-left: var(--pad); }
+:is(.root, .layer):is(.root, .layer) .costTable :is(th, td):last-child { padding-right: var(--pad); }
+:is(.root, .layer):is(.root, .layer) .costTable .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+:is(.root, .layer):is(.root, .layer) .costTable a { color: var(--ink); font-weight: 800; text-decoration: none; }
+:is(.root, .layer):is(.root, .layer) .costTable a:hover { text-decoration: underline; text-underline-offset: 3px; }
+:is(.root, .layer):is(.root, .layer) .costTable tfoot td { border-top: 1.5px solid var(--ink); font-weight: 900; }
+:is(.root, .layer):is(.root, .layer) .costCards { display: none; list-style: none; }
+:is(.root, .layer):is(.root, .layer).filterBar { padding: 10px var(--pad) 12px; }
+:is(.root, .layer):is(.root, .layer) .filter { display: flex; flex-wrap: wrap; gap: 0; }
+:is(.root, .layer):is(.root, .layer) .filter .seg { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; }
+:is(.root, .layer):is(.root, .layer) .filter .seg b { font: 500 11px/1 var(--font-mono); opacity: 0.7; }
+@media (max-width: 768px) {
+  :is(.root, .layer):is(.root, .layer) .tableWrap { display: none; }
+  :is(.root, .layer):is(.root, .layer) .costCards { display: grid; }
+  :is(.root, .layer):is(.root, .layer) .costCards > li { display: grid; gap: 4px; padding: 14px var(--pad); }
+  :is(.root, .layer):is(.root, .layer) .costCards > li + li { border-top: 1px solid var(--ink-line); }
+  :is(.root, .layer):is(.root, .layer) .filter .seg { min-height: 44px; margin-top: -1.5px; }
+  :is(.root, .layer):is(.root, .layer) .batch .btn, :is(.root, .layer):is(.root, .layer) .owActs .btn { min-height: 44px; }
+}

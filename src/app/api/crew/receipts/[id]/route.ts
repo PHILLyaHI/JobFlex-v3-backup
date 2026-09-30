@@ -29,7 +29,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const caller = await crewCaller(body.token ?? null);
   if (!caller) return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   const ex = await db.jobExpense.findFirst({ where: { id, job: { organizationId: caller.organizationId } }, select: { jobId: true } });
-  if (!ex) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!ex || !ex.jobId) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (body.url && !isPrivateJobFile(body.url, "receipts", ex.jobId) && !IMAGE_DATA_URL.test(body.url)) {
     return NextResponse.json({ error: "That picture is not in this job's receipts folder." }, { status: 400 });
   }

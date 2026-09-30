@@ -143,7 +143,7 @@ export async function uploadJobFile(opts: {
   const pdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
   if (folder === "jobs" && !video && !isImageType(file.type)) throw new MediaUploadError(`${file.name} is not a photo or a video.`);
   if (folder === "receipts" && !isImageType(file.type) && !pdf) throw new MediaUploadError(`${file.name} is not a picture or a PDF of the receipt.`);
-  if (file.size > MAX_FILE_BYTES) throw new MediaUploadError(`${file.name} is ${fileSize(file.size)} — files up to ${fileSize(MAX_FILE_BYTES)}.`);
+  if (file.size > MAX_FILE_BYTES) throw new MediaUploadError(`${file.name} is larger than ${fileSize(MAX_FILE_BYTES)} (${fileSize(file.size)}) — send a shorter video or a smaller picture.`);
 
   const body = video || pdf ? { blob: file as Blob, type: file.type || (pdf ? "application/pdf" : "video/mp4"), name: file.name } : await shrinkPhoto(file);
   const token = "token" in door ? door.token : null;

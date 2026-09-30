@@ -17,9 +17,13 @@ import * as React from "react";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { InvoiceSheet } from "@/components/billing/InvoiceSheet";
 import { toast } from "@/components/ui/Toast";
-import { addJobExpense } from "@/actions/expenses";
+import { addJobExpense, addStockPurchase } from "@/actions/expenses";
 import type { FinancialsJob } from "./financials-behavior";
 import type { InvoiceTarget } from "./financials-data";
+import type { StockPick } from "@/components/v3/crew-board/office-review-data";
+
+/** The "For" select's value for a purchase for the warehouse (stage D). */
+const STOCK = "__stock";
 
 type Dialog = null | "expense" | "order" | "invoice";
 const EXPENSE_CATEGORIES = ["Materials", "Labor", "Equipment", "Permit", "Subcontractor", "Fuel", "Other"];
@@ -39,7 +43,7 @@ function landOn(tab: "expenses" | "orders" | "invoices") {
   window.setTimeout(() => window.location.assign(`/dashboard/financials?tab=${tab}`), 700);
 }
 
-export function FinancialsActions({ jobs, invoiceTargets }: { jobs: FinancialsJob[]; invoiceTargets: InvoiceTarget[] }) {
+export function FinancialsActions({ jobs, invoiceTargets, stockItems = [] }: { jobs: FinancialsJob[]; invoiceTargets: InvoiceTarget[]; stockItems?: StockPick[] }) {
   const [dialog, setDialog] = React.useState<Dialog>(null);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
@@ -50,6 +54,10 @@ export function FinancialsActions({ jobs, invoiceTargets }: { jobs: FinancialsJo
   const [amount, setAmount] = React.useState("");
   const [when, setWhen] = React.useState(today);
   const [note, setNote] = React.useState("");
+  // For stock (stage D): the item it bought and how many, both optional —
+  // given, they set the item's last price, which issued stock goes by.
+  const [itemId, setItemId] = React.useState("");
+  const [qty, setQty] = React.useState("");
 
   // change order
   const [coJob, setCoJob] = React.useState(jobs[0]?.id ?? "");
@@ -63,16 +71,22 @@ export function FinancialsActions({ jobs, invoiceTargets }: { jobs: FinancialsJo
 
   async function saveExpense() {
     const value = Number(amount);
-    if (!jobId) return setErr("Pick the job this expense belongs to.");
+    if (!jobId) return setErr("Pick the job this expense belongs to, or Stock.");
     if (!Number.isFinite(value) || value <= 0) return setErr("Enter the amount.");
+    const units = qty ? Number(qty) : null;
+    if (jobId === STOCK && itemId && units !== null && !(units > 0)) return setErr("Enter how many units it bought, or leave it empty.");
     setBusy(true);
     setErr("");
     try {
-      // JobExpense books on its created date, so a receipt dated earlier says
-      // so in its own note rather than pretending the column exists.
-      const dated = when && when !== today() ? `Dated ${when}. ` : "";
-      await addJobExpense({ jobId, category, amount: value, note: `${dated}${note}`.trim() || null });
-      toast.success("Expense booked", `${category} · $${value.toLocaleString("en-US")}`);
+      // The date is the day the money was spent (JobExpense.spentAt, stage A);
+      // the totals go by it.
+      const spentAt = when ? `${when}T12:00:00` : null;
+      if (jobId === STOCK) {
+        await addStockPurchase({ category, amount: value, note: note.trim() || null, spentAt, stockItemId: itemId || null, stockQty: itemId ? units : null });
+      } else {
+        await addJobExpense({ jobId, category, amount: value, note: note.trim() || null, spentAt });
+      }
+      toast.success(jobId === STOCK ? "Stock purchase booked" : "Expense booked", `${category} · $${value.toLocaleString("en-US")}`);
       setAmount("");
       setNote("");
       setDialog(null);
@@ -179,8 +193,11 @@ export function FinancialsActions({ jobs, invoiceTargets }: { jobs: FinancialsJo
           "Add an expense",
           <>
             <label className="fi-fld">
-              <span>Job</span>
-              <select className="pinput" value={jobId} onChange={(e) => setJobId(e.target.value)}>
+              <span>For</span>
+              {/* A job, or the warehouse (stage D): money for stock is the
+                  company's now and a job's only when the stock is issued. */}
+              <select className="pinput" value={jobId} onChange={(e) => setJobId(e.target.value)} data-expense-for>
+                <option value={STOCK}>Stock — the warehouse, no job</option>
                 {jobs.map((j) => (
                   <option key={j.id} value={j.id}>
                     {j.title}
@@ -188,6 +205,25 @@ export function FinancialsActions({ jobs, invoiceTargets }: { jobs: FinancialsJo
                 ))}
               </select>
             </label>
+            {jobId === STOCK && stockItems.length > 0 && (
+              <>
+                <label className="fi-fld">
+                  <span>Item (optional)</span>
+                  <select className="pinput" value={itemId} onChange={(e) => setItemId(e.target.value)} data-stock-item>
+                    <option value="">Not one item</option>
+                    {stockItems.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.name} · {i.trade}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="fi-fld">
+                  <span>Units bought</span>
+                  <input className="pinput" inputMode="decimal" placeholder="Sets its unit cost" value={qty} disabled={!itemId} onChange={(e) => setQty(e.target.value)} data-stock-qty />
+                </label>
+              </>
+            )}
             <label className="fi-fld">
               <span>Category</span>
               <select className="pinput" value={category} onChange={(e) => setCategory(e.target.value)}>

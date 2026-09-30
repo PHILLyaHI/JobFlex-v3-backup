@@ -819,10 +819,13 @@ export function initFinancialsContent(
 
   /** One expense row. Extracted so a receipt just saved can be inserted on its
    *  own instead of the whole tbody being rebuilt around it. */
+  const STATUS_WORD: Record<string, string> = { SUBMITTED: "On review — not counted", APPROVED: "Approved", REJECTED: "Rejected — not counted", REIMBURSED: "Reimbursed" };
   function expenseRowHtml(e: Expense) {
     return (
       '<tr class="prow" data-exp="' +
       esc(e.id) +
+      '" data-status="' +
+      esc(e.status ?? "APPROVED") +
       '">' +
       "<td>" +
       jobCell(e.jobId, e.job) +
@@ -830,7 +833,13 @@ export function initFinancialsContent(
       "</td>" +
       '<td><span class="pstatus cat">' +
       esc(e.category) +
-      "</span></td>" +
+      "</span>" +
+      // Stage D: where the receipt stands, and whether it bought stock.
+      '<div class="fi-note">' +
+      esc(STATUS_WORD[e.status ?? "APPROVED"] ?? "Approved") +
+      (e.purpose === "STOCK" ? " · for stock" : "") +
+      (e.paidBy === "WORKER" ? " · paid by the worker" : "") +
+      "</div></td>" +
       '<td><span class="fi-note">' +
       (e.note ? esc(e.note) : "—") +
       "</span></td>" +
@@ -1035,7 +1044,10 @@ export function initFinancialsContent(
   // reads the route again rather than re-rendering, because these books are
   // built once from the payload this module was mounted with. `?tab=` says
   // which book the fresh page should open on.
-  const wantedTab = new URLSearchParams(window.location.search).get("tab") ?? "";
+  // ?review=1 is where the "receipt on review" bell and email land (stage D):
+  // the review queue sits on top of the Expenses book.
+  const query = new URLSearchParams(window.location.search);
+  const wantedTab = query.get("tab") ?? (query.get("review") ? "expenses" : "");
   if (wantedTab && fiTabs && fiTabs.querySelector('[data-tab="' + wantedTab + '"]')) {
     switchTab(wantedTab);
   }

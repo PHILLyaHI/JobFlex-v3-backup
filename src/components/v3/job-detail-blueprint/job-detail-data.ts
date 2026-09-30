@@ -210,8 +210,10 @@ export type JdMoney = {
   /** Receipts on review — apart from the cost (stage A, 2026-09-30). */
   expensesPending: number;
   expenses: number;
-  /** Warehouse materials on the job at the items' last cost. */
+  /** Warehouse materials issued to the job, at the movements' prices (lib/jobCost). */
   stock: number;
+  /** Stock lines with no price anywhere — counted at $0, named so the page can say so. */
+  stockUnpriced: string[];
   cost: number;
   costIsPlanned: boolean;
   profit: number;

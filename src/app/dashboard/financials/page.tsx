@@ -86,6 +86,7 @@ export default async function FinancialsPage() {
       invoiceTargets={snapshot.invoiceTargets}
       overheadMonths={overheadMonths}
       overheadSheets={overheadSheets}
+      office={snapshot.office}
     />
   );
 }

@@ -1148,7 +1148,11 @@ model JobPhoto {
 
 model JobExpense {
   id         String   @id @default(cuid())
-  jobId      String
+  // Null for a purchase FOR STOCK (stage D, 2026-09-30): the money is the
+  // company's the day it is spent and the warehouse's value; it reaches a job
+  // only when the stock is issued to it (InventoryMovement PICKED / USED at
+  // its unitCost). A receipt for a job is purpose JOB with its jobId.
+  jobId      String?
   category   String
   amount     Float
   note       String?
@@ -1173,8 +1177,13 @@ model JobExpense {
   spentAt        DateTime?
   // Set when the row is edited after it was submitted ("edited" mark).
   editedAt       DateTime?
+  // "JOB" | "STOCK" — what the money bought (stage D). STOCK rows have no job;
+  // the item and quantity, when given, set the item's lastCost on approval.
+  purpose        String    @default("JOB")
+  stockItemId    String?
+  stockQty       Float?
 
-  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job Job? @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, status])
 }
@@ -2537,6 +2546,11 @@ model InventoryMovement {
   note       String?
   actorId    String?
   createdAt  DateTime @default(now())
+  /// The unit price the movement moved at (stage D, 2026-09-30): stamped from
+  /// the item's lastCost when stock is issued to a job or returned, so a job's
+  /// cost does not drift when the price changes later. Null on older rows —
+  /// they read the item's lastCost, else 0 (lib/jobCost).
+  unitCost   Float?
 
   item InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 

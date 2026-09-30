@@ -72,7 +72,7 @@ export const EXPENSE_CATEGORIES = [
 export type Expense = {
   /** The real `JobExpense.id`; `deleteJobExpense` is called with it. */
   id: string;
-  jobId: string;
+  jobId: string | null;
   job: string;
   category: string;
   amount: number;
@@ -85,6 +85,8 @@ export type Expense = {
   status?: string;
   paidBy?: string;
   vendor?: string | null;
+  /** Stage D: "JOB" (a receipt for a job) or "STOCK" (a purchase for the warehouse, no job). */
+  purpose?: string;
   /** Who logged it — the mark. Absent when the trail cannot say. */
   who?: WhoLike | null;
   whoKind?: WhoKind;

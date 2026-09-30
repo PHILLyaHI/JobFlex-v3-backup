@@ -68,7 +68,7 @@ export async function getFinancialsWho(organizationId: string): Promise<Financia
       // which needs each row's amount and date. JobExpense keeps no author of
       // its own, so the trail is the only record of who logged it.
       db.jobExpense.findMany({
-        where: { job: { organizationId } },
+        where: { OR: [{ organizationId }, { job: { organizationId } }] },
         orderBy: { createdAt: "desc" },
         take: 200,
         select: { id: true, amount: true, createdAt: true },

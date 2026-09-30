@@ -24,8 +24,8 @@ export default async function ExpensesPage() {
 
   const rows: ExpenseRow[] = expenses.map((e) => ({
     id: e.id,
-    jobId: e.jobId,
-    jobTitle: e.job.title,
+    jobId: e.jobId ?? "",
+    jobTitle: e.job?.title ?? "Stock",
     category: e.category,
     amount: e.amount,
     note: e.note,

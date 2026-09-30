@@ -20,39 +20,40 @@ export async function notifyExpenseSubmitted(expenseId: string): Promise<void> {
     where: { id: expenseId },
     select: { id: true, amount: true, category: true, vendor: true, paidBy: true, status: true, submittedById: true, jobId: true, job: { select: { title: true, organizationId: true, proposalId: true, clientId: true, organization: { select: { name: true, logoUrl: true } } } } },
   });
-  if (!ex || ex.status !== "SUBMITTED") return;
+  if (!ex || ex.status !== "SUBMITTED" || !ex.job) return;
+  const job = ex.job;
   const who = ex.submittedById
     ? (await db.workerProfile.findUnique({ where: { userId: ex.submittedById }, select: { displayName: true } }))?.displayName ??
       (await db.user.findUnique({ where: { id: ex.submittedById }, select: { name: true, email: true } }).then((u) => u?.name || u?.email)) ??
       "A crew member"
     : "A crew member";
-  const orgId = ex.job.organizationId;
+  const orgId = job.organizationId;
   const what = `${money(ex.amount)}${ex.vendor ? ` at ${ex.vendor}` : ""}`;
   await db.activityEvent.create({
     data: {
       organizationId: orgId,
       actorId: ex.submittedById,
-      proposalId: ex.job.proposalId,
-      clientId: ex.job.clientId,
+      proposalId: job.proposalId,
+      clientId: job.clientId,
       kind: "EXPENSE_SUBMITTED",
-      summary: `${who} sent a receipt for ${ex.job.title} — ${what}, waiting for review`,
+      summary: `${who} sent a receipt for ${job.title} — ${what}, waiting for review`,
       meta: JSON.stringify({ jobId: ex.jobId, expenseId: ex.id, amount: ex.amount, paidBy: ex.paidBy, href: "/dashboard/financials?review=1" }),
     },
   });
   const appUrl = await appBaseUrl();
   await sendToMembersByPref(orgId, "expense-submitted", {
-    subject: `Receipt to review — ${ex.job.title}`,
-    lockup: { kind: "org", name: ex.job.organization.name, logoUrl: ex.job.organization.logoUrl },
+    subject: `Receipt to review — ${job.title}`,
+    lockup: { kind: "org", name: job.organization.name, logoUrl: job.organization.logoUrl },
     kicker: { text: "Waiting for review", tone: "warn" },
     headline: `${who} sent a receipt`,
     prose: [`It does not count in any total until you approve it.`],
     box: [
-      { type: "field", label: "Job", value: ex.job.title },
+      { type: "field", label: "Job", value: job.title },
       { type: "field", label: "Amount", value: what },
       { type: "field", label: "Category", value: ex.category },
       { type: "field", label: "Paid by", value: ex.paidBy === "WORKER" ? `${who} (to reimburse)` : "Company card" },
     ],
     cta: { label: "Review receipts", href: `${appUrl}/dashboard/financials?review=1` },
-    footer: { name: ex.job.organization.name },
+    footer: { name: job.organization.name },
   });
 }

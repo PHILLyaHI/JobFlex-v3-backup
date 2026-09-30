@@ -6,10 +6,13 @@ import { db } from "@/lib/db";
 import { safeHref } from "@/lib/safeHref";
 import {
   createJobExpense,
+  createStockPurchase,
   deleteJobExpense as deleteExpenseFor,
   editJobExpense as editExpenseFor,
   reviewJobExpense,
+  reviewJobExpenses as reviewManyFor,
   type ExpenseActor,
+  type ReviewDecision,
 } from "@/lib/jobExpenses";
 
 // THE OFFICE'S AND THE CREW'S EXPENSES (stage A, 2026-09-30). Every write
@@ -61,10 +64,10 @@ async function actorOf(): Promise<ExpenseActor> {
   return { organizationId, userId: user.id, role, name: user.name ?? user.email ?? null };
 }
 
-function refresh(jobId: string) {
+function refresh(jobId: string | null) {
   revalidatePath("/dashboard/financials/expenses");
   revalidatePath("/dashboard/financials");
-  revalidatePath(`/dashboard/jobs/${jobId}`);
+  if (jobId) revalidatePath(`/dashboard/jobs/${jobId}`);
   revalidatePath("/dashboard/workers");
 }
 
@@ -80,6 +83,41 @@ export async function addJobExpense(raw: unknown) {
   );
   refresh(data.jobId);
   return { id: exp.id };
+}
+
+const stockInput = z.object({
+  category: z.string().min(1),
+  amount: z.number().min(0),
+  note: z.string().optional().nullable(),
+  receiptUrl: receiptUrlInput,
+  vendor: z.string().max(120).optional().nullable(),
+  spentAt: z.string().optional().nullable(),
+  paidBy: z.enum(["WORKER", "COMPANY"]).optional().nullable(),
+  stockItemId: z.string().optional().nullable(),
+  stockQty: z.number().positive().optional().nullable(),
+});
+
+/** The office's purchase FOR STOCK (stage D): company money and warehouse
+ *  value, no job — a job pays for it only when the stock is issued to it. */
+export async function addStockPurchase(raw: unknown) {
+  const { organizationId, user, role } = await requireManager();
+  const data = stockInput.parse(raw);
+  const exp = await createStockPurchase({ organizationId, userId: user.id, role }, { ...data, spentAt: dateOf(data.spentAt) });
+  refresh(null);
+  revalidatePath("/dashboard/inventory");
+  return { id: exp.id };
+}
+
+/** The office's review queue, one receipt or several at once (stage D). */
+export async function reviewJobExpenses(ids: string[], decision: ReviewDecision, reason?: string | null) {
+  const { organizationId, user, role } = await requireManager();
+  const list = z.array(z.string().min(1)).min(1).max(200).parse(ids);
+  const which = z.enum(["approve", "reject", "reimburse"]).parse(decision);
+  const out = await reviewManyFor({ organizationId, userId: user.id, role }, list, which, reason ?? null);
+  refresh(null);
+  const jobs = await db.jobExpense.findMany({ where: { id: { in: out.done } }, select: { jobId: true } });
+  for (const j of new Set(jobs.map((x) => x.jobId))) if (j) revalidatePath(`/dashboard/jobs/${j}`);
+  return out;
 }
 
 /** A receipt from anyone on the job (the crew's own dashboard): a worker's is
