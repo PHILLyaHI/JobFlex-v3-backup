@@ -199,13 +199,12 @@ function FileTile({ f, door, onError }: { f: CrewFile; door: CrewDoor; onError: 
   const { call, busy } = useCrewCalls(door);
   const [editing, setEditing] = useState(false);
   const [caption, setCaption] = useState(f.caption ?? "");
+  // A video the browser cannot play is offered as a file instead of a black
+  // player. Decided by TRYING it, not by canPlayType: Chrome answers "" for
+  // "video/quicktime" yet plays an iPhone's HEVC .mov (checked against the real
+  // store, 2026-10-01). Unplayable = an error, or metadata with no picture
+  // (the sound track alone decodes).
   const [playable, setPlayable] = useState(true);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  useEffect(() => {
-    // A .mov (HEVC) the browser cannot play: the file is offered instead of a
-    // black player. canPlayType answers "" when it is sure it cannot.
-    if (f.media === "video" && f.contentType && videoRef.current && videoRef.current.canPlayType(f.contentType) === "") setPlayable(false);
-  }, [f.contentType, f.media]);
   const del = async () => {
     if (!window.confirm(`Delete this ${f.media}? It is removed from the job and from storage.`)) return;
     const ok = await call("del", `/api/crew/media/${f.id}`, "DELETE");
@@ -220,7 +219,16 @@ function FileTile({ f, door, onError }: { f: CrewFile; door: CrewDoor; onError: 
       <div className={cx("media")}>
         {f.media === "video" ? (
           playable ? (
-            <video ref={videoRef} src={f.href} preload="metadata" controls playsInline onError={() => setPlayable(false)} />
+            <video
+              src={f.href}
+              preload="metadata"
+              controls
+              playsInline
+              onError={() => setPlayable(false)}
+              onLoadedMetadata={(e) => {
+                if (e.currentTarget.videoWidth === 0) setPlayable(false);
+              }}
+            />
           ) : (
             <a className={cx("noPlay")} href={f.downloadHref} data-download>
               <Download aria-hidden="true" />

@@ -10,10 +10,26 @@
 // names (orphans) and the rows whose private file is gone (dangling). Deleting
 // an orphan is a decision for a person, with this list in hand.
 
-import { promises as fs } from "node:fs";
+import { promises as fs, readFileSync } from "node:fs";
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { kindOfUrl, localRoot, pathnameOf, privateToken, storageMode, storedExists } from "../../src/lib/media/privateStore";
+
+// Run from a terminal, the stores' tokens are not in the environment (the app
+// reads them from .env.local through Next): take them from there, so the
+// report reads the real store rather than quietly scanning the local folder.
+for (const file of [".env.local", ".env"]) {
+  let text = "";
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {
+    continue;
+  }
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^(BLOB_PRIVATE_READ_WRITE_TOKEN|BLOB_READ_WRITE_TOKEN)=(.*)$/.exec(line.trim());
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^"|"$/g, "");
+  }
+}
 
 const db = new PrismaClient();
 const asJson = process.argv.includes("--json");
