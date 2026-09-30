@@ -206,6 +206,8 @@ export type JdMoney = {
   plannedCost: number;
   crew: number;
   crewUnpaid: number;
+  /** Receipts on review — apart from the cost (stage A, 2026-09-30). */
+  expensesPending: number;
   expenses: number;
   /** Warehouse materials on the job at the items' last cost. */
   stock: number;
@@ -227,6 +229,11 @@ export type JdExpense = {
   vendor: string;
   meta: string;
   amount: number;
+  /** SUBMITTED | APPROVED | REJECTED | REIMBURSED (stage A); only APPROVED and REIMBURSED are in the money card. */
+  status: string;
+  paidBy: string;
+  /** Set when the row was edited after submission. */
+  editedAt: string | null;
   /** Who logged it, when a trail row names this expense (meta.expenseId); else null. */
   by: JdWho | null;
 };
@@ -284,7 +291,8 @@ export type JobDetailRecord = {
   expenses: JdExpense[];
   /** Where the job stands for the crew's buttons (lib/jobProgress, 2026-09-27):
    *  the day a press lands on, whether today is on the clock, days so far. */
-  progress: { day: number; startedToday: boolean; daysSoFar: number };
+  /** The day count (lib/jobProgress); since stage A also the day open today and the days that passed unclosed. */
+  progress: { day: number; startedToday: boolean; daysSoFar: number; openDay?: { id?: string; date: string; dayNumber: number; status: string; note?: string | null } | null; pendingDays?: { id?: string; date: string; dayNumber: number; status: string }[] };
   /** The company's file store is on: videos and big photos go straight to it. */
   blobEnabled: boolean;
   /** Who did what on this job, newest first, at most 40 rows — the org's

@@ -26,6 +26,7 @@ import { mediaOf } from "@/lib/jobMediaShared";
 import { isBlobEnabled } from "@/lib/sdk/blob";
 import { contractTotal } from "@/lib/contractTotal";
 import { crewTotals, jobMoney } from "@/lib/jobCosting";
+import { countsInTotals, isPending } from "@/lib/expenseTotals";
 import { isTradeId, pickList } from "@/lib/inventory";
 import { inventoryLinkOf, linkedTradeOf } from "@/lib/inventoryPick";
 import { stockItemsOf } from "@/lib/inventoryPolicy";
@@ -371,7 +372,9 @@ export async function loadJobDetail(
     collected: job.proposal ? job.proposal.payments.reduce((a, p) => a + p.amount, 0) : 0,
     lines: job.proposal?.lineItems ?? [],
     crewPay: job.assignments.map((a) => a.pay),
-    expenses: job.expenses.map((e) => e.amount),
+    // Only what is approved is a cost; a receipt on review stands apart (lib/expenseTotals).
+    expenses: job.expenses.filter((e) => countsInTotals(e.status)).map((e) => e.amount),
+    pendingExpenses: job.expenses.filter((e) => isPending(e.status)).map((e) => e.amount),
     stock: out.cost,
   });
   const money: JdMoney = {
@@ -382,6 +385,7 @@ export async function loadJobDetail(
     crew: m.crew,
     crewUnpaid: crewTotals(job.assignments.map((a) => ({ assignmentId: a.id, workerId: a.workerId, name: a.worker.displayName, pay: a.pay, paidAt: a.paidAt ? a.paidAt.toISOString() : null }))).unpaid,
     expenses: m.expenses,
+    expensesPending: m.expensesPending,
     stock: m.stock,
     cost: m.cost,
     costIsPlanned: m.costIsPlanned,
@@ -430,6 +434,9 @@ export async function loadJobDetail(
     vendor: e.category,
     meta: e.note?.trim() || `logged ${day(e.createdAt)}`,
     amount: e.amount,
+    status: e.status,
+    paidBy: e.paidBy,
+    editedAt: e.editedAt ? e.editedAt.toISOString() : null,
     by: trail.expenseBy.get(e.id) ?? null,
   }));
 

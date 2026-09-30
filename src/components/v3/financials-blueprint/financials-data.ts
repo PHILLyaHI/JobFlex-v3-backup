@@ -41,6 +41,10 @@ export type Rollup = {
   invoicesPending: number;
   invoicesOverdue: number;
   changeOrdersPending: number;
+  /** Stage A (2026-09-30): receipts on review, apart from expenses30d; what is owed to workers. */
+  expensesOnReview?: number;
+  expensesOnReviewCount?: number;
+  owedToWorkers?: number;
 };
 
 /**
@@ -77,6 +81,10 @@ export type Expense = {
   when: string;
   /** Blob (or data) URL of the attached receipt image, when there is one. */
   receiptUrl: string | null;
+  /** Stage A (2026-09-30): SUBMITTED | APPROVED | REJECTED | REIMBURSED — only APPROVED and REIMBURSED are in a total. */
+  status?: string;
+  paidBy?: string;
+  vendor?: string | null;
   /** Who logged it — the mark. Absent when the trail cannot say. */
   who?: WhoLike | null;
   whoKind?: WhoKind;

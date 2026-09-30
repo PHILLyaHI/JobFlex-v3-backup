@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { isBlobEnabled } from "@/lib/sdk/blob";
 import { authorizeJobMedia } from "@/lib/jobMedia";
-import { IMAGE_TYPES, MAX_PHOTO_BYTES, MAX_VIDEO_BYTES, VIDEO_TYPES, isVideoType } from "@/lib/jobMediaShared";
+import { IMAGE_TYPES, MAX_FILE_BYTES, VIDEO_TYPES } from "@/lib/jobMediaShared";
 
 export const runtime = "nodejs";
 
@@ -12,7 +12,7 @@ export const runtime = "nodejs";
 // itself, then records the result at /api/jobs/media. This route only ever
 // hands out a token for a job the caller may add to — a worker's token
 // (the portal) or the session (the dashboard), in `clientPayload` — and
-// only for a picture or a video of a sane size, under the job's own folder.
+// only for a picture or a video up to 100 MB, under the job's own folder.
 export async function POST(req: Request) {
   if (!isBlobEnabled()) return NextResponse.json({ error: "File storage is not set up on this server." }, { status: 503 });
   let body: HandleUploadBody;
@@ -36,10 +36,11 @@ export async function POST(req: Request) {
         const caller = await authorizeJobMedia(payload.jobId, payload.token ?? null);
         if (!caller) throw new Error("Not authorized");
         if (!pathname.startsWith(`jobs/${payload.jobId}/`)) throw new Error("Wrong folder");
-        const video = isVideoType(payload.contentType);
+        // Any file as it is, photo or video, up to 100 MB (owner, 2026-09-30) —
+        // the store enforces it on the upload itself.
         return {
           allowedContentTypes: [...IMAGE_TYPES, ...VIDEO_TYPES],
-          maximumSizeInBytes: video ? MAX_VIDEO_BYTES : MAX_PHOTO_BYTES,
+          maximumSizeInBytes: MAX_FILE_BYTES,
           addRandomSuffix: true,
           tokenPayload: JSON.stringify({ jobId: payload.jobId, userId: caller.userId }),
         };

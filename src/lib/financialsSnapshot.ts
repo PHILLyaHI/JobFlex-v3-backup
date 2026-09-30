@@ -133,8 +133,11 @@ export async function getFinancialsSnapshot(
     category: e.category,
     amount: e.amount,
     note: e.note ?? "",
-    when: plate(e.createdAt),
+    when: plate(e.spentAt ?? e.createdAt),
     receiptUrl: e.receiptUrl,
+    status: e.status,
+    paidBy: e.paidBy,
+    vendor: e.vendor,
   }));
 
   const orders: ChangeOrder[] = orderRows.map((c) => ({

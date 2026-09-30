@@ -37,8 +37,10 @@ export type JobCostingInput = {
   lines: readonly CostingLine[];
   /** Every worker's pay on this job. */
   crewPay: readonly number[];
-  /** Expenses booked against the job. */
+  /** Expenses booked against the job — the APPROVED and REIMBURSED ones (lib/expenseTotals). */
   expenses: readonly number[];
+  /** Receipts on review (SUBMITTED): shown apart, never in the cost. */
+  pendingExpenses?: readonly number[];
   /** Materials taken from the warehouse for the job, at the items' last cost (2026-09-20). */
   stock?: number;
 };
@@ -51,6 +53,8 @@ export type JobMoney = {
   planned: { material: number; labor: number; total: number };
   crew: number;
   expenses: number;
+  /** Receipts on review — apart from the cost. */
+  expensesPending: number;
   /** Warehouse materials on the job, at cost. */
   stock: number;
   /** What the job has cost: crew + expenses + stock, or the planned cost until one is booked. */
@@ -78,6 +82,7 @@ export function jobMoney(input: JobCostingInput): JobMoney {
   const plannedTotal = money(material + labor);
   const crew = money(sum(input.crewPay.map((p) => Math.max(0, p))));
   const expenses = money(sum(input.expenses.map((e) => Math.max(0, e))));
+  const expensesPending = money(sum((input.pendingExpenses ?? []).map((e) => Math.max(0, e))));
   const stock = money(Math.max(0, input.stock ?? 0));
   const booked = money(crew + expenses + stock);
   const costIsPlanned = booked <= 0 && plannedTotal > 0;
@@ -91,6 +96,7 @@ export function jobMoney(input: JobCostingInput): JobMoney {
     planned: { material, labor, total: plannedTotal },
     crew,
     expenses,
+    expensesPending,
     stock,
     cost,
     costIsPlanned,

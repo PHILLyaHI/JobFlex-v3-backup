@@ -38,7 +38,7 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
     orderBy: { updatedAt: "desc" },
     include: {
       client: { select: { name: true } },
-      jobs: { select: { status: true, updatedAt: true, expenses: { select: { amount: true } } } },
+      jobs: { select: { status: true, updatedAt: true, expenses: { where: { status: { in: ["APPROVED", "REIMBURSED"] } }, select: { amount: true } } } },
       proposals: {
         where: { status: { not: "ARCHIVED" } },
         select: { status: true, total: true, updatedAt: true, changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } } },

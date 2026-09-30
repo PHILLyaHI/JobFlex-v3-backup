@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { touchWorkerActivity } from "@/lib/workerActivity";
-import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
+import { createJobExpense } from "@/lib/jobExpenses";
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
@@ -19,6 +19,11 @@ export async function POST(req: Request) {
     amount?: number;
     category?: string;
     note?: string | null;
+    vendor?: string | null;
+    /** Who paid: the worker (to be reimbursed, the default) or the company's card. */
+    paidBy?: "WORKER" | "COMPANY";
+    /** When the money was spent (ISO date); today when empty. */
+    spentAt?: string | null;
   };
   if (!body.token || !body.jobId || !body.dataUrl) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
@@ -59,34 +64,24 @@ export async function POST(req: Request) {
     receiptUrl = res.url;
   }
 
-  const rawAmount = Number(body.amount);
-  // Non-negative, finite, and capped: a worker token must not be able to post
-  // a -$99,999 "expense" that flips the org's margin figures.
-  const amount = Number.isFinite(rawAmount) ? Math.min(Math.max(rawAmount, 0), 1_000_000) : 0;
-  const category = (body.category?.trim() || "Materials").slice(0, 60);
-
-  const expense = await db.jobExpense.create({
-    data: {
+  // The one rule (lib/jobExpenses, stage A 2026-09-30): a worker's receipt is
+  // SUBMITTED — on review, in no total — until the office approves it. The
+  // amount is clamped there (never negative, never absurd).
+  const spentAt = body.spentAt ? new Date(body.spentAt) : null;
+  const expense = await createJobExpense(
+    { organizationId: worker.organizationId, userId: worker.userId, role: "WORKER_TOKEN", workerId: worker.id, name: worker.displayName },
+    {
       jobId: body.jobId,
-      category,
-      amount,
-      note: body.note?.trim().slice(0, 2000) || null,
+      category: body.category ?? "Materials",
+      amount: Number(body.amount),
+      note: body.note,
       receiptUrl,
+      vendor: body.vendor,
+      paidBy: body.paidBy === "COMPANY" ? "COMPANY" : "WORKER",
+      spentAt: spentAt && !Number.isNaN(spentAt.getTime()) ? spentAt : null,
+      via: "worker-portal",
     },
-  });
+  );
   await touchWorkerActivity(worker.id);
-  const job = await db.job.findUnique({
-    where: { id: body.jobId },
-    select: { title: true, proposalId: true, clientId: true },
-  });
-  await logActivity({
-    organizationId: worker.organizationId,
-    actorId: worker.userId,
-    kind: TRAIL_KINDS.EXPENSE,
-    summary: `Added a $${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })} receipt to ${job?.title ?? "a job"} — ${category}`,
-    proposalId: job?.proposalId,
-    clientId: job?.clientId,
-    meta: { jobId: body.jobId, expenseId: expense.id, amount, category, via: "worker-portal" },
-  });
-  return NextResponse.json({ id: expense.id, url: receiptUrl });
+  return NextResponse.json({ id: expense.id, url: receiptUrl, status: expense.status });
 }

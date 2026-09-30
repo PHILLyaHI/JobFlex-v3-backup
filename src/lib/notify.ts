@@ -1404,6 +1404,8 @@ export async function notifyPaymentIssue(input: {
  * pressed the button. The bell already has the STARTED / COMPLETED row.
  */
 export async function notifyJobProgress(jobId: string, actor: { userId: string; name: string }, what: ProgressWhat, day: number) {
+  // A closed day (stage A, 2026-09-30) is the trail's; its text comes with the texting stage.
+  if (what === "closed") return { skipped: true as const };
   const job = await db.job.findUnique({ where: { id: jobId }, select: { id: true, title: true, organizationId: true, proposal: { select: { ownerId: true } } } });
   if (!job) return { skipped: true as const };
   const appUrl = await appBaseUrl();

@@ -1603,11 +1603,22 @@ export function initFinancialsContent(
 
   /** The parts of renderExpenses that are NOT the row markup. */
   function syncExpenseTotals() {
-    const total = expensesData.reduce(function (a, e) {
+    // Stage A (2026-09-30): only APPROVED / REIMBURSED rows are in the total;
+    // a receipt on review (SUBMITTED) is its own figure beside it.
+    const counted = expensesData.filter(function (e) {
+      return !e.status || e.status === "APPROVED" || e.status === "REIMBURSED";
+    });
+    const review = expensesData.filter(function (e) {
+      return e.status === "SUBMITTED";
+    });
+    const total = counted.reduce(function (a, e) {
+      return a + e.amount;
+    }, 0);
+    const reviewTotal = review.reduce(function (a, e) {
       return a + e.amount;
     }, 0);
     const totalEl = $("#expTotal");
-    if (totalEl) totalEl.textContent = money(total) + " · " + expensesData.length + " items";
+    if (totalEl) totalEl.textContent = money(total) + " · " + counted.length + " items" + (review.length ? " · " + money(reviewTotal) + " on review (" + review.length + ")" : "");
     const empty = $("#expEmpty");
     if (empty) empty.classList.toggle("is-hidden", expensesData.length !== 0);
   }

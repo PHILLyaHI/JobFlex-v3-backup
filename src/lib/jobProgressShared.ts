@@ -6,7 +6,8 @@
 // server action): a job's days on site are the distinct local days a crew
 // pressed Start or Back on site, read off the STARTED rows of the trail.
 
-export type ProgressWhat = "started" | "continued" | "completed";
+/** A press on the crew's buttons; "closed" (stage A, 2026-09-30) closes a day on site. */
+export type ProgressWhat = "started" | "continued" | "completed" | "closed";
 
 export interface ProgressRow {
   kind: string;
@@ -47,6 +48,7 @@ export function progressSummary(worker: string | null, job: string, what: Progre
   const who = worker ?? "The crew";
   if (what === "started") return `${who} started ${job}`;
   if (what === "continued") return `${who} is back on ${job} — day ${day}`;
+  if (what === "closed") return `${who} closed day ${day} of ${job}`;
   return day > 1 ? `${who} completed ${job} after ${day} days` : `${who} completed ${job}`;
 }
 

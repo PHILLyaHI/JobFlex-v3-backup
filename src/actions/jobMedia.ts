@@ -7,10 +7,12 @@ import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
-import { authorizeJobMedia, recordJobMedia } from "@/lib/jobMedia";
+import { authorizeJobMedia, deleteJobMediaFor, editJobMediaCaption, recordJobMedia } from "@/lib/jobMedia";
+import { createJobExpense, deleteJobExpense as deleteExpenseFor } from "@/lib/jobExpenses";
 
-const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-
+// The expense pair here is the older twin of src/actions/expenses.ts (no
+// callers); both now go through lib/jobExpenses so nothing bypasses the
+// statuses (stage A, 2026-09-30).
 const expenseInput = z.object({
   category: z.string().min(1),
   amount: z.number().positive(),
@@ -18,48 +20,16 @@ const expenseInput = z.object({
 });
 
 export async function addJobExpense(jobId: string, raw: unknown) {
-  const { organizationId, user } = await requireManager();
+  const { organizationId, user, role } = await requireManager();
   const data = expenseInput.parse(raw);
-  const job = await db.job.findUnique({ where: { id: jobId } });
-  if (!job || job.organizationId !== organizationId) throw new Error("Not found");
-  const exp = await db.jobExpense.create({
-    data: {
-      jobId,
-      category: data.category,
-      amount: data.amount,
-      note: data.note ?? null,
-    },
-  });
+  await createJobExpense({ organizationId, userId: user.id, role }, { jobId, ...data, via: "dashboard" });
   revalidatePath(`/dashboard/jobs/${jobId}`);
-  await logActivity({
-    organizationId,
-    actorId: user.id,
-    kind: TRAIL_KINDS.EXPENSE,
-    summary: `Added a ${money(data.amount)} expense to ${job.title} — ${data.category}`,
-    proposalId: job.proposalId,
-    clientId: job.clientId,
-    meta: { jobId, expenseId: exp.id, amount: data.amount, category: data.category },
-  });
 }
 
 export async function deleteJobExpense(expenseId: string) {
-  const { organizationId, user } = await requireManager();
-  const ex = await db.jobExpense.findUnique({
-    where: { id: expenseId },
-    include: { job: true },
-  });
-  if (!ex || ex.job.organizationId !== organizationId) throw new Error("Not found");
-  await db.jobExpense.delete({ where: { id: expenseId } });
-  revalidatePath(`/dashboard/jobs/${ex.jobId}`);
-  await logActivity({
-    organizationId,
-    actorId: user.id,
-    kind: TRAIL_KINDS.EXPENSE,
-    summary: `Deleted a ${money(ex.amount)} expense from ${ex.job.title} — ${ex.category}`,
-    proposalId: ex.job.proposalId,
-    clientId: ex.job.clientId,
-    meta: { jobId: ex.jobId, expenseId, amount: ex.amount, category: ex.category, deleted: true },
-  });
+  const { organizationId, user, role } = await requireManager();
+  const { jobId } = await deleteExpenseFor({ organizationId, userId: user.id, role }, expenseId);
+  revalidatePath(`/dashboard/jobs/${jobId}`);
 }
 
 /**
@@ -145,24 +115,19 @@ export async function createJobPhoto(jobId: string, raw: unknown) {
   });
 }
 
+/** Delete a file: the office any, a worker their own (stage A, 2026-09-30). */
 export async function deleteJobPhoto(photoId: string) {
-  const { organizationId, user } = await requireManager();
-  const p = await db.jobPhoto.findUnique({
-    where: { id: photoId },
-    include: { job: true },
-  });
-  if (!p || p.job.organizationId !== organizationId) throw new Error("Not found");
-  await db.jobPhoto.delete({ where: { id: photoId } });
-  revalidatePath(`/dashboard/jobs/${p.jobId}`);
-  await logActivity({
-    organizationId,
-    actorId: user.id,
-    kind: TRAIL_KINDS.PHOTO,
-    summary: `Deleted a ${p.kind.toLowerCase()} photo from ${p.job.title}`,
-    proposalId: p.job.proposalId,
-    clientId: p.job.clientId,
-    meta: { jobId: p.jobId, photoId, kind: p.kind, deleted: true },
-  });
+  const { organizationId, user, role } = await requireOrg();
+  const { jobId } = await deleteJobMediaFor({ organizationId, userId: user.id, role }, photoId);
+  revalidatePath(`/dashboard/jobs/${jobId}`);
+}
+
+/** A new caption on a file: the office any, a worker their own; leaves the "edited" mark. */
+export async function editJobPhotoCaption(photoId: string, caption: string | null) {
+  const { organizationId, user, role } = await requireOrg();
+  const row = await editJobMediaCaption({ organizationId, userId: user.id, role }, photoId, caption);
+  revalidatePath(`/dashboard/jobs/${row.jobId}`);
+  return { id: row.id, caption: row.caption, editedAt: row.editedAt?.toISOString() ?? null };
 }
 
 /**

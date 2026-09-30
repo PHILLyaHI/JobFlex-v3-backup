@@ -45,7 +45,7 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
         include: {
           client: { select: { name: true } },
           // What the job has spent — part of the project's spend (2026-09-18).
-          expenses: { select: { id: true, category: true, amount: true, note: true, createdAt: true } },
+          expenses: { where: { status: { in: ["APPROVED", "REIMBURSED"] } }, select: { id: true, category: true, amount: true, note: true, createdAt: true } },
           // The contract behind the job: original → approved changes → current.
           proposal: { select: { total: true, changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } } } },
         },

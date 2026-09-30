@@ -10,7 +10,7 @@
 // sentence, because a JSON body cannot carry one.
 
 import { upload } from "@vercel/blob/client";
-import { MAX_INLINE_PHOTO_BYTES, MAX_VIDEO_BYTES, PHOTO_LONG_SIDE, blobPathFor, fileSize, isImageType, isVideoType, type MediaKind } from "@/lib/jobMediaShared";
+import { MAX_INLINE_PHOTO_BYTES, MAX_FILE_BYTES, PHOTO_LONG_SIDE, blobPathFor, fileSize, isImageType, isVideoType, type MediaKind } from "@/lib/jobMediaShared";
 
 export type UploadDoor = { token: string } | { session: true };
 
@@ -74,7 +74,7 @@ export async function uploadJobMedia(opts: {
   const video = isVideoType(file.type) || /\.(mp4|mov|m4v|webm|3gp)$/i.test(file.name);
   if (!video && !isImageType(file.type)) throw new MediaUploadError(`${file.name} is not a photo or a video.`);
   if (video && !blobEnabled) throw new MediaUploadError("Videos need the company's file storage, which is not switched on yet — the office can turn it on. Photos still go through.");
-  if (video && file.size > MAX_VIDEO_BYTES) throw new MediaUploadError(`${file.name} is ${fileSize(file.size)} — videos up to ${fileSize(MAX_VIDEO_BYTES)}.`);
+  if (file.size > MAX_FILE_BYTES) throw new MediaUploadError(`${file.name} is ${fileSize(file.size)} — files up to ${fileSize(MAX_FILE_BYTES)}.`);
 
   const body = video ? { blob: file as Blob, type: file.type || "video/mp4", name: file.name } : await shrinkPhoto(file);
   const token = "token" in door ? door.token : null;

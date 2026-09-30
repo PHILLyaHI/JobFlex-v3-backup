@@ -112,6 +112,7 @@ model Organization {
   templates            ProposalTemplate[]
   jobs                 Job[]
   jobEvents            JobEvent[]
+  workDays             WorkDay[]
   workerProfiles       WorkerProfile[]
   payments             Payment[]
   invoices             Invoice[]
@@ -1002,6 +1003,7 @@ model Job {
   assignments    JobAssignment[]
   photos         JobPhoto[]
   expenses       JobExpense[]
+  workDays       WorkDay[]
   messages       JobMessage[]
   conversation   Conversation?
   changeOrders   ChangeOrder[]
@@ -1087,6 +1089,38 @@ model JobAssignment {
   @@index([workerId, assignedAt])
 }
 
+// A DAY ON SITE (2026-09-30, stage A of crew days / media / worker expenses).
+// One row per job and local date (the organization's timezone), opened by a
+// Start or a Back-on-site press — or by the office moving the status — and
+// closed by the crew with a note or at least one photo / video of the day.
+// A day left open past its date reads PENDING ("passed, needs closing") and
+// can be closed later. Several crew on one job share the one day.
+// Status: OPEN | CLOSED | PENDING (src/lib/prismaEnums.ts WorkDayStatus).
+model WorkDay {
+  id             String    @id @default(cuid())
+  jobId          String
+  organizationId String
+  // "2026-09-30" in the organization's timezone.
+  date           String
+  dayNumber      Int
+  status         String    @default("OPEN")
+  openedById     String?
+  closedById     String?
+  closedAt       DateTime?
+  note           String?
+  // worker | office — who opened it.
+  source         String    @default("worker")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  photos       JobPhoto[]
+
+  @@unique([jobId, date])
+  @@index([organizationId, status])
+}
+
 model JobPhoto {
   id        String   @id @default(cuid())
   jobId     String
@@ -1095,8 +1129,21 @@ model JobPhoto {
   caption   String?
   analysis  String? // JSON-encoded vision output
   createdAt DateTime @default(now())
+  // Stage A (2026-09-30): the columns behind the crew's gallery. Older rows
+  // leave them null and are read as before (the analysis JSON marks a video).
+  uploadedById String?
+  workDayId    String?
+  // photo | video
+  media        String?
+  contentType  String?
+  bytes        Int?
+  // Set when the crew edits the caption after upload ("edited" mark).
+  editedAt     DateTime?
 
-  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job     Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  workDay WorkDay? @relation(fields: [workDayId], references: [id], onDelete: SetNull)
+
+  @@index([workDayId])
 }
 
 model JobExpense {
@@ -1108,8 +1155,28 @@ model JobExpense {
   receiptUrl String?
   ocrJson    String? // JSON-encoded OCR output
   createdAt  DateTime @default(now())
+  // Stage A (2026-09-30): a worker's receipt is SUBMITTED and counts nowhere
+  // until the owner or a manager APPROVES it (or REJECTS it with a reason);
+  // REIMBURSED marks the money handed back to a worker who paid from their
+  // own pocket (paidBy WORKER). Rows from before the change read APPROVED
+  // and COMPANY, so no total moved. (src/lib/prismaEnums.ts ExpenseStatus.)
+  organizationId String?
+  submittedById  String?
+  paidBy         String    @default("COMPANY")
+  status         String    @default("APPROVED")
+  rejectReason   String?
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reimbursedAt   DateTime?
+  vendor         String?
+  // When the money was spent; the totals go by it (createdAt when null).
+  spentAt        DateTime?
+  // Set when the row is edited after it was submitted ("edited" mark).
+  editedAt       DateTime?
 
   job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
 }
 
 model JobMessage {

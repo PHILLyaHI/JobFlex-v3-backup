@@ -3,6 +3,7 @@ import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 import { revalidatePath } from "next/cache";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { createJobExpense } from "@/lib/jobExpenses";
 import { friendlyAIError, isOpenAIEnabled } from "@/lib/sdk/openai";
 import { runVisionJson } from "@/lib/sdk/openaiVision";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
@@ -122,8 +123,8 @@ export async function saveReceiptExpense(input: {
   note: string | null;
   ocrJson: OcrResult | null;
 }) {
-  const { organizationId } = await requireManager();
-await enforceRateLimit(`vision:${organizationId}`, 60, HOUR, "receipt scans");
+  const { organizationId, user, role } = await requireManager();
+  await enforceRateLimit(`vision:${organizationId}`, 60, HOUR, "receipt scans");
   const job = await db.job.findUnique({ where: { id: input.jobId } });
   if (!job || job.organizationId !== organizationId) throw new Error("Not found");
 
@@ -145,18 +146,22 @@ await enforceRateLimit(`vision:${organizationId}`, 60, HOUR, "receipt scans");
   // The id and the resolved receipt URL come back so a caller that keeps its
   // own on-screen copy of the book can append the REAL row — one that its
   // delete button can then address — instead of a placeholder.
-  const created = await db.jobExpense.create({
-    data: {
+  // The one rule (lib/jobExpenses, stage A 2026-09-30): the office's row is
+  // APPROVED at once, with the vendor in its own column and the trail row
+  // that names who booked it.
+  const created = await createJobExpense(
+    { organizationId, userId: user.id, role },
+    {
       jobId: input.jobId,
       category: input.category,
       amount: input.total,
-      note:
-        input.note ||
-        (input.vendor ? `Vendor: ${input.vendor}` : null),
+      note: input.note || (input.vendor ? `Vendor: ${input.vendor}` : null),
       receiptUrl,
       ocrJson: input.ocrJson ? JSON.stringify(input.ocrJson) : null,
+      vendor: input.vendor || null,
+      via: "dashboard",
     },
-  });
+  );
   revalidatePath(`/dashboard/jobs/${input.jobId}`);
   revalidatePath("/dashboard/financials");
   revalidatePath("/dashboard/financials/expenses");

@@ -14,7 +14,7 @@ export async function POST(
   ctx: { params: Promise<{ jobId: string }> },
 ) {
   const { jobId } = await ctx.params;
-  const body = (await req.json()) as { token?: string; status?: string };
+  const body = (await req.json()) as { token?: string; status?: string; note?: string | null; date?: string | null };
   if (!body.token || !body.status) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
@@ -35,7 +35,9 @@ export async function POST(
   });
   if (!assignment) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const WHAT = { IN_PROGRESS: "started", CONTINUE: "continued", COMPLETED: "completed" } as const;
+  // CLOSE_DAY (stage A, 2026-09-30): close today's day on site, or a past
+  // day by its date, with a note or a file of the day.
+  const WHAT = { IN_PROGRESS: "started", CONTINUE: "continued", COMPLETED: "completed", CLOSE_DAY: "closed" } as const;
   const what = WHAT[body.status as keyof typeof WHAT];
   if (!what) return NextResponse.json({ error: "Invalid status" }, { status: 400 });
 
@@ -45,11 +47,14 @@ export async function POST(
     actor: { userId: worker.userId, name: worker.displayName },
     what,
     via: "worker-portal",
+    source: "worker",
+    note: body.note ?? null,
+    date: body.date ?? null,
   });
   if (!r.ok) {
     const status = r.code === "not-found" ? 404 : 409;
     return NextResponse.json({ error: r.error }, { status });
   }
   await touchWorkerActivity(worker.id);
-  return NextResponse.json({ ok: true, status: r.status, day: r.day, what: r.what });
+  return NextResponse.json({ ok: true, status: r.status, day: r.day, what: r.what, workDayId: r.workDayId ?? null });
 }

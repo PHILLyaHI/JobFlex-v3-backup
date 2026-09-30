@@ -159,6 +159,33 @@ export const JobStatus = {
 } as const;
 export type JobStatus = (typeof JobStatus)[keyof typeof JobStatus];
 
+// A day on site (stage A, 2026-09-30): OPEN while the crew is on it, CLOSED
+// by them with a note or a photo, PENDING once its date has passed unclosed.
+export const WorkDayStatus = {
+  OPEN: "OPEN",
+  CLOSED: "CLOSED",
+  PENDING: "PENDING",
+} as const;
+export type WorkDayStatus = (typeof WorkDayStatus)[keyof typeof WorkDayStatus];
+
+// A job expense (stage A, 2026-09-30): a worker's receipt is SUBMITTED and
+// counts nowhere until APPROVED; REJECTED carries a reason; REIMBURSED marks
+// the money handed back to a worker who paid themselves. Office-entered rows
+// are APPROVED at once. Only APPROVED and REIMBURSED are in any total.
+export const ExpenseStatus = {
+  SUBMITTED: "SUBMITTED",
+  APPROVED: "APPROVED",
+  REJECTED: "REJECTED",
+  REIMBURSED: "REIMBURSED",
+} as const;
+export type ExpenseStatus = (typeof ExpenseStatus)[keyof typeof ExpenseStatus];
+
+export const ExpensePaidBy = {
+  WORKER: "WORKER",
+  COMPANY: "COMPANY",
+} as const;
+export type ExpensePaidBy = (typeof ExpensePaidBy)[keyof typeof ExpensePaidBy];
+
 export const AssignmentStatus = {
   PENDING: "PENDING",
   ACCEPTED: "ACCEPTED",

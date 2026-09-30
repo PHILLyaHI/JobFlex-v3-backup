@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 import { isCronAuthorized } from "@/lib/cronAuth";
+import { sweepPendingDaysEverywhere } from "@/lib/workDays";
 
 export const runtime = "nodejs";
 
@@ -51,8 +52,11 @@ export async function GET(req: Request) {
     where: { key: { startsWith: "meta:pending:" }, updatedAt: { lt: new Date(Date.now() - 15 * 60_000) } },
   });
 
+  // ── 3) Days on site left open past their date read PENDING (stage A) ──────
+  const pendingDays = await sweepPendingDaysEverywhere();
+
   console.info(
-    `[cron/daily-cleanup] revoked ${revoked} inactive worker token(s); pruned ${pruned.count} price-cache row(s).`,
+    `[cron/daily-cleanup] revoked ${revoked} inactive worker token(s); pruned ${pruned.count} price-cache row(s); ${pendingDays} day(s) on site now pending.`,
   );
-  return NextResponse.json({ ok: true, revokedWorkers: revoked, prunedCache: pruned.count, prunedMetaAuthorizations: pendingMeta.count });
+  return NextResponse.json({ ok: true, revokedWorkers: revoked, prunedCache: pruned.count, prunedMetaAuthorizations: pendingMeta.count, pendingDays });
 }

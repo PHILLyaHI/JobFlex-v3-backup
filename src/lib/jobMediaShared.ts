@@ -9,14 +9,19 @@
 export type MediaKind = "BEFORE" | "PROGRESS" | "AFTER";
 export const MEDIA_KINDS: readonly MediaKind[] = ["BEFORE", "PROGRESS", "AFTER"];
 
-export const IMAGE_TYPES: readonly string[] = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"];
+// No HEIC / HEIF on purpose (stage A, 2026-09-30): iOS Safari hands the
+// browser a JPEG for a HEIC photo unless the picker asks for HEIC by name.
+export const IMAGE_TYPES: readonly string[] = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 export const VIDEO_TYPES: readonly string[] = ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v", "video/3gpp"];
-/** What the file pickers offer. */
-export const MEDIA_ACCEPT = "image/*,video/mp4,video/quicktime,video/webm,video/x-m4v,video/3gpp";
+/** What the file pickers offer — the types by name, never image/* (HEIC). */
+export const MEDIA_ACCEPT = [...IMAGE_TYPES, ...VIDEO_TYPES].join(",");
+export const IMAGE_ACCEPT = IMAGE_TYPES.join(",");
 
-/** Through the file store (client upload): a photo after shrinking, a video whole. */
-export const MAX_PHOTO_BYTES = 25 * 1024 * 1024;
-export const MAX_VIDEO_BYTES = 300 * 1024 * 1024;
+/** Any file, photo or video, as it is: 100 MB (owner, 2026-09-30). Checked on
+ *  the phone before the upload and by the store through the upload token. */
+export const MAX_FILE_BYTES = 100 * 1024 * 1024;
+export const MAX_PHOTO_BYTES = MAX_FILE_BYTES;
+export const MAX_VIDEO_BYTES = MAX_FILE_BYTES;
 /** Without the store a photo travels as a data URL in a JSON body (Vercel's 4.5 MB request cap). */
 export const MAX_INLINE_PHOTO_BYTES = 4 * 1024 * 1024;
 /** Photos are shrunk in the browser to this long side before they leave the phone. */
@@ -38,9 +43,13 @@ export interface MediaMeta {
 
 const VIDEO_EXT = /\.(mp4|mov|m4v|webm|3gp)(\?|$)/i;
 
-/** What a JobPhoto row is, from its `analysis` JSON (a video's marker) or,
- *  failing that, the URL's extension. Anything unreadable is a photo. */
-export function mediaOf(row: { url: string; analysis?: string | null }): MediaMeta {
+/** What a JobPhoto row is: its `media` column (stage A), else its `analysis`
+ *  JSON (the older video marker), else the URL's extension. Anything
+ *  unreadable is a photo. */
+export function mediaOf(row: { url: string; analysis?: string | null; media?: string | null; contentType?: string | null; bytes?: number | null }): MediaMeta {
+  if (row.media === "video" || row.media === "photo") {
+    return { media: row.media, contentType: row.contentType ?? undefined, bytes: typeof row.bytes === "number" ? row.bytes : undefined };
+  }
   const raw = row.analysis;
   if (raw) {
     try {

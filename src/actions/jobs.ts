@@ -200,11 +200,22 @@ export async function updateJob(id: string, raw: Partial<z.infer<typeof jobInput
   const existing = await db.job.findUnique({ where: { id } });
   if (!existing || existing.organizationId !== organizationId) throw new Error("Not found");
 
+  // The office moving the status to IN_PROGRESS or COMPLETED goes through the
+  // crew's own rule (stage A, 2026-09-30): the day on site counts, the
+  // STARTED / COMPLETED row is written — and nobody is texted (silent).
+  const wantsProgress: "started" | "completed" | null =
+    raw.status === "IN_PROGRESS" && existing.status !== "IN_PROGRESS" ? "started" : raw.status === "COMPLETED" && existing.status !== "COMPLETED" ? "completed" : null;
+  let progressed = false;
+  if (wantsProgress) {
+    const r = await recordJobProgress({ organizationId, jobId: id, actor: { userId: user.id, name: await actorName(user.id) }, what: wantsProgress, via: "dashboard", source: "office", silent: true });
+    progressed = r.ok;
+  }
+
   await db.job.update({
     where: { id },
     data: {
       title: raw.title ?? undefined,
-      status: raw.status ?? undefined,
+      status: progressed ? undefined : raw.status ?? undefined,
       notes: raw.notes === null ? null : raw.notes ?? undefined,
       startsAt:
         raw.startsAt === null ? null : raw.startsAt ? toDate(raw.startsAt) ?? undefined : undefined,
@@ -213,8 +224,9 @@ export async function updateJob(id: string, raw: Partial<z.infer<typeof jobInput
     },
   });
 
-  // Auto-create review request when the job transitions to COMPLETED
-  if (raw.status === "COMPLETED" && existing.status !== "COMPLETED") {
+  // Auto-create review request when the job transitions to COMPLETED — the
+  // crew's rule already did all of this when it took the move above.
+  if (raw.status === "COMPLETED" && existing.status !== "COMPLETED" && !progressed) {
     // The proposal follows its job across the finish line: an ACCEPTED
     // proposal whose work is done now reads COMPLETED everywhere (proposals
     // list, calendar link picker) instead of sitting on "Accepted" forever.
@@ -251,7 +263,7 @@ export async function updateJob(id: string, raw: Partial<z.infer<typeof jobInput
     // status, a moved date, edited notes.
     const changes: string[] = [];
     if (raw.title !== undefined && raw.title !== existing.title) changes.push(`renamed to ${raw.title}`);
-    if (raw.status !== undefined && raw.status !== existing.status)
+    if (raw.status !== undefined && raw.status !== existing.status && !progressed)
       changes.push(`status ${raw.status.replace("_", " ").toLowerCase()}`);
     const newStart = raw.startsAt === undefined ? undefined : toDate(raw.startsAt);
     if (newStart !== undefined && (newStart?.getTime() ?? null) !== (existing.startsAt?.getTime() ?? null))
@@ -306,11 +318,35 @@ export async function setJobProgress(id: string, status: "IN_PROGRESS" | "COMPLE
     actor: { userId: user.id, name: await actorName(user.id) },
     what: status === "COMPLETED" ? "completed" : "started",
     via: "dashboard",
+    source: isWorkerRole(role) ? "worker" : "office",
   });
   if (!r.ok) throw new Error(r.error);
   revalidatePath(`/dashboard/jobs/${id}`);
   revalidatePath("/dashboard/jobs");
   return { ok: true as const, day: r.day, what: r.what };
+}
+
+/**
+ * "Close the day" (stage A, 2026-09-30): the crew closes today's day on site
+ * — or a past day that stayed open (PENDING), by its date — with a note or
+ * at least one photo / video of the day. One day per job: any crew member
+ * on it closes it for all; the office may too. Crew-gated like the rest.
+ */
+export async function closeJobDay(id: string, input: { note?: string | null; date?: string | null } = {}) {
+  const { organizationId, user, role } = await requireOrg();
+  const existing = await db.job.findUnique({ where: { id }, select: { organizationId: true } });
+  if (!existing || existing.organizationId !== organizationId) throw new Error("Not found");
+  if (isWorkerRole(role)) {
+    const assigned = await db.jobAssignment.findFirst({
+      where: { jobId: id, worker: { userId: user.id }, status: { not: "DECLINED" } },
+      select: { id: true },
+    });
+    if (!assigned) throw new Error("You can only update jobs assigned to you");
+  }
+  const r = await recordJobProgress({ organizationId, jobId: id, actor: { userId: user.id, name: await actorName(user.id) }, what: "closed", via: "dashboard", source: isWorkerRole(role) ? "worker" : "office", note: input.note ?? null, date: input.date ?? null });
+  if (!r.ok) throw new Error(r.error);
+  revalidatePath(`/dashboard/jobs/${id}`);
+  return { ok: true as const, day: r.day, workDayId: r.workDayId ?? null };
 }
 
 /**
@@ -329,7 +365,7 @@ export async function continueJobDay(id: string) {
     });
     if (!assigned) throw new Error("You can only update jobs assigned to you");
   }
-  const r = await recordJobProgress({ organizationId, jobId: id, actor: { userId: user.id, name: await actorName(user.id) }, what: "continued", via: "dashboard" });
+  const r = await recordJobProgress({ organizationId, jobId: id, actor: { userId: user.id, name: await actorName(user.id) }, what: "continued", via: "dashboard", source: isWorkerRole(role) ? "worker" : "office" });
   if (!r.ok) throw new Error(r.error);
   revalidatePath(`/dashboard/jobs/${id}`);
   return { ok: true as const, day: r.day };
