@@ -35,7 +35,7 @@ import {
   type BookRow,
 } from "@/lib/priceBook";
 import { InventoryStock } from "./inventory-stock";
-import { cx, Empty, Picker, Sheet, useHandheld } from "./inventory-shared";
+import { cx, Empty, Filters, Sheet, useHandheld } from "./inventory-shared";
 
 const TAB_LABEL: Record<InventoryTab, string> = { book: "Price book", stock: "Stock", services: "Service menu" };
 const GROUP_ORDER: Record<TradeId, string[]> = {
@@ -83,6 +83,7 @@ export function InventoryContent({ data, canEditBook, canWriteStock }: Inventory
         </div>
       </div>
 
+      <div className={cx("head2")}>
       <div className={cx("toolbar")}>
         <nav className={cx("trade")} aria-label="Trade">
           {data.trades.map((t) => (
@@ -97,14 +98,16 @@ export function InventoryContent({ data, canEditBook, canWriteStock }: Inventory
         </div>
       </div>
 
-      <nav className="ptabs" aria-label="Inventory sections">
+      {/* The sections: the same joined control as the trade switch above, a mono counter after the label. */}
+      <nav className={cx("trade")} aria-label="Inventory sections">
         {tabs.map((t) => (
-          <Link key={t} href={hrefFor(trade, t)} className={cx("ptab", t === tab && "active")} aria-current={t === tab ? "page" : undefined} id={t === "book" ? "book" : undefined}>
+          <Link key={t} href={hrefFor(trade, t)} className={cx("trade-btn", t === tab && "on")} aria-current={t === tab ? "page" : undefined} id={t === "book" ? "book" : undefined}>
             {TAB_LABEL[t]}
-            {counts[t] !== undefined && (t !== "stock" || counts[t]! > 0) && <span className="ptab-count">{counts[t]}</span>}
+            {counts[t] !== undefined && (t !== "stock" || counts[t]! > 0) && <b>{counts[t]}</b>}
           </Link>
         ))}
       </nav>
+      </div>
 
       {tab === "book" && <PriceBook data={data} rows={rows} canEdit={canEditBook} sheet={sheet} setSheet={setSheet} />}
       {tab === "stock" && (data.stock ? <InventoryStock key={trade} data={data.stock.data} facts={data.stock.facts} canWrite={canWriteStock} slots={{ primary: primarySlot, toolbar: toolbarSlot }} /> : <Empty text={`No ${trade} board yet`} />)}
@@ -176,7 +179,7 @@ function PriceBook({ data, rows, canEdit, sheet, setSheet }: { data: InventoryPa
         </div>
         <div className={cx("tools")}>
           <label className="search"><svg className="ic" aria-hidden="true"><use href="#i-search" /></svg><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find an item" aria-label="Find an item" />{q && <button type="button" className={cx("link")} onClick={() => setQ("")} aria-label="Clear search"><X size={14} /></button>}</label>
-          <Picker label="Group" value={group} items={[{ id: "", label: "All groups" }, ...allGroups.map((g) => ({ id: g.label, label: g.label, n: g.rows.length }))]} onChange={jumpTo} />
+          <Filters label="Group" value={group} items={[{ id: "", label: "All", n: rows.length }, ...allGroups.map((g) => ({ id: g.label, label: g.label, n: g.rows.length }))]} onChange={jumpTo} />
         </div>
 
         {shown.length === 0 ? (

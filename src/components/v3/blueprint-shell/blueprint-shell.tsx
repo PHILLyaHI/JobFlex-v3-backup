@@ -80,6 +80,10 @@ const PAGE_STYLES: Record<string, string> = {
   // NOTE: no "hire" entry — the Hire & Work board (2026-09-03) is a plain
   // stylesheet scoped `.jf-blueprint .content .hm-*`, imported by its page.
   jobs: jobsStyles.bp,
+  // The Inventory page (2026-09-30) filters its tables with the Jobs status
+  // strip (.jtabs / .jtab / .jtab-n) as it is, so it takes the Jobs sheet too;
+  // every rule of its own is hashed, so nothing else of Jobs lands on it.
+  inventory: jobsStyles.bp,
   leads: leadsStyles.bp,
   messages: messagesStyles.bp,
   phone: phoneStyles.bp,

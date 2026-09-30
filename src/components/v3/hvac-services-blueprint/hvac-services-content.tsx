@@ -140,11 +140,12 @@ export function HvacServicesContent({ card: initial, factor, place, embedded }: 
               <svg className="ic" aria-hidden="true"><use href="#i-search" /></svg>
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a task or a part" aria-label="Find a task" />
             </label>
-            <select className="pinput" aria-label="Show" value={view} onChange={(e) => setView(e.target.value as "all" | "mine" | "hidden")} data-toggle-hidden>
-              <option value="all">All tasks</option>
-              <option value="mine">Priced by you · {priced}</option>
-              <option value="hidden">Hidden · {hidden}</option>
-            </select>
+            {/* The Jobs status strip (.jtabs / .jtab / .jtab-n), as it is. */}
+            <div className="jtabs" role="group" aria-label="Show" data-toggle-hidden>
+              {([["all", "All", SERVICE_MENU.length], ["mine", "Priced by you", priced], ["hidden", "Hidden", hidden]] as const).map(([id, label, n]) => (
+                <button key={id} type="button" className={cx("jtab", view === id && "on")} aria-pressed={view === id} onClick={() => setView(id)}>{label}<span className="jtab-n">{n}</span></button>
+              ))}
+            </div>
             <form
               className={cx("adjust")}
               data-menu-adjust

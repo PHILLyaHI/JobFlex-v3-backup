@@ -20,16 +20,22 @@
 // It is deliberately a frame and not a rebuild: a real handheld design for a
 // page belongs in mobile-*-v2, and when one lands, the route moves to
 // HANDHELD_SURFACES and this frame stops being used for it.
+import { usePathname } from "next/navigation";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { Sprite } from "@/components/v3/blueprint-shell/sprite";
 import proposalStyles from "@/components/v3/proposals-blueprint/proposals.module.css";
 import dashboardStyles from "@/components/v3/dashboard-blueprint/blueprint.module.css";
+import jobsStyles from "@/components/v3/jobs-blueprint/jobs.module.css";
 import styles from "./blueprint-handheld-frame.module.css";
 
 export function BlueprintHandheldFrame({ children }: { children: React.ReactNode }) {
+  // The Inventory page filters its tables with the Jobs status strip (.jtabs),
+  // the same registration the desk shell's PAGE_STYLES makes for it.
+  const pathname = usePathname();
+  const pageStyles = pathname?.startsWith("/dashboard/inventory") ? jobsStyles.bp : null;
   return (
     <div
-      className={[proposalStyles.bp, dashboardStyles.bp, "jf-blueprint", styles.frame]
+      className={[proposalStyles.bp, dashboardStyles.bp, pageStyles, "jf-blueprint", styles.frame]
         .filter(Boolean)
         .join(" ")}
     >

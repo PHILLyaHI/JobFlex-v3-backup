@@ -35,10 +35,13 @@
 :global(.jf-blueprint :is(.content, .inv-layer)) .btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
 /* ── the trade row: the trade switch (one joined control, no card), the secondary actions ── */
-:global(.jf-blueprint :is(.content, .inv-layer)) .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 2px; /* the shell's .content is a flex column with a 22px gap: 22 + 2 = 24 to the main tabs */ }
+:global(.jf-blueprint :is(.content, .inv-layer)) .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; /* to the section tabs, inside one block (.head2) so the shell's 22px column gap does not add to it */ }
+:global(.jf-blueprint :is(.content, .inv-layer)) .head2 { display: block; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .trade { display: inline-flex; flex: 0 0 auto; height: 40px; border: 1px solid var(--ink); border-radius: var(--radius); background: #fff; overflow: hidden; }
-:global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; height: 100%; padding: 0 22px; border-left: 1px solid var(--ink); background: #fff; font: inherit; font-size: 14px; font-weight: 800; letter-spacing: 0.02em; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap; transition: background 0.12s; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; height: 100%; padding: 0 22px; border-left: 1px solid var(--ink); background: #fff; font: inherit; font-size: 14px; font-weight: 700; letter-spacing: 0.02em; color: var(--ink); text-decoration: none; cursor: pointer; white-space: nowrap; transition: background 0.12s; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn:first-child { border-left: 0; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn b { margin-left: 8px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: color-mix(in srgb, var(--ink) 45%, transparent); }
+:global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn.on b { color: rgba(255, 255, 255, 0.7); }
 :global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn:hover { background: var(--paper-deep); }
 :global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn.on { background: var(--ink); color: var(--paper); }
 :global(.jf-blueprint :is(.content, .inv-layer)) .trade-btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -3px; }
@@ -78,9 +81,10 @@
 :global(.jf-blueprint :is(.content, .inv-layer)) .seg2 .seg-btn .n { margin-left: 8px; font-weight: 700; opacity: 0.75; }
 
 /* Tools in a card: the search, filter chips, a select. */
-:global(.jf-blueprint :is(.content, .inv-layer)) .tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 20px 16px; border-bottom: 1.5px solid var(--hair-soft); }
-/* One row of tools: the shell's .search box (the topbar's), then the Add expense form's .pinput select, 12px apart, 40px tall. */
-:global(.jf-blueprint :is(.content, .inv-layer)) .tools :global(.search) { flex: 0 0 320px; max-width: 320px; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .tools { display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; padding: 12px 20px 16px; border-bottom: 1.5px solid var(--hair-soft); }
+/* One row of tools: the shell's .search box (the topbar's, plated white here), the Jobs status strip (.jtabs) beside it; the stock's order stays an Add expense .pinput select. */
+:global(.jf-blueprint :is(.content, .inv-layer)) .tools :global(.search) { flex: 0 0 320px; max-width: 320px; background: #fff; }
+:global(.jf-blueprint :is(.content, .inv-layer)) .tools :global(.jtabs) { flex: 1 1 0; min-width: 0; margin-bottom: 0; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .tools :global(.search):focus-within { outline: 2px solid var(--blueprint); outline-offset: -1px; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .tools :global(.search) input:focus-visible { outline: none; }
 :global(.jf-blueprint :is(.content, .inv-layer)) .tools :global(.pinput) { width: auto; max-width: 240px; height: 40px; padding: 0 10px; box-sizing: border-box; }
@@ -231,6 +235,10 @@
   :global(.jf-blueprint :is(.content, .inv-layer)) .tools { flex-wrap: wrap; }
   /* the strip: the chips in one line, scrolled sideways */
   :global(.jf-blueprint :is(.content, .inv-layer)) .tools :global(.pinput) { height: 44px; max-width: 100%; }
+  /* the strip: the filters in one line under the search, scrolled sideways */
+  :global(.jf-blueprint :is(.content, .inv-layer)) .tools :global(.jtabs) { flex: 1 1 100%; width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .tools :global(.jtabs)::-webkit-scrollbar { display: none; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .tools :global(.jtab) { flex: 0 0 auto; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .cards { grid-template-columns: 1fr; padding: 14px 16px 16px; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .feed { padding: 4px 16px 12px; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .feed li { grid-template-columns: 76px 1fr auto; gap: 10px; }

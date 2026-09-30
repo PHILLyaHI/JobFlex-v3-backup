@@ -20,7 +20,7 @@ import { ago, dayOf, materialsOf, moveLabel, qty, statusLabel, stockStatus, useR
 import type { BoardOrder, BoardProposal, TradeBoardData } from "@/lib/inventoryBoard";
 import type { StockFacts } from "@/lib/inventoryDashboard";
 import { pickList, type StockRow } from "@/lib/inventory";
-import { cx, Empty, Picker, Sheet, STAMP_TONE, useHandheld } from "./inventory-shared";
+import { cx, Empty, Filters, Sheet, STAMP_TONE, useHandheld } from "./inventory-shared";
 
 export type StockSlots = { primary: HTMLElement | null; toolbar: HTMLElement | null };
 
@@ -110,7 +110,7 @@ function StockSchedule({ w, handheld, addMaterials }: { w: InventoryWorkspace; h
       {w.data.rows.length > 0 && (
         <div className={cx("tools")}>
           <label className="search"><svg className="ic" aria-hidden="true"><use href="#i-search" /></svg><input value={w.q} onChange={(e) => w.setQ(e.target.value)} placeholder="Find an item, a supplier, a SKU" aria-label="Find an item" />{w.q && <button type="button" className={cx("link")} onClick={() => w.setQ("")} aria-label="Clear search"><X size={14} /></button>}</label>
-          <Picker label="Show" value={w.filter} items={w.chips.filter((c) => c.id === "ALL" || c.n > 0)} onChange={w.setFilter} />
+          <Filters label="Show" value={w.filter} items={w.chips.filter((c) => c.id === "ALL" || c.n > 0)} onChange={w.setFilter} />
           <select className="pinput" value={w.view} onChange={(e) => w.setView(e.target.value as "urgency" | "category")} aria-label="Order the schedule by"><option value="urgency">By urgency</option><option value="category">By category</option></select>
         </div>
       )}
@@ -416,7 +416,7 @@ function Jobs({ w }: { w: InventoryWorkspace }) {
       <div className={cx("card-head")}><div><div className={cx("card-title")}>Jobs & proposals</div><div className={cx("card-sub")}>{w.connected} of {w.data.proposals.length} connected to the stock · a connected proposal reserves its materials when it sells</div></div></div>
       {w.data.proposals.length > 0 && (
         <div className={cx("tools")}>
-          <Picker label="Show" value={w.ptab} items={w.ptabs.filter((t) => t.id === "ALL" || t.n > 0)} onChange={w.setPtab} />
+          <Filters label="Show" value={w.ptab} items={w.ptabs.filter((t) => t.id === "ALL" || t.n > 0)} onChange={w.setPtab} />
         </div>
       )}
       {w.data.proposals.length === 0 ? (

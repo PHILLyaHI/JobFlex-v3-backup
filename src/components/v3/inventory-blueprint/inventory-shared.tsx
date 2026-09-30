@@ -37,12 +37,12 @@ export function Sheet({ id = "inv-sheet-title", kicker, title, onClose, footer, 
   );
 }
 
-/** The Add expense form's select (.pinput, the Proposals / Financials sheets), one choice per row, a counter after the label. */
-export function Picker<T extends string>({ label, value, items, onChange }: { label: string; value: T; items: Array<{ id: T; label: string; n?: number }>; onChange: (id: T) => void }) {
+/** The Jobs page's status strip (.jtabs / .jtab / .jtab-n, jobs.module.css), re-used as it is: a label and a mono counter, the chosen one ink-filled. */
+export function Filters<T extends string>({ label, value, items, onChange }: { label: string; value: T; items: Array<{ id: T; label: string; n?: number }>; onChange: (id: T) => void }) {
   return (
-    <select className="pinput" aria-label={label} value={value} onChange={(e) => onChange(e.target.value as T)}>
-      {items.map((it) => <option key={it.id} value={it.id}>{it.label}{it.n !== undefined ? ` · ${it.n}` : ""}</option>)}
-    </select>
+    <div className="jtabs" role="group" aria-label={label}>
+      {items.map((it) => <button key={it.id} type="button" className={"jtab" + (value === it.id ? " on" : "")} aria-pressed={value === it.id} onClick={() => onChange(it.id)}>{it.label}{it.n !== undefined && <span className="jtab-n">{it.n}</span>}</button>)}
+    </div>
   );
 }
 
