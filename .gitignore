@@ -80,3 +80,4 @@ scripts/migrate-v2/reports/
 # run artefacts of the QA page scripts
 scripts/qa/*.png
 scripts/qa/report-dl.csv
+prisma/dev.db.bak-*
