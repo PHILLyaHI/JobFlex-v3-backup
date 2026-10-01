@@ -82,8 +82,20 @@ export async function createCardlessSubscription(opts: {
     ...(priced.isCustom ? { customPages: opts.customPages.join(",") } : {}),
   };
   try {
+    // REHEARSALS ONLY: STRIPE_TEST_CLOCKS=1 puts each new trial customer on a
+    // Stripe test clock of its own, so a harness can walk it to day 8. Never
+    // in production, never on the live account.
+    let testClock: string | undefined;
+    if (mode === "test" && process.env.NODE_ENV !== "production" && process.env.STRIPE_TEST_CLOCKS === "1") {
+      testClock = (await stripe.testHelpers.testClocks.create({ frozen_time: Math.floor(Date.now() / 1000), name: `trial ${opts.email}`.slice(0, 300) })).id;
+    }
     const customer = await stripe.customers.create(
-      { email: opts.email, name: opts.businessName, metadata: { signupToken: opts.token, jf_cardless: "1" } },
+      {
+        email: opts.email,
+        name: opts.businessName,
+        metadata: { signupToken: opts.token, jf_cardless: "1" },
+        ...(testClock ? { test_clock: testClock } : {}),
+      },
       { idempotencyKey: `cardless-customer:${opts.token}` },
     );
     const subscription = await stripe.subscriptions.create(
