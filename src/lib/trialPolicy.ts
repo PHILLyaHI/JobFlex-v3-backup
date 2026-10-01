@@ -19,5 +19,5 @@ export const CARDLESS_TRIAL_DAYS = 7;
 
 /** The line every register button and plan card carries, by flag. */
 export function trialLine(requiresCard: boolean): string {
-  return requiresCard ? "7 days free · Cancel anytime" : "7-Day Free Trial — No Credit Card Required";
+  return requiresCard ? "7 days free · Cancel anytime" : "7-Day Free Trial · No Credit Card Required";
 }

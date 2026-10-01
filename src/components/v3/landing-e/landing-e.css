@@ -1934,3 +1934,41 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
 @media (max-width: 639px) {
   .jf-lp .lp-trial-line--lg { padding: 8px 12px; font-size: 13.5px; letter-spacing: 0.04em; }
 }
+
+/* THE HERO'S BADGE (owner, 2026-10-01): under the button pair, exactly as
+   wide as the pair's outer edges (left/right 0 of the pair's own row, which
+   only the buttons size), the pair's 12 px gap above it, the tick at the left
+   edge and the words centred, lower than a button. Absolute, over the place
+   of the invisible card-first note that keeps the hero's height (hero.tsx). */
+.jf-lp .lp-trial-line--bar {
+  position: absolute;
+  top: calc(100% + 12px);
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  padding: 0 38px;
+  font-size: 13.5px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.jf-lp .lp-trial-line--bar svg {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  margin: -8px 0 0;
+  width: 16px;
+  height: 16px;
+}
+@media (max-width: 639px) {
+  .jf-lp .lp-trial-line--bar { padding: 0 28px; font-size: 11px; letter-spacing: 0.02em; }
+  .jf-lp .lp-trial-line--bar svg { left: 10px; width: 14px; height: 14px; margin-top: -7px; }
+}
+
+/* A hero button with a sentence on it (roofing, 2026-10-01): on a phone it
+   wraps to two lines and keeps the full width, never squeezes. */
+@media (max-width: 640px) {
+  .jf-lp .lp-cta.lp-cta--long { height: auto; min-height: 48px; padding-block: 10px; white-space: normal; text-align: center; line-height: 1.3; }
+}

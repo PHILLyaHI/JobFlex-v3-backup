@@ -73,24 +73,51 @@ export function Hero({
             is the experiment's slot, on the default hero only — a trade
             variant is its own page and is never bucketed. */}
         <HeroExperiment enabled={!variantKey}>
-        <h1 className="lp-enter text-[clamp(38px,6.7vw,96px)] font-bold leading-[1.02] tracking-[-0.025em] text-ink" data-entrance="h1">
+        <h1
+          className={`lp-enter ${variant.h1Long ? "text-[clamp(32px,4.8vw,68px)]" : "text-[clamp(38px,6.7vw,96px)]"} font-bold leading-[1.02] tracking-[-0.025em] text-ink`}
+          data-entrance="h1"
+        >
           {variant.h1[0]}
-          <br />
+          {/* A sentence-long headline breaks where it falls on a phone; the
+              set break is the desk's. */}
+          {variant.h1Long ? (
+            <>
+              {" "}
+              <br className="hidden sm:inline" />
+            </>
+          ) : (
+            <br />
+          )}
           {variant.h1[1]}
         </h1>
         {/* The line under the headline exists only on trade variants; the
             default hero never had one and renders nothing here. */}
-        {variant.sub && (
+        {variant.sub && !variant.subStrong && (
           <p className="lp-enter mx-auto max-w-[38rem] text-[15px] leading-[1.5] text-white/70 sm:text-[17px] lg:max-w-[46rem]" data-entrance="sub">{variant.sub}</p>
+        )}
+        {/* A sub with a bold line of its own under it (HVAC, 2026-10-01): the
+            two arrive together, as the one sub block the entrance moves. */}
+        {variant.sub && variant.subStrong && (
+          <div className="lp-enter mx-auto max-w-[38rem] lg:max-w-[46rem]" data-entrance="sub">
+            <p className="text-[15px] leading-[1.5] text-white/70 sm:text-[17px]">{variant.sub}</p>
+            <p className="mt-3 text-[16px] font-bold leading-[1.4] text-white sm:text-[18px]">{variant.subStrong}</p>
+          </div>
         )}
         </HeroExperiment>
         <div className="lp-enter w-full sm:w-auto" data-entrance="cta">
-          {/* Its own line under the heading (owner, 2026-10-01), before the
-              buttons — inside the buttons' entrance so it arrives with them. */}
-          {requiresCard ? null : <TrialLine tone="dark" className="mt-1" />}
-          <div className="mx-auto mt-4 flex w-full max-w-[22rem] flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:items-center sm:justify-center">
-            <a href={registerHref} className="lp-btn-dark lp-cta lp-cta--solid" data-cta="hero">
-              {cta ?? variant.primaryCta}
+          {/* The pair and, under it, the trial badge (owner, 2026-10-01): the
+              badge is exactly as wide as the pair's outer edges and sits the
+              pair's own 12 px gap below it. It is laid out OVER the place the
+              card-first note held — that note stays in the flow, invisible —
+              so the hero keeps its height to the pixel and nothing under the
+              buttons moves (.lp-trial-line--bar). */}
+          <div className="relative mx-auto mt-4 flex w-full max-w-[22rem] flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:items-center sm:justify-center">
+            <a
+              href={registerHref}
+              className={`lp-btn-dark lp-cta lp-cta--solid${(variant.heroCta ?? cta ?? variant.primaryCta).length > 30 ? " lp-cta--long" : ""}`}
+              data-cta="hero"
+            >
+              {variant.heroCta ?? cta ?? variant.primaryCta}
             </a>
             <GoogleSignupButton className="lp-cta lp-cta--ghost" industry={variantKey} utm={utm} fbclid={fbclid}>
               <svg viewBox="0 0 48 48" className="h-[18px] w-[18px]" aria-hidden>
@@ -113,8 +140,9 @@ export function Hero({
               </svg>
               Sign up with Google
             </GoogleSignupButton>
+            {requiresCard ? null : <TrialLine tone="dark" size="bar" />}
           </div>
-          {requiresCard ? <CtaNote tone="dark" className="mt-3 text-center" /> : null}
+          {requiresCard ? <CtaNote tone="dark" className="mt-3 text-center" /> : <CtaNote tone="dark" className="invisible mt-3 text-center" hidden />}
         </div>
         </HeroEntrance>
       </div>

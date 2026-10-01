@@ -40,6 +40,14 @@ export type LandingVariant = {
   visual: "dashboard" | "roof" | "fence" | "hvac" | "smart";
   /** For visual "smart": which job the sequence prices. */
   scenario?: SmartScenarioKey;
+  /** A headline a sentence long (owner, 2026-10-01: HVAC, roofing): set a
+   *  size down so it stays two or three lines instead of five. */
+  h1Long?: boolean;
+  /** One bold line under the sub (HVAC). */
+  subStrong?: string;
+  /** The hero's own primary button, when it differs from the top-of-page CTA
+   *  the nav, the showcase and the sticky bar carry (cta-copy.ts). */
+  heroCta?: string;
 };
 
 /** The hero as it shipped on 2026-08-25 — the page with no `?industry=`. */
@@ -93,10 +101,13 @@ export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> 
     showcaseSlide: "fence",
     visual: "fence",
   },
+  // Owner's copy, 2026-10-01 — verbatim.
   roofing: {
-    h1: ["The full roof report.", "From just the address."],
-    sub: "Area, squares, pitch, facets, aerial photo and a priced proposal — in about a minute.",
+    h1: ["Complete Roof Report & Proposal —", "in Seconds."],
+    h1Long: true,
+    sub: "Enter an address. JobFlex AI analyzes the property and generates a detailed, customer-ready proposal — roof measurements, materials, labor, pricing, and more — without waiting hours for a report or driving to the job first.",
     primaryCta: "Start free — measure a roof",
+    heroCta: "Get My First Roofing Report & Proposal →",
     showcaseSlide: "roof",
     visual: "roof",
   },
@@ -191,10 +202,14 @@ export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> 
   // HVAC (2026-10-01): its own window — the real estimator's flow on three
   // example house (hvac-estimator-shot.tsx) — and its own showcase slide, like the
   // roof and the fence. The Smart scenario stays for the showcase's first slide.
+  // Owner's copy, 2026-10-01 — verbatim.
   hvac: {
-    h1: ["The whole system, priced.", "From the address."],
-    sub: "Design load, the heat pump that fits it, Good / Better / Best, the year's bill and the rebates — before the first site visit.",
+    h1: ["Turn an Address Into a Complete", "HVAC Estimate — in Seconds."],
+    h1Long: true,
+    sub: "JobFlex AI analyzes the property and builds a detailed estimate with system sizing, equipment, pricing, energy costs, rebates, and more — before the first site visit.",
+    subStrong: "No unnecessary drive. No hours of calculations.",
     primaryCta: "Start free — price an HVAC job",
+    heroCta: "Build My First Estimate →",
     showcaseSlide: "hvac",
     visual: "hvac",
     scenario: "hvac",

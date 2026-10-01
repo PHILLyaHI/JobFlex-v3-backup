@@ -60,6 +60,7 @@ import {
   type SignupPlan,
   type SignupPromo,
 } from "@/actions/signupPaywall";
+import { trialLine } from "@/lib/trialPolicy";
 import {
   completePendingSignup,
   requestCardlessTrial,
@@ -1537,7 +1538,7 @@ export function RegisterContent({
                   <svg className="ic" aria-hidden>
                     <use href="#i-check" />
                   </svg>
-                  7-Day Free Trial — No Credit Card Required
+                  {trialLine(false)}
                 </p>
               )}
             </div>

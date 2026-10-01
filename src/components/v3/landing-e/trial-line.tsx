@@ -13,7 +13,9 @@ export function TrialLine({
   className = "",
 }: {
   tone?: "light" | "dark";
-  size?: "lg" | "sm";
+  /** lg: its own line under a heading; sm: the sticky phone bar; bar: under
+   *  the hero's pair, exactly as wide as the pair, tick at the left. */
+  size?: "lg" | "sm" | "bar";
   className?: string;
 }) {
   return (

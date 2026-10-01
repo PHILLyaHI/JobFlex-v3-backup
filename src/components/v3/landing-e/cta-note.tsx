@@ -5,9 +5,10 @@
    floor for mono caps and the inks clear 4.5:1 (type pass, 2026-09-10).
    landing-e pass A (2026-09-11): the honest pair — the card is taken at the
    plan step, so the line promises the trial and the exit, nothing else. */
-export function CtaNote({ tone = "light", className = "" }: { tone?: "light" | "dark"; className?: string }) {
+export function CtaNote({ tone = "light", className = "", hidden = false }: { tone?: "light" | "dark"; className?: string; /** Kept for its place only (the hero's spacer under the card-less badge): unread. */ hidden?: boolean }) {
   return (
     <span
+      aria-hidden={hidden || undefined}
       className={`block font-mono text-[11px] font-bold uppercase tracking-[0.14em] lg:text-[12px] ${
         tone === "dark" ? "text-white/60" : "text-[#666666]"
       } ${className}`}
