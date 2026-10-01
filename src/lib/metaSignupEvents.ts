@@ -1,7 +1,8 @@
 /* The server-side Meta events of a signup's life (2026-09-09):
    CompleteRegistration when the organization is created (signupCheckout),
-   StartTrial when Stripe's checkout comes back trialing, Purchase on the
-   first paid invoice. All three read the person from what the signup wrote
+   StartTrial when Stripe's checkout comes back trialing (the return or the
+   webhook, whichever finds the organization first), Purchase on the first
+   paid invoice. A flag is set only once Meta has accepted the event. All three read the person from what the signup wrote
    on the organization (Organization.metaSignupJson) and its landing
    attribution, and each carries an event_id the browser's copy shares. */
 
@@ -55,20 +56,44 @@ function eventFor(org: OrgRow, ctx: MetaSignupContext, base: Pick<MetaEvent, "ev
 export async function metaOnCheckoutCompleted(session: Stripe.Checkout.Session, sub: Stripe.Subscription): Promise<void> {
   if (sub.status !== "trialing") return;
   const mirror = await db.subscription.findFirst({ where: { externalSubId: sub.id }, select: { organizationId: true, plan: true } });
+  // No mirror yet: the webhook beat the browser's return, and the organization
+  // does not exist. The return (completePendingSignup) sends it instead.
   if (!mirror) return;
-  const org = await db.organization.findUnique({ where: { id: mirror.organizationId }, select: ORG_SELECT });
+  await metaStartTrial(mirror.organizationId, sub, {
+    amountTotal: session.amount_total,
+    currency: session.currency,
+    plan: mirror.plan,
+  });
+}
+
+/** StartTrial, once per organization. Called from BOTH ends of the checkout —
+ *  the return from Stripe, which creates the organization, and the webhook,
+ *  which can arrive before it (and then finds nothing to name). Same event_id
+ *  either way, `<subscription>:trial`, so a pair that raced is one event to Meta. */
+export async function metaStartTrial(
+  organizationId: string,
+  sub: Stripe.Subscription,
+  checkout: { amountTotal: number | null | undefined; currency: string | null | undefined; plan?: string | null },
+): Promise<void> {
+  if (sub.status !== "trialing") return;
+  const org = await db.organization.findUnique({ where: { id: organizationId }, select: ORG_SELECT });
   const ctx = org ? parseMetaSignup(org.metaSignupJson) : null;
   if (!org || !ctx || ctx.trialSentAt) return;
-  const amount = session.amount_total != null ? session.amount_total / 100 : undefined;
-  await sendMetaEvent(
+  // The mirror's plan, as the webhook's copy reads it, when the caller has none.
+  const plan =
+    checkout.plan ??
+    (await db.subscription.findUnique({ where: { organizationId }, select: { plan: true } }).catch(() => null))?.plan;
+  const amount = checkout.amountTotal != null ? checkout.amountTotal / 100 : undefined;
+  const sent = await sendMetaEvent(
     eventFor(org, ctx, {
       eventName: "StartTrial",
       eventId: `${sub.id}:trial`,
       value: amount,
-      currency: session.currency?.toUpperCase() ?? "USD",
-      custom: { plan: mirror.plan, predicted_ltv: amount },
+      currency: checkout.currency?.toUpperCase() ?? "USD",
+      custom: { plan: plan ?? "none", predicted_ltv: amount },
     }),
   );
+  if (!sent) return;
   await db.organization.update({
     where: { id: org.id },
     data: { metaSignupJson: JSON.stringify({ ...ctx, trialSentAt: new Date().toISOString() }) },
@@ -85,7 +110,7 @@ export async function metaOnInvoicePaid(invoice: Stripe.Invoice): Promise<void> 
   const org = await db.organization.findUnique({ where: { id: mirror.organizationId }, select: ORG_SELECT });
   const ctx = org ? parseMetaSignup(org.metaSignupJson) : null;
   if (!org || !ctx || ctx.purchaseSentAt) return;
-  await sendMetaEvent(
+  const sent = await sendMetaEvent(
     eventFor(org, ctx, {
       eventName: "Purchase",
       eventId: invoice.id,
@@ -94,6 +119,7 @@ export async function metaOnInvoicePaid(invoice: Stripe.Invoice): Promise<void> 
       custom: { plan: mirror.plan },
     }),
   );
+  if (!sent) return;
   await db.organization.update({
     where: { id: org.id },
     data: { metaSignupJson: JSON.stringify({ ...ctx, purchaseSentAt: new Date().toISOString() }) },

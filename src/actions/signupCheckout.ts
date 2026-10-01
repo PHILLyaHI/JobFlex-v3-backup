@@ -42,7 +42,8 @@ import { readGoogleSignup } from "@/lib/googleSignup";
 import { settleReferralsForSignupOrg } from "@/lib/referralRewards";
 import { after } from "next/server";
 import { captureSignupOutcome, trafficIdentitySchema } from "@/lib/traffic-capture-server";
-import { sendMetaEvent, type MetaSignupContext } from "@/lib/metaCapi";
+import { fbcFromFbclid, sendMetaEvent, type MetaSignupContext } from "@/lib/metaCapi";
+import { metaStartTrial } from "@/lib/metaSignupEvents";
 import { sendWelcomeFirstEstimate } from "@/lib/email/welcome";
 import { trackActivation } from "@/lib/activation-events";
 
@@ -94,6 +95,9 @@ const pendingSchema = z.object({
       checkoutEventId: z.string().min(8).max(80).optional(),
       fbp: z.string().max(120).optional(),
       fbc: z.string().max(400).optional(),
+      /** Meta's click id from the register link (`?fbclid=`). A malformed one
+       *  is dropped rather than failing the signup. */
+      fbclid: z.string().regex(/^[\w-]{1,500}$/).optional().catch(undefined),
       sourceUrl: z.string().max(400).optional(),
     })
     .optional(),
@@ -120,13 +124,17 @@ function key(token: string): string {
 }
 
 /** The IP and user agent join the Meta context ONLY with marketing consent;
- *  without it the Conversions API gets the hashed email alone. */
+ *  without it the Conversions API gets the hashed email alone. The same goes
+ *  for the click id: with consent, an fbc is built from `fbclid` when the
+ *  pixel's _fbc cookie is missing (consent given after the landing, or the
+ *  pixel blocked), and the fbclid is kept for the events that come later. */
 async function metaContextFor(meta: z.infer<typeof pendingSchema>["meta"]): Promise<MetaSignupContext | undefined> {
   if (!meta) return undefined;
   const ctx: MetaSignupContext = { consent: meta.consent, registrationEventId: meta.registrationEventId, checkoutEventId: meta.checkoutEventId, sourceUrl: meta.sourceUrl };
   if (meta.consent) {
     ctx.fbp = meta.fbp;
-    ctx.fbc = meta.fbc;
+    ctx.fbclid = meta.fbclid;
+    ctx.fbc = meta.fbc || fbcFromFbclid(meta.fbclid, Date.now());
     try {
       const { headers } = await import("next/headers");
       const h = await headers();
@@ -189,6 +197,28 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
     update: { cursor: JSON.stringify(record) },
     create: { key: key(token), cursor: JSON.stringify(record) },
   });
+  // Meta InitiateCheckout — the server copy of the event the browser fires as
+  // this answer moves it to the plan step (same event_id, so the pair is one).
+  const meta = record.meta;
+  if (meta?.checkoutEventId) {
+    const checkoutEventId = meta.checkoutEventId;
+    after(() =>
+      sendMetaEvent({
+        eventName: "InitiateCheckout",
+        eventId: checkoutEventId,
+        sourceUrl: meta.sourceUrl ?? null,
+        consent: meta.consent,
+        user: { email: record.email, phone: record.companyPhone ?? null, fbp: meta.fbp, fbc: meta.fbc, clientIp: meta.clientIp, userAgent: meta.userAgent },
+        custom: {
+          content_category: record.landingIndustry ?? "default",
+          utm_source: record.utm?.utm_source,
+          utm_medium: record.utm?.utm_medium,
+          utm_campaign: record.utm?.utm_campaign,
+          utm_content: record.utm?.utm_content,
+        },
+      }),
+    );
+  }
   return { ok: true, token };
 }
 
@@ -361,6 +391,9 @@ export async function completePendingSignup(
   // client) rather than from the intent, which updatePendingSignupPages can
   // still rewrite after the session was priced.
   let paidCustomPages: string[] | null = null;
+  // What the checkout charged, for Meta's StartTrial value.
+  let checkoutAmount: number | null = null;
+  let checkoutCurrency: string | null = null;
 
   if (sessionId) {
     if (!isStripeEnabled()) return { ok: false, error: "Checkout is not configured." };
@@ -379,6 +412,8 @@ export async function completePendingSignup(
       const paid = session.status === "complete" || session.payment_status === "paid";
       if (!paid) return { ok: false, error: "The payment has not completed yet." };
       analyticsLive = session.livemode;
+      checkoutAmount = session.amount_total;
+      checkoutCurrency = session.currency;
       if (session.payment_status === "paid" && (session.amount_total ?? 0) > 0) analyticsOutcome = "subscription_purchased";
       stripeCustomerId = typeof session.customer === "string" ? session.customer : null;
       const sub = session.subscription;
@@ -612,6 +647,17 @@ export async function completePendingSignup(
           utm_content: rec.utm?.utm_content,
         },
       }),
+    );
+  }
+  // Meta StartTrial on the return from Stripe. The webhook sends it too, but
+  // when it arrives before this return has created the organization it finds
+  // nothing to name and sent nothing; metaStartTrial sends it once either way.
+  if (rec.meta && stripeSubscription?.status === "trialing") {
+    const sub = stripeSubscription;
+    after(() =>
+      metaStartTrial(orgId, sub, { amountTotal: checkoutAmount, currency: checkoutCurrency }).catch((err) =>
+        console.warn("[meta:capi] StartTrial failed", err),
+      ),
     );
   }
   return { ok: true, email: rec.email, ticket };

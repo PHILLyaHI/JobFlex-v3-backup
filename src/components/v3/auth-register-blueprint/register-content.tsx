@@ -919,6 +919,9 @@ export function RegisterContent({
           registrationEventId: metaIds.current.registration,
           checkoutEventId: metaIds.current.checkout,
           ...readMetaCookies(),
+          // Meta's click id, carried here from the ad's landing link; the
+          // server builds an fbc from it when _fbc is missing (with consent).
+          fbclid: searchParams?.get("fbclid") || undefined,
           sourceUrl: typeof window !== "undefined" ? window.location.origin + window.location.pathname : undefined,
         },
       });

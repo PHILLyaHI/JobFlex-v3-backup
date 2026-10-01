@@ -3,7 +3,7 @@
    therefore stay free of next/headers types. */
 
 import type { LandingEProps } from "./landing-e-page";
-import { pickUtm, resolveLandingVariant } from "./landing-variants";
+import { pickFbclid, pickUtm, resolveLandingVariant } from "./landing-variants";
 
 /** The variant this visit gets — from the URL and NOTHING ELSE (owner,
     2026-09-10). The jf_industry cookie the page writes is for the register
@@ -14,5 +14,5 @@ import { pickUtm, resolveLandingVariant } from "./landing-variants";
 export function readLandingVariant(params: Record<string, string | string[] | undefined>): LandingEProps {
   const utm = pickUtm(params);
   const variant = resolveLandingVariant(params.industry ?? params.trade);
-  return { variant, explicitVariant: Boolean(variant), utm };
+  return { variant, explicitVariant: Boolean(variant), utm, fbclid: pickFbclid(params) };
 }

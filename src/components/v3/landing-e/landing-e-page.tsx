@@ -72,12 +72,14 @@ export interface LandingEProps {
   explicitVariant?: boolean;
   /** utm_* the visit arrived with — carried into the register links. */
   utm?: UtmParams;
+  /** Meta's click id from an ad link — carried into the register links. */
+  fbclid?: string;
 }
 
-export async function LandingE({ variant, explicitVariant = false, utm = {} }: LandingEProps) {
+export async function LandingE({ variant, explicitVariant = false, utm = {}, fbclid }: LandingEProps) {
   const v = variantContent(variant);
-  // Every register link carries the trade and the visit's utm_*.
-  const register = signupHref(REGISTER, { industry: variant, utm });
+  // Every register link carries the trade, the visit's utm_* and the fbclid.
+  const register = signupHref(REGISTER, { industry: variant, utm, fbclid });
   // The price anchor shows the Subscription page's own catalogue (CRO stage
   // 2); a catalogue read that fails leaves the section out rather than the
   // page down.

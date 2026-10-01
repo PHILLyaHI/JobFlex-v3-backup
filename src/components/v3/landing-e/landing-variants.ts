@@ -434,16 +434,27 @@ export function hasUtm(utm: UtmParams | undefined): boolean {
   return !!utm && UTM_KEYS.some((k) => !!utm[k]);
 }
 
-/** `/auth/register` → `/auth/register?industry=fencing&utm_source=…`.
- *  With neither a variant nor utm it returns `base` untouched, so the default
+/* Meta's click id (2026-09-30). An ad link arrives with `?fbclid=…`; the
+   register link carries it on, so the signup can hand the Conversions API an
+   fbc built from it when the pixel's own _fbc cookie is missing (consent
+   given after the landing). Only Meta's own alphabet passes. */
+export function pickFbclid(params: Record<string, string | string[] | undefined>): string | undefined {
+  const raw = params.fbclid;
+  const value = (Array.isArray(raw) ? raw[0] : raw)?.trim();
+  return value && /^[\w-]{1,500}$/.test(value) ? value : undefined;
+}
+
+/** `/auth/register` → `/auth/register?industry=fencing&utm_source=…&fbclid=…`.
+ *  With no variant, utm or fbclid it returns `base` untouched, so the default
  *  page's markup is exactly what it was. */
-export function signupHref(base: string, opts: { industry?: LandingVariantKey; utm?: UtmParams }): string {
+export function signupHref(base: string, opts: { industry?: LandingVariantKey; utm?: UtmParams; fbclid?: string }): string {
   const q = new URLSearchParams();
   if (opts.industry) q.set("industry", opts.industry);
   for (const key of UTM_KEYS) {
     const v = opts.utm?.[key];
     if (v) q.set(key, v);
   }
+  if (opts.fbclid) q.set("fbclid", opts.fbclid);
   const s = q.toString();
   return s ? `${base}?${s}` : base;
 }

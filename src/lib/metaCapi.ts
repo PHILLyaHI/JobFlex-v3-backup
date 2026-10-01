@@ -4,6 +4,12 @@
    unless NEXT_PUBLIC_META_PIXEL_ID and META_CAPI_ACCESS_TOKEN are both set;
    META_TEST_EVENT_CODE routes events to Events Manager's Test Events tab.
 
+   LOGS (2026-09-30). Every event leaves exactly one line, whatever happens:
+   "<Event> events_received=1" when Meta took it, "<Event> rejected <status>:
+   <Meta's error.message>" when it did not, "<Event> not sent: …" when a
+   variable is missing. The live test on production showed browser events
+   and no server ones, and the code had nothing to say about why.
+
    CONSENT (lib/consent). With marketing consent the event carries fbp/fbc,
    the client IP and the user agent. Without it the event still goes — as a
    server-side conversion record, with the hashed email/phone only. Never a
@@ -92,29 +98,56 @@ export function buildMetaPayload(e: MetaEvent): Record<string, unknown> {
   return body;
 }
 
-/** Fire and forget; never throws. Returns true when a send was attempted. */
+/** Awaits Meta's answer and logs it; never throws. True when Meta accepted
+ *  the event. The callers run it inside `after()` or an awaited webhook, so
+ *  the request is not cut off with the response. */
 export async function sendMetaEvent(e: MetaEvent): Promise<boolean> {
+  // Read here, at send time, on the server: the token never reaches a bundle.
   const pixel = process.env.NEXT_PUBLIC_META_PIXEL_ID?.trim();
   const token = process.env.META_CAPI_ACCESS_TOKEN?.trim();
+  const test = process.env.META_TEST_EVENT_CODE?.trim();
   const body = buildMetaPayload(e);
+  const tag = `[meta:capi] ${e.eventName} event_id=${e.eventId}${test ? ` test_event_code=${test}` : ""}`;
   if (process.env.META_CAPI_DEBUG === "true") {
-    console.info("[meta:capi]", e.eventName, JSON.stringify(body));
+    console.info(`${tag} payload`, JSON.stringify(body));
   }
-  if (!pixel || !token) return false;
+  if (!pixel || !token) {
+    const missing = [!pixel && "NEXT_PUBLIC_META_PIXEL_ID", !token && "META_CAPI_ACCESS_TOKEN"].filter(Boolean).join(" and ");
+    console.warn(`${tag} not sent: ${missing} is empty`);
+    return false;
+  }
   try {
     const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${pixel}/events?access_token=${encodeURIComponent(token)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(8000),
       cache: "no-store",
     });
-    if (!res.ok) console.warn("[meta:capi] rejected", e.eventName, res.status, (await res.text().catch(() => "")).slice(0, 200));
+    const text = await res.text().catch(() => "");
+    let json: { events_received?: number; fbtrace_id?: string; error?: { message?: string; error_user_msg?: string } } = {};
+    try {
+      json = JSON.parse(text);
+    } catch {
+      /* not JSON — the raw text is logged below */
+    }
+    if (!res.ok || json.error) {
+      const why = json.error?.error_user_msg || json.error?.message || text.slice(0, 200) || "no body";
+      console.warn(`${tag} rejected ${res.status}: ${why}`);
+      return false;
+    }
+    console.info(`${tag} events_received=${json.events_received ?? "?"}${json.fbtrace_id ? ` fbtrace_id=${json.fbtrace_id}` : ""}`);
     return true;
   } catch (err) {
-    console.warn("[meta:capi] unavailable", e.eventName, err instanceof Error ? err.message : String(err));
-    return true;
+    console.warn(`${tag} unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
   }
+}
+
+/** Meta's fbc, built the way the pixel builds its _fbc cookie when the
+ *  cookie itself is missing: `fb.1.<ms when the click id was seen>.<fbclid>`. */
+export function fbcFromFbclid(fbclid: string | null | undefined, seenAtMs: number): string | undefined {
+  return fbclid ? `fb.1.${seenAtMs}.${fbclid}` : undefined;
 }
 
 /* ── what the signup remembers for the events that come later ── */
@@ -126,7 +159,10 @@ export interface MetaSignupContext {
   registrationEventId: string;
   checkoutEventId?: string;
   fbp?: string;
+  /** The pixel's _fbc cookie, or one built from `fbclid` when it was missing. */
   fbc?: string;
+  /** Meta's click id from the ad link, with consent only (2026-09-30). */
+  fbclid?: string;
   clientIp?: string;
   userAgent?: string;
   sourceUrl?: string;
