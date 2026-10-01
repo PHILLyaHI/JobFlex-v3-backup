@@ -58,6 +58,13 @@ export interface LiveEvent {
   outcome: string;
   plan: string;
   verified: string;
+  /** PostHog's GeoIP guess at the browser's place (null when it has none). */
+  lat: number | null;
+  lon: number | null;
+  countryCode: string;
+  regionCode: string;
+  /** The ad platform's click id on the link, by name ("gclid", "fbclid"…), or "". */
+  click: string;
 }
 
 /** An organization created today, from the database. */
@@ -76,6 +83,40 @@ export interface FreshSignup {
 export type LiveStage = "browsing" | "registering" | "checkout" | "signed-up" | "member";
 export type SourceKind = "ad" | "likely-ad" | "search" | "social" | "referral" | "direct";
 
+/** The platforms a visit is credited to, each in its own colour (AVACO's),
+ *  and which of them we run ads on — those get a card even at zero. */
+export const PLATFORMS: Record<string, { name: string; colour: string; ads: boolean }> = {
+  facebook: { name: "Facebook", colour: "#1877f2", ads: true },
+  instagram: { name: "Instagram", colour: "#e1306c", ads: true },
+  tiktok: { name: "TikTok", colour: "#fe2c55", ads: true },
+  x: { name: "X (Twitter)", colour: "#0a0a0a", ads: true },
+  google: { name: "Google Ads", colour: "#34a853", ads: true },
+  youtube: { name: "YouTube", colour: "#ff0000", ads: false },
+  bing: { name: "Bing", colour: "#008373", ads: false },
+  linkedin: { name: "LinkedIn", colour: "#0a66c2", ads: false },
+  snapchat: { name: "Snapchat", colour: "#f5c518", ads: false },
+  reddit: { name: "Reddit", colour: "#ff4500", ads: false },
+  nextdoor: { name: "Nextdoor", colour: "#8ed500", ads: false },
+  pinterest: { name: "Pinterest", colour: "#e60023", ads: false },
+  yelp: { name: "Yelp", colour: "#d32323", ads: false },
+  search: { name: "Search", colour: "#555555", ads: false },
+  direct: { name: "Direct", colour: "#888888", ads: false },
+  other: { name: "Other sites", colour: "#b0aea8", ads: false },
+};
+export const AD_PLATFORM_KEYS = Object.keys(PLATFORMS).filter((k) => PLATFORMS[k].ads);
+export const platformName = (key: string) => PLATFORMS[key]?.name ?? key;
+export const platformColour = (key: string) => PLATFORMS[key]?.colour ?? PLATFORMS.other.colour;
+
+/** Click ids the ad platforms add to a link: which platform, and whether the
+ *  click was paid. fbclid rides every link clicked in Facebook or Instagram,
+ *  paid or not, so it names the platform without proving an ad. */
+export const CLICK_IDS: Record<string, { platform: string; paid: boolean }> = {
+  gclid: { platform: "google", paid: true }, gbraid: { platform: "google", paid: true }, wbraid: { platform: "google", paid: true },
+  ttclid: { platform: "tiktok", paid: true }, twclid: { platform: "x", paid: true }, msclkid: { platform: "bing", paid: true },
+  li_fat_id: { platform: "linkedin", paid: true }, fbclid: { platform: "facebook", paid: false },
+};
+export const CLICK_ID_KEYS = Object.keys(CLICK_IDS);
+
 export interface LiveVisitor {
   /** The person id, shortened for the eye. */
   id: string;
@@ -85,7 +126,11 @@ export interface LiveVisitor {
   sourceKind: SourceKind;
   /** "Facebook ad", "Google search", "Direct", "yelp.com"… */
   source: string;
+  /** The platform the visit is credited to (a PLATFORMS key). */
+  platform: string;
   campaign: string;
+  /** utm_content — the ad itself, as Meta and TikTok name it. */
+  content: string;
   /** The page they are on now (last pageview), and its plain name. */
   page: string;
   pageLabel: string;
@@ -99,6 +144,14 @@ export interface LiveVisitor {
   device: string;
   browser: string;
   place: string;
+  /** For the map: where the browser is, as GeoIP reads it (null = not on the map). */
+  lat: number | null;
+  lon: number | null;
+  city: string;
+  region: string;
+  regionCode: string;
+  country: string;
+  countryCode: string;
   environment: "production" | "development";
   hostname: string;
   /** The account this visitor made, when the database row could be tied to it. */
@@ -115,6 +168,25 @@ export interface LiveCounts {
   members: number;
 }
 
+/** One platform's window: who it brought, from ads or not, how far they got. */
+export interface LivePlatform {
+  platform: string;
+  name: string;
+  colour: string;
+  /** We run ads here — shown even at zero. */
+  ads: boolean;
+  visitors: number;
+  onSite: number;
+  fromAds: number;
+  organic: number;
+  signingUp: number;
+  signedUp: number;
+  /** Today's signups the database credits to this platform (utm_source). */
+  signedUpToday: number;
+  /** The campaigns and ads seen in the window, most visitors first. */
+  campaigns: Array<{ campaign: string; content: string; visitors: number; signedUp: number }>;
+}
+
 export interface LiveReport {
   status: "ok" | "disabled" | "error";
   message?: string;
@@ -123,6 +195,8 @@ export interface LiveReport {
   activeMinutes: number;
   visitors: LiveVisitor[];
   counts: LiveCounts;
+  /** The ad platforms first (always), then any other platform with a visitor. */
+  platforms: LivePlatform[];
   /** The day's organizations from the database, and how many came from ads. */
   today: { signups: number; fromAds: number };
   /** Fresh organizations no live visitor could be tied to (their visit was
@@ -130,27 +204,39 @@ export interface LiveReport {
   otherSignups: Array<{ orgName: string; ownerEmail: string; at: string; source: string }>;
 }
 
-const AD_MEDIUMS = new Set(["cpc", "ppc", "paid", "paid_social", "paidsocial", "paid-social", "social-paid", "ads", "ad", "display", "retargeting", "remarketing", "cpm", "cpv", "cpa", "sponsored", "banner", "video-ad", "lead-ad", "leadgen", "instant-form"]);
-const AD_PLATFORMS: Record<string, string> = {
-  facebook: "Facebook", fb: "Facebook", meta: "Meta", instagram: "Instagram", ig: "Instagram",
-  google: "Google", googleads: "Google", adwords: "Google", gads: "Google", youtube: "YouTube",
-  tiktok: "TikTok", bing: "Bing", microsoft: "Bing", linkedin: "LinkedIn", nextdoor: "Nextdoor", yelp: "Yelp", reddit: "Reddit", x: "X", twitter: "X", pinterest: "Pinterest", snapchat: "Snapchat",
+const AD_MEDIUMS = new Set(["cpc", "ppc", "paid", "paid_social", "paidsocial", "paid-social", "social-paid", "ads", "ad", "display", "retargeting", "remarketing", "cpm", "cpv", "cpa", "sponsored", "promoted", "boost", "boosted", "banner", "video-ad", "lead-ad", "leadgen", "instant-form"]);
+/** utm_source spellings → the platform key. Meta's own {{site_source_name}}
+ *  fills in fb / ig / msg / an; Google Ads, adwords; the rest as people type them. */
+const SOURCE_PLATFORM: Record<string, string> = {
+  facebook: "facebook", fb: "facebook", meta: "facebook", msg: "facebook", messenger: "facebook", an: "facebook",
+  instagram: "instagram", ig: "instagram",
+  google: "google", googleads: "google", adwords: "google", gads: "google", "google-ads": "google",
+  youtube: "youtube", yt: "youtube",
+  tiktok: "tiktok", tt: "tiktok",
+  bing: "bing", microsoft: "bing", msads: "bing",
+  linkedin: "linkedin", nextdoor: "nextdoor", yelp: "yelp", reddit: "reddit",
+  x: "x", twitter: "x", "x.com": "x",
+  pinterest: "pinterest", snapchat: "snapchat", snap: "snapchat",
 };
+/** The platform's name as the source line says it — "Facebook ad", not "Facebook Ads ad". */
+const SOURCE_LABEL: Record<string, string> = { facebook: "Facebook", instagram: "Instagram", google: "Google", youtube: "YouTube", tiktok: "TikTok", bing: "Bing", linkedin: "LinkedIn", nextdoor: "Nextdoor", yelp: "Yelp", reddit: "Reddit", x: "X", pinterest: "Pinterest", snapchat: "Snapchat" };
 /** Referrers that are almost always an ad click on a contractor SaaS landing. */
 const SOCIAL_AD_DOMAINS: Array<[RegExp, string]> = [
-  [/(^|\.)facebook\.com$|^l\.facebook\.com$|^lm\.facebook\.com$|^m\.facebook\.com$|(^|\.)fb\.com$/, "Facebook"],
-  [/(^|\.)instagram\.com$/, "Instagram"],
-  [/(^|\.)tiktok\.com$/, "TikTok"],
-  [/(^|\.)youtube\.com$|^youtu\.be$/, "YouTube"],
-  [/(^|\.)snapchat\.com$/, "Snapchat"],
+  [/(^|\.)facebook\.com$|^l\.facebook\.com$|^lm\.facebook\.com$|^m\.facebook\.com$|(^|\.)fb\.com$|(^|\.)messenger\.com$/, "facebook"],
+  [/(^|\.)instagram\.com$/, "instagram"],
+  [/(^|\.)tiktok\.com$/, "tiktok"],
+  [/(^|\.)youtube\.com$|^youtu\.be$/, "youtube"],
+  [/(^|\.)snapchat\.com$/, "snapchat"],
 ];
 const SOCIAL_DOMAINS: Array<[RegExp, string]> = [
-  [/(^|\.)linkedin\.com$|^lnkd\.in$/, "LinkedIn"],
-  [/^t\.co$|(^|\.)twitter\.com$|(^|\.)x\.com$/, "X"],
-  [/(^|\.)reddit\.com$/, "Reddit"],
-  [/(^|\.)nextdoor\.com$/, "Nextdoor"],
-  [/(^|\.)pinterest\.com$/, "Pinterest"],
+  [/(^|\.)linkedin\.com$|^lnkd\.in$/, "linkedin"],
+  [/^t\.co$|(^|\.)twitter\.com$|(^|\.)x\.com$/, "x"],
+  [/(^|\.)reddit\.com$/, "reddit"],
+  [/(^|\.)nextdoor\.com$/, "nextdoor"],
+  [/(^|\.)pinterest\.com$/, "pinterest"],
 ];
+/** Other sites that get a card of their own when they send someone. */
+const REFERRAL_PLATFORMS: Array<[RegExp, string]> = [[/(^|\.)yelp\.com$/, "yelp"]];
 const SEARCH_DOMAINS: Array<[RegExp, string]> = [
   [/(^|\.)google\.[a-z.]+$/, "Google"],
   [/(^|\.)bing\.com$/, "Bing"],
@@ -162,32 +248,46 @@ const SEARCH_DOMAINS: Array<[RegExp, string]> = [
 
 const lower = (s: string) => s.trim().toLowerCase();
 
-/** Where a visit came from, read off its first event. */
-export function classifySource(utmSource: string, utmMedium: string, referrer: string, hostname: string): { kind: SourceKind; label: string; fromAd: boolean } {
+export interface SourceRead { kind: SourceKind; label: string; fromAd: boolean; platform: string }
+
+/** Where a visit came from, read off its first event: the tag first, then
+ *  the platform's click id, then the referrer. */
+export function classifySource(utmSource: string, utmMedium: string, referrer: string, hostname: string, click = ""): SourceRead {
   const src = lower(utmSource);
   const med = lower(utmMedium);
   const ref = lower(referrer).replace(/^www\./, "");
+  const clickId = CLICK_IDS[lower(click)];
   if (src) {
-    const platform = AD_PLATFORMS[src] ?? utmSource.trim();
-    if (AD_MEDIUMS.has(med) || /paid|cpc|ppc|\bads?\b/.test(med)) return { kind: "ad", label: `${platform} ad`, fromAd: true };
-    if (src in AD_PLATFORMS && !med) return { kind: "likely-ad", label: `${platform} · tagged, no medium`, fromAd: true };
-    if (med === "social" || med === "organic_social") return { kind: "social", label: `${platform} · post`, fromAd: false };
-    if (med === "email" || med === "newsletter") return { kind: "referral", label: `${platform} · email`, fromAd: false };
-    if (med === "referral" || med === "affiliate" || med === "partner") return { kind: "referral", label: `${platform} · ${med}`, fromAd: false };
-    if (med === "organic" || med === "search") return { kind: "search", label: `${platform} search`, fromAd: false };
-    return { kind: "referral", label: med ? `${platform} · ${utmMedium.trim()}` : platform, fromAd: false };
+    const key = SOURCE_PLATFORM[src] ?? "other";
+    const platform = SOURCE_LABEL[key] ?? utmSource.trim();
+    const paid = AD_MEDIUMS.has(med) || /paid|cpc|ppc|\bads?\b/.test(med) || Boolean(clickId?.paid);
+    if (paid) return { kind: "ad", label: `${platform} ad`, fromAd: true, platform: key };
+    if (key !== "other" && PLATFORMS[key]?.ads && !med) return { kind: "likely-ad", label: `${platform} · tagged, no medium`, fromAd: true, platform: key };
+    if (med === "social" || med === "organic_social") return { kind: "social", label: `${platform} · post`, fromAd: false, platform: key };
+    if (med === "email" || med === "newsletter") return { kind: "referral", label: `${platform} · email`, fromAd: false, platform: key };
+    if (med === "referral" || med === "affiliate" || med === "partner") return { kind: "referral", label: `${platform} · ${med}`, fromAd: false, platform: key };
+    if (med === "organic" || med === "search") return { kind: "search", label: `${platform} search`, fromAd: false, platform: key === "other" ? "search" : key };
+    return { kind: "referral", label: med ? `${platform} · ${utmMedium.trim()}` : platform, fromAd: false, platform: key };
   }
-  if (!ref || ref === "$direct" || ref === hostname.toLowerCase().replace(/^www\./, "")) return { kind: "direct", label: "Direct", fromAd: false };
-  for (const [re, name] of SOCIAL_AD_DOMAINS) if (re.test(ref)) return { kind: "likely-ad", label: `${name} · untagged, most likely an ad`, fromAd: true };
-  for (const [re, name] of SEARCH_DOMAINS) if (re.test(ref)) return { kind: "search", label: `${name} search`, fromAd: false };
-  for (const [re, name] of SOCIAL_DOMAINS) if (re.test(ref)) return { kind: "social", label: `${name}`, fromAd: false };
-  return { kind: "referral", label: ref, fromAd: false };
+  // A paid click id with no tag: the platform's own ad link (Google's auto-tagging, TikTok, X).
+  if (clickId?.paid) return { kind: "ad", label: `${SOURCE_LABEL[clickId.platform]} ad · click id`, fromAd: true, platform: clickId.platform };
+  const own = !ref || ref === "$direct" || ref === hostname.toLowerCase().replace(/^www\./, "");
+  if (own) {
+    // fbclid with no referrer: the in-app browser of Facebook or Instagram, which sends none.
+    if (clickId) return { kind: "likely-ad", label: `${SOURCE_LABEL[clickId.platform]} · in-app link, most likely an ad`, fromAd: true, platform: clickId.platform };
+    return { kind: "direct", label: "Direct", fromAd: false, platform: "direct" };
+  }
+  for (const [re, key] of SOCIAL_AD_DOMAINS) if (re.test(ref)) return { kind: "likely-ad", label: `${SOURCE_LABEL[key]} · untagged, most likely an ad`, fromAd: true, platform: key };
+  for (const [re, name] of SEARCH_DOMAINS) if (re.test(ref)) return { kind: "search", label: `${name} search`, fromAd: false, platform: "search" };
+  for (const [re, key] of SOCIAL_DOMAINS) if (re.test(ref)) return { kind: "social", label: SOURCE_LABEL[key] ?? key, fromAd: false, platform: key };
+  const known = REFERRAL_PLATFORMS.find(([re]) => re.test(ref));
+  return { kind: "referral", label: ref, fromAd: false, platform: known ? known[1] : "other" };
 }
 
 /** A database signup's own source, in the same words. */
-export function signupSource(s: { utmSource: string; utmMedium: string }): { label: string; fromAd: boolean } {
+export function signupSource(s: { utmSource: string; utmMedium: string }): { label: string; fromAd: boolean; platform: string } {
   const c = classifySource(s.utmSource, s.utmMedium, "", "");
-  return { label: c.kind === "direct" ? "Untagged" : c.label, fromAd: c.fromAd };
+  return { label: c.kind === "direct" ? "Untagged" : c.label, fromAd: c.fromAd, platform: c.kind === "direct" ? "direct" : c.platform };
 }
 
 const APP_PATH = /^\/(dashboard|mobile-|w\/|portal|worker)/;
@@ -267,7 +367,10 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
     // registration step is not a pageview but it is a screen.
     const lastView = [...visit].reverse().find((e) => pathOf(e)) ?? last;
     const page = pathOf(lastView) || "/";
-    const src = classifySource(first.utmSource, first.utmMedium, first.referrer, first.hostname || domainOf(first.url));
+    // The first event usually carries the tag and the click id; a later one
+    // may (a tagged link opened mid-visit), so the first that has any wins.
+    const tagged = visit.find((e) => e.utmSource || e.click) ?? first;
+    const src = classifySource(tagged.utmSource, tagged.utmMedium, first.referrer, first.hostname || domainOf(first.url), tagged.click);
     // The furthest thing done in the whole window, any visit.
     let stage: LiveStage = "browsing";
     let signedUpAt: string | null = null;
@@ -295,8 +398,8 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
         if (claimed.has(s.orgId)) continue;
         const d = Math.abs(Date.parse(s.createdAt) - at);
         if (d > SIGNUP_MATCH_MS) continue;
-        const tagged = lower(first.utmCampaign) && lower(s.utmCampaign);
-        if (tagged && lower(first.utmCampaign) !== lower(s.utmCampaign)) continue;
+        const bothTagged = lower(tagged.utmCampaign) && lower(s.utmCampaign);
+        if (bothTagged && lower(tagged.utmCampaign) !== lower(s.utmCampaign)) continue;
         if (!best || d < best.d) best = { s, d };
       }
       if (best) {
@@ -304,6 +407,9 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
         signup = { orgName: best.s.orgName, ownerEmail: best.s.ownerEmail, ownerName: best.s.ownerName, at: best.s.createdAt, plan, outcome };
       }
     }
+    // Where they are: the latest event that carries a GeoIP place.
+    const located = [...list].reverse().find((e) => e.lat !== null && e.lon !== null);
+    const geo = located ? { lat: located.lat, lon: located.lon, city: located.city, region: located.region, regionCode: located.regionCode, country: located.country, countryCode: located.countryCode } : null;
     // The trail: every screen and step in order, a repeat folded into its
     // neighbour; the last six.
     const trail: string[] = [];
@@ -318,7 +424,9 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
       fromAd: src.fromAd,
       sourceKind: src.kind,
       source: src.label,
-      campaign: first.utmCampaign || "",
+      platform: src.platform,
+      campaign: tagged.utmCampaign || "",
+      content: tagged.utmContent || "",
       page,
       pageLabel: screenLabel(page),
       views: views.length,
@@ -329,6 +437,13 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
       device: lastView.device || first.device || "",
       browser: lastView.browser || first.browser || "",
       place: [first.city, first.region, first.country].filter(Boolean).join(", "),
+      lat: geo?.lat ?? null,
+      lon: geo?.lon ?? null,
+      city: geo?.city ?? first.city,
+      region: geo?.region ?? first.region,
+      regionCode: geo?.regionCode ?? first.regionCode,
+      country: geo?.country ?? first.country,
+      countryCode: geo?.countryCode ?? first.countryCode,
       environment: envOf(first),
       hostname: first.hostname || domainOf(first.url),
       signup,
@@ -362,9 +477,60 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
     activeMinutes: LIVE_ACTIVE_MINUTES,
     visitors,
     counts,
+    platforms: platformCards(visitors, signups),
     today: { signups: signups.length, fromAds: signups.filter((s) => signupSource(s).fromAd).length },
     otherSignups,
   };
+}
+
+/** The platform cards: every ad platform (even at zero), then the others
+ *  with a visitor, each with who it brought in the window, from ads or not,
+ *  how far they got, today's signups the database credits to it, and the
+ *  campaigns and ads seen. */
+export function platformCards(visitors: LiveVisitor[], signups: FreshSignup[]): LivePlatform[] {
+  const by = new Map<string, LivePlatform>();
+  const card = (key: string): LivePlatform => {
+    const found = by.get(key);
+    if (found) return found;
+    const meta = PLATFORMS[key] ?? PLATFORMS.other;
+    const fresh: LivePlatform = { platform: key, name: meta.name, colour: meta.colour, ads: meta.ads, visitors: 0, onSite: 0, fromAds: 0, organic: 0, signingUp: 0, signedUp: 0, signedUpToday: 0, campaigns: [] };
+    by.set(key, fresh);
+    return fresh;
+  };
+  for (const key of AD_PLATFORM_KEYS) card(key);
+  const campaignsBy = new Map<string, Map<string, { campaign: string; content: string; visitors: number; signedUp: number }>>();
+  for (const v of visitors) {
+    const key = PLATFORMS[v.platform] ? v.platform : "other";
+    const c = card(key);
+    c.visitors++;
+    if (v.active) c.onSite++;
+    if (v.fromAd) c.fromAds++; else c.organic++;
+    if (v.stage === "registering" || v.stage === "checkout") c.signingUp++;
+    if (v.stage === "signed-up") c.signedUp++;
+    if (v.campaign || v.content) {
+      const list = campaignsBy.get(key) ?? new Map();
+      const id = `${v.campaign}\u0000${v.content}`;
+      const row = list.get(id) ?? { campaign: v.campaign, content: v.content, visitors: 0, signedUp: 0 };
+      row.visitors++;
+      if (v.stage === "signed-up") row.signedUp++;
+      list.set(id, row);
+      campaignsBy.set(key, list);
+    }
+  }
+  for (const s of signups) {
+    const p = signupSource(s).platform;
+    if (p === "direct") continue;
+    card(PLATFORMS[p] ? p : "other").signedUpToday++;
+  }
+  for (const [key, list] of campaignsBy) card(key).campaigns = [...list.values()].sort((a, b) => b.visitors - a.visitors).slice(0, 4);
+  // The ad platforms in their fixed order, so the cards never jump around as
+  // traffic shifts; then the other named platforms by visitors; then search,
+  // direct and other sites, always last.
+  const TAIL = ["search", "direct", "other"];
+  const order = (p: LivePlatform) => (p.ads ? AD_PLATFORM_KEYS.indexOf(p.platform) : TAIL.includes(p.platform) ? 100 + TAIL.indexOf(p.platform) : 50);
+  return [...by.values()]
+    .filter((p) => p.ads || p.visitors > 0 || p.signedUpToday > 0)
+    .sort((a, b) => order(a) - order(b) || b.visitors - a.visitors || b.signedUpToday - a.signedUpToday || a.name.localeCompare(b.name));
 }
 
 /** The one HogQL query behind the panel: the window's events, one row each. */
@@ -378,7 +544,10 @@ export function buildLiveQuery(windowMinutes = LIVE_WINDOW_MINUTES): string {
     ${prop("$referring_domain")},
     ${prop("$device_type")}, ${prop("$browser")}, ${prop("$os")},
     ${prop("$geoip_country_name")}, ${prop("$geoip_subdivision_1_name")}, ${prop("$geoip_city_name")},
-    ${prop("step")}, ${prop("outcome")}, ${prop("plan")}, ${prop("verified")}
+    ${prop("step")}, ${prop("outcome")}, ${prop("plan")}, ${prop("verified")},
+    toFloat64OrNull(toString(properties.$geoip_latitude)), toFloat64OrNull(toString(properties.$geoip_longitude)),
+    ${prop("$geoip_country_code")}, ${prop("$geoip_subdivision_1_code")},
+    multiIf(${CLICK_ID_KEYS.map((k) => `${prop(k)} != '', '${k}'`).join(", ")}, '')
     FROM events
     WHERE timestamp > now() - INTERVAL ${Math.max(5, Math.min(120, Math.round(windowMinutes)))} MINUTE AND event IN (${events})
     ORDER BY timestamp DESC LIMIT 4000`;
@@ -391,11 +560,22 @@ export function liveEventFromRow(row: unknown[]): LiveEvent | null {
   if (!Number.isFinite(at) || at <= 0) return null;
   const event = str(2);
   if (!event) return null;
+  const coord = (i: number, limit: number) => {
+    const v = typeof row[i] === "number" ? (row[i] as number) : row[i] == null || row[i] === "" ? NaN : Number(row[i]);
+    return Number.isFinite(v) && Math.abs(v) <= limit && v !== 0 ? v : null;
+  };
+  const lat = coord(24, 90);
+  const lon = coord(25, 180);
   return {
     person: str(0), distinctId: str(1), event, at,
     pathname: str(4), url: str(5), sessionId: str(6), hostname: str(7), environment: str(8),
     utmSource: str(9), utmMedium: str(10), utmCampaign: str(11), utmContent: str(12), referrer: str(13),
     device: str(14), browser: str(15), os: str(16), country: str(17), region: str(18), city: str(19),
     step: str(20), outcome: str(21), plan: str(22), verified: str(23),
+    lat: lat !== null && lon !== null ? lat : null,
+    lon: lat !== null && lon !== null ? lon : null,
+    countryCode: str(26).toUpperCase().slice(0, 2),
+    regionCode: str(27).toUpperCase().slice(0, 3),
+    click: CLICK_IDS[str(28).toLowerCase()] ? str(28).toLowerCase() : "",
   };
 }
