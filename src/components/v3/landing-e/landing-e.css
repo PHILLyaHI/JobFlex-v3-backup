@@ -905,6 +905,7 @@
 .jf-lp .lp-cv--built { --lp-cv: 1260px; }
 .jf-lp .lp-cv--pricing { --lp-cv: 1130px; }
 .jf-lp .lp-cv--faq { --lp-cv: 880px; }
+.jf-lp .lp-cv--hvac { --lp-cv: 2000px; } /* the HVAC page's service book; 3600px on a phone, below */
 
 @media (min-width: 1280px) { /* the container has reached its width; the montage strip loses a row */
   .jf-lp .lp-cv--showcase { --lp-cv: 927px; }
@@ -1515,6 +1516,18 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
    box starts to its right. On a phone the stage is the hero's 320 px and the
    plan takes the middle three fifths. */
 .jf-lp .lp-hvac-stage .lp-hvac-plan { left: 170px; right: 0; top: 7%; height: 79%; }
+/* The service book's "usual way / JobFlex" sheet on a phone: each question is
+   a block — the question, then the two answers under their own labels. */
+@media (max-width: 639px) {
+  .jf-lp .lp-cv--hvac { --lp-cv: 3600px; }
+  .jf-lp .lp-hv-vs-head { display: none; }
+  .jf-lp .lp-hv-vs-row { grid-template-columns: 1fr; padding: 12px 14px 14px; }
+  .jf-lp .lp-hv-vs-row > div { padding: 0; }
+  .jf-lp .lp-hv-vs-row > div + div { margin-top: 8px; padding-left: 12px; border-left: 2px solid rgba(10, 10, 10, 0.15); }
+  .jf-lp .lp-hv-vs-row > div + div::before { display: block; margin-bottom: 2px; font-family: var(--font-mono); font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-muted); content: "The usual way"; }
+  .jf-lp .lp-hv-vs-row > div + div + div { border-left-color: #1854a0; }
+  .jf-lp .lp-hv-vs-row > div + div + div::before { color: #1854a0; content: "JobFlex"; }
+}
 @media (max-width: 639px) {
   .jf-lp .lp-hvac-stage { height: 320px; }
   .jf-lp .lp-hvac-stage .lp-hvac-plan { left: 0; top: 19%; height: 58%; }

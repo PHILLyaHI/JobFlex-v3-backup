@@ -43,6 +43,8 @@ import { LandingVariantEffects } from "./landing-variant-effects";
    put 2–4 s of the mobile LCP in render delay from script work alone. */
 const EstimatorsShowcase = dynamic(() => import("./estimators-showcase").then((m) => m.EstimatorsShowcase));
 const Montage = dynamic(() => import("./montage").then((m) => m.Montage));
+// The HVAC page's own section (2026-10-01): plans, visits, units, menu, the tech's phone.
+const HvacServiceSection = dynamic(() => import("./hvac-service-section").then((m) => m.HvacServiceSection));
 const ProposalsSection = dynamic(() => import("./proposals-section").then((m) => m.ProposalsSection));
 const PortalSection = dynamic(() => import("./portal-section").then((m) => m.PortalSection));
 const JobsSection = dynamic(() => import("./jobs-section").then((m) => m.JobsSection));
@@ -111,6 +113,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
         <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} cta={top} />
         <Intro />
         <div className="lp-cv lp-cv--showcase"><EstimatorsShowcase ownSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} scenario={smart} registerHref={register} cta={top} /></div>
+        {variant === "hvac" && <div className="lp-cv lp-cv--hvac"><HvacServiceSection registerHref={register} cta={top} /></div>}
         {(g?.montage ?? true) && <div className="lp-cv lp-cv--montage"><Montage /></div>}
         <div className="lp-cv lp-cv--proposals"><ProposalsSection proposal={g?.proposal} registerHref={register} cta={low} /></div>
         <div className="lp-cv lp-cv--portal"><PortalSection portal={g?.portal} client={g?.proposal?.client} /></div>

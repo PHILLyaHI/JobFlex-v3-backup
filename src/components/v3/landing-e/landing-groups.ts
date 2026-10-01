@@ -401,6 +401,39 @@ const MEP_PORTAL: PortalContent = {
   totalUpgraded: "$7,180",
 };
 
+/* The HVAC page's proposal and portal (2026-10-01): the hero window's
+   Kirkland job at its Better tier — the same $12,580, line for line
+   (hvac-demo.ts demoSystem), so the page tells one story. */
+const HVAC_PROPOSAL: ProposalContent = {
+  number: "P-1217",
+  title: "Whitfield heat pump — 2.5 ton, two-stage, ducted",
+  blurb:
+    "Full scope for the system: a 2.5-ton two-stage heat pump at 17 SEER2 with a variable-speed air handler, the existing ducts sealed and two runs repaired, a new 240 V circuit and disconnect, the permit and the load report. The price is complete — anything outside it gets a written change order first.",
+  linesMobile: [
+    ["2.5-ton heat pump, 17 SEER2", "$8,230"],
+    ["Duct sealing & repair", "$900"],
+    ["Labor, 23 hrs", "$2,513"],
+  ],
+  linesDesktop: [
+    ["2.5-ton heat pump, 17 SEER2, air handler", "$8,230"],
+    ["Duct sealing & repair — 2 runs", "$900"],
+    ["Electrical & disconnect — 240 V circuit", "$650"],
+    ["Labor — permit, set, commissioning (23 hrs)", "$2,513"],
+  ],
+  total: "$12,580",
+  option: { name: "Option — smart thermostat & C-wire", note: "Client adds this in the portal", price: "+$505" },
+  client: "J. Whitfield",
+};
+
+const HVAC_PORTAL: PortalContent = {
+  title: "Whitfield heat pump · Proposal #P-1217",
+  baseOption: "Two-stage, 17 SEER2",
+  upgradeOption: "Smart thermostat & C-wire",
+  upgradePrice: "+$505",
+  total: "$12,580",
+  totalUpgraded: "$13,085",
+};
+
 /* ── general: carpentry, demolition, general-contractor ───── */
 
 const GENERAL_STATS: StatsRow[] = [
@@ -675,7 +708,14 @@ export function groupContentFor(key: LandingVariantKey | undefined): GroupConten
     case "exterior":
       return { stats: EXTERIOR_STATS, jobs: EXTERIOR_JOBS, phoneJobs: EXTERIOR_PHONE, crew: EXTERIOR_CREW, phoneLanes: EXTERIOR_PHONE_LANES, proposal: EXTERIOR_PROPOSAL, portal: EXTERIOR_PORTAL, montage: false };
     case "mep":
-      return { stats: MEP_STATS, jobs: MEP_JOBS, phoneJobs: MEP_PHONE, crew: MEP_CREW, phoneLanes: MEP_PHONE_LANES, proposal: MEP_PROPOSAL, portal: MEP_PORTAL, montage: false };
+      return {
+        stats: MEP_STATS,
+        jobs: MEP_JOBS,
+        phoneJobs: MEP_PHONE, crew: MEP_CREW, phoneLanes: MEP_PHONE_LANES,
+        proposal: key === "hvac" ? HVAC_PROPOSAL : MEP_PROPOSAL,
+        portal: key === "hvac" ? HVAC_PORTAL : MEP_PORTAL,
+        montage: false,
+      };
     case "general":
       return { stats: GENERAL_STATS, jobs: GENERAL_JOBS, phoneJobs: GENERAL_PHONE, crew: GENERAL_CREW, phoneLanes: GENERAL_PHONE_LANES, proposal: GENERAL_PROPOSAL, portal: GENERAL_PORTAL, montage: false };
     default:

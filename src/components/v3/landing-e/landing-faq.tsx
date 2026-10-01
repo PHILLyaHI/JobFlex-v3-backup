@@ -19,7 +19,7 @@ import "./pricing-faq.css";
    columns of two, with the next column showing at the right edge. */
 type Faq = { q: string; a: string };
 
-const DATA_Q: Record<"roofing" | "fencing" | "other", Faq> = {
+const DATA_Q: Record<"roofing" | "fencing" | "hvac" | "other", Faq> = {
   roofing: {
     q: "Where do the roof figures come from?",
     a: "From aerial data for the address: area, pitch and each structure are measured from above, and the report says which figures were measured and which were reported.",
@@ -28,6 +28,11 @@ const DATA_Q: Record<"roofing" | "fencing" | "other", Faq> = {
     q: "Where do the fence figures come from?",
     a: "The lot lines come from the parcel record and the grade from terrain data; the run is the line you draw on the map, and the takeoff follows it.",
   },
+  // HVAC (2026-10-01): the hero promises a load and a rebate list.
+  hvac: {
+    q: "Where do the HVAC figures come from?",
+    a: "The design day comes from the county, the load from the house's size, era and ducts, and the heat pump is sized to the Manual S window. Incentives are listed with the dates they open and close, so a proposal never quotes a rebate that is not live.",
+  },
   other: {
     q: "How is an estimate priced from a description?",
     a: "You type the job the way you would say it to a foreman; the estimator turns it into line items with your trade's units and current material and labor prices, and you adjust anything before it goes out.",
@@ -35,7 +40,7 @@ const DATA_Q: Record<"roofing" | "fencing" | "other", Faq> = {
 };
 
 function questions(variant: LandingVariantKey | undefined): Faq[] {
-  const data = variant === "roofing" || variant === "fencing" ? DATA_Q[variant] : DATA_Q.other;
+  const data = variant === "roofing" || variant === "fencing" || variant === "hvac" ? DATA_Q[variant] : DATA_Q.other;
   return [
     {
       q: "Do I need a credit card to start?",
