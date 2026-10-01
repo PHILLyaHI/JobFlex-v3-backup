@@ -66,15 +66,22 @@ async function main() {
   const { renderEmail } = await import("../../src/lib/email/renderEmail");
   const { buildAccountReady } = await import("../../src/lib/email/build/platform");
   const { sendEmail, isResendEnabled, EMAIL_FROM } = await import("../../src/lib/sdk/resend");
+  const { isSmtpEnabled } = await import("../../src/lib/sdk/smtp");
   const stripe = getStripe();
 
   // The sender. .env.local may carry a development sender (Resend's shared
-  // onboarding@resend.dev delivers only to the Resend account's own inbox), so
-  // production mail takes --from, and refuses a resend.dev sender outright.
-  const FROM = opt("--from") ?? EMAIL_FROM;
-  if (PROD && FIX && /@resend\.dev>?$/i.test(FROM)) throw new Error(`the sender is ${FROM} — Resend's test address delivers to nobody else; pass --from "JobFlex <app@jobflex.app>"`);
-  const transport = process.env.EMAIL_DEV_OUTBOX ? `dev outbox ${path.relative(ROOT, process.env.EMAIL_DEV_OUTBOX)}` : isResendEnabled() ? "Resend" : process.env.SMTP_HOST ? "SMTP" : "NONE — would not be sent";
-  console.log(`IMPORT V2 SUBSCRIBERS — ${FIX ? "FIX" : "DRY RUN"} · ${where} · Stripe ${PROD ? "LIVE" : "test"} · mail via ${transport}, from ${FROM}${PROD && /@resend\.dev>?$/i.test(FROM) ? " (a TEST sender — --fix refuses it; pass --from)" : ""} · links to ${BASE}`);
+  // onboarding@resend.dev delivers only to the Resend account's own inbox).
+  // Production mail takes --from, else FROM_EMAIL, and refuses resend.dev.
+  const testSender = (f: string) => /@resend\.dev>?$/i.test(f);
+  const FROM = opt("--from") ?? (PROD && testSender(EMAIL_FROM) && process.env.FROM_EMAIL ? `JobFlex <${process.env.FROM_EMAIL}>` : EMAIL_FROM);
+  if (PROD && FIX && testSender(FROM)) throw new Error(`the sender is ${FROM} — Resend's test address delivers to nobody else; pass --from "JobFlex <app@jobflex.app>"`);
+  // What sendEmail will pick, in its order: the outbox, Resend, SMTP.
+  const sendsBy = (outbox: boolean) =>
+    outbox ? `dev outbox ${path.relative(ROOT, process.env.EMAIL_DEV_OUTBOX ?? "")}` : isResendEnabled() ? "Resend" : isSmtpEnabled() ? `SMTP ${process.env.SMTP_HOST} as ${process.env.SMTP_USER}` : "NONE — would not be sent";
+  const transport = sendsBy(Boolean(process.env.EMAIL_DEV_OUTBOX));
+  const atFix = PROD ? sendsBy(false) : transport;
+  console.log(`IMPORT V2 SUBSCRIBERS — ${FIX ? "FIX" : "DRY RUN"} · ${where} · Stripe ${PROD ? "LIVE" : "test"} · links to ${BASE}`);
+  console.log(`mail now via ${transport}; with --fix via ${atFix}, from ${FROM}`);
 
   const limitsText = (json: string | null) => {
     const l = parsePlanLimits(json) as { [k: string]: number | null | undefined };
