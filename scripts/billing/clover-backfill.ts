@@ -43,13 +43,10 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import Module from "node:module";
-import { spawnSync } from "node:child_process";
 import type Stripe from "stripe";
+import { ROOT, openEnvironment } from "./_prod";
 
-const ROOT = path.resolve(__dirname, "../..");
 const OUT = path.join(ROOT, ".cache/clover-backfill");
-const URL_FILE = "C:/Users/ivana/Downloads/prod-db-url.txt";
 const argv = process.argv.slice(2);
 const flag = (n: string) => argv.includes(n);
 const opt = (n: string) => {
@@ -62,53 +59,6 @@ const CREDIT = flag("--credit-rewards");
 const SINCE = new Date(opt("--since") ?? "2026-09-24T00:00:00Z");
 const UNTIL = opt("--until") ? new Date(opt("--until")!) : new Date();
 if (Number.isNaN(SINCE.getTime()) || Number.isNaN(UNTIL.getTime())) throw new Error("--since / --until: not a date");
-fs.mkdirSync(OUT, { recursive: true });
-
-// ── environment, before any app module loads ───────────
-function loadEnv() {
-  // Next's own loader: .env.local, then .env; a variable already set wins.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { loadEnvConfig } = require("@next/env") as typeof import("@next/env");
-  loadEnvConfig(ROOT, true, { info: () => {}, error: console.error });
-  process.env.EMAIL_DEV_OUTBOX = path.join(OUT, "outbox");
-  process.env.NEXT_PUBLIC_POSTHOG_KEY = "";
-  process.env.META_CAPI_ACCESS_TOKEN = "";
-  delete process.env.STRIPE_MOCK_FILE;
-  // Live writes only for the referral credit, and only when asked for.
-  process.env.STRIPE_ALLOW_LIVE_WRITES = FIX && CREDIT ? "true" : "";
-}
-
-function openProductionDatabase(): string {
-  const raw = fs.readFileSync(URL_FILE, "utf8");
-  fs.unlinkSync(URL_FILE);
-  const url = raw.split(/\r?\n/).map((l) => l.trim()).find((l) => /^postgres(ql)?:\/\//i.test(l));
-  if (!url) throw new Error("no postgres url in the file (file deleted)");
-  const host = new URL(url).hostname;
-  if (!/neon\.tech$/.test(host)) throw new Error(`not a Neon host: ${host}`);
-  process.env.POSTGRES_URL = url;
-  process.env.POSTGRES_URL_NON_POOLING = url;
-  process.env.DATABASE_URL = url;
-
-  // The app's schema with the production datasource (scripts/prisma-production-schema.js),
-  // generated into its own folder so the shared node_modules client stays SQLite.
-  const dir = path.join(OUT, "prisma-pg");
-  fs.mkdirSync(dir, { recursive: true });
-  const schema = fs
-    .readFileSync(path.join(ROOT, "prisma/schema.prisma"), "utf8")
-    .replace(/datasource db \{[\s\S]*?\n\}/, `datasource db {\n  provider  = "postgresql"\n  url       = env("POSTGRES_URL")\n  directUrl = env("POSTGRES_URL_NON_POOLING")\n}`)
-    .replace(/generator client \{[\s\S]*?\n\}/, `generator client {\n  provider = "prisma-client-js"\n  output   = "${path.join(dir, "client").replace(/\\/g, "/")}"\n}`);
-  fs.writeFileSync(path.join(dir, "schema.prisma"), schema);
-  const gen = spawnSync("npx", ["--no-install", "prisma", "generate", "--schema", path.join(dir, "schema.prisma")], { cwd: ROOT, encoding: "utf8", shell: process.platform === "win32" });
-  if (gen.status !== 0) throw new Error(`prisma generate failed:\n${gen.stderr}`);
-  const client = path.join(dir, "client", "index.js");
-  const M = Module as unknown as { _resolveFilename: (req: string, ...rest: unknown[]) => string };
-  const orig = M._resolveFilename;
-  M._resolveFilename = function (req: string, ...rest: unknown[]) {
-    if (req === "@prisma/client" || req === ".prisma/client" || req === ".prisma/client/default") return client;
-    return orig.call(this, req, ...rest);
-  };
-  return host;
-}
 
 // ── report helpers ─────────────────────────────────────
 const usd = (c: number | null | undefined) => (c == null ? "—" : `${c < 0 ? "−" : ""}$${(Math.abs(c) / 100).toFixed(2)}`);
@@ -120,19 +70,8 @@ const say = (s = "") => {
 };
 
 async function main() {
-  loadEnv();
-  let where: string;
-  if (PROD) {
-    where = `production (${openProductionDatabase()})`;
-  } else {
-    const url = process.env.DATABASE_URL ?? "";
-    if (!/^file:/.test(url)) throw new Error("without --prod only a local SQLite database is allowed");
-    where = `local (${url.replace(/^file:/, "")})`;
-  }
-  const live = (process.env.STRIPE_SECRET_KEY ?? "").startsWith("sk_live_");
-  if (PROD !== live) {
-    throw new Error(PROD ? "--prod needs the LIVE key (STRIPE_SECRET_KEY=sk_live_…)" : "a live key against a local database — refusing; blank STRIPE_SECRET_KEY for the sandbox");
-  }
+  // Live writes only for the referral credit, and only when asked for.
+  const { where, live } = openEnvironment({ prod: PROD, out: OUT, allowLiveWrites: FIX && CREDIT });
 
   // The app's modules, now that the client and the environment are in place.
   await import("../qa/_server-only");
