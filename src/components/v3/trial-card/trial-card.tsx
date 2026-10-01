@@ -10,6 +10,7 @@
 // it. Only the owner adds the card; everyone else is told who can.
 import * as React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { Route } from "next";
 import type { TrialView } from "@/lib/cardlessTrial";
 import { metaTrack, newEventId } from "@/lib/metaPixel";
@@ -75,6 +76,10 @@ function daysText(n: number): string {
    (only="dock", via the shell's handheldBanner). */
 export function TrialRibbon({ view, isOwner, only }: { view: TrialView; isOwner: boolean; only?: "dock" }) {
   const { go, busy, error } = useAddCard();
+  // Not over the trial's own page, which says the same at full size. Read in
+  // the browser too: a layout is not re-rendered on a client-side navigation
+  // (a refused write redirects there), so the server's check alone left it up.
+  const pathname = usePathname();
   const ended = view.kind === "ended";
   const tone = ended ? s.isEnded : view.hasCard ? s.isCard : view.daysLeft <= 2 ? s.isSoon : "";
   const stamp = ended ? "Trial ended" : view.hasCard ? "Card on file" : daysText(view.daysLeft);
@@ -100,6 +105,7 @@ export function TrialRibbon({ view, isOwner, only }: { view: TrialView; isOwner:
       {action}
     </div>
   );
+  if (pathname?.startsWith("/dashboard/trial")) return null;
   if (only === "dock") return dock;
   return (
     <>
