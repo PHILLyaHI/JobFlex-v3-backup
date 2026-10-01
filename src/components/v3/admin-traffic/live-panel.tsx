@@ -182,7 +182,7 @@ export function LivePanel({ initial, timezone }: { initial: LiveReport; timezone
     {rows.length > 0 && <ol className={s.liveList} aria-label="Visitors on the site">
       {rows.map((v) => <LiveRow key={v.id + v.firstAt} v={v} now={now} timezone={timezone} selected={selected === v.id} onSelect={() => setSelected(selected === v.id ? null : v.id)}/>)}
     </ol>}
-    {report.otherSignups.length > 0 && <div className={s.liveOthers}><span className={s.micro}>Also signed up today, before this window or with analytics blocked:</span>{report.otherSignups.map((o) => <span key={o.orgName + o.at} className={s.liveOther}><b>{o.orgName}</b> · {o.ownerEmail || "no owner yet"} · {o.source} · {clock(o.at, timezone)}</span>)}</div>}
+    {report.otherSignups.length > 0 && <div className={s.liveOthers}><span className={s.micro}>Signed up today, outside the last {report.windowMinutes} minutes or with analytics blocked — the live list above only holds the window, this holds the day:</span>{report.otherSignups.map((o) => <span key={o.orgName + o.at} className={s.liveOther}><b>{o.orgName}</b> · {o.ownerEmail || "no owner yet"} · {o.source} · {clock(o.at, timezone)} <b className={s.livePlan}>{o.planLabel}</b></span>)}</div>}
     <p className={s.footnote}>One line per browser (a PostHog person), newest move first, signups on top; a click on a line shows it on the map. Source is what the first page of the visit carried: a tagged paid medium is an ad; a Facebook, Instagram or TikTok referrer with no tag is called an ad too. Colour is how far they got, and each stage has its own: crimson looking around, cyan signing in, amber on the sign-up form or at checkout, green signed up, near-black already a member. A visitor at the login, forgot-password or reset screen is an existing customer, counted as signing in rather than browsing; "locked out" means they asked for a reset link. Places come from PostHog&apos;s GeoIP reading of the browser&apos;s address — the town is usually right, the street never known. A signup is named after the organization created within fifteen minutes of it with the same campaign tag.</p>
   </section>;
 }
@@ -193,7 +193,12 @@ function LiveRow({ v, now, timezone, selected, onSelect }: { v: LiveVisitor; now
     <div className={s.liveMark} aria-hidden="true"/>
     <div className={s.liveWho}>
       <b>{STAGE[v.stage]}{v.signup ? ` → ${v.signup.orgName}` : ""}</b>
-      {v.signup && <span className={s.liveSignup}>{v.signup.ownerName ? `${v.signup.ownerName} · ` : ""}{v.signup.ownerEmail}{v.signup.plan ? ` · ${v.signup.plan}` : ""}{v.signup.outcome ? ` · ${v.signup.outcome.replace(/_/g, " ")}` : ""} · account made {clock(v.signup.at, timezone)}</span>}
+      {v.signup && <span className={s.liveSignup}>
+        {v.signup.ownerName ? `${v.signup.ownerName} · ` : ""}{v.signup.ownerEmail} · account made {clock(v.signup.at, timezone)}
+        {/* What they signed up FOR, read from the subscription row — the
+            event's own `plan` is only what the page offered. */}
+        <b className={s.livePlan}>{v.signup.planLabel}</b>
+      </span>}
       {!v.signup && v.stage === "signed-up" && v.signedUpAt && <span className={s.liveSignup}>Verified at {clock(v.signedUpAt, timezone)} · no organization row matched yet</span>}
       <span className={s.liveSource}>
         {v.fromAd && <em className={s.liveAd}><Megaphone size={11}/>Ad</em>}

@@ -3,7 +3,7 @@
 // signups named after the organization the database made. Static imports
 // only (tsx has no top-level await).
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/traffic-live.check.ts
-import { AD_PLATFORM_KEYS, buildLiveQuery, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, liveHeadline, minutesIntoDay, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
+import { AD_PLATFORM_KEYS, buildLiveQuery, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, liveHeadline, minutesIntoDay, signupLedgerSummary, signupPlanLabel, signupState, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
 
 let bad = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -259,6 +259,48 @@ check("with no totals it simply says nothing about the day",
   !/today/i.test(liveHeadline({ ...base, todayVisitors: null, yesterdaySoFar: null, yesterdayTotal: null })));
 check("one person reads as one person",
   /1 person is on the site right now/.test(liveHeadline({ ...base, onSite: 1, todayVisitors: 5, yesterdaySoFar: 5 })));
+
+// ── "they signed up — but for what?" (2026-10-01)
+const NOWMS = Date.parse("2026-10-01T12:00:00Z");
+const sub = (plan: string, subStatus: string, trialEndsAt: string | null = null) => signupPlanLabel({ plan, subStatus, trialEndsAt }, NOWMS);
+check("a free trial says so, and how long is left",
+  sub("PROFESSIONAL", "TRIALING", "2026-10-13T12:00:00Z") === "Free trial · Professional · 12 days left"
+  && sub("FREE", "TRIALING", "2026-10-02T12:00:00Z") === "Free trial · 1 day left"
+  && sub("FREE", "TRIALING", "2026-10-01T18:00:00Z") === "Free trial · ends today",
+  sub("PROFESSIONAL", "TRIALING", "2026-10-13T12:00:00Z"));
+check("a trial whose date has passed is not called days left",
+  sub("STARTER", "TRIALING", "2026-09-28T12:00:00Z") === "Free trial · Starter · trial expired");
+check("a trial with no end date still reads as a trial", sub("STARTER", "TRIALING", null) === "Free trial · Starter");
+check("paying, failing, canceled and free each read as themselves",
+  sub("PROFESSIONAL", "ACTIVE") === "Professional · paying"
+  && sub("STARTER", "PAST_DUE") === "Starter · payment failed"
+  && sub("STARTER", "CANCELED") === "Starter · canceled"
+  && sub("STARTER", "EXPIRED") === "Starter · expired"
+  && sub("FREE", "FREE") === "Free plan");
+check("an account with no subscription row says so instead of being called free",
+  sub("", "") === "no subscription row yet");
+check("an unknown status is printed, not swallowed", sub("STARTER", "SOMETHING_NEW") === "Starter · something new");
+check("the label rides along with a matched signup and with one that aged out",
+  typeof shapeLive([], [], NOW, {}).otherSignups === "object");
+
+// ── the signup ledger: the record that outlasts the window (2026-10-01)
+check("a subscription status folds to the state its colour and count use",
+  signupState("TRIALING") === "trial" && signupState("ACTIVE") === "paying"
+  && signupState("PAST_DUE") === "lapsed" && signupState("CANCELED") === "lapsed" && signupState("EXPIRED") === "lapsed"
+  && signupState("FREE") === "free" && signupState("") === "unknown" && signupState("whatever") === "unknown");
+check("the state reading is not case- or space-sensitive", signupState("  trialing ") === "trial");
+
+const rec = (state: ReturnType<typeof signupState>, fromAd = false) => ({
+  orgId: Math.random().toString(36).slice(2), orgName: "Org", ownerName: "", ownerEmail: "",
+  createdAt: "2026-10-01T00:00:00Z", source: "Direct", fromAd, platform: "direct",
+  campaign: "", content: "", industry: "", planLabel: "", state,
+});
+const led = signupLedgerSummary([rec("trial", true), rec("trial"), rec("paying", true), rec("lapsed"), rec("free"), rec("unknown")]);
+check("the ledger counts the span by state, and how many came from ads",
+  led.total === 6 && led.trial === 2 && led.paying === 1 && led.lapsed === 1 && led.free === 1 && led.unknown === 1 && led.fromAds === 2,
+  JSON.stringify(led));
+check("an empty span counts zero of everything, not NaN",
+  Object.values(signupLedgerSummary([])).every((v) => v === 0));
 
 console.log(bad ? `\n${bad} failing` : "\nall green");
 process.exit(bad ? 1 : 0);

@@ -443,7 +443,49 @@
 :global(.jf-blueprint) .liveRow[data-active="true"] .liveWhen b { color:var(--success-dark); }
 :global(.jf-blueprint) .liveOthers { display:flex; flex-direction:column; gap:6px; padding:14px 24px; border-top:1px solid var(--traffic-line); background:var(--paper); }
 :global(.jf-blueprint) .liveOther { font:600 11px/1.5 var(--font-mono); color:var(--ink-soft); }
+/* What the account actually is — trial, paying, free — from the database. */
+:global(.jf-blueprint) .livePlan { display:inline-block; padding:1px 6px; border:1.5px solid var(--map-signed); background:color-mix(in oklab, var(--map-signed) 9%, transparent); color:var(--success-dark); font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; }
 :global(.jf-blueprint) .live .footnote { padding:12px 24px 16px; margin:0; }
+
+/* ── THE SIGNUP LEDGER (2026-10-01): every account made, and what it is now.
+   Same plate as the live panel so the two read as one surface. */
+:global(.jf-blueprint) .ledger { --map-visitor:#e11d48; --map-signin:#0891b2; --map-signing:#f59e0b; --map-signed:#15803d; --map-member:#1e293b; border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); margin-top:22px; }
+:global(.jf-blueprint) .ledgerHead { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:18px 24px; border-bottom:1px solid var(--traffic-line); flex-wrap:wrap; }
+:global(.jf-blueprint) .ledgerHead h2 { margin:0 0 4px; font:800 19px/1.1 var(--font); letter-spacing:-.03em; }
+:global(.jf-blueprint) .ledgerHead .micro { margin:0; display:block; max-width:62ch; }
+:global(.jf-blueprint) .ledgerTools { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+:global(.jf-blueprint) .ledgerSummary { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); border-bottom:1px solid var(--traffic-line); background:var(--paper); }
+:global(.jf-blueprint) .ledgerSummary > div { display:flex; flex-direction:column; gap:5px; padding:14px 20px; border-right:1px solid var(--traffic-line); min-width:0; }
+:global(.jf-blueprint) .ledgerSummary > div:last-child { border-right:0; }
+:global(.jf-blueprint) .ledgerSummary span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); }
+:global(.jf-blueprint) .ledgerSummary strong { font:850 28px/1 var(--font); letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .ledgerSummary small { font:600 11px/1.4 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .ledgerSummary > div[data-state="trial"] strong { color:#b45309; }
+:global(.jf-blueprint) .ledgerSummary > div[data-state="paying"] strong { color:var(--success-dark); }
+:global(.jf-blueprint) .ledgerSummary > div[data-state="lapsed"] strong { color:#9b2c2c; }
+:global(.jf-blueprint) .ledgerSummary > div[data-state="free"] strong { color:var(--muted); }
+:global(.jf-blueprint) .ledgerList { list-style:none; margin:0; padding:0; }
+:global(.jf-blueprint) .ledgerRow { display:grid; grid-template-columns:6px minmax(150px,1fr) minmax(150px,1fr) minmax(150px,1.05fr) minmax(104px,.48fr); gap:0 16px; align-items:start; padding:13px 20px 13px 0; border-bottom:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .ledgerRow:last-child { border-bottom:0; }
+:global(.jf-blueprint) .ledgerMark { align-self:stretch; background:var(--muted-faint); }
+:global(.jf-blueprint) .ledgerRow[data-state="trial"] .ledgerMark { background:var(--map-signing); }
+:global(.jf-blueprint) .ledgerRow[data-state="paying"] .ledgerMark { background:var(--map-signed); }
+:global(.jf-blueprint) .ledgerRow[data-state="lapsed"] .ledgerMark { background:var(--map-visitor); }
+:global(.jf-blueprint) .ledgerRow[data-state="free"] .ledgerMark { background:var(--map-member); }
+:global(.jf-blueprint) .ledgerWho, :global(.jf-blueprint) .ledgerFrom, :global(.jf-blueprint) .ledgerPlan, :global(.jf-blueprint) .ledgerWhen { display:flex; flex-direction:column; gap:3px; min-width:0; }
+:global(.jf-blueprint) .ledgerRow b { font:700 13px/1.35 var(--font); color:var(--ink); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+:global(.jf-blueprint) .ledgerRow span { font:600 11px/1.5 var(--font-mono); color:var(--muted); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .ledgerWhen b { font-family:var(--font-mono); font-size:11.5px; font-weight:600; color:var(--ink-soft); }
+:global(.jf-blueprint) .ledgerPlan .livePlan { white-space:normal; max-width:100%; line-height:1.55; }
+:global(.jf-blueprint) .livePlan[data-state="trial"] { border-color:#b45309; background:color-mix(in oklab, #b45309 9%, transparent); color:#92400e; }
+:global(.jf-blueprint) .livePlan[data-state="lapsed"] { border-color:#9b2c2c; background:color-mix(in oklab, #9b2c2c 9%, transparent); color:#9b2c2c; }
+:global(.jf-blueprint) .livePlan[data-state="free"], :global(.jf-blueprint) .livePlan[data-state="unknown"] { border-color:var(--hair-soft); background:var(--paper-deep); color:var(--muted); }
+@media (max-width: 900px) {
+  :global(.jf-blueprint) .ledgerSummary { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  :global(.jf-blueprint) .ledgerSummary > div:nth-child(2n) { border-right:0; }
+  :global(.jf-blueprint) .ledgerRow { grid-template-columns:6px minmax(0,1fr); gap:6px 14px; padding-right:14px; }
+  :global(.jf-blueprint) .ledgerMark { grid-row:1 / span 4; }
+}
 @media (max-width: 900px) {
   :global(.jf-blueprint) .liveTotals { grid-template-columns:repeat(2,minmax(0,1fr)); }
   :global(.jf-blueprint) .liveTotals > div:nth-child(2n) { border-right:0; }

@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { getLiveTraffic as liveTraffic, getStageVisitors, getTrafficReport } from "@/lib/traffic-server";
 import { parseTrafficFilters } from "@/lib/traffic-query";
 import type { SignupAttribution } from "@/lib/traffic-contract";
-import type { FreshSignup, LiveReport } from "@/lib/traffic-live";
+import { signupLedgerSummary, signupPlanLabel, signupSource, signupState, type FreshSignup, type LiveReport, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
 
 /** The organizations made in the last day, with the owner who made them —
  *  the rows a live signup is tied back to (lib/traffic-live). */
@@ -18,11 +18,17 @@ async function freshSignups(): Promise<FreshSignup[]> {
       select: {
         id: true, name: true, createdAt: true, utmSource: true, utmMedium: true, utmCampaign: true, landingIndustry: true,
         memberships: { orderBy: { createdAt: "asc" }, take: 1, select: { user: { select: { email: true, name: true } } } },
+        // What they actually signed up FOR. The browser event says what the
+        // page offered; this row is Stripe's truth, mirrored by the webhooks,
+        // and it is the only place that knows a trial from a payment.
+        subscription: { select: { plan: true, status: true, trialEndsAt: true } },
       },
     });
     return rows.map((r) => ({
       orgId: r.id, orgName: r.name, createdAt: r.createdAt.toISOString(),
       ownerEmail: r.memberships[0]?.user.email ?? "", ownerName: r.memberships[0]?.user.name ?? "",
+      plan: r.subscription?.plan ?? "", subStatus: r.subscription?.status ?? "",
+      trialEndsAt: r.subscription?.trialEndsAt?.toISOString() ?? null,
       utmSource: r.utmSource ?? "", utmMedium: r.utmMedium ?? "", utmCampaign: r.utmCampaign ?? "", landingIndustry: r.landingIndustry ?? "",
     }));
   } catch {
@@ -85,6 +91,62 @@ export async function getSignupAttribution(input: Record<string, unknown> = {}):
     dimensions[key] = [...counts.entries()].map(([name, signups]) => ({ name, signups })).sort((a, b) => b.signups - a.signups);
   }
   return { from: f.from, to: f.to, total: rows.length, dimensions };
+}
+
+/** THE SIGNUP LEDGER: every account made in the span, who made it, what the
+ *  landing recorded about where they came from, and what the subscription is
+ *  now (2026-10-01). Reads rows the database already keeps — no new table,
+ *  no new column — so the record goes back as far as the accounts do.
+ *
+ *  The subscription is read in its own pass. Folding it into the main select
+ *  would mean one failure there costs the whole ledger; separately, the worst
+ *  it can cost is the plan label. */
+const LEDGER_LIMIT = 400;
+export async function getSignupLedger(input: Record<string, unknown> = {}): Promise<SignupLedger> {
+  await requirePlatformAdmin();
+  const days = [1, 7, 30, 90, 365].includes(Number(input.days)) ? Number(input.days) : 30;
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const rows = await db.organization.findMany({
+    where: { createdAt: { gte: since }, deletedAt: null },
+    orderBy: { createdAt: "desc" },
+    take: LEDGER_LIMIT + 1,
+    select: {
+      id: true, name: true, createdAt: true,
+      utmSource: true, utmMedium: true, utmCampaign: true, utmContent: true, landingIndustry: true,
+      memberships: { orderBy: { createdAt: "asc" }, take: 1, select: { user: { select: { email: true, name: true } } } },
+    },
+  });
+  const truncated = rows.length > LEDGER_LIMIT;
+  const page = truncated ? rows.slice(0, LEDGER_LIMIT) : rows;
+
+  // The subscriptions, separately — see the note above.
+  let subs = new Map<string, { plan: string; status: string; trialEndsAt: Date | null }>();
+  try {
+    const found = await db.subscription.findMany({
+      where: { organizationId: { in: page.map((r) => r.id) } },
+      select: { organizationId: true, plan: true, status: true, trialEndsAt: true },
+    });
+    subs = new Map(found.map((x) => [x.organizationId, { plan: x.plan, status: x.status, trialEndsAt: x.trialEndsAt }]));
+  } catch {
+    // The ledger still lists who signed up and where from; only the plan
+    // column goes quiet.
+  }
+
+  const records: SignupRecord[] = page.map((r) => {
+    const sub = subs.get(r.id);
+    const src = signupSource({ utmSource: r.utmSource ?? "", utmMedium: r.utmMedium ?? "" });
+    const shape = { plan: sub?.plan ?? "", subStatus: sub?.status ?? "", trialEndsAt: sub?.trialEndsAt?.toISOString() ?? null };
+    return {
+      orgId: r.id, orgName: r.name,
+      ownerName: r.memberships[0]?.user.name ?? "", ownerEmail: r.memberships[0]?.user.email ?? "",
+      createdAt: r.createdAt.toISOString(),
+      source: src.label, fromAd: src.fromAd, platform: src.platform,
+      campaign: r.utmCampaign ?? "", content: r.utmContent ?? "", industry: r.landingIndustry ?? "",
+      planLabel: signupPlanLabel(shape),
+      state: signupState(shape.subStatus),
+    };
+  });
+  return { days, records, summary: signupLedgerSummary(records), truncated };
 }
 
 export async function getTrafficDashboard(input: Record<string, unknown> = {}) {

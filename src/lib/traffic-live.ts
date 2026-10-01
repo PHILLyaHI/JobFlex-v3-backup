@@ -77,6 +77,13 @@ export interface FreshSignup {
   ownerEmail: string;
   ownerName: string;
   createdAt: string;
+  /** What the account actually is, read from the Subscription row rather
+   *  than from the browser event (2026-10-01). The event's `plan` is what
+   *  the page said; this is what the database granted. Empty strings mean
+   *  the organization has no subscription row at all. */
+  plan: string;
+  subStatus: string;
+  trialEndsAt: string | null;
   utmSource: string;
   utmMedium: string;
   utmCampaign: string;
@@ -161,7 +168,10 @@ export interface LiveVisitor {
   environment: "production" | "development";
   hostname: string;
   /** The account this visitor made, when the database row could be tied to it. */
-  signup: { orgName: string; ownerEmail: string; ownerName: string; at: string; plan: string; outcome: string } | null;
+  signup: { orgName: string; ownerEmail: string; ownerName: string; at: string; plan: string; outcome: string;
+    /** "Free trial · 12 days left", "Professional · paying", "Free plan" — the
+     *  answer to "they signed up, but for what?". */
+    planLabel: string } | null;
   /** The verified signup this visit produced even when no row matched. */
   signedUpAt: string | null;
   /** What they pressed, newest first: the words on the button and where it
@@ -249,7 +259,7 @@ export interface LiveReport {
   today: { signups: number; fromAds: number };
   /** Fresh organizations no live visitor could be tied to (their visit was
    *  before the window, or the browser blocked analytics). */
-  otherSignups: Array<{ orgName: string; ownerEmail: string; at: string; source: string }>;
+  otherSignups: Array<{ orgName: string; ownerEmail: string; at: string; source: string; planLabel: string }>;
 }
 
 const AD_MEDIUMS = new Set(["cpc", "ppc", "paid", "paid_social", "paidsocial", "paid-social", "social-paid", "ads", "ad", "display", "retargeting", "remarketing", "cpm", "cpv", "cpa", "sponsored", "promoted", "boost", "boosted", "banner", "video-ad", "lead-ad", "leadgen", "instant-form"]);
@@ -464,6 +474,100 @@ export function visitSummary(v: {
   return join(`Reading — ${v.views} pages so far${v.trail.length > 1 ? `, now on ${last}` : ""}.`, v.active ? "" : "Has since left.", pressed);
 }
 
+/** What an account actually is, in the words the owner asked for:
+ *  "they signed up — but for what, a free trial or what?" (2026-10-01).
+ *
+ *  Read from the Subscription row, which is Stripe's truth mirrored by the
+ *  webhooks, not from the browser event that said what the page offered.
+ *  An organization with no subscription row yet says so rather than being
+ *  quietly called free: that is a real state, usually a signup caught in
+ *  the seconds before the row is written. */
+export function signupPlanLabel(sub: { plan: string; subStatus: string; trialEndsAt: string | null }, now = Date.now()): string {
+  const plan = (sub.plan || "").trim();
+  const status = (sub.subStatus || "").trim().toUpperCase();
+  if (!status && !plan) return "no subscription row yet";
+  const pretty = plan && plan.toUpperCase() !== "FREE"
+    ? plan.charAt(0).toUpperCase() + plan.slice(1).toLowerCase()
+    : "";
+  switch (status) {
+    case "TRIALING": {
+      const ends = sub.trialEndsAt ? Date.parse(sub.trialEndsAt) : NaN;
+      if (!Number.isFinite(ends)) return pretty ? `Free trial · ${pretty}` : "Free trial";
+      // Whole days remaining, rounded DOWN: a trial with six hours on it
+      // "ends today" rather than claiming a day the owner does not have.
+      const ms = ends - now;
+      const days = Math.floor(ms / 86_400_000);
+      const left = ms <= 0 ? "trial expired" : days === 0 ? "ends today" : days === 1 ? "1 day left" : `${days} days left`;
+      return `${pretty ? `Free trial · ${pretty}` : "Free trial"} · ${left}`;
+    }
+    case "ACTIVE": return pretty ? `${pretty} · paying` : "Paying";
+    case "PAST_DUE": return `${pretty || "Paid plan"} · payment failed`;
+    case "CANCELED": return `${pretty || "Paid plan"} · canceled`;
+    case "EXPIRED": return `${pretty || "Paid plan"} · expired`;
+    case "FREE": return "Free plan";
+    default: return pretty ? `${pretty} · ${status.toLowerCase().replace(/_/g, " ")}` : status ? status.toLowerCase().replace(/_/g, " ") : "no subscription row yet";
+  }
+}
+
+/** THE SIGNUP LEDGER (2026-10-01).
+ *
+ *  The live list holds half an hour and the day line holds a day, so a signup
+ *  older than that had nowhere left to be seen — which is how an account the
+ *  owner watched arrive became an account he could not find again. Nothing
+ *  new is stored for this: every signup is already an Organization row with
+ *  the landing's tags on it and a Subscription beside it. This is a reading
+ *  of those rows over a span the owner picks, so the record lasts as long as
+ *  the accounts do. */
+export type SignupState = "trial" | "paying" | "lapsed" | "free" | "unknown";
+
+export interface SignupRecord {
+  orgId: string;
+  orgName: string;
+  ownerName: string;
+  ownerEmail: string;
+  createdAt: string;
+  /** Where the landing recorded them as coming from. */
+  source: string;
+  fromAd: boolean;
+  platform: string;
+  campaign: string;
+  content: string;
+  /** The trade hero the landing showed them, "default" when none. */
+  industry: string;
+  /** What the account is now, from its Subscription row. */
+  planLabel: string;
+  state: SignupState;
+}
+
+/** The coarse state a subscription is in, for the colour and the counts. */
+export function signupState(subStatus: string): SignupState {
+  switch ((subStatus || "").trim().toUpperCase()) {
+    case "TRIALING": return "trial";
+    case "ACTIVE": return "paying";
+    case "PAST_DUE": case "CANCELED": case "EXPIRED": return "lapsed";
+    case "FREE": return "free";
+    default: return "unknown";
+  }
+}
+
+export interface SignupLedger {
+  days: number;
+  records: SignupRecord[];
+  summary: { total: number; fromAds: number; trial: number; paying: number; lapsed: number; free: number; unknown: number };
+  /** True when the span held more accounts than the page asked for. */
+  truncated: boolean;
+}
+
+/** The counts under the ledger — what the span actually produced. */
+export function signupLedgerSummary(records: SignupRecord[]): SignupLedger["summary"] {
+  const n = (st: SignupState) => records.filter((r) => r.state === st).length;
+  return {
+    total: records.length,
+    fromAds: records.filter((r) => r.fromAd).length,
+    trial: n("trial"), paying: n("paying"), lapsed: n("lapsed"), free: n("free"), unknown: n("unknown"),
+  };
+}
+
 /** How far into the local day it is, in minutes. */
 export function minutesIntoDay(timezone: string, now: Date = new Date()): number {
   try {
@@ -617,7 +721,7 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
       }
       if (best) {
         claimed.add(best.s.orgId);
-        signup = { orgName: best.s.orgName, ownerEmail: best.s.ownerEmail, ownerName: best.s.ownerName, at: best.s.createdAt, plan, outcome };
+        signup = { orgName: best.s.orgName, ownerEmail: best.s.ownerEmail, ownerName: best.s.ownerName, at: best.s.createdAt, plan, outcome, planLabel: signupPlanLabel(best.s, now) };
       }
     }
     // Where they are: the latest event that carries a GeoIP place.
@@ -687,7 +791,7 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
     .filter((s) => !claimed.has(s.orgId))
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
     .slice(0, 12)
-    .map((s) => ({ orgName: s.orgName, ownerEmail: s.ownerEmail, at: s.createdAt, source: signupSource(s).label }));
+    .map((s) => ({ orgName: s.orgName, ownerEmail: s.ownerEmail, at: s.createdAt, source: signupSource(s).label, planLabel: signupPlanLabel(s, now) }));
   return {
     windowMinutes: LIVE_WINDOW_MINUTES,
     activeMinutes: LIVE_ACTIVE_MINUTES,
