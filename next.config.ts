@@ -17,11 +17,14 @@ const CSP_REPORT_ONLY = [
   "img-src 'self' data: blob: https:",
   "media-src 'self' blob: https://*.public.blob.vercel-storage.com",
   "connect-src 'self' https://api.stripe.com https://checkout.stripe.com https://us.i.posthog.com https://us-assets.i.posthog.com https://maps.googleapis.com https://places.googleapis.com https://www.paypal.com https://www.sandbox.paypal.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://*.public.blob.vercel-storage.com https://vercel.live wss://ws-us3.pusher.com https://www.facebook.com https://connect.facebook.net https://accounts.google.com",
-  "frame-src https://js.stripe.com https://hooks.stripe.com https://checkout.stripe.com https://www.paypal.com https://www.sandbox.paypal.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://www.google.com https://accounts.google.com https://vercel.live",
+  "frame-src https://js.stripe.com https://hooks.stripe.com https://checkout.stripe.com https://www.paypal.com https://www.sandbox.paypal.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://www.google.com https://accounts.google.com https://vercel.live https://www.facebook.com",
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",
-  "form-action 'self' https://checkout.stripe.com",
+  // www.facebook.com in frame-src and form-action: the Meta Pixel sends a
+  // large event as a form POST into a hidden iframe (2026-10-01, it was the
+  // console's only report on the landing and the register page).
+  "form-action 'self' https://checkout.stripe.com https://www.facebook.com",
   "frame-ancestors 'self'",
   // `upgrade-insecure-requests` is deliberately absent: browsers ignore it in a
   // report-only policy and log a warning on every page. Add it back when this
