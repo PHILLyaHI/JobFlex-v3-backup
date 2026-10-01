@@ -1508,6 +1508,18 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
   .jf-lp .lp-hero-stage { height: 320px; --plan-inset: 6%; --plan-y: 56%; }
 }
 
+/* ── The HVAC window's plan (2026-10-01, hvac-shot.tsx) ─────────────────
+   The plan is an SVG that fits its box; the box keeps clear of the lifted
+   address bar and the house card above it and of the equipment card on the
+   floor. On the desk the house card holds the top-left corner, so the plan's
+   box starts to its right. On a phone the stage is the hero's 320 px and the
+   plan takes the middle three fifths. */
+.jf-lp .lp-hvac-stage .lp-hvac-plan { left: 170px; right: 0; top: 7%; height: 79%; }
+@media (max-width: 639px) {
+  .jf-lp .lp-hvac-stage { height: 320px; }
+  .jf-lp .lp-hvac-stage .lp-hvac-plan { left: 0; top: 19%; height: 58%; }
+}
+
 /* ── The takeoff rail on a phone (owner, 2026-09-14) ───────────────
    Under the hero's stage the rail used to arrive as a whole on opacity:
    a strip of nothing, then everything. Now it is revealed top to bottom in

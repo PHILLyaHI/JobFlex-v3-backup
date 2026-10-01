@@ -24,7 +24,7 @@
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
 import type { SmartScenarioKey } from "./smart-scenarios";
 
-export type ShowcaseSlideKey = "smart" | "roof" | "fence" | "video";
+export type ShowcaseSlideKey = "smart" | "roof" | "fence" | "hvac" | "video";
 
 export type LandingVariant = {
   /** Two lines — the hero breaks the H1 exactly once. */
@@ -37,7 +37,7 @@ export type LandingVariant = {
   showcaseSlide: ShowcaseSlideKey;
   /** The hero's product shot. "dashboard" is the default's; a trade picks
    *  one of the three estimator sequences. */
-  visual: "dashboard" | "roof" | "fence" | "smart";
+  visual: "dashboard" | "roof" | "fence" | "hvac" | "smart";
   /** For visual "smart": which job the sequence prices. */
   scenario?: SmartScenarioKey;
 };
@@ -188,12 +188,15 @@ export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> 
     visual: "smart",
     scenario: "electrical",
   },
+  // HVAC (2026-10-01): its own window — the real estimator's flow on three
+  // example houses (hvac-shot.tsx) — and its own showcase slide, like the
+  // roof and the fence. The Smart scenario stays for the showcase's first slide.
   hvac: {
-    h1: ["The whole system, priced.", "Before the first site visit."],
-    sub: "Heat pump or furnace, tonnage, duct runs, thermostat and labor per unit.",
+    h1: ["The whole system, priced.", "From the address."],
+    sub: "Design load, the heat pump that fits it, Good / Better / Best, the year's bill and the rebates — before the first site visit.",
     primaryCta: "Start free — price an HVAC job",
-    showcaseSlide: "smart",
-    visual: "smart",
+    showcaseSlide: "hvac",
+    visual: "hvac",
     scenario: "hvac",
   },
   drywall: {
