@@ -24,7 +24,7 @@
 //
 // The skip path (testing only) calls `completePendingSignup(token, null)`,
 // which creates the same account with no subscription attached.
-import { randomUUID, createHash } from "crypto";
+import { randomUUID, randomBytes, createHash } from "crypto";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -49,10 +49,17 @@ import { trackActivation } from "@/lib/activation-events";
 import { trialRequiresCard } from "@/lib/trialPolicy";
 import { createCardlessSubscription, nameOrgOnSubscription } from "@/lib/cardlessTrial";
 import { writeCardlessRecord } from "@/lib/trialState";
+import { cardlessTrialRefusal, markCardlessTrialUsed, trialRequestsPerIpHour } from "@/lib/trialGuard";
+import { appBaseUrl } from "@/lib/appUrl";
+import { renderEmail } from "@/lib/email/renderEmail";
+import { sendEmail } from "@/lib/sdk/resend";
+import { buildTrialConfirm } from "@/lib/email/build/trial";
 
 /** How long an unpaid intent is honoured. Long enough to pay, short enough
  *  that an abandoned card never becomes an account a week later. */
 const PENDING_TTL_MS = 2 * 60 * 60 * 1000;
+/** How long a card-less trial's confirmation link stays good. */
+const CONFIRM_TTL_MS = 24 * 60 * 60 * 1000;
 
 const pendingSchema = z.object({
   analytics: trafficIdentitySchema.optional().catch(undefined),
@@ -119,6 +126,9 @@ type PendingRecord = z.infer<typeof pendingSchema> extends infer T
       viaGoogle?: boolean;
       image?: string | null;
       createdAt: number;
+      /** Set by requestCardlessTrial: the plan the card-less trial is for, and
+       *  when the confirmation link went out (the intent then lives 24 hours). */
+      cardless?: { planSlug: string; requestedAt: number };
     }
   : never;
 
@@ -343,7 +353,12 @@ async function loadPending(token: string): Promise<PendingRecord | null> {
   if (!row) return null;
   try {
     const rec = JSON.parse(row.cursor) as PendingRecord;
-    if (!rec?.email || Date.now() - (rec.createdAt ?? 0) > PENDING_TTL_MS) return null;
+    // A card-less trial waits on an email link, so it gets a day, counted from
+    // the latest link sent; every other intent has the checkout's two hours.
+    const alive = rec?.cardless
+      ? Date.now() - rec.cardless.requestedAt <= CONFIRM_TTL_MS
+      : Date.now() - (rec?.createdAt ?? 0) <= PENDING_TTL_MS;
+    if (!rec?.email || !alive) return null;
     return rec;
   } catch {
     return null;
@@ -470,23 +485,97 @@ export async function completePendingSignup(
 }
 
 /**
- * THE CARD-LESS TRIAL (TRIAL_REQUIRES_CARD off — lib/trialPolicy). The plan
- * step's "Start free trial" lands here instead of at Stripe Checkout: the
- * trialing subscription is created with no payment method
- * (lib/cardlessTrial), then the same account the paid return creates, and
- * everything that waited for completePendingSignup — the welcome email, the
- * attribution, metaSignupJson, CompleteRegistration and StartTrial — runs here.
+ * THE CARD-LESS TRIAL, STEP ONE (TRIAL_REQUIRES_CARD off — lib/trialPolicy).
+ * The plan step's "Start free trial" lands here instead of at Stripe
+ * Checkout. Nothing is created yet (owner, 2026-10-01: "confirm before the
+ * dashboard"): the brakes are checked (lib/trialGuard — per IP, per address,
+ * per company domain), the plan is stamped on the intent, and a confirmation
+ * link is emailed. Calling it again sends a fresh link (the old one stops
+ * working). The account and the trial are created by confirmCardlessTrial.
  */
-export async function startCardlessTrial(
+export async function requestCardlessTrial(
   token: string,
   planSlug: string,
+): Promise<{ ok: true; email: string } | { ok: false; error: string }> {
+  if (trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account." };
+  const rec = await loadPending(token);
+  if (!rec) return { ok: false, error: "That signup expired. Start again." };
+  const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
+  if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
+  try {
+    await enforceRateLimit(`cardless-trial:${await clientIp()}`, trialRequestsPerIpHour(), HOUR, "free trials from this network");
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Too many free trials. Try again later." };
+  }
+  const refusal = await cardlessTrialRefusal(rec.email);
+  if (refusal) return { ok: false, error: refusal };
+  let planName = "Custom";
+  if (planSlug !== CUSTOM_PLAN_SLUG) {
+    const plan = await getPlanBySlug(planSlug);
+    if (!plan || !plan.active || plan.isFree) return { ok: false, error: "That plan is not available." };
+    planName = plan.name;
+  }
+
+  // The link: a random secret in the email, its hash in the store, pointing
+  // at this intent. A new request replaces the old link.
+  const secret = randomBytes(32).toString("base64url");
+  const hash = createHash("sha256").update(secret).digest("hex");
+  const prev = await db.syncState.findUnique({ where: { key: confirmIndexKey(token) } }).catch(() => null);
+  if (prev) await db.syncState.delete({ where: { key: confirmKey(prev.cursor) } }).catch(() => {});
+  const next: PendingRecord = { ...rec, cardless: { planSlug, requestedAt: Date.now() } };
+  await db.syncState.upsert({ where: { key: key(token) }, update: { cursor: JSON.stringify(next) }, create: { key: key(token), cursor: JSON.stringify(next) } });
+  await db.syncState.upsert({ where: { key: confirmKey(hash) }, update: { cursor: token }, create: { key: confirmKey(hash), cursor: token } });
+  await db.syncState.upsert({ where: { key: confirmIndexKey(token) }, update: { cursor: hash }, create: { key: confirmIndexKey(token), cursor: hash } });
+
+  const base = (await appBaseUrl()).replace(/\/$/, "");
+  const { subject, html } = renderEmail(
+    buildTrialConfirm({ name: rec.name, planName, href: `${base}/auth/register/confirm?t=${secret}` }),
+  );
+  try {
+    await sendEmail({ to: rec.email, subject, html });
+  } catch (err) {
+    console.error("[signup] trial confirmation email failed:", err);
+    return { ok: false, error: "Couldn't send the confirmation email. Try again." };
+  }
+  return { ok: true, email: rec.email };
+}
+
+/**
+ * THE CARD-LESS TRIAL, STEP TWO: the link from the email. Proves the address,
+ * then creates the trialing subscription (no payment method —
+ * lib/cardlessTrial) and the same account the paid return creates, with
+ * everything that waited for completePendingSignup — the welcome email, the
+ * attribution, metaSignupJson, CompleteRegistration and StartTrial. Answers a
+ * sign-in ticket the confirmation page redeems. Opening the link again within
+ * fifteen minutes signs in again; later it says the shop is already set up.
+ */
+export async function confirmCardlessTrial(
+  secret: string,
+): Promise<
+  | { ok: true; email: string; ticket: string | null; registrationEventId: string | null }
+  | { ok: false; error: string; done?: boolean; email?: string }
+> {
+  if (!secret || secret.length > 200) return { ok: false, error: "That link is not valid." };
+  const hash = createHash("sha256").update(secret).digest("hex");
+  const row = await db.syncState.findUnique({ where: { key: confirmKey(hash) } }).catch(() => null);
+  if (!row) return { ok: false, error: "That link has expired or was replaced by a newer one. Start the signup again." };
+  return finishCardlessTrial(row.cursor);
+}
+
+const confirmKey = (hash: string) => `signup-confirm:${hash}`;
+const confirmIndexKey = (token: string) => `signup-confirm-of:${token}`;
+
+/** The account and the trial, from a confirmed intent. Not exported: the
+ *  only way in is the emailed link (confirmCardlessTrial). */
+async function finishCardlessTrial(
+  token: string,
 ): Promise<
   | { ok: true; email: string; ticket: string | null; registrationEventId: string | null }
   | { ok: false; error: string; done?: boolean; email?: string }
 > {
   if (trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account." };
   const rec = await loadPending(token);
-  if (!rec) {
+  if (!rec?.cardless) {
     const done = await loadDone(token);
     if (done && done.sessionId === CARDLESS_SESSION) {
       if (Date.now() - done.at <= REPLAY_WINDOW_MS) {
@@ -498,7 +587,10 @@ export async function startCardlessTrial(
   }
   const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
   if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
+  const refusal = await cardlessTrialRefusal(rec.email);
+  if (refusal) return { ok: false, error: refusal };
 
+  const planSlug = rec.cardless.planSlug;
   const interval = "MONTH" as const;
   const customPages = planSlug === CUSTOM_PLAN_SLUG ? normalizeCustomPages(rec.customPages) : [];
   const started = await createCardlessSubscription({
@@ -550,6 +642,9 @@ export async function startCardlessTrial(
     startedAt: new Date().toISOString(),
     endsAt: (trialEnd ?? new Date()).toISOString(),
   });
+  // The address is proven — the link was opened from it.
+  await db.user.update({ where: { id: created.userId }, data: { emailVerified: new Date() } }).catch(() => {});
+  await markCardlessTrialUsed(rec.email, created.orgId);
   after(() => nameOrgOnSubscription(sub.id, created.orgId));
   return { ok: true, email: created.email, ticket: created.ticket, registrationEventId: rec.meta?.registrationEventId ?? null };
 }

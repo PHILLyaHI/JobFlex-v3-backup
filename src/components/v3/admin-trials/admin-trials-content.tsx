@@ -11,22 +11,29 @@
 import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import type { TrialWatchData } from "@/actions/trialWatch";
+import type { TrialCard, TrialWatchData } from "@/actions/trialWatch";
 import type { TrialLevel } from "@/lib/trialWatch";
 import s from "@/components/v3/admin-overview/admin-shared.module.css";
 import { Ic, StatusChip, ago } from "@/components/v3/admin-overview/admin-ui";
 import t from "./admin-trials.module.css";
 
 const LEVEL_LABEL: Record<TrialLevel, string> = { suspicious: "Look at this", watch: "Watch", clear: "Clear" };
+/** The card-less trial's card, as the row's second line says it. */
+const CARD_LABEL: Record<TrialCard, string> = { none: "No card", "on-file": "Card added", ended: "Ended, no card", restarted: "Paid after trial" };
 
 export function AdminTrialsContent({ data }: { data: TrialWatchData }) {
   const [level, setLevel] = useState<"" | TrialLevel>("");
+  // Card-less trials apart (owner, 2026-10-01): "no-card" is every trial that
+  // started without one, whatever has happened since; the rest narrow it.
+  const [card, setCard] = useState<"" | "no-card" | TrialCard>("");
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return data.rows.filter((r) => (!level || r.level === level) && (!q || r.name.toLowerCase().includes(q) || (r.ownerEmail ?? "").toLowerCase().includes(q)));
-  }, [data.rows, level, query]);
+    const cardOk = (c: TrialCard | null) => !card || (card === "no-card" ? c !== null : c === card);
+    return data.rows.filter((r) => (!level || r.level === level) && cardOk(r.card) && (!q || r.name.toLowerCase().includes(q) || (r.ownerEmail ?? "").toLowerCase().includes(q)));
+  }, [data.rows, level, card, query]);
+  const cardless = data.rows.filter((r) => r.card !== null).length;
   const suspicious = data.rows.filter((r) => r.level === "suspicious").length;
   const watching = data.rows.filter((r) => r.level === "watch").length;
   const working = data.rows.filter((r) => r.writes > 0).length;
@@ -99,6 +106,16 @@ export function AdminTrialsContent({ data }: { data: TrialWatchData }) {
               <option value="clear">Clear</option>
             </select>
           </span>
+          <span className={`bp-sel bp-sel--admin ${s.fSel}`}>
+            <select className="bp-sel-in" aria-label="Card" value={card} onChange={(e) => setCard(e.target.value as typeof card)}>
+              <option value="">All signups</option>
+              <option value="no-card">Started without a card ({cardless})</option>
+              <option value="none">· No card yet</option>
+              <option value="on-file">· Card added</option>
+              <option value="ended">· Ended, no card</option>
+              <option value="restarted">· Paid after the trial</option>
+            </select>
+          </span>
         </div>
         {rows.length === 0 ? (
           <div className="empty">{data.rows.length ? "No trials match." : `No companies signed up in the last ${data.windowDays} days.`}</div>
@@ -132,6 +149,7 @@ export function AdminTrialsContent({ data }: { data: TrialWatchData }) {
                         {ago(r.createdAt, data.now)}
                         <div className={s.sub}>
                           <StatusChip status={r.status} />
+                          {r.card ? <span data-card={r.card}> · {CARD_LABEL[r.card]}</span> : null}
                         </div>
                       </div>
                     </td>

@@ -62,7 +62,7 @@ import {
 } from "@/actions/signupPaywall";
 import {
   completePendingSignup,
-  startCardlessTrial,
+  requestCardlessTrial,
   startPendingSignup,
   updatePendingSignupAttribution,
   updatePendingSignupPages,
@@ -735,9 +735,14 @@ export function RegisterContent({
   }
 
   /* THE CARD-LESS TRIAL (TRIAL_REQUIRES_CARD off). The same two re-stamps
-     the checkout needs, then the account and its 7-day trial are created on
-     the server (startCardlessTrial) and the session is established here, as
-     the skip does — there is no Stripe page to leave for. */
+     the checkout needs, then a confirmation link is emailed
+     (requestCardlessTrial): the account and its 7-day trial are created when
+     the link is opened (/auth/register/confirm), not here — the owner's rule,
+     2026-10-01: the address is confirmed before the dashboard opens. The plan
+     step then says where the link went, with a way to send it again. */
+  const [confirmSentTo, setConfirmSentTo] = React.useState<string | null>(null);
+  const [confirmSlug, setConfirmSlug] = React.useState<string | null>(null);
+  const [resent, setResent] = React.useState(false);
   async function onStartCardless(slug: string | null = planSlug) {
     if (payBusy || !slug || !token) return;
     trackTraffic(TRAFFIC_EVENTS.attempt, { plan: slug, interval, intent: "trial", flow: trafficFlow, card: false });
@@ -757,16 +762,23 @@ export function RegisterContent({
         setPlansErr(stamped.error);
         return;
       }
-      const res = await startCardlessTrial(token, slug);
+      const res = await requestCardlessTrial(token, slug);
       if (!res.ok) {
         trackTraffic(TRAFFIC_EVENTS.error, { step: 3, reason: "trial_rejected" });
         setPlansErr(res.error);
         return;
       }
-      const auth = res.ticket ? await signIn("signup-ticket", { ticket: res.ticket, redirect: false }) : null;
-      setSignedIn(Boolean(auth && !auth.error));
-      setDoneNote("Your 7-day trial is on — no card needed. Add one any time before it ends to keep your workspace.");
-      setStep(4);
+      // The link's own page signs the shop in; keep the registration event
+      // id under the token so that page's browser event pairs with the
+      // server's copy (same as the Stripe return).
+      try {
+        sessionStorage.setItem("jf_meta_reg:" + token, metaIds.current.registration);
+      } catch {
+        /* storage blocked — the server's copy stands alone */
+      }
+      setResent(confirmSentTo !== null);
+      setConfirmSlug(slug);
+      setConfirmSentTo(res.email);
     } catch {
       trackTraffic(TRAFFIC_EVENTS.error, { step: 3, reason: "trial_unavailable" });
       setPlansErr("Couldn't start the trial. Try again.");
@@ -1508,7 +1520,33 @@ export function RegisterContent({
               </div>
             ) : null}
 
-            <div className="pw-plans" ref={plansRef}>
+            {confirmSentTo ? (
+              <div className="pw-confirm" role="status">
+                <span className="pw-confirm-k">Check your email</span>
+                <p className="pw-confirm-h">
+                  We sent a link to <b>{confirmSentTo}</b>.
+                </p>
+                <p className="pw-confirm-p">
+                  Open it to create your shop and start the 7-day free trial — no card needed. The link works for 24 hours{resent ? "; the one sent before it no longer does" : ""}.
+                </p>
+                <div className="pw-confirm-row">
+                  <button
+                    type="button"
+                    className="btn pw-go"
+                    onClick={() => void onStartCardless(confirmSlug)}
+                    disabled={payBusy}
+                    aria-busy={payBusy || undefined}
+                  >
+                    {payBusy ? "Sending…" : "Send the link again"}
+                  </button>
+                  <button type="button" className="pw-confirm-back" onClick={() => setConfirmSentTo(null)} disabled={payBusy}>
+                    Pick another plan
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className={"pw-plans" + (confirmSentTo ? " is-hidden" : "")} ref={plansRef}>
               {plans.map((p) => {
                 const yearly = interval === "YEAR" ? p.yearlyPriceCents : null;
                 const cents = yearly ?? p.priceCents;

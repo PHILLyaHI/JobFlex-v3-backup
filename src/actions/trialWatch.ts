@@ -12,6 +12,11 @@
 import { db } from "@/lib/db";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { scoreTrial, sortAssessments, TRIAL_WINDOW_DAYS, WATCH_DAYS, type TrialAssessment, type ViewIn } from "@/lib/trialWatch";
+import type { CardlessRecord } from "@/lib/trialState";
+
+/** Where a company's card stands on a card-less trial (lib/cardlessTrial):
+ *  null for a company that did not start one (a card-first signup). */
+export type TrialCard = "none" | "on-file" | "ended" | "restarted";
 
 export type TrialWatchData = {
   now: string;
@@ -19,7 +24,7 @@ export type TrialWatchData = {
   watchDays: number;
   /** False when the PageView table could not be read — not pushed to this database yet. */
   viewsAvailable: boolean;
-  rows: TrialAssessment[];
+  rows: Array<TrialAssessment & { card: TrialCard | null }>;
 };
 
 const countBy = (rows: Array<{ organizationId: string; _count: { _all: number } }>) => new Map(rows.map((r) => [r.organizationId, r._count._all]));
@@ -50,6 +55,20 @@ export async function getTrialWatch(): Promise<TrialWatchData> {
     db.lead.groupBy({ by: ["organizationId"], where: inOrgs, _count: { _all: true } }).catch(() => [] as Array<{ organizationId: string; _count: { _all: number } }>),
   ]);
   const c = countBy(clients), p = countBy(proposals), s = countBy(sent), j = countBy(jobs), l = countBy(leads);
+  // The card-less trials' own records (SyncState cardlessTrial:<orgId>): which
+  // of these companies started with no card, and whether one has arrived.
+  const cardRows = await db.syncState
+    .findMany({ where: { key: { in: ids.map((id) => `cardlessTrial:${id}`) } }, select: { key: true, cursor: true } })
+    .catch(() => [] as Array<{ key: string; cursor: string }>);
+  const cardOf = new Map<string, TrialCard>();
+  for (const r of cardRows) {
+    try {
+      const rec = JSON.parse(r.cursor) as CardlessRecord;
+      cardOf.set(r.key.slice("cardlessTrial:".length), rec.restartedAt ? "restarted" : rec.cardAt ? "on-file" : rec.endedAt ? "ended" : "none");
+    } catch {
+      /* a malformed record reads as no record */
+    }
+  }
 
   let viewsAvailable = true;
   const viewsByOrg = new Map<string, ViewIn[]>();
@@ -91,5 +110,12 @@ export async function getTrialWatch(): Promise<TrialWatchData> {
       sharedDeviceTrials: others.size,
     });
   });
-  return { now: new Date().toISOString(), windowDays: TRIAL_WINDOW_DAYS, watchDays: WATCH_DAYS, viewsAvailable, rows: sortAssessments(rows) };
+  const withCard = sortAssessments(rows).map((r) => {
+    const card = cardOf.get(r.id) ?? null;
+    // A trial past its end with no card reads "ended" before the sweep stamps it.
+    const org = orgs.find((o) => o.id === r.id);
+    const lapsed = card === "none" && (org?.subscription?.status === "TRIAL_ENDED" || (org?.subscription?.trialEndsAt && org.subscription.trialEndsAt.getTime() < Date.now()));
+    return { ...r, card: lapsed ? ("ended" as const) : card };
+  });
+  return { now: new Date().toISOString(), windowDays: TRIAL_WINDOW_DAYS, watchDays: WATCH_DAYS, viewsAvailable, rows: withCard };
 }

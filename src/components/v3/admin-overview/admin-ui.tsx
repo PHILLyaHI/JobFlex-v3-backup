@@ -21,6 +21,8 @@ export function statusChipClass(status: string): string {
       return `chip ${s.chipInfo}`;
     case "PAST_DUE":
     case "INCOMPLETE":
+    // A card-less trial that ran out with no card (lib/trialState).
+    case "TRIAL_ENDED":
       return "chip wait";
     case "UNPAID":
       return `chip ${s.chipDanger}`;

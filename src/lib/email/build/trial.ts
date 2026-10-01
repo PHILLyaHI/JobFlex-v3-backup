@@ -47,3 +47,35 @@ export function buildTrialReminder(i: TrialReminderInput): EmailDoc {
     footer: PLATFORM_FOOTER,
   };
 }
+
+export interface TrialConfirmInput {
+  name: string | null;
+  /** The plan picked on the plan step, by its catalog name. */
+  planName: string;
+  /** Absolute link to /auth/register/confirm?t=… */
+  href: string;
+}
+
+/** The address check the card-less trial starts from (stage 3, 2026-10-01):
+ *  the account and the trial are created when this link is opened. */
+export function buildTrialConfirm(i: TrialConfirmInput): EmailDoc {
+  const first = i.name?.trim().split(/\s+/)[0] || "there";
+  const box: BoxRow[] = [
+    { type: "field", label: "Plan", value: `${i.planName} · 7 days free` },
+    { type: "cond", label: "Card", chip: "Not needed", tone: "ok" },
+    { type: "field", label: "Link expires", value: "In 24 hours" },
+  ];
+  return {
+    subject: "Confirm your email to start your JobFlex trial",
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "One step left" },
+    headline: "Confirm your email to start your trial",
+    prose: [
+      `Hi ${first} — open the link below and your shop is created with a 7-day free trial of ${i.planName}. No card needed.`,
+    ],
+    box,
+    cta: { label: "Confirm and start my trial", href: i.href },
+    after: ["Didn't sign up for JobFlex? Ignore this email — nothing is created without the link."],
+    footer: PLATFORM_FOOTER,
+  };
+}

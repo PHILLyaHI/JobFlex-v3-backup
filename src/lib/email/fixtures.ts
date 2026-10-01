@@ -9,7 +9,7 @@ import {
   buildReviewReminder,
 } from "./build/client";
 import { buildOwnerAccepted, buildNewLead, buildLeadOffer, buildSupportTicket } from "./build/operator";
-import { buildTrialReminder } from "./build/trial";
+import { buildTrialConfirm, buildTrialReminder } from "./build/trial";
 import { buildJobAssignment, buildWorkerInvite, buildTeamInvite } from "./build/worker";
 import {
   buildPasswordReset,
@@ -504,6 +504,12 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
       firstChargeDate: "Oct 8, 2026",
       cardless: true,
     }),
+  },
+  {
+    id: "b-trial-confirm",
+    label: "18c2 · buildTrialConfirm()",
+    note: "Card-less trial: the address check the account and the trial are created from (link valid 24 h).",
+    doc: buildTrialConfirm({ name: "Jordan Rivera", planName: "Professional", href: "https://example.com/auth/register/confirm?t=…" }),
   },
   {
     id: "b-trial-soon",
