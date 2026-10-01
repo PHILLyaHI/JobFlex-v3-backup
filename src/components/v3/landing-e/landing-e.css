@@ -1936,15 +1936,21 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
 }
 
 /* THE HERO'S BADGE (owner, 2026-10-01): under the button pair, exactly as
-   wide as the pair's outer edges (left/right 0 of the pair's own row, which
-   only the buttons size), the pair's 12 px gap above it, the tick at the left
-   edge and the words centred, lower than a button. Absolute, over the place
-   of the invisible card-first note that keeps the hero's height (hero.tsx). */
+   wide as the pair's outer edges (width 0 + min-width 100%: it takes the
+   column's width and never widens it), the pair's 12 px gap above it, the
+   tick at the left edge and the words centred, lower than a button.
+
+   THE HERO KEEPS ITS HEIGHT. The card-first note it replaces took 12 px +
+   one line (16.5 px under 1024, 18 px from it); the badge takes 12 + 38. From
+   640 px the badge hands the difference back as a negative bottom margin, so
+   everything under the buttons — and the hero photo, sized to the section —
+   stays where it was. Under 640 the badge keeps the hero's 8vmin (~30 px) to
+   the dashboard, and the hero's bottom padding hands the 21.5 px back
+   instead (.lp-hero-vis--badge). */
 .jf-lp .lp-trial-line--bar {
-  position: absolute;
-  top: calc(100% + 12px);
-  left: 0;
-  right: 0;
+  position: relative;
+  width: 0;
+  min-width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1962,7 +1968,14 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
   width: 16px;
   height: 16px;
 }
+@media (min-width: 640px) {
+  .jf-lp .lp-trial-line--bar { margin-bottom: -21.5px; }
+}
+@media (min-width: 1024px) {
+  .jf-lp .lp-trial-line--bar { margin-bottom: -20px; }
+}
 @media (max-width: 639px) {
+  .jf-lp .lp-hero-vis--badge { padding-bottom: calc(26vmin - 21.5px); }
   .jf-lp .lp-trial-line--bar { padding: 0 28px; font-size: 11px; letter-spacing: 0.02em; }
   .jf-lp .lp-trial-line--bar svg { left: 10px; width: 14px; height: 14px; margin-top: -7px; }
 }

@@ -106,12 +106,15 @@ export function Hero({
         </HeroExperiment>
         <div className="lp-enter w-full sm:w-auto" data-entrance="cta">
           {/* The pair and, under it, the trial badge (owner, 2026-10-01): the
-              badge is exactly as wide as the pair's outer edges and sits the
-              pair's own 12 px gap below it. It is laid out OVER the place the
-              card-first note held — that note stays in the flow, invisible —
-              so the hero keeps its height to the pixel and nothing under the
-              buttons moves (.lp-trial-line--bar). */}
-          <div className="relative mx-auto mt-4 flex w-full max-w-[22rem] flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:items-center sm:justify-center">
+              badge is exactly as wide as the pair's outer edges (the column
+              is sized by the buttons alone) and sits the pair's own 12 px gap
+              below it. The hero keeps its height to the pixel without the
+              card-first note: from 640 px the badge gives back, as a negative
+              bottom margin, the room it takes beyond that note; under 640 it
+              keeps its ~30 px to the dashboard and the hero's bottom padding
+              gives it back instead (.lp-trial-line--bar, .lp-hero-vis). */}
+          <div className="mx-auto mt-4 flex w-full max-w-[22rem] flex-col gap-3 sm:w-auto sm:max-w-none">
+          <div className="flex w-full flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-center">
             <a
               href={registerHref}
               className={`lp-btn-dark lp-cta lp-cta--solid${(variant.heroCta ?? cta ?? variant.primaryCta).length > 30 ? " lp-cta--long" : ""}`}
@@ -140,14 +143,15 @@ export function Hero({
               </svg>
               Sign up with Google
             </GoogleSignupButton>
-            {requiresCard ? null : <TrialLine tone="dark" size="bar" />}
           </div>
-          {requiresCard ? <CtaNote tone="dark" className="mt-3 text-center" /> : <CtaNote tone="dark" className="invisible mt-3 text-center" hidden />}
+          {requiresCard ? null : <TrialLine tone="dark" size="bar" />}
+          </div>
+          {requiresCard ? <CtaNote tone="dark" className="mt-3 text-center" /> : null}
         </div>
         </HeroEntrance>
       </div>
 
-      <div className="relative z-[1] mt-[8vmin] px-5 pb-[26vmin] sm:px-6">
+      <div className={`lp-hero-vis relative z-[1] mt-[8vmin] px-5 pb-[26vmin] sm:px-6${requiresCard ? "" : " lp-hero-vis--badge"}`}>
         {/* Two builds of the same screen, not one build clipped: the desktop
             plate's 208px sidebar and four-across KPI row cannot survive a
             phone column (owner, 2026-08-25). The phone build also skips
