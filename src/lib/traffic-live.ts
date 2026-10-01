@@ -54,6 +54,9 @@ export interface LiveEvent {
   country: string;
   region: string;
   city: string;
+  /** cta_click only: where the button sits, and the words on it. */
+  placement: string;
+  label: string;
   step: string;
   outcome: string;
   plan: string;
@@ -80,7 +83,10 @@ export interface FreshSignup {
   landingIndustry: string;
 }
 
-export type LiveStage = "browsing" | "registering" | "checkout" | "signed-up" | "member";
+/** How far a person got. "signing-in" is its own stage (2026-09-30): an
+ *  existing customer at the login, forgot-password or reset screen is not a
+ *  stranger looking around, and reading them as one made the list lie. */
+export type LiveStage = "browsing" | "signing-in" | "registering" | "checkout" | "signed-up" | "member";
 export type SourceKind = "ad" | "likely-ad" | "search" | "social" | "referral" | "direct";
 
 /** The platforms a visit is credited to, each in its own colour (AVACO's),
@@ -158,6 +164,14 @@ export interface LiveVisitor {
   signup: { orgName: string; ownerEmail: string; ownerName: string; at: string; plan: string; outcome: string } | null;
   /** The verified signup this visit produced even when no row matched. */
   signedUpAt: string | null;
+  /** What they pressed, newest first: the words on the button and where it
+   *  sits on the page. Only the landing's tagged CTAs fire this. */
+  clicks: Array<{ label: string; placement: string; at: string }>;
+  /** They asked for a password reset or opened one. A support signal: this
+   *  is a customer who cannot get back in, not a visitor. */
+  lockedOut: boolean;
+  /** One sentence for what this visit is, written from the trail. */
+  summary: string;
 }
 
 export interface LiveCounts {
@@ -319,12 +333,41 @@ export function signupSource(s: { utmSource: string; utmMedium: string }): { lab
 
 const APP_PATH = /^\/(dashboard|mobile-|w\/|portal|worker)/;
 const SIGNUP_PATH = /^\/auth\/register/;
+/** Signing in, and the locked-out corner of it. A visitor here already has an
+ *  account; counting them as "looking around" hid every returning customer
+ *  and every person who could not get back in. */
+const SIGNIN_PATH = /^\/auth\/(login|signin|sign-in)/;
+const RECOVER_PATH = /^\/auth\/(forgot|reset|recover)/;
+const VERIFY_PATH = /^\/auth\/(verify|confirm)/;
 
-const stageRank: Record<LiveStage, number> = { browsing: 0, member: 1, registering: 2, checkout: 3, "signed-up": 4 };
+const stageRank: Record<LiveStage, number> = { browsing: 0, "signing-in": 1, member: 2, registering: 3, checkout: 4, "signed-up": 5 };
+
+/** The screens worth naming in words, because the live list is read at a
+ *  glance (2026-09-30). "/auth/reset" told the owner nothing and, worse, it
+ *  looked like browsing; "Resetting their password" says who that is and
+ *  that they are stuck. These names are the LIVE view's only — the report's
+ *  page table keeps `pageLabel`'s shorter ones so its rows stay comparable
+ *  with the history. */
+const PLAIN_SCREEN: Record<string, string> = {
+  "/": "Landing page",
+  "/pricing": "Pricing",
+  "/auth/login": "Signing in",
+  "/auth/signin": "Signing in",
+  "/auth/sign-in": "Signing in",
+  "/auth/register": "Sign-up form",
+  "/auth/forgot": "Forgot password",
+  "/auth/reset": "Setting a new password",
+  "/auth/recover": "Account recovery",
+  "/auth/verify": "Verifying their email",
+  "/auth/confirm": "Confirming their email",
+  "/auth/logout": "Signing out",
+};
 
 /** A screen's plain name: the report's labels, the app's own screens by
  *  section ("App · Jobs"), the rest by path. */
 export function screenLabel(path: string): string {
+  const plain = PLAIN_SCREEN[path.replace(/\/+$/, "") || "/"];
+  if (plain) return plain;
   const known = pageLabel(path);
   if (known !== path) return known;
   const m = /^\/(dashboard|mobile-[a-z0-9-]+|portal|w)(?:\/([a-z0-9-]+))?/i.exec(path);
@@ -363,6 +406,55 @@ function pathOf(e: LiveEvent): string {
   if (e.pathname) return e.pathname;
   const m = /^[a-z]+:\/\/[^/?#]+([^?#]*)/i.exec(e.url);
   return m ? m[1] || "/" : "";
+}
+
+/** One sentence for what a visit is (2026-09-30). The list used to make the
+ *  owner read a trail of paths and work it out; this says it. Written from
+ *  what we actually saw, and it never guesses: a visitor with no tracked
+ *  click is "no button we track", not "clicked nothing". */
+export function visitSummary(v: {
+  stage: LiveStage;
+  lockedOut: boolean;
+  views: number;
+  trail: string[];
+  clicks: Array<{ label: string; placement: string }>;
+  active: boolean;
+  signup: { orgName: string } | null;
+  step: number;
+  fromAd: boolean;
+  source: string;
+}): string {
+  const pressed = v.clicks[0]
+    ? `Pressed “${v.clicks[0].label}”${v.clicks[0].placement ? ` in the ${v.clicks[0].placement.replace(/[-_]/g, " ")}` : ""}.`
+    : "";
+  const join = (...parts: string[]) => parts.filter(Boolean).join(" ");
+
+  if (v.stage === "signed-up") {
+    return join(v.signup ? `Signed up — the account ${v.signup.orgName} exists in the database.` : "Signed up, but no organization row matched it yet.", pressed);
+  }
+  if (v.stage === "member") {
+    return join(
+      v.lockedOut ? "Got back in after a password reset, and is working in the app." : "An existing customer working in the app.",
+      v.active ? "" : "Has since left.",
+    );
+  }
+  if (v.stage === "signing-in") {
+    if (v.lockedOut) return join("Locked out — asked for a password reset.", v.active ? "Still on it." : "Gave up for now.", "Worth a look if it repeats.");
+    return join("An existing customer signing back in.", v.active ? "" : "Left before reaching the app.");
+  }
+  if (v.stage === "checkout") return join("At checkout, choosing a plan.", pressed);
+  if (v.stage === "registering") {
+    const where = v.step > 0 ? `reached step ${v.step}` : "opened the form";
+    return join(`Filling in the sign-up form — ${where}.`, v.active ? "" : "Stopped there.", pressed);
+  }
+  // Browsing. One sentence, not two saying the same thing: a visitor who
+  // left after one page is a bounce, and that is the whole story.
+  const last = v.trail[v.trail.length - 1] || "the first page";
+  if (v.views <= 1 && !v.active) {
+    return join(`Left from ${v.trail[0] || "the first page"} without opening a second page${v.fromAd ? " — an ad click that bounced" : ""}.`, pressed);
+  }
+  if (v.views <= 1) return join("Landed, and has not opened a second page yet.", pressed);
+  return join(`Reading — ${v.views} pages so far${v.trail.length > 1 ? `, now on ${last}` : ""}.`, v.active ? "" : "Has since left.", pressed);
 }
 
 /** The visitors of the window, newest activity first, signups on top. */
@@ -413,8 +505,21 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
       } else if (e.event === E.opened || e.event === E.attempt) s = "checkout";
       else if (e.event === E.step || SIGNUP_PATH.test(pathOf(e))) s = "registering";
       else if (APP_PATH.test(pathOf(e))) s = "member";
+      else if (SIGNIN_PATH.test(pathOf(e)) || RECOVER_PATH.test(pathOf(e)) || VERIFY_PATH.test(pathOf(e))) s = "signing-in";
       if (stageRank[s] > stageRank[stage]) stage = s;
     }
+    // Locked out: they asked for a reset link or opened one. Worth its own
+    // flag — it is the one stage that wants a human, not a nudge.
+    const lockedOut = list.some((e) => RECOVER_PATH.test(pathOf(e)));
+    // The furthest numbered sign-up step they reached, for the sentence.
+    const furthestStep = list.reduce((best, e) => (e.event === E.step && /^\d+$/.test(e.step) ? Math.max(best, Number(e.step)) : best), 0);
+    // What they pressed. Only the landing's tagged CTAs fire cta_click, so an
+    // empty list means "nothing we track", never "they clicked nothing".
+    const clicks = [...list]
+      .reverse()
+      .filter((e) => e.event === E.ctaClick && (e.label || e.placement))
+      .slice(0, 3)
+      .map((e) => ({ label: e.label || "a button", placement: e.placement || "", at: new Date(e.at).toISOString() }));
     // Tie the signup to the organization the database made minutes later:
     // the closest row in time whose tag agrees, each row claimed once.
     let signup: LiveVisitor["signup"] = null;
@@ -475,6 +580,9 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
       hostname: first.hostname || domainOf(first.url),
       signup,
       signedUpAt,
+      clicks,
+      lockedOut,
+      summary: visitSummary({ stage, lockedOut, views: views.length, trail, clicks, active: last.at >= activeSince, signup, step: furthestStep, fromAd: src.fromAd, source: src.label }),
     });
   }
   // Signups first, then the people from ads who are on the site now, then
@@ -575,7 +683,8 @@ export function buildLiveQuery(windowMinutes = LIVE_WINDOW_MINUTES): string {
     ${prop("step")}, ${prop("outcome")}, ${prop("plan")}, ${prop("verified")},
     toFloat64OrNull(toString(properties.$geoip_latitude)), toFloat64OrNull(toString(properties.$geoip_longitude)),
     ${prop("$geoip_country_code")}, ${prop("$geoip_subdivision_1_code")},
-    multiIf(${CLICK_ID_KEYS.map((k) => `${prop(k)} != '', '${k}'`).join(", ")}, '')
+    multiIf(${CLICK_ID_KEYS.map((k) => `${prop(k)} != '', '${k}'`).join(", ")}, ''),
+    ${prop("placement")}, ${prop("label")}
     FROM events
     WHERE timestamp > now() - INTERVAL ${Math.max(5, Math.min(120, Math.round(windowMinutes)))} MINUTE AND event IN (${events})
     ORDER BY timestamp DESC LIMIT 4000`;
@@ -673,5 +782,7 @@ export function liveEventFromRow(row: unknown[]): LiveEvent | null {
     countryCode: str(26).toUpperCase().slice(0, 2),
     regionCode: str(27).toUpperCase().slice(0, 3),
     click: CLICK_IDS[str(28).toLowerCase()] ? str(28).toLowerCase() : "",
+    placement: str(29),
+    label: str(30),
   };
 }

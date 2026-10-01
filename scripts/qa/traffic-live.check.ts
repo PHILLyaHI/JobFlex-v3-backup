@@ -3,7 +3,7 @@
 // signups named after the organization the database made. Static imports
 // only (tsx has no top-level await).
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/traffic-live.check.ts
-import { AD_PLATFORM_KEYS, buildLiveQuery, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, platformCards, shapeLive, shortId, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
+import { AD_PLATFORM_KEYS, buildLiveQuery, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
 
 let bad = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -74,12 +74,12 @@ const by = (id: string) => r.visitors.find((v) => v.id === shortId(id));
 check("one line per person: the localhost developer and the visitor past the window are out", r.visitors.length === 5 && !by("p-eli") && !by("p-fay"), r.visitors.map((v) => v.id).join(","));
 const ana = by("p-ana")!;
 check("Ana signed up: the green stage, from a Facebook ad, named after the organization the database made", ana.stage === "signed-up" && ana.fromAd && ana.source === "Facebook ad" && ana.campaign === "fence-fall" && ana.signup?.orgName === "Ana Fence Co" && ana.signup?.ownerEmail === "ana@example.com" && ana.signup?.plan === "pro" && ana.signup?.outcome === "trial_started", JSON.stringify(ana.signup));
-check("…and she is on the dashboard now, three pages in, the trail naming each step, the checkout and the signup", ana.active && ana.page === "/dashboard" && ana.pageLabel === "App · Dashboard" && ana.views === 3 && ana.trail.join(" → ") === "Landing page → Registration entry → Step 2 / Company → Checkout → Signed up → App · Dashboard", `${ana.page} · ${ana.views} · ${ana.trail.join(" → ")}`);
+check("…and she is on the dashboard now, three pages in, the trail naming each step, the checkout and the signup", ana.active && ana.page === "/dashboard" && ana.pageLabel === "App · Dashboard" && ana.views === 3 && ana.trail.join(" → ") === "Landing page → Sign-up form → Step 2 / Company → Checkout → Signed up → App · Dashboard", `${ana.page} · ${ana.views} · ${ana.trail.join(" → ")}`);
 check("signups sort to the top", r.visitors[0].id === ana.id);
 const ben = by("p-ben")!;
 check("Ben: Google search, looking around on /pricing, not from an ad", ben.stage === "browsing" && !ben.fromAd && ben.source === "Google search" && ben.page === "/pricing" && ben.active);
 const cal = by("p-cal")!;
-check("Cal: an untagged Instagram click, on the sign-up form now — counted as an ad", cal.stage === "registering" && cal.fromAd && cal.sourceKind === "likely-ad" && cal.active && cal.pageLabel === "Registration entry", `${cal.stage} · ${cal.source} · ${cal.pageLabel}`);
+check("Cal: an untagged Instagram click, on the sign-up form now — counted as an ad", cal.stage === "registering" && cal.fromAd && cal.sourceKind === "likely-ad" && cal.active && cal.pageLabel === "Sign-up form", `${cal.stage} · ${cal.source} · ${cal.pageLabel}`);
 check("an app screen is named by its section", (() => { const m = shapeLive([ev({ person: "p-m", at: min(1), pathname: "/dashboard/jobs" })], [], NOW).visitors[0]; return m.pageLabel === "App · Jobs" && m.stage === "member"; })());
 const dee = by("p-dee")!;
 check("Dee: a member in the app, gone quiet — shown as left", dee.stage === "member" && !dee.active);
@@ -162,6 +162,63 @@ check("a missing or unreadable total is zero, never NaN",
   && liveTotalsFromRow(["12", null, "x", -4, undefined, "", 0, 0, 0, 0, 0, 0]).all.today === 0);
 check("shapeLive leaves the totals to the server fetch that caches them",
   shapeLive([], [], NOW, {}).totals === null);
+
+// ── what the visitor is doing, in words (2026-09-30)
+check("the auth screens are named, not left as paths",
+  screenLabel("/auth/login") === "Signing in" && screenLabel("/auth/reset") === "Setting a new password"
+  && screenLabel("/auth/forgot") === "Forgot password" && screenLabel("/auth/register") === "Sign-up form"
+  && screenLabel("/auth/verify") === "Verifying their email");
+check("a trailing slash does not defeat the name", screenLabel("/auth/login/") === "Signing in");
+check("the app's own screens and unknown paths are unchanged",
+  screenLabel("/dashboard/jobs") === "App · Jobs" && screenLabel("/fencing") === "/fencing");
+
+// Someone at the login screen is a customer coming back, not a stranger.
+const signin = shapeLive([ev({ person: "rae", at: min(6), pathname: "/auth/login" })], [], NOW, {}).visitors[0];
+check("a visitor at the login screen is signing in, not browsing",
+  signin.stage === "signing-in" && !signin.lockedOut && /existing customer signing back in/i.test(signin.summary),
+  `${signin.stage} — ${signin.summary}`);
+
+// The locked-out corner of it.
+const locked = shapeLive([
+  ev({ person: "sam", at: min(9), pathname: "/auth/forgot" }),
+  ev({ person: "sam", at: min(4), pathname: "/auth/reset" }),
+], [], NOW, {}).visitors[0];
+check("asking for a password reset is flagged locked out and said in words",
+  locked.stage === "signing-in" && locked.lockedOut && /locked out/i.test(locked.summary),
+  `${locked.stage} · lockedOut=${locked.lockedOut} — ${locked.summary}`);
+
+// Getting back in outranks signing in: the dashboard wins the stage.
+const recovered = shapeLive([
+  ev({ person: "tom", at: min(12), pathname: "/auth/forgot" }),
+  ev({ person: "tom", at: min(8), pathname: "/auth/reset" }),
+  ev({ person: "tom", at: min(2), pathname: "/dashboard" }),
+], [], NOW, {}).visitors[0];
+check("a reset that ends in the app reads as a member who got back in",
+  recovered.stage === "member" && recovered.lockedOut && /got back in/i.test(recovered.summary),
+  `${recovered.stage} — ${recovered.summary}`);
+
+// What they pressed rides along with the visit.
+const clicked = shapeLive([
+  ev({ person: "uma", at: min(10), pathname: "/" }),
+  ev({ person: "uma", at: min(9), event: "cta_click", pathname: "/", placement: "hero", label: "Start free trial" }),
+  ev({ person: "uma", at: min(8), pathname: "/pricing" }),
+], [], NOW, {}).visitors[0];
+check("the button they pressed is carried, newest first, with where it sits",
+  clicked.clicks.length === 1 && clicked.clicks[0].label === "Start free trial" && clicked.clicks[0].placement === "hero"
+  && /Start free trial/.test(clicked.summary) && /hero/.test(clicked.summary),
+  clicked.summary);
+check("a visit with no tracked click simply has none", signin.clicks.length === 0);
+check("the query asks for the click's own words", /properties\.placement/.test(sql) && /properties\.label/.test(sql));
+check("the row parser reads them", liveEventFromRow([...row, 1, 1, "US", "TX", "", "hero", "Start free trial"])?.label === "Start free trial");
+
+// The sentence is written from what was seen, and never overclaims.
+check("a one-page visit that left is called a bounce, and an ad click says so",
+  /without opening a second page/i.test(visitSummary({ stage: "browsing", lockedOut: false, views: 1, trail: ["Landing page"], clicks: [], active: false, signup: null, step: 0, fromAd: true, source: "Facebook ad" }))
+  && /an ad click that bounced/i.test(visitSummary({ stage: "browsing", lockedOut: false, views: 1, trail: ["Landing page"], clicks: [], active: false, signup: null, step: 0, fromAd: true, source: "Facebook ad" })));
+check("a half-filled sign-up form names the step it stopped on",
+  /step 2/i.test(visitSummary({ stage: "registering", lockedOut: false, views: 2, trail: [], clicks: [], active: false, signup: null, step: 2, fromAd: false, source: "Direct" })));
+check("a signup names the account the database made",
+  /Acme Roofing/.test(visitSummary({ stage: "signed-up", lockedOut: false, views: 4, trail: [], clicks: [], active: true, signup: { orgName: "Acme Roofing" }, step: 3, fromAd: false, source: "Direct" })));
 
 console.log(bad ? `\n${bad} failing` : "\nall green");
 process.exit(bad ? 1 : 0);

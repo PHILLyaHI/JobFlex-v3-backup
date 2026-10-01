@@ -352,7 +352,8 @@
    on the sign-up form, blueprint at checkout, GREEN once the account exists,
    grey for a member already in the app — and carries an AD mark when the
    visit came off an advertisement. Nothing pulses but the one dot. */
-:global(.jf-blueprint) .live { --live-ok: var(--success); --live-ok-soft: var(--success-soft); --live-warm: var(--warning); --live-warm-soft: var(--warning-soft); --live-ad: #7c3aed; border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); }
+:global(.jf-blueprint) .live { --live-ok: var(--success); --live-ok-soft: var(--success-soft); --live-warm: var(--warning); --live-warm-soft: var(--warning-soft); --live-ad: #7c3aed;
+  --map-visitor:#e11d48; --map-signin:#0891b2; --map-signing:#f59e0b; --map-signed:#15803d; --map-member:#1e293b; --map-ad:#7c3aed; border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); }
 :global(.jf-blueprint) .liveHead { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:18px 24px; border-bottom:1px solid var(--traffic-line); flex-wrap:wrap; }
 :global(.jf-blueprint) .liveTitle { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 :global(.jf-blueprint) .liveTitle .micro { margin:0; }
@@ -393,12 +394,15 @@
 :global(.jf-blueprint) .liveRow:last-child { border-bottom:0; }
 :global(.jf-blueprint) .liveRow[data-active="false"] { color:var(--muted); }
 :global(.jf-blueprint) .liveRow[data-active="false"] .liveWho b, :global(.jf-blueprint) .liveRow[data-active="false"] .liveWhere b { color:var(--muted); }
-:global(.jf-blueprint) .liveMark { align-self:stretch; background:var(--muted-faint); }
-:global(.jf-blueprint) .liveRow[data-stage="registering"] .liveMark { background:var(--live-warm); }
-:global(.jf-blueprint) .liveRow[data-stage="checkout"] .liveMark { background:var(--blueprint); }
-:global(.jf-blueprint) .liveRow[data-stage="member"] .liveMark { background:var(--muted); }
+:global(.jf-blueprint) .liveMark { align-self:stretch; background:var(--map-visitor); }
+:global(.jf-blueprint) .liveRow[data-stage="signing-in"] .liveMark { background:var(--map-signin); }
+:global(.jf-blueprint) .liveRow[data-stage="registering"] .liveMark { background:var(--map-signing); }
+:global(.jf-blueprint) .liveRow[data-stage="checkout"] .liveMark { background:var(--map-signing); }
+:global(.jf-blueprint) .liveRow[data-stage="member"] .liveMark { background:var(--map-member); }
+:global(.jf-blueprint) .liveRow[data-stage="signing-in"] { background:color-mix(in oklab, var(--map-signin) 7%, transparent); }
 :global(.jf-blueprint) .liveRow[data-stage="registering"] { background:var(--live-warm-soft); }
 :global(.jf-blueprint) .liveRow[data-stage="checkout"] { background:var(--chart-fill); }
+:global(.jf-blueprint) .liveRow[data-stage="signing-in"] .liveWho b { color:#0e7490; }
 /* The one that signed up: green, edge to edge. */
 :global(.jf-blueprint) .liveRow[data-stage="signed-up"] { background:var(--live-ok-soft); }
 :global(.jf-blueprint) .liveRow[data-stage="signed-up"] .liveMark { background:var(--live-ok); }
@@ -409,6 +413,11 @@
 :global(.jf-blueprint) .liveSignup { color:var(--success-dark) !important; }
 :global(.jf-blueprint) .liveSource { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 :global(.jf-blueprint) .liveAd { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1.5px solid var(--live-ad); color:var(--live-ad); font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; font-style:normal; }
+:global(.jf-blueprint) .liveLocked { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1.5px solid var(--map-signin); color:#0e7490; font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; font-style:normal; }
+/* What they pressed, and the visit in one sentence. */
+:global(.jf-blueprint) .liveClicks { display:inline-flex; align-items:center; gap:5px; font:600 11px/1.5 var(--font-mono); color:var(--blueprint); }
+:global(.jf-blueprint) .liveClicks svg { flex-shrink:0; }
+:global(.jf-blueprint) .liveSummary { font:500 12px/1.55 var(--font); color:var(--ink-soft); }
 :global(.jf-blueprint) .liveRow[data-active="true"] .liveWhen b { color:var(--success-dark); }
 :global(.jf-blueprint) .liveOthers { display:flex; flex-direction:column; gap:6px; padding:14px 24px; border-top:1px solid var(--traffic-line); background:var(--paper); }
 :global(.jf-blueprint) .liveOther { font:600 11px/1.5 var(--font-mono); color:var(--ink-soft); }
@@ -439,7 +448,7 @@
    ink-washed land, countries shaded blueprint by their visitors, a pin per
    visitor in the stage colours of the list above. Controls are drawn tools,
    the card is a white plate with an ink frame. */
-:global(.jf-blueprint) .map { --map-visitor:#e5484d; --map-signing:var(--warning); --map-signed:var(--success); --map-member:var(--muted); --map-ad:#7c3aed; padding:0 24px 8px; }
+:global(.jf-blueprint) .map { padding:0 24px 8px; }
 :global(.jf-blueprint) .mapLoading { margin:0 24px 8px; aspect-ratio:2.26; display:grid; place-items:center; border:1.5px solid var(--hair-soft); background:color-mix(in oklab, var(--sky) 16%, var(--paper-deep)); font:600 12px var(--font-mono); color:var(--muted); }
 :global(.jf-blueprint) .mapBox { position:relative; overflow:hidden; border:2px solid var(--ink); border-radius:2px; background:var(--paper-deep); }
 :global(.jf-blueprint) .mapSvg { display:block; width:100%; touch-action:none; user-select:none; cursor:grab; }

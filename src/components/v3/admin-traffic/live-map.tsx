@@ -33,15 +33,20 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 const PIN = "M0 0C-1.6-5-8-9.4-8-15A8 8 0 1 1 8-15C8-9.4 1.6-5 0 0Z";
 
 /** What a pin says about the visitor: the stage, folded to four colours. */
-type PinKind = "visitor" | "signing-up" | "signed-up" | "member";
-const PIN_KIND: Record<LiveStage, PinKind> = { browsing: "visitor", registering: "signing-up", checkout: "signing-up", "signed-up": "signed-up", member: "member" };
+/* Five kinds, five hues far apart (2026-09-30). The old four sat close
+   together — red, amber, green and a grey that vanished into the land — so
+   every pin read the same at a glance. These are picked against what is
+   behind them: a sky-tinted ocean and an ink-washed land. */
+type PinKind = "visitor" | "signing-in" | "signing-up" | "signed-up" | "member";
+const PIN_KIND: Record<LiveStage, PinKind> = { browsing: "visitor", "signing-in": "signing-in", registering: "signing-up", checkout: "signing-up", "signed-up": "signed-up", member: "member" };
 const PIN_META: Record<PinKind, { colour: string; label: string }> = {
   visitor: { colour: "var(--map-visitor)", label: "Looking around" },
+  "signing-in": { colour: "var(--map-signin)", label: "Signing in" },
   "signing-up": { colour: "var(--map-signing)", label: "Signing up" },
   "signed-up": { colour: "var(--map-signed)", label: "Signed up" },
   member: { colour: "var(--map-member)", label: "Member in the app" },
 };
-const STAGE_LABEL: Record<LiveStage, string> = { browsing: "Looking around", registering: "On the sign-up form", checkout: "At checkout", "signed-up": "Signed up", member: "In the app · member" };
+const STAGE_LABEL: Record<LiveStage, string> = { browsing: "Looking around", "signing-in": "Signing in", registering: "On the sign-up form", checkout: "At checkout", "signed-up": "Signed up", member: "In the app · member" };
 
 export function LiveMap({ visitors, now, selected, onSelect, timezone, totals }: { visitors: LiveVisitor[]; now: number; selected: string | null; onSelect: (key: string | null) => void; timezone: string; totals?: LiveTotals | null }) {
   const [map, setMap] = useState<WorldMap | null>(null);
@@ -270,8 +275,8 @@ export function LiveMap({ visitors, now, selected, onSelect, timezone, totals }:
                 {v.active && <ellipse cx={px} cy={py} rx={7 * k} ry={2.6 * k} fill={colour} className={s.livePing} />}
                 <ellipse cx={px} cy={py} rx={3.2 * k} ry={1.2 * k} fill="rgba(0,0,0,.25)" />
                 <g transform={`translate(${px} ${py}) scale(${size})`}>
-                  <path d={PIN} fill={colour} stroke={on ? "var(--ink)" : "#fff"} strokeWidth={on ? 1.8 : 1.2} />
-                  <circle cx={0} cy={-15} r={3.2} fill="#fff" />
+                  <path d={PIN} fill={colour} stroke={on ? "var(--ink)" : "#fff"} strokeWidth={on ? 2.4 : 1.9} />
+                  <circle cx={0} cy={-15} r={3} fill="#fff" />
                   {v.fromAd && <circle cx={0} cy={-15} r={5.6} fill="none" stroke="var(--map-ad)" strokeWidth={1.6} />}
                 </g>
               </g>
@@ -359,7 +364,7 @@ export function LiveMap({ visitors, now, selected, onSelect, timezone, totals }:
       <div className={s.mapLegend}>
         {(Object.keys(PIN_META) as PinKind[]).map((key) => (
           <span key={key}>
-            <svg viewBox="-9 -24 18 25" aria-hidden="true"><path d={PIN} fill={PIN_META[key].colour} stroke="#fff" strokeWidth={1.2} /><circle cx={0} cy={-15} r={3.2} fill="#fff" /></svg>
+            <svg viewBox="-9.5 -25 19 26" aria-hidden="true"><path d={PIN} fill={PIN_META[key].colour} stroke="#fff" strokeWidth={1.9} /><circle cx={0} cy={-15} r={3} fill="#fff" /></svg>
             {PIN_META[key].label} · <b>{visitors.filter((v) => PIN_KIND[v.stage] === key).length}</b>
           </span>
         ))}

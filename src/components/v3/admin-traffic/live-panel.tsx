@@ -5,7 +5,7 @@
 // account the database just made. Polls while the tab is visible; one shared
 // PostHog query behind it (lib/traffic-server fetchLiveEvents).
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Info, Megaphone, RefreshCw } from "lucide-react";
+import { Info, KeyRound, Megaphone, MousePointerClick, RefreshCw } from "lucide-react";
 import { getLiveTraffic } from "@/actions/trafficDashboard";
 import type { LiveReport, LiveStage, LiveVisitor } from "@/lib/traffic-live";
 import { LiveMap } from "./live-map";
@@ -21,7 +21,7 @@ const LIVE_POLL_MS = 15_000;
 const POLL_MS = 45_000;
 const LIVE_MODE_KEY = "jf.traffic.liveMode";
 const fmt = (n: number) => n.toLocaleString("en-US");
-const STAGE: Record<LiveStage, string> = { browsing: "Looking around", registering: "On the sign-up form", checkout: "At checkout", "signed-up": "Signed up", member: "In the app · member" };
+const STAGE: Record<LiveStage, string> = { browsing: "Looking around", "signing-in": "Signing in", registering: "On the sign-up form", checkout: "At checkout", "signed-up": "Signed up", member: "In the app · member" };
 
 function ago(iso: string, now: number): string {
   const sec = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
@@ -151,7 +151,7 @@ export function LivePanel({ initial, timezone }: { initial: LiveReport; timezone
       {rows.map((v) => <LiveRow key={v.id + v.firstAt} v={v} now={now} timezone={timezone} selected={selected === v.id} onSelect={() => setSelected(selected === v.id ? null : v.id)}/>)}
     </ol>}
     {report.otherSignups.length > 0 && <div className={s.liveOthers}><span className={s.micro}>Also signed up today, before this window or with analytics blocked:</span>{report.otherSignups.map((o) => <span key={o.orgName + o.at} className={s.liveOther}><b>{o.orgName}</b> · {o.ownerEmail || "no owner yet"} · {o.source} · {clock(o.at, timezone)}</span>)}</div>}
-    <p className={s.footnote}>One line per browser (a PostHog person), newest move first, signups on top; a click on a line shows it on the map. Source is what the first page of the visit carried: a tagged paid medium is an ad; a Facebook, Instagram or TikTok referrer with no tag is called an ad too. Colour is how far they got. Places come from PostHog&apos;s GeoIP reading of the browser&apos;s address — the town is usually right, the street never known. A signup is named after the organization created within fifteen minutes of it with the same campaign tag.</p>
+    <p className={s.footnote}>One line per browser (a PostHog person), newest move first, signups on top; a click on a line shows it on the map. Source is what the first page of the visit carried: a tagged paid medium is an ad; a Facebook, Instagram or TikTok referrer with no tag is called an ad too. Colour is how far they got, and each stage has its own: crimson looking around, cyan signing in, amber on the sign-up form or at checkout, green signed up, near-black already a member. A visitor at the login, forgot-password or reset screen is an existing customer, counted as signing in rather than browsing; "locked out" means they asked for a reset link. Places come from PostHog&apos;s GeoIP reading of the browser&apos;s address — the town is usually right, the street never known. A signup is named after the organization created within fifteen minutes of it with the same campaign tag.</p>
   </section>;
 }
 
@@ -163,11 +163,26 @@ function LiveRow({ v, now, timezone, selected, onSelect }: { v: LiveVisitor; now
       <b>{STAGE[v.stage]}{v.signup ? ` → ${v.signup.orgName}` : ""}</b>
       {v.signup && <span className={s.liveSignup}>{v.signup.ownerName ? `${v.signup.ownerName} · ` : ""}{v.signup.ownerEmail}{v.signup.plan ? ` · ${v.signup.plan}` : ""}{v.signup.outcome ? ` · ${v.signup.outcome.replace(/_/g, " ")}` : ""} · account made {clock(v.signup.at, timezone)}</span>}
       {!v.signup && v.stage === "signed-up" && v.signedUpAt && <span className={s.liveSignup}>Verified at {clock(v.signedUpAt, timezone)} · no organization row matched yet</span>}
-      <span className={s.liveSource}>{v.fromAd && <em className={s.liveAd}><Megaphone size={11}/>Ad</em>}{v.source}{v.campaign ? ` · ${v.campaign}` : ""}</span>
+      <span className={s.liveSource}>
+        {v.fromAd && <em className={s.liveAd}><Megaphone size={11}/>Ad</em>}
+        {/* Locked out is its own chip: the one state that wants a person,
+            not a nudge. */}
+        {v.lockedOut && <em className={s.liveLocked}><KeyRound size={11}/>Locked out</em>}
+        {v.source}{v.campaign ? ` · ${v.campaign}` : ""}
+      </span>
     </div>
     <div className={s.liveWhere}>
       <b>{v.pageLabel}</b>
       <span>{v.views} {v.views === 1 ? "page" : "pages"}{v.trail.length > 1 ? ` · ${v.trail.join(" → ")}` : ""}</span>
+      {/* What they pressed — only the landing's tagged buttons fire this, so
+          an empty line means "nothing we track", not "they clicked nothing". */}
+      {v.clicks.length > 0 && <span className={s.liveClicks}>
+        <MousePointerClick size={11}/>
+        {v.clicks.map((c) => `“${c.label}”${c.placement ? ` · ${c.placement.replace(/[-_]/g, " ")}` : ""}`).join("  ·  ")}
+      </span>}
+      {/* The visit in one sentence, so the trail above does not have to be
+          decoded by eye. */}
+      {v.summary && <span className={s.liveSummary}>{v.summary}</span>}
     </div>
     <div className={s.liveWhen}>
       <b>{v.active ? "On the site now" : "Left"}</b>
