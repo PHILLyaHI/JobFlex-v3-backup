@@ -1043,37 +1043,46 @@ body:has(.jf-mobile-job-detail)::before { content: none; }
 }
 
 /* ============================================================
-   SECTIONS RAIL (2026-10-01) — one row, scrolls sideways.
+   SECTIONS (2026-10-01) — every tab in sight at 390, no sideways scroll.
+   A six-track grid: three tabs across (span 2); a short last row shares its
+   width (5 tabs = 3 + 2 at span 3, 4 = 2 + 2), so no cell is ever empty.
+   The dividers are the GAPS over an ink ground, not borders on the tabs: a
+   sub-pixel seam between a tab's fill and the frame then shows ink, never a
+   white hairline under the picked tab (the owner saw one on an iPhone).
    ============================================================ */
 .jf-mobile-job-detail .mjd-tabs {
-  display: flex;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1.5px;
+  overflow: hidden;
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--sheet, #fff);
+  background: var(--ink);
 }
-.jf-mobile-job-detail .mjd-tabs::-webkit-scrollbar { display: none; }
 .jf-mobile-job-detail .mjd-tab {
-  flex: 0 0 auto;
-  display: inline-flex;
+  grid-column: span 2;
+  display: flex;
   align-items: center;
-  gap: 7px;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
   min-height: var(--tap);
-  padding: 0 14px;
+  padding: 6px;
   border: 0;
-  border-right: 1.5px solid var(--ink);
-  background: transparent;
+  background: var(--sheet, #fff);
   color: var(--ink);
-  font: 800 12px/1 var(--font);
-  letter-spacing: 0.06em;
+  font: 800 11.5px/1.15 var(--font);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  white-space: nowrap;
+  text-align: center;
   cursor: pointer;
 }
-.jf-mobile-job-detail .mjd-tab:last-child { border-right: 0; }
+.jf-mobile-job-detail .mjd-tabs[data-n="5"] .mjd-tab:nth-child(n + 4),
+.jf-mobile-job-detail .mjd-tabs[data-n="4"] .mjd-tab,
+.jf-mobile-job-detail .mjd-tabs[data-n="2"] .mjd-tab { grid-column: span 3; }
+.jf-mobile-job-detail .mjd-tabs[data-n="1"] .mjd-tab { grid-column: span 6; }
 .jf-mobile-job-detail .mjd-tab.mjd-on { background: var(--ink); color: var(--paper); }
+.jf-mobile-job-detail .mjd-tab-t { min-width: 0; text-wrap: balance; }
 .jf-mobile-job-detail .mjd-tab i {
   font-style: normal;
   font-family: var(--font-mono);

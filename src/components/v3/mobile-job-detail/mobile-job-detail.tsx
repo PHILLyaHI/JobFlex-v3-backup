@@ -95,7 +95,6 @@ const rowVar = (i: number) => ({ "--i": i }) as React.CSSProperties;
 export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const tabsRef = useRef<HTMLElement>(null);
 
   const [tab, setTab] = useState<TabKey>("overview");
   const [rosterOpen, setRosterOpen] = useState(false);
@@ -150,12 +149,6 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
     setTab(k);
     setSwitched(true);
   }, []);
-
-  /* The section rail keeps the picked tab in view (it scrolls sideways). */
-  useEffect(() => {
-    const on = tabsRef.current?.querySelector<HTMLElement>('[aria-selected="true"]');
-    on?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [tab]);
 
   /* ---------- Motion: reveal on load + adaptive reveal on scroll ---------- */
   useEffect(() => {
@@ -291,10 +284,11 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
           <CrewPendingBanner data={record.board} door={record.door} />
 
           {/* ============ SECTIONS ============
-              One row that scrolls sideways (owner, 2026-10-01, after the iPhone
-              check — it replaces the dropdown): every section and its count in
-              sight, the picked one inked, nothing wraps into a half-empty grid. */}
-          <nav className="mjd-tabs" ref={tabsRef} role="tablist" aria-label="Job sections" data-job-tabs>
+              Every section in sight at 390, no sideways scroll (owner,
+              2026-10-01): a grid of three across, the last row sharing its
+              width so no cell is left empty (5 tabs = 3 + 2, 6 = 3 + 3).
+              Full labels and their counts; the picked one inked. */}
+          <nav className="mjd-tabs" role="tablist" aria-label="Job sections" data-n={TABS.length} data-job-tabs>
             {TABS.map(([key, label, count]) => (
               <button
                 key={key}
@@ -304,8 +298,12 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                 className={`mjd-tab${tab === key ? " mjd-on" : ""}`}
                 onClick={() => selectTab(key)}
               >
-                {label}
-                {count !== null && <i>{count}</i>}
+                {/* One run of text, so a label that wraps in a narrow cell keeps
+                    its count beside its last word ("Days & / photos 4"). */}
+                <span className="mjd-tab-t">
+                  {label}
+                  {count !== null && <> <i>{count}</i></>}
+                </span>
               </button>
             ))}
           </nav>

@@ -158,17 +158,20 @@
   font-variant-numeric: tabular-nums; }
 
 :global(.jf-blueprint .content) .jd-tabbar { display: flex; gap: 14px; justify-content: space-between; }
+/* The ground behind the tabs is INK (2026-10-01): under the shell's fluid zoom a
+   tab's fill and the frame land on fractional pixels, and a white ground showed
+   through as a hairline under the picked tab. The tabs carry their own white. */
 :global(.jf-blueprint .content) .jd-tabs { display: inline-flex; flex-wrap: wrap; width: max-content;
-  border: var(--border); border-radius: var(--radius); background: #ffffff;
+  border: var(--border); border-radius: var(--radius); background: var(--ink);
   overflow: hidden; }
 :global(.jf-blueprint .content) .jd-vp { align-self: stretch; }
-:global(.jf-blueprint .content) .jd-tab { appearance: none; cursor: pointer; border: none; background: transparent;
+:global(.jf-blueprint .content) .jd-tab { appearance: none; cursor: pointer; border: none; background: #ffffff;
   padding: 10px 18px; font-family: var(--font); font-size: 12.5px; font-weight: 800;
   letter-spacing: .04em; color: var(--ink); display: inline-flex; align-items: center;
   gap: 8px; border-right: 1.5px solid var(--ink);
   transition: background .14s var(--ease), color .14s var(--ease); }
 :global(.jf-blueprint .content) .jd-tab:last-child { border-right: none; }
-:global(.jf-blueprint .content) .jd-tab:hover:not(.on) { background: rgba(10,10,10,.05); }
+:global(.jf-blueprint .content) .jd-tab:hover:not(.on) { background: #f2f2f2; }
 :global(.jf-blueprint .content) .jd-tab.on { background: var(--ink); color: var(--paper); }
 :global(.jf-blueprint .content) .jd-tab i { font-style: normal; font-family: var(--font-mono); font-size: 11.5px;
   font-weight: 600; color: var(--muted); }
