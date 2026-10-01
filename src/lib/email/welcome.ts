@@ -16,6 +16,8 @@ export async function sendWelcomeFirstEstimate(i: {
   tradeTypes: readonly string[];
   landingIndustry: string | null;
   firstChargeAt: Date;
+  /** A card-less trial (lib/cardlessTrial): no card is on file. */
+  cardless?: boolean;
 }) {
   const target = firstEstimateTarget(i.tradeTypes, i.landingIndustry);
   const base = (await appBaseUrl()).replace(/\/$/, "");
@@ -25,6 +27,7 @@ export async function sendWelcomeFirstEstimate(i: {
     ctaLabel: target.label,
     trade: target.trade,
     firstChargeDate: DATE_FMT.format(i.firstChargeAt),
+    cardless: i.cardless,
   });
   const { subject, html } = renderEmail(doc);
   return sendEmail({ to: i.to, subject, html });

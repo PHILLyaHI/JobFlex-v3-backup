@@ -28,6 +28,7 @@ import { db } from "@/lib/db";
 import { isPlaceholderOrgName, needsCompanySetup } from "@/lib/orgSetup";
 import { readGoogleSignup } from "@/lib/googleSignup";
 import { detectInAppBrowser } from "@/lib/inAppBrowser";
+import { trialRequiresCard } from "@/lib/trialPolicy";
 import { RegisterResponsive, type GooglePrefill, type SetupPrefill } from "./register-responsive";
 import {
   INDUSTRY_COOKIE,
@@ -132,6 +133,7 @@ export default async function RegisterPage({
   const inAppBrowser = detectInAppBrowser((await headers()).get("user-agent"));
   return (
     <RegisterResponsive
+      requiresCard={trialRequiresCard()}
       setup={setup}
       google={google}
       industry={industry}

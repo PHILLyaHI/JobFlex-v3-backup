@@ -86,12 +86,14 @@ function RegisterSwitch({
   industry,
   utm,
   inAppBrowser,
+  requiresCard,
 }: {
   setup: SetupPrefill | null;
   google: GooglePrefill | null;
   industry: TradeType | null;
   utm: UtmParams | null;
   inAppBrowser: InAppBrowser | null;
+  requiresCard: boolean;
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const params = useSearchParams();
@@ -116,7 +118,7 @@ function RegisterSwitch({
      day the handheld build is ported to the pending-signup flow. */
   void isHandheld;
   void params;
-  return <RegisterContent setup={setup} google={google} industry={industry} utm={utm} inAppBrowser={inAppBrowser} />;
+  return <RegisterContent setup={setup} google={google} industry={industry} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} />;
 }
 
 // The attribution capture under either tree reads the query string, so the
@@ -128,6 +130,7 @@ export function RegisterResponsive({
   industry = null,
   utm = null,
   inAppBrowser = null,
+  requiresCard = true,
 }: {
   setup?: SetupPrefill | null;
   google?: GooglePrefill | null;
@@ -137,10 +140,12 @@ export function RegisterResponsive({
   utm?: UtmParams | null;
   /** The in-app browser the request's user agent names (lib/inAppBrowser). */
   inAppBrowser?: InAppBrowser | null;
+  /** TRIAL_REQUIRES_CARD, read on the server (lib/trialPolicy). */
+  requiresCard?: boolean;
 }) {
   return (
     <Suspense fallback={null}>
-      <RegisterSwitch setup={setup} google={google} industry={industry} utm={utm} inAppBrowser={inAppBrowser} />
+      <RegisterSwitch setup={setup} google={google} industry={industry} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} />
     </Suspense>
   );
 }

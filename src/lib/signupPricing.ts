@@ -1,0 +1,152 @@
+// WHAT A SIGNUP IS BILLED: the Stripe price for the plan picked on the plan
+// step, and the discount its stored code earns. Both signup paths read this:
+// the card checkout (/api/checkout/signup, TRIAL_REQUIRES_CARD=true) and the
+// card-less trial (lib/cardlessTrial). Moved here from the checkout route
+// unchanged (2026-10-01), so the two can never price the same plan apart.
+//
+// Everything is read from the pending intent and the catalog — never from a
+// request body, so a doctored request cannot name its own price.
+import "server-only";
+import type Stripe from "stripe";
+import { db } from "@/lib/db";
+import { getPlanBySlug } from "@/lib/planCatalogServer";
+import { CUSTOM_PLAN_SLUG, customPriceCents } from "@/lib/customPlan";
+import { getCustomPlanTrialDays } from "@/lib/customPlanConfig";
+import { ensureRecurringPrice } from "@/lib/stripePriceCache";
+import { validateAttribution } from "@/lib/attribution";
+import { promotionCodeIdForMode } from "@/lib/influencerPromoMode";
+import { ensureReferralCoupon, referralCouponMonths } from "@/lib/referralDiscount";
+import type { StripeMode } from "@/lib/stripeMode";
+
+export type SignupInterval = "MONTH" | "YEAR";
+
+export type SignupPrice =
+  | {
+      ok: true;
+      /** The Stripe price id the subscription is created on. */
+      price: string;
+      /** The plan's own trial (catalog row, or the custom plan's setting). */
+      trialDays: number;
+      /** The slug recorded on the session / subscription metadata. */
+      planLabel: string;
+      isCustom: boolean;
+      /** What the plan costs per interval, in cents. */
+      cents: number;
+    }
+  | { ok: false; status: number; error: string };
+
+/**
+ * THE CUSTOM PLAN has no catalog row and no Stripe price: its amount is the
+ * base plus the pages the shop ticked, priced from the selection stored with
+ * the pending intent. A REUSED price, not inline price_data: inline data mints
+ * a fresh Product+Price per checkout and would litter the Stripe dashboard with
+ * a product per signup. The custom price space is tiny ($20 + $10 × 0–9 pages),
+ * so lib/stripePriceCache keeps ONE "JobFlex Custom" product per account and
+ * reuses a price per distinct amount.
+ *
+ * Mode-aware: the admin's live/sandbox switch (lib/stripeMode) decides which
+ * account the price lives on, and only the LIVE path requires a PlanPrice
+ * mirror — the sandbox has no such ids, so test mode prices from the catalog
+ * row (one product per plan slug on the test account, one price per amount).
+ */
+export async function resolveSignupPrice(opts: {
+  stripe: Stripe;
+  mode: StripeMode;
+  planSlug: string;
+  interval: SignupInterval;
+  customPages: string[];
+}): Promise<SignupPrice> {
+  const { stripe, mode, interval } = opts;
+  if (opts.planSlug === CUSTOM_PLAN_SLUG) {
+    const cents = customPriceCents(opts.customPages, interval);
+    const price = await ensureRecurringPrice({
+      stripe,
+      mode,
+      kind: "custom",
+      name: "JobFlex Custom plan",
+      interval,
+      cents,
+    });
+    return { ok: true, price, trialDays: await getCustomPlanTrialDays(), planLabel: CUSTOM_PLAN_SLUG, isCustom: true, cents };
+  }
+  const plan = await getPlanBySlug(opts.planSlug);
+  if (!plan || !plan.active || plan.isFree) {
+    return { ok: false, status: 404, error: "That plan is not available." };
+  }
+  const cents = interval === "YEAR" ? (plan.yearlyPriceCents ?? 0) : plan.priceCents;
+  if (mode === "live") {
+    const row = await db.planPrice.findFirst({
+      where: { planSlug: plan.slug, interval, active: true },
+    });
+    if (!row) {
+      return { ok: false, status: 404, error: "That plan isn't available for checkout yet." };
+    }
+    return { ok: true, price: row.stripePriceId, trialDays: plan.trialDays, planLabel: plan.slug, isCustom: false, cents };
+  }
+  if (cents <= 0) {
+    return { ok: false, status: 404, error: "That plan is not available." };
+  }
+  const price = await ensureRecurringPrice({
+    stripe,
+    mode,
+    kind: plan.slug,
+    name: `JobFlex ${plan.name}`,
+    interval,
+    cents,
+  });
+  return { ok: true, price, trialDays: plan.trialDays, planLabel: plan.slug, isCustom: false, cents };
+}
+
+/** The discount a signup's stored code earns: an influencer promo becomes its
+ *  Stripe promotion code, a member referral the referral coupon. */
+export type SignupDiscount = { promotion_code: string } | { coupon: string };
+
+/* THE CODE TYPED ON THE PLAN STEP IS APPLIED — for real. Until 2026-09-02
+   this only opened Stripe's own promo field, so "code applied" on our page met
+   a full price on Stripe's (owner's report). The validated code rides with the
+   pending intent.
+
+   THE MODE GATE THAT USED TO BE HERE. `&& mode === "live"` made the promo a
+   no-op in the sandbox, because the stored promo_… ids belong to the live
+   account and passing one to a test session 400s the whole checkout. True,
+   but the remedy reproduced the 2026-09-02 defect in test mode: the plan step
+   promises "20% off · $63.20" and Stripe charges $79. lib/influencerPromoMode
+   resolves the id per mode instead — the stored one on live, byte for byte,
+   and a cached test twin in the sandbox. */
+export async function resolveSignupDiscount(opts: {
+  stripe: Stripe;
+  mode: StripeMode;
+  attribution: { kind: "promo" | "ref"; code: string } | null;
+  trialDays: number;
+  /** For the log line. */
+  where: string;
+}): Promise<SignupDiscount | null> {
+  const { stripe, mode, attribution: attr } = opts;
+  if (attr?.kind === "promo") {
+    const v = await validateAttribution("promo", attr.code);
+    if (v?.kind === "promo") {
+      const promotionCode = await promotionCodeIdForMode(stripe, mode, {
+        id: v.promoId,
+        code: v.code,
+        stripeCouponId: v.stripeCouponId,
+        stripePromotionCodeId: v.stripePromotionCodeId,
+        customerPercentOff: v.percentOff,
+      });
+      if (promotionCode) return { promotion_code: promotionCode };
+      // Never silently: the plan step has already shown this visitor a price
+      // with the discount in it, so a drop here is a promise being broken and
+      // the operator must be able to find out why.
+      console.warn(`[${opts.where}] promo ${v.code} is not applicable in ${mode} mode`);
+    }
+  } else if (attr?.kind === "ref") {
+    const v = await validateAttribution("ref", attr.code);
+    if (v) {
+      try {
+        return { coupon: await ensureReferralCoupon(stripe, mode, referralCouponMonths(opts.trialDays)) };
+      } catch (err) {
+        console.warn(`[${opts.where}] referral coupon unavailable:`, err);
+      }
+    }
+  }
+  return null;
+}

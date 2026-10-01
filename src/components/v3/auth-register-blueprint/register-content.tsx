@@ -62,6 +62,7 @@ import {
 } from "@/actions/signupPaywall";
 import {
   completePendingSignup,
+  startCardlessTrial,
   startPendingSignup,
   updatePendingSignupAttribution,
   updatePendingSignupPages,
@@ -122,7 +123,12 @@ export function RegisterContent({
   industry = null,
   utm = null,
   inAppBrowser: inAppInitial = null,
+  requiresCard = true,
 }: {
+  /* TRIAL_REQUIRES_CARD (lib/trialPolicy), read on the server. True: the plan
+     step opens Stripe Checkout and the card is taken there, as it always was.
+     False: the plan step starts a 7-day trial with no card (onStartCardless). */
+  requiresCard?: boolean;
   setup?: SetupPrefill | null;
   /* Instagram / Facebook / LINE / TikTok webview, read from the request's
      user agent on the server (lib/inAppBrowser), so the first paint already
@@ -727,6 +733,50 @@ export function RegisterContent({
       setPayBusy(false);
     }
   }
+
+  /* THE CARD-LESS TRIAL (TRIAL_REQUIRES_CARD off). The same two re-stamps
+     the checkout needs, then the account and its 7-day trial are created on
+     the server (startCardlessTrial) and the session is established here, as
+     the skip does — there is no Stripe page to leave for. */
+  async function onStartCardless(slug: string | null = planSlug) {
+    if (payBusy || !slug || !token) return;
+    trackTraffic(TRAFFIC_EVENTS.attempt, { plan: slug, interval, intent: "trial", flow: trafficFlow, card: false });
+    setPayBusy(true);
+    setStartingSlug(slug);
+    setPlansErr(null);
+    try {
+      if (slug === CUSTOM_PLAN_SLUG) {
+        const upd = await updatePendingSignupPages(token, customPages);
+        if (!upd.ok) {
+          setPlansErr(upd.error);
+          return;
+        }
+      }
+      const stamped = await updatePendingSignupAttribution(token, attribution);
+      if (!stamped.ok) {
+        setPlansErr(stamped.error);
+        return;
+      }
+      const res = await startCardlessTrial(token, slug);
+      if (!res.ok) {
+        trackTraffic(TRAFFIC_EVENTS.error, { step: 3, reason: "trial_rejected" });
+        setPlansErr(res.error);
+        return;
+      }
+      const auth = res.ticket ? await signIn("signup-ticket", { ticket: res.ticket, redirect: false }) : null;
+      setSignedIn(Boolean(auth && !auth.error));
+      setDoneNote("Your 7-day trial is on — no card needed. Add one any time before it ends to keep your workspace.");
+      setStep(4);
+    } catch {
+      trackTraffic(TRAFFIC_EVENTS.error, { step: 3, reason: "trial_unavailable" });
+      setPlansErr("Couldn't start the trial. Try again.");
+    } finally {
+      setPayBusy(false);
+      setStartingSlug(null);
+    }
+  }
+  const onStartPlan = (slug: string) => void (requiresCard ? onStartTrial(slug) : onStartCardless(slug));
+  const busyLabel = requiresCard ? "Opening checkout…" : "Starting your trial…";
 
   /* ONCE. The intent is spent by its first completion, and React's development
      StrictMode mounts effects twice — the second call came back "That signup
@@ -1568,15 +1618,17 @@ export function RegisterContent({
                       onClick={(e) => {
                         e.stopPropagation();
                         setPlanSlug(p.slug);
-                        void onStartTrial(p.slug);
+                        onStartPlan(p.slug);
                       }}
                       disabled={payBusy || !checkoutReady}
                     >
                       {startingSlug === p.slug
-                        ? "Opening checkout…"
-                        : checkoutReady
-                          ? `Start ${p.trialDays || DEFAULT_TRIAL_DAYS}-day trial`
-                          : "Checkout is not configured"}
+                        ? busyLabel
+                        : !checkoutReady
+                          ? "Checkout is not configured"
+                          : requiresCard
+                            ? `Start ${p.trialDays || DEFAULT_TRIAL_DAYS}-day trial`
+                            : "Start free trial"}
                     </button>
                   </div>
                 );
@@ -1700,15 +1752,17 @@ export function RegisterContent({
                   onClick={(e) => {
                     e.stopPropagation();
                     setPlanSlug(CUSTOM_PLAN_SLUG);
-                    void onStartTrial(CUSTOM_PLAN_SLUG);
+                    onStartPlan(CUSTOM_PLAN_SLUG);
                   }}
                   disabled={payBusy || !checkoutReady}
                 >
                   {startingSlug === CUSTOM_PLAN_SLUG
-                    ? "Opening checkout…"
-                    : checkoutReady
-                      ? `Start ${customTrialDays}-day trial`
-                      : "Checkout is not configured"}
+                    ? busyLabel
+                    : !checkoutReady
+                      ? "Checkout is not configured"
+                      : requiresCard
+                        ? `Start ${customTrialDays}-day trial`
+                        : "Start free trial"}
                 </button>
               </div>
               ) : null}
@@ -1723,7 +1777,9 @@ export function RegisterContent({
                 day is named: the trial's length is per plan (the note below
                 and each button say it), and "day 15" had gone stale. */}
             <p className="pw-terms" id="pwTerms">
-              Your card won&apos;t be charged until the free trial ends. Cancel anytime from Subscription.
+              {requiresCard
+                ? "Your card won't be charged until the free trial ends. Cancel anytime from Subscription."
+                : "No card needed: the trial is 7 days, and you add a card only if you keep the plan."}
               {" "}By starting a trial, you agree to our{" "}
               <Link href="/terms" target="_blank" rel="noopener noreferrer"><u>Terms of service</u></Link>
               {" "}and acknowledge our{" "}
@@ -1770,10 +1826,16 @@ export function RegisterContent({
               </p>
             ) : null}
 
-            <p className="pw-note">
-              No charge today. <b>{trialDays} days free.</b> Cancel before it ends and you pay
-              nothing.
-            </p>
+            {requiresCard ? (
+              <p className="pw-note">
+                No charge today. <b>{trialDays} days free.</b> Cancel before it ends and you pay
+                nothing.
+              </p>
+            ) : (
+              <p className="pw-note">
+                <b>7 days free.</b> No card, nothing charged.
+              </p>
+            )}
 
             {/* The testing exit. Small, quiet, cornered — an escape, not an
                 offer. Development builds only: the server refuses the

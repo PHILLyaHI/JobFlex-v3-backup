@@ -53,8 +53,11 @@ export interface WelcomeFirstEstimateInput {
   ctaLabel: string;
   /** What the estimator does, in one line, for the prose. */
   trade: "roofing" | "fencing" | "general";
-  /** "Sep 25, 2026" — the day the card is first charged. */
+  /** "Sep 25, 2026" — the day the card is first charged (the trial's end). */
   firstChargeDate: string;
+  /** A card-less trial: the box and the closing line say there is no card,
+   *  and when to add one to keep the workspace. */
+  cardless?: boolean;
 }
 
 /** landing-e pass A (2026-09-11): the welcome for the test variant. One
@@ -68,11 +71,17 @@ export function buildWelcomeFirstEstimate(i: WelcomeFirstEstimateInput): EmailDo
       : i.trade === "fencing"
         ? "Draw the fence line on the map, pick the style and height, and the footage, posts, gates and price are on a proposal — two minutes, no tape."
         : "Type the job the way you'd say it to a customer, and the estimate writes itself: line items, quantities, a priced proposal — two minutes.";
-  const box: BoxRow[] = [
-    { type: "field", label: "Trial", value: "7 days free" },
-    { type: "field", label: "First charge", value: i.firstChargeDate },
-    { type: "cond", label: "Cancel", chip: "Anytime, from Subscription", tone: "ok" },
-  ];
+  const box: BoxRow[] = i.cardless
+    ? [
+        { type: "field", label: "Trial", value: "7 days free" },
+        { type: "field", label: "Trial ends", value: i.firstChargeDate },
+        { type: "cond", label: "Card", chip: "None needed to start", tone: "ok" },
+      ]
+    : [
+        { type: "field", label: "Trial", value: "7 days free" },
+        { type: "field", label: "First charge", value: i.firstChargeDate },
+        { type: "cond", label: "Cancel", chip: "Anytime, from Subscription", tone: "ok" },
+      ];
   return {
     subject: "Your first estimate in 2 minutes",
     lockup: PLATFORM_LOCKUP,
@@ -81,7 +90,11 @@ export function buildWelcomeFirstEstimate(i: WelcomeFirstEstimateInput): EmailDo
     prose: [`Hi ${first} — your shop is set up. The fastest first win is an estimate, so start there.`, job],
     box,
     cta: { label: i.ctaLabel, href: i.href },
-    after: [`Your card won't be charged until ${i.firstChargeDate}. Cancel before then from Subscription and you pay nothing.`],
+    after: [
+      i.cardless
+        ? `No card is on file and nothing is charged. To keep your workspace after ${i.firstChargeDate}, add a card from the banner in the app — it takes a minute.`
+        : `Your card won't be charged until ${i.firstChargeDate}. Cancel before then from Subscription and you pay nothing.`,
+    ],
     footer: PLATFORM_FOOTER,
   };
 }

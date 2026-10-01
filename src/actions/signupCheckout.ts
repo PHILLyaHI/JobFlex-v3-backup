@@ -46,6 +46,9 @@ import { fbcFromFbclid, sendMetaEvent, type MetaSignupContext } from "@/lib/meta
 import { metaStartTrial } from "@/lib/metaSignupEvents";
 import { sendWelcomeFirstEstimate } from "@/lib/email/welcome";
 import { trackActivation } from "@/lib/activation-events";
+import { trialRequiresCard } from "@/lib/trialPolicy";
+import { createCardlessSubscription, nameOrgOnSubscription } from "@/lib/cardlessTrial";
+import { writeCardlessRecord } from "@/lib/trialState";
 
 /** How long an unpaid intent is honoured. Long enough to pay, short enough
  *  that an abandoned card never becomes an account a week later. */
@@ -449,6 +452,163 @@ export async function completePendingSignup(
     }
   }
 
+  return createAccountFromPending(token, rec, {
+    flow: sessionId ? "checkout" : "skip",
+    sessionId,
+    stripeCustomerId,
+    stripeSubscriptionId,
+    stripeSubscription,
+    planSlug,
+    trialEnd,
+    periodEnd,
+    paidCustomPages,
+    analyticsOutcome,
+    analyticsLive,
+    checkoutAmount,
+    checkoutCurrency,
+  });
+}
+
+/**
+ * THE CARD-LESS TRIAL (TRIAL_REQUIRES_CARD off — lib/trialPolicy). The plan
+ * step's "Start free trial" lands here instead of at Stripe Checkout: the
+ * trialing subscription is created with no payment method
+ * (lib/cardlessTrial), then the same account the paid return creates, and
+ * everything that waited for completePendingSignup — the welcome email, the
+ * attribution, metaSignupJson, CompleteRegistration and StartTrial — runs here.
+ */
+export async function startCardlessTrial(
+  token: string,
+  planSlug: string,
+): Promise<
+  | { ok: true; email: string; ticket: string | null; registrationEventId: string | null }
+  | { ok: false; error: string; done?: boolean; email?: string }
+> {
+  if (trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account." };
+  const rec = await loadPending(token);
+  if (!rec) {
+    const done = await loadDone(token);
+    if (done && done.sessionId === CARDLESS_SESSION) {
+      if (Date.now() - done.at <= REPLAY_WINDOW_MS) {
+        return { ok: true, email: done.email, ticket: await mintSigninTicket(done.userId), registrationEventId: null };
+      }
+      return { ok: false, done: true, email: done.email, error: "This signup is already complete. Sign in to open your shop." };
+    }
+    return { ok: false, error: "That signup expired. Start again." };
+  }
+  const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
+  if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
+
+  const interval = "MONTH" as const;
+  const customPages = planSlug === CUSTOM_PLAN_SLUG ? normalizeCustomPages(rec.customPages) : [];
+  const started = await createCardlessSubscription({
+    token,
+    email: rec.email,
+    businessName: rec.businessName,
+    planSlug,
+    interval,
+    customPages,
+    attribution: rec.attribution ?? null,
+  });
+  if (!started.ok) return { ok: false, error: started.error };
+  const sub = started.subscription;
+  const trialEnd = sub.trial_end ? new Date(sub.trial_end * 1000) : null;
+
+  const created = await createAccountFromPending(token, rec, {
+    flow: "cardless",
+    sessionId: CARDLESS_SESSION,
+    stripeCustomerId: started.customerId,
+    stripeSubscriptionId: sub.id,
+    stripeSubscription: sub,
+    planSlug: started.planLabel,
+    trialEnd,
+    periodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : null,
+    paidCustomPages: started.customPages,
+    analyticsOutcome: "trial_started",
+    analyticsLive: sub.livemode,
+    checkoutAmount: 0,
+    checkoutCurrency: sub.currency ?? "usd",
+  });
+  if (!created.ok) {
+    // The account could not be created (the address was taken a moment ago):
+    // the trial it was for must not keep running in Stripe.
+    try {
+      const { stripe } = await getStripeClient();
+      await stripe.subscriptions.cancel(sub.id);
+    } catch (err) {
+      console.warn("[signup] orphan card-less trial not cancelled:", err);
+    }
+    return created;
+  }
+  await writeCardlessRecord(created.orgId, {
+    subId: sub.id,
+    customerId: started.customerId,
+    planSlug: started.planLabel,
+    interval,
+    customPages: started.customPages,
+    mode: started.mode,
+    startedAt: new Date().toISOString(),
+    endsAt: (trialEnd ?? new Date()).toISOString(),
+  });
+  after(() => nameOrgOnSubscription(sub.id, created.orgId));
+  return { ok: true, email: created.email, ticket: created.ticket, registrationEventId: rec.meta?.registrationEventId ?? null };
+}
+
+/** The done record's "session" for a card-less trial — there is no Checkout. */
+const CARDLESS_SESSION = "cardless";
+
+/** What the account is created WITH: the Stripe side of a paid checkout, of
+ *  a card-less trial, or nothing at all (the non-production skip). */
+type AccountBilling = {
+  flow: "checkout" | "cardless" | "skip";
+  /** The Stripe Checkout session (paid flow), or the marker the done record
+   *  replays against (card-less: "cardless"); null on the skip. */
+  sessionId: string | null;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  stripeSubscription: Stripe.Subscription | null;
+  planSlug: string | null;
+  trialEnd: Date | null;
+  periodEnd: Date | null;
+  /** The page selection the subscription was priced with (custom plan). */
+  paidCustomPages: string[] | null;
+  analyticsOutcome: string;
+  analyticsLive: boolean;
+  checkoutAmount: number | null;
+  checkoutCurrency: string | null;
+};
+
+/**
+ * The account itself: Organization + owner User + Membership, the
+ * Subscription row, the Lead Center pin, the custom pages, the attribution,
+ * the done marker, the sign-in ticket, and after the response the welcome
+ * email, the analytics outcome and Meta's CompleteRegistration / StartTrial.
+ * Shared by the paid return (completePendingSignup) and the card-less trial
+ * (completeCardlessSignup) — split out of completePendingSignup unchanged
+ * (2026-10-01), so the two flows create the same account.
+ */
+async function createAccountFromPending(
+  token: string,
+  rec: PendingRecord,
+  billing: AccountBilling,
+): Promise<
+  | { ok: true; email: string; ticket: string | null; orgId: string; userId: string }
+  | { ok: false; error: string }
+> {
+  const {
+    sessionId,
+    stripeCustomerId,
+    stripeSubscriptionId,
+    stripeSubscription,
+    planSlug,
+    trialEnd,
+    periodEnd,
+    paidCustomPages,
+    analyticsOutcome,
+    analyticsLive,
+    checkoutAmount,
+    checkoutCurrency,
+  } = billing;
   // Re-check the address: somebody may have registered it while the card was
   // being typed.
   const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
@@ -507,7 +667,7 @@ export async function completePendingSignup(
   }
 
   // Sent after the response, so it reads the subscription row written below.
-  trackActivation("organization_created", orgId, { flow: "checkout" });
+  trackActivation("organization_created", orgId, { flow: billing.flow === "cardless" ? "cardless" : "checkout" });
 
   // The subscription row, written here rather than by the webhook: at session
   // creation there was no organization for the webhook's metadata to name.
@@ -622,7 +782,7 @@ export async function completePendingSignup(
   // round-trip ago.
   const ticket = await mintSigninTicket(userId);
   if (sessionId && rec.analytics) {
-    after(() => captureSignupOutcome(rec.analytics, sessionId, analyticsOutcome, planSlug, analyticsLive, rec.landingIndustry ?? null, rec.utm ?? null, rec.signupVariant ?? null));
+    after(() => captureSignupOutcome(rec.analytics, billing.flow === "cardless" && stripeSubscriptionId ? stripeSubscriptionId : sessionId, analyticsOutcome, planSlug, analyticsLive, rec.landingIndustry ?? null, rec.utm ?? null, rec.signupVariant ?? null));
   }
   // The welcome email (landing-e pass A; every signup since 2026-09-16). Sent
   // after the response; a failure is logged, never shown — the account
@@ -634,6 +794,7 @@ export async function completePendingSignup(
       tradeTypes: rec.tradeTypes ?? [],
       landingIndustry: rec.landingIndustry ?? null,
       firstChargeAt: trialEnd ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      cardless: billing.flow === "cardless",
     };
     after(() => sendWelcomeFirstEstimate(welcome).catch((e) => console.warn("[signup] welcome email failed:", e)));
   }
@@ -672,7 +833,7 @@ export async function completePendingSignup(
       ),
     );
   }
-  return { ok: true, email: rec.email, ticket };
+  return { ok: true, email: rec.email, ticket, orgId, userId };
 }
 
 /* ── local helpers (the auth action's, kept private to this file) ───────── */

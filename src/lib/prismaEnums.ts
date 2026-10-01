@@ -201,6 +201,9 @@ export const SubscriptionStatus = {
   PAST_DUE: "PAST_DUE",
   CANCELED: "CANCELED",
   EXPIRED: "EXPIRED",
+  /** A card-less trial that reached its end with no card on file (lib/trialState):
+   *  the workspace reads, nothing writes, until a card restarts the plan. */
+  TRIAL_ENDED: "TRIAL_ENDED",
 } as const;
 export type SubscriptionStatus = (typeof SubscriptionStatus)[keyof typeof SubscriptionStatus];
 
