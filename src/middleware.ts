@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 import { isPartnerPublic, principalRedirect } from "@/lib/principalRoutes";
+import { REGION_COOKIE, REGION_MAX_AGE_S, consentModeFor } from "@/lib/consent";
 
 // The standalone handheld URLs (/mobile-*, /trade-services) are protected too:
 // they render the same org data as their /dashboard twins and the (mobile)
@@ -51,7 +52,26 @@ const MOVED_INVENTORY: Record<string, string> = {
   "/mobile-hvac-inventory-v1": "/dashboard/inventory?trade=hvac&tab=stock",
 };
 
+/* THE CONSENT MODEL BY COUNTRY (owner, 2026-09-30; lib/consent). Vercel's
+   x-vercel-ip-country decides notice or opt-in once, on the first page this
+   browser asks for, and the answer — never the country — is kept a year in
+   jf_region for the client to read. Here rather than in the root layout: a
+   request header read there rendered every page per request, /pricing's
+   catalogue read included. No header (localhost) is the US: notice. */
 export async function middleware(req: NextRequest) {
+  const res = await route(req);
+  if (!req.cookies.has(REGION_COOKIE)) {
+    res.cookies.set(REGION_COOKIE, consentModeFor(req.headers.get("x-vercel-ip-country")), {
+      path: "/",
+      maxAge: REGION_MAX_AGE_S,
+      sameSite: "lax",
+      secure: req.nextUrl.protocol === "https:",
+    });
+  }
+  return res;
+}
+
+async function route(req: NextRequest): Promise<NextResponse> {
   const { pathname } = req.nextUrl;
   const moved = MOVED_INVENTORY[pathname];
   if (moved) {
@@ -183,28 +203,9 @@ async function decodeSession(req: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/dashboard/:path*",
-    "/admin/:path*",
-    "/influencer/:path*",
-    "/v3/:path*",
-    "/mobile-:slug*",
-    // The pattern above does not reach a bare "/mobile-v2" (it needs a second
-    // segment), so the standalone handheld twins fell through to their own
-    // page guard — a partner landed on /auth/login instead of home.
-    "/(mobile-.*)",
-    "/trade-services/:path*",
-    "/trade-services",
-    // The removed landings, by exact path: the middleware exists for them only
-    // to answer 308, and matching a prefix would put every /landing-* URL this
-    // app may grow later through the auth machinery above for no reason.
-    "/landing",
-    "/landing-a",
-    "/landing-b",
-    "/landing-c",
-    "/landing-aerial",
-    // Listed exactly, not left to "/mobile-:slug*": that pattern did not match
-    // this path and the URL 404'd instead of redirecting.
-    "/mobile-landing-v2",
-  ],
+  // Every page, for the jf_region cookie above; the auth, role and redirect
+  // rules inside still apply only to the paths they name. API routes, Next's
+  // own files and anything with a file extension (images, fonts, robots.txt)
+  // never come through here.
+  matcher: ["/((?!api/|_next/|_vercel/|.*\\.[\\w]+$).*)"],
 };

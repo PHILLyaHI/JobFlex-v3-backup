@@ -5,9 +5,10 @@
    Stored as a first-party cookie so the server can read it too (the
    Conversions API sends fbp/fbc/IP/UA only with marketing consent).
 
-   TWO MODELS BY COUNTRY (owner, 2026-09-30). The root layout reads Vercel's
-   x-vercel-ip-country on the server and writes the model on <html
-   data-consent-mode>; no header (localhost) counts as the US.
+   TWO MODELS BY COUNTRY (owner, 2026-09-30). The middleware reads Vercel's
+   x-vercel-ip-country and stores the model — never the country — in the
+   jf_region cookie (a year, written once); the client reads it from there,
+   so pages stay static. No header (localhost) and no cookie count as the US.
      notice  — everywhere outside CONSENT_OPTIN_COUNTRIES: no jf_consent
                record means analytics and marketing are on, the pixel and
                PostHog load at once, and no banner is shown. The footer's
@@ -20,6 +21,9 @@
    Client-safe: nothing touches `document` until a function is called. */
 
 export const CONSENT_COOKIE = "jf_consent";
+/** notice | optin, set by the middleware from the visitor's country. */
+export const REGION_COOKIE = "jf_region";
+export const REGION_MAX_AGE_S = 60 * 60 * 24 * 365; // 1 year
 export const CONSENT_VERSION = 1;
 export const CONSENT_MAX_AGE_S = 60 * 60 * 24 * 180; // 180 days
 /** Fired on `window` after every write; detail is the new Consent. */
@@ -62,10 +66,9 @@ export function consentModeFor(country: string | null | undefined): ConsentMode 
   return CONSENT_OPTIN_COUNTRIES.has(c) ? "optin" : "notice";
 }
 
-/** The model the root layout chose for this visit, off <html data-consent-mode>. */
+/** The model the middleware stored for this browser; no cookie is notice. */
 export function pageConsentMode(): ConsentMode {
-  if (typeof document === "undefined") return "notice";
-  return document.documentElement.dataset.consentMode === "optin" ? "optin" : "notice";
+  return cookieValue(REGION_COOKIE) === "optin" ? "optin" : "notice";
 }
 
 /** What the trackers may do now: the visitor's own record when there is one,
