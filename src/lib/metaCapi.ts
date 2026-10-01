@@ -28,7 +28,11 @@ export interface MetaUserData {
   fbc?: string | null;
   clientIp?: string | null;
   userAgent?: string | null;
-  /** Our stable id for the person (organization id), hashed like the rest. */
+  /** The organization id once the account exists, hashed like the rest.
+   *  external_id is [sha256(email)] before the account and
+   *  [sha256(email), sha256(organization id)] after it (2026-10-01): the
+   *  email hash is the one id a Lead, an InitiateCheckout and a Purchase of
+   *  the same person all share. */
   externalId?: string | null;
 }
 
@@ -72,7 +76,8 @@ export function buildMetaPayload(e: MetaEvent): Record<string, unknown> {
   const userData: Record<string, unknown> = {};
   if (em) userData.em = [em];
   if (ph) userData.ph = [ph];
-  if (e.user.externalId) userData.external_id = [sha256(e.user.externalId)];
+  const externalIds = [em, e.user.externalId ? sha256(e.user.externalId) : null].filter((v): v is string => Boolean(v));
+  if (externalIds.length) userData.external_id = externalIds;
   if (e.consent) {
     if (e.user.fbp) userData.fbp = e.user.fbp;
     if (e.user.fbc) userData.fbc = e.user.fbc;

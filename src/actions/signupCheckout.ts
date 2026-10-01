@@ -127,14 +127,26 @@ function key(token: string): string {
  *  without it the Conversions API gets the hashed email alone. The same goes
  *  for the click id: with consent, an fbc is built from `fbclid` when the
  *  pixel's _fbc cookie is missing (consent given after the landing, or the
- *  pixel blocked), and the fbclid is kept for the events that come later. */
+ *  pixel blocked), and the fbclid is kept for the events that come later.
+ *  fbp / fbc (2026-10-01): the request's own _fbp / _fbc cookies first, the
+ *  values the browser put in the body when the request has none. */
 async function metaContextFor(meta: z.infer<typeof pendingSchema>["meta"]): Promise<MetaSignupContext | undefined> {
   if (!meta) return undefined;
   const ctx: MetaSignupContext = { consent: meta.consent, registrationEventId: meta.registrationEventId, checkoutEventId: meta.checkoutEventId, sourceUrl: meta.sourceUrl };
   if (meta.consent) {
-    ctx.fbp = meta.fbp;
+    let jarFbp: string | undefined;
+    let jarFbc: string | undefined;
+    try {
+      const { cookies } = await import("next/headers");
+      const jar = await cookies();
+      jarFbp = jar.get("_fbp")?.value?.slice(0, 120) || undefined;
+      jarFbc = jar.get("_fbc")?.value?.slice(0, 400) || undefined;
+    } catch {
+      /* no request cookies — the body's values stand */
+    }
+    ctx.fbp = jarFbp || meta.fbp;
     ctx.fbclid = meta.fbclid;
-    ctx.fbc = meta.fbc || fbcFromFbclid(meta.fbclid, Date.now());
+    ctx.fbc = jarFbc || meta.fbc || fbcFromFbclid(meta.fbclid, Date.now());
     try {
       const { headers } = await import("next/headers");
       const h = await headers();

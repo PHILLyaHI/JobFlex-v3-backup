@@ -12,10 +12,18 @@
    else the country's default (lib/consent) — in the browser, and the server
    checks the same cookies again before it sends its copy (api/meta/event).
    Without consent nothing is sent, either side. The pair shares one event_id,
-   so Meta counts it once. */
+   so Meta counts it once.
+
+   fbp / fbc (2026-10-01). The server copy carries the pixel's cookies; on a
+   first visit the _fbp cookie does not exist until fbevents.js has loaded,
+   which can be after the event. So the copy waits for _fbp (up to
+   FBP_WAIT_MS, or until the page is left) and puts both values in the body
+   as well; the server prefers the request's cookies and falls back to these. */
 
 import { effectiveConsent } from "@/lib/consent";
-import { isMetaPixelConfigured, loadMetaPixel, metaTrack, metaTrackCustom, newEventId } from "@/lib/metaPixel";
+import { isMetaPixelConfigured, loadMetaPixel, metaTrack, metaTrackCustom, newEventId, readMetaCookies } from "@/lib/metaPixel";
+
+const FBP_WAIT_MS = 2500;
 
 export type MetaPairEvent = "ViewContent" | "Lead";
 export type MetaCustomEvent = "EstimatorDemoStep" | "EstimatorDemoTier";
@@ -38,25 +46,44 @@ export function metaTrackWithServer(
   if (!allowed()) return false;
   const eventId = newEventId();
   metaTrack(event, params, eventId);
-  try {
-    const fbclid = new URLSearchParams(window.location.search).get("fbclid") || undefined;
-    void fetch("/api/meta/event", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // keepalive: a CTA tap right after the view must not cancel the copy.
-      keepalive: true,
-      body: JSON.stringify({
-        event,
-        eventId,
-        params,
-        ...(extra.email ? { email: extra.email } : {}),
-        ...(fbclid ? { fbclid } : {}),
-        sourceUrl: window.location.origin + window.location.pathname,
-      }),
-    }).catch(() => {});
-  } catch {
-    /* the server copy is best effort */
-  }
+  const fbclid = new URLSearchParams(window.location.search).get("fbclid") || undefined;
+  const sourceUrl = window.location.origin + window.location.pathname;
+  const started = Date.now();
+  let done = false;
+  let timer = 0;
+  const send = () => {
+    if (done) return;
+    done = true;
+    window.clearTimeout(timer);
+    window.removeEventListener("pagehide", send);
+    try {
+      const { fbp, fbc } = readMetaCookies();
+      void fetch("/api/meta/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // keepalive: leaving the page (a CTA tap) must not cancel the copy.
+        keepalive: true,
+        body: JSON.stringify({
+          event,
+          eventId,
+          params,
+          ...(extra.email ? { email: extra.email } : {}),
+          ...(fbclid ? { fbclid } : {}),
+          ...(fbp ? { fbp } : {}),
+          ...(fbc ? { fbc } : {}),
+          sourceUrl,
+        }),
+      }).catch(() => {});
+    } catch {
+      /* the server copy is best effort */
+    }
+  };
+  const poll = () => {
+    if (readMetaCookies().fbp || Date.now() - started >= FBP_WAIT_MS) send();
+    else timer = window.setTimeout(poll, 100);
+  };
+  window.addEventListener("pagehide", send);
+  poll();
   return true;
 }
 
