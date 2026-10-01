@@ -23,11 +23,34 @@ import { readLandingVariant } from "@/components/v3/landing-e/landing-variant-se
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
+const DEFAULT_METADATA: Metadata = {
   title: "JobFlex — Turn your trade into a business",
   description:
     "The operating system for small-shop contractors — estimating, proposals, scheduling, jobs, and invoicing in one workspace.",
 };
+
+// The HVAC page's own title, description and share card (2026-10-01): the
+// link an HVAC ad or a shortcut (/hvac) carries unfurls as the HVAC page,
+// not the general one. Every other variant keeps the default metadata.
+const HVAC_METADATA: Metadata = {
+  title: "JobFlex for HVAC — the whole system, priced from the address",
+  description:
+    "Design load, the heat pump that fits it, Good / Better / Best, the year's bill and the rebates — before the first site visit. Then the service plans, the seasonal visits, the units on file and the menu, in one app.",
+  alternates: { canonical: "/?industry=hvac" },
+  openGraph: {
+    type: "website",
+    url: "/?industry=hvac",
+    siteName: "JobFlex",
+    title: "JobFlex for HVAC — the whole system, priced from the address",
+    description: "Load, heat pump, Good / Better / Best, the year's bill and the rebates before the first visit; service plans and visit reports after the install.",
+  },
+  twitter: { card: "summary", title: "JobFlex for HVAC", description: "The whole system, priced from the address. Service plans and visit reports after the install." },
+};
+
+export async function generateMetadata({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }): Promise<Metadata> {
+  const { variant } = readLandingVariant(await searchParams);
+  return variant === "hvac" ? HVAC_METADATA : DEFAULT_METADATA;
+}
 
 // Read at true device width — the page carries its own handheld build.
 // `maximumScale` is deliberately NOT set: pinning it suppresses pinch-zoom and

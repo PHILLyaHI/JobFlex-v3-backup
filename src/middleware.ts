@@ -40,6 +40,14 @@ const REMOVED_LANDINGS = new Set([
   "/mobile-landing-v2",
 ]);
 
+/* THE TRADE SHORTCUTS (2026-10-01). /hvac is the HVAC landing's short
+   address for an ad, a card or a spoken link: 308 to the root with the trade
+   in the query, everything else in the query (utm_*, fbclid) kept. The
+   landing reads the variant from the query only, so this is the one way in. */
+const TRADE_SHORTCUTS: Record<string, string> = {
+  "/hvac": "hvac",
+};
+
 /* THE INVENTORY PAGES THAT MOVED (owner, 2026-09-29). One page,
    /dashboard/inventory, with the trade in the query; the three per-trade
    boards, the HVAC service menu page and the handheld HVAC preview are gone.
@@ -80,6 +88,13 @@ async function route(req: NextRequest): Promise<NextResponse> {
     url.pathname = path;
     // The old address's own query rides along (?group=…); the trade and the tab are the new page's.
     for (const [k, v] of new URLSearchParams(query)) url.searchParams.set(k, v);
+    return NextResponse.redirect(url, 308);
+  }
+  const shortcut = TRADE_SHORTCUTS[pathname];
+  if (shortcut) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/";
+    url.searchParams.set("industry", shortcut);
     return NextResponse.redirect(url, 308);
   }
   if (REMOVED_LANDINGS.has(pathname)) {
