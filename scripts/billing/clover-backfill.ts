@@ -191,6 +191,9 @@ async function main() {
   say("\n1 · SUBSCRIPTIONS — mirror vs Stripe, and partner codes without an attribution");
   const mirrors = await db.subscription.findMany({ where: { provider: "STRIPE" } });
   const mirrorBySub = new Map(mirrors.filter((m) => m.externalSubId).map((m) => [m.externalSubId!, m]));
+  const mirrorByCustomer = new Map(mirrors.filter((m) => m.externalCustomerId).map((m) => [m.externalCustomerId!, m]));
+  const orgNames = new Map((await db.organization.findMany({ select: { id: true, name: true } })).map((o) => [o.id, o.name]));
+  const orgLabel = (id: string | null | undefined) => (id ? `${orgNames.get(id) ?? "?"} (${id})` : "?");
   const subs: Stripe.Subscription[] = [];
   for await (const s of byClock((c) => stripe.subscriptions.list({ status: "all", limit: 100, expand: ["data.discounts"], ...clockArg(c) }))) subs.push(s);
   const toSync: Stripe.Subscription[] = [];
@@ -232,6 +235,13 @@ async function main() {
     }
   }
   say(`  ${subs.length} subscriptions read, ${toSync.length} to re-sync`);
+  // Live on Stripe, but no mirror row names them: the handlers cannot map their
+  // invoices to an organisation (report only — not a clover effect).
+  for (const sub of subs) {
+    if (!["active", "trialing", "past_due", "unpaid"].includes(sub.status) || mirrorBySub.has(sub.id)) continue;
+    const byCus = mirrorByCustomer.get(C.refId(sub.customer) ?? "");
+    say(`  NO MIRROR ROW: ${sub.id} · Stripe ${sub.status} · customer ${C.refId(sub.customer)}${byCus ? ` → org ${orgLabel(byCus.organizationId)}, whose row names ${byCus.externalSubId ?? "no subscription"} (${byCus.status})` : " → no organisation"}`);
+  }
 
   // ── 2 & 3. paid invoices of the window ────────────────
   say("\n2 · PAID INVOICES OF THE WINDOW — commission, refunds, referrals");
@@ -256,7 +266,25 @@ async function main() {
   for (const inv of invoices) {
     const subId = C.invoiceSubscriptionId(inv)!;
     const mirror = mirrorBySub.get(subId);
-    const head = `  ${inv.id} · ${day(inv.created)} · ${usd(inv.amount_paid)} · ${subId} · org ${mirror?.organizationId ?? "?"}`;
+    const customerId = C.refId(inv.customer);
+    const byCustomer = mirror ? undefined : mirrorByCustomer.get(customerId ?? "");
+    const head = `  ${inv.id} · ${day(inv.created)} · ${usd(inv.amount_paid)} · ${subId} · org ${mirror ? orgLabel(mirror.organizationId) : byCustomer ? `${orgLabel(byCustomer.organizationId)} by customer only` : "?"} · ${inv.customer_email ?? customerId}`;
+    // What the discount on the invoice was, and whose.
+    let discountNote = "";
+    if ((inv.total_discount_amounts ?? []).some((d) => d.amount > 0)) {
+      const full = await stripe.invoices.retrieve(inv.id, { expand: ["total_discount_amounts.discount.source.coupon", "total_discount_amounts.discount.promotion_code"] });
+      for (const d of full.total_discount_amounts ?? []) {
+        const disc = d.discount as Stripe.Discount;
+        const coupon = typeof disc.source?.coupon === "object" ? disc.source.coupon : null;
+        const pc = typeof disc.promotion_code === "object" ? disc.promotion_code : null;
+        // Live: the stored promotion code id. Sandbox twin: the PromoCode id in the coupon's metadata.
+        const partner = { include: { influencer: { select: { displayName: true, email: true } } } } as const;
+        const ours =
+          (pc ? await db.promoCode.findUnique({ where: { stripePromotionCodeId: pc.id }, ...partner }) : null) ??
+          (coupon?.metadata?.jfPromoCodeId ? await db.promoCode.findUnique({ where: { id: coupon.metadata.jfPromoCodeId }, ...partner }) : null);
+        discountNote += `\n      discount ${usd(d.amount)}: coupon "${coupon?.name ?? C.refId(disc.source?.coupon)}" (${coupon?.metadata?.jfKind ?? "no kind"})${pc ? ` · promotion code ${pc.code}` : " · no promotion code"}${ours ? ` · PARTNER ${ours.influencer.displayName} <${ours.influencer.email}>` : ""}`;
+      }
+    }
     let verdict: string;
     let commission = 0;
     const accrued = await db.commissionLedger.findUnique({ where: { idempotencyKey: `accrue:${inv.id}` }, select: { amountCents: true } });
@@ -312,7 +340,17 @@ async function main() {
       if (pending) referral += ` · referral: ${pending} PENDING → CONVERTED`;
       if (pending || owed) referral += ` · credits owed ${owed + pending}${CREDIT ? " (would be credited)" : " (stay owed without --credit-rewards)"}`;
     }
-    say(`${head}\n      ${verdict}${referral}`);
+    // The referral this payer came in with, found by email — mapped or not.
+    if (inv.customer_email) {
+      const conv = await db.referralConversion.findMany({
+        where: { signupEmail: { in: [...new Set([inv.customer_email, inv.customer_email.toLowerCase()])] } },
+        include: { code: { select: { code: true, organizationId: true, user: { select: { email: true, name: true } } } } },
+      });
+      for (const c of conv) {
+        referral += `\n      referral code ${c.code.code} of ${c.code.user.name ?? "?"} <${c.code.user.email}> (org ${orgLabel(c.code.organizationId)}) · ${c.status}${c.signupOrgId ? ` · signup org ${orgLabel(c.signupOrgId)}` : " · no signup org"}${c.rewardAppliedAt ? ` · credit ${usd(c.rewardCents)} paid` : " · credit not paid"}`;
+      }
+    }
+    say(`${head}\n      ${verdict}${discountNote}${referral}`);
     accrualPlan.push(inv);
   }
   say(`  ${invoices.length} paid invoices · commission to accrue ${usd(commissionTotal)}`);
