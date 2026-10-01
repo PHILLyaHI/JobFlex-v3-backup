@@ -160,6 +160,11 @@ export type MarkupBlockProps = {
   onTaxPct: (next: number) => void;
 
   totals: MarkupFigures;
+
+  /** The lines are an estimator's installed prices (profit inside), not the
+   *  contractor's costs: the margin is not known, and the badge says so
+   *  instead of grading the estimate's own price as a red 0%. */
+  priceOnly?: boolean;
 };
 
 /* ============================================================
@@ -663,15 +668,21 @@ export function MarkupBlock({
   onPatch,
   onTaxPct,
   totals,
+  priceOnly = false,
 }: MarkupBlockProps) {
   const headId = useId();
 
-  const tone = marginTone(totals.margin, totals.preTax > 0);
+  // An estimator's proposal (fence, roof, HVAC) prices its lines at the
+  // estimator's installed rates — the profit is inside them and no cost sits
+  // under them, so the sheet's own arithmetic would call it 0% (−5% after a
+  // discount) in red. The honest reading is "not known", in neutral.
+  const tone = priceOnly ? "idle" : marginTone(totals.margin, totals.preTax > 0);
 
   return (
     <div className={s.wrap}>
       <div className={s.badgeRow}>
-        <span className={cx(s.badge, TONE_CLASS[tone])}>Margin · {pct1(totals.margin)}</span>
+        {priceOnly && <span className={s.badgeNote}>Estimator prices include your profit</span>}
+        <span className={cx(s.badge, TONE_CLASS[tone])}>Margin · {priceOnly ? "cost not entered" : pct1(totals.margin)}</span>
       </div>
 
       <div className={s.cols}>

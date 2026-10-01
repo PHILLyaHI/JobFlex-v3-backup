@@ -4556,10 +4556,10 @@ export function initFenceEstimatorContent(
   // ================= CONVERT TO PROPOSAL =================
   // The last leg of the flow, and the only one that writes. The proposal's
   // lines are the SAME package the ticket bills (lib/fence/pricing), each
-  // with its material and labor halves, so the proposal's pre-markup
-  // subtotal is the ticket total to the cent; the org's markup and the
-  // state's sales tax are added on the server. The scope of work is the
-  // engine's own sentences about THIS fence — the posts, the sections, the
+  // with its material and labor halves, so the proposal's subtotal is the
+  // ticket total to the cent — no company markup on top, the rates are the
+  // installed price (2026-10-01); the state's sales tax is added on the
+  // server. The scope of work is the engine's own sentences about THIS fence — the posts, the sections, the
   // gates — and the assumptions carry the takeoff summary and every check.
 
   /** `n gate(s)` / `n door(s)`, or nothing when there are none of that kind. */

@@ -850,6 +850,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
             onPatch={patch}
             onTaxPct={(n) => patch({ taxPct: n, taxAuto: false, taxState: "" })}
             totals={totals}
+            priceOnly={data.proposal?.priceOnly === true}
           />
         </Card>
 

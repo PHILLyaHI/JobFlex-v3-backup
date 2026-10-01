@@ -10,7 +10,7 @@ const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigi
 import { db } from "@/lib/db";
 import { recordInventoryLink } from "@/lib/inventoryPick";
 import { clearFilingContext, filedClientId, leadProposalText, readFilingContext } from "@/lib/filingContext";
-import { sellUnitPrice, resolveMarkupRates } from "@/lib/pricing/markup";
+import { sellUnitPrice } from "@/lib/pricing/markup";
 import { uploadBlob, isBlobEnabled } from "@/lib/sdk/blob";
 import { getOpenAI, isOpenAIEnabled, samplingOptions, resolveOpenAIModel } from "@/lib/sdk/openai";
 import { estimateSchema, type GeneratedEstimate } from "@/lib/estimatorSchema";
@@ -174,16 +174,21 @@ async function writeProposal(organizationId: string, userId: string, role: strin
   const projectId = filing?.projectId ?? null;
   const text = leadProposalText(filing?.lead ?? null, data.scope ?? "");
 
-  // Hidden profit markup: seed from the org-wide default, then apply so each
-  // line's unitPrice is the SELL price (0% → equals cost).
+  // NO markup on top (owner, 2026-10-01): the fence rates are installed
+  // prices with the profit inside — "a typed rate is what you charge" — so the
+  // proposal is the ticket, to the cent, whatever markup the company keeps
+  // for its hand-built proposals. It used to treat the ticket as cost and add
+  // that markup: the client got a bigger number than the page showed, and at
+  // the default 0% the builder graded the job a red "MARGIN 0.0%". The roof
+  // and HVAC converts already price this way.
   const org = await db.organization.findUnique({
     where: { id: organizationId },
-    select: { materialMarkupPct: true, laborMarkupPct: true, defaultTaxRate: true },
+    select: { defaultTaxRate: true },
   });
-  const markupRates = resolveMarkupRates(null, org);
+  const markupRates = { materialMarkupPct: 0, laborMarkupPct: 0 };
 
-  // A split line (the package engine): the sell price marks up each half at
-  // its own rate; the stored unit price is the client-facing figure.
+  // A split line (the package engine): the unit price is the two halves; the
+  // halves stay so "Show to client → breakdown" can print them.
   const split = (data.lines ?? []).map((l) => {
     const sell = sellUnitPrice({ unitPrice: l.materialCost + l.laborCost, materialCost: l.materialCost, laborCost: l.laborCost }, markupRates);
     return {
