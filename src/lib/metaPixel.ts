@@ -87,6 +87,20 @@ export function metaTrack(event: string, params: Record<string, string | number>
   }
 }
 
+/** The standard PageView, exactly as Meta's own snippet sends it —
+ *  `fbq('track', 'PageView')`, no custom data, no eventID (there is no server
+ *  copy to deduplicate against). The live test on production listed our
+ *  PageView, then sent with an `industry` parameter, as a custom event
+ *  (2026-09-30). */
+export function metaPageView(): void {
+  if (!isMetaPixelLoaded()) return;
+  try {
+    window.fbq!("track", "PageView");
+  } catch {
+    /* the pixel must never break the page */
+  }
+}
+
 /** The pixel's own first-party cookies, for the Conversions API's user_data. */
 export function readMetaCookies(): { fbp?: string; fbc?: string } {
   if (typeof document === "undefined") return {};

@@ -3,13 +3,13 @@
 import { useEffect, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { onConsent, readConsent } from "@/lib/consent";
-import { isMetaPixelConfigured, loadMetaPixel, metaTrack, newEventId, unloadMetaPixel } from "@/lib/metaPixel";
+import { isMetaPixelConfigured, loadMetaPixel, metaPageView, unloadMetaPixel } from "@/lib/metaPixel";
 
-/* Loads the Meta Pixel after marketing consent and sends PageView on the
-   pages that matter for ads — the landing (/, any
-   ?industry=) and the register page — each with a fresh eventID. Renders
-   nothing; with no NEXT_PUBLIC_META_PIXEL_ID the component does nothing. */
-const PAGEVIEW_PATHS = new Set(["/", "/auth/register"]);
+/* Loads the Meta Pixel after marketing consent and sends the standard
+   PageView on the pages that matter for ads — the landing (/, any
+   ?industry=), /pricing and the register page. Renders nothing; with no
+   NEXT_PUBLIC_META_PIXEL_ID the component does nothing. */
+const PAGEVIEW_PATHS = new Set(["/", "/pricing", "/auth/register"]);
 
 export function MetaPixel() {
   const pathname = usePathname();
@@ -39,7 +39,7 @@ export function MetaPixel() {
     const key = path + "|" + (industry ?? "");
     if (lastViewed.current === key) return;
     lastViewed.current = key;
-    metaTrack("PageView", industry ? { industry } : {}, newEventId());
+    metaPageView();
   }
 
   // Route → PageView (only when the pixel is loaded, i.e. consent exists).
