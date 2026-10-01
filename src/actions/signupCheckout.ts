@@ -496,16 +496,32 @@ export async function completePendingSignup(
 export async function requestCardlessTrial(
   token: string,
   planSlug: string,
-): Promise<{ ok: true; email: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; email: string; resendAt: number } | { ok: false; error: string; resendAt?: number }> {
   if (trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account." };
   const rec = await loadPending(token);
   if (!rec) return { ok: false, error: "That signup expired. Start again." };
   const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
   if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
-  try {
-    await enforceRateLimit(`cardless-trial:${await clientIp()}`, trialRequestsPerIpHour(), HOUR, "free trials from this network");
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Too many free trials. Try again later." };
+  // THE BRAKES. A first request counts against the network (trials per IP per
+  // hour); a resend counts against this signup only — RESEND_COOLDOWN_MS
+  // between two links, RESEND_MAX in an hour — so asking for the email again
+  // never spends a neighbour's trial.
+  if (rec.cardless) {
+    const wait = rec.cardless.requestedAt + RESEND_COOLDOWN_MS - Date.now();
+    if (wait > 0) {
+      return { ok: false, error: `Wait ${Math.ceil(wait / 1000)} s before sending another link.`, resendAt: rec.cardless.requestedAt + RESEND_COOLDOWN_MS };
+    }
+    try {
+      await enforceRateLimit(`cardless-resend:${token}`, RESEND_MAX, HOUR, "confirmation emails");
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "Too many confirmation emails. Try again later." };
+    }
+  } else {
+    try {
+      await enforceRateLimit(`cardless-trial:${await clientIp()}`, trialRequestsPerIpHour(), HOUR, "free trials from this network");
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "Too many free trials. Try again later." };
+    }
   }
   const refusal = await cardlessTrialRefusal(rec.email);
   if (refusal) return { ok: false, error: refusal };
@@ -537,8 +553,12 @@ export async function requestCardlessTrial(
     console.error("[signup] trial confirmation email failed:", err);
     return { ok: false, error: "Couldn't send the confirmation email. Try again." };
   }
-  return { ok: true, email: rec.email };
+  return { ok: true, email: rec.email, resendAt: next.cardless!.requestedAt + RESEND_COOLDOWN_MS };
 }
+
+/** A minute between two confirmation emails, and three resends an hour. */
+const RESEND_COOLDOWN_MS = 60 * 1000;
+const RESEND_MAX = 3;
 
 /**
  * THE CARD-LESS TRIAL, STEP TWO: the link from the email. Proves the address,
@@ -559,7 +579,11 @@ export async function confirmCardlessTrial(
   const hash = createHash("sha256").update(secret).digest("hex");
   const row = await db.syncState.findUnique({ where: { key: confirmKey(hash) } }).catch(() => null);
   if (!row) return { ok: false, error: "That link has expired or was replaced by a newer one. Start the signup again." };
-  return finishCardlessTrial(row.cursor);
+  const res = await finishCardlessTrial(row.cursor);
+  // Used once: the link is gone, and opening it again goes to sign-in (the
+  // done marker answers `done`) instead of signing anybody in a second time.
+  if (res.ok) await db.syncState.delete({ where: { key: confirmIndexKey(row.cursor) } }).catch(() => {});
+  return res;
 }
 
 const confirmKey = (hash: string) => `signup-confirm:${hash}`;
@@ -578,12 +602,9 @@ async function finishCardlessTrial(
   if (!rec?.cardless) {
     const done = await loadDone(token);
     if (done && done.sessionId === CARDLESS_SESSION) {
-      if (Date.now() - done.at <= REPLAY_WINDOW_MS) {
-        return { ok: true, email: done.email, ticket: await mintSigninTicket(done.userId), registrationEventId: null, subscriptionId: null };
-      }
-      return { ok: false, done: true, email: done.email, error: "This signup is already complete. Sign in to open your shop." };
+      return { ok: false, done: true, email: done.email, error: "This link was already used. Sign in to open your shop." };
     }
-    return { ok: false, error: "That signup expired. Start again." };
+    return { ok: false, error: "This link has expired — links last 24 hours. Start the signup again." };
   }
   const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
   if (taken) return { ok: false, error: "That email is already registered. Try signing in." };

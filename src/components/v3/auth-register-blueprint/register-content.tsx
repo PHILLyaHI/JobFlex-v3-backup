@@ -743,6 +743,16 @@ export function RegisterContent({
   const [confirmSentTo, setConfirmSentTo] = React.useState<string | null>(null);
   const [confirmSlug, setConfirmSlug] = React.useState<string | null>(null);
   const [resent, setResent] = React.useState(false);
+  /* The resend brake, shown: the server allows a link a minute (and three
+     an hour); the button counts the minute down instead of failing. */
+  const [resendAt, setResendAt] = React.useState(0);
+  const [nowTick, setNowTick] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    if (!confirmSentTo || resendAt <= Date.now()) return;
+    const t = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [confirmSentTo, resendAt, nowTick]);
+  const resendIn = Math.max(0, Math.ceil((resendAt - nowTick) / 1000));
   async function onStartCardless(slug: string | null = planSlug) {
     if (payBusy || !slug || !token) return;
     trackTraffic(TRAFFIC_EVENTS.attempt, { plan: slug, interval, intent: "trial", flow: trafficFlow, card: false });
@@ -765,9 +775,15 @@ export function RegisterContent({
       const res = await requestCardlessTrial(token, slug);
       if (!res.ok) {
         trackTraffic(TRAFFIC_EVENTS.error, { step: 3, reason: "trial_rejected" });
+        if (res.resendAt) {
+          setResendAt(res.resendAt);
+          setNowTick(Date.now());
+        }
         setPlansErr(res.error);
         return;
       }
+      setResendAt(res.resendAt);
+      setNowTick(Date.now());
       // The link's own page signs the shop in; keep the registration event
       // id under the token so that page's browser event pairs with the
       // server's copy (same as the Stripe return).
@@ -1546,10 +1562,10 @@ export function RegisterContent({
                     type="button"
                     className="btn pw-go"
                     onClick={() => void onStartCardless(confirmSlug)}
-                    disabled={payBusy}
+                    disabled={payBusy || resendIn > 0}
                     aria-busy={payBusy || undefined}
                   >
-                    {payBusy ? "Sending…" : "Send the link again"}
+                    {payBusy ? "Sending…" : resendIn > 0 ? `Resend in ${resendIn} s` : "Resend the link"}
                   </button>
                   <button type="button" className="pw-confirm-back" onClick={() => setConfirmSentTo(null)} disabled={payBusy}>
                     Pick another plan

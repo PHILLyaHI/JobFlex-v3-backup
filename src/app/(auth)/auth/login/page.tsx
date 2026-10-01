@@ -121,8 +121,11 @@ function LoginInner() {
   const [loading, setLoading] = React.useState(false);
   // Prefill demo credentials only in local development — never in production.
   const isDev = process.env.NODE_ENV === "development";
-  const [email, setEmail] = React.useState(isDev ? "owner@acme.test" : "");
-  const [password, setPassword] = React.useState(isDev ? "password123" : "");
+  // ?email= prefills the address (a used trial confirmation link lands here,
+  // /auth/register/confirm); the dev prefill stands only without it.
+  const emailParam = search.get("email")?.trim().slice(0, 200) || null;
+  const [email, setEmail] = React.useState(emailParam ?? (isDev ? "owner@acme.test" : ""));
+  const [password, setPassword] = React.useState(isDev && !emailParam ? "password123" : "");
 
   const [inlineError, setInlineError] = React.useState<string | null>(() =>
     authErrorMessage(search.get("error")),

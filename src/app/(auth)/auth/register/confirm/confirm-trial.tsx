@@ -27,6 +27,12 @@ export function ConfirmTrial() {
     void confirmCardlessTrial(secret)
       .then(async (res) => {
         if (!res.ok) {
+          // A link already used: to sign-in with the address filled in, not an error.
+          if (res.done) {
+            const q = new URLSearchParams({ next: "/dashboard", ...(res.email ? { email: res.email } : {}) });
+            router.replace(`/auth/login?${q.toString()}` as Route);
+            return;
+          }
           setView({ kind: "error", text: res.error, done: res.done });
           return;
         }
