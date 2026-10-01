@@ -67,6 +67,9 @@ check("without a build the old privacy run comes out as it always did (8 ft, one
 const hill = (x: number) => -x * 0.3; // 30 % grade down the x axis
 const layHill = computeFenceLayout([{ x: 0, y: 0 }, { x: 16, y: 0 }], [], { build: cedar6, groundAt: hill, segClass: () => "stepped" });
 check("a stepped 16 ft run dropping 4.8 ft is not two 2.4 ft cliffs: each bay splits in three ≤ 1 ft steps (7 posts, 6 bays — the takeoff's 2 × 3)", layHill.postCount === 7 && layHill.bayCount === 6 && layHill.steppedBays === 6, `${layHill.postCount} posts · ${layHill.bayCount} bays`);
+// The ticket's count wins over the ground under each bay (vinyl: 29 drawn, 31 priced).
+const layPriced = computeFenceLayout([{ x: 0, y: 0 }, { x: 16, y: 0 }], [], { build: cedar6, groundAt: hill, segClass: () => "stepped", segSteps: () => 5 });
+check("given the ticket's step count, the 3D draws exactly that many equal steps", layPriced.steppedBays === 5 && layPriced.bayCount === 5 && layPriced.postCount === 6, `${layPriced.steppedBays} steps · ${layPriced.postCount} posts`);
 const dropOk = (() => {
   for (let i = 0; i < layHill.bayCount; i++) {
     const o = i * 7;

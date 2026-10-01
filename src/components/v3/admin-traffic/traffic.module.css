@@ -352,7 +352,8 @@
    on the sign-up form, blueprint at checkout, GREEN once the account exists,
    grey for a member already in the app — and carries an AD mark when the
    visit came off an advertisement. Nothing pulses but the one dot. */
-:global(.jf-blueprint) .live { --live-ok: var(--success); --live-ok-soft: var(--success-soft); --live-warm: var(--warning); --live-warm-soft: var(--warning-soft); --live-ad: #7c3aed; border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); }
+:global(.jf-blueprint) .live { --live-ok: var(--success); --live-ok-soft: var(--success-soft); --live-warm: var(--warning); --live-warm-soft: var(--warning-soft); --live-ad: #7c3aed;
+  --map-visitor:#e11d48; --map-signin:#0891b2; --map-signing:#f59e0b; --map-signed:#15803d; --map-member:#1e293b; --map-ad:#7c3aed; border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); }
 :global(.jf-blueprint) .liveHead { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:18px 24px; border-bottom:1px solid var(--traffic-line); flex-wrap:wrap; }
 :global(.jf-blueprint) .liveTitle { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 :global(.jf-blueprint) .liveTitle .micro { margin:0; }
@@ -362,7 +363,43 @@
 :global(.jf-blueprint) .liveTools { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
 :global(.jf-blueprint) .liveToggle { display:flex; align-items:center; gap:8px; min-height:44px; font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); cursor:pointer; }
 :global(.jf-blueprint) .liveToggle input { width:18px; height:18px; accent-color:var(--blueprint); margin:0; }
+/* Live mode: the switch that puts the panel on a 15-second clock. */
+:global(.jf-blueprint) .liveToggle[data-live="true"] { color:var(--success-dark); }
+/* The totals (2026-09-30): everyone today, at this hour yesterday, the week
+   and ever — above the half-hour window, so the live section answers "how
+   many" on its own. Heavier type than the live KPIs: these are the headline. */
+:global(.jf-blueprint) .liveTotals { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-bottom:1px solid var(--traffic-line); background:var(--paper); }
+:global(.jf-blueprint) .liveTotals > div { display:flex; flex-direction:column; gap:6px; padding:16px 20px; border-right:1px solid var(--traffic-line); min-width:0; }
+:global(.jf-blueprint) .liveTotals > div:last-child { border-right:0; }
+:global(.jf-blueprint) .liveTotals span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); }
+:global(.jf-blueprint) .liveTotals strong { font:850 34px/1 var(--font); letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .liveTotals small { font:600 11px/1.4 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .liveTotals > div[data-tone="lead"] strong { color:var(--blueprint); }
+:global(.jf-blueprint) .liveTotals small[data-trend="up"] { color:var(--success-dark); }
+:global(.jf-blueprint) .liveTotals small[data-trend="down"] { color:var(--danger-dark, #9b2c2c); }
 :global(.jf-blueprint) .liveKpis { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); border-bottom:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .liveTotals > div[data-tone="now"] strong { color:var(--ink); }
+:global(.jf-blueprint) .liveTotals > div[data-tone="ok"] strong { color:var(--success-dark); }
+:global(.jf-blueprint) .liveTotals > div[data-tone="mute"] strong { color:var(--muted); }
+/* The sentence under the row: what all those figures actually mean. */
+:global(.jf-blueprint) .liveHeadline { margin:0; padding:13px 24px; border-bottom:1px solid var(--traffic-line); font:500 13.5px/1.6 var(--font); color:var(--ink-soft); }
+/* The window as one coloured line, the map's own stage colours. */
+:global(.jf-blueprint) .liveFunnel { display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px; padding:11px 24px; border-bottom:1px solid var(--traffic-line); background:var(--paper); }
+:global(.jf-blueprint) .liveFunnelLead { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); }
+:global(.jf-blueprint) .liveFunnelStep { display:inline-flex; align-items:center; gap:6px; font:600 11.5px var(--font-mono); color:var(--ink-soft); }
+:global(.jf-blueprint) .liveFunnelStep i { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+:global(.jf-blueprint) .liveFunnelStep b { font:850 14px/1 var(--font); font-variant-numeric:tabular-nums; color:var(--ink); }
+:global(.jf-blueprint) .liveFunnelStep[data-zero="true"] { opacity:.42; }
+:global(.jf-blueprint) .liveFunnelStep[data-stage="browsing"] i { background:var(--map-visitor); }
+:global(.jf-blueprint) .liveFunnelStep[data-stage="signing-in"] i { background:var(--map-signin); }
+:global(.jf-blueprint) .liveFunnelStep[data-stage="registering"] i { background:var(--map-signing); }
+:global(.jf-blueprint) .liveFunnelStep[data-stage="signed-up"] i { background:var(--map-signed); }
+:global(.jf-blueprint) .liveFunnelStep[data-stage="member"] i { background:var(--map-member); }
+/* The platforms with nothing to say, folded into a line. */
+:global(.jf-blueprint) .platformsQuiet { grid-column:1 / -1; display:flex; align-items:center; flex-wrap:wrap; gap:6px 9px; margin:0; font:600 11.5px/1.6 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .platformsQuiet button { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border:1.5px solid var(--hair-soft); background:var(--paper-deep); font:inherit; color:var(--ink-soft); cursor:pointer; }
+:global(.jf-blueprint) .platformsQuiet button:hover { border-color:var(--platform); color:var(--ink); }
+:global(.jf-blueprint) .platformsQuiet button i { width:8px; height:8px; background:var(--platform); flex-shrink:0; }
 :global(.jf-blueprint) .liveKpis > div { display:flex; flex-direction:column; gap:6px; padding:16px 20px; border-right:1px solid var(--traffic-line); min-width:0; }
 :global(.jf-blueprint) .liveKpis > div:last-child { border-right:0; }
 :global(.jf-blueprint) .liveKpis span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); }
@@ -379,12 +416,15 @@
 :global(.jf-blueprint) .liveRow:last-child { border-bottom:0; }
 :global(.jf-blueprint) .liveRow[data-active="false"] { color:var(--muted); }
 :global(.jf-blueprint) .liveRow[data-active="false"] .liveWho b, :global(.jf-blueprint) .liveRow[data-active="false"] .liveWhere b { color:var(--muted); }
-:global(.jf-blueprint) .liveMark { align-self:stretch; background:var(--muted-faint); }
-:global(.jf-blueprint) .liveRow[data-stage="registering"] .liveMark { background:var(--live-warm); }
-:global(.jf-blueprint) .liveRow[data-stage="checkout"] .liveMark { background:var(--blueprint); }
-:global(.jf-blueprint) .liveRow[data-stage="member"] .liveMark { background:var(--muted); }
+:global(.jf-blueprint) .liveMark { align-self:stretch; background:var(--map-visitor); }
+:global(.jf-blueprint) .liveRow[data-stage="signing-in"] .liveMark { background:var(--map-signin); }
+:global(.jf-blueprint) .liveRow[data-stage="registering"] .liveMark { background:var(--map-signing); }
+:global(.jf-blueprint) .liveRow[data-stage="checkout"] .liveMark { background:var(--map-signing); }
+:global(.jf-blueprint) .liveRow[data-stage="member"] .liveMark { background:var(--map-member); }
+:global(.jf-blueprint) .liveRow[data-stage="signing-in"] { background:color-mix(in oklab, var(--map-signin) 7%, transparent); }
 :global(.jf-blueprint) .liveRow[data-stage="registering"] { background:var(--live-warm-soft); }
 :global(.jf-blueprint) .liveRow[data-stage="checkout"] { background:var(--chart-fill); }
+:global(.jf-blueprint) .liveRow[data-stage="signing-in"] .liveWho b { color:#0e7490; }
 /* The one that signed up: green, edge to edge. */
 :global(.jf-blueprint) .liveRow[data-stage="signed-up"] { background:var(--live-ok-soft); }
 :global(.jf-blueprint) .liveRow[data-stage="signed-up"] .liveMark { background:var(--live-ok); }
@@ -395,11 +435,61 @@
 :global(.jf-blueprint) .liveSignup { color:var(--success-dark) !important; }
 :global(.jf-blueprint) .liveSource { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 :global(.jf-blueprint) .liveAd { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1.5px solid var(--live-ad); color:var(--live-ad); font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; font-style:normal; }
+:global(.jf-blueprint) .liveLocked { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1.5px solid var(--map-signin); color:#0e7490; font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; font-style:normal; }
+/* What they pressed, and the visit in one sentence. */
+:global(.jf-blueprint) .liveClicks { display:inline-flex; align-items:center; gap:5px; font:600 11px/1.5 var(--font-mono); color:var(--blueprint); }
+:global(.jf-blueprint) .liveClicks svg { flex-shrink:0; }
+:global(.jf-blueprint) .liveSummary { font:500 12px/1.55 var(--font); color:var(--ink-soft); }
 :global(.jf-blueprint) .liveRow[data-active="true"] .liveWhen b { color:var(--success-dark); }
 :global(.jf-blueprint) .liveOthers { display:flex; flex-direction:column; gap:6px; padding:14px 24px; border-top:1px solid var(--traffic-line); background:var(--paper); }
 :global(.jf-blueprint) .liveOther { font:600 11px/1.5 var(--font-mono); color:var(--ink-soft); }
+/* What the account actually is — trial, paying, free — from the database. */
+:global(.jf-blueprint) .livePlan { display:inline-block; padding:1px 6px; border:1.5px solid var(--map-signed); background:color-mix(in oklab, var(--map-signed) 9%, transparent); color:var(--success-dark); font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; }
 :global(.jf-blueprint) .live .footnote { padding:12px 24px 16px; margin:0; }
+
+/* ── THE SIGNUP LEDGER (2026-10-01): every account made, and what it is now.
+   Same plate as the live panel so the two read as one surface. */
+:global(.jf-blueprint) .ledger { --map-visitor:#e11d48; --map-signin:#0891b2; --map-signing:#f59e0b; --map-signed:#15803d; --map-member:#1e293b; border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); margin-top:22px; }
+:global(.jf-blueprint) .ledgerHead { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:18px 24px; border-bottom:1px solid var(--traffic-line); flex-wrap:wrap; }
+:global(.jf-blueprint) .ledgerHead h2 { margin:0 0 4px; font:800 19px/1.1 var(--font); letter-spacing:-.03em; }
+:global(.jf-blueprint) .ledgerHead .micro { margin:0; display:block; max-width:62ch; }
+:global(.jf-blueprint) .ledgerTools { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+:global(.jf-blueprint) .ledgerSummary { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); border-bottom:1px solid var(--traffic-line); background:var(--paper); }
+:global(.jf-blueprint) .ledgerSummary > div { display:flex; flex-direction:column; gap:5px; padding:14px 20px; border-right:1px solid var(--traffic-line); min-width:0; }
+:global(.jf-blueprint) .ledgerSummary > div:last-child { border-right:0; }
+:global(.jf-blueprint) .ledgerSummary span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); }
+:global(.jf-blueprint) .ledgerSummary strong { font:850 28px/1 var(--font); letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .ledgerSummary small { font:600 11px/1.4 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .ledgerSummary > div[data-state="trial"] strong { color:#b45309; }
+:global(.jf-blueprint) .ledgerSummary > div[data-state="paying"] strong { color:var(--success-dark); }
+:global(.jf-blueprint) .ledgerSummary > div[data-state="lapsed"] strong { color:#9b2c2c; }
+:global(.jf-blueprint) .ledgerSummary > div[data-state="free"] strong { color:var(--muted); }
+:global(.jf-blueprint) .ledgerList { list-style:none; margin:0; padding:0; }
+:global(.jf-blueprint) .ledgerRow { display:grid; grid-template-columns:6px minmax(150px,1fr) minmax(150px,1fr) minmax(150px,1.05fr) minmax(104px,.48fr); gap:0 16px; align-items:start; padding:13px 20px 13px 0; border-bottom:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .ledgerRow:last-child { border-bottom:0; }
+:global(.jf-blueprint) .ledgerMark { align-self:stretch; background:var(--muted-faint); }
+:global(.jf-blueprint) .ledgerRow[data-state="trial"] .ledgerMark { background:var(--map-signing); }
+:global(.jf-blueprint) .ledgerRow[data-state="paying"] .ledgerMark { background:var(--map-signed); }
+:global(.jf-blueprint) .ledgerRow[data-state="lapsed"] .ledgerMark { background:var(--map-visitor); }
+:global(.jf-blueprint) .ledgerRow[data-state="free"] .ledgerMark { background:var(--map-member); }
+:global(.jf-blueprint) .ledgerWho, :global(.jf-blueprint) .ledgerFrom, :global(.jf-blueprint) .ledgerPlan, :global(.jf-blueprint) .ledgerWhen { display:flex; flex-direction:column; gap:3px; min-width:0; }
+:global(.jf-blueprint) .ledgerRow b { font:700 13px/1.35 var(--font); color:var(--ink); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+:global(.jf-blueprint) .ledgerRow span { font:600 11px/1.5 var(--font-mono); color:var(--muted); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .ledgerWhen b { font-family:var(--font-mono); font-size:11.5px; font-weight:600; color:var(--ink-soft); }
+:global(.jf-blueprint) .ledgerPlan .livePlan { white-space:normal; max-width:100%; line-height:1.55; }
+:global(.jf-blueprint) .livePlan[data-state="trial"] { border-color:#b45309; background:color-mix(in oklab, #b45309 9%, transparent); color:#92400e; }
+:global(.jf-blueprint) .livePlan[data-state="lapsed"] { border-color:#9b2c2c; background:color-mix(in oklab, #9b2c2c 9%, transparent); color:#9b2c2c; }
+:global(.jf-blueprint) .livePlan[data-state="free"], :global(.jf-blueprint) .livePlan[data-state="unknown"] { border-color:var(--hair-soft); background:var(--paper-deep); color:var(--muted); }
 @media (max-width: 900px) {
+  :global(.jf-blueprint) .ledgerSummary { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  :global(.jf-blueprint) .ledgerSummary > div:nth-child(2n) { border-right:0; }
+  :global(.jf-blueprint) .ledgerRow { grid-template-columns:6px minmax(0,1fr); gap:6px 14px; padding-right:14px; }
+  :global(.jf-blueprint) .ledgerMark { grid-row:1 / span 4; }
+}
+@media (max-width: 900px) {
+  :global(.jf-blueprint) .liveTotals { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  :global(.jf-blueprint) .liveTotals > div:nth-child(2n) { border-right:0; }
+  :global(.jf-blueprint) .liveTotals > div:nth-child(-n+2) { border-bottom:1px solid var(--traffic-line); }
   :global(.jf-blueprint) .liveKpis { grid-template-columns:repeat(3,minmax(0,1fr)); }
   :global(.jf-blueprint) .liveKpis > div:nth-child(3n) { border-right:0; }
   :global(.jf-blueprint) .liveKpis > div:nth-child(-n+3) { border-bottom:1px solid var(--traffic-line); }
@@ -412,6 +502,7 @@
   :global(.jf-blueprint) .liveKpis > div:nth-child(2n) { border-right:0; }
   :global(.jf-blueprint) .liveKpis > div:nth-child(-n+4) { border-bottom:1px solid var(--traffic-line); }
   :global(.jf-blueprint) .liveKpis strong { font-size:26px; }
+  :global(.jf-blueprint) .liveTotals strong { font-size:27px; }
   :global(.jf-blueprint) .liveHead { padding:14px 16px; }
   :global(.jf-blueprint) .live .footnote, :global(.jf-blueprint) .liveOthers, :global(.jf-blueprint) .liveEmpty { padding-left:16px; padding-right:16px; }
 }
@@ -421,7 +512,7 @@
    ink-washed land, countries shaded blueprint by their visitors, a pin per
    visitor in the stage colours of the list above. Controls are drawn tools,
    the card is a white plate with an ink frame. */
-:global(.jf-blueprint) .map { --map-visitor:#e5484d; --map-signing:var(--warning); --map-signed:var(--success); --map-member:var(--muted); --map-ad:#7c3aed; padding:0 24px 8px; }
+:global(.jf-blueprint) .map { padding:0 24px 8px; }
 :global(.jf-blueprint) .mapLoading { margin:0 24px 8px; aspect-ratio:2.26; display:grid; place-items:center; border:1.5px solid var(--hair-soft); background:color-mix(in oklab, var(--sky) 16%, var(--paper-deep)); font:600 12px var(--font-mono); color:var(--muted); }
 :global(.jf-blueprint) .mapBox { position:relative; overflow:hidden; border:2px solid var(--ink); border-radius:2px; background:var(--paper-deep); }
 :global(.jf-blueprint) .mapSvg { display:block; width:100%; touch-action:none; user-select:none; cursor:grab; }
@@ -440,6 +531,13 @@
 :global(.jf-blueprint) .mapZoom button:last-child { border-bottom:0; }
 :global(.jf-blueprint) .mapZoom button:hover { background:var(--paper); }
 :global(.jf-blueprint) .mapZoomLevel { position:absolute; left:10px; bottom:10px; padding:3px 8px; border:1.5px solid var(--hair-soft); background:var(--paper-deep); font:700 10.5px var(--font-mono); color:var(--ink-soft); }
+/* The count, on the map itself (2026-09-30). Steps aside for the card. */
+:global(.jf-blueprint) .mapCount { position:absolute; right:10px; bottom:10px; display:flex; flex-direction:column; gap:2px; padding:8px 11px; border:1.5px solid var(--hair-soft); background:var(--paper-deep); pointer-events:none; max-width:min(62%, 320px); }
+:global(.jf-blueprint) .mapCount b { font:850 24px/1 var(--font); letter-spacing:-.04em; font-variant-numeric:tabular-nums; color:var(--ink); }
+:global(.jf-blueprint) .mapCount span { font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.07em; color:var(--traffic-label); }
+:global(.jf-blueprint) .mapCount i { font:600 10.5px/1.45 var(--font-mono); font-style:normal; color:var(--ink-soft); }
+:global(.jf-blueprint) .mapCount[data-card="true"] { opacity:.28; }
+@media (max-width: 560px) { :global(.jf-blueprint) .mapCount b { font-size:20px; } }
 :global(.jf-blueprint) .mapTip { position:absolute; z-index:20; pointer-events:none; white-space:nowrap; padding:4px 8px; background:var(--ink); color:var(--paper); font:700 11px var(--font-mono); border-radius:2px; }
 :global(.jf-blueprint) .mapCard { z-index:10; margin:10px; display:flex; flex-direction:column; max-height:70vh; border:2px solid var(--ink); border-radius:2px; background:var(--paper-deep); box-shadow:3px 3px 0 var(--ink); padding:14px 16px; }
 :global(.jf-blueprint) .mapCardHead { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }

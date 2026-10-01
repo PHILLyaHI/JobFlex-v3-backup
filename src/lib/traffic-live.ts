@@ -54,6 +54,9 @@ export interface LiveEvent {
   country: string;
   region: string;
   city: string;
+  /** cta_click only: where the button sits, and the words on it. */
+  placement: string;
+  label: string;
   step: string;
   outcome: string;
   plan: string;
@@ -74,13 +77,23 @@ export interface FreshSignup {
   ownerEmail: string;
   ownerName: string;
   createdAt: string;
+  /** What the account actually is, read from the Subscription row rather
+   *  than from the browser event (2026-10-01). The event's `plan` is what
+   *  the page said; this is what the database granted. Empty strings mean
+   *  the organization has no subscription row at all. */
+  plan: string;
+  subStatus: string;
+  trialEndsAt: string | null;
   utmSource: string;
   utmMedium: string;
   utmCampaign: string;
   landingIndustry: string;
 }
 
-export type LiveStage = "browsing" | "registering" | "checkout" | "signed-up" | "member";
+/** How far a person got. "signing-in" is its own stage (2026-09-30): an
+ *  existing customer at the login, forgot-password or reset screen is not a
+ *  stranger looking around, and reading them as one made the list lie. */
+export type LiveStage = "browsing" | "signing-in" | "registering" | "checkout" | "signed-up" | "member";
 export type SourceKind = "ad" | "likely-ad" | "search" | "social" | "referral" | "direct";
 
 /** The platforms a visit is credited to, each in its own colour (AVACO's),
@@ -155,9 +168,20 @@ export interface LiveVisitor {
   environment: "production" | "development";
   hostname: string;
   /** The account this visitor made, when the database row could be tied to it. */
-  signup: { orgName: string; ownerEmail: string; ownerName: string; at: string; plan: string; outcome: string } | null;
+  signup: { orgName: string; ownerEmail: string; ownerName: string; at: string; plan: string; outcome: string;
+    /** "Free trial · 12 days left", "Professional · paying", "Free plan" — the
+     *  answer to "they signed up, but for what?". */
+    planLabel: string } | null;
   /** The verified signup this visit produced even when no row matched. */
   signedUpAt: string | null;
+  /** What they pressed, newest first: the words on the button and where it
+   *  sits on the page. Only the landing's tagged CTAs fire this. */
+  clicks: Array<{ label: string; placement: string; at: string }>;
+  /** They asked for a password reset or opened one. A support signal: this
+   *  is a customer who cannot get back in, not a visitor. */
+  lockedOut: boolean;
+  /** One sentence for what this visit is, written from the trail. */
+  summary: string;
 }
 
 export interface LiveCounts {
@@ -167,6 +191,30 @@ export interface LiveCounts {
   signedUp: number;
   members: number;
 }
+
+/** The whole-site visitor totals behind the live view (2026-09-30). The live
+ *  window only ever holds half an hour; these are the numbers the owner looks
+ *  for first — how many people in all, how many today, and how today stands
+ *  against the same hour yesterday — so the live section answers everything
+ *  without scrolling to the report below it. Counted twice, with and without
+ *  localhost, so the panel's own "Include localhost" switch picks an answer
+ *  without a second query. */
+export interface LiveTotals {
+  /** Unique people with a pageview, ever. */
+  allTime: number;
+  /** Unique people today, in the admin's timezone. */
+  today: number;
+  /** Yesterday up to this same clock time — what today is beating, or not. */
+  yesterdaySoFar: number;
+  /** All of yesterday. */
+  yesterday: number;
+  /** Unique people in the last seven days. */
+  last7Days: number;
+  /** Pageviews today — views, not people. */
+  viewsToday: number;
+}
+/** The same totals counted both ways; the caller picks by the dev switch. */
+export interface LiveTotalsPair { all: LiveTotals; production: LiveTotals }
 
 /** One platform's window: who it brought, from ads or not, how far they got. */
 export interface LivePlatform {
@@ -195,13 +243,23 @@ export interface LiveReport {
   activeMinutes: number;
   visitors: LiveVisitor[];
   counts: LiveCounts;
+  /** Site-wide visitor totals (null when the totals query did not answer —
+   *  the live window is still shown). */
+  totals: LiveTotals | null;
+  /** How far into the local day it is, in minutes. A count of 0 visitors at
+   *  00:12 is not the same news as 0 at 16:00, and the panel has to say
+   *  which it is rather than print a bare zero. */
+  dayAgeMinutes: number;
+  /** The whole live section in one sentence, written server-side so the
+   *  wording is testable. */
+  headline: string;
   /** The ad platforms first (always), then any other platform with a visitor. */
   platforms: LivePlatform[];
   /** The day's organizations from the database, and how many came from ads. */
   today: { signups: number; fromAds: number };
   /** Fresh organizations no live visitor could be tied to (their visit was
    *  before the window, or the browser blocked analytics). */
-  otherSignups: Array<{ orgName: string; ownerEmail: string; at: string; source: string }>;
+  otherSignups: Array<{ orgName: string; ownerEmail: string; at: string; source: string; planLabel: string }>;
 }
 
 const AD_MEDIUMS = new Set(["cpc", "ppc", "paid", "paid_social", "paidsocial", "paid-social", "social-paid", "ads", "ad", "display", "retargeting", "remarketing", "cpm", "cpv", "cpa", "sponsored", "promoted", "boost", "boosted", "banner", "video-ad", "lead-ad", "leadgen", "instant-form"]);
@@ -292,12 +350,41 @@ export function signupSource(s: { utmSource: string; utmMedium: string }): { lab
 
 const APP_PATH = /^\/(dashboard|mobile-|w\/|portal|worker)/;
 const SIGNUP_PATH = /^\/auth\/register/;
+/** Signing in, and the locked-out corner of it. A visitor here already has an
+ *  account; counting them as "looking around" hid every returning customer
+ *  and every person who could not get back in. */
+const SIGNIN_PATH = /^\/auth\/(login|signin|sign-in)/;
+const RECOVER_PATH = /^\/auth\/(forgot|reset|recover)/;
+const VERIFY_PATH = /^\/auth\/(verify|confirm)/;
 
-const stageRank: Record<LiveStage, number> = { browsing: 0, member: 1, registering: 2, checkout: 3, "signed-up": 4 };
+const stageRank: Record<LiveStage, number> = { browsing: 0, "signing-in": 1, member: 2, registering: 3, checkout: 4, "signed-up": 5 };
+
+/** The screens worth naming in words, because the live list is read at a
+ *  glance (2026-09-30). "/auth/reset" told the owner nothing and, worse, it
+ *  looked like browsing; "Resetting their password" says who that is and
+ *  that they are stuck. These names are the LIVE view's only — the report's
+ *  page table keeps `pageLabel`'s shorter ones so its rows stay comparable
+ *  with the history. */
+const PLAIN_SCREEN: Record<string, string> = {
+  "/": "Landing page",
+  "/pricing": "Pricing",
+  "/auth/login": "Signing in",
+  "/auth/signin": "Signing in",
+  "/auth/sign-in": "Signing in",
+  "/auth/register": "Sign-up form",
+  "/auth/forgot": "Forgot password",
+  "/auth/reset": "Setting a new password",
+  "/auth/recover": "Account recovery",
+  "/auth/verify": "Verifying their email",
+  "/auth/confirm": "Confirming their email",
+  "/auth/logout": "Signing out",
+};
 
 /** A screen's plain name: the report's labels, the app's own screens by
  *  section ("App · Jobs"), the rest by path. */
 export function screenLabel(path: string): string {
+  const plain = PLAIN_SCREEN[path.replace(/\/+$/, "") || "/"];
+  if (plain) return plain;
   const known = pageLabel(path);
   if (known !== path) return known;
   const m = /^\/(dashboard|mobile-[a-z0-9-]+|portal|w)(?:\/([a-z0-9-]+))?/i.exec(path);
@@ -336,6 +423,223 @@ function pathOf(e: LiveEvent): string {
   if (e.pathname) return e.pathname;
   const m = /^[a-z]+:\/\/[^/?#]+([^?#]*)/i.exec(e.url);
   return m ? m[1] || "/" : "";
+}
+
+/** One sentence for what a visit is (2026-09-30). The list used to make the
+ *  owner read a trail of paths and work it out; this says it. Written from
+ *  what we actually saw, and it never guesses: a visitor with no tracked
+ *  click is "no button we track", not "clicked nothing". */
+export function visitSummary(v: {
+  stage: LiveStage;
+  lockedOut: boolean;
+  views: number;
+  trail: string[];
+  clicks: Array<{ label: string; placement: string }>;
+  active: boolean;
+  signup: { orgName: string } | null;
+  step: number;
+  fromAd: boolean;
+  source: string;
+}): string {
+  const pressed = v.clicks[0]
+    ? `Pressed “${v.clicks[0].label}”${v.clicks[0].placement ? ` in the ${v.clicks[0].placement.replace(/[-_]/g, " ")}` : ""}.`
+    : "";
+  const join = (...parts: string[]) => parts.filter(Boolean).join(" ");
+
+  if (v.stage === "signed-up") {
+    return join(v.signup ? `Signed up — the account ${v.signup.orgName} exists in the database.` : "Signed up, but no organization row matched it yet.", pressed);
+  }
+  if (v.stage === "member") {
+    return join(
+      v.lockedOut ? "Got back in after a password reset, and is working in the app." : "An existing customer working in the app.",
+      v.active ? "" : "Has since left.",
+    );
+  }
+  if (v.stage === "signing-in") {
+    if (v.lockedOut) return join("Locked out — asked for a password reset.", v.active ? "Still on it." : "Gave up for now.", "Worth a look if it repeats.");
+    return join("An existing customer signing back in.", v.active ? "" : "Left before reaching the app.");
+  }
+  if (v.stage === "checkout") return join("At checkout, choosing a plan.", pressed);
+  if (v.stage === "registering") {
+    const where = v.step > 0 ? `reached step ${v.step}` : "opened the form";
+    return join(`Filling in the sign-up form — ${where}.`, v.active ? "" : "Stopped there.", pressed);
+  }
+  // Browsing. One sentence, not two saying the same thing: a visitor who
+  // left after one page is a bounce, and that is the whole story.
+  const last = v.trail[v.trail.length - 1] || "the first page";
+  if (v.views <= 1 && !v.active) {
+    return join(`Left from ${v.trail[0] || "the first page"} without opening a second page${v.fromAd ? " — an ad click that bounced" : ""}.`, pressed);
+  }
+  if (v.views <= 1) return join("Landed, and has not opened a second page yet.", pressed);
+  return join(`Reading — ${v.views} pages so far${v.trail.length > 1 ? `, now on ${last}` : ""}.`, v.active ? "" : "Has since left.", pressed);
+}
+
+/** What an account actually is, in the words the owner asked for:
+ *  "they signed up — but for what, a free trial or what?" (2026-10-01).
+ *
+ *  Read from the Subscription row, which is Stripe's truth mirrored by the
+ *  webhooks, not from the browser event that said what the page offered.
+ *  An organization with no subscription row yet says so rather than being
+ *  quietly called free: that is a real state, usually a signup caught in
+ *  the seconds before the row is written. */
+export function signupPlanLabel(sub: { plan: string; subStatus: string; trialEndsAt: string | null }, now = Date.now()): string {
+  const plan = (sub.plan || "").trim();
+  const status = (sub.subStatus || "").trim().toUpperCase();
+  if (!status && !plan) return "no subscription row yet";
+  const pretty = plan && plan.toUpperCase() !== "FREE"
+    ? plan.charAt(0).toUpperCase() + plan.slice(1).toLowerCase()
+    : "";
+  switch (status) {
+    case "TRIALING": {
+      const ends = sub.trialEndsAt ? Date.parse(sub.trialEndsAt) : NaN;
+      if (!Number.isFinite(ends)) return pretty ? `Free trial · ${pretty}` : "Free trial";
+      // Whole days remaining, rounded DOWN: a trial with six hours on it
+      // "ends today" rather than claiming a day the owner does not have.
+      const ms = ends - now;
+      const days = Math.floor(ms / 86_400_000);
+      const left = ms <= 0 ? "trial expired" : days === 0 ? "ends today" : days === 1 ? "1 day left" : `${days} days left`;
+      return `${pretty ? `Free trial · ${pretty}` : "Free trial"} · ${left}`;
+    }
+    case "ACTIVE": return pretty ? `${pretty} · paying` : "Paying";
+    case "PAST_DUE": return `${pretty || "Paid plan"} · payment failed`;
+    case "CANCELED": return `${pretty || "Paid plan"} · canceled`;
+    case "EXPIRED": return `${pretty || "Paid plan"} · expired`;
+    case "FREE": return "Free plan";
+    default: return pretty ? `${pretty} · ${status.toLowerCase().replace(/_/g, " ")}` : status ? status.toLowerCase().replace(/_/g, " ") : "no subscription row yet";
+  }
+}
+
+/** THE SIGNUP LEDGER (2026-10-01).
+ *
+ *  The live list holds half an hour and the day line holds a day, so a signup
+ *  older than that had nowhere left to be seen — which is how an account the
+ *  owner watched arrive became an account he could not find again. Nothing
+ *  new is stored for this: every signup is already an Organization row with
+ *  the landing's tags on it and a Subscription beside it. This is a reading
+ *  of those rows over a span the owner picks, so the record lasts as long as
+ *  the accounts do. */
+export type SignupState = "trial" | "paying" | "lapsed" | "free" | "unknown";
+
+export interface SignupRecord {
+  orgId: string;
+  orgName: string;
+  ownerName: string;
+  ownerEmail: string;
+  createdAt: string;
+  /** Where the landing recorded them as coming from. */
+  source: string;
+  fromAd: boolean;
+  platform: string;
+  campaign: string;
+  content: string;
+  /** The trade hero the landing showed them, "default" when none. */
+  industry: string;
+  /** What the account is now, from its Subscription row. */
+  planLabel: string;
+  state: SignupState;
+}
+
+/** The coarse state a subscription is in, for the colour and the counts. */
+export function signupState(subStatus: string): SignupState {
+  switch ((subStatus || "").trim().toUpperCase()) {
+    case "TRIALING": return "trial";
+    case "ACTIVE": return "paying";
+    case "PAST_DUE": case "CANCELED": case "EXPIRED": return "lapsed";
+    case "FREE": return "free";
+    default: return "unknown";
+  }
+}
+
+export interface SignupLedger {
+  days: number;
+  records: SignupRecord[];
+  summary: { total: number; fromAds: number; trial: number; paying: number; lapsed: number; free: number; unknown: number };
+  /** True when the span held more accounts than the page asked for. */
+  truncated: boolean;
+}
+
+/** The counts under the ledger — what the span actually produced. */
+export function signupLedgerSummary(records: SignupRecord[]): SignupLedger["summary"] {
+  const n = (st: SignupState) => records.filter((r) => r.state === st).length;
+  return {
+    total: records.length,
+    fromAds: records.filter((r) => r.fromAd).length,
+    trial: n("trial"), paying: n("paying"), lapsed: n("lapsed"), free: n("free"), unknown: n("unknown"),
+  };
+}
+
+/** How far into the local day it is, in minutes. */
+export function minutesIntoDay(timezone: string, now: Date = new Date()): number {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hourCycle: "h23", hour: "2-digit", minute: "2-digit" }).formatToParts(now);
+    const n = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+    const m = n("hour") * 60 + n("minute");
+    return Number.isFinite(m) && m >= 0 && m < 1440 ? m : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** The whole live section in one sentence (2026-10-01).
+ *
+ *  Ten tiles of zeros told the owner nothing and, just after midnight, read
+ *  as a broken page. This says what is actually true: who is here, what the
+ *  day has done so far, and — when the day is minutes old — that the day is
+ *  minutes old, which is the whole reason the number is small. */
+export function liveHeadline(r: {
+  onSite: number;
+  fromAds: number;
+  signingUp: number;
+  windowVisitors: number;
+  windowMinutes: number;
+  todayVisitors: number | null;
+  todaySignups: number;
+  yesterdaySoFar: number | null;
+  yesterdayTotal: number | null;
+  dayAgeMinutes: number;
+  topPlatform: { name: string; visitors: number } | null;
+}): string {
+  const parts: string[] = [];
+
+  // 1. Who is here this minute.
+  if (r.onSite > 0) {
+    const who = `${r.onSite} ${r.onSite === 1 ? "person is" : "people are"} on the site right now`;
+    const ads = r.fromAds > 0 ? `, ${r.fromAds} of them from an ad` : "";
+    parts.push(`${who}${ads}.`);
+    if (r.signingUp > 0) parts.push(`${r.signingUp} ${r.signingUp === 1 ? "is" : "are"} filling in the sign-up form.`);
+  } else if (r.windowVisitors > 0) {
+    parts.push(`Nobody on the site this minute, but ${r.windowVisitors} came through in the last ${r.windowMinutes} minutes.`);
+  } else {
+    parts.push(`Quiet — nobody in the last ${r.windowMinutes} minutes.`);
+  }
+
+  // 2. Which platform is doing the work, when one is.
+  if (r.topPlatform && r.topPlatform.visitors > 0) {
+    parts.push(`${r.topPlatform.name} brought the most of them (${r.topPlatform.visitors}).`);
+  }
+
+  // 3. The day so far — and why it might look empty.
+  const young = r.dayAgeMinutes < 120;
+  if (r.todayVisitors === null) {
+    // No totals this time round; say nothing rather than guess.
+  } else if (young) {
+    const age = r.dayAgeMinutes < 60 ? `${Math.max(1, r.dayAgeMinutes)} minutes` : `${Math.floor(r.dayAgeMinutes / 60)} hour${r.dayAgeMinutes >= 120 ? "s" : ""}`;
+    const sofar = r.todayVisitors === 0 ? "No visitors yet today" : `${r.todayVisitors} ${r.todayVisitors === 1 ? "visitor" : "visitors"} so far today`;
+    const ref = r.yesterdayTotal && r.yesterdayTotal > 0 ? `; yesterday finished at ${r.yesterdayTotal}` : "";
+    parts.push(`${sofar} — the day is only ${age} old${ref}.`);
+  } else if (r.yesterdaySoFar && r.yesterdaySoFar > 0) {
+    const delta = Math.round(((r.todayVisitors - r.yesterdaySoFar) / r.yesterdaySoFar) * 100);
+    const verdict = delta > 4 ? `${delta}% ahead of` : delta < -4 ? `${Math.abs(delta)}% behind` : "level with";
+    parts.push(`${r.todayVisitors} visitors today, ${verdict} this time yesterday.`);
+  } else {
+    parts.push(`${r.todayVisitors} ${r.todayVisitors === 1 ? "visitor" : "visitors"} today.`);
+  }
+
+  // 4. Did any of it turn into an account.
+  if (r.todaySignups > 0) parts.push(`${r.todaySignups} signed up today.`);
+  else if (!young && r.todayVisitors) parts.push("No signups yet today.");
+
+  return parts.join(" ");
 }
 
 /** The visitors of the window, newest activity first, signups on top. */
@@ -386,8 +690,21 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
       } else if (e.event === E.opened || e.event === E.attempt) s = "checkout";
       else if (e.event === E.step || SIGNUP_PATH.test(pathOf(e))) s = "registering";
       else if (APP_PATH.test(pathOf(e))) s = "member";
+      else if (SIGNIN_PATH.test(pathOf(e)) || RECOVER_PATH.test(pathOf(e)) || VERIFY_PATH.test(pathOf(e))) s = "signing-in";
       if (stageRank[s] > stageRank[stage]) stage = s;
     }
+    // Locked out: they asked for a reset link or opened one. Worth its own
+    // flag — it is the one stage that wants a human, not a nudge.
+    const lockedOut = list.some((e) => RECOVER_PATH.test(pathOf(e)));
+    // The furthest numbered sign-up step they reached, for the sentence.
+    const furthestStep = list.reduce((best, e) => (e.event === E.step && /^\d+$/.test(e.step) ? Math.max(best, Number(e.step)) : best), 0);
+    // What they pressed. Only the landing's tagged CTAs fire cta_click, so an
+    // empty list means "nothing we track", never "they clicked nothing".
+    const clicks = [...list]
+      .reverse()
+      .filter((e) => e.event === E.ctaClick && (e.label || e.placement))
+      .slice(0, 3)
+      .map((e) => ({ label: e.label || "a button", placement: e.placement || "", at: new Date(e.at).toISOString() }));
     // Tie the signup to the organization the database made minutes later:
     // the closest row in time whose tag agrees, each row claimed once.
     let signup: LiveVisitor["signup"] = null;
@@ -404,7 +721,7 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
       }
       if (best) {
         claimed.add(best.s.orgId);
-        signup = { orgName: best.s.orgName, ownerEmail: best.s.ownerEmail, ownerName: best.s.ownerName, at: best.s.createdAt, plan, outcome };
+        signup = { orgName: best.s.orgName, ownerEmail: best.s.ownerEmail, ownerName: best.s.ownerName, at: best.s.createdAt, plan, outcome, planLabel: signupPlanLabel(best.s, now) };
       }
     }
     // Where they are: the latest event that carries a GeoIP place.
@@ -448,6 +765,9 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
       hostname: first.hostname || domainOf(first.url),
       signup,
       signedUpAt,
+      clicks,
+      lockedOut,
+      summary: visitSummary({ stage, lockedOut, views: views.length, trail, clicks, active: last.at >= activeSince, signup, step: furthestStep, fromAd: src.fromAd, source: src.label }),
     });
   }
   // Signups first, then the people from ads who are on the site now, then
@@ -471,12 +791,15 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
     .filter((s) => !claimed.has(s.orgId))
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
     .slice(0, 12)
-    .map((s) => ({ orgName: s.orgName, ownerEmail: s.ownerEmail, at: s.createdAt, source: signupSource(s).label }));
+    .map((s) => ({ orgName: s.orgName, ownerEmail: s.ownerEmail, at: s.createdAt, source: signupSource(s).label, planLabel: signupPlanLabel(s, now) }));
   return {
     windowMinutes: LIVE_WINDOW_MINUTES,
     activeMinutes: LIVE_ACTIVE_MINUTES,
     visitors,
     counts,
+    totals: null,
+    dayAgeMinutes: 0,
+    headline: "",
     platforms: platformCards(visitors, signups),
     today: { signups: signups.length, fromAds: signups.filter((s) => signupSource(s).fromAd).length },
     otherSignups,
@@ -547,10 +870,79 @@ export function buildLiveQuery(windowMinutes = LIVE_WINDOW_MINUTES): string {
     ${prop("step")}, ${prop("outcome")}, ${prop("plan")}, ${prop("verified")},
     toFloat64OrNull(toString(properties.$geoip_latitude)), toFloat64OrNull(toString(properties.$geoip_longitude)),
     ${prop("$geoip_country_code")}, ${prop("$geoip_subdivision_1_code")},
-    multiIf(${CLICK_ID_KEYS.map((k) => `${prop(k)} != '', '${k}'`).join(", ")}, '')
+    multiIf(${CLICK_ID_KEYS.map((k) => `${prop(k)} != '', '${k}'`).join(", ")}, ''),
+    ${prop("placement")}, ${prop("label")}
     FROM events
     WHERE timestamp > now() - INTERVAL ${Math.max(5, Math.min(120, Math.round(windowMinutes)))} MINUTE AND event IN (${events})
     ORDER BY timestamp DESC LIMIT 4000`;
+}
+
+/** A timezone name, safe to paste into HogQL. Anything else falls back to UTC
+ *  rather than reaching the query with quotes in it. */
+function tzLiteral(timezone: string): string {
+  const name = typeof timezone === "string" ? timezone.trim() : "";
+  return /^[A-Za-z][A-Za-z0-9_+\-]*(\/[A-Za-z0-9_+\-]+){0,2}$/.test(name) && name.length <= 64 ? `'${name}'` : "'UTC'";
+}
+
+/** Site-wide visitor totals, in the admin's timezone, counted with and
+ *  without localhost in one pass (2026-09-30).
+ *
+ *  It follows the dashboard's own rules — pageviews only, /admin excluded,
+ *  the environment read from jf_environment with the localhost domain as the
+ *  fallback — so "All-time visitors" here agrees with the figure the report
+ *  below the live section prints.
+ *
+ *  This one touches every event the project holds, so it is deliberately NOT
+ *  on the live poll's cache: an all-time count does not move in fifteen
+ *  seconds (lib/traffic-server caches it for minutes). */
+export function buildLiveTotalsQuery(timezone: string): string {
+  const tz = tzLiteral(timezone);
+  const prop = (name: string) => `ifNull(toString(properties.${name}), '')`;
+  const production = "env != 'development'";
+  /** Each figure twice: everyone, then everyone but localhost. */
+  const pair = (cond: string) => `uniqExactIf(person, ${cond}), uniqExactIf(person, (${cond}) AND ${production})`;
+  const today = "day = today_local";
+  const localNow = `toTimeZone(now(), ${tz})`;
+  return `SELECT
+    ${pair("1 = 1")},
+    ${pair(today)},
+    ${pair("day = today_local - 1 AND secs <= now_secs")},
+    ${pair("day = today_local - 1")},
+    ${pair("ts >= now() - INTERVAL 7 DAY")},
+    countIf(${today}), countIf((${today}) AND ${production})
+  FROM (
+    SELECT toString(person_id) AS person, timestamp AS ts,
+      ifNull(nullIf(${prop("$pathname")}, ''), path(${prop("$current_url")})) AS pathname,
+      ifNull(nullIf(${prop("jf_environment")}, ''), if(domain(${prop("$current_url")}) IN ('localhost', '127.0.0.1'), 'development', 'production')) AS env,
+      toTimeZone(timestamp, ${tz}) AS lts,
+      toDate(lts) AS day,
+      toHour(lts) * 3600 + toMinute(lts) * 60 + toSecond(lts) AS secs,
+      toDate(${localNow}) AS today_local,
+      toHour(${localNow}) * 3600 + toMinute(${localNow}) * 60 + toSecond(${localNow}) AS now_secs
+    FROM events
+    WHERE event = '$pageview' AND timestamp <= now()
+  )
+  WHERE pathname != '/admin' AND NOT startsWith(pathname, '/admin/')`;
+}
+
+/** The totals row → both readings. A missing or unreadable cell counts zero,
+ *  never NaN: the panel prints these straight. */
+export function liveTotalsFromRow(row: unknown[]): LiveTotalsPair {
+  const n = (i: number) => {
+    const raw = Array.isArray(row) ? row[i] : undefined;
+    const v = typeof raw === "number" ? raw : raw == null || raw === "" ? NaN : Number(raw);
+    return Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
+  };
+  // Columns come in pairs: everyone, then production only.
+  const read = (offset: 0 | 1): LiveTotals => ({
+    allTime: n(0 + offset),
+    today: n(2 + offset),
+    yesterdaySoFar: n(4 + offset),
+    yesterday: n(6 + offset),
+    last7Days: n(8 + offset),
+    viewsToday: n(10 + offset),
+  });
+  return { all: read(0), production: read(1) };
 }
 
 /** One query row → one LiveEvent (a bad row is skipped by the caller). */
@@ -577,5 +969,7 @@ export function liveEventFromRow(row: unknown[]): LiveEvent | null {
     countryCode: str(26).toUpperCase().slice(0, 2),
     regionCode: str(27).toUpperCase().slice(0, 3),
     click: CLICK_IDS[str(28).toLowerCase()] ? str(28).toLowerCase() : "",
+    placement: str(29),
+    label: str(30),
   };
 }

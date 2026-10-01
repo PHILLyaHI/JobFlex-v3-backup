@@ -1,30 +1,76 @@
 import type { StageVisitor, StageVisitorsReport, TrafficBreakdown, TrafficFilters, TrafficReport, TrafficTotals } from "./traffic-contract";
 import { buildStageVisitorsQuery, buildTrafficQueries, funnelStages, shiftDate } from "./traffic-query";
-import { buildLiveQuery, liveEventFromRow, shapeLive, type FreshSignup, type LiveEvent, type LiveReport } from "./traffic-live";
+import { buildLiveQuery, buildLiveTotalsQuery, liveEventFromRow, liveHeadline, liveTotalsFromRow, minutesIntoDay, shapeLive, type FreshSignup, type LiveEvent, type LiveReport, type LiveTotalsPair } from "./traffic-live";
 
 /** The last half hour of events, one PostHog query, shared by every admin
  *  looking for LIVE_CACHE_MS — the query endpoint's budget is small, and the
  *  panel polls. */
 const LIVE_CACHE_MS = 25_000;
+/** Live mode polls every 15 s, so its answers may be at most this stale —
+ *  otherwise the cache would hand back the same rows twice and the panel
+ *  would tick without moving. Still shared: two admins watching cost one
+ *  query between them. */
+const LIVE_FAST_CACHE_MS = 12_000;
 let liveEvents: { at: number; promise: Promise<LiveEvent[]> } | null = null;
-export async function fetchLiveEvents(): Promise<LiveEvent[]> {
+export async function fetchLiveEvents(maxAgeMs = LIVE_CACHE_MS): Promise<LiveEvent[]> {
   const now = Date.now();
-  if (liveEvents && now - liveEvents.at < LIVE_CACHE_MS) return liveEvents.promise;
+  const age = Math.max(LIVE_FAST_CACHE_MS, Math.min(LIVE_CACHE_MS, maxAgeMs));
+  if (liveEvents && now - liveEvents.at < age) return liveEvents.promise;
   const promise = runTrafficQuery(buildLiveQuery(), "live").then((rows) => rows.map(liveEventFromRow).filter((e): e is LiveEvent => !!e));
   promise.catch(() => { if (liveEvents?.promise === promise) liveEvents = null; });
   liveEvents = { at: now, promise };
   return promise;
 }
 
+/** The site-wide totals (all-time, today, this time yesterday, seven days).
+ *  A far longer cache than the window above on purpose: the query reads every
+ *  event in the project, and an all-time count does not move while someone
+ *  watches a 15-second ticker. Keyed by timezone, because "today" is. */
+const LIVE_TOTALS_CACHE_MS = 5 * 60_000;
+const liveTotals = new Map<string, { at: number; promise: Promise<LiveTotalsPair> }>();
+export async function fetchLiveTotals(timezone: string): Promise<LiveTotalsPair> {
+  const key = timezone || "UTC";
+  const now = Date.now();
+  const hit = liveTotals.get(key);
+  if (hit && now - hit.at < LIVE_TOTALS_CACHE_MS) return hit.promise;
+  const promise = runTrafficQuery(buildLiveTotalsQuery(key), "live totals").then((rows) => liveTotalsFromRow(Array.isArray(rows[0]) ? rows[0] : []));
+  promise.catch(() => { if (liveTotals.get(key)?.promise === promise) liveTotals.delete(key); });
+  liveTotals.set(key, { at: now, promise });
+  return promise;
+}
+
 /** The live report: the window's visitors shaped with the day's signups. */
-export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDevelopment?: boolean } = {}): Promise<LiveReport> {
+export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDevelopment?: boolean; timezone?: string; fast?: boolean } = {}): Promise<LiveReport> {
   const fetchedAt = new Date().toISOString();
   try {
     if (!posthogApiConfig()) return { ...shapeLive([], signups, Date.now(), opts), status: "disabled", message: "Connect a PostHog personal key with query:read and a numeric project ID.", fetchedAt };
   } catch (err) { return { ...shapeLive([], signups, Date.now(), opts), status: "error", message: (err as Error).message, fetchedAt }; }
   try {
-    const events = await fetchLiveEvents();
-    return { ...shapeLive(events, signups, Date.now(), opts), status: "ok", fetchedAt };
+    // The totals must never take the live view down with them: a failure
+    // there leaves the window intact and the panel simply prints no totals.
+    const [events, pair] = await Promise.all([
+      fetchLiveEvents(opts.fast ? LIVE_FAST_CACHE_MS : LIVE_CACHE_MS),
+      fetchLiveTotals(opts.timezone || "UTC").catch(() => null),
+    ]);
+    const totals = pair ? (opts.includeDevelopment ? pair.all : pair.production) : null;
+    const shaped = shapeLive(events, signups, Date.now(), opts);
+    const dayAgeMinutes = minutesIntoDay(opts.timezone || "UTC");
+    // The busiest platform of the window, for the sentence.
+    const top = [...shaped.platforms].sort((a, b) => b.visitors - a.visitors)[0];
+    const headline = liveHeadline({
+      onSite: shaped.counts.onSite,
+      fromAds: shaped.counts.fromAds,
+      signingUp: shaped.counts.signingUp,
+      windowVisitors: shaped.visitors.length,
+      windowMinutes: shaped.windowMinutes,
+      todayVisitors: totals ? totals.today : null,
+      todaySignups: shaped.today.signups,
+      yesterdaySoFar: totals ? totals.yesterdaySoFar : null,
+      yesterdayTotal: totals ? totals.yesterday : null,
+      dayAgeMinutes,
+      topPlatform: top && top.visitors > 0 ? { name: top.name, visitors: top.visitors } : null,
+    });
+    return { ...shaped, totals, dayAgeMinutes, headline, status: "ok", fetchedAt };
   } catch (err) {
     const msg = err instanceof Error && err.name === "TimeoutError" ? "PostHog took too long. Try again shortly." : err instanceof Error ? err.message : "Live view unavailable.";
     return { ...shapeLive([], signups, Date.now(), opts), status: "error", message: msg, fetchedAt };

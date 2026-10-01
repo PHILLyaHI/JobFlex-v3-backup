@@ -100,6 +100,22 @@ export interface SlopeSummary {
 }
 
 /**
+ * The steps ONE stepped segment is built and priced with: its bays, each
+ * re-split so no step drops more than MAX_STEP_DROP_FT. The ticket, the
+ * map's badge and the 3D all read this, so the three show one count (the
+ * 3D used to split by the ground under each bay: 29 drawn, 31 priced).
+ */
+export function segmentSteps(s: Pick<SlopeSegment, "planFt" | "riseFt" | "cls" | "steps">, sectionLenFt: number): { steps: number; dropFt: number } {
+  if (s.cls !== "stepped" || !(s.planFt > 0)) return { steps: 0, dropFt: 0 };
+  const bays = Math.max(1, s.steps ?? Math.ceil(s.planFt / Math.max(1, sectionLenFt)));
+  // Every bay drops rise/bays; a bay dropping more than a code step
+  // splits into shorter panels with extra posts.
+  const perBay = Math.abs(s.riseFt) / bays;
+  const splits = Math.max(1, Math.ceil(perBay / MAX_STEP_DROP_FT));
+  return { steps: bays * splits, dropFt: perBay / splits };
+}
+
+/**
  * Summarize JobFlex's per-segment terrain for the takeoff. Steps: the
  * report's own count on stepped segments, re-split so no step drops more
  * than MAX_STEP_DROP_FT (a 3' drop over one 8' bay is three 1' steps with
@@ -129,14 +145,11 @@ export function summarizeSlope(
     if (s.cls === "racked") {
       rackedExtra += Math.max(0, s.gradeFt - s.planFt);
     } else if (s.cls === "stepped") {
-      const rise = Math.abs(s.riseFt);
       const bays = Math.max(1, s.steps ?? Math.ceil(s.planFt / Math.max(1, sectionLenFt)));
-      // Every bay drops rise/bays; a bay dropping more than a code step
-      // splits into shorter panels with extra posts.
-      const perBay = rise / bays;
-      const splits = Math.max(1, Math.ceil(perBay / MAX_STEP_DROP_FT));
-      steps += bays * splits;
-      maxStep = Math.max(maxStep, perBay / splits);
+      const perBay = Math.abs(s.riseFt) / bays;
+      const seg = segmentSteps(s, sectionLenFt);
+      steps += seg.steps;
+      maxStep = Math.max(maxStep, seg.dropFt);
       // A wall-like drop: more than WALL_RISE_FT in a single bay.
       if (perBay >= WALL_RISE_FT) {
         wallSegments += 1;

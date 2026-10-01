@@ -45,6 +45,9 @@ export interface FencePlanScene {
   color: string;
   gates: FenceSceneGate[];
   segClasses: Record<number, SceneBayClass>;
+  /** The ticket's step count per stepped segment (2026-10-01), so the
+   *  client's 3D steps where the price does. Absent on older plans. */
+  segSteps?: Record<number, number>;
   wallMounts: PlanPoint[];
   terrain: FenceSceneTerrain | null;
   lotColor: string | null;
@@ -97,11 +100,18 @@ export function parseFencePlanScene(raw: unknown): FencePlanScene | null {
       if (Number.isInteger(i) && i >= 0 && (v === "level" || v === "racked" || v === "stepped")) segClasses[i] = v;
     }
   }
+  const segSteps: Record<number, number> = {};
+  if (r.segSteps && typeof r.segSteps === "object") {
+    for (const [k, v] of Object.entries(r.segSteps as Record<string, unknown>).slice(0, 600)) {
+      const i = Number(k);
+      if (Number.isInteger(i) && i >= 0 && num(v) && v >= 1 && v <= 400) segSteps[i] = Math.round(v);
+    }
+  }
   const wallMounts = readPts(r.wallMounts, 40);
   const terrain = parseTerrain(r.terrain);
   const lotColor = typeof r.lotColor === "string" && HEX.test(r.lotColor) ? r.lotColor : null;
   const build = parseFenceBuild(r.build);
-  return { family, color, gates, segClasses, wallMounts, terrain, lotColor, build };
+  return { family, color, gates, segClasses, segSteps, wallMounts, terrain, lotColor, build };
 }
 
 function parseTerrain(raw: unknown): FenceSceneTerrain | null {
@@ -169,6 +179,7 @@ export interface FenceSceneProps {
   buildings: Array<{ ring: PlanPoint[]; heightFt: number; role: "subject" | "neighbor" }>;
   terrain: FenceSceneTerrain | null;
   segClasses: Record<number, SceneBayClass> | null;
+  segSteps: Record<number, number> | null;
   wallMounts: PlanPoint[];
   lots: PlanPoint[][];
   lotColor: string;
@@ -197,6 +208,7 @@ export function fenceSceneFromPlan(plan: FencePlan): FenceSceneProps | null {
     buildings: plan.buildings.filter((b) => b.role === "subject").map((b) => ({ ring: b.ring, heightFt: b.heightFt ?? 12, role: "subject" as const })),
     terrain: s?.terrain ?? null,
     segClasses: s && Object.keys(s.segClasses).length ? s.segClasses : null,
+    segSteps: s?.segSteps && Object.keys(s.segSteps).length ? s.segSteps : null,
     wallMounts: s?.wallMounts ?? [],
     lots: plan.lots,
     lotColor: s?.lotColor ?? SCENE_DEFAULT_LOT_COLOR,

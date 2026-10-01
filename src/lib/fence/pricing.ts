@@ -17,6 +17,7 @@
 import {
   CATEGORY_LABEL,
   effectiveSpacingFt,
+  FENCE_TYPES,
   fenceType,
   heightFactor,
   nearestHeight,
@@ -28,7 +29,7 @@ import {
 } from "./catalog";
 import { blendedFactor, laborFactor, LINE_MATERIAL_SHARE, marketFrostIn, materialFactor, type MarketSnapshot } from "./market";
 import { standardRate, type FenceRate, type RateBook } from "./rates";
-import { computeFenceTakeoff, gateKitLabel, openingTotals, type BoardGrade, type FenceLayoutInput, type FenceOpeningInput, type FenceTakeoff, type PostSystem } from "./takeoff";
+import { computeFenceTakeoff, gateKitLabel, openingTotals, postStock, postUpgradeApplies, type BoardGrade, type FenceLayoutInput, type FenceOpeningInput, type FenceTakeoff, type PostSystem } from "./takeoff";
 import type { SlopeSummary } from "./slope";
 
 /** Share of a fence's $/LF that is the posts + footings. Tightening the
@@ -254,7 +255,13 @@ export function priceFencePackage(layout: FenceLayoutInput, opts: FencePriceOpti
   const lines: FencePackageLine[] = [];
   const line = (l: Omit<FencePackageLine, "unitPrice">) => {
     if (l.quantity <= 0) return;
-    lines.push({ ...l, materialCost: round2(l.materialCost), laborCost: round2(l.laborCost), unitPrice: round2(l.materialCost + l.laborCost) });
+    // The halves must ADD UP to the unit price: the proposal stores them and
+    // prices the line at their sum. Rounded apart they missed it by a cent a
+    // unit — on a 3,040 sq ft stain line the ticket said $17,828 and the
+    // converted proposal $17,797.60. Labor takes the cent, as on the gate lines.
+    const unitPrice = round2(l.materialCost + l.laborCost);
+    const materialCost = round2(l.materialCost);
+    lines.push({ ...l, materialCost, laborCost: round2(unitPrice - materialCost), unitPrice });
   };
 
   const spacingNote = spacingRatio !== 1 ? ` — ${effSpacing}' post spacing` : "";
@@ -463,27 +470,46 @@ export interface FenceTier {
   recommended?: boolean;
 }
 
+/** What a fence is FOR. Good only ever offers a cheaper fence that does the
+ *  same job — a privacy fence for a privacy fence, never chain link. */
+const FENCE_ROLE: Record<FenceTypeId, "privacy" | "picket" | "chain-link" | "ornamental" | "rail"> = {
+  "cedar-privacy": "privacy",
+  "pt-pine-privacy": "privacy",
+  "board-on-board": "privacy",
+  shadowbox: "privacy",
+  "horizontal-modern": "privacy",
+  "vinyl-privacy": "privacy",
+  "composite-privacy": "privacy",
+  "wood-picket": "picket",
+  "vinyl-picket": "picket",
+  "chain-link-galv": "chain-link",
+  "chain-link-black": "chain-link",
+  "aluminum-ornamental": "ornamental",
+  "steel-ornamental": "ornamental",
+  "split-rail-2": "rail",
+  "ranch-rail-3": "rail",
+};
+
 /**
- * Tier ladder for a chosen base type: Good = value build of the same
- * category, Better = the chosen type as drawn, Best = chosen type plus
- * stain / seal (wood) or the premium sibling. Siblings are held to the
- * job's height — one that does not come in that height falls back to the
- * base — and a "value" sibling that would cost MORE at this height
- * collapses to the base too: Good must never out-price Better.
+ * Tier ladder for a chosen base type: Good = a cheaper build that does the
+ * same job, Better = the chosen type as drawn, Best = chosen type plus
+ * stain / seal (wood) or the premium sibling. Every tier is held to the
+ * job's height. Good is the family's value build when it is made at that
+ * height and costs less; else the cheapest same-job fence that is (its own
+ * material first); else there is no Good. A tier that would quote the very
+ * fence Better quotes is left out — two cards with one price is not a
+ * choice (vinyl privacy at 6' showed "Vinyl privacy $13,642" twice).
  */
 export function fenceTiers(base: FenceTypeId, heightFt?: number): FenceTier[] {
   const t = fenceType(base);
-  const held = (id: FenceTypeId): FenceTypeId => {
-    if (id === base) return base;
-    if (heightFt !== undefined && !fenceType(id).heightsFt.includes(heightFt)) return base;
-    return id;
-  };
+  const offered = (id: FenceTypeId): boolean => heightFt === undefined || fenceType(id).heightsFt.includes(heightFt);
+  const held = (id: FenceTypeId): FenceTypeId => (id === base || offered(id) ? id : base);
   const costPerLf = (id: FenceTypeId): number => {
     const ft = fenceType(id);
     const h = heightFt !== undefined ? heightFt : ft.defaultHeightFt;
     return (ft.materialPerLf + ft.laborPerLf) * heightFactor(ft, h);
   };
-  let valueSibling: FenceTypeId = held(
+  const preferred: FenceTypeId =
     t.category === "wood"
       ? "pt-pine-privacy"
       : t.category === "vinyl"
@@ -494,9 +520,15 @@ export function fenceTiers(base: FenceTypeId, heightFt?: number): FenceTier[] {
             ? "chain-link-galv"
             : t.category === "aluminum" || t.category === "steel"
               ? "aluminum-ornamental"
-              : "split-rail-2",
-  );
-  if (valueSibling !== base && costPerLf(valueSibling) >= costPerLf(base)) valueSibling = base;
+              : "split-rail-2";
+  const cheaper = (id: FenceTypeId) => id !== base && offered(id) && costPerLf(id) < costPerLf(base);
+  let valueSibling: FenceTypeId | null = cheaper(preferred) && FENCE_ROLE[preferred] === FENCE_ROLE[base] ? preferred : null;
+  if (!valueSibling) {
+    const pool = FENCE_TYPES.filter((x) => FENCE_ROLE[x.id] === FENCE_ROLE[base] && cheaper(x.id)).sort(
+      (a, b) => Number(a.category !== t.category) - Number(b.category !== t.category) || costPerLf(a.id) - costPerLf(b.id),
+    );
+    valueSibling = pool[0]?.id ?? null;
+  }
   const premiumSibling: FenceTypeId = held(
     t.category === "wood"
       ? "board-on-board"
@@ -513,17 +545,12 @@ export function fenceTiers(base: FenceTypeId, heightFt?: number): FenceTier[] {
                 : base,
   );
   const bestType = t.stainable ? base : premiumSibling;
-  return [
-    { id: "good", name: "Good", tagline: valueSibling !== base ? "Solid build, best price" : "Same fence, value-priced", type: valueSibling, stain: false },
-    { id: "better", name: "Better", tagline: "The fence as designed", type: base, stain: false, recommended: true },
-    {
-      id: "best",
-      name: "Best",
-      tagline: t.stainable ? "Stained & sealed" : bestType !== base ? "Premium line" : "Priority scheduling",
-      type: bestType,
-      stain: t.stainable,
-    },
-  ];
+  const tiers: FenceTier[] = [];
+  if (valueSibling) tiers.push({ id: "good", name: "Good", tagline: "Solid build, best price", type: valueSibling, stain: false });
+  tiers.push({ id: "better", name: "Better", tagline: "The fence as designed", type: base, stain: false, recommended: true });
+  // Best is the stained fence or the premium line — never the same fence again.
+  if (t.stainable || bestType !== base) tiers.push({ id: "best", name: "Best", tagline: t.stainable ? "Stained & sealed" : "Premium line", type: bestType, stain: t.stainable });
+  return tiers;
 }
 
 /* ------------------------------------------------------------------ */
@@ -547,7 +574,7 @@ export function fenceScope(pkg: FencePackage, layout: FenceLayoutInput, where?: 
       tk.posts.gate ? `${tk.posts.gate} gate` : null,
     ]
       .filter(Boolean)
-      .join(", ")}), ${t.spec.postMaterial}.`,
+      .join(", ")}), ${postStock(t, layout.postUpgrade)}.`,
   );
   if (t.build === "stick") out.push(`${t.spec.railMaterial}; ${t.spec.infillMaterial}.`);
   else if (t.build === "panel") out.push(`${tk.sections} prefab ${t.postSpacingFt}' panels — ${t.spec.infillMaterial}, ${t.spec.railMaterial}.`);
@@ -563,9 +590,10 @@ export function fenceScope(pkg: FencePackage, layout: FenceLayoutInput, where?: 
     out.push(`${[...kinds].map(([k, n]) => `${n} × ${k}`).join(", ")} — hung, latched and adjusted.`);
   }
   if ((layout.steppedSections ?? 0) > 0) out.push(`${plural(layout.steppedSections!, "section")} stepped down the grade with extended posts, each step within 1' so the top line stays at code height.`);
-  if (layout.postUpgrade && t.category === "wood" && !(layout.postUpgrade === "6x6" && t.spec.postWidthIn >= 5.5)) {
+  if (postUpgradeApplies(t, layout.postUpgrade)) {
+    // The post sentence above already names the post; this says what it buys.
     const sys = POST_SYSTEMS[layout.postUpgrade];
-    out.push(`${sys.label} throughout — ${sys.blurb}.${sys.warranty ? ` ${sys.warranty}.` : ""}`);
+    out.push(`${sys.blurb.charAt(0).toUpperCase()}${sys.blurb.slice(1)}.${sys.warranty ? ` ${sys.warranty}.` : ""}`);
   }
   if (t.category === "wood" && layout.boardGrade && layout.boardGrade !== "standard") out.push(`Boards in ${BOARD_GRADES[layout.boardGrade].label.toLowerCase()} cedar — ${BOARD_GRADES[layout.boardGrade].blurb}.`);
   if (t.category === "wood" && layout.fasteners === "stainless") out.push("Stainless steel fasteners throughout — no rust streaks down the boards.");
@@ -591,7 +619,8 @@ export function packageNotes(layout: FenceLayoutInput, t: FenceType, takeoff: Fe
   const sys = layout.postUpgrade && t.category === "wood" && !(layout.postUpgrade === "6x6" && t.spec.postWidthIn >= 5.5) ? POST_SYSTEMS[layout.postUpgrade] : null;
   out.push(`Warranty: 4-year workmanship on the whole fence${sys?.warranty ? `; ${sys.warranty.toLowerCase()}` : t.category === "wood" ? " (a steel or post-on-pipe post system adds a 10-year to lifetime structural warranty)" : "; limited lifetime structural warranty on the post system"}.`);
   if (t.category === "wood" && takeoff.posts.gate > 0 && !layout.steelGatePosts && layout.postUpgrade !== "steel" && layout.postUpgrade !== "black-steel") out.push("Gates on wood posts: the gate warranty is 6 months — steel gate posts carry it for life.");
-  if (t.category === "wood") out.push("Cedar and pressure-treated lumber are natural: color change, checking, small cracks and some movement with the seasons are normal, not defects. Staining or sealing is the owner's upkeep.");
+  // With stain & seal sold, "staining is the owner's upkeep" read as if it were not.
+  if (t.category === "wood") out.push(`Cedar and pressure-treated lumber are natural: color change, checking, small cracks and some movement with the seasons are normal, not defects. ${layout.stain && t.stainable ? "The stain and seal in this proposal protects the wood; a fresh coat every few years is the owner's upkeep." : "Staining or sealing is the owner's upkeep."}`);
   if (!layout.clearLine) out.push("Before the crew arrives, the owner clears a 2-ft path along the fence line (plants to keep are marked); clearing on the day is extra.");
   if (!layout.haulSoil) out.push("Soil from the post holes is spread along the line; hauling it away is extra.");
   out.push("811 marks public utilities; the owner marks private ones — sprinklers, drains, low-voltage, septic. Property lines and HOA approval are the owner's to confirm.");
@@ -631,7 +660,11 @@ export function fenceChecks(pkg: FencePackage, layout: FenceLayoutInput, slope?:
     out.push({ level: "info", text: `${TERRAIN_LABEL[layout.terrain]} — installation labor ×${TERRAIN_FACTOR[layout.terrain]}${slope ? ` (grade ${slope.avgGradePct}% avg, ${slope.maxGradePct}% max)` : ""}.` });
   }
   if ((layout.steppedSections ?? 0) > 0) {
-    out.push({ level: "info", text: `${plural(layout.steppedSections!, "step")} down the slope — ${pkg.takeoff.postLengthFt.step}' posts there, ${pkg.takeoff.postLengthFt.base}' elsewhere.` });
+    const pl = pkg.takeoff.postLengthFt;
+    // Frost-deep holes can already make every post long enough for a step.
+    out.push({ level: "info", text: pl.step > pl.base
+      ? `${plural(layout.steppedSections!, "step")} down the slope — ${pl.step}' posts there, ${pl.base}' elsewhere.`
+      : `${plural(layout.steppedSections!, "step")} down the slope — the ${pl.base}' posts take the drop.` });
   }
   if (slope && slope.wallSegments > 0) {
     out.push({ level: "warn", text: `A sheer drop measured on ~${Math.round(slope.wallLikeLf)} LF — a retaining wall or cut bank? Posts on a wall are core-drilled and anchored, not dug; not priced here.` });

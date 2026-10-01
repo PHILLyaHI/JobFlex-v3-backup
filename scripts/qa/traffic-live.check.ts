@@ -3,7 +3,7 @@
 // signups named after the organization the database made. Static imports
 // only (tsx has no top-level await).
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/traffic-live.check.ts
-import { AD_PLATFORM_KEYS, buildLiveQuery, classifySource, liveEventFromRow, platformCards, shapeLive, shortId, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
+import { AD_PLATFORM_KEYS, buildLiveQuery, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, liveHeadline, minutesIntoDay, signupLedgerSummary, signupPlanLabel, signupState, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
 
 let bad = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -74,12 +74,12 @@ const by = (id: string) => r.visitors.find((v) => v.id === shortId(id));
 check("one line per person: the localhost developer and the visitor past the window are out", r.visitors.length === 5 && !by("p-eli") && !by("p-fay"), r.visitors.map((v) => v.id).join(","));
 const ana = by("p-ana")!;
 check("Ana signed up: the green stage, from a Facebook ad, named after the organization the database made", ana.stage === "signed-up" && ana.fromAd && ana.source === "Facebook ad" && ana.campaign === "fence-fall" && ana.signup?.orgName === "Ana Fence Co" && ana.signup?.ownerEmail === "ana@example.com" && ana.signup?.plan === "pro" && ana.signup?.outcome === "trial_started", JSON.stringify(ana.signup));
-check("…and she is on the dashboard now, three pages in, the trail naming each step, the checkout and the signup", ana.active && ana.page === "/dashboard" && ana.pageLabel === "App · Dashboard" && ana.views === 3 && ana.trail.join(" → ") === "Landing page → Registration entry → Step 2 / Company → Checkout → Signed up → App · Dashboard", `${ana.page} · ${ana.views} · ${ana.trail.join(" → ")}`);
+check("…and she is on the dashboard now, three pages in, the trail naming each step, the checkout and the signup", ana.active && ana.page === "/dashboard" && ana.pageLabel === "App · Dashboard" && ana.views === 3 && ana.trail.join(" → ") === "Landing page → Sign-up form → Step 2 / Company → Checkout → Signed up → App · Dashboard", `${ana.page} · ${ana.views} · ${ana.trail.join(" → ")}`);
 check("signups sort to the top", r.visitors[0].id === ana.id);
 const ben = by("p-ben")!;
 check("Ben: Google search, looking around on /pricing, not from an ad", ben.stage === "browsing" && !ben.fromAd && ben.source === "Google search" && ben.page === "/pricing" && ben.active);
 const cal = by("p-cal")!;
-check("Cal: an untagged Instagram click, on the sign-up form now — counted as an ad", cal.stage === "registering" && cal.fromAd && cal.sourceKind === "likely-ad" && cal.active && cal.pageLabel === "Registration entry", `${cal.stage} · ${cal.source} · ${cal.pageLabel}`);
+check("Cal: an untagged Instagram click, on the sign-up form now — counted as an ad", cal.stage === "registering" && cal.fromAd && cal.sourceKind === "likely-ad" && cal.active && cal.pageLabel === "Sign-up form", `${cal.stage} · ${cal.source} · ${cal.pageLabel}`);
 check("an app screen is named by its section", (() => { const m = shapeLive([ev({ person: "p-m", at: min(1), pathname: "/dashboard/jobs" })], [], NOW).visitors[0]; return m.pageLabel === "App · Jobs" && m.stage === "member"; })());
 const dee = by("p-dee")!;
 check("Dee: a member in the app, gone quiet — shown as left", dee.stage === "member" && !dee.active);
@@ -132,6 +132,175 @@ const e4 = liveEventFromRow([...row, 32.7767, -96.797, "us", "tx", "GCLID"]);
 check("the click id column names the id, lower-cased, only when it is one we know", !!e4 && e4.click === "gclid" && liveEventFromRow([...row, 1, 1, "US", "TX", "zzz"])?.click === "");
 check("a row without a time or an event is skipped", liveEventFromRow(["p", "d", "$pageview", "x"]) === null && liveEventFromRow(["p", "d", "", 1]) === null);
 check("a short id is the tail of the person id", shortId("0192abcd-1234-5678-9abc-def012345678") === "345678" && shortId("abc") === "abc");
+
+// ── the site-wide totals behind the live view (2026-09-30)
+const totalsSql = buildLiveTotalsQuery("America/Chicago");
+check("the totals query counts people today, yesterday to this hour, the week and all time",
+  /uniqExactIf\(person, 1 = 1\)/.test(totalsSql) && /day = today_local/.test(totalsSql)
+  && /day = today_local - 1 AND secs <= now_secs/.test(totalsSql) && /INTERVAL 7 DAY/.test(totalsSql)
+  && /countIf\(day = today_local\)/.test(totalsSql));
+check("it counts each figure twice, so the localhost switch needs no second query",
+  (totalsSql.match(/env != 'development'/g) || []).length === 6);
+check("it follows the report's own rules — pageviews, no /admin, localhost by domain when the tag is missing",
+  /event = '\$pageview'/.test(totalsSql) && /pathname != '\/admin'/.test(totalsSql)
+  && /NOT startsWith\(pathname, '\/admin\/'\)/.test(totalsSql) && /'localhost', '127\.0\.0\.1'/.test(totalsSql));
+check("the timezone is the admin's, and only a real zone name reaches the query",
+  /'America\/Chicago'/.test(totalsSql) && /'UTC'/.test(buildLiveTotalsQuery("'; DROP TABLE events --"))
+  && !/DROP TABLE/.test(buildLiveTotalsQuery("'; DROP TABLE events --")) && /'UTC'/.test(buildLiveTotalsQuery("")));
+const pair = liveTotalsFromRow([900, 700, 120, 90, 100, 80, 450, 400, 61, 50, 310, 240]);
+check("the row reads as two sets: everyone, and everyone but localhost",
+  pair.all.allTime === 900 && pair.production.allTime === 700
+  && pair.all.today === 120 && pair.production.today === 90
+  && pair.all.yesterdaySoFar === 100 && pair.production.yesterdaySoFar === 80
+  && pair.all.yesterday === 450 && pair.production.yesterday === 400
+  && pair.all.last7Days === 61 && pair.production.last7Days === 50
+  && pair.all.viewsToday === 310 && pair.production.viewsToday === 240);
+const empty = liveTotalsFromRow([]);
+check("a missing or unreadable total is zero, never NaN",
+  empty.all.allTime === 0 && empty.production.today === 0
+  && liveTotalsFromRow(["12", null, "x", -4, undefined, "", 0, 0, 0, 0, 0, 0]).all.allTime === 12
+  && liveTotalsFromRow(["12", null, "x", -4, undefined, "", 0, 0, 0, 0, 0, 0]).all.today === 0);
+check("shapeLive leaves the totals to the server fetch that caches them",
+  shapeLive([], [], NOW, {}).totals === null);
+
+// ── what the visitor is doing, in words (2026-09-30)
+check("the auth screens are named, not left as paths",
+  screenLabel("/auth/login") === "Signing in" && screenLabel("/auth/reset") === "Setting a new password"
+  && screenLabel("/auth/forgot") === "Forgot password" && screenLabel("/auth/register") === "Sign-up form"
+  && screenLabel("/auth/verify") === "Verifying their email");
+check("a trailing slash does not defeat the name", screenLabel("/auth/login/") === "Signing in");
+check("the app's own screens and unknown paths are unchanged",
+  screenLabel("/dashboard/jobs") === "App · Jobs" && screenLabel("/fencing") === "/fencing");
+
+// Someone at the login screen is a customer coming back, not a stranger.
+const signin = shapeLive([ev({ person: "rae", at: min(6), pathname: "/auth/login" })], [], NOW, {}).visitors[0];
+check("a visitor at the login screen is signing in, not browsing",
+  signin.stage === "signing-in" && !signin.lockedOut && /existing customer signing back in/i.test(signin.summary),
+  `${signin.stage} — ${signin.summary}`);
+
+// The locked-out corner of it.
+const locked = shapeLive([
+  ev({ person: "sam", at: min(9), pathname: "/auth/forgot" }),
+  ev({ person: "sam", at: min(4), pathname: "/auth/reset" }),
+], [], NOW, {}).visitors[0];
+check("asking for a password reset is flagged locked out and said in words",
+  locked.stage === "signing-in" && locked.lockedOut && /locked out/i.test(locked.summary),
+  `${locked.stage} · lockedOut=${locked.lockedOut} — ${locked.summary}`);
+
+// Getting back in outranks signing in: the dashboard wins the stage.
+const recovered = shapeLive([
+  ev({ person: "tom", at: min(12), pathname: "/auth/forgot" }),
+  ev({ person: "tom", at: min(8), pathname: "/auth/reset" }),
+  ev({ person: "tom", at: min(2), pathname: "/dashboard" }),
+], [], NOW, {}).visitors[0];
+check("a reset that ends in the app reads as a member who got back in",
+  recovered.stage === "member" && recovered.lockedOut && /got back in/i.test(recovered.summary),
+  `${recovered.stage} — ${recovered.summary}`);
+
+// What they pressed rides along with the visit.
+const clicked = shapeLive([
+  ev({ person: "uma", at: min(10), pathname: "/" }),
+  ev({ person: "uma", at: min(9), event: "cta_click", pathname: "/", placement: "hero", label: "Start free trial" }),
+  ev({ person: "uma", at: min(8), pathname: "/pricing" }),
+], [], NOW, {}).visitors[0];
+check("the button they pressed is carried, newest first, with where it sits",
+  clicked.clicks.length === 1 && clicked.clicks[0].label === "Start free trial" && clicked.clicks[0].placement === "hero"
+  && /Start free trial/.test(clicked.summary) && /hero/.test(clicked.summary),
+  clicked.summary);
+check("a visit with no tracked click simply has none", signin.clicks.length === 0);
+check("the query asks for the click's own words", /properties\.placement/.test(sql) && /properties\.label/.test(sql));
+check("the row parser reads them", liveEventFromRow([...row, 1, 1, "US", "TX", "", "hero", "Start free trial"])?.label === "Start free trial");
+
+// The sentence is written from what was seen, and never overclaims.
+check("a one-page visit that left is called a bounce, and an ad click says so",
+  /without opening a second page/i.test(visitSummary({ stage: "browsing", lockedOut: false, views: 1, trail: ["Landing page"], clicks: [], active: false, signup: null, step: 0, fromAd: true, source: "Facebook ad" }))
+  && /an ad click that bounced/i.test(visitSummary({ stage: "browsing", lockedOut: false, views: 1, trail: ["Landing page"], clicks: [], active: false, signup: null, step: 0, fromAd: true, source: "Facebook ad" })));
+check("a half-filled sign-up form names the step it stopped on",
+  /step 2/i.test(visitSummary({ stage: "registering", lockedOut: false, views: 2, trail: [], clicks: [], active: false, signup: null, step: 2, fromAd: false, source: "Direct" })));
+check("a signup names the account the database made",
+  /Acme Roofing/.test(visitSummary({ stage: "signed-up", lockedOut: false, views: 4, trail: [], clicks: [], active: true, signup: { orgName: "Acme Roofing" }, step: 3, fromAd: false, source: "Direct" })));
+
+// ── the section in one sentence (2026-10-01)
+const base = { onSite: 0, fromAds: 0, signingUp: 0, windowVisitors: 0, windowMinutes: 30,
+  todayVisitors: 0, todaySignups: 0, yesterdaySoFar: 0, yesterdayTotal: 0, dayAgeMinutes: 600,
+  topPlatform: null as { name: string; visitors: number } | null };
+
+check("the hour of the day is read in the admin's zone",
+  minutesIntoDay("UTC", new Date("2026-10-01T00:12:00Z")) === 12
+  && minutesIntoDay("UTC", new Date("2026-10-01T16:30:00Z")) === 990
+  && minutesIntoDay("America/Los_Angeles", new Date("2026-10-01T07:00:00Z")) === 0);
+check("an unreadable timezone does not throw, it reads midnight", minutesIntoDay("Not/AZone") === 0);
+
+// The case that made the page look broken: just past midnight, everything 0.
+const midnight = liveHeadline({ ...base, dayAgeMinutes: 12, todayVisitors: 0, yesterdayTotal: 62, yesterdaySoFar: 0 });
+check("just after midnight it says the day is minutes old, not a bare zero",
+  /Quiet/.test(midnight) && /No visitors yet today/.test(midnight) && /12 minutes old/.test(midnight) && /yesterday finished at 62/.test(midnight),
+  midnight);
+check("it never prints a percent against a yesterday that had nobody", !/%/.test(midnight));
+
+const busy = liveHeadline({ ...base, onSite: 4, fromAds: 3, signingUp: 1, windowVisitors: 9,
+  todayVisitors: 120, yesterdaySoFar: 90, yesterdayTotal: 300, todaySignups: 2,
+  topPlatform: { name: "Facebook", visitors: 6 } });
+check("a busy hour names who is here, who sent them, and how the day compares",
+  /4 people are on the site right now/.test(busy) && /3 of them from an ad/.test(busy)
+  && /1 is filling in the sign-up form/.test(busy) && /Facebook brought the most of them \(6\)/.test(busy)
+  && /33% ahead of this time yesterday/.test(busy) && /2 signed up today/.test(busy),
+  busy);
+
+const lull = liveHeadline({ ...base, windowVisitors: 5, todayVisitors: 70, yesterdaySoFar: 70 });
+check("nobody on now but people in the window reads as a lull, and a level day says level",
+  /Nobody on the site this minute, but 5 came through in the last 30 minutes/.test(lull)
+  && /level with this time yesterday/.test(lull) && /No signups yet today/.test(lull),
+  lull);
+
+const behind = liveHeadline({ ...base, windowVisitors: 1, todayVisitors: 50, yesterdaySoFar: 100 });
+check("a day running behind says so", /50% behind this time yesterday/.test(behind), behind);
+check("with no totals it simply says nothing about the day",
+  !/today/i.test(liveHeadline({ ...base, todayVisitors: null, yesterdaySoFar: null, yesterdayTotal: null })));
+check("one person reads as one person",
+  /1 person is on the site right now/.test(liveHeadline({ ...base, onSite: 1, todayVisitors: 5, yesterdaySoFar: 5 })));
+
+// ── "they signed up — but for what?" (2026-10-01)
+const NOWMS = Date.parse("2026-10-01T12:00:00Z");
+const sub = (plan: string, subStatus: string, trialEndsAt: string | null = null) => signupPlanLabel({ plan, subStatus, trialEndsAt }, NOWMS);
+check("a free trial says so, and how long is left",
+  sub("PROFESSIONAL", "TRIALING", "2026-10-13T12:00:00Z") === "Free trial · Professional · 12 days left"
+  && sub("FREE", "TRIALING", "2026-10-02T12:00:00Z") === "Free trial · 1 day left"
+  && sub("FREE", "TRIALING", "2026-10-01T18:00:00Z") === "Free trial · ends today",
+  sub("PROFESSIONAL", "TRIALING", "2026-10-13T12:00:00Z"));
+check("a trial whose date has passed is not called days left",
+  sub("STARTER", "TRIALING", "2026-09-28T12:00:00Z") === "Free trial · Starter · trial expired");
+check("a trial with no end date still reads as a trial", sub("STARTER", "TRIALING", null) === "Free trial · Starter");
+check("paying, failing, canceled and free each read as themselves",
+  sub("PROFESSIONAL", "ACTIVE") === "Professional · paying"
+  && sub("STARTER", "PAST_DUE") === "Starter · payment failed"
+  && sub("STARTER", "CANCELED") === "Starter · canceled"
+  && sub("STARTER", "EXPIRED") === "Starter · expired"
+  && sub("FREE", "FREE") === "Free plan");
+check("an account with no subscription row says so instead of being called free",
+  sub("", "") === "no subscription row yet");
+check("an unknown status is printed, not swallowed", sub("STARTER", "SOMETHING_NEW") === "Starter · something new");
+check("the label rides along with a matched signup and with one that aged out",
+  typeof shapeLive([], [], NOW, {}).otherSignups === "object");
+
+// ── the signup ledger: the record that outlasts the window (2026-10-01)
+check("a subscription status folds to the state its colour and count use",
+  signupState("TRIALING") === "trial" && signupState("ACTIVE") === "paying"
+  && signupState("PAST_DUE") === "lapsed" && signupState("CANCELED") === "lapsed" && signupState("EXPIRED") === "lapsed"
+  && signupState("FREE") === "free" && signupState("") === "unknown" && signupState("whatever") === "unknown");
+check("the state reading is not case- or space-sensitive", signupState("  trialing ") === "trial");
+
+const rec = (state: ReturnType<typeof signupState>, fromAd = false) => ({
+  orgId: Math.random().toString(36).slice(2), orgName: "Org", ownerName: "", ownerEmail: "",
+  createdAt: "2026-10-01T00:00:00Z", source: "Direct", fromAd, platform: "direct",
+  campaign: "", content: "", industry: "", planLabel: "", state,
+});
+const led = signupLedgerSummary([rec("trial", true), rec("trial"), rec("paying", true), rec("lapsed"), rec("free"), rec("unknown")]);
+check("the ledger counts the span by state, and how many came from ads",
+  led.total === 6 && led.trial === 2 && led.paying === 1 && led.lapsed === 1 && led.free === 1 && led.unknown === 1 && led.fromAds === 2,
+  JSON.stringify(led));
+check("an empty span counts zero of everything, not NaN",
+  Object.values(signupLedgerSummary([])).every((v) => v === 0));
 
 console.log(bad ? `\n${bad} failing` : "\nall green");
 process.exit(bad ? 1 : 0);

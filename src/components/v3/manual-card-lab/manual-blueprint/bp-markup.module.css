@@ -73,7 +73,18 @@
 
 :global(.jf-blueprint) .badgeRow {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
+  gap: 4px 10px;
+}
+
+/* Beside the badge on an estimator's proposal: why there is no margin. */
+:global(.jf-blueprint) .badgeNote {
+  font-family: var(--font);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
 }
 
 /* The resting state is IDLE — neutral, no status claim. An empty

@@ -136,6 +136,27 @@ export function concreteBagsPerPost(heightFt: number, postWidthIn: number, frost
   return (Math.max(0, holeFt3 - postFt3) / 0.45) * 1.1;
 }
 
+/** A post system replaces the stock only on a wood fence, and 6×6 only where the stock is thinner. */
+export function postUpgradeApplies(t: FenceType, up: PostSystem | null | undefined): up is PostSystem {
+  return !!up && t.category === "wood" && !(up === "6x6" && t.spec.postWidthIn >= 5.5);
+}
+
+/**
+ * The post the fence actually stands on: the type's own stock, or the post
+ * system that REPLACES it. The takeoff used to list the 4×4 wood posts and
+ * then "Post upgrade — galvanized steel (every post)" under them — a crew
+ * reads that as buying both — and the scope said "4×4 pressure-treated pine
+ * post" a line above "Galvanized steel posts throughout".
+ */
+export function postStock(t: FenceType, up: PostSystem | null | undefined): string {
+  if (!postUpgradeApplies(t, up)) return t.spec.postMaterial;
+  if (up === "steel") return "galvanized steel post";
+  if (up === "black-steel") return "3×3 black powder-coated steel post with brackets";
+  if (up === "6x6") return "6×6 pressure-treated post";
+  if (up === "cedar-post-on-pipe") return "clear cedar post sleeved over 2⅜″ galvanized pipe";
+  return `${t.spec.postMaterial.replace(/\s*\(.*\)$/, "")} sleeved over 2⅜″ galvanized pipe`;
+}
+
 /** Gate posts and openings: every opening takes two heavy posts and its width out of the fabric. */
 export function openingTotals(openings: readonly FenceOpeningInput[]): { count: number; widthFt: number; posts: number } {
   const real = openings.filter((o) => Number.isFinite(o.widthFt) && o.widthFt > 0);
@@ -188,11 +209,16 @@ export function computeFenceTakeoff(input: FenceLayoutInput): FenceTakeoff {
   // stays on cut goods (pickets, rails, fabric, wire), where offcuts are real.
   const burial = burialFt(heightFt, frostIn);
   const basePost = roundPost(heightFt + burial);
-  add("post-line", `Line posts · ${t.spec.postMaterial} · ${basePost}' (${spacingFt}' o.c.)`, linePosts, "ea");
-  add("post-corner", `Corner posts · ${basePost}'`, corners, "ea");
-  add("post-end", `End posts · ${basePost}'`, ends, "ea");
+  // An upgraded post system is named on every post row — it replaces the
+  // stock, it is not bought beside it.
+  const upgraded = postUpgradeApplies(t, input.postUpgrade);
+  const stock = postStock(t, input.postUpgrade);
+  const named = upgraded ? ` · ${stock}` : "";
+  add("post-line", `Line posts · ${stock} · ${basePost}' (${spacingFt}' o.c.)`, linePosts, "ea");
+  add("post-corner", `Corner posts${named} · ${basePost}'`, corners, "ea");
+  add("post-end", `End posts${named} · ${basePost}'`, ends, "ea");
   const steelGate = !!input.steelGatePosts && t.category === "wood" && input.postUpgrade !== "steel" && input.postUpgrade !== "black-steel";
-  add("post-gate", steelGate ? `Gate posts · 4×4 black steel · ${basePost}'` : `Gate posts · heavy-set · ${basePost}'`, gatePosts, "ea");
+  add("post-gate", steelGate ? `Gate posts · 4×4 black steel · ${basePost}'` : `Gate posts · heavy-set${named} · ${basePost}'`, gatePosts, "ea");
   if (t.spec.setInConcrete) {
     const bagsLine = concreteBagsPerPost(heightFt, t.spec.postWidthIn, frostIn);
     const bagsTerm = concreteBagsPerPost(heightFt, t.spec.terminalWidthIn, frostIn);
@@ -268,19 +294,9 @@ export function computeFenceTakeoff(input: FenceLayoutInput): FenceTakeoff {
 
   const stepped = Math.max(0, Math.round(input.steppedSections ?? 0));
   const stepPost = roundPost(heightFt + burial + 1);
-  if (stepped > 0) add("step-posts", `Extended posts for stepped sections · ${stepPost}' (slope)`, stepped, "ea");
-  const upgradeApplies = !!input.postUpgrade && t.category === "wood" && !(input.postUpgrade === "6x6" && t.spec.postWidthIn >= 5.5);
-  if (upgradeApplies) {
-    const up = input.postUpgrade as PostSystem;
-    const label =
-      up === "steel" ? "Post upgrade — galvanized steel (every post)"
-      : up === "6x6" ? "Post upgrade — 6×6 pressure-treated (every post)"
-      : up === "post-on-pipe" ? "Post upgrade — post-on-pipe, pressure-treated post over steel pipe (every post)"
-      : up === "cedar-post-on-pipe" ? "Post upgrade — clear cedar post over steel pipe (every post)"
-      : "Post upgrade — 3×3 black steel posts with brackets (every post)";
-    add("post-upgrade", label, totalPosts, "ea");
-    if (up === "post-on-pipe" || up === "cedar-post-on-pipe") add("post-pipe", `Galvanized pipe · 2⅜″ × ${basePost}' (post-on-pipe)`, totalPosts, "ea");
-  }
+  if (stepped > 0) add("step-posts", `Extended posts for stepped sections${named} · ${stepPost}' (slope)`, stepped, "ea");
+  // The pipe a post-on-pipe system sleeves over is its own stock line.
+  if (upgraded && (input.postUpgrade === "post-on-pipe" || input.postUpgrade === "cedar-post-on-pipe")) add("post-pipe", `Galvanized pipe · 2⅜″ × ${basePost}' (post-on-pipe)`, totalPosts, "ea");
   // Caps are per-system hardware, not a generic line: chain-link line posts
   // take loop caps that the top rail threads through while their terminals
   // take solid domes, and split rail is capped with nothing.

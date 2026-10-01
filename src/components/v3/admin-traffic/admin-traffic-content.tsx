@@ -9,8 +9,9 @@ import { Sheet, useMdl } from "@/components/v3/admin-influencers/admin-ui";
 import { TrafficChart } from "./traffic-chart";
 import { TrafficDatePicker } from "./traffic-date-picker";
 import { LivePanel } from "./live-panel";
+import { SignupLedgerPanel } from "./signup-ledger";
 import { AdLinks } from "./ad-links";
-import type { LiveReport } from "@/lib/traffic-live";
+import type { LiveReport, SignupLedger } from "@/lib/traffic-live";
 import s from "./traffic.module.css";
 
 const n = (v: number | null | undefined) => v == null ? "--" : v.toLocaleString("en-US");
@@ -66,7 +67,7 @@ function exportReport(report: TrafficReport) {
 const signupDimensions = { landingIndustry: "Landing trade", signupVariant: "Landing variant", utmSource: "utm_source", utmMedium: "utm_medium", utmCampaign: "utm_campaign", utmContent: "utm_content" } as const;
 type SignupDimension = keyof typeof signupDimensions;
 
-export function AdminTrafficContent({ data, signups: initialSignups = null, live = null }: { data: TrafficReport; signups?: SignupAttribution | null; live?: LiveReport | null }) {
+export function AdminTrafficContent({ data, signups: initialSignups = null, live = null, ledger = null }: { data: TrafficReport; signups?: SignupAttribution | null; live?: LiveReport | null; ledger?: SignupLedger | null }) {
   const [report, setReport] = useState(data);
   const [signups, setSignups] = useState(initialSignups);
   const [signupDimension, setSignupDimension] = useState<SignupDimension>("landingIndustry");
@@ -149,6 +150,8 @@ export function AdminTrafficContent({ data, signups: initialSignups = null, live
 
     {/* Who is on the site this minute, where from, how far they got (2026-09-28). */}
     {live && <LivePanel initial={live} timezone={filters.timezone}/>}
+    {/* Every signup, kept — the live view above only holds half an hour. */}
+    {ledger && <SignupLedgerPanel initial={ledger} timezone={filters.timezone}/>}
     {/* The tagged link for every ad and post, so the cards above tell them apart (2026-09-29). */}
     <AdLinks/>
 

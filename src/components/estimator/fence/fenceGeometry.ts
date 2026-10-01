@@ -81,6 +81,10 @@ export interface FenceLayoutOptions {
   groundAt?: (x: number, y: number) => number;
   /** The priced slope class of the segment points[i] → points[i + 1]. */
   segClass?: (segIndex: number) => BayClass | null | undefined;
+  /** The priced step count of a stepped segment (lib/fence/slope segmentSteps).
+   *  Given, the segment is drawn in exactly that many equal steps; absent, each
+   *  bay is split by the ground under it. */
+  segSteps?: (segIndex: number) => number | null | undefined;
   /** Where a run ends ON a house wall: the post there becomes a wall mount. */
   wallMounts?: PathPoint[];
   /** The parts the fence is built from; the old privacy run without it. */
@@ -381,7 +385,13 @@ export function computeFenceLayout(
     const step = len / bayN;
     let stations: number[] = [];
     for (let k = 0; k <= bayN; k++) stations.push(k === bayN ? len : step * k);
-    if (stepped && groundAt) {
+    const priced = stepped ? opts.segSteps?.(i) : null;
+    if (stepped && groundAt && priced && priced >= 1) {
+      // The ticket's count, in equal steps: what the client is charged for is what stands.
+      const n = Math.min(bayN * 12, Math.round(priced));
+      stations = [];
+      for (let k = 0; k <= n; k++) stations.push(k === n ? len : (len * k) / n);
+    } else if (stepped && groundAt) {
       const refined: number[] = [stations[0]];
       for (let k = 1; k < stations.length; k++) {
         const s0 = stations[k - 1];
