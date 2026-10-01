@@ -3,7 +3,7 @@ import * as React from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { PostHog } from "posthog-js";
 import { trafficReady } from "@/lib/traffic-client";
-import { onConsent, readConsent } from "@/lib/consent";
+import { effectiveConsent, onConsent, readConsent } from "@/lib/consent";
 import { TRAFFIC_EXPERIMENTS_ACTIVE } from "@/lib/traffic-experiments";
 
 const KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
@@ -42,6 +42,8 @@ function loadPostHog(): Promise<PostHog | null> {
         session_recording: { maskAllInputs: true, maskTextSelector: "[data-ph-mask]" },
         before_send: (event) => {
           if (!event || internal(window.location.pathname)) return null;
+          // Opt-in countries with no choice yet send nothing (lib/consent).
+          if (!effectiveConsent().analytics) return null;
           scrubUrls(event.properties);
           return event;
         },
@@ -128,7 +130,8 @@ export function PostHogCapture() {
 
   // The cookie banner's analytics choice (lib/consent): "essential only"
   // opts the browser out of capture and replay; a later "accept" opts back
-  // in. No decision yet keeps the pre-banner behaviour (first-party capture).
+  // in. No decision yet follows the country: capture in the notice model,
+  // nothing in the opt-in one (before_send drops it until a choice).
   React.useEffect(() => {
     if (!KEY || !loaded || !ph) return;
     const posthog = ph;
@@ -146,7 +149,7 @@ export function PostHogCapture() {
     if (!KEY || !pathname || !loaded || !ph) return;
     const posthog = ph;
     if (internal(pathname)) { lastUrl.current = ""; disarmRecording(); posthog.stopSessionRecording(); return; }
-    if (readConsent()?.analytics === false) { disarmRecording(); posthog.stopSessionRecording(); return; }
+    if (!effectiveConsent().analytics) { disarmRecording(); posthog.stopSessionRecording(); return; }
     if (recordable(pathname)) armRecording();
     else { disarmRecording(); posthog.stopSessionRecording(); }
     posthog.register({ jf_hostname: window.location.hostname,

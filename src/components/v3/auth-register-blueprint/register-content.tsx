@@ -44,7 +44,7 @@ import type { GooglePrefill, SetupPrefill } from "@/app/(auth)/auth/register/reg
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
 import type { UtmParams } from "@/components/v3/landing-e/landing-variants";
 import { GoogleOneTap } from "@/components/auth/google-one-tap";
-import { readConsent } from "@/lib/consent";
+import { effectiveConsent } from "@/lib/consent";
 import { metaTrack, newEventId, readMetaCookies } from "@/lib/metaPixel";
 import { RegisterSprite } from "./register-sprite";
 import { ReferralBanner, type RegisterAttribution } from "./referral-banner";
@@ -915,7 +915,7 @@ export function RegisterContent({
         utm: utm ?? undefined,
         signupVariant: "e",
         meta: {
-          consent: readConsent()?.marketing === true,
+          consent: effectiveConsent().marketing,
           registrationEventId: metaIds.current.registration,
           checkoutEventId: metaIds.current.checkout,
           ...readMetaCookies(),

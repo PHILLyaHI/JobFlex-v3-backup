@@ -5,15 +5,17 @@
    Stored as a first-party cookie so the server can read it too (the
    Conversions API sends fbp/fbc/IP/UA only with marketing consent).
 
-   TWO MODELS BY REGION (2026-09-10), decided from Vercel's country header
-   through /api/consent/region:
-     notice  — US and Canada: both categories on by default, a strip at the
-               bottom says so ("Got it" / "Cookie settings"), and the footer
-               carries "Do not sell or share my personal information", which
-               turns marketing off. The record is written at first paint with
-               `implied: true`; "Got it" only sets `ack`.
-     optin   — everywhere else and an unknown country: nothing optional runs
-               until the visitor chooses in the banner.
+   TWO MODELS BY COUNTRY (owner, 2026-09-30). The root layout reads Vercel's
+   x-vercel-ip-country on the server and writes the model on <html
+   data-consent-mode>; no header (localhost) counts as the US.
+     notice  — everywhere outside CONSENT_OPTIN_COUNTRIES: no jf_consent
+               record means analytics and marketing are on, the pixel and
+               PostHog load at once, and no banner is shown. The footer's
+               "Do not sell or share" turns marketing off; "Cookie settings"
+               turns things back on.
+     optin   — CONSENT_OPTIN_COUNTRIES: the banner is shown, and nothing
+               optional runs until the visitor chooses.
+   An explicit jf_consent record — a yes or a no — always beats the country.
 
    Client-safe: nothing touches `document` until a function is called. */
 
@@ -39,10 +41,40 @@ export interface Consent {
 
 export type ConsentMode = "notice" | "optin";
 
-/** US and Canada get the notice model; everyone else, and unknown, opt in. */
+/* Where the visitor must opt in before any optional cookie: the EU's 27, the
+   rest of the EEA (Iceland, Liechtenstein, Norway), the United Kingdom and
+   Switzerland — ISO 3166-1 alpha-2, as Vercel's x-vercel-ip-country sends
+   them (Greece is GR). Everyone else gets the notice model. */
+export const CONSENT_OPTIN_COUNTRIES: ReadonlySet<string> = new Set([
+  // European Union
+  "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE",
+  "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+  // EEA outside the EU
+  "IS", "LI", "NO",
+  // United Kingdom, Switzerland
+  "GB", "CH",
+]);
+
+/** Opt-in for CONSENT_OPTIN_COUNTRIES; notice everywhere else. No country
+ *  (no header — localhost) is treated as the US. */
 export function consentModeFor(country: string | null | undefined): ConsentMode {
-  const c = (country ?? "").toUpperCase();
-  return c === "US" || c === "CA" ? "notice" : "optin";
+  const c = (country ?? "").trim().toUpperCase();
+  return CONSENT_OPTIN_COUNTRIES.has(c) ? "optin" : "notice";
+}
+
+/** The model the root layout chose for this visit, off <html data-consent-mode>. */
+export function pageConsentMode(): ConsentMode {
+  if (typeof document === "undefined") return "notice";
+  return document.documentElement.dataset.consentMode === "optin" ? "optin" : "notice";
+}
+
+/** What the trackers may do now: the visitor's own record when there is one,
+ *  else the country's default — on for notice, off for opt-in. */
+export function effectiveConsent(): { analytics: boolean; marketing: boolean; explicit: boolean } {
+  const c = readConsent();
+  if (c) return { analytics: c.analytics, marketing: c.marketing, explicit: true };
+  const on = pageConsentMode() === "notice";
+  return { analytics: on, marketing: on, explicit: false };
 }
 
 export function parseConsentCookie(value: string | undefined | null): Consent | null {
@@ -104,8 +136,7 @@ export function onConsent(cb: (c: Consent) => void): () => void {
 
 /** "Do not sell or share my personal information": marketing off, the rest kept. */
 export function withdrawMarketing(): Consent {
-  const current = readConsent();
-  return writeConsent({ analytics: current?.analytics ?? true, marketing: false, ack: true });
+  return writeConsent({ analytics: effectiveConsent().analytics, marketing: false, ack: true });
 }
 
 export function openConsentManager(): void {

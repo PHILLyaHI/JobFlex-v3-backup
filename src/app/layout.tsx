@@ -1,14 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
+import { headers } from "next/headers";
 import localFont from "next/font/local";
 import "./globals.css";
 import { ToastHostLazy } from "@/components/ui/toast-host-lazy";
 import { AttributionCapture } from "@/components/attribution-capture";
 import { PostHogCapture } from "@/components/providers/posthog-capture";
 import { MetaPixel } from "@/components/providers/meta-pixel";
-// CookieBanner hidden for now (owner, 2026-09-20) — component untouched,
-// just not mounted. Restore: re-add the import and <CookieBanner /> below.
-// import { CookieBanner } from "@/components/consent/cookie-banner";
+import { CookieBanner } from "@/components/consent/cookie-banner";
+import { consentModeFor } from "@/lib/consent";
 
 /* Bundle the official variable fonts so local and production builds never
    depend on a Google Fonts request. Keep the complete weight ranges and
@@ -55,9 +55,15 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // THE CONSENT MODEL BY COUNTRY (owner, 2026-09-30; lib/consent). Read from
+  // Vercel's geolocation header here, on the server, so the first paint
+  // already knows it; no header (localhost) counts as the US. The trackers
+  // and the banner read it off <html data-consent-mode>. Reading a request
+  // header renders every route per request.
+  const consentMode = consentModeFor((await headers()).get("x-vercel-ip-country"));
   return (
-    <html lang="en" className={`${inter.variable} ${jbMono.variable}`}>
+    <html lang="en" className={`${inter.variable} ${jbMono.variable}`} data-consent-mode={consentMode}>
       {/* suppressHydrationWarning: browser extensions (e.g. Grammarly) inject
           data-gr-* attributes on <body> before React hydrates — benign mismatch. */}
       {/* No `antialiased`: default subpixel rendering keeps text crisper
@@ -75,12 +81,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Suspense fallback={null}>
           <PostHogCapture />
         </Suspense>
-        {/* Meta Pixel: loads only after marketing consent and only with
-            NEXT_PUBLIC_META_PIXEL_ID; PageView on the landing and register
-            pages with an eventID the Conversions API deduplicates against. */}
+        {/* Meta Pixel: only with NEXT_PUBLIC_META_PIXEL_ID, and only while
+            marketing is allowed (lib/consent: the record, else the country);
+            the standard PageView on the landing, /pricing and register. */}
         <Suspense fallback={null}>
           <MetaPixel />
         </Suspense>
+        {/* Opens by itself only in the opt-in countries while no choice is
+            recorded; the footer's "Cookie settings" opens it for everyone. */}
+        <CookieBanner />
         <ToastHostLazy />
       </body>
     </html>

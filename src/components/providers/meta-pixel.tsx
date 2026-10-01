@@ -2,10 +2,11 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { onConsent, readConsent } from "@/lib/consent";
+import { effectiveConsent, onConsent } from "@/lib/consent";
 import { isMetaPixelConfigured, loadMetaPixel, metaPageView, unloadMetaPixel } from "@/lib/metaPixel";
 
-/* Loads the Meta Pixel after marketing consent and sends the standard
+/* Loads the Meta Pixel while marketing is allowed — the visitor's record, else
+   the country's default (lib/consent) — and sends the standard
    PageView on the pages that matter for ads — the landing (/, any
    ?industry=), /pricing and the register page. Renders nothing; with no
    NEXT_PUBLIC_META_PIXEL_ID the component does nothing. */
@@ -26,7 +27,7 @@ export function MetaPixel() {
         lastViewed.current = "";
       }
     };
-    apply(readConsent()?.marketing === true);
+    apply(effectiveConsent().marketing);
     return onConsent((c) => {
       apply(c.marketing);
       // Consent given on this very page: count the view it was given on.
@@ -45,7 +46,7 @@ export function MetaPixel() {
   // Route → PageView (only when the pixel is loaded, i.e. consent exists).
   useEffect(() => {
     if (!isMetaPixelConfigured() || !pathname || !PAGEVIEW_PATHS.has(pathname)) return;
-    if (readConsent()?.marketing !== true) return;
+    if (!effectiveConsent().marketing) return;
     view(pathname, searchParams?.get("industry"));
   }, [pathname, searchParams]);
 

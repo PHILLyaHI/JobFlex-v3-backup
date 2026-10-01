@@ -2,7 +2,7 @@
 
 import type { PostHog } from "posthog-js";
 import { TRAFFIC_EVENTS } from "./traffic-contract";
-import { readConsent } from "./consent";
+import { effectiveConsent } from "./consent";
 
 /* posthog-js is NOT imported here (landing-e pass C, 2026-09-11): it is a
    259 KB script, and a static import from this module put it in every page
@@ -143,7 +143,7 @@ const reported = new WeakSet<object>();
 export function trackException(error: Error & { digest?: string }, boundary: "route" | "global") {
   if (!KEY || typeof window === "undefined" || reported.has(error)) return;
   // The same choice the capture provider applies; a queued event never outruns it.
-  if (readConsent()?.analytics === false) return;
+  if (!effectiveConsent().analytics) return;
   reported.add(error);
   const message = scrubMessage(String(error.message ?? ""));
   // The instance reads the message off the error itself — hand it the scrubbed one.

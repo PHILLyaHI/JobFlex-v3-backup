@@ -1,120 +1,49 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CONSENT_OPEN_EVENT, consentModeFor, readConsent, writeConsent, type Consent, type ConsentMode } from "@/lib/consent";
+import { CONSENT_OPEN_EVENT, effectiveConsent, pageConsentMode, readConsent, writeConsent, type Consent } from "@/lib/consent";
 
-/* The cookie banner (2026-09-09, region-aware 2026-09-10). Essential
-   cookies are always on; Analytics (PostHog) and Marketing (Meta Pixel and
-   Conversions API) are the two choices. Two models (lib/consent):
-     optin  — the card: nothing optional until "Accept all" / "Essential only"
-              / Manage → Save.
-     notice — US and Canada: both on by default, recorded as implied at first
-              paint; a low strip says so with "Got it" and "Cookie settings".
-   "Cookie settings" in the footer reopens the manage view either way.
+/* The cookie banner (2026-09-09; by country 2026-09-30). Essential cookies are
+   always on; Analytics (PostHog) and Marketing (Meta Pixel and Conversions
+   API) are the two choices. Which visitors see it (lib/consent):
+     optin   — EU, EEA, UK and Switzerland: the card opens by itself until
+               "Accept all" / "Essential only" / Manage → Save.
+     notice  — everyone else: never opens by itself (owner, 2026-09-30); the
+               trackers run on the country default.
+   The footer's "Cookie settings" and "Do not sell or share" open the manage
+   view for everyone — that is where a choice is changed or taken back.
    Blueprint tokens only — paper card, 1.5 px ink frame, mono caps. Type
    floors (2026-09-10): mono caps 11 px in ink-muted, text and buttons 14 px. */
 export function CookieBanner() {
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<ConsentMode>("optin");
   const [manage, setManage] = useState(false);
   const [analytics, setAnalytics] = useState(true);
   const [marketing, setMarketing] = useState(false);
 
   useEffect(() => {
-    let alive = true;
     // After paint, not during the effect: the cookie is a client-only fact and
     // the server rendered the banner closed.
     const id = requestAnimationFrame(() => {
-      const current = readConsent();
-      if (current) {
-        setAnalytics(current.analytics);
-        setMarketing(current.marketing);
-        if (current.implied && !current.ack) {
-          setMode("notice");
-          setOpen(true);
-        }
-        return;
-      }
-      // No record yet: which model does this visitor get? One request, once.
-      fetch("/api/consent/region", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null)
-        .then((j: { country?: string | null } | null) => {
-          if (!alive || readConsent()) return;
-          const m = consentModeFor(j?.country ?? null);
-          setMode(m);
-          if (m === "notice") {
-            // The defaults are the record; the strip only tells.
-            writeConsent({ analytics: true, marketing: true, implied: true });
-            setAnalytics(true);
-            setMarketing(true);
-          }
-          setOpen(true);
-        });
+      const c = effectiveConsent();
+      setAnalytics(c.analytics);
+      setMarketing(c.marketing);
+      if (pageConsentMode() === "optin" && !readConsent()) setOpen(true);
     });
     const reopen = () => {
-      const c = readConsent();
-      if (c) {
-        setAnalytics(c.analytics);
-        setMarketing(c.marketing);
-      }
+      const c = effectiveConsent();
+      setAnalytics(c.analytics);
+      setMarketing(c.marketing);
       setManage(true);
       setOpen(true);
     };
     window.addEventListener(CONSENT_OPEN_EVENT, reopen);
     return () => {
-      alive = false;
       cancelAnimationFrame(id);
       window.removeEventListener(CONSENT_OPEN_EVENT, reopen);
     };
   }, []);
 
   if (!open) return null;
-
-  // ── the notice strip (US / CA), until "Got it" or "Cookie settings" ──
-  if (mode === "notice" && !manage) {
-    return (
-      <div
-        role="region"
-        aria-label="Cookie notice"
-        className="fixed inset-x-0 bottom-0 z-40 border-t-[1.5px] border-[color:var(--ink)] bg-[color:var(--paper-deep)] px-4 py-2.5 text-[color:var(--ink)] sm:px-6"
-        data-cookie-notice
-      >
-        {/* One line on a desk; on a phone the text, then the two buttons under
-            it, and the long footer clause left out — a strip, not a card. */}
-        <div className="mx-auto flex max-w-[86rem] flex-col gap-y-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-x-6">
-          <p className="min-w-0 flex-1 text-[14px] leading-[1.45] text-[color:var(--ink-soft)]">
-            <span className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[color:var(--ink-muted)]">Cookies · </span>
-            We use analytics (PostHog) and marketing cookies (the Meta Pixel) to measure our pages and ads. Turn them off any time in
-            Cookie settings<span className="hidden sm:inline">, or use &ldquo;Do not sell or share my personal information&rdquo; in the footer</span>.{" "}
-            <a href="/privacy" className="underline underline-offset-2">Privacy policy</a>.
-          </p>
-          <div className="flex shrink-0 items-center justify-end gap-2">
-            <button
-              type="button"
-              className="h-8 px-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[color:var(--ink-muted)] underline-offset-2 hover:underline"
-              onClick={() => setManage(true)}
-              data-consent="manage"
-            >
-              Cookie settings
-            </button>
-            <button
-              type="button"
-              className="h-8 rounded-[var(--radius)] bg-[color:var(--ink)] px-3.5 text-[14px] font-semibold text-[color:var(--paper-deep)]"
-              onClick={() => {
-                const c = readConsent();
-                writeConsent({ analytics: c?.analytics ?? true, marketing: c?.marketing ?? true, implied: true, ack: true });
-                setOpen(false);
-              }}
-              data-consent="got-it"
-            >
-              Got it
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   const decide = (choice: { analytics: boolean; marketing: boolean }): Consent => {
     const c = writeConsent({ ...choice, ack: true });
