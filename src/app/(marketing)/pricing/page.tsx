@@ -8,6 +8,7 @@ import type { Metadata } from "next";
 import { getPlanCatalog } from "@/lib/planCatalogServer";
 import { getCustomPlanTrialDays } from "@/lib/customPlanConfig";
 import { PricingPage } from "@/components/v3/pricing-d/pricing-page";
+import { trialRequiresCard } from "@/lib/trialPolicy";
 
 // ISR backstop — instant propagation comes from revalidatePlanSurfaces() firing
 // on every admin plan write; this window only covers out-of-band DB edits.
@@ -24,5 +25,5 @@ export default async function Page() {
     getPlanCatalog(),
     getCustomPlanTrialDays(),
   ]);
-  return <PricingPage plans={plans} customTrialDays={customTrialDays} />;
+  return <PricingPage plans={plans} customTrialDays={customTrialDays} requiresCard={trialRequiresCard()} />;
 }

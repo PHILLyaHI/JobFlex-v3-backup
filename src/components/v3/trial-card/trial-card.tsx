@@ -12,6 +12,7 @@ import * as React from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import type { TrialView } from "@/lib/cardlessTrial";
+import { metaTrack, newEventId } from "@/lib/metaPixel";
 import s from "./trial-card.module.css";
 
 const DATE = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
@@ -36,9 +37,17 @@ function useAddCard() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/billing/trial-card", { method: "POST" });
-      const body = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+      // Meta InitiateCheckout as the card form opens: the browser's copy here,
+      // the server's from the route, one event id between them.
+      const eventId = newEventId();
+      const res = await fetch("/api/billing/trial-card", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { url?: string; error?: string; purpose?: string };
       if (res.ok && body.url) {
+        metaTrack("InitiateCheckout", { content_category: body.purpose ?? "trial-card" }, eventId);
         leaving.current = true;
         window.location.href = body.url;
         return;

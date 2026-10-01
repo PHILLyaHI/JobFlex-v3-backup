@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalContact, LegalPage } from "@/components/legal/legal-page";
 import { LEGAL_OPERATOR_NAME, LEGAL_UPDATED } from "@/lib/legal";
+import { trialRequiresCard } from "@/lib/trialPolicy";
 
 export const metadata: Metadata = {
   title: "JobFlex · Terms of service",
@@ -10,6 +11,9 @@ export const metadata: Metadata = {
 };
 
 export default function TermsPage() {
+  // The trial sentence follows TRIAL_REQUIRES_CARD (lib/trialPolicy): the
+  // card-less trial asks for no payment method, so the terms do not say it does.
+  const requiresCard = trialRequiresCard();
   return (
     <LegalPage title="Terms of service" number="02" summary="The agreement for your workspace, subscriptions, business documents, and connected services." updated={LEGAL_UPDATED.terms}>
       <p>
@@ -31,8 +35,10 @@ export default function TermsPage() {
       <p>
         Your plan and checkout specify pricing, billing intervals, features, limits, applicable taxes,
         and any trial. An authorized recurring subscription renews at the disclosed interval until
-        canceled. When a 14-day free trial is offered with a payment method, the first charge occurs
-        after the trial unless canceled beforehand. Review the specific offer at checkout.
+        canceled.{" "}
+        {requiresCard
+          ? "When a 7-day free trial is offered with a payment method, the first charge occurs after the trial unless canceled beforehand. Review the specific offer at checkout."
+          : "When a 7-day free trial is offered, no payment method is needed to start it. If you add one, the first charge occurs when the trial ends unless canceled beforehand; if you do not, the trial ends without a charge and the workspace becomes read-only until one is added. Review the specific offer when you sign up."}
       </p>
       <p>
         Cancel through Subscription settings or contact <LegalContact /> for help. Cancellation normally

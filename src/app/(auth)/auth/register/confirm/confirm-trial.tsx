@@ -35,6 +35,10 @@ export function ConfirmTrial() {
         if (res.registrationEventId) {
           metaTrack("CompleteRegistration", { status: "true" }, res.registrationEventId);
         }
+        // StartTrial with the server's id, `<subscription>:trial`, so the pair is one event.
+        if (res.subscriptionId) {
+          metaTrack("StartTrial", { value: 0, currency: "USD" }, `${res.subscriptionId}:trial`);
+        }
         const auth = res.ticket ? await signIn("signup-ticket", { ticket: res.ticket, redirect: false }) : null;
         const signedIn = Boolean(auth && !auth.error);
         setView({ kind: "done", email: res.email, signedIn });

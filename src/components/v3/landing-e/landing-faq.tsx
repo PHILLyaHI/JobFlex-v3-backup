@@ -39,13 +39,22 @@ const DATA_Q: Record<"roofing" | "fencing" | "hvac" | "other", Faq> = {
   },
 };
 
-function questions(variant: LandingVariantKey | undefined): Faq[] {
+/* The card question, by TRIAL_REQUIRES_CARD (lib/trialPolicy). */
+const CARD_Q: Record<"card" | "cardless", Faq> = {
+  card: {
+    q: "Do I need a credit card to start?",
+    a: "Yes, at step 3 of signup, when you pick a plan. The 7 days are free and the first charge comes on day 8. Cancel in one click from Subscription before then and you pay nothing.",
+  },
+  cardless: {
+    q: "Do I need a credit card to start?",
+    a: "No. Confirm your email and the 7-day trial starts with no card on file. Add one before day 8 to keep your plan; without one the workspace turns read-only and nothing is charged.",
+  },
+};
+
+function questions(variant: LandingVariantKey | undefined, requiresCard = true): Faq[] {
   const data = variant === "roofing" || variant === "fencing" || variant === "hvac" ? DATA_Q[variant] : DATA_Q.other;
   return [
-    {
-      q: "Do I need a credit card to start?",
-      a: "Yes, at step 3 of signup, when you pick a plan. The 7 days are free and the first charge comes on day 8. Cancel in one click from Subscription before then and you pay nothing.",
-    },
+    requiresCard ? CARD_Q.card : CARD_Q.cardless,
     {
       q: "How long does it take to learn?",
       a: "Most shops send their first proposal the same day. Type the job, the estimate writes itself, and the calendar and invoices follow from it.",
@@ -66,8 +75,8 @@ function questions(variant: LandingVariantKey | undefined): Faq[] {
   ];
 }
 
-export function LandingFaq({ variant, registerHref = "/auth/register", cta = "Start my free trial" }: { variant?: LandingVariantKey; registerHref?: string; cta?: string }) {
-  const items = questions(variant);
+export function LandingFaq({ variant, registerHref = "/auth/register", cta = "Start my free trial", requiresCard = true }: { variant?: LandingVariantKey; registerHref?: string; cta?: string; requiresCard?: boolean }) {
+  const items = questions(variant, requiresCard);
   /* Opened by a click, a tap, Enter or Space; each card on its own. Hover and
      keyboard focus only SHOW the answer (CSS); this set is what aria-expanded
      reports and what keeps an answer up on a touch screen. */

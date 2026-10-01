@@ -53,6 +53,24 @@ function eventFor(org: OrgRow, ctx: MetaSignupContext, base: Pick<MetaEvent, "ev
   };
 }
 
+/** InitiateCheckout when the owner of a card-less trial opens the card form
+ *  (/api/billing/trial-card) — the browser fires the same id. During the
+ *  trial it is the card that will be charged on day 8; after it, the plan's
+ *  first charge. */
+export async function metaTrialCardCheckout(organizationId: string, eventId: string, purpose: "trial-card" | "trial-restart"): Promise<void> {
+  const org = await db.organization.findUnique({ where: { id: organizationId }, select: ORG_SELECT });
+  const ctx = org ? parseMetaSignup(org.metaSignupJson) : null;
+  if (!org || !ctx) return;
+  const plan = (await db.subscription.findUnique({ where: { organizationId }, select: { plan: true } }).catch(() => null))?.plan;
+  await sendMetaEvent(
+    eventFor(org, ctx, {
+      eventName: "InitiateCheckout",
+      eventId,
+      custom: { content_category: purpose, plan: plan ?? "none" },
+    }),
+  );
+}
+
 /** Stripe's checkout came back for a subscription: StartTrial when it is trialing. */
 export async function metaOnCheckoutCompleted(session: Stripe.Checkout.Session, sub: Stripe.Subscription): Promise<void> {
   if (sub.status !== "trialing") return;

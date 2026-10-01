@@ -392,11 +392,11 @@ export function RegisterContent({
   }, [ret?.token]);
   const initiateSent = React.useRef(false);
   React.useEffect(() => {
-    if (step === 3 && !initiateSent.current && !ret?.sessionId) {
+    if (requiresCard && step === 3 && !initiateSent.current && !ret?.sessionId) {
       initiateSent.current = true;
       metaTrack("InitiateCheckout", { content_category: industry ?? "default" }, metaIds.current.checkout);
     }
-  }, [step, industry, ret?.sessionId]);
+  }, [step, industry, ret?.sessionId, requiresCard]);
   const leadSent = React.useRef(false);
   const registrationSent = React.useRef(false);
   React.useEffect(() => {
@@ -1008,7 +1008,9 @@ export function RegisterContent({
         meta: {
           consent: effectiveConsent().marketing,
           registrationEventId: metaIds.current.registration,
-          checkoutEventId: metaIds.current.checkout,
+          // No checkout on the card-less trial: InitiateCheckout belongs to
+          // adding the card later (/api/billing/trial-card), not to this step.
+          checkoutEventId: requiresCard ? metaIds.current.checkout : undefined,
           ...readMetaCookies(),
           // Meta's click id, carried here from the ad's landing link; the
           // server builds an fbc from it when _fbc is missing (with consent).
@@ -1512,6 +1514,16 @@ export function RegisterContent({
                 speaks for. */}
             <div className="pw-head">
               <h1 className="auth-h1">Pick a plan.</h1>
+              {/* The card-less trial's promise, its own line under the heading
+                  (owner, 2026-10-01) — the stamp the landing carries. */}
+              {requiresCard ? null : (
+                <p className="pw-trial">
+                  <svg className="ic" aria-hidden>
+                    <use href="#i-check" />
+                  </svg>
+                  7-Day Free Trial — No Credit Card Required
+                </p>
+              )}
             </div>
 
             {plansErr ? (
@@ -1869,11 +1881,7 @@ export function RegisterContent({
                 No charge today. <b>{trialDays} days free.</b> Cancel before it ends and you pay
                 nothing.
               </p>
-            ) : (
-              <p className="pw-note">
-                <b>7 days free.</b> No card, nothing charged.
-              </p>
-            )}
+            ) : null}
 
             {/* The testing exit. Small, quiet, cornered — an escape, not an
                 offer. Development builds only: the server refuses the

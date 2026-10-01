@@ -65,6 +65,7 @@ import { GoogleOneTap } from "@/components/auth/google-one-tap";
 import { Nav } from "./nav";
 import { REGISTER } from "./routes";
 import { SmoothWheel } from "./smooth-wheel";
+import { trialRequiresCard } from "@/lib/trialPolicy";
 import "./landing-e.css";
 
 export interface LandingEProps {
@@ -80,6 +81,9 @@ export interface LandingEProps {
 
 export async function LandingE({ variant, explicitVariant = false, utm = {}, fbclid }: LandingEProps) {
   const v = variantContent(variant);
+  // TRIAL_REQUIRES_CARD (lib/trialPolicy): the card-less trial's line under
+  // the hero heading, the plan cards' words and the FAQ's card answer.
+  const requiresCard = trialRequiresCard();
   // Every register link carries the trade, the visit's utm_* and the fbclid.
   const register = signupHref(REGISTER, { industry: variant, utm, fbclid });
   // The price anchor shows the Subscription page's own catalogue (CRO stage
@@ -110,7 +114,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
     <div className="jf-lp min-h-full bg-white">
       <Nav registerHref={register} cta={top} />
       <main>
-        <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} cta={top} fbclid={fbclid} />
+        <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} cta={top} fbclid={fbclid} requiresCard={requiresCard} />
         <Intro />
         <div className="lp-cv lp-cv--showcase"><EstimatorsShowcase ownSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} scenario={smart} registerHref={register} cta={top} /></div>
         {variant === "hvac" && <div className="lp-cv lp-cv--hvac"><HvacServiceSection registerHref={register} cta={top} /></div>}
@@ -128,11 +132,11 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
         <div className="lp-cv lp-cv--integrations"><Integrations registerHref={register} /></div>
         <div className="lp-cv lp-cv--stats"><StatsSection rows={g?.stats} /></div>
         <div className="lp-cv lp-cv--built"><BuiltSection jobs={g?.jobs} phoneJobs={g?.phoneJobs} /></div>
-        <div className="lp-cv lp-cv--pricing"><LandingPricing plans={plans} registerHref={register} cta={low} /></div>
-        <div className="lp-cv lp-cv--faq"><LandingFaq variant={variant} registerHref={register} cta={low} /></div>
-        <CtaFooter registerHref={register} cta={low} />
+        <div className="lp-cv lp-cv--pricing"><LandingPricing plans={plans} registerHref={register} cta={low} requiresCard={requiresCard} /></div>
+        <div className="lp-cv lp-cv--faq"><LandingFaq variant={variant} registerHref={register} cta={low} requiresCard={requiresCard} /></div>
+        <CtaFooter registerHref={register} cta={low} requiresCard={requiresCard} />
       </main>
-      <MobileCta registerHref={register} cta={top} />
+      <MobileCta registerHref={register} cta={top} requiresCard={requiresCard} />
       <ScrollFx />
       {/* Mouse-wheel notches glide, 0.7× the browser's step — on a desk only
           (hover, fine pointer, wider than 768px); phones, tablets and touch

@@ -35,7 +35,16 @@ function Minus() {
   );
 }
 
-export function PricingPlans({ plans, registerHref }: { plans: PlanDTO[]; registerHref: string }) {
+export function PricingPlans({
+  plans,
+  registerHref,
+  requiresCard = true,
+}: {
+  plans: PlanDTO[];
+  registerHref: string;
+  /** TRIAL_REQUIRES_CARD: false — every card starts the same 7-day trial, no card. */
+  requiresCard?: boolean;
+}) {
   const { rows, included } = expandPlanFeatures(plans);
   const heroIndex = Math.max(0, plans.findIndex((p) => p.highlight));
   const railRef = useRef<HTMLDivElement>(null);
@@ -179,7 +188,7 @@ export function PricingPlans({ plans, registerHref }: { plans: PlanDTO[]; regist
                 </button>
               ) : null}
               <a href={registerHref} className="lp-pw-go" data-cta="pricing">
-                {planCtaLabel(p.trialDays)}
+                {requiresCard ? planCtaLabel(p.trialDays) : "Start free trial"}
                 <span className="sr-only"> on {p.name}</span>
               </a>
             </article>

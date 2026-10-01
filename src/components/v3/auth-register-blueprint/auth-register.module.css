@@ -1505,3 +1505,18 @@
   .bp :global(.pw-confirm-h) { font-size: 20px; }
   .bp :global(.pw-confirm-row .pw-go.pw-go) { width: 100%; min-height: 44px; }
 }
+
+/* The card-less trial's promise under "Pick a plan." (2026-10-01): its own
+   line, set as a stamp — ink frame, heavy uppercase, the blueprint tick —
+   the landing's .lp-trial-line on this page's paper. */
+.bp :global(.pw-trial) {
+  display: inline-flex; align-items: center; gap: 9px; width: fit-content; max-width: 100%;
+  margin: 0; padding: 8px 14px; border: 2px solid var(--ink); border-radius: var(--radius);
+  background: var(--sheet, #fff); color: var(--ink);
+  font-size: 15px; font-weight: 800; line-height: 1.25; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.bp :global(.pw-trial .ic) { width: 16px; height: 16px; flex-shrink: 0; color: var(--blueprint); }
+@media (max-width: 768px) {
+  .bp :global(.pw-trial) { font-size: 13px; letter-spacing: 0.04em; padding: 7px 11px; }
+}
+.bp :global(.pw-head:has(.pw-trial)) { flex-direction: column; align-items: flex-start; gap: 12px; }

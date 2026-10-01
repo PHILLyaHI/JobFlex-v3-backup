@@ -552,7 +552,7 @@ export async function requestCardlessTrial(
 export async function confirmCardlessTrial(
   secret: string,
 ): Promise<
-  | { ok: true; email: string; ticket: string | null; registrationEventId: string | null }
+  | { ok: true; email: string; ticket: string | null; registrationEventId: string | null; subscriptionId: string | null }
   | { ok: false; error: string; done?: boolean; email?: string }
 > {
   if (!secret || secret.length > 200) return { ok: false, error: "That link is not valid." };
@@ -570,7 +570,7 @@ const confirmIndexKey = (token: string) => `signup-confirm-of:${token}`;
 async function finishCardlessTrial(
   token: string,
 ): Promise<
-  | { ok: true; email: string; ticket: string | null; registrationEventId: string | null }
+  | { ok: true; email: string; ticket: string | null; registrationEventId: string | null; subscriptionId: string | null }
   | { ok: false; error: string; done?: boolean; email?: string }
 > {
   if (trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account." };
@@ -579,7 +579,7 @@ async function finishCardlessTrial(
     const done = await loadDone(token);
     if (done && done.sessionId === CARDLESS_SESSION) {
       if (Date.now() - done.at <= REPLAY_WINDOW_MS) {
-        return { ok: true, email: done.email, ticket: await mintSigninTicket(done.userId), registrationEventId: null };
+        return { ok: true, email: done.email, ticket: await mintSigninTicket(done.userId), registrationEventId: null, subscriptionId: null };
       }
       return { ok: false, done: true, email: done.email, error: "This signup is already complete. Sign in to open your shop." };
     }
@@ -646,7 +646,7 @@ async function finishCardlessTrial(
   await db.user.update({ where: { id: created.userId }, data: { emailVerified: new Date() } }).catch(() => {});
   await markCardlessTrialUsed(rec.email, created.orgId);
   after(() => nameOrgOnSubscription(sub.id, created.orgId));
-  return { ok: true, email: created.email, ticket: created.ticket, registrationEventId: rec.meta?.registrationEventId ?? null };
+  return { ok: true, email: created.email, ticket: created.ticket, registrationEventId: rec.meta?.registrationEventId ?? null, subscriptionId: sub.id };
 }
 
 /** The done record's "session" for a card-less trial — there is no Checkout. */

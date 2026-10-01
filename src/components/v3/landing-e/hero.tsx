@@ -7,6 +7,7 @@ import { DEFAULT_LANDING, type LandingVariant, type LandingVariantKey, type UtmP
 import { Reveal } from "./reveal";
 import { GoogleSignupButton } from "./google-signup-button";
 import { CtaNote } from "./cta-note";
+import { TrialLine } from "./trial-line";
 import { HeroEntrance } from "./hero-entrance";
 import { HeroExperiment } from "./hero-experiment";
 
@@ -22,7 +23,11 @@ export function Hero({
   registerHref = REGISTER,
   cta,
   fbclid,
+  requiresCard = true,
 }: {
+  /** TRIAL_REQUIRES_CARD (lib/trialPolicy): false puts the card-less trial's
+   *  line under the heading instead of the small note under the buttons. */
+  requiresCard?: boolean;
   variant?: LandingVariant;
   /** The variant's key, for the Google button's cookie and callback. */
   variantKey?: LandingVariantKey;
@@ -80,6 +85,9 @@ export function Hero({
         )}
         </HeroExperiment>
         <div className="lp-enter w-full sm:w-auto" data-entrance="cta">
+          {/* Its own line under the heading (owner, 2026-10-01), before the
+              buttons — inside the buttons' entrance so it arrives with them. */}
+          {requiresCard ? null : <TrialLine tone="dark" className="mt-1" />}
           <div className="mx-auto mt-4 flex w-full max-w-[22rem] flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:items-center sm:justify-center">
             <a href={registerHref} className="lp-btn-dark lp-cta lp-cta--solid" data-cta="hero">
               {cta ?? variant.primaryCta}
@@ -106,7 +114,7 @@ export function Hero({
               Sign up with Google
             </GoogleSignupButton>
           </div>
-          <CtaNote tone="dark" className="mt-3 text-center" />
+          {requiresCard ? <CtaNote tone="dark" className="mt-3 text-center" /> : null}
         </div>
         </HeroEntrance>
       </div>
