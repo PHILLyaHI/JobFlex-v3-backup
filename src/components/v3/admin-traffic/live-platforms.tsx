@@ -13,9 +13,20 @@ import s from "./traffic.module.css";
 
 export function LivePlatforms({ platforms, selected, onSelect }: { platforms: LivePlatform[]; selected: string | null; onSelect: (key: string | null) => void }) {
   const rate = (a: number, b: number) => (b > 0 ? `${Math.round((a / b) * 100)}%` : "–");
+  // A platform with nobody in the window and no signup today has nothing to
+  // say, and five such cards — each three zeros deep — were most of the
+  // screen (2026-10-01). They fold into one line underneath, still nameable,
+  // still pressable the moment they have someone. A selected card always
+  // shows, or pressing it would make it vanish.
+  const busy = platforms.filter((p) => p.visitors > 0 || p.signedUpToday > 0 || p.platform === selected);
+  // When nothing is happening anywhere, keeping one card back just to have a
+  // card leaves a column of zeros on screen; the folded line below says it
+  // in one sentence instead.
+  const shown = busy;
+  const folded = platforms.filter((p) => !shown.includes(p));
   return (
     <div className={s.platforms} role="group" aria-label="Where they come from, by platform">
-      {platforms.map((p) => (
+      {shown.map((p) => (
         <button key={p.platform} type="button" className={s.platform} style={{ "--platform": p.colour } as React.CSSProperties} aria-pressed={selected === p.platform} onClick={() => onSelect(selected === p.platform ? null : p.platform)} data-platform={p.platform} data-ads={p.ads} title={selected === p.platform ? "Show everyone again" : `Keep only ${p.name}`}>
           <span className={s.platformName}><i aria-hidden="true"/>{p.name}{p.ads && <em>ads</em>}</span>
           <strong className={s.platformCount}>{p.visitors}<small>{p.onSite ? ` · ${p.onSite} on now` : ""}</small></strong>
@@ -38,6 +49,17 @@ export function LivePlatforms({ platforms, selected, onSelect }: { platforms: Li
           )}
         </button>
       ))}
+      {folded.length > 0 && (
+        <p className={s.platformsQuiet}>
+          <span>Nothing yet from</span>
+          {folded.map((p) => (
+            <button key={p.platform} type="button" style={{ "--platform": p.colour } as React.CSSProperties} onClick={() => onSelect(p.platform)} title={`Keep only ${p.name}`}>
+              <i aria-hidden="true"/>{p.name}
+            </button>
+          ))}
+          <span>{folded.some((p) => p.ads) ? "— tag those ads with the links below and they will name themselves here." : ""}</span>
+        </p>
+      )}
     </div>
   );
 }

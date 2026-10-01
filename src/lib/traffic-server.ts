@@ -1,6 +1,6 @@
 import type { StageVisitor, StageVisitorsReport, TrafficBreakdown, TrafficFilters, TrafficReport, TrafficTotals } from "./traffic-contract";
 import { buildStageVisitorsQuery, buildTrafficQueries, funnelStages, shiftDate } from "./traffic-query";
-import { buildLiveQuery, buildLiveTotalsQuery, liveEventFromRow, liveTotalsFromRow, shapeLive, type FreshSignup, type LiveEvent, type LiveReport, type LiveTotalsPair } from "./traffic-live";
+import { buildLiveQuery, buildLiveTotalsQuery, liveEventFromRow, liveHeadline, liveTotalsFromRow, minutesIntoDay, shapeLive, type FreshSignup, type LiveEvent, type LiveReport, type LiveTotalsPair } from "./traffic-live";
 
 /** The last half hour of events, one PostHog query, shared by every admin
  *  looking for LIVE_CACHE_MS — the query endpoint's budget is small, and the
@@ -53,7 +53,24 @@ export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDeve
       fetchLiveTotals(opts.timezone || "UTC").catch(() => null),
     ]);
     const totals = pair ? (opts.includeDevelopment ? pair.all : pair.production) : null;
-    return { ...shapeLive(events, signups, Date.now(), opts), totals, status: "ok", fetchedAt };
+    const shaped = shapeLive(events, signups, Date.now(), opts);
+    const dayAgeMinutes = minutesIntoDay(opts.timezone || "UTC");
+    // The busiest platform of the window, for the sentence.
+    const top = [...shaped.platforms].sort((a, b) => b.visitors - a.visitors)[0];
+    const headline = liveHeadline({
+      onSite: shaped.counts.onSite,
+      fromAds: shaped.counts.fromAds,
+      signingUp: shaped.counts.signingUp,
+      windowVisitors: shaped.visitors.length,
+      windowMinutes: shaped.windowMinutes,
+      todayVisitors: totals ? totals.today : null,
+      todaySignups: shaped.today.signups,
+      yesterdaySoFar: totals ? totals.yesterdaySoFar : null,
+      yesterdayTotal: totals ? totals.yesterday : null,
+      dayAgeMinutes,
+      topPlatform: top && top.visitors > 0 ? { name: top.name, visitors: top.visitors } : null,
+    });
+    return { ...shaped, totals, dayAgeMinutes, headline, status: "ok", fetchedAt };
   } catch (err) {
     const msg = err instanceof Error && err.name === "TimeoutError" ? "PostHog took too long. Try again shortly." : err instanceof Error ? err.message : "Live view unavailable.";
     return { ...shapeLive([], signups, Date.now(), opts), status: "error", message: msg, fetchedAt };

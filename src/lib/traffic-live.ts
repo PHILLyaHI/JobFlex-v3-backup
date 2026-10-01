@@ -236,6 +236,13 @@ export interface LiveReport {
   /** Site-wide visitor totals (null when the totals query did not answer —
    *  the live window is still shown). */
   totals: LiveTotals | null;
+  /** How far into the local day it is, in minutes. A count of 0 visitors at
+   *  00:12 is not the same news as 0 at 16:00, and the panel has to say
+   *  which it is rather than print a bare zero. */
+  dayAgeMinutes: number;
+  /** The whole live section in one sentence, written server-side so the
+   *  wording is testable. */
+  headline: string;
   /** The ad platforms first (always), then any other platform with a visitor. */
   platforms: LivePlatform[];
   /** The day's organizations from the database, and how many came from ads. */
@@ -457,6 +464,80 @@ export function visitSummary(v: {
   return join(`Reading — ${v.views} pages so far${v.trail.length > 1 ? `, now on ${last}` : ""}.`, v.active ? "" : "Has since left.", pressed);
 }
 
+/** How far into the local day it is, in minutes. */
+export function minutesIntoDay(timezone: string, now: Date = new Date()): number {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hourCycle: "h23", hour: "2-digit", minute: "2-digit" }).formatToParts(now);
+    const n = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+    const m = n("hour") * 60 + n("minute");
+    return Number.isFinite(m) && m >= 0 && m < 1440 ? m : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** The whole live section in one sentence (2026-10-01).
+ *
+ *  Ten tiles of zeros told the owner nothing and, just after midnight, read
+ *  as a broken page. This says what is actually true: who is here, what the
+ *  day has done so far, and — when the day is minutes old — that the day is
+ *  minutes old, which is the whole reason the number is small. */
+export function liveHeadline(r: {
+  onSite: number;
+  fromAds: number;
+  signingUp: number;
+  windowVisitors: number;
+  windowMinutes: number;
+  todayVisitors: number | null;
+  todaySignups: number;
+  yesterdaySoFar: number | null;
+  yesterdayTotal: number | null;
+  dayAgeMinutes: number;
+  topPlatform: { name: string; visitors: number } | null;
+}): string {
+  const parts: string[] = [];
+
+  // 1. Who is here this minute.
+  if (r.onSite > 0) {
+    const who = `${r.onSite} ${r.onSite === 1 ? "person is" : "people are"} on the site right now`;
+    const ads = r.fromAds > 0 ? `, ${r.fromAds} of them from an ad` : "";
+    parts.push(`${who}${ads}.`);
+    if (r.signingUp > 0) parts.push(`${r.signingUp} ${r.signingUp === 1 ? "is" : "are"} filling in the sign-up form.`);
+  } else if (r.windowVisitors > 0) {
+    parts.push(`Nobody on the site this minute, but ${r.windowVisitors} came through in the last ${r.windowMinutes} minutes.`);
+  } else {
+    parts.push(`Quiet — nobody in the last ${r.windowMinutes} minutes.`);
+  }
+
+  // 2. Which platform is doing the work, when one is.
+  if (r.topPlatform && r.topPlatform.visitors > 0) {
+    parts.push(`${r.topPlatform.name} brought the most of them (${r.topPlatform.visitors}).`);
+  }
+
+  // 3. The day so far — and why it might look empty.
+  const young = r.dayAgeMinutes < 120;
+  if (r.todayVisitors === null) {
+    // No totals this time round; say nothing rather than guess.
+  } else if (young) {
+    const age = r.dayAgeMinutes < 60 ? `${Math.max(1, r.dayAgeMinutes)} minutes` : `${Math.floor(r.dayAgeMinutes / 60)} hour${r.dayAgeMinutes >= 120 ? "s" : ""}`;
+    const sofar = r.todayVisitors === 0 ? "No visitors yet today" : `${r.todayVisitors} ${r.todayVisitors === 1 ? "visitor" : "visitors"} so far today`;
+    const ref = r.yesterdayTotal && r.yesterdayTotal > 0 ? `; yesterday finished at ${r.yesterdayTotal}` : "";
+    parts.push(`${sofar} — the day is only ${age} old${ref}.`);
+  } else if (r.yesterdaySoFar && r.yesterdaySoFar > 0) {
+    const delta = Math.round(((r.todayVisitors - r.yesterdaySoFar) / r.yesterdaySoFar) * 100);
+    const verdict = delta > 4 ? `${delta}% ahead of` : delta < -4 ? `${Math.abs(delta)}% behind` : "level with";
+    parts.push(`${r.todayVisitors} visitors today, ${verdict} this time yesterday.`);
+  } else {
+    parts.push(`${r.todayVisitors} ${r.todayVisitors === 1 ? "visitor" : "visitors"} today.`);
+  }
+
+  // 4. Did any of it turn into an account.
+  if (r.todaySignups > 0) parts.push(`${r.todaySignups} signed up today.`);
+  else if (!young && r.todayVisitors) parts.push("No signups yet today.");
+
+  return parts.join(" ");
+}
+
 /** The visitors of the window, newest activity first, signups on top. */
 export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Date.now(), opts: { includeDevelopment?: boolean } = {}): Omit<LiveReport, "status" | "message" | "fetchedAt"> {
   const windowStart = now - LIVE_WINDOW_MINUTES * 60_000;
@@ -613,6 +694,8 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
     visitors,
     counts,
     totals: null,
+    dayAgeMinutes: 0,
+    headline: "",
     platforms: platformCards(visitors, signups),
     today: { signups: signups.length, fromAds: signups.filter((s) => signupSource(s).fromAd).length },
     otherSignups,

@@ -3,7 +3,7 @@
 // signups named after the organization the database made. Static imports
 // only (tsx has no top-level await).
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/traffic-live.check.ts
-import { AD_PLATFORM_KEYS, buildLiveQuery, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
+import { AD_PLATFORM_KEYS, buildLiveQuery, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, liveHeadline, minutesIntoDay, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
 
 let bad = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -219,6 +219,46 @@ check("a half-filled sign-up form names the step it stopped on",
   /step 2/i.test(visitSummary({ stage: "registering", lockedOut: false, views: 2, trail: [], clicks: [], active: false, signup: null, step: 2, fromAd: false, source: "Direct" })));
 check("a signup names the account the database made",
   /Acme Roofing/.test(visitSummary({ stage: "signed-up", lockedOut: false, views: 4, trail: [], clicks: [], active: true, signup: { orgName: "Acme Roofing" }, step: 3, fromAd: false, source: "Direct" })));
+
+// ── the section in one sentence (2026-10-01)
+const base = { onSite: 0, fromAds: 0, signingUp: 0, windowVisitors: 0, windowMinutes: 30,
+  todayVisitors: 0, todaySignups: 0, yesterdaySoFar: 0, yesterdayTotal: 0, dayAgeMinutes: 600,
+  topPlatform: null as { name: string; visitors: number } | null };
+
+check("the hour of the day is read in the admin's zone",
+  minutesIntoDay("UTC", new Date("2026-10-01T00:12:00Z")) === 12
+  && minutesIntoDay("UTC", new Date("2026-10-01T16:30:00Z")) === 990
+  && minutesIntoDay("America/Los_Angeles", new Date("2026-10-01T07:00:00Z")) === 0);
+check("an unreadable timezone does not throw, it reads midnight", minutesIntoDay("Not/AZone") === 0);
+
+// The case that made the page look broken: just past midnight, everything 0.
+const midnight = liveHeadline({ ...base, dayAgeMinutes: 12, todayVisitors: 0, yesterdayTotal: 62, yesterdaySoFar: 0 });
+check("just after midnight it says the day is minutes old, not a bare zero",
+  /Quiet/.test(midnight) && /No visitors yet today/.test(midnight) && /12 minutes old/.test(midnight) && /yesterday finished at 62/.test(midnight),
+  midnight);
+check("it never prints a percent against a yesterday that had nobody", !/%/.test(midnight));
+
+const busy = liveHeadline({ ...base, onSite: 4, fromAds: 3, signingUp: 1, windowVisitors: 9,
+  todayVisitors: 120, yesterdaySoFar: 90, yesterdayTotal: 300, todaySignups: 2,
+  topPlatform: { name: "Facebook", visitors: 6 } });
+check("a busy hour names who is here, who sent them, and how the day compares",
+  /4 people are on the site right now/.test(busy) && /3 of them from an ad/.test(busy)
+  && /1 is filling in the sign-up form/.test(busy) && /Facebook brought the most of them \(6\)/.test(busy)
+  && /33% ahead of this time yesterday/.test(busy) && /2 signed up today/.test(busy),
+  busy);
+
+const lull = liveHeadline({ ...base, windowVisitors: 5, todayVisitors: 70, yesterdaySoFar: 70 });
+check("nobody on now but people in the window reads as a lull, and a level day says level",
+  /Nobody on the site this minute, but 5 came through in the last 30 minutes/.test(lull)
+  && /level with this time yesterday/.test(lull) && /No signups yet today/.test(lull),
+  lull);
+
+const behind = liveHeadline({ ...base, windowVisitors: 1, todayVisitors: 50, yesterdaySoFar: 100 });
+check("a day running behind says so", /50% behind this time yesterday/.test(behind), behind);
+check("with no totals it simply says nothing about the day",
+  !/today/i.test(liveHeadline({ ...base, todayVisitors: null, yesterdaySoFar: null, yesterdayTotal: null })));
+check("one person reads as one person",
+  /1 person is on the site right now/.test(liveHeadline({ ...base, onSite: 1, todayVisitors: 5, yesterdaySoFar: 5 })));
 
 console.log(bad ? `\n${bad} failing` : "\nall green");
 process.exit(bad ? 1 : 0);

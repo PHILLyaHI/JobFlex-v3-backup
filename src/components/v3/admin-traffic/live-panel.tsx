@@ -21,6 +21,15 @@ const LIVE_POLL_MS = 15_000;
 const POLL_MS = 45_000;
 const LIVE_MODE_KEY = "jf.traffic.liveMode";
 const fmt = (n: number) => n.toLocaleString("en-US");
+/** The window's stages in travel order; registering absorbs checkout, the
+ *  same fold the map's pins use so a chip and a pin are the same colour. */
+const FUNNEL: Array<[LiveStage, string]> = [
+  ["browsing", "looking around"],
+  ["signing-in", "signing in"],
+  ["registering", "signing up"],
+  ["signed-up", "signed up"],
+  ["member", "members"],
+];
 const STAGE: Record<LiveStage, string> = { browsing: "Looking around", "signing-in": "Signing in", registering: "On the sign-up form", checkout: "At checkout", "signed-up": "Signed up", member: "In the app · member" };
 
 function ago(iso: string, now: number): string {
@@ -95,6 +104,9 @@ export function LivePanel({ initial, timezone }: { initial: LiveReport; timezone
   // the day is still running. Null when yesterday had nobody to divide by.
   const t = report.totals;
   const trend = t && t.yesterdaySoFar > 0 ? Math.round(((t.today - t.yesterdaySoFar) / t.yesterdaySoFar) * 100) : null;
+  // A day two hours old explains a small number better than any comparison.
+  const youngDay = report.dayAgeMinutes < 120;
+  const dayAge = report.dayAgeMinutes < 60 ? `${Math.max(1, report.dayAgeMinutes)} min` : `${Math.floor(report.dayAgeMinutes / 60)} h`;
   const rows = report.visitors.filter((v) => (!adsOnly || v.fromAd || v.stage === "signed-up") && (!platform || v.platform === platform));
   const onMap = rows.filter((v) => span === 30 || v.active);
   const live = report.status === "ok";
@@ -108,29 +120,49 @@ export function LivePanel({ initial, timezone }: { initial: LiveReport; timezone
         <button type="button" className={s.iconButton} aria-label="Refresh live view" onClick={() => void load(includeDev, liveMode)} disabled={pending}><RefreshCw size={16} className={pending ? s.spin : ""}/></button>
       </div>
     </div>
-    {/* The totals (2026-09-30): the live window only holds half an hour, so
-        the counts the owner asks for first sit above it — everyone today,
-        what that was at this hour yesterday, the week, and everyone ever. */}
-    {report.totals && <div className={s.liveTotals}>
+    {/* ONE stat row (2026-10-01). It used to be two — four totals over six
+        live counters — which on a quiet morning was ten zeros in a grid and
+        read as a broken page. Four tiles now, each with the figure that
+        gives it meaning underneath, and a sentence under the lot. */}
+    <div className={s.liveTotals}>
+      <div data-tone="now">
+        <span>On the site now</span>
+        <strong>{fmt(c.onSite)}</strong>
+        <small>{c.fromAds > 0 ? `${fmt(c.fromAds)} from ads` : "none from ads"}{c.signingUp > 0 ? ` · ${fmt(c.signingUp)} signing up` : ""}</small>
+      </div>
       <div data-tone="lead">
         <span>Visitors today</span>
-        <strong>{fmt(report.totals.today)}</strong>
+        <strong>{t ? fmt(t.today) : "—"}</strong>
         <small data-trend={trend === null ? "flat" : trend > 0 ? "up" : trend < 0 ? "down" : "flat"}>
-          {trend === null ? "no one at this hour yesterday to compare" : trend === 0 ? "level with this time yesterday" : `${trend > 0 ? "+" : "−"}${Math.abs(trend)}% vs this time yesterday`}
+          {!t ? "totals unavailable"
+            : youngDay ? `the day is ${dayAge} old`
+            : trend === null ? "nothing at this hour yesterday to compare"
+            : trend === 0 ? "level with this time yesterday"
+            : `${trend > 0 ? "+" : "−"}${Math.abs(trend)}% vs this time yesterday`}
         </small>
       </div>
-      <div><span>This time yesterday</span><strong>{fmt(report.totals.yesterdaySoFar)}</strong><small>{fmt(report.totals.yesterday)} by the end of the day</small></div>
-      <div><span>Last 7 days</span><strong>{fmt(report.totals.last7Days)}</strong><small>people, counted once each</small></div>
-      <div><span>All-time visitors</span><strong>{fmt(report.totals.allTime)}</strong><small>{fmt(report.totals.viewsToday)} page {report.totals.viewsToday === 1 ? "view" : "views"} today</small></div>
-    </div>}
-    <div className={s.liveKpis}>
-      <div data-tone="ink"><span>On the site now</span><strong>{c.onSite}</strong></div>
-      <div data-tone="ad"><span>From ads</span><strong>{c.fromAds}</strong><small>of those on now</small></div>
-      <div data-tone="warm"><span>Signing up</span><strong>{c.signingUp}</strong><small>form or checkout, now</small></div>
-      <div data-tone="ok"><span>Signed up</span><strong>{c.signedUp}</strong><small>last {report.windowMinutes} min</small></div>
-      <div data-tone="mute"><span>Members in the app</span><strong>{c.members}</strong></div>
-      <div data-tone="today"><span>Today</span><strong>{report.today.signups}</strong><small>{report.today.signups === 1 ? "signup" : "signups"} · {report.today.fromAds} from ads</small></div>
+      <div data-tone="ok">
+        <span>Signed up today</span>
+        <strong>{fmt(report.today.signups)}</strong>
+        <small>{report.today.signups > 0 ? `${fmt(report.today.fromAds)} from ads` : t && t.today > 0 ? `${fmt(t.today)} visitors, none yet` : "none yet"}</small>
+      </div>
+      <div data-tone="mute">
+        <span>All-time visitors</span>
+        <strong>{t ? fmt(t.allTime) : "—"}</strong>
+        <small>{t ? `${fmt(t.last7Days)} in the last 7 days · ${fmt(t.yesterday)} yesterday` : "totals unavailable"}</small>
+      </div>
     </div>
+    {/* What all of that actually means, in a sentence. */}
+    {live && report.headline && <p className={s.liveHeadline}>{report.headline}</p>}
+    {/* The window, as one coloured line instead of five tiles — the same
+        colours the map's pins use. */}
+    {live && <div className={s.liveFunnel} aria-label={`The last ${report.windowMinutes} minutes`}>
+      <span className={s.liveFunnelLead}>Last {report.windowMinutes} min · {fmt(report.visitors.length)}</span>
+      {FUNNEL.map(([stage, label]) => {
+        const n = report.visitors.filter((v) => v.stage === stage || (stage === "registering" && v.stage === "checkout")).length;
+        return <span key={stage} className={s.liveFunnelStep} data-stage={stage} data-zero={n === 0}><i aria-hidden="true"/>{label}<b>{fmt(n)}</b></span>;
+      })}
+    </div>}
     {(error || report.message) && <div className={s.notice} role="status"><Info size={16}/><div><strong>{error || report.message}</strong></div></div>}
     {live && <>
       {/* The platforms: a card each, the ad platforms always; pressed, a filter. */}

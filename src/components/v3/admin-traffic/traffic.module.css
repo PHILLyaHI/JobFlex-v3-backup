@@ -378,6 +378,28 @@
 :global(.jf-blueprint) .liveTotals small[data-trend="up"] { color:var(--success-dark); }
 :global(.jf-blueprint) .liveTotals small[data-trend="down"] { color:var(--danger-dark, #9b2c2c); }
 :global(.jf-blueprint) .liveKpis { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); border-bottom:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .liveTotals > div[data-tone="now"] strong { color:var(--ink); }
+:global(.jf-blueprint) .liveTotals > div[data-tone="ok"] strong { color:var(--success-dark); }
+:global(.jf-blueprint) .liveTotals > div[data-tone="mute"] strong { color:var(--muted); }
+/* The sentence under the row: what all those figures actually mean. */
+:global(.jf-blueprint) .liveHeadline { margin:0; padding:13px 24px; border-bottom:1px solid var(--traffic-line); font:500 13.5px/1.6 var(--font); color:var(--ink-soft); }
+/* The window as one coloured line, the map's own stage colours. */
+:global(.jf-blueprint) .liveFunnel { display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px; padding:11px 24px; border-bottom:1px solid var(--traffic-line); background:var(--paper); }
+:global(.jf-blueprint) .liveFunnelLead { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); }
+:global(.jf-blueprint) .liveFunnelStep { display:inline-flex; align-items:center; gap:6px; font:600 11.5px var(--font-mono); color:var(--ink-soft); }
+:global(.jf-blueprint) .liveFunnelStep i { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+:global(.jf-blueprint) .liveFunnelStep b { font:850 14px/1 var(--font); font-variant-numeric:tabular-nums; color:var(--ink); }
+:global(.jf-blueprint) .liveFunnelStep[data-zero="true"] { opacity:.42; }
+:global(.jf-blueprint) .liveFunnelStep[data-stage="browsing"] i { background:var(--map-visitor); }
+:global(.jf-blueprint) .liveFunnelStep[data-stage="signing-in"] i { background:var(--map-signin); }
+:global(.jf-blueprint) .liveFunnelStep[data-stage="registering"] i { background:var(--map-signing); }
+:global(.jf-blueprint) .liveFunnelStep[data-stage="signed-up"] i { background:var(--map-signed); }
+:global(.jf-blueprint) .liveFunnelStep[data-stage="member"] i { background:var(--map-member); }
+/* The platforms with nothing to say, folded into a line. */
+:global(.jf-blueprint) .platformsQuiet { grid-column:1 / -1; display:flex; align-items:center; flex-wrap:wrap; gap:6px 9px; margin:0; font:600 11.5px/1.6 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .platformsQuiet button { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border:1.5px solid var(--hair-soft); background:var(--paper-deep); font:inherit; color:var(--ink-soft); cursor:pointer; }
+:global(.jf-blueprint) .platformsQuiet button:hover { border-color:var(--platform); color:var(--ink); }
+:global(.jf-blueprint) .platformsQuiet button i { width:8px; height:8px; background:var(--platform); flex-shrink:0; }
 :global(.jf-blueprint) .liveKpis > div { display:flex; flex-direction:column; gap:6px; padding:16px 20px; border-right:1px solid var(--traffic-line); min-width:0; }
 :global(.jf-blueprint) .liveKpis > div:last-child { border-right:0; }
 :global(.jf-blueprint) .liveKpis span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); }

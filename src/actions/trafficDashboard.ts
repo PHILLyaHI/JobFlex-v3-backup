@@ -37,8 +37,13 @@ export async function getLiveTraffic(input: Record<string, unknown> = {}): Promi
   const signups = await freshSignups();
   return liveTraffic(signups, {
     includeDevelopment: input.includeDevelopment === true,
-    // "Today" is a local day; the panel sends the timezone it is printing in.
-    timezone: typeof input.timezone === "string" ? input.timezone : "UTC",
+    // "Today" is a LOCAL day, and it has to be the same local day on the
+    // server's first paint as in the client's polls. Reading it through
+    // parseTrafficFilters gives both the one default (America/Los_Angeles);
+    // defaulting to UTC here meant the page rendered one day's figure and
+    // then replaced it with another a few seconds later, and paid for two
+    // all-time queries to do it.
+    timezone: parseTrafficFilters({ timezone: input.timezone }).timezone,
     // Live mode (15 s) asks for a shorter server cache so each tick moves.
     fast: input.fast === true,
   });
