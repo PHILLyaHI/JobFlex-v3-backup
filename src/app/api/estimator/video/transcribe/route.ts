@@ -14,6 +14,7 @@
 import { NextResponse } from "next/server";
 import { toFile } from "openai";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
+import { trialEndedResponse } from "@/lib/trialState";
 import { getOpenAI, isOpenAIEnabled } from "@/lib/sdk/openai";
 import { checkPlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE } from "@/lib/planLimits";
@@ -88,6 +89,8 @@ export async function POST(req: Request) {
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unauthorized" }, { status: 403 });
   }
+  const locked = await trialEndedResponse(organizationId);
+  if (locked) return locked;
   const quota = await checkPlanLimit(organizationId, "estimatorUses");
   // Whisper is billed per second of audio: hard per-org ceiling independent of
   // the plan meter (which only counts SAVED estimates).

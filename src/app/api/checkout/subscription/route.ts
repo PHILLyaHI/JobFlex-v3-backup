@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { appBaseUrl } from "@/lib/appUrl";
 import { requireOwner } from "@/lib/orgContext";
+import { trialEndedResponse } from "@/lib/trialState";
 import { db } from "@/lib/db";
 import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { INFLUENCER_LIVE_STATUSES, readAttributionCookie, validateAttribution } from "@/lib/attribution";
@@ -20,6 +21,10 @@ import { getCustomPlanTrialDays } from "@/lib/customPlanConfig";
 // Billing is owner-only: managers run operations, not the money.
 export async function POST(req: Request) {
   const { organizationId, user } = await requireOwner();
+  // Past a card-less trial the card goes through /dashboard/trial (the same
+  // plan, no new trial) — not a fresh plan checkout from here.
+  const locked = await trialEndedResponse(organizationId);
+  if (locked) return locked;
   if (!isStripeEnabled()) {
     return NextResponse.json({ error: "Stripe is not configured." }, { status: 503 });
   }

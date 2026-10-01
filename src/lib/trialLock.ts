@@ -17,10 +17,22 @@
 // throws and nothing is ever locked. No database import here: lib/db imports
 // this module.
 
-/** The error a locked write throws; the message is what the toast shows. */
+/** What the owner reads when a write is refused. */
+export const TRIAL_ENDED_MESSAGE = "Your free trial has ended. Add a card to keep working — everything you made is still here.";
+
+/**
+ * The error a locked write throws. It carries OUR TEXT for every action that
+ * catches and returns the message (most do). For the ones that let it
+ * propagate, a production build would replace the message with React's
+ * generic "An error occurred in the Server Components render…" — so the error
+ * also carries Next's redirect digest: Next treats it as `redirect()` and the
+ * browser lands on /dashboard/trial?locked=1, which says what happened and
+ * offers the card. Same in dev and in a production build.
+ */
 export class TrialEndedError extends Error {
+  readonly digest = "NEXT_REDIRECT;push;/dashboard/trial?locked=1;303;";
   constructor() {
-    super("Your free trial has ended. Add a card to keep working — everything you made is still here.");
+    super(TRIAL_ENDED_MESSAGE);
     this.name = "TrialEndedError";
   }
 }

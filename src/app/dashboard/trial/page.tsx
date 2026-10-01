@@ -11,6 +11,7 @@ import type { Route } from "next";
 import { redirect } from "next/navigation";
 import { requireOrg, isOwnerRole, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { finishCardCheckout, trialView } from "@/lib/cardlessTrial";
+import { TRIAL_ENDED_MESSAGE } from "@/lib/trialLock";
 import { TrialSheet } from "@/components/v3/trial-card/trial-card";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,9 @@ export default async function TrialPage({ searchParams }: { searchParams: Promis
       : { tone: "error", text: done.error };
   } else if (card === "cancelled") {
     notice = { tone: "plain", text: "No card was added." };
+  } else if (sp.locked === "1") {
+    // A write was refused (lib/trialLock sends the browser here).
+    notice = { tone: "error", text: `That change wasn't saved. ${TRIAL_ENDED_MESSAGE}` };
   }
 
   const view = await trialView(organizationId);

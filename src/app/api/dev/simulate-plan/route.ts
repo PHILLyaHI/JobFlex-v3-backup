@@ -15,6 +15,7 @@
 import { NextResponse } from "next/server";
 import { isDevSimulationEnabled } from "@/lib/devSimulation";
 import { requireOwner } from "@/lib/orgContext";
+import { trialEndedResponse } from "@/lib/trialState";
 import { getPlanCatalog } from "@/lib/planCatalogServer";
 import { db } from "@/lib/db";
 import { recordPlanChange } from "@/lib/subscriptionRecord";
@@ -32,6 +33,8 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "Owner access required" }, { status: 401 });
   }
+  const locked = await trialEndedResponse(organizationId);
+  if (locked) return locked;
 
   const body = (await req.json().catch(() => ({}))) as { direction?: string };
   const direction = body.direction === "down" ? "down" : body.direction === "up" ? "up" : null;

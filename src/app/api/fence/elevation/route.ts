@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
+import { trialEndedResponse } from "@/lib/trialState";
 import { elevationForPoints, MAX_ELEVATION_POINTS } from "@/lib/elevationProfile";
 import { RateLimitError } from "@/lib/rateLimit";
 
@@ -21,6 +22,8 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+  const locked = await trialEndedResponse(organizationId);
+  if (locked) return locked;
   let points: unknown;
   try {
     points = ((await req.json()) as { points?: unknown })?.points;

@@ -103,6 +103,15 @@ export async function cardlessTrialState(orgId: string, now = new Date()): Promi
   return { kind: "trialing", endsAt, daysLeft, hasCard, record: rec };
 }
 
+/** The same rule for a route handler (a POST that writes for the
+ *  organization): a 403 with the lock's own text, or null to go on. Route
+ *  handlers are not server actions, so requireOrg cannot note them. */
+export async function trialEndedResponse(orgId: string): Promise<Response | null> {
+  if (!(await isTrialWriteLocked(orgId))) return null;
+  const { TRIAL_ENDED_MESSAGE } = await import("@/lib/trialLock");
+  return Response.json({ ok: false, error: TRIAL_ENDED_MESSAGE, trialEnded: true }, { status: 403 });
+}
+
 /** True while the organization is past a card-less trial with no card. */
 export async function isTrialWriteLocked(orgId: string): Promise<boolean> {
   return (await cardlessTrialState(orgId))?.kind === "ended";
