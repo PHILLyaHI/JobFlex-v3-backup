@@ -9,6 +9,7 @@ import {
   buildReviewReminder,
 } from "./build/client";
 import { buildOwnerAccepted, buildNewLead, buildLeadOffer, buildSupportTicket } from "./build/operator";
+import { buildTrialReminder } from "./build/trial";
 import { buildJobAssignment, buildWorkerInvite, buildTeamInvite } from "./build/worker";
 import {
   buildPasswordReset,
@@ -490,6 +491,31 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
       trade: "roofing",
       firstChargeDate: "Sep 25, 2026",
     }),
+  },
+  {
+    id: "b-welcome-cardless",
+    label: "18c · buildWelcomeFirstEstimate({ cardless })",
+    note: "The card-less trial's welcome (TRIAL_REQUIRES_CARD off): the box says no card is needed and when the trial ends.",
+    doc: buildWelcomeFirstEstimate({
+      name: "Jordan Rivera",
+      href: "https://example.com/dashboard/advanced-ai/roof",
+      ctaLabel: "Measure my first roof",
+      trade: "roofing",
+      firstChargeDate: "Oct 8, 2026",
+      cardless: true,
+    }),
+  },
+  {
+    id: "b-trial-soon",
+    label: "18d · buildTrialReminder({ when: 'soon' })",
+    note: "Card-less trial, two days before it ends (cron /api/cron/trials).",
+    doc: buildTrialReminder({ name: "Jordan Rivera", planName: "Professional", price: "$79/mo", endsAt: new Date("2026-10-08T17:00:00Z"), href: "https://example.com/dashboard/trial", when: "soon" }),
+  },
+  {
+    id: "b-trial-today",
+    label: "18e · buildTrialReminder({ when: 'today' })",
+    note: "Card-less trial, on the day it ends.",
+    doc: buildTrialReminder({ name: "Jordan Rivera", planName: "Professional", price: "$79/mo", endsAt: new Date("2026-10-08T17:00:00Z"), href: "https://example.com/dashboard/trial", when: "today" }),
   },
   {
     id: "b-request-received",

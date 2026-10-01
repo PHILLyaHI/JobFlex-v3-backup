@@ -51,6 +51,8 @@ import { LeadOfferPopup } from "@/components/leads/LeadOfferPopup";
 import { DashboardAnnouncementDismiss } from "@/app/(dashboard)/announcement-dismiss";
 import { TrafficContext } from "@/components/providers/traffic-context";
 import { TrialWatchMount } from "@/components/v3/trial-watch/trial-watch-mount";
+import { trialView, type TrialView } from "@/lib/cardlessTrial";
+import { TrialRibbon } from "@/components/v3/trial-card/trial-card";
 
 /** Membership.role is a raw enum-ish string ("OWNER", "INSTALLER"). The
  *  sidebar shows it to a human, so title-case it. */
@@ -107,6 +109,10 @@ export default async function DashboardBlueprintLayout({
   // For the trial watch (components/v3/trial-watch): the beacon while the
   // company is new, the watermark while it has not paid.
   let email: string | null = null;
+  // The card-less trial's ribbon (lib/cardlessTrial): days left and the card
+  // button, or "Trial ended" while the workspace is read-only. Null on every
+  // other subscription; a failed read costs the ribbon, never the page.
+  let trial: TrialView | null = null;
   try {
     const ctx = await requireOrg();
     role = ctx.role;
@@ -152,6 +158,7 @@ export default async function DashboardBlueprintLayout({
     const limitState = await getNavLimitState(ctx.organizationId).catch(() => undefined);
     navLimits = limitState?.counters;
     navLimitsExempt = limitState?.exempt ?? false;
+    trial = await trialView(ctx.organizationId).catch(() => null);
     plan = await db.subscription
       .findUnique({ where: { organizationId: ctx.organizationId }, select: { plan: true } })
       .then((sub) => sub?.plan ?? "FREE")
@@ -202,6 +209,8 @@ export default async function DashboardBlueprintLayout({
   // server paints it folded — a stored flag read after hydration would flash
   // the wide sidebar on every page load.
   const sidebarFolded = (await cookies()).get(SIDEBAR_FOLD_COOKIE)?.value === "1";
+  // Not over the trial's own page, which says the same thing at full size.
+  const onTrialPage = trial ? ((await headers()).get("x-pathname") ?? "").startsWith("/dashboard/trial") : false;
 
   return (
     <ResponsiveDashboardShell
@@ -215,6 +224,7 @@ export default async function DashboardBlueprintLayout({
     >
       <TrafficContext role={role} plan={plan} organizationId={organizationId} />
       {organizationId && <TrialWatchMount organizationId={organizationId} email={email} />}
+      {trial && !onTrialPage && <TrialRibbon view={trial} isOwner={role === "OWNER"} />}
       {announcements.length > 0 && <DashboardAnnouncementDismiss announcements={announcements} />}
       {customGate ?? children}
       {canHandleLeads ? <LeadOfferPopup /> : null}

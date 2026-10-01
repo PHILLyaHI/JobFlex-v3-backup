@@ -27,7 +27,8 @@ import { getStripeClient } from "@/lib/sdk/stripe";
 import { resolveSignupDiscount, resolveSignupPrice, type SignupInterval } from "@/lib/signupPricing";
 import { CARDLESS_TRIAL_DAYS } from "@/lib/trialPolicy";
 import { cardlessTrialState, patchCardlessRecord, readCardlessRecord, type CardlessRecord } from "@/lib/trialState";
-import { syncSubscriptionFromStripe } from "@/lib/stripeSync";
+import { isCardlessTrialLapse, syncSubscriptionFromStripe } from "@/lib/stripeSync";
+import { db } from "@/lib/db";
 import { CUSTOM_PLAN_SLUG, customPriceCents } from "@/lib/customPlan";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 
@@ -111,6 +112,18 @@ export async function createCardlessSubscription(opts: {
   } catch (err) {
     console.error("[cardless-trial] Stripe refused the trial:", err);
     return { ok: false, error: "Couldn't start the trial. Try again in a minute." };
+  }
+}
+
+/** customer.subscription.deleted for a card-less trial that ran out: the
+ *  record notes when (the mirror itself is set by markSubscriptionCanceled). */
+export async function noteCardlessTrialEnded(sub: Stripe.Subscription): Promise<void> {
+  if (!isCardlessTrialLapse(sub)) return;
+  const row = await db.subscription.findFirst({ where: { externalSubId: sub.id }, select: { organizationId: true } });
+  if (!row) return;
+  const rec = await readCardlessRecord(row.organizationId);
+  if (rec && rec.subId === sub.id && !rec.endedAt) {
+    await patchCardlessRecord(row.organizationId, { endedAt: new Date((sub.ended_at ?? Math.floor(Date.now() / 1000)) * 1000).toISOString() });
   }
 }
 
@@ -234,4 +247,97 @@ export async function finishCardCheckout(
     return { ok: true, purpose };
   }
   return { ok: false, error: "Unknown checkout." };
+}
+
+/** What the banner and the trial page draw — plain data for client components. */
+export type TrialView = {
+  kind: "trialing" | "ended";
+  daysLeft: number;
+  /** ISO — the trial's end (the first charge when a card is on file). */
+  endsAt: string;
+  hasCard: boolean;
+  planName: string;
+  /** "$79/mo" */
+  price: string;
+};
+
+export async function trialView(orgId: string): Promise<TrialView | null> {
+  const state = await cardlessTrialState(orgId);
+  if (!state) return null;
+  const plan = await trialPlanSummary(state.record);
+  const dollars = plan.cents / 100;
+  const price = `$${Number.isInteger(dollars) ? dollars : dollars.toFixed(2)}${plan.per}`;
+  if (state.kind === "ended") {
+    return { kind: "ended", daysLeft: 0, endsAt: state.endedAt.toISOString(), hasCard: false, planName: plan.name, price };
+  }
+  return { kind: "trialing", daysLeft: state.daysLeft, endsAt: state.endsAt.toISOString(), hasCard: state.hasCard, planName: plan.name, price };
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+
+async function ownerContact(orgId: string): Promise<{ email: string; name: string | null } | null> {
+  const owner = await db.membership.findFirst({
+    where: { organizationId: orgId, role: "OWNER", organization: { deletedAt: null } },
+    orderBy: { createdAt: "asc" },
+    select: { user: { select: { email: true, name: true } }, organization: { select: { billingEmail: true } } },
+  });
+  const email = owner?.organization.billingEmail || owner?.user.email;
+  return email ? { email, name: owner?.user.name ?? null } : null;
+}
+
+/**
+ * THE DAILY WATCH (hourly cron /api/cron/trials). For every card-less trial
+ * with no card: the "2 days left" email once the end is under 48 hours away,
+ * the "ends today" email under 24, each once; and a trial past its end is
+ * stamped ended (the lock itself never waits for this — lib/trialState).
+ */
+export async function runCardlessTrialSweep(now = new Date()): Promise<{ scanned: number; soon: number; today: number; ended: number }> {
+  const { appBaseUrl } = await import("@/lib/appUrl");
+  const { renderEmail } = await import("@/lib/email/renderEmail");
+  const { sendEmail } = await import("@/lib/sdk/resend");
+  const { buildTrialReminder } = await import("@/lib/email/build/trial");
+  const rows = await db.syncState.findMany({ where: { key: { startsWith: "cardlessTrial:" } }, select: { key: true } });
+  const out = { scanned: rows.length, soon: 0, today: 0, ended: 0 };
+  const base = (await appBaseUrl()).replace(/\/$/, "");
+  for (const { key } of rows) {
+    const orgId = key.slice("cardlessTrial:".length);
+    try {
+      const state = await cardlessTrialState(orgId, now);
+      if (!state) continue;
+      if (state.kind === "ended") {
+        if (!state.record.endedAt) {
+          await patchCardlessRecord(orgId, { endedAt: state.endedAt.toISOString() });
+          out.ended++;
+        }
+        continue;
+      }
+      if (state.hasCard) continue;
+      const left = state.endsAt.getTime() - now.getTime();
+      const when = left <= 24 * HOUR_MS ? "today" : left <= 48 * HOUR_MS ? "soon" : null;
+      if (!when) continue;
+      if (when === "today" ? state.record.mailedTodayAt : state.record.mailedSoonAt) continue;
+      const to = await ownerContact(orgId);
+      if (!to) continue;
+      const plan = await trialPlanSummary(state.record);
+      const dollars = plan.cents / 100;
+      const { subject, html } = renderEmail(
+        buildTrialReminder({
+          name: to.name,
+          planName: plan.name,
+          price: `$${Number.isInteger(dollars) ? dollars : dollars.toFixed(2)}${plan.per}`,
+          endsAt: state.endsAt,
+          href: `${base}/dashboard/trial`,
+          when,
+        }),
+      );
+      await sendEmail({ to: to.email, subject, html });
+      // The "today" email stands for both when the trial was already inside
+      // its last day at the first look: the two-day one is not sent late.
+      await patchCardlessRecord(orgId, when === "today" ? { mailedTodayAt: now.toISOString(), mailedSoonAt: state.record.mailedSoonAt ?? now.toISOString() } : { mailedSoonAt: now.toISOString() });
+      out[when]++;
+    } catch (err) {
+      console.warn(`[cardless-trial] sweep ${orgId}:`, err);
+    }
+  }
+  return out;
 }

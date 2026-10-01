@@ -49,6 +49,23 @@ function mapStripeStatus(s: Stripe.Subscription.Status): string {
   }
 }
 
+/* A CARD-LESS TRIAL THAT RAN OUT (2026-10-01). The trial is created with
+   trial_settings.end_behavior.missing_payment_method = "cancel" and marked
+   jf_cardless (lib/cardlessTrial), so Stripe cancels it at the trial's end
+   when no card arrived. That cancellation is not a customer leaving: the
+   mirror says TRIAL_ENDED (lib/trialState) — the workspace reads, nothing
+   writes, and a card restarts the plan — instead of CANCELED. */
+export function isCardlessTrialLapse(sub: Stripe.Subscription): boolean {
+  if (sub.status !== "canceled" || sub.metadata?.jf_cardless !== "1" || !sub.trial_end) return false;
+  const ended = sub.ended_at ?? sub.canceled_at ?? 0;
+  return ended >= sub.trial_end - 60 * 60 && !sub.default_payment_method;
+}
+
+/** The mirror's status for a subscription. */
+export function mirrorStatusFor(sub: Stripe.Subscription): string {
+  return isCardlessTrialLapse(sub) ? SubscriptionStatus.TRIAL_ENDED : mapStripeStatus(sub.status);
+}
+
 async function planSlugForPrice(stripePriceId: string | null): Promise<string | null> {
   if (!stripePriceId) return null;
   const pp = await db.planPrice.findUnique({ where: { stripePriceId } });
@@ -241,6 +258,7 @@ async function carryAttributionToSubscription(opts: {
  * own forward-only rule.
  */
 const LIVE_MIRROR: string[] = [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING, SubscriptionStatus.PAST_DUE];
+const ENDED: string[] = [SubscriptionStatus.CANCELED, SubscriptionStatus.TRIAL_ENDED];
 
 async function mirrorAccepts(organizationId: string, externalSubId: string, status: string, createdMs: number) {
   const mirror = await db.subscription.findUnique({
@@ -248,7 +266,7 @@ async function mirrorAccepts(organizationId: string, externalSubId: string, stat
     select: { externalSubId: true, status: true, provider: true, updatedAt: true },
   });
   if (!mirror || mirror.externalSubId === externalSubId) return true;
-  if (status === SubscriptionStatus.CANCELED && LIVE_MIRROR.includes(mirror.status)) return false;
+  if (ENDED.includes(status) && LIVE_MIRROR.includes(mirror.status)) return false;
   const ref = await db.syncState.findUnique({ where: { key: mirrorSubAtKey(organizationId) } }).catch(() => null);
   const refMs = ref ? Number(ref.cursor) : mirror.provider === "MANUAL" ? mirror.updatedAt.getTime() : NaN;
   if (!Number.isFinite(refMs)) return true;
@@ -282,7 +300,10 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
   const stripePriceId = sub.items.data[0]?.price?.id ?? null;
   const planSlug = await planSlugForPrice(stripePriceId);
   const promo = await resolvePromoCode(sub.discount);
-  const status = mapStripeStatus(sub.status);
+  const status = mirrorStatusFor(sub);
+  // The trial's end, while it is one — Stripe moves it (an operator, a test
+  // clock), and the card-less trial's banner and lock read it from the row.
+  const trialEndsAt = sub.status === "trialing" && sub.trial_end ? new Date(sub.trial_end * 1000) : undefined;
 
   const subCreatedMs = (sub.created ?? Math.floor(Date.now() / 1000)) * 1000;
   if (await mirrorAccepts(organizationId, externalSubId, status, subCreatedMs)) {
@@ -298,6 +319,7 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
         ...(planSlug && { plan: planSlug }),
         currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : null,
         canceledAt: sub.canceled_at ? new Date(sub.canceled_at * 1000) : null,
+        ...(trialEndsAt && { trialEndsAt }),
         appliedPromotionCodeId: idOf(sub.discount?.promotion_code),
         appliedCouponId: sub.discount?.coupon?.id ?? null,
       },
@@ -310,6 +332,7 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
         externalSubId,
         stripePriceId,
         currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : null,
+        trialEndsAt: trialEndsAt ?? null,
         appliedPromotionCodeId: idOf(sub.discount?.promotion_code),
         appliedCouponId: sub.discount?.coupon?.id ?? null,
       },
@@ -326,7 +349,7 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
     organizationId,
     customerId,
     subCreatedMs,
-    subCanceled: status === SubscriptionStatus.CANCELED,
+    subCanceled: ENDED.includes(status),
   });
 
   // ONE CLIENT, ONE ATTRIBUTION. If this subscription has no row of its own but
@@ -453,7 +476,7 @@ export async function markSubscriptionCanceled(sub: Stripe.Subscription) {
   const planWas = mirror ? await planSnapshot(mirror.organizationId) : undefined;
   await db.subscription.updateMany({
     where: { externalSubId },
-    data: { status: SubscriptionStatus.CANCELED, canceledAt: new Date() },
+    data: { status: mirrorStatusFor(sub) === SubscriptionStatus.TRIAL_ENDED ? SubscriptionStatus.TRIAL_ENDED : SubscriptionStatus.CANCELED, canceledAt: new Date() },
   });
   if (mirror) reportPlanChange(mirror.organizationId, "stripe", planWas);
   await db.attribution.updateMany({

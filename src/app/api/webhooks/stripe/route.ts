@@ -18,6 +18,7 @@ import { confirmSyncingFromStripe } from "@/lib/planGrant";
 import { processReferralEffectsForInvoice } from "@/lib/referralRewards";
 import { metaOnCheckoutCompleted, metaOnInvoicePaid } from "@/lib/metaSignupEvents";
 import { trackActivation } from "@/lib/activation-events";
+import { finishCardCheckout, noteCardlessTrialEnded } from "@/lib/cardlessTrial";
 
 export const runtime = "nodejs";
 
@@ -52,6 +53,16 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
+      // A card added to a card-less trial (setup mode), or the plan restarted
+      // after one ended (subscription mode) — lib/cardlessTrial. The return
+      // page usually got there first; both are safe to run twice.
+      const purpose = session.metadata?.jf_purpose;
+      const trialOrg = session.metadata?.organizationId;
+      if (trialOrg && (purpose === "trial-card" || purpose === "trial-restart")) {
+        const done = await finishCardCheckout(trialOrg, session.id);
+        if (!done.ok) console.warn(`[webhook] trial card for ${trialOrg}: ${done.error}`);
+        if (purpose === "trial-card") break;
+      }
       if (session.mode === "subscription" && session.subscription) {
         const sub = await stripe.subscriptions.retrieve(
           typeof session.subscription === "string" ? session.subscription : session.subscription.id,
@@ -74,7 +85,19 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
       break;
     }
     case "customer.subscription.deleted": {
-      await markSubscriptionCanceled(event.data.object as Stripe.Subscription);
+      const sub = event.data.object as Stripe.Subscription;
+      // A card-less trial that ran out lands as TRIAL_ENDED, not CANCELED
+      // (lib/stripeSync, isCardlessTrialLapse).
+      await markSubscriptionCanceled(sub);
+      await noteCardlessTrialEnded(sub);
+      break;
+    }
+    // Three days before any trial ends. The mirror follows the subscription
+    // (its trial end may have moved); the card-less trial's reminder emails
+    // are the daily cron's (/api/cron/trials), on its own two-day and same-day
+    // schedule.
+    case "customer.subscription.trial_will_end": {
+      await syncSubscriptionFromStripe(event.data.object as Stripe.Subscription);
       break;
     }
     case "invoice.paid": {

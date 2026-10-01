@@ -1,6 +1,8 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readAdminCookie } from "@/lib/adminAuth";
+import { isServerActionRequest, noteTrialLock } from "@/lib/trialLock";
+import { isTrialWriteLocked } from "@/lib/trialState";
 
 export class UnauthorizedError extends Error {
   constructor(message = "Unauthorized") {
@@ -103,7 +105,22 @@ export async function requireInfluencerSelf(resourceInfluencerId: string) {
   return influencer;
 }
 
+/* PAST A CARD-LESS TRIAL WITH NO CARD (2026-10-01) the organization reads but
+   does not write: a server action that resolves it here is noted, and the
+   database client refuses its writes (lib/trialLock). Page renders are not
+   server actions and are never noted. */
+async function withTrialGuard<T extends { organizationId: string }>(ctx: T): Promise<T> {
+  if ((await isServerActionRequest()) && (await isTrialWriteLocked(ctx.organizationId))) {
+    await noteTrialLock(ctx.organizationId);
+  }
+  return ctx;
+}
+
 export async function requireOrg() {
+  return withTrialGuard(await resolveOrg());
+}
+
+async function resolveOrg() {
   const user = await requireUser();
   // A soft-deleted org (Settings → Danger zone) is gone from every membership
   // lookup at once; the member falls through to another org or NoOrgError.

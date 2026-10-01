@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { withAccelerate } from "@prisma/extension-accelerate";
+import { assertWriteAllowed } from "@/lib/trialLock";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -53,15 +54,34 @@ function withReconnectRetry(client: PrismaClient): PrismaClient {
   }) as unknown as PrismaClient;
 }
 
+/* THE CARD-LESS TRIAL'S WRITE LOCK (2026-10-01). Past a card-less trial
+   with no card, a server action may read but not write (lib/trialLock): the
+   check is here, on the one client every action shares, so no action has to
+   remember it. Outside a noted request it costs one header read per write. */
+function withTrialWriteLock(client: PrismaClient): PrismaClient {
+  return client.$extends({
+    query: {
+      $allModels: {
+        async $allOperations({ model, operation, args, query }) {
+          await assertWriteAllowed(model, operation);
+          return query(args);
+        },
+      },
+    },
+  }) as unknown as PrismaClient;
+}
+
 export const db =
   globalForPrisma.prisma ??
-  (useAccelerate
-    ? (new PrismaClient().$extends(withAccelerate()) as unknown as PrismaClient)
-    : withReconnectRetry(
-        new PrismaClient({
-          log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
-        }),
-      ));
+  withTrialWriteLock(
+    useAccelerate
+      ? (new PrismaClient().$extends(withAccelerate()) as unknown as PrismaClient)
+      : withReconnectRetry(
+          new PrismaClient({
+            log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
+          }),
+        ),
+  );
 
 // Cached on globalThis in EVERY environment. In production a warm serverless
 // instance re-evaluates modules across invocations; without the global cache

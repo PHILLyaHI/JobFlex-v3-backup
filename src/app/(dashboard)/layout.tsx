@@ -20,6 +20,8 @@ import { getBadgeCounts } from "@/lib/badgeCounts";
 import { getNavLimitCounters } from "@/lib/navLimits";
 import { getPlanDisplayName } from "@/lib/planCatalogServer";
 import { DashboardAnnouncementDismiss } from "./announcement-dismiss";
+import { trialView } from "@/lib/cardlessTrial";
+import { TrialRibbon } from "@/components/v3/trial-card/trial-card";
 import { TrafficContext } from "@/components/providers/traffic-context";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -124,6 +126,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   // The sidebar's limit pill names the plan by its catalog name, never the slug.
   const planName = subscription?.plan ? await getPlanDisplayName(subscription.plan) : undefined;
+  // The card-less trial's ribbon — the blueprint layout's, for this tree's pages.
+  const trial = activeOrgId ? await trialView(activeOrgId).catch(() => null) : null;
 
   return (
     <SessionProvider>
@@ -146,6 +150,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             limited={isLimited}
           />
           <div className="px-6 lg:px-10 py-8 max-w-[1400px] mx-auto pb-24 md:pb-8">
+            {trial && <TrialRibbon view={trial} isOwner={activeRole === "OWNER"} />}
             <DashboardAnnouncementDismiss
               announcements={announcements.map((a) => ({
                 id: a.id,
