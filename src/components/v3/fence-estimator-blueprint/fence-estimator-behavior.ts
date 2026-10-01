@@ -91,7 +91,7 @@ import {
 } from "@/lib/fence/catalog";
 import { resolveMarket, type MarketSnapshot } from "@/lib/fence/market";
 import { RATE_LIMITS, sanitizeRateBook, standardRate, type RateBook } from "@/lib/fence/rates";
-import { summarizeSlope, type SlopeSummary } from "@/lib/fence/slope";
+import { segmentSteps, summarizeSlope, type SlopeSummary } from "@/lib/fence/slope";
 import { fenceBuildFor, type FenceBuild } from "@/lib/fence/build";
 import type { FenceLayoutInput, FenceOpeningInput, FenceRunInput } from "@/lib/fence/takeoff";
 import { polylinesToRuns, typedRuns } from "@/lib/fence/layout";
@@ -368,6 +368,11 @@ export function initFenceEstimatorContent(
       market()?.frostIn ?? 0,
     );
   }
+  /** The steps one stepped segment is priced with — the ticket's count, which
+   *  the map's badge, the run's grade tag and the 3D all show. */
+  function pricedSteps(sg: { planFt: number; riseFt: number; cls: 'level' | 'racked' | 'stepped'; steps?: number }): number {
+    return segmentSteps(sg, effectiveSpacingFt(currentType().type, fs.spacing)).steps;
+  }
   /** The ground difficulty the labor is priced at. */
   function effTerrain(): Terrain {
     if (fs.terrain !== 'auto') return fs.terrain;
@@ -574,6 +579,9 @@ export function initFenceEstimatorContent(
     if (p.ft <= 0 || base.custom || currentType().custom) { box.innerHTML = ''; box.classList.add('is-hidden'); return; }
     const layout = layoutInput();
     const tiers = fenceTiers(base.type.id, fs.height);
+    // The ladder drops a tier that would quote the same fence as Better; a
+    // lone card is no choice, so the strip goes.
+    if (tiers.length < 2) { box.innerHTML = ''; box.classList.add('is-hidden'); return; }
     const html = tiers.map(function (tier) {
       // The card shows what a click on it will price — the click sets stain to
       // the tier's own on a stainable base (or a stained tier) and leaves it be
@@ -623,7 +631,9 @@ export function initFenceEstimatorContent(
       return '<li><span>' + esc(b.label) + '</span><span>' + b.qty.toLocaleString('en-US') + unit + '</span></li>';
     }).join('');
     const posts = [tk.posts.line ? tk.posts.line + ' line' : '', tk.posts.corner ? tk.posts.corner + ' corner' : '', tk.posts.end ? tk.posts.end + ' end' : '', tk.posts.gate ? tk.posts.gate + ' gate' : ''].filter(Boolean).join(' · ');
-    foot.innerHTML = '<span>Posts: ' + esc(posts) + ' · ' + tk.postLengthFt.base + "' stock" + (tk.bom.some(function (b) { return b.key === 'step-posts'; }) ? ' (' + tk.postLengthFt.step + "' at steps)" : '') + '</span>' +
+    // "10' stock (10' at steps)" said nothing: name the step length only when it differs.
+    const stepLen = tk.bom.some(function (b) { return b.key === 'step-posts'; }) && tk.postLengthFt.step > tk.postLengthFt.base;
+    foot.innerHTML = '<span>Posts: ' + esc(posts) + ' · ' + tk.postLengthFt.base + "' stock" + (stepLen ? ' (' + tk.postLengthFt.step + "' at steps)" : '') + '</span>' +
       '<span>Crew time ≈ ' + tk.laborHours + ' hrs</span>';
   }
   // ---- one row's markup, so a row can be ADDED or PATCHED without rebuilding
@@ -735,6 +745,9 @@ export function initFenceEstimatorContent(
     const strip = $('#statStrip');
     if (strip) strip.innerHTML = statStripHtml();
   }
+  /** The ground rules (post spacing | rack limit) the map and the 3D note were
+   *  last painted under. */
+  let paintedRules = '';
   /** The figures every edit touches: the ticket and the stat strip. Text only —
    *  no list is rebuilt, so nothing re-animates. */
   function renderFigures() {
@@ -748,10 +761,28 @@ export function initFenceEstimatorContent(
       const o = fs.openings.find(function (x) { return x.id === li.dataset.op; });
       if (o) paintOpenRow(li, o);
     });
+    // And so do the Gate and Door menus' — they were built once per studio
+    // render, so a rate typed in the book (or an address that moved the
+    // market) left the menu on the old figure: $744 there, $736 on the row.
+    $$('.tool-pop [data-add-open]').forEach(function (b) {
+      const t = OPENINGS.find(function (x) { return x.id === b.dataset.addOpen; });
+      const cell = b.querySelector<HTMLElement>('.tp-p');
+      if (t && cell) cell.textContent = money(openingPrice(t));
+    });
     // Material, height and openings are the 3D scene's inputs too. No-op until
     // the scene is mounted, and `modelGates()` keeps the array identity stable
     // so a keystroke in a run-length box does not rebuild it.
     pushModel();
+    // A new type or post spacing re-reads the same ground under ITS rules (a
+    // prefab vinyl panel racks 4°, cedar 20°): the map's slope badges and the
+    // 3D note follow, or they keep the last type's racked runs.
+    const rb = currentBuild();
+    const rules = rb.spacingFt + '|' + rb.rackMaxDeg;
+    if (rules !== paintedRules) {
+      paintedRules = rules;
+      pushMap();
+      renderModelNote();
+    }
   }
   function syncOpenEmpty() {
     $('#openEmpty')?.classList.toggle('is-hidden', fs.openings.length !== 0);
@@ -2353,7 +2384,7 @@ export function initFenceEstimatorContent(
         (s.riseFt >= 0 ? 'Rises ' : 'Falls ') + Math.abs(s.riseFt).toFixed(1) + ' ft over ' + Math.round(s.planFt) +
         ' ft · ' + s.thetaDeg.toFixed(0) + '° · ' +
         (s.cls === 'stepped'
-          ? 'stepped, ' + (s.steps ?? 1) + ' steps' + (s.rolling ? ' — the ground rolls under it, a racked panel would not sit' : '')
+          ? 'stepped, ' + pricedSteps(s) + ' steps' + (s.rolling ? ' — the ground rolls under it, a racked panel would not sit' : '')
           : s.cls === 'racked' ? 'racked — one line following the grade' : 'level');
     });
   }
@@ -2377,8 +2408,9 @@ export function initFenceEstimatorContent(
         thetaDeg: s.thetaDeg,
         riseFt: s.riseFt,
         gradeFt: s.gradeFt,
-        steps: s.steps,
-        stepDropFt: s.stepDropFt,
+        // The ticket's count (bays re-split at 1-ft code steps), not the bays.
+        steps: s.cls === 'stepped' ? pricedSteps(s) : s.steps,
+        stepDropFt: s.cls === 'stepped' ? segmentSteps(s, effectiveSpacingFt(currentType().type, fs.spacing)).dropFt : s.stepDropFt,
       });
     });
     terrainViewMemo = { report: t, out: out.length ? out : null };
@@ -3565,6 +3597,7 @@ export function initFenceEstimatorContent(
       buildings: modelHouses(),
       terrain: modelTerrain(),
       segClasses: modelClasses(),
+      segSteps: modelSteps(),
       wallMounts: wallMounts().ft,
       // The property line on the land, in the map's lot colour.
       lots: modelLots(),
@@ -3624,13 +3657,22 @@ export function initFenceEstimatorContent(
    *  profile is in, so the 3D steps exactly where the ticket charges steps;
    *  until then (or if it failed) read off the lot lattice with the same
    *  thresholds. */
-  let classesMemo: { key: unknown[]; view: Record<number, BayClass> | null } | null = null;
+  let classesMemo: { key: unknown[]; view: Record<number, BayClass> | null; steps: Record<number, number> | null } | null = null;
   function modelClasses(): Record<number, BayClass> | null {
+    return modelSlope().view;
+  }
+  /** The ticket's step count per stepped segment, for the 3D to draw exactly
+   *  that many (null while the lattice speaks for the ground). */
+  function modelSteps(): Record<number, number> | null {
+    return modelSlope().steps;
+  }
+  function modelSlope(): { view: Record<number, BayClass> | null; steps: Record<number, number> | null } {
     const report = usableTerrain();
     const g = topoGrid && sameOrigin(topoGrid.origin, mapOrigin) ? topoGrid : null;
-    const key = [report, g ? g.rev : -1, mapPoints];
-    if (classesMemo && classesMemo.key.every(function (k, i) { return k === key[i]; })) return classesMemo.view;
+    const key = [report, g ? g.rev : -1, mapPoints, effectiveSpacingFt(currentType().type, fs.spacing)];
+    if (classesMemo && classesMemo.key.every(function (k, i) { return k === key[i]; })) return classesMemo;
     let view: Record<number, BayClass> | null = null;
+    let steps: Record<number, number> | null = null;
     // A dragged dot keeps every segment index, so the old report still reads
     // as "usable" until the new profile lands. The price can live with the old
     // grade FACTOR for that moment; the 3D must not stand the moved segment up
@@ -3643,8 +3685,14 @@ export function initFenceEstimatorContent(
     });
     if (report && fresh) {
       view = {};
+      steps = {};
       const out = view;
-      report.segs.forEach(function (sg) { out[sg.seg] = sg.cls; });
+      const counts = steps;
+      report.segs.forEach(function (sg) {
+        out[sg.seg] = sg.cls;
+        const n = pricedSteps(sg);
+        if (n > 0) counts[sg.seg] = n;
+      });
     } else if (g) {
       view = {};
       for (let i = 0; i + 1 < mapPoints.length; i++) {
@@ -3655,8 +3703,8 @@ export function initFenceEstimatorContent(
         if (lg) view[i] = lg.cls;
       }
     }
-    classesMemo = { key: key, view: view };
-    return view;
+    classesMemo = { key: key, view: view, steps: steps };
+    return classesMemo;
   }
 
   /** The note in the 3D corner: what the ground in the scene is, what the lot
@@ -3673,7 +3721,8 @@ export function initFenceEstimatorContent(
       ground.push('Terrain not shown — ground rendered flat');
     } else {
       const report = usableTerrain();
-      const steps = report ? report.segs.reduce(function (a, sg) { return a + (sg.cls === 'stepped' ? sg.steps ?? 0 : 0); }, 0) : 0;
+      // The ticket's count: a bay dropping more than a code step is split.
+      const steps = report ? slope()?.steppedSections ?? 0 : 0;
       const racked = report ? report.segs.filter(function (sg) { return sg.cls === 'racked'; }).length : 0;
       const rolling = report ? report.segs.filter(function (sg) { return sg.cls === 'stepped' && sg.rolling; }).length : 0;
       ground.push('Real ground · ' + sourceLabel(topoGrid));
@@ -3871,6 +3920,9 @@ export function initFenceEstimatorContent(
     const classes = modelClasses();
     const seg: Record<number, BayClass> = {};
     if (classes) Object.keys(classes).forEach(function (k) { seg[Number(k)] = classes[Number(k)]; });
+    const counts = modelSteps();
+    const segSteps: Record<number, number> = {};
+    if (counts) Object.keys(counts).forEach(function (k) { segSteps[Number(k)] = counts[Number(k)]; });
     const family = currentType().type.family;
     const swatch = typeRow(fs.material).color;
     const hex6 = /^#[0-9a-f]{6}$/i;
@@ -3883,6 +3935,7 @@ export function initFenceEstimatorContent(
       color: color,
       gates: modelGates().slice(0, 40).map(function (g) { return { id: g.id, segmentIndex: g.segmentIndex, t: g.t, widthFt: g.widthFt, kind: g.kind, variant: g.variant, x: g.x, y: g.y }; }),
       segClasses: seg,
+      segSteps: segSteps,
       wallMounts: wallMounts().ft.slice(0, 40).map(function (q) { return { x: r1(q.x), y: r1(q.y) }; }),
       terrain: terrain,
       lotColor: lot && hex6.test(lot) ? lot : null,

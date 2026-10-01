@@ -365,6 +365,9 @@ const Z = {
 } as const;
 
 /** One text label pinned to the ground. */
+/** The label layer's stacking in the marker pane: over the dots, under the handles. */
+const LABEL_Z = 28;
+
 interface MapLabel {
   at: LatLng;
   text: string;
@@ -458,13 +461,14 @@ function mountHatchLayer(maps: GMaps, map: GMaps, rings: LatLng[][], over: strin
  * overlap a higher-priority one at THIS zoom, so zooming out thins the labels
  * instead of piling them up. Returns the teardown.
  */
-function mountLabelLayer(maps: GMaps, map: GMaps, items: MapLabel[], zIndex: number): () => void {
+function mountLabelLayer(maps: GMaps, map: GMaps, items: MapLabel[], zIndex: number, avoid: LatLng[] = []): () => void {
   const g = (window as unknown as { google?: GMaps }).google;
   const LatLngCtor = g?.maps?.LatLng;
   if (!LatLngCtor || !items.length) return () => {};
   const nodes = [...items]
     .sort((a, b) => b.priority - a.priority)
     .map((it) => ({ it, el: null as HTMLDivElement | null, ll: new LatLngCtor(it.at.lat, it.at.lng), w: 0, h: 0 }));
+  const avoidLl = avoid.map((q) => new LatLngCtor(q.lat, q.lng));
   const layer = new maps.OverlayView();
   let host: HTMLDivElement | null = null;
   layer.onAdd = () => {
@@ -488,6 +492,13 @@ function mountLabelLayer(maps: GMaps, map: GMaps, items: MapLabel[], zIndex: num
     if (!proj || !host) return;
     const zoom = Number(map.getZoom()) || 0;
     const taken: Array<[number, number, number, number]> = [];
+    // The fence's corner dots: a lifted chip takes the side of its point
+    // where no dot sits ("WALL MOUNT" read "W··L MOUNT" under two of them).
+    const dots: Array<[number, number, number, number]> = [];
+    for (const ll of avoidLl) {
+      const q = proj.fromLatLngToDivPixel(ll);
+      if (q) dots.push([q.x - 7, q.y - 7, q.x + 7, q.y + 7]);
+    }
     for (const n of nodes) {
       const el = n.el;
       if (!el) continue;
@@ -507,14 +518,26 @@ function mountLabelLayer(maps: GMaps, map: GMaps, items: MapLabel[], zIndex: num
       const bh = Math.abs(n.w * Math.sin(a)) + Math.abs(n.h * Math.cos(a));
       const off = bh / 2 + 10;
       const tries = n.it.lift ? [-off, off] : [0];
+      const hits = (box: [number, number, number, number], list: Array<[number, number, number, number]>) =>
+        list.some((t) => box[0] < t[2] && box[2] > t[0] && box[1] < t[3] && box[3] > t[1]);
       let placedAt: number | null = null;
+      // Over a dot is still better than no chip: the layer sits above the dots.
+      let overDot: { cy: number; box: [number, number, number, number] } | null = null;
       for (const dy of tries) {
         const cy = px.y + dy;
         const box: [number, number, number, number] = [px.x - bw / 2 - 3, cy - bh / 2 - 3, px.x + bw / 2 + 3, cy + bh / 2 + 3];
-        if (taken.some((t) => box[0] < t[2] && box[2] > t[0] && box[1] < t[3] && box[3] > t[1])) continue;
+        if (hits(box, taken)) continue;
+        if (n.it.lift && hits(box, dots)) {
+          overDot ??= { cy, box };
+          continue;
+        }
         taken.push(box);
         placedAt = cy;
         break;
+      }
+      if (placedAt === null && overDot) {
+        taken.push(overDot.box);
+        placedAt = overDot.cy;
       }
       if (placedAt === null) {
         el.style.display = "none";
@@ -3027,7 +3050,10 @@ export function FenceDrawMap({
         },
       });
     }
-    return mountLabelLayer(maps, map, items, 1);
+    // Above the fence's dots (z 20) and the house tracer's (27), under the
+    // drag handles (30+) — at 1 the dots printed over the chips' letters.
+    const corners = points.map((q) => localFeetToLatLng(origin, q));
+    return mountLabelLayer(maps, map, items, LABEL_Z, corners);
   }, [topo, terrain, points, houses, wallMounts, lat, lng, mapEpoch]);
 
   if (!enabled) {

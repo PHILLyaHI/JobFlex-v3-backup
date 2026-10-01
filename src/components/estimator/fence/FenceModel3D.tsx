@@ -84,6 +84,7 @@ interface ViewSpec {
   buildings: BuildingFootprint[]; // real nearby footprints (local feet)
   terrain: FenceTerrain3D | null;
   segClasses: Record<number, BayClass> | null; // priced slope class per segment index
+  segSteps: Record<number, number> | null; // priced step count per stepped segment
   wallMounts: PathPoint[]; // run ends that sit on a house wall
   lots: PathPoint[][]; // the lot's rings (local feet)
   lotColor: string; // the map's lot-line colour
@@ -115,6 +116,8 @@ export const FenceModel3D = React.forwardRef<
     buildings: BuildingFootprint[];
     terrain?: FenceTerrain3D | null;
     segClasses?: Record<number, BayClass> | null;
+    /** The ticket's step count per stepped segment; drawn as that many equal steps. */
+    segSteps?: Record<number, number> | null;
     wallMounts?: PathPoint[];
     /** The lot's rings in the same local-feet frame; drawn on the land. */
     lots?: PathPoint[][];
@@ -141,6 +144,7 @@ export const FenceModel3D = React.forwardRef<
     buildings,
     terrain = null,
     segClasses = null,
+    segSteps = null,
     wallMounts = NO_MOUNTS,
     lots = NO_LOTS,
     lotColor = DEFAULT_LOT_COLOR,
@@ -178,8 +182,8 @@ export const FenceModel3D = React.forwardRef<
 
   const applyRef = React.useRef<(s: ViewSpec) => void>(() => {});
   React.useEffect(() => {
-    applyRef.current({ points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts, lots, lotColor, build });
-  }, [points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts, lots, lotColor, build]);
+    applyRef.current({ points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, segSteps, wallMounts, lots, lotColor, build });
+  }, [points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, segSteps, wallMounts, lots, lotColor, build]);
   /** Walking is not possible here (the browser refused the pointer lock). */
   const [walkNote, setWalkNote] = React.useState<string | null>(null);
   const walkRef = React.useRef<() => void>(() => {});
@@ -1295,6 +1299,7 @@ export const FenceModel3D = React.forwardRef<
 
     let prevTerrain: FenceTerrain3D | null = null;
     let prevClasses: Record<number, BayClass> | null = null;
+    let prevSteps: Record<number, number> | null = null;
     let prevMounts: PathPoint[] | null = null;
     let prevBuild: FenceBuild | null = null;
     const applySpec = (next: ViewSpec) => {
@@ -1305,6 +1310,7 @@ export const FenceModel3D = React.forwardRef<
         next.material !== prevMat ||
         next.terrain !== prevTerrain ||
         next.segClasses !== prevClasses ||
+        next.segSteps !== prevSteps ||
         next.wallMounts !== prevMounts ||
         next.build !== prevBuild;
 
@@ -1332,6 +1338,7 @@ export const FenceModel3D = React.forwardRef<
         const l = computeFenceLayout(next.points, next.gates, {
           groundAt: terrainRef ? groundAt : undefined,
           segClass: classes ? (i: number) => classes[i] : undefined,
+          segSteps: next.segSteps ? (i: number) => next.segSteps?.[i] : undefined,
           wallMounts: next.wallMounts,
           build,
         });
@@ -1371,6 +1378,7 @@ export const FenceModel3D = React.forwardRef<
         prevMat = next.material;
         prevTerrain = next.terrain;
         prevClasses = next.segClasses;
+        prevSteps = next.segSteps;
         prevMounts = next.wallMounts;
         prevBuild = next.build;
         if (!framed) {
@@ -1417,7 +1425,7 @@ export const FenceModel3D = React.forwardRef<
       }
     };
 
-    applySpec({ points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, wallMounts, lots, lotColor, build });
+    applySpec({ points, height, material, materialColor, gates, selectedSegment, buildings, terrain, segClasses, segSteps, wallMounts, lots, lotColor, build });
     applyRef.current = applySpec;
 
     activateRef.current = () => {

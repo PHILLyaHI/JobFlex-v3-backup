@@ -115,6 +115,7 @@ export function FenceSceneFigure({
             buildings={scene.buildings}
             terrain={scene.terrain}
             segClasses={scene.segClasses}
+            segSteps={scene.segSteps}
             wallMounts={scene.wallMounts}
             lots={scene.lots}
             lotColor={scene.lotColor}

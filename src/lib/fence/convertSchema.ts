@@ -78,6 +78,8 @@ export const fenceConvertSchema = z.object({
           color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
           gates: z.array(z.object({ id: z.string().max(40), segmentIndex: z.number().int().min(-1).max(600), t: z.number().min(0).max(1), widthFt: z.number().min(0).max(40), kind: z.enum(["gate", "door"]), variant: z.string().max(20), x: z.number().finite().optional(), y: z.number().finite().optional() })).max(40),
           segClasses: z.record(z.string().regex(/^\d{1,3}$/), z.enum(["level", "racked", "stepped"])).refine((o) => Object.keys(o).length <= 600, "too many segments"),
+          // The ticket's step count per stepped segment (2026-10-01).
+          segSteps: z.record(z.string().regex(/^\d{1,3}$/), z.number().int().min(1).max(400)).refine((o) => Object.keys(o).length <= 600, "too many segments").optional(),
           wallMounts: z.array(planPoint).max(40),
           terrain: z
             .object({
