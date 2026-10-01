@@ -206,7 +206,7 @@ export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> 
   hvac: {
     h1: ["Turn an Address Into a Complete", "HVAC Estimate — in Seconds."],
     h1Long: true,
-    sub: "JobFlex AI analyzes the property and builds a detailed estimate with system sizing, equipment, pricing, energy costs, rebates, and more — before the first site visit.",
+    sub: "JobFlex AI analyzes the property and builds a detailed estimate with system sizing, equipment, pricing, energy costs, and more — before the first site visit.",
     subStrong: "No unnecessary drive. No hours of calculations.",
     primaryCta: "Start free — price an HVAC job",
     heroCta: "Build My First Estimate →",
