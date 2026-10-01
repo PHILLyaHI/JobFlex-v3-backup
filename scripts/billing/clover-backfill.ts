@@ -158,10 +158,10 @@ async function main() {
 
   // ── 0. where the window came from ─────────────────────
   say("\n0 · EVIDENCE FOR THE WINDOW");
-  const endpointId = opt("--endpoint") ?? "we_1SrleQ32nNmZaeo9PI1I5kZj";
-  if (live) {
-    const ep = await stripe.webhookEndpoints.retrieve(endpointId).catch((e: Error) => ({ error: e.message }));
-    say(`  endpoint ${endpointId}: ${"error" in ep ? ep.error : `${ep.url} · api_version ${ep.api_version} · ${ep.status}`}`);
+  // Every endpoint, with the version it is pinned to and when it was made: a
+  // replaced endpoint is the clearest date the window has.
+  for await (const ep of stripe.webhookEndpoints.list({ limit: 100 })) {
+    say(`  endpoint ${ep.id}: ${ep.url} · ${ep.api_version ?? "account default"} · ${ep.status} · created ${day(ep.created)}`);
   }
   // Events Stripe still holds (30 days): the version each was rendered at.
   const seenVersions = new Map<string, { first: number; last: number; n: number }>();
