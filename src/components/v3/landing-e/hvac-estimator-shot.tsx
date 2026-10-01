@@ -35,9 +35,13 @@ import { DEMO_ADDRESS, DEMO_READS } from "./hvac-estimator-demo/demo-actions";
 import type { DemoStep, HvacDemoHandle, HvacDemoHooks } from "./hvac-estimator-demo/demo-hooks";
 import { PLATE_INDOOR, PLATE_OUTDOOR, PLATE_PANEL } from "./hvac-estimator-demo/plates";
 
-/** The natural width the page is laid out at on the desk: the shell's 1728
- *  design width less its 264 px sidebar. */
-const DESK_PAGE_W = 1464;
+/** The width the page is laid out at on the desk, before it is zoomed to the
+ *  frame. It was the shell's 1728 px design width less its 264 px sidebar
+ *  (1464); 1350 since 2026-10-01 (owner: "the content is small") — the frame
+ *  draws the page ~8 % larger, and the estimator's own layout (the ESTIMATE
+ *  rail beside the step, the five-step row, the field grid) still holds at
+ *  1350, above its 860 px handheld break. */
+const DESK_PAGE_W = 1350;
 /** The frame is laid out at the phone's width below this (the estimator's
  *  own handheld rules are at 860 and 520; the hero's phone build at 640). */
 const PHONE_MAX = 640;
