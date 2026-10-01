@@ -48,6 +48,7 @@ import { OpenInBrowser } from "@/components/auth/open-in-browser";
 import { useInAppBrowser } from "@/components/auth/use-in-app-browser";
 import { effectiveConsent } from "@/lib/consent";
 import type { InAppBrowser } from "@/lib/inAppBrowser";
+import { metaTrackWithServer } from "@/lib/metaEvents";
 import { metaTrack, newEventId, readMetaCookies } from "@/lib/metaPixel";
 import { RegisterSprite } from "./register-sprite";
 import { ReferralBanner, type RegisterAttribution } from "./referral-banner";
@@ -389,6 +390,7 @@ export function RegisterContent({
       metaTrack("InitiateCheckout", { content_category: industry ?? "default" }, metaIds.current.checkout);
     }
   }, [step, industry, ret?.sessionId]);
+  const leadSent = React.useRef(false);
   const registrationSent = React.useRef(false);
   React.useEffect(() => {
     if (step === 4 && !registrationSent.current) {
@@ -872,6 +874,12 @@ export function RegisterContent({
       return;
     } finally {
       setChecking(false);
+    }
+    /* Meta Lead (2026-10-01): step 1 sent with a free address — browser and
+       server, one event_id, marketing consent only (lib/metaEvents). Once per
+       page: going back to step 1 and on again is the same lead. */
+    if (!leadSent.current) {
+      leadSent.current = metaTrackWithServer("Lead", { content_name: industry ?? "default" }, { email: em });
     }
     setStep(2);
   }

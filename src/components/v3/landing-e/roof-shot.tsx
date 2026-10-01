@@ -220,7 +220,21 @@ function useWide() {
   return wide;
 }
 
-export function RoofShot({ active, instant = false, hero = false }: { active: boolean; instant?: boolean; hero?: boolean }) {
+/** The steps the hero reports as the sequence reaches them (EstimatorDemoStep). */
+const ROOF_STEPS = ["aerial", "trace", "tilt", "takeoff"] as const;
+
+export function RoofShot({
+  active,
+  instant = false,
+  hero = false,
+  onStep,
+}: {
+  active: boolean;
+  instant?: boolean;
+  hero?: boolean;
+  /** Called once per step reached; the hero passes it, the showcase does not. */
+  onStep?: (step: string) => void;
+}) {
   const compact = useCompact();
   const wide = useWide();
   const marks = hero ? HERO_MARKS : ROOF_MARKS;
@@ -235,6 +249,11 @@ export function RoofShot({ active, instant = false, hero = false }: { active: bo
   const tilted = lifted && phase >= 3;
   const measured = lifted && phase >= 4;
   const t = useTiltT(tilted);
+  const reached = measured ? 4 : tilted ? 3 : traced ? 2 : lifted ? 1 : 0;
+  useEffect(() => {
+    if (reached > 0) onStep?.(ROOF_STEPS[reached - 1]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reached]);
 
   /* Orthographic camera rotating about the model's centre. At t=0 this is the
      identity on (x, y) — exactly the plan the trace was drawn in. */

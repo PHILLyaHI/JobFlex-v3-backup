@@ -83,7 +83,7 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
       // Member-referral side: convert PENDING referrals on the referred org's
       // first real payment + apply owed 50%-of-a-month referrer credits.
       await processReferralEffectsForInvoice(invoice);
-      // Meta Purchase on the first paid invoice, once per organization.
+      // Meta Purchase + Subscribe on the first paid invoice, once per organization.
       await metaOnInvoicePaid(invoice).catch((err) => console.warn("[meta:capi] Purchase failed", err));
       break;
     }

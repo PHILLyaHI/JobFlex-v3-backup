@@ -87,6 +87,17 @@ export function metaTrack(event: string, params: Record<string, string | number>
   }
 }
 
+/** A custom event (fbq trackCustom) — ours, not one of Meta's standard names.
+ *  Browser only: there is no server copy to deduplicate against. */
+export function metaTrackCustom(event: string, params: Record<string, string | number> = {}): void {
+  if (!isMetaPixelLoaded()) return;
+  try {
+    window.fbq!("trackCustom", event, params);
+  } catch {
+    /* the pixel must never break the page */
+  }
+}
+
 /** The standard PageView, exactly as Meta's own snippet sends it —
  *  `fbq('track', 'PageView')`, no custom data, no eventID (there is no server
  *  copy to deduplicate against). The live test on production listed our

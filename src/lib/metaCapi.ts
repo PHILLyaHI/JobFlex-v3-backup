@@ -33,7 +33,7 @@ export interface MetaUserData {
 }
 
 export interface MetaEvent {
-  eventName: "PageView" | "InitiateCheckout" | "CompleteRegistration" | "StartTrial" | "Purchase";
+  eventName: "PageView" | "ViewContent" | "Lead" | "InitiateCheckout" | "CompleteRegistration" | "StartTrial" | "Subscribe" | "Purchase";
   eventId: string;
   /** Unix seconds; now when absent. */
   eventTime?: number;
@@ -168,6 +168,8 @@ export interface MetaSignupContext {
   sourceUrl?: string;
   /** Set once the first Purchase has gone, so renewals do not repeat it. */
   purchaseSentAt?: string;
+  /** Set once Subscribe (the same first paid invoice) has gone. */
+  subscribeSentAt?: string;
   trialSentAt?: string;
 }
 

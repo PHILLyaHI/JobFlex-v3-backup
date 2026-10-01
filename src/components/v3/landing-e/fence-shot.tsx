@@ -6,6 +6,7 @@
    sequence, two stages — the timing and the geometry cannot drift apart. */
 
 import Image from "next/image";
+import { useEffect } from "react";
 import {
   AppFrame,
   BLUE,
@@ -62,7 +63,20 @@ const FENCE_CALLOUTS: CalloutSpec[] = [
 const FENCE_PHASES = [700, 1420, 1560, 2700, 4100, 5500];
 export const FENCE_TIMELINE = { marks: FENCE_PHASES, slide: FENCE_PHASES[5] + 1800 + READ_HOLD };
 
-export function FenceShot({ active, instant = false }: { active: boolean; instant?: boolean }) {
+/** The steps the hero reports as the sequence reaches them (EstimatorDemoStep):
+ *  phases 3–6; 1–2 are the cursor on the parcels button. */
+const FENCE_STEPS = ["parcel", "run", "tilt", "takeoff"] as const;
+
+export function FenceShot({
+  active,
+  instant = false,
+  onStep,
+}: {
+  active: boolean;
+  instant?: boolean;
+  /** Called once per step reached; the hero passes it, the showcase does not. */
+  onStep?: (step: string) => void;
+}) {
   // A press beat of its own between the cursor arriving and the layer coming
   // on (owner, 2026-08-25). The colour used to flip with nothing moving, so
   // the button never looked pressed — it just changed.
@@ -80,6 +94,10 @@ export function FenceShot({ active, instant = false }: { active: boolean; instan
   const run = phase >= 4;
   const tilted = phase >= 5;
   const graded = phase >= 6;
+  useEffect(() => {
+    if (phase >= 3) onStep?.(FENCE_STEPS[Math.min(phase, 6) - 3]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   const bays = 7;
   const sideBays = 5;

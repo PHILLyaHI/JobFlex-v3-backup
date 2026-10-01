@@ -1,8 +1,9 @@
 /* The server-side Meta events of a signup's life (2026-09-09):
    CompleteRegistration when the organization is created (signupCheckout),
    StartTrial when Stripe's checkout comes back trialing (the return or the
-   webhook, whichever finds the organization first), Purchase on the first
-   paid invoice. A flag is set only once Meta has accepted the event. All three read the person from what the signup wrote
+   webhook, whichever finds the organization first), Purchase and — since
+   2026-10-01 — Subscribe on the first paid invoice, i.e. the first charge
+   after the trial. A flag is set only once Meta has accepted the event. All three read the person from what the signup wrote
    on the organization (Organization.metaSignupJson) and its landing
    attribution, and each carries an event_id the browser's copy shares. */
 
@@ -100,7 +101,11 @@ export async function metaStartTrial(
   }).catch(() => {});
 }
 
-/** The first paid invoice of a subscription is the Purchase; renewals are not. */
+/** The first paid invoice of a subscription is the Purchase; renewals are not.
+ *  The same invoice is the Subscribe (2026-10-01): the trial has turned into
+ *  a paying subscription. Server only, its own id `<invoice>:subscribe`, its
+ *  own flag; it goes only with the first Purchase, so a subscription whose
+ *  Purchase went before Subscribe existed never sends one on a renewal. */
 export async function metaOnInvoicePaid(invoice: Stripe.Invoice): Promise<void> {
   if (!invoice.amount_paid || invoice.amount_paid <= 0) return;
   const subId = typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
@@ -110,18 +115,40 @@ export async function metaOnInvoicePaid(invoice: Stripe.Invoice): Promise<void> 
   const org = await db.organization.findUnique({ where: { id: mirror.organizationId }, select: ORG_SELECT });
   const ctx = org ? parseMetaSignup(org.metaSignupJson) : null;
   if (!org || !ctx || ctx.purchaseSentAt) return;
-  const sent = await sendMetaEvent(
-    eventFor(org, ctx, {
-      eventName: "Purchase",
-      eventId: invoice.id,
-      value: invoice.amount_paid / 100,
-      currency: invoice.currency.toUpperCase(),
-      custom: { plan: mirror.plan },
-    }),
-  );
-  if (!sent) return;
+  const value = invoice.amount_paid / 100;
+  const currency = invoice.currency.toUpperCase();
+  const [sent, subscribed] = await Promise.all([
+    sendMetaEvent(
+      eventFor(org, ctx, {
+        eventName: "Purchase",
+        eventId: invoice.id,
+        value,
+        currency,
+        custom: { plan: mirror.plan },
+      }),
+    ),
+    ctx.subscribeSentAt
+      ? Promise.resolve(false)
+      : sendMetaEvent(
+          eventFor(org, ctx, {
+            eventName: "Subscribe",
+            eventId: `${invoice.id}:subscribe`,
+            value,
+            currency,
+            custom: { plan: mirror.plan, predicted_ltv: value, subscription_id: subId },
+          }),
+        ),
+  ]);
+  if (!sent && !subscribed) return;
+  const now = new Date().toISOString();
   await db.organization.update({
     where: { id: org.id },
-    data: { metaSignupJson: JSON.stringify({ ...ctx, purchaseSentAt: new Date().toISOString() }) },
+    data: {
+      metaSignupJson: JSON.stringify({
+        ...ctx,
+        ...(sent ? { purchaseSentAt: now } : {}),
+        ...(subscribed ? { subscribeSentAt: now } : {}),
+      }),
+    },
   }).catch(() => {});
 }

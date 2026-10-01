@@ -74,9 +74,18 @@ export function pageConsentMode(): ConsentMode {
 /** What the trackers may do now: the visitor's own record when there is one,
  *  else the country's default — on for notice, off for opt-in. */
 export function effectiveConsent(): { analytics: boolean; marketing: boolean; explicit: boolean } {
-  const c = readConsent();
+  return consentFromCookies(cookieValue(CONSENT_COOKIE), cookieValue(REGION_COOKIE));
+}
+
+/** effectiveConsent() from the two cookie values — the same rule, for the
+ *  server, which reads them off the request (api/meta/event). */
+export function consentFromCookies(
+  consentValue: string | undefined | null,
+  regionValue: string | undefined | null,
+): { analytics: boolean; marketing: boolean; explicit: boolean } {
+  const c = parseConsentCookie(consentValue);
   if (c) return { analytics: c.analytics, marketing: c.marketing, explicit: true };
-  const on = pageConsentMode() === "notice";
+  const on = regionValue !== "optin";
   return { analytics: on, marketing: on, explicit: false };
 }
 
