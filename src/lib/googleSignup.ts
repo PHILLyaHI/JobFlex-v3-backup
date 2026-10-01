@@ -43,14 +43,16 @@ export async function googleSignupReturnUrl(handle: string): Promise<string> {
   const q = new URLSearchParams({ gsu: handle });
   try {
     const { cookies } = await import("next/headers");
-    const { INDUSTRY_COOKIE, UTM_COOKIE, UTM_KEYS, parseUtmCookie, resolveLandingVariant } = await import(
-      "@/components/v3/landing-e/landing-variants"
-    );
+    const { FBCLID_COOKIE, INDUSTRY_COOKIE, UTM_COOKIE, UTM_KEYS, parseUtmCookie, pickFbclid, resolveLandingVariant } =
+      await import("@/components/v3/landing-e/landing-variants");
     const jar = await cookies();
     const industry = resolveLandingVariant(jar.get(INDUSTRY_COOKIE)?.value);
     if (industry) q.set("industry", industry);
     const utm = parseUtmCookie(jar.get(UTM_COOKIE)?.value);
     for (const key of UTM_KEYS) if (utm[key]) q.set(key, utm[key] as string);
+    // The ad's click id, left by the landing's Google button (FBCLID_COOKIE).
+    const fbclid = pickFbclid({ fbclid: jar.get(FBCLID_COOKIE)?.value });
+    if (fbclid) q.set("fbclid", fbclid);
   } catch {
     /* no request cookies here — the register page reads the same cookies itself */
   }

@@ -447,6 +447,15 @@ export function pickFbclid(params: Record<string, string | string[] | undefined>
   return value && /^[\w-]{1,500}$/.test(value) ? value : undefined;
 }
 
+/* The click id across the Google round trip (2026-10-01). A NEW address comes
+   back from Google through the auth callback's own redirect
+   (lib/googleSignup.googleSignupReturnUrl), which never sees the callbackUrl —
+   so the Google button also leaves the fbclid in this cookie for an hour, and
+   the return puts it back on the register URL. Written with marketing consent
+   only: it is an advertising identifier. */
+export const FBCLID_COOKIE = "jf_fbclid";
+export const FBCLID_MAX_AGE_S = 60 * 60; // 1 hour
+
 /** `/auth/register` → `/auth/register?industry=fencing&utm_source=…&fbclid=…`.
  *  With no variant, utm or fbclid it returns `base` untouched, so the default
  *  page's markup is exactly what it was. */

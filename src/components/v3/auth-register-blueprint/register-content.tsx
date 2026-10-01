@@ -52,6 +52,7 @@ import { metaTrackWithServer } from "@/lib/metaEvents";
 import { metaTrack, newEventId, readMetaCookies } from "@/lib/metaPixel";
 import { RegisterSprite } from "./register-sprite";
 import { ReferralBanner, type RegisterAttribution } from "./referral-banner";
+import { rememberFbclidForGoogle } from "@/components/v3/landing-e/landing-variant-effects";
 import {
   applySignupPromo,
   googleSignupIdentity,
@@ -977,7 +978,9 @@ export function RegisterContent({
     setGoogleBusy(true);
     window.setTimeout(() => setGoogleBusy(false), 1600);
     // A new address comes back here with ?gsu= (auth callback); an address
-    // that already has an account signs in and lands on the dashboard.
+    // that already has an account signs in and lands on the dashboard. The
+    // ad's click id rides to that return in a cookie (2026-10-01).
+    rememberFbclidForGoogle(searchParams?.get("fbclid"));
     void signIn("google", { callbackUrl: "/auth/register" });
   }
 

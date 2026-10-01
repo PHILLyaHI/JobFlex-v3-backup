@@ -21,6 +21,7 @@ export function Hero({
   utm,
   registerHref = REGISTER,
   cta,
+  fbclid,
 }: {
   variant?: LandingVariant;
   /** The variant's key, for the Google button's cookie and callback. */
@@ -29,6 +30,8 @@ export function Hero({
   registerHref?: string;
   /** landing-e: the first-person CTA replaces the variant's own words. */
   cta?: string;
+  /** Meta's click id, for the Google button's callback (the register links have it in registerHref). */
+  fbclid?: string;
 }) {
   const shot = variant.visual !== "dashboard";
   // The hero plate is the LCP element: preload the one this viewport's CSS
@@ -81,7 +84,7 @@ export function Hero({
             <a href={registerHref} className="lp-btn-dark lp-cta lp-cta--solid" data-cta="hero">
               {cta ?? variant.primaryCta}
             </a>
-            <GoogleSignupButton className="lp-cta lp-cta--ghost" industry={variantKey} utm={utm}>
+            <GoogleSignupButton className="lp-cta lp-cta--ghost" industry={variantKey} utm={utm} fbclid={fbclid}>
               <svg viewBox="0 0 48 48" className="h-[18px] w-[18px]" aria-hidden>
                 <path
                   fill="#FFC107"

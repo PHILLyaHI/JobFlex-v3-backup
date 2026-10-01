@@ -110,7 +110,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
     <div className="jf-lp min-h-full bg-white">
       <Nav registerHref={register} cta={top} />
       <main>
-        <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} cta={top} />
+        <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} cta={top} fbclid={fbclid} />
         <Intro />
         <div className="lp-cv lp-cv--showcase"><EstimatorsShowcase ownSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} scenario={smart} registerHref={register} cta={top} /></div>
         {variant === "hvac" && <div className="lp-cv lp-cv--hvac"><HvacServiceSection registerHref={register} cta={top} /></div>}

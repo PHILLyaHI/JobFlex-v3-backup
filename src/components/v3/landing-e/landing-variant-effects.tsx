@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { onConsent } from "@/lib/consent";
+import { effectiveConsent, onConsent } from "@/lib/consent";
 import { metaTrackWithServer } from "@/lib/metaEvents";
 import { trackTraffic } from "@/lib/traffic-client";
 import { TRAFFIC_EVENTS } from "@/lib/traffic-contract";
 import {
+  FBCLID_COOKIE,
+  FBCLID_MAX_AGE_S,
   INDUSTRY_COOKIE,
   INDUSTRY_MAX_AGE_S,
   UTM_COOKIE,
@@ -27,6 +29,18 @@ export function writeLandingCookies(industry: LandingVariantKey | undefined, utm
     if (hasUtm(utm)) document.cookie = `${UTM_COOKIE}=${encodeURIComponent(serializeUtm(utm!))}; path=/; max-age=${INDUSTRY_MAX_AGE_S}; samesite=lax`;
   } catch {
     /* cookies blocked — the visit simply is not remembered */
+  }
+}
+
+/** Before a Google sign-in: the ad's click id for the return of a NEW address,
+ *  which comes back through the auth callback's own redirect and not the
+ *  callbackUrl (landing-variants FBCLID_COOKIE). Marketing consent only. */
+export function rememberFbclidForGoogle(fbclid: string | null | undefined) {
+  if (!fbclid || !/^[\w-]{1,500}$/.test(fbclid) || !effectiveConsent().marketing) return;
+  try {
+    document.cookie = `${FBCLID_COOKIE}=${fbclid}; path=/; max-age=${FBCLID_MAX_AGE_S}; samesite=lax`;
+  } catch {
+    /* cookies blocked — the callbackUrl still carries it */
   }
 }
 

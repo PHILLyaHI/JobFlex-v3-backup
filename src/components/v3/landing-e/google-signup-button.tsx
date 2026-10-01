@@ -13,7 +13,7 @@ import { signIn } from "next-auth/react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useInAppBrowser } from "@/components/auth/use-in-app-browser";
-import { writeLandingCookies } from "./landing-variant-effects";
+import { rememberFbclidForGoogle, writeLandingCookies } from "./landing-variant-effects";
 import { signupHref, type LandingVariantKey, type UtmParams } from "./landing-variants";
 import { REGISTER } from "./routes";
 
@@ -23,17 +23,23 @@ import { REGISTER } from "./routes";
    new address (lib/googleSignup.googleSignupReturnUrl) reads the cookies, so
    the register form opens with the trade pre-selected and the campaign kept
    exactly as it does on the email path. An existing address signs in and is
-   sent on to the app by the register page. */
+   sent on to the app by the register page.
+   The fbclid too (2026-10-01): in the callbackUrl like the email path's
+   register link, and — for the new address, whose return ignores the
+   callbackUrl — in FBCLID_COOKIE (marketing consent only). */
 export function GoogleSignupButton({
   className,
   children,
   industry,
   utm,
+  fbclid,
 }: {
   className: string;
   children: ReactNode;
   industry?: LandingVariantKey;
   utm?: UtmParams;
+  /** Meta's click id from the ad link (landing-variants pickFbclid). */
+  fbclid?: string;
 }) {
   const [busy, setBusy] = useState(false);
   /* Not offered inside Instagram / Facebook / LINE / TikTok (2026-10-01):
@@ -52,7 +58,8 @@ export function GoogleSignupButton({
         if (busy) return;
         setBusy(true);
         writeLandingCookies(industry, utm);
-        void signIn("google", { callbackUrl: signupHref(REGISTER, { industry, utm }) });
+        rememberFbclidForGoogle(fbclid);
+        void signIn("google", { callbackUrl: signupHref(REGISTER, { industry, utm, fbclid }) });
       }}
     >
       {children}
