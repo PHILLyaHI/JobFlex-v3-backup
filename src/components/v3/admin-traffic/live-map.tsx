@@ -15,7 +15,7 @@
  * this admin page.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { LiveStage, LiveVisitor } from "@/lib/traffic-live";
+import type { LiveStage, LiveTotals, LiveVisitor } from "@/lib/traffic-live";
 import s from "./traffic.module.css";
 
 interface Shape { c?: string | null; r?: string | null; n: string; d: string }
@@ -43,7 +43,7 @@ const PIN_META: Record<PinKind, { colour: string; label: string }> = {
 };
 const STAGE_LABEL: Record<LiveStage, string> = { browsing: "Looking around", registering: "On the sign-up form", checkout: "At checkout", "signed-up": "Signed up", member: "In the app · member" };
 
-export function LiveMap({ visitors, now, selected, onSelect, timezone }: { visitors: LiveVisitor[]; now: number; selected: string | null; onSelect: (key: string | null) => void; timezone: string }) {
+export function LiveMap({ visitors, now, selected, onSelect, timezone, totals }: { visitors: LiveVisitor[]; now: number; selected: string | null; onSelect: (key: string | null) => void; timezone: string; totals?: LiveTotals | null }) {
   const [map, setMap] = useState<WorldMap | null>(null);
   const [fine, setFine] = useState<Shape[] | null>(null);
   const [states, setStates] = useState<Shape[] | null>(null);
@@ -226,6 +226,9 @@ export function LiveMap({ visitors, now, selected, onSelect, timezone }: { visit
   const labelled = zoom >= 2.5;
   const topCountries = [...perCountry].sort((a, b) => b[1] - a[1]).slice(0, 8);
   const unplaced = visitors.filter((v) => v.lat === null || v.lon === null).length;
+  const count = visitors.length;
+  const onNow = visitors.filter((v) => v.active).length;
+  const fromAds = visitors.filter((v) => v.fromAd).length;
 
   return (
     <div className={s.map}>
@@ -289,6 +292,16 @@ export function LiveMap({ visitors, now, selected, onSelect, timezone }: { visit
           <button type="button" title="Whole world" aria-label="Whole world" onClick={() => flyTo(full)}>⟲</button>
         </div>
         {zoom > 1.05 && <span className={s.mapZoomLevel} data-card={!!open}>{Math.round(zoom * 10) / 10}×{showStates ? " · US states" : detailed ? " · detailed" : ""}</span>}
+
+        {/* The count, on the map (2026-09-30): what is pinned here, how many
+            of them are on the site this minute, and the day's running total,
+            so the map answers "how many" without looking anywhere else. */}
+        <div className={s.mapCount} data-card={!!open}>
+          <b>{count.toLocaleString("en-US")}</b>
+          <span>{count === 1 ? "visitor on the map" : "visitors on the map"}</span>
+          <i>{onNow.toLocaleString("en-US")} on the site now{fromAds > 0 ? ` · ${fromAds.toLocaleString("en-US")} from ads` : ""}{perCountry.size > 0 ? ` · ${plural(perCountry.size, "country", "countries")}` : ""}</i>
+          {totals && <i>{totals.today.toLocaleString("en-US")} today · {totals.allTime.toLocaleString("en-US")} all time</i>}
+        </div>
 
         {/* The name of what is under the pointer */}
         {tip && !open && <span className={s.mapTip} style={{ left: tip.x + 14, top: tip.y + 12 }}>{tip.text}</span>}

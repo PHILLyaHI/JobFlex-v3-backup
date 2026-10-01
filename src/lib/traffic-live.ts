@@ -168,6 +168,30 @@ export interface LiveCounts {
   members: number;
 }
 
+/** The whole-site visitor totals behind the live view (2026-09-30). The live
+ *  window only ever holds half an hour; these are the numbers the owner looks
+ *  for first — how many people in all, how many today, and how today stands
+ *  against the same hour yesterday — so the live section answers everything
+ *  without scrolling to the report below it. Counted twice, with and without
+ *  localhost, so the panel's own "Include localhost" switch picks an answer
+ *  without a second query. */
+export interface LiveTotals {
+  /** Unique people with a pageview, ever. */
+  allTime: number;
+  /** Unique people today, in the admin's timezone. */
+  today: number;
+  /** Yesterday up to this same clock time — what today is beating, or not. */
+  yesterdaySoFar: number;
+  /** All of yesterday. */
+  yesterday: number;
+  /** Unique people in the last seven days. */
+  last7Days: number;
+  /** Pageviews today — views, not people. */
+  viewsToday: number;
+}
+/** The same totals counted both ways; the caller picks by the dev switch. */
+export interface LiveTotalsPair { all: LiveTotals; production: LiveTotals }
+
 /** One platform's window: who it brought, from ads or not, how far they got. */
 export interface LivePlatform {
   platform: string;
@@ -195,6 +219,9 @@ export interface LiveReport {
   activeMinutes: number;
   visitors: LiveVisitor[];
   counts: LiveCounts;
+  /** Site-wide visitor totals (null when the totals query did not answer —
+   *  the live window is still shown). */
+  totals: LiveTotals | null;
   /** The ad platforms first (always), then any other platform with a visitor. */
   platforms: LivePlatform[];
   /** The day's organizations from the database, and how many came from ads. */
@@ -477,6 +504,7 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
     activeMinutes: LIVE_ACTIVE_MINUTES,
     visitors,
     counts,
+    totals: null,
     platforms: platformCards(visitors, signups),
     today: { signups: signups.length, fromAds: signups.filter((s) => signupSource(s).fromAd).length },
     otherSignups,
@@ -551,6 +579,74 @@ export function buildLiveQuery(windowMinutes = LIVE_WINDOW_MINUTES): string {
     FROM events
     WHERE timestamp > now() - INTERVAL ${Math.max(5, Math.min(120, Math.round(windowMinutes)))} MINUTE AND event IN (${events})
     ORDER BY timestamp DESC LIMIT 4000`;
+}
+
+/** A timezone name, safe to paste into HogQL. Anything else falls back to UTC
+ *  rather than reaching the query with quotes in it. */
+function tzLiteral(timezone: string): string {
+  const name = typeof timezone === "string" ? timezone.trim() : "";
+  return /^[A-Za-z][A-Za-z0-9_+\-]*(\/[A-Za-z0-9_+\-]+){0,2}$/.test(name) && name.length <= 64 ? `'${name}'` : "'UTC'";
+}
+
+/** Site-wide visitor totals, in the admin's timezone, counted with and
+ *  without localhost in one pass (2026-09-30).
+ *
+ *  It follows the dashboard's own rules — pageviews only, /admin excluded,
+ *  the environment read from jf_environment with the localhost domain as the
+ *  fallback — so "All-time visitors" here agrees with the figure the report
+ *  below the live section prints.
+ *
+ *  This one touches every event the project holds, so it is deliberately NOT
+ *  on the live poll's cache: an all-time count does not move in fifteen
+ *  seconds (lib/traffic-server caches it for minutes). */
+export function buildLiveTotalsQuery(timezone: string): string {
+  const tz = tzLiteral(timezone);
+  const prop = (name: string) => `ifNull(toString(properties.${name}), '')`;
+  const production = "env != 'development'";
+  /** Each figure twice: everyone, then everyone but localhost. */
+  const pair = (cond: string) => `uniqExactIf(person, ${cond}), uniqExactIf(person, (${cond}) AND ${production})`;
+  const today = "day = today_local";
+  const localNow = `toTimeZone(now(), ${tz})`;
+  return `SELECT
+    ${pair("1 = 1")},
+    ${pair(today)},
+    ${pair("day = today_local - 1 AND secs <= now_secs")},
+    ${pair("day = today_local - 1")},
+    ${pair("ts >= now() - INTERVAL 7 DAY")},
+    countIf(${today}), countIf((${today}) AND ${production})
+  FROM (
+    SELECT toString(person_id) AS person, timestamp AS ts,
+      ifNull(nullIf(${prop("$pathname")}, ''), path(${prop("$current_url")})) AS pathname,
+      ifNull(nullIf(${prop("jf_environment")}, ''), if(domain(${prop("$current_url")}) IN ('localhost', '127.0.0.1'), 'development', 'production')) AS env,
+      toTimeZone(timestamp, ${tz}) AS lts,
+      toDate(lts) AS day,
+      toHour(lts) * 3600 + toMinute(lts) * 60 + toSecond(lts) AS secs,
+      toDate(${localNow}) AS today_local,
+      toHour(${localNow}) * 3600 + toMinute(${localNow}) * 60 + toSecond(${localNow}) AS now_secs
+    FROM events
+    WHERE event = '$pageview' AND timestamp <= now()
+  )
+  WHERE pathname != '/admin' AND NOT startsWith(pathname, '/admin/')`;
+}
+
+/** The totals row → both readings. A missing or unreadable cell counts zero,
+ *  never NaN: the panel prints these straight. */
+export function liveTotalsFromRow(row: unknown[]): LiveTotalsPair {
+  const n = (i: number) => {
+    const raw = Array.isArray(row) ? row[i] : undefined;
+    const v = typeof raw === "number" ? raw : raw == null || raw === "" ? NaN : Number(raw);
+    return Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
+  };
+  // Columns come in pairs: everyone, then production only.
+  const read = (offset: 0 | 1): LiveTotals => ({
+    allTime: n(0 + offset),
+    today: n(2 + offset),
+    yesterdaySoFar: n(4 + offset),
+    yesterday: n(6 + offset),
+    last7Days: n(8 + offset),
+    viewsToday: n(10 + offset),
+  });
+  return { all: read(0), production: read(1) };
 }
 
 /** One query row → one LiveEvent (a bad row is skipped by the caller). */

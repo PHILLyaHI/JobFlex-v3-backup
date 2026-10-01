@@ -3,7 +3,7 @@
 // signups named after the organization the database made. Static imports
 // only (tsx has no top-level await).
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/traffic-live.check.ts
-import { AD_PLATFORM_KEYS, buildLiveQuery, classifySource, liveEventFromRow, platformCards, shapeLive, shortId, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
+import { AD_PLATFORM_KEYS, buildLiveQuery, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, platformCards, shapeLive, shortId, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
 
 let bad = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -132,6 +132,36 @@ const e4 = liveEventFromRow([...row, 32.7767, -96.797, "us", "tx", "GCLID"]);
 check("the click id column names the id, lower-cased, only when it is one we know", !!e4 && e4.click === "gclid" && liveEventFromRow([...row, 1, 1, "US", "TX", "zzz"])?.click === "");
 check("a row without a time or an event is skipped", liveEventFromRow(["p", "d", "$pageview", "x"]) === null && liveEventFromRow(["p", "d", "", 1]) === null);
 check("a short id is the tail of the person id", shortId("0192abcd-1234-5678-9abc-def012345678") === "345678" && shortId("abc") === "abc");
+
+// ── the site-wide totals behind the live view (2026-09-30)
+const totalsSql = buildLiveTotalsQuery("America/Chicago");
+check("the totals query counts people today, yesterday to this hour, the week and all time",
+  /uniqExactIf\(person, 1 = 1\)/.test(totalsSql) && /day = today_local/.test(totalsSql)
+  && /day = today_local - 1 AND secs <= now_secs/.test(totalsSql) && /INTERVAL 7 DAY/.test(totalsSql)
+  && /countIf\(day = today_local\)/.test(totalsSql));
+check("it counts each figure twice, so the localhost switch needs no second query",
+  (totalsSql.match(/env != 'development'/g) || []).length === 6);
+check("it follows the report's own rules — pageviews, no /admin, localhost by domain when the tag is missing",
+  /event = '\$pageview'/.test(totalsSql) && /pathname != '\/admin'/.test(totalsSql)
+  && /NOT startsWith\(pathname, '\/admin\/'\)/.test(totalsSql) && /'localhost', '127\.0\.0\.1'/.test(totalsSql));
+check("the timezone is the admin's, and only a real zone name reaches the query",
+  /'America\/Chicago'/.test(totalsSql) && /'UTC'/.test(buildLiveTotalsQuery("'; DROP TABLE events --"))
+  && !/DROP TABLE/.test(buildLiveTotalsQuery("'; DROP TABLE events --")) && /'UTC'/.test(buildLiveTotalsQuery("")));
+const pair = liveTotalsFromRow([900, 700, 120, 90, 100, 80, 450, 400, 61, 50, 310, 240]);
+check("the row reads as two sets: everyone, and everyone but localhost",
+  pair.all.allTime === 900 && pair.production.allTime === 700
+  && pair.all.today === 120 && pair.production.today === 90
+  && pair.all.yesterdaySoFar === 100 && pair.production.yesterdaySoFar === 80
+  && pair.all.yesterday === 450 && pair.production.yesterday === 400
+  && pair.all.last7Days === 61 && pair.production.last7Days === 50
+  && pair.all.viewsToday === 310 && pair.production.viewsToday === 240);
+const empty = liveTotalsFromRow([]);
+check("a missing or unreadable total is zero, never NaN",
+  empty.all.allTime === 0 && empty.production.today === 0
+  && liveTotalsFromRow(["12", null, "x", -4, undefined, "", 0, 0, 0, 0, 0, 0]).all.allTime === 12
+  && liveTotalsFromRow(["12", null, "x", -4, undefined, "", 0, 0, 0, 0, 0, 0]).all.today === 0);
+check("shapeLive leaves the totals to the server fetch that caches them",
+  shapeLive([], [], NOW, {}).totals === null);
 
 console.log(bad ? `\n${bad} failing` : "\nall green");
 process.exit(bad ? 1 : 0);

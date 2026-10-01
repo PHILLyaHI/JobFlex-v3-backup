@@ -35,7 +35,13 @@ async function freshSignups(): Promise<FreshSignup[]> {
 export async function getLiveTraffic(input: Record<string, unknown> = {}): Promise<LiveReport> {
   await requirePlatformAdmin();
   const signups = await freshSignups();
-  return liveTraffic(signups, { includeDevelopment: input.includeDevelopment === true });
+  return liveTraffic(signups, {
+    includeDevelopment: input.includeDevelopment === true,
+    // "Today" is a local day; the panel sends the timezone it is printing in.
+    timezone: typeof input.timezone === "string" ? input.timezone : "UTC",
+    // Live mode (15 s) asks for a shorter server cache so each tick moves.
+    fast: input.fast === true,
+  });
 }
 
 /** Signups by what the landing recorded on the organization — the trade hero
