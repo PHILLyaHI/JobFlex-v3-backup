@@ -33,20 +33,9 @@ export const metadata: Metadata = {
   description:
     "The modern operating system for contractors. AI-powered proposals, lead pipelines, scheduling, and client portals.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
-  icons: {
-    // Tight crop of the mark (2026-09-24): the 384 file is two-thirds padding,
-    // which drew the J tiny in the browser tab.
-    // Follows the browser theme (2026-09-24): ink J on a light browser, white
-    // on a dark one. The SVG switches itself (prefers-color-scheme inside it —
-    // Chrome, Edge, Firefox); the two PNGs are the same pair by media query for
-    // browsers that do not take an SVG favicon.
-    icon: [
-      { url: "/jobflex-mark-tab-dark.png", type: "image/png", media: "(prefers-color-scheme: light)" },
-      { url: "/jobflex-mark-tab-light.png", type: "image/png", media: "(prefers-color-scheme: dark)" },
-      { url: "/jobflex-mark-tab.svg", type: "image/svg+xml" },
-    ],
-    apple: "/jobflex-mark-384.png",
-  },
+  // The icons are files (2026-10-01, scripts/brand-icons.mjs): app/favicon.ico,
+  // app/icon.png 512², app/icon1.png 192², app/apple-icon.png 180² — Next writes their <link>s
+  // with type and sizes; app/manifest.ts lists the home-screen set.
 };
 
 export const viewport: Viewport = {
