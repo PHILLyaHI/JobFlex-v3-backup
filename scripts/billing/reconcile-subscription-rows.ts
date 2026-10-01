@@ -80,7 +80,7 @@ async function main() {
   console.log(`reconcile-subscription-rows · ${where}`);
   await import("../qa/_server-only");
   const { db } = await import("../../src/lib/db");
-  const { getStripe, isStripeEnabled } = await import("../../src/lib/sdk/stripe");
+  const { getStripe, isStripeEnabled, stripeClientForMode } = await import("../../src/lib/sdk/stripe");
   const { mirrorInvariantViolations, readPlanGrant, clearPlanGrant, LIVE_STRIPE_STATUSES } = await import("../../src/lib/planGrant");
   const { recordMirrorReference } = await import("../../src/lib/subscriptionRecord");
   const { subscriptionPeriodEndDate } = await import("../../src/lib/stripeCompat");
@@ -92,6 +92,9 @@ async function main() {
 
   const stripeOn = isStripeEnabled();
   const stripe = stripeOn ? getStripe() : null;
+  // Read-only: the sandbox account, to recognise a row that names a test subscription.
+  const stripeTest = stripeClientForMode("test");
+  const HOLD = new Set(listOpt("--hold"));
   // Every subscription on the account, grouped by organization the way the
   // sync links them: metadata.organizationId, else the mirror's ids.
   const byOrg = new Map<string, Stripe.Subscription[]>();
@@ -138,18 +141,28 @@ async function main() {
       // A row that never named a Stripe object is a demo / self-serve row
       // (actions/billing.setOrgPlan without Stripe) — reported, never written.
       const neverLinked = !row.externalSubId && !row.externalCustomerId;
+      // A row on a SANDBOX subscription (a checkout taken while the admin
+      // switch said test) is not one the live account could hold: shown, left.
+      const sandbox = !neverLinked && row.externalSubId ? await sandboxSubscription(row.externalSubId) : null;
+      const held = HOLD.has(row.externalSubId ?? "");
       lines.push(
         neverLinked
           ? `  no Stripe link at all — a demo/self-serve row; left as it is`
-          : `  no live candidate — the mirror claims ${row.status} but Stripe holds nothing live: mark CANCELED${FIX ? " (done)" : ""}`,
+          : sandbox
+            ? `  the row names a SANDBOX subscription (${sandbox}) — not on the live account; left as it is`
+            : `  no live candidate — the mirror claims ${row.status} but Stripe holds nothing live: mark CANCELED${held ? " — HELD, not written" : FIX ? " (done)" : ""}`,
       );
-      if (FIX && !neverLinked) {
+      if (FIX && !neverLinked && !sandbox && !held) {
         await db.subscription.update({ where: { organizationId: row.organizationId }, data: { status: "CANCELED", canceledAt: row.canceledAt ?? new Date() } });
         fixed += 1;
       }
       continue;
     }
     const winner = candidates[0];
+    if (candidates.some((c) => c.kind === "stripe" && HOLD.has(c.sub.id)) || HOLD.has(row.externalSubId ?? "")) {
+      lines.push(`  HELD (--hold) — shown only, nothing written for this organisation`);
+      continue;
+    }
     if (winner.kind === "stripe") {
       const s = winner.sub;
       const priceId = s.items.data[0]?.price?.id ?? null;
@@ -195,13 +208,18 @@ async function main() {
   console.log(`\n${flagged} organization(s) flagged${FIX ? `, ${fixed} mirror row(s) written` : ""}.`);
 
   if (stripe) await whoPaysForWhat();
+
+  async function sandboxSubscription(id: string): Promise<string | null> {
+    if (!stripeTest || stripeTest === stripe) return null;
+    const s = await stripeTest.subscriptions.retrieve(id).catch(() => null);
+    return s ? `${s.status}, ${s.items.data.map((i) => `$${((i.price.unit_amount ?? 0) / 100).toFixed(2)}/${i.price.recurring?.interval ?? "?"}`).join(" + ")}` : null;
+  }
   await db.$disconnect();
 
   // ── LINK and PAYS ON STRIPE, FREE HERE — reports only ──
   async function whoPaysForWhat() {
     const { getOrgLimitUsage } = await import("../../src/lib/limitsEngine");
     const { parsePlanLimits } = await import("../../src/lib/planLimits");
-    const HOLD = new Set(listOpt("--hold"));
     const ONLY = new Set(listOpt("--subs"));
     const usd = (c: number | null | undefined) => (c == null ? "—" : `$${(c / 100).toFixed(2)}`);
     const day = (s: number) => new Date(s * 1000).toISOString().slice(0, 10);
