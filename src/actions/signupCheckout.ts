@@ -32,6 +32,7 @@ import { TRADE_TYPES } from "@/lib/tradeTypes";
 import type Stripe from "stripe";
 import { bindAttributionToOrg } from "@/lib/attribution";
 import { syncSubscriptionFromStripe } from "@/lib/stripeSync";
+import { subscriptionPeriodEndDate } from "@/lib/stripeCompat";
 import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { CUSTOM_PLAN_SLUG, normalizeCustomPages } from "@/lib/customPlan";
@@ -452,7 +453,7 @@ export async function completePendingSignup(
         stripeSubscriptionId = sub.id;
         stripeSubscription = sub;
         trialEnd = sub.trial_end ? new Date(sub.trial_end * 1000) : null;
-        periodEnd = sub.current_period_end ? new Date(sub.current_period_end * 1000) : null;
+        periodEnd = subscriptionPeriodEndDate(sub);
       } else if (typeof sub === "string") {
         stripeSubscriptionId = sub;
       }
@@ -635,7 +636,7 @@ async function finishCardlessTrial(
     stripeSubscription: sub,
     planSlug: started.planLabel,
     trialEnd,
-    periodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : null,
+    periodEnd: subscriptionPeriodEndDate(sub),
     paidCustomPages: started.customPages,
     analyticsOutcome: "trial_started",
     analyticsLive: sub.livemode,
@@ -874,10 +875,12 @@ async function createAccountFromPending(
   // to name, so customer.subscription.created could not be mapped and wrote
   // nothing; the next event used to repair it — unless the shop upgraded first,
   // and the replacement carries no code. The subscription came back expanded
-  // with the session above, so this costs no Stripe call. Best-effort: the
-  // webhook and the reconcile cron still get their turn.
+  // with the session above; on clover its discounts are ids, which takes one
+  // Stripe call when a code was used. Best-effort: the webhook and the
+  // reconcile cron still get their turn.
   if (stripeSubscription) {
-    await syncSubscriptionFromStripe(stripeSubscription).catch((err) =>
+    const client = isStripeEnabled() ? ((await getStripeClient().catch(() => null))?.stripe ?? null) : null;
+    await syncSubscriptionFromStripe(stripeSubscription, client).catch((err) =>
       console.warn("[signup] subscription sync failed:", err),
     );
   }

@@ -22,6 +22,11 @@ export function isStripeMocked(): boolean {
   return mockIfEnabled() !== null;
 }
 
+/** The API version every client speaks, and every endpoint we register
+ *  receives. It decides the shape of each object and event payload; the
+ *  readers in lib/stripeCompat take both this shape and the 2024-06-20 one. */
+export const STRIPE_API_VERSION = "2025-11-17.clover" as Stripe.LatestApiVersion;
+
 // Only platform credentials are cached. Bound the cache across key rotations;
 // contractor keys (including invalid submissions) must never accumulate here.
 const clients = new Map<string, Stripe>();
@@ -29,7 +34,7 @@ const clients = new Map<string, Stripe>();
 function clientFor(key: string): Stripe {
   let c = clients.get(key);
   if (!c) {
-    c = new Stripe(key, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion });
+    c = new Stripe(key, { apiVersion: STRIPE_API_VERSION });
     if (clients.size >= 2) clients.delete(clients.keys().next().value!);
     clients.set(key, c);
   }
@@ -80,7 +85,7 @@ export function stripeClientForMode(mode: StripeMode): Stripe | null {
  * or replacing a stored key must not leave a copy in a global client cache.
  */
 export function stripeClientForKey(key: string): Stripe {
-  return new Stripe(key, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion });
+  return new Stripe(key, { apiVersion: STRIPE_API_VERSION });
 }
 
 /**

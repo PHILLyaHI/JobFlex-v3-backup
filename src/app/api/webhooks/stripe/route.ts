@@ -67,7 +67,7 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
         const sub = await stripe.subscriptions.retrieve(
           typeof session.subscription === "string" ? session.subscription : session.subscription.id,
         );
-        await syncSubscriptionFromStripe(sub);
+        await syncSubscriptionFromStripe(sub, stripe);
         // Meta StartTrial when the checkout came back trialing (lib/metaSignupEvents).
         await metaOnCheckoutCompleted(session, sub).catch((err) => console.warn("[meta:capi] StartTrial failed", err));
       } else {
@@ -78,7 +78,7 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
     case "customer.subscription.created":
     case "customer.subscription.updated": {
       const sub = event.data.object as Stripe.Subscription;
-      await syncSubscriptionFromStripe(sub);
+      await syncSubscriptionFromStripe(sub, stripe);
       // An admin change written from Stripe's reply is "syncing" until Stripe
       // reports the subscription back in that state (lib/planGrant).
       await confirmSyncingFromStripe(sub).catch((err) => console.warn("[webhook] sync mark:", err));
@@ -97,12 +97,12 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
     // are the daily cron's (/api/cron/trials), on its own two-day and same-day
     // schedule.
     case "customer.subscription.trial_will_end": {
-      await syncSubscriptionFromStripe(event.data.object as Stripe.Subscription);
+      await syncSubscriptionFromStripe(event.data.object as Stripe.Subscription, stripe);
       break;
     }
     case "invoice.paid": {
       const invoice = event.data.object as Stripe.Invoice;
-      await accrueForInvoice(invoice, event.id);
+      await accrueForInvoice(invoice, event.id, stripe);
       // Member-referral side: convert PENDING referrals on the referred org's
       // first real payment + apply owed 50%-of-a-month referrer credits.
       await processReferralEffectsForInvoice(invoice);
@@ -115,7 +115,7 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
       break;
     }
     case "charge.refunded": {
-      await reverseForCharge(event.data.object as Stripe.Charge, event.id);
+      await reverseForCharge(event.data.object as Stripe.Charge, event.id, stripe);
       break;
     }
     // A chargeback removes the commission as a refund does (owner, 2026-09-22):

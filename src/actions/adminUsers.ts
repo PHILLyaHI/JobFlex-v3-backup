@@ -6,6 +6,7 @@ import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
 import { SubscriptionStatus } from "@/lib/prismaEnums";
+import { subscriptionPeriodEnd } from "@/lib/stripeCompat";
 import { getSubscribersData, type SubscriberRow } from "@/actions/subscribers";
 import {
   LIVE_RECORD_STATUSES,
@@ -722,7 +723,7 @@ export async function syncSubscriptionsFromStripe(): Promise<StripeSyncResult> {
       externalCustomerId: stripeCustomerId(sub),
       externalSubId: sub.id,
       stripePriceId: priceId,
-      currentPeriodEnd: stripeDate(sub.current_period_end),
+      currentPeriodEnd: stripeDate(subscriptionPeriodEnd(sub)),
       trialEndsAt: stripeDate(sub.trial_end),
       canceledAt: stripeDate(sub.canceled_at),
     };

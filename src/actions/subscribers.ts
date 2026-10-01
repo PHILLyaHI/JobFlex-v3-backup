@@ -3,6 +3,7 @@ import type Stripe from "stripe";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
+import { discountRef, subscriptionPeriodEndDate } from "@/lib/stripeCompat";
 import { getMonthlyCentsBySlugUpper, getPlanNamesBySlug } from "@/lib/planCatalogServer";
 import { planDisplayName } from "@/lib/planCatalog";
 import {
@@ -150,15 +151,58 @@ function monthlyCentsFromPlanPrice(unitAmountCents: number, interval: string): n
  * reduces a single invoice, not recurring revenue; a repeating coupon whose
  * run has ended reduces nothing.
  */
+type StandingDiscount = { discount: Stripe.Discount; coupon: Stripe.Coupon };
+
+/* Clover sends a discount's coupon as an id under `source` (the old payload
+   carried the object as `discount.coupon`), so the coupons are fetched once
+   per page load and looked up here. */
+type CouponBook = Map<string, Stripe.Coupon>;
+
+function couponIdOf(d: Stripe.Discount | null | undefined): string | null {
+  return d ? discountRef(d)?.couponId ?? null : null;
+}
+
+function couponOf(d: Stripe.Discount, coupons: CouponBook): Stripe.Coupon | null {
+  const old = (d as unknown as { coupon?: Stripe.Coupon | null }).coupon;
+  if (old && typeof old === "object") return old;
+  const c = d.source?.coupon;
+  if (c && typeof c === "object") return c;
+  return typeof c === "string" ? (coupons.get(c) ?? null) : null;
+}
+
+/** The subscription's own discount: the old single field, else the first
+ *  expanded entry of `discounts`. */
+function subscriptionDiscount(sub: Stripe.Subscription): Stripe.Discount | null {
+  const old = (sub as unknown as { discount?: Stripe.Discount | null }).discount;
+  if (old) return old;
+  return (sub.discounts ?? []).find((d): d is Stripe.Discount => typeof d === "object" && d !== null) ?? null;
+}
+
+async function loadCoupons(stripe: Stripe, ids: Iterable<string>): Promise<CouponBook> {
+  const book: CouponBook = new Map();
+  await Promise.all(
+    [...new Set(ids)].map((id) =>
+      stripe.coupons
+        .retrieve(id, { expand: ["applies_to"] })
+        .then((c) => void book.set(id, c))
+        .catch(() => {}),
+    ),
+  );
+  return book;
+}
+
 function standingDiscount(
   sub: Stripe.Subscription,
   cust: Stripe.Customer | null,
-): Stripe.Discount | null {
-  const d = sub.discount ?? cust?.discount ?? null;
-  if (!d?.coupon) return null;
-  if (d.coupon.duration === "once") return null;
+  coupons: CouponBook,
+): StandingDiscount | null {
+  const d = subscriptionDiscount(sub) ?? cust?.discount ?? null;
+  if (!d) return null;
+  const coupon = couponOf(d, coupons);
+  if (!coupon) return null;
+  if (coupon.duration === "once") return null;
   if (d.end && d.end * 1000 <= Date.now()) return null;
-  return d;
+  return { discount: d, coupon };
 }
 
 /**
@@ -169,12 +213,12 @@ function standingDiscount(
  * behaviour, so the total does not move — and the row is counted as understated
  * rather than left looking exact.
  */
-function isProductRestricted(d: Stripe.Discount | null): boolean {
-  const products = d?.coupon?.applies_to?.products;
+function isProductRestricted(d: StandingDiscount | null): boolean {
+  const products = d?.coupon.applies_to?.products;
   return Array.isArray(products) && products.length > 0;
 }
 
-function afterDiscount(cents: number, currency: string, d: Stripe.Discount | null): number {
+function afterDiscount(cents: number, currency: string, d: StandingDiscount | null): number {
   const c = d?.coupon;
   if (!c) return cents;
   if (c.percent_off) return Math.round(cents * (1 - c.percent_off / 100));
@@ -283,13 +327,22 @@ async function fromStripe(): Promise<SubscribersData> {
       status: "all",
       limit: STRIPE_PAGE_SIZE,
       ...(startingAfter ? { starting_after: startingAfter } : {}),
-      expand: ["data.customer"],
+      expand: ["data.customer", "data.discounts"],
     });
     subs.push(...res.data);
     if (!res.has_more || res.data.length === 0) break;
     startingAfter = res.data[res.data.length - 1].id;
     if (page === STRIPE_MAX_PAGES - 1) truncated = true;
   }
+
+  const coupons = await loadCoupons(
+    stripe,
+    subs.flatMap((sub) =>
+      [subscriptionDiscount(sub), expandedCustomer(sub)?.discount ?? null]
+        .map(couponIdOf)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
 
   // Link keys, in the order they are trusted.
   const metaOrgIds = new Set<string>();
@@ -409,7 +462,7 @@ async function fromStripe(): Promise<SubscribersData> {
     const recurringItems = sub.items.data.filter((i) => i.price?.recurring);
     const priceable = recurringItems.filter((i) => i.price?.unit_amount != null);
     const gross = priceable.reduce((a, i) => a + monthlyCentsFor(i.price, i.quantity ?? 1), 0);
-    const discount = standingDiscount(sub, cust);
+    const discount = standingDiscount(sub, cust, coupons);
     const amountCents = afterDiscount(gross, currency, discount);
     const pricedBy: PricedBy =
       priceable.length === 0
@@ -460,9 +513,7 @@ async function fromStripe(): Promise<SubscribersData> {
       currency,
       promoCode: attr?.promoCode.code ?? null,
       influencerName: attr?.influencer.displayName ?? null,
-      currentPeriodEnd: sub.current_period_end
-        ? new Date(sub.current_period_end * 1000)
-        : null,
+      currentPeriodEnd: subscriptionPeriodEndDate(sub),
       createdAt: new Date(sub.created * 1000),
       changedAt: event.at,
       changeKind: event.kind,
@@ -711,24 +762,20 @@ export async function getSubscriberStripeStatus(
   const stripe = getStripe();
   let sub: Stripe.Subscription;
   try {
-    sub = await stripe.subscriptions.retrieve(externalSubId);
+    sub = await stripe.subscriptions.retrieve(externalSubId, { expand: ["discounts"] });
   } catch (err) {
     const code = (err as { code?: string } | null)?.code;
     if (code === "resource_missing") return { found: false };
     throw err;
   }
+  const discount = discountRef(subscriptionDiscount(sub));
   return {
     found: true,
     status: sub.status,
     paused: Boolean(sub.pause_collection),
-    currentPeriodEnd: sub.current_period_end
-      ? new Date(sub.current_period_end * 1000).toISOString()
-      : null,
+    currentPeriodEnd: subscriptionPeriodEndDate(sub)?.toISOString() ?? null,
     cancelAtPeriodEnd: sub.cancel_at_period_end,
-    promotionCode:
-      typeof sub.discount?.promotion_code === "string"
-        ? sub.discount.promotion_code
-        : (sub.discount?.promotion_code?.id ?? null),
-    couponId: sub.discount?.coupon?.id ?? null,
+    promotionCode: discount?.promotionCodeId ?? null,
+    couponId: discount?.couponId ?? null,
   };
 }

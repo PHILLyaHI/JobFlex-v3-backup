@@ -34,6 +34,7 @@ import { db } from "../../src/lib/db";
 import { getStripe, isStripeEnabled } from "../../src/lib/sdk/stripe";
 import { mirrorInvariantViolations, readPlanGrant, clearPlanGrant, LIVE_STRIPE_STATUSES } from "../../src/lib/planGrant";
 import { recordMirrorReference } from "../../src/lib/subscriptionRecord";
+import { subscriptionPeriodEndDate } from "../../src/lib/stripeCompat";
 
 const FIX = process.argv.includes("--fix");
 const CANCEL = process.argv.includes("--cancel-losers");
@@ -143,7 +144,7 @@ async function main() {
             externalCustomerId: typeof s.customer === "string" ? s.customer : s.customer.id,
             externalSubId: s.id,
             stripePriceId: priceId,
-            currentPeriodEnd: s.current_period_end ? new Date(s.current_period_end * 1000) : null,
+            currentPeriodEnd: subscriptionPeriodEndDate(s),
             trialEndsAt: s.trial_end ? new Date(s.trial_end * 1000) : null,
             canceledAt: s.cancel_at_period_end && s.canceled_at ? new Date(s.canceled_at * 1000) : null,
           },

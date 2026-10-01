@@ -109,7 +109,7 @@ export async function promotionCodeIdForMode(
   let created: Stripe.PromotionCode | null = null;
   try {
     created = await stripe.promotionCodes.create({
-      coupon: couponId,
+      promotion: { type: "coupon", coupon: couponId },
       // The SAME redeemable string as live, so a code typed from an influencer's
       // post behaves identically in a rehearsal.
       code: promo.code,

@@ -107,8 +107,8 @@ export async function createCardlessSubscription(opts: {
         // A card added later through Checkout becomes the subscription's own.
         payment_settings: { save_default_payment_method: "on_subscription" },
         metadata: meta,
-        ...(discount && "promotion_code" in discount ? { promotion_code: discount.promotion_code } : {}),
-        ...(discount && "coupon" in discount ? { coupon: discount.coupon } : {}),
+        // Basil removed the top-level coupon / promotion_code parameters.
+        ...(discount ? { discounts: [discount] } : {}),
       },
       { idempotencyKey: `cardless-subscription:${opts.token}` },
     );
@@ -254,7 +254,7 @@ export async function finishCardCheckout(
         ? await stripe.subscriptions.retrieve(session.subscription)
         : session.subscription;
     if (!sub) return { ok: false, error: "The plan did not restart." };
-    await syncSubscriptionFromStripe(sub);
+    await syncSubscriptionFromStripe(sub, stripe);
     if (!rec.restartedAt) await patchCardlessRecord(orgId, { restartedAt: new Date().toISOString() });
     return { ok: true, purpose };
   }

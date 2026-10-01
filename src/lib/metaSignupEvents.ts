@@ -10,6 +10,7 @@
 import type Stripe from "stripe";
 import { db } from "@/lib/db";
 import { parseMetaSignup, sendMetaEvent, type MetaEvent, type MetaSignupContext } from "@/lib/metaCapi";
+import { invoiceSubscriptionId } from "@/lib/stripeCompat";
 
 type OrgRow = {
   id: string;
@@ -126,7 +127,7 @@ export async function metaStartTrial(
  *  Purchase went before Subscribe existed never sends one on a renewal. */
 export async function metaOnInvoicePaid(invoice: Stripe.Invoice): Promise<void> {
   if (!invoice.amount_paid || invoice.amount_paid <= 0) return;
-  const subId = typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
+  const subId = invoiceSubscriptionId(invoice);
   if (!subId) return;
   const mirror = await db.subscription.findFirst({ where: { externalSubId: subId }, select: { organizationId: true, plan: true } });
   if (!mirror) return;

@@ -11,7 +11,7 @@
 import type Stripe from "stripe";
 import { db } from "@/lib/db";
 import { getStripeMode, stripeKeyFor, type StripeMode } from "@/lib/stripeMode";
-import { stripeClientForKey, stripeClientForMode } from "@/lib/sdk/stripe";
+import { STRIPE_API_VERSION, stripeClientForKey, stripeClientForMode } from "@/lib/sdk/stripe";
 import { decryptSecret, isSecretBoxConfigured } from "@/lib/crypto/secretBox";
 import { credentialErrorMessage } from "./credentialErrors";
 
@@ -194,6 +194,8 @@ export async function registerKeyWebhook(
     const ep = await stripe.webhookEndpoints.create({
       url,
       enabled_events: [...KEY_WEBHOOK_EVENTS],
+      // Pinned: the account's default version would decide the payload shape.
+      api_version: STRIPE_API_VERSION as Stripe.WebhookEndpointCreateParams.ApiVersion,
       description: "JobFlex — proposal payments",
     });
     if (!ep.secret) return { ok: false, message: "Stripe returned no signing secret" };

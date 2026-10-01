@@ -31,6 +31,7 @@ import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { planDisplayName, type PlanDTO } from "@/lib/planCatalog";
 import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
 import { recordMirrorReference } from "@/lib/subscriptionRecord";
+import { lineIsProration, subscriptionPeriodEnd, subscriptionPeriodEndDate } from "@/lib/stripeCompat";
 import {
   clearPlanGrant,
   clearSyncingMark,
@@ -218,7 +219,7 @@ function nowFacts(s: Situation): SubscriptionFacts {
     const plan = s.catalog.find((p) => p.slug === slug);
     const status = stripeStatusToMirror(sub.status);
     const cancelBooked = sub.cancel_at_period_end;
-    const nextAt = cancelBooked ? null : sub.status === "trialing" ? sub.trial_end : sub.current_period_end;
+    const nextAt = cancelBooked ? null : sub.status === "trialing" ? sub.trial_end : subscriptionPeriodEnd(sub);
     return {
       plan: slug || "—",
       planName: plan?.name ?? planDisplayName(slug || null, s.catalog),
@@ -228,7 +229,7 @@ function nowFacts(s: Situation): SubscriptionFacts {
       interval: intervalOf(sub),
       nextChargeAt: iso(nextAt),
       nextChargeCents: cancelBooked ? null : priceCentsOf(sub),
-      endsAt: cancelBooked ? iso(sub.current_period_end) : null,
+      endsAt: cancelBooked ? iso(subscriptionPeriodEnd(sub)) : null,
       note: cancelBooked
         ? "Cancellation booked — no further charges."
         : sub.status === "trialing"
@@ -352,7 +353,7 @@ async function planChange(raw: unknown, forApply: boolean): Promise<Plan | { err
     const trialing = sub?.status === "trialing";
     const endsTrial = trialing && data.endTrialNow;
     if (sub && priceId && curPriceId === priceId && !endsTrial) block(`Already on ${plan.name} (${interval.toLowerCase()}) — nothing to change.`);
-    if (sub?.cancel_at_period_end) warnings.push(`A cancellation is booked for ${new Date(sub.current_period_end * 1000).toLocaleDateString("en-US")} and stays booked; resume it from the customer's page if the plan should continue.`);
+    if (sub?.cancel_at_period_end) warnings.push(`A cancellation is booked for ${new Date((subscriptionPeriodEnd(sub) ?? 0) * 1000).toLocaleDateString("en-US")} and stays booked; resume it from the customer's page if the plan should continue.`);
 
     const targetCents = interval === "YEAR" ? (plan.yearlyPriceCents ?? plan.priceCents * 12) : plan.priceCents;
     let nextChargeAt: string | null = null;
@@ -378,7 +379,7 @@ async function planChange(raw: unknown, forApply: boolean): Promise<Plan | { err
         } else if (data.proration === "always_invoice") {
           // Stripe invoices the proration lines at once and the plan itself at
           // the period end: the preview carries both, split here.
-          const prorated = (pre.lines?.data ?? []).filter((l) => l.proration).reduce((n, l) => n + (l.amount ?? 0), 0);
+          const prorated = (pre.lines?.data ?? []).filter(lineIsProration).reduce((n, l) => n + (l.amount ?? 0), 0);
           if (prorated !== 0) {
             chargeNowCents = Math.max(0, prorated);
             nextChargeCents = Math.max(0, (pre.amount_due ?? targetCents) - prorated);
@@ -392,7 +393,7 @@ async function planChange(raw: unknown, forApply: boolean): Promise<Plan | { err
       estimated = true;
     }
     if (estimated && sub) {
-      nextChargeAt = endsTrial ? new Date(nowMs).toISOString() : iso(trialing ? sub.trial_end : sub.current_period_end);
+      nextChargeAt = endsTrial ? new Date(nowMs).toISOString() : iso(trialing ? sub.trial_end : subscriptionPeriodEnd(sub));
       if (endsTrial || data.proration === "always_invoice") chargeNowCents = targetCents;
     }
     // An invoice today moves the next regular charge one period out only when
@@ -409,7 +410,7 @@ async function planChange(raw: unknown, forApply: boolean): Promise<Plan | { err
       interval,
       nextChargeAt: restarts ? nextAfterNow : nextChargeAt,
       nextChargeCents: restarts ? targetCents : nextChargeCents,
-      endsAt: sub?.cancel_at_period_end ? iso(sub.current_period_end) : null,
+      endsAt: sub?.cancel_at_period_end ? iso(subscriptionPeriodEnd(sub)) : null,
       note: endsTrial
         ? "The trial ends today; the customer starts paying today."
         : trialing
@@ -435,7 +436,7 @@ async function planChange(raw: unknown, forApply: boolean): Promise<Plan | { err
     if (sub) {
       if (!s.stripe) block("Stripe is not configured — the live subscription cannot be cancelled from here.");
       const cancelsNow = trialing || data.cancelNow;
-      const periodEnd = new Date(sub.current_period_end * 1000);
+      const periodEnd = new Date((subscriptionPeriodEnd(sub) ?? Math.floor(nowMs / 1000)) * 1000);
       stripeAction = cancelsNow
         ? `Cancel ${sub.id} now (${trialing ? "a trial — nothing bills at its end" : "no refund, no further charges"}).`
         : `Book ${sub.id} to cancel on ${periodEnd.toLocaleDateString("en-US")}; no further charges after that.`;
@@ -523,7 +524,7 @@ export async function applySubscriptionChange(raw: unknown, admin: EditorActor):
       externalSubId: updated.id,
       stripePriceId: updated.items.data[0]?.price?.id ?? p.priceId,
       trialEndsAt: updated.trial_end ? new Date(updated.trial_end * 1000) : null,
-      currentPeriodEnd: updated.current_period_end ? new Date(updated.current_period_end * 1000) : null,
+      currentPeriodEnd: subscriptionPeriodEndDate(updated),
       canceledAt: updated.cancel_at_period_end && updated.canceled_at ? new Date(updated.canceled_at * 1000) : null,
     };
     await db.subscription.upsert({ where: { organizationId }, update: next, create: { organizationId, ...next } });
@@ -566,7 +567,7 @@ export async function applySubscriptionChange(raw: unknown, admin: EditorActor):
         replaced = { subId: sub.id, status: sub.status, action: "canceled_now", endsAt: null };
       } else {
         const booked = await s.stripe!.subscriptions.update(sub.id, { cancel_at_period_end: true });
-        replaced = { subId: sub.id, status: sub.status, action: "cancel_at_period_end", endsAt: iso(booked.current_period_end) };
+        replaced = { subId: sub.id, status: sub.status, action: "cancel_at_period_end", endsAt: iso(subscriptionPeriodEnd(booked)) };
       }
     } catch (err) {
       return { ok: false, error: stripeError(err) };
@@ -636,7 +637,7 @@ export async function verifySubscriptionSync(organizationId: string): Promise<Ve
     return {
       ok: true,
       confirmed,
-      stripe: { status: sub.status, priceId: sub.items.data[0]?.price?.id ?? null, periodEnd: iso(sub.current_period_end) },
+      stripe: { status: sub.status, priceId: sub.items.data[0]?.price?.id ?? null, periodEnd: iso(subscriptionPeriodEnd(sub)) },
       mark: confirmed ? null : mark,
     };
   } catch (err) {

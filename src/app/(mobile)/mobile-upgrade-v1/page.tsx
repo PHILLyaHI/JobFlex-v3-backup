@@ -23,6 +23,7 @@ import { requireOrg, isOwnerRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getPlanCatalog } from "@/lib/planCatalogServer";
 import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
+import { subscriptionPeriodEndDate } from "@/lib/stripeCompat";
 import { getStripeMode } from "@/lib/stripeMode";
 import { SubscriptionStatus } from "@/lib/prismaEnums";
 import { CUSTOM_PLAN_SLUG, normalizeCustomPages } from "@/lib/customPlan";
@@ -67,10 +68,7 @@ async function verifyReturn(organizationId: string, sessionId: string): Promise<
     const subId = typeof sub === "string" ? sub : (sub?.id ?? null);
     const trialEnd =
       sub && typeof sub !== "string" && sub.trial_end ? new Date(sub.trial_end * 1000) : null;
-    const periodEnd =
-      sub && typeof sub !== "string" && sub.current_period_end
-        ? new Date(sub.current_period_end * 1000)
-        : null;
+    const periodEnd = sub && typeof sub !== "string" ? subscriptionPeriodEndDate(sub) : null;
     const customerId = typeof session.customer === "string" ? session.customer : null;
     const status = trialEnd ? SubscriptionStatus.TRIALING : SubscriptionStatus.ACTIVE;
     // The old subscription ends here — the checkout route names the one this

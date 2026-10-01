@@ -16,6 +16,7 @@ import { db } from "@/lib/db";
 import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { isStripeWriteAllowed } from "@/lib/stripeSafety";
 import { PLAN_MONTHLY_USD } from "@/lib/planPricing";
+import { invoiceIsPaid, invoiceSubscriptionId } from "@/lib/stripeCompat";
 
 export const REFERRAL_REWARD_PCT = 50;
 
@@ -28,9 +29,8 @@ export const REFERRAL_REWARD_PCT = 50;
 export async function processReferralEffectsForInvoice(invoice: Stripe.Invoice): Promise<void> {
   // Trials produce $0 invoices — a referral only converts on real money,
   // mirroring accrueForInvoice's guard.
-  if (!invoice.paid || (invoice.amount_paid ?? 0) <= 0) return;
-  const subId =
-    typeof invoice.subscription === "string" ? invoice.subscription : (invoice.subscription?.id ?? null);
+  if (!invoiceIsPaid(invoice) || (invoice.amount_paid ?? 0) <= 0) return;
+  const subId = invoiceSubscriptionId(invoice);
   if (!subId) return;
 
   const mirror = await db.subscription.findFirst({

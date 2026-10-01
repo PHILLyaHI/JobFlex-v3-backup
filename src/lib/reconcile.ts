@@ -28,13 +28,13 @@ export async function reconcileStripe() {
 
   const subList = await stripe.subscriptions.list({ limit: 100, status: "all" });
   for (const sub of subList.data) {
-    await syncSubscriptionFromStripe(sub);
+    await syncSubscriptionFromStripe(sub, stripe);
     subscriptions++;
   }
 
   const invList = await stripe.invoices.list({ limit: 100, status: "paid" });
   for (const inv of invList.data) {
-    await accrueForInvoice(inv);
+    await accrueForInvoice(inv, undefined, stripe);
     invoices++;
   }
 

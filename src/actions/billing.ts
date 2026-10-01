@@ -6,6 +6,7 @@ import { isStripeEnabled, getStripeClient } from "@/lib/sdk/stripe";
 import { getPlanBySlug, getOrgPlanContext, revalidatePlanSurfaces } from "@/lib/planCatalogServer";
 import { ensureRecurringPrice } from "@/lib/stripePriceCache";
 import { SubscriptionStatus } from "@/lib/prismaEnums";
+import { subscriptionPeriodEndDate } from "@/lib/stripeCompat";
 import {
   CUSTOM_PAGES,
   CUSTOM_PAGE_CENTS,
@@ -148,7 +149,8 @@ export async function listSubscriptionInvoices(): Promise<{
         const pre = await stripe.invoices.createPreview({
           customer: sub.externalCustomerId,
           subscription: sub.externalSubId,
-          expand: ["discounts.coupon", "total_discount_amounts.discount"],
+          // Clover keeps a discount's coupon under source and sends it as an id.
+          expand: ["total_discount_amounts.discount.source.coupon"],
         });
         const subtotal = pre.subtotal ?? 0;
         const total = pre.total ?? 0;
@@ -158,8 +160,11 @@ export async function listSubscriptionInvoices(): Promise<{
         const creditCents = Math.max(0, total - due);
         const notes: string[] = [];
         for (const d of pre.total_discount_amounts ?? []) {
-          const disc = d.discount as unknown as { coupon?: { name?: string | null } } | string;
-          const name = typeof disc === "object" && disc?.coupon?.name ? disc.coupon.name : "Discount";
+          const disc = d.discount as unknown as
+            | { coupon?: { name?: string | null }; source?: { coupon?: { name?: string | null } | string | null } }
+            | string;
+          const coupon = typeof disc === "object" ? (disc?.source?.coupon ?? disc?.coupon) : null;
+          const name = typeof coupon === "object" && coupon?.name ? coupon.name : "Discount";
           if (d.amount) notes.push(`${name} −$${(d.amount / 100).toFixed(2)}`);
         }
         const firstLine = pre.lines?.data?.[0];
@@ -212,7 +217,7 @@ export async function cancelSubscription(): Promise<CancelSubscriptionResult> {
       const updated = await stripe.subscriptions.update(sub.externalSubId, {
         cancel_at_period_end: true,
       });
-      if (updated.current_period_end) endsAt = new Date(updated.current_period_end * 1000);
+      endsAt = subscriptionPeriodEndDate(updated) ?? endsAt;
     } catch (err) {
       console.warn("[billing] cancelSubscription failed:", err);
       return { ok: false, error: "Couldn't cancel the subscription. Try again." };
@@ -247,7 +252,7 @@ export async function resumeSubscription(): Promise<CancelSubscriptionResult> {
       const updated = await stripe.subscriptions.update(sub.externalSubId, {
         cancel_at_period_end: false,
       });
-      if (updated.current_period_end) endsAt = new Date(updated.current_period_end * 1000);
+      endsAt = subscriptionPeriodEndDate(updated) ?? endsAt;
     } catch (err) {
       console.warn("[billing] resumeSubscription failed:", err);
       return { ok: false, error: "Couldn't resume the subscription. Try again." };
@@ -344,9 +349,7 @@ export async function changePlan(
       metadata: { ...(current.metadata ?? {}), organizationId, planSlug: plan.slug, interval },
     });
     const trialEnd = updated.trial_end ? new Date(updated.trial_end * 1000) : null;
-    const periodEnd = updated.current_period_end
-      ? new Date(updated.current_period_end * 1000)
-      : null;
+    const periodEnd = subscriptionPeriodEndDate(updated);
     const planWas = await planSnapshot(organizationId);
     await db.subscription.update({
       where: { organizationId },

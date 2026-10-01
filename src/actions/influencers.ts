@@ -94,7 +94,8 @@ async function provisionStripePromo(opts: {
       name: opts.label,
     });
     const promo = await stripe.promotionCodes.create({
-      coupon: coupon.id,
+      // Clover: a promotion code names its coupon under `promotion`.
+      promotion: { type: "coupon", coupon: coupon.id },
       code: opts.code,
     });
     return { stripeCouponId: coupon.id, stripePromotionCodeId: promo.id };

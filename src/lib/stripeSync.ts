@@ -25,6 +25,15 @@ import {
 import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
 import { mirrorSubAtKey, recordMirrorReference } from "@/lib/subscriptionRecord";
 import { mailChargeback, mailCommissionHeld } from "@/lib/influencerMail";
+import {
+  chargeIsInvoiceBacked,
+  invoiceChargeId,
+  invoiceIsPaid,
+  invoiceSubscriptionId,
+  subscriptionDiscounts,
+  subscriptionPeriodEndDate,
+  type DiscountRef,
+} from "@/lib/stripeCompat";
 
 // ── small helpers ─────────────────────────────────────
 function idOf(v: string | { id: string } | null | undefined): string | null {
@@ -120,14 +129,14 @@ export async function isSelfReferral(
 }
 
 // Resolve a Stripe discount (promotion_code preferred, else coupon) to our PromoCode.
-async function resolvePromoCode(discount: Stripe.Discount | null | undefined) {
+export async function resolvePromoCode(discount: DiscountRef | null | undefined, stripe?: Stripe | null) {
   if (!discount) return null;
-  const promoId = idOf(discount.promotion_code);
+  const promoId = discount.promotionCodeId;
   if (promoId) {
     const byPromo = await db.promoCode.findUnique({ where: { stripePromotionCodeId: promoId } });
     if (byPromo) return byPromo;
   }
-  const couponId = discount.coupon?.id ?? null;
+  const couponId = discount.couponId;
   if (couponId) {
     const byCoupon = await db.promoCode.findFirst({ where: { stripeCouponId: couponId } });
     if (byCoupon) return byCoupon;
@@ -137,7 +146,12 @@ async function resolvePromoCode(discount: Stripe.Discount | null | undefined) {
   // metadata instead. A live coupon is created without metadata
   // (actions/influencers.ts), so on live this branch cannot fire; it is reached
   // only after both lookups above have already missed.
-  const metaPromoId = discount.coupon?.metadata?.jfPromoCodeId;
+  // Clover sends the coupon as an id, so its metadata takes one retrieve.
+  let couponMeta = discount.couponMetadata;
+  if (!couponMeta && couponId && stripe) {
+    couponMeta = await stripe.coupons.retrieve(couponId).then((c) => c.metadata ?? null, () => null);
+  }
+  const metaPromoId = couponMeta?.jfPromoCodeId;
   if (metaPromoId) {
     const byMeta = await db.promoCode.findUnique({ where: { id: metaPromoId } });
     if (byMeta) return byMeta;
@@ -274,7 +288,9 @@ async function mirrorAccepts(organizationId: string, externalSubId: string, stat
 }
 
 // ── subscription lifecycle → Subscription mirror + Attribution ──
-export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
+/** `stripe` reads what a clover payload leaves as ids (the discounts, a
+ *  coupon's metadata); every production caller passes the client it holds. */
+export async function syncSubscriptionFromStripe(sub: Stripe.Subscription, stripe?: Stripe | null) {
   const externalSubId = sub.id;
   const customerId = idOf(sub.customer);
   const metaOrg = sub.metadata?.organizationId ?? null;
@@ -299,7 +315,14 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
 
   const stripePriceId = sub.items.data[0]?.price?.id ?? null;
   const planSlug = await planSlugForPrice(stripePriceId);
-  const promo = await resolvePromoCode(sub.discount);
+  const discounts = await subscriptionDiscounts(sub, stripe);
+  let promo: Awaited<ReturnType<typeof resolvePromoCode>> = null;
+  for (const d of discounts) {
+    promo = await resolvePromoCode(d, stripe);
+    if (promo) break;
+  }
+  const discount = discounts[0] ?? null;
+  const currentPeriodEnd = subscriptionPeriodEndDate(sub);
   const status = mirrorStatusFor(sub);
   // The trial's end, while it is one — Stripe moves it (an operator, a test
   // clock), and the card-less trial's banner and lock read it from the row.
@@ -317,11 +340,11 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
         externalSubId,
         stripePriceId,
         ...(planSlug && { plan: planSlug }),
-        currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : null,
+        currentPeriodEnd,
         canceledAt: sub.canceled_at ? new Date(sub.canceled_at * 1000) : null,
         ...(trialEndsAt && { trialEndsAt }),
-        appliedPromotionCodeId: idOf(sub.discount?.promotion_code),
-        appliedCouponId: sub.discount?.coupon?.id ?? null,
+        appliedPromotionCodeId: discount?.promotionCodeId ?? null,
+        appliedCouponId: discount?.couponId ?? null,
       },
       create: {
         organizationId,
@@ -331,10 +354,10 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
         externalCustomerId: customerId,
         externalSubId,
         stripePriceId,
-        currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : null,
+        currentPeriodEnd,
         trialEndsAt: trialEndsAt ?? null,
-        appliedPromotionCodeId: idOf(sub.discount?.promotion_code),
-        appliedCouponId: sub.discount?.coupon?.id ?? null,
+        appliedPromotionCodeId: discount?.promotionCodeId ?? null,
+        appliedCouponId: discount?.couponId ?? null,
       },
     });
     reportPlanChange(organizationId, "stripe", planWas);
@@ -486,7 +509,7 @@ export async function markSubscriptionCanceled(sub: Stripe.Subscription) {
 }
 
 export async function markSubscriptionPastDue(invoice: Stripe.Invoice) {
-  const subId = idOf(invoice.subscription);
+  const subId = invoiceSubscriptionId(invoice);
   if (!subId) return;
   await db.subscription.updateMany({
     where: { externalSubId: subId },
@@ -495,9 +518,10 @@ export async function markSubscriptionPastDue(invoice: Stripe.Invoice) {
 }
 
 // ── commission accrual (the trigger: a successfully PAID invoice) ──
-export async function accrueForInvoice(invoice: Stripe.Invoice, eventId?: string) {
-  if (!invoice.paid || (invoice.amount_paid ?? 0) <= 0) return { skipped: "not-paid" as const };
-  const subId = idOf(invoice.subscription);
+/** `stripe` finds the paying charge when a clover invoice does not carry it. */
+export async function accrueForInvoice(invoice: Stripe.Invoice, eventId?: string, stripe?: Stripe | null) {
+  if (!invoiceIsPaid(invoice) || (invoice.amount_paid ?? 0) <= 0) return { skipped: "not-paid" as const };
+  const subId = invoiceSubscriptionId(invoice);
   if (!subId) return { skipped: "no-subscription" as const };
 
   let attribution = await db.attribution.findUnique({
@@ -598,6 +622,11 @@ export async function accrueForInvoice(invoice: Stripe.Invoice, eventId?: string
 
   const clearsAt = new Date(Date.now() + attribution.influencer.holdDays * 24 * 60 * 60 * 1000);
   const idempotencyKey = `accrue:${invoice.id}`;
+  // Refunds and disputes find this accrual by its charge — on a clover invoice
+  // that is a Stripe call, so a replay that already accrued skips it.
+  const accrued = await db.commissionLedger.findUnique({ where: { idempotencyKey }, select: { id: true } });
+  if (accrued) return { skipped: "already-accrued" as const };
+  const chargeId = await invoiceChargeId(invoice, stripe);
 
   try {
     await db.commissionLedger.create({
@@ -608,7 +637,7 @@ export async function accrueForInvoice(invoice: Stripe.Invoice, eventId?: string
         amountCents: commissionCents,
         currency: (invoice.currency ?? "usd").toLowerCase(),
         stripeInvoiceId: invoice.id,
-        stripeChargeId: idOf(invoice.charge),
+        stripeChargeId: chargeId,
         stripeEventId: eventId ?? null,
         clearsAt,
         state: LedgerEntryState.PENDING,
@@ -633,14 +662,14 @@ export async function accrueForInvoice(invoice: Stripe.Invoice, eventId?: string
   // A refund that arrived before this invoice parked its numbers; settle it now
   // that there is something to reverse. Both this and the reversal are keyed, so
   // a redelivery of either event cannot double-reverse.
-  const reversedFromPark = await drainParkedRefund(idOf(invoice.charge), eventId);
+  const reversedFromPark = await drainParkedRefund(chargeId, eventId);
 
   // A dispute can outrun its invoice as well: this commission is born into it —
   // frozen while it is open, charged back if it was already lost. Without this
   // the accrual stood PENDING with its clock running, and a lost dispute whose
   // closed event had come first was never applied: redeliveries of it are
   // skipped as already closed.
-  const dispute = await applyDisputesToNewAccrual(idOf(invoice.charge), eventId);
+  const dispute = await applyDisputesToNewAccrual(chargeId, eventId);
 
   return {
     accruedCents: commissionCents,
@@ -708,12 +737,12 @@ async function drainParkedRefund(chargeId: string | null, eventId?: string): Pro
   return typeof reversed === "number" ? reversed : 0;
 }
 
-export async function reverseForCharge(charge: Stripe.Charge, eventId?: string) {
+export async function reverseForCharge(charge: Stripe.Charge, eventId?: string, stripe?: Stripe | null) {
   return applyRefundReversal({
     chargeId: charge.id,
     chargeAmountCents: charge.amount,
     refundedCents: charge.amount_refunded ?? 0,
-    invoiceBacked: Boolean(idOf(charge.invoice)),
+    invoiceBacked: await chargeIsInvoiceBacked(charge, stripe),
     eventId,
   });
 }

@@ -333,7 +333,7 @@ async function main() {
     ok("…and the mirror stays on the new subscription", mI?.externalSubId === I_NEW && mI?.status === "ACTIVE", JSON.stringify(mI));
     const signupSrc = readFileSync("src/actions/signupCheckout.ts", "utf8");
     ok("the completion page now syncs the expanded subscription itself, after writing the mirror",
-      signupSrc.indexOf("syncSubscriptionFromStripe(stripeSubscription)") > signupSrc.indexOf("where: { organizationId: orgId }"));
+      signupSrc.indexOf("syncSubscriptionFromStripe(stripeSubscription,") > signupSrc.indexOf("where: { organizationId: orgId }"));
     await cleanup();
 
     // ═══ F. The coupon is not issued a second time ═══
