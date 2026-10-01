@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { ArrowDownToLine, ArrowUpRight, ChevronRight, RefreshCw, SlidersHorizontal, FlaskConical, Info, Users } from "lucide-react";
-import { getSignupAttribution, getTrafficDashboard, getTrafficStageVisitors } from "@/actions/trafficDashboard";
-import { conversionInterval, pageLabel, percent, type SignupAttribution, type StageVisitor, type StageVisitorsReport, type TrafficFilters, type TrafficReport } from "@/lib/traffic-contract";
+import { getSignupAttribution, getTrafficDashboard, getTrafficExperimentsAction, getTrafficStageVisitors } from "@/actions/trafficDashboard";
+import { conversionInterval, pageLabel, percent, type ExperimentResult, type SignupAttribution, type StageVisitor, type StageVisitorsReport, type TrafficFilters, type TrafficReport } from "@/lib/traffic-contract";
+import { AdsReconciliation, DailyPeople } from "./daily-tables";
 import { dateInZone, shiftDate } from "@/lib/traffic-query";
 import { Sheet, useMdl } from "@/components/v3/admin-influencers/admin-ui";
 import { TrafficChart } from "./traffic-chart";
@@ -68,7 +69,7 @@ function exportReport(report: TrafficReport) {
 const signupDimensions = { landingIndustry: "Landing trade", signupVariant: "Landing variant", utmSource: "utm_source", utmMedium: "utm_medium", utmCampaign: "utm_campaign", utmContent: "utm_content" } as const;
 type SignupDimension = keyof typeof signupDimensions;
 
-export function AdminTrafficContent({ data, signups: initialSignups = null, live = null, ledger = null }: { data: TrafficReport; signups?: SignupAttribution | null; live?: LiveReport | null; ledger?: SignupLedger | null }) {
+export function AdminTrafficContent({ data, deferred = false, signups: initialSignups = null, live = null, ledger = null }: { data: TrafficReport; deferred?: boolean; signups?: SignupAttribution | null; live?: LiveReport | null; ledger?: SignupLedger | null }) {
   const [report, setReport] = useState(data);
   const [signups, setSignups] = useState(initialSignups);
   const [signupDimension, setSignupDimension] = useState<SignupDimension>("landingIndustry");
@@ -96,6 +97,15 @@ export function AdminTrafficContent({ data, signups: initialSignups = null, live
       } catch (err) { if (id === request.current) setError(err instanceof Error ? err.message : "Could not refresh traffic."); }
     });
   }
+  // The page painted before the PostHog report was ready (page.tsx): ask for
+  // it now — the server's in-flight queries answer, nothing runs twice.
+  const asked = useRef(false);
+  useEffect(() => {
+    if (!deferred || asked.current) return;
+    asked.current = true;
+    load(data.filters);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
+  }, []);
   function apply(changes: Partial<TrafficFilters>) {
     const next = { ...filters, ...changes };
     setDraft(next); load(next);
@@ -107,14 +117,24 @@ export function AdminTrafficContent({ data, signups: initialSignups = null, live
   const pageCount = Math.max(1, Math.ceil(rows.length / 20));
   const visiblePage = Math.min(pageIndex, pageCount - 1);
   const acquisition = report[dimension];
-  const experimentNames = Array.from(new Set(report.experiments.map(e => e.experiment)));
+  // The A/B bench loads when its tab opens, not with the page (2026-10-01).
+  const [exp, setExp] = useState<{ key: string; rows: ExperimentResult[]; failed: boolean } | null>(null);
+  const expKey = JSON.stringify(filters);
+  useEffect(() => {
+    if (tab !== "experiments" || exp?.key === expKey) return;
+    let live = true;
+    getTrafficExperimentsAction({ ...filters }).then(rows => { if (live) setExp({ key: expKey, rows, failed: false }); }).catch(() => { if (live) setExp({ key: expKey, rows: [], failed: true }); });
+    return () => { live = false; };
+  }, [tab, expKey, exp?.key, filters]);
+  const experimentRows = exp?.key === expKey ? exp.rows : [];
+  const experimentNames = Array.from(new Set(experimentRows.map(e => e.experiment)));
   const selectedExperiment = experimentNames.includes(experiment) ? experiment : experimentNames[0] || "";
-  const variants = report.experiments.filter(e => e.experiment === selectedExperiment);
+  const variants = experimentRows.filter(e => e.experiment === selectedExperiment);
   const baseline = variants.find(v => v.variant === control) || variants.find(v => v.variant === "control") || variants[0];
   const funnelEnd = report.funnel.at(-1);
   const stepCoverageDate = report.firstStepAt ? dateInZone(new Date(report.firstStepAt), filters.timezone) : null;
   const coverageIncomplete = !stepCoverageDate || filters.from <= stepCoverageDate;
-  const failed = (name: string) => report.errors.some(e => e.startsWith(name + ":"));
+  const failed = (name: string) => name === "experiments" ? exp?.key === expKey && exp.failed : report.errors.some(e => e.startsWith(name + ":"));
   const today = dateInZone(new Date(), draft.timezone);
 
   // Stage drill-down: who reached a funnel stage, with device, place and source.
@@ -141,13 +161,13 @@ export function AdminTrafficContent({ data, signups: initialSignups = null, live
   return <div className={s.root} aria-busy={pending}>
     <header className={s.header}>
       <div><div className={s.eyebrow}>Platform intelligence / 01</div><h1>Traffic<span>.</span></h1></div>
-      <div className={s.headerActions}><span className={s.status} data-state={report.status === "ok" && !report.errors.length ? "ok" : "warning"}><i/>{report.status === "disabled" ? "Not connected" : report.status !== "ok" ? "Unavailable" : report.errors.length ? "Partial data" : "PostHog connected"}</span>
+      <div className={s.headerActions}><span className={s.status} data-state={report.status === "ok" && !report.errors.length ? "ok" : "warning"}><i/>{deferred && !report.totals && !error ? "Loading PostHog…" : report.status === "disabled" ? "Not connected" : report.status !== "ok" ? "Unavailable" : report.errors.length ? "Partial data" : "PostHog connected"}</span>
         <button className={s.button} onClick={() => exportReport(report)} disabled={!t || pending}><ArrowDownToLine size={15}/>Export CSV</button>
         <button className={s.iconButton} aria-label="Refresh traffic" onClick={() => load(filters)} disabled={pending}><RefreshCw size={17} className={pending ? s.spin : ""}/></button>
       </div>
     </header>
 
-    <div className={s.lifetime}><span>All-time visitors <strong>{n(report.lifetime)}</strong></span><span>Today <strong>{n(report.today)}</strong></span><span className={s.scope}>{filters.environment === "all" ? "www.jobflex.app + localhost" : filters.environment === "development" ? "Localhost only" : "www.jobflex.app"} / no bots, no previews / {filters.fullHistory ? "full history" : `since ${TRAFFIC_SINCE_LABEL}`}</span><label className={s.liveToggle}><input type="checkbox" checked={filters.fullHistory} disabled={pending} onChange={e => apply({ fullHistory: e.target.checked })}/>Show full history</label><span className={s.updated}>{pending ? "Querying PostHog..." : `Updated ${new Date(report.fetchedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: filters.timezone })}`}</span></div>
+    <div className={s.lifetime}><span>All-time visitors <strong>{n(report.lifetime ?? live?.totals?.allTime)}</strong></span><span>Today <strong>{n(report.today ?? live?.totals?.today)}</strong></span><span className={s.scope}>{filters.environment === "all" ? "www.jobflex.app + localhost" : filters.environment === "development" ? "Localhost only" : "www.jobflex.app"} / no bots, no previews / {filters.fullHistory ? "full history" : `since ${TRAFFIC_SINCE_LABEL}`}</span><label className={s.liveToggle}><input type="checkbox" checked={filters.fullHistory} disabled={pending} onChange={e => apply({ fullHistory: e.target.checked })}/>Show full history</label><span className={s.updated}>{pending ? "Querying PostHog..." : `Updated ${new Date(report.fetchedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: filters.timezone })}`}</span></div>
 
     {/* Who is on the site this minute, where from, how far they got (2026-09-28). */}
     {live && <LivePanel initial={live} timezone={filters.timezone} fullHistory={filters.fullHistory}/>}
@@ -176,6 +196,7 @@ export function AdminTrafficContent({ data, signups: initialSignups = null, live
     <div className={s.sectionLabel}><span>01 / Audience</span><span>{filters.page ? pageLabel(filters.page) : "All pages"}{filters.audience !== "all" ? ` / ${filters.audience}` : ""}</span></div>
     <section className={s.metrics} aria-label="Audience summary">
       <div className={s.metricLead}><span>Visitors in range</span><strong>{n(t?.visitors)}</strong><small>{delta(t?.visitors, report.previous?.visitors)}</small></div>
+      <div><span>People (est.)</span><strong>{n(report.people?.people)}</strong><small>{report.people && t?.visitors ? `${rate(percent(report.people.inAppVisitors, t.visitors))} in FB / IG in-app · ${n(report.people.inAppVisitors)} clicks → ${n(report.people.inAppPeople)} people` : "address + browser"}</small></div>
       <div><span>New visitors</span><strong>{n(t?.newVisitors)}</strong><small>{rate(t ? percent(t.newVisitors, t.visitors) : null)} of visitors</small></div>
       <div><span>Returning visitors</span><strong>{n(t?.returningVisitors)}</strong><small>{rate(t ? percent(t.returningVisitors, t.visitors) : null)} of visitors</small></div>
       <div><span>Repeat visitors</span><strong>{n(t?.repeatVisitors)}</strong><small>2+ sessions in this range</small></div>
@@ -189,12 +210,15 @@ export function AdminTrafficContent({ data, signups: initialSignups = null, live
       <div className={s.composition}><div className={s.compositionBar} data-empty={!t?.visitors} aria-label={`${rate(t ? percent(t.newVisitors, t.visitors) : null)} new visitors`}><span style={{ width: `${t ? percent(t.newVisitors, t.visitors) ?? 0 : 0}%` }}/></div><span><b>{rate(t ? percent(t.newVisitors, t.visitors) : null)}</b> new</span><span><b>{rate(t ? percent(t.returningVisitors, t.visitors) : null)}</b> returning</span></div>
     </section>
 
+    {report.points.length > 0 && <DailyPeople points={report.points}/>}
+    {report.points.length > 0 && <AdsReconciliation points={report.points}/>}
+
     <div className={s.sectionLabel}><span>02 / Conversion</span><span>Ordered, unique visitors</span></div>
     <section className={s.card}>
       <div className={s.cardHead}><div><h2>From visit to signup</h2><span className={s.micro}>Landing entrants in the selected dates</span></div><div className={s.funnelControls}><Select label="Registration flow" value={filters.flow} onChange={flow => apply({ flow: flow as TrafficFilters["flow"] })}><option value="all">All flows</option><option value="standard">Email signup</option><option value="google">Google signup</option></Select><Select label="Conversion window" value={String(filters.windowDays)} onChange={v => apply({ windowDays: Number(v) })}>{[1, 7, 14].map(d => <option key={d} value={d}>{d} day{d > 1 ? "s" : ""}</option>)}</Select><Select label="Billing data" value={filters.billingMode} onChange={v => apply({ billingMode: v as TrafficFilters["billingMode"] })}><option value="live">Live only</option><option value="test">Test only</option><option value="all">Live + test</option></Select></div></div>
       <div className={s.inlineNote}><Info size={16}/><span><b>New organizations: {n(signups?.total)}</b> / {filters.from} to {filters.to}. Database count across all signup flows, billing modes and traffic sources; deleted organizations excluded. This is separate from the tracked visitor funnel below.</span></div>
       {filters.flow === "all" && <p className={s.inlineNote}>Email and Google combined, counted once per visitor. The email-only Account step is omitted because Google skips it.</p>}
-      {!report.firstStepAt && !failed("lifetime") && <div className={s.inlineNote}><Info size={16}/><span>Step tracking starts with this release. Earlier step conversions are not available.</span></div>}
+      {!report.firstStepAt && !failed("overview") && <div className={s.inlineNote}><Info size={16}/><span>Step tracking starts with this release. Earlier step conversions are not available.</span></div>}
       {stepCoverageDate && coverageIncomplete && <div className={s.inlineNote}><Info size={16}/><span>Partial step coverage from {stepCoverageDate}. Entry-to-step and overall rates are hidden for this range.</span></div>}
       {filters.page && <p className={s.inlineNote}>The page filter affects audience reports, not the landing-to-signup funnel.</p>}
       <div className={s.funnelLayout}>
@@ -273,6 +297,6 @@ export function AdminTrafficContent({ data, signups: initialSignups = null, live
         <p className={s.footnote}>Device and browser come from the visitor&apos;s own browser. Location is estimated from IP address and can be approximate. Source is the first thing recorded in the landing session. Activity counts inside the {filters.windowDays}-day conversion window.</p>
       </div>
     </Sheet>
-    <details className={s.methodology}><summary><Info size={15}/>Measurement notes</summary><div><p><b>{filters.fullHistory ? "Full history: every recorded event, before the ad launch too." : `Counting since ${TRAFFIC_SINCE_LABEL}`}</b> (the ad launch, midnight America/Los_Angeles). Every card, all-time, today, the funnel, the platform cards, the map and the signup lists count from that date; the date range works inside it.</p><p><b>Visitors</b> are distinct PostHog person IDs, not guaranteed distinct humans. Separate devices or cleared cookies can count again.</p><p><b>New</b> means first observed in the selected range. <b>Returning</b> means first observed before it. <b>Repeat</b> means 2+ recorded sessions within the range, and can include new visitors.</p><p><b>Coverage</b> begins {report.firstTrackedAt?.slice(0, 10) || "when the first event arrives"}. Admin pages are excluded. Visitors are counted on www.jobflex.app and jobflex.app only (localhost when chosen); Vercel previews, pages with no hostname and bots (PostHog&apos;s bot flag, an empty or known bot user agent) never count. &ldquo;From ads&rdquo; means the visit carried utm_source or fbclid. Google signup skips the account step. Filters never reconstruct unrecorded historical events.</p><p><b>Freshness</b> Reports are cached for up to 60 seconds; ingestion may take additional time. Today follows the displayed timezone. All-time and today ignore page, audience, source and device filters.</p></div></details>
+    <details className={s.methodology}><summary><Info size={15}/>Measurement notes</summary><div><p><b>{filters.fullHistory ? "Full history: every recorded event, before the ad launch too." : `Counting since ${TRAFFIC_SINCE_LABEL}`}</b> (the ad launch, midnight America/Los_Angeles). Every card, all-time, today, the funnel, the platform cards, the map and the signup lists count from that date; the date range works inside it.</p><p><b>In-app browsers.</b> In Facebook and Instagram&apos;s in-app browsers a visitor is a click: each ad tap can arrive with a fresh cookie, so one person counts again. <b>People (est.)</b> counts address + browser ($ip + $raw_user_agent) instead, unique per day — an estimate: a household on one Wi-Fi with the same phone model counts once, a phone that changes network counts twice.</p><p><b>Visitors</b> are distinct PostHog person IDs, not guaranteed distinct humans. Separate devices or cleared cookies can count again.</p><p><b>New</b> means first observed in the selected range. <b>Returning</b> means first observed before it. <b>Repeat</b> means 2+ recorded sessions within the range, and can include new visitors.</p><p><b>Coverage</b> begins {report.firstTrackedAt?.slice(0, 10) || "when the first event arrives"}. Admin pages are excluded. Visitors are counted on www.jobflex.app and jobflex.app only (localhost when chosen); Vercel previews, pages with no hostname and bots (PostHog&apos;s bot flag, an empty or known bot user agent) never count. &ldquo;From ads&rdquo; means the visit carried utm_source or fbclid. Google signup skips the account step. Filters never reconstruct unrecorded historical events.</p><p><b>Freshness</b> Reports are cached for up to 60 seconds; ingestion may take additional time. Today follows the displayed timezone. All-time and today ignore page, audience, source and device filters.</p></div></details>
   </div>;
 }

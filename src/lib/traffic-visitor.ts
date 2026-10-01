@@ -80,6 +80,17 @@ export function visitorRuleSql(cols: { host: string; ua: string; browserType: st
   return `(${hostRuleSql(cols.host, cols.event, scope)} AND ${botRuleSql(cols.ua, cols.browserType, cols.event)})`;
 }
 
+/** Facebook's and Instagram's in-app browsers (2026-10-01). A visitor there is
+ *  a CLICK: each ad tap can arrive with a fresh cookie, so PostHog counts the
+ *  same person again. "People (est.)" counts them by address and browser
+ *  instead — $ip + $raw_user_agent, unique per day. */
+export const IN_APP_UA_PATTERN = "FBAN|FBAV|FB_IAB|FBIOS|FB4A|Instagram";
+export const IN_APP_SQL = `match(${UA_SQL}, '${IN_APP_UA_PATTERN}')`;
+/** One estimated person: the address and the browser, together. */
+export const PERSON_KEY_SQL = `concat(${prop("$ip")}, '|', ${UA_SQL})`;
+/** The ad tags the reconciliation table splits by: Meta's site_source_name values. */
+export const AD_SOURCES = ["fb", "ig", "an"] as const;
+
 // ── JavaScript (the live panel's events) ───────────────────────────────────
 
 export function isLocalHost(host: string): boolean {

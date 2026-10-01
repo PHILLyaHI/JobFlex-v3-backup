@@ -8,10 +8,12 @@
 // the campaigns and ads seen — so when the ads run, every platform and
 // every ad is told apart at a glance. A card is a filter: pressed, the map
 // and the list below keep only that platform's people.
+import { memo } from "react";
 import type { LivePlatform } from "@/lib/traffic-live";
 import s from "./traffic.module.css";
 
-export function LivePlatforms({ platforms, selected, onSelect }: { platforms: LivePlatform[]; selected: string | null; onSelect: (key: string | null) => void }) {
+/** Memoised (2026-10-01): a refresh with the same platforms hands down the same array (live-diff), and the cards skip their render. */
+export const LivePlatforms = memo(function LivePlatforms({ platforms, selected, onSelect }: { platforms: LivePlatform[]; selected: string | null; onSelect: (key: string | null) => void }) {
   const rate = (a: number, b: number) => (b > 0 ? `${Math.round((a / b) * 100)}%` : "–");
   // A platform with nobody in the window and no signup today has nothing to
   // say, and five such cards — each three zeros deep — were most of the
@@ -62,4 +64,4 @@ export function LivePlatforms({ platforms, selected, onSelect }: { platforms: Li
       )}
     </div>
   );
-}
+});

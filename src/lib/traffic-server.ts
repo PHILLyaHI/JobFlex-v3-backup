@@ -1,5 +1,5 @@
-import type { StageVisitor, StageVisitorsReport, TrafficBreakdown, TrafficFilters, TrafficReport, TrafficTotals } from "./traffic-contract";
-import { buildStageVisitorsQuery, buildTrafficQueries, funnelStages, shiftDate } from "./traffic-query";
+import type { ExperimentResult, StageVisitor, StageVisitorsReport, TrafficBreakdown, TrafficDaily, TrafficFilters, TrafficReport, TrafficTotals } from "./traffic-contract";
+import { buildExperimentsQuery, buildStageVisitorsQuery, buildTrafficQueries, funnelStages, shiftDate } from "./traffic-query";
 import { buildLiveQuery, buildLiveTotalsQuery, liveEventFromRow, liveHeadline, liveTotalsFromRow, minutesIntoDay, shapeLive, type FreshSignup, type LiveEvent, type LiveReport, type LiveTotalsPair } from "./traffic-live";
 
 /** The last half hour of events, one PostHog query, shared by every admin
@@ -80,6 +80,7 @@ export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDeve
 type Rows = unknown[][];
 const cache = new Map<string, { at: number; promise: Promise<TrafficReport> }>();
 const numeric = (v: unknown) => typeof v === "number" && Number.isFinite(v) ? v : Number(v) || 0;
+const daily = (r: unknown[]): TrafficDaily => ({ people: numeric(r[0]), inAppVisitors: numeric(r[1]), inAppPeople: numeric(r[2]), adsFb: numeric(r[3]), adsIg: numeric(r[4]), adsAn: numeric(r[5]), adsFbclid: numeric(r[6]), adsAny: numeric(r[7]) });
 const totals = (r: unknown[]): TrafficTotals => ({ visitors: numeric(r[0]), newVisitors: numeric(r[1]), returningVisitors: numeric(r[2]), repeatVisitors: numeric(r[3]), sessions: numeric(r[4]), pageviews: numeric(r[5]) });
 
 export function posthogApiConfig() {
@@ -116,7 +117,7 @@ export async function runTrafficQuery(sql: string, name: string): Promise<Rows> 
 
 export function emptyTrafficReport(filters: TrafficFilters): TrafficReport {
   return { filters, fetchedAt: new Date().toISOString(), status: "ok", errors: [], totals: null, previous: null,
-    lifetime: null, today: null, firstTrackedAt: null, firstStepAt: null, points: [], pages: [], sources: [],
+    lifetime: null, today: null, firstTrackedAt: null, firstStepAt: null, people: null, points: [], pages: [], sources: [],
     referrers: [], campaigns: [], devices: [], browsers: [], countries: [], terms: [], hosts: [], funnel: [], funnelOutcomes: null, experiments: [], variants: [] };
 }
 
@@ -128,8 +129,12 @@ async function loadReport(filters: TrafficFilters): Promise<TrafficReport> {
   const queries = Object.entries(buildTrafficQueries(filters));
   const results: Record<string, Rows> = {};
   // Bound concurrency to avoid saturating the upstream project's query slots.
-  for (let i = 0; i < queries.length; i += 2) {
-    await Promise.all(queries.slice(i, i + 2).map(async ([name, sql]) => {
+  // Two at a time: the live panel's two queries run beside these on a page
+  // load, and at three PostHog queued one of them for nine seconds
+  // (measured 2026-10-01). Six queries now (lifetime folded into the
+  // overview, the A/B bench on its tab) — three rounds, not five.
+  for (let i = 0; i < queries.length; i += QUERY_CONCURRENCY) {
+    await Promise.all(queries.slice(i, i + QUERY_CONCURRENCY).map(async ([name, sql]) => {
       try { results[name] = await runTrafficQuery(sql, name); }
       catch (err) {
         const msg = err instanceof Error && err.name === "TimeoutError" ? "Query timed out. Narrow the date range." : err instanceof Error ? err.message : "Query unavailable.";
@@ -142,11 +147,13 @@ async function loadReport(filters: TrafficFilters): Promise<TrafficReport> {
     const previous = results.overview.find(r => r[0] === "previous");
     report.totals = current ? totals(current.slice(1)) : null;
     report.previous = previous ? totals(previous.slice(1)) : null;
-  }
-  if (results.lifetime?.[0]) {
-    const r = results.lifetime[0];
-    report.lifetime = numeric(r[0]); report.today = numeric(r[1]);
-    report.firstTrackedAt = r[2] ? String(r[2]) : null; report.firstStepAt = r[3] ? String(r[3]) : null;
+    const people = results.overview.find(r => r[0] === "people");
+    report.people = people ? { people: numeric(people[1]), inAppVisitors: numeric(people[2]), inAppPeople: numeric(people[3]) } : null;
+    // Coverage: the first pageview and the first registration step, as Unix seconds (0 = none).
+    const coverage = results.overview.find(r => r[0] === "coverage");
+    const iso = (v: unknown) => (numeric(v) > 0 ? new Date(numeric(v) * 1000).toISOString() : null);
+    report.firstTrackedAt = coverage ? iso(coverage[1]) : null;
+    report.firstStepAt = coverage ? iso(coverage[2]) : null;
   }
   // ONE ALL-TIME FIGURE (2026-10-01). The header's "All-time visitors" and
   // "Today" are the live panel's totals — the same query, the same cached
@@ -161,8 +168,8 @@ async function loadReport(filters: TrafficFilters): Promise<TrafficReport> {
     } catch { /* the report's own count stands */ }
   }
   if (results.trend) {
-    const days = new Map(results.trend.map(r => [String(r[0]), totals(r.slice(1))]));
-    for (let date = filters.from; date <= filters.to; date = shiftDate(date, 1)) report.points.push({ date, ...(days.get(date) || totals([])) });
+    const days = new Map(results.trend.map(r => [String(r[0]), { ...totals(r.slice(1)), ...daily(r.slice(7)) }]));
+    for (let date = filters.from; date <= filters.to; date = shiftDate(date, 1)) report.points.push({ date, ...(days.get(date) || { ...totals([]), ...daily([]) }) });
   }
   report.pages = (results.pages || []).map(r => ({ page: String(r[0]), ...totals(r.slice(1)) }));
   for (const r of results.breakdowns || []) {
@@ -183,14 +190,41 @@ async function loadReport(filters: TrafficFilters): Promise<TrafficReport> {
   return report;
 }
 
+/** STALE WHILE REVALIDATE (2026-10-01). A report younger than a minute is
+ *  served as is; up to half an hour old it is served AT ONCE and refreshed
+ *  behind it, so the page never waits on PostHog for a figure it showed a
+ *  minute ago (the header says when it was fetched). Older, or an answer that
+ *  failed, waits for a fresh one. */
+const REPORT_FRESH_MS = 60_000;
+const REPORT_STALE_MS = 30 * 60_000;
+const QUERY_CONCURRENCY = 2;
+const refreshing = new Set<string>();
 export async function getTrafficReport(filters: TrafficFilters): Promise<TrafficReport> {
   const cacheKey = JSON.stringify([process.env.POSTHOG_PROJECT_ID, process.env.POSTHOG_HOST, filters]);
   const hit = cache.get(cacheKey);
-  if (hit && Date.now() - hit.at < 60_000) return hit.promise;
+  const age = hit ? Date.now() - hit.at : Infinity;
+  if (hit && age < REPORT_FRESH_MS) return hit.promise;
+  if (hit && age < REPORT_STALE_MS) {
+    const served = await hit.promise;
+    if (served.status === "ok" && !served.errors.length) {
+      if (!refreshing.has(cacheKey)) {
+        refreshing.add(cacheKey);
+        void loadReport(filters).then((fresh) => { if (fresh.status === "ok") cache.set(cacheKey, { at: Date.now(), promise: Promise.resolve(fresh) }); }).finally(() => refreshing.delete(cacheKey));
+      }
+      return served;
+    }
+  }
   if (cache.size >= 24) cache.delete(cache.keys().next().value!);
   const promise = loadReport(filters);
   cache.set(cacheKey, { at: Date.now(), promise });
   return promise;
+}
+
+/** The A/B bench, asked for when its tab opens — not on every page load. */
+export async function getTrafficExperiments(filters: TrafficFilters): Promise<ExperimentResult[]> {
+  if (!posthogApiConfig()) return [];
+  const rows = await runTrafficQuery(buildExperimentsQuery(filters), "experiments");
+  return rows.map(r => ({ experiment: String(r[0]), variant: String(r[1]), visitors: numeric(r[2]), attempts: numeric(r[3]), completed: numeric(r[4]), mixedVisitors: numeric(r[5]) }));
 }
 
 const text = (v: unknown) => v == null ? "" : String(v);

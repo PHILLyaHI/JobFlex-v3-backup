@@ -4,12 +4,19 @@
 // got — and the ones who signed up, in their own colour, named after the
 // account the database just made. Polls while the tab is visible; one shared
 // PostHog query behind it (lib/traffic-server fetchLiveEvents).
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { Info, KeyRound, Megaphone, MousePointerClick, RefreshCw } from "lucide-react";
 import { getLiveTraffic } from "@/actions/trafficDashboard";
 import type { LiveReport, LiveStage, LiveVisitor } from "@/lib/traffic-live";
-import { LiveMap } from "./live-map";
 import { LivePlatforms } from "./live-platforms";
+import { Ago, setClockPeriod } from "./ticker";
+import { sameReport } from "./live-diff";
+
+/* The map is the heaviest part of the page (the world's shapes, a pin per
+   visitor) and the last thing the eye reaches: it loads after the rest, in
+   its own chunk (2026-10-01). */
+const LiveMap = dynamic(() => import("./live-map").then((m) => m.LiveMap), { ssr: false, loading: () => <div className={s.mapLoading}>Loading the map…</div> });
 import s from "./traffic.module.css";
 
 /** Live mode (2026-09-30): the owner watches this while an ad runs, so the
@@ -32,13 +39,6 @@ const FUNNEL: Array<[LiveStage, string]> = [
 ];
 const STAGE: Record<LiveStage, string> = { browsing: "Looking around", "signing-in": "Signing in", registering: "On the sign-up form", checkout: "At checkout", "signed-up": "Signed up", member: "In the app · member" };
 
-function ago(iso: string, now: number): string {
-  const sec = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
-  if (sec < 45) return `${sec} s ago`;
-  const min = Math.round(sec / 60);
-  if (min < 60) return `${min} min ago`;
-  return `${Math.round(min / 60)} h ago`;
-}
 function clock(iso: string, timezone: string): string {
   try { return new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(new Date(iso)); } catch { return ""; }
 }
@@ -49,7 +49,6 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
   const [adsOnly, setAdsOnly] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const [now, setNow] = useState(() => Date.now());
   /** Who the map shows: the last 5 minutes (on the site now) or the whole window. */
   const [span, setSpan] = useState<5 | 30>(30);
   /** Live mode: 15-second refresh. On unless this browser turned it off. */
@@ -66,7 +65,10 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
     setPending(true);
     try {
       const next = await getLiveTraffic({ includeDevelopment: dev, timezone, fast, fullHistory });
-      if (id === request.current) { setReport(next); setError(""); setNow(Date.now()); }
+      // Only what changed is handed down: an answer with the same visitors
+      // keeps the same objects, so the map, the cards and the rows skip their
+      // render (2026-10-01).
+      if (id === request.current) { setReport((prev) => sameReport(prev, next)); setError(""); }
     } catch (err) {
       if (id === request.current) setError(err instanceof Error ? err.message : "Could not refresh the live view.");
     } finally {
@@ -99,11 +101,12 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
   useEffect(() => {
     const every = liveMode ? LIVE_POLL_MS : POLL_MS;
     const poll = window.setInterval(() => { if (document.visibilityState === "visible") void load(includeDev, liveMode); }, every);
-    // In live mode the "n s ago" figures have to keep up with the poll.
-    const tick = window.setInterval(() => setNow(Date.now()), liveMode ? 1_000 : 10_000);
+    // In live mode the "n s ago" figures keep up with the poll; the shared
+    // clock (./ticker) moves only those labels, and stops in a hidden tab.
+    setClockPeriod(liveMode ? 1_000 : 10_000);
     const onVisible = () => { if (document.visibilityState === "visible") void load(includeDev, liveMode); };
     document.addEventListener("visibilitychange", onVisible);
-    return () => { window.clearInterval(poll); window.clearInterval(tick); document.removeEventListener("visibilitychange", onVisible); };
+    return () => { window.clearInterval(poll); document.removeEventListener("visibilitychange", onVisible); };
   }, [includeDev, liveMode, load]);
 
   const c = report.counts;
@@ -114,12 +117,13 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
   // A day two hours old explains a small number better than any comparison.
   const youngDay = report.dayAgeMinutes < 120;
   const dayAge = report.dayAgeMinutes < 60 ? `${Math.max(1, report.dayAgeMinutes)} min` : `${Math.floor(report.dayAgeMinutes / 60)} h`;
-  const rows = report.visitors.filter((v) => (!adsOnly || v.fromAd || v.stage === "signed-up") && (!platform || v.platform === platform));
-  const onMap = rows.filter((v) => span === 30 || v.active);
+  const rows = useMemo(() => report.visitors.filter((v) => (!adsOnly || v.fromAd || v.stage === "signed-up") && (!platform || v.platform === platform)), [report.visitors, adsOnly, platform]);
+  const onMap = useMemo(() => rows.filter((v) => span === 30 || v.active), [rows, span]);
+  const toggleRow = useCallback((id: string) => setSelected((cur) => (cur === id ? null : id)), []);
   const live = report.status === "ok";
   return <section className={s.live} aria-label="Live now" data-state={report.status} aria-busy={pending}>
     <div className={s.liveHead}>
-      <div className={s.liveTitle}><span className={s.livePulse} data-on={live && c.onSite > 0}/><h2>Live now</h2><span className={s.micro}>Last {report.activeMinutes} minutes on the site · seen within {report.windowMinutes} · {liveMode ? `live — every ${LIVE_POLL_MS / 1000} s` : `every ${POLL_MS / 1000} s`} while this tab is open · updated {ago(report.fetchedAt, now)}</span></div>
+      <div className={s.liveTitle}><span className={s.livePulse} data-on={live && c.onSite > 0}/><h2>Live now</h2><span className={s.micro}>Last {report.activeMinutes} minutes on the site · seen within {report.windowMinutes} · {liveMode ? `live — every ${LIVE_POLL_MS / 1000} s` : `every ${POLL_MS / 1000} s`} while this tab is open · updated <Ago iso={report.fetchedAt}/></span></div>
       <div className={s.liveTools}>
         <label className={s.liveToggle} data-live={liveMode} title={`Refresh every ${LIVE_POLL_MS / 1000} seconds instead of ${POLL_MS / 1000}`}><input type="checkbox" checked={liveMode} onChange={(e) => toggleLiveMode(e.target.checked)}/>Live · {LIVE_POLL_MS / 1000} s</label>
         <label className={s.liveToggle}><input type="checkbox" checked={adsOnly} onChange={(e) => setAdsOnly(e.target.checked)}/>From ads only</label>
@@ -183,20 +187,21 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
         <span>{onMap.length} {onMap.length === 1 ? "visitor" : "visitors"} on the map{platform ? ` · ${report.platforms.find((p) => p.platform === platform)?.name ?? platform} only` : ""}</span>
         {platform && <button type="button" className={s.textButton} onClick={() => setPlatform(null)}>Show everyone</button>}
       </div>
-      <LiveMap visitors={onMap} now={now} selected={selected} onSelect={setSelected} timezone={timezone} totals={report.totals}/>
+      <LiveMap visitors={onMap} selected={selected} onSelect={setSelected} timezone={timezone} totals={report.totals}/>
     </>}
     {live && !rows.length && <div className={s.liveEmpty}>{report.visitors.length ? (platform ? "Nobody from this platform in the last half hour — press the card again to see everyone." : "Nobody from an ad in the last half hour — turn off the ads filter to see everyone.") : `Nobody on the site in the last ${report.windowMinutes} minutes.`}</div>}
     {rows.length > 0 && <ol className={s.liveList} aria-label="Visitors on the site">
-      {rows.map((v) => <LiveRow key={v.id + v.firstAt} v={v} now={now} timezone={timezone} selected={selected === v.id} onSelect={() => setSelected(selected === v.id ? null : v.id)}/>)}
+      {rows.map((v) => <LiveRow key={v.id + v.firstAt} v={v} timezone={timezone} selected={selected === v.id} onToggle={toggleRow}/>)}
     </ol>}
     {report.otherSignups.length > 0 && <div className={s.liveOthers}><span className={s.micro}>Signed up today, outside the last {report.windowMinutes} minutes or with analytics blocked — the live list above only holds the window, this holds the day:</span>{report.otherSignups.map((o) => <span key={o.orgName + o.at} className={s.liveOther}><b>{o.orgName}</b> · {o.ownerEmail || "no owner yet"} · {o.source} · {clock(o.at, timezone)} <b className={s.livePlan}>{o.planLabel}</b></span>)}</div>}
-    <p className={s.footnote}>One line per browser (a PostHog person), newest move first, signups on top; a click on a line shows it on the map. Source is what the first page of the visit carried: a tagged paid medium is an ad; a Facebook, Instagram or TikTok referrer with no tag is called an ad too. Colour is how far they got, and each stage has its own: crimson looking around, cyan signing in, amber on the sign-up form or at checkout, green signed up, near-black already a member. A visitor at the login, forgot-password or reset screen is an existing customer, counted as signing in rather than browsing; "locked out" means they asked for a reset link. Places come from PostHog&apos;s GeoIP reading of the browser&apos;s address — the town is usually right, the street never known. A signup is named after the organization created within fifteen minutes of it with the same campaign tag.</p>
+    <p className={s.footnote}>One line per browser (a PostHog person), newest move first, signups on top; a click on a line shows it on the map. Source is what the first page of the visit carried: it is from an ad only when it carried utm_source or fbclid — a Facebook, Instagram or TikTok link with neither is that platform&apos;s link, not an ad. Colour is how far they got, and each stage has its own: crimson looking around, cyan signing in, amber on the sign-up form or at checkout, green signed up, near-black already a member. A visitor at the login, forgot-password or reset screen is an existing customer, counted as signing in rather than browsing; "locked out" means they asked for a reset link. Places come from PostHog&apos;s GeoIP reading of the browser&apos;s address — the town is usually right, the street never known. A signup is named after the organization created within fifteen minutes of it with the same campaign tag.</p>
   </section>;
 }
 
-function LiveRow({ v, now, timezone, selected, onSelect }: { v: LiveVisitor; now: number; timezone: string; selected: boolean; onSelect: () => void }) {
+/** One visitor. Memoised: between refreshes only its "n s ago" moves, and that is the shared clock's. */
+const LiveRow = memo(function LiveRow({ v, timezone, selected, onToggle }: { v: LiveVisitor; timezone: string; selected: boolean; onToggle: (id: string) => void }) {
   // A row is a click away from its pin on the map (and back).
-  return <li className={s.liveRow} data-stage={v.stage} data-active={v.active} data-ad={v.fromAd} data-selected={selected} onClick={onSelect} title={v.lat !== null ? "Show on the map" : "No known place for this visitor"}>
+  return <li className={s.liveRow} data-live-row data-stage={v.stage} data-active={v.active} data-ad={v.fromAd} data-selected={selected} onClick={() => onToggle(v.id)} title={v.lat !== null ? "Show on the map" : "No known place for this visitor"}>
     <div className={s.liveMark} aria-hidden="true"/>
     <div className={s.liveWho}>
       <b>{STAGE[v.stage]}{v.signup ? ` → ${v.signup.orgName}` : ""}</b>
@@ -230,8 +235,8 @@ function LiveRow({ v, now, timezone, selected, onSelect }: { v: LiveVisitor; now
     </div>
     <div className={s.liveWhen}>
       <b>{v.active ? "On the site now" : "Left"}</b>
-      <span>{ago(v.lastAt, now)} · since {clock(v.firstAt, timezone)}</span>
+      <span><Ago iso={v.lastAt}/> · since {clock(v.firstAt, timezone)}</span>
       <span>{[v.device, v.browser].filter(Boolean).join(" / ") || "Unknown device"}{v.place ? ` · ${v.place}` : ""}{v.environment === "development" ? " · localhost" : ""}</span>
     </div>
   </li>;
-}
+});

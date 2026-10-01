@@ -2,7 +2,7 @@
 
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { getLiveTraffic as liveTraffic, getStageVisitors, getTrafficReport } from "@/lib/traffic-server";
+import { getLiveTraffic as liveTraffic, getStageVisitors, getTrafficExperiments, getTrafficReport } from "@/lib/traffic-server";
 import { parseTrafficFilters } from "@/lib/traffic-query";
 import { TRAFFIC_SINCE_MS } from "@/lib/traffic-visitor";
 import type { SignupAttribution } from "@/lib/traffic-contract";
@@ -156,6 +156,12 @@ export async function getSignupLedger(input: Record<string, unknown> = {}): Prom
 export async function getTrafficDashboard(input: Record<string, unknown> = {}) {
   await requirePlatformAdmin();
   return getTrafficReport(parseTrafficFilters(input));
+}
+
+/** The A/B bench's figures, when its tab opens (2026-10-01). */
+export async function getTrafficExperimentsAction(input: Record<string, unknown> = {}) {
+  await requirePlatformAdmin();
+  return getTrafficExperiments(parseTrafficFilters(input));
 }
 
 /** Who reached a funnel stage: device, place, source and how far they got. */

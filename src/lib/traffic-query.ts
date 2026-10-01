@@ -1,7 +1,7 @@
 import type { TrafficFilters } from "./traffic-contract";
 import { TRAFFIC_EVENTS as E } from "./traffic-contract";
 // Who counts: one rule for every figure on the page (2026-10-01).
-import { BROWSER_TYPE_SQL, HOST_SQL, TRAFFIC_SINCE, UA_SQL, sinceSql, visitorRuleSql, type VisitorScope } from "./traffic-visitor";
+import { BROWSER_TYPE_SQL, HOST_SQL, IN_APP_SQL, PERSON_KEY_SQL, TRAFFIC_SINCE, UA_SQL, sinceSql, visitorRuleSql, type VisitorScope } from "./traffic-visitor";
 
 const DAY = 86_400_000;
 export function dateInZone(date: Date, timezone: string): string {
@@ -75,6 +75,7 @@ function trafficParts(f: TrafficFilters) {
     SELECT timestamp, toString(person_id) AS visitor, toString(distinct_id) AS distinct_id, event,
       ${eventPath} AS pathname,
       ${HOST_SQL} AS hostname, ${UA_SQL} AS ua, ${BROWSER_TYPE_SQL} AS browser_type,
+      ${PERSON_KEY_SQL} AS person_key, ${IN_APP_SQL} AS in_app, ${prop("fbclid")} AS fbclid,
       ${prop("$session_id")} AS session_id,
       ifNull(nullIf(${prop("jf_environment")}, ''), if(domain(${prop("$current_url")}) IN ('localhost', '127.0.0.1'), 'development', 'production')) AS environment,
       ${prop("utm_source")} AS utm_source, ${prop("utm_medium")} AS medium,
@@ -127,27 +128,57 @@ function trafficParts(f: TrafficFilters) {
   return { q, start, end, prev, base, scopedBase, audienceBase, aud, selected, previous, page, stages, ctes };
 }
 
+/** The report's queries as the page loads them: five round trips' worth. The
+ *  A/B bench's query waits for its tab (buildExperimentsQuery). */
 export function buildTrafficQueries(f: TrafficFilters): Record<string, string> {
-  const { q, start, end, prev, base, scopedBase, audienceBase, aud, selected, previous, page, stages, ctes } = trafficParts(f);
+  const { experiments: _deferred, ...onLoad } = buildAllTrafficQueries(f);
+  void _deferred;
+  return onLoad;
+}
+export function buildExperimentsQuery(f: TrafficFilters): string {
+  return buildAllTrafficQueries(f).experiments;
+}
+
+function buildAllTrafficQueries(f: TrafficFilters): Record<string, string> {
+  const { q, start, end, prev, base, audienceBase, aud, selected, previous, page, stages, ctes } = trafficParts(f);
   const totals = (where: string, boundary: string) => `SELECT count() AS visitors,
     countIf(visitor_first_seen >= ${boundary}) AS new_visitors, countIf(visitor_first_seen < ${boundary}) AS returning_visitors,
     countIf(sessions >= 2) AS repeat_visitors, sum(sessions) AS session_total, sum(views) AS pageview_total
     FROM (SELECT visitor, min(first_seen) AS visitor_first_seen, uniqExactIf(session_id, session_id != '') AS sessions, count() AS views
       FROM enriched WHERE ${where} AND ${page} GROUP BY visitor)`;
+  // ONE ROUND TRIP FOR THE HEADLINE FIGURES (2026-10-01): the range and the
+  // period before it, the estimated people (address + browser) and the in-app
+  // share, and when coverage begins — what the separate "lifetime" query used
+  // to answer; the all-time count itself comes from the live totals.
+  // HogQL has no toUInt64; every column here is already an unsigned count, and
+  // a zero is written as an empty countIf so UNION ALL finds one type.
+  const u = (x: string) => (x === "0" ? "countIf(1 = 0)" : x);
   const overview = `${audienceBase} SELECT 'current' AS period, * FROM (${totals(selected, start)})
-    UNION ALL SELECT 'previous' AS period, * FROM (${totals(previous, prev)}) LIMIT 2`;
-  const trend = `${audienceBase} SELECT day, count(), countIf(visitor_first_seen >= ${start}), countIf(visitor_first_seen < ${start}), countIf(sessions >= 2), sum(sessions), sum(views)
-    FROM (SELECT toString(toDate(toTimeZone(timestamp, ${q(f.timezone)}))) AS day, visitor, min(first_seen) AS visitor_first_seen,
-      uniqExactIf(session_id, session_id != '') AS sessions, count() AS views
-      FROM enriched WHERE ${selected} AND ${page} GROUP BY day, visitor)
-    GROUP BY day ORDER BY day LIMIT 366`;
+    UNION ALL SELECT 'previous' AS period, * FROM (${totals(previous, prev)})
+    UNION ALL SELECT 'people', ${u("uniqExact(person_key)")}, ${u("uniqExactIf(visitor, in_app)")}, ${u("uniqExactIf(person_key, in_app)")}, ${u("0")}, ${u("0")}, ${u("0")}
+      FROM enriched WHERE ${selected} AND ${page}
+    UNION ALL SELECT 'coverage', ${u("ifNull(toUnixTimestamp(minOrNullIf(timestamp, event = '$pageview')), 0)")}, ${u(`ifNull(toUnixTimestamp(minOrNullIf(timestamp, event = ${q(E.step)})), 0)`)}, ${u("0")}, ${u("0")}, ${u("0")}, ${u("0")}
+      FROM base LIMIT 4`;
+  // The days, with the estimated people and the in-app share beside the
+  // visitors, and the ad tags the reconciliation table needs (2026-10-01).
+  const trend = `${audienceBase} SELECT t.day, t.visitors, t.new_visitors, t.returning_visitors, t.repeat_visitors, t.session_total, t.pageview_total,
+      d.people, d.in_app_visitors, d.in_app_people, d.ads_fb, d.ads_ig, d.ads_an, d.ads_fbclid, d.ads_any
+    FROM (SELECT day, count() AS visitors, countIf(visitor_first_seen >= ${start}) AS new_visitors, countIf(visitor_first_seen < ${start}) AS returning_visitors,
+        countIf(sessions >= 2) AS repeat_visitors, sum(sessions) AS session_total, sum(views) AS pageview_total
+      FROM (SELECT toString(toDate(toTimeZone(timestamp, ${q(f.timezone)}))) AS day, visitor, min(first_seen) AS visitor_first_seen,
+        uniqExactIf(session_id, session_id != '') AS sessions, count() AS views
+        FROM enriched WHERE ${selected} AND ${page} GROUP BY day, visitor)
+      GROUP BY day) AS t
+    LEFT JOIN (SELECT toString(toDate(toTimeZone(timestamp, ${q(f.timezone)}))) AS day,
+        uniqExact(person_key) AS people, uniqExactIf(visitor, in_app) AS in_app_visitors, uniqExactIf(person_key, in_app) AS in_app_people,
+        uniqExactIf(visitor, utm_source = 'fb') AS ads_fb, uniqExactIf(visitor, utm_source = 'ig') AS ads_ig, uniqExactIf(visitor, utm_source = 'an') AS ads_an,
+        uniqExactIf(visitor, fbclid != '') AS ads_fbclid, uniqExactIf(visitor, utm_source != '' OR fbclid != '') AS ads_any
+      FROM enriched WHERE ${selected} AND ${page} GROUP BY day) AS d ON t.day = d.day
+    ORDER BY t.day LIMIT 366`;
   const pages = `${audienceBase} SELECT page, count(), countIf(visitor_first_seen >= ${start}), countIf(visitor_first_seen < ${start}), countIf(sessions >= 2), sum(sessions), sum(views)
     FROM (SELECT page, visitor, min(first_seen) AS visitor_first_seen, uniqExactIf(session_id, session_id != '') AS sessions, count() AS views
       FROM enriched WHERE ${selected} AND event IN ('$pageview', ${q(E.step)}) GROUP BY page, visitor)
     GROUP BY page ORDER BY count() DESC LIMIT 200`;
-  const lifetime = `${scopedBase} SELECT uniqExactIf(visitor, event = '$pageview'),
-    uniqExactIf(visitor, event = '$pageview' AND toDate(toTimeZone(timestamp, ${q(f.timezone)})) = toDate(toTimeZone(now(), ${q(f.timezone)}))),
-    minOrNullIf(timestamp, event = '$pageview'), minOrNullIf(timestamp, event = ${q(E.step)}) FROM base`;
   const dimensions = { sources: "traffic_source", referrers: "traffic_referrer", campaigns: "traffic_campaign", devices: "device", browsers: "browser", countries: "country", terms: "traffic_term", hosts: "hostname" };
   const breakdowns = `${base} SELECT tupleElement(dimension, 1) AS kind, ifNull(nullIf(tupleElement(dimension, 2), ''), 'Unknown') AS name,
       uniqExact(visitor) AS visitors, uniqExactIf(concat(visitor, ':', session_id), session_id != '') AS sessions,
@@ -190,7 +221,7 @@ export function buildTrafficQueries(f: TrafficFilters): Record<string, string> {
       uniqExactIf(s.visitor, b.event = ${q(E.completed)} AND b.verified = 'true' AND b.timestamp >= s.started_at AND b.timestamp <= s.started_at + INTERVAL ${f.windowDays} DAY) AS completed
     FROM starts s LEFT JOIN base b ON s.visitor = b.visitor
     GROUP BY s.arm ORDER BY s.arm LIMIT 2`;
-  return { overview, lifetime, trend, pages, breakdowns, funnel, experiments, variants };
+  return { overview, trend, pages, breakdowns, funnel, experiments, variants };
 }
 
 export const STAGE_VISITOR_LIMIT = 200;

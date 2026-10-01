@@ -627,3 +627,13 @@
   :global(.jf-blueprint) .linksRow { grid-template-columns:1fr; }
   :global(.jf-blueprint) .linksRow button { width:100%; }
 }
+
+/* Long lists (2026-10-01): rows off screen are not laid out or painted until
+   they scroll near — the browser's own virtualisation, so a 400-row ledger or
+   a busy live list costs what the visible rows cost. */
+:global(.jf-blueprint) .liveRow, :global(.jf-blueprint) .ledgerRow, :global(.jf-blueprint) .drillList li { content-visibility:auto; contain-intrinsic-size:auto 96px; }
+/* The Ads Manager clicks, typed per day (daily-tables.tsx). */
+:global(.jf-blueprint) .clicksInput { width:84px; min-height:36px; padding:6px 8px; border:1.5px solid var(--traffic-line); border-radius:var(--radius, 2px); font:600 13px var(--font-mono); text-align:right; background:var(--paper-deep); color:var(--ink); }
+:global(.jf-blueprint) .clicksInput:focus-visible { outline:2px solid var(--blueprint); outline-offset:1px; }
+:global(.jf-blueprint) .table td[data-sign="down"] { color:var(--danger, #a83232); font-weight:700; }
+:global(.jf-blueprint) .table td[data-sign="up"] { color:var(--success, #3a7d44); font-weight:700; }

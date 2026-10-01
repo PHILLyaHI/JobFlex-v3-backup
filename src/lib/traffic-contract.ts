@@ -24,7 +24,12 @@ export interface TrafficTotals {
   sessions: number;
   pageviews: number;
 }
-export interface TrafficPoint extends TrafficTotals { date: string }
+/** One day of the selected range. The daily extras (2026-10-01): the
+ *  estimated people ($ip + $raw_user_agent, unique that day), the FB / IG
+ *  in-app visitors and people, and the visitors per ad tag for the
+ *  reconciliation with Ads Manager. */
+export interface TrafficDaily { people: number; inAppVisitors: number; inAppPeople: number; adsFb: number; adsIg: number; adsAn: number; adsFbclid: number; adsAny: number }
+export interface TrafficPoint extends TrafficTotals, TrafficDaily { date: string }
 export interface TrafficPage extends TrafficTotals { page: string }
 export interface TrafficBreakdown { name: string; visitors: number; sessions: number; conversions: number }
 export interface FunnelStage { id: string; label: string; visitors: number }
@@ -73,6 +78,8 @@ export interface TrafficReport {
   today: number | null;
   firstTrackedAt: string | null;
   firstStepAt: string | null;
+  /** The range's estimated people and its FB / IG in-app share (2026-10-01). */
+  people: { people: number; inAppVisitors: number; inAppPeople: number } | null;
   points: TrafficPoint[];
   pages: TrafficPage[];
   sources: TrafficBreakdown[];

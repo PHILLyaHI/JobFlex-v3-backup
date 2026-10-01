@@ -14,9 +14,19 @@
  * drawn once from Natural Earth and us-atlas (public/maps) and load only on
  * this admin page.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LiveStage, LiveTotals, LiveVisitor } from "@/lib/traffic-live";
+import { Ago } from "./ticker";
 import s from "./traffic.module.css";
+
+/* DRAWN ONCE, THEN ONLY THE DATA (2026-10-01). The world's shapes are their
+   own memoised layer with strokes that do not scale (vector-effect), so
+   neither a refresh nor a zoom step touches the 183 country paths; only a
+   change in who is where re-shades them. Pins that would overlap at the
+   current zoom gather into one numbered bubble (a grid in screen space); a
+   click on it zooms to them. The whole component is memoised and loaded in
+   its own chunk by the live panel. */
+const CLUSTER_PX = 30;
 
 interface Shape { c?: string | null; r?: string | null; n: string; d: string }
 interface WorldMap { scale: number; translate: [number, number]; view: [number, number, number, number]; sphere: string; graticule: string; countries: Shape[] }
@@ -48,7 +58,36 @@ const PIN_META: Record<PinKind, { colour: string; label: string }> = {
 };
 const STAGE_LABEL: Record<LiveStage, string> = { browsing: "Looking around", "signing-in": "Signing in", registering: "On the sign-up form", checkout: "At checkout", "signed-up": "Signed up", member: "In the app · member" };
 
-export function LiveMap({ visitors, now, selected, onSelect, timezone, totals }: { visitors: LiveVisitor[]; now: number; selected: string | null; onSelect: (key: string | null) => void; timezone: string; totals?: LiveTotals | null }) {
+/** "3 min" — a relative time that the shared clock moves on its own. */
+const Since = ({ iso }: { iso: string }) => <Ago iso={iso} format={(x, at) => ago(at - Date.parse(x))}/>;
+
+/** The world: ocean, grid, countries and (zoomed over North America) the
+ *  states, shaded by visitors. Re-rendered only when the shapes or the counts change. */
+const MapBase = memo(function MapBase({ map, shapes, states, perCountry, perState }: { map: WorldMap; shapes: Shape[]; states: Shape[] | null; perCountry: Map<string, number>; perState: Map<string, number> }) {
+  const mostCountry = Math.max(1, ...perCountry.values()), mostState = Math.max(1, ...perState.values());
+  return <>
+    <path d={map.sphere} className={s.mapOcean} />
+    <path d={map.graticule} fill="none" className={s.mapGrid} strokeWidth={0.5} vectorEffect="non-scaling-stroke" />
+    <g>
+      {shapes.map((c, i) => {
+        const n = c.c ? perCountry.get(c.c) ?? 0 : 0;
+        // With the states drawn, they carry the shading and the country itself stays plain.
+        const plain = !n || (states && c.c === "US");
+        return <path key={`${c.c ?? c.n}-${i}`} d={c.d} data-country={c.c ?? undefined} data-tip={`${c.n}${n ? ` · ${plural(n, "visitor", "visitors")}` : ""}`} className={s.mapLand} style={plain ? undefined : { fill: `color-mix(in oklab, var(--blueprint) ${Math.round(28 + 52 * (n / mostCountry))}%, var(--paper-deep))` }} strokeWidth={0.8} vectorEffect="non-scaling-stroke" />;
+      })}
+    </g>
+    {states && (
+      <g>
+        {states.map((x) => {
+          const n = perState.get(x.r ?? "") ?? 0;
+          return <path key={x.r} d={x.d} data-tip={`${x.n}${n ? ` · ${plural(n, "visitor", "visitors")}` : ""}`} className={s.mapState} style={n ? { fill: `color-mix(in oklab, var(--blueprint) ${Math.round(28 + 52 * (n / mostState))}%, var(--paper-deep))` } : undefined} strokeWidth={0.5} vectorEffect="non-scaling-stroke" />;
+        })}
+      </g>
+    )}
+  </>;
+});
+
+export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, timezone, totals }: { visitors: LiveVisitor[]; selected: string | null; onSelect: (key: string | null) => void; timezone: string; totals?: LiveTotals | null }) {
   const [map, setMap] = useState<WorldMap | null>(null);
   const [fine, setFine] = useState<Shape[] | null>(null);
   const [states, setStates] = useState<Shape[] | null>(null);
@@ -138,27 +177,45 @@ export function LiveMap({ visitors, now, selected, onSelect, timezone, totals }:
     }
     return [...by.values()].map((p) => ({ ...p, visitors: p.visitors.sort((a, b) => Date.parse(b.lastAt) - Date.parse(a.lastAt)), active: p.visitors.some((v) => v.active) }));
   }, [visitors, project]);
-  // Every visitor has a pin: at their town, fanned out in a small ring when several share it, drawn south to north.
-  const pins = useMemo(() => places.flatMap((p) => p.visitors.map((v, i) => {
+  // Places that would overlap at this zoom gather into a numbered bubble: a
+  // grid in screen space, the scale stepped in half-octaves so a zoom
+  // animation does not regroup on every frame.
+  const kStep = view && full ? 2 ** (Math.round(Math.log2(view.w / full.w) * 2) / 2) : 1;
+  const { clusters, loose } = useMemo(() => {
+    const cell = CLUSTER_PX * kStep;
+    const grid = new Map<string, typeof places>();
+    for (const p of places) { const key = `${Math.floor(p.x / cell)}:${Math.floor(p.y / cell)}`; const g = grid.get(key); if (g) g.push(p); else grid.set(key, [p]); }
+    const clusters: Array<{ key: string; x: number; y: number; count: number; active: boolean; box: [number, number, number, number] }> = [];
+    const loose: typeof places = [];
+    for (const [key, g] of grid) {
+      if (g.length === 1) { loose.push(g[0]); continue; }
+      const count = g.reduce((a, p) => a + p.visitors.length, 0);
+      const xs = g.map((p) => p.x), ys = g.map((p) => p.y);
+      clusters.push({ key, x: xs.reduce((a, b) => a + b, 0) / g.length, y: ys.reduce((a, b) => a + b, 0) / g.length, count, active: g.some((p) => p.active), box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] });
+    }
+    return { clusters, loose };
+  }, [places, kStep]);
+  // Every visitor outside a bubble has a pin: at their town, fanned out in a small ring when several share it, drawn south to north.
+  const pins = useMemo(() => loose.flatMap((p) => p.visitors.map((v, i) => {
     const n = p.visitors.length, ring = i < 8 ? 0 : 1, slot = ring ? i - 8 : i, count = ring ? n - 8 : Math.min(n, 8);
     const angle = -Math.PI / 2 + (slot / Math.max(1, count)) * Math.PI * 2, radius = n === 1 ? 0 : ring ? 20 : 11;
     return { v, place: p.key, x: p.x, y: p.y, dx: Math.cos(angle) * radius, dy: Math.sin(angle) * radius * 0.7 };
-  })).sort((a, b) => a.y + a.dy - (b.y + b.dy)), [places]);
+  })).sort((a, b) => a.y + a.dy - (b.y + b.dy)), [loose]);
   const selectedRef = useRef(selected);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
   const perCountry = useMemo(() => { const m = new Map<string, number>(); for (const v of visitors) if (v.countryCode) m.set(v.countryCode, (m.get(v.countryCode) ?? 0) + 1); return m; }, [visitors]);
   const perState = useMemo(() => { const m = new Map<string, number>(); for (const v of visitors) if (v.countryCode === "US" && v.regionCode) m.set(v.regionCode, (m.get(v.regionCode) ?? 0) + 1); return m; }, [visitors]);
-  const mostCountry = Math.max(1, ...perCountry.values()), mostState = Math.max(1, ...perState.values());
   const open = places.find((p) => p.visitors.some((v) => v.id === selected)) ?? null;
 
   // Dragging moves the map; two fingers pinch. A press and release on a pin without dragging opens it.
   const pointers = useRef(new Map<number, { x: number; y: number }>());
-  const drag = useRef<{ x: number; y: number; view: View; moved: boolean; pinch?: number; visitor: string | null } | null>(null);
+  const drag = useRef<{ x: number; y: number; view: View; moved: boolean; pinch?: number; visitor: string | null; cluster: string | null } | null>(null);
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const pts = [...pointers.current.values()];
     const visitor = (e.target as Element).closest?.("[data-visitor]")?.getAttribute("data-visitor") ?? null;
-    drag.current = { x: e.clientX, y: e.clientY, view: viewRef.current!, moved: false, pinch: pts.length === 2 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : undefined, visitor: pts.length === 1 ? visitor : null };
+    const cluster = (e.target as Element).closest?.("[data-cluster]")?.getAttribute("data-cluster") ?? null;
+    drag.current = { x: e.clientX, y: e.clientY, view: viewRef.current!, moved: false, pinch: pts.length === 2 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : undefined, visitor: pts.length === 1 ? visitor : null, cluster: pts.length === 1 ? cluster : null };
   };
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     // What is under the pointer, named at once.
@@ -189,6 +246,8 @@ export function LiveMap({ visitors, now, selected, onSelect, timezone, totals }:
     if (pointers.current.size > 0) return;
     drag.current = null;
     if (d && !d.moved && d.visitor) onSelect(d.visitor === selectedRef.current ? null : d.visitor);
+    // A bubble opens into its pins.
+    if (d && !d.moved && d.cluster) { const c = clusters.find((x) => x.key === d.cluster); if (c) flyToBox(c.box[0] - 10, c.box[1] - 10, c.box[2] + 10, c.box[3] + 10); }
   };
 
   // Selecting someone (here or in the list) brings their place into view, left of the card.
@@ -246,26 +305,16 @@ export function LiveMap({ visitors, now, selected, onSelect, timezone, totals }:
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
           onDoubleClick={(e) => { const p = toMap(e.clientX, e.clientY); const v = viewRef.current!; flyTo({ w: v.w / 2, h: v.h / 2, x: p.x - v.w / 4, y: p.y - v.h / 4 }); }}
           role="img" aria-label={`World map: ${plural(visitors.length - unplaced, "visitor", "visitors")} in ${plural(places.length, "place", "places")}.`}
-          data-pins={pins.length}
+          data-pins={visitors.length - unplaced}
         >
-          <path d={map.sphere} className={s.mapOcean} />
-          <path d={map.graticule} fill="none" className={s.mapGrid} strokeWidth={0.5 * k} />
-          <g>
-            {shapes.map((c, i) => {
-              const n = c.c ? perCountry.get(c.c) ?? 0 : 0;
-              // With the states drawn, they carry the shading and the country itself stays plain.
-              const plain = !n || (showStates && c.c === "US");
-              return <path key={`${c.c ?? c.n}-${i}`} d={c.d} data-country={c.c ?? undefined} data-tip={`${c.n}${n ? ` · ${plural(n, "visitor", "visitors")}` : ""}`} className={s.mapLand} style={plain ? undefined : { fill: `color-mix(in oklab, var(--blueprint) ${Math.round(28 + 52 * (n / mostCountry))}%, var(--paper-deep))` }} strokeWidth={0.7 * k} />;
-            })}
-          </g>
-          {showStates && (
-            <g>
-              {states!.map((x) => {
-                const n = perState.get(x.r ?? "") ?? 0;
-                return <path key={x.r} d={x.d} data-tip={`${x.n}${n ? ` · ${plural(n, "visitor", "visitors")}` : ""}`} className={s.mapState} style={n ? { fill: `color-mix(in oklab, var(--blueprint) ${Math.round(28 + 52 * (n / mostState))}%, var(--paper-deep))` } : undefined} strokeWidth={0.45 * k} />;
-              })}
+          <MapBase map={map} shapes={shapes} states={showStates ? states : null} perCountry={perCountry} perState={perState} />
+          {clusters.map((c) => (
+            <g key={`cluster-${c.key}`} data-cluster={c.key} data-tip={`${plural(c.count, "visitor", "visitors")} here · click to zoom in`} className={s.mapPin}>
+              {c.active && <circle cx={c.x} cy={c.y} r={13 * k} fill="var(--map-visitor)" className={s.livePing} />}
+              <circle cx={c.x} cy={c.y} r={(c.count > 99 ? 14 : 11) * k} fill="var(--ink)" stroke="#fff" strokeWidth={2 * k} />
+              <text x={c.x} y={c.y + 4 * k} textAnchor="middle" fontSize={11 * k} fontWeight={800} fill="#fff" pointerEvents="none">{c.count}</text>
             </g>
-          )}
+          ))}
           {pins.map(({ v, x, y, dx, dy }) => {
             const kind = PIN_KIND[v.stage], colour = PIN_META[kind].colour, on = v.id === selected, size = (on ? 1.3 : 1) * k;
             const px = x + dx * k, py = y + dy * k;
@@ -330,13 +379,13 @@ export function LiveMap({ visitors, now, selected, onSelect, timezone, totals }:
                   <p className={s.mapVisitorTop}>
                     <em style={{ background: PIN_META[kind].colour }}>{STAGE_LABEL[v.stage]}</em>
                     <b>{v.source}</b>{v.campaign ? <span>· {v.campaign}</span> : null}
-                    <span className={s.mapWhen} data-active={v.active}>{v.active ? "on the site now" : `left ${ago(now - Date.parse(v.lastAt))} ago`}</span>
+                    <span className={s.mapWhen} data-active={v.active}>{v.active ? "on the site now" : <>left <Since iso={v.lastAt}/> ago</>}</span>
                   </p>
                   {v.signup && <p className={s.mapSignup}>Signed up → <b>{v.signup.orgName}</b> · {v.signup.ownerEmail}{v.signup.plan ? ` · ${v.signup.plan}` : ""}</p>}
                   <div className={s.mapNow}>
                     <span>{v.active ? "Now on" : "Last seen on"}</span>
                     <b>{v.pageLabel}</b>
-                    <small>{plural(v.views, "page", "pages")} since {clock(v.firstAt)} · last move {ago(now - Date.parse(v.lastAt))} ago</small>
+                    <small>{plural(v.views, "page", "pages")} since {clock(v.firstAt)} · last move <Since iso={v.lastAt}/> ago</small>
                   </div>
                   {v.trail.length > 1 && <ol className={s.mapTrail}>{v.trail.map((t, i) => <li key={`${i}-${t}`} data-last={i === v.trail.length - 1}>{t}</li>)}</ol>}
                   <p className={s.mapMeta}>{[v.device, v.browser].filter(Boolean).join(" / ") || "Unknown device"}{v.fromAd ? " · from an ad" : ""}{v.environment === "development" ? " · localhost" : ""}</p>
@@ -349,7 +398,7 @@ export function LiveMap({ visitors, now, selected, onSelect, timezone, totals }:
                           <i style={{ background: PIN_META[PIN_KIND[o.stage]].colour }} aria-hidden="true"/>
                           <b>{o.source}</b>
                           <span>· now on {o.pageLabel}</span>
-                          <small>{o.active ? "active" : `${ago(now - Date.parse(o.lastAt))} ago`}</small>
+                          <small>{o.active ? "active" : <><Since iso={o.lastAt}/> ago</>}</small>
                         </button>
                       </li>
                     ))}
@@ -383,4 +432,4 @@ export function LiveMap({ visitors, now, selected, onSelect, timezone, totals }:
       <p className={s.mapNote}>Scroll or pinch to zoom, drag to move, double-click to zoom in; zoomed in, the map turns detailed and shows the US states. Hover for names, click a pin for who it is.</p>
     </div>
   );
-}
+});
