@@ -3,8 +3,9 @@
 // DEMO stand-in for hvac-estimator-blueprint/use-hvac-walk.ts (2026-10-01):
 // the same return shape, so the form's walk markup renders as it does on the
 // real page. A clip picked here is probed and its stills pulled in the
-// browser (video-ingest, no upload); the READING needs the model on the
-// server, so `read` explains that instead of calling anything.
+// browser (video-ingest, no upload); the READING is the example house's
+// walk, answered from a fixture after the pause a model run takes — the
+// staged "Transcribing the audio" / "Reading the walk" the real page shows.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WalkthroughAnalysis } from "@/lib/estimate/video-schema";
@@ -18,6 +19,43 @@ import {
 
 export type WalkStage = "frames" | "audio" | "read";
 
+/** The example house's walk, as the reader would return it: the labels are
+ *  the ones intake.ts matches, so the reading lands on the model's fields.
+ *  No maker's name — the plates carry the model numbers. */
+export const DEMO_WALK: WalkthroughAnalysis = {
+  projectType: "other",
+  title: "HVAC replacement survey — 4418 NE 97th St",
+  location: "Kirkland, WA",
+  scope: "Two-storey 1978 house on a vented crawlspace, 1,980 sq ft conditioned. A 3-ton split AC on an 80% gas furnace, ducts in the crawl in fair shape, one undersized return in the hall. 200 A panel with four free slots. The owner wants the AC and furnace replaced together and asked about a heat pump.",
+  measurements: [
+    { label: "Square footage", value: "1,980", unit: "sq ft", confidence: "high", source: "spoken" },
+    { label: "Storeys", value: "2", confidence: "high", source: "visual" },
+    { label: "Year built", value: "1978", confidence: "medium", source: "spoken" },
+    { label: "Outdoor unit model", value: "AC13-036", confidence: "high", source: "visual" },
+    { label: "Outdoor unit tons", value: "3", unit: "ton", confidence: "high", source: "visual" },
+    { label: "Refrigerant", value: "R-410A", confidence: "high", source: "visual" },
+    { label: "SEER", value: "13", confidence: "medium", source: "visual" },
+    { label: "Furnace model", value: "G80-080", confidence: "high", source: "visual" },
+    { label: "Furnace BTU input", value: "80,000", unit: "BTU/h", confidence: "high", source: "visual" },
+    { label: "AFUE", value: "80", unit: "%", confidence: "medium", source: "visual" },
+    { label: "Main breaker", value: "200", unit: "A", confidence: "high", source: "visual" },
+    { label: "Free breaker slots", value: "4", confidence: "high", source: "visual" },
+    { label: "Return grille size", value: "20x20", unit: "in", confidence: "medium", source: "visual" },
+    { label: "Gas pipe size", value: "3/4", unit: "in", confidence: "medium", source: "visual" },
+  ],
+  observations: [
+    "Ducts run in the crawlspace; flex runs sagging in places, fair condition, uninsulated in part.",
+    "Vented crawlspace foundation; double-pane windows throughout.",
+    "Gas furnace, gas water heater and gas range; electric dryer.",
+    "The owner said they are considering a heat pump and want it quiet — the bedroom is over the outdoor unit.",
+  ],
+  frames: [],
+  enoughDetail: true,
+  questions: [],
+  confidence: 82,
+  transcriptHighlights: ["\"It's about nineteen-eighty square feet, built in seventy-eight.\"", "\"We'd go heat pump if it makes sense.\""],
+};
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function useHvacWalk(_aiEnabled: boolean) {
   const [file, setFile] = useState<File | null>(null);
@@ -26,8 +64,9 @@ export function useHvacWalk(_aiEnabled: boolean) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [stage, setStage] = useState<WalkStage | null>(null);
   const [stageNote, setStageNote] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [audioState] = useState<"pending" | "ok" | "partial" | "none" | "failed">("pending");
+  const [audioState, setAudioState] = useState<"pending" | "ok" | "partial" | "none" | "failed">("pending");
   const pickSeq = useRef(0);
   const previewRef = useRef<string | null>(null);
 
@@ -37,7 +76,7 @@ export function useHvacWalk(_aiEnabled: boolean) {
     pickSeq.current += 1;
     if (previewRef.current) URL.revokeObjectURL(previewRef.current);
     previewRef.current = null;
-    setPreviewUrl(null); setFile(null); setProbe(null); setFrames([]); setStage(null); setStageNote(""); setError("");
+    setPreviewUrl(null); setFile(null); setProbe(null); setFrames([]); setStage(null); setStageNote(""); setError(""); setAudioState("pending");
   }, []);
 
   const pickFile = useCallback(async (f: File) => {
@@ -63,16 +102,30 @@ export function useHvacWalk(_aiEnabled: boolean) {
   }, []);
 
   const framesReady = frames.length > 0 && stage !== "frames";
-  const canRead = !!file && !!probe && framesReady;
+  const canRead = !!file && !!probe && framesReady && !busy;
 
+  const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const read = useCallback(async (_address: string): Promise<WalkthroughAnalysis | null> => {
-    setError("This is the example estimator — the walk is read on your own account. Photograph the plates or type the facts below to see the rest.");
-    return null;
-  }, []);
+    if (!canRead) return null;
+    setError("");
+    setBusy(true);
+    try {
+      setStage("audio"); setStageNote("1 / 1");
+      await wait(1400);
+      setAudioState("ok");
+      setStage("read"); setStageNote("");
+      await wait(1800);
+      return structuredClone(DEMO_WALK);
+    } finally {
+      setBusy(false); setStage(null); setStageNote("");
+    }
+  }, [canRead]);
 
-  const stageText = stage ? `Pulling stills${stageNote ? ` · ${stageNote}` : ""}` : "";
-  const stagePct = stage === "frames" ? 20 : 0;
+  const stageText = stage
+    ? `${stage === "frames" ? "Pulling stills" : stage === "audio" ? "Transcribing the audio" : "Reading the walk"}${stageNote ? ` · ${stageNote}` : ""}`
+    : "";
+  const stagePct = stage === "frames" ? 20 : stage === "audio" ? 55 : stage === "read" ? 85 : 0;
 
-  return { file, probe, frames, previewUrl, stage, stageText, stagePct, busy: false, error, audioState, canRead, pickFile, removeFile, read };
+  return { file, probe, frames, previewUrl, stage, stageText, stagePct, busy, error, audioState, canRead, pickFile, removeFile, read };
 }

@@ -189,7 +189,9 @@ export function HvacEstimatorShot({ active, hero = false }: { active: boolean; i
                 <h2 className={cx("page-title")}>HVAC estimator</h2>
               </div>
             </div>
-            <HvacEstimatorForm aiEnabled={false} demo={hooks} />
+            {/* aiEnabled: the plates and a walk are read here too — from the
+                example's fixtures, after the pause a model run takes. */}
+            <HvacEstimatorForm aiEnabled demo={hooks} />
           </div>
         </div>
         </div>
