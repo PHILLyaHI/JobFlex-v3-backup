@@ -12,6 +12,7 @@
 import { signIn } from "next-auth/react";
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { useInAppBrowser } from "@/components/auth/use-in-app-browser";
 import { writeLandingCookies } from "./landing-variant-effects";
 import { signupHref, type LandingVariantKey, type UtmParams } from "./landing-variants";
 import { REGISTER } from "./routes";
@@ -35,6 +36,12 @@ export function GoogleSignupButton({
   utm?: UtmParams;
 }) {
   const [busy, setBusy] = useState(false);
+  /* Not offered inside Instagram / Facebook / LINE / TikTok (2026-10-01):
+     Google answers "403 disallowed_useragent" in a webview, so the email
+     button is the hero's only — and full-width — action there. The page is
+     static, so this corrects on hydration, under the hero's entrance mask. */
+  const inApp = useInAppBrowser();
+  if (inApp) return null;
   return (
     <button
       type="button"

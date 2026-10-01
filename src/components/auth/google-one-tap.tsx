@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { signIn } from "next-auth/react";
+import { detectInAppBrowser } from "@/lib/inAppBrowser";
 
 /* GOOGLE ONE TAP (landing-e pass A, 2026-09-11). Google's own prompt in the
    corner of the page: one tap, and the visitor is either signed in (an
@@ -34,6 +35,9 @@ export function GoogleOneTap() {
   useEffect(() => {
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     if (!clientId) return;
+    // Not in Instagram / Facebook / LINE / TikTok webviews (lib/inAppBrowser):
+    // Google does not show One Tap there, and its sign-in is refused there.
+    if (detectInAppBrowser(navigator.userAgent)) return;
     let alive = true;
 
     const onCredential = async (res: { credential?: string }) => {

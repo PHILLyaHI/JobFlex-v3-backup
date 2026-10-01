@@ -1,0 +1,97 @@
+/* The "open outside the app" row (open-in-browser.tsx). Lives inside the auth
+   pages' own scopes (register .bp, login .bp, the handheld login), which all
+   define --ink / --muted / --paper-deep / --radius; the global Blueprint
+   tokens are the fallback. Quiet on purpose: a muted text line with no frame
+   or fill — the email path above it is the primary action — still a full
+   44px row to tap. */
+
+.wrap {
+  margin-top: 20px;
+}
+
+.wrap .row {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: var(--radius, var(--r-sm));
+  background: transparent;
+  color: var(--muted, var(--ink-muted));
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: center;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.wrap .row b {
+  color: var(--ink);
+  font-weight: 700;
+}
+.wrap .row:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.wrap .row:active {
+  background: var(--paper-deep);
+}
+.wrap .row:focus-visible,
+.wrap .copy:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.ic {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.help {
+  margin-top: 10px;
+  text-align: center;
+  color: var(--muted, var(--ink-muted));
+  font-size: 13px;
+  line-height: 1.5;
+}
+.help b {
+  color: var(--ink);
+  font-weight: 700;
+}
+.glyph {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius, var(--r-sm));
+  line-height: 1.25;
+}
+
+.wrap .copy {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wrap .row {
+    transition: none;
+  }
+}

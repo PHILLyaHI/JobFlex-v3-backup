@@ -26,6 +26,7 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense, useSyncExternalStore } from "react";
 import { RegisterContent } from "@/components/v3/auth-register-blueprint/register-content";
+import type { InAppBrowser } from "@/lib/inAppBrowser";
 import type { TradeType } from "@/lib/tradeTypes";
 import type { UtmParams } from "@/components/v3/landing-e/landing-variants";
 
@@ -84,11 +85,13 @@ function RegisterSwitch({
   google,
   industry,
   utm,
+  inAppBrowser,
 }: {
   setup: SetupPrefill | null;
   google: GooglePrefill | null;
   industry: TradeType | null;
   utm: UtmParams | null;
+  inAppBrowser: InAppBrowser | null;
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const params = useSearchParams();
@@ -113,7 +116,7 @@ function RegisterSwitch({
      day the handheld build is ported to the pending-signup flow. */
   void isHandheld;
   void params;
-  return <RegisterContent setup={setup} google={google} industry={industry} utm={utm} />;
+  return <RegisterContent setup={setup} google={google} industry={industry} utm={utm} inAppBrowser={inAppBrowser} />;
 }
 
 // The attribution capture under either tree reads the query string, so the
@@ -124,6 +127,7 @@ export function RegisterResponsive({
   google = null,
   industry = null,
   utm = null,
+  inAppBrowser = null,
 }: {
   setup?: SetupPrefill | null;
   google?: GooglePrefill | null;
@@ -131,10 +135,12 @@ export function RegisterResponsive({
   industry?: TradeType | null;
   /** The visit's utm_*, resolved by the page the same way. */
   utm?: UtmParams | null;
+  /** The in-app browser the request's user agent names (lib/inAppBrowser). */
+  inAppBrowser?: InAppBrowser | null;
 }) {
   return (
     <Suspense fallback={null}>
-      <RegisterSwitch setup={setup} google={google} industry={industry} utm={utm} />
+      <RegisterSwitch setup={setup} google={google} industry={industry} utm={utm} inAppBrowser={inAppBrowser} />
     </Suspense>
   );
 }

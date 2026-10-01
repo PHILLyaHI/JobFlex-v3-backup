@@ -64,6 +64,8 @@ import type { Route } from "next";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { toast } from "@/components/ui/Toast";
+import { OpenInBrowser } from "@/components/auth/open-in-browser";
+import { useInAppBrowser } from "@/components/auth/use-in-app-browser";
 import "./mobile-auth-login.css";
 
 /* ── Icons. 24×24 grid, stroke 2-ish, currentColor — the house line style. ── */
@@ -146,6 +148,9 @@ export function MobileLoginContent() {
   const [showPw, setShowPw] = React.useState(false);
   const [signedIn, setSignedIn] = React.useState(false);
   const [googleBusy, setGoogleBusy] = React.useState(false);
+  // Instagram / Facebook / LINE / TikTok webview: no Google button — Google
+  // refuses its sign-in there (lib/inAppBrowser) — and a way out instead.
+  const inApp = useInAppBrowser();
 
   // The drawing annotation in the hero only earns its place when it says
   // something: where the user lands after signing in, when that isn't the
@@ -304,6 +309,10 @@ export function MobileLoginContent() {
             </div>
           </form>
 
+          {inApp ? (
+            <OpenInBrowser app={inApp} />
+          ) : (
+          <>
           <div className="divider">
             <span className="kpi-lbl">or</span>
           </div>
@@ -321,6 +330,8 @@ export function MobileLoginContent() {
               </>
             )}
           </button>
+          </>
+          )}
         </section>
 
         <p className="foot">

@@ -21,12 +21,13 @@
 // rather than inline. /mobile-v1/auth/register remains as a direct preview URL.
 
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { isPlaceholderOrgName, needsCompanySetup } from "@/lib/orgSetup";
 import { readGoogleSignup } from "@/lib/googleSignup";
+import { detectInAppBrowser } from "@/lib/inAppBrowser";
 import { RegisterResponsive, type GooglePrefill, type SetupPrefill } from "./register-responsive";
 import {
   INDUSTRY_COOKIE,
@@ -125,5 +126,17 @@ export default async function RegisterPage({
     // Session read hiccup: render the normal signup.
   }
   if (sendToApp) redirect("/dashboard");
-  return <RegisterResponsive setup={setup} google={google} industry={industry} utm={hasUtm(utm) ? utm : null} />;
+  /* Instagram / Facebook / LINE / TikTok webview: read here (the page is
+     dynamic already, for the cookies above) so step 1 is drawn without the
+     Google button from the first paint (lib/inAppBrowser). */
+  const inAppBrowser = detectInAppBrowser((await headers()).get("user-agent"));
+  return (
+    <RegisterResponsive
+      setup={setup}
+      google={google}
+      industry={industry}
+      utm={hasUtm(utm) ? utm : null}
+      inAppBrowser={inAppBrowser}
+    />
+  );
 }

@@ -52,6 +52,8 @@ import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { toast } from "@/components/ui/Toast";
+import { OpenInBrowser } from "@/components/auth/open-in-browser";
+import { useInAppBrowser } from "@/components/auth/use-in-app-browser";
 import styles from "./login.module.css";
 
 /**
@@ -130,6 +132,9 @@ function LoginInner() {
   const [showPw, setShowPw] = React.useState(false);
   const [signedIn, setSignedIn] = React.useState(false);
   const [googleBusy, setGoogleBusy] = React.useState(false);
+  // Instagram / Facebook / LINE / TikTok webview: no Google button — Google
+  // refuses its sign-in there (lib/inAppBrowser) — and a way out instead.
+  const inApp = useInAppBrowser();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -239,12 +244,14 @@ function LoginInner() {
             <div className={cx("err", !inlineError && "is-hidden")} role="alert">{inlineError}</div>
           </form>
 
+          {inApp ? <OpenInBrowser app={inApp} /> : (<>
           <div className={cx("divider")}><span className={cx("kpi-lbl")}>or</span></div>
           <button className={cx("btn", "btn--ghost")} type="button" onClick={onGoogle}>
             {googleBusy
               ? (<><svg className={cx("ic")}><use href="#i-check"/></svg>Redirecting to Google…</>)
               : (<><svg className={cx("ic", "ic--brand")}><use href="#i-google"/></svg>Continue with Google</>)}
           </button>
+          </>)}
 
           <div className={cx("foot")}>Don&apos;t have an account? <Link className={cx("link-ink")} href={"/auth/register" as never}>Create an account</Link></div>
 

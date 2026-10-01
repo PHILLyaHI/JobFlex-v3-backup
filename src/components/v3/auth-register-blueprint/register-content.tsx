@@ -44,7 +44,10 @@ import type { GooglePrefill, SetupPrefill } from "@/app/(auth)/auth/register/reg
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
 import type { UtmParams } from "@/components/v3/landing-e/landing-variants";
 import { GoogleOneTap } from "@/components/auth/google-one-tap";
+import { OpenInBrowser } from "@/components/auth/open-in-browser";
+import { useInAppBrowser } from "@/components/auth/use-in-app-browser";
 import { effectiveConsent } from "@/lib/consent";
+import type { InAppBrowser } from "@/lib/inAppBrowser";
 import { metaTrack, newEventId, readMetaCookies } from "@/lib/metaPixel";
 import { RegisterSprite } from "./register-sprite";
 import { ReferralBanner, type RegisterAttribution } from "./referral-banner";
@@ -116,8 +119,13 @@ export function RegisterContent({
   google: googlePrefill = null,
   industry = null,
   utm = null,
+  inAppBrowser: inAppInitial = null,
 }: {
   setup?: SetupPrefill | null;
+  /* Instagram / Facebook / LINE / TikTok webview, read from the request's
+     user agent on the server (lib/inAppBrowser), so the first paint already
+     has no Google button. Corrected in the browser either way. */
+  inAppBrowser?: InAppBrowser | null;
   /* The visit's utm_*, resolved on the server (query, else the landing's
      cookie). Rides into the signup intent and onto the organization. */
   utm?: UtmParams | null;
@@ -130,6 +138,11 @@ export function RegisterContent({
   industry?: TradeType | null;
 }) {
   const router = useRouter();
+  /* IN-APP BROWSERS (2026-10-01): Google refuses its sign-in inside them
+     ("403 disallowed_useragent") and One Tap does not render, so step 1 is
+     the email form alone, with a quiet "Open in Safari / Chrome for Google
+     sign-in" under it (components/auth/open-in-browser). */
+  const inApp = useInAppBrowser(inAppInitial);
   /* SETUP MODE: a Google signup finishing step 2. Step 1 is done (Google did
      it), the plan step follows in the app (/dashboard/upgrade), and there is
      no pending-signup intent to park: the account already exists. */
@@ -844,7 +857,14 @@ export function RegisterContent({
     try {
       const res = await checkEmailAvailable(em);
       if (!res.available) {
-        setErr1(res.message || "That email is already registered. Try signing in instead.");
+        const msg = res.message || "That email is already registered. Try signing in instead.";
+        // The Google button that message points at is not on this screen in
+        // an in-app browser.
+        setErr1(
+          inApp && /Continue with Google/.test(msg)
+            ? "That email signs in with Google. Open this page in your browser (below) to continue with Google."
+            : msg,
+        );
         return;
       }
     } catch (err: unknown) {
@@ -1150,6 +1170,10 @@ export function RegisterContent({
               </div>
             </form>
 
+            {inApp ? (
+              <OpenInBrowser app={inApp} />
+            ) : (
+            <>
             <div className="divider">
               <span className="kpi-lbl">or</span>
             </div>
@@ -1170,6 +1194,8 @@ export function RegisterContent({
                 </>
               )}
             </button>
+            </>
+            )}
 
             <div className="foot">
               Already have an account?{" "}
@@ -1179,7 +1205,7 @@ export function RegisterContent({
             </div>
             {/* Google One Tap (pass A): step 1 only, and only with
                 NEXT_PUBLIC_GOOGLE_CLIENT_ID set. */}
-            {step === 1 && !google && !setupMode ? <GoogleOneTap /> : null}
+            {step === 1 && !google && !setupMode && !inApp ? <GoogleOneTap /> : null}
           </div>
 
           {/* ───── ШАГ 2 ───── */}
