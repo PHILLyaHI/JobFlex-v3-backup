@@ -13,6 +13,7 @@ import { buildTrialConfirm, buildTrialReminder } from "./build/trial";
 import { buildJobAssignment, buildWorkerInvite, buildTeamInvite } from "./build/worker";
 import {
   buildPasswordReset,
+  buildAccountReady,
   buildWelcomeFirstEstimate,
   buildRequestReceived,
   buildHomeownerMatched,
@@ -477,6 +478,18 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
     note: "Platform lockup. One-row box, tone warn. Fine print below a hairline.",
     doc: buildPasswordReset({
       name: "Jordan Rivera",
+      href: "https://example.com/auth/reset?token=demo",
+    }),
+  },
+  {
+    id: "b-account-ready",
+    label: "18b · buildAccountReady()",
+    note: "A subscriber carried over from the old app: the account and the subscription exist, the password does not. The ordinary reset link, minted for 24 hours. Platform lockup; three field rows, then the expiry chip.",
+    doc: buildAccountReady({
+      name: "Chey Galigo",
+      email: "chey@example.com",
+      workspace: "Chey Galigo",
+      planName: "Professional",
       href: "https://example.com/auth/reset?token=demo",
     }),
   },

@@ -45,6 +45,45 @@ export function buildPasswordReset(i: PasswordResetInput): EmailDoc {
   };
 }
 
+export interface AccountReadyInput {
+  name: string | null;
+  /** The sign-in address. */
+  email: string;
+  workspace: string;
+  /** The plan's display name, e.g. "Professional". */
+  planName: string;
+  /** /auth/reset?token=… — the ordinary reset link, minted for 24 hours. */
+  href: string;
+}
+
+/**
+ * A paying subscriber carried over from the old app (2026-10-01): the account
+ * exists, the subscription is already attached, and the one thing left is a
+ * password. Same link and page as a password reset, with a day instead of an
+ * hour — the address was not the one asking.
+ */
+export function buildAccountReady(i: AccountReadyInput): EmailDoc {
+  return {
+    subject: "Your JobFlex account is ready — set your password",
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Account" },
+    headline: "Your account is ready",
+    prose: [
+      `Hi ${i.name?.trim().split(/\s+/)[0] || "there"} — your JobFlex account is set up, and your ${i.planName} subscription is connected to it. Your billing stays exactly as it is.`,
+      "Set a password to sign in.",
+    ],
+    box: [
+      { type: "field", label: "Sign-in email", value: i.email },
+      { type: "field", label: "Workspace", value: i.workspace },
+      { type: "field", label: "Plan", value: i.planName },
+      { type: "cond", label: "Link expires", chip: "In 24 hours", tone: "warn" },
+    ],
+    cta: { label: "Set your password", href: i.href },
+    fine: "The link works once. If it has expired, use “Forgot password” on the sign-in page.",
+    footer: PLATFORM_FOOTER,
+  };
+}
+
 export interface WelcomeFirstEstimateInput {
   name: string;
   /** Absolute link to the trade's estimator (lib/firstEstimate). */
