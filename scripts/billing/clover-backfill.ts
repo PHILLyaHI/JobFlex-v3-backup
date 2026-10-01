@@ -195,7 +195,7 @@ async function main() {
   const orgNames = new Map((await db.organization.findMany({ select: { id: true, name: true } })).map((o) => [o.id, o.name]));
   const orgLabel = (id: string | null | undefined) => (id ? `${orgNames.get(id) ?? "?"} (${id})` : "?");
   const subs: Stripe.Subscription[] = [];
-  for await (const s of byClock((c) => stripe.subscriptions.list({ status: "all", limit: 100, expand: ["data.discounts"], ...clockArg(c) }))) subs.push(s);
+  for await (const s of byClock((c) => stripe.subscriptions.list({ status: "all", limit: 100, expand: ["data.discounts", "data.customer"], ...clockArg(c) }))) subs.push(s);
   const toSync: Stripe.Subscription[] = [];
   /** Attributions the sync step would create, by subscription — for the dry run's accruals. */
   const wouldAttribute = new Map<string, { promoId: string }>();
@@ -240,7 +240,12 @@ async function main() {
   for (const sub of subs) {
     if (!["active", "trialing", "past_due", "unpaid"].includes(sub.status) || mirrorBySub.has(sub.id)) continue;
     const byCus = mirrorByCustomer.get(C.refId(sub.customer) ?? "");
-    say(`  NO MIRROR ROW: ${sub.id} · Stripe ${sub.status} · customer ${C.refId(sub.customer)}${byCus ? ` → org ${orgLabel(byCus.organizationId)}, whose row names ${byCus.externalSubId ?? "no subscription"} (${byCus.status})` : " → no organisation"}`);
+    const cus = typeof sub.customer === "object" && !("deleted" in sub.customer && sub.customer.deleted) ? (sub.customer as Stripe.Customer) : null;
+    // No row to map by — the payer's email is the remaining lead to an organisation.
+    const user = cus?.email ? await db.user.findFirst({ where: { email: { in: [...new Set([cus.email, cus.email.toLowerCase()])] } }, select: { memberships: { select: { organizationId: true, role: true } } } }) : null;
+    const byEmail = user ? user.memberships.map((m) => `${orgLabel(m.organizationId)} as ${m.role}`).join(", ") || "a user with no organisation" : "no user with this email";
+    const price = sub.items.data.map((i) => `${i.price.nickname ?? i.price.id} ${usd(i.price.unit_amount)}/${i.price.recurring?.interval ?? "?"}`).join(", ");
+    say(`  NO MIRROR ROW: ${sub.id} · Stripe ${sub.status} · ${price} · since ${day(sub.created)} · ${C.refId(sub.customer)} ${cus?.email ?? ""} "${cus?.name ?? ""}"${byCus ? ` → org ${orgLabel(byCus.organizationId)} by customer, whose row names ${byCus.externalSubId ?? "no subscription"} (${byCus.status})` : ` → by email: ${byEmail}`}`);
   }
 
   // ── 2 & 3. paid invoices of the window ────────────────
@@ -400,21 +405,37 @@ async function main() {
 
   // ── FIX ───────────────────────────────────────────────
   say("\nFIX");
+  // What the money tables hold before and after, so the run shows every row it wrote.
+  const snapshot = async () => ({
+    ledger: await db.commissionLedger.count(),
+    attributions: await db.attribution.count(),
+    conversions: (await db.referralConversion.groupBy({ by: ["status"], _count: { _all: true } })).map((x) => `${x.status}:${x._count._all}`).sort().join(" "),
+    parkedRefunds: await db.syncState.count({ where: { key: { startsWith: "refundPending:" } } }),
+    subscriptions: await db.subscription.count(),
+  });
+  const before = await snapshot();
+  const pick = { status: true, plan: true, currentPeriodEnd: true, appliedPromotionCodeId: true, appliedCouponId: true, updatedAt: true } as const;
   for (const sub of toSync) {
+    const was = await db.subscription.findFirst({ where: { externalSubId: sub.id }, select: pick });
     const full = await stripe.subscriptions.retrieve(sub.id);
     await sync.syncSubscriptionFromStripe(full, stripe);
-    const m = await db.subscription.findFirst({ where: { externalSubId: sub.id }, select: { status: true, currentPeriodEnd: true, appliedPromotionCodeId: true } });
+    const now = await db.subscription.findFirst({ where: { externalSubId: sub.id }, select: pick });
     const a = await db.attribution.findUnique({ where: { stripeSubscriptionId: sub.id }, select: { status: true } });
-    say(`  synced ${sub.id}: ${JSON.stringify(m)}${a ? ` · attribution ${a.status}` : ""}`);
+    say(`  synced ${sub.id}\n      before ${JSON.stringify(was)}\n      after  ${JSON.stringify(now)}${a ? ` · attribution ${a.status}` : ""}`);
   }
   for (const inv of accrualPlan) {
     const r = await sync.accrueForInvoice(inv, undefined, stripe);
     await processReferralEffectsForInvoice(inv);
     say(`  accrue ${inv.id}: ${JSON.stringify(r)}`);
   }
+  // Only a charge that now carries an accrual has anything to reverse; for the
+  // rest the handler would park a row that no accrual will ever consume.
   for (const [id, ch] of refundedCharges) {
-    say(`  refund ${id}: ${JSON.stringify(await sync.reverseForCharge(ch, undefined, stripe))}`);
+    const accrued = await db.commissionLedger.count({ where: { stripeChargeId: id, entryType: "ACCRUED" } });
+    say(`  refund ${id}: ${accrued ? JSON.stringify(await sync.reverseForCharge(ch, undefined, stripe)) : "no accrual on this charge — nothing to reverse, nothing parked"}`);
   }
+  const after = await snapshot();
+  say(`\n  rows before ${JSON.stringify(before)}\n  rows after  ${JSON.stringify(after)}`);
   say("\nDone. Run again without --fix: every line should read 'already accrued' and step 1 should be empty.");
   finish();
   await db.$disconnect();
