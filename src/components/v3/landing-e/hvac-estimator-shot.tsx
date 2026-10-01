@@ -29,7 +29,7 @@ import s from "@/components/v3/hvac-estimator-blueprint/hvac-estimator.module.cs
 import { metaCustomEvent } from "@/lib/metaEvents";
 import { trackTraffic } from "@/lib/traffic-client";
 import { TRAFFIC_EVENTS } from "@/lib/traffic-contract";
-import { AppFrame, READ_HOLD } from "./showcase-kit";
+import { AppFrame, READ_HOLD, TYPE_MS } from "./showcase-kit";
 import { HvacEstimatorForm } from "./hvac-estimator-demo/hvac-estimator-form";
 import { DEMO_ADDRESS, DEMO_READS } from "./hvac-estimator-demo/demo-actions";
 import type { DemoStep, HvacDemoHandle, HvacDemoHooks } from "./hvac-estimator-demo/demo-hooks";
@@ -46,7 +46,6 @@ const PHONE_MAX = 640;
    landing's pace (showcase-kit TYPE_MS), the lookups answer after the
    fixtures' own waits (demo-actions), and the design holds long enough to
    read before the estimate. */
-const TYPE_MS = 52;
 const T = {
   house: 1500,
   typeFrom: 2100,

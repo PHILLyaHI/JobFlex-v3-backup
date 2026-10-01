@@ -10,14 +10,20 @@
 // custom plan's price and trial come from lib/customPlan + lib/customPlanConfig
 // — the same values the signup step and both checkout routes use. Nothing here
 // is a copy an admin edit could leave behind.
+//
+// THE PLAN CARDS ARE THE LANDING'S (2026-10-01). The landing's pricing section
+// took the register's step-3 cards on 2026-09-26 (landing-e/pricing-plans.tsx:
+// white, 2px ink frame, hard ink offset, blue on Most picked, one shared
+// feature list, a swipe carousel on a phone). This page renders that same
+// component instead of its own plates, and the build-your-own plate wears the
+// same frame, price and start button (pricing.css).
 
-import Link from "next/link";
-import { Check } from "lucide-react";
 import { Nav } from "@/components/v3/landing-e/nav";
 import { CtaFooter } from "@/components/v3/landing-e/cta-footer";
 import { Reveal } from "@/components/v3/landing-e/reveal";
 import { REGISTER } from "@/components/v3/landing-e/routes";
-import type { PlanDTO } from "@/lib/planCatalog";
+import { PricingPlans } from "@/components/v3/landing-e/pricing-plans";
+import { priceCadence, type PlanDTO } from "@/lib/planCatalog";
 import { CUSTOM_BASE_CENTS, CUSTOM_PAGE_CENTS, CUSTOM_PAGES } from "@/lib/customPlan";
 import "@/components/v3/landing-e/landing-e.css";
 import "./pricing.css";
@@ -27,40 +33,6 @@ import "./pricing.css";
 function price(cents: number): string {
   const d = cents / 100;
   return Number.isInteger(d) ? `$${d}` : `$${d.toFixed(2)}`;
-}
-
-function Plate({ plan, index }: { plan: PlanDTO; index: number }) {
-  const hot = plan.highlight;
-  return (
-    <div className={`pr-plate${hot ? " pr-plate--hot" : ""}`}>
-      {hot ? <span className="pr-flag">Most picked</span> : null}
-      <span className="pr-no">{String(index + 1).padStart(2, "0")}</span>
-      <div className="pr-name">{plan.name}</div>
-
-      <div className="mt-5 flex items-baseline gap-2">
-        <span className="pr-amt">{price(plan.priceCents)}</span>
-        <span className="pr-per">/ month</span>
-      </div>
-      <div className="mt-2.5 min-h-[16px]">
-        {plan.trialDays > 0 ? <span className="pr-trial">{plan.trialDays}-day free trial</span> : null}
-      </div>
-
-      {plan.description ? <p className="pr-desc mt-4">{plan.description}</p> : null}
-
-      <div className="pr-feats mt-6 flex-1">
-        {plan.features.map((f) => (
-          <div key={f} className="pr-feat">
-            <Check className="h-3.5 w-3.5" aria-hidden />
-            <span>{f}</span>
-          </div>
-        ))}
-      </div>
-
-      <Link href={REGISTER as never} className="pr-cta mt-7">
-        {plan.trialDays > 0 ? `Start ${plan.trialDays}-day trial` : "Get started"}
-      </Link>
-    </div>
-  );
 }
 
 export function PricingPage({
@@ -100,19 +72,15 @@ export function PricingPage({
         <section className="px-5 sm:px-6">
           <div className="mx-auto lp-wrap">
             <div className="border-t border-slate-900/10 pt-[6vmin]">
-              <Reveal>
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-                  {sellable.map((p, i) => (
-                    <Plate key={p.slug} plan={p} index={i} />
-                  ))}
-                </div>
-              </Reveal>
-
-              {sellable.length === 0 ? (
+              {sellable.length > 0 ? (
+                <Reveal className="pr-plans">
+                  <PricingPlans plans={sellable} registerHref={REGISTER} />
+                </Reveal>
+              ) : (
                 <p className="py-12 text-center text-[15px] text-slate-500">
                   Plans are being updated. Check back shortly.
                 </p>
-              ) : null}
+              )}
             </div>
           </div>
         </section>
@@ -147,10 +115,10 @@ export function PricingPage({
 
                   <div className="flex flex-col justify-between border-slate-900/10 lg:border-l lg:pl-10">
                     <div>
-                      <div className="flex items-baseline gap-2">
-                        <span className="pr-amt">{price(CUSTOM_BASE_CENTS)}</span>
-                        <span className="pr-per">/ month base</span>
-                      </div>
+                      <p className="lp-pw-price">
+                        {price(CUSTOM_BASE_CENTS)}
+                        <i>{priceCadence(true)} base</i>
+                      </p>
                       <div className="mt-2.5">
                         {customTrialDays > 0 ? (
                           <span className="pr-trial">{customTrialDays}-day free trial</span>
@@ -162,9 +130,9 @@ export function PricingPage({
                         twice over.
                       </p>
                     </div>
-                    <Link href={REGISTER as never} className="pr-cta mt-8">
+                    <a href={REGISTER} className="lp-pw-go mt-8" data-cta="pricing-custom">
                       {customTrialDays > 0 ? `Start ${customTrialDays}-day trial` : "Build your plan"}
-                    </Link>
+                    </a>
                   </div>
                 </div>
               </div>

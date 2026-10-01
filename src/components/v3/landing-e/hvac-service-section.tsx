@@ -268,8 +268,11 @@ export function HvacServiceSection({ registerHref, cta }: { registerHref: string
         </Reveal>
 
         <Reveal delay={120} className="mt-9 flex flex-col items-start gap-3 sm:mt-11 sm:flex-row sm:items-center sm:gap-5">
-          <Link href={registerHref as Route} className="lp-btn-dark h-12 w-full px-6 text-[15px] sm:w-auto" data-cta="hvac-service">
+          {/* The section CTA every other section carries: the blue primary
+              with its ink line and arrow (landing pass, 2026-09-26). */}
+          <Link href={registerHref as Route} className="lp-btn-lime w-full sm:w-auto" data-cta="hvac-service">
             {cta}
+            <span aria-hidden>→</span>
           </Link>
           <p className="text-[14px] text-[color:var(--ink-soft)]">
             All of it is in every plan — the estimator, the plans, the visits and the menu.{" "}

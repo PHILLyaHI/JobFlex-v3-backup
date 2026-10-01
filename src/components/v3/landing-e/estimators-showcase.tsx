@@ -292,7 +292,8 @@ export function EstimatorsShowcase({
           <Reveal delay={80}>
             {/* Two by two on a phone (owner, 2026-09-26): the full labels, a
                 timer bar under each, every tab at least 48 px tall. From 640 px
-                the strip is one row as before. */}
+                the strip is one row as before. An odd last tab (HVAC
+                adds a fifth) takes the whole row rather than half of it. */}
             <div
               className="grid grid-cols-2 items-stretch gap-1.5 sm:flex sm:flex-wrap sm:gap-2"
               role="tablist"
@@ -309,7 +310,7 @@ export function EstimatorsShowcase({
                   // 2026-09-10): ground 0.02 -> 0.04, text ~0.60 -> 0.80, track
                   // 0.15 -> 0.30. The active tab is unchanged. From 1024px the
                   // label is 2px larger and the track and padding follow.
-                  className={`relative min-h-[48px] overflow-hidden rounded-[2px] px-3 pb-3 pt-2.5 text-left transition-colors duration-200 sm:flex-1 sm:px-4 sm:pb-3.5 sm:pt-3 lg:px-5 lg:pb-4 lg:pt-3.5 ${
+                  className={`${SLIDES.length % 2 && i === SLIDES.length - 1 ? "col-span-2 " : ""}relative min-h-[48px] overflow-hidden rounded-[2px] px-3 pb-3 pt-2.5 text-left transition-colors duration-200 sm:flex-1 sm:px-4 sm:pb-3.5 sm:pt-3 lg:px-5 lg:pb-4 lg:pt-3.5 ${
                     i === slide ? "bg-white/[0.08] text-white" : "bg-white/[0.04] text-white/80 hover:bg-white/[0.06] hover:text-white/95"
                   }`}
                 >
