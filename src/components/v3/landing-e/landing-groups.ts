@@ -401,37 +401,39 @@ const MEP_PORTAL: PortalContent = {
   totalUpgraded: "$7,180",
 };
 
-/* The HVAC page's proposal and portal (2026-10-01): the hero window's
-   Kirkland job at its Better tier — the same $12,580, line for line
-   (hvac-demo.ts demoSystem), so the page tells one story. */
+/* The HVAC page's proposal and portal (2026-10-01): the hero estimator's
+   Kirkland job — the real engine and ledger on the starter catalog, at the
+   Better tier (AC + 96% furnace, $12,417.03; the heat pump at Better is
+   $13,484.58 — the option) — so the page tells one story. The figures are
+   the ledger's own, grouped into the four lines a proposal shows. */
 const HVAC_PROPOSAL: ProposalContent = {
   number: "P-1217",
-  title: "Whitfield heat pump — 2.5 ton, two-stage, ducted",
+  title: "Whitfield AC + furnace — 2.5 ton, 16 SEER2, 96% AFUE",
   blurb:
-    "Full scope for the system: a 2.5-ton two-stage heat pump at 17 SEER2 with a variable-speed air handler, the existing ducts sealed and two runs repaired, a new 240 V circuit and disconnect, the permit and the load report. The price is complete — anything outside it gets a written change order first.",
+    "Full scope for the system: the 3-ton AC and the 80% furnace out, a 2.5-ton two-stage condenser at 16 SEER2 with a matched coil and a 45k BTU 96% furnace in, new line set, pad, disconnect and thermostat, the return cut larger, PVC venting, start-up and commissioning, permit and disposal. The price is complete — anything outside it gets a written change order first.",
   linesMobile: [
-    ["2.5-ton heat pump, 17 SEER2", "$8,230"],
-    ["Duct sealing & repair", "$900"],
-    ["Labor, 23 hrs", "$2,513"],
+    ["Condenser, coil & 96% furnace", "$6,516"],
+    ["Line set, pad, stat, drain, vent, return", "$1,581"],
+    ["Labor, permit & disposal", "$4,320"],
   ],
   linesDesktop: [
-    ["2.5-ton heat pump, 17 SEER2, air handler", "$8,230"],
-    ["Duct sealing & repair — 2 runs", "$900"],
-    ["Electrical & disconnect — 240 V circuit", "$650"],
-    ["Labor — permit, set, commissioning (23 hrs)", "$2,513"],
+    ["2.5-ton condenser, 16 SEER2 · matched coil · 45k BTU 96% furnace", "$6,516"],
+    ["Line set, pad, disconnect, surge, drain, thermostat, venting, return", "$1,581"],
+    ["Labor — remove, set, braze & evacuate, electrical, gas, vent, start-up", "$3,920"],
+    ["Mechanical permit, inspection and disposal", "$400"],
   ],
-  total: "$12,580",
-  option: { name: "Option — smart thermostat & C-wire", note: "Client adds this in the portal", price: "+$505" },
+  total: "$12,417",
+  option: { name: "Option — heat pump instead of the AC", note: "Client adds this in the portal", price: "+$1,068" },
   client: "J. Whitfield",
 };
 
 const HVAC_PORTAL: PortalContent = {
-  title: "Whitfield heat pump · Proposal #P-1217",
-  baseOption: "Two-stage, 17 SEER2",
-  upgradeOption: "Smart thermostat & C-wire",
-  upgradePrice: "+$505",
-  total: "$12,580",
-  totalUpgraded: "$13,085",
+  title: "Whitfield AC + furnace · Proposal #P-1217",
+  baseOption: "AC + 96% furnace",
+  upgradeOption: "Heat pump instead of the AC",
+  upgradePrice: "+$1,068",
+  total: "$12,417",
+  totalUpgraded: "$13,485",
 };
 
 /* ── general: carpentry, demolition, general-contractor ───── */

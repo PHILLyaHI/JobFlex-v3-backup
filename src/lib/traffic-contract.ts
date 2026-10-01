@@ -107,7 +107,7 @@ export const TRAFFIC_EVENTS = {
   ctaClick: "cta_click",
   // The HVAC landing's hero window (2026-10-01): a step reached — by the
   // clock ("auto", once per load) or by a tap — and a tier / size / SEER2
-  // picked. Fired by landing-e/hvac-shot.tsx; always industry "hvac".
+  // picked. Fired by landing-e/hvac-estimator-shot.tsx; always industry "hvac".
   hvacDemoStep: "hvac_demo_step",
   hvacDemoTier: "hvac_demo_tier",
 } as const;

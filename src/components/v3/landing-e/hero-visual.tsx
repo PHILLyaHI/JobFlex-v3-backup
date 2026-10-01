@@ -11,7 +11,7 @@
    there, not just DashboardMock). */
 
 import { FenceShot } from "./fence-shot";
-import { HvacShot } from "./hvac-shot";
+import { HvacEstimatorShot } from "./hvac-estimator-shot";
 import type { LandingVariant } from "./landing-variants";
 import { RoofShot } from "./roof-shot";
 import { SmartProposalShot } from "./smart-proposal-shot";
@@ -36,7 +36,7 @@ export function HeroVisual({ variant }: { variant: LandingVariant }) {
     <div ref={ref}>
       {variant.visual === "fence" && <FenceShot active={active} instant={now} />}
       {variant.visual === "roof" && <RoofShot active={active} instant={now} hero />}
-      {variant.visual === "hvac" && <HvacShot active={active} instant={now} hero />}
+      {variant.visual === "hvac" && <HvacEstimatorShot active={active} instant={now} hero />}
       {variant.visual === "smart" && (
         <SmartProposalShot active={active} instant={now} scenario={SMART_SCENARIOS[variant.scenario ?? "kitchen"]} />
       )}

@@ -48,7 +48,7 @@ import {
   useTyped,
 } from "./showcase-kit";
 import { FENCE_TIMELINE, FenceShot } from "./fence-shot";
-import { HVAC_TIMELINE, HvacShot } from "./hvac-shot";
+import { HVAC_TIMELINE, HvacEstimatorShot } from "./hvac-estimator-shot";
 import type { ShowcaseSlideKey } from "./landing-variants";
 import { ROOF_TIMELINE, RoofShot } from "./roof-shot";
 import { SmartProposalShot, smartTimeline } from "./smart-proposal-shot";
@@ -355,7 +355,7 @@ export function EstimatorsShowcase({
               {s.key === "smart" && <SmartProposalShot active={inView} scenario={smartScenario} />}
               {s.key === "roof" && <RoofShot active={inView} />}
               {s.key === "fence" && <FenceShot active={inView} />}
-              {s.key === "hvac" && <HvacShot active={inView} />}
+              {s.key === "hvac" && <HvacEstimatorShot active={inView} />}
               {s.key === "video" && <VideoShot active={inView} />}
             </div>
           </Reveal>

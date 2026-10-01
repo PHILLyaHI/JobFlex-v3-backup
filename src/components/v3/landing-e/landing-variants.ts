@@ -189,7 +189,7 @@ export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> 
     scenario: "electrical",
   },
   // HVAC (2026-10-01): its own window — the real estimator's flow on three
-  // example houses (hvac-shot.tsx) — and its own showcase slide, like the
+  // example house (hvac-estimator-shot.tsx) — and its own showcase slide, like the
   // roof and the fence. The Smart scenario stays for the showcase's first slide.
   hvac: {
     h1: ["The whole system, priced.", "From the address."],

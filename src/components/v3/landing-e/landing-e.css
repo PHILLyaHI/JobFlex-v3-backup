@@ -1509,13 +1509,21 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
   .jf-lp .lp-hero-stage { height: 320px; --plan-inset: 6%; --plan-y: 56%; }
 }
 
-/* ── The HVAC window's plan (2026-10-01, hvac-shot.tsx) ─────────────────
-   The plan is an SVG that fits its box; the box keeps clear of the lifted
-   address bar and the house card above it and of the equipment card on the
-   floor. On the desk the house card holds the top-left corner, so the plan's
-   box starts to its right. On a phone the stage is the hero's 320 px and the
-   plan takes the middle three fifths. */
-.jf-lp .lp-hvac-stage .lp-hvac-plan { left: 170px; right: 0; top: 7%; height: 79%; }
+/* ── The HVAC estimator in the hero (2026-10-01, hvac-estimator-shot.tsx) ──
+   The real page's form inside the app frame: a fixed-height frame that
+   scrolls inside, the page zoomed to it on the desk (the zoom is set by the
+   shot from the frame's width) and laid out at the phone's own width below
+   640px. The shell root's window height and overflow are undone here — the
+   frame is the window. */
+.jf-lp .lp-hvac-frame { position: relative; height: 600px; overflow: hidden; transform: translateZ(0); background: #f2f0eb; }
+.jf-lp .lp-hvac-scroll { height: 100%; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+/* The step body's entrance fade (hvac-estimator.module.css, .st-b → hvIn) is
+   left on its first frames by Chrome inside this frame — the landing's
+   composited hero (the parallax layer) never repaints the body once the fade
+   ends, headed and headless alike (probe12/13, 2026-10-01); on the real page
+   it is fine. The fade is dropped here and only here; the module is untouched. */
+.jf-lp .lp-hvac-page section[id^="hv-"] > div:last-child { animation: none !important; }
+.jf-lp .lp-hvac-page { height: auto !important; min-height: 100%; overflow: visible !important; }
 /* The service book's "usual way / JobFlex" sheet on a phone: each question is
    a block — the question, then the two answers under their own labels. */
 @media (max-width: 639px) {
@@ -1529,8 +1537,7 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
   .jf-lp .lp-hv-vs-row > div + div + div::before { color: #1854a0; content: "JobFlex"; }
 }
 @media (max-width: 639px) {
-  .jf-lp .lp-hvac-stage { height: 320px; }
-  .jf-lp .lp-hvac-stage .lp-hvac-plan { left: 0; top: 19%; height: 58%; }
+  .jf-lp .lp-hvac-frame { height: 540px; }
 }
 
 /* ── The takeoff rail on a phone (owner, 2026-09-14) ───────────────
