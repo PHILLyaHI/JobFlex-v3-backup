@@ -40,11 +40,23 @@ export function canonicalTrialEmail(email: string): string {
   return `${local}@${domain}`;
 }
 
-/** The company's domain, or null for a public mailbox. */
+/* The big providers' regional twins — yahoo.co.uk, hotmail.fr, outlook.de,
+   live.com.au, gmx.de … — are public too: the provider's name followed by a
+   country or generic ending only (mail.ridgeline-roofing.com is a company). */
+const PUBLIC_MAIL_PROVIDERS = /^(yahoo|ymail|hotmail|outlook|live|msn|windowslive|aol|gmx|web|yandex|mail|icloud|proton|protonmail|zoho|libero|virgilio|orange|wanadoo|free|laposte|t-online|seznam|naver|daum|hanmail|qq|163|126|sina|rediffmail).(com|net|org|co|[a-z]{2})(.[a-z]{2})?$/;
+
+/** The company's domain, or null for a public mailbox — a public mailbox is
+ *  one person, not an organization, and is never limited by domain. */
 export function trialCompanyDomain(email: string): string | null {
   const domain = email.trim().toLowerCase().split("@")[1] ?? "";
   if (!domain || PUBLIC_MAIL.has(domain)) return null;
-  return domain;
+  if (PUBLIC_MAIL_PROVIDERS.test(domain)) return null;
+  // The registrable domain, so a subdomain is the same company:
+  // pat@mail.ridgeline-roofing.com and sam@ridgeline-roofing.com share one
+  // trial (two labels; three under a short second-level like .co.uk).
+  const labels = domain.split(".");
+  const keep = labels.length >= 3 && labels[labels.length - 2].length <= 3 && labels[labels.length - 1].length === 2 ? 3 : 2;
+  return labels.slice(-keep).join(".");
 }
 
 const emailKey = (email: string) => `trial-email:${createHash("sha256").update(canonicalTrialEmail(email)).digest("hex")}`;
