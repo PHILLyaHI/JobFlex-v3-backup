@@ -304,8 +304,13 @@ export function ResponsiveDashboardShell({
   locked,
   limits,
   limitsExempt,
+  handheldBanner,
 }: {
   children: React.ReactNode;
+  /** A banner the layout passes inside `children` (the card-less trial's
+   *  ribbon) — repeated here for the mapped handheld surfaces, which render
+   *  their own component INSTEAD of children and would drop it. */
+  handheldBanner?: React.ReactNode;
   /** Signed-in identity, read in the server layout and handed to the desktop
    *  sidebar. The handheld shell draws its own account row. */
   user?: { name: string; role: string };
@@ -345,6 +350,7 @@ export function ResponsiveDashboardShell({
         {/* Keyed: this shell persists across navigation, and MarkNavSeen only
             stamps once per mount — a new key remounts it for the new surface. */}
         {seenSurface && <MarkNavSeen key={seenSurface} surface={seenSurface} />}
+        {handheldBanner}
         <ChunkRecoveryBoundary resetKey={pathname ?? ""}>
           <CustomGateSwap>
             <Handheld />

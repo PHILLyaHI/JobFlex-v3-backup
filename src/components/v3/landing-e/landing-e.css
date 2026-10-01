@@ -1896,11 +1896,11 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
    Its own line under the heading, as a stamp: frame, heavy uppercase, the
    tick in blueprint blue (sky on the ink ground, 6.5:1). Not mono — it is
    the offer, read before the button. */
+/* inline-block, the tick in the text's own flow: when the line wraps on a
+   phone the tick stays beside the words and both centre together, instead
+   of the tick pinned to a stretched box's left edge. */
 .jf-lp .lp-trial-line {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  display: inline-block;
   max-width: 100%;
   padding: 9px 16px;
   border: 2px solid currentColor;
@@ -1915,7 +1915,9 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
   text-wrap: balance;
 }
 .jf-lp .lp-trial-line svg {
-  flex: 0 0 auto;
+  display: inline-block;
+  vertical-align: -3px;
+  margin-right: 9px;
   width: 18px;
   height: 18px;
   fill: none;
@@ -1927,8 +1929,8 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
 .jf-lp .lp-trial-line--dark svg { stroke: #4a9eff; }
 .jf-lp .lp-trial-line--light { color: #0a0a0a; background: #fff; }
 .jf-lp .lp-trial-line--light svg { stroke: #1854a0; }
-.jf-lp .lp-trial-line--sm { gap: 7px; padding: 5px 10px; border-width: 1.5px; font-size: 11.5px; letter-spacing: 0.05em; }
-.jf-lp .lp-trial-line--sm svg { width: 14px; height: 14px; }
+.jf-lp .lp-trial-line--sm { padding: 5px 10px; border-width: 1.5px; font-size: 11.5px; letter-spacing: 0.05em; }
+.jf-lp .lp-trial-line--sm svg { width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; }
 @media (max-width: 639px) {
-  .jf-lp .lp-trial-line--lg { gap: 8px; padding: 8px 12px; font-size: 13.5px; letter-spacing: 0.04em; }
+  .jf-lp .lp-trial-line--lg { padding: 8px 12px; font-size: 13.5px; letter-spacing: 0.04em; }
 }

@@ -66,11 +66,44 @@ function daysText(n: number): string {
   return n === 1 ? "1 day left" : `${n} days left`;
 }
 
-export function TrialRibbon({ view, isOwner }: { view: TrialView; isOwner: boolean }) {
+/* TWO PLACEMENTS, ONE COMPONENT. Above 768px the ribbon sits at the top of
+   the page's column. At 768px and under the handheld pages are full-screen
+   compositions of their own (some fixed to the viewport), so the same ribbon
+   docks as a compact bar just above the bottom navigation instead — CSS
+   chooses which of the two shows (trial-card.module.css). The mapped handheld
+   surfaces, which replace the layout's children, get the dock alone
+   (only="dock", via the shell's handheldBanner). */
+export function TrialRibbon({ view, isOwner, only }: { view: TrialView; isOwner: boolean; only?: "dock" }) {
   const { go, busy, error } = useAddCard();
   const ended = view.kind === "ended";
   const tone = ended ? s.isEnded : view.hasCard ? s.isCard : view.daysLeft <= 2 ? s.isSoon : "";
+  const stamp = ended ? "Trial ended" : view.hasCard ? "Card on file" : daysText(view.daysLeft);
+  const action =
+    view.hasCard && !ended ? null : isOwner ? (
+      ended ? (
+        <Link className={s.button} href={"/dashboard/trial" as Route}>
+          Add a card
+        </Link>
+      ) : (
+        <button type="button" className={s.button} onClick={() => void go()} disabled={busy} aria-busy={busy || undefined}>
+          {busy ? "Opening…" : "Add card"}
+        </button>
+      )
+    ) : null;
+  const dock = (
+    <div className={`${s.dock} ${tone}`} role={ended ? "alert" : "status"}>
+      <span className={s.stamp}>{stamp}</span>
+      <p className={s.dockText}>
+        {ended ? "Read-only until a card is added" : view.hasCard ? `${view.planName} starts ${DATE.format(new Date(view.endsAt))}` : isOwner ? "Add a card to keep access" : "Ask the owner to add a card"}
+        {error ? <span role="alert"> · {error}</span> : null}
+      </p>
+      {action}
+    </div>
+  );
+  if (only === "dock") return dock;
   return (
+    <>
+    {dock}
     <div className={`${s.ribbon} ${tone}`} role={ended ? "alert" : "status"}>
       <span className={s.stamp}>{ended ? "Trial ended" : view.hasCard ? "Card on file" : daysText(view.daysLeft)}</span>
       <p className={s.ribbonText}>
@@ -105,6 +138,7 @@ export function TrialRibbon({ view, isOwner }: { view: TrialView; isOwner: boole
         </span>
       )}
     </div>
+    </>
   );
 }
 

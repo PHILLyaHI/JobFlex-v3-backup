@@ -96,7 +96,10 @@ export async function cardlessTrialState(orgId: string, now = new Date()): Promi
   if (!hasCard && endsAt.getTime() <= now.getTime()) {
     return { kind: "ended", endedAt: endsAt, record: rec };
   }
-  const daysLeft = Math.max(0, Math.ceil((endsAt.getTime() - now.getTime()) / DAY_MS));
+  // Whole days, rounded up — the first day reads "7 days left" — except the
+  // last 24 hours, which read as the day it ends (daysLeft 0, "Ends today").
+  const leftMs = endsAt.getTime() - now.getTime();
+  const daysLeft = leftMs <= DAY_MS ? 0 : Math.ceil(leftMs / DAY_MS);
   return { kind: "trialing", endsAt, daysLeft, hasCard, record: rec };
 }
 

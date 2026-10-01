@@ -221,6 +221,7 @@ export default async function DashboardBlueprintLayout({
       locked={lockedPages ?? undefined}
       limits={navLimits}
       limitsExempt={navLimitsExempt}
+      handheldBanner={trial && !onTrialPage ? <TrialRibbon view={trial} isOwner={role === "OWNER"} only="dock" /> : null}
     >
       <TrafficContext role={role} plan={plan} organizationId={organizationId} />
       {organizationId && <TrialWatchMount organizationId={organizationId} email={email} />}
