@@ -43,7 +43,7 @@ function clock(iso: string, timezone: string): string {
   try { return new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(new Date(iso)); } catch { return ""; }
 }
 
-export function LivePanel({ initial, timezone }: { initial: LiveReport; timezone: string }) {
+export function LivePanel({ initial, timezone, fullHistory = false }: { initial: LiveReport; timezone: string; fullHistory?: boolean }) {
   const [report, setReport] = useState(initial);
   const [includeDev, setIncludeDev] = useState(false);
   const [adsOnly, setAdsOnly] = useState(false);
@@ -65,14 +65,21 @@ export function LivePanel({ initial, timezone }: { initial: LiveReport; timezone
     const id = ++request.current;
     setPending(true);
     try {
-      const next = await getLiveTraffic({ includeDevelopment: dev, timezone, fast });
+      const next = await getLiveTraffic({ includeDevelopment: dev, timezone, fast, fullHistory });
       if (id === request.current) { setReport(next); setError(""); setNow(Date.now()); }
     } catch (err) {
       if (id === request.current) setError(err instanceof Error ? err.message : "Could not refresh the live view.");
     } finally {
       if (id === request.current) setPending(false);
     }
-  }, [timezone]);
+  }, [timezone, fullHistory]);
+  // "Show full history" turned on or off above: the totals are counted again at once.
+  const firstWindow = useRef(true);
+  useEffect(() => {
+    if (firstWindow.current) { firstWindow.current = false; return; }
+    void load(includeDev, liveMode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the window switch reloads here
+  }, [fullHistory]);
 
   // The switch is remembered per browser. Read after mount so the server and
   // the first client render agree.

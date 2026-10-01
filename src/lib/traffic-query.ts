@@ -1,5 +1,7 @@
 import type { TrafficFilters } from "./traffic-contract";
 import { TRAFFIC_EVENTS as E } from "./traffic-contract";
+// Who counts: one rule for every figure on the page (2026-10-01).
+import { BROWSER_TYPE_SQL, HOST_SQL, TRAFFIC_SINCE, UA_SQL, sinceSql, visitorRuleSql, type VisitorScope } from "./traffic-visitor";
 
 const DAY = 86_400_000;
 export function dateInZone(date: Date, timezone: string): string {
@@ -12,8 +14,12 @@ export function parseTrafficFilters(input: Record<string, unknown> = {}, now = n
   const timezone = typeof input.timezone === "string" ? input.timezone : "America/Los_Angeles";
   try { new Intl.DateTimeFormat("en", { timeZone: timezone }).format(now); } catch { throw new Error("Choose a valid timezone."); }
   const today = dateInZone(now, timezone);
-  const from = typeof input.from === "string" ? input.from : shiftDate(today, -29);
-  const to = typeof input.to === "string" ? input.to : today;
+  const fullHistory = input.fullHistory === true || input.fullHistory === "true";
+  // The range works inside the counted window: nothing before TRAFFIC_SINCE
+  // unless the full history is asked for (2026-10-01).
+  const floor = (d: string) => (fullHistory || d >= TRAFFIC_SINCE ? d : TRAFFIC_SINCE);
+  const from = floor(typeof input.from === "string" ? input.from : shiftDate(today, -29));
+  const to = floor(typeof input.to === "string" ? input.to : today);
   for (const d of [from, to]) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !Number.isFinite(Date.parse(d)) || new Date(d).toISOString().slice(0, 10) !== d) throw new Error("Use valid dates in YYYY-MM-DD format.");
   }
@@ -22,11 +28,13 @@ export function parseTrafficFilters(input: Record<string, unknown> = {}, now = n
   return {
     from, to, timezone,
     audience: input.audience === "new" || input.audience === "returning" ? input.audience : "all",
-    environment: input.environment === "production" || input.environment === "development" ? input.environment : "all",
+    // Production (www.jobflex.app, jobflex.app) unless the admin asks for localhost too (2026-10-01).
+    environment: input.environment === "all" || input.environment === "development" ? input.environment : "production",
     page: text("page", 240), source: text("source", 160), device: text("device", 80), host: text("host", 253),
     flow: input.flow === "google" || input.flow === "standard" ? input.flow : "all",
     windowDays: [1, 7, 14].includes(Number(input.windowDays)) ? Number(input.windowDays) : 7,
     billingMode: input.billingMode === "test" || input.billingMode === "all" ? input.billingMode : "live",
+    fullHistory,
   };
 }
 
@@ -58,12 +66,15 @@ function trafficParts(f: TrafficFilters) {
   const prev = `toDateTime(${q(shiftDate(f.from, -duration) + " 00:00:00")}, ${q(f.timezone)})`;
   const prop = (name: string) => `ifNull(toString(properties.${name}), '')`;
   const eventPath = `ifNull(nullIf(${prop("$pathname")}, ''), path(${prop("$current_url")}))`;
-  const env = f.environment === "all" ? "1 = 1" : `environment = ${q(f.environment)}`;
+  // The page's one visitor rule (lib/traffic-visitor): production hosts, localhost
+  // only when asked, Vercel previews and unknown hosts never, no bots.
+  const scope: VisitorScope = f.environment === "all" ? "with-local" : f.environment === "development" ? "local" : "production";
+  const env = visitorRuleSql({ host: "hostname", ua: "ua", browserType: "browser_type", event: "event" }, scope);
   const hostFilter = f.host ? `hostname = ${q(f.host === "__unknown__" ? "" : f.host)}` : "1 = 1";
   const base = `WITH raw AS (
     SELECT timestamp, toString(person_id) AS visitor, toString(distinct_id) AS distinct_id, event,
       ${eventPath} AS pathname,
-      ifNull(nullIf(${prop("jf_hostname")}, ''), domain(${prop("$current_url")})) AS hostname,
+      ${HOST_SQL} AS hostname, ${UA_SQL} AS ua, ${BROWSER_TYPE_SQL} AS browser_type,
       ${prop("$session_id")} AS session_id,
       ifNull(nullIf(${prop("jf_environment")}, ''), if(domain(${prop("$current_url")}) IN ('localhost', '127.0.0.1'), 'development', 'production')) AS environment,
       ${prop("utm_source")} AS utm_source, ${prop("utm_medium")} AS medium,
@@ -76,7 +87,7 @@ function trafficParts(f: TrafficFilters) {
       ${prop("verified")} AS verified, ${prop("billing_mode")} AS billing_mode,
       ${prop("intent")} AS intent, ${prop("outcome")} AS outcome
     FROM events
-    WHERE timestamp <= now() AND (event = '$pageview' OR event IN (${Object.values(E).map(q).join(",")}))
+    WHERE timestamp <= now() AND ${sinceSql(f.fullHistory)} AND (event = '$pageview' OR event IN (${Object.values(E).map(q).join(",")}))
   ), base AS (
     SELECT *, if(event = ${q(E.step)}, concat('registration:', step), pathname) AS page,
       if(utm_source != '', utm_source, if(referrer IN ('', '$direct') OR referrer = hostname, 'Direct / unknown', referrer)) AS source

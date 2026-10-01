@@ -25,6 +25,8 @@
 //   · "On the site now" = an event in the last ACTIVE_MINUTES; up to
 //     WINDOW_MINUTES they are "just left", shown dimmer, then gone.
 import { TRAFFIC_EVENTS as E, pageLabel } from "./traffic-contract";
+// Who counts and what is "from an ad": one rule for the whole page (2026-10-01).
+import { BROWSER_TYPE_SQL, HOST_SQL, UA_SQL, carriesAdTag, isCountedEvent, sinceSql, visitorRuleSql } from "./traffic-visitor";
 
 export const LIVE_WINDOW_MINUTES = 30;
 export const LIVE_ACTIVE_MINUTES = 5;
@@ -68,6 +70,9 @@ export interface LiveEvent {
   regionCode: string;
   /** The ad platform's click id on the link, by name ("gclid", "fbclid"…), or "". */
   click: string;
+  /** The browser's user agent and PostHog's own bot flag — the visitor rule (lib/traffic-visitor). */
+  ua: string;
+  browserType: string;
 }
 
 /** An organization created today, from the database. */
@@ -309,7 +314,13 @@ const lower = (s: string) => s.trim().toLowerCase();
 export interface SourceRead { kind: SourceKind; label: string; fromAd: boolean; platform: string }
 
 /** Where a visit came from, read off its first event: the tag first, then
- *  the platform's click id, then the referrer. */
+ *  the platform's click id, then the referrer.
+ *
+ *  FROM AN AD (owner, 2026-10-01): only a visit that carries utm_source or
+ *  fbclid (traffic-visitor carriesAdTag). An untagged Facebook / Instagram /
+ *  TikTok referrer is that platform's link, not an ad; a Google, TikTok or X
+ *  click id with no utm tag is named but not counted. A tagged post
+ *  (utm_medium social, email, referral, organic) stays a post. */
 export function classifySource(utmSource: string, utmMedium: string, referrer: string, hostname: string, click = ""): SourceRead {
   const src = lower(utmSource);
   const med = lower(utmMedium);
@@ -327,15 +338,13 @@ export function classifySource(utmSource: string, utmMedium: string, referrer: s
     if (med === "organic" || med === "search") return { kind: "search", label: `${platform} search`, fromAd: false, platform: key === "other" ? "search" : key };
     return { kind: "referral", label: med ? `${platform} · ${utmMedium.trim()}` : platform, fromAd: false, platform: key };
   }
-  // A paid click id with no tag: the platform's own ad link (Google's auto-tagging, TikTok, X).
-  if (clickId?.paid) return { kind: "ad", label: `${SOURCE_LABEL[clickId.platform]} ad · click id`, fromAd: true, platform: clickId.platform };
+  // fbclid with no tag: Meta's own ad link (the in-app browser sends no referrer).
+  if (carriesAdTag("", click)) return { kind: "likely-ad", label: `${SOURCE_LABEL[clickId?.platform ?? "facebook"] ?? "Facebook"} · fbclid, no utm tag`, fromAd: true, platform: clickId?.platform ?? "facebook" };
+  // Any other click id with no tag: named, not counted as an ad.
+  if (clickId) return { kind: "referral", label: `${SOURCE_LABEL[clickId.platform] ?? clickId.platform} · click id, no utm tag`, fromAd: false, platform: clickId.platform };
   const own = !ref || ref === "$direct" || ref === hostname.toLowerCase().replace(/^www\./, "");
-  if (own) {
-    // fbclid with no referrer: the in-app browser of Facebook or Instagram, which sends none.
-    if (clickId) return { kind: "likely-ad", label: `${SOURCE_LABEL[clickId.platform]} · in-app link, most likely an ad`, fromAd: true, platform: clickId.platform };
-    return { kind: "direct", label: "Direct", fromAd: false, platform: "direct" };
-  }
-  for (const [re, key] of SOCIAL_AD_DOMAINS) if (re.test(ref)) return { kind: "likely-ad", label: `${SOURCE_LABEL[key]} · untagged, most likely an ad`, fromAd: true, platform: key };
+  if (own) return { kind: "direct", label: "Direct", fromAd: false, platform: "direct" };
+  for (const [re, key] of SOCIAL_AD_DOMAINS) if (re.test(ref)) return { kind: "social", label: `${SOURCE_LABEL[key]} · untagged link`, fromAd: false, platform: key };
   for (const [re, name] of SEARCH_DOMAINS) if (re.test(ref)) return { kind: "search", label: `${name} search`, fromAd: false, platform: "search" };
   for (const [re, key] of SOCIAL_DOMAINS) if (re.test(ref)) return { kind: "social", label: SOURCE_LABEL[key] ?? key, fromAd: false, platform: key };
   const known = REFERRAL_PLATFORMS.find(([re]) => re.test(ref));
@@ -643,13 +652,14 @@ export function liveHeadline(r: {
 }
 
 /** The visitors of the window, newest activity first, signups on top. */
-export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Date.now(), opts: { includeDevelopment?: boolean } = {}): Omit<LiveReport, "status" | "message" | "fetchedAt"> {
+export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Date.now(), opts: { includeDevelopment?: boolean; fullHistory?: boolean } = {}): Omit<LiveReport, "status" | "message" | "fetchedAt"> {
   const windowStart = now - LIVE_WINDOW_MINUTES * 60_000;
   const activeSince = now - LIVE_ACTIVE_MINUTES * 60_000;
   const byPerson = new Map<string, LiveEvent[]>();
   for (const e of events) {
     if (!(e.at >= windowStart && e.at <= now + 60_000)) continue;
-    if (!opts.includeDevelopment && envOf(e) === "development") continue;
+    // The page's one visitor rule: production hosts (localhost on the switch), no bots, no previews.
+    if (!isCountedEvent({ event: e.event, hostname: e.hostname || domainOf(e.url), ua: e.ua, browserType: e.browserType, at: e.at }, !!opts.includeDevelopment, !!opts.fullHistory)) continue;
     const key = e.person || e.distinctId;
     if (!key) continue;
     const list = byPerson.get(key);
@@ -871,7 +881,8 @@ export function buildLiveQuery(windowMinutes = LIVE_WINDOW_MINUTES): string {
     toFloat64OrNull(toString(properties.$geoip_latitude)), toFloat64OrNull(toString(properties.$geoip_longitude)),
     ${prop("$geoip_country_code")}, ${prop("$geoip_subdivision_1_code")},
     multiIf(${CLICK_ID_KEYS.map((k) => `${prop(k)} != '', '${k}'`).join(", ")}, ''),
-    ${prop("placement")}, ${prop("label")}
+    ${prop("placement")}, ${prop("label")},
+    ${UA_SQL}, ${BROWSER_TYPE_SQL}
     FROM events
     WHERE timestamp > now() - INTERVAL ${Math.max(5, Math.min(120, Math.round(windowMinutes)))} MINUTE AND event IN (${events})
     ORDER BY timestamp DESC LIMIT 4000`;
@@ -887,20 +898,24 @@ function tzLiteral(timezone: string): string {
 /** Site-wide visitor totals, in the admin's timezone, counted with and
  *  without localhost in one pass (2026-09-30).
  *
- *  It follows the dashboard's own rules — pageviews only, /admin excluded,
- *  the environment read from jf_environment with the localhost domain as the
- *  fallback — so "All-time visitors" here agrees with the figure the report
- *  below the live section prints.
+ *  It follows the page's one visitor rule (lib/traffic-visitor, 2026-10-01) —
+ *  pageviews only, /admin excluded, www.jobflex.app and jobflex.app (plus
+ *  localhost on the switch), no bots, no Vercel previews — and the report's
+ *  header reads these same figures (traffic-server), so the two can no
+ *  longer disagree.
  *
  *  This one touches every event the project holds, so it is deliberately NOT
  *  on the live poll's cache: an all-time count does not move in fifteen
  *  seconds (lib/traffic-server caches it for minutes). */
-export function buildLiveTotalsQuery(timezone: string): string {
+export function buildLiveTotalsQuery(timezone: string, fullHistory = false): string {
   const tz = tzLiteral(timezone);
   const prop = (name: string) => `ifNull(toString(properties.${name}), '')`;
-  const production = "env != 'development'";
-  /** Each figure twice: everyone, then everyone but localhost. */
-  const pair = (cond: string) => `uniqExactIf(person, ${cond}), uniqExactIf(person, (${cond}) AND ${production})`;
+  // The page's one visitor rule (lib/traffic-visitor), twice: with localhost, then without.
+  const cols = { host: "hostname", ua: "ua", browserType: "browser_type", event: "'$pageview'" };
+  const withLocal = visitorRuleSql(cols, "with-local");
+  const production = visitorRuleSql(cols, "production");
+  /** Each figure twice: production + localhost, then production only. */
+  const pair = (cond: string) => `uniqExactIf(person, (${cond}) AND ${withLocal}), uniqExactIf(person, (${cond}) AND ${production})`;
   const today = "day = today_local";
   const localNow = `toTimeZone(now(), ${tz})`;
   return `SELECT
@@ -909,18 +924,18 @@ export function buildLiveTotalsQuery(timezone: string): string {
     ${pair("day = today_local - 1 AND secs <= now_secs")},
     ${pair("day = today_local - 1")},
     ${pair("ts >= now() - INTERVAL 7 DAY")},
-    countIf(${today}), countIf((${today}) AND ${production})
+    countIf((${today}) AND ${withLocal}), countIf((${today}) AND ${production})
   FROM (
     SELECT toString(person_id) AS person, timestamp AS ts,
       ifNull(nullIf(${prop("$pathname")}, ''), path(${prop("$current_url")})) AS pathname,
-      ifNull(nullIf(${prop("jf_environment")}, ''), if(domain(${prop("$current_url")}) IN ('localhost', '127.0.0.1'), 'development', 'production')) AS env,
+      ${HOST_SQL} AS hostname, ${UA_SQL} AS ua, ${BROWSER_TYPE_SQL} AS browser_type,
       toTimeZone(timestamp, ${tz}) AS lts,
       toDate(lts) AS day,
       toHour(lts) * 3600 + toMinute(lts) * 60 + toSecond(lts) AS secs,
       toDate(${localNow}) AS today_local,
       toHour(${localNow}) * 3600 + toMinute(${localNow}) * 60 + toSecond(${localNow}) AS now_secs
     FROM events
-    WHERE event = '$pageview' AND timestamp <= now()
+    WHERE event = '$pageview' AND timestamp <= now() AND ${sinceSql(fullHistory)}
   )
   WHERE pathname != '/admin' AND NOT startsWith(pathname, '/admin/')`;
 }
@@ -971,5 +986,7 @@ export function liveEventFromRow(row: unknown[]): LiveEvent | null {
     click: CLICK_IDS[str(28).toLowerCase()] ? str(28).toLowerCase() : "",
     placement: str(29),
     label: str(30),
+    ua: str(31),
+    browserType: str(32),
   };
 }

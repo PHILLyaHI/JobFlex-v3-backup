@@ -6,7 +6,7 @@
 // the owner watched arrive became one he could not find again. Nothing new is
 // stored for it — these are Organization rows with the landing's tags on them
 // and the Subscription beside them, read over a span he picks.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Info, Megaphone, RefreshCw } from "lucide-react";
 import { getSignupLedger } from "@/actions/trafficDashboard";
 import type { SignupLedger, SignupRecord, SignupState } from "@/lib/traffic-live";
@@ -17,7 +17,7 @@ const STATE_LABEL: Record<SignupState, string> = {
   trial: "on trial", paying: "paying", lapsed: "lapsed", free: "free plan", unknown: "no plan row",
 };
 
-export function SignupLedgerPanel({ initial, timezone }: { initial: SignupLedger; timezone: string }) {
+export function SignupLedgerPanel({ initial, timezone, fullHistory = false }: { initial: SignupLedger; timezone: string; fullHistory?: boolean }) {
   const [ledger, setLedger] = useState(initial);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -25,15 +25,22 @@ export function SignupLedgerPanel({ initial, timezone }: { initial: SignupLedger
   const load = useCallback(async (days: number) => {
     setPending(true);
     try {
-      setLedger(await getSignupLedger({ days }));
+      setLedger(await getSignupLedger({ days, fullHistory }));
       setError("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load the signups.");
     } finally {
       setPending(false);
     }
-  }, []);
+  }, [fullHistory]);
   useEffect(() => { setLedger(initial); }, [initial]);
+  // "Show full history" switched: the same span, counted again.
+  const firstWindow = useRef(true);
+  useEffect(() => {
+    if (firstWindow.current) { firstWindow.current = false; return; }
+    void load(ledger.days);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the window switch reloads here
+  }, [fullHistory]);
 
   const when = (iso: string) => {
     try {

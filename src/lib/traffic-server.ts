@@ -28,19 +28,19 @@ export async function fetchLiveEvents(maxAgeMs = LIVE_CACHE_MS): Promise<LiveEve
  *  watches a 15-second ticker. Keyed by timezone, because "today" is. */
 const LIVE_TOTALS_CACHE_MS = 5 * 60_000;
 const liveTotals = new Map<string, { at: number; promise: Promise<LiveTotalsPair> }>();
-export async function fetchLiveTotals(timezone: string): Promise<LiveTotalsPair> {
-  const key = timezone || "UTC";
+export async function fetchLiveTotals(timezone: string, fullHistory = false): Promise<LiveTotalsPair> {
+  const key = `${timezone || "UTC"}|${fullHistory ? "full" : "since"}`;
   const now = Date.now();
   const hit = liveTotals.get(key);
   if (hit && now - hit.at < LIVE_TOTALS_CACHE_MS) return hit.promise;
-  const promise = runTrafficQuery(buildLiveTotalsQuery(key), "live totals").then((rows) => liveTotalsFromRow(Array.isArray(rows[0]) ? rows[0] : []));
+  const promise = runTrafficQuery(buildLiveTotalsQuery(timezone || "UTC", fullHistory), "live totals").then((rows) => liveTotalsFromRow(Array.isArray(rows[0]) ? rows[0] : []));
   promise.catch(() => { if (liveTotals.get(key)?.promise === promise) liveTotals.delete(key); });
   liveTotals.set(key, { at: now, promise });
   return promise;
 }
 
 /** The live report: the window's visitors shaped with the day's signups. */
-export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDevelopment?: boolean; timezone?: string; fast?: boolean } = {}): Promise<LiveReport> {
+export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDevelopment?: boolean; timezone?: string; fast?: boolean; fullHistory?: boolean } = {}): Promise<LiveReport> {
   const fetchedAt = new Date().toISOString();
   try {
     if (!posthogApiConfig()) return { ...shapeLive([], signups, Date.now(), opts), status: "disabled", message: "Connect a PostHog personal key with query:read and a numeric project ID.", fetchedAt };
@@ -50,7 +50,7 @@ export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDeve
     // there leaves the window intact and the panel simply prints no totals.
     const [events, pair] = await Promise.all([
       fetchLiveEvents(opts.fast ? LIVE_FAST_CACHE_MS : LIVE_CACHE_MS),
-      fetchLiveTotals(opts.timezone || "UTC").catch(() => null),
+      fetchLiveTotals(opts.timezone || "UTC", !!opts.fullHistory).catch(() => null),
     ]);
     const totals = pair ? (opts.includeDevelopment ? pair.all : pair.production) : null;
     const shaped = shapeLive(events, signups, Date.now(), opts);
@@ -147,6 +147,18 @@ async function loadReport(filters: TrafficFilters): Promise<TrafficReport> {
     const r = results.lifetime[0];
     report.lifetime = numeric(r[0]); report.today = numeric(r[1]);
     report.firstTrackedAt = r[2] ? String(r[2]) : null; report.firstStepAt = r[3] ? String(r[3]) : null;
+  }
+  // ONE ALL-TIME FIGURE (2026-10-01). The header's "All-time visitors" and
+  // "Today" are the live panel's totals — the same query, the same cached
+  // answer — so the two can no longer print 11,706 and 11,702 side by side
+  // (two queries, two rules, two cache ages). The localhost-only scope keeps
+  // its own count; the pair has no column for it.
+  if (filters.environment !== "development") {
+    try {
+      const pair = await fetchLiveTotals(filters.timezone, filters.fullHistory);
+      const t = filters.environment === "all" ? pair.all : pair.production;
+      report.lifetime = t.allTime; report.today = t.today;
+    } catch { /* the report's own count stands */ }
   }
   if (results.trend) {
     const days = new Map(results.trend.map(r => [String(r[0]), totals(r.slice(1))]));

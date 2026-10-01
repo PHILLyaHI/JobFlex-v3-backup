@@ -11,21 +11,24 @@ const check = (name: string, ok: boolean, extra = "") => {
   console.log(`${ok ? "ok  " : "FAIL"} ${name}${extra ? " — " + extra : ""}`);
 };
 
-const NOW = Date.parse("2026-09-28T17:30:00Z");
+// After TRAFFIC_SINCE (2026-09-30, the ad launch): the live window counts nothing before it.
+const NOW = Date.parse("2026-10-01T17:30:00Z");
 const min = (m: number) => NOW - m * 60_000;
 const ev = (p: Partial<LiveEvent> & { person: string; at: number }): LiveEvent => ({
   distinctId: p.person, event: "$pageview", pathname: "/", url: "https://jobflex.app/", sessionId: "s-" + p.person, hostname: "jobflex.app", environment: "production",
   utmSource: "", utmMedium: "", utmCampaign: "", utmContent: "", referrer: "$direct", device: "Desktop", browser: "Chrome", os: "Mac OS X",
   country: "United States", region: "Texas", city: "Dallas", step: "", outcome: "", plan: "", verified: "",
-  lat: 32.78, lon: -96.8, countryCode: "US", regionCode: "TX", click: "", ...p,
+  lat: 32.78, lon: -96.8, countryCode: "US", regionCode: "TX", click: "",
+  ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36", browserType: "", ...p,
 });
 
 // ── where a visit came from
 check("a tagged paid medium is an ad", classifySource("facebook", "paid", "", "jobflex.app").fromAd && classifySource("facebook", "paid", "", "jobflex.app").label === "Facebook ad");
 check("google / cpc is a Google ad", classifySource("google", "cpc", "", "").label === "Google ad" && classifySource("google", "cpc", "", "").kind === "ad");
 check("an ad platform tagged without a medium is still counted as an ad, and says so", classifySource("fb", "", "", "").fromAd && /tagged, no medium/.test(classifySource("fb", "", "", "").label));
-check("an untagged Facebook referrer is most likely an ad", classifySource("", "", "l.facebook.com", "jobflex.app").fromAd && classifySource("", "", "l.facebook.com", "jobflex.app").kind === "likely-ad");
-check("Instagram and TikTok referrers likewise", classifySource("", "", "www.instagram.com", "").fromAd && classifySource("", "", "www.tiktok.com", "").fromAd);
+// From an ad = utm_source or fbclid, nothing else (owner, 2026-10-01).
+check("an untagged Facebook referrer is Facebook's link, not an ad", !classifySource("", "", "l.facebook.com", "jobflex.app").fromAd && classifySource("", "", "l.facebook.com", "jobflex.app").platform === "facebook" && classifySource("", "", "l.facebook.com", "jobflex.app").kind === "social");
+check("Instagram and TikTok referrers likewise", !classifySource("", "", "www.instagram.com", "").fromAd && !classifySource("", "", "www.tiktok.com", "").fromAd);
 check("a Google referrer is search, not an ad", !classifySource("", "", "www.google.com", "").fromAd && classifySource("", "", "www.google.com", "").label === "Google search");
 check("tagged organic social is a post, not an ad", !classifySource("facebook", "social", "", "").fromAd && /post/.test(classifySource("facebook", "social", "", "").label));
 check("no referrer, or the site itself, is Direct", classifySource("", "", "$direct", "jobflex.app").kind === "direct" && classifySource("", "", "jobflex.app", "jobflex.app").kind === "direct" && classifySource("", "", "", "").kind === "direct");
@@ -33,9 +36,9 @@ check("another site is a referral by name", classifySource("", "", "www.yelp.com
 check("LinkedIn is social, not an ad", classifySource("", "", "www.linkedin.com", "").kind === "social" && !classifySource("", "", "www.linkedin.com", "").fromAd);
 // ── the platforms, and the click ids the ad platforms add
 check("Meta's own site_source_name fills fb / ig / msg: each credited to its platform", classifySource("fb", "paid", "", "").platform === "facebook" && classifySource("ig", "paid", "", "").platform === "instagram" && classifySource("msg", "paid", "", "").platform === "facebook" && classifySource("ig", "paid", "", "").label === "Instagram ad");
-check("a Google click id with no tag is a Google ad (auto-tagging)", classifySource("", "", "", "", "gclid").fromAd && classifySource("", "", "", "", "gclid").platform === "google" && /click id/.test(classifySource("", "", "", "", "gclid").label));
-check("ttclid and twclid are TikTok and X ads; msclkid Bing", classifySource("", "", "", "", "ttclid").platform === "tiktok" && classifySource("", "", "", "", "twclid").platform === "x" && classifySource("", "", "", "", "msclkid").platform === "bing" && classifySource("", "", "", "", "twclid").fromAd);
-check("fbclid with no referrer (the in-app browser) is Facebook, most likely an ad", classifySource("", "", "", "", "fbclid").platform === "facebook" && classifySource("", "", "", "", "fbclid").kind === "likely-ad");
+check("a Google click id with no utm tag is named Google, not counted as an ad", !classifySource("", "", "", "", "gclid").fromAd && classifySource("", "", "", "", "gclid").platform === "google" && /click id/.test(classifySource("", "", "", "", "gclid").label));
+check("ttclid, twclid and msclkid name TikTok, X and Bing, none an ad without a tag", classifySource("", "", "", "", "ttclid").platform === "tiktok" && classifySource("", "", "", "", "twclid").platform === "x" && classifySource("", "", "", "", "msclkid").platform === "bing" && !classifySource("", "", "", "", "twclid").fromAd);
+check("fbclid with no tag is a Facebook ad, referrer or not", classifySource("", "", "", "", "fbclid").platform === "facebook" && classifySource("", "", "", "", "fbclid").fromAd && classifySource("", "", "l.facebook.com", "", "fbclid").fromAd);
 check("fbclid does not turn a tagged post into an ad", !classifySource("facebook", "social", "", "", "fbclid").fromAd);
 check("search, direct and other sites have their own platform keys", classifySource("", "", "www.google.com", "").platform === "search" && classifySource("", "", "", "").platform === "direct" && classifySource("", "", "www.yelp.com", "").platform === "yelp" && classifySource("", "", "some-blog.com", "").platform === "other");
 
@@ -79,13 +82,13 @@ check("signups sort to the top", r.visitors[0].id === ana.id);
 const ben = by("p-ben")!;
 check("Ben: Google search, looking around on /pricing, not from an ad", ben.stage === "browsing" && !ben.fromAd && ben.source === "Google search" && ben.page === "/pricing" && ben.active);
 const cal = by("p-cal")!;
-check("Cal: an untagged Instagram click, on the sign-up form now — counted as an ad", cal.stage === "registering" && cal.fromAd && cal.sourceKind === "likely-ad" && cal.active && cal.pageLabel === "Sign-up form", `${cal.stage} · ${cal.source} · ${cal.pageLabel}`);
+check("Cal: an untagged Instagram click, on the sign-up form now — Instagram, not counted as an ad", cal.stage === "registering" && !cal.fromAd && cal.sourceKind === "social" && cal.active && cal.pageLabel === "Sign-up form", `${cal.stage} · ${cal.source} · ${cal.pageLabel}`);
 check("an app screen is named by its section", (() => { const m = shapeLive([ev({ person: "p-m", at: min(1), pathname: "/dashboard/jobs" })], [], NOW).visitors[0]; return m.pageLabel === "App · Jobs" && m.stage === "member"; })());
 const dee = by("p-dee")!;
 check("Dee: a member in the app, gone quiet — shown as left", dee.stage === "member" && !dee.active);
 const gus = by("p-gus")!;
 check("Gus: the source is his NEW visit's (the Facebook ad), not the old direct one", gus.fromAd && gus.source === "Facebook ad" && gus.views === 1 && gus.active);
-check("the counts: 4 on now, 3 of them from ads, 1 signing up, 1 signed up, 0 members on now", r.counts.onSite === 4 && r.counts.fromAds === 3 && r.counts.signingUp === 1 && r.counts.signedUp === 1 && r.counts.members === 0, JSON.stringify(r.counts));
+check("the counts: 4 on now, 2 of them from ads, 1 signing up, 1 signed up, 0 members on now", r.counts.onSite === 4 && r.counts.fromAds === 2 && r.counts.signingUp === 1 && r.counts.signedUp === 1 && r.counts.members === 0, JSON.stringify(r.counts));
 check("today: 3 signups, 2 from ads", r.today.signups === 3 && r.today.fromAds === 2, JSON.stringify(r.today));
 // ── the platform cards
 const cards = r.platforms;
@@ -95,7 +98,7 @@ const fb = byKey("facebook")!;
 check("Facebook: Ana and Gus, both from ads, Ana signed up, the fence-fall campaign counted twice with one signup", fb.visitors === 2 && fb.fromAds === 2 && fb.organic === 0 && fb.signedUp === 1 && fb.onSite === 2 && fb.campaigns[0]?.campaign === "fence-fall" && fb.campaigns[0]?.visitors === 2 && fb.campaigns[0]?.signedUp === 1, JSON.stringify(fb));
 check("Facebook's signups today from the database: Ana's row (facebook / paid)", fb.signedUpToday === 1);
 const ig = byKey("instagram")!;
-check("Instagram: Cal, untagged, signing up", ig.visitors === 1 && ig.fromAds === 1 && ig.signingUp === 1 && ig.campaigns.length === 0);
+check("Instagram: Cal, untagged, signing up, organic", ig.visitors === 1 && ig.fromAds === 0 && ig.signingUp === 1 && ig.campaigns.length === 0);
 const goog = byKey("google")!;
 check("Google Ads: nobody in the window, one signup today (Morning Roofing, google / cpc)", goog.visitors === 0 && goog.signedUpToday === 1 && goog.ads);
 check("TikTok and X stand at zero, still shown", byKey("tiktok")?.visitors === 0 && byKey("x")?.visitors === 0);
@@ -105,6 +108,21 @@ check("platformCards on nothing still lists the ad platforms at zero", platformC
 check("the two signups no visitor could be tied to are listed apart, newest first, with their own source", r.otherSignups.length === 2 && r.otherSignups[0].orgName === "Morning Roofing" && r.otherSignups[0].source === "Google ad" && r.otherSignups[1].source === "Untagged", JSON.stringify(r.otherSignups));
 const dev = shapeLive(events, signups, NOW, { includeDevelopment: true });
 check("with localhost included the developer shows, marked development", dev.visitors.length === 6 && dev.visitors.find((v) => v.id === shortId("p-eli"))?.environment === "development");
+// the page's one visitor rule (2026-10-01): a headless browser and a Vercel preview never count, even with localhost on
+const outsiders = [
+  ev({ person: "p-bot", at: min(1), ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 HeadlessChrome/131.0 Safari/537.36" }),
+  ev({ person: "p-preview", at: min(1), hostname: "jobflex-v3.vercel.app", url: "https://jobflex-v3.vercel.app/" }),
+  ev({ person: "p-noua", at: min(1), ua: "" }),
+];
+check("a headless browser, a preview deployment and a pageview with no user agent are not visitors", shapeLive([...events, ...outsiders], signups, NOW, { includeDevelopment: true }).visitors.length === 6);
+// the counting window (TRAFFIC_SINCE, 2026-10-01): an event before the ad launch is out unless the full history is asked for
+const before = ev({ person: "p-old", at: Date.parse("2026-09-29T23:00:00-07:00") });
+check("before Sep 30 (Los Angeles) a visitor is not counted; with the full history he is",
+  !shapeLive([before], [], Date.parse("2026-09-29T23:10:00-07:00")).visitors.length
+  && shapeLive([before], [], Date.parse("2026-09-29T23:10:00-07:00"), { fullHistory: true }).visitors.length === 1);
+check("the totals query counts from Sep 30 in Los Angeles, and not when the full history is asked for",
+  /timestamp >= toDateTime\('2026-09-30 00:00:00', 'America\/Los_Angeles'\)/.test(buildLiveTotalsQuery("UTC"))
+  && !/2026-09-30/.test(buildLiveTotalsQuery("UTC", true)));
 // a signup whose campaign tag disagrees is not tied to the row
 const wrongTag = shapeLive(events.map((e) => (e.person === "p-ana" ? { ...e, utmCampaign: "other-campaign" } : e)), signups, NOW);
 check("a different campaign tag keeps the signup from being tied to the wrong row (still green, unnamed)", wrongTag.visitors[0].stage === "signed-up" && wrongTag.visitors[0].signup === null && wrongTag.otherSignups.length === 3);
@@ -136,11 +154,13 @@ check("a short id is the tail of the person id", shortId("0192abcd-1234-5678-9ab
 // ── the site-wide totals behind the live view (2026-09-30)
 const totalsSql = buildLiveTotalsQuery("America/Chicago");
 check("the totals query counts people today, yesterday to this hour, the week and all time",
-  /uniqExactIf\(person, 1 = 1\)/.test(totalsSql) && /day = today_local/.test(totalsSql)
+  /uniqExactIf\(person, \(1 = 1\) AND/.test(totalsSql) && /day = today_local/.test(totalsSql)
   && /day = today_local - 1 AND secs <= now_secs/.test(totalsSql) && /INTERVAL 7 DAY/.test(totalsSql)
-  && /countIf\(day = today_local\)/.test(totalsSql));
+  && /countIf\(\(day = today_local\) AND/.test(totalsSql));
 check("it counts each figure twice, so the localhost switch needs no second query",
-  (totalsSql.match(/env != 'development'/g) || []).length === 6);
+  (totalsSql.match(/startsWith\(hostname, '192\.168\.'\)/g) || []).length === 6 && (totalsSql.match(/hostname IN \('www\.jobflex\.app', 'jobflex\.app'\)/g) || []).length === 12);
+check("…by the page's one visitor rule: production hosts, no bots, no empty user agent",
+  /match\(ua, '\(\?i\)headless/.test(totalsSql) && /browser_type = 'bot'/.test(totalsSql) && /ua = ''/.test(totalsSql));
 check("it follows the report's own rules — pageviews, no /admin, localhost by domain when the tag is missing",
   /event = '\$pageview'/.test(totalsSql) && /pathname != '\/admin'/.test(totalsSql)
   && /NOT startsWith\(pathname, '\/admin\/'\)/.test(totalsSql) && /'localhost', '127\.0\.0\.1'/.test(totalsSql));

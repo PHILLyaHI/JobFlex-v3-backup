@@ -13,6 +13,8 @@ export interface TrafficFilters {
   flow: "all" | "standard" | "google";
   windowDays: number;
   billingMode: "live" | "test" | "all";
+  /** Admins only: count before TRAFFIC_SINCE too (lib/traffic-visitor). Off by default. */
+  fullHistory: boolean;
 }
 export interface TrafficTotals {
   visitors: number;

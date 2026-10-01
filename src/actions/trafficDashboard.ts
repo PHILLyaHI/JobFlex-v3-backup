@@ -4,6 +4,7 @@ import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getLiveTraffic as liveTraffic, getStageVisitors, getTrafficReport } from "@/lib/traffic-server";
 import { parseTrafficFilters } from "@/lib/traffic-query";
+import { TRAFFIC_SINCE_MS } from "@/lib/traffic-visitor";
 import type { SignupAttribution } from "@/lib/traffic-contract";
 import { signupLedgerSummary, signupPlanLabel, signupSource, signupState, type FreshSignup, type LiveReport, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
 
@@ -52,6 +53,8 @@ export async function getLiveTraffic(input: Record<string, unknown> = {}): Promi
     timezone: parseTrafficFilters({ timezone: input.timezone }).timezone,
     // Live mode (15 s) asks for a shorter server cache so each tick moves.
     fast: input.fast === true,
+    // Counted from TRAFFIC_SINCE unless the admin asks for the full history.
+    fullHistory: input.fullHistory === true,
   });
 }
 
@@ -105,7 +108,8 @@ const LEDGER_LIMIT = 400;
 export async function getSignupLedger(input: Record<string, unknown> = {}): Promise<SignupLedger> {
   await requirePlatformAdmin();
   const days = [1, 7, 30, 90, 365].includes(Number(input.days)) ? Number(input.days) : 30;
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  // Counted from TRAFFIC_SINCE (the ad launch) unless the full history is asked for.
+  const since = new Date(Math.max(Date.now() - days * 24 * 60 * 60 * 1000, input.fullHistory === true ? 0 : TRAFFIC_SINCE_MS));
   const rows = await db.organization.findMany({
     where: { createdAt: { gte: since }, deletedAt: null },
     orderBy: { createdAt: "desc" },
