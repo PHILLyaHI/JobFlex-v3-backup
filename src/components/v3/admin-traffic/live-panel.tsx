@@ -4,14 +4,14 @@
 // range the owner picks (5 minutes to all time), and the map of where they
 // are. Polls while the tab is visible; the live window and the long ranges
 // are each one shared, cached PostHog query (lib/traffic-server).
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Activity, Info, RefreshCw } from "lucide-react";
+import { Activity, Building2, Info, KeyRound, Megaphone, MousePointerClick, RefreshCw } from "lucide-react";
 import { getLiveTraffic } from "@/actions/trafficDashboard";
-import { LIVE_RANGES, RANGE_MAP_CAP, type LiveRange, type LiveReport } from "@/lib/traffic-live";
+import { isAdId, LIVE_RANGES, RANGE_MAP_CAP, type LiveRange, type LiveReport, type LiveStage, type LiveVisitor } from "@/lib/traffic-live";
 import { LivePlatforms } from "./live-platforms";
 import { RangeSelect } from "./range-select";
-import { setClockPeriod } from "./ticker";
+import { Ago, setClockPeriod } from "./ticker";
 import { sameReport } from "./live-diff";
 import s from "./traffic.module.css";
 
@@ -29,6 +29,12 @@ const LIVE_POLL_MS = 15_000;
 const POLL_MS = 45_000;
 const LIVE_MODE_KEY = "jf.traffic.liveMode";
 const fmt = (n: number) => n.toLocaleString("en-US");
+/** Rows before "Show all" — the map keeps every pin either way. */
+const ROWS_SHOWN = 10;
+const STAGE: Record<LiveStage, string> = { browsing: "Looking around", "signing-in": "Signing in", registering: "On the sign-up form", checkout: "At checkout", "signed-up": "Signed up", member: "Member in the app" };
+function clock(iso: string, timezone: string): string {
+  try { return new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(new Date(iso)); } catch { return ""; }
+}
 
 export function LivePanel({ initial, timezone, fullHistory = false }: { initial: LiveReport; timezone: string; fullHistory?: boolean }) {
   const [report, setReport] = useState(initial);
@@ -44,6 +50,7 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
   const [selected, setSelected] = useState<string | null>(null);
   /** A platform card pressed: the map keeps only its people. */
   const [platform, setPlatform] = useState<string | null>(null);
+  const [allRows, setAllRows] = useState(false);
   const request = useRef(0);
   // Stable: it takes what changes as arguments, so the poll below is armed
   // once per setting, not once per tick of the clock.
@@ -105,6 +112,9 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
   const onMap = useMemo(() => report.visitors.filter((v) => (!adsOnly || v.fromAd || v.stage === "signed-up") && (!platform || v.platform === platform)), [report.visitors, adsOnly, platform]);
   // The owner's names for ad and campaign ids, for the map card.
   const adNames = useMemo(() => report.adNames ?? {}, [report.adNames]);
+  // The pin opened on the map keeps its row on screen even past the fold.
+  const shownRows = useMemo(() => (allRows ? onMap : onMap.filter((v, i) => i < ROWS_SHOWN || v.id === selected)), [allRows, onMap, selected]);
+  const toggleRow = useCallback((id: string) => setSelected((cur) => (cur === id ? null : id)), []);
   const live = report.status === "ok";
   const total = report.rangeTotal ?? report.visitors.length;
 
@@ -163,10 +173,47 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
         </div>
       </div>
       <LivePlatforms platforms={report.platforms} selected={platform} onSelect={setPlatform}/>
-      <div className={s.liveMapCol}>
-        {total > report.visitors.length && <p className={s.cardMeta} style={{ margin: "0 0 12px" }}>The map shows the latest {fmt(RANGE_MAP_CAP)} of {fmt(total)}.</p>}
-        <LiveMap visitors={onMap} selected={selected} onSelect={setSelected} timezone={timezone} adNames={adNames}/>
+      <div className={s.liveBody}>
+        <div className={s.liveMapCol}>
+          {total > report.visitors.length && <p className={s.cardMeta} style={{ margin: "0 0 12px" }}>The map shows the latest {fmt(RANGE_MAP_CAP)} of {fmt(total)}.</p>}
+          <LiveMap visitors={onMap} selected={selected} onSelect={setSelected} timezone={timezone} adNames={adNames}/>
+        </div>
+        {/* The visitors, one row each — a row and its pin open each other. */}
+        <div className={s.liveListCol}>
+          <div className={s.liveListHead}><span>Visitors</span><b>{fmt(onMap.length)}</b></div>
+          {!onMap.length ? <div className={s.empty}>Nobody in this range{platform ? " from this platform" : adsOnly ? " from an ad" : ""}.</div>
+            : <ol className={s.liveList} aria-label="Visitors">
+              {shownRows.map((v) => <LiveRow key={v.id + v.firstAt} v={v} timezone={timezone} selected={selected === v.id} onToggle={toggleRow} adNames={adNames}/>)}
+            </ol>}
+          {onMap.length > ROWS_SHOWN && <button type="button" className={s.moreButton} onClick={() => setAllRows(!allRows)}>{allRows ? "Show fewer" : `Show all ${fmt(onMap.length)}`}</button>}
+        </div>
       </div>
     </div>}
   </section>;
 }
+
+/** An ad or campaign tag as the owner named it; an unnamed numeric id says nothing, so it is left out. */
+const tagText = (tag: string, adNames: Record<string, string>) => adNames[tag] || (isAdId(tag) ? "" : tag);
+
+/** One visitor. Memoised: between refreshes only its "ago" moves, and that is the shared clock's. */
+const LiveRow = memo(function LiveRow({ v, timezone, selected, onToggle, adNames }: { v: LiveVisitor; timezone: string; selected: boolean; onToggle: (id: string) => void; adNames: Record<string, string> }) {
+  const tags = [tagText(v.campaign, adNames), v.content !== v.campaign ? tagText(v.content, adNames) : ""].filter(Boolean);
+  const who = v.signup ? v.signup.orgName : v.member ? v.member.orgName : "";
+  return <li className={s.liveRow} data-stage={v.stage} data-active={v.active}>
+    <button type="button" aria-pressed={selected} onClick={() => onToggle(v.id)} title={v.lat !== null ? "Show on the map" : "No known place for this visitor"}>
+      <span className={s.liveTop}>
+        <span className={s.liveStage}><i aria-hidden="true"/>{STAGE[v.stage]}</span>
+        <em data-active={v.active}>{v.active ? "On the site" : <>Left <Ago iso={v.lastAt}/></>}</em>
+      </span>
+      {who && <span className={s.liveWhoLine}><Building2 size={13}/><b>{who}</b>{v.signup ? <span className={s.stampPlan}>{v.signup.planLabel}</span> : v.member?.userName ? <span>· {v.member.userName}</span> : null}</span>}
+      <span className={s.livePage}><b>{v.pageLabel}</b><span>{v.views} {v.views === 1 ? "page" : "pages"}</span></span>
+      <span className={s.liveSource}>
+        {v.fromAd && <i className={s.tagAd}><Megaphone size={11}/>Ad</i>}
+        {v.lockedOut && <i className={s.tagLocked}><KeyRound size={11}/>Locked out</i>}
+        <span>{v.source}{v.trade ? ` · ${v.trade}` : ""}{tags.length ? ` · ${tags.join(" · ")}` : ""}</span>
+      </span>
+      {v.clicks.length > 0 && <span className={s.liveClicks}><MousePointerClick size={12}/>{v.clicks.map((c) => `“${c.label}”`).join(" · ")}</span>}
+      <span className={s.liveMeta}>{[v.device, v.browser].filter(Boolean).join(" / ") || "Unknown device"}{v.place ? ` · ${v.place}` : ""} · since {clock(v.firstAt, timezone)}</span>
+    </button>
+  </li>;
+});

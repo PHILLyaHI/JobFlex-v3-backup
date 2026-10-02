@@ -529,3 +529,46 @@
   :global(.jf-blueprint) .card > .tableScroll { padding:8px 16px 0; }
   :global(.jf-blueprint) .footnote { padding:12px 16px 16px; }
 }
+
+/* ── Visitor list beside the map (back 2026-10-01, polished) ── */
+:global(.jf-blueprint) .liveBody { display:grid; grid-template-columns:minmax(0,1fr); }
+:global(.jf-blueprint) .liveListCol { min-width:0; display:flex; flex-direction:column; border-top:1px solid var(--t-line); }
+:global(.jf-blueprint) .liveListHead { display:flex; align-items:baseline; justify-content:space-between; padding:14px 20px; border-bottom:2px solid var(--ink); font:800 13px var(--font); text-transform:uppercase; letter-spacing:.05em; }
+:global(.jf-blueprint) .liveListHead b { font:900 20px/1 var(--font); color:var(--blueprint); font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .liveList { list-style:none; margin:0; padding:0; }
+:global(.jf-blueprint) .liveRow { border-bottom:1px solid var(--t-line); content-visibility:auto; contain-intrinsic-size:auto 120px; }
+:global(.jf-blueprint) .liveRow > button { width:100%; display:flex; flex-direction:column; gap:6px; padding:14px 20px; border:0; border-left:4px solid transparent; border-radius:0; background:transparent; color:inherit; text-align:left; transition:background .14s var(--ease), border-color .14s var(--ease); }
+:global(.jf-blueprint) .liveRow > button:hover { background:var(--paper); }
+:global(.jf-blueprint) .liveRow > button[aria-pressed="true"] { background:var(--paper); border-left-color:var(--blueprint); }
+:global(.jf-blueprint) .liveRow > button:focus-visible { outline-offset:-3px; }
+:global(.jf-blueprint) .liveRow[data-active="false"] > button { opacity:.78; }
+:global(.jf-blueprint) .liveRow[data-stage="signed-up"] > button { background:var(--success-soft); }
+:global(.jf-blueprint) .liveTop { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+:global(.jf-blueprint) .liveStage { display:inline-flex; align-items:center; gap:8px; font:800 14px/1.3 var(--font); }
+:global(.jf-blueprint) .liveStage i { width:10px; height:10px; border-radius:50%; flex:0 0 auto; background:var(--map-visitor); }
+:global(.jf-blueprint) .liveRow[data-stage="signing-in"] .liveStage i { background:var(--map-signin); }
+:global(.jf-blueprint) .liveRow:is([data-stage="registering"],[data-stage="checkout"]) .liveStage i { background:var(--map-signing); }
+:global(.jf-blueprint) .liveRow[data-stage="signed-up"] .liveStage i { background:var(--map-signed); }
+:global(.jf-blueprint) .liveRow[data-stage="member"] .liveStage i { background:var(--map-member); }
+:global(.jf-blueprint) .liveRow[data-stage="signed-up"] .liveStage { color:var(--success-dark); }
+:global(.jf-blueprint) .liveTop em { flex:0 0 auto; font:700 11px var(--font-mono); font-style:normal; color:var(--muted); white-space:nowrap; }
+:global(.jf-blueprint) .liveTop em[data-active="true"] { padding:2px 7px; border-radius:2px; background:var(--success-soft); color:var(--success-dark); text-transform:uppercase; letter-spacing:.06em; }
+:global(.jf-blueprint) .liveWhoLine { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font:600 13px var(--font); color:var(--ink); }
+:global(.jf-blueprint) .liveWhoLine svg { color:var(--muted); }
+:global(.jf-blueprint) .liveWhoLine > span:not(.stampPlan) { color:var(--muted); font-weight:500; }
+:global(.jf-blueprint) .livePage { display:flex; align-items:baseline; gap:8px; font:500 13px/1.4 var(--font); color:var(--muted); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .livePage b { font-weight:700; color:var(--ink); }
+:global(.jf-blueprint) .liveSource { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font:600 12px/1.5 var(--font-mono); color:var(--ink-soft); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .tagLocked { color:#0e7490; }
+:global(.jf-blueprint) .liveClicks { display:flex; align-items:center; gap:6px; font:600 12px/1.5 var(--font); color:var(--blueprint); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .liveClicks svg { flex-shrink:0; }
+:global(.jf-blueprint) .liveMeta { font:600 11.5px/1.5 var(--font-mono); color:var(--muted); overflow-wrap:anywhere; }
+@media (min-width:1400px) {
+  :global(.jf-blueprint) .liveBody { grid-template-columns:minmax(0,1.6fr) minmax(360px,1fr); }
+  :global(.jf-blueprint) /* The map sets the row height; the list scrolls inside it. */ .liveListCol { border-top:0; border-left:1px solid var(--t-line); contain:size; min-height:420px; }
+  :global(.jf-blueprint) .liveListCol > .liveList { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; }
+}
+@media (max-width:768px) {
+  :global(.jf-blueprint) .liveListHead { padding:12px 16px; }
+  :global(.jf-blueprint) .liveRow > button { padding:12px 16px; }
+}
