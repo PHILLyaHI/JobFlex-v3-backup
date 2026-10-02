@@ -17,6 +17,7 @@
 import { requireOrg, isSalesRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { relative } from "@/lib/format";
+import { contactsLocked } from "@/lib/leadCenter/contacts";
 import type { Lead, Offer } from "./leads-data";
 
 /** "Bothell, WA". Either half may be missing on a real row. */
@@ -58,8 +59,9 @@ export async function loadMobileLeads(): Promise<MobileLeadsSnapshot> {
   const leads: Lead[] = leadRows.map((l) => ({
     id: l.id,
     name: l.name,
-    email: l.email,
-    phone: l.phone,
+    // A legacy hand-routed lead keeps its homeowner's contacts until claimed.
+    email: contactsLocked(l) ? null : l.email,
+    phone: contactsLocked(l) ? null : l.phone,
     city: placeLabel(l.city, l.state),
     project: l.projectType ?? "General inquiry",
     spec: l.aiCategory,
@@ -77,15 +79,14 @@ export async function loadMobileLeads(): Promise<MobileLeadsSnapshot> {
       null,
     mine: l.assignedToId === user.id || l.claimedById === user.id,
     age: relative(l.createdAt),
-    desc: l.description ?? "",
+    desc: l.scope ?? l.description ?? "",
   }));
 
   const now = Date.now();
   const offers: Offer[] = offerRows.map((o) => ({
     id: o.id,
     name: o.platformLead.name,
-    email: o.platformLead.email,
-    phone: o.platformLead.phone,
+    // Contacts stay on the PlatformLead until the shop accepts (see Offer).
     city: placeLabel(o.platformLead.city, o.platformLead.state),
     project: o.platformLead.projectType ?? "General inquiry",
     spec: o.platformLead.detectedTrade ?? "General",
@@ -94,7 +95,8 @@ export async function loadMobileLeads(): Promise<MobileLeadsSnapshot> {
     // Whole minutes left in the offer window — the countdown chip's unit.
     mins: Math.max(0, Math.round((o.expiresAt.getTime() - now) / 60000)),
     age: relative(o.createdAt),
-    desc: o.platformLead.description ?? "",
+    // The scope written for a contractor, as on the desk edition.
+    desc: o.platformLead.scope ?? o.platformLead.description ?? "",
   }));
 
   return { leads, offers, me: user.name || user.email || "You" };

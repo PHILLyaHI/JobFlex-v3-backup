@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { isSalesRole, isWorkerRole, NoOrgError, requireOrg, UnauthorizedError } from "@/lib/orgContext";
 import { longDate } from "@/lib/format";
+import { contactsLocked } from "@/lib/leadCenter/contacts";
 import { LeadDetailContent } from "@/components/v3/lead-detail-blueprint/lead-detail-content";
 
 // ONE LEAD (2026-09-22) — under the blueprint shell, the same design as the
@@ -44,14 +45,17 @@ export default async function LeadDetailPage({
   if (isSalesRole(role) && lead.assignedToId !== userId && lead.claimedById !== userId && lead.status !== "NEW") {
     notFound();
   }
+  // A legacy hand-routed lead the shop has not claimed: city and scope only,
+  // and nothing to price yet — the estimators would carry the street with them.
+  const locked = contactsLocked(lead);
   return (
     <LeadDetailContent
       lead={{
         id: lead.id,
         name: lead.name,
-        email: lead.email,
-        phone: lead.phone,
-        address: lead.address,
+        email: locked ? null : lead.email,
+        phone: locked ? null : lead.phone,
+        address: locked ? null : lead.address,
         city: lead.city,
         state: lead.state,
         zip: lead.zip,
@@ -65,7 +69,8 @@ export default async function LeadDetailPage({
         assignee: lead.assignedTo?.name ?? lead.assignedTo?.email ?? null,
         created: longDate(lead.createdAt),
       }}
-      canEstimate={!isSalesRole(role) && !isWorkerRole(role)}
+      canEstimate={!locked && !isSalesRole(role) && !isWorkerRole(role)}
+      contactsLocked={locked}
       scopeFailed={scopeFailed}
     />
   );

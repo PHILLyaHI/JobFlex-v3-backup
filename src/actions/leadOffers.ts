@@ -41,6 +41,7 @@ export async function pendingLeadOffers(): Promise<
           state: true,
           zip: true,
           description: true,
+          scope: true,
         },
       },
     },
@@ -53,7 +54,9 @@ export async function pendingLeadOffers(): Promise<
     city: o.platformLead.city,
     state: o.platformLead.state,
     zip: o.platformLead.zip,
-    description: o.platformLead.description,
+    // The scope written for a contractor when the request carried one — the
+    // same text the Leads page shows. No contacts: those open on Accept.
+    description: o.platformLead.scope ?? o.platformLead.description,
     attempt: o.attempt,
     expiresAt: o.expiresAt.toISOString(),
   }));
@@ -201,12 +204,12 @@ export async function declineLeadOffer(offerId: string): Promise<{ ok: true }> {
   return { ok: true };
 }
 
-// ── Manually routed leads ──────────────────────────────────────────────────
-// A lead an admin routed by hand never becomes a LeadOffer: it is written
-// straight into the org's Incoming tab as a Lead with status ROUTED. The
-// pop-up polls this alongside the live offers so BOTH ways a platform lead can
-// arrive announce themselves — before this, a hand-routed lead sat in a tab
-// nobody had a reason to open.
+// ── Manually routed leads (legacy) ─────────────────────────────────────────
+// Until 2026-10-02 a lead an admin routed by hand never became a LeadOffer: it
+// was written straight into the org's Incoming tab as a Lead with status
+// ROUTED. Hand-sent leads are offers now (lib/leadCenter/route.ts); these two
+// actions remain for the ROUTED rows made before that, so a shop can still
+// take or pass on them. The pop-up polls this alongside the live offers.
 export async function pendingRoutedLeads(): Promise<
   {
     id: string;
@@ -263,7 +266,7 @@ export async function pendingRoutedLeads(): Promise<
  *      same shop this lead again (the cascade skips orgs it has already asked),
  *   3. the PlatformLead is un-matched and re-driven — the cascade offers it to
  *      the next-best shop, or, when the platform is routing by hand, it is
- *      routed straight to the next-best shop.
+ *      offered straight to the next-best shop.
  */
 export async function declineRoutedLead(leadId: string): Promise<{ ok: true; rerouted: boolean }> {
   const ctx = await requireSalesOrManager();

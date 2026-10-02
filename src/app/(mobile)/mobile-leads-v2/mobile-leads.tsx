@@ -1178,7 +1178,7 @@ export function MobileLeads() {
                         </span>
                       </div>
                       <div className={styles.icardDesc}>{o.desc}</div>
-                      <div className={styles.icardContact}>{o.email ?? o.phone}</div>
+                      <div className={styles.icardContact}>Contact details open when you accept</div>
                       <div className={styles.icardAct}>
                         <button className={`${styles.icardBtn} ${styles.icardBtnGo}`} type="button"
                           onClick={() => acceptOffer(o)}>

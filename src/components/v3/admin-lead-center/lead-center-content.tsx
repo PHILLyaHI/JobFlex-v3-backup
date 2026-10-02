@@ -120,8 +120,19 @@ export interface PlatformLeadDTO {
   shopLeadStatus: string | null;
   createdAt: string;
   ranking: RankEntry[];
+  /** The hand-send list in the cascade's order: every shop taking platform
+   *  leads, scored now, marked whether it covers this lead's trade. Empty once
+   *  the lead is matched. */
+  shopOrder: { orgId: string; score: number; coversTrade: boolean }[];
   offers: OfferDTO[];
-  activeOffer: { orgName: string; attempt: number; expiresAt: string; score: number } | null;
+  activeOffer: {
+    orgName: string;
+    attempt: number;
+    expiresAt: string;
+    score: number;
+    /** Sent by an admin, not the cascade. */
+    manual: boolean;
+  } | null;
 }
 
 /** A CONTRACTOR — one of our shops, not a homeowner. */
@@ -261,10 +272,12 @@ function destinationNote(l: PlatformLeadDTO): string {
   const score = rowScore(l);
   const match = score == null ? "" : `match ${Math.round(score * 100)}`;
   if (l.status === "OFFERED") {
+    if (l.activeOffer?.manual) return ["sent by hand", match].filter(Boolean).join(" · ");
     return [`offer ${Math.min(Math.max(l.attemptCount, 1), 3)} of 3`, match].filter(Boolean).join(" · ");
   }
   if (l.status === "MATCHED") {
-    const how = l.manuallyAssigned ? "routed by hand" : "accepted";
+    const how =
+      l.shopLeadStatus === "ROUTED" ? "routed by hand" : l.manuallyAssigned ? "sent by hand · accepted" : "accepted";
     return [how, l.matchedAt ? relative(l.matchedAt) : ""].filter(Boolean).join(" · ");
   }
   if (l.status === "MANUAL_QUEUE") {
@@ -1039,7 +1052,7 @@ function DetailSheet({
     setError(null);
     try {
       await manualAssignPlatformLead(lead.id, org.id);
-      toast.success("Lead routed", `${lead.name} is in ${org.name}'s Incoming tab to accept.`);
+      toast.success("Offer sent", `${org.name} has 24 hours to accept or pass. The homeowner's contacts open when they accept.`);
       close();
       router.refresh();
     } catch (err) {
@@ -1065,17 +1078,29 @@ function DetailSheet({
     }
   }
 
-  // Shops the lead can actually go to come first, and the rest stay behind a
-  // disclosure — routing to a shop with no address is a thing an admin can do,
-  // not a thing the list should suggest.
-  const ranked = (a: OrgPickDTO, b: OrgPickDTO) => {
-    if (!lead) return a.name.localeCompare(b.name);
-    const ra = lead.ranking.findIndex((r) => r.orgId === a.id);
-    const rb = lead.ranking.findIndex((r) => r.orgId === b.id);
-    return (ra === -1 ? 999 : ra) - (rb === -1 ? 999 : rb) || a.name.localeCompare(b.name);
+  // Shops that take this lead's trade come first, in the cascade's own order
+  // (lib/leadCenter/matching rankWith). Everyone else stays behind "Show all":
+  // shops in other trades — still scored and in order, since sending one is an
+  // exception a person may make — then shops not set up for leads at all.
+  // Before 2026-10-02 the list was every set-up shop, trade unchecked: an HVAC
+  // lead offered a flooring shop first.
+  const order = new Map((lead?.shopOrder ?? []).map((s, i) => [s.orgId, { i, ...s }]));
+  const byOrder = (a: OrgPickDTO, b: OrgPickDTO) =>
+    (order.get(a.id)?.i ?? 9999) - (order.get(b.id)?.i ?? 9999) || a.name.localeCompare(b.name);
+  const readyShops = orgs.filter((o) => isMatchable(o) && order.get(o.id)?.coversTrade === true).sort(byOrder);
+  const otherShops = [
+    ...orgs.filter((o) => isMatchable(o) && order.get(o.id)?.coversTrade !== true).sort(byOrder),
+    ...orgs.filter((o) => !isMatchable(o)).sort(byOrder),
+  ];
+  const tradeLabel = lead?.detectedTrade ?? "this trade";
+  /** The small line on a hand-send row: why it sits where it does. */
+  const assignNote = (o: OrgPickDTO): string => {
+    if (!isMatchable(o)) return eligibility(o);
+    const s = order.get(o.id);
+    const score = s ? `match ${Math.round(s.score * 100)}` : null;
+    if (s?.coversTrade !== true) return ["other trade", score].filter(Boolean).join(" · ");
+    return [score, `★ ${ratingLabel(o.ratingAvg, o.ratingCount)}`].filter(Boolean).join(" · ");
   };
-  const readyShops = orgs.filter(isMatchable).sort(ranked);
-  const otherShops = orgs.filter((o) => !isMatchable(o)).sort(ranked);
   // The ranking table reads stars off the snapshot when it carries them, else
   // off the live roster (snapshots taken before 2026-09-13 have no numbers).
   const orgById = new Map(orgs.map((o) => [o.id, o]));
@@ -1245,7 +1270,7 @@ function DetailSheet({
 
           {lead.status !== "MATCHED" ? (
             <>
-              <div className={styles.dSec}>Route it by hand</div>
+              <div className={styles.dSec}>Send it by hand</div>
               <div className={styles.assign}>
                 {(showAllShops ? readyShops.concat(otherShops) : readyShops).map((o) => (
                   <button
@@ -1257,17 +1282,11 @@ function DetailSheet({
                   >
                     <Ic name={isMatchable(o) ? "check" : "ban"} />
                     <span>{o.name}</span>
-                    <i>
-                      {busy === o.id
-                        ? "routing…"
-                        : isMatchable(o)
-                          ? `★ ${ratingLabel(o.ratingAvg, o.ratingCount)}`
-                          : eligibility(o)}
-                    </i>
+                    <i>{busy === o.id ? "sending…" : assignNote(o)}</i>
                   </button>
                 ))}
                 {readyShops.length === 0 && !showAllShops ? (
-                  <Empty>No shop is set up to take this lead yet.</Empty>
+                  <Empty>No shop that takes {tradeLabel} is set up for leads yet.</Empty>
                 ) : null}
                 {otherShops.length ? (
                   <button
@@ -1276,7 +1295,7 @@ function DetailSheet({
                     onClick={() => setShowAllShops((v) => !v)}
                   >
                     <Ic name="chev" />
-                    {showAllShops ? "Hide" : `Show ${otherShops.length} not set up`}
+                    {showAllShops ? "Hide other shops" : `Show all · ${otherShops.length} more`}
                   </button>
                 ) : null}
               </div>
@@ -1299,18 +1318,21 @@ function whereItStands(l: PlatformLeadDTO): string {
         : `${shop} accepted it${when}.`;
     }
     case "OFFERED":
+      if (l.activeOffer?.manual) {
+        return `Sent by hand to ${l.activeOffer.orgName} — 24 hours to accept or pass. The homeowner's contacts open when they accept.`;
+      }
       return l.activeOffer
         ? `Offered to ${l.activeOffer.orgName} — attempt ${l.activeOffer.attempt} of 3, 24 hours to answer.`
         : "An offer is open.";
     case "MANUAL_QUEUE":
       if (l.queueReason === "NO_CANDIDATES") {
-        return "No contractor covers this trade or area — route it by hand.";
+        return "No contractor covers this trade or area — send it by hand.";
       }
       if (l.queueReason === "MANUAL_MODE") {
         return "Held for you: routing is set to manual, so nothing was offered.";
       }
       if (l.queueReason?.startsWith("TRADE_UNDETERMINED")) {
-        return "The trade could not be read from the description — route it by hand.";
+        return "The trade could not be read from the description — send it by hand.";
       }
       // Two different endings, told apart rather than blurred into one:
       // the pool was used up, or the pool ran dry early. The dialog used to say
@@ -1319,9 +1341,9 @@ function whereItStands(l: PlatformLeadDTO): string {
         const n = Math.max(0, l.attemptCount);
         return `${n === 1 ? "The one shop that qualified" : `All ${n} shops that qualified`} ${
           n === 1 ? "did not take it" : "were asked and none took it"
-        }, and there are no others in range — route it by hand.`;
+        }, and there are no others in range — send it by hand.`;
       }
-      return "Three contractors passed or ran out of time — route it by hand.";
+      return "Three contractors passed or ran out of time — send it by hand.";
     default:
       return "Ranking shops now.";
   }
@@ -1386,7 +1408,7 @@ function ShopSheet({
     setError(null);
     try {
       await manualAssignPlatformLead(lead.id, shop.id);
-      toast.success("Lead sent", `${lead.name} is in ${shop.name}'s Incoming tab to accept.`);
+      toast.success("Offer sent", `${shop.name} has 24 hours to accept or pass. The homeowner's contacts open when they accept.`);
       close();
       onSent();
       router.refresh();

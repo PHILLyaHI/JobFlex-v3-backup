@@ -89,9 +89,12 @@ export type LeadDetailProps = {
   canEstimate: boolean;
   /** `?scope=failed` — the model could not write the scope just now. */
   scopeFailed: boolean;
+  /** A Lead Center lead not accepted yet: the homeowner's contacts are withheld
+   *  (lib/leadCenter/contacts) and the card says when they open. */
+  contactsLocked?: boolean;
 };
 
-export function LeadDetailContent({ lead, canEstimate, scopeFailed }: LeadDetailProps) {
+export function LeadDetailContent({ lead, canEstimate, scopeFailed, contactsLocked = false }: LeadDetailProps) {
   const primary = estimatorFor(lead.aiCategory, lead.description);
   const fullAddress = [lead.address, lead.city, [lead.state, lead.zip].filter(Boolean).join(" ")]
     .filter((s) => s && s.trim())
@@ -129,13 +132,17 @@ export function LeadDetailContent({ lead, canEstimate, scopeFailed }: LeadDetail
           </div>
           <dl className={cx("kv")}>
             <dt>Email</dt>
-            <dd className={cx("mono")}>{lead.email ?? "—"}</dd>
+            <dd className={cx("mono")}>{contactsLocked ? "Opens when you accept" : (lead.email ?? "—")}</dd>
             <dt>Phone</dt>
-            <dd className={cx("mono")}>{lead.phone ?? "—"}</dd>
+            <dd className={cx("mono")}>{contactsLocked ? "Opens when you accept" : (lead.phone ?? "—")}</dd>
             <dt>Job address</dt>
             <dd data-lead-address>
               {fullAddress || "Not given"}
-              {!hasStreet && <span className={cx("soft")}> — no street address yet; a roof or fence quote needs one</span>}
+              {contactsLocked ? (
+                <span className={cx("soft")}> — the street opens when you accept</span>
+              ) : (
+                !hasStreet && <span className={cx("soft")}> — no street address yet; a roof or fence quote needs one</span>
+              )}
             </dd>
             <dt>Project</dt>
             <dd>{lead.projectType ?? lead.aiCategory ?? "—"}</dd>

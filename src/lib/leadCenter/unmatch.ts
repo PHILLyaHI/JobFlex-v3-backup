@@ -183,7 +183,7 @@ export async function unmatchAndAdvance(
 
 /**
  * Manual mode's version of "next": rank again, skip every shop that has
- * already seen this lead, and hand it to the best one left. False when nobody
+ * already seen this lead, and offer it to the best one left. False when nobody
  * is left — the lead drops into the admin queue rather than nowhere.
  */
 export async function routeToNextBest(platformLeadId: string): Promise<boolean> {
@@ -202,7 +202,8 @@ export async function routeToNextBest(platformLeadId: string): Promise<boolean> 
     });
     return false;
   }
-  const { routePlatformLeadToOrg } = await import("./route");
-  await routePlatformLeadToOrg(platformLeadId, next.orgId, null);
+  // An offer, like every other way a shop is handed a lead (./route).
+  const { offerPlatformLeadToOrg } = await import("./route");
+  await offerPlatformLeadToOrg(platformLeadId, next.orgId, null);
   return true;
 }

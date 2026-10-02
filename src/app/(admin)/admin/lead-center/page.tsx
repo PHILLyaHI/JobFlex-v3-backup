@@ -5,8 +5,9 @@
 // geocoded points the site plan projects). No fixtures.
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { parseTradeTypes } from "@/lib/tradeTypes";
+import { isTradeType, orgCoversTrade, parseTradeTypes } from "@/lib/tradeTypes";
 import { getRoutingMode } from "@/lib/leadCenter/routingMode";
+import { loadRankingInputs, rankWith } from "@/lib/leadCenter/matching";
 import { orgRatingsByIds } from "@/lib/reviews/publicSummary";
 import {
   AdminLeadCenterContent,
@@ -15,6 +16,15 @@ import {
   type RankEntry,
   type StatsDTO,
 } from "@/components/v3/admin-lead-center/lead-center-content";
+
+/** A hand-sent offer carries `manual: true` in its breakdown (lib/leadCenter/route). */
+function isManualOffer(o: { scoreBreakdownJson: string | null }): boolean {
+  try {
+    return JSON.parse(o.scoreBreakdownJson ?? "{}")?.manual === true;
+  } catch {
+    return false;
+  }
+}
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +51,7 @@ export default async function AdminLeadCenterPage() {
   const since30 = new Date(now.getTime() - 30 * DAY_MS);
   const seriesStart = startOfDay(new Date(now.getTime() - (SERIES_DAYS - 1) * DAY_MS));
 
-  const [platformLeads, orgs, recent, resolvedOffers, openOffers] = await Promise.all([
+  const [platformLeads, orgs, recent, resolvedOffers, openOffers, rankingInputs] = await Promise.all([
     db.platformLead.findMany({
       orderBy: { createdAt: "desc" },
       take: 200,
@@ -90,7 +100,10 @@ export default async function AdminLeadCenterPage() {
       where: { status: "OFFERED", expiresAt: { gt: now } },
       select: { expiresAt: true },
     }),
+    // What the cascade ranks on, loaded once for every lead still to place.
+    loadRankingInputs(),
   ]);
+  const tradesByOrg = new Map(rankingInputs.orgs.map((o) => [o.id, parseTradeTypes(o.tradeTypesJson)]));
 
   // ── ledger DTO ──────────────────────────────────────────────────────────
   const orgName = new Map(orgs.map((o) => [o.id, o.name]));
@@ -129,6 +142,19 @@ export default async function AdminLeadCenterPage() {
       ranking = [];
     }
     const active = p.offers.find((o) => o.status === "OFFERED" && o.expiresAt > now);
+    const accepted = p.offers.find((o) => o.status === "ACCEPTED");
+    // The hand-send list, in the cascade's order (2026-10-02): every shop that
+    // takes platform leads, scored as the cascade scores, each marked whether
+    // it covers this lead's trade. A lead with no trade read covers everyone.
+    const trade = p.detectedTrade && isTradeType(p.detectedTrade) ? p.detectedTrade : null;
+    const shopOrder =
+      p.status === "MATCHED"
+        ? []
+        : rankWith(p, rankingInputs, { anyTrade: true }).map((c) => ({
+            orgId: c.orgId,
+            score: c.score,
+            coversTrade: trade ? orgCoversTrade(tradesByOrg.get(c.orgId) ?? [], trade) : true,
+          }));
     return {
       id: p.id,
       name: p.name,
@@ -153,10 +179,13 @@ export default async function AdminLeadCenterPage() {
       // one currently holding the offer. The row's "Went to" cell opens them.
       wentToOrgId: p.matchedOrgId ?? active?.organizationId ?? null,
       matchedAt: p.matchedAt ? p.matchedAt.toISOString() : null,
-      manuallyAssigned: p.assignedByAdminId != null,
+      // Sent by hand = the offer the shop accepted was a hand-sent one; a
+      // legacy ROUTED match has no accepted offer and reads the admin stamp.
+      manuallyAssigned: accepted ? isManualOffer(accepted) : p.assignedByAdminId != null,
       shopLeadStatus: p.matchedLeadId ? (shopLeadStatus.get(p.matchedLeadId) ?? null) : null,
       createdAt: p.createdAt.toISOString(),
       ranking,
+      shopOrder,
       offers: p.offers.map((o) => ({
         id: o.id,
         orgName: o.organization.name,
@@ -173,6 +202,7 @@ export default async function AdminLeadCenterPage() {
             attempt: active.attempt,
             expiresAt: active.expiresAt.toISOString(),
             score: active.score,
+            manual: isManualOffer(active),
           }
         : null,
     };

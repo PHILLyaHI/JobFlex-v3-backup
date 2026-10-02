@@ -31,8 +31,10 @@ export type Lead = {
 export type Offer = {
   id: string;
   name: string;
-  email: string | null;
-  phone: string | null;
+  // No email, phone or street (2026-10-02): an offer carries the city and the
+  // scope, and the homeowner's contacts arrive with the Lead row that
+  // acceptLeadOffer writes. Leaving them off the type keeps every surface that
+  // renders an offer from showing them by accident.
   city: string;
   project: string;
   spec: string;

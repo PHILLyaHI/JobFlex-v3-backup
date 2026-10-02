@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { startCascade } from "@/lib/leadCenter/cascade";
-import { routePlatformLeadToOrg } from "@/lib/leadCenter/route";
+import { offerPlatformLeadToOrg } from "@/lib/leadCenter/route";
 import { buildRanking } from "@/lib/leadCenter/matching";
 import { getRoutingMode, setRoutingMode, type RoutingMode } from "@/lib/leadCenter/routingMode";
 
@@ -11,17 +11,22 @@ import { getRoutingMode, setRoutingMode, type RoutingMode } from "@/lib/leadCent
 // for MANUAL_QUEUE leads (and can override a pending offer: cancelling it
 // inside the transaction makes the contractor's later accept fail its
 // conditional update with "no longer available").
+//
+// Since 2026-10-02 a hand-picked shop gets an OFFER — city and scope, Accept /
+// Pass, 24 hours — not the lead itself: the homeowner's contacts open, and the
+// homeowner hears "you're matched", only when the shop accepts. See
+// lib/leadCenter/route.ts.
 
 export async function manualAssignPlatformLead(
   platformLeadId: string,
   organizationId: string,
-): Promise<{ ok: true; leadId: string }> {
+): Promise<{ ok: true; offerId: string }> {
   const admin = await requirePlatformAdmin();
-  // The write itself lives in lib/leadCenter/route so the re-route that follows
-  // a contractor passing on a lead does exactly the same thing.
-  const { leadId } = await routePlatformLeadToOrg(platformLeadId, organizationId, admin.id);
+  // The write itself lives in lib/leadCenter/route so manual mode's re-route
+  // after a match falls through does exactly the same thing.
+  const { offerId } = await offerPlatformLeadToOrg(platformLeadId, organizationId, admin.id);
   revalidatePath("/admin/lead-center");
-  return { ok: true, leadId };
+  return { ok: true, offerId };
 }
 
 // Send a MANUAL_QUEUE lead back through the cascade — useful once new shops

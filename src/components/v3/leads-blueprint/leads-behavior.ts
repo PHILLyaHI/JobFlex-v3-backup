@@ -693,6 +693,8 @@ export function initLeadsContent(
     const offers = offersData
       .map(function (o) {
         return (
+          // Everything a homeowner typed on the public form is escaped here: name,
+          // city, project and scope reach this card from an unauthenticated page.
           '<div class="icard" data-offer="' +
           o.id +
           '">' +
@@ -710,33 +712,32 @@ export function initLeadsContent(
           initials(o.name) +
           "</span>" +
           '<div class="icard-id"><div class="icard-name">' +
-          o.name +
+          esc(o.name) +
           "</div>" +
           '<div class="icard-meta" title="' +
           o.age +
           " · Lead center · " +
-          o.city +
+          esc(o.city) +
           '">' +
           o.age +
           " · Lead center · " +
-          o.city +
+          esc(o.city) +
           "</div></div>" +
           '<span class="pstatus lst--new">Offer</span></div>' +
           '<div class="icard-proj">' +
-          o.project +
+          esc(o.project) +
           '<span class="pstatus ltrade" style="--p:' +
           Math.round(o.conf * 100) +
           '%">' +
-          o.spec +
+          esc(o.spec) +
           "<b>" +
           pct(o.conf) +
           "</b></span></div>" +
           '<div class="icard-desc">' +
-          o.desc +
+          esc(o.desc) +
           "</div>" +
-          '<div class="icard-contact">' +
-          (o.email || o.phone) +
-          "</div>" +
+          // The homeowner's contacts open on Accept — the offer has none.
+          '<div class="icard-contact">Contact details open when you accept</div>' +
           '<div class="icard-act">' +
           '<button class="btn btn-primary btn--sm" type="button" data-act="offer-yes"><svg class="ic"><use href="#i-check"/></svg>Accept lead</button>' +
           '<button class="btn btn-ghost btn--sm" type="button" data-act="offer-no">Pass</button>' +
@@ -756,20 +757,20 @@ export function initLeadsContent(
           initials(l.name) +
           "</span>" +
           '<div class="icard-id"><div class="icard-name">' +
-          l.name +
+          esc(l.name) +
           "</div>" +
           '<div class="icard-meta" title="' +
           l.age +
           " · " +
           srcLabel(l.source) +
           " · " +
-          l.city +
+          esc(l.city) +
           '">' +
           l.age +
           " · " +
           srcLabel(l.source) +
           " · " +
-          l.city +
+          esc(l.city) +
           "</div></div>" +
           '<span class="pstatus lst--' +
           l.status.toLowerCase() +
@@ -777,19 +778,19 @@ export function initLeadsContent(
           l.status +
           "</span></div>" +
           '<div class="icard-proj">' +
-          l.project +
+          esc(l.project) +
           '<span class="pstatus ltrade" style="--p:' +
           Math.round(l.conf * 100) +
           '%">' +
-          l.spec +
+          esc(l.spec ?? "") +
           "<b>" +
           pct(l.conf) +
           "</b></span></div>" +
           '<div class="icard-desc">' +
-          l.desc +
+          esc(l.desc) +
           "</div>" +
           '<div class="icard-contact">' +
-          [l.email, l.phone].filter(Boolean).join(" · ") +
+          esc([l.email, l.phone].filter(Boolean).join(" · ")) +
           "</div>" +
           '<div class="icard-act">' +
           '<button class="btn btn-primary btn--sm" type="button" data-act="accept"><svg class="ic"><use href="#i-check"/></svg>Accept</button>' +

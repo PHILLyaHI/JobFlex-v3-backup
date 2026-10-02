@@ -17,6 +17,7 @@ import type { Metadata } from "next";
 import { requireOrg, isSalesRole, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { relative } from "@/lib/format";
+import { contactsLocked } from "@/lib/leadCenter/contacts";
 import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { LeadProfileNudge } from "@/components/dashboard/LeadProfileNudge";
 import { LeadsContent } from "@/components/v3/leads-blueprint/leads-content";
@@ -73,8 +74,9 @@ export default async function LeadsPage() {
   const leads: Lead[] = leadRows.map((l) => ({
     id: l.id,
     name: l.name,
-    email: l.email,
-    phone: l.phone,
+    // A legacy hand-routed lead keeps its homeowner's contacts until claimed.
+    email: contactsLocked(l) ? null : l.email,
+    phone: contactsLocked(l) ? null : l.phone,
     city: placeLabel(l.city, l.state),
     project: l.projectType ?? l.aiCategory ?? "General inquiry",
     spec: l.aiCategory,
@@ -93,8 +95,7 @@ export default async function LeadsPage() {
   const offers: Offer[] = offerRows.map((o) => ({
     id: o.id,
     name: o.platformLead.name,
-    email: o.platformLead.email,
-    phone: o.platformLead.phone,
+    // Contacts stay on the PlatformLead until the shop accepts (see Offer).
     city: placeLabel(o.platformLead.city, o.platformLead.state),
     project: o.platformLead.projectType ?? o.platformLead.detectedTrade ?? "General inquiry",
     spec: o.platformLead.detectedTrade ?? "General",

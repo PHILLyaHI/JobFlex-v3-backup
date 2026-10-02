@@ -70,10 +70,26 @@ function median(values: number[]): number | null {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-export async function buildRanking(lead: PlatformLeadLike): Promise<Candidate[]> {
-  const detected: TradeType =
-    lead.detectedTrade && isTradeType(lead.detectedTrade) ? lead.detectedTrade : "Other";
+/** Everything ranking reads that does not depend on the lead: the shops that
+ *  can take platform leads at all, their reviews and their offer history. One
+ *  load serves any number of leads — the admin Lead Center ranks every waiting
+ *  lead against it in one pass (2026-10-02). */
+export interface RankingInputs {
+  orgs: {
+    id: string;
+    name: string;
+    address: string | null;
+    lat: number | null;
+    lng: number | null;
+    tradeTypesJson: string | null;
+    createdAt: Date;
+  }[];
+  ratingByOrg: Map<string, { _sum: { rating: number | null }; _count: { rating: number } }>;
+  openByOrg: Map<string, number>;
+  resolvedByOrg: Map<string, { status: string; createdAt: Date; respondedAt: Date | null }[]>;
+}
 
+export async function loadRankingInputs(): Promise<RankingInputs> {
   const orgs = await db.organization.findMany({
     where: { leadOffersEnabled: true, deletedAt: null, lat: { not: null }, lng: { not: null } },
     select: {
@@ -86,11 +102,10 @@ export async function buildRanking(lead: PlatformLeadLike): Promise<Candidate[]>
       createdAt: true,
     },
   });
-  // tradeTypesJson is a JSON-string column (SQLite) — filter in JS; org count
-  // is small at this stage of the platform.
-  const eligible = orgs.filter((o) => orgCoversTrade(parseTradeTypes(o.tradeTypesJson), detected));
-  if (!eligible.length) return [];
-  const ids = eligible.map((o) => o.id);
+  const ids = orgs.map((o) => o.id);
+  if (!ids.length) {
+    return { orgs, ratingByOrg: new Map(), openByOrg: new Map(), resolvedByOrg: new Map() };
+  }
 
   const [ratingAgg, resolvedOffers, openOfferAgg] = await Promise.all([
     db.reviewRequest.groupBy({
@@ -110,14 +125,45 @@ export async function buildRanking(lead: PlatformLeadLike): Promise<Candidate[]>
     }),
   ]);
 
-  const ratingByOrg = new Map(ratingAgg.map((r) => [r.organizationId, r]));
-  const openByOrg = new Map(openOfferAgg.map((r) => [r.organizationId, r._count._all]));
-  const resolvedByOrg = new Map<string, typeof resolvedOffers>();
+  const resolvedByOrg: RankingInputs["resolvedByOrg"] = new Map();
   for (const o of resolvedOffers) {
     const list = resolvedByOrg.get(o.organizationId) ?? [];
     list.push(o);
     resolvedByOrg.set(o.organizationId, list);
   }
+  return {
+    orgs,
+    ratingByOrg: new Map(ratingAgg.map((r) => [r.organizationId, r])),
+    openByOrg: new Map(openOfferAgg.map((r) => [r.organizationId, r._count._all])),
+    resolvedByOrg,
+  };
+}
+
+export async function buildRanking(lead: PlatformLeadLike): Promise<Candidate[]> {
+  return rankWith(lead, await loadRankingInputs());
+}
+
+/**
+ * The cascade's ranking for one lead, from inputs already loaded.
+ *
+ * `anyTrade` drops the trade filter and nothing else — same score, same tie
+ * breaks — for the admin's "show all" list, where a shop outside the lead's
+ * trade is an exception a person may still choose.
+ */
+export function rankWith(
+  lead: PlatformLeadLike,
+  inputs: RankingInputs,
+  opts: { anyTrade?: boolean } = {},
+): Candidate[] {
+  const detected: TradeType =
+    lead.detectedTrade && isTradeType(lead.detectedTrade) ? lead.detectedTrade : "Other";
+  // tradeTypesJson is a JSON-string column (SQLite) — filter in JS; org count
+  // is small at this stage of the platform.
+  const eligible = opts.anyTrade
+    ? inputs.orgs
+    : inputs.orgs.filter((o) => orgCoversTrade(parseTradeTypes(o.tradeTypesJson), detected));
+  if (!eligible.length) return [];
+  const { ratingByOrg, openByOrg, resolvedByOrg } = inputs;
 
   const candidates = eligible.map((org) => {
     const dist = distanceScoreFor(lead, { lat: org.lat!, lng: org.lng!, address: org.address });
