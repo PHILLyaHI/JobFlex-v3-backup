@@ -67,7 +67,6 @@ import {
   completePendingSignup,
   requestCardlessTrial,
   startPendingSignup,
-  startDirectTrial,
   updatePendingSignupAttribution,
   updatePendingSignupPages,
 } from "@/actions/signupCheckout";
@@ -1079,15 +1078,6 @@ export function RegisterContent({
         /* storage blocked */
       }
       setToken(res.token);
-      if (experiment === "a") {
-        const trial = await startDirectTrial(res.token);
-        if (!trial.ok || !trial.created?.ticket) throw new Error(!trial.ok ? trial.error : "Your trial could not be opened. Please sign in.");
-        const login = await signIn("signup-ticket", { ticket: trial.created.ticket, redirect: false });
-        if (login?.error) throw new Error("Your account is ready. Sign in to open your workspace.");
-        setSignedIn(true);
-        router.push("/dashboard" as Route);
-        return;
-      }
       setStep(3);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Couldn't continue.";
@@ -1123,7 +1113,7 @@ export function RegisterContent({
      sheet — because the two are separate layers that slide past each other;
      only one is ever visible. */
   const stepper = (
-    <div className="stepper" id="stepper" data-steps={requiresCard ? 3 : 2}>
+    <div className="stepper" id="stepper" data-steps={3}>
       <div className={stItem(0, step)} data-step="1">
         <span className="st-n">1</span>
         <span className="st-txt">
@@ -1139,7 +1129,7 @@ export function RegisterContent({
           <span className="st-h">Optional</span>
         </span>
       </div>
-      {requiresCard && <><div className="st-line" /><div className={stItem(2, step)} data-step="3"><span className="st-n">3</span><span className="st-txt"><span className="st-t">Free trial</span><span className="st-h">7 days</span></span></div></>}
+      <div className="st-line" /><div className={stItem(2, step)} data-step="3"><span className="st-n">3</span><span className="st-txt"><span className="st-t">Choose plan</span><span className="st-h">7-day trial</span></span></div>
     </div>
   );
 

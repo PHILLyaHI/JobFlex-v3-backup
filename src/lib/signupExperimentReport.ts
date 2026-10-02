@@ -34,7 +34,9 @@ export async function signupExperimentReport() {
     const assigned = browsers.filter(b => b.variant === variant);
     const ids = new Set(assigned.map(b => b.id));
     const registered = registrations.filter(r => r.variant === variant && ids.has(r.id));
-    const mature = assigned.filter(b => b.at <= now - WINDOW);
+    // Legacy assignments predate the switch and were all randomized 50/50.
+    const randomized = assigned.filter(b => !b.allocation || b.allocation === "split");
+    const mature = randomized.filter(b => b.at <= now - WINDOW);
     const matureIds = new Set(mature.map(b => b.id));
     const paid = registered.filter(r => firstPayment(r) !== null);
     const converted = paid.filter(r => {
@@ -44,13 +46,14 @@ export async function signupExperimentReport() {
     const registeredBrowsers = new Set(registered.map(r => r.id)).size;
     const paidBrowsers = new Set(converted.map(r => r.id)).size;
     return { variant, assigned: assigned.length, registered: registered.length, registeredBrowsers, paid: new Set(paid.map(r => r.userId)).size,
+      randomized: randomized.length, singleVariant: assigned.length - randomized.length,
       mature: mature.length, converted: paidBrowsers, registrationRate: assigned.length ? registeredBrowsers / assigned.length : 0,
       paidRate: mature.length ? paidBrowsers / mature.length : 0 };
   });
   const [a,b] = cohorts;
   const pooled = (a.converted + b.converted) / Math.max(1,a.mature+b.mature);
   const se = Math.sqrt(pooled*(1-pooled)*(1/Math.max(1,a.mature)+1/Math.max(1,b.mature)));
-  const oldest = browsers.reduce((min,b) => Math.min(min,b.at), now);
+  const oldest = browsers.filter(b => !b.allocation || b.allocation === "split").reduce((min,b) => Math.min(min,b.at), now);
   // Fixed planning assumptions: baseline 5%, relative lift 25%, alpha .05, power .80.
   // Do not call a winner while cohorts are still immature or underpowered.
   const ready = a.mature >= 5400 && b.mature >= 5400 && now-oldest >= 28*86400000;

@@ -5,9 +5,19 @@ import { db } from "@/lib/db";
 import type Stripe from "stripe";
 
 export const SIGNUP_EXPERIMENT = "signup_trial_v1";
+export const SIGNUP_ALLOCATION_KEY = `${SIGNUP_EXPERIMENT}:allocation`;
+export type SignupAllocation = "split" | "a" | "b";
 const COOKIE = "jf_signup_trial_v1";
-export type SignupAssignment = { id: string; variant: "a" | "b"; at: number; environment: "production" | "development" };
+export type SignupAssignment = { id: string; variant: "a" | "b"; at: number; environment: "production" | "development"; allocation?: SignupAllocation };
 const key = (id: string) => `${SIGNUP_EXPERIMENT}:browser:${id}`;
+
+export async function readSignupAllocation(): Promise<SignupAllocation> {
+  const row = await db.syncState.findUnique({ where: { key: SIGNUP_ALLOCATION_KEY } });
+  if (!row) return "a";
+  const { mode } = JSON.parse(row.cursor);
+  if (mode !== "split" && mode !== "a" && mode !== "b") throw new Error("Invalid signup allocation setting.");
+  return mode;
+}
 
 export async function readSignupAssignment(): Promise<SignupAssignment | null> {
   const id = (await cookies()).get(COOKIE)?.value;
@@ -16,13 +26,15 @@ export async function readSignupAssignment(): Promise<SignupAssignment | null> {
   return row ? JSON.parse(row.cursor) as SignupAssignment : null;
 }
 
-/** Server-owned, equal-probability assignment. Reloads and OAuth preserve it. */
+/** Admin allocation applies to new browsers. Never change an in-progress flow. */
 export async function assignSignupBrowser(): Promise<SignupAssignment> {
   const existing = await readSignupAssignment();
   if (existing) return existing;
+  const allocation = await readSignupAllocation();
   const id = randomBytes(24).toString("hex");
   const hostname = (await headers()).get("host") ?? "";
-  const assignment: SignupAssignment = { id, variant: randomBytes(1)[0] < 128 ? "a" : "b", at: Date.now(), environment: /^(www\.)?jobflex\.app$/.test(hostname) ? "production" : "development" };
+  const variant = allocation === "split" ? (randomBytes(1)[0] < 128 ? "a" : "b") : allocation;
+  const assignment: SignupAssignment = { id, variant, allocation, at: Date.now(), environment: /^(www\.)?jobflex\.app$/.test(hostname) ? "production" : "development" };
   await db.syncState.create({ data: { key: key(id), cursor: JSON.stringify(assignment) } });
   (await cookies()).set(COOKIE, id, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 365 * 86400 });
   return assignment;

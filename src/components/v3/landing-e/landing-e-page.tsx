@@ -65,7 +65,7 @@ import { GoogleOneTap } from "@/components/auth/google-one-tap";
 import { Nav } from "./nav";
 import { REGISTER } from "./routes";
 import { SmoothWheel } from "./smooth-wheel";
-import { trialRequiresCard } from "@/lib/trialPolicy";
+import { readSignupAssignment, readSignupAllocation } from "@/lib/signupExperiment";
 import "./landing-e.css";
 
 export interface LandingEProps {
@@ -81,9 +81,11 @@ export interface LandingEProps {
 
 export async function LandingE({ variant, explicitVariant = false, utm = {}, fbclid }: LandingEProps) {
   const v = variantContent(variant);
-  // TRIAL_REQUIRES_CARD (lib/trialPolicy): the card-less trial's line under
-  // the hero heading, the plan cards' words and the FAQ's card answer.
-  const requiresCard = trialRequiresCard();
+  // Registration owns browser assignment. Before a split-test assignment,
+  // keep the landing promise neutral instead of promising a cardless trial.
+  const [assignment, allocation] = await Promise.all([readSignupAssignment(), readSignupAllocation()]);
+  const signupVariant = assignment?.variant ?? (allocation === "split" ? null : allocation);
+  const requiresCard = signupVariant !== "a";
   // Every register link carries the trade, the visit's utm_* and the fbclid.
   const register = signupHref(REGISTER, { industry: variant, utm, fbclid });
   // The price anchor shows the Subscription page's own catalogue (CRO stage
@@ -133,7 +135,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
         <div className="lp-cv lp-cv--stats"><StatsSection rows={g?.stats} /></div>
         <div className="lp-cv lp-cv--built"><BuiltSection jobs={g?.jobs} phoneJobs={g?.phoneJobs} /></div>
         <div className="lp-cv lp-cv--pricing"><LandingPricing plans={plans} registerHref={register} cta={low} requiresCard={requiresCard} /></div>
-        <div className="lp-cv lp-cv--faq"><LandingFaq variant={variant} registerHref={register} cta={low} requiresCard={requiresCard} /></div>
+        <div className="lp-cv lp-cv--faq"><LandingFaq variant={variant} registerHref={register} cta={low} requiresCard={requiresCard} assignmentPending={signupVariant === null} /></div>
         <CtaFooter registerHref={register} cta={low} requiresCard={requiresCard} />
       </main>
       <MobileCta registerHref={register} cta={top} requiresCard={requiresCard} />

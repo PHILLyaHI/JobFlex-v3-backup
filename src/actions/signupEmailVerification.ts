@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import { enforceRateLimit, clientIp, HOUR } from "@/lib/rateLimit";
 import { sendEmail } from "@/lib/sdk/resend";
 import { appBaseUrl } from "@/lib/appUrl";
+import { renderEmail } from "@/lib/email/renderEmail";
+import { buildSignupEmailVerification } from "@/lib/email/build/platform";
 
 const COOKIE = "jf_signup_email";
 const digest = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -20,7 +22,8 @@ export async function requestSignupEmail(rawEmail: string) {
   const verification: Verification = { email, expires: Date.now() + 30 * 60_000, verified: false, sentAt: Date.now() };
   await db.syncState.create({ data: { key: key(secret), cursor: JSON.stringify(verification) } });
   const href = `${(await appBaseUrl()).replace(/\/$/, "")}/auth/register/verify?token=${secret}`;
-  const delivery = await sendEmail({ to: email, subject: "Verify your email for JobFlex", html: `<p>Confirm your email to continue creating your JobFlex account.</p><p><a href="${href}">Verify email</a></p><p>This link expires in 30 minutes. If you didn't request this, ignore this email.</p>` });
+  const { subject, html } = renderEmail(buildSignupEmailVerification(href));
+  const delivery = await sendEmail({ to: email, subject, html });
   if (delivery.id === "disabled") throw new Error("Verification email is temporarily unavailable. Please try again later.");
   (await cookies()).set(COOKIE, secret, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 1800 });
   return { sent: true };

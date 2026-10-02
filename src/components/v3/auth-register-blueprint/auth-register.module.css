@@ -35,6 +35,16 @@
      font-feature-settings, scrollbar-*, svg display).
    ============================================================ */
 
+.bp :global(.verify-page) { min-height: 100dvh; padding: 32px 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; background-color: var(--paper); background-image: linear-gradient(var(--grid-light) 1px, transparent 1px), linear-gradient(90deg, var(--grid-light) 1px, transparent 1px); background-size: 40px 40px; }
+.bp :global(.verify-card) { width: 100%; max-width: 480px; padding: 32px 24px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet); text-align: center; }
+.bp :global(.verify-card .auth-h1) { font-size: clamp(26px, 5vw, 34px); margin: 20px 0 12px; }
+.bp :global(.verify-card .auth-lede) { margin: 0; color: var(--ink-soft); font-size: 16px; line-height: 1.6; }
+.bp :global(.verify-check) { display: block; width: 64px; height: 64px; margin: 0 auto; color: var(--success); stroke: currentColor; stroke-width: 3; }
+.bp :global(.verify-check path) { stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 0; animation: verifyCheckDraw .45s var(--ease-out) both; }
+.bp :global(.verify-card .verification-spinner) { display: block; margin: 0 auto; }
+@keyframes verifyCheckDraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) { .bp :global(.verify-check path) { animation: none; } }
+
 .bp {
   --paper: #f2f0eb; --paper-deep: #ebe8e1;
   /* The white card surface (DESIGN.md's `--sheet`). This scope's

@@ -10,6 +10,20 @@ import type { OrgBrand } from "./client";
 const PLATFORM_LOCKUP: Lockup = { kind: "platform" };
 const PLATFORM_FOOTER = { name: "JobFlex" };
 
+export function buildSignupEmailVerification(href: string): EmailDoc {
+  return {
+    subject: "Verify your email for JobFlex",
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Account verification" },
+    headline: "Verify your email",
+    prose: ["Confirm your email to continue setting up your JobFlex account."],
+    cta: { label: "Verify email", href },
+    after: ["Once verified, return to your original signup tab. It will continue automatically."],
+    fine: "This link expires in 30 minutes. If you didn’t request this email, you can ignore it.",
+    footer: PLATFORM_FOOTER,
+  };
+}
+
 function orgLockup(org: OrgBrand): Lockup {
   return { kind: "org", name: org.name, logoUrl: org.logoUrl ?? null };
 }

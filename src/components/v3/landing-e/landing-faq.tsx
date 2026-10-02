@@ -47,7 +47,7 @@ const CARD_Q: Record<"card" | "cardless", Faq> = {
   },
   cardless: {
     q: "Do I need a credit card to start?",
-    a: "No. Confirm your email and the 7-day trial starts with no card on file. Add one before day 8 to keep your plan; without one the workspace turns read-only and nothing is charged.",
+    a: "No. Verify your email, choose a plan, and start your 7-day trial without a card. Subscribe before the trial ends to keep using the workspace. Nothing is charged unless you subscribe.",
   },
 };
 
@@ -75,8 +75,9 @@ function questions(variant: LandingVariantKey | undefined, requiresCard = true):
   ];
 }
 
-export function LandingFaq({ variant, registerHref = "/auth/register", cta = "Start my free trial", requiresCard = true }: { variant?: LandingVariantKey; registerHref?: string; cta?: string; requiresCard?: boolean }) {
+export function LandingFaq({ variant, registerHref = "/auth/register", cta = "Start my free trial", requiresCard = true, assignmentPending = false }: { variant?: LandingVariantKey; registerHref?: string; cta?: string; requiresCard?: boolean; assignmentPending?: boolean }) {
   const items = questions(variant, requiresCard);
+  if (assignmentPending) items[0] = { q: "Do I need a credit card to start?", a: "Your signup flow will explain whether a card is needed before you start your 7-day trial." };
   /* Opened by a click, a tap, Enter or Space; each card on its own. Hover and
      keyboard focus only SHOW the answer (CSS); this set is what aria-expanded
      reports and what keeps an answer up on a touch screen. */

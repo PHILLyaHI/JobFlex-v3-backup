@@ -708,20 +708,6 @@ async function finishCardlessTrial(
 /** The done record's "session" for a card-less trial — there is no Checkout. */
 const CARDLESS_SESSION = "cardless";
 
-/** Variant A deliberately has no plan picker. Start on the catalog's highlighted plan. */
-export async function startDirectTrial(token: string) {
-  const rec = await loadPending(token);
-  const assignment = await readSignupAssignment();
-  if (!rec || rec.experiment?.variant !== "a" || rec.experiment.id !== assignment?.id || !rec.emailVerified) {
-    return { ok: false as const, error: "Verify your email and continue from your signup browser." };
-  }
-  const { getPlanCatalog } = await import("@/lib/planCatalogServer");
-  const plans = (await getPlanCatalog()).filter(p => p.active && !p.isFree);
-  const plan = plans.find(p => p.highlight) ?? plans[0];
-  if (!plan) return { ok: false as const, error: "No trial plan is available. Please contact support." };
-  return requestCardlessTrial(token, plan.slug);
-}
-
 /** What the account is created WITH: the Stripe side of a paid checkout, of
  *  a card-less trial, or nothing at all (the non-production skip). */
 type AccountBilling = {
