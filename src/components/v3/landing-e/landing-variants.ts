@@ -94,10 +94,14 @@ export const VARIANT_KEYS = Object.keys(VARIANT_TRADE) as LandingVariantKey[];
    and the hero is the default. The dev gallery (/dev/landing-variants)
    shows these as TODO plates. */
 export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> = {
+  // Owner's copy, 2026-10-01 — verbatim. The new words are the hero's own
+  // button only; the nav, the sections and the sticky bar keep the trade's.
   fencing: {
-    h1: ["The whole fence takeoff.", "From the lot lines."],
-    sub: "Run, grade, stepped panels, posts, gates, concrete and labor — from the line you draw on the parcel.",
+    h1: ["Still Driving to the Job Site", "Just to Measure a Fence?"],
+    h1Long: true,
+    sub: "Enter the project address. JobFlex generates the measurements, materials, labor, pricing, and a complete customer-ready estimate and proposal — in seconds, right from your phone.",
     primaryCta: "Start free — estimate a fence",
+    heroCta: "Create My Free Estimate →",
     showcaseSlide: "fence",
     visual: "fence",
   },
