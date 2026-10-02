@@ -7,11 +7,15 @@
 // shut after hydration on every page load.
 
 export const SIDEBAR_FOLD_COOKIE = "jf_sb";
+/** The platform console's own memory of the same choice (2026-10-02): a
+ *  folded console must not fold the contractor's dashboard, or the other way
+ *  round. */
+export const ADMIN_SIDEBAR_FOLD_COOKIE = "jf_sba";
 
 /** Remember the choice for a year, for every page of the app. */
-export function writeSidebarFold(folded: boolean): void {
+export function writeSidebarFold(folded: boolean, name: string = SIDEBAR_FOLD_COOKIE): void {
   try {
-    document.cookie = `${SIDEBAR_FOLD_COOKIE}=${folded ? "1" : "0"}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
+    document.cookie = `${name}=${folded ? "1" : "0"}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
   } catch {
     /* a blocked cookie only costs the memory of the choice */
   }

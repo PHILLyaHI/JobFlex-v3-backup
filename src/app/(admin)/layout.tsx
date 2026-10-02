@@ -18,13 +18,14 @@
 
 import { redirect } from "next/navigation";
 import type { Route } from "next";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { db } from "@/lib/db";
 import { readAdminCookie } from "@/lib/adminAuth";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { unreadSupportCount } from "@/actions/support";
 import { NavRoleProvider } from "@/components/v3/blueprint-shell/nav-role";
 import { AdminShell } from "@/components/v3/admin-shell/admin-shell";
+import { ADMIN_SIDEBAR_FOLD_COOKIE } from "@/components/v3/blueprint-shell/sidebar-fold";
 
 export default async function AdminRootLayout({ children }: { children: React.ReactNode }) {
   const pathname = (await headers()).get("x-pathname") ?? "";
@@ -59,10 +60,13 @@ export default async function AdminRootLayout({ children }: { children: React.Re
   };
 
   const adminName = admin.name || admin.email;
+  // The sidebar's fold (owner, 2026-10-02), read here so the first paint is
+  // already folded — the console's own cookie, not the dashboard's.
+  const sidebarFolded = (await cookies()).get(ADMIN_SIDEBAR_FOLD_COOKIE)?.value === "1";
 
   return (
     <NavRoleProvider identity={{ role: null, name: adminName }} badges={badges}>
-      <AdminShell adminName={adminName} signOutMode={viaCookie ? "cookie" : "nextauth"}>
+      <AdminShell adminName={adminName} signOutMode={viaCookie ? "cookie" : "nextauth"} sidebarFolded={sidebarFolded}>
         {children}
       </AdminShell>
     </NavRoleProvider>

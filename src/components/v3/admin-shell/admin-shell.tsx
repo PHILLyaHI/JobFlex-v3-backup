@@ -29,10 +29,11 @@
 // .page-title / .page-actions / .card / .card-head / .card-title / .card-sub /
 // .kpi-grid / .kpi / .btn / .ic — see the report for the full list.
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { initBlueprintShell, type ShellHandle } from "@/components/v3/blueprint-shell/shell-behavior";
 import { Sprite } from "@/components/v3/blueprint-shell/sprite";
+import { ADMIN_SIDEBAR_FOLD_COOKIE, writeSidebarFold } from "@/components/v3/blueprint-shell/sidebar-fold";
 import proposalStyles from "@/components/v3/proposals-blueprint/proposals.module.css";
 import dashboardStyles from "@/components/v3/dashboard-blueprint/blueprint.module.css";
 import "@/components/v3/dashboard-blueprint/blueprint-global.css";
@@ -57,6 +58,7 @@ export function AdminShell({
   children,
   adminName,
   signOutMode,
+  sidebarFolded = false,
 }: {
   children: React.ReactNode;
   /** Display name for the topbar and the sidebar's account plate. Read
@@ -64,10 +66,36 @@ export function AdminShell({
   adminName: string;
   /** Which door the admin came through, so Sign out clears the right thing. */
   signOutMode: SignOutMode;
+  /** Start with the sidebar folded to its icon rail (the console's own cookie). */
+  sidebarFolded?: boolean;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<ShellHandle | null>(null);
   const pathname = usePathname() ?? "/admin";
+
+  // FOLDED SIDEBAR (owner, 2026-10-02: "make admin side bar foldable on the
+  // middle arrow"). The dashboard shell's fold, on the same global CSS
+  // (`[data-sb="fold"]` in blueprint-global.css): the arrow on the sidebar's
+  // edge or ⌘\ / Ctrl+\. Desktop only — at 860px and below the sidebar is a
+  // drawer and the attribute changes nothing. Remembered in the console's own
+  // cookie, so a folded console does not fold the contractor's dashboard.
+  const [folded, setFolded] = useState(sidebarFolded);
+  const toggleFold = useCallback(() => {
+    setFolded((f) => {
+      writeSidebarFold(!f, ADMIN_SIDEBAR_FOLD_COOKIE);
+      return !f;
+    });
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "\\" || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (window.innerWidth <= 860) return;
+      e.preventDefault();
+      toggleFold();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleFold]);
 
   useEffect(() => {
     if (!rootRef.current) return;
@@ -79,10 +107,14 @@ export function AdminShell({
     };
   }, []);
 
-  // React re-renders which item carries `active`; the plate follows it.
+  // React re-renders which item carries `active`; the plate follows it. A
+  // fold re-flows the rows too, so it is measured again once the 0.24 s
+  // width transition has settled.
   useEffect(() => {
     handleRef.current?.syncIndicator();
-  }, [pathname]);
+    const settled = window.setTimeout(() => handleRef.current?.syncIndicator(), 280);
+    return () => window.clearTimeout(settled);
+  }, [pathname, folded]);
 
   return (
     <div
@@ -91,11 +123,12 @@ export function AdminShell({
         .filter(Boolean)
         .join(" ")}
       data-page="admin"
+      data-sb={folded ? "fold" : undefined}
     >
       <Sprite />
 
       <div className="layout">
-        <AdminSidebar adminName={adminName} />
+        <AdminSidebar adminName={adminName} folded={folded} onToggleFold={toggleFold} />
 
         <div className="sb-overlay" id="sbOverlay"></div>
 
