@@ -42,6 +42,12 @@ import styles from "./admin-shell.module.css";
 import { AdminSidebar } from "./admin-sidebar";
 import { AdminTopbar, type SignOutMode } from "./admin-topbar";
 
+/** The console reads 7% larger than the dashboard's fluid scale (owner,
+ *  2026-10-02: "make font size bigger, it's hard to read, too small — 7%").
+ *  One multiplier on the shell's zoom, so every font, control and gap on
+ *  every admin page grows together and nothing has to be re-measured. */
+const ADMIN_SCALE = 1.07;
+
 /** Per-page stylesheets — active page only, keyed by route prefix. */
 const ADMIN_PAGE_STYLES: Record<string, string> = {
   "/admin/announcements": announcementsStyles.bp,
@@ -99,7 +105,7 @@ export function AdminShell({
 
   useEffect(() => {
     if (!rootRef.current) return;
-    const handle = initBlueprintShell(rootRef.current);
+    const handle = initBlueprintShell(rootRef.current, { scale: ADMIN_SCALE });
     handleRef.current = handle;
     return () => {
       handle.destroy();

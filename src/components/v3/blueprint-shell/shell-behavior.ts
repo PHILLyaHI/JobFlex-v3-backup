@@ -21,7 +21,12 @@ export type ShellHandle = {
   syncIndicator: () => void;
 };
 
-export function initBlueprintShell(root: HTMLElement): ShellHandle {
+export function initBlueprintShell(root: HTMLElement, opts: {
+  /** Multiplies the fluid scale below — the admin console reads 7% larger
+   *  than the dashboard (owner, 2026-10-02: "hard to read, too small"). */
+  scale?: number;
+} = {}): ShellHandle {
+  const scale = opts.scale ?? 1;
   const disposers: Array<() => void> = [];
   const on = (t: EventTarget, ev: string, fn: EventListener, o?: AddEventListenerOptions) => {
     t.addEventListener(ev, fn, o);
@@ -65,7 +70,7 @@ export function initBlueprintShell(root: HTMLElement): ShellHandle {
       // EVERY font on a fractional pixel size and softens all type, while the
       // ≤2% size difference from true 1:1 is imperceptible. Snap the band to 1
       // so near-reference windows rasterize text on exact pixels.
-      const z = Math.abs(raw - 1) < 0.02 ? 1 : raw;
+      const z = (Math.abs(raw - 1) < 0.02 ? 1 : raw) * scale;
       root.style.setProperty("zoom", String(z));
       // 100vh diverges from the real window under zoom != 1 — set it explicitly
       root.style.setProperty("--app-h", window.innerHeight / z + "px");
