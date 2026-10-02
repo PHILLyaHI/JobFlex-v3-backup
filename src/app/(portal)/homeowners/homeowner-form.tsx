@@ -104,12 +104,16 @@ export function HomeownerForm() {
 
   return (
     <div className="w-full max-w-md space-y-6">
+      {/* The step rail fits a 390px phone: the dividers stretch and shrink,
+          the labels may break onto two lines, and nothing sets the column's
+          width — a fixed rail used to push the page 40px wider than the
+          screen and slid an input over the Continue button. */}
       <div className="flex items-center gap-2">
         {STEPS.map((s, i) => (
-          <div key={s} className="flex items-center gap-2">
+          <div key={s} className={"flex min-w-0 items-center gap-2" + (i < STEPS.length - 1 ? " flex-1" : "")}>
             <span
               className={
-                "h-6 w-6 rounded-full grid place-items-center text-[11px] tabular transition-colors " +
+                "h-6 w-6 shrink-0 rounded-full grid place-items-center text-[11px] tabular transition-colors " +
                 (i <= step
                   ? "bg-[color:var(--ink)] text-[color:var(--paper)]"
                   : "bg-transparent text-[color:var(--ink-muted)] hairline")
@@ -125,7 +129,7 @@ export function HomeownerForm() {
             >
               {s}
             </span>
-            {i < STEPS.length - 1 && <span className="w-8 h-px bg-[color:var(--ink-line)] mx-1" />}
+            {i < STEPS.length - 1 && <span className="h-px min-w-3 flex-1 bg-[color:var(--ink-line)]" />}
           </div>
         ))}
       </div>
@@ -177,7 +181,7 @@ export function HomeownerForm() {
           {step === 2 && (
             <>
               <Input label={needsAddress ? "Street address — needed to measure this job" : "Address (optional)"} value={values.address} onChange={(e) => update("address", e.target.value)} placeholder="221 Oak St" autoComplete="street-address" />
-              <div className="grid grid-cols-[1fr_72px_88px] gap-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_72px_88px] gap-2">
                 <Input label="City" value={values.city} onChange={(e) => update("city", e.target.value)} placeholder="Philadelphia" />
                 <Input label="State" value={values.state} onChange={(e) => update("state", e.target.value)} placeholder="PA" />
                 <Input label="ZIP" value={values.zip} onChange={(e) => update("zip", e.target.value)} placeholder="19103" />

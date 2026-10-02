@@ -316,6 +316,12 @@
   :global(.jf-blueprint .content .pmdl) .body { padding-bottom: 20px; }
   :global(.jf-blueprint .content .pmdl) .foot { padding-bottom: max(11px, env(safe-area-inset-bottom)); }
   :global(.jf-blueprint .content .pmdl) .foot :global(.btn) { min-height: 44px; }
+  /* A footer with three actions does not fit a phone on one line: it wraps
+     instead of clipping the last button off the screen (Lead Center's lead
+     sheet, 2026-10-02). Each button keeps its label whole; a footer that fits
+     still splits the row evenly. */
+  :global(.jf-blueprint .content .pmdl) .foot { flex-wrap: wrap; }
+  :global(.jf-blueprint .content .pmdl) .foot :global(.btn) { min-width: max-content; }
   :global(.jf-blueprint .content .pmdl) .row2,
   :global(.jf-blueprint .content .pmdl) .row3 { grid-template-columns: 1fr; }
   :global(.jf-blueprint .content .pmdl) :global(.mf-in) { height: 44px; }
