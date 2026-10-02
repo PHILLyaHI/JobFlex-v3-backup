@@ -1520,3 +1520,60 @@
   .bp :global(.pw-trial) { font-size: 13px; letter-spacing: 0.04em; padding: 7px 11px; }
 }
 .bp :global(.pw-head:has(.pw-trial)) { flex-direction: column; align-items: flex-start; gap: 12px; }
+
+/* ============================================================
+   OWNER PASS — 2026-10-01 (signup after the first ad day).
+   · Step 1 opens on "Sign up with email"; the form unfolds in its place.
+   · Step 2 is optional; its labels and trade chips are ink, a size up.
+   · Step 2's Back / Create account share the row 1 : 2.6.
+   · The terms sit at the foot of the column, a size down.
+   · Phone: more air between the brand, the steps and the form.
+   Last in the file so it outranks the blocks above at equal specificity.
+   ============================================================ */
+.bp :global(.s1-email) { width: 100%; margin-top: clamp(24px, 3.8vh, 34px); gap: 10px; }
+.bp :global(.s1-email .ic) { width: 18px; height: 18px; }
+.bp :global(.s1-form) { animation: s1-open 0.42s var(--ease-out) both; transform-origin: top center; }
+@keyframes s1-open {
+  from { opacity: 0; transform: translateY(-10px) scaleY(0.96); clip-path: inset(0 0 100% 0); }
+  60% { opacity: 1; }
+  to { opacity: 1; transform: none; clip-path: inset(0 0 -12px 0); }
+}
+
+.bp :global(#step2) :global(.fld-lbl) {
+  color: var(--ink); font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; margin-bottom: 8px;
+}
+.bp :global(#step2) :global(.chip) {
+  height: 40px; padding: 0 14px;
+  border: 2px solid var(--ink); color: var(--ink);
+  font-size: 13.5px; font-weight: 700;
+}
+@media (hover: hover) and (pointer: fine) {
+  .bp :global(#step2) :global(.chip:not(.on)):hover { background: var(--paper-deep); }
+}
+.bp :global(#step2) :global(.chip.on) {
+  border-color: var(--ink); background: var(--blueprint); color: #fff;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.bp :global(#step2) :global(.btn-pair .btn:first-child) {
+  flex: 1 1 0; width: auto; min-width: 0; padding-left: 34px; padding-right: 12px;
+}
+.bp :global(#step2) :global(.btn-pair .btn:last-child) {
+  flex: 2.6 1 0; min-width: 0; padding-left: 16px; padding-right: 16px;
+}
+
+.bp :global(.step-note--foot) {
+  margin-top: auto; padding-top: clamp(24px, 4vh, 40px);
+  font-size: 9.5px; letter-spacing: 0.06em; line-height: 1.6;
+}
+
+@media (max-width: 768px) {
+  .bp :global(.auth-form .brand) { margin-bottom: clamp(30px, 5vh, 42px); }
+  .bp :global(.auth-body) :global(.stepper) { margin-bottom: clamp(30px, 5vh, 42px); }
+  .bp :global(.auth-body) :global(form) { margin-top: 24px; }
+  .bp :global(.s1-email) { margin-top: 24px; }
+  .bp :global(#step2) :global(.chip) { height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.s1-form) { animation: none; }
+}

@@ -41,6 +41,10 @@ export function RegisterSprite() {
       <symbol id="i-check" viewBox="0 0 24 24">
         <path d="M4 12.5l5 5L20 6.5" />
       </symbol>
+      <symbol id="i-mail" viewBox="0 0 24 24">
+        <rect x="3" y="5" width="18" height="14" rx="1" />
+        <path d="m3 6 9 7 9-7" />
+      </symbol>
       <symbol id="i-gift" viewBox="0 0 24 24">
         <rect x="3" y="9" width="18" height="12" rx="1" />
         <path d="M3 13h18" />

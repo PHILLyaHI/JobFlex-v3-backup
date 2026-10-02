@@ -65,7 +65,9 @@ const CONFIRM_TTL_MS = 24 * 60 * 60 * 1000;
 const pendingSchema = z.object({
   analytics: trafficIdentitySchema.optional().catch(undefined),
   name: z.string().trim().min(1, "Enter your name").max(120),
-  businessName: z.string().trim().min(1, "Enter your business name").max(120),
+  // Optional since 2026-10-01 (owner): the company step can be left blank.
+  // A blank name becomes "<first name>'s company" in startPendingSignup.
+  businessName: z.string().trim().max(120).default(""),
   email: z.string().trim().toLowerCase().email("Enter a valid email"),
   // One of the two: a password, or the handle of a parked Google identity
   // (lib/googleSignup) whose email must match.
@@ -200,7 +202,7 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
   const record: PendingRecord = {
     analytics: data.analytics,
     name: data.name,
-    businessName: data.businessName,
+    businessName: data.businessName || `${data.name.split(/\s+/)[0]}'s company`,
     email: data.email,
     companyAddress: data.companyAddress,
     companyPhone: data.companyPhone,
@@ -497,7 +499,16 @@ export async function completePendingSignup(
 export async function requestCardlessTrial(
   token: string,
   planSlug: string,
-): Promise<{ ok: true; email: string; resendAt: number } | { ok: false; error: string; resendAt?: number }> {
+): Promise<
+  | {
+      ok: true;
+      email: string;
+      resendAt: number;
+      /** Set when no confirmation email is sent: the account exists already. */
+      created?: { ticket: string | null; registrationEventId: string | null; subscriptionId: string | null };
+    }
+  | { ok: false; error: string; resendAt?: number }
+> {
   if (trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account." };
   const rec = await loadPending(token);
   if (!rec) return { ok: false, error: "That signup expired. Start again." };
@@ -533,6 +544,18 @@ export async function requestCardlessTrial(
     planName = plan.name;
   }
 
+  /* NO EMAIL CONFIRMATION FOR NOW (owner, 2026-10-01): the trial and the
+     account are created right here and the browser is signed in with the
+     ticket, the address left unverified. SIGNUP_CONFIRM_EMAIL=true brings
+     back the emailed link (the code below). */
+  if (!signupConfirmsEmail()) {
+    const stamped: PendingRecord = { ...rec, cardless: { planSlug, requestedAt: Date.now() } };
+    await db.syncState.upsert({ where: { key: key(token) }, update: { cursor: JSON.stringify(stamped) }, create: { key: key(token), cursor: JSON.stringify(stamped) } });
+    const done = await finishCardlessTrial(token, { verified: false });
+    if (!done.ok) return { ok: false, error: done.error };
+    return { ok: true, email: done.email, resendAt: 0, created: { ticket: done.ticket, registrationEventId: done.registrationEventId, subscriptionId: done.subscriptionId } };
+  }
+
   // The link: a random secret in the email, its hash in the store, pointing
   // at this intent. A new request replaces the old link.
   const secret = randomBytes(32).toString("base64url");
@@ -555,6 +578,12 @@ export async function requestCardlessTrial(
     return { ok: false, error: "Couldn't send the confirmation email. Try again." };
   }
   return { ok: true, email: rec.email, resendAt: next.cardless!.requestedAt + RESEND_COOLDOWN_MS };
+}
+
+/** Whether the card-less trial waits for the emailed link. Off unless
+ *  SIGNUP_CONFIRM_EMAIL=true (owner, 2026-10-01: not needed right now). */
+function signupConfirmsEmail(): boolean {
+  return process.env.SIGNUP_CONFIRM_EMAIL?.trim().toLowerCase() === "true";
 }
 
 /** A minute between two confirmation emails, and three resends an hour. */
@@ -580,7 +609,7 @@ export async function confirmCardlessTrial(
   const hash = createHash("sha256").update(secret).digest("hex");
   const row = await db.syncState.findUnique({ where: { key: confirmKey(hash) } }).catch(() => null);
   if (!row) return { ok: false, error: "That link has expired or was replaced by a newer one. Start the signup again." };
-  const res = await finishCardlessTrial(row.cursor);
+  const res = await finishCardlessTrial(row.cursor, { verified: true });
   // Used once: the link is gone, and opening it again goes to sign-in (the
   // done marker answers `done`) instead of signing anybody in a second time.
   if (res.ok) await db.syncState.delete({ where: { key: confirmIndexKey(row.cursor) } }).catch(() => {});
@@ -590,10 +619,12 @@ export async function confirmCardlessTrial(
 const confirmKey = (hash: string) => `signup-confirm:${hash}`;
 const confirmIndexKey = (token: string) => `signup-confirm-of:${token}`;
 
-/** The account and the trial, from a confirmed intent. Not exported: the
- *  only way in is the emailed link (confirmCardlessTrial). */
+/** The account and the trial, from an intent with a plan stamped on it. Not
+ *  exported: the ways in are the emailed link (confirmCardlessTrial) and,
+ *  while confirmation is off, requestCardlessTrial itself. */
 async function finishCardlessTrial(
   token: string,
+  opts: { verified: boolean },
 ): Promise<
   | { ok: true; email: string; ticket: string | null; registrationEventId: string | null; subscriptionId: string | null }
   | { ok: false; error: string; done?: boolean; email?: string }
@@ -665,7 +696,9 @@ async function finishCardlessTrial(
     endsAt: (trialEnd ?? new Date()).toISOString(),
   });
   // The address is proven — the link was opened from it.
-  await db.user.update({ where: { id: created.userId }, data: { emailVerified: new Date() } }).catch(() => {});
+  if (opts.verified) {
+    await db.user.update({ where: { id: created.userId }, data: { emailVerified: new Date() } }).catch(() => {});
+  }
   await markCardlessTrialUsed(rec.email, created.orgId);
   after(() => nameOrgOnSubscription(sub.id, created.orgId));
   return { ok: true, email: created.email, ticket: created.ticket, registrationEventId: rec.meta?.registrationEventId ?? null, subscriptionId: sub.id };

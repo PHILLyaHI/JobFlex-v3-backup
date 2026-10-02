@@ -185,6 +185,15 @@ export function HvacEstimatorShot({ active, hero = false }: { active: boolean; i
         onPointerDownCapture={takeOver}
         onKeyDownCapture={takeOver}
       >
+        {/* THE INVITATION (2026-10-01): on day one of the ads the demo
+            auto-played for 177 visitors and 2 touched it. Until the visitor
+            takes over, a stamp says it is theirs to drive; any tap anywhere
+            in the window takes over (and the stamp goes). */}
+        {manual ? null : (
+          <span className="lp-hvac-tap" aria-hidden="true">
+            Tap to try it yourself
+          </span>
+        )}
         <div className="lp-hvac-scroll" data-hvac-scroll>
         {/* The dashboard shell's root: its tokens, its reset, its sprite — the
             page's stylesheet is scoped to `.jf-blueprint .content`. The root's

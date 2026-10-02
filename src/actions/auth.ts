@@ -366,12 +366,15 @@ export async function resetPassword(raw: unknown): Promise<{ ok: true }> {
 /* ───────────────────── Google signup — the company step ───────────────────── */
 
 const companySetupSchema = z.object({
-  businessName: z.string().trim().min(1, "Business name is required.").max(160),
-  companyAddress: z.string().trim().min(1, "Company address is required.").max(300),
+  // Every company field is optional since 2026-10-01 (owner): a blank one
+  // leaves what the org already has, so the step can be skipped and filled
+  // in later from Settings.
+  businessName: z.string().trim().max(160).optional(),
+  companyAddress: z.string().trim().max(300).optional(),
   companyPhone: z.string().trim().max(40).optional(),
   /** The signed-in person's own phone (Google gives us none). */
   phone: z.string().trim().max(40).optional(),
-  tradeTypes: z.array(z.enum(TRADE_TYPES)).min(1, "Pick at least one trade."),
+  tradeTypes: z.array(z.enum(TRADE_TYPES)).optional(),
   otherTrade: z.string().trim().max(80).optional(),
 });
 
@@ -391,21 +394,27 @@ export async function completeCompanySetup(raw: unknown): Promise<{ ok: true }> 
   });
   if (!org) throw new Error("Not found");
 
-  const renamed = data.businessName !== org.name;
+  const businessName = data.businessName || org.name;
+  const trades = data.tradeTypes ?? [];
+  const renamed = businessName !== org.name;
   const slug =
     renamed && isPlaceholderOrgName(org.name)
-      ? await uniqueOrgSlug(slugify(data.businessName))
+      ? await uniqueOrgSlug(slugify(businessName))
       : org.slug;
 
   await db.organization.update({
     where: { id: org.id },
     data: {
-      name: data.businessName,
+      name: businessName,
       slug,
-      address: data.companyAddress,
-      phone: data.companyPhone || null,
-      tradeTypesJson: JSON.stringify(data.tradeTypes),
-      otherTrade: data.otherTrade && data.tradeTypes.includes("Other") ? data.otherTrade : null,
+      ...(data.companyAddress ? { address: data.companyAddress } : {}),
+      ...(data.companyPhone ? { phone: data.companyPhone } : {}),
+      ...(trades.length
+        ? {
+            tradeTypesJson: JSON.stringify(trades),
+            otherTrade: data.otherTrade && trades.includes("Other") ? data.otherTrade : null,
+          }
+        : {}),
     },
   });
   if (data.phone !== undefined) {
@@ -418,13 +427,13 @@ export async function completeCompanySetup(raw: unknown): Promise<{ ok: true }> 
         organizationId: org.id,
         actorId: ctx.user.id,
         kind: "CREATED",
-        summary: `${ctx.user.name ?? ctx.user.email ?? "Owner"} set up the ${data.businessName} workspace`,
+        summary: `${ctx.user.name ?? ctx.user.email ?? "Owner"} set up the ${businessName} workspace`,
       },
     });
   } catch {
     /* non-fatal */
   }
-  try {
+  if (data.companyAddress) try {
     const { geocodeAddress } = await import("@/lib/maps");
     const geo = await geocodeAddress({ address: data.companyAddress });
     if (geo) {

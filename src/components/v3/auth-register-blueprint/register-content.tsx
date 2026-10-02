@@ -95,10 +95,9 @@ export const REDIRECT_SECONDS = 5;
 
 // Donor `setStep`: items[0] is `on` at step 1 and `done` after it; items[1] is
 // `on` at step 2, `done` at step 3, and bare at step 1.
-function stItem(index: 0 | 1 | 2, step: Step): string {
+function stItem(index: 0 | 1, step: Step): string {
   if (index === 0) return "st-item" + (step === 1 ? " on" : " done");
-  if (index === 1) return "st-item" + (step === 2 ? " on" : step > 2 ? " done" : "");
-  return "st-item" + (step === 3 ? " on" : step > 3 ? " done" : "");
+  return "st-item" + (step === 2 ? " on" : step > 2 ? " done" : "");
 }
 
 /* THE CUSTOM PLAN IS OFFERED AT SIGNUP AGAIN (owner, 2026-09-26: "the custom
@@ -110,13 +109,6 @@ function stItem(index: 0 | 1 | 2, step: Step): string {
    Typed `boolean` on purpose, so flipping it never turns a branch below into
    a constant condition. */
 const OFFER_CUSTOM_AT_SIGNUP: boolean = true;
-
-// Donor `#tradeNote`, verbatim.
-function tradeNote(n: number): string {
-  return n === 0
-    ? "Pick at least one — leads are matched to these."
-    : n + (n === 1 ? " trade" : " trades") + " selected — leads will be matched to these.";
-}
 
 export function RegisterContent({
   setup = null,
@@ -157,8 +149,8 @@ export function RegisterContent({
      no pending-signup intent to park: the account already exists. */
   const setupMode = setup !== null;
   /* THE FORM (landing-e pass A, 2026-09-11; the only form since 2026-09-16):
-     step 1 is name, email, password and — since 2026-09-26 (owner) — a
-     password confirmation, checked here in the browser only; the business
+     step 1 is name, email and password (the confirmation field added on
+     2026-09-26 came off again on 2026-10-01, owner); the business
      name is on step 2 — the progress shows all three steps from the first
      screen, every analytics event carries `variant: "e"` and the pending
      signup records it (the admin's d-vs-e history reads on). */
@@ -486,21 +478,17 @@ export function RegisterContent({
   const [email, setEmail] = React.useState(setup?.email ?? googlePrefill?.email ?? "");
   const [password, setPassword] = React.useState("");
   const [showPw, setShowPw] = React.useState(false);
-  /* THE CONFIRMATION (owner, 2026-09-26). Checked here in the browser only —
-     the server still receives the one password. Its error belongs to the
-     field and prints under it: shown once the visitor leaves the field having
-     typed something, or presses Continue, and gone the moment the two match. */
-  const [password2, setPassword2] = React.useState("");
-  const [showPw2, setShowPw2] = React.useState(false);
-  const [pw2Checked, setPw2Checked] = React.useState(false);
-  const pw2Ref = React.useRef<HTMLInputElement>(null);
-  const pw2Err = !pw2Checked
-    ? null
-    : !password2
-      ? "Type your password again to confirm it."
-      : password2 !== password
-        ? "Passwords do not match."
-        : null;
+  /* EMAIL FIRST (owner, 2026-10-01): step 1 opens on two buttons — "Sign up
+     with email" and Google — and the email button unfolds the form in its
+     place. A visitor fresh off an ad meets one choice, not four fields. */
+  const [emailOpen, setEmailOpen] = React.useState(false);
+  const nameRef = React.useRef<HTMLInputElement>(null);
+  function openEmailForm() {
+    setEmailOpen(true);
+    window.setTimeout(() => nameRef.current?.focus({ preventScroll: true }), 60);
+  }
+  /* Continue waits for the three fields (no error after an empty tap). */
+  const step1Ready = Boolean(name.trim() && email.trim() && (google || password));
   // Step 1 is now gated on a server answer (is this email free?), so it has a
   // pending state the Continue button reads.
   const [checking, setChecking] = React.useState(false);
@@ -541,6 +529,7 @@ export function RegisterContent({
       if (!live) return;
       if (!g) {
         setErr1("Your Google sign-in expired. Continue with Google again.");
+        setEmailOpen(true);
         return;
       }
       setGoogle({ handle: gsu, email: g.email });
@@ -560,6 +549,7 @@ export function RegisterContent({
         if (!live) return;
         if (!res.available) {
           setErr1(res.message || "That email is already registered. Try signing in instead.");
+          setEmailOpen(true);
           return;
         }
       } catch {
@@ -783,6 +773,31 @@ export function RegisterContent({
         setPlansErr(res.error);
         return;
       }
+      /* NO CONFIRMATION EMAIL (SIGNUP_CONFIRM_EMAIL off, the default since
+         2026-10-01): the account and its trial exist already. The browser's
+         copies of the server's Meta events (the confirm page fired these),
+         then the ticket signs the shop in and the done panel counts down to
+         the dashboard. */
+      if (res.created) {
+        if (res.created.registrationEventId) {
+          metaTrack("CompleteRegistration", { status: "true" }, res.created.registrationEventId);
+        }
+        if (res.created.subscriptionId) {
+          metaTrack("StartTrial", { value: 0, currency: "USD" }, `${res.created.subscriptionId}:trial`);
+        }
+        const auth = res.created.ticket
+          ? await signIn("signup-ticket", { ticket: res.created.ticket, redirect: false })
+          : null;
+        const ok = Boolean(auth && !auth.error);
+        setSignedIn(ok);
+        setDoneNote(
+          ok
+            ? `Your 7-day free trial is on and your workspace is ready for ${res.email}.`
+            : `Your workspace is ready for ${res.email}. Sign in to open it.`,
+        );
+        setStep(4);
+        return;
+      }
       setResendAt(res.resendAt);
       setNowTick(Date.now());
       // The link's own page signs the shop in; keep the registration event
@@ -924,15 +939,6 @@ export function RegisterContent({
         setErr1("Password must be at least 8 characters.");
         return;
       }
-      /* The two must match before anything is asked of the server. The
-         message is the confirmation field's own (pw2Err), so the general
-         error block is cleared rather than saying it twice. */
-      if (password2 !== password) {
-        setPw2Checked(true);
-        setErr1(null);
-        pw2Ref.current?.focus();
-        return;
-      }
     }
     setErr1(null);
     setChecking(true);
@@ -970,32 +976,19 @@ export function RegisterContent({
      never subscribed still ended up with a workspace. The details are parked as
      a PENDING INTENT instead (actions/signupCheckout), and the account is
      created when checkout comes back — or when the testing skip is used. */
-  /* STEP 2 IS REQUIRED (owner's call, 2026-09-02): the address and at least
-     one trade are what the Lead Center matches on, so a shop without them is a
-     shop that never receives the free leads the step promises. The
-     "Skip — set this up later" exit is gone with it. */
+  /* STEP 2 IS OPTIONAL (owner, 2026-10-01 — it was required from 2026-09-02).
+     Every field may be left blank: a blank business name becomes "<first
+     name>'s company" on the server, and the address and trades can be added
+     later in Settings (the Lead Center matches on them once they are). */
   async function finish() {
     if (creating) return;
-    /* The business name is asked for on this step, so it is validated here. */
-    if (!biz.trim()) {
-      setErr2("Enter your business name.");
-      return;
-    }
-    if (!addr.trim()) {
-      setErr2("Enter your company address — leads are matched by distance.");
-      return;
-    }
-    if (trades.length === 0) {
-      setErr2("Pick at least one trade — leads are matched to it.");
-      return;
-    }
     setCreating(true);
     setErr2(null);
     try {
       if (setupMode) {
         await completeCompanySetup({
-          businessName: biz.trim(),
-          companyAddress: addr.trim(),
+          businessName: biz.trim() || undefined,
+          companyAddress: addr.trim() || undefined,
           companyPhone: phone.trim() || undefined,
           phone: phone.trim() || undefined,
           tradeTypes: trades,
@@ -1006,14 +999,14 @@ export function RegisterContent({
         router.push("/dashboard/upgrade" as Route);
         return;
       }
-      setDoneNote(biz.trim() + " is ready to send its first proposal.");
+      setDoneNote((biz.trim() || "Your shop") + " is ready to send its first proposal.");
       const res = await startPendingSignup({
         analytics: trafficIdentity(),
         name: name.trim(),
         businessName: biz.trim(),
         email: email.trim(),
         ...(google ? { googleToken: google.handle } : { password }),
-        companyAddress: addr.trim(),
+        companyAddress: addr.trim() || undefined,
         companyPhone: phone.trim() || undefined,
         tradeTypes: trades,
         otherTrade:
@@ -1089,20 +1082,11 @@ export function RegisterContent({
         <span className="st-n">2</span>
         <span className="st-txt">
           <span className="st-t">Company</span>
-          <span className="st-h">Required</span>
+          <span className="st-h">Optional</span>
         </span>
       </div>
-      {/* All three steps from the first screen (pass A). The sub-line names
-          no number: the trial's length is set per plan in /admin/plans (7
-          days as of 2026-09-26), and "14 days free" had gone stale. */}
-      <span className="st-line"></span>
-      <div className={stItem(2, step)} data-step="3">
-        <span className="st-n">3</span>
-        <span className="st-txt">
-          <span className="st-t">Plan</span>
-          <span className="st-h">Free trial</span>
-        </span>
-      </div>
+      {/* Two steps in the bar (owner, 2026-10-01): the plan page still
+          follows step 2, it is just not counted as a step. */}
     </div>
   );
 
@@ -1136,13 +1120,27 @@ export function RegisterContent({
           <div className={step === 1 ? "step" : "step is-hidden"} id="step1">
             <h1 className="auth-h1">Register.</h1>
 
-            <form id="step1Form" noValidate onSubmit={(e) => void onStep1(e)}>
+            {/* EMAIL FIRST (owner, 2026-10-01): one button until it is
+                pressed, then the form unfolds in its place. A Google return
+                that stopped on step 1 (expired, address taken) opens it. */}
+            {!emailOpen && !google ? (
+              <button className="btn s1-email" type="button" id="emailBtn" onClick={openEmailForm}>
+                <svg className="ic" aria-hidden="true">
+                  <use href="#i-mail" />
+                </svg>
+                Sign up with email
+              </button>
+            ) : null}
+
+            {emailOpen || google ? (
+            <form id="step1Form" className="s1-form" noValidate onSubmit={(e) => void onStep1(e)}>
               {/* The business name is asked for on step 2, so the name
                   stands alone here, full width. */}
               <div>
                 <label className="fld">
                   <span className="fld-lbl">Your name</span>
                   <input
+                    ref={nameRef}
                     className="fld-in"
                     id="name"
                     placeholder="First and last"
@@ -1205,50 +1203,10 @@ export function RegisterContent({
                 </span>
                 <span className="fld-note">At least 8 characters.</span>
               </label>
-              {/* CONFIRM PASSWORD (owner, 2026-09-26): the same field, the
-                  same eye, and its own error line under it. */}
-              <label className="fld">
-                <span className="fld-lbl">Confirm password</span>
-                <span className="pw-wrap">
-                  <input
-                    ref={pw2Ref}
-                    className="fld-in"
-                    type={showPw2 ? "text" : "password"}
-                    id="password2"
-                    placeholder="••••••••"
-                    autoComplete="new-password"
-                    value={password2}
-                    aria-invalid={pw2Err ? true : undefined}
-                    aria-describedby="password2Note"
-                    onChange={(e) => setPassword2(e.target.value)}
-                    onBlur={() => {
-                      if (password2) setPw2Checked(true);
-                    }}
-                  />
-                  <button
-                    className="pw-toggle"
-                    type="button"
-                    aria-label={showPw2 ? "Hide confirmation password" : "Show confirmation password"}
-                    aria-pressed={showPw2}
-                    onClick={() => setShowPw2((v) => !v)}
-                  >
-                    <svg className="ic" aria-hidden="true">
-                      <use href={showPw2 ? "#i-eye-off" : "#i-eye"} />
-                    </svg>
-                  </button>
-                </span>
-                <span
-                  className={pw2Err ? "fld-note fld-note--err" : "fld-note"}
-                  id="password2Note"
-                  aria-live="polite"
-                >
-                  {pw2Err ?? "Type it again to confirm."}
-                </span>
-              </label>
               </>
               ) : null}
 
-              <button className="btn" type="submit" id="nextBtn" disabled={checking}>
+              <button className="btn" type="submit" id="nextBtn" disabled={checking || !step1Ready}>
                 {checking ? "Checking…" : "Continue"}
                 <svg className="ic">
                   <use href="#i-arrow-r" />
@@ -1261,6 +1219,7 @@ export function RegisterContent({
                 {err1}
               </div>
             </form>
+            ) : null}
 
             {inApp ? (
               <OpenInBrowser app={inApp} />
@@ -1304,8 +1263,8 @@ export function RegisterContent({
           <div className={step === 2 ? "step" : "step is-hidden"} id="step2">
             <h1 className="auth-h1">
               {setupMode || google
-                ? `Welcome${name.trim() ? `, ${name.trim().split(" ")[0]}` : ""}. Tell us about your company.`
-                : "Tell us what you do."}
+                ? `Welcome${name.trim() ? `, ${name.trim().split(" ")[0]}` : ""}. Tell us what you do for leads.`
+                : "Tell us what you do for leads."}
             </h1>
             {setupMode ? (
               <p className="auth-lede">{`Signed in with Google as ${email}. One more step and your shop is live.`}</p>
@@ -1389,9 +1348,6 @@ export function RegisterContent({
                     onChange={(e) => setOtherTrade(e.target.value)}
                   />
                 )}
-                <span className="fld-note" id="tradeNote">
-                  {tradeNote(trades.length)}
-                </span>
               </div>
 
               <div className="btn-pair">
@@ -1415,15 +1371,21 @@ export function RegisterContent({
               <div className={err2 ? "err" : "err is-hidden"} id="err2">
                 {err2}
               </div>
-              <p className="step-note">
-                By creating an account, you agree to our{" "}
-                <Link href="/terms" target="_blank" rel="noopener noreferrer"><u>Terms of service</u></Link>
-                {" "}and acknowledge our{" "}
-                <Link href="/privacy" target="_blank" rel="noopener noreferrer"><u>Privacy policy</u></Link>.
-              </p>
             </form>
 
           </div>
+
+          {/* THE TERMS, AT THE FOOT (owner, 2026-10-01): under the form, at
+              the bottom of the column, a size down — fine print, not a
+              line in the form. */}
+          {step === 2 && !setupMode ? (
+            <p className="step-note step-note--foot">
+              By creating an account, you agree to our{" "}
+              <Link href="/terms" target="_blank" rel="noopener noreferrer"><u>Terms of service</u></Link>
+              {" "}and acknowledge our{" "}
+              <Link href="/privacy" target="_blank" rel="noopener noreferrer"><u>Privacy policy</u></Link>.
+            </p>
+          ) : null}
 
           <div className={step === 4 ? "step" : "step is-hidden"} id="stepDone">
             {/* The plan turning on, once, when the workspace has settled —
@@ -1839,19 +1801,6 @@ export function RegisterContent({
               ) : null}
             </div>
 
-            {/* The card terms, where the card is asked for (pass A) — under
-                the cards now, beside the start buttons they speak for. No
-                day is named: the trial's length is per plan (the note below
-                and each button say it), and "day 15" had gone stale. */}
-            <p className="pw-terms" id="pwTerms">
-              {requiresCard
-                ? "Your card won't be charged until the free trial ends. Cancel anytime from Subscription."
-                : "No card needed: the trial is 7 days, and you add a card only if you keep the plan."}
-              {" "}By starting a trial, you agree to our{" "}
-              <Link href="/terms" target="_blank" rel="noopener noreferrer"><u>Terms of service</u></Link>
-              {" "}and acknowledge our{" "}
-              <Link href="/privacy" target="_blank" rel="noopener noreferrer"><u>Privacy policy</u></Link>.
-            </p>
 
             <div className={"pw-foot" + (planSlug ? " is-armed" : "")}>
               {/* PROMO — the same codes the ?promo / ?ref links carry. Applying
@@ -1893,6 +1842,17 @@ export function RegisterContent({
               </p>
             ) : null}
 
+            {/* The trial terms, under the promo code field (owner,
+                2026-10-01) — they were between the cards and the field. */}
+            <p className="pw-terms" id="pwTerms">
+              {requiresCard
+                ? "Your card won't be charged until the free trial ends. Cancel anytime from Subscription."
+                : "No card needed: the trial is 7 days, and you add a card only if you keep the plan."}
+              {" "}By starting a trial, you agree to our{" "}
+              <Link href="/terms" target="_blank" rel="noopener noreferrer"><u>Terms of service</u></Link>
+              {" "}and acknowledge our{" "}
+              <Link href="/privacy" target="_blank" rel="noopener noreferrer"><u>Privacy policy</u></Link>.
+            </p>
             {requiresCard ? (
               <p className="pw-note">
                 No charge today. <b>{trialDays} days free.</b> Cancel before it ends and you pay
