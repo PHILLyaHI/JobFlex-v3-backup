@@ -1,8 +1,10 @@
 "use client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import type { Route } from "next";
 import { usePlanLimitStore } from "@/stores/usePlanLimitStore";
 import { LIMIT_DEFS } from "@/lib/planLimits";
+import { TRIAL_CAPS, TRIAL_CAP_NOUN, TRIAL_CAP_TITLE, trialCapAllowance, trialCapHref } from "@/lib/trialCaps";
 import { ConfirmPlanChange } from "./ConfirmPlanChange";
 
 /**
@@ -18,7 +20,51 @@ export function PlanLimitDialog() {
   const router = useRouter();
   const open = usePlanLimitStore((s) => s.open);
   const resource = usePlanLimitStore((s) => s.resource);
+  const trial = usePlanLimitStore((s) => s.trial);
   const close = usePlanLimitStore((s) => s.close);
+
+  /* THE CARD-LESS TRIAL'S OWN CEILING (lib/trialCaps): the same box, but the
+     way on is a card, not a bigger plan — the button opens the trial page,
+     which names the ceiling and adds the card. */
+  if (trial) {
+    const [, many] = TRIAL_CAP_NOUN[trial.key];
+    const cap = TRIAL_CAPS[trial.key];
+    return (
+      <ConfirmPlanChange
+        open={open}
+        kicker="Free trial"
+        title={trial.ended ? "Your free trial has ended" : TRIAL_CAP_TITLE}
+        confirmLabel="Add a card"
+        cancelLabel="Not now"
+        onCancel={close}
+        onConfirm={() => {
+          close();
+          router.push((trial.ended ? "/dashboard/trial" : trialCapHref(trial.key)) as Route);
+        }}
+        body={
+          <>
+            <p>
+              {trial.ended ? (
+                <>Add a card to keep working — everything you made is still here.</>
+              ) : (
+                <>
+                  The free trial without a card includes <b>{trialCapAllowance(trial.key)}</b>
+                  {cap > 0 ? ", and they are used" : ""}. Add a card and your plan&rsquo;s full limits apply at once — nothing is
+                  charged until the trial ends.
+                </>
+              )}
+            </p>
+            {trial.ended ? null : (
+              <div className="jf-confirm-meter">
+                <span>{many.charAt(0).toUpperCase() + many.slice(1)}</span>
+                <span>{cap > 0 ? `${cap} of ${cap} used` : "Needs a card"}</span>
+              </div>
+            )}
+          </>
+        }
+      />
+    );
+  }
 
   const def = resource ? LIMIT_DEFS.find((d) => d.key === resource) : null;
   const label = def?.label.toLowerCase() ?? null;

@@ -39,6 +39,8 @@ import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { readOsmPoint, writeOsmPoint } from "@/lib/overpassStore";
 import { askOverpass } from "@/lib/overpass";
 import { solarHousesAt, withOsmHeights } from "@/lib/solarHouses";
+import { takeTrialCap, trialPointKey } from "@/lib/trialMeter";
+import type { PlanLimitFailure } from "@/lib/planLimits";
 
 export type { LatLngPoint };
 
@@ -223,10 +225,15 @@ export async function fetchPropertyBoundary(
   lng: number,
 ): Promise<
   | { ok: true; ring: LatLngPoint[]; buildings: BuildingRing[]; roads: RoadLine[] }
-  | { ok: false; error: string; buildings: BuildingRing[]; roads: RoadLine[] }
+  | { ok: false; error: string; buildings: BuildingRing[]; roads: RoadLine[]; code?: PlanLimitFailure["code"]; trialCap?: PlanLimitFailure["trialCap"]; trialEnded?: boolean }
 > {
   const { organizationId: rlOrg } = await requireEstimatorOrManager();
   await enforceRateLimit(`parcels:${rlOrg}`, 30, HOUR, "property lookups");
+  // The card-less trial's fence ceiling (lib/trialMeter), counted once per
+  // point — /api/parcels asks for the same pin at the same moment. Inside an
+  // HVAC site lookup or a roof measurement the outline is theirs, not a fence's.
+  const trial = await takeTrialCap(rlOrg, "fenceLookups", { dedupe: trialPointKey(lat, lng), coveredBy: ["hvacLookups", "roofMeasurements"] });
+  if (!trial.ok) return { ...trial.failure, buildings: [], roads: [] };
   // Three independent lookups, and they stay independent: OSM context, the
   // parcel, and Regrid footprints. A failure in any one must not take the other
   // two down — the front-side decision in particular is derived from `roads`
@@ -302,6 +309,9 @@ export async function fetchHouseFootprints(
 > {
   const { organizationId } = await requireEstimatorOrManager();
   await enforceRateLimit(`solar-houses:${organizationId}`, 30, HOUR, "house outline lookups");
+  // Google Solar, at the fence page's point: the same trial use as its lot.
+  const trial = await takeTrialCap(organizationId, "fenceLookups", { dedupe: trialPointKey(lat, lng) });
+  if (!trial.ok) return { ok: false, reason: "failed", error: trial.failure.error };
   const answer = await solarHousesAt({ lat, lng }, { radiusM });
   if (!answer.ok) return answer;
   const osm = await readOsmPoint<{ buildings: BuildingRing[]; roads: RoadLine[] }>(lat, lng).catch(() => null);

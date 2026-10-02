@@ -7,6 +7,8 @@
 // Storage: PricingPlan.limitsJson holds a JSON object keyed by LimitKey. A key
 // that is absent, null, or negative means "unlimited".
 
+import type { TrialCapKey } from "@/lib/trialCaps";
+
 export const UNLIMITED = -1;
 
 /**
@@ -31,6 +33,11 @@ export interface PlanLimitFailure {
   error: string;
   code: "PLAN_LIMIT_REACHED";
   resource?: LimitKey;
+  /** Set when the ceiling reached is the card-less trial's own, not the
+   *  plan's (lib/trialCaps): the dialog asks for a card instead of a plan. */
+  trialCap?: TrialCapKey;
+  /** The card-less trial is over with no card: nothing paid runs. */
+  trialEnded?: boolean;
 }
 
 export function isPlanLimitFailure(v: unknown): v is PlanLimitFailure {
@@ -48,9 +55,9 @@ export function isPlanLimitFailure(v: unknown): v is PlanLimitFailure {
  * reportPlanLimit recognises (with its resource), anything else carries the
  * server's own words — which a thrown server-action error would not.
  */
-export function failureAsError(res: { error: string; code?: string; resource?: string }): Error {
+export function failureAsError(res: { error: string; code?: string; resource?: string; trialCap?: string; trialEnded?: boolean }): Error {
   if (res.code === "PLAN_LIMIT_REACHED") {
-    return Object.assign(new Error(PLAN_LIMIT_MESSAGE), { code: res.code, resource: res.resource });
+    return Object.assign(new Error(PLAN_LIMIT_MESSAGE), { code: res.code, resource: res.resource, trialCap: res.trialCap, trialEnded: res.trialEnded });
   }
   return new Error(res.error);
 }

@@ -13,6 +13,8 @@ import Link from "next/link";
 import type { Route } from "next";
 import type { TrialCard, TrialWatchData } from "@/actions/trialWatch";
 import type { TrialLevel } from "@/lib/trialWatch";
+import { formatSpend, PAID_SERVICE_LABEL } from "@/lib/paidApiCosts";
+import { TRIAL_CAP_KEYS, TRIAL_CAP_NOUN } from "@/lib/trialCaps";
 import s from "@/components/v3/admin-overview/admin-shared.module.css";
 import { Ic, StatusChip, ago } from "@/components/v3/admin-overview/admin-ui";
 import t from "./admin-trials.module.css";
@@ -27,12 +29,17 @@ export function AdminTrialsContent({ data }: { data: TrialWatchData }) {
   // started without one, whatever has happened since; the rest narrow it.
   const [card, setCard] = useState<"" | "no-card" | TrialCard>("");
   const [query, setQuery] = useState("");
+  // Score first (the watch's own order), or what the trial cost us in paid APIs.
+  const [sort, setSort] = useState<"score" | "spend">("score");
   const [open, setOpen] = useState<string | null>(null);
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     const cardOk = (c: TrialCard | null) => !card || (card === "no-card" ? c !== null : c === card);
-    return data.rows.filter((r) => (!level || r.level === level) && cardOk(r.card) && (!q || r.name.toLowerCase().includes(q) || (r.ownerEmail ?? "").toLowerCase().includes(q)));
-  }, [data.rows, level, card, query]);
+    const kept = data.rows.filter((r) => (!level || r.level === level) && cardOk(r.card) && (!q || r.name.toLowerCase().includes(q) || (r.ownerEmail ?? "").toLowerCase().includes(q)));
+    return sort === "spend" ? [...kept].sort((a, b) => b.spend.cents - a.spend.cents || b.score - a.score) : kept;
+  }, [data.rows, level, card, query, sort]);
+  const spendTotal = data.rows.reduce((n, r) => n + r.spend.cents, 0);
+  const spenders = data.rows.filter((r) => r.spend.cents > 0).length;
   const cardless = data.rows.filter((r) => r.card !== null).length;
   const suspicious = data.rows.filter((r) => r.level === "suspicious").length;
   const watching = data.rows.filter((r) => r.level === "watch").length;
@@ -81,6 +88,13 @@ export function AdminTrialsContent({ data }: { data: TrialWatchData }) {
           <div className="kpi-val">{working}</div>
           <div className={s.kpiSrc}>Made a client, proposal, job or lead</div>
         </div>
+        <div className="kpi">
+          <div className="kpi-lbl">Paid API spend</div>
+          <div className="kpi-val">{formatSpend(spendTotal)}</div>
+          <div className={s.kpiSrc}>
+            {spenders} {spenders === 1 ? "trial" : "trials"} · estimated, list price
+          </div>
+        </div>
       </div>
 
       <p className={s.note}>
@@ -116,6 +130,12 @@ export function AdminTrialsContent({ data }: { data: TrialWatchData }) {
               <option value="restarted">· Paid after the trial</option>
             </select>
           </span>
+          <span className={`bp-sel bp-sel--admin ${s.fSel}`}>
+            <select className="bp-sel-in" aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
+              <option value="score">Highest score first</option>
+              <option value="spend">Highest API spend first</option>
+            </select>
+          </span>
         </div>
         {rows.length === 0 ? (
           <div className="empty">{data.rows.length ? "No trials match." : `No companies signed up in the last ${data.windowDays} days.`}</div>
@@ -128,6 +148,11 @@ export function AdminTrialsContent({ data }: { data: TrialWatchData }) {
                 <th className={s.num}>Screens</th>
                 <th className={s.num}>Records</th>
                 <th>Active</th>
+                <th className={s.num}>
+                  <button type="button" className={t.sortBtn} aria-pressed={sort === "spend"} onClick={() => setSort(sort === "spend" ? "score" : "spend")}>
+                    API spend{sort === "spend" ? " ↓" : ""}
+                  </button>
+                </th>
                 <th>Score</th>
                 <th>
                   <span className={t.srOnly}>Why</span>
@@ -165,6 +190,10 @@ export function AdminTrialsContent({ data }: { data: TrialWatchData }) {
                       {r.sessions ? `${r.sessions} ${r.sessions === 1 ? "sitting" : "sittings"} · ${r.minutesActive} min` : "—"}
                       {r.lastSeen && <div className={s.sub}>last {ago(r.lastSeen, data.now)}</div>}
                     </td>
+                    <td data-l="API spend" className={s.num} data-spend={r.spend.cents}>
+                      {r.spend.cents > 0 ? formatSpend(r.spend.cents) : "—"}
+                      {r.spend.byService.length ? <span className={s.sub}> · {r.spend.byService.reduce((n, x) => n + x.calls, 0)} calls</span> : null}
+                    </td>
                     <td data-l="Score">
                       <div className={t.score}>
                         <i className={t.bar} data-level={r.level}>
@@ -184,7 +213,7 @@ export function AdminTrialsContent({ data }: { data: TrialWatchData }) {
                   </tr>
                   {open === r.id && (
                     <tr className={s.detail} data-trial-detail>
-                      <td colSpan={7}>
+                      <td colSpan={8}>
                         <div className={t.detail}>
                           <div>
                             <div className={s.detailHead}>Signals</div>
@@ -213,6 +242,29 @@ export function AdminTrialsContent({ data }: { data: TrialWatchData }) {
                             ) : (
                               <p className={s.detailNote}>No page views recorded{data.viewsAvailable ? "" : " — the table is not in this database"}.</p>
                             )}
+                          </div>
+                          <div>
+                            <div className={s.detailHead}>Paid APIs during the trial</div>
+                            {r.spend.byService.length ? (
+                              <ul className={t.signals}>
+                                {r.spend.byService.map((x) => (
+                                  <li key={x.service} data-kind="spend">
+                                    <b>{formatSpend(x.cents)}</b>
+                                    {PAID_SERVICE_LABEL[x.service]} · {x.calls} {x.calls === 1 ? "call" : "calls"}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className={s.detailNote}>Nothing paid recorded.</p>
+                            )}
+                            {TRIAL_CAP_KEYS.some((k) => (r.spend.uses[k] ?? 0) > 0) ? (
+                              <p className={s.detailNote}>
+                                Trial ceilings used:{" "}
+                                {TRIAL_CAP_KEYS.filter((k) => (r.spend.uses[k] ?? 0) > 0)
+                                  .map((k) => `${r.spend.uses[k]} ${TRIAL_CAP_NOUN[k][(r.spend.uses[k] ?? 0) === 1 ? 0 : 1]}`)
+                                  .join(" · ")}
+                              </p>
+                            ) : null}
                           </div>
                           <div>
                             <div className={s.detailHead}>Made</div>

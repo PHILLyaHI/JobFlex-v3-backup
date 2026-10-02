@@ -6,6 +6,7 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { instantAddressKey, type InstantRoofData } from "@/lib/eagleview";
+import { notePaidCall } from "@/lib/trialMeter";
 
 export const STATICMAP_ZOOM = 20;
 export const STATICMAP_PX = 640; // logical size; scale=2 doubles the pixels
@@ -64,6 +65,7 @@ export async function satellitePhotoPng(row: PhotoSubject): Promise<{ ok: true; 
       const detail = await res.text().catch(() => "");
       return { ok: false, error: `Static Maps refused (${res.status})${detail ? `: ${detail.slice(0, 120)}` : ""}` };
     }
+    await notePaidCall("google-static-maps", "staticmap");
     const bytes = Buffer.from(await res.arrayBuffer());
     try {
       await fs.mkdir(STATICMAP_DIR, { recursive: true });

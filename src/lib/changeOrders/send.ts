@@ -18,6 +18,7 @@ import { isTwilioEnabled, sendSMS } from "@/lib/sdk/twilio";
 import { toE164 } from "@/lib/phone";
 import { contractTotal, type ContractCo } from "@/lib/contractTotal";
 import { parseCoLines, parseCoPhotos } from "./parse";
+import { trialBlocksText } from "@/lib/trialMeter";
 
 export interface SendReport {
   email: "sent" | "no-email" | "failed" | "disabled";
@@ -93,6 +94,9 @@ export async function sendChangeOrderToClient(coId: string): Promise<SendReport>
   const phone = toE164(client?.phone);
   if (phone) {
     if (!await isTwilioEnabled()) {
+      report.sms = "disabled";
+    } else if (await trialBlocksText(co.organizationId, "change-order")) {
+      // The card-less trial sends no texts (lib/trialMeter); the email went.
       report.sms = "disabled";
     } else {
       try {

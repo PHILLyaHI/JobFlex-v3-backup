@@ -42,6 +42,7 @@ import {
 } from "@/lib/estimate/video-schema";
 import { trackActivation } from "@/lib/activation-events";
 import { logServerError } from "@/lib/server-events";
+import { takeTrialCap } from "@/lib/trialMeter";
 
 /** Vision quality matters more here than on the text-only planner: reading a
  *  fence run off a frame against a door for scale is spatial reasoning, which
@@ -101,6 +102,9 @@ export async function analyzeWalkthrough(
   // Only inline JPEG/PNG/WebP the browser rendered reaches the model.
   const frames = input.frames.filter((f) => INLINE_JPEG.test(f.dataUrl));
   if (frames.length === 0) return { ok: false, error: "No readable frames in the walkthrough." };
+  // The card-less trial's AI ceiling (lib/trialMeter): one reading, one use.
+  const trial = await takeTrialCap(organizationId, "aiCalls");
+  if (!trial.ok) return trial.failure;
 
   const ticket = [
     input.project.trim() ? `Project (as typed on the ticket): ${input.project.trim()}` : "",
@@ -199,6 +203,7 @@ export async function analyzeWalkthrough(
     logServerError("videoEstimator.analyzeWalkthrough", err, { kind: "action", organizationId });
     const msg = err instanceof Error ? err.message : "Could not read the walkthrough";
     console.error(`[videoEstimator] reading failed: ${msg}`);
+    if (typeof (err as { status?: unknown })?.status === "number") await trial.refund();
     return { ok: false, error: msg };
   }
 }

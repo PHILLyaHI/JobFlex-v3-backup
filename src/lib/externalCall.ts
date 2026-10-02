@@ -109,7 +109,10 @@ export async function externalFetch(
     try {
       const res = await fetch(url, { ...init, cache: "no-store", signal: AbortSignal.timeout(policy.timeoutMs) });
       policy.onResponse?.(res);
-      if (res.ok || accept.includes(res.status)) return res;
+      if (res.ok || accept.includes(res.status)) {
+        meterPaidCall(service, op);
+        return res;
+      }
       const detail = (await res.text().catch(() => "")).slice(0, 160);
       const err = new ExternalCallError(
         `${service} ${op} failed (${res.status})${detail ? `: ${detail}` : ""}`,
@@ -139,6 +142,24 @@ export async function externalFetch(
     }
   }
   throw last ?? new ExternalCallError(`${service} ${op} failed`, service, op, "unreachable");
+}
+
+/* THE SPEND (2026-10-02). The services billed per answered request are
+   recorded against the organization of the request (lib/trialMeter, which
+   prices them from lib/paidApiCosts). EagleView and ReportAll are recorded
+   where they are called — what they bill by (a pack, a parcel returned) is
+   known only there. Loaded lazily: this module is imported by scripts and
+   checks that never meet a request. */
+const METERED: Record<string, { service: "google-solar" | "google-geocoding" | "regrid"; op?: string }> = {
+  solar: { service: "google-solar" },
+  maps: { service: "google-geocoding" },
+  regrid: { service: "regrid", op: "parcel" },
+};
+
+function meterPaidCall(service: string, op: string): void {
+  const m = METERED[service];
+  if (!m) return;
+  void import("@/lib/trialMeter").then((t) => t.notePaidCall(m.service, m.op ?? op)).catch(() => {});
 }
 
 /** Run any promise into the non-throwing result shape. */

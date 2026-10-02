@@ -337,6 +337,8 @@ export class TranscribeError extends Error {
     public status: number,
     public code?: string,
     public resource?: string,
+    /** The card-less trial's ceiling, when that is what refused it (lib/trialCaps). */
+    public trialCap?: string,
   ) {
     super(message);
     this.name = "TranscribeError";
@@ -352,10 +354,11 @@ async function transcribeChunk(chunk: AudioChunk): Promise<TranscriptSegment[]> 
     error?: string;
     code?: string;
     resource?: string;
+    trialCap?: string;
     segments?: TranscriptSegment[];
   };
   if (!res.ok) {
-    throw new TranscribeError(body.error ?? `Transcription failed (${res.status})`, res.status, body.code, body.resource);
+    throw new TranscribeError(body.error ?? `Transcription failed (${res.status})`, res.status, body.code, body.resource, body.trialCap);
   }
   return body.segments ?? [];
 }

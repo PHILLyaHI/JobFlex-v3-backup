@@ -252,9 +252,10 @@ export function useVideoEstimator(opts: {
   }, [busy, stage]);
 
   // ── Failure funnel ──────────────────────────────────────────────────────
-  const fail = useCallback((res: { error: string; code?: string; resource?: string }, where: string) => {
+  const fail = useCallback((res: { error: string; code?: string; resource?: string; trialCap?: string }, where: string) => {
     if (reportPlanLimitResult(res)) {
-      setError("You have used this month's estimator runs.");
+      // The card-less trial's ceiling says its own sentence (lib/trialCaps).
+      setError(res.trialCap ? res.error : "You have used this month's estimator runs.");
       return;
     }
     setError(res.error);
@@ -391,7 +392,7 @@ export function useVideoEstimator(opts: {
           }
         } catch (err) {
           if (err instanceof TranscribeError && err.code === "PLAN_LIMIT_REACHED") {
-            fail({ error: err.message, code: err.code, resource: err.resource }, "Couldn't start");
+            fail({ error: err.message, code: err.code, resource: err.resource, trialCap: err.trialCap }, "Couldn't start");
             return;
           }
           // Auth / key refusals surface on the reading call in a moment; a

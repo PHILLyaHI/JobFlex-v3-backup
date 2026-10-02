@@ -13,6 +13,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { Route } from "next";
 import type { TrialView } from "@/lib/cardlessTrial";
+import { TRIAL_CAP_NOUN, TRIAL_CAP_TITLE, trialCapAllowance, type TrialCapKey } from "@/lib/trialCaps";
 import { metaTrack, newEventId } from "@/lib/metaPixel";
 import s from "./trial-card.module.css";
 
@@ -148,26 +149,40 @@ export function TrialRibbon({ view, isOwner, only }: { view: TrialView; isOwner:
   );
 }
 
+/** A ceiling as the sheet lists it (lib/trialMeter.trialCapUsage). */
+export type TrialCapRow = { key: TrialCapKey; used: number; cap: number };
+
 export function TrialSheet({
   view,
   isOwner,
   notice,
+  caps = null,
+  capHit = null,
 }: {
   view: TrialView;
   isOwner: boolean;
   /** The return from Stripe: "added" / "cancelled" / an error line. */
   notice: { tone: "ok" | "error" | "plain"; text: string } | null;
+  /** The card-less trial's ceilings and their uses — null once a card is on
+   *  file (the plan's limits apply) or the trial has ended. */
+  caps?: TrialCapRow[] | null;
+  /** The ceiling a refused action sent the browser here for (?cap=). */
+  capHit?: TrialCapKey | null;
 }) {
   const { go, busy, error } = useAddCard();
   const ended = view.kind === "ended";
   const tone = ended ? s.isEnded : view.hasCard ? s.isCard : view.daysLeft <= 2 ? s.isSoon : "";
   const when = DATE.format(new Date(view.endsAt));
-  const title = ended ? "Add a card to continue" : view.hasCard ? "Your card is on file" : "Add a card to keep access";
+  // A ceiling was reached: the sheet leads with it (owner, 2026-10-02).
+  const hit = !ended && !view.hasCard && caps ? capHit : null;
+  const title = ended ? "Add a card to continue" : view.hasCard ? "Your card is on file" : hit ? TRIAL_CAP_TITLE : "Add a card to keep access";
   const lede = ended
     ? `Your 7-day trial ended on ${when}. Everything you made is still here and readable; add a card and ${view.planName} starts again today — no new trial.`
     : view.hasCard
       ? `Nothing to do. The trial runs until ${when}, then ${view.planName} begins and the card is charged.`
-      : `The trial is free until ${when}. Add a card before then and ${view.planName} carries on without a gap. Without one, the workspace turns read-only on ${when}.`;
+      : hit
+        ? `The free trial without a card includes ${trialCapAllowance(hit)}. Add a card and ${view.planName}'s full limits apply at once — nothing is charged until ${when}.`
+        : `The trial is free until ${when}. Add a card before then and ${view.planName} carries on without a gap. Without one, the workspace turns read-only on ${when}.`;
   return (
     <div className={s.page}>
       {notice ? (
@@ -197,6 +212,26 @@ export function TrialSheet({
               {ended ? "Charged today, then monthly. Cancel any time from Subscription." : `First charge ${when}, then monthly. Cancel any time from Subscription.`}
             </span>
           </div>
+          {caps && !ended && !view.hasCard ? (
+            <section className={s.caps} aria-labelledby="trial-caps">
+              <h2 id="trial-caps" className={s.capsHead}>
+                Included without a card
+              </h2>
+              <ul className={s.capList}>
+                {caps.map((c) => {
+                  const [, many] = TRIAL_CAP_NOUN[c.key];
+                  const full = c.used >= c.cap;
+                  return (
+                    <li key={c.key} className={`${s.capRow} ${c.key === hit ? s.capHit : ""}`} data-cap={c.key} data-full={full || undefined}>
+                      <span className={s.capName}>{many.charAt(0).toUpperCase() + many.slice(1)}</span>
+                      <span className={s.capUse}>{c.cap === 0 ? "Needs a card" : `${Math.min(c.used, c.cap)} of ${c.cap} used`}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className={s.capsNote}>With a card on file the plan&rsquo;s own limits apply instead.</p>
+            </section>
+          ) : null}
           {view.hasCard && !ended ? (
             <div className={s.actions}>
               <Link className={s.quiet} href={"/dashboard" as Route}>

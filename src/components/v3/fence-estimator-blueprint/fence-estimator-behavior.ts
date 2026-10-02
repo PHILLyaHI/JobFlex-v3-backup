@@ -121,6 +121,7 @@ import {
 import { pointInRing } from "@/lib/parcel";
 import { convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
 import { isPlanLimitError, isPlanLimitFailure, PLAN_LIMIT_MESSAGE } from "@/lib/planLimits";
+import { reportPlanLimitResult } from "@/stores/usePlanLimitStore";
 import { DEFAULT_REMOVAL_PER_LF, OPENINGS, type OpeningType } from "./fence-estimator-data";
 
 /** Where a created proposal opens: the BLUEPRINT manual builder, loaded with
@@ -4241,7 +4242,9 @@ export function initFenceEstimatorContent(
         return;
       }
       if (!res.ok) {
-        const body = (await res.json().catch(function () { return {}; })) as { error?: string };
+        const body = (await res.json().catch(function () { return {}; })) as { error?: string; code?: string; trialCap?: string };
+        // The card-less trial's fence ceiling: the dialog asks for a card.
+        if (body.code === 'PLAN_LIMIT_REACHED') reportPlanLimitResult({ ok: false, ...body });
         hideParcelPanel();
         pushMap();
         if (sameOrigin(mapOrigin, o)) scheduleTopo(0);

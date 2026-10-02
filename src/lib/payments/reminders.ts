@@ -22,6 +22,7 @@ import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
 import { contractSchedule, contractTotal } from "@/lib/contractTotal";
 import { ensureSchedule } from "@/lib/payments/settle";
 import { parsePaymentSettings } from "@/lib/settings";
+import { trialBlocksText } from "@/lib/trialMeter";
 
 export const REMINDER_DAYS = [1, 3, 7] as const;
 export const MAX_REMINDERS = REMINDER_DAYS.length;
@@ -103,6 +104,8 @@ export async function sendPaymentReminder(input: { proposalId: string; installme
   const phone = toE164(proposal.client?.phone);
   if (phone) {
     if (!await isTwilioEnabled()) report.sms = "disabled";
+    // The card-less trial sends no texts (lib/trialMeter); the email went.
+    else if (await trialBlocksText(proposal.organizationId, "payment-reminder")) report.sms = "disabled";
     else {
       try {
         await sendSMS(

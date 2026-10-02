@@ -25,6 +25,7 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { sample3depElevations } from "@/lib/elevation3dep";
+import { notePaidCall } from "@/lib/trialMeter";
 
 const CACHE_DIR = join(process.cwd(), ".cache", "elevation");
 /** Bumped whenever the meaning of a cached answer changes (v2: 3DEP first). */
@@ -145,6 +146,7 @@ async function googleElevations(
         { cache: "no-store", signal: AbortSignal.timeout(8000) },
       );
       if (!res.ok) return { ok: false, error: `Elevation API refused (${res.status})` };
+      await notePaidCall("google-elevation", "elevation");
       const data = (await res.json()) as {
         status?: string;
         error_message?: string;

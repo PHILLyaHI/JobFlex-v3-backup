@@ -6,6 +6,7 @@ import { readStoredAsDataUrl } from "@/lib/media/privateStore";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { runVisionJson } from "@/lib/sdk/openaiVision";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
+import { takeTrialCap } from "@/lib/trialMeter";
 
 export interface PhotoAnalysis {
   materials?: string[];
@@ -42,6 +43,9 @@ export async function analyzeJobPhoto(photoId: string): Promise<
     revalidatePath(`/dashboard/jobs/${photo.jobId}`);
     return { ok: true, analysis: stub, disabled: true };
   }
+  // The card-less trial's AI ceiling (lib/trialMeter): one read, one use.
+  const trial = await takeTrialCap(organizationId, "aiCalls");
+  if (!trial.ok) return trial.failure;
   try {
     const result = await runVisionJson<PhotoAnalysis>({
       systemPrompt:

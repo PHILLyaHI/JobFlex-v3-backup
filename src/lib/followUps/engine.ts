@@ -17,6 +17,7 @@ import {
   parseChannel,
   parseDispatch,
 } from "@/lib/followUps/copy";
+import { trialBlocksText } from "@/lib/trialMeter";
 
 // Called from sendProposal / updateProposalStatus when a status changes — schedules any matching rule.
 export async function scheduleFollowUpsFor(proposalId: string, newStatus: string) {
@@ -131,7 +132,9 @@ export async function dispatchOne(id: string): Promise<boolean> {
     // TEXT falls back to email when the number was removed after the rule was
     // written — a follow-up that goes nowhere is worse than one that arrives on
     // the other channel.
-    const canText = channel === "TEXT" && await isTwilioEnabled() && Boolean(proposal.client?.phone);
+    // The card-less trial sends no texts (lib/trialMeter): a TEXT follow-up
+    // goes by email instead, the same fallback as a removed number.
+    const canText = channel === "TEXT" && await isTwilioEnabled() && Boolean(proposal.client?.phone) && !(await trialBlocksText(proposal.organizationId, "follow-up"));
 
     if (canText && proposal.client?.phone) {
       const res = await sendSMS(proposal.client.phone, followUpSmsText(trigger ?? "SENT", ctx));

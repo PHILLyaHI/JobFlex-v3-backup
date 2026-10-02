@@ -45,6 +45,7 @@ import {
 } from "@/lib/estimatorSchema";
 import { trackActivation, trackProposalCreated } from "@/lib/activation-events";
 import { applyMemberDiscount } from "@/lib/servicePlanBook";
+import { notePaidCall, takeTrialCap } from "@/lib/trialMeter";
 
 /**
  * Quota gate for the AI *run* functions. Returned (not thrown) because these
@@ -186,10 +187,12 @@ async function pricesFallback(
 async function serpFetch(url: string): Promise<Response> {
   let res = await fetch(url);
   for (const delay of [400, 1200]) {
-    if (res.ok || (res.status !== 429 && res.status < 500)) return res;
+    if (res.ok || (res.status !== 429 && res.status < 500)) break;
     await new Promise((r) => setTimeout(r, delay));
     res = await fetch(url);
   }
+  // An answered search is a billed one (lib/trialMeter records it).
+  if (res.ok) await notePaidCall("serpapi", "search");
   return res;
 }
 
@@ -539,6 +542,9 @@ export async function analyzeEstimatePrompt(input: {
     questions: [],
   };
   if (!isOpenAIEnabled()) return { ok: true, data: passthrough };
+  // The card-less trial's AI ceiling (lib/trialMeter): one run, one use.
+  const trial = await takeTrialCap(organizationId, "aiCalls");
+  if (!trial.ok) return trial.failure;
 
   const analyzePhotos = safePhotos(input.photos);
   const facts = readBrief(input.description, { sqft: input.sqft });
@@ -633,6 +639,8 @@ Description: ${input.description}${stated.length ? `\n\nThe brief already states
     };
   } catch (err: any) {
     console.warn(`[analyzeEstimatePrompt] failed, proceeding without clarify: ${err?.message ?? err}`);
+    // The provider refused (no completion billed): the run is given back.
+    if (typeof err?.status === "number") await trial.refund();
     return { ok: true, data: passthrough };
   }
 }
@@ -667,6 +675,8 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
   if (!isOpenAIEnabled()) {
     return { ok: true, data: { ...STUB, title: `${input.projectType || "Sample"} estimate · AI disabled` }, disabled: true };
   }
+  const trial = await takeTrialCap(organizationId, "aiCalls");
+  if (!trial.ok) return trial.failure;
 
   const qualityTier = input.qualityTier ?? "standard";
   // "Regenerate with AI" feeds the user's edited assumptions in as constraints.
@@ -1009,6 +1019,7 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
       console.error(`[advancedEstimator] generation failed: ${err.message}`);
       return { ok: false, error: err.message };
     }
+    await trial.refund();
     return { ok: false, error: friendlyAIError(err, "estimate generation") };
   }
 }
@@ -1091,6 +1102,8 @@ export async function refineAdvancedEstimate(raw: unknown): Promise<
       disabled: true,
     };
   }
+  const trial = await takeTrialCap(organizationId, "aiCalls");
+  if (!trial.ok) return trial.failure;
 
   const qualityTier = input.qualityTier ?? "standard";
   try {
@@ -1376,6 +1389,7 @@ ${JSON.stringify(research)}`,
         error: "The AI returned an edit we couldn't apply. Try rephrasing, or make one change at a time.",
       };
     }
+    if (typeof err?.status === "number") await trial.refund();
     return { ok: false, error: friendlyAIError(err, "estimate refine") };
   }
 }

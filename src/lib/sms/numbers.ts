@@ -12,6 +12,7 @@
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { twilioClient, twilioSettings } from "@/lib/sdk/twilio";
+import { notePaidCall } from "@/lib/trialMeter";
 
 export type NumberResult = { ok: true; number: string } | { ok: false; error: string };
 
@@ -41,6 +42,8 @@ export async function claimNumberFor(organizationId: string): Promise<NumberResu
       smsUrl: `${base}/api/twilio/sms`,
       smsMethod: "POST",
     });
+    // A month of the number, on the trial meter (lib/trialMeter).
+    await notePaidCall("twilio", "number", { orgId: organizationId });
     if (s.messagingServiceSid) {
       try {
         await client.messaging.v1.services(s.messagingServiceSid).phoneNumbers.create({ phoneNumberSid: bought.sid });

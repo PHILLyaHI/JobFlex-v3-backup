@@ -144,6 +144,28 @@
 .error.error { border-color: var(--rose); color: var(--rose); }
 .ok.ok { border-color: var(--emerald); color: var(--emerald); }
 
+/* ── The card-less trial's ceilings (2026-10-02, lib/trialCaps) ── */
+.caps.caps { display: grid; gap: 8px; min-width: 0; }
+.capsHead.capsHead { margin: 0; font: 800 12px/1.3 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; }
+.capList.capList { display: grid; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--ink); }
+.capRow.capRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+  min-width: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--ink-line);
+  font-size: 14px;
+}
+.capName.capName { min-width: 0; overflow-wrap: anywhere; }
+.capUse.capUse { flex: 0 0 auto; font: 500 11px/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.capRow.capRow[data-full] .capUse.capUse { color: var(--ink-soft); }
+.capRow.capRow.capHit.capHit { margin-inline: -12px; padding-inline: 12px; border-left: 4px solid var(--amber); background: color-mix(in srgb, var(--amber) 8%, var(--sheet, var(--paper-deep))); font-weight: 700; }
+.capRow.capRow.capHit.capHit .capUse.capUse { color: var(--ink); }
+.capsNote.capsNote { margin: 0; color: var(--ink-muted); font-size: 13px; }
+
 /* ── The dock: the ribbon at handheld width ───────────────────
    A compact bar fixed just above the bottom navigation (both handheld navs
    are ~68px), over the page's own full-screen composition. One row: the

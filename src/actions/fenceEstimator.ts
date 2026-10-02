@@ -23,6 +23,7 @@ import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import { applyMemberDiscount } from "@/lib/servicePlanBook";
+import { takeTrialCap } from "@/lib/trialMeter";
 
 const STUB: GeneratedEstimate = {
   title: "Cedar privacy fence estimate · AI disabled",
@@ -73,6 +74,9 @@ await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
     };
   }
   if (!isOpenAIEnabled()) return { ok: true, data: STUB, disabled: true };
+  // The card-less trial's AI ceiling (lib/trialMeter): one run, one use.
+  const trial = await takeTrialCap(organizationId, "aiCalls");
+  if (!trial.ok) return trial.failure;
   try {
     // The model this process can actually call, asked once per process and
     // remembered (lib/sdk/openai). OPENAI_MODEL's import-time snapshot answers
@@ -115,6 +119,7 @@ ${input.notes ? `Notes: ${input.notes}` : ""}`,
     });
     return { ok: true, data: parsed };
   } catch (err: unknown) {
+    if (typeof (err as { status?: unknown })?.status === "number") await trial.refund();
     return { ok: false, error: err instanceof Error && err.message ? err.message : "Generation failed" };
   }
 }

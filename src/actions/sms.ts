@@ -16,10 +16,11 @@ import { toE164 } from "@/lib/phone";
 import { enforceRateLimit, HOUR, RateLimitError } from "@/lib/rateLimit";
 import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { testText, verifyText, welcomeText } from "@/lib/sms/format";
-import { sendText } from "@/lib/sms/send";
+import { sendText, TRIAL_TEXT_MESSAGE } from "@/lib/sms/send";
 import { claimNumberFor, releaseNumberFor } from "@/lib/sms/numbers";
 import { SMS_GROUPS, audienceForRole, parseNotificationPrefs, textEventsFor, type PrefCells, type PrefKey, type SmsGroupKey } from "@/lib/notificationPrefsShared";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+import { takeTrialCap } from "@/lib/trialMeter";
 
 const OFFICE_ROLES = ["OWNER", "ADMIN", "MANAGER"];
 
@@ -150,7 +151,7 @@ export async function sendTestText(): Promise<SmsActionResult> {
   if (!await isTwilioEnabled()) return { ok: false, error: "Texting is not set up on this server." };
   const org = await db.organization.findUnique({ where: { id: organizationId }, select: { name: true } });
   const r = await sendText({ organizationId, to: me.smsPhone, body: testText(org?.name ?? null), kind: "test" });
-  if (!r.ok) return { ok: false, error: r.reason === "duplicate" ? "A test just went out — give it a minute." : r.reason === "opted-out" ? "That number replied STOP." : "Couldn't send. Try again in a moment." };
+  if (!r.ok) return { ok: false, error: r.reason === "duplicate" ? "A test just went out — give it a minute." : r.reason === "opted-out" ? "That number replied STOP." : r.reason === "trial" ? TRIAL_TEXT_MESSAGE : "Couldn't send. Try again in a moment." };
   return { ok: true, note: `Test text sent to ${pretty(me.smsPhone)}.` };
 }
 
@@ -165,7 +166,11 @@ export async function setClientTextsOn(on: boolean): Promise<SmsActionResult> {
 /** "Get your own number": a local number in the company's area code, kept on the company. */
 export async function claimOwnNumber(): Promise<SmsActionResult> {
   const { organizationId } = await requireManager();
+  // A number is a monthly charge: the card-less trial's own ceiling (lib/trialMeter).
+  const trial = await takeTrialCap(organizationId, "phoneNumbers");
+  if (!trial.ok) return trial.failure;
   const r = await claimNumberFor(organizationId);
+  if (!r.ok) await trial.refund();
   revalidatePath(SETTINGS_PATH);
   return r.ok ? { ok: true, note: `${pretty(r.number)} is yours — your texts show it, and replies to it come straight to you.` } : { ok: false, error: r.error };
 }

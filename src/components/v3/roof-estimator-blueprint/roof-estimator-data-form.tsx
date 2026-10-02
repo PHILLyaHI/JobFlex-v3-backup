@@ -834,6 +834,8 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
         stop();
         setPanel("intake");
         setIntakeError({ text: res.error, kind: res.noRoof ? "no-roof" : res.stillProcessing ? "processing" : "failed", target: input, reorder: res.canReorder === true });
+        // The card-less trial's ceiling: the dialog asks for a card instead.
+        if (reportPlanLimitResult(res)) return;
         toast.error("Couldn't measure this roof", res.error);
         return;
       }

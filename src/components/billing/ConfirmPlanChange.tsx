@@ -31,6 +31,8 @@ export interface ConfirmPlanChangeProps {
   kicker?: string;
   title: string;
   confirmLabel: string;
+  /** The way out; "Keep my plan" unless the box is not about a plan. */
+  cancelLabel?: string;
   busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -121,6 +123,7 @@ export function ConfirmPlanChange({
   body,
   compare,
   confirmLabel,
+  cancelLabel = "Keep my plan",
   busy = false,
   onConfirm,
   onCancel,
@@ -186,7 +189,7 @@ export function ConfirmPlanChange({
         ) : null}
         <div className="jf-confirm-row">
           <button type="button" className="jf-confirm-btn" disabled={busy} onClick={onCancel}>
-            Keep my plan
+            {cancelLabel}
           </button>
           <button type="button" className="jf-confirm-btn primary" disabled={busy} onClick={onConfirm}>
             {busy ? "Working…" : confirmLabel}

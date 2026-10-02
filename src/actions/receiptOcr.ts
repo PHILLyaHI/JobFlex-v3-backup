@@ -9,6 +9,7 @@ import { createJobExpense } from "@/lib/jobExpenses";
 import { friendlyAIError, isOpenAIEnabled } from "@/lib/sdk/openai";
 import { runVisionJson } from "@/lib/sdk/openaiVision";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
+import { takeTrialCap } from "@/lib/trialMeter";
 
 export interface OcrResult {
   vendor?: string;
@@ -79,6 +80,9 @@ export async function scanReceipt(input: {
   }
 
   if (!isOpenAIEnabled()) return { ok: true, ocr: STUB, disabled: true };
+  // The card-less trial's AI ceiling (lib/trialMeter): one read, one use.
+  const trial = await takeTrialCap(organizationId, "aiCalls");
+  if (!trial.ok) return trial.failure;
 
   try {
     const result = await runVisionJson<OcrResult>({

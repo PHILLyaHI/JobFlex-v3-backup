@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { readAdminCookie } from "@/lib/adminAuth";
 import { isServerActionRequest, noteTrialLock } from "@/lib/trialLock";
 import { isTrialWriteLocked } from "@/lib/trialState";
+import { noteRequestOrg } from "@/lib/trialMeter";
 
 export class UnauthorizedError extends Error {
   constructor(message = "Unauthorized") {
@@ -113,6 +114,9 @@ async function withTrialGuard<T extends { organizationId: string }>(ctx: T): Pro
   if ((await isServerActionRequest()) && (await isTrialWriteLocked(ctx.organizationId))) {
     await noteTrialLock(ctx.organizationId);
   }
+  // Paid API calls made in this request are this organization's spend
+  // (lib/trialMeter — recorded while it is on a trial).
+  await noteRequestOrg(ctx.organizationId);
   return ctx;
 }
 

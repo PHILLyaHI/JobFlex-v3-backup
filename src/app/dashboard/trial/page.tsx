@@ -13,6 +13,8 @@ import { requireOrg, isOwnerRole, NoOrgError, UnauthorizedError } from "@/lib/or
 import { finishCardCheckout, trialView } from "@/lib/cardlessTrial";
 import { TRIAL_ENDED_MESSAGE } from "@/lib/trialLock";
 import { TrialSheet } from "@/components/v3/trial-card/trial-card";
+import { isTrialCapKey } from "@/lib/trialCaps";
+import { trialCapUsage } from "@/lib/trialMeter";
 
 export const dynamic = "force-dynamic";
 
@@ -57,5 +59,9 @@ export default async function TrialPage({ searchParams }: { searchParams: Promis
     if (notice?.tone === "ok") redirect("/dashboard?card=added" as Route);
     redirect("/dashboard/subscription" as Route);
   }
-  return <TrialSheet view={view} isOwner={isOwnerRole(role)} notice={notice} />;
+  // The card-less trial's own ceilings, while they apply (no card, not ended):
+  // lib/trialCaps. A refused paid action sends the browser here with ?cap=.
+  const caps = view.kind === "trialing" && !view.hasCard ? await trialCapUsage(organizationId) : null;
+  const capHit = isTrialCapKey(sp.cap) ? sp.cap : null;
+  return <TrialSheet view={view} isOwner={isOwnerRole(role)} notice={notice} caps={caps} capHit={capHit} />;
 }

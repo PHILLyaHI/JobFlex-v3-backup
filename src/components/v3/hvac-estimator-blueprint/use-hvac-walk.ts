@@ -140,7 +140,7 @@ export function useHvacWalk(aiEnabled: boolean) {
             } else audio = failed > 0 ? "failed" : "none";
           } catch (err) {
             if (err instanceof TranscribeError && err.code === "PLAN_LIMIT_REACHED") {
-              reportPlanLimitResult({ ok: false, error: err.message, code: err.code, resource: err.resource });
+              reportPlanLimitResult({ ok: false, error: err.message, code: err.code, resource: err.resource, trialCap: err.trialCap });
               setError(err.message);
               return null;
             }

@@ -1,21 +1,33 @@
 "use client";
 import { create } from "zustand";
 import { isPlanLimitError, isPlanLimitFailure, type LimitKey } from "@/lib/planLimits";
+import { isTrialCapKey, type TrialCapKey } from "@/lib/trialCaps";
 import { getLimitUsage } from "@/actions/limits";
+
+/** The card-less trial's ceiling, when that is what was reached (lib/trialCaps). */
+export type TrialCapHit = { key: TrialCapKey; ended: boolean };
 
 interface PlanLimitState {
   open: boolean;
   resource: LimitKey | null;
-  openLimit: (resource?: LimitKey | null) => void;
+  trial: TrialCapHit | null;
+  openLimit: (resource?: LimitKey | null, trial?: TrialCapHit | null) => void;
   close: () => void;
 }
 
 export const usePlanLimitStore = create<PlanLimitState>((set) => ({
   open: false,
   resource: null,
-  openLimit: (resource) => set({ open: true, resource: resource ?? null }),
+  trial: null,
+  openLimit: (resource, trial) => set({ open: true, resource: resource ?? null, trial: trial ?? null }),
   close: () => set({ open: false }),
 }));
+
+/** The trial ceiling a refusal carries, if any. */
+function trialHitOf(v: unknown): TrialCapHit | null {
+  const t = v as { trialCap?: unknown; trialEnded?: unknown } | null;
+  return t && isTrialCapKey(t.trialCap) ? { key: t.trialCap, ended: t.trialEnded === true } : null;
+}
 
 /**
  * Call from a create handler's catch block. If `err` is a plan-limit error,
@@ -29,7 +41,7 @@ export function reportPlanLimit(err: unknown): boolean {
   // enforcePlanLimit attaches the resource in dev; prod redacts thrown errors
   // so this falls back to the dialog's generic copy.
   const resource = (err as { resource?: LimitKey }).resource ?? null;
-  usePlanLimitStore.getState().openLimit(resource);
+  usePlanLimitStore.getState().openLimit(resource, trialHitOf(err));
   return true;
 }
 
@@ -43,7 +55,7 @@ export function reportPlanLimit(err: unknown): boolean {
  */
 export function reportPlanLimitResult(res: unknown): boolean {
   if (!isPlanLimitFailure(res)) return false;
-  usePlanLimitStore.getState().openLimit(res.resource ?? null);
+  usePlanLimitStore.getState().openLimit(res.resource ?? null, trialHitOf(res));
   return true;
 }
 

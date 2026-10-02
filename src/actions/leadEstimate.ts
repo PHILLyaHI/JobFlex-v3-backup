@@ -15,6 +15,7 @@ import { ESTIMATOR_PATH, writeProfessionalScope, type EstimatorId } from "@/lib/
 import { writeEstimateSeed } from "@/lib/estimateSeed";
 import { ensureClientForLead } from "@/lib/leadClient";
 import { FILING_COOKIE, FILING_MAX_AGE_S, type Filing } from "@/lib/filingCookie";
+import { enforceTrialCap } from "@/lib/trialMeter";
 
 const ENGINES = new Set<string>(["roof", "fence", "hvac", "smart", "manual"]);
 
@@ -81,6 +82,9 @@ export async function writeLeadScope(leadId: string): Promise<void> {
   });
   if (!lead) return;
   if (!lead.scope) {
+    // The card-less trial's AI ceiling (lib/trialMeter). A form action: a
+    // refusal redirects to the trial page, which says so and adds the card.
+    if ((lead.description ?? "").trim().length >= 12) await enforceTrialCap(organizationId, "aiCalls");
     const scope = (lead.description ?? "").trim().length >= 12
       ? await writeProfessionalScope({
           description: lead.description ?? "",

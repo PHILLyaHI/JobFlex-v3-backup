@@ -10,7 +10,7 @@ export async function POST(
   const { photoId } = await ctx.params;
   try {
     const res = await analyzeJobPhoto(photoId);
-    if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 });
+    if (!res.ok) return NextResponse.json(res, { status: "trialCap" in res ? 402 : 400 });
     return NextResponse.json({ analysis: res.analysis, disabled: res.disabled ?? false });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? "Failed" }, { status: 500 });

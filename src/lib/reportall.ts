@@ -18,6 +18,7 @@
 //   · rpp=0 returns just the count without spending parcel quota.
 
 import { ExternalCallError, externalFetch } from "@/lib/externalCall";
+import { notePaidCall } from "@/lib/trialMeter";
 const BASE = "https://reportallusa.com/api/parcels";
 
 /** The allowance the key ships with — for the log line, not a limit we enforce. */
@@ -249,6 +250,8 @@ async function call(params: Record<string, string>): Promise<Parcel[]> {
   if (data.status && data.status !== "OK") {
     throw new ReportAllError(`ReportAll returned status ${data.status}`, res.status);
   }
+  // Every parcel returned is one off the allowance — the trial meter's too.
+  await notePaidCall("reportall", "parcel", { units: data.results?.length ?? 0 });
   return (data.results ?? []).map(normalize).filter((p): p is Parcel => p !== null);
 }
 

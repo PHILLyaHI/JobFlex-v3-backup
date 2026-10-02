@@ -27,6 +27,7 @@ import {
   smsDecision,
   type PrefKey, allowsSms, audienceForRole, textEventsFor } from "@/lib/notificationPrefsShared";
 import { brand, clip, heldDigestText, SMS_MAX, unbrand } from "./format";
+import { trialBlocksText } from "@/lib/trialMeter";
 
 const CAP_PER_NUMBER_PER_DAY = 25;
 const CAP_PER_ORG_PER_DAY = 500;
@@ -45,7 +46,10 @@ export type SendTextInput = {
 };
 export type SendTextResult =
   | { ok: true; id: string; status: "SENT" | "SKIPPED" | "HELD" }
-  | { ok: false; reason: "invalid-number" | "opted-out" | "duplicate" | "cap" | "limiter-down" | "failed" };
+  | { ok: false; reason: "invalid-number" | "opted-out" | "duplicate" | "cap" | "trial" | "limiter-down" | "failed" };
+
+/** What a member reads when the card-less trial held a text back (lib/trialCaps). */
+export const TRIAL_TEXT_MESSAGE = "The free trial without a card sends no texts except the verification code. Add a card to unlock full limits.";
 
 /** Send one text (or hold it). Never throws. */
 export async function sendText(input: SendTextInput): Promise<SendTextResult> {
@@ -71,6 +75,13 @@ export async function sendText(input: SendTextInput): Promise<SendTextResult> {
 }
 
 async function dispatch(m: { organizationId: string | null; to: string; body: string; kind: string }): Promise<SendTextResult> {
+  // The card-less trial sends nothing but the verification code (lib/trialMeter):
+  // a SKIPPED row says so, and the per-number allowance is not spent on it.
+  // A held text is checked here too, when the morning sends it.
+  if (await trialBlocksText(m.organizationId, m.kind).catch(() => true)) {
+    await capped(m, "trial");
+    return { ok: false, reason: "trial" };
+  }
   // Caps, fail-closed: a limiter that cannot answer pauses texting.
   try {
     const perNumber = await rateLimitShared(`sms:to:${m.to}`, CAP_PER_NUMBER_PER_DAY, DAY);

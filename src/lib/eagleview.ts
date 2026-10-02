@@ -12,6 +12,7 @@
 
 import { ExternalCallError, externalFetch, type ExternalFailureKind } from "@/lib/externalCall";
 import { instantTotalsOf } from "@/lib/roofDiagram/instantTotals";
+import { notePaidCall } from "@/lib/trialMeter";
 const TOKEN_BASE = process.env.EAGLEVIEW_TOKEN_BASE_URL || "https://apicenter.eagleview.com";
 const API_BASE = process.env.EAGLEVIEW_API_BASE_URL || "https://sandbox.apicenter.eagleview.com";
 
@@ -315,6 +316,7 @@ export async function placeOrder(input: EvOrderInput): Promise<{ reportId: numbe
     body: JSON.stringify(orderBody(input)),
   });
   if (!res.ok) throw await evError(res, "PlaceOrder");
+  await notePaidCall("eagleview", "report");
   const raw = (await res.json()) as Record<string, unknown>;
   const reportId = Number(
     (raw?.ReportId as number) ??
@@ -1337,6 +1339,8 @@ export async function submitInstantOrder(
   const requestId = accepted?.request?.id;
   if (!requestId) throw new Error("Property Data returned no request id");
   evDebug("property request accepted", { requestId, packs, status: accepted.request?.status });
+  // An accepted order is a billed one, per pack (lib/trialMeter).
+  await notePaidCall("eagleview", "pack", { units: packs.length });
   return { requestId, completeAddress, packs };
 }
 

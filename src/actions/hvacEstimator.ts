@@ -54,6 +54,7 @@ import { JOBS, OUTDOOR_KINDS } from "@/lib/hvac/jobs";
 import { US_CATALOG, US_CATALOG_VERIFIED_ON } from "@/lib/hvac/data/usCatalog";
 import { applyMemberDiscount } from "@/lib/servicePlanBook";
 import { fileEquipmentFromModel } from "@/lib/visitBook";
+import { notePaidCall, takeTrialCap } from "@/lib/trialMeter";
 
 type Fail = { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey };
 
@@ -108,6 +109,10 @@ export async function hvacSiteFacts(raw: unknown): Promise<{ ok: true; facts: Si
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Not allowed" };
   }
+  // The card-less trial's HVAC ceiling (lib/trialMeter): one use per address;
+  // the lot outline asked below rides on it, not on a fence lookup.
+  const trial = await takeTrialCap(organizationId, "hvacLookups", { dedupe: `hvac:${input.address.trim().toLowerCase().replace(/\s+/g, " ")}` });
+  if (!trial.ok) return trial.failure;
 
   const warnings: string[] = [];
   const facts: SiteFacts = { address: input.address.trim(), state: (input.state ?? stateFromAddress(input.address) ?? "").toUpperCase(), county: input.county, lat: input.lat, lng: input.lng, sources: {} };
@@ -279,6 +284,9 @@ export async function readHvacNameplate(raw: unknown): Promise<{ ok: true; read:
   const blocked = await runBlocked(organizationId);
   if (blocked) return blocked;
   if (!isOpenAIEnabled()) return { ok: false, error: "Nameplate reading needs OPENAI_API_KEY — type the plate's model number instead." };
+  // The card-less trial's AI ceiling (lib/trialMeter): one plate, one use.
+  const trial = await takeTrialCap(organizationId, "aiCalls");
+  if (!trial.ok) return trial.failure;
 
   const hintLine = parsed.data.hint === "outdoor" ? "This should be the OUTDOOR unit (condenser / heat pump) plate." : parsed.data.hint === "indoor" ? "This should be the INDOOR unit (furnace or air handler) plate." : parsed.data.hint === "panel" ? "This is an electrical panel: read the MAIN BREAKER amps into mcaAmps, set kind to \"other\" and put the count of free breaker slots in notes." : "";
   const out = await runVisionJson<Record<string, unknown>>({ systemPrompt: NAMEPLATE_SYSTEM, userPrompt: `Read this nameplate. ${hintLine}`.trim(), imageUrl: parsed.data.dataUrl });
@@ -692,6 +700,10 @@ export async function requestHvacPermitReport(raw: unknown): Promise<{ ok: true;
   const existing = parseJson<HvacPermit>(row.permitJson);
   const { COOLCALC_APP_URL } = await import("@/lib/hvac/coolcalc");
   if (existing?.projectId && existing.systemId) return { ok: true, permit: existing, appUrl: COOLCALC_APP_URL };
+  // A new system is a Cool Calc report credit: the card-less trial's own
+  // ceiling (lib/trialMeter) — none without a card.
+  const trial = await takeTrialCap(organizationId, "hvacReports");
+  if (!trial.ok) return trial.failure;
   const title = String(parseJson<{ title?: string }>(row.draftJson)?.title ?? row.address);
   // The saved state stands in when the typed address does not spell one.
   const parts = { ...splitAddress(row.address) };
@@ -700,10 +712,12 @@ export async function requestHvacPermitReport(raw: unknown): Promise<{ ok: true;
     const project = await coolCalcCreateProject(cfg, { project: `${title} · JobFlex ${row.id.slice(-6)}`, address: parts.address, city: parts.city, state: parts.state, zip: parts.zip });
     const systems = Number(parseJson<{ selection?: { systems?: number } }>(row.engineJson)?.selection?.systems ?? 1);
     const system = await coolCalcCreateSystem(cfg, project, systems > 1 ? `System 1 of ${systems}` : "System 1");
+    await notePaidCall("coolcalc", "report");
     const permit: HvacPermit = { provider: "coolcalc", projectId: project.projectId, systemId: system.systemId, projectUrl: project.projectUrl, reportUrl: system.reportUrl, requestedAt: new Date().toISOString() };
     await db.hvacEstimate.update({ where: { id: row.id }, data: { permitJson: JSON.stringify(permit) } });
     return { ok: true, permit, appUrl: COOLCALC_APP_URL };
   } catch (err) {
+    await trial.refund();
     return { ok: false, error: failed("reach Cool Calc", err) };
   }
 }

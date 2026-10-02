@@ -23,7 +23,7 @@ export async function POST(req: Request) {
 
   if (body.preview) {
     const res = await scanReceipt({ jobId: body.jobId, dataUrl: body.dataUrl });
-    if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 });
+    if (!res.ok) return NextResponse.json(res, { status: "trialCap" in res ? 402 : 400 });
     return NextResponse.json({ ocr: res.ocr, disabled: res.disabled ?? false });
   }
 

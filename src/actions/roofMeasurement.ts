@@ -64,6 +64,7 @@ import { areaOf, type FootprintPoint } from "@/lib/roofRecon/footprint";
 import { foreignIndices, footprintRead, pickMainStructure, rowFigures } from "@/lib/roofDiagram/instantTotals";
 import { toDTO, toSummary, type StoredProvenance } from "@/lib/roofDiagram/dto";
 import type { MeasurementProvenance, MeasurementSource, RoofMeasurementDTO, RoofMeasurementSummary } from "@/lib/roofDiagram/types";
+import { takeTrialCap } from "@/lib/trialMeter";
 
 type MeasureResult =
   | {
@@ -893,6 +894,11 @@ export async function measureRoofInstant(
   }
   if (!isEagleViewEnabled()) return { ok: false, error: "Roof measurement is not configured" };
   if (!input.address && input.lat == null) return { ok: false, error: "Pick an address first" };
+  // The card-less trial's ceilings (lib/trialMeter): a measurement is one
+  // roof measurement — given back below when a stored order answers it — and
+  // a paid re-measure is an EagleView order, which needs a card.
+  const trial = await takeTrialCap(organizationId, opts?.forceNewOrder ? "eagleViewOrders" : "roofMeasurements");
+  if (!trial.ok) return trial.failure;
   const deadlineAt = Date.now() + ACTION_BUDGET_MS;
 
   // Instant: через леджер заказов (переиспользование, дозабор, покупка)
@@ -904,6 +910,7 @@ export async function measureRoofInstant(
     instant = got.instant;
     reuse = got.reuse;
     packs = got.packs;
+    if (reuse) await trial.refund();
   } catch (err) {
     const debug = { ...eagleViewIdentity(), stage: "instant order", error: errorMessage(err, String(err)) };
     console.warn("[roofMeasurement] instant failed", debug);

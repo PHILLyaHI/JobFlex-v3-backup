@@ -7,6 +7,7 @@ import { checkPlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+import { takeTrialCap } from "@/lib/trialMeter";
 
 const aiDraftSchema = z.object({
   title: z.string(),
@@ -88,6 +89,9 @@ export async function generateAiProposal(prompt: string): Promise<
   if (!isOpenAIEnabled()) {
     return { ok: true, draft: STUB_DRAFT, disabled: true };
   }
+  // The card-less trial's AI ceiling (lib/trialMeter): one draft, one use.
+  const trial = await takeTrialCap(organizationId, "aiCalls");
+  if (!trial.ok) return trial.failure;
 
   try {
     // The model this process can actually call, asked once per process and

@@ -18,6 +18,7 @@ import {
   type EvDiagnostics,
   type EvLineType,
 } from "@/lib/eagleview";
+import { takeTrialCap } from "@/lib/trialMeter";
 
 // NOTE: EV_SAMPLES (sample report ids) lives in ./roofViz (a client-safe module)
 // — a "use server" file may only export async functions, so a const array here
@@ -141,6 +142,9 @@ export async function evOrderRoof(
   const { organizationId, user } = await requireEstimatorOrManager();
 await enforceRateLimit(`ev-order:${organizationId}`, 5, DAY, "roof report orders");
   if (!isEagleViewEnabled()) return { ok: false, error: "Aerial data is not configured" };
+  // A billed report: the card-less trial's own ceiling (lib/trialMeter).
+  const trial = await takeTrialCap(organizationId, "eagleViewOrders");
+  if (!trial.ok) return trial.failure;
   try {
     const { reportId } = await placeOrder(input);
     await db.eagleViewReport.upsert({

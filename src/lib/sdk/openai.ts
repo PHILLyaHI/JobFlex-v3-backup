@@ -25,10 +25,46 @@ export function getOpenAI() {
     throw new IntegrationDisabledError("OpenAI", "OPENAI_API_KEY");
   }
   if (!client) {
-    client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, fetch: meteredFetch });
   }
   return client;
 }
+
+/* THE SPEND (2026-10-02). Every request the client makes passes here: a chat
+   completion is priced from its own usage block, a transcription by the
+   audio's length (whisper-1 bills by the minute; the upload's size stands in
+   — 16-bit mono WAV at 16 kHz is 32,000 bytes a second), and the trial meter
+   records it against the request's organization (lib/trialMeter). The model
+   list (`models.retrieve`) is free and is not recorded. */
+const meteredFetch: typeof fetch = async (input, init) => {
+  const res = await fetch(input, init);
+  if (!res.ok) return res;
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  try {
+    if (/\/chat\/completions(\?|$)/.test(url)) {
+      void res
+        .clone()
+        .json()
+        .then(async (body: { model?: string; usage?: { prompt_tokens?: number; completion_tokens?: number } }) => {
+          const { notePaidCall } = await import("@/lib/trialMeter");
+          const { openAiChatCents } = await import("@/lib/paidApiCosts");
+          const u = body.usage;
+          await notePaidCall("openai", "chat", u ? { cents: openAiChatCents(body.model ?? getOpenAIModel(), u.prompt_tokens ?? 0, u.completion_tokens ?? 0) } : {});
+        })
+        .catch(() => {});
+    } else if (/\/audio\/transcriptions(\?|$)/.test(url)) {
+      let bytes = 0;
+      if (init?.body instanceof FormData) {
+        for (const [, v] of init.body.entries()) if (typeof v !== "string") bytes += v.size;
+      }
+      const minutes = bytes > 0 ? bytes / 32_000 / 60 : 1;
+      void import("@/lib/trialMeter").then((t) => t.notePaidCall("openai", "transcribe-minute", { units: minutes })).catch(() => {});
+    }
+  } catch {
+    /* recording never breaks the call */
+  }
+  return res;
+};
 
 /** Model name read at CALL time. Module-level consts are captured when the
  *  module first evaluates — under a tsx harness whose .env loader runs after

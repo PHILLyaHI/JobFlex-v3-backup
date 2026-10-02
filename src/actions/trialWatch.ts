@@ -13,10 +13,21 @@ import { db } from "@/lib/db";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { scoreTrial, sortAssessments, TRIAL_WINDOW_DAYS, WATCH_DAYS, type TrialAssessment, type ViewIn } from "@/lib/trialWatch";
 import type { CardlessRecord } from "@/lib/trialState";
+import { meterSpendCents, readTrialMeters } from "@/lib/trialMeter";
+import type { PaidService } from "@/lib/paidApiCosts";
+import type { TrialCapKey } from "@/lib/trialCaps";
 
 /** Where a company's card stands on a card-less trial (lib/cardlessTrial):
  *  null for a company that did not start one (a card-first signup). */
 export type TrialCard = "none" | "on-file" | "ended" | "restarted";
+
+/** What the trial cost us in paid APIs (lib/trialMeter): estimated cents, by
+ *  service, with the request counts, and the trial ceilings used. */
+export type TrialSpend = {
+  cents: number;
+  byService: Array<{ service: PaidService; cents: number; calls: number }>;
+  uses: Partial<Record<TrialCapKey, number>>;
+};
 
 export type TrialWatchData = {
   now: string;
@@ -24,7 +35,7 @@ export type TrialWatchData = {
   watchDays: number;
   /** False when the PageView table could not be read — not pushed to this database yet. */
   viewsAvailable: boolean;
-  rows: Array<TrialAssessment & { card: TrialCard | null }>;
+  rows: Array<TrialAssessment & { card: TrialCard | null; spend: TrialSpend }>;
 };
 
 const countBy = (rows: Array<{ organizationId: string; _count: { _all: number } }>) => new Map(rows.map((r) => [r.organizationId, r._count._all]));
@@ -117,5 +128,17 @@ export async function getTrialWatch(): Promise<TrialWatchData> {
     const lapsed = card === "none" && (org?.subscription?.status === "TRIAL_ENDED" || (org?.subscription?.trialEndsAt && org.subscription.trialEndsAt.getTime() < Date.now()));
     return { ...r, card: lapsed ? ("ended" as const) : card };
   });
-  return { now: new Date().toISOString(), windowDays: TRIAL_WINDOW_DAYS, watchDays: WATCH_DAYS, viewsAvailable, rows: withCard };
+  // Paid API spend during the trial (lib/trialMeter: recorded only while an
+  // organization is TRIALING, priced by lib/paidApiCosts).
+  const meters = await readTrialMeters(ids);
+  const rowsOut = withCard.map((r) => {
+    const m = meters.get(r.id);
+    const byService = m
+      ? (Object.keys(m.spend) as PaidService[])
+          .map((service) => ({ service, cents: m.spend[service] ?? 0, calls: m.calls[service] ?? 0 }))
+          .sort((a, b) => b.cents - a.cents)
+      : [];
+    return { ...r, spend: { cents: meterSpendCents(m), byService, uses: m?.uses ?? {} } };
+  });
+  return { now: new Date().toISOString(), windowDays: TRIAL_WINDOW_DAYS, watchDays: WATCH_DAYS, viewsAvailable, rows: rowsOut };
 }

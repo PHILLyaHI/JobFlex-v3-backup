@@ -21,6 +21,7 @@ import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import { trackActivation, trackProposalCreated } from "@/lib/activation-events";
 import { logServerError } from "@/lib/server-events";
 import { applyMemberDiscount } from "@/lib/servicePlanBook";
+import { takeTrialCap } from "@/lib/trialMeter";
 
 /**
  * The sample shown when no OpenAI key is set. Scaled from the REAL squares
@@ -103,6 +104,9 @@ await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
   if (!isOpenAIEnabled()) {
     return { ok: true, data: stubFor(input.squares, input.wastePct), disabled: true };
   }
+  // The card-less trial's AI ceiling (lib/trialMeter): one run, one use.
+  const trial = await takeTrialCap(organizationId, "aiCalls");
+  if (!trial.ok) return trial.failure;
   const where = input.address?.trim() || (input.lat != null && input.lng != null ? `${input.lat.toFixed(5)}, ${input.lng.toFixed(5)}` : "");
   const families = (input.pitchFamilies ?? []).filter((f) => Number.isFinite(f.pitch12) && f.share > 0);
   const pitchLine =
@@ -167,6 +171,7 @@ Waste factor: ${input.wastePct}%${input.roofKind === "low-slope" ? "\nRoof kind:
     return { ok: true, data: parsed };
   } catch (err: unknown) {
     logServerError("roofEstimator.estimateRoof", err, { kind: "action", organizationId });
+    if (typeof (err as { status?: unknown })?.status === "number") await trial.refund();
     return { ok: false, error: err instanceof Error ? err.message : "Generation failed" };
   }
 }

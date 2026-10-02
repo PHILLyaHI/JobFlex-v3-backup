@@ -19,6 +19,7 @@ import { getOpenAI, isOpenAIEnabled } from "@/lib/sdk/openai";
 import { checkPlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE } from "@/lib/planLimits";
 import { rateLimitShared, HOUR } from "@/lib/rateLimit";
+import { takeTrialCap } from "@/lib/trialMeter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -120,6 +121,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Audio chunk too large" }, { status: 413 });
   }
   const offset = Math.max(0, Number(form.get("offset") ?? 0) || 0);
+  // The card-less trial's AI ceiling (lib/trialMeter): every chunk is a
+  // billed Whisper run, so every chunk is one use.
+  const trial = await takeTrialCap(organizationId, "aiCalls");
+  if (!trial.ok) return NextResponse.json(trial.failure, { status: 402 });
 
   try {
     const client = getOpenAI();
@@ -155,6 +160,7 @@ export async function POST(req: Request) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Transcription failed";
     console.error(`[videoEstimator] transcription failed: ${msg}`);
+    if (typeof (err as { status?: unknown })?.status === "number") await trial.refund();
     return NextResponse.json({ error: msg }, { status: 502 });
   }
 }

@@ -877,7 +877,12 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
         const res = await hvacSiteFacts({ address: full, state: st, county: countyPicked && county ? county : undefined, lat: picked?.lat, lng: picked?.lng });
         // The contractor may have moved on to another address meanwhile.
         if ((addrRef.current?.value ?? "").trim() !== text) return;
-        if (!res.ok) { setSiteWarnings([`House record not found for this address (${res.error}) — the job runs on the address and the state.`]); return; }
+        if (!res.ok) {
+          // The card-less trial's ceiling says its own sentence and opens the dialog.
+          if (reportPlanLimitResult(res)) { setSiteWarnings([res.error]); return; }
+          setSiteWarnings([`House record not found for this address (${res.error}) — the job runs on the address and the state.`]);
+          return;
+        }
         setSite(res.facts);
         setSiteLocal(false);
         setStateCode(res.facts.state);

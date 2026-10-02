@@ -52,6 +52,7 @@ import {
   buildHomeownerManualQueue,
 } from "@/lib/email/build/platform";
 import { parseGmailSettings } from "@/lib/settings";
+import { trialBlocksText } from "@/lib/trialMeter";
 
 export { formatUSD };
 
@@ -609,6 +610,11 @@ async function sendLeadSms(
     // documented local/dev state. Said once, quietly, so a missing text during
     // testing has an explanation in the log.
     console.info(`[notify] ${tag}: SMS skipped — Twilio is not configured`);
+    return "disabled";
+  }
+  // The card-less trial sends no texts (lib/trialMeter); the email still goes.
+  if (await trialBlocksText(ctx.orgId, "lead")) {
+    console.info(`[notify] ${tag}: SMS skipped — card-less trial`);
     return "disabled";
   }
 

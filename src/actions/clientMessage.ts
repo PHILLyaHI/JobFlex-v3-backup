@@ -26,6 +26,7 @@ import { requireSalesOrManager } from "@/lib/orgContext";
 import { sendOrgEmail } from "@/lib/email/orgSend";
 import { isTwilioEnabled, sendSMS } from "@/lib/sdk/twilio";
 import { parseGmailSettings } from "@/lib/settings";
+import { enforceTrialCap } from "@/lib/trialMeter";
 
 export type ClientChannel = "email" | "sms";
 
@@ -127,6 +128,9 @@ export async function messageClient(input: {
   } else {
     if (!client.phone) throw new Error(`${client.name} has no phone number on file`);
     if (!await isTwilioEnabled()) throw new Error("Texting needs a Twilio number — set one up on the Phone page");
+    // The card-less trial sends no texts (lib/trialMeter): the refusal
+    // redirects to the trial page, which says so and adds the card.
+    await enforceTrialCap(organizationId, "smsOutbound");
     to = client.phone;
     const res = await sendSMS(to, body);
     delivered = !res.skipped;

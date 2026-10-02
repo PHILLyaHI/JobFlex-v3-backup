@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { rateLimitShared, MINUTE } from "@/lib/rateLimit";
+import { notePaidCall } from "@/lib/trialMeter";
 
 export const runtime = "nodejs";
 
@@ -51,6 +52,8 @@ export async function GET(
       signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) return new NextResponse(null, { status: 502 });
+    // A tile spends the tile allowance — the trial meter's (lib/trialMeter).
+    await notePaidCall("reportall", "tile", { orgId: session.user.activeOrgId ?? null });
     const body = await res.arrayBuffer();
     return new NextResponse(body, {
       headers: {

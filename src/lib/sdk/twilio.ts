@@ -99,6 +99,13 @@ export async function sendSMS(to: string, body: string, opts: { statusCallback?:
     body,
     ...(opts.statusCallback ? { statusCallback: opts.statusCallback } : {}),
   });
+  // Billed per segment (160 characters, 153 each once split) — lib/trialMeter.
+  try {
+    const { notePaidCall } = await import("@/lib/trialMeter");
+    await notePaidCall("twilio", "sms", { units: body.length <= 160 ? 1 : Math.ceil(body.length / 153) });
+  } catch {
+    /* recording never stops a text */
+  }
   try {
     const { db } = await import("@/lib/db");
     const at = new Date().toISOString();

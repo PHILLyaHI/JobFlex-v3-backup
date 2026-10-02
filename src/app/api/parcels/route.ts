@@ -27,6 +27,8 @@ import {
 } from "@/lib/reportall";
 import { parseWkt } from "@/lib/parcels";
 import { rateLimitShared, HOUR } from "@/lib/rateLimit";
+import { requireOrg } from "@/lib/orgContext";
+import { takeTrialCap, trialPointKey } from "@/lib/trialMeter";
 
 export const runtime = "nodejs";
 
@@ -103,6 +105,17 @@ export async function GET(req: Request) {
       { error: "Pass lat+lon, or address+region" },
       { status: 400 },
     );
+  }
+  // The card-less trial's fence ceiling (lib/trialMeter): one use per point,
+  // shared with fetchPropertyBoundary, which the page asks at the same moment.
+  // requireOrg also files this request's paid calls under the organization.
+  const organizationId = await requireOrg().then((c) => c.organizationId).catch(() => null);
+  if (organizationId) {
+    const lat = Number(latStr);
+    const lon = Number(lonStr);
+    const dedupe = byPoint && Number.isFinite(lat) && Number.isFinite(lon) ? trialPointKey(lat, lon) : `addr:${(address ?? "").toLowerCase()}|${(region ?? "").toLowerCase()}`;
+    const trial = await takeTrialCap(organizationId, "fenceLookups", { dedupe });
+    if (!trial.ok) return NextResponse.json(trial.failure, { status: 402 });
   }
 
   try {

@@ -22,6 +22,7 @@ import {
 import { reconstructRoof, latLngRingToFrame } from "@/lib/roofRecon";
 import type { RoofModel } from "@/lib/eagleview";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
+import { takeTrialCap } from "@/lib/trialMeter";
 
 const M2_TO_SQFT = 10.7639;
 
@@ -54,6 +55,10 @@ export async function reconRoofPreview(input: {
   if (!isSolarEnabled()) {
     return { ok: false, error: "Set GOOGLE_MAPS_API_KEY to enable the free roof preview." };
   }
+  // Google Solar, paid per lookup: the card-less trial counts it as a roof
+  // measurement (lib/trialMeter).
+  const trial = await takeTrialCap(rlOrg, "roofMeasurements");
+  if (!trial.ok) return trial.failure;
 
   try {
     // Resolve coordinates — the address autocomplete usually supplies them.

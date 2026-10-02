@@ -15,6 +15,7 @@
 //      thing computed lines exist to remove.
 import { readPriceCache, writePriceCache } from "@/lib/priceCache";
 import type { MaterialQuote } from "./computed-lines";
+import { notePaidCall } from "@/lib/trialMeter";
 
 interface ShoppingRow {
   title: string;
@@ -48,6 +49,7 @@ async function searchShopping(query: string, location: string | null): Promise<S
 
   const res = await fetch(url.toString(), { signal: AbortSignal.timeout(12_000) });
   if (!res.ok) return [];
+  await notePaidCall("serpapi", "search");
   const json = (await res.json()) as { shopping_results?: unknown };
   const rows = Array.isArray(json.shopping_results) ? json.shopping_results : [];
   return rows
