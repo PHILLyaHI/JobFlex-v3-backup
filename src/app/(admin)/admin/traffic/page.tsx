@@ -16,7 +16,7 @@ export default async function AdminTrafficPage() {
   await requirePlatformAdmin();
   const report = getTrafficDashboard();
   report.catch(() => undefined);
-  const [signups, live, ledger] = await Promise.all([getSignupAttribution(), getLiveTraffic(), getSignupLedger()]);
+  const [signups, live, ledger] = await Promise.all([getSignupAttribution().catch(() => null), getLiveTraffic(), getSignupLedger()]);
   const ready = await Promise.race([report, new Promise<null>((r) => setTimeout(() => r(null), REPORT_WAIT_MS))]).catch(() => null);
   const data = ready ?? emptyTrafficReport(parseTrafficFilters({}));
   return <AdminTrafficContent data={data} deferred={!ready} signups={signups} live={live} ledger={ledger} />;

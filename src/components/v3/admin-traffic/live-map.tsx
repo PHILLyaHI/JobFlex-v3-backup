@@ -15,7 +15,7 @@
  * this admin page.
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { LiveStage, LiveTotals, LiveVisitor } from "@/lib/traffic-live";
+import type { LiveStage, LiveVisitor } from "@/lib/traffic-live";
 import { Ago } from "./ticker";
 import s from "./traffic.module.css";
 
@@ -90,7 +90,7 @@ const MapBase = memo(function MapBase({ map, shapes, states, perCountry, perStat
   </>;
 });
 
-export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, timezone, totals, adNames = EMPTY_NAMES }: { visitors: LiveVisitor[]; selected: string | null; onSelect: (key: string | null) => void; timezone: string; totals?: LiveTotals | null; adNames?: Record<string, string> }) {
+export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, timezone, adNames = EMPTY_NAMES }: { visitors: LiveVisitor[]; selected: string | null; onSelect: (key: string | null) => void; timezone: string; adNames?: Record<string, string> }) {
   const [map, setMap] = useState<WorldMap | null>(null);
   const [fine, setFine] = useState<Shape[] | null>(null);
   const [states, setStates] = useState<Shape[] | null>(null);
@@ -270,17 +270,6 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
     const w = Math.max(full.w / 30, w0, (h0 * full.w) / full.h), h = (w * full.h) / full.w;
     flyTo({ x: (x0 + x1) / 2 - w / 2, y: (y0 + y1) / 2 - h / 2, w, h });
   };
-  const fitAll = () => {
-    if (!full) return;
-    if (places.length === 0) { flyTo(full); return; }
-    const xs = places.map((p) => p.x), ys = places.map((p) => p.y);
-    flyToBox(Math.min(...xs) - 20, Math.min(...ys) - 20, Math.max(...xs) + 20, Math.max(...ys) + 20);
-  };
-  const flyToCountry = (cc: string) => {
-    if (cc === "US" && usBox) { flyToBox(usBox.x0, usBox.y0, usBox.x1, usBox.y1); return; }
-    const el = svgRef.current?.querySelector<SVGGraphicsElement>(`[data-country="${cc}"]`);
-    if (el) { const b = el.getBBox(); flyToBox(b.x, b.y, b.x + b.width, b.y + b.height); }
-  };
   const clock = (iso: string) => { try { return new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(new Date(iso)); } catch { return ""; } };
   const stateName = (code: string) => (code ? states?.find((x) => x.r === code)?.n ?? code : "");
   const placeName = (v: LiveVisitor) => `${v.city || countryName(v.countryCode, v.country)}${v.countryCode === "US" && v.regionCode ? `, ${stateName(v.regionCode)}` : ""}`;
@@ -291,11 +280,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
   const shapes = detailed && fine ? fine : map.countries;
   const showStates = detailed && overUS && states;
   const labelled = zoom >= 2.5;
-  const topCountries = [...perCountry].sort((a, b) => b[1] - a[1]).slice(0, 8);
   const unplaced = visitors.filter((v) => v.lat === null || v.lon === null).length;
-  const count = visitors.length;
-  const onNow = visitors.filter((v) => v.active).length;
-  const fromAds = visitors.filter((v) => v.fromAd).length;
 
   return (
     <div className={s.map}>
@@ -313,7 +298,6 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
           <MapBase map={map} shapes={shapes} states={showStates ? states : null} perCountry={perCountry} perState={perState} />
           {clusters.map((c) => (
             <g key={`cluster-${c.key}`} data-cluster={c.key} data-tip={`${plural(c.count, "visitor", "visitors")} here · click to zoom in`} className={s.mapPin}>
-              {c.active && <circle cx={c.x} cy={c.y} r={13 * k} fill="var(--map-visitor)" className={s.livePing} />}
               <circle cx={c.x} cy={c.y} r={(c.count > 99 ? 14 : 11) * k} fill="var(--ink)" stroke="#fff" strokeWidth={2 * k} />
               <text x={c.x} y={c.y + 4 * k} textAnchor="middle" fontSize={11 * k} fontWeight={800} fill="#fff" pointerEvents="none">{c.count}</text>
             </g>
@@ -324,7 +308,6 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
             const tipText = `${placeName(v)} · ${STAGE_LABEL[v.stage]}${v.signup ? ` (${v.signup.orgName})` : ""} · ${v.source}${v.active ? " · on the site now" : ""}`;
             return (
               <g key={v.id} data-visitor={v.id} data-tip={tipText} className={s.mapPin} opacity={v.active || on ? 1 : 0.72}>
-                {v.active && <ellipse cx={px} cy={py} rx={7 * k} ry={2.6 * k} fill={colour} className={s.livePing} />}
                 <ellipse cx={px} cy={py} rx={3.2 * k} ry={1.2 * k} fill="rgba(0,0,0,.25)" />
                 <g transform={`translate(${px} ${py}) scale(${size})`}>
                   <path d={PIN} fill={colour} stroke={on ? "var(--ink)" : "#fff"} strokeWidth={on ? 2.4 : 1.9} />
@@ -340,25 +323,6 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
             </text>
           ))}
         </svg>
-
-        {/* Zoom controls */}
-        <div className={s.mapZoom}>
-          <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoomAround(view.x + view.w / 2, view.y + view.h / 2, 0.6)}>+</button>
-          <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomAround(view.x + view.w / 2, view.y + view.h / 2, 1 / 0.6)}>−</button>
-          <button type="button" title="Fit the visitors" aria-label="Fit the visitors" onClick={fitAll}>◎</button>
-          <button type="button" title="Whole world" aria-label="Whole world" onClick={() => flyTo(full)}>⟲</button>
-        </div>
-        {zoom > 1.05 && <span className={s.mapZoomLevel} data-card={!!open}>{Math.round(zoom * 10) / 10}×{showStates ? " · US states" : detailed ? " · detailed" : ""}</span>}
-
-        {/* The count, on the map (2026-09-30): what is pinned here, how many
-            of them are on the site this minute, and the day's running total,
-            so the map answers "how many" without looking anywhere else. */}
-        <div className={s.mapCount} data-card={!!open}>
-          <b>{count.toLocaleString("en-US")}</b>
-          <span>{count === 1 ? "visitor on the map" : "visitors on the map"}</span>
-          <i>{onNow.toLocaleString("en-US")} on the site now{fromAds > 0 ? ` · ${fromAds.toLocaleString("en-US")} from ads` : ""}{perCountry.size > 0 ? ` · ${plural(perCountry.size, "country", "countries")}` : ""}</i>
-          {totals && <i>{totals.today.toLocaleString("en-US")} today · {totals.allTime.toLocaleString("en-US")} all time</i>}
-        </div>
 
         {/* The name of what is under the pointer */}
         {tip && !open && <span className={s.mapTip} style={{ left: tip.x + 14, top: tip.y + 12 }}>{tip.text}</span>}
@@ -414,26 +378,20 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
         })()}
       </div>
 
-      <div className={s.mapLegend}>
-        {(Object.keys(PIN_META) as PinKind[]).map((key) => (
-          <span key={key}>
-            <svg viewBox="-9.5 -25 19 26" aria-hidden="true"><path d={PIN} fill={PIN_META[key].colour} stroke="#fff" strokeWidth={1.9} /><circle cx={0} cy={-15} r={3} fill="#fff" /></svg>
-            {PIN_META[key].label} · <b>{visitors.filter((v) => PIN_KIND[v.stage] === key).length}</b>
-          </span>
-        ))}
-        <span><i className={s.mapAdRing} aria-hidden="true"/>From an ad</span>
-        <span className={s.mapLegendNote}>Pulsing: on the site in the last 5 minutes</span>
-        {unplaced > 0 && <span className={s.mapLegendNote}>{plural(unplaced, "visitor", "visitors")} without a known place: counted, not on the map</span>}
-      </div>
-      {topCountries.length > 0 && (
-        <div className={s.mapChips}>
-          <span>Where they are</span>
-          {topCountries.map(([cc, n]) => (
-            <button key={cc} type="button" onClick={() => flyToCountry(cc)} title={`Show ${countryName(cc)}`}>{flag(cc)} {countryName(cc)} · <b>{n}</b></button>
-          ))}
-        </div>
-      )}
-      <p className={s.mapNote}>Scroll or pinch to zoom, drag to move, double-click to zoom in; zoomed in, the map turns detailed and shows the US states. Hover for names, click a pin for who it is.</p>
+      <ul className={s.mapLegend} aria-label="Map key">
+        {(Object.keys(PIN_META) as PinKind[]).map((key) => {
+          const n = visitors.filter((v) => PIN_KIND[v.stage] === key).length;
+          return (
+            <li key={key} data-zero={n === 0}>
+              <svg viewBox="-9.5 -25 19 26" aria-hidden="true"><path d={PIN} fill={PIN_META[key].colour} stroke="#fff" strokeWidth={1.9} /><circle cx={0} cy={-15} r={3} fill="#fff" /></svg>
+              <span>{PIN_META[key].label}</span>
+              <b>{n.toLocaleString("en-US")}</b>
+            </li>
+          );
+        })}
+        <li><i className={s.mapAdRing} aria-hidden="true"/><span>From an ad</span><b>{visitors.filter((v) => v.fromAd).length.toLocaleString("en-US")}</b></li>
+      </ul>
+      {unplaced > 0 && <p className={s.mapNote}>{plural(unplaced, "visitor", "visitors")} without a known place are counted but not pinned.</p>}
     </div>
   );
 });
