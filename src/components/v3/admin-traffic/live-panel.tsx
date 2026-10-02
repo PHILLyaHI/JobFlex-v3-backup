@@ -4,11 +4,11 @@
 // got — and the ones who signed up, in their own colour, named after the
 // account the database just made. Polls while the tab is visible; one shared
 // PostHog query behind it (lib/traffic-server fetchLiveEvents).
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import { Building2, Info, KeyRound, Megaphone, MousePointerClick, RefreshCw } from "lucide-react";
 import { getLiveTraffic, nameAdTag } from "@/actions/trafficDashboard";
-import { isAdId, type LiveReport, type LiveStage, type LiveVisitor } from "@/lib/traffic-live";
+import { isAdId, prospectsOf, type LiveReport, type LiveStage, type LiveVisitor } from "@/lib/traffic-live";
 import { LivePlatforms } from "./live-platforms";
 import { Ago, setClockPeriod } from "./ticker";
 import { sameReport } from "./live-diff";
@@ -27,6 +27,18 @@ import s from "./traffic.module.css";
 const LIVE_POLL_MS = 15_000;
 const POLL_MS = 45_000;
 const LIVE_MODE_KEY = "jf.traffic.liveMode";
+const LIVE_MAP_VIEW_KEY = "jf.traffic.mapView";
+type MapView = "everyone" | "prospects";
+/* The map view is kept outside React (localStorage, with the page's own
+   memory when storage is blocked) and read through useSyncExternalStore: the
+   server paints "everyone", the browser's remembered choice takes over after
+   hydration, no effect sets state. */
+let viewInMemory: MapView = "everyone";
+const viewListeners = new Set<() => void>();
+const readMapView = (): MapView => { try { const v = window.localStorage.getItem(LIVE_MAP_VIEW_KEY); if (v === "prospects" || v === "everyone") return v; } catch { /* no storage: the page's own memory */ } return viewInMemory; };
+const serverMapView = (): MapView => "everyone";
+const subscribeMapView = (cb: () => void) => { viewListeners.add(cb); return () => { viewListeners.delete(cb); }; };
+const writeMapView = (v: MapView) => { viewInMemory = v; try { window.localStorage.setItem(LIVE_MAP_VIEW_KEY, v); } catch { /* not worth a word to the user */ } for (const cb of viewListeners) cb(); };
 const fmt = (n: number) => n.toLocaleString("en-US");
 /** The window's stages in travel order; registering absorbs checkout, the
  *  same fold the map's pins use so a chip and a pin are the same colour. */
@@ -51,6 +63,12 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
   const [error, setError] = useState("");
   /** Who the map shows: the last 5 minutes (on the site now) or the whole window. */
   const [span, setSpan] = useState<5 | 30>(30);
+  // MAP VIEW (owner, 2026-10-02): everyone, or only the prospects — new
+  // visitors trying to convert, members and customers signing in left off, a
+  // signup kept for a day (lib/traffic-live prospectsOf). Remembered per
+  // browser: it is a way of watching the map, not a filter on the list.
+  const mapView = useSyncExternalStore(subscribeMapView, readMapView, serverMapView);
+  const setMapView = writeMapView;
   /** Live mode: 15-second refresh. On unless this browser turned it off. */
   const [liveMode, setLiveMode] = useState(true);
   /** The visitor opened on the map — from a pin, or from a row of the list. */
@@ -128,7 +146,13 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
   const youngDay = report.dayAgeMinutes < 120;
   const dayAge = report.dayAgeMinutes < 60 ? `${Math.max(1, report.dayAgeMinutes)} min` : `${Math.floor(report.dayAgeMinutes / 60)} h`;
   const rows = useMemo(() => report.visitors.filter((v) => (!adsOnly || v.fromAd || v.stage === "signed-up") && (!platform || v.platform === platform)), [report.visitors, adsOnly, platform]);
-  const onMap = useMemo(() => rows.filter((v) => span === 30 || v.active), [rows, span]);
+  const onMap = useMemo(() => {
+    const inWindow = rows.filter((v) => span === 30 || v.active);
+    if (mapView !== "prospects") return inWindow;
+    // The day's converts follow the platform card, never the span: they stay a day.
+    return prospectsOf(inWindow, report.converted.filter((v) => !platform || v.platform === platform));
+  }, [rows, span, mapView, report.converted, platform]);
+  const converts = useMemo(() => onMap.filter((v) => v.stage === "signed-up").length, [onMap]);
   const toggleRow = useCallback((id: string) => setSelected((cur) => (cur === id ? null : id)), []);
   const live = report.status === "ok";
   return <section className={s.live} aria-label="Live now" data-state={report.status} aria-busy={pending}>
@@ -190,14 +214,20 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
       <LivePlatforms platforms={report.platforms} selected={platform} onSelect={setPlatform} adNames={adNames}/>
       {/* The map: where everyone is, a pin per visitor in the stage colours. */}
       <div className={s.liveSpan} role="group" aria-label="Who the map shows">
+        <div className={s.dimensionTabs} style={{ margin: 0 }} role="group" aria-label="Map view">
+          <button type="button" aria-pressed={mapView === "everyone"} onClick={() => setMapView("everyone")}>Everyone</button>
+          <button type="button" aria-pressed={mapView === "prospects"} onClick={() => setMapView("prospects")} title="New visitors trying to convert — no members, no one signing in; a signup stays on the map for a day">Prospects</button>
+        </div>
         <div className={s.dimensionTabs} style={{ margin: 0 }}>
           <button type="button" aria-pressed={span === 5} onClick={() => setSpan(5)}>Now · 5 min</button>
           <button type="button" aria-pressed={span === 30} onClick={() => setSpan(30)}>Last 30 min</button>
         </div>
-        <span>{onMap.length} {onMap.length === 1 ? "visitor" : "visitors"} on the map{platform ? ` · ${report.platforms.find((p) => p.platform === platform)?.name ?? platform} only` : ""}</span>
+        <span>{mapView === "prospects"
+          ? `${onMap.length} ${onMap.length === 1 ? "prospect" : "prospects"} on the map · ${converts} signed up in the last 24 h`
+          : `${onMap.length} ${onMap.length === 1 ? "visitor" : "visitors"} on the map`}{platform ? ` · ${report.platforms.find((p) => p.platform === platform)?.name ?? platform} only` : ""}</span>
         {platform && <button type="button" className={s.textButton} onClick={() => setPlatform(null)}>Show everyone</button>}
       </div>
-      <LiveMap visitors={onMap} selected={selected} onSelect={setSelected} timezone={timezone} totals={report.totals} adNames={adNames}/>
+      <LiveMap visitors={onMap} selected={selected} onSelect={setSelected} timezone={timezone} totals={report.totals} adNames={adNames} view={mapView}/>
     </>}
     {live && !rows.length && <div className={s.liveEmpty}>{report.visitors.length ? (platform ? "Nobody from this platform in the last half hour — press the card again to see everyone." : "Nobody from an ad in the last half hour — turn off the ads filter to see everyone.") : `Nobody on the site in the last ${report.windowMinutes} minutes.`}</div>}
     {rows.length > 0 && <ol className={s.liveList} aria-label="Visitors on the site">

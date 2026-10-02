@@ -1,6 +1,6 @@
 import type { ExperimentResult, StageVisitor, StageVisitorsReport, TrafficBreakdown, TrafficDaily, TrafficFilters, TrafficReport, TrafficTotals } from "./traffic-contract";
 import { buildExperimentsQuery, buildStageVisitorsQuery, buildTrafficQueries, funnelStages, shiftDate } from "./traffic-query";
-import { buildLiveQuery, buildLiveTotalsQuery, liveEventFromRow, liveHeadline, liveTotalsFromRow, minutesIntoDay, shapeLive, type FreshSignup, type LiveEvent, type LiveReport, type LiveTotalsPair } from "./traffic-live";
+import { CONVERTED_HOURS, buildConvertedQuery, buildLiveQuery, buildLiveTotalsQuery, liveEventFromRow, liveHeadline, liveTotalsFromRow, minutesIntoDay, shapeLive, type FreshSignup, type LiveEvent, type LiveReport, type LiveTotalsPair } from "./traffic-live";
 
 /** The last half hour of events, one PostHog query, shared by every admin
  *  looking for LIVE_CACHE_MS — the query endpoint's budget is small, and the
@@ -19,6 +19,21 @@ export async function fetchLiveEvents(maxAgeMs = LIVE_CACHE_MS): Promise<LiveEve
   const promise = runTrafficQuery(buildLiveQuery(), "live").then((rows) => rows.map(liveEventFromRow).filter((e): e is LiveEvent => !!e));
   promise.catch(() => { if (liveEvents?.promise === promise) liveEvents = null; });
   liveEvents = { at: now, promise };
+  return promise;
+}
+
+/** The day's converts — the events of everyone who completed a signup in
+ *  the last CONVERTED_HOURS — for the prospects map, which keeps a convert
+ *  for a day (2026-10-02). Its own, longer cache: a signup is rare, and the
+ *  window query above already shows one the minute it happens. */
+const CONVERTED_CACHE_MS = 2 * 60_000;
+let convertedEvents: { at: number; promise: Promise<LiveEvent[]> } | null = null;
+export async function fetchConvertedEvents(): Promise<LiveEvent[]> {
+  const now = Date.now();
+  if (convertedEvents && now - convertedEvents.at < CONVERTED_CACHE_MS) return convertedEvents.promise;
+  const promise = runTrafficQuery(buildConvertedQuery(), "converted").then((rows) => rows.map(liveEventFromRow).filter((e): e is LiveEvent => !!e));
+  promise.catch(() => { if (convertedEvents?.promise === promise) convertedEvents = null; });
+  convertedEvents = { at: now, promise };
   return promise;
 }
 
@@ -48,12 +63,17 @@ export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDeve
   try {
     // The totals must never take the live view down with them: a failure
     // there leaves the window intact and the panel simply prints no totals.
-    const [events, pair] = await Promise.all([
+    const [events, pair, dayEvents] = await Promise.all([
       fetchLiveEvents(opts.fast ? LIVE_FAST_CACHE_MS : LIVE_CACHE_MS),
       fetchLiveTotals(opts.timezone || "UTC", !!opts.fullHistory).catch(() => null),
+      // Nor the converts: without them the prospects map simply shows the window.
+      fetchConvertedEvents().catch(() => [] as LiveEvent[]),
     ]);
     const totals = pair ? (opts.includeDevelopment ? pair.all : pair.production) : null;
     const shaped = shapeLive(events, signups, Date.now(), opts);
+    // The day's converts, shaped the same way over a day-long window and kept
+    // only where the signup is on the record; the prospects map merges them.
+    const converted = shapeLive(dayEvents, signups, Date.now(), { ...opts, windowMinutes: CONVERTED_HOURS * 60 }).visitors.filter((v) => v.stage === "signed-up");
     const dayAgeMinutes = minutesIntoDay(opts.timezone || "UTC");
     // The busiest platform of the window, for the sentence.
     const top = [...shaped.platforms].sort((a, b) => b.visitors - a.visitors)[0];
@@ -70,7 +90,7 @@ export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDeve
       dayAgeMinutes,
       topPlatform: top && top.visitors > 0 ? { name: top.name, visitors: top.visitors } : null,
     });
-    return { ...shaped, totals, dayAgeMinutes, headline, status: "ok", fetchedAt };
+    return { ...shaped, converted, totals, dayAgeMinutes, headline, status: "ok", fetchedAt };
   } catch (err) {
     const msg = err instanceof Error && err.name === "TimeoutError" ? "PostHog took too long. Try again shortly." : err instanceof Error ? err.message : "Live view unavailable.";
     return { ...shapeLive([], signups, Date.now(), opts), status: "error", message: msg, fetchedAt };

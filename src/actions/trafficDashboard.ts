@@ -6,7 +6,7 @@ import { getLiveTraffic as liveTraffic, getStageVisitors, getTrafficExperiments,
 import { parseTrafficFilters } from "@/lib/traffic-query";
 import { TRAFFIC_SINCE_MS } from "@/lib/traffic-visitor";
 import type { SignupAttribution } from "@/lib/traffic-contract";
-import { adNameKey, adTagsOf, signupLedgerSummary, signupPlanLabel, signupSource, signupState, type FreshSignup, type LiveReport, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
+import { adNameKey, adTagsOf, signupLedgerSummary, signupPlanLabel, signupSource, signupState, type FreshSignup, type LiveReport, type LiveVisitor, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
 
 /** The organizations made in the last day, with the owner who made them —
  *  the rows a live signup is tied back to (lib/traffic-live). */
@@ -66,8 +66,10 @@ export async function getLiveTraffic(input: Record<string, unknown> = {}): Promi
 async function withNames(report: LiveReport): Promise<LiveReport> {
   if (report.status !== "ok") return report;
   const tags = adTagsOf(report);
-  const orgIds = [...new Set(report.visitors.map((v) => v.orgId).filter(Boolean))];
-  const userIds = [...new Set(report.visitors.map((v) => v.userId).filter(Boolean))];
+  // The day's converts are named the same way: their ads, and their company once they are in the app.
+  const everyone = [...report.visitors, ...report.converted];
+  const orgIds = [...new Set(everyone.map((v) => v.orgId).filter(Boolean))];
+  const userIds = [...new Set(everyone.map((v) => v.userId).filter(Boolean))];
   const [names, orgs, users] = await Promise.all([
     tags.length ? db.syncState.findMany({ where: { key: { in: tags.map(adNameKey) } }, select: { key: true, cursor: true } }).catch(() => []) : [],
     orgIds.length ? db.organization.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } }).catch(() => []) : [],
@@ -77,13 +79,10 @@ async function withNames(report: LiveReport): Promise<LiveReport> {
   for (const t of tags) { const row = names.find((n) => n.key === adNameKey(t)); if (row?.cursor) adNames[t] = row.cursor; }
   const orgName = new Map(orgs.map((o) => [o.id, o.name]));
   const userName = new Map(users.map((u) => [u.id, u.name || u.email]));
-  return {
-    ...report,
-    adNames,
-    visitors: report.visitors.map((v) => (v.orgId && orgName.has(v.orgId)
-      ? { ...v, member: { orgName: orgName.get(v.orgId) ?? "", userName: userName.get(v.userId) ?? "" } }
-      : v)),
-  };
+  const named = (v: LiveVisitor): LiveVisitor => (v.orgId && orgName.has(v.orgId)
+    ? { ...v, member: { orgName: orgName.get(v.orgId) ?? "", userName: userName.get(v.userId) ?? "" } }
+    : v);
+  return { ...report, adNames, visitors: report.visitors.map(named), converted: report.converted.map(named) };
 }
 
 /** Name an ad or campaign id the way the owner knows it ("Roofing · 40 s v1").

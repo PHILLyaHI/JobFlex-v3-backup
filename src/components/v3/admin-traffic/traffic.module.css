@@ -648,3 +648,12 @@
 :global(.jf-blueprint) .clicksInput:focus-visible { outline:2px solid var(--blueprint); outline-offset:1px; }
 :global(.jf-blueprint) .table td[data-sign="down"] { color:var(--danger, #a83232); font-weight:700; }
 :global(.jf-blueprint) .table td[data-sign="up"] { color:var(--success, #3a7d44); font-weight:700; }
+
+/* ── Full screen (owner, 2026-10-02): the map box over the whole window ──
+   The drawing keeps its own proportions inside it (sized by the component),
+   centred; everything the box already holds — zoom buttons, the count, the
+   visitor card — comes along. */
+:global(.jf-blueprint) .mapBox[data-wide="true"] { position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center; border:0; border-radius:0; }
+:global(.jf-blueprint) .mapBox[data-wide="true"] .mapSvg { flex:none; }
+:global(.jf-blueprint) .mapZoom button svg { width:14px; height:14px; }
+:global(.jf-blueprint) .mapZoom button[aria-pressed="true"] { background:var(--ink); color:var(--paper); }

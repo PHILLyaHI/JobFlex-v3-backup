@@ -3,7 +3,7 @@
 // signups named after the organization the database made. Static imports
 // only (tsx has no top-level await).
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/traffic-live.check.ts
-import { AD_PLATFORM_KEYS, adTagsOf, buildLiveQuery, isAdId, landingTradeOf, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, liveHeadline, minutesIntoDay, signupLedgerSummary, signupPlanLabel, signupState, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
+import { AD_PLATFORM_KEYS, adTagsOf, buildConvertedQuery, buildLiveQuery, prospectsOf, isAdId, landingTradeOf, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, liveHeadline, minutesIntoDay, signupLedgerSummary, signupPlanLabel, signupState, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
 
 let bad = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -337,4 +337,23 @@ check("a long run of digits is an ad id worth naming; a written name is not", is
 check("the tags to look names up for are every campaign and ad the report shows", adTagsOf(r).includes(ana.campaign) && adTagsOf({ visitors: [fenceAd], platforms: [] }).includes("120248923877540280"));
 
 console.log(bad ? `\n${bad} failing` : "\nall green");
+
+// ── prospects (owner, 2026-10-02): new visitors trying to convert, no members; a convert stays a day
+const cq = buildConvertedQuery();
+check("the converts query reads the last day of everyone who completed a signup in it, with the live columns", /INTERVAL 24 HOUR/.test(cq) && /distinct_id IN \(SELECT distinct_id FROM events WHERE event = 'jf_signup_completed'/.test(cq) && /jf_org_id/.test(cq) && /toUnixTimestamp\(timestamp\) \* 1000/.test(cq) && /LIMIT 3000/.test(cq));
+const dayWin = shapeLive([ev({ person: "p-old", at: min(180), pathname: "/auth/register" }), ev({ person: "p-old", at: min(178), event: "jf_signup_completed", pathname: "/auth/register", outcome: "trial_started", plan: "pro", verified: "true", city: "Denver" })], [], NOW, { windowMinutes: 24 * 60 });
+check("a day-long window shapes a three-hour-old signup as signed up, and says the window is a day", dayWin.visitors.length === 1 && dayWin.visitors[0].stage === "signed-up" && dayWin.windowMinutes === 1440 && dayWin.converted.length === 0);
+check("the half-hour window does not hold it", shapeLive([ev({ person: "p-old", at: min(180) })], [], NOW).visitors.length === 0 && shapeLive([], [], NOW).windowMinutes === 30);
+const member = shapeLive([ev({ person: "p-mem2", at: min(2), pathname: "/dashboard/jobs", orgId: "org_2", userId: "user_2" })], [], NOW).visitors[0];
+const memberConv = shapeLive([ev({ person: "p-mem2", at: min(130), pathname: "/auth/register" }), ev({ person: "p-mem2", at: min(128), event: "jf_signup_completed", pathname: "/auth/register", verified: "true", plan: "starter" }), ev({ person: "p-mem2", at: min(2), pathname: "/dashboard/jobs", orgId: "org_2", userId: "user_2" })], [], NOW, { windowMinutes: 1440 }).visitors[0];
+const signinV = shapeLive([ev({ person: "p-in", at: min(3), pathname: "/auth/login" })], [], NOW).visitors[0];
+const looker = shapeLive([ev({ person: "p-look", at: min(1), pathname: "/pricing" })], [], NOW).visitors[0];
+const pros = prospectsOf([member, signinV, looker], [dayWin.visitors[0], memberConv], NOW);
+check("prospects: the looker stays, the customer signing in and the member go, the day's converts come", pros.length === 3 && pros.some((v) => v.id === looker.id) && !pros.some((v) => v.id === signinV.id) && pros.some((v) => v.id === dayWin.visitors[0].id), pros.map((v) => `${v.id}:${v.stage}`).join(" "));
+const mergedMember = pros.find((v) => v.id === member.id);
+check("a member who signed up two hours ago is on it as signed up, with the window's fresh page and the signup's time", !!mergedMember && mergedMember.stage === "signed-up" && mergedMember.page === "/dashboard/jobs" && mergedMember.signedUpAt === memberConv.signedUpAt && mergedMember.orgId === "org_2");
+check("a convert older than a day is gone", prospectsOf([], [{ ...dayWin.visitors[0], signedUpAt: new Date(NOW - 25 * 3_600_000).toISOString() }], NOW).length === 0);
+check("a convert is listed once, even when the window holds them too", prospectsOf([dayWin.visitors[0]], [dayWin.visitors[0]], NOW).length === 1);
+check("the tags to name include the converts' ads", adTagsOf({ visitors: [], platforms: [], converted: [{ ...looker, campaign: "120248923877540999" }] }).includes("120248923877540999"));
+
 process.exit(bad ? 1 : 0);

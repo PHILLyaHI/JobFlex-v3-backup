@@ -15,6 +15,7 @@
  * this admin page.
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Maximize2, Minimize2 } from "lucide-react";
 import type { LiveStage, LiveTotals, LiveVisitor } from "@/lib/traffic-live";
 import { Ago } from "./ticker";
 import s from "./traffic.module.css";
@@ -90,7 +91,9 @@ const MapBase = memo(function MapBase({ map, shapes, states, perCountry, perStat
   </>;
 });
 
-export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, timezone, totals, adNames = EMPTY_NAMES }: { visitors: LiveVisitor[]; selected: string | null; onSelect: (key: string | null) => void; timezone: string; totals?: LiveTotals | null; adNames?: Record<string, string> }) {
+export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, timezone, totals, adNames = EMPTY_NAMES, view: mode = "everyone" }: { visitors: LiveVisitor[]; selected: string | null; onSelect: (key: string | null) => void; timezone: string; totals?: LiveTotals | null; adNames?: Record<string, string>;
+  /** "prospects" (2026-10-02): the panel has already left members and sign-ins off and kept the day's converts; the map words itself for it. */
+  view?: "everyone" | "prospects" }) {
   const [map, setMap] = useState<WorldMap | null>(null);
   const [fine, setFine] = useState<Shape[] | null>(null);
   const [states, setStates] = useState<Shape[] | null>(null);
@@ -105,6 +108,51 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
 
   const full = useMemo<View | null>(() => (map ? { x: map.view[0], y: map.view[1], w: map.view[2], h: map.view[3] } : null), [map]);
   useEffect(() => { if (full && !viewRef.current) { viewRef.current = full; setView(full); } }, [full]);
+
+  /* FULL SCREEN (owner, 2026-10-02): the map alone, over the whole window.
+     The box goes fixed over everything and the drawing keeps its own
+     proportions inside it — measured here, not in vh units (the shell root
+     carries a CSS zoom, under which vh lies) — so the pointer→map maths stay
+     exact. Where the browser has an element full-screen mode (not on an
+     iPhone) it is asked for too, so the tab bar goes away; the button, Esc or
+     leaving the browser's mode all bring the page back. */
+  const [wide, setWide] = useState(false);
+  const [fit, setFit] = useState<{ w: number; h: number } | null>(null);
+  const openWide = () => {
+    setWide(true);
+    const el = boxRef.current;
+    if (el?.requestFullscreen) el.requestFullscreen().catch(() => undefined);
+  };
+  const closeWide = useCallback(() => {
+    setWide(false);
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    if (!wide) return;
+    const box = boxRef.current;
+    const measure = () => {
+      if (!box || !full) return;
+      const w = Math.min(box.clientWidth, (box.clientHeight * full.w) / full.h);
+      setFit({ w, h: (w * full.h) / full.w });
+    };
+    measure();
+    const watch = box && typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (watch && box) watch.observe(box); else window.addEventListener("resize", measure);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeWide(); };
+    const onMode = () => { if (!document.fullscreenElement) setWide(false); };
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("fullscreenchange", onMode);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      watch?.disconnect();
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("fullscreenchange", onMode);
+      document.body.style.overflow = overflow;
+      setFit(null);
+    };
+  }, [wide, full, closeWide]);
 
   // Natural Earth 1, the same projection the map files were drawn with.
   const project = useCallback((lon: number, lat: number): [number, number] => {
@@ -296,15 +344,17 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
   const count = visitors.length;
   const onNow = visitors.filter((v) => v.active).length;
   const fromAds = visitors.filter((v) => v.fromAd).length;
+  const converted = visitors.filter((v) => v.stage === "signed-up").length;
+  const prospects = mode === "prospects";
 
   return (
     <div className={s.map}>
-      <div ref={boxRef} className={s.mapBox} onPointerLeave={() => setTip(null)}>
+      <div ref={boxRef} className={s.mapBox} data-wide={wide || undefined} onPointerLeave={() => setTip(null)}>
         <svg
           ref={svgRef}
           viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
           className={s.mapSvg}
-          style={{ aspectRatio: `${full.w} / ${full.h}` }}
+          style={wide && fit ? { width: fit.w, height: fit.h } : { aspectRatio: `${full.w} / ${full.h}` }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
           onDoubleClick={(e) => { const p = toMap(e.clientX, e.clientY); const v = viewRef.current!; flyTo({ w: v.w / 2, h: v.h / 2, x: p.x - v.w / 4, y: p.y - v.h / 4 }); }}
           role="img" aria-label={`World map: ${plural(visitors.length - unplaced, "visitor", "visitors")} in ${plural(places.length, "place", "places")}.`}
@@ -347,6 +397,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
           <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomAround(view.x + view.w / 2, view.y + view.h / 2, 1 / 0.6)}>−</button>
           <button type="button" title="Fit the visitors" aria-label="Fit the visitors" onClick={fitAll}>◎</button>
           <button type="button" title="Whole world" aria-label="Whole world" onClick={() => flyTo(full)}>⟲</button>
+          <button type="button" title={wide ? "Back to the page · Esc" : "Full screen"} aria-label={wide ? "Exit full screen" : "Full screen"} aria-pressed={wide} onClick={() => (wide ? closeWide() : openWide())}>{wide ? <Minimize2 size={14}/> : <Maximize2 size={14}/>}</button>
         </div>
         {zoom > 1.05 && <span className={s.mapZoomLevel} data-card={!!open}>{Math.round(zoom * 10) / 10}×{showStates ? " · US states" : detailed ? " · detailed" : ""}</span>}
 
@@ -355,8 +406,9 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
             so the map answers "how many" without looking anywhere else. */}
         <div className={s.mapCount} data-card={!!open}>
           <b>{count.toLocaleString("en-US")}</b>
-          <span>{count === 1 ? "visitor on the map" : "visitors on the map"}</span>
+          <span>{prospects ? (count === 1 ? "prospect on the map" : "prospects on the map") : count === 1 ? "visitor on the map" : "visitors on the map"}</span>
           <i>{onNow.toLocaleString("en-US")} on the site now{fromAds > 0 ? ` · ${fromAds.toLocaleString("en-US")} from ads` : ""}{perCountry.size > 0 ? ` · ${plural(perCountry.size, "country", "countries")}` : ""}</i>
+          {prospects && <i>{converted.toLocaleString("en-US")} signed up in the last 24 h</i>}
           {totals && <i>{totals.today.toLocaleString("en-US")} today · {totals.allTime.toLocaleString("en-US")} all time</i>}
         </div>
 
@@ -382,10 +434,11 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
                   <p className={s.mapVisitorTop}>
                     <em style={{ background: PIN_META[kind].colour }}>{STAGE_LABEL[v.stage]}</em>
                     <b>{v.source}</b>{v.trade ? <span>· {v.trade}</span> : null}{v.campaign ? <span>· {adNames[v.campaign] || v.campaign}</span> : null}{v.content && v.content !== v.campaign ? <span>· {adNames[v.content] || v.content}</span> : null}
-                    <span className={s.mapWhen} data-active={v.active}>{v.active ? "on the site now" : <>left <Since iso={v.lastAt}/> ago</>}</span>
+                    {/* A convert says when they signed up — beside "on the site now" while they are, instead of "left" once they have gone. */}
+                    <span className={s.mapWhen} data-active={v.active}>{v.active ? "on the site now" : v.stage === "signed-up" && v.signedUpAt ? null : <>left <Since iso={v.lastAt}/> ago</>}{v.stage === "signed-up" && v.signedUpAt ? <>{v.active ? " · " : ""}signed up <Since iso={v.signedUpAt}/> ago</> : null}</span>
                   </p>
                   {v.signup && <p className={s.mapSignup}>Signed up → <b>{v.signup.orgName}</b> · {v.signup.ownerEmail}{v.signup.plan ? ` · ${v.signup.plan}` : ""}</p>}
-                  {!v.signup && v.member && <p className={s.mapSignup}>Member → <b>{v.member.orgName}</b>{v.member.userName ? ` · ${v.member.userName}` : ""}</p>}
+                  {!v.signup && v.member && <p className={s.mapSignup}>{v.stage === "signed-up" ? "Signed up" : "Member"} → <b>{v.member.orgName}</b>{v.member.userName ? ` · ${v.member.userName}` : ""}</p>}
                   <div className={s.mapNow}>
                     <span>{v.active ? "Now on" : "Last seen on"}</span>
                     <b>{v.pageLabel}</b>
@@ -415,7 +468,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
       </div>
 
       <div className={s.mapLegend}>
-        {(Object.keys(PIN_META) as PinKind[]).map((key) => (
+        {(Object.keys(PIN_META) as PinKind[]).filter((key) => !prospects || (key !== "member" && key !== "signing-in")).map((key) => (
           <span key={key}>
             <svg viewBox="-9.5 -25 19 26" aria-hidden="true"><path d={PIN} fill={PIN_META[key].colour} stroke="#fff" strokeWidth={1.9} /><circle cx={0} cy={-15} r={3} fill="#fff" /></svg>
             {PIN_META[key].label} · <b>{visitors.filter((v) => PIN_KIND[v.stage] === key).length}</b>
@@ -423,6 +476,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
         ))}
         <span><i className={s.mapAdRing} aria-hidden="true"/>From an ad</span>
         <span className={s.mapLegendNote}>Pulsing: on the site in the last 5 minutes</span>
+        {prospects && <span className={s.mapLegendNote}>Prospects: members and customers signing in are left off; a signup stays on the map for a day.</span>}
         {unplaced > 0 && <span className={s.mapLegendNote}>{plural(unplaced, "visitor", "visitors")} without a known place: counted, not on the map</span>}
       </div>
       {topCountries.length > 0 && (
@@ -433,7 +487,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
           ))}
         </div>
       )}
-      <p className={s.mapNote}>Scroll or pinch to zoom, drag to move, double-click to zoom in; zoomed in, the map turns detailed and shows the US states. Hover for names, click a pin for who it is.</p>
+      <p className={s.mapNote}>Scroll or pinch to zoom, drag to move, double-click to zoom in; zoomed in, the map turns detailed and shows the US states. Hover for names, click a pin for who it is. The last button in the corner fills the screen with the map; Esc brings the page back.</p>
     </div>
   );
 });

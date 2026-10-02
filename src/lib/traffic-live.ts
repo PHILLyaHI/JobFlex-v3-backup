@@ -31,6 +31,9 @@ import { resolveLandingVariant, VARIANT_TRADE } from "@/components/v3/landing-e/
 
 export const LIVE_WINDOW_MINUTES = 30;
 export const LIVE_ACTIVE_MINUTES = 5;
+/** PROSPECTS (owner, 2026-10-02): the map of people who might become
+ *  customers keeps someone who signed up for this long after they did. */
+export const CONVERTED_HOURS = 24;
 /** The verified signup event and the database row are this close in time. */
 const SIGNUP_MATCH_MS = 15 * 60_000;
 
@@ -278,6 +281,10 @@ export interface LiveReport {
   /** Fresh organizations no live visitor could be tied to (their visit was
    *  before the window, or the browser blocked analytics). */
   otherSignups: Array<{ orgName: string; ownerEmail: string; at: string; source: string; planLabel: string }>;
+  /** Everyone who completed a signup in the last CONVERTED_HOURS, shaped
+   *  like a visitor (stage "signed-up"), whether or not their visit is still
+   *  inside the window. The prospects map keeps them for a day (prospectsOf). */
+  converted: LiveVisitor[];
   /** Names the owner gave ad and campaign ids (Meta sends {{campaign.id}} /
    *  {{ad.id}} as numbers), keyed by the id as it arrives. Filled in by the
    *  admin's server action. */
@@ -304,9 +311,9 @@ export function landingTradeOf(urls: readonly string[]): string {
 }
 
 /** Every ad and campaign tag the report shows — what the server looks names up for. */
-export function adTagsOf(report: Pick<LiveReport, "visitors" | "platforms">): string[] {
+export function adTagsOf(report: Pick<LiveReport, "visitors" | "platforms"> & { converted?: LiveVisitor[] }): string[] {
   const out = new Set<string>();
-  for (const v of report.visitors) { if (v.campaign) out.add(v.campaign); if (v.content) out.add(v.content); }
+  for (const v of [...report.visitors, ...(report.converted ?? [])]) { if (v.campaign) out.add(v.campaign); if (v.content) out.add(v.content); }
   for (const p of report.platforms) for (const c of p.campaigns) { if (c.campaign) out.add(c.campaign); if (c.content) out.add(c.content); }
   return [...out].filter((t) => t.length <= 120);
 }
@@ -696,8 +703,10 @@ export function liveHeadline(r: {
 }
 
 /** The visitors of the window, newest activity first, signups on top. */
-export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Date.now(), opts: { includeDevelopment?: boolean; fullHistory?: boolean } = {}): Omit<LiveReport, "status" | "message" | "fetchedAt"> {
-  const windowStart = now - LIVE_WINDOW_MINUTES * 60_000;
+export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Date.now(), opts: { includeDevelopment?: boolean; fullHistory?: boolean; windowMinutes?: number } = {}): Omit<LiveReport, "status" | "message" | "fetchedAt"> {
+  // The half hour, or the day when the converts are shaped (traffic-server).
+  const windowMinutes = opts.windowMinutes ?? LIVE_WINDOW_MINUTES;
+  const windowStart = now - windowMinutes * 60_000;
   const activeSince = now - LIVE_ACTIVE_MINUTES * 60_000;
   const byPerson = new Map<string, LiveEvent[]>();
   for (const e of events) {
@@ -852,7 +861,7 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
     .slice(0, 12)
     .map((s) => ({ orgName: s.orgName, ownerEmail: s.ownerEmail, at: s.createdAt, source: signupSource(s).label, planLabel: signupPlanLabel(s, now) }));
   return {
-    windowMinutes: LIVE_WINDOW_MINUTES,
+    windowMinutes,
     activeMinutes: LIVE_ACTIVE_MINUTES,
     visitors,
     counts,
@@ -862,7 +871,34 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
     platforms: platformCards(visitors, signups),
     today: { signups: signups.length, fromAds: signups.filter((s) => signupSource(s).fromAd).length },
     otherSignups,
+    converted: [],
   };
+}
+
+/** PROSPECTS (owner, 2026-10-02): the map of the people who might become
+ *  customers. Members in the app and customers signing in are left off —
+ *  they are not converting, they have. Someone who signed up stays on it
+ *  for CONVERTED_HOURS after they did, as "signed up": even when their
+ *  latest visit is already inside the app (a trial poking around), and even
+ *  after their visit has left the half-hour window — `converted` is the
+ *  day's signups shaped over a day-long window. A convert the window still
+ *  holds keeps the window's fresher trail, with the signup written on it. */
+export function prospectsOf(visitors: LiveVisitor[], converted: LiveVisitor[], now = Date.now()): LiveVisitor[] {
+  const since = now - CONVERTED_HOURS * 3_600_000;
+  const recent = new Map(converted.filter((c) => c.signedUpAt && Date.parse(c.signedUpAt) >= since).map((c) => [c.id, c]));
+  const out: LiveVisitor[] = [];
+  for (const v of visitors) {
+    const c = recent.get(v.id);
+    if (c) {
+      recent.delete(v.id);
+      out.push({ ...v, stage: "signed-up", signedUpAt: v.signedUpAt ?? c.signedUpAt, signup: v.signup ?? c.signup, trade: v.trade || c.trade, campaign: v.campaign || c.campaign, content: v.content || c.content });
+      continue;
+    }
+    if (v.stage === "member" || v.stage === "signing-in") continue;
+    out.push(v);
+  }
+  for (const c of recent.values()) out.push(c);
+  return out;
 }
 
 /** The platform cards: every ad platform (even at zero), then the others
@@ -915,10 +951,32 @@ export function platformCards(visitors: LiveVisitor[], signups: FreshSignup[]): 
     .sort((a, b) => order(a) - order(b) || b.visitors - a.visitors || b.signedUpToday - a.signedUpToday || a.name.localeCompare(b.name));
 }
 
+/** The events the live view reads, as a HogQL list. */
+const liveEventsSql = () => ["'$pageview'", ...[E.step, E.attempt, E.opened, E.completed, E.landingView, E.ctaClick].map((e) => `'${e}'`)].join(", ");
+
 /** The one HogQL query behind the panel: the window's events, one row each. */
 export function buildLiveQuery(windowMinutes = LIVE_WINDOW_MINUTES): string {
+  return `${liveSelectSql()}
+    WHERE timestamp > now() - INTERVAL ${Math.max(5, Math.min(120, Math.round(windowMinutes)))} MINUTE AND event IN (${liveEventsSql()})
+    ORDER BY timestamp DESC LIMIT 4000`;
+}
+
+/** The last day's events of everyone who completed a signup in it, for the
+ *  prospects map (which keeps a convert for CONVERTED_HOURS): the same
+ *  columns, so the same parser and shaping read them. The subquery is on
+ *  distinct_id — the server-side completion event and the browser's own
+ *  pageviews share it. */
+export function buildConvertedQuery(hours = CONVERTED_HOURS): string {
+  const h = Math.max(1, Math.min(72, Math.round(hours)));
+  return `${liveSelectSql()}
+    WHERE timestamp > now() - INTERVAL ${h} HOUR AND event IN (${liveEventsSql()})
+      AND distinct_id IN (SELECT distinct_id FROM events WHERE event = '${E.completed}' AND timestamp > now() - INTERVAL ${h} HOUR)
+    ORDER BY timestamp DESC LIMIT 3000`;
+}
+
+/** The columns every live row carries, in the order liveEventFromRow reads them. */
+function liveSelectSql(): string {
   const prop = (name: string) => `ifNull(toString(properties.${name}), '')`;
-  const events = ["'$pageview'", ...[E.step, E.attempt, E.opened, E.completed, E.landingView, E.ctaClick].map((e) => `'${e}'`)].join(", ");
   return `SELECT toString(person_id), toString(distinct_id), event, toUnixTimestamp(timestamp) * 1000,
     ${prop("$pathname")}, ${prop("$current_url")}, ${prop("$session_id")},
     ${prop("jf_hostname")}, ${prop("jf_environment")},
@@ -932,9 +990,7 @@ export function buildLiveQuery(windowMinutes = LIVE_WINDOW_MINUTES): string {
     multiIf(${CLICK_ID_KEYS.map((k) => `${prop(k)} != '', '${k}'`).join(", ")}, ''),
     ${prop("placement")}, ${prop("label")}, ${prop("jf_org_id")}, ${prop("jf_user_id")},
     ${UA_SQL}, ${BROWSER_TYPE_SQL}
-    FROM events
-    WHERE timestamp > now() - INTERVAL ${Math.max(5, Math.min(120, Math.round(windowMinutes)))} MINUTE AND event IN (${events})
-    ORDER BY timestamp DESC LIMIT 4000`;
+    FROM events`;
 }
 
 /** A timezone name, safe to paste into HogQL. Anything else falls back to UTC
