@@ -1,309 +1,198 @@
-/* Traffic — a scoped drafting sheet inside the admin shell (2026-10-01 redesign).
-   One system, used everywhere on the page:
-     section head  icon plate + uppercase title + one meta line, tools on the right
-     card          white plate, 2px ink frame
-     KPI strip     equal tiles split by hairlines; the lead tile is the one blue block
-     card head     uppercase title, meta line, controls on the right
-   Sections sit 56px apart; parts of a section 16px apart. Mono is for labels
-   and annotations only; values are Inter with tabular figures. */
-:global(.jf-blueprint) .root {
-  --t-line: var(--hair); --t-plate: var(--paper-deep); --t-label: var(--ink-soft);
-  /* Visitor stage colours: the map pins, the list marks and the legend. */
-  --map-visitor:#e11d48; --map-signin:#0891b2; --map-signing:#f59e0b; --map-signed:#15803d; --map-member:#1e293b; --map-ad:#7c3aed;
-  display:flex; flex-direction:column; gap:56px; min-width:0; padding-bottom:24px; font-family:var(--font); color:var(--ink);
-}
+/* Traffic is a scoped drafting sheet inside the existing admin shell.
+   Scale: mono annotations never drop below 11px, body copy is 13px, and every
+   card is a white plate with a 2px ink frame on the paper ground. */
+:global(.jf-blueprint) .root { --traffic-line: var(--hair); --traffic-plate: var(--paper-deep); --traffic-label: var(--ink-soft); display:flex; flex-direction:column; gap:24px; min-width:0; font-family:var(--font); color:var(--ink); }
 :global(.jf-blueprint) .root * { box-sizing:border-box; }
 :global(.jf-blueprint) .root button { cursor:pointer; font-family:inherit; }
-:global(.jf-blueprint) .root button:disabled { opacity:.45; cursor:not-allowed; }
-:global(.jf-blueprint) .root[aria-busy="true"] button:disabled, :global(.jf-blueprint) .root [aria-busy="true"] button:disabled { cursor:wait; }
-:global(.jf-blueprint) .root :is(button, input, select, summary, a, label):focus-visible { outline:3px solid var(--blueprint); outline-offset:2px; }
+:global(.jf-blueprint) .root button:disabled { opacity:.5; cursor:wait; }
+:global(.jf-blueprint) .root :is(button, input, select, summary, a):focus-visible { outline:3px solid var(--blueprint); outline-offset:3px; }
 
-/* ── Page header ───────────────────────────────────────────── */
-:global(.jf-blueprint) .header { display:flex; justify-content:space-between; align-items:flex-end; gap:12px 24px; flex-wrap:wrap; padding-bottom:20px; border-bottom:2px solid var(--ink); margin-bottom:-24px; }
-:global(.jf-blueprint) .header h1 { margin:0; font:900 clamp(40px,4vw,56px)/1 var(--font); letter-spacing:-.06em; }
+/* ── Header ─────────────────────────────────────────────────── */
+:global(.jf-blueprint) .header { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; }
+:global(.jf-blueprint) .eyebrow { font:700 11px/1.5 var(--font-mono); text-transform:uppercase; letter-spacing:.12em; color:var(--blueprint); }
+:global(.jf-blueprint) .header h1 { margin:6px 0 0; font:900 clamp(40px,4vw,56px)/1 var(--font); letter-spacing:-.06em; }
 :global(.jf-blueprint) .header h1 > span { color:var(--blueprint); }
-:global(.jf-blueprint) .headerMeta { display:flex; align-items:center; gap:8px 20px; flex-wrap:wrap; padding-bottom:6px; }
-:global(.jf-blueprint) .status { display:inline-flex; align-items:center; gap:8px; font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; color:var(--success-dark); }
+:global(.jf-blueprint) .headerActions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+:global(.jf-blueprint) :is(.button,.iconButton,.primary,.dateButton) { min-height:44px; border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); color:var(--ink); display:inline-flex; align-items:center; justify-content:center; gap:9px; padding:0 16px; font-size:13px; font-weight:800; transition:box-shadow .12s var(--ease), background .12s var(--ease); }
+:global(.jf-blueprint) :is(.button,.iconButton,.dateButton):hover { box-shadow:2px 2px 0 var(--ink); }
+:global(.jf-blueprint) .iconButton { width:44px; padding:0; }
+:global(.jf-blueprint) .primary { background:var(--blueprint); border-color:var(--blueprint); color:white; }
+:global(.jf-blueprint) .primary:hover { background:var(--blueprint-dark); box-shadow:2px 2px 0 var(--ink); }
+:global(.jf-blueprint) .status { display:inline-flex; align-items:center; gap:8px; font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--success-dark); }
 :global(.jf-blueprint) .status i { width:8px; height:8px; background:currentColor; }
 :global(.jf-blueprint) .status[data-state="warning"] { color:var(--warning-dark); }
-:global(.jf-blueprint) .updated { font:600 12px var(--font-mono); color:var(--muted); white-space:nowrap; }
 
-/* ── Sections ──────────────────────────────────────────────── */
-:global(.jf-blueprint) .section { display:flex; flex-direction:column; gap:16px; min-width:0; scroll-margin-top:24px; }
-:global(.jf-blueprint) .sectionHead { display:flex; justify-content:space-between; align-items:center; gap:14px 24px; flex-wrap:wrap; }
-:global(.jf-blueprint) .sectionTitle { display:flex; align-items:center; gap:14px; min-width:0; }
-:global(.jf-blueprint) .sectionTitle h2 { margin:0; font:900 34px/1 var(--font); text-transform:uppercase; letter-spacing:-.03em; }
-:global(.jf-blueprint) .sectionMeta { margin:7px 0 0; font:600 12px/1.4 var(--font-mono); color:var(--muted); overflow-wrap:anywhere; }
-:global(.jf-blueprint) .sectionIcon { position:relative; flex:0 0 auto; width:48px; height:48px; display:grid; place-items:center; border-radius:2px; background:var(--ink); color:var(--t-plate); }
-/* Live: the plate turns green and breathes while someone is on the site. */
-:global(.jf-blueprint) .sectionIcon[data-live="true"] { background:var(--success-dark); animation:livePulse 1.8s ease-in-out infinite; }
-@keyframes livePulse { 0%,100% { box-shadow:0 0 0 0 color-mix(in oklab, var(--success) 45%, transparent); } 50% { box-shadow:0 0 0 7px color-mix(in oklab, var(--success) 0%, transparent); } }
-:global(.jf-blueprint) .sectionTools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+/* ── All-time strip ─────────────────────────────────────────── */
+:global(.jf-blueprint) .lifetime { border-top:2px solid var(--ink); border-bottom:1px solid var(--ink); display:flex; align-items:center; gap:28px; padding:14px 0; font:600 12px var(--font-mono); color:var(--traffic-label); }
+:global(.jf-blueprint) .lifetime > span:not(.scope):not(.updated) { display:flex; gap:10px; align-items:baseline; }
+:global(.jf-blueprint) .lifetime strong { font:850 22px var(--font); letter-spacing:-.04em; color:var(--ink); }
+:global(.jf-blueprint) .scope { color:var(--muted); font-size:11px; }
+:global(.jf-blueprint) .updated { margin-left:auto; font-size:11px; color:var(--muted); white-space:nowrap; }
 
-/* ── Controls ──────────────────────────────────────────────── */
-:global(.jf-blueprint) :is(.button,.iconButton,.primary,.dateButton) { min-height:44px; border:2px solid var(--ink); border-radius:2px; background:var(--t-plate); color:var(--ink); display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:0 16px; font-size:13px; font-weight:800; white-space:nowrap; transition:box-shadow .14s var(--ease), background .14s var(--ease); }
-:global(.jf-blueprint) :is(.button,.iconButton,.dateButton):hover:not(:disabled) { box-shadow:2px 2px 0 var(--ink); }
-:global(.jf-blueprint) .button[aria-expanded="true"] { background:var(--ink); color:var(--t-plate); }
-:global(.jf-blueprint) .iconButton { width:44px; padding:0; }
-:global(.jf-blueprint) .primary { background:var(--blueprint); border-color:var(--blueprint); color:#fff; }
-:global(.jf-blueprint) .primary:hover:not(:disabled) { background:var(--blueprint-dark); box-shadow:2px 2px 0 var(--ink); }
-:global(.jf-blueprint) .textButton { min-height:44px; border:0; padding:0 8px; background:transparent; color:var(--ink); text-decoration:underline; text-underline-offset:3px; font-size:13px; font-weight:700; }
-:global(.jf-blueprint) .count { display:inline-grid; place-items:center; min-width:20px; height:20px; padding:0 5px; background:var(--blueprint); color:#fff; font:800 11px/1 var(--font-mono); font-style:normal; }
-/* Segmented control: one frame, the chosen option filled ink. */
-:global(.jf-blueprint) .segment { display:inline-flex; border:2px solid var(--ink); border-radius:2px; background:var(--t-plate); overflow:hidden; max-width:100%; }
-:global(.jf-blueprint) .segment button { min-height:40px; padding:0 14px; border:0; border-right:1px solid var(--t-line); background:transparent; color:var(--ink); font:700 12px var(--font-mono); white-space:nowrap; transition:background .14s var(--ease); }
+/* ── Filter panel: one white plate, three rows ──────────────── */
+:global(.jf-blueprint) .filterPanel { position:relative; z-index:5; border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); }
+:global(.jf-blueprint) .rangeRow { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:16px 20px; border-bottom:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .filterCaption { display:flex; gap:9px; align-items:center; margin-right:auto; font:700 12px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; }
+:global(.jf-blueprint) .filterCaption svg { color:var(--blueprint); }
+:global(.jf-blueprint) .segment { display:flex; border:1.5px solid var(--ink); border-radius:2px; background:var(--traffic-plate); width:max-content; overflow:hidden; }
+:global(.jf-blueprint) .segment button { min-height:42px; padding:0 14px; border:0; border-right:1px solid var(--traffic-line); background:transparent; color:var(--ink); font:700 12px var(--font-mono); }
 :global(.jf-blueprint) .segment button:last-child { border-right:0; }
-:global(.jf-blueprint) .segment button:hover:not([aria-pressed="true"]):not(:disabled) { background:var(--paper); }
-:global(.jf-blueprint) .segment button[aria-pressed="true"] { background:var(--ink); color:var(--t-plate); }
-/* Switch chip: a checkbox that reads as a toggle; checked = ink frame + tick. */
-:global(.jf-blueprint) .chip { display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:0 12px; border:1.5px solid var(--t-line); border-radius:2px; background:var(--t-plate); font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--t-label); cursor:pointer; transition:border-color .14s var(--ease); }
-:global(.jf-blueprint) .chip:hover { border-color:var(--ink); }
-:global(.jf-blueprint) .chip:has(input:checked) { border-color:var(--ink); color:var(--ink); }
-:global(.jf-blueprint) .chip:has(input:focus-visible) { outline:3px solid var(--blueprint); outline-offset:2px; }
-:global(.jf-blueprint) .chip input { width:16px; height:16px; margin:0; accent-color:var(--blueprint); }
-/* Option tabs inside a card: quiet frames, the chosen one blue. */
-:global(.jf-blueprint) .tabs { display:flex; flex-wrap:wrap; gap:8px; }
-:global(.jf-blueprint) .tabs button { min-height:40px; border:1.5px solid var(--t-line); border-radius:2px; padding:8px 12px; background:var(--t-plate); color:var(--ink); font:700 12px var(--font); transition:border-color .14s var(--ease), background .14s var(--ease); }
-:global(.jf-blueprint) .tabs button:hover:not([aria-pressed="true"]) { border-color:var(--ink); }
-:global(.jf-blueprint) .tabs button[aria-pressed="true"] { background:var(--blueprint); border-color:var(--blueprint); color:#fff; }
-:global(.jf-blueprint) .filterLabel { display:flex; flex-direction:column; gap:6px; min-width:0; margin:0; }
-:global(.jf-blueprint) .filterLabel > span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.07em; color:var(--t-label); }
+:global(.jf-blueprint) .segment button:hover:not([aria-pressed="true"]) { background:var(--paper); }
+:global(.jf-blueprint) .segment button[aria-pressed="true"] { background:var(--ink); color:var(--paper); }
+:global(.jf-blueprint) .filters { display:grid; grid-template-columns:1.6fr repeat(5,minmax(0,1fr)); gap:14px; padding:18px 20px; }
+:global(.jf-blueprint) .filtersDisclosure > summary { display:flex; gap:10px; align-items:center; cursor:pointer; min-height:48px; padding:12px 20px; font:700 13px var(--font); list-style:none; }
+:global(.jf-blueprint) .filtersDisclosure > summary::-webkit-details-marker { display:none; }
+:global(.jf-blueprint) .filtersDisclosure > summary::before { content:"+"; font:700 18px var(--font-mono); color:var(--blueprint); }
+:global(.jf-blueprint) .filtersDisclosure[open] > summary::before { content:"-"; }
+:global(.jf-blueprint) .filtersDisclosure > summary > span { margin-left:auto; font:600 11px var(--font-mono); color:var(--muted); letter-spacing:.04em; }
+:global(.jf-blueprint) .filtersDisclosure > .timezone { padding:0 20px 14px; }
+:global(.jf-blueprint) .activeTimezone { font:600 11px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .filterLabel { display:flex; flex-direction:column; gap:7px; min-width:0; margin:0; }
+:global(.jf-blueprint) .filterLabel > span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.07em; color:var(--traffic-label); }
 :global(.jf-blueprint) .selectWrap { width:100%; min-width:0; }
 /* The wrapper draws the chevron; the native one must go or two show at once. */
-:global(.jf-blueprint) .selectWrap select { appearance:none; -webkit-appearance:none; width:100%; min-height:44px; padding:8px 32px 8px 12px; font:600 13px var(--font); letter-spacing:0; color:var(--ink); border:1.5px solid var(--ink); border-radius:2px; background:var(--t-plate); text-overflow:ellipsis; }
-:global(.jf-blueprint) .input { min-height:44px; width:100%; padding:8px 12px; border:1.5px solid var(--ink); border-radius:2px; font:500 13px var(--font); color:var(--ink); background:var(--t-plate); }
-:global(.jf-blueprint) .moreButton { display:block; width:100%; min-height:48px; border:0; border-top:1px solid var(--t-line); background:var(--t-plate); color:var(--blueprint); font:800 13px var(--font); transition:background .14s var(--ease); }
-:global(.jf-blueprint) .moreButton:hover { background:var(--paper); }
+:global(.jf-blueprint) .selectWrap select { appearance:none; -webkit-appearance:none; width:100%; min-height:44px; padding:8px 32px 8px 12px; font:600 13px var(--font); letter-spacing:0; color:var(--ink); border:1.5px solid var(--ink); border-radius:2px; background:var(--traffic-plate); text-overflow:ellipsis; }
+:global(.jf-blueprint) .filterFooter { display:flex; align-items:center; gap:16px; padding:14px 20px; border-top:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .timezone { display:flex; align-items:center; gap:10px; font:600 11px var(--font-mono); color:var(--traffic-label); text-transform:uppercase; letter-spacing:.06em; }
+:global(.jf-blueprint) .timezone select { max-width:220px; min-height:44px; background:transparent; color:var(--ink); border:0; font:600 12px var(--font-mono); text-transform:none; letter-spacing:0; }
+:global(.jf-blueprint) .unsaved { margin-left:auto; color:var(--muted); font:600 11px var(--font-mono); }
+:global(.jf-blueprint) .textButton { min-height:44px; border:0; padding:0 8px; background:transparent; text-decoration:underline; text-underline-offset:3px; font-size:13px; font-weight:700; }
 
-/* ── Cards ─────────────────────────────────────────────────── */
-:global(.jf-blueprint) .card { background:var(--t-plate); border:2px solid var(--ink); border-radius:2px; min-width:0; overflow:clip; }
-:global(.jf-blueprint) .cardHead { display:flex; justify-content:space-between; align-items:center; gap:12px 20px; flex-wrap:wrap; padding:20px 24px; border-bottom:1px solid var(--t-line); }
-:global(.jf-blueprint) .cardHead h3 { margin:0; font:800 15px/1.2 var(--font); text-transform:uppercase; letter-spacing:.04em; }
-:global(.jf-blueprint) .bigTitle { margin:0; display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; font:900 24px/1.1 var(--font) !important; text-transform:uppercase; letter-spacing:-.02em !important; }
-:global(.jf-blueprint) .bigTitle b { font:900 30px/1 var(--font); letter-spacing:-.04em; color:var(--blueprint); font-variant-numeric:tabular-nums; }
-:global(.jf-blueprint) .rangeSelect { width:200px; }
-:global(.jf-blueprint) .cardMeta { margin:5px 0 0; font:600 12px/1.4 var(--font-mono); color:var(--muted); }
-:global(.jf-blueprint) .cardTools { display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; }
-:global(.jf-blueprint) .cardTools .filterLabel { min-width:132px; }
-:global(.jf-blueprint) .cardNote { display:flex; gap:10px; align-items:flex-start; margin:0; padding:12px 24px; border-bottom:1px solid var(--t-line); background:var(--warning-soft); font:500 13px/1.55 var(--font); color:var(--ink-soft); }
-:global(.jf-blueprint) .cardNote svg { flex-shrink:0; margin-top:2px; color:var(--warning-dark); }
-:global(.jf-blueprint) .cardFoot { margin:0; padding:12px 24px; border-top:1px solid var(--t-line); font:600 12px var(--font-mono); color:var(--muted); }
-:global(.jf-blueprint) .cardBlock { padding:20px 24px; border-top:1px solid var(--t-line); }
-:global(.jf-blueprint) .blockTitle { margin:0 0 8px; font:800 13px var(--font); text-transform:uppercase; letter-spacing:.05em; }
-:global(.jf-blueprint) .hint { margin:14px 0 0; font:500 12.5px/1.6 var(--font); color:var(--muted); max-width:90ch; }
-:global(.jf-blueprint) .empty { padding:36px 24px; color:var(--muted); font:600 13px/1.7 var(--font-mono); text-align:center; }
-:global(.jf-blueprint) .notice { display:flex; gap:12px; align-items:flex-start; padding:14px 18px; border:1.5px solid var(--warning); border-left-width:5px; background:var(--warning-soft); font:500 13px/1.6 var(--font); }
-:global(.jf-blueprint) .notice > svg { flex-shrink:0; margin-top:2px; }
-:global(.jf-blueprint) .notice summary { cursor:pointer; padding-top:6px; }
-:global(.jf-blueprint) .notice p { margin:6px 0; }
+/* ── Section labels ─────────────────────────────────────────── */
+:global(.jf-blueprint) .sectionLabel { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:8px 0 -12px; color:var(--muted); font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.1em; }
+:global(.jf-blueprint) .sectionLabel > span:first-child { color:var(--blueprint); }
 
-/* ── KPI strip ─────────────────────────────────────────────────
-   Every tile draws its right and bottom hairline and pokes 1px past its cell;
-   the strip clips that overhang, so the outer edges stay clean at any column
-   count without nth-child arithmetic. (A 1px grid gap vanishes under the admin
-   shell's desktop zoom; borders always keep a device pixel.) */
-:global(.jf-blueprint) .kpis { --cols:4; display:grid; grid-template-columns:repeat(var(--cols),minmax(0,1fr)); overflow:hidden; }
-:global(.jf-blueprint) .kpis[data-cols="2"] { --cols:2; }
-:global(.jf-blueprint) .kpis[data-cols="5"] { --cols:5; }
-:global(.jf-blueprint) .kpis[data-cols="6"] { --cols:6; }
-:global(.jf-blueprint) .cardHead + .kpis { border-bottom:1px solid var(--t-line); }
-:global(.jf-blueprint) .kpi { display:flex; flex-direction:column; gap:10px; min-width:0; padding:20px 24px; margin:0 -1px -1px 0; border-right:1px solid var(--t-line); border-bottom:1px solid var(--t-line); background:var(--t-plate); }
-:global(.jf-blueprint) .kpi > span { display:flex; align-items:center; gap:7px; font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.07em; color:var(--t-label); }
-:global(.jf-blueprint) .kpi > span > i { width:8px; height:8px; flex:0 0 auto; background:var(--muted-faint); }
-:global(.jf-blueprint) .kpi > strong { font:900 38px/1 var(--font); letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
-:global(.jf-blueprint) .kpi > small { font:600 12px/1.45 var(--font-mono); color:var(--muted); }
-:global(.jf-blueprint) .kpi[data-lead="true"] { background:var(--blueprint); color:#fff; }
-:global(.jf-blueprint) .kpi[data-lead="true"] > :is(span, small) { color:color-mix(in oklab, #fff 86%, var(--blueprint)); }
-:global(.jf-blueprint) .kpi[data-tone="ok"] > strong { color:var(--success-dark); }
-:global(.jf-blueprint) .kpi small[data-trend="up"] { color:var(--success-dark); }
-:global(.jf-blueprint) .kpi small[data-trend="down"] { color:var(--danger); }
-:global(.jf-blueprint) .kpi[data-tone="paying"] > span > i { background:var(--success); }
-:global(.jf-blueprint) .kpi[data-tone="trial"] > span > i { background:var(--warning); }
-:global(.jf-blueprint) .kpi[data-tone="lapsed"] > span > i { background:var(--danger); }
-:global(.jf-blueprint) .kpi[data-tone="free"] > span > i { background:var(--muted-faint); }
+/* ── Audience metrics ───────────────────────────────────────── */
+:global(.jf-blueprint) .metrics { display:grid; grid-template-columns:1.4fr repeat(5,1fr); border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); overflow:hidden; }
+:global(.jf-blueprint) .metrics > div { padding:22px 20px; display:flex; flex-direction:column; border-right:1px solid var(--traffic-line); min-width:0; gap:12px; }
+:global(.jf-blueprint) .metrics > div:last-child { border-right:0; }
+:global(.jf-blueprint) .metrics > div > span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); }
+:global(.jf-blueprint) .metrics strong { font:850 clamp(28px,2.8vw,42px)/1 var(--font); letter-spacing:-.055em; font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .metrics small { font:600 11px/1.5 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .metrics .metricLead { background:var(--blueprint); color:white; }
+:global(.jf-blueprint) .metricLead > span, :global(.jf-blueprint) .metricLead small { color:white; }
 
-/* ── Disclosures (reading notes) ──────────────────────────── */
-:global(.jf-blueprint) :is(.disclosure,.cardDisclosure) > summary { display:flex; align-items:center; gap:8px; min-height:44px; cursor:pointer; list-style:none; font:700 12px var(--font-mono); text-transform:uppercase; letter-spacing:.07em; color:var(--t-label); }
-:global(.jf-blueprint) :is(.disclosure,.cardDisclosure) > summary::-webkit-details-marker { display:none; }
-:global(.jf-blueprint) :is(.disclosure,.cardDisclosure) > summary::after { content:"+"; margin-left:auto; font:700 18px var(--font-mono); color:var(--blueprint); }
-:global(.jf-blueprint) :is(.disclosure,.cardDisclosure)[open] > summary::after { content:"−"; }
-:global(.jf-blueprint) :is(.disclosure,.cardDisclosure) > summary:hover { color:var(--ink); }
-:global(.jf-blueprint) :is(.disclosure,.cardDisclosure) ul { margin:0; padding:4px 0 8px 18px; display:flex; flex-direction:column; gap:8px; max-width:96ch; }
-:global(.jf-blueprint) :is(.disclosure,.cardDisclosure) li { font:500 13px/1.6 var(--font); color:var(--ink-soft); }
-:global(.jf-blueprint) :is(.disclosure,.cardDisclosure) a { color:var(--blueprint); font-weight:700; }
-:global(.jf-blueprint) .disclosure { border-top:1px solid var(--t-line); border-bottom:1px solid var(--t-line); }
-:global(.jf-blueprint) .section > .disclosure { margin-top:-4px; }
-:global(.jf-blueprint) .cardDisclosure { padding:4px 24px; border-top:1px solid var(--t-line); }
-:global(.jf-blueprint) .cardDisclosure[data-inline="true"] { padding:4px 0; margin-top:20px; }
-:global(.jf-blueprint) .cardDisclosure[open] { padding-bottom:12px; }
+/* ── Cards ──────────────────────────────────────────────────── */
+:global(.jf-blueprint) .card { background:var(--traffic-plate); border:2px solid var(--ink); border-radius:2px; min-width:0; overflow:clip; }
+:global(.jf-blueprint) .cardHead { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:22px 24px; border-bottom:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .root h2 { font:800 20px/1.2 var(--font); letter-spacing:-.035em; margin:0; }
+:global(.jf-blueprint) .micro { display:block; font:600 11px/1.6 var(--font-mono); color:var(--muted); margin:6px 0 0; }
+:global(.jf-blueprint) .stamp { border:1.5px solid var(--blueprint); padding:8px 10px; color:var(--blueprint); font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; }
 
-/* ── Live: platforms ──────────────────────────────────────── */
-:global(.jf-blueprint) .platforms { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px; padding:20px 24px; border-bottom:1px solid var(--t-line); }
-:global(.jf-blueprint) .platform { display:flex; flex-direction:column; gap:8px; min-width:0; padding:14px; text-align:left; border:1.5px solid var(--t-line); border-top:4px solid var(--platform); border-radius:2px; background:var(--t-plate); color:var(--ink); transition:border-color .14s var(--ease), box-shadow .14s var(--ease); }
-:global(.jf-blueprint) .platform:hover { border-color:var(--ink); border-top-color:var(--platform); }
-:global(.jf-blueprint) .platform[aria-pressed="true"] { border-color:var(--ink); border-top-color:var(--platform); box-shadow:3px 3px 0 var(--ink); }
-:global(.jf-blueprint) .platform[data-empty="true"] { opacity:.6; }
-:global(.jf-blueprint) .platform[data-empty="true"]:hover { opacity:1; }
-:global(.jf-blueprint) .platformName { display:flex; align-items:center; gap:10px; min-width:0; min-height:26px; font:800 14px var(--font); }
-:global(.jf-blueprint) .platformLogo { width:26px; height:26px; flex:0 0 auto; display:grid; place-items:center; border-radius:2px; background:var(--platform); color:#fff; }
-:global(.jf-blueprint) .platformDot { width:10px; height:10px; flex:0 0 auto; margin:0 8px; background:var(--platform); }
-:global(.jf-blueprint) .platformCount { display:flex; align-items:baseline; gap:8px; }
-:global(.jf-blueprint) .platformCount strong { font:900 34px/1 var(--font); letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
-:global(.jf-blueprint) .platformCount small { font:700 11px var(--font-mono); color:var(--success-dark); }
-:global(.jf-blueprint) .platformBar { display:block; height:6px; background:color-mix(in oklab, var(--platform) 22%, var(--t-plate)); }
-:global(.jf-blueprint) .platformBar i { display:block; height:100%; background:var(--platform); }
-:global(.jf-blueprint) .platformSplit { font:600 11.5px var(--font-mono); color:var(--muted); }
-:global(.jf-blueprint) .platformSplit b { color:var(--ink); }
-:global(.jf-blueprint) .platformSigned { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-top:2px; padding-top:10px; border-top:1px solid var(--t-line); }
-:global(.jf-blueprint) .platformSigned span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--t-label); }
-:global(.jf-blueprint) .platformSigned b { font:900 20px/1 var(--font); font-variant-numeric:tabular-nums; color:var(--success-dark); }
-
-/* ── Visitor sources: the map ───────────────────────────── */
-:global(.jf-blueprint) .liveMapCol { min-width:0; padding:20px 24px 24px; }
-:global(.jf-blueprint) :is(.tagAd,.tagLocked) { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1.5px solid currentColor; border-radius:2px; font:700 10px var(--font-mono); font-style:normal; text-transform:uppercase; letter-spacing:.08em; }
-:global(.jf-blueprint) .tagAd { color:var(--map-ad); }
-/* What the account is now — trial, paying, free — from the database. */
-:global(.jf-blueprint) .stampPlan { display:inline-block; max-width:100%; padding:2px 7px; border:1.5px solid var(--success); border-radius:2px; background:var(--success-soft); color:var(--success-dark); font:700 10.5px/1.5 var(--font-mono); text-transform:uppercase; letter-spacing:.06em; }
-:global(.jf-blueprint) .stampPlan[data-state="trial"] { border-color:var(--warning); background:var(--warning-soft); color:var(--warning-dark); }
-:global(.jf-blueprint) .stampPlan[data-state="lapsed"] { border-color:var(--danger); background:var(--danger-soft); color:var(--danger); }
-:global(.jf-blueprint) .stampPlan:is([data-state="free"],[data-state="unknown"]) { border-color:var(--t-line); background:var(--paper); color:var(--muted); }
-
-/* ── Signups ledger ───────────────────────────────────────── */
-:global(.jf-blueprint) .ledgerCols, :global(.jf-blueprint) .ledgerRow { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr) 128px; gap:0 20px; align-items:start; }
-:global(.jf-blueprint) .ledger { border-top:2px solid var(--ink); }
-:global(.jf-blueprint) .ledgerCols { padding:16px 24px 12px; border-bottom:2px solid var(--ink); font:800 13px var(--font); text-transform:uppercase; letter-spacing:.05em; color:var(--ink); }
-:global(.jf-blueprint) .ledgerCols span:last-child { text-align:right; }
-:global(.jf-blueprint) .ledgerList { list-style:none; margin:0; padding:0; }
-:global(.jf-blueprint) .ledgerRow { padding:14px 24px; border-bottom:1px solid var(--t-line); }
-:global(.jf-blueprint) .ledgerRow:last-child { border-bottom:0; }
-:global(.jf-blueprint) .ledgerRow:hover { background:var(--paper); }
-:global(.jf-blueprint) :is(.ledgerWho,.ledgerFrom,.ledgerPlan) { display:flex; flex-direction:column; align-items:flex-start; gap:4px; min-width:0; }
-:global(.jf-blueprint) .ledgerRow b { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font:700 14px/1.35 var(--font); color:var(--ink); overflow-wrap:anywhere; }
-:global(.jf-blueprint) .ledgerRow span { font:600 12px/1.5 var(--font-mono); color:var(--muted); overflow-wrap:anywhere; }
-:global(.jf-blueprint) .ledgerRow .stampPlan { font:700 10.5px/1.5 var(--font-mono); color:var(--success-dark); display:inline-block; }
-:global(.jf-blueprint) .ledgerRow .stampPlan[data-state="trial"] { color:var(--warning-dark); }
-:global(.jf-blueprint) .ledgerRow .stampPlan[data-state="lapsed"] { color:var(--danger); }
-:global(.jf-blueprint) .ledgerRow .stampPlan:is([data-state="free"],[data-state="unknown"]) { color:var(--muted); }
-:global(.jf-blueprint) .ledgerWhen { font:600 12px/1.5 var(--font-mono); color:var(--ink-soft); text-align:right; white-space:nowrap; }
-
-/* ── Reports: scope bar ───────────────────────────────────── */
-:global(.jf-blueprint) .scope { position:relative; z-index:5; border:2px solid var(--ink); border-radius:2px; background:var(--t-plate); }
-:global(.jf-blueprint) .scopeRow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:14px 16px; }
-:global(.jf-blueprint) .scopeActions { display:flex; align-items:center; gap:8px; margin-left:auto; }
-:global(.jf-blueprint) .unsaved { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--warning-dark); }
-:global(.jf-blueprint) .filters { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px; padding:16px; border-top:1px solid var(--t-line); background:var(--paper); }
-
-/* ── Chart ─────────────────────────────────────────────────── */
-:global(.jf-blueprint) .chartToolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:20px 24px 0; }
-:global(.jf-blueprint) .legend { display:flex; align-items:center; flex-wrap:wrap; gap:18px; font:600 12px var(--font-mono); color:var(--t-label); }
+/* ── Chart ──────────────────────────────────────────────────── */
+:global(.jf-blueprint) .chartToolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 24px 0; }
+:global(.jf-blueprint) .legend { display:flex; align-items:center; flex-wrap:wrap; gap:18px; font:600 12px var(--font-mono); color:var(--traffic-label); }
 :global(.jf-blueprint) .legend span { display:flex; align-items:center; gap:7px; }
 :global(.jf-blueprint) .legend i { width:9px; height:9px; background:var(--ink); }
 :global(.jf-blueprint) .legend span:nth-child(2) i { background:var(--blueprint); }
 :global(.jf-blueprint) .legend span:nth-child(3) i { background:var(--sky); }
-:global(.jf-blueprint) .chartReadout { display:flex; align-items:baseline; flex-wrap:wrap; gap:6px 12px; padding:16px 24px 0; min-height:48px; font:600 12px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .chartReadout { display:flex; align-items:baseline; gap:12px; padding:16px 24px 0; min-height:48px; font:600 12px var(--font-mono); color:var(--muted); }
 :global(.jf-blueprint) .chartReadout strong { color:var(--ink); font:850 26px var(--font); letter-spacing:-.04em; }
 :global(.jf-blueprint) .chart { display:block; width:100%; height:auto; min-height:220px; padding:0 18px; overflow:visible; background-image:linear-gradient(var(--chart-minor) 1px,transparent 1px),linear-gradient(90deg,var(--chart-minor) 1px,transparent 1px); background-size:32px 32px; background-clip:content-box; }
 :global(.jf-blueprint) .chart text { font:11px var(--font-mono); fill:var(--muted); }
 :global(.jf-blueprint) .chart g[tabindex] { cursor:crosshair; }
 :global(.jf-blueprint) .chart g[tabindex]:focus-visible { outline:none; }
 :global(.jf-blueprint) .chart g[tabindex]:focus-visible rect { stroke:var(--blueprint); stroke-width:2; }
-:global(.jf-blueprint) .details { padding:8px 24px 14px; font:600 12px var(--font-mono); border-top:1px solid var(--t-line); }
-:global(.jf-blueprint) .details summary { cursor:pointer; min-height:44px; align-content:center; color:var(--t-label); }
+:global(.jf-blueprint) .details { padding:12px 24px; font:600 12px var(--font-mono); }
+:global(.jf-blueprint) .details summary { cursor:pointer; min-height:36px; align-content:center; }
+:global(.jf-blueprint) .composition { border-top:1px solid var(--traffic-line); display:flex; align-items:center; gap:20px; padding:16px 24px; font:600 12px var(--font-mono); color:var(--traffic-label); }
+:global(.jf-blueprint) .composition b { color:var(--ink); }
+:global(.jf-blueprint) .compositionBar { width:180px; height:10px; background:var(--sky); border:1px solid var(--ink); }
+:global(.jf-blueprint) .compositionBar > span { display:block; height:100%; background:var(--blueprint); }
+:global(.jf-blueprint) .compositionBar[data-empty="true"] { background:var(--paper); }
 
-/* ── Reports: funnel ──────────────────────────────────────── */
-:global(.jf-blueprint) .funnelLayout { display:grid; grid-template-columns:minmax(0,1fr) 280px; }
-:global(.jf-blueprint) .funnelTable { padding:4px 24px 12px; min-width:0; }
-:global(.jf-blueprint) .funnelHeading, :global(.jf-blueprint) .funnelRow { display:grid; grid-template-columns:minmax(150px,1fr) 84px 72px 104px; gap:12px; align-items:center; text-align:right; }
-:global(.jf-blueprint) .funnelHeading { padding:14px 0 10px; font:700 11px var(--font-mono); color:var(--t-label); text-transform:uppercase; letter-spacing:.06em; }
+/* ── Funnel ─────────────────────────────────────────────────── */
+:global(.jf-blueprint) .funnelControls { display:flex; gap:12px; }
+:global(.jf-blueprint) .funnelLayout { display:grid; grid-template-columns:minmax(0,1fr) 260px; }
+:global(.jf-blueprint) .funnelTable { padding:8px 24px 16px; min-width:0; }
+:global(.jf-blueprint) .funnelHeading, :global(.jf-blueprint) .funnelRow { display:grid; grid-template-columns:minmax(150px,1fr) 80px 80px 96px; gap:12px; align-items:center; text-align:right; }
+:global(.jf-blueprint) .funnelHeading { padding:14px 0; font:700 11px var(--font-mono); color:var(--traffic-label); text-transform:uppercase; letter-spacing:.06em; }
 :global(.jf-blueprint) .funnelHeading > span:first-child { text-align:left; }
 :global(.jf-blueprint) .funnelHeading em { font-style:normal; text-transform:none; letter-spacing:0; color:var(--muted); font-weight:600; }
 /* Each stage is a button: the whole row opens the visitor sheet. */
-:global(.jf-blueprint) .funnelRow { width:100%; min-height:68px; border:0; border-top:1px solid var(--t-line); border-radius:0; padding:0 8px 0 0; margin:0; background:transparent; color:inherit; font:600 13px var(--font-mono); transition:background .14s var(--ease); }
+:global(.jf-blueprint) .funnelRow { width:100%; min-height:72px; border:0; border-top:1px solid var(--traffic-line); border-radius:0; padding:0 8px 0 0; margin:0; background:transparent; color:inherit; font:600 13px var(--font-mono); transition:background .12s var(--ease); }
 :global(.jf-blueprint) .funnelRow:hover:not(:disabled), :global(.jf-blueprint) .funnelRow[aria-pressed="true"] { background:var(--paper); }
 :global(.jf-blueprint) .funnelRow:hover:not(:disabled) .stage b, :global(.jf-blueprint) .funnelRow[aria-pressed="true"] .stage b { color:var(--blueprint); }
-:global(.jf-blueprint) .funnelRow:disabled { cursor:default; opacity:.55; }
+:global(.jf-blueprint) .funnelRow:disabled { cursor:default; opacity:.6; }
 :global(.jf-blueprint) .funnelRow:focus-visible { outline-offset:-3px; }
 :global(.jf-blueprint) .funnelRow > strong { font:850 24px var(--font); letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
 :global(.jf-blueprint) .stage { display:flex; align-items:flex-start; gap:12px; text-align:left; padding:14px 0; }
-:global(.jf-blueprint) .stageNumber { width:24px; flex-shrink:0; color:var(--blueprint); font:700 11px var(--font-mono); padding-top:3px; }
-:global(.jf-blueprint) .stageBody { display:block; width:100%; min-width:0; }
-:global(.jf-blueprint) .stage b { display:flex; align-items:center; gap:4px; font:700 14px var(--font); letter-spacing:-.01em; transition:color .14s var(--ease); }
-:global(.jf-blueprint) .stage b svg { color:var(--muted); opacity:0; transition:opacity .14s var(--ease), transform .14s var(--ease); }
+:global(.jf-blueprint) .stageNumber { width:26px; flex-shrink:0; color:var(--blueprint); font:700 11px var(--font-mono); padding-top:3px; }
+:global(.jf-blueprint) .stageBody { display:block; width:100%; }
+:global(.jf-blueprint) .stage b { display:flex; align-items:center; gap:4px; font:700 14px var(--font); letter-spacing:-.01em; transition:color .12s var(--ease); }
+:global(.jf-blueprint) .stage b svg { color:var(--muted); opacity:0; transition:opacity .12s var(--ease), transform .12s var(--ease); }
 :global(.jf-blueprint) .funnelRow:hover:not(:disabled) .stage b svg { opacity:1; transform:translateX(2px); color:var(--blueprint); }
 :global(.jf-blueprint) .stage small { display:block; margin-top:6px; color:var(--muted); font:600 11px var(--font-mono); }
-:global(.jf-blueprint) .funnelBar { display:block; margin-top:8px; width:100%; height:8px; background:var(--paper); }
+:global(.jf-blueprint) .funnelBar { display:block; margin-top:8px; width:100%; height:8px; background:var(--paper); border:1px solid var(--traffic-line); }
 :global(.jf-blueprint) .funnelBar span { display:block; height:100%; background:var(--blueprint); }
-/* The database total beside the funnel: the one number that never misses a signup. */
-:global(.jf-blueprint) .plate { display:flex; flex-direction:column; padding:24px; border-left:2px solid var(--ink); background:var(--t-plate); }
-:global(.jf-blueprint) .plateLabel { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; color:var(--blueprint); }
-:global(.jf-blueprint) .plate > strong { margin:12px 0 6px; font:900 52px/1 var(--font); letter-spacing:-.06em; color:var(--blueprint); font-variant-numeric:tabular-nums; }
-:global(.jf-blueprint) .plateSub { font:600 12px var(--font-mono); color:var(--t-label); }
-:global(.jf-blueprint) .plateWarn { margin:10px 0 0; font:600 12px/1.5 var(--font); color:var(--warning-dark); }
-:global(.jf-blueprint) .outcomes { margin:20px 0 0; border-top:2px solid var(--ink); }
-:global(.jf-blueprint) .outcomes > div { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--t-line); }
-:global(.jf-blueprint) .outcomes dt { font:600 12px var(--font-mono); color:var(--t-label); }
-:global(.jf-blueprint) .outcomes dd { margin:0; font:850 17px var(--font); font-variant-numeric:tabular-nums; }
-:global(.jf-blueprint) .outcomes > div[data-key="true"] dt { color:var(--ink); font-weight:700; }
-:global(.jf-blueprint) .outcomes > div[data-key="true"] + div:not([data-key]) { border-top:1px solid var(--ink); }
+:global(.jf-blueprint) .conversionPlate { padding:28px 24px; border-left:2px solid var(--ink); background-color:var(--traffic-plate); background-image:linear-gradient(var(--chart-minor) 1px,transparent 1px),linear-gradient(90deg,var(--chart-minor) 1px,transparent 1px); background-size:20px 20px; }
+:global(.jf-blueprint) .conversionPlate > strong { display:block; font:900 46px/1.1 var(--font); letter-spacing:-.065em; margin:16px 0 6px; color:var(--blueprint); }
+:global(.jf-blueprint) .conversionPlate > span { font:600 12px var(--font-mono); color:var(--traffic-label); }
+:global(.jf-blueprint) .conversionPlate p { margin:14px 0 0; font:500 12px/1.65 var(--font); color:var(--ink-soft); }
+:global(.jf-blueprint) .outcomes { margin:22px 0 0; border-top:2px solid var(--ink); }
+:global(.jf-blueprint) .outcomes > div { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .outcomes dt { font:600 12px var(--font-mono); color:var(--traffic-label); }
+:global(.jf-blueprint) .outcomes dd { margin:0; font:850 18px var(--font); font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .inlineNote { display:flex; gap:10px; align-items:center; padding:12px 24px; margin:0; border-bottom:1px solid var(--traffic-line); border-left:4px solid var(--blueprint); background:var(--traffic-plate); font:500 13px/1.6 var(--font); color:var(--ink-soft); }
+:global(.jf-blueprint) .inlineNote svg { flex-shrink:0; color:var(--blueprint); }
 
-/* ── Reports: explore ─────────────────────────────────────── */
-:global(.jf-blueprint) .exploreTabs { display:flex; border-bottom:2px solid var(--ink); }
-:global(.jf-blueprint) .exploreTabs button { min-height:56px; display:flex; align-items:center; justify-content:center; gap:10px; padding:12px 24px; border:0; border-right:1px solid var(--t-line); background:transparent; color:var(--ink); font:800 14px var(--font); text-transform:uppercase; letter-spacing:.03em; transition:background .14s var(--ease); }
-:global(.jf-blueprint) .exploreTabs button:hover:not([aria-selected="true"]) { background:var(--paper); }
-:global(.jf-blueprint) .exploreTabs button[aria-selected="true"] { background:var(--ink); color:var(--t-plate); }
-:global(.jf-blueprint) .exploreTabs button > span { font:700 11px var(--font-mono); opacity:.7; }
-:global(.jf-blueprint) .exploreBody { display:flex; flex-direction:column; gap:16px; padding:24px; }
-:global(.jf-blueprint) .exploreBody > .hint { margin-top:0; }
-:global(.jf-blueprint) .exploreHead { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; flex-wrap:wrap; }
-:global(.jf-blueprint) .pageTools { display:flex; align-items:flex-end; gap:10px; }
-:global(.jf-blueprint) .pageTools .input { width:220px; }
-:global(.jf-blueprint) .pageTools .filterLabel { min-width:130px; }
+/* ── Explore ────────────────────────────────────────────────── */
+:global(.jf-blueprint) .exploreTabs { display:flex; border-bottom:2px solid var(--ink); background:var(--traffic-plate); }
+:global(.jf-blueprint) .exploreTabs button { min-height:58px; display:flex; align-items:center; justify-content:center; gap:14px; padding:12px 24px; border:0; border-right:1px solid var(--traffic-line); background:transparent; font-size:14px; font-weight:800; transition:background .12s var(--ease); }
+:global(.jf-blueprint) .exploreTabs button:hover:not([aria-pressed="true"]) { background:var(--paper); }
+:global(.jf-blueprint) .exploreTabs button[aria-pressed="true"] { background:var(--ink); color:var(--paper); }
+:global(.jf-blueprint) .exploreTabs button > span { font:700 11px var(--font-mono); opacity:.8; }
+:global(.jf-blueprint) .exploreBody { padding:24px; }
+:global(.jf-blueprint) .exploreHead { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:20px; }
+:global(.jf-blueprint) .pageTools { display:flex; align-items:flex-end; gap:12px; }
+:global(.jf-blueprint) .pageTools input { min-height:44px; width:230px; max-width:100%; padding:10px 12px; border:1.5px solid var(--ink); border-radius:2px; font:500 13px var(--font); background:var(--traffic-plate); }
+:global(.jf-blueprint) .pageShortcuts, :global(.jf-blueprint) .dimensionTabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
+:global(.jf-blueprint) .pageShortcuts button, :global(.jf-blueprint) .dimensionTabs button { min-height:40px; border:1.5px solid var(--traffic-line); border-radius:2px; padding:8px 12px; background:var(--traffic-plate); color:var(--ink); font:700 11px var(--font-mono); letter-spacing:.02em; transition:border-color .12s var(--ease), background .12s var(--ease); }
+:global(.jf-blueprint) :is(.pageShortcuts,.dimensionTabs) button:hover:not([aria-pressed="true"]) { border-color:var(--ink); }
+:global(.jf-blueprint) :is(.pageShortcuts,.dimensionTabs) button[aria-pressed="true"] { background:var(--blueprint); border-color:var(--blueprint); color:white; }
 :global(.jf-blueprint) .tableScroll { overflow:auto; max-width:100%; overscroll-behavior-x:contain; }
 :global(.jf-blueprint) .table { width:100%; border-collapse:collapse; font-size:13px; }
-:global(.jf-blueprint) .table th { padding:12px 10px; border-bottom:2px solid var(--ink); font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--t-label); text-align:right; white-space:nowrap; }
-:global(.jf-blueprint) .table td { padding:10px; border-bottom:1px solid var(--t-line); text-align:right; font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .table th { padding:12px 10px; border-bottom:2px solid var(--ink); font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); text-align:right; white-space:nowrap; }
+:global(.jf-blueprint) .table td { padding:10px 10px; border-bottom:1px solid var(--traffic-line); text-align:right; font-variant-numeric:tabular-nums; }
 :global(.jf-blueprint) .table :is(th,td):first-child { text-align:left; padding-left:0; }
 :global(.jf-blueprint) .table tbody tr:hover, :global(.jf-blueprint) .table tr[data-selected="true"] { background:var(--paper); }
 :global(.jf-blueprint) .table td small { display:block; margin-top:3px; font:600 11px var(--font-mono); color:var(--muted); }
-:global(.jf-blueprint) .pageLink { min-height:44px; width:100%; min-width:160px; max-width:360px; display:flex; align-items:center; border:0; padding:0; background:transparent; text-align:left; color:var(--blueprint); font:700 13px var(--font); overflow-wrap:anywhere; }
-:global(.jf-blueprint) .pageLink:hover { text-decoration:underline; text-underline-offset:3px; }
-:global(.jf-blueprint) .pageLink small { display:block; font:600 11px var(--font-mono); color:var(--muted); }
-:global(.jf-blueprint) .pagination { display:flex; align-items:center; gap:10px; }
+:global(.jf-blueprint) .pageLink { min-height:44px; width:100%; min-width:160px; max-width:360px; display:flex; align-items:center; justify-content:space-between; gap:10px; background:transparent; border:0; text-align:left; color:var(--blueprint); font:700 13px var(--font); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .pageLink small { font:600 11px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .pageLink svg { flex-shrink:0; }
+:global(.jf-blueprint) .footnote { margin:18px 0 0; color:var(--muted); font:600 11px/1.7 var(--font-mono); }
+:global(.jf-blueprint) .pagination { display:flex; align-items:center; gap:10px; padding-top:16px; }
 :global(.jf-blueprint) .pagination > span { margin-right:auto; font:600 12px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .acquisitionLayout { display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:28px; }
 :global(.jf-blueprint) .sourceName { min-width:170px; max-width:360px; overflow-wrap:anywhere; }
-:global(.jf-blueprint) .sourceName button { min-height:44px; display:flex; align-items:center; border:0; padding:0; background:transparent; color:var(--blueprint); font-weight:700; text-align:left; }
-:global(.jf-blueprint) .sourceName button:hover { text-decoration:underline; text-underline-offset:3px; }
-:global(.jf-blueprint) .sourceBar { height:6px; background:var(--paper); margin-top:4px; }
+:global(.jf-blueprint) .sourceName button { min-height:44px; display:flex; align-items:center; gap:8px; border:0; padding:0; background:transparent; color:var(--blueprint); font-weight:700; text-align:left; }
+:global(.jf-blueprint) .sourceBar { height:6px; background:var(--paper); border:1px solid var(--traffic-line); margin-top:8px; }
 :global(.jf-blueprint) .sourceBar > span { display:block; height:100%; background:var(--blueprint); }
-:global(.jf-blueprint) .subBlock { display:flex; flex-direction:column; gap:14px; margin-top:12px; padding-top:24px; border-top:2px solid var(--ink); }
-:global(.jf-blueprint) .subHead { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; }
-:global(.jf-blueprint) .subHead .blockTitle { margin:0; }
-:global(.jf-blueprint) .subHead .cardMeta { margin:0; }
-:global(.jf-blueprint) .experimentEmpty { display:flex; align-items:center; gap:16px; padding:20px 0; }
-:global(.jf-blueprint) .experimentEmpty .sectionIcon { background:var(--blueprint); }
-:global(.jf-blueprint) .experimentEmpty h4 { margin:0 0 4px; font:800 16px var(--font); text-transform:uppercase; letter-spacing:.02em; }
-:global(.jf-blueprint) .experimentEmpty p { margin:0; max-width:60ch; font:500 14px/1.6 var(--font); color:var(--ink-soft); }
-:global(.jf-blueprint) .experimentControls { display:flex; gap:16px; }
+:global(.jf-blueprint) .acquisitionNotes { border-left:1px solid var(--traffic-line); padding-left:24px; }
+:global(.jf-blueprint) .acquisitionNotes h3 { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--blueprint); margin:0 0 8px; }
+:global(.jf-blueprint) .acquisitionNotes p { margin:0 0 22px; font:500 13px/1.65 var(--font); color:var(--ink-soft); }
+:global(.jf-blueprint) .acquisitionNotes a { display:flex; align-items:center; gap:6px; min-height:44px; font:700 13px var(--font); color:var(--blueprint); }
+:global(.jf-blueprint) .experimentEmpty { display:grid; grid-template-columns:170px minmax(0,1fr); gap:30px; padding:28px 18px; align-items:center; }
+:global(.jf-blueprint) .experimentMark { display:flex; align-items:center; justify-content:center; flex-direction:column; gap:18px; min-height:170px; background-image:linear-gradient(var(--chart-minor) 1px,transparent 1px),linear-gradient(90deg,var(--chart-minor) 1px,transparent 1px); background-size:16px 16px; border:1.5px solid var(--blueprint); color:var(--blueprint); font:800 22px var(--font-mono); }
+:global(.jf-blueprint) .experimentEmpty h3 { font:800 24px var(--font); letter-spacing:-.04em; margin:0 0 12px; }
+:global(.jf-blueprint) .experimentEmpty p { max-width:570px; font:500 14px/1.65 var(--font); color:var(--ink-soft); margin:0; }
+:global(.jf-blueprint) .experimentSteps { display:flex; flex-wrap:wrap; gap:16px; margin-top:24px; font:700 11px var(--font-mono); color:var(--blueprint); }
+:global(.jf-blueprint) .experimentControls { display:flex; gap:18px; margin-bottom:20px; }
+:global(.jf-blueprint) .experimentNote { display:flex; gap:10px; align-items:flex-start; margin-top:20px; border-top:1px solid var(--traffic-line); padding-top:18px; color:var(--ink-soft); font:500 13px/1.65 var(--font); }
+:global(.jf-blueprint) .experimentNote svg { flex-shrink:0; margin-top:2px; color:var(--blueprint); }
+:global(.jf-blueprint) .notice { display:flex; gap:12px; align-items:flex-start; padding:16px 18px; border:1.5px solid var(--warning); border-left-width:5px; background:var(--warning-soft); font:500 13px/1.65 var(--font); }
+:global(.jf-blueprint) .notice > svg { flex-shrink:0; margin-top:2px; }
+:global(.jf-blueprint) .notice summary { cursor:pointer; padding-top:6px; }
+:global(.jf-blueprint) .notice p { margin:6px 0; }
+:global(.jf-blueprint) .empty { padding:36px 20px; color:var(--muted); font:600 13px/1.7 var(--font-mono); text-align:center; }
+:global(.jf-blueprint) .methodology { border-top:1px solid var(--ink); padding:4px 0 20px; }
+:global(.jf-blueprint) .methodology summary { display:flex; align-items:center; gap:8px; min-height:44px; cursor:pointer; font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; }
+:global(.jf-blueprint) .methodology summary::after { content:"+"; margin-left:auto; font-size:20px; }
+:global(.jf-blueprint) .methodology[open] summary::after { content:"-"; }
+:global(.jf-blueprint) .methodology > div { display:grid; grid-template-columns:1fr 1fr; gap:10px 30px; }
+:global(.jf-blueprint) .methodology p { margin:0; font:500 13px/1.65 var(--font); color:var(--ink-soft); }
 
-/* ── Ad links: a tool, closed into one line ───────────────── */
-:global(.jf-blueprint) .toolCard { border:2px solid var(--ink); border-radius:2px; background:var(--t-plate); }
-:global(.jf-blueprint) .toolCard > summary { display:flex; align-items:center; gap:14px; min-height:76px; padding:16px 24px; cursor:pointer; list-style:none; transition:background .14s var(--ease); }
-:global(.jf-blueprint) .toolCard > summary::-webkit-details-marker { display:none; }
-:global(.jf-blueprint) .toolCard > summary:hover { background:var(--paper); }
-:global(.jf-blueprint) .toolCard > summary::after { content:"+"; margin-left:auto; font:700 22px var(--font-mono); color:var(--blueprint); }
-:global(.jf-blueprint) .toolCard[open] > summary { border-bottom:1px solid var(--t-line); }
-:global(.jf-blueprint) .toolCard[open] > summary::after { content:"−"; }
-:global(.jf-blueprint) .toolTitle { display:flex; flex-direction:column; gap:4px; min-width:0; }
-:global(.jf-blueprint) .toolTitle b { font:900 20px/1 var(--font); text-transform:uppercase; letter-spacing:-.02em; }
-:global(.jf-blueprint) .toolTitle small { font:600 12px/1.4 var(--font-mono); color:var(--muted); }
-:global(.jf-blueprint) .toolBody { display:flex; flex-direction:column; gap:16px; padding:24px; }
-:global(.jf-blueprint) .linksForm { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; }
-:global(.jf-blueprint) .linksRow { display:grid; grid-template-columns:minmax(0,1fr) 96px; gap:6px 12px; align-items:center; }
-:global(.jf-blueprint) .linksRow > span { grid-column:1 / -1; font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.07em; color:var(--t-label); }
-:global(.jf-blueprint) .linksRow code { display:block; min-width:0; padding:11px 12px; border:1.5px solid var(--t-line); border-radius:2px; background:var(--paper); font:600 12px/1.5 var(--font-mono); color:var(--ink); overflow-wrap:anywhere; }
-:global(.jf-blueprint) .toolBody > .hint { margin:0; }
-
-/* ── Stage visitors sheet ─────────────────────────────────── */
+/* ── Stage visitors sheet ───────────────────────────────────── */
 :global(.jf-blueprint) .drill { display:flex; flex-direction:column; gap:20px; font-family:var(--font); color:var(--ink); }
 :global(.jf-blueprint) .drillLead { display:flex; align-items:center; gap:14px; padding:4px 0 18px; border-bottom:2px solid var(--ink); }
 :global(.jf-blueprint) .drillLead svg { color:var(--blueprint); flex-shrink:0; }
@@ -319,7 +208,7 @@
 :global(.jf-blueprint) .drillSkeleton { display:flex; flex-direction:column; gap:10px; }
 :global(.jf-blueprint) .drillSkeleton span { display:block; height:64px; background:var(--paper); animation:pulse 1.2s ease-in-out infinite; }
 :global(.jf-blueprint) .drillList { list-style:none; margin:0; padding:0; border-top:2px solid var(--ink); }
-:global(.jf-blueprint) .drillList li { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:6px 16px; padding:14px 0; border-bottom:1px solid var(--t-line); }
+:global(.jf-blueprint) .drillList li { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:6px 16px; padding:14px 0; border-bottom:1px solid var(--traffic-line); }
 :global(.jf-blueprint) .drillWho { display:flex; flex-direction:column; gap:4px; min-width:0; }
 :global(.jf-blueprint) .drillWho b { font:700 13px/1.35 var(--font); letter-spacing:-.01em; overflow-wrap:anywhere; }
 :global(.jf-blueprint) .drillWho span { font:500 12px/1.4 var(--font); color:var(--ink-soft); overflow-wrap:anywhere; }
@@ -329,30 +218,313 @@
 :global(.jf-blueprint) .drillFacts em { flex-shrink:0; width:62px; font-style:normal; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
 :global(.jf-blueprint) .drillFacts a { display:inline-flex; align-items:center; gap:4px; margin-top:4px; min-height:32px; font:700 12px var(--font); color:var(--blueprint); }
 
-/* ── Date picker ──────────────────────────────────────────── */
+/* ── Date picker ────────────────────────────────────────────── */
 :global(.jf-blueprint) .dateRoot { position:relative; }
 :global(.jf-blueprint) .dateButton { font:700 12px var(--font-mono); }
 :global(.jf-blueprint) .dateButton > span { color:var(--muted); font-weight:600; }
-:global(.jf-blueprint) .calendar { position:absolute; left:0; top:calc(100% + 8px); width:352px; max-width:calc(100vw - 40px); padding:14px; z-index:30; background:var(--t-plate); border:2px solid var(--ink); box-shadow:5px 5px 0 var(--ink); }
+:global(.jf-blueprint) .calendar { position:absolute; right:0; top:calc(100% + 8px); width:352px; max-width:calc(100vw - 40px); padding:14px; z-index:30; background:var(--traffic-plate); border:2px solid var(--ink); box-shadow:5px 5px 0 var(--ink); }
 :global(.jf-blueprint) .calendarHead { display:flex; justify-content:space-between; align-items:center; font-size:13px; font-weight:700; }
-:global(.jf-blueprint) .calendarHead button { width:44px; min-height:44px; border:1px solid var(--ink); background:var(--t-plate); }
+:global(.jf-blueprint) .calendarHead button { width:44px; min-height:44px; border:1px solid var(--ink); background:var(--traffic-plate); }
 :global(.jf-blueprint) .calendar > p { font:600 11px var(--font-mono); color:var(--blueprint); margin:14px 0; }
 :global(.jf-blueprint) .calendarGrid { display:grid; grid-template-columns:repeat(7,1fr); }
 :global(.jf-blueprint) .calendarGrid > span { text-align:center; font:700 11px var(--font-mono); padding:8px 0; color:var(--muted); }
 :global(.jf-blueprint) .calendarGrid button { min-height:44px; border:1px solid transparent; background:transparent; font:600 13px var(--font); color:var(--ink); }
 :global(.jf-blueprint) .calendarGrid button[data-outside="true"] { color:var(--muted); }
-:global(.jf-blueprint) .calendarGrid button[aria-pressed="true"] { background:var(--blueprint); color:#fff; }
+:global(.jf-blueprint) .calendarGrid button[aria-pressed="true"] { background:var(--blueprint); color:white; }
 :global(.jf-blueprint) .calendarGrid button:hover { border-color:var(--ink); }
 :global(.jf-blueprint) .dateInputs { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:12px 0; }
 :global(.jf-blueprint) .dateInputs label { font:700 11px var(--font-mono); }
-:global(.jf-blueprint) .dateInputs input { width:100%; min-height:44px; border:1px solid var(--ink); padding:8px; margin-top:5px; background:var(--t-plate); font:500 12px var(--font-mono); }
+:global(.jf-blueprint) .dateInputs input { width:100%; min-height:44px; border:1px solid var(--ink); padding:8px; margin-top:5px; background:var(--traffic-plate); font:500 12px var(--font-mono); }
 :global(.jf-blueprint) .calendar > .primary { width:100%; }
 
+@keyframes sheetIn { from { opacity:0; transform:translateY(9px); } to { opacity:1; transform:translateY(0); } }
+@keyframes spin { to { transform:rotate(360deg); } }
+@keyframes pulse { 0%, 100% { opacity:.55; } 50% { opacity:1; } }
+:global(.jf-blueprint) .root > :is(.header,.filterPanel,.metrics,.card) { animation:sheetIn .4s var(--ease) backwards; }
+:global(.jf-blueprint) .root > .metrics { animation-delay:60ms; }
+:global(.jf-blueprint) .root > .card { animation-delay:100ms; }
+:global(.jf-blueprint) .spin { animation:spin 1s linear infinite; }
+
+@media (max-width:1250px) {
+  :global(.jf-blueprint) .filters { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  :global(.jf-blueprint) .metrics { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  :global(.jf-blueprint) .metrics > div { border-bottom:1px solid var(--traffic-line); }
+  :global(.jf-blueprint) .metrics > div:nth-child(3n) { border-right:0; }
+  :global(.jf-blueprint) .metrics > div:nth-child(n+4) { border-bottom:0; }
+  :global(.jf-blueprint) .lifetime { flex-wrap:wrap; gap:10px 20px; }
+  :global(.jf-blueprint) .scope { order:3; width:100%; }
+  :global(.jf-blueprint) .funnelLayout { grid-template-columns:minmax(0,1fr); }
+  :global(.jf-blueprint) .conversionPlate { border-left:0; border-top:2px solid var(--ink); display:grid; grid-template-columns:1fr 1fr; gap:10px 30px; padding:20px 24px; }
+  :global(.jf-blueprint) .conversionPlate > strong { grid-row:2 / 4; margin:0; }
+  :global(.jf-blueprint) .conversionPlate p { margin:0; }
+  :global(.jf-blueprint) .outcomes { grid-column:1 / -1; }
+  :global(.jf-blueprint) .acquisitionLayout { grid-template-columns:minmax(0,1fr); }
+  :global(.jf-blueprint) .acquisitionNotes { border-left:0; border-top:1px solid var(--traffic-line); padding:20px 0 0; }
+  :global(.jf-blueprint) .exploreHead { align-items:flex-start; flex-wrap:wrap; }
+}
+@media (max-width:860px) {
+  :global(.jf-blueprint) .root { gap:20px; }
+  :global(.jf-blueprint) .header { align-items:flex-start; }
+  :global(.jf-blueprint) .headerActions { justify-content:flex-end; gap:8px; }
+  :global(.jf-blueprint) .status { width:100%; justify-content:flex-end; }
+  :global(.jf-blueprint) .header h1 { font-size:44px; }
+  :global(.jf-blueprint) .filterFooter { flex-wrap:wrap; }
+  :global(.jf-blueprint) .unsaved { order:4; width:100%; margin:0; }
+  :global(.jf-blueprint) .filterFooter .textButton { margin-left:auto; }
+  :global(.jf-blueprint) .rangeRow { padding:14px; }
+  :global(.jf-blueprint) .filters { padding:14px; gap:12px; }
+  :global(.jf-blueprint) .cardHead { padding:18px; }
+  :global(.jf-blueprint) .chartToolbar { padding:16px 18px 0; flex-wrap:wrap; }
+  :global(.jf-blueprint) .chartReadout { padding:14px 18px 0; }
+  :global(.jf-blueprint) .exploreBody { padding:18px; }
+  :global(.jf-blueprint) :is(.segment,.dimensionTabs,.pageShortcuts) button { min-height:44px; }
+  :global(.jf-blueprint) .details summary { min-height:44px; }
+  :global(.jf-blueprint) .drillSummary { grid-template-columns:1fr; gap:14px; }
+}
+@media (max-width:600px) {
+  :global(.jf-blueprint) .header .eyebrow { font-size:10px; letter-spacing:.08em; }
+  :global(.jf-blueprint) .headerActions .button { padding:0 12px; font-size:12px; }
+  :global(.jf-blueprint) .lifetime { gap:10px 16px; }
+  :global(.jf-blueprint) .lifetime strong { font-size:20px; }
+  :global(.jf-blueprint) .updated { width:100%; margin:0; }
+  :global(.jf-blueprint) .filterCaption { width:100%; }
+  :global(.jf-blueprint) .dateRoot, :global(.jf-blueprint) .dateButton { width:100%; }
+  :global(.jf-blueprint) .calendar { position:fixed; top:auto; bottom:8px; left:50%; right:auto; transform:translateX(-50%); width:352px; max-width:calc(100vw - 8px); max-height:calc(100dvh - 16px); overflow-y:auto; padding:0; }
+  :global(.jf-blueprint) .calendar > :not(.calendarGrid) { padding:8px; }
+  :global(.jf-blueprint) .filters { grid-template-columns:1fr 1fr; }
+  :global(.jf-blueprint) .timezone { width:100%; justify-content:space-between; }
+  :global(.jf-blueprint) .activeTimezone { width:100%; }
+  :global(.jf-blueprint) .filterFooter .textButton { margin-left:0; }
+  :global(.jf-blueprint) .filterFooter .primary { margin-left:auto; min-width:140px; }
+  :global(.jf-blueprint) .sectionLabel { font-size:10px; letter-spacing:.06em; }
+  :global(.jf-blueprint) .sectionLabel > span:last-child { text-align:right; max-width:55%; overflow-wrap:anywhere; }
+  :global(.jf-blueprint) .metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  :global(.jf-blueprint) .metrics > div { padding:18px 14px; }
+  :global(.jf-blueprint) .metrics strong { font-size:34px; }
+  :global(.jf-blueprint) .metrics > div:nth-child(3n) { border-right:1px solid var(--traffic-line); }
+  :global(.jf-blueprint) .metrics > div:nth-child(2n) { border-right:0; }
+  :global(.jf-blueprint) .metrics > div:nth-child(4) { border-bottom:1px solid var(--traffic-line); }
+  :global(.jf-blueprint) .cardHead { align-items:flex-start; flex-wrap:wrap; padding:16px; }
+  :global(.jf-blueprint) .root h2 { font-size:19px; }
+  :global(.jf-blueprint) .legend { gap:12px; }
+  :global(.jf-blueprint) .chartReadout { flex-wrap:wrap; gap:6px 10px; }
+  :global(.jf-blueprint) .chart { min-height:190px; padding:0 8px; }
+  :global(.jf-blueprint) .composition { flex-wrap:wrap; gap:12px; padding:16px; }
+  :global(.jf-blueprint) .compositionBar { width:100%; }
+  :global(.jf-blueprint) .funnelControls { width:100%; flex-wrap:wrap; }
+  :global(.jf-blueprint) .funnelControls > label { flex:1 1 130px; }
+  :global(.jf-blueprint) .funnelTable { padding:8px 12px 12px; }
+  :global(.jf-blueprint) .funnelHeading, :global(.jf-blueprint) .funnelRow { grid-template-columns:minmax(0,1fr) 48px 52px 58px; gap:6px; }
+  :global(.jf-blueprint) .funnelHeading { font-size:10px; }
+  :global(.jf-blueprint) .funnelHeading em { display:none; }
+  :global(.jf-blueprint) .funnelRow { font-size:11px; padding-right:0; }
+  :global(.jf-blueprint) .funnelRow > strong { font-size:20px; }
+  :global(.jf-blueprint) .stage { gap:6px; }
+  :global(.jf-blueprint) .stageNumber { width:20px; }
+  :global(.jf-blueprint) .stage b { font-size:12px; }
+  :global(.jf-blueprint) .stage b svg { opacity:1; }
+  :global(.jf-blueprint) .conversionPlate { grid-template-columns:1fr; padding:20px; }
+  :global(.jf-blueprint) .conversionPlate > strong { grid-row:auto; }
+  :global(.jf-blueprint) .conversionPlate p { margin-top:6px; }
+  :global(.jf-blueprint) .exploreTabs button { flex:1; padding:12px 8px; font-size:12px; gap:5px; }
+  :global(.jf-blueprint) .exploreTabs button > span { display:none; }
+  :global(.jf-blueprint) .pageTools { width:100%; flex-wrap:wrap; }
+  :global(.jf-blueprint) .pageTools input { flex:1; min-width:140px; }
+  :global(.jf-blueprint) .pageTools .filterLabel { width:100%; }
+  :global(.jf-blueprint) .exploreBody { padding:16px; }
+  :global(.jf-blueprint) .table { font-size:12px; }
+  :global(.jf-blueprint) .table th { font-size:10px; }
+  :global(.jf-blueprint) .experimentEmpty { grid-template-columns:1fr; padding:12px 0; gap:20px; }
+  :global(.jf-blueprint) .experimentMark { min-height:120px; flex-direction:row; }
+  :global(.jf-blueprint) .experimentEmpty h3 { font-size:21px; }
+  :global(.jf-blueprint) .experimentControls { flex-direction:column; }
+  :global(.jf-blueprint) .methodology > div { grid-template-columns:1fr; }
+  :global(.jf-blueprint) .drillList li { grid-template-columns:1fr; }
+  :global(.jf-blueprint) .drillLead strong { font-size:28px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  :global(.jf-blueprint) .root > :is(.header,.filterPanel,.metrics,.card), :global(.jf-blueprint) .spin, :global(.jf-blueprint) .drillSkeleton span { animation:none; }
+}
+
+/* ── Live now (2026-09-28) ──────────────────────────────────────
+   One plate above the filters: who is on the site this minute. Each line
+   is coloured by how far the visitor got — paper for a look around, amber
+   on the sign-up form, blueprint at checkout, GREEN once the account exists,
+   grey for a member already in the app — and carries an AD mark when the
+   visit came off an advertisement. Nothing pulses but the one dot. */
+:global(.jf-blueprint) .live { --live-ok: var(--success); --live-ok-soft: var(--success-soft); --live-warm: var(--warning); --live-warm-soft: var(--warning-soft); --live-ad: #7c3aed;
+  --map-visitor:#e11d48; --map-signin:#0891b2; --map-signing:#f59e0b; --map-signed:#15803d; --map-member:#1e293b; --map-ad:#7c3aed; border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); }
+:global(.jf-blueprint) .liveHead { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:18px 24px; border-bottom:1px solid var(--traffic-line); flex-wrap:wrap; }
+:global(.jf-blueprint) .liveTitle { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+:global(.jf-blueprint) .liveTitle .micro { margin:0; }
+:global(.jf-blueprint) .livePulse { width:10px; height:10px; background:var(--muted-faint); border:1px solid var(--ink); flex-shrink:0; }
+:global(.jf-blueprint) .livePulse[data-on="true"] { background:var(--live-ok); animation:livePulse 1.6s ease-in-out infinite; }
+@keyframes livePulse { 0%,100% { box-shadow:0 0 0 0 rgba(58,125,68,.45); } 50% { box-shadow:0 0 0 6px rgba(58,125,68,0); } }
+:global(.jf-blueprint) .liveTools { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+:global(.jf-blueprint) .liveToggle { display:flex; align-items:center; gap:8px; min-height:44px; font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); cursor:pointer; }
+:global(.jf-blueprint) .liveToggle input { width:18px; height:18px; accent-color:var(--blueprint); margin:0; }
+/* Live mode: the switch that puts the panel on a 15-second clock. */
+:global(.jf-blueprint) .liveToggle[data-live="true"] { color:var(--success-dark); }
+/* The totals (2026-09-30): everyone today, at this hour yesterday, the week
+   and ever — above the half-hour window, so the live section answers "how
+   many" on its own. Heavier type than the live KPIs: these are the headline. */
+:global(.jf-blueprint) .liveTotals { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-bottom:1px solid var(--traffic-line); background:var(--paper); }
+:global(.jf-blueprint) .liveTotals > div { display:flex; flex-direction:column; gap:6px; padding:16px 20px; border-right:1px solid var(--traffic-line); min-width:0; }
+:global(.jf-blueprint) .liveTotals > div:last-child { border-right:0; }
+:global(.jf-blueprint) .liveTotals span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); }
+:global(.jf-blueprint) .liveTotals strong { font:850 34px/1 var(--font); letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .liveTotals small { font:600 11px/1.4 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .liveTotals > div[data-tone="lead"] strong { color:var(--blueprint); }
+:global(.jf-blueprint) .liveTotals small[data-trend="up"] { color:var(--success-dark); }
+:global(.jf-blueprint) .liveTotals small[data-trend="down"] { color:var(--danger-dark, #9b2c2c); }
+:global(.jf-blueprint) .liveKpis { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); border-bottom:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .liveTotals > div[data-tone="now"] strong { color:var(--ink); }
+:global(.jf-blueprint) .liveTotals > div[data-tone="ok"] strong { color:var(--success-dark); }
+:global(.jf-blueprint) .liveTotals > div[data-tone="mute"] strong { color:var(--muted); }
+/* The sentence under the row: what all those figures actually mean. */
+:global(.jf-blueprint) .liveHeadline { margin:0; padding:13px 24px; border-bottom:1px solid var(--traffic-line); font:500 13.5px/1.6 var(--font); color:var(--ink-soft); }
+/* The window as one coloured line, the map's own stage colours. */
+:global(.jf-blueprint) .liveFunnel { display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px; padding:11px 24px; border-bottom:1px solid var(--traffic-line); background:var(--paper); }
+:global(.jf-blueprint) .liveFunnelLead { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); }
+:global(.jf-blueprint) .liveFunnelStep { display:inline-flex; align-items:center; gap:6px; font:600 11.5px var(--font-mono); color:var(--ink-soft); }
+:global(.jf-blueprint) .liveFunnelStep i { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+:global(.jf-blueprint) .liveFunnelStep b { font:850 14px/1 var(--font); font-variant-numeric:tabular-nums; color:var(--ink); }
+:global(.jf-blueprint) .liveFunnelStep[data-zero="true"] { opacity:.42; }
+:global(.jf-blueprint) .liveFunnelStep[data-stage="browsing"] i { background:var(--map-visitor); }
+:global(.jf-blueprint) .liveFunnelStep[data-stage="signing-in"] i { background:var(--map-signin); }
+:global(.jf-blueprint) .liveFunnelStep[data-stage="registering"] i { background:var(--map-signing); }
+:global(.jf-blueprint) .liveFunnelStep[data-stage="signed-up"] i { background:var(--map-signed); }
+:global(.jf-blueprint) .liveFunnelStep[data-stage="member"] i { background:var(--map-member); }
+/* The platforms with nothing to say, folded into a line. */
+:global(.jf-blueprint) .platformsQuiet { grid-column:1 / -1; display:flex; align-items:center; flex-wrap:wrap; gap:6px 9px; margin:0; font:600 11.5px/1.6 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .platformsQuiet button { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border:1.5px solid var(--hair-soft); background:var(--paper-deep); font:inherit; color:var(--ink-soft); cursor:pointer; }
+:global(.jf-blueprint) .platformsQuiet button:hover { border-color:var(--platform); color:var(--ink); }
+:global(.jf-blueprint) .platformsQuiet button i { width:8px; height:8px; background:var(--platform); flex-shrink:0; }
+:global(.jf-blueprint) .liveKpis > div { display:flex; flex-direction:column; gap:6px; padding:16px 20px; border-right:1px solid var(--traffic-line); min-width:0; }
+:global(.jf-blueprint) .liveKpis > div:last-child { border-right:0; }
+:global(.jf-blueprint) .liveKpis span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); }
+:global(.jf-blueprint) .liveKpis strong { font:850 30px/1 var(--font); letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .liveKpis small { font:600 11px/1.4 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .liveKpis > div[data-tone="ok"] strong { color:var(--success-dark); }
+:global(.jf-blueprint) .liveKpis > div[data-tone="warm"] strong { color:var(--warning-dark); }
+:global(.jf-blueprint) .liveKpis > div[data-tone="ad"] strong { color:var(--live-ad); }
+:global(.jf-blueprint) .liveKpis > div[data-tone="mute"] strong { color:var(--muted); }
+:global(.jf-blueprint) .liveKpis > div[data-tone="today"] { background:var(--paper); }
+:global(.jf-blueprint) .liveEmpty { padding:22px 24px; font:600 13px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .liveList { list-style:none; margin:0; padding:0; }
+:global(.jf-blueprint) .liveRow { display:grid; grid-template-columns:6px minmax(220px,1.3fr) minmax(180px,1fr) minmax(170px,.9fr); gap:0 18px; align-items:start; padding:14px 20px 14px 0; border-bottom:1px solid var(--traffic-line); background:var(--traffic-plate); }
+:global(.jf-blueprint) .liveRow:last-child { border-bottom:0; }
+:global(.jf-blueprint) .liveRow[data-active="false"] { color:var(--muted); }
+:global(.jf-blueprint) .liveRow[data-active="false"] .liveWho b, :global(.jf-blueprint) .liveRow[data-active="false"] .liveWhere b { color:var(--muted); }
+:global(.jf-blueprint) .liveMark { align-self:stretch; background:var(--map-visitor); }
+:global(.jf-blueprint) .liveRow[data-stage="signing-in"] .liveMark { background:var(--map-signin); }
+:global(.jf-blueprint) .liveRow[data-stage="registering"] .liveMark { background:var(--map-signing); }
+:global(.jf-blueprint) .liveRow[data-stage="checkout"] .liveMark { background:var(--map-signing); }
+:global(.jf-blueprint) .liveRow[data-stage="member"] .liveMark { background:var(--map-member); }
+:global(.jf-blueprint) .liveRow[data-stage="signing-in"] { background:color-mix(in oklab, var(--map-signin) 7%, transparent); }
+:global(.jf-blueprint) .liveRow[data-stage="registering"] { background:var(--live-warm-soft); }
+:global(.jf-blueprint) .liveRow[data-stage="checkout"] { background:var(--chart-fill); }
+:global(.jf-blueprint) .liveRow[data-stage="signing-in"] .liveWho b { color:#0e7490; }
+/* The one that signed up: green, edge to edge. */
+:global(.jf-blueprint) .liveRow[data-stage="signed-up"] { background:var(--live-ok-soft); }
+:global(.jf-blueprint) .liveRow[data-stage="signed-up"] .liveMark { background:var(--live-ok); }
+:global(.jf-blueprint) .liveRow[data-stage="signed-up"] .liveWho b { color:var(--success-dark); }
+:global(.jf-blueprint) .liveWho, :global(.jf-blueprint) .liveWhere, :global(.jf-blueprint) .liveWhen { display:flex; flex-direction:column; gap:4px; min-width:0; }
+:global(.jf-blueprint) .liveWho b, :global(.jf-blueprint) .liveWhere b, :global(.jf-blueprint) .liveWhen b { font:800 13px/1.35 var(--font); letter-spacing:-.01em; color:var(--ink); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .liveWho span, :global(.jf-blueprint) .liveWhere span, :global(.jf-blueprint) .liveWhen span { font:600 11px/1.5 var(--font-mono); color:var(--muted); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .liveSignup { color:var(--success-dark) !important; }
+:global(.jf-blueprint) .liveSource { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+:global(.jf-blueprint) .liveAd { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1.5px solid var(--live-ad); color:var(--live-ad); font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; font-style:normal; }
+:global(.jf-blueprint) .liveTrade { display:inline-flex; align-items:center; padding:2px 6px; background:var(--ink, #0a0a0a); color:#fff; font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; font-style:normal; }
+:global(.jf-blueprint) .adTag { display:inline-flex; align-items:baseline; gap:6px; flex-wrap:wrap; }
+:global(.jf-blueprint) .adTag b { font-weight:800; }
+:global(.jf-blueprint) .adId { font:600 10px var(--font-mono); color:var(--ink-muted, #555); }
+:global(.jf-blueprint) .adNameBtn { padding:1px 6px; border:1.5px solid currentColor; background:transparent; color:#1854a0; font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; cursor:pointer; }
+:global(.jf-blueprint) .adNameBtn:hover { background:#1854a0; color:#fff; border-color:#1854a0; }
+:global(.jf-blueprint) .adNameEdit { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; margin-left:6px; }
+:global(.jf-blueprint) .adNameEdit input { width:190px; padding:3px 6px; border:1.5px solid var(--ink, #0a0a0a); font:600 12px var(--font); background:#fff; }
+:global(.jf-blueprint) .adNameEdit button { padding:3px 8px; border:1.5px solid var(--ink, #0a0a0a); background:#fff; font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; cursor:pointer; }
+:global(.jf-blueprint) .adNameEdit button:first-of-type { background:#1854a0; border-color:#1854a0; color:#fff; }
+:global(.jf-blueprint) .adNameEdit i { font:600 11px var(--font); color:#b3261e; font-style:normal; }
+:global(.jf-blueprint) .liveLocked { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1.5px solid var(--map-signin); color:#0e7490; font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; font-style:normal; }
+/* What they pressed, and the visit in one sentence. */
+:global(.jf-blueprint) .liveClicks { display:inline-flex; align-items:center; gap:5px; font:600 11px/1.5 var(--font-mono); color:var(--blueprint); }
+:global(.jf-blueprint) .liveClicks svg { flex-shrink:0; }
+:global(.jf-blueprint) .liveSummary { font:500 12px/1.55 var(--font); color:var(--ink-soft); }
+:global(.jf-blueprint) .liveRow[data-active="true"] .liveWhen b { color:var(--success-dark); }
+:global(.jf-blueprint) .liveOthers { display:flex; flex-direction:column; gap:6px; padding:14px 24px; border-top:1px solid var(--traffic-line); background:var(--paper); }
+:global(.jf-blueprint) .liveOther { font:600 11px/1.5 var(--font-mono); color:var(--ink-soft); }
+/* What the account actually is — trial, paying, free — from the database. */
+:global(.jf-blueprint) .livePlan { display:inline-block; padding:1px 6px; border:1.5px solid var(--map-signed); background:color-mix(in oklab, var(--map-signed) 9%, transparent); color:var(--success-dark); font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; }
+:global(.jf-blueprint) .live .footnote { padding:12px 24px 16px; margin:0; }
+
+/* ── THE SIGNUP LEDGER (2026-10-01): every account made, and what it is now.
+   Same plate as the live panel so the two read as one surface. */
+:global(.jf-blueprint) .ledger { --map-visitor:#e11d48; --map-signin:#0891b2; --map-signing:#f59e0b; --map-signed:#15803d; --map-member:#1e293b; border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); margin-top:22px; }
+:global(.jf-blueprint) .ledgerHead { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:18px 24px; border-bottom:1px solid var(--traffic-line); flex-wrap:wrap; }
+:global(.jf-blueprint) .ledgerHead h2 { margin:0 0 4px; font:800 19px/1.1 var(--font); letter-spacing:-.03em; }
+:global(.jf-blueprint) .ledgerHead .micro { margin:0; display:block; max-width:62ch; }
+:global(.jf-blueprint) .ledgerTools { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+:global(.jf-blueprint) .ledgerSummary { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); border-bottom:1px solid var(--traffic-line); background:var(--paper); }
+:global(.jf-blueprint) .ledgerSummary > div { display:flex; flex-direction:column; gap:5px; padding:14px 20px; border-right:1px solid var(--traffic-line); min-width:0; }
+:global(.jf-blueprint) .ledgerSummary > div:last-child { border-right:0; }
+:global(.jf-blueprint) .ledgerSummary span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); }
+:global(.jf-blueprint) .ledgerSummary strong { font:850 28px/1 var(--font); letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .ledgerSummary small { font:600 11px/1.4 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .ledgerSummary > div[data-state="trial"] strong { color:#b45309; }
+:global(.jf-blueprint) .ledgerSummary > div[data-state="paying"] strong { color:var(--success-dark); }
+:global(.jf-blueprint) .ledgerSummary > div[data-state="lapsed"] strong { color:#9b2c2c; }
+:global(.jf-blueprint) .ledgerSummary > div[data-state="free"] strong { color:var(--muted); }
+:global(.jf-blueprint) .ledgerList { list-style:none; margin:0; padding:0; }
+:global(.jf-blueprint) .ledgerRow { display:grid; grid-template-columns:6px minmax(150px,1fr) minmax(150px,1fr) minmax(150px,1.05fr) minmax(104px,.48fr); gap:0 16px; align-items:start; padding:13px 20px 13px 0; border-bottom:1px solid var(--traffic-line); }
+:global(.jf-blueprint) .ledgerRow:last-child { border-bottom:0; }
+:global(.jf-blueprint) .ledgerMark { align-self:stretch; background:var(--muted-faint); }
+:global(.jf-blueprint) .ledgerRow[data-state="trial"] .ledgerMark { background:var(--map-signing); }
+:global(.jf-blueprint) .ledgerRow[data-state="paying"] .ledgerMark { background:var(--map-signed); }
+:global(.jf-blueprint) .ledgerRow[data-state="lapsed"] .ledgerMark { background:var(--map-visitor); }
+:global(.jf-blueprint) .ledgerRow[data-state="free"] .ledgerMark { background:var(--map-member); }
+:global(.jf-blueprint) .ledgerWho, :global(.jf-blueprint) .ledgerFrom, :global(.jf-blueprint) .ledgerPlan, :global(.jf-blueprint) .ledgerWhen { display:flex; flex-direction:column; gap:3px; min-width:0; }
+:global(.jf-blueprint) .ledgerRow b { font:700 13px/1.35 var(--font); color:var(--ink); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+:global(.jf-blueprint) .ledgerRow span { font:600 11px/1.5 var(--font-mono); color:var(--muted); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .ledgerWhen b { font-family:var(--font-mono); font-size:11.5px; font-weight:600; color:var(--ink-soft); }
+:global(.jf-blueprint) .ledgerPlan .livePlan { white-space:normal; max-width:100%; line-height:1.55; }
+:global(.jf-blueprint) .livePlan[data-state="trial"] { border-color:#b45309; background:color-mix(in oklab, #b45309 9%, transparent); color:#92400e; }
+:global(.jf-blueprint) .livePlan[data-state="lapsed"] { border-color:#9b2c2c; background:color-mix(in oklab, #9b2c2c 9%, transparent); color:#9b2c2c; }
+:global(.jf-blueprint) .livePlan[data-state="free"], :global(.jf-blueprint) .livePlan[data-state="unknown"] { border-color:var(--hair-soft); background:var(--paper-deep); color:var(--muted); }
+@media (max-width: 900px) {
+  :global(.jf-blueprint) .ledgerSummary { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  :global(.jf-blueprint) .ledgerSummary > div:nth-child(2n) { border-right:0; }
+  :global(.jf-blueprint) .ledgerRow { grid-template-columns:6px minmax(0,1fr); gap:6px 14px; padding-right:14px; }
+  :global(.jf-blueprint) .ledgerMark { grid-row:1 / span 4; }
+}
+@media (max-width: 900px) {
+  :global(.jf-blueprint) .liveTotals { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  :global(.jf-blueprint) .liveTotals > div:nth-child(2n) { border-right:0; }
+  :global(.jf-blueprint) .liveTotals > div:nth-child(-n+2) { border-bottom:1px solid var(--traffic-line); }
+  :global(.jf-blueprint) .liveKpis { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  :global(.jf-blueprint) .liveKpis > div:nth-child(3n) { border-right:0; }
+  :global(.jf-blueprint) .liveKpis > div:nth-child(-n+3) { border-bottom:1px solid var(--traffic-line); }
+  :global(.jf-blueprint) .liveRow { grid-template-columns:6px minmax(0,1fr); gap:6px 14px; padding-right:14px; }
+  :global(.jf-blueprint) .liveMark { grid-row:1 / span 3; }
+}
+@media (max-width: 560px) {
+  :global(.jf-blueprint) .liveKpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  :global(.jf-blueprint) .liveKpis > div:nth-child(3n) { border-right:1px solid var(--traffic-line); }
+  :global(.jf-blueprint) .liveKpis > div:nth-child(2n) { border-right:0; }
+  :global(.jf-blueprint) .liveKpis > div:nth-child(-n+4) { border-bottom:1px solid var(--traffic-line); }
+  :global(.jf-blueprint) .liveKpis strong { font-size:26px; }
+  :global(.jf-blueprint) .liveTotals strong { font-size:27px; }
+  :global(.jf-blueprint) .liveHead { padding:14px 16px; }
+  :global(.jf-blueprint) .live .footnote, :global(.jf-blueprint) .liveOthers, :global(.jf-blueprint) .liveEmpty { padding-left:16px; padding-right:16px; }
+}
+
 /* ── Live map (2026-09-29, from AVACO's statistics, in this sheet's skin) ──
-   A paper ocean tinted sky, ink-washed land, countries shaded blueprint by
-   their visitors, a pin per visitor in the stage colours of the list. */
-:global(.jf-blueprint) .map { padding:0; }
-:global(.jf-blueprint) .mapLoading { aspect-ratio:2.26; display:grid; place-items:center; border:1.5px solid var(--t-line); background:color-mix(in oklab, var(--sky) 16%, var(--paper-deep)); font:600 12px var(--font-mono); color:var(--muted); }
+   The world as a plate inside the Live now section: paper ocean tinted sky,
+   ink-washed land, countries shaded blueprint by their visitors, a pin per
+   visitor in the stage colours of the list above. Controls are drawn tools,
+   the card is a white plate with an ink frame. */
+:global(.jf-blueprint) .map { padding:0 24px 8px; }
+:global(.jf-blueprint) .mapLoading { margin:0 24px 8px; aspect-ratio:2.26; display:grid; place-items:center; border:1.5px solid var(--hair-soft); background:color-mix(in oklab, var(--sky) 16%, var(--paper-deep)); font:600 12px var(--font-mono); color:var(--muted); }
 :global(.jf-blueprint) .mapBox { position:relative; overflow:hidden; border:2px solid var(--ink); border-radius:2px; background:var(--paper-deep); }
 :global(.jf-blueprint) .mapSvg { display:block; width:100%; touch-action:none; user-select:none; cursor:grab; }
 :global(.jf-blueprint) .mapSvg:active { cursor:grabbing; }
@@ -362,12 +534,27 @@
 :global(.jf-blueprint) .mapState { fill:transparent; stroke:color-mix(in oklab, var(--paper-deep) 60%, var(--ink)); stroke-linejoin:round; }
 :global(.jf-blueprint) .mapPin { cursor:pointer; }
 :global(.jf-blueprint) .mapLabel { font-family:var(--font); font-weight:700; fill:var(--ink); stroke:var(--paper-deep); }
+@keyframes livePing { 0% { transform:scale(1); opacity:.75; } 100% { transform:scale(3.4); opacity:0; } }
+:global(.jf-blueprint) .livePing { transform-box:fill-box; transform-origin:center; animation:livePing 1.8s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { :global(.jf-blueprint) .livePing { animation:none; } }
+:global(.jf-blueprint) .mapZoom { position:absolute; left:10px; top:10px; display:flex; flex-direction:column; border:1.5px solid var(--ink); background:var(--paper-deep); box-shadow:2px 2px 0 var(--ink); }
+:global(.jf-blueprint) .mapZoom button { width:32px; height:32px; border:0; border-bottom:1px solid var(--traffic-line); background:transparent; color:var(--ink); font:700 15px var(--font); display:grid; place-items:center; }
+:global(.jf-blueprint) .mapZoom button:last-child { border-bottom:0; }
+:global(.jf-blueprint) .mapZoom button:hover { background:var(--paper); }
+:global(.jf-blueprint) .mapZoomLevel { position:absolute; left:10px; bottom:10px; padding:3px 8px; border:1.5px solid var(--hair-soft); background:var(--paper-deep); font:700 10.5px var(--font-mono); color:var(--ink-soft); }
+/* The count, on the map itself (2026-09-30). Steps aside for the card. */
+:global(.jf-blueprint) .mapCount { position:absolute; right:10px; bottom:10px; display:flex; flex-direction:column; gap:2px; padding:8px 11px; border:1.5px solid var(--hair-soft); background:var(--paper-deep); pointer-events:none; max-width:min(62%, 320px); }
+:global(.jf-blueprint) .mapCount b { font:850 24px/1 var(--font); letter-spacing:-.04em; font-variant-numeric:tabular-nums; color:var(--ink); }
+:global(.jf-blueprint) .mapCount span { font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.07em; color:var(--traffic-label); }
+:global(.jf-blueprint) .mapCount i { font:600 10.5px/1.45 var(--font-mono); font-style:normal; color:var(--ink-soft); }
+:global(.jf-blueprint) .mapCount[data-card="true"] { opacity:.28; }
+@media (max-width: 560px) { :global(.jf-blueprint) .mapCount b { font-size:20px; } }
 :global(.jf-blueprint) .mapTip { position:absolute; z-index:20; pointer-events:none; white-space:nowrap; padding:4px 8px; background:var(--ink); color:var(--paper); font:700 11px var(--font-mono); border-radius:2px; }
 :global(.jf-blueprint) .mapCard { z-index:10; margin:10px; display:flex; flex-direction:column; max-height:70vh; border:2px solid var(--ink); border-radius:2px; background:var(--paper-deep); box-shadow:3px 3px 0 var(--ink); padding:14px 16px; }
 :global(.jf-blueprint) .mapCardHead { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
 :global(.jf-blueprint) .mapCardHead b { display:block; font:800 14px/1.35 var(--font); letter-spacing:-.01em; }
 :global(.jf-blueprint) .mapCardHead span { display:block; margin-top:2px; font:600 11px var(--font-mono); color:var(--muted); }
-:global(.jf-blueprint) .mapCardHead button { width:32px; height:32px; border:1.5px solid var(--t-line); background:transparent; color:var(--muted); font:700 16px var(--font); display:grid; place-items:center; }
+:global(.jf-blueprint) .mapCardHead button { width:28px; height:28px; border:1.5px solid var(--hair-soft); background:transparent; color:var(--muted); font:700 16px var(--font); display:grid; place-items:center; }
 :global(.jf-blueprint) .mapCardHead button:hover { border-color:var(--ink); color:var(--ink); }
 :global(.jf-blueprint) .mapCardBody { margin-top:12px; min-height:0; flex:1; overflow:auto; }
 :global(.jf-blueprint) .mapVisitor { border:1.5px solid var(--blueprint); padding:12px; font:500 13px/1.5 var(--font); }
@@ -387,188 +574,77 @@
 :global(.jf-blueprint) .mapTrail li[data-last="true"] { color:var(--ink); font-weight:800; }
 :global(.jf-blueprint) .mapMeta { margin:10px 0 0; font:600 11px var(--font-mono); color:var(--muted); }
 :global(.jf-blueprint) .mapOthers { list-style:none; margin:8px 0 0; padding:0; display:flex; flex-direction:column; gap:4px; }
-:global(.jf-blueprint) .mapOthers button { width:100%; display:flex; align-items:center; gap:8px; padding:8px 10px; border:1.5px solid var(--t-line); background:var(--paper-deep); text-align:left; font:600 11px var(--font-mono); color:var(--ink); }
+:global(.jf-blueprint) .mapOthers button { width:100%; display:flex; align-items:center; gap:8px; padding:8px 10px; border:1.5px solid var(--hair-soft); background:var(--paper-deep); text-align:left; font:600 11px var(--font-mono); color:var(--ink); }
 :global(.jf-blueprint) .mapOthers button:hover { border-color:var(--blueprint); }
 :global(.jf-blueprint) .mapOthers i { width:8px; height:8px; flex:0 0 auto; }
 :global(.jf-blueprint) .mapOthers span { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); }
 :global(.jf-blueprint) .mapOthers small { flex:0 0 auto; color:var(--muted); }
-:global(.jf-blueprint) .mapLegend { list-style:none; margin:16px 0 0; padding:0; display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; }
-:global(.jf-blueprint) .mapLegend li { display:flex; align-items:center; gap:10px; min-height:44px; padding:8px 12px; border:1.5px solid var(--t-line); border-radius:2px; background:var(--t-plate); }
-:global(.jf-blueprint) .mapLegend li[data-zero="true"] { opacity:.5; }
-:global(.jf-blueprint) .mapLegend svg { width:14px; height:19px; flex:0 0 auto; }
-:global(.jf-blueprint) .mapLegend span { flex:1; min-width:0; font:600 13px var(--font); color:var(--ink-soft); }
-:global(.jf-blueprint) .mapLegend b { font:900 18px/1 var(--font); font-variant-numeric:tabular-nums; color:var(--ink); }
-:global(.jf-blueprint) .mapAdRing { flex:0 0 auto; margin:0 1px; width:12px; height:12px; border:2px solid var(--map-ad); border-radius:50%; }
-:global(.jf-blueprint) .mapNote { margin:10px 0 0; font:500 12px/1.6 var(--font); color:var(--muted); }
-@media (min-width:720px) {
+:global(.jf-blueprint) .mapLegend { display:flex; flex-wrap:wrap; align-items:center; gap:6px 18px; margin-top:12px; font:600 11px var(--font-mono); color:var(--ink-soft); }
+:global(.jf-blueprint) .mapLegend > span { display:inline-flex; align-items:center; gap:6px; }
+:global(.jf-blueprint) .mapLegend svg { width:12px; height:16px; }
+:global(.jf-blueprint) .mapLegend b { color:var(--ink); }
+:global(.jf-blueprint) .mapAdRing { width:12px; height:12px; border:2px solid var(--map-ad); border-radius:50%; }
+:global(.jf-blueprint) .mapLegendNote { color:var(--muted); }
+:global(.jf-blueprint) .mapChips { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
+:global(.jf-blueprint) .mapChips > span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+:global(.jf-blueprint) .mapChips button { min-height:36px; border:1.5px solid var(--traffic-line); border-radius:2px; padding:6px 12px; background:var(--traffic-plate); color:var(--ink); font:700 11px var(--font-mono); }
+:global(.jf-blueprint) .mapChips button:hover { border-color:var(--blueprint); }
+:global(.jf-blueprint) .mapNote { margin:10px 0 0; font:600 11px/1.6 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .liveSpan { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:14px 24px 10px; }
+:global(.jf-blueprint) .liveSpan > span { font:600 11px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .liveRow[data-selected="true"] { outline:2px solid var(--blueprint); outline-offset:-2px; }
+:global(.jf-blueprint) .liveRow { cursor:pointer; }
+@media (min-width: 720px) {
   :global(.jf-blueprint) .mapCard { position:absolute; right:12px; top:12px; margin:0; width:24rem; max-width:calc(100% - 5rem); max-height:calc(100% - 24px); }
+  :global(.jf-blueprint) .mapZoomLevel[data-card="true"] { display:none; }
+}
+@media (max-width: 560px) {
+  :global(.jf-blueprint) .map { padding:0 16px 8px; }
+  :global(.jf-blueprint) .mapLoading { margin:0 16px 8px; }
+  :global(.jf-blueprint) .liveSpan { padding:12px 16px 8px; }
 }
 
-/* ── Motion ────────────────────────────────────────────────── */
-@keyframes spin { to { transform:rotate(360deg); } }
-@keyframes pulse { 0%, 100% { opacity:.55; } 50% { opacity:1; } }
-:global(.jf-blueprint) .spin { animation:spin 1s linear infinite; }
-@media (prefers-reduced-motion:reduce) {
-  :global(.jf-blueprint) :is(.spin,.drillSkeleton span,.sectionIcon[data-live="true"]) { animation:none; }
-}
-
-/* ── Narrower screens ─────────────────────────────────────── */
-@media (max-width:1250px) {
-  :global(.jf-blueprint) .kpis[data-cols="6"] { --cols:3; }
-  :global(.jf-blueprint) .funnelLayout { grid-template-columns:minmax(0,1fr); }
-  :global(.jf-blueprint) .plate { border-left:0; border-top:2px solid var(--ink); }
-  :global(.jf-blueprint) .outcomes { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:32px; }
-  :global(.jf-blueprint) .outcomes > div[data-key="true"] + div:not([data-key]) { border-top:0; }
-}
-@media (max-width:1000px) {
-  :global(.jf-blueprint) .kpis[data-cols="5"] { --cols:4; }
-  :global(.jf-blueprint) .kpis[data-cols="5"] > .kpi[data-lead="true"] { grid-column:span 4; }
-  :global(.jf-blueprint) .ledgerCols { display:none; }
-  :global(.jf-blueprint) .ledgerRow { grid-template-columns:minmax(0,1fr) auto; gap:8px 16px; }
-  :global(.jf-blueprint) .ledgerWho { grid-column:1; grid-row:1; }
-  :global(.jf-blueprint) .ledgerWhen { grid-column:2; grid-row:1; }
-  :global(.jf-blueprint) :is(.ledgerFrom,.ledgerPlan) { grid-column:1 / -1; }
-  :global(.jf-blueprint) .ledgerPlan { flex-direction:row; align-items:center; flex-wrap:wrap; gap:8px; }
-}
-@media (max-width:768px) {
-  :global(.jf-blueprint) .root { gap:44px; }
-  :global(.jf-blueprint) .header { margin-bottom:-16px; }
-  :global(.jf-blueprint) .header h1 { font-size:44px; }
-  :global(.jf-blueprint) .sectionHead { align-items:flex-start; }
-  :global(.jf-blueprint) .sectionTitle h2 { font-size:28px; }
-  :global(.jf-blueprint) .sectionIcon { width:44px; height:44px; }
-  :global(.jf-blueprint) .bigTitle { font-size:20px !important; }
-  :global(.jf-blueprint) .bigTitle b { font-size:26px; }
-  :global(.jf-blueprint) :is(.cardTools,.sectionTools) > .rangeSelect { flex:1; width:auto; }
-  :global(.jf-blueprint) .platform { padding:12px; }
-  :global(.jf-blueprint) .platformCount strong { font-size:28px; }
-  :global(.jf-blueprint) .mapLegend { grid-template-columns:1fr 1fr; }
-  :global(.jf-blueprint) .mapLegend li { padding:8px 10px; gap:8px; }
-  :global(.jf-blueprint) .mapLegend span { font-size:12px; }
-  :global(.jf-blueprint) .sectionTools { width:100%; }
-  :global(.jf-blueprint) .sectionTools > .segment { flex:1; }
-  :global(.jf-blueprint) .sectionTools > .chip { flex:1 1 auto; justify-content:center; }
-  :global(.jf-blueprint) .sectionTools > .segment button { flex:1; padding:0 8px; min-height:44px; }
-  :global(.jf-blueprint) .kpis[data-cols] { --cols:2; }
-  :global(.jf-blueprint) .kpis[data-cols="5"] > .kpi[data-lead="true"] { grid-column:span 2; }
-  :global(.jf-blueprint) .kpi { padding:16px; gap:8px; }
-  :global(.jf-blueprint) .kpi > strong { font-size:30px; }
-  :global(.jf-blueprint) .kpi > small { font-size:11px; }
-  :global(.jf-blueprint) :is(.cardHead,.headline,.cardNote,.cardBlock,.cardFoot) { padding-left:16px; padding-right:16px; }
-  :global(.jf-blueprint) .cardHead { align-items:flex-start; }
-  :global(.jf-blueprint) .cardTools { width:100%; }
-  :global(.jf-blueprint) .cardTools .filterLabel { flex:1 1 120px; min-width:0; }
-  :global(.jf-blueprint) .cardTools > .segment { width:100%; }
-  :global(.jf-blueprint) .cardTools > .segment button { flex:1; min-height:44px; }
-  :global(.jf-blueprint) .platforms { padding:16px; grid-template-columns:1fr 1fr; gap:8px; }
-  :global(.jf-blueprint) .liveMapCol { padding:16px; }
-  :global(.jf-blueprint) .ledgerRow { padding:14px 16px; }
-  :global(.jf-blueprint) .scopeRow { padding:12px; }
-  :global(.jf-blueprint) .scopeRow > :is(.dateRoot,.segment) { width:100%; }
-  :global(.jf-blueprint) .scopeRow .dateButton { width:100%; }
-  :global(.jf-blueprint) .scopeRow > .segment button { flex:1; min-height:44px; padding:0 6px; }
-  :global(.jf-blueprint) .scopeActions { margin-left:auto; }
-  :global(.jf-blueprint) .filters { grid-template-columns:1fr 1fr; padding:12px; }
-  :global(.jf-blueprint) .calendar { position:fixed; top:auto; bottom:8px; left:50%; right:auto; transform:translateX(-50%); width:352px; max-width:calc(100vw - 8px); max-height:calc(100dvh - 16px); overflow-y:auto; padding:0; }
-  :global(.jf-blueprint) .calendar > :not(.calendarGrid) { padding:8px; }
-  :global(.jf-blueprint) .chartToolbar { padding:16px 16px 0; }
-  :global(.jf-blueprint) .chartReadout { padding:12px 16px 0; }
-  :global(.jf-blueprint) .chart { min-height:190px; padding:0 6px; }
-  :global(.jf-blueprint) .details { padding:6px 16px 10px; }
-  :global(.jf-blueprint) .funnelTable { padding:4px 12px 8px; }
-  :global(.jf-blueprint) .funnelHeading, :global(.jf-blueprint) .funnelRow { grid-template-columns:minmax(0,1fr) 46px 52px 58px; gap:6px; }
-  :global(.jf-blueprint) .funnelHeading { font-size:10px; }
-  :global(.jf-blueprint) .funnelHeading em { display:none; }
-  :global(.jf-blueprint) .funnelRow { font-size:11px; padding-right:0; }
-  :global(.jf-blueprint) .funnelRow > strong { font-size:19px; }
-  :global(.jf-blueprint) .stage { gap:6px; }
-  :global(.jf-blueprint) .stageNumber { width:18px; }
-  :global(.jf-blueprint) .stage b { font-size:13px; }
-  :global(.jf-blueprint) .stage b svg { opacity:1; }
-  :global(.jf-blueprint) .plate { padding:20px 16px; }
-  :global(.jf-blueprint) .plate > strong { font-size:44px; }
-  :global(.jf-blueprint) .outcomes { grid-template-columns:1fr; }
-  :global(.jf-blueprint) .cardDisclosure { padding-left:16px; padding-right:16px; }
-  :global(.jf-blueprint) .exploreTabs button { flex:1; padding:12px 6px; font-size:12px; gap:6px; }
-  :global(.jf-blueprint) .exploreBody { padding:16px; }
-  :global(.jf-blueprint) .pageTools { width:100%; }
-  :global(.jf-blueprint) .pageTools .input { flex:1; width:auto; min-width:0; }
-  :global(.jf-blueprint) .tabs { flex-wrap:nowrap; overflow-x:auto; margin:0 -16px; padding:0 16px 2px; scrollbar-width:none; }
-  :global(.jf-blueprint) .tabs button { flex:0 0 auto; min-height:44px; }
-  :global(.jf-blueprint) .table { font-size:12px; }
-  :global(.jf-blueprint) .table th { font-size:10px; }
-  :global(.jf-blueprint) .experimentControls { flex-direction:column; }
-  :global(.jf-blueprint) .toolCard > summary { padding:14px 16px; }
-  :global(.jf-blueprint) .toolTitle b { font-size:18px; }
-  :global(.jf-blueprint) .toolBody { padding:16px; }
+/* ── The ad platforms, live (2026-09-29) — cards in each platform's colour ── */
+:global(.jf-blueprint) .platforms { display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:12px; padding:14px 24px 4px; }
+:global(.jf-blueprint) .platform { display:flex; flex-direction:column; gap:8px; text-align:left; padding:14px 14px 12px; border:1.5px solid var(--hair-soft); border-top:4px solid var(--platform); border-radius:2px; background:var(--traffic-plate); color:var(--ink); min-height:0; transition:border-color .12s var(--ease), box-shadow .12s var(--ease); }
+:global(.jf-blueprint) .platform:hover { border-color:var(--ink); border-top-color:var(--platform); }
+:global(.jf-blueprint) .platform[aria-pressed="true"] { border-color:var(--ink); border-top-color:var(--platform); box-shadow:2px 2px 0 var(--ink); background:var(--paper); }
+:global(.jf-blueprint) .platformName { display:flex; align-items:center; gap:8px; font:800 13px var(--font); }
+:global(.jf-blueprint) .platformName i { width:10px; height:10px; background:var(--platform); flex:0 0 auto; }
+:global(.jf-blueprint) .platformName em { margin-left:auto; font:700 9.5px var(--font-mono); font-style:normal; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); border:1px solid var(--hair-soft); padding:2px 5px; }
+:global(.jf-blueprint) .platformCount { font:850 30px/1 var(--font); letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .platformCount small { font:600 11px var(--font-mono); letter-spacing:0; color:var(--success-dark); margin-left:4px; }
+:global(.jf-blueprint) .platformSplit { font:600 11px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .platformSplit b { color:var(--ink); }
+:global(.jf-blueprint) .platformBar { display:flex; height:6px; background:var(--paper); border:1px solid var(--hair-soft); overflow:hidden; }
+:global(.jf-blueprint) .platformBar i { display:block; height:100%; background:var(--platform); }
+:global(.jf-blueprint) .platformOutcomes { display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
+:global(.jf-blueprint) .platformOutcomes > span { display:flex; flex-direction:column; align-items:center; gap:1px; padding:6px 4px; background:var(--chart-fill); text-align:center; }
+:global(.jf-blueprint) .platformOutcomes > span[data-tone="ok"] { background:var(--success-soft); }
+:global(.jf-blueprint) .platformOutcomes > span[data-tone="today"] { background:var(--paper); }
+:global(.jf-blueprint) .platformOutcomes small { font:700 9.5px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+:global(.jf-blueprint) .platformOutcomes b { font:850 16px var(--font); font-variant-numeric:tabular-nums; }
+:global(.jf-blueprint) .platformOutcomes > span[data-tone="ok"] b { color:var(--success-dark); }
+:global(.jf-blueprint) .platformCampaigns { display:flex; flex-direction:column; gap:2px; font:600 10.5px/1.5 var(--font-mono); color:var(--muted); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .platformCampaigns b { color:var(--ink); }
+/* Links for the ads: a row per link, the address in a mono well, a copy button beside. */
+:global(.jf-blueprint) .linksForm { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:14px; margin-bottom:18px; }
+:global(.jf-blueprint) .linksInput { min-height:44px; padding:8px 12px; border:1.5px solid var(--ink); border-radius:2px; font:600 13px var(--font); background:var(--traffic-plate); }
+:global(.jf-blueprint) .linksRow { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px 12px; align-items:center; margin-top:12px; }
+:global(.jf-blueprint) .linksRow > span { grid-column:1 / -1; font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.07em; color:var(--traffic-label); }
+:global(.jf-blueprint) .linksRow code { display:block; min-width:0; padding:10px 12px; border:1.5px solid var(--hair-soft); background:var(--paper); font:600 12px/1.5 var(--font-mono); color:var(--ink); overflow-wrap:anywhere; }
+@media (max-width: 560px) {
+  :global(.jf-blueprint) .platforms { padding:12px 16px 4px; grid-template-columns:1fr; }
   :global(.jf-blueprint) .linksRow { grid-template-columns:1fr; }
   :global(.jf-blueprint) .linksRow button { width:100%; }
-  :global(.jf-blueprint) .drillSummary { grid-template-columns:1fr; gap:14px; }
-  :global(.jf-blueprint) .drillList li { grid-template-columns:1fr; }
-  :global(.jf-blueprint) .drillLead strong { font-size:28px; }
 }
 
-/* ── Daily tables (daily-tables.tsx, 2026-10-01) in this page's card style ── */
-:global(.jf-blueprint) .cardHead h2 { margin:0; font:800 15px/1.2 var(--font); text-transform:uppercase; letter-spacing:.04em; }
-:global(.jf-blueprint) .micro { display:block; margin:6px 0 0; max-width:90ch; font:500 12.5px/1.55 var(--font); color:var(--muted); }
-:global(.jf-blueprint) .stamp { flex:0 0 auto; padding:4px 8px; border:1.5px solid var(--blueprint); border-radius:2px; font:700 10.5px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; color:var(--blueprint); white-space:nowrap; }
-:global(.jf-blueprint) .card > .tableScroll { padding:8px 24px 0; }
-:global(.jf-blueprint) .footnote { margin:0; padding:14px 24px 20px; max-width:110ch; font:500 12.5px/1.6 var(--font); color:var(--muted); }
-/* The Ads Manager clicks, typed per day. */
-:global(.jf-blueprint) .clicksInput { width:84px; min-height:36px; padding:6px 8px; border:1.5px solid var(--t-line); border-radius:2px; font:600 13px var(--font-mono); text-align:right; background:var(--t-plate); color:var(--ink); }
-:global(.jf-blueprint) .table td[data-sign="down"] { color:var(--danger); font-weight:700; }
-:global(.jf-blueprint) .table td[data-sign="up"] { color:var(--success-dark); font-weight:700; }
-/* Long lists: rows off screen are not laid out until they scroll near. */
-:global(.jf-blueprint) .ledgerRow, :global(.jf-blueprint) .drillList li { content-visibility:auto; contain-intrinsic-size:auto 72px; }
-:global(.jf-blueprint) .kpis[data-cols="7"] { --cols:7; }
-:global(.jf-blueprint) .kpis[data-cols="7"] .kpi { padding-left:18px; padding-right:18px; }
-@media (max-width:1400px) { :global(.jf-blueprint) .kpis[data-cols="7"] { --cols:4; } }
-@media (max-width:768px) {
-  :global(.jf-blueprint) .kpis[data-cols="7"] { --cols:2; }
-  :global(.jf-blueprint) .kpis[data-cols="7"] > .kpi[data-lead="true"] { grid-column:span 2; }
-  :global(.jf-blueprint) .card > .tableScroll { padding:8px 16px 0; }
-  :global(.jf-blueprint) .footnote { padding:12px 16px 16px; }
-}
-
-/* ── Visitor list beside the map (back 2026-10-01, polished) ── */
-:global(.jf-blueprint) .liveBody { display:grid; grid-template-columns:minmax(0,1fr); }
-:global(.jf-blueprint) .liveListCol { min-width:0; display:flex; flex-direction:column; border-top:1px solid var(--t-line); }
-:global(.jf-blueprint) .liveListHead { display:flex; align-items:baseline; justify-content:space-between; padding:14px 20px; border-bottom:2px solid var(--ink); font:800 13px var(--font); text-transform:uppercase; letter-spacing:.05em; }
-:global(.jf-blueprint) .liveListHead b { font:900 20px/1 var(--font); color:var(--blueprint); font-variant-numeric:tabular-nums; }
-:global(.jf-blueprint) .liveList { list-style:none; margin:0; padding:0; }
-:global(.jf-blueprint) .liveRow { border-bottom:1px solid var(--t-line); content-visibility:auto; contain-intrinsic-size:auto 120px; }
-:global(.jf-blueprint) .liveRow > button { width:100%; display:flex; flex-direction:column; gap:6px; padding:14px 20px; border:0; border-left:4px solid transparent; border-radius:0; background:transparent; color:inherit; text-align:left; transition:background .14s var(--ease), border-color .14s var(--ease); }
-:global(.jf-blueprint) .liveRow > button:hover { background:var(--paper); }
-:global(.jf-blueprint) .liveRow > button[aria-pressed="true"] { background:var(--paper); border-left-color:var(--blueprint); }
-:global(.jf-blueprint) .liveRow > button:focus-visible { outline-offset:-3px; }
-:global(.jf-blueprint) .liveRow[data-active="false"] > button { opacity:.78; }
-:global(.jf-blueprint) .liveRow[data-stage="signed-up"] > button { background:var(--success-soft); }
-:global(.jf-blueprint) .liveTop { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-:global(.jf-blueprint) .liveStage { display:inline-flex; align-items:center; gap:8px; font:800 14px/1.3 var(--font); }
-:global(.jf-blueprint) .liveStage i { width:10px; height:10px; border-radius:50%; flex:0 0 auto; background:var(--map-visitor); }
-:global(.jf-blueprint) .liveRow[data-stage="signing-in"] .liveStage i { background:var(--map-signin); }
-:global(.jf-blueprint) .liveRow:is([data-stage="registering"],[data-stage="checkout"]) .liveStage i { background:var(--map-signing); }
-:global(.jf-blueprint) .liveRow[data-stage="signed-up"] .liveStage i { background:var(--map-signed); }
-:global(.jf-blueprint) .liveRow[data-stage="member"] .liveStage i { background:var(--map-member); }
-:global(.jf-blueprint) .liveRow[data-stage="signed-up"] .liveStage { color:var(--success-dark); }
-:global(.jf-blueprint) .liveTop em { flex:0 0 auto; font:700 11px var(--font-mono); font-style:normal; color:var(--muted); white-space:nowrap; }
-:global(.jf-blueprint) .liveTop em[data-active="true"] { padding:2px 7px; border-radius:2px; background:var(--success-soft); color:var(--success-dark); text-transform:uppercase; letter-spacing:.06em; }
-:global(.jf-blueprint) .liveWhoLine { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font:600 13px var(--font); color:var(--ink); }
-:global(.jf-blueprint) .liveWhoLine svg { color:var(--muted); }
-:global(.jf-blueprint) .liveWhoLine > span:not(.stampPlan) { color:var(--muted); font-weight:500; }
-:global(.jf-blueprint) .livePage { display:flex; align-items:baseline; gap:8px; font:500 13px/1.4 var(--font); color:var(--muted); overflow-wrap:anywhere; }
-:global(.jf-blueprint) .livePage b { font-weight:700; color:var(--ink); }
-:global(.jf-blueprint) .liveSource { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font:600 12px/1.5 var(--font-mono); color:var(--ink-soft); overflow-wrap:anywhere; }
-:global(.jf-blueprint) .tagLocked { color:#0e7490; }
-:global(.jf-blueprint) .liveClicks { display:flex; align-items:center; gap:6px; font:600 12px/1.5 var(--font); color:var(--blueprint); overflow-wrap:anywhere; }
-:global(.jf-blueprint) .liveClicks svg { flex-shrink:0; }
-:global(.jf-blueprint) .liveMeta { font:600 11.5px/1.5 var(--font-mono); color:var(--muted); overflow-wrap:anywhere; }
-@media (min-width:1400px) {
-  :global(.jf-blueprint) .liveBody { grid-template-columns:minmax(0,1.6fr) minmax(360px,1fr); }
-  :global(.jf-blueprint) /* The map sets the row height; the list scrolls inside it. */ .liveListCol { border-top:0; border-left:1px solid var(--t-line); contain:size; min-height:420px; }
-  :global(.jf-blueprint) .liveListCol > .liveList { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; }
-}
-@media (max-width:768px) {
-  :global(.jf-blueprint) .liveListHead { padding:12px 16px; }
-  :global(.jf-blueprint) .liveRow > button { padding:12px 16px; }
-}
+/* Long lists (2026-10-01): rows off screen are not laid out or painted until
+   they scroll near — the browser's own virtualisation, so a 400-row ledger or
+   a busy live list costs what the visible rows cost. */
+:global(.jf-blueprint) .liveRow, :global(.jf-blueprint) .ledgerRow, :global(.jf-blueprint) .drillList li { content-visibility:auto; contain-intrinsic-size:auto 96px; }
+/* The Ads Manager clicks, typed per day (daily-tables.tsx). */
+:global(.jf-blueprint) .clicksInput { width:84px; min-height:36px; padding:6px 8px; border:1.5px solid var(--traffic-line); border-radius:var(--radius, 2px); font:600 13px var(--font-mono); text-align:right; background:var(--paper-deep); color:var(--ink); }
+:global(.jf-blueprint) .clicksInput:focus-visible { outline:2px solid var(--blueprint); outline-offset:1px; }
+:global(.jf-blueprint) .table td[data-sign="down"] { color:var(--danger, #a83232); font-weight:700; }
+:global(.jf-blueprint) .table td[data-sign="up"] { color:var(--success, #3a7d44); font-weight:700; }

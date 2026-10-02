@@ -1,6 +1,6 @@
 import type { ExperimentResult, StageVisitor, StageVisitorsReport, TrafficBreakdown, TrafficDaily, TrafficFilters, TrafficReport, TrafficTotals } from "./traffic-contract";
 import { buildExperimentsQuery, buildStageVisitorsQuery, buildTrafficQueries, funnelStages, shiftDate } from "./traffic-query";
-import { buildLiveQuery, buildLiveTotalsQuery, buildRangeQuery, liveEventFromRow, liveHeadline, liveTotalsFromRow, minutesIntoDay, platformCards, rangeEventsFromRow, RANGE_MAP_CAP, RANGE_MINUTES, shapeLive, shortId, type FreshSignup, type LiveEvent, type LiveRange, type LiveReport, type LiveTotalsPair } from "./traffic-live";
+import { buildLiveQuery, buildLiveTotalsQuery, liveEventFromRow, liveHeadline, liveTotalsFromRow, minutesIntoDay, shapeLive, type FreshSignup, type LiveEvent, type LiveReport, type LiveTotalsPair } from "./traffic-live";
 
 /** The last half hour of events, one PostHog query, shared by every admin
  *  looking for LIVE_CACHE_MS — the query endpoint's budget is small, and the
@@ -39,56 +39,21 @@ export async function fetchLiveTotals(timezone: string, fullHistory = false): Pr
   return promise;
 }
 
-/** The Visitors card's long ranges (a day and up): one summary row per
- *  person. Minutes-cached per range — a week does not move in 15 seconds,
- *  and the all-time read touches every event. */
-const RANGE_CACHE_MS = 5 * 60_000;
-type RangeRows = Array<{ events: LiveEvent[]; person: string; views: number }>;
-const rangeRows = new Map<string, { at: number; promise: Promise<RangeRows> }>();
-async function fetchRangeRows(range: LiveRange, includeLocal: boolean, fullHistory: boolean): Promise<RangeRows> {
-  const now = Date.now();
-  const key = `${range}|${includeLocal ? "local" : "prod"}|${fullHistory ? "full" : "since"}`;
-  const hit = rangeRows.get(key);
-  if (hit && now - hit.at < RANGE_CACHE_MS) return hit.promise;
-  const promise = runTrafficQuery(buildRangeQuery(RANGE_MINUTES[range], { includeLocal, fullHistory }), "live range").then((rows) => rows.map(rangeEventsFromRow).filter((r): r is RangeRows[number] => !!r));
-  promise.catch(() => { if (rangeRows.get(key)?.promise === promise) rangeRows.delete(key); });
-  rangeRows.set(key, { at: now, promise });
-  return promise;
-}
-
-type LiveOpts = { includeDevelopment?: boolean; timezone?: string; fast?: boolean; fullHistory?: boolean; range?: LiveRange; signedUpBy?: Record<string, number> };
-
-/** The live report: the window's visitors shaped with the day's signups.
- *  The Visitors card's range (2026-10-01) swaps `visitors` and `platforms`
- *  for that range; the Stats tiles keep reading the live window. */
-export async function getLiveTraffic(signups: FreshSignup[], opts: LiveOpts = {}): Promise<LiveReport> {
+/** The live report: the window's visitors shaped with the day's signups. */
+export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDevelopment?: boolean; timezone?: string; fast?: boolean; fullHistory?: boolean } = {}): Promise<LiveReport> {
   const fetchedAt = new Date().toISOString();
-  const range = opts.range ?? "30m";
-  const empty = () => ({ ...shapeLive([], signups, Date.now(), opts), range, rangeTotal: 0 });
   try {
-    if (!posthogApiConfig()) return { ...empty(), status: "disabled", message: "Connect a PostHog personal key with query:read and a numeric project ID.", fetchedAt };
-  } catch (err) { return { ...empty(), status: "error", message: (err as Error).message, fetchedAt }; }
+    if (!posthogApiConfig()) return { ...shapeLive([], signups, Date.now(), opts), status: "disabled", message: "Connect a PostHog personal key with query:read and a numeric project ID.", fetchedAt };
+  } catch (err) { return { ...shapeLive([], signups, Date.now(), opts), status: "error", message: (err as Error).message, fetchedAt }; }
   try {
     // The totals must never take the live view down with them: a failure
     // there leaves the window intact and the panel simply prints no totals.
-    const long = RANGE_MINUTES[range] === null || (RANGE_MINUTES[range] ?? 0) > 30;
-    const [events, pair, longRows] = await Promise.all([
+    const [events, pair] = await Promise.all([
       fetchLiveEvents(opts.fast ? LIVE_FAST_CACHE_MS : LIVE_CACHE_MS),
       fetchLiveTotals(opts.timezone || "UTC", !!opts.fullHistory).catch(() => null),
-      long ? fetchRangeRows(range, !!opts.includeDevelopment, !!opts.fullHistory) : Promise.resolve(null),
     ]);
     const totals = pair ? (opts.includeDevelopment ? pair.all : pair.production) : null;
-    const now = Date.now();
-    const shaped = shapeLive(events, signups, now, opts);
-    // The range's visitors: the live window (all of it, or its last 5
-    // minutes), or the long-range summary rows shaped the same way.
-    let rangeVisitors = range === "5m" ? shaped.visitors.filter((v) => v.active) : shaped.visitors;
-    if (longRows) {
-      rangeVisitors = shapeLive(longRows.flatMap((r) => r.events), [], now, { includeDevelopment: opts.includeDevelopment, fullHistory: opts.fullHistory, windowMinutes: null }).visitors;
-      const views = new Map(longRows.map((r) => [shortId(r.person), r.views]));
-      for (const v of rangeVisitors) v.views = views.get(v.id) ?? v.views;
-    }
-    const platforms = opts.signedUpBy ? platformCards(rangeVisitors, [], opts.signedUpBy) : shaped.platforms;
+    const shaped = shapeLive(events, signups, Date.now(), opts);
     const dayAgeMinutes = minutesIntoDay(opts.timezone || "UTC");
     // The busiest platform of the window, for the sentence.
     const top = [...shaped.platforms].sort((a, b) => b.visitors - a.visitors)[0];
@@ -105,10 +70,10 @@ export async function getLiveTraffic(signups: FreshSignup[], opts: LiveOpts = {}
       dayAgeMinutes,
       topPlatform: top && top.visitors > 0 ? { name: top.name, visitors: top.visitors } : null,
     });
-    return { ...shaped, visitors: rangeVisitors.slice(0, RANGE_MAP_CAP), platforms, range, rangeTotal: rangeVisitors.length, totals, dayAgeMinutes, headline, status: "ok", fetchedAt };
+    return { ...shaped, totals, dayAgeMinutes, headline, status: "ok", fetchedAt };
   } catch (err) {
     const msg = err instanceof Error && err.name === "TimeoutError" ? "PostHog took too long. Try again shortly." : err instanceof Error ? err.message : "Live view unavailable.";
-    return { ...empty(), status: "error", message: msg, fetchedAt };
+    return { ...shapeLive([], signups, Date.now(), opts), status: "error", message: msg, fetchedAt };
   }
 }
 

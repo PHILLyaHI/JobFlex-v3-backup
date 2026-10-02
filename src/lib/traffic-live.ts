@@ -31,18 +31,6 @@ import { resolveLandingVariant, VARIANT_TRADE } from "@/components/v3/landing-e/
 
 export const LIVE_WINDOW_MINUTES = 30;
 export const LIVE_ACTIVE_MINUTES = 5;
-
-/** The Visitors card's range (2026-10-01). 5 and 30 minutes come from the
- *  live event window; the longer ones from a per-person summary query
- *  (buildRangeQuery), since the raw-event window stops at two hours. */
-export type LiveRange = "5m" | "30m" | "1d" | "7d" | "30d" | "all";
-export const LIVE_RANGES: Array<[LiveRange, string]> = [["5m", "Last 5 minutes"], ["30m", "Last 30 minutes"], ["1d", "Last 24 hours"], ["7d", "Last 7 days"], ["30d", "Last 30 days"], ["all", "All time"]];
-/** The range in minutes; null = all time. */
-export const RANGE_MINUTES: Record<LiveRange, number | null> = { "5m": 5, "30m": 30, "1d": 1440, "7d": 10080, "30d": 43200, all: null };
-export const parseLiveRange = (v: unknown): LiveRange => (typeof v === "string" && v in RANGE_MINUTES ? (v as LiveRange) : "30m");
-/** The map gets at most this many visitors (the most recent); the platform
- *  counts always cover everyone in the range. */
-export const RANGE_MAP_CAP = 2000;
 /** The verified signup event and the database row are this close in time. */
 const SIGNUP_MATCH_MS = 15 * 60_000;
 
@@ -269,11 +257,6 @@ export interface LiveReport {
   status: "ok" | "disabled" | "error";
   message?: string;
   fetchedAt: string;
-  /** The Visitors card's range; `visitors` and `platforms` cover it, while
-   *  `counts` and `totals` stay live (the Stats tiles). */
-  range: LiveRange;
-  /** Everyone in the range, before the map's RANGE_MAP_CAP. */
-  rangeTotal: number;
   windowMinutes: number;
   activeMinutes: number;
   visitors: LiveVisitor[];
@@ -713,9 +696,8 @@ export function liveHeadline(r: {
 }
 
 /** The visitors of the window, newest activity first, signups on top. */
-export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Date.now(), opts: { includeDevelopment?: boolean; fullHistory?: boolean; windowMinutes?: number | null } = {}): Omit<LiveReport, "status" | "message" | "fetchedAt" | "range" | "rangeTotal"> {
-  const span = opts.windowMinutes === undefined ? LIVE_WINDOW_MINUTES : opts.windowMinutes;
-  const windowStart = span === null ? -Infinity : now - span * 60_000;
+export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Date.now(), opts: { includeDevelopment?: boolean; fullHistory?: boolean } = {}): Omit<LiveReport, "status" | "message" | "fetchedAt"> {
+  const windowStart = now - LIVE_WINDOW_MINUTES * 60_000;
   const activeSince = now - LIVE_ACTIVE_MINUTES * 60_000;
   const byPerson = new Map<string, LiveEvent[]>();
   for (const e of events) {
@@ -887,7 +869,7 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
  *  with a visitor, each with who it brought in the window, from ads or not,
  *  how far they got, today's signups the database credits to it, and the
  *  campaigns and ads seen. */
-export function platformCards(visitors: LiveVisitor[], signups: FreshSignup[], signedUpBy?: Record<string, number>): LivePlatform[] {
+export function platformCards(visitors: LiveVisitor[], signups: FreshSignup[]): LivePlatform[] {
   const by = new Map<string, LivePlatform>();
   const card = (key: string): LivePlatform => {
     const found = by.get(key);
@@ -906,7 +888,7 @@ export function platformCards(visitors: LiveVisitor[], signups: FreshSignup[], s
     if (v.active) c.onSite++;
     if (v.fromAd) c.fromAds++; else c.organic++;
     if (v.stage === "registering" || v.stage === "checkout") c.signingUp++;
-    if (v.stage === "signed-up" && !signedUpBy) c.signedUp++;
+    if (v.stage === "signed-up") c.signedUp++;
     if (v.campaign || v.content) {
       const list = campaignsBy.get(key) ?? new Map();
       const id = `${v.campaign}\u0000${v.content}`;
@@ -922,18 +904,7 @@ export function platformCards(visitors: LiveVisitor[], signups: FreshSignup[], s
     if (p === "direct") continue;
     card(PLATFORMS[p] ? p : "other").signedUpToday++;
   }
-  // Range mode (2026-10-01): "signed up" is the database's count for the
-  // chosen range, credited by the organization's own utm tags — the same
-  // reading the Signups ledger uses — and every platform is sorted by people.
-  if (signedUpBy) {
-    for (const [key, n] of Object.entries(signedUpBy)) if (n > 0) card(PLATFORMS[key] ? key : "other").signedUp += n;
-  }
   for (const [key, list] of campaignsBy) card(key).campaigns = [...list.values()].sort((a, b) => b.visitors - a.visitors).slice(0, 4);
-  if (signedUpBy) {
-    return [...by.values()]
-      .filter((p) => p.ads || p.visitors > 0 || p.signedUp > 0)
-      .sort((a, b) => b.visitors - a.visitors || b.signedUp - a.signedUp || a.name.localeCompare(b.name));
-  }
   // The ad platforms in their fixed order, so the cards never jump around as
   // traffic shifts; then the other named platforms by visitors; then search,
   // direct and other sites, always last.
@@ -964,88 +935,6 @@ export function buildLiveQuery(windowMinutes = LIVE_WINDOW_MINUTES): string {
     FROM events
     WHERE timestamp > now() - INTERVAL ${Math.max(5, Math.min(120, Math.round(windowMinutes)))} MINUTE AND event IN (${events})
     ORDER BY timestamp DESC LIMIT 4000`;
-}
-
-/** The Visitors card's long ranges (a day and up, 2026-10-01): one row per
- *  person instead of one per event, so a month or all time stays one small
- *  answer. Each row carries what shapeLive reads — the first tagged source,
- *  the latest place, the first and last page — and a count per stage signal,
- *  which rangeEventsFromRow turns back into a handful of events. */
-/** Follows the page's one visitor rule (lib/traffic-visitor): counted hosts,
- *  no bots, and from the ad launch unless the full history is asked for. */
-export function buildRangeQuery(minutes: number | null, opts: { includeLocal?: boolean; fullHistory?: boolean } = {}): string {
-  const prop = (name: string) => `ifNull(toString(properties.${name}), '')`;
-  const events = ["'$pageview'", ...[E.step, E.attempt, E.opened, E.completed].map((e) => `'${e}'`)].join(", ");
-  const since = minutes === null ? "" : ` AND timestamp > now() - INTERVAL ${Math.max(5, Math.round(minutes))} MINUTE`;
-  const tagged = "src != ''";
-  return `SELECT pid, any(did), toUnixTimestamp(min(ts)) * 1000, toUnixTimestamp(max(ts)) * 1000,
-    argMin(pth, ts), argMaxIf(pth, ts, pth != ''), argMin(url, ts), argMin(host, ts), argMin(env, ts),
-    argMinIf(src, ts, ${tagged}), argMinIf(med, ts, ${tagged}), argMinIf(camp, ts, ${tagged}), argMinIf(cont, ts, ${tagged}),
-    argMin(ref, ts), argMax(dev, ts), argMax(brw, ts), argMax(os, ts),
-    argMaxIf(country, ts, lat IS NOT NULL), argMaxIf(region, ts, lat IS NOT NULL), argMaxIf(city, ts, lat IS NOT NULL),
-    argMaxIf(lat, ts, lat IS NOT NULL), argMaxIf(lon, ts, lat IS NOT NULL), argMaxIf(cc, ts, lat IS NOT NULL), argMaxIf(rc, ts, lat IS NOT NULL),
-    argMinIf(click, ts, click != ''),
-    countIf(event = '$pageview'),
-    countIf(event = '${E.completed}' AND verified IN ('true', '', '1')),
-    countIf(event IN ('${E.opened}', '${E.attempt}')),
-    countIf(event = '${E.step}' OR startsWith(pth, '/auth/register')),
-    countIf(match(pth, '^/(dashboard|mobile-|w/|portal|worker)')),
-    countIf(match(pth, '^/auth/(login|signin|sign-in|verify|confirm)')),
-    countIf(match(pth, '^/auth/(forgot|reset|recover)')),
-    argMax(ua, ts), argMax(btype, ts)
-  FROM (
-    SELECT toString(person_id) AS pid, toString(distinct_id) AS did, event, timestamp AS ts,
-      ifNull(nullIf(${prop("$pathname")}, ''), path(${prop("$current_url")})) AS pth, ${prop("$current_url")} AS url,
-      ${HOST_SQL} AS host, ${prop("jf_environment")} AS env, ${UA_SQL} AS ua, ${BROWSER_TYPE_SQL} AS btype,
-      ${prop("utm_source")} AS src, ${prop("utm_medium")} AS med, ${prop("utm_campaign")} AS camp, ${prop("utm_content")} AS cont,
-      ${prop("$referring_domain")} AS ref, ${prop("$device_type")} AS dev, ${prop("$browser")} AS brw, ${prop("$os")} AS os,
-      ${prop("$geoip_country_name")} AS country, ${prop("$geoip_subdivision_1_name")} AS region, ${prop("$geoip_city_name")} AS city,
-      toFloat64OrNull(toString(properties.$geoip_latitude)) AS lat, toFloat64OrNull(toString(properties.$geoip_longitude)) AS lon,
-      ${prop("$geoip_country_code")} AS cc, ${prop("$geoip_subdivision_1_code")} AS rc,
-      multiIf(${CLICK_ID_KEYS.map((k) => `${prop(k)} != '', '${k}'`).join(", ")}, '') AS click,
-      ${prop("verified")} AS verified
-    FROM events
-    WHERE event IN (${events}) AND timestamp <= now()${since} AND ${sinceSql(!!opts.fullHistory)}
-      AND ${visitorRuleSql({ host: HOST_SQL, ua: UA_SQL, browserType: BROWSER_TYPE_SQL, event: "event" }, opts.includeLocal ? "with-local" : "production")}
-  )
-  WHERE NOT startsWith(pth, '/admin')
-  GROUP BY pid
-  ORDER BY max(ts) DESC
-  LIMIT 20000`;
-}
-
-/** One summary row → the few events shapeLive needs: the first page (with
- *  the source), a marker per stage reached, and the last page. `views` is the
- *  real pageview count, for the caller to put back on the visitor. */
-export function rangeEventsFromRow(row: unknown[]): { events: LiveEvent[]; person: string; views: number } | null {
-  const str = (i: number) => (typeof row[i] === "string" ? (row[i] as string) : row[i] == null ? "" : String(row[i]));
-  const num = (i: number) => { const v = Number(row[i]); return Number.isFinite(v) ? v : 0; };
-  const firstAt = num(2), lastAt = num(3);
-  const person = str(0);
-  if (!person || firstAt <= 0 || lastAt <= 0) return null;
-  const coord = (i: number, limit: number) => { const v = row[i] == null || row[i] === "" ? NaN : Number(row[i]); return Number.isFinite(v) && Math.abs(v) <= limit && v !== 0 ? v : null; };
-  const lat = coord(20, 90), lon = coord(21, 180);
-  const clickKey = str(24).toLowerCase();
-  const base: Omit<LiveEvent, "event" | "at" | "pathname" | "url"> = {
-    person, distinctId: str(1), sessionId: "", hostname: str(7), environment: str(8),
-    utmSource: str(9), utmMedium: str(10), utmCampaign: str(11), utmContent: str(12), referrer: str(13),
-    device: str(14), browser: str(15), os: str(16), country: str(17), region: str(18), city: str(19),
-    step: "", outcome: "", plan: "", verified: "true",
-    lat: lat !== null && lon !== null ? lat : null, lon: lat !== null && lon !== null ? lon : null,
-    countryCode: str(22).toUpperCase().slice(0, 2), regionCode: str(23).toUpperCase().slice(0, 3),
-    click: CLICK_IDS[clickKey] ? clickKey : "", placement: "", label: "",
-    orgId: "", userId: "", ua: str(32), browserType: str(33),
-  };
-  const events: LiveEvent[] = [{ ...base, event: "$pageview", at: firstAt, pathname: str(4) || "/", url: str(6) }];
-  const mark = (on: boolean, event: string, pathname: string) => { if (on) events.push({ ...base, event, at: firstAt, pathname, url: "" }); };
-  mark(num(30) > 0, "$range", "/auth/login");
-  mark(num(31) > 0, "$range", "/auth/forgot-password");
-  mark(num(29) > 0, "$range", "/dashboard");
-  mark(num(28) > 0, "$range", "/auth/register");
-  mark(num(27) > 0, E.opened, "");
-  mark(num(26) > 0, E.completed, "");
-  events.push({ ...base, event: "$pageview", at: Math.max(firstAt, lastAt), pathname: str(5) || str(4) || "/", url: "" });
-  return { events, person, views: num(25) };
 }
 
 /** A timezone name, safe to paste into HogQL. Anything else falls back to UTC

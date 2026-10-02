@@ -6,7 +6,7 @@ import { getLiveTraffic as liveTraffic, getStageVisitors, getTrafficExperiments,
 import { parseTrafficFilters } from "@/lib/traffic-query";
 import { TRAFFIC_SINCE_MS } from "@/lib/traffic-visitor";
 import type { SignupAttribution } from "@/lib/traffic-contract";
-import { adNameKey, adTagsOf, parseLiveRange, RANGE_MINUTES, signupLedgerSummary, signupPlanLabel, signupSource, signupState, type FreshSignup, type LiveRange, type LiveReport, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
+import { adNameKey, adTagsOf, signupLedgerSummary, signupPlanLabel, signupSource, signupState, type FreshSignup, type LiveReport, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
 
 /** The organizations made in the last day, with the owner who made them —
  *  the rows a live signup is tied back to (lib/traffic-live). */
@@ -39,37 +39,10 @@ async function freshSignups(): Promise<FreshSignup[]> {
 
 /** Who is on the site now, where from, how far they got — and the signups
  *  among them named (2026-09-28). `includeDevelopment` shows localhost too. */
-/** Signups per platform over the Visitors card's range (2026-10-01): the
- *  organizations made in it, credited by their own utm tags — the ledger's
- *  reading — so "signed up" on a platform card follows the chosen range. */
-async function signupsByPlatform(range: LiveRange, fullHistory: boolean): Promise<Record<string, number>> {
-  const minutes = RANGE_MINUTES[range];
-  // From the ad launch, like every figure on the page, unless the full history is asked for.
-  const since = Math.max(minutes === null ? 0 : Date.now() - minutes * 60_000, fullHistory ? 0 : TRAFFIC_SINCE_MS);
-  try {
-    const rows = await db.organization.groupBy({
-      by: ["utmSource", "utmMedium"],
-      where: { deletedAt: null, ...(since > 0 ? { createdAt: { gte: new Date(since) } } : {}) },
-      _count: { _all: true },
-    });
-    const out: Record<string, number> = {};
-    for (const r of rows) {
-      const p = signupSource({ utmSource: r.utmSource ?? "", utmMedium: r.utmMedium ?? "" }).platform;
-      out[p] = (out[p] ?? 0) + r._count._all;
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
-
 export async function getLiveTraffic(input: Record<string, unknown> = {}): Promise<LiveReport> {
   await requirePlatformAdmin();
-  const range = parseLiveRange(input.range);
-  const [signups, signedUpBy] = await Promise.all([freshSignups(), signupsByPlatform(range, input.fullHistory === true)]);
+  const signups = await freshSignups();
   const report = await liveTraffic(signups, {
-    range,
-    signedUpBy,
     includeDevelopment: input.includeDevelopment === true,
     // "Today" is a LOCAL day, and it has to be the same local day on the
     // server's first paint as in the client's polls. Reading it through

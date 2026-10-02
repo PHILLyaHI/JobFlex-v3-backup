@@ -1,18 +1,14 @@
 "use client";
 
-// Traffic (2026-10-01 redesign): four sections in the order the owner reads
-// them — Live now, Signups, Reports (one date scope over audience, conversion
-// and the explorer) and the Ad links tool, closed at the foot. Each figure
-// appears once; explanations sit in disclosures next to what they explain.
 import { useEffect, useRef, useState, useTransition } from "react";
-import { ArrowDownToLine, ArrowUpRight, BarChart3, ChevronRight, FlaskConical, Info, RefreshCw, SlidersHorizontal, Users } from "lucide-react";
+import { ArrowDownToLine, ArrowUpRight, ChevronRight, RefreshCw, SlidersHorizontal, FlaskConical, Info, Users } from "lucide-react";
 import { getSignupAttribution, getTrafficDashboard, getTrafficExperimentsAction, getTrafficStageVisitors } from "@/actions/trafficDashboard";
 import { conversionInterval, pageLabel, percent, type ExperimentResult, type SignupAttribution, type StageVisitor, type StageVisitorsReport, type TrafficFilters, type TrafficReport } from "@/lib/traffic-contract";
+import { AdsReconciliation, DailyPeople } from "./daily-tables";
 import { dateInZone, shiftDate } from "@/lib/traffic-query";
 import { Sheet, useMdl } from "@/components/v3/admin-influencers/admin-ui";
 import { TrafficChart } from "./traffic-chart";
 import { TrafficDatePicker } from "./traffic-date-picker";
-import { AdsReconciliation, DailyPeople } from "./daily-tables";
 import { TRAFFIC_SINCE, TRAFFIC_SINCE_LABEL } from "@/lib/traffic-visitor";
 import { LivePanel } from "./live-panel";
 import { SignupLedgerPanel } from "./signup-ledger";
@@ -26,8 +22,8 @@ const pageKeys = ["/", "/auth/login", "/auth/register", "registration:1", "regis
 const dimensions = { sources: "Sources", referrers: "Referrers", campaigns: "Campaigns", devices: "Devices", browsers: "Browsers", countries: "Countries", terms: "Campaign terms" } as const;
 type Dimension = keyof typeof dimensions;
 function delta(current: number | undefined, previous: number | undefined) {
-  if (current == null || previous == null) return "no comparison";
-  if (!previous) return current ? "no previous baseline" : "no change";
+  if (current == null || previous == null) return "Comparison unavailable";
+  if (!previous) return current ? "No previous baseline" : "No change";
   const d = (current - previous) / previous * 100;
   return `${d > 0 ? "+" : ""}${d.toFixed(1)}% vs previous period`;
 }
@@ -45,13 +41,11 @@ function csvCell(value: unknown) {
   const text = String(value ?? "");
   return '"' + (/^[=+\-@\t\r]/.test(text) ? "'" + text : text).replaceAll('"', '""') + '"';
 }
-function exportReport(report: TrafficReport, signups: SignupAttribution | null) {
+function exportReport(report: TrafficReport) {
   const coverageIncomplete = !report.firstStepAt || report.filters.from <= dateInZone(new Date(report.firstStepAt), report.filters.timezone);
   const rows: unknown[][] = [
     ["JobFlex traffic", report.filters.from, report.filters.to, report.filters.timezone],
     ["Filters", JSON.stringify(report.filters)],
-    ["Registered organizations (database)", signups?.total ?? "Unavailable", signups?.from ?? report.filters.from, signups?.to ?? report.filters.to],
-    ["Registration count scope", "All flows, billing modes and traffic sources; deleted organizations excluded. One registration per organization, not a payment count."],
     ["Daily", "Visitors", "New", "Returning", "Repeat visitors", "Sessions", "Views"],
     ...report.points.map(p => [p.date, p.visitors, p.newVisitors, p.returningVisitors, p.repeatVisitors, p.sessions, p.pageviews]),
     [], ["Page / step", "Visitors", "New", "Returning", "Repeat visitors", "Sessions", "Views"],
@@ -74,7 +68,6 @@ function exportReport(report: TrafficReport, signups: SignupAttribution | null) 
 
 const signupDimensions = { landingIndustry: "Landing trade", signupVariant: "Landing variant", utmSource: "utm_source", utmMedium: "utm_medium", utmCampaign: "utm_campaign", utmContent: "utm_content" } as const;
 type SignupDimension = keyof typeof signupDimensions;
-const outcomeRows = [["Trial attempts", "trialAttempts"], ["Purchase attempts", "purchaseAttempts"], ["Trials started", "trials"], ["Subscriptions purchased", "purchases"], ["Other activations", "other"]] as const;
 
 export function AdminTrafficContent({ data, deferred = false, signups: initialSignups = null, live = null, ledger = null }: { data: TrafficReport; deferred?: boolean; signups?: SignupAttribution | null; live?: LiveReport | null; ledger?: SignupLedger | null }) {
   const [report, setReport] = useState(data);
@@ -84,7 +77,6 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState("");
   const request = useRef(0);
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [tab, setTab] = useState<"pages" | "acquisition" | "experiments">("pages");
   const [dimension, setDimension] = useState<Dimension>("sources");
   const [search, setSearch] = useState("");
@@ -144,9 +136,6 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
   const coverageIncomplete = !stepCoverageDate || filters.from <= stepCoverageDate;
   const failed = (name: string) => name === "experiments" ? exp?.key === expKey && exp.failed : report.errors.some(e => e.startsWith(name + ":"));
   const today = dateInZone(new Date(), draft.timezone);
-  const activeFilters = [draft.page, draft.source, draft.device, draft.host, draft.audience !== "all", draft.environment !== "production"].filter(Boolean).length;
-  const statusOk = report.status === "ok" && !report.errors.length;
-  const updatedAt = new Date(report.fetchedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: filters.timezone });
 
   // Stage drill-down: who reached a funnel stage, with device, place and source.
   const [drill, setDrill] = useState<{ id: string; label: string } | null>(null);
@@ -169,180 +158,130 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
   const visitors = drillReport?.visitors ?? [];
   const place = (v: StageVisitor) => [v.city, v.region, v.country].filter(Boolean).join(", ");
 
-  // Funnel limits that change how the numbers read stay visible; the rest is
-  // in "About these numbers".
-  const funnelNotes = [
-    !report.firstStepAt && !failed("overview") && "Step tracking starts with this release. Earlier step conversions are not available.",
-    stepCoverageDate && coverageIncomplete && `Step tracking covers this range only from ${stepCoverageDate}. Rates from landing are hidden.`,
-    filters.page && "The page filter does not apply to this funnel.",
-  ].filter(Boolean) as string[];
-
   return <div className={s.root} aria-busy={pending}>
     <header className={s.header}>
-      <h1>Traffic<span>.</span></h1>
-      <div className={s.headerMeta}>
-        <span className={s.status} data-state={statusOk ? "ok" : "warning"}><i/>{deferred && !report.totals && !error ? "Loading PostHog…" : report.status === "disabled" ? "PostHog not connected" : report.status !== "ok" ? "PostHog unavailable" : report.errors.length ? "Partial data" : "PostHog connected"}</span>
-        <span className={s.updated}>{pending ? "Querying PostHog…" : `Report updated ${updatedAt}`}</span>
-        {/* Every figure counts from the ad launch; this brings the earlier history back. */}
-        <label className={s.chip} title={`Every figure counts from ${TRAFFIC_SINCE_LABEL} (the ad launch) unless this is on`}><input type="checkbox" checked={filters.fullHistory} disabled={pending} onChange={e => apply({ fullHistory: e.target.checked })}/>Full history</label>
+      <div><div className={s.eyebrow}>Platform intelligence / 01</div><h1>Traffic<span>.</span></h1></div>
+      <div className={s.headerActions}><span className={s.status} data-state={report.status === "ok" && !report.errors.length ? "ok" : "warning"}><i/>{deferred && !report.totals && !error ? "Loading PostHog…" : report.status === "disabled" ? "Not connected" : report.status !== "ok" ? "Unavailable" : report.errors.length ? "Partial data" : "PostHog connected"}</span>
+        <button className={s.button} onClick={() => exportReport(report)} disabled={!t || pending}><ArrowDownToLine size={15}/>Export CSV</button>
+        <button className={s.iconButton} aria-label="Refresh traffic" onClick={() => load(filters)} disabled={pending}><RefreshCw size={17} className={pending ? s.spin : ""}/></button>
       </div>
     </header>
 
+    <div className={s.lifetime}><span>All-time visitors <strong>{n(report.lifetime ?? live?.totals?.allTime)}</strong></span><span>Today <strong>{n(report.today ?? live?.totals?.today)}</strong></span><span className={s.scope}>{filters.environment === "all" ? "www.jobflex.app + localhost" : filters.environment === "development" ? "Localhost only" : "www.jobflex.app"} / no bots, no previews / {filters.fullHistory ? "full history" : `since ${TRAFFIC_SINCE_LABEL}`}</span><label className={s.liveToggle}><input type="checkbox" checked={filters.fullHistory} disabled={pending} onChange={e => apply({ fullHistory: e.target.checked })}/>Show full history</label><span className={s.updated}>{pending ? "Querying PostHog..." : `Updated ${new Date(report.fetchedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: filters.timezone })}`}</span></div>
+
     {/* Who is on the site this minute, where from, how far they got (2026-09-28). */}
-    {live ? <LivePanel initial={live} timezone={filters.timezone} fullHistory={filters.fullHistory}/>
-      : <div className={s.card}><div className={s.kpis} data-cols="2">
-        <div className={s.kpi} data-lead="true"><span>Visitors today</span><strong>{n(report.today)}</strong><small>selected host &amp; environment</small></div>
-        <div className={s.kpi}><span>All-time visitors</span><strong>{n(report.lifetime)}</strong><small>live view unavailable</small></div>
-      </div></div>}
+    {live && <LivePanel initial={live} timezone={filters.timezone} fullHistory={filters.fullHistory}/>}
     {/* Every signup, kept — the live view above only holds half an hour. */}
     {ledger && <SignupLedgerPanel initial={ledger} timezone={filters.timezone} fullHistory={filters.fullHistory}/>}
-
-    <section className={s.section} id="reports" aria-labelledby="traffic-reports-title">
-      <header className={s.sectionHead}>
-        <div className={s.sectionTitle}>
-          <span className={s.sectionIcon} aria-hidden="true"><BarChart3 size={22}/></span>
-          <div>
-            <h2 id="traffic-reports-title">Reports</h2>
-            <p className={s.sectionMeta}>{filters.from} to {filters.to} · {filters.timezone} · {filters.fullHistory ? "full history" : `since ${TRAFFIC_SINCE_LABEL}`}{filters.page ? ` · ${pageLabel(filters.page)}` : ""}{filters.audience !== "all" ? ` · ${filters.audience} visitors` : ""}</p>
-          </div>
-        </div>
-        <div className={s.sectionTools}>
-          <button className={s.button} onClick={() => exportReport(report, signups)} disabled={(!t && !signups) || pending}><ArrowDownToLine size={15}/>Export CSV</button>
-          <button className={s.iconButton} aria-label="Refresh report" onClick={() => load(filters)} disabled={pending}><RefreshCw size={16} className={pending ? s.spin : ""}/></button>
-        </div>
-      </header>
-
-      {/* The scope: one bar that every report below reads from. */}
-      <div className={s.scope} aria-label="Report scope">
-        <div className={s.scopeRow}>
-          <TrafficDatePicker from={draft.from} to={draft.to} timezone={draft.timezone} min={draft.fullHistory ? undefined : TRAFFIC_SINCE} onChange={(from, to) => update({ from, to })}/>
-          <div className={s.segment} role="group" aria-label="Quick ranges">{[1, 7, 14, 30, 90].map(days => <button key={days} aria-pressed={draft.from === shiftDate(today, 1 - days) && draft.to === today} onClick={() => update({ from: shiftDate(today, 1 - days), to: today })}>{days === 1 ? "Today" : `${days}D`}</button>)}</div>
-          <button type="button" className={s.button} aria-expanded={filtersOpen} aria-controls="traffic-filters" onClick={() => setFiltersOpen(!filtersOpen)}><SlidersHorizontal size={15}/>Filters{activeFilters > 0 && <em className={s.count}>{activeFilters}</em>}</button>
-          <div className={s.scopeActions}>
-            {changed && <span className={s.unsaved}>Not applied yet</span>}
-            <button className={s.textButton} onClick={() => { const next = { ...data.filters, from: shiftDate(today, -29), to: today }; setDraft(next); load(next); }} disabled={pending}>Reset</button>
-            <button className={s.primary} onClick={() => load(draft)} disabled={pending || !changed}>{pending ? "Updating…" : "Apply"}</button>
-          </div>
-        </div>
-        {filtersOpen && <div className={s.filters} id="traffic-filters">
-          <Select label="Page / screen" value={draft.page} onChange={page => update({ page })}><option value="">All pages</option>{availablePages.map(p => <option key={p} value={p}>{pageLabel(p)}</option>)}</Select>
-          <Select label="Audience" value={draft.audience} onChange={audience => update({ audience: audience as TrafficFilters["audience"] })}><option value="all">All visitors</option><option value="new">New visitors</option><option value="returning">Returning visitors</option></Select>
-          <Select label="Source" value={draft.source} onChange={source => update({ source })}><option value="">All sources</option>{options("sources").map(name => <option key={name}>{name}</option>)}</Select>
-          <Select label="Device" value={draft.device} onChange={device => update({ device })}><option value="">All devices</option>{options("devices").map(name => <option key={name} value={name === "Unknown" ? "__unknown__" : name}>{name}</option>)}</Select>
-          <Select label="Environment" value={draft.environment} onChange={environment => update({ environment: environment as TrafficFilters["environment"] })}><option value="production">www.jobflex.app</option><option value="all">www.jobflex.app + localhost</option><option value="development">Localhost only</option></Select>
-          <Select label="Hostname" value={draft.host} onChange={host => update({ host })}><option value="">All hostnames</option>{options("hosts").filter(Boolean).map(name => <option key={name} value={name === "Unknown" ? "__unknown__" : name}>{name}</option>)}</Select>
-          <Select label="Timezone" value={draft.timezone} onChange={timezone => update({ timezone })}>{Array.from(new Set([draft.timezone, "America/Los_Angeles", "America/New_York", "Europe/London", "UTC"])).map(z => <option key={z}>{z}</option>)}</Select>
-        </div>}
-      </div>
-
-      {(error || report.message || report.errors.length > 0) && <div className={s.notice} role="alert"><Info size={18}/><div><strong>{error || report.message || "Some reports are unavailable."}</strong>{report.errors.length > 0 && <details><summary>Query details</summary>{report.errors.map(e => <p key={e}>{e}</p>)}</details>}</div></div>}
-
-      {/* ── Audience ── */}
-      <div className={s.card}>
-        <div className={s.cardHead}><div><h3>Audience</h3><p className={s.cardMeta}>{filters.page ? pageLabel(filters.page) : "All pages"}</p></div></div>
-        <div className={s.kpis} data-cols="7">
-          <div className={s.kpi} data-lead="true"><span>Visitors</span><strong>{n(t?.visitors)}</strong><small>{delta(t?.visitors, report.previous?.visitors)}</small></div>
-          <div className={s.kpi}><span>People (est.)</span><strong>{n(report.people?.people)}</strong><small>{report.people && t?.visitors ? `${n(report.people.inAppVisitors)} in-app clicks → ${n(report.people.inAppPeople)} people` : "address + browser"}</small></div>
-          <div className={s.kpi}><span>New</span><strong>{n(t?.newVisitors)}</strong><small>{rate(t ? percent(t.newVisitors, t.visitors) : null)} of visitors</small></div>
-          <div className={s.kpi}><span>Returning</span><strong>{n(t?.returningVisitors)}</strong><small>{rate(t ? percent(t.returningVisitors, t.visitors) : null)} of visitors</small></div>
-          <div className={s.kpi}><span>Repeat</span><strong>{n(t?.repeatVisitors)}</strong><small>2+ sessions in range</small></div>
-          <div className={s.kpi}><span>Sessions</span><strong>{n(t?.sessions)}</strong><small>{t?.visitors ? (t.sessions / t.visitors).toFixed(2) : "--"} per visitor</small></div>
-          <div className={s.kpi}><span>{filters.page.startsWith("registration:") ? "Screen views" : "Pageviews"}</span><strong>{n(t?.pageviews)}</strong><small>{delta(t?.pageviews, report.previous?.pageviews)}</small></div>
-        </div>
-        <TrafficChart points={report.points}/>
-      </div>
-
-      {report.points.length > 0 && <DailyPeople points={report.points}/>}
-      {report.points.length > 0 && <AdsReconciliation points={report.points}/>}
-
-      {/* ── Conversion ── */}
-      <div className={s.card}>
-        <div className={s.cardHead}><div><h3>Visit to signup</h3><p className={s.cardMeta}>Landing entrants in range · unique visitors, in order</p></div><div className={s.cardTools}><Select label="Flow" value={filters.flow} onChange={flow => apply({ flow: flow as TrafficFilters["flow"] })}><option value="all">All flows</option><option value="standard">Email signup</option><option value="google">Google signup</option></Select><Select label="Window" value={String(filters.windowDays)} onChange={v => apply({ windowDays: Number(v) })}>{[1, 7, 14].map(d => <option key={d} value={d}>{d} day{d > 1 ? "s" : ""}</option>)}</Select><Select label="Billing" value={filters.billingMode} onChange={v => apply({ billingMode: v as TrafficFilters["billingMode"] })}><option value="live">Live only</option><option value="test">Test only</option><option value="all">Live + test</option></Select></div></div>
-        {funnelNotes.length > 0 && <div className={s.cardNote}><Info size={16}/><span>{funnelNotes.join(" ")}</span></div>}
-        <div className={s.funnelLayout}>
-          <div className={s.funnelTable}><div className={s.funnelHeading}><span>Stage <em>· select one to see who reached it</em></span><span>Visitors</span><span>Step</span><span>From landing</span></div>
-            {report.funnel.map((stage, i) => {
-              const untracked = !report.firstStepAt && i >= 2;
-              const base = report.funnel[0]?.visitors || 0;
-              const prev = report.funnel[i - 1]?.visitors || 0;
-              return <button type="button" className={s.funnelRow} key={stage.id} disabled={untracked || pending} aria-pressed={drill?.id === stage.id && sheet.isOpen} aria-label={`${stage.label}: ${untracked ? "not tracked" : n(stage.visitors) + " visitors"}. Show who reached this stage.`} onClick={() => inspect(stage)}><span className={s.stage}><span className={s.stageNumber}>{String(i + 1).padStart(2, "0")}</span><span className={s.stageBody}><b>{stage.label}<ChevronRight size={15} aria-hidden="true"/></b><span className={s.funnelBar}><span style={{ width: `${untracked ? 0 : percent(stage.visitors, base) ?? 0}%` }}/></span>{i > 0 && !untracked && !(i === 2 && coverageIncomplete) && <small>{n(Math.max(0, prev - stage.visitors))} dropped</small>}</span></span><strong>{untracked ? "--" : n(stage.visitors)}</strong><span>{untracked || !i || (i === 2 && coverageIncomplete) ? "--" : rate(percent(stage.visitors, prev))}</span><span>{untracked || (i >= 2 && coverageIncomplete) ? "--" : rate(percent(stage.visitors, base))}</span></button>;
-            })}
-            {!report.funnel.length && <div className={s.empty}>Funnel unavailable. Retry the report.</div>}
-          </div>
-          <aside className={s.plate} aria-label="Registration totals">
-            <span className={s.plateLabel}>Registered organizations</span>
-            <strong>{n(signups?.total)}</strong>
-            <span className={s.plateSub}>{filters.from} to {filters.to} · database</span>
-            {!signups && <p role="status" className={s.plateWarn}>Registration total unavailable. Refresh to retry.</p>}
-            <dl className={s.outcomes}>
-              <div data-key="true"><dt>Tracked funnel signups</dt><dd>{report.firstStepAt && funnelEnd ? n(funnelEnd.visitors) : "--"}</dd></div>
-              <div data-key="true"><dt>Tracked conversion</dt><dd>{!coverageIncomplete && funnelEnd ? rate(percent(funnelEnd.visitors, report.funnel[0]?.visitors || 0)) : "--"}</dd></div>
-              {outcomeRows.map(([label, key]) => <div key={key}><dt>{label}</dt><dd>{report.firstStepAt ? n(report.funnelOutcomes?.[key]) : "--"}</dd></div>)}
-            </dl>
-          </aside>
-        </div>
-        {/* Landing variant d vs e (landing-e pass A): signup starts → verified signups, per arm. */}
-        {!!report.variants.length && <div className={s.cardBlock}><h4 className={s.blockTitle}>Landing variants</h4><div className={s.tableScroll}><table className={s.table}><thead><tr><th>Variant</th><th>Signup starts</th><th>Verified signups</th><th>Start → complete</th></tr></thead><tbody>{report.variants.map(v => <tr key={v.variant}><td><b>{v.variant === "e" ? "e / landing-e" : "d / landing"}</b></td><td><b>{n(v.started)}</b></td><td>{n(v.completed)}</td><td>{coverageIncomplete ? "--" : rate(percent(v.completed, v.started))}</td></tr>)}</tbody></table></div></div>}
-        <details className={s.cardDisclosure}><summary><Info size={15}/>About these numbers</summary><ul>
-          <li><b>Registered organizations</b> is the database count: one per organization, across all signup flows, billing modes and traffic sources. Missing analytics events never reduce it; deleted organizations are excluded. A registration is not necessarily a paid subscription.</li>
-          <li><b>Tracked</b> figures need every funnel step recorded in PostHog, so a real signup can be missing from them.</li>
-          <li><b>Attempt</b> = button clicked. <b>Verified</b> = Stripe confirmed and the account was created. {filters.billingMode === "live" ? "Test checkouts are excluded." : filters.billingMode === "test" ? "Only test checkout outcomes are shown." : "Live and test outcomes are included."} Attempts cannot know the billing mode yet.</li>
-          {filters.flow === "all" && <li>Email and Google signups are combined and counted once per visitor. The email-only Account step is left out because Google skips it.</li>}
-          <li>{filters.windowDays}-day window from the first eligible landing. Recent cohorts may still convert.</li>
-        </ul></details>
-      </div>
-
-      {/* ── Explore ── */}
-      <div className={s.card}>
-        <div className={s.exploreTabs} role="tablist" aria-label="Detailed reports">{(["pages", "acquisition", "experiments"] as const).map(key => <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>{key === "pages" ? "Pages" : key === "acquisition" ? "Acquisition" : "A/B tests"}<span>{key === "pages" ? n(report.pages.length) : key === "acquisition" ? n(report.sources.length) : n(experimentNames.length)}</span></button>)}</div>
-        {tab === "pages" && <div className={s.exploreBody}>
-          <div className={s.exploreHead}>
-            <div className={s.tabs} role="group" aria-label="Page shortcuts">{pageKeys.map(p => <button key={p} aria-pressed={filters.page === p} onClick={() => apply({ page: p })}>{pageLabel(p)}</button>)}{filters.page && <button onClick={() => apply({ page: "" })}>Clear</button>}</div>
-            <div className={s.pageTools}><input type="search" className={s.input} aria-label="Find a page" placeholder="Find a page…" value={search} onChange={e => { setSearch(e.target.value); setPageIndex(0); }}/><Select label="Sort" value={sort} onChange={v => { setSort(v as typeof sort); setPageIndex(0); }}><option value="visitors">Visitors</option><option value="pageviews">Views</option><option value="returningVisitors">Returning</option></Select></div>
-          </div>
-          <div className={s.tableScroll}><table className={s.table}><thead><tr><th>Page / screen</th><th>Visitors</th><th>New</th><th>Returning</th><th>Repeat</th><th>Sessions</th><th>Views</th></tr></thead><tbody>{rows.slice(visiblePage * 20, (visiblePage + 1) * 20).map(p => <tr key={p.page} data-selected={filters.page === p.page}><td><button className={s.pageLink} onClick={() => apply({ page: p.page })} title="Filter the reports to this page"><span>{pageLabel(p.page)}{pageLabel(p.page) !== p.page && <small>{p.page}</small>}</span></button></td><td><b>{n(p.visitors)}</b></td><td>{n(p.newVisitors)}</td><td>{n(p.returningVisitors)}<small>{rate(percent(p.returningVisitors, p.visitors))}</small></td><td>{n(p.repeatVisitors)}</td><td>{n(p.sessions)}</td><td>{n(p.pageviews)}</td></tr>)}</tbody></table></div>
-          {rows.length > 20 && <div className={s.pagination}><span>{visiblePage * 20 + 1}–{Math.min(rows.length, (visiblePage + 1) * 20)} of {rows.length}</span><button className={s.button} disabled={visiblePage === 0} onClick={() => setPageIndex(visiblePage - 1)}>Previous</button><button className={s.button} disabled={visiblePage === pageCount - 1} onClick={() => setPageIndex(visiblePage + 1)}>Next</button></div>}
-          {!rows.length && <div className={s.empty}>{failed("pages") ? "Page report unavailable." : "No matching page activity in this range."}</div>}
-        </div>}
-
-        {tab === "acquisition" && <div className={s.exploreBody}>
-          <div className={s.tabs} role="group" aria-label="Dimension">{Object.entries(dimensions).map(([key, label]) => <button key={key} aria-pressed={dimension === key} onClick={() => setDimension(key as Dimension)}>{label}</button>)}</div>
-          <div className={s.tableScroll}><table className={s.table}><thead><tr><th>{dimensions[dimension]}</th><th>Visitors</th><th>Sessions</th><th>Signups</th><th>Signup rate</th></tr></thead><tbody>{acquisition.map(row => <tr key={row.name}><td><div className={s.sourceName}>{dimension === "sources" ? <button onClick={() => apply({ source: row.name })} title="Filter the reports to this source">{row.name}</button> : <b>{row.name === " /  / " ? "No UTM campaign" : row.name}</b>}<div className={s.sourceBar}><span style={{ width: `${percent(row.visitors, acquisition[0]?.visitors || 1) ?? 0}%` }}/></div></div></td><td><b>{n(row.visitors)}</b></td><td>{n(row.sessions)}</td><td>{report.firstStepAt ? n(row.conversions) : "--"}</td><td>{coverageIncomplete ? "--" : rate(percent(row.conversions, row.visitors))}</td></tr>)}</tbody></table>{!acquisition.length && <div className={s.empty}>{failed("breakdowns") ? "Acquisition report unavailable." : "No recorded data for this dimension."}</div>}</div>
-          <p className={s.hint}>Session-entry attribution, top 20. Signups are verified within the conversion window after a visit.{coverageIncomplete && " Signup rates are hidden until the range has full tracking coverage."}</p>
-          {signups && <div className={s.subBlock}>
-            <div className={s.subHead}><h4 className={s.blockTitle}>Signups by landing trade and campaign</h4><span className={s.cardMeta}>{n(signups.total)} signups · database</span></div>
-            <div className={s.tabs} role="group" aria-label="Signup dimension">{Object.entries(signupDimensions).map(([key, label]) => <button key={key} aria-pressed={signupDimension === key} onClick={() => setSignupDimension(key as SignupDimension)}>{label}</button>)}</div>
-            <div className={s.tableScroll}><table className={s.table}><thead><tr><th>{signupDimensions[signupDimension]}</th><th>Signups</th><th>Share</th></tr></thead><tbody>{signups.dimensions[signupDimension].map(row => <tr key={row.name}><td><b>{row.name}</b></td><td><b>{n(row.signups)}</b></td><td>{rate(percent(row.signups, signups.total))}</td></tr>)}</tbody></table>{!signups.dimensions[signupDimension].length && <div className={s.empty}>No signups in this range.</div>}</div>
-          </div>}
-          <details className={s.cardDisclosure} data-inline="true"><summary><Info size={15}/>What sources can and can&apos;t show</summary><ul>
-            <li>Google, Bing, Instagram and other referrers appear when the browser passes them. Tagged links also carry campaign and medium.</li>
-            <li>Exact organic searches and browsing history are usually private. Missing referrers appear as direct / unknown. One visitor can use several sources; privacy settings and blockers reduce coverage.</li>
-            <li>Campaign terms come from <code>utm_term</code>, not organic search queries. For search queries use <a href="https://search.google.com/search-console" target="_blank" rel="noreferrer">Google Search Console</a> or <a href="https://www.bing.com/webmasters" target="_blank" rel="noreferrer">Bing Webmaster Tools</a>.</li>
-          </ul></details>
-        </div>}
-
-        {tab === "experiments" && <div className={s.exploreBody}>
-          {!variants.length ? failed("experiments") ? <div className={s.empty}>Experiment results are unavailable. Retry the report.</div> : <div className={s.experimentEmpty}><span className={s.sectionIcon} aria-hidden="true"><FlaskConical size={20}/></span><div><h4>No experiment exposures in this range</h4><p>When a test runs, this compares visitors who actually saw each version — not everyone who visited.</p></div></div> : <>
-            <div className={s.experimentControls}><Select label="Experiment" value={selectedExperiment} onChange={setExperiment}>{experimentNames.map(name => <option key={name}>{name}</option>)}</Select><Select label="Compare against" value={baseline?.variant || ""} onChange={setControl}>{variants.map(v => <option key={v.variant}>{v.variant}</option>)}</Select></div>
-            <div className={s.tableScroll}><table className={s.table}><thead><tr><th>Variant</th><th>Exposed</th><th>Attempts</th><th>Attempt rate</th><th>Verified</th><th>Signup rate</th><th>Lift</th><th>95% interval</th></tr></thead><tbody>{variants.map(v => {
-              const r = percent(v.completed, v.visitors);
-              const b = baseline ? percent(baseline.completed, baseline.visitors) : null;
-              const ci = conversionInterval(v.completed, v.visitors);
-              return <tr key={v.variant}><td><b>{v.variant}</b>{v === baseline && <small>Baseline</small>}</td><td>{n(v.visitors)}</td><td>{n(v.attempts)}</td><td>{rate(percent(v.attempts, v.visitors))}</td><td>{n(v.completed)}</td><td><b>{rate(r)}</b></td><td>{v === baseline ? "--" : b && r != null ? `${((r / b - 1) * 100).toFixed(1)}%` : "--"}</td><td>{ci ? `${rate(ci[0])} to ${rate(ci[1])}` : "--"}</td></tr>;
-            })}</tbody></table></div>
-            <p className={s.hint}>{n(variants.reduce((sum, v) => sum + v.mixedVisitors, 0))} visitors with mixed exposures excluded. The page filter does not apply. Rates use a {filters.windowDays}-day window after first exposure. No automatic winner: the 95% Wilson interval shows uncertainty in each rate, not significance between variants.</p>
-          </>}
-          {failed("experiments") && <div className={s.notice}>Experiment results could not be loaded. This does not mean no experiments exist.</div>}
-        </div>}
-      </div>
-    </section>
-
-    {/* The tagged link for every ad and post (2026-09-29) — a tool, closed by default. */}
+    {/* The tagged link for every ad and post, so the cards above tell them apart (2026-09-29). */}
     <AdLinks/>
 
+    <section className={s.filterPanel} aria-label="Traffic filters">
+      <div className={s.rangeRow}><div className={s.filterCaption}><SlidersHorizontal size={16}/><span>Report scope</span></div><TrafficDatePicker from={draft.from} to={draft.to} timezone={draft.timezone} min={draft.fullHistory ? undefined : TRAFFIC_SINCE} onChange={(from, to) => update({ from, to })}/>
+        <div className={s.segment}>{[1, 7, 14, 30, 90].map(days => <button key={days} aria-pressed={draft.from === shiftDate(today, 1 - days) && draft.to === today} onClick={() => update({ from: shiftDate(today, 1 - days), to: today })}>{days === 1 ? "Today" : `${days}D`}</button>)}</div>
+      </div>
+      <details className={s.filtersDisclosure}><summary>Page, audience &amp; source filters<span>{[draft.page, draft.source, draft.device, draft.host, draft.audience !== "all", draft.environment !== "production"].filter(Boolean).length || "All traffic"}</span></summary><div className={s.filters}>
+        <Select label="Page / screen" value={draft.page} onChange={page => update({ page })}><option value="">All pages</option>{availablePages.map(p => <option key={p} value={p}>{pageLabel(p)}</option>)}</Select>
+        <Select label="Audience" value={draft.audience} onChange={audience => update({ audience: audience as TrafficFilters["audience"] })}><option value="all">All visitors</option><option value="new">New visitors</option><option value="returning">Returning visitors</option></Select>
+        <Select label="Source" value={draft.source} onChange={source => update({ source })}><option value="">All sources</option>{options("sources").map(name => <option key={name}>{name}</option>)}</Select>
+        <Select label="Device" value={draft.device} onChange={device => update({ device })}><option value="">All devices</option>{options("devices").map(name => <option key={name} value={name === "Unknown" ? "__unknown__" : name}>{name}</option>)}</Select>
+        <Select label="Environment" value={draft.environment} onChange={environment => update({ environment: environment as TrafficFilters["environment"] })}><option value="production">www.jobflex.app</option><option value="all">www.jobflex.app + localhost</option><option value="development">Localhost only</option></Select>
+        <Select label="Hostname" value={draft.host} onChange={host => update({ host })}><option value="">All hostnames</option>{options("hosts").filter(Boolean).map(name => <option key={name} value={name === "Unknown" ? "__unknown__" : name}>{name}</option>)}</Select>
+      </div><label className={s.timezone}>Timezone<select aria-label="Report timezone" value={draft.timezone} onChange={e => update({ timezone: e.target.value })}>{Array.from(new Set([draft.timezone, "America/Los_Angeles", "America/New_York", "Europe/London", "UTC"])).map(z => <option key={z}>{z}</option>)}</select></label></details>
+      <div className={s.filterFooter}><span className={s.activeTimezone}>{filters.timezone}</span><span className={s.unsaved}>{changed ? "Filters changed. Apply to update." : `${filters.from} to ${filters.to} / inclusive`}</span><button className={s.textButton} onClick={() => { const next = { ...data.filters, from: shiftDate(today, -29), to: today }; setDraft(next); load(next); }} disabled={pending}>Reset</button><button className={s.primary} onClick={() => load(draft)} disabled={pending}>{pending ? "Updating..." : "Apply filters"}<ArrowUpRight size={16}/></button></div>
+    </section>
+
+    {(error || report.message || report.errors.length > 0) && <div className={s.notice} role="alert"><Info size={18}/><div><strong>{error || report.message || "Some reports are unavailable."}</strong>{report.errors.length > 0 && <details><summary>Query details</summary>{report.errors.map(e => <p key={e}>{e}</p>)}</details>}</div></div>}
+
+    <div className={s.sectionLabel}><span>01 / Audience</span><span>{filters.page ? pageLabel(filters.page) : "All pages"}{filters.audience !== "all" ? ` / ${filters.audience}` : ""}</span></div>
+    <section className={s.metrics} aria-label="Audience summary">
+      <div className={s.metricLead}><span>Visitors in range</span><strong>{n(t?.visitors)}</strong><small>{delta(t?.visitors, report.previous?.visitors)}</small></div>
+      <div><span>People (est.)</span><strong>{n(report.people?.people)}</strong><small>{report.people && t?.visitors ? `${rate(percent(report.people.inAppVisitors, t.visitors))} in FB / IG in-app · ${n(report.people.inAppVisitors)} clicks → ${n(report.people.inAppPeople)} people` : "address + browser"}</small></div>
+      <div><span>New visitors</span><strong>{n(t?.newVisitors)}</strong><small>{rate(t ? percent(t.newVisitors, t.visitors) : null)} of visitors</small></div>
+      <div><span>Returning visitors</span><strong>{n(t?.returningVisitors)}</strong><small>{rate(t ? percent(t.returningVisitors, t.visitors) : null)} of visitors</small></div>
+      <div><span>Repeat visitors</span><strong>{n(t?.repeatVisitors)}</strong><small>2+ sessions in this range</small></div>
+      <div><span>Sessions</span><strong>{n(t?.sessions)}</strong><small>{t?.visitors ? (t.sessions / t.visitors).toFixed(2) : "--"} per visitor</small></div>
+      <div><span>{filters.page.startsWith("registration:") ? "Screen views" : "Pageviews"}</span><strong>{n(t?.pageviews)}</strong><small>{delta(t?.pageviews, report.previous?.pageviews)}</small></div>
+    </section>
+
+    <section className={s.card}>
+      <div className={s.cardHead}><div><h2>Traffic over time</h2><span className={s.micro}>{filters.from} / {filters.to}</span></div><span className={s.stamp}>Daily resolution</span></div>
+      <TrafficChart points={report.points}/>
+      <div className={s.composition}><div className={s.compositionBar} data-empty={!t?.visitors} aria-label={`${rate(t ? percent(t.newVisitors, t.visitors) : null)} new visitors`}><span style={{ width: `${t ? percent(t.newVisitors, t.visitors) ?? 0 : 0}%` }}/></div><span><b>{rate(t ? percent(t.newVisitors, t.visitors) : null)}</b> new</span><span><b>{rate(t ? percent(t.returningVisitors, t.visitors) : null)}</b> returning</span></div>
+    </section>
+
+    {report.points.length > 0 && <DailyPeople points={report.points}/>}
+    {report.points.length > 0 && <AdsReconciliation points={report.points}/>}
+
+    <div className={s.sectionLabel}><span>02 / Conversion</span><span>Ordered, unique visitors</span></div>
+    <section className={s.card}>
+      <div className={s.cardHead}><div><h2>From visit to signup</h2><span className={s.micro}>Landing entrants in the selected dates</span></div><div className={s.funnelControls}><Select label="Registration flow" value={filters.flow} onChange={flow => apply({ flow: flow as TrafficFilters["flow"] })}><option value="all">All flows</option><option value="standard">Email signup</option><option value="google">Google signup</option></Select><Select label="Conversion window" value={String(filters.windowDays)} onChange={v => apply({ windowDays: Number(v) })}>{[1, 7, 14].map(d => <option key={d} value={d}>{d} day{d > 1 ? "s" : ""}</option>)}</Select><Select label="Billing data" value={filters.billingMode} onChange={v => apply({ billingMode: v as TrafficFilters["billingMode"] })}><option value="live">Live only</option><option value="test">Test only</option><option value="all">Live + test</option></Select></div></div>
+      <div className={s.inlineNote}><Info size={16}/><span><b>New organizations: {n(signups?.total)}</b> / {filters.from} to {filters.to}. Database count across all signup flows, billing modes and traffic sources; deleted organizations excluded. This is separate from the tracked visitor funnel below.</span></div>
+      {filters.flow === "all" && <p className={s.inlineNote}>Email and Google combined, counted once per visitor. The email-only Account step is omitted because Google skips it.</p>}
+      {!report.firstStepAt && !failed("overview") && <div className={s.inlineNote}><Info size={16}/><span>Step tracking starts with this release. Earlier step conversions are not available.</span></div>}
+      {stepCoverageDate && coverageIncomplete && <div className={s.inlineNote}><Info size={16}/><span>Partial step coverage from {stepCoverageDate}. Entry-to-step and overall rates are hidden for this range.</span></div>}
+      {filters.page && <p className={s.inlineNote}>The page filter affects audience reports, not the landing-to-signup funnel.</p>}
+      <div className={s.funnelLayout}>
+        <div className={s.funnelTable}><div className={s.funnelHeading}><span>Stage <em>/ select a stage to see who reached it</em></span><span>Visitors</span><span>Step rate</span><span>From landing</span></div>
+          {report.funnel.map((stage, i) => {
+            const untracked = !report.firstStepAt && i >= 2;
+            const base = report.funnel[0]?.visitors || 0;
+            const prev = report.funnel[i - 1]?.visitors || 0;
+            return <button type="button" className={s.funnelRow} key={stage.id} disabled={untracked || pending} aria-pressed={drill?.id === stage.id && sheet.isOpen} aria-label={`${stage.label}: ${untracked ? "not tracked" : n(stage.visitors) + " visitors"}. Show who reached this stage.`} onClick={() => inspect(stage)}><span className={s.stage}><span className={s.stageNumber}>{String(i + 1).padStart(2, "0")}</span><span className={s.stageBody}><b>{stage.label}<ChevronRight size={15} aria-hidden="true"/></b><span className={s.funnelBar}><span style={{ width: `${untracked ? 0 : percent(stage.visitors, base) ?? 0}%` }}/></span>{i > 0 && !untracked && !(i === 2 && coverageIncomplete) && <small>{n(Math.max(0, prev - stage.visitors))} did not reach this step</small>}</span></span><strong>{untracked ? "--" : n(stage.visitors)}</strong><span>{untracked || !i || (i === 2 && coverageIncomplete) ? "--" : rate(percent(stage.visitors, prev))}</span><span>{untracked || (i >= 2 && coverageIncomplete) ? "--" : rate(percent(stage.visitors, base))}</span></button>;
+          })}
+          {!report.funnel.length && <div className={s.empty}>Funnel unavailable. Retry the report.</div>}
+        </div>
+        <aside className={s.conversionPlate}><div className={s.eyebrow}>End-to-end conversion</div><strong>{!coverageIncomplete && funnelEnd ? rate(percent(funnelEnd.visitors, report.funnel[0]?.visitors || 0)) : "--"}</strong><span>{report.firstStepAt && funnelEnd ? `${n(funnelEnd.visitors)} signups with every funnel step tracked` : "Awaiting step tracking"}</span><dl className={s.outcomes}>{([['Trial attempts', 'trialAttempts'], ['Purchase attempts', 'purchaseAttempts'], ['Trials started', 'trials'], ['Subscriptions purchased', 'purchases'], ['Other activations', 'other']] as const).map(([label, key]) => <div key={key}><dt>{label}</dt><dd>{report.firstStepAt ? n(report.funnelOutcomes?.[key]) : "--"}</dd></div>)}</dl><p>Attempt = button clicked. Verified = Stripe confirmed and account created. Missing tracking steps can exclude a real signup from this funnel.</p><p>{filters.billingMode === "live" ? "Test checkouts excluded." : filters.billingMode === "test" ? "Test checkout outcomes only." : "Live and test outcomes included."} Attempts cannot know the billing mode yet.</p><p>{filters.windowDays}-day window from the first eligible landing. Recent cohorts may still convert.</p></aside>
+      </div>
+      {/* Landing variant d vs e (landing-e pass A): signup starts → verified signups, per arm. */}
+      {!!report.variants.length && <div className={s.tableScroll} style={{ marginTop: 18 }}><table className={s.table}><thead><tr><th>Landing variant</th><th>Signup starts</th><th>Verified signups</th><th>Start → complete</th></tr></thead><tbody>{report.variants.map(v => <tr key={v.variant}><td><b>{v.variant === "e" ? "e / landing-e" : "d / landing"}</b></td><td><b>{n(v.started)}</b></td><td>{n(v.completed)}</td><td>{coverageIncomplete ? "--" : rate(percent(v.completed, v.started))}</td></tr>)}</tbody></table></div>}
+    </section>
+
+    <div className={s.sectionLabel}><span>03 / Explore</span><span>Same date &amp; audience filters</span></div>
+    <section className={s.card}>
+      <div className={s.exploreTabs} aria-label="Detailed reports">{(["pages", "acquisition", "experiments"] as const).map(key => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{key === "pages" ? "Pages & screens" : key === "acquisition" ? "Acquisition" : "A/B experiments"}<span>{key === "pages" ? n(report.pages.length) : key === "acquisition" ? n(report.sources.length) : n(experimentNames.length)}</span></button>)}</div>
+      {tab === "pages" && <div className={s.exploreBody}>
+        <div className={s.exploreHead}><div><h2>Page explorer</h2><p className={s.micro}>Select a row to inspect its audience and daily traffic.</p></div><div className={s.pageTools}><input type="search" aria-label="Find a page" placeholder="Find a page or screen..." value={search} onChange={e => { setSearch(e.target.value); setPageIndex(0); }}/><Select label="Sort by" value={sort} onChange={v => { setSort(v as typeof sort); setPageIndex(0); }}><option value="visitors">Visitors</option><option value="pageviews">Views</option><option value="returningVisitors">Returning</option></Select></div></div>
+        <div className={s.pageShortcuts}>{pageKeys.map(p => <button key={p} aria-pressed={filters.page === p} onClick={() => apply({ page: p })}>{pageLabel(p)}</button>)}{filters.page && <button onClick={() => apply({ page: "" })}>Clear page filter</button>}</div>
+        <div className={s.tableScroll}><table className={s.table}><thead><tr><th>Page / screen</th><th>Visitors</th><th>New</th><th>Returning</th><th>Repeat</th><th>Sessions</th><th>Views</th></tr></thead><tbody>{rows.slice(visiblePage * 20, (visiblePage + 1) * 20).map(p => <tr key={p.page} data-selected={filters.page === p.page}><td><button className={s.pageLink} onClick={() => apply({ page: p.page })}><span>{pageLabel(p.page)}{pageLabel(p.page) !== p.page && <small>{p.page}</small>}</span><ArrowUpRight size={15}/></button></td><td><b>{n(p.visitors)}</b></td><td>{n(p.newVisitors)}</td><td>{n(p.returningVisitors)}<small>{rate(percent(p.returningVisitors, p.visitors))}</small></td><td>{n(p.repeatVisitors)}</td><td>{n(p.sessions)}</td><td>{n(p.pageviews)}</td></tr>)}</tbody></table></div>
+        {rows.length > 20 && <div className={s.pagination}><span>{visiblePage * 20 + 1}-{Math.min(rows.length, (visiblePage + 1) * 20)} of {rows.length} pages</span><button className={s.button} disabled={visiblePage === 0} onClick={() => setPageIndex(visiblePage - 1)}>Previous</button><button className={s.button} disabled={visiblePage === pageCount - 1} onClick={() => setPageIndex(visiblePage + 1)}>Next</button></div>}
+        {!rows.length && <div className={s.empty}>{failed("pages") ? "Page report unavailable." : "No matching page activity in this range."}</div>}
+        <p className={s.footnote}>Top 200 pages. Screen views are explicit registration events. A visitor can appear on more than one page; rows do not add up to unique site visitors.</p>
+      </div>}
+
+      {tab === "acquisition" && <div className={s.exploreBody}>
+        <div className={s.exploreHead}><div><h2>Where visitors come from</h2><p className={s.micro}>Session-entry attribution / top 20 per dimension</p></div><span className={s.stamp}>Sources, not guesses</span></div>
+        <div className={s.dimensionTabs}>{Object.entries(dimensions).map(([key, label]) => <button key={key} aria-pressed={dimension === key} onClick={() => setDimension(key as Dimension)}>{label}</button>)}</div>
+        <div className={s.acquisitionLayout}><div className={s.tableScroll}><table className={s.table}><thead><tr><th>{dimensions[dimension]}</th><th>Visitors</th><th>Sessions</th><th>Signups</th><th>Signup rate</th></tr></thead><tbody>{acquisition.map(row => <tr key={row.name}><td><div className={s.sourceName}>{dimension === "sources" ? <button onClick={() => apply({ source: row.name })}>{row.name}<ArrowUpRight size={14}/></button> : <b>{row.name === " /  / " ? "No UTM campaign" : row.name}</b>}<div className={s.sourceBar}><span style={{ width: `${percent(row.visitors, acquisition[0]?.visitors || 1) ?? 0}%` }}/></div></div></td><td><b>{n(row.visitors)}</b></td><td>{n(row.sessions)}</td><td>{report.firstStepAt ? n(row.conversions) : "--"}</td><td>{coverageIncomplete ? "--" : rate(percent(row.conversions, row.visitors))}</td></tr>)}</tbody></table>{!acquisition.length && <div className={s.empty}>{failed("breakdowns") ? "Acquisition report unavailable." : "No recorded data for this dimension."}</div>}</div>
+          <aside className={s.acquisitionNotes}><h3>What we can see</h3><p>Google, Bing, Instagram and other referrers when the browser passes them. Tagged links also carry campaign and medium.</p><h3>What stays private</h3><p>Exact organic searches and browsing history are usually not shared. Missing referrers appear as direct / unknown.</p><h3>Search terms</h3><p>Campaign terms here come from <code>utm_term</code>, not organic search queries. Connect Search Console or Bing Webmaster Tools separately for aggregate search queries.</p><a href="https://search.google.com/search-console" target="_blank" rel="noreferrer">Google Search Console <ArrowUpRight size={14}/></a><a href="https://www.bing.com/webmasters" target="_blank" rel="noreferrer">Bing Webmaster Tools <ArrowUpRight size={14}/></a></aside>
+        </div>
+        {signups && <>
+          <div className={s.exploreHead}><div><h2>Signups by landing trade and campaign</h2><p className={s.micro}>From the database: what the landing recorded on each organization at signup / {signups.from} to {signups.to} / {n(signups.total)} signups</p></div><span className={s.stamp}>Database, not PostHog</span></div>
+          <div className={s.dimensionTabs}>{Object.entries(signupDimensions).map(([key, label]) => <button key={key} aria-pressed={signupDimension === key} onClick={() => setSignupDimension(key as SignupDimension)}>{label}</button>)}</div>
+          <div className={s.tableScroll}><table className={s.table}><thead><tr><th>{signupDimensions[signupDimension]}</th><th>Signups</th><th>Share</th></tr></thead><tbody>{signups.dimensions[signupDimension].map(row => <tr key={row.name}><td><b>{row.name}</b></td><td><b>{n(row.signups)}</b></td><td>{rate(percent(row.signups, signups.total))}</td></tr>)}</tbody></table>{!signups.dimensions[signupDimension].length && <div className={s.empty}>No signups in this range.</div>}</div>
+        </>}
+        <p className={s.footnote}>Signups are verified outcomes within the conversion window after an eligible visit. {coverageIncomplete && "Signup rates are hidden until the selected range has full tracking coverage. "}One visitor can use multiple sources. Browser privacy, consent and blockers can reduce coverage.</p>
+      </div>}
+
+      {tab === "experiments" && <div className={s.exploreBody}>
+        <div className={s.exploreHead}><div><h2>A/B experiment bench</h2><p className={s.micro}>Actual exposures, checkout intent and verified conversion</p></div><span className={s.stamp}>{failed("experiments") ? "Unavailable" : experimentNames.length ? `${experimentNames.length} observed` : "Ready for future tests"}</span></div>
+        {!variants.length ? failed("experiments") ? <div className={s.empty}>Experiment results are unavailable. Retry the report.</div> : <div className={s.experimentEmpty}><div className={s.experimentMark}><FlaskConical size={34}/><span>A / B</span></div><div><h3>No experiment exposures in this range.</h3><p>Choose the pages and variants when you are ready. This report will compare visitors who actually saw each version, not everyone who visited the site.</p><div className={s.experimentSteps}><span>01 / Assign a variant</span><span>02 / Record exposure</span><span>03 / Compare conversion</span></div></div></div> : <>
+          <div className={s.experimentControls}><Select label="Experiment" value={selectedExperiment} onChange={setExperiment}>{experimentNames.map(name => <option key={name}>{name}</option>)}</Select><Select label="Compare against" value={baseline?.variant || ""} onChange={setControl}>{variants.map(v => <option key={v.variant}>{v.variant}</option>)}</Select></div>
+          <div className={s.tableScroll}><table className={s.table}><thead><tr><th>Variant</th><th>Exposed</th><th>Attempts</th><th>Attempt rate</th><th>Verified</th><th>Signup rate</th><th>Lift</th><th>95% interval</th></tr></thead><tbody>{variants.map(v => {
+            const r = percent(v.completed, v.visitors);
+            const b = baseline ? percent(baseline.completed, baseline.visitors) : null;
+            const ci = conversionInterval(v.completed, v.visitors);
+            return <tr key={v.variant}><td><b>{v.variant}</b>{v === baseline && <small>Baseline</small>}</td><td>{n(v.visitors)}</td><td>{n(v.attempts)}</td><td>{rate(percent(v.attempts, v.visitors))}</td><td>{n(v.completed)}</td><td><b>{rate(r)}</b></td><td>{v === baseline ? "--" : b && r != null ? `${((r / b - 1) * 100).toFixed(1)}%` : "--"}</td><td>{ci ? `${rate(ci[0])} to ${rate(ci[1])}` : "--"}</td></tr>;
+          })}</tbody></table></div>
+          <p className={s.footnote}>{n(variants.reduce((sum, v) => sum + v.mixedVisitors, 0))} visitors with mixed variant exposures excluded. Page filter does not apply; the experiment defines its tested page. Rates use a {filters.windowDays}-day window after first exposure.</p>
+        </>}
+        {failed("experiments") && <div className={s.notice}>Experiment results could not be loaded. This does not mean no experiments exist.</div>}
+        <div className={s.experimentNote}><Info size={16}/><span>No automatic winner. The 95% Wilson interval shows uncertainty in each rate, not statistical significance between variants. Let cohorts mature before deciding.</span></div>
+      </div>}
+    </section>
     <Sheet mdlRef={sheet.ref} title={drill ? `${drill.label} / who reached it` : "Stage visitors"} titleId="trafficStageVisitors" size="drawer" onClose={sheet.close} error={drillError || null}>
       <div className={s.drill}>
-        <div className={s.drillLead}><Users size={18}/><div><strong>{drillPending ? "Loading" : n(drillReport?.total)}</strong><span>{drillPending ? "Querying PostHog…" : `visitor${drillReport?.total === 1 ? "" : "s"} reached ${drill?.label ?? "this stage"} / ${filters.from} to ${filters.to}`}</span></div></div>
+        <div className={s.drillLead}><Users size={18}/><div><strong>{drillPending ? "Loading" : n(drillReport?.total)}</strong><span>{drillPending ? "Querying PostHog..." : `visitor${drillReport?.total === 1 ? "" : "s"} reached ${drill?.label ?? "this stage"} / ${filters.from} to ${filters.to}`}</span></div></div>
         {visitors.length > 0 && <div className={s.drillSummary}>
           {([["Devices", (v: StageVisitor) => v.device], ["Countries", (v: StageVisitor) => v.country], ["Sources", (v: StageVisitor) => v.source]] as const).map(([label, pick]) => <div key={label}><h3>{label}</h3><ul>{tally(visitors, pick).map(item => <li key={item.name}><span>{item.name}</span><b>{n(item.count)}</b><i style={{ width: `${percent(item.count, visitors.length) ?? 0}%` }}/></li>)}</ul></div>)}
         </div>}
@@ -354,9 +293,10 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
             <div className={s.drillFacts}><span><em>Reached</em>{when(v.reachedAt)}</span><span><em>Got to</em>{stageLabel(v.furthest)}</span><span><em>Activity</em>{n(v.sessions)} session{v.sessions === 1 ? "" : "s"} / {n(v.views)} view{v.views === 1 ? "" : "s"}</span>{v.personUrl && <a href={v.personUrl} target="_blank" rel="noreferrer">PostHog profile <ArrowUpRight size={13}/></a>}</div>
           </li>)}
         </ol>}
-        {drillReport && drillReport.total > visitors.length && <p className={s.hint}>Showing the {n(visitors.length)} most recent of {n(drillReport.total)}. Narrow the date range for the rest.</p>}
-        <p className={s.hint}>Device and browser come from the visitor&apos;s own browser. Location is estimated from IP address and can be approximate. Source is the first thing recorded in the landing session. Activity counts inside the {filters.windowDays}-day conversion window.</p>
+        {drillReport && drillReport.total > visitors.length && <p className={s.footnote}>Showing the {n(visitors.length)} most recent of {n(drillReport.total)}. Narrow the date range for the rest.</p>}
+        <p className={s.footnote}>Device and browser come from the visitor&apos;s own browser. Location is estimated from IP address and can be approximate. Source is the first thing recorded in the landing session. Activity counts inside the {filters.windowDays}-day conversion window.</p>
       </div>
     </Sheet>
+    <details className={s.methodology}><summary><Info size={15}/>Measurement notes</summary><div><p><b>{filters.fullHistory ? "Full history: every recorded event, before the ad launch too." : `Counting since ${TRAFFIC_SINCE_LABEL}`}</b> (the ad launch, midnight America/Los_Angeles). Every card, all-time, today, the funnel, the platform cards, the map and the signup lists count from that date; the date range works inside it.</p><p><b>In-app browsers.</b> In Facebook and Instagram&apos;s in-app browsers a visitor is a click: each ad tap can arrive with a fresh cookie, so one person counts again. <b>People (est.)</b> counts address + browser ($ip + $raw_user_agent) instead, unique per day — an estimate: a household on one Wi-Fi with the same phone model counts once, a phone that changes network counts twice.</p><p><b>Visitors</b> are distinct PostHog person IDs, not guaranteed distinct humans. Separate devices or cleared cookies can count again.</p><p><b>New</b> means first observed in the selected range. <b>Returning</b> means first observed before it. <b>Repeat</b> means 2+ recorded sessions within the range, and can include new visitors.</p><p><b>Coverage</b> begins {report.firstTrackedAt?.slice(0, 10) || "when the first event arrives"}. Admin pages are excluded. Visitors are counted on www.jobflex.app and jobflex.app only (localhost when chosen); Vercel previews, pages with no hostname and bots (PostHog&apos;s bot flag, an empty or known bot user agent) never count. &ldquo;From ads&rdquo; means the visit carried utm_source or fbclid. Google signup skips the account step. Filters never reconstruct unrecorded historical events.</p><p><b>Freshness</b> Reports are cached for up to 60 seconds; ingestion may take additional time. Today follows the displayed timezone. All-time and today ignore page, audience, source and device filters.</p></div></details>
   </div>;
 }
