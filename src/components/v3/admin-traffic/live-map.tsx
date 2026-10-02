@@ -48,7 +48,7 @@ const PIN_META: Record<PinKind, { colour: string; label: string }> = {
 };
 const STAGE_LABEL: Record<LiveStage, string> = { browsing: "Looking around", "signing-in": "Signing in", registering: "On the sign-up form", checkout: "At checkout", "signed-up": "Signed up", member: "In the app · member" };
 
-export function LiveMap({ visitors, now, selected, onSelect, timezone, totals }: { visitors: LiveVisitor[]; now: number; selected: string | null; onSelect: (key: string | null) => void; timezone: string; totals?: LiveTotals | null }) {
+export function LiveMap({ visitors, now, selected, onSelect, timezone, totals, adNames = {} }: { visitors: LiveVisitor[]; now: number; selected: string | null; onSelect: (key: string | null) => void; timezone: string; totals?: LiveTotals | null; adNames?: Record<string, string> }) {
   const [map, setMap] = useState<WorldMap | null>(null);
   const [fine, setFine] = useState<Shape[] | null>(null);
   const [states, setStates] = useState<Shape[] | null>(null);
@@ -329,10 +329,11 @@ export function LiveMap({ visitors, now, selected, onSelect, timezone, totals }:
                 <div className={s.mapVisitor} data-kind={kind}>
                   <p className={s.mapVisitorTop}>
                     <em style={{ background: PIN_META[kind].colour }}>{STAGE_LABEL[v.stage]}</em>
-                    <b>{v.source}</b>{v.campaign ? <span>· {v.campaign}</span> : null}
+                    <b>{v.source}</b>{v.trade ? <span>· {v.trade}</span> : null}{v.campaign ? <span>· {adNames[v.campaign] || v.campaign}</span> : null}{v.content && v.content !== v.campaign ? <span>· {adNames[v.content] || v.content}</span> : null}
                     <span className={s.mapWhen} data-active={v.active}>{v.active ? "on the site now" : `left ${ago(now - Date.parse(v.lastAt))} ago`}</span>
                   </p>
                   {v.signup && <p className={s.mapSignup}>Signed up → <b>{v.signup.orgName}</b> · {v.signup.ownerEmail}{v.signup.plan ? ` · ${v.signup.plan}` : ""}</p>}
+                  {!v.signup && v.member && <p className={s.mapSignup}>Member → <b>{v.member.orgName}</b>{v.member.userName ? ` · ${v.member.userName}` : ""}</p>}
                   <div className={s.mapNow}>
                     <span>{v.active ? "Now on" : "Last seen on"}</span>
                     <b>{v.pageLabel}</b>

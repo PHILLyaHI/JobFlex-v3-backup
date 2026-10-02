@@ -5,9 +5,9 @@
 // account the database just made. Polls while the tab is visible; one shared
 // PostHog query behind it (lib/traffic-server fetchLiveEvents).
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Info, KeyRound, Megaphone, MousePointerClick, RefreshCw } from "lucide-react";
-import { getLiveTraffic } from "@/actions/trafficDashboard";
-import type { LiveReport, LiveStage, LiveVisitor } from "@/lib/traffic-live";
+import { Building2, Info, KeyRound, Megaphone, MousePointerClick, RefreshCw } from "lucide-react";
+import { getLiveTraffic, nameAdTag } from "@/actions/trafficDashboard";
+import { isAdId, type LiveReport, type LiveStage, type LiveVisitor } from "@/lib/traffic-live";
 import { LiveMap } from "./live-map";
 import { LivePlatforms } from "./live-platforms";
 import s from "./traffic.module.css";
@@ -58,6 +58,15 @@ export function LivePanel({ initial, timezone }: { initial: LiveReport; timezone
   const [selected, setSelected] = useState<string | null>(null);
   /** A platform card pressed: the map and the list keep only its people. */
   const [platform, setPlatform] = useState<string | null>(null);
+  /** Names given on this page since the last poll (2026-10-01): shown at once,
+   *  and the next poll brings them back from the server anyway. "" = forgotten. */
+  const [named, setNamed] = useState<Record<string, string>>({});
+  const adNames: Record<string, string> = Object.fromEntries(Object.entries({ ...(report.adNames ?? {}), ...named }).filter(([, n]) => n));
+  const onName = useCallback(async (tag: string, name: string) => {
+    const r = await nameAdTag({ tag, name });
+    if (r.ok) setNamed((m) => ({ ...m, [tag]: name.trim() }));
+    return r;
+  }, []);
   const request = useRef(0);
   // Stable: it takes the one thing that changes as an argument, so the poll
   // below is armed once per setting, not once per tick of the clock.
@@ -166,7 +175,7 @@ export function LivePanel({ initial, timezone }: { initial: LiveReport; timezone
     {(error || report.message) && <div className={s.notice} role="status"><Info size={16}/><div><strong>{error || report.message}</strong></div></div>}
     {live && <>
       {/* The platforms: a card each, the ad platforms always; pressed, a filter. */}
-      <LivePlatforms platforms={report.platforms} selected={platform} onSelect={setPlatform}/>
+      <LivePlatforms platforms={report.platforms} selected={platform} onSelect={setPlatform} adNames={adNames}/>
       {/* The map: where everyone is, a pin per visitor in the stage colours. */}
       <div className={s.liveSpan} role="group" aria-label="Who the map shows">
         <div className={s.dimensionTabs} style={{ margin: 0 }}>
@@ -176,23 +185,56 @@ export function LivePanel({ initial, timezone }: { initial: LiveReport; timezone
         <span>{onMap.length} {onMap.length === 1 ? "visitor" : "visitors"} on the map{platform ? ` · ${report.platforms.find((p) => p.platform === platform)?.name ?? platform} only` : ""}</span>
         {platform && <button type="button" className={s.textButton} onClick={() => setPlatform(null)}>Show everyone</button>}
       </div>
-      <LiveMap visitors={onMap} now={now} selected={selected} onSelect={setSelected} timezone={timezone} totals={report.totals}/>
+      <LiveMap visitors={onMap} now={now} selected={selected} onSelect={setSelected} timezone={timezone} totals={report.totals} adNames={adNames}/>
     </>}
     {live && !rows.length && <div className={s.liveEmpty}>{report.visitors.length ? (platform ? "Nobody from this platform in the last half hour — press the card again to see everyone." : "Nobody from an ad in the last half hour — turn off the ads filter to see everyone.") : `Nobody on the site in the last ${report.windowMinutes} minutes.`}</div>}
     {rows.length > 0 && <ol className={s.liveList} aria-label="Visitors on the site">
-      {rows.map((v) => <LiveRow key={v.id + v.firstAt} v={v} now={now} timezone={timezone} selected={selected === v.id} onSelect={() => setSelected(selected === v.id ? null : v.id)}/>)}
+      {rows.map((v) => <LiveRow key={v.id + v.firstAt} v={v} now={now} timezone={timezone} selected={selected === v.id} onSelect={() => setSelected(selected === v.id ? null : v.id)} adNames={adNames} onName={onName}/>)}
     </ol>}
     {report.otherSignups.length > 0 && <div className={s.liveOthers}><span className={s.micro}>Signed up today, outside the last {report.windowMinutes} minutes or with analytics blocked — the live list above only holds the window, this holds the day:</span>{report.otherSignups.map((o) => <span key={o.orgName + o.at} className={s.liveOther}><b>{o.orgName}</b> · {o.ownerEmail || "no owner yet"} · {o.source} · {clock(o.at, timezone)} <b className={s.livePlan}>{o.planLabel}</b></span>)}</div>}
     <p className={s.footnote}>One line per browser (a PostHog person), newest move first, signups on top; a click on a line shows it on the map. Source is what the first page of the visit carried: a tagged paid medium is an ad; a Facebook, Instagram or TikTok referrer with no tag is called an ad too. Colour is how far they got, and each stage has its own: crimson looking around, cyan signing in, amber on the sign-up form or at checkout, green signed up, near-black already a member. A visitor at the login, forgot-password or reset screen is an existing customer, counted as signing in rather than browsing; "locked out" means they asked for a reset link. Places come from PostHog&apos;s GeoIP reading of the browser&apos;s address — the town is usually right, the street never known. A signup is named after the organization created within fifteen minutes of it with the same campaign tag.</p>
   </section>;
 }
 
-function LiveRow({ v, now, timezone, selected, onSelect }: { v: LiveVisitor; now: number; timezone: string; selected: boolean; onSelect: () => void }) {
+/** An ad or campaign tag, by the owner's name when it has one (2026-10-01).
+ *  Meta sends {{campaign.id}} / {{ad.id}} as long numbers; "Name it" turns
+ *  one into "Roofing · 40 s v1" for every row, card and pin from then on. */
+function AdTag({ tag, adNames, onName }: { tag: string; adNames: Record<string, string>; onName: (tag: string, name: string) => Promise<{ ok: boolean; error?: string }> }) {
+  const name = adNames[tag] ?? "";
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const save = async () => {
+    setBusy(true); setErr("");
+    const r = await onName(tag, draft);
+    setBusy(false);
+    if (r.ok) setEditing(false); else setErr(r.error ?? "Not saved");
+  };
+  if (editing) {
+    return <span className={s.adNameEdit} onClick={(e) => e.stopPropagation()}>
+      <input autoFocus value={draft} maxLength={60} placeholder="Roofing · 40 s v1" aria-label={`Name for ${tag}`} disabled={busy}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") void save(); if (e.key === "Escape") setEditing(false); }}/>
+      <button type="button" onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+      <button type="button" onClick={() => setEditing(false)} disabled={busy}>Cancel</button>
+      {err && <i>{err}</i>}
+    </span>;
+  }
+  return <span className={s.adTag}>
+    {" · "}{name ? <><b>{name}</b><span className={s.adId}>{tag}</span></> : tag}
+    {(name || isAdId(tag)) && <button type="button" className={s.adNameBtn} onClick={(e) => { e.stopPropagation(); setDraft(name); setEditing(true); }}>{name ? "Rename" : "Name it"}</button>}
+  </span>;
+}
+
+function LiveRow({ v, now, timezone, selected, onSelect, adNames, onName }: { v: LiveVisitor; now: number; timezone: string; selected: boolean; onSelect: () => void; adNames: Record<string, string>; onName: (tag: string, name: string) => Promise<{ ok: boolean; error?: string }> }) {
   // A row is a click away from its pin on the map (and back).
   return <li className={s.liveRow} data-stage={v.stage} data-active={v.active} data-ad={v.fromAd} data-selected={selected} onClick={onSelect} title={v.lat !== null ? "Show on the map" : "No known place for this visitor"}>
     <div className={s.liveMark} aria-hidden="true"/>
     <div className={s.liveWho}>
-      <b>{STAGE[v.stage]}{v.signup ? ` → ${v.signup.orgName}` : ""}</b>
+      <b>{STAGE[v.stage]}{v.signup ? ` → ${v.signup.orgName}` : v.member ? ` → ${v.member.orgName}` : ""}</b>
+      {/* A signed-in member: the company and the person (2026-10-01). */}
+      {!v.signup && v.member && <span className={s.liveSignup}><Building2 size={11}/> {v.member.orgName}{v.member.userName ? ` · ${v.member.userName}` : ""}</span>}
       {v.signup && <span className={s.liveSignup}>
         {v.signup.ownerName ? `${v.signup.ownerName} · ` : ""}{v.signup.ownerEmail} · account made {clock(v.signup.at, timezone)}
         {/* What they signed up FOR, read from the subscription row — the
@@ -205,7 +247,11 @@ function LiveRow({ v, now, timezone, selected, onSelect }: { v: LiveVisitor; now
         {/* Locked out is its own chip: the one state that wants a person,
             not a nudge. */}
         {v.lockedOut && <em className={s.liveLocked}><KeyRound size={11}/>Locked out</em>}
-        {v.source}{v.campaign ? ` · ${v.campaign}` : ""}
+        {v.source}
+        {/* The trade the ad sent them to (the landing's ?industry=). */}
+        {v.trade && <em className={s.liveTrade}>{v.trade}</em>}
+        {v.campaign && <AdTag tag={v.campaign} adNames={adNames} onName={onName}/>}
+        {v.content && v.content !== v.campaign && <AdTag tag={v.content} adNames={adNames} onName={onName}/>}
       </span>
     </div>
     <div className={s.liveWhere}>

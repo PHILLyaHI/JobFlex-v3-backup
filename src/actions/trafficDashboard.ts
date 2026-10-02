@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { getLiveTraffic as liveTraffic, getStageVisitors, getTrafficReport } from "@/lib/traffic-server";
 import { parseTrafficFilters } from "@/lib/traffic-query";
 import type { SignupAttribution } from "@/lib/traffic-contract";
-import { signupLedgerSummary, signupPlanLabel, signupSource, signupState, type FreshSignup, type LiveReport, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
+import { adNameKey, adTagsOf, signupLedgerSummary, signupPlanLabel, signupSource, signupState, type FreshSignup, type LiveReport, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
 
 /** The organizations made in the last day, with the owner who made them —
  *  the rows a live signup is tied back to (lib/traffic-live). */
@@ -41,7 +41,7 @@ async function freshSignups(): Promise<FreshSignup[]> {
 export async function getLiveTraffic(input: Record<string, unknown> = {}): Promise<LiveReport> {
   await requirePlatformAdmin();
   const signups = await freshSignups();
-  return liveTraffic(signups, {
+  const report = await liveTraffic(signups, {
     includeDevelopment: input.includeDevelopment === true,
     // "Today" is a LOCAL day, and it has to be the same local day on the
     // server's first paint as in the client's polls. Reading it through
@@ -53,6 +53,50 @@ export async function getLiveTraffic(input: Record<string, unknown> = {}): Promi
     // Live mode (15 s) asks for a shorter server cache so each tick moves.
     fast: input.fast === true,
   });
+  return withNames(report);
+}
+
+/** The names the live view shows next to bare ids (owner, 2026-10-01): the
+ *  owner's own names for ad and campaign ids, and the company and person
+ *  behind a member's visit. A failed read costs the names, never the panel.
+ *  The report from lib/traffic-server is a shared cache — copied, not mutated. */
+async function withNames(report: LiveReport): Promise<LiveReport> {
+  if (report.status !== "ok") return report;
+  const tags = adTagsOf(report);
+  const orgIds = [...new Set(report.visitors.map((v) => v.orgId).filter(Boolean))];
+  const userIds = [...new Set(report.visitors.map((v) => v.userId).filter(Boolean))];
+  const [names, orgs, users] = await Promise.all([
+    tags.length ? db.syncState.findMany({ where: { key: { in: tags.map(adNameKey) } }, select: { key: true, cursor: true } }).catch(() => []) : [],
+    orgIds.length ? db.organization.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } }).catch(() => []) : [],
+    userIds.length ? db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } }).catch(() => []) : [],
+  ]);
+  const adNames: Record<string, string> = {};
+  for (const t of tags) { const row = names.find((n) => n.key === adNameKey(t)); if (row?.cursor) adNames[t] = row.cursor; }
+  const orgName = new Map(orgs.map((o) => [o.id, o.name]));
+  const userName = new Map(users.map((u) => [u.id, u.name || u.email]));
+  return {
+    ...report,
+    adNames,
+    visitors: report.visitors.map((v) => (v.orgId && orgName.has(v.orgId)
+      ? { ...v, member: { orgName: orgName.get(v.orgId) ?? "", userName: userName.get(v.userId) ?? "" } }
+      : v)),
+  };
+}
+
+/** Name an ad or campaign id the way the owner knows it ("Roofing · 40 s v1").
+ *  Kept in SyncState under `adname:<id>`; an empty name forgets it. */
+export async function nameAdTag(input: { tag?: unknown; name?: unknown }): Promise<{ ok: boolean; error?: string }> {
+  await requirePlatformAdmin();
+  const tag = typeof input.tag === "string" ? input.tag.trim() : "";
+  const name = typeof input.name === "string" ? input.name.trim().replace(/\s+/g, " ").slice(0, 60) : "";
+  if (!tag || tag.length > 120) return { ok: false, error: "No ad id to name." };
+  try {
+    if (!name) await db.syncState.deleteMany({ where: { key: adNameKey(tag) } });
+    else await db.syncState.upsert({ where: { key: adNameKey(tag) }, create: { key: adNameKey(tag), cursor: name }, update: { cursor: name } });
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "The name could not be saved. Try again." };
+  }
 }
 
 /** Signups by what the landing recorded on the organization — the trade hero

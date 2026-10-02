@@ -105,6 +105,9 @@ export default async function DashboardBlueprintLayout({
   // For the error reporter ($exception): which org and plan hit the error.
   // The plan slug as stored; a failed read costs the label, never the page.
   let organizationId: string | null = null;
+  // Who is in the app, for the admin's live view (ids only; names are looked
+  // up server-side when an admin asks).
+  let userId: string | null = null;
   let plan: string | null = null;
   // For the trial watch (components/v3/trial-watch): the beacon while the
   // company is new, the watermark while it has not paid.
@@ -117,6 +120,7 @@ export default async function DashboardBlueprintLayout({
     const ctx = await requireOrg();
     role = ctx.role;
     organizationId = ctx.organizationId;
+    userId = ctx.user.id;
     email = ctx.user.email ?? null;
     name = ctx.user.name || ctx.user.email || "Account";
     hidden = hiddenPagesFor(ctx.user.email);
@@ -223,7 +227,7 @@ export default async function DashboardBlueprintLayout({
       limitsExempt={navLimitsExempt}
       handheldBanner={trial && !onTrialPage ? <TrialRibbon view={trial} isOwner={role === "OWNER"} only="dock" /> : null}
     >
-      <TrafficContext role={role} plan={plan} organizationId={organizationId} />
+      <TrafficContext role={role} plan={plan} organizationId={organizationId} userId={userId} />
       {organizationId && <TrialWatchMount organizationId={organizationId} email={email} />}
       {trial && !onTrialPage && <TrialRibbon view={trial} isOwner={role === "OWNER"} />}
       {announcements.length > 0 && <DashboardAnnouncementDismiss announcements={announcements} />}
