@@ -103,3 +103,19 @@ export function getStripe() {
   }
   return clientFor(key);
 }
+
+/** A live key accidentally pasted into the test slot must never run a simulation. */
+export function isStripeTestConfigured(): boolean {
+  return Boolean(mockIfEnabled() || /^(sk|rk)_test_/.test(stripeKeyFor("test") ?? ""));
+}
+
+/** Trial simulation tenants can never reach a live payment client. */
+export async function getStripeClientForOrg(orgId: string): Promise<{ stripe: Stripe; mode: StripeMode }> {
+  const { isTrialSimulation } = await import("@/lib/trialSimulation");
+  if (await isTrialSimulation(orgId)) {
+    const stripe = isStripeTestConfigured() ? stripeClientForMode("test") : null;
+    if (!stripe) throw new Error("Set STRIPE_SECRET_KEY_TEST to test checkout. Live payments are disabled for this test workspace.");
+    return { stripe, mode: "test" };
+  }
+  return getStripeClient();
+}

@@ -1,8 +1,8 @@
 "use server";
 import { revalidatePath } from "next/cache";
-import { requireOwner } from "@/lib/orgContext";
+import { requireOwner, requireBillingOwner } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { isStripeEnabled, getStripeClient } from "@/lib/sdk/stripe";
+import { isStripeEnabled, getStripeClientForOrg } from "@/lib/sdk/stripe";
 import { getPlanBySlug, getOrgPlanContext, revalidatePlanSurfaces } from "@/lib/planCatalogServer";
 import { ensureRecurringPrice } from "@/lib/stripePriceCache";
 import { SubscriptionStatus } from "@/lib/prismaEnums";
@@ -112,7 +112,7 @@ export async function listSubscriptionInvoices(): Promise<{
   invoices: SubscriptionInvoice[];
   upcoming?: UpcomingInvoice | null;
 }> {
-  const { organizationId } = await requireOwner();
+  const { organizationId } = await requireBillingOwner();
   const sub = await db.subscription.findUnique({ where: { organizationId } });
 
   if (!isStripeEnabled() || !sub?.externalCustomerId) {
@@ -122,7 +122,7 @@ export async function listSubscriptionInvoices(): Promise<{
   try {
     // Mode-aware: a subscription started on the sandbox has its invoices on
     // the sandbox. The live-only client returned nothing for it.
-    const { stripe } = await getStripeClient();
+    const { stripe } = await getStripeClientForOrg(organizationId);
     const res = await stripe.invoices.list({
       customer: sub.externalCustomerId,
       limit: 12,
@@ -212,7 +212,7 @@ export async function cancelSubscription(): Promise<CancelSubscriptionResult> {
 
   let endsAt: Date | null = sub.currentPeriodEnd ?? sub.trialEndsAt ?? null;
   if (sub.externalSubId && isStripeEnabled()) {
-    const { stripe } = await getStripeClient();
+    const { stripe } = await getStripeClientForOrg(organizationId);
     try {
       const updated = await stripe.subscriptions.update(sub.externalSubId, {
         cancel_at_period_end: true,
@@ -242,7 +242,7 @@ export async function resumeSubscription(): Promise<CancelSubscriptionResult> {
 
   let endsAt: Date | null = sub.currentPeriodEnd ?? null;
   if (sub.externalSubId && isStripeEnabled()) {
-    const { stripe } = await getStripeClient();
+    const { stripe } = await getStripeClientForOrg(organizationId);
     try {
       const current = await stripe.subscriptions.retrieve(sub.externalSubId);
       // Already over: Stripe cancelled for real and nothing can be resumed.
@@ -303,7 +303,7 @@ export async function changePlan(
   if (!sub?.externalSubId) return { ok: true, mode: "checkout" };
   if (ctx.plan?.slug === plan.slug) return { ok: false, error: "That is already your plan." };
 
-  const { stripe, mode } = await getStripeClient();
+  const { stripe, mode } = await getStripeClientForOrg(organizationId);
   let current;
   try {
     current = await stripe.subscriptions.retrieve(sub.externalSubId);
@@ -414,7 +414,7 @@ export async function addCustomPages(rawIds: unknown): Promise<AddCustomPagesRes
 
   let chargedCents = 0;
   if (sub?.externalSubId && isStripeEnabled()) {
-    const { stripe, mode } = await getStripeClient();
+    const { stripe, mode } = await getStripeClientForOrg(organizationId);
     let current;
     try {
       current = await stripe.subscriptions.retrieve(sub.externalSubId);
@@ -537,7 +537,7 @@ export async function removeCustomPages(rawIds: unknown): Promise<RemoveCustomPa
   const next = owned.filter((id) => !dropping.includes(id));
 
   if (sub?.externalSubId && isStripeEnabled()) {
-    const { stripe, mode } = await getStripeClient();
+    const { stripe, mode } = await getStripeClientForOrg(organizationId);
     let current;
     try {
       current = await stripe.subscriptions.retrieve(sub.externalSubId);

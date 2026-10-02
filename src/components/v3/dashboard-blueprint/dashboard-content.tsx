@@ -1,4 +1,5 @@
 "use client";
+import { useStartTrialSimulation } from "@/components/v3/trial-card/trial-access";
 
 // Blueprint dashboard — page CONTENT only. The donor's `.content` children,
 // verbatim; the sidebar, topbar, sprite and graph-paper field come from the
@@ -21,6 +22,7 @@ import { WEEK_DAY_EVENT, initDashboardContent, initialWeekIso } from "./blueprin
 import type { DashboardData } from "./blueprint-data";
 
 export function DashboardContent({ data }: { data: DashboardData }) {
+  useStartTrialSimulation();
   // The week strip is drawn imperatively, but the day it lands on has to reach
   // a `Link` — a Link navigates to its href PROP, so rewriting the rendered
   // anchor's attribute from the behavior module would move the text and not the
@@ -46,6 +48,31 @@ export function DashboardContent({ data }: { data: DashboardData }) {
 
   return (
     <>
+      {/* FIRST RUN (landing-e pass A, 2026-09-11) — a variant-e shop that has
+          not made an estimate yet: one card, one button by trade. The server
+          stops sending it after the first proposal / estimate / measurement. */}
+      {data.firstRun && (
+        <div className="first-run" id="firstRun" data-trade={data.firstRun.trade}>
+          <div className="first-run-body">
+            <div className="first-run-kicker">First estimate</div>
+            <div className="first-run-title">Make your first estimate</div>
+            <div className="first-run-txt">
+              {data.firstRun.trade === "roofing"
+                ? "Type an address and the roof is measured from the aerial — squares, pitch, a priced proposal in about two minutes."
+                : data.firstRun.trade === "fencing"
+                  ? "Draw the fence line on the map — footage, posts, gates and a priced proposal in about two minutes."
+                  : "Type the job the way you'd say it to a customer — the estimate writes itself in about two minutes."}
+            </div>
+          </div>
+          <Link className="btn btn-primary" href={data.firstRun.href as Route} data-cta="first-run">
+            {data.firstRun.label}
+            <svg className="ic">
+              <use href="#i-arrow" />
+            </svg>
+          </Link>
+        </div>
+      )}
+
       {/* LEAD CENTER BANNER — only for an org that cannot receive platform
           leads yet. The behavior module fills the missing-piece phrase and
           honours the 7-day localStorage snooze the classic banner wrote. */}
@@ -72,31 +99,6 @@ export function DashboardContent({ data }: { data: DashboardData }) {
               <use href="#i-x" />
             </svg>
           </button>
-        </div>
-      )}
-
-      {/* FIRST RUN (landing-e pass A, 2026-09-11) — a variant-e shop that has
-          not made an estimate yet: one card, one button by trade. The server
-          stops sending it after the first proposal / estimate / measurement. */}
-      {data.firstRun && (
-        <div className="first-run" id="firstRun" data-trade={data.firstRun.trade}>
-          <div className="first-run-body">
-            <div className="first-run-kicker">First estimate</div>
-            <div className="first-run-title">Make your first estimate</div>
-            <div className="first-run-txt">
-              {data.firstRun.trade === "roofing"
-                ? "Type an address and the roof is measured from the aerial — squares, pitch, a priced proposal in about two minutes."
-                : data.firstRun.trade === "fencing"
-                  ? "Draw the fence line on the map — footage, posts, gates and a priced proposal in about two minutes."
-                  : "Type the job the way you'd say it to a customer — the estimate writes itself in about two minutes."}
-            </div>
-          </div>
-          <Link className="btn btn-primary" href={data.firstRun.href as Route} data-cta="first-run">
-            {data.firstRun.label}
-            <svg className="ic">
-              <use href="#i-arrow" />
-            </svg>
-          </Link>
         </div>
       )}
 

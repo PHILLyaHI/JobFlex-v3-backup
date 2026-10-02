@@ -28,6 +28,8 @@
 // signIn, the promo/referral attribution capture, and the Google OAuth entry.
 // No server action, API route or Prisma call was added or altered.
 
+import { initializeSignupExperiment } from "@/actions/signupExperiment";
+import { requestSignupEmail, signupEmailVerified } from "@/actions/signupEmailVerification";
 import { PlanConfetti } from "@/components/billing/PlanConfetti";
 import * as React from "react";
 import Link from "next/link";
@@ -65,6 +67,7 @@ import {
   completePendingSignup,
   requestCardlessTrial,
   startPendingSignup,
+  startDirectTrial,
   updatePendingSignupAttribution,
   updatePendingSignupPages,
 } from "@/actions/signupCheckout";
@@ -87,7 +90,7 @@ const PICKER_EXIT_MS = 220;
 type Step = 1 | 2 | 3 | 4;
 
 /** Fallback trial length, used only until the catalog answers. */
-const DEFAULT_TRIAL_DAYS = 14;
+const DEFAULT_TRIAL_DAYS = 7;
 
 // How long the "Your shop is live" panel holds before it hands over to the
 // dashboard. Shared by both register surfaces.
@@ -95,9 +98,9 @@ export const REDIRECT_SECONDS = 5;
 
 // Donor `setStep`: items[0] is `on` at step 1 and `done` after it; items[1] is
 // `on` at step 2, `done` at step 3, and bare at step 1.
-function stItem(index: 0 | 1, step: Step): string {
-  if (index === 0) return "st-item" + (step === 1 ? " on" : " done");
-  return "st-item" + (step === 2 ? " on" : step > 2 ? " done" : "");
+function stItem(index: 0 | 1 | 2, step: Step): string {
+  const number = index + 1;
+  return "st-item" + (step === number ? " on" : step > number ? " done" : "");
 }
 
 /* THE CUSTOM PLAN IS OFFERED AT SIGNUP AGAIN (owner, 2026-09-26: "the custom
@@ -116,7 +119,7 @@ export function RegisterContent({
   industry = null,
   utm = null,
   inAppBrowser: inAppInitial = null,
-  requiresCard = true,
+  requiresCard: legacyRequiresCard = true,
 }: {
   /* TRIAL_REQUIRES_CARD (lib/trialPolicy), read on the server. True: the plan
      step opens Stripe Checkout and the card is taken there, as it always was.
@@ -139,6 +142,16 @@ export function RegisterContent({
   industry?: TradeType | null;
 }) {
   const router = useRouter();
+  const [experiment, setExperiment] = React.useState<"a" | "b" | null>(null);
+  const [experimentError, setExperimentError] = React.useState(false);
+  const experimentInit = React.useRef<Promise<{ variant: "a" | "b" }> | null>(null);
+  React.useEffect(() => {
+    const initialize = () => initializeSignupExperiment();
+    experimentInit.current ??= navigator.locks ? navigator.locks.request("jf-signup-assignment", initialize) : initialize();
+    void experimentInit.current.then(r => setExperiment(r.variant)).catch(() => setExperimentError(true));
+  }, []);
+  const requiresCard = experiment ? experiment === "b" : legacyRequiresCard;
+  const [waitingEmail, setWaitingEmail] = React.useState<string | null>(null);
   /* IN-APP BROWSERS (2026-10-01): Google refuses its sign-in inside them
      ("403 disallowed_useragent") and One Tap does not render, so step 1 is
      the email form alone, with a quiet "Open in Safari / Chrome for Google
@@ -186,6 +199,22 @@ export function RegisterContent({
   const [step, setStep] = React.useState<Step>(
     setupMode ? 2 : ret ? (ret.sessionId && !ret.cancelled ? 4 : 3) : googlePrefill ? 2 : 1,
   );
+  React.useEffect(() => {
+    if (!waitingEmail) return;
+    let live = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const check = async () => {
+      try {
+        if (await signupEmailVerified(waitingEmail)) {
+          if (live) { setWaitingEmail(null); setStep(2); }
+          return;
+        }
+      } catch { /* Never advance an unverified address after a failed check. */ }
+      if (live) timer = setTimeout(check, 2500);
+    };
+    void check();
+    return () => { live = false; clearTimeout(timer); };
+  }, [waitingEmail]);
   /* GOOGLE ON THIS PAGE proves who the visitor is and nothing more (owner,
      2026-09-03). The auth callback parks the verified identity and comes back
      here with ?gsu=<handle>; the handle is read once and step 1 is filled
@@ -194,6 +223,12 @@ export function RegisterContent({
   const [google, setGoogle] = React.useState<{ handle: string; email: string } | null>(
     googlePrefill ? { handle: googlePrefill.handle, email: googlePrefill.email } : null,
   );
+  const [showLeadPerk, setShowLeadPerk] = React.useState(false);
+  React.useEffect(() => {
+    if (step !== 2) return;
+    const timer = window.setTimeout(() => setShowLeadPerk(true), 5000);
+    return () => window.clearTimeout(timer);
+  }, [step]);
   const lastTrackedStep = React.useRef("");
   const trafficFlow = setupMode ? "setup" : google ? "google" : "standard";
   React.useEffect(() => {
@@ -398,7 +433,7 @@ export function RegisterContent({
       metaTrack("CompleteRegistration", { content_name: industry ?? "default", status: "true" }, metaIds.current.registration);
     }
   }, [step, industry]);
-  const trialDays =
+  const trialDays = requiresCard ? 7 :
     planSlug === CUSTOM_PLAN_SLUG
       ? customTrialDays
       : plans.find((p) => p.slug === planSlug)?.trialDays || DEFAULT_TRIAL_DAYS;
@@ -636,7 +671,7 @@ export function RegisterContent({
   async function onStartTrial(slug: string | null = planSlug) {
     if (payBusy || !slug) return;
     // The clicked card can differ from the selection until React commits it.
-    const clickedTrialDays = slug === CUSTOM_PLAN_SLUG
+    const clickedTrialDays = requiresCard ? 7 : slug === CUSTOM_PLAN_SLUG
       ? customTrialDays
       : plans.find((p) => p.slug === slug)?.trialDays ?? 0;
     trackTraffic(TRAFFIC_EVENTS.attempt, { plan: slug, interval, intent: clickedTrialDays > 0 ? "trial" : "purchase", flow: trafficFlow });
@@ -967,6 +1002,16 @@ export function RegisterContent({
     if (!leadSent.current) {
       leadSent.current = metaTrackWithServer("Lead", { content_name: industry ?? "default" }, { email: em });
     }
+    if (experiment === "a" && !google) {
+      setChecking(true);
+      try {
+        if (await signupEmailVerified(em)) { setStep(2); return; }
+        await requestSignupEmail(em);
+        setWaitingEmail(em);
+      } catch (error) { setErr1(error instanceof Error ? error.message : "Couldn't send verification. Try again."); }
+      finally { setChecking(false); }
+      return;
+    }
     setStep(2);
   }
 
@@ -1034,6 +1079,15 @@ export function RegisterContent({
         /* storage blocked */
       }
       setToken(res.token);
+      if (experiment === "a") {
+        const trial = await startDirectTrial(res.token);
+        if (!trial.ok || !trial.created?.ticket) throw new Error(!trial.ok ? trial.error : "Your trial could not be opened. Please sign in.");
+        const login = await signIn("signup-ticket", { ticket: trial.created.ticket, redirect: false });
+        if (login?.error) throw new Error("Your account is ready. Sign in to open your workspace.");
+        setSignedIn(true);
+        router.push("/dashboard" as Route);
+        return;
+      }
       setStep(3);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Couldn't continue.";
@@ -1069,7 +1123,7 @@ export function RegisterContent({
      sheet — because the two are separate layers that slide past each other;
      only one is ever visible. */
   const stepper = (
-    <div className="stepper" id="stepper">
+    <div className="stepper" id="stepper" data-steps={requiresCard ? 3 : 2}>
       <div className={stItem(0, step)} data-step="1">
         <span className="st-n">1</span>
         <span className="st-txt">
@@ -1085,10 +1139,11 @@ export function RegisterContent({
           <span className="st-h">Optional</span>
         </span>
       </div>
-      {/* Two steps in the bar (owner, 2026-10-01): the plan page still
-          follows step 2, it is just not counted as a step. */}
+      {requiresCard && <><div className="st-line" /><div className={stItem(2, step)} data-step="3"><span className="st-n">3</span><span className="st-txt"><span className="st-t">Free trial</span><span className="st-h">7 days</span></span></div></>}
     </div>
   );
+
+  if (!experiment) return <div className={styles.bp}><main className="auth"><section className="auth-form" role="status">{experimentError ? "Couldn't load registration. Please reload to try again." : "Preparing your signup…"}</section></main></div>;
 
   return (
     <div className={styles.bp} ref={rootRef}>
@@ -1133,7 +1188,7 @@ export function RegisterContent({
             ) : null}
 
             {emailOpen || google ? (
-            <form id="step1Form" className="s1-form" noValidate onSubmit={(e) => void onStep1(e)}>
+            <form hidden={Boolean(waitingEmail)} id="step1Form" className="s1-form" noValidate onSubmit={(e) => void onStep1(e)}>
               {/* The business name is asked for on step 2, so the name
                   stands alone here, full width. */}
               <div>
@@ -1164,17 +1219,6 @@ export function RegisterContent({
                   onChange={(e) => setEmail(e.target.value)}
                 />
               </label>
-              {google ? (
-                <div className="gsu-note" role="status">
-                  <svg className="ic ic--brand">
-                    <use href="#i-google" />
-                  </svg>
-                  <span>
-                    Verified by Google as <b>{google.email}</b>. No password needed — you&apos;ll
-                    sign in with Google.
-                  </span>
-                </div>
-              ) : null}
               {!google ? (
               <>
               <label className="fld">
@@ -1221,6 +1265,14 @@ export function RegisterContent({
             </form>
             ) : null}
 
+            {waitingEmail && (
+              <div className="pw-confirm" role="status" aria-live="polite">
+                <span className="verification-spinner" aria-hidden="true" />
+                <h2 className="pw-confirm-h">Check your email</h2>
+                <p className="pw-confirm-p">We sent a verification link to {waitingEmail}. This page will continue automatically after you verify.</p>
+                <button type="button" className="btn btn--ghost" onClick={() => setWaitingEmail(null)}>Use another email or resend</button>
+              </div>
+            )}
             {inApp ? (
               <OpenInBrowser app={inApp} />
             ) : (
@@ -1256,23 +1308,12 @@ export function RegisterContent({
             </div>
             {/* Google One Tap (pass A): step 1 only, and only with
                 NEXT_PUBLIC_GOOGLE_CLIENT_ID set. */}
-            {step === 1 && !google && !setupMode && !inApp ? <GoogleOneTap /> : null}
+            {step === 1 && !waitingEmail && !google && !setupMode && !inApp ? <GoogleOneTap /> : null}
           </div>
 
           {/* ───── ШАГ 2 ───── */}
           <div className={step === 2 ? "step" : "step is-hidden"} id="step2">
-            <h1 className="auth-h1">
-              {setupMode || google
-                ? `Welcome${name.trim() ? `, ${name.trim().split(" ")[0]}` : ""}. Tell us what you do for leads.`
-                : "Tell us what you do for leads."}
-            </h1>
-            {setupMode ? (
-              <p className="auth-lede">{`Signed in with Google as ${email}. One more step and your shop is live.`}</p>
-            ) : google ? (
-              /* The account does NOT exist yet on this path — it is created
-                 when checkout returns — so this says verified, not signed in. */
-              <p className="auth-lede">{`Verified by Google as ${email}. No password needed.`}</p>
-            ) : null}
+            <h1 className="auth-h1">Tell us what you do for leads.</h1>
 
             <form
               id="step2Form"
@@ -1432,7 +1473,7 @@ export function RegisterContent({
           {/* THE PROMISE. One paper card on the ink field, top right, three
               lines long: what you get, why this step. It enters with step 2
               and leaves with it. */}
-          <div className={step === 2 ? "side-perk is-on" : "side-perk"} id="sidePerk" aria-hidden={step !== 2}>
+          <div className={step === 2 && showLeadPerk ? "side-perk is-on" : "side-perk"} id="sidePerk" aria-hidden={step !== 2 || !showLeadPerk}>
             <div className="pk">
               <span className="pk-eyebrow">
                 <svg className="ic">
@@ -1655,9 +1696,7 @@ export function RegisterContent({
                         ? busyLabel
                         : !checkoutReady
                           ? "Checkout is not configured"
-                          : requiresCard
-                            ? `Start ${p.trialDays || DEFAULT_TRIAL_DAYS}-day trial`
-                            : "Start free trial"}
+                          : "Start 7 day free trial"}
                     </button>
                   </div>
                 );
@@ -1789,9 +1828,7 @@ export function RegisterContent({
                     ? busyLabel
                     : !checkoutReady
                       ? "Checkout is not configured"
-                      : requiresCard
-                        ? `Start ${customTrialDays}-day trial`
-                        : "Start free trial"}
+                      : "Start 7 day free trial"}
                 </button>
               </div>
               ) : null}

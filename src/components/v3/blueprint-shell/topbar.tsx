@@ -1,4 +1,5 @@
 "use client";
+import { TrialNavTimer } from "@/components/v3/trial-card/trial-access";
 
 // Blueprint shell — topbar. Donor markup, verbatim.
 //
@@ -54,6 +55,7 @@ export function Topbar() {
         <span className="search-ph">Search clients, proposals, leads…</span>
       </button>
 
+      <TrialNavTimer />
       <div className="topbar-right">
         {/* The app's most prominent CTA was a bare <button> with no onClick,
             no type and no id — the only thing touching it was the press

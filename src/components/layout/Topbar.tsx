@@ -1,4 +1,5 @@
 "use client";
+import { TrialNavTimer } from "@/components/v3/trial-card/trial-access";
 import * as React from "react";
 import Link from "next/link";
 import { logOutEverywhere } from "@/components/v3/blueprint-shell/sign-out";
@@ -76,6 +77,7 @@ export function Topbar({ user, memberships = [], isWorker = false, limited = fal
         </button>
       )}
 
+      <TrialNavTimer />
       <div className="flex-1" />
 
       <div className="flex items-center gap-2 shrink-0">

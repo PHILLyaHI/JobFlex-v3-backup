@@ -23,7 +23,7 @@
 // charge is taken there and the workspace unlocks as the mirror turns ACTIVE.
 import "server-only";
 import type Stripe from "stripe";
-import { getStripeClient } from "@/lib/sdk/stripe";
+import { getStripeClient, getStripeClientForOrg } from "@/lib/sdk/stripe";
 import { resolveSignupDiscount, resolveSignupPrice, type SignupInterval } from "@/lib/signupPricing";
 import { CARDLESS_TRIAL_DAYS } from "@/lib/trialPolicy";
 import { cardlessTrialState, patchCardlessRecord, readCardlessRecord, type CardlessRecord } from "@/lib/trialState";
@@ -171,10 +171,11 @@ export async function trialPlanSummary(rec: CardlessRecord): Promise<{ name: str
  * nothing to add a card to.
  */
 export async function openCardCheckout(orgId: string, origin: string): Promise<{ url: string; purpose: "trial-card" | "trial-restart" } | null> {
+  if (await (await import("@/lib/trialSimulation")).isTrialSimulation(orgId)) throw new Error("Use Pay now to choose a plan for this test workspace.");
   const state = await cardlessTrialState(orgId);
   if (!state || (state.kind === "trialing" && state.hasCard)) return null;
   const rec = state.record;
-  const { stripe, mode } = await getStripeClient();
+  const { stripe, mode } = await getStripeClientForOrg(orgId);
   const back = `${origin}/dashboard/trial`;
   if (state.kind === "trialing") {
     const session = await stripe.checkout.sessions.create({
@@ -224,7 +225,7 @@ export async function finishCardCheckout(
   orgId: string,
   sessionOrId: string | Stripe.Checkout.Session,
 ): Promise<{ ok: true; purpose: string } | { ok: false; error: string }> {
-  const { stripe } = await getStripeClient();
+  const { stripe } = await getStripeClientForOrg(orgId);
   const session =
     typeof sessionOrId === "string"
       ? await stripe.checkout.sessions.retrieve(sessionOrId, { expand: ["setup_intent", "subscription"] })
@@ -253,7 +254,7 @@ export async function finishCardCheckout(
       typeof session.subscription === "string"
         ? await stripe.subscriptions.retrieve(session.subscription)
         : session.subscription;
-    if (!sub) return { ok: false, error: "The plan did not restart." };
+    if (!sub || session.payment_status !== "paid" || sub.status !== "active") return { ok: false, error: "Payment has not completed yet." };
     await syncSubscriptionFromStripe(sub, stripe);
     if (!rec.restartedAt) await patchCardlessRecord(orgId, { restartedAt: new Date().toISOString() });
     return { ok: true, purpose };
@@ -263,6 +264,7 @@ export async function finishCardCheckout(
 
 /** What the banner and the trial page draw — plain data for client components. */
 export type TrialView = {
+  simulationPending?: boolean;
   kind: "trialing" | "ended";
   daysLeft: number;
   /** ISO — the trial's end (the first charge when a card is on file). */
@@ -282,7 +284,7 @@ export async function trialView(orgId: string): Promise<TrialView | null> {
   if (state.kind === "ended") {
     return { kind: "ended", daysLeft: 0, endsAt: state.endedAt.toISOString(), hasCard: false, planName: plan.name, price };
   }
-  return { kind: "trialing", daysLeft: state.daysLeft, endsAt: state.endsAt.toISOString(), hasCard: state.hasCard, planName: plan.name, price };
+  return { simulationPending: state.record.simulationPending, kind: "trialing", daysLeft: state.daysLeft, endsAt: state.endsAt.toISOString(), hasCard: state.hasCard, planName: plan.name, price };
 }
 
 const HOUR_MS = 60 * 60 * 1000;

@@ -1,3 +1,5 @@
+import { db } from "@/lib/db";
+import { isTrialWriteLocked } from "@/lib/trialState";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
@@ -67,7 +69,8 @@ const MOVED_INVENTORY: Record<string, string> = {
    request header read there rendered every page per request, /pricing's
    catalogue read included. No header (localhost) is the US: notice. */
 export async function middleware(req: NextRequest) {
-  const res = await route(req);
+  const trialBlock = await enforceTrialAccess(req);
+  const res = trialBlock ?? await route(req);
   if (!req.cookies.has(REGION_COOKIE)) {
     res.cookies.set(REGION_COOKIE, consentModeFor(req.headers.get("x-vercel-ip-country")), {
       path: "/",
@@ -202,6 +205,27 @@ async function route(req: NextRequest): Promise<NextResponse> {
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
+async function enforceTrialAccess(req: NextRequest): Promise<NextResponse | null> {
+  const path = req.nextUrl.pathname;
+  const billingPages = new Set(["/dashboard/trial", "/dashboard/upgrade", "/dashboard/subscription", "/mobile-subscription-v2"]);
+  const billingApis = new Set(["/api/checkout/subscription", "/api/billing/trial-card"]);
+  const publicApi = ["/api/auth/", "/api/webhooks/", "/api/cron/", "/api/public/", "/api/portal/", "/api/traffic", "/api/health"];
+  const api = path.startsWith("/api/");
+  const workspace = PROTECTED_PREFIXES.some(p => path.startsWith(p)) && !path.startsWith("/admin") && !path.startsWith("/influencer") &&
+    !PUBLIC_MOBILE_PREFIXES.some(p => path === p || path.startsWith(p + "/"));
+  if ((!api && !workspace) || billingPages.has(path) || billingApis.has(path) || publicApi.some(p => path.startsWith(p)) || path.startsWith("/api/admin/")) return null;
+  const token = await decodeSession(req);
+  if (!token?.sub || token.principal === "INFLUENCER") return null;
+  const memberships = await db.membership.findMany({
+    where: { userId: token.sub, organization: { deletedAt: null } },
+    orderBy: { createdAt: "asc" }, select: { organizationId: true },
+  });
+  const membership = memberships.find(m => m.organizationId === token.activeOrgId) ?? memberships[0];
+  if (!membership || !(await isTrialWriteLocked(membership.organizationId))) return null;
+  if (api) return NextResponse.json({ error: "Your free trial has ended. Subscribe to continue.", trialEnded: true }, { status: 403 });
+  return NextResponse.redirect(new URL("/dashboard/trial?locked=1", req.url));
+}
+
 /** The session JWT's claims, or null. Same cookie rules NextAuth uses. */
 async function decodeSession(req: NextRequest) {
   const secureCookie =
@@ -218,9 +242,10 @@ async function decodeSession(req: NextRequest) {
 }
 
 export const config = {
+  runtime: "nodejs",
   // Every page, for the jf_region cookie above; the auth, role and redirect
   // rules inside still apply only to the paths they name. API routes, Next's
   // own files and anything with a file extension (images, fonts, robots.txt)
   // never come through here.
-  matcher: ["/((?!api/|_next/|_vercel/|.*\\.[\\w]+$).*)"],
+  matcher: ["/api/:path*", "/dashboard/:path*", "/((?!_next/|_vercel/|.*\\.[\\w]+$).*)"],
 };

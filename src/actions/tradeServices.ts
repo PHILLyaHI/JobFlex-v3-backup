@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
-import { requireUser, requireManager, requireOrg, isLimitedRole } from "@/lib/orgContext";
+import { requireManager, requireOrg, isLimitedRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import type {
   TradeJob,
@@ -53,7 +53,7 @@ function asUrgency(s: string | null | undefined): Urgency | undefined {
 
 // ─── Opt-in profile ────────────────────────────────────────────────────────
 export async function getTradeNetworkProfile(): Promise<TradeNetworkProfileDTO> {
-  const user = await requireUser();
+  const { user } = await requireOrg();
   const p = await db.tradeNetworkProfile.findUnique({ where: { userId: user.id } });
   if (!p) return { optIn: false, tradeTypes: [], specialties: [], serviceArea: null };
   return {
@@ -72,7 +72,7 @@ const optInInput = z.object({
 });
 
 export async function setTradeNetworkOptIn(raw: unknown): Promise<TradeNetworkProfileDTO> {
-  const user = await requireUser();
+  const { user } = await requireOrg();
   const data = optInInput.parse(raw);
   const payload = {
     optIn: data.optIn,
@@ -238,7 +238,7 @@ function mapInboxJob(row: RecipientRow, orgNames: Map<string, string>): TradeJob
 }
 
 export async function getTradeInbox(): Promise<TradeInboxDTO> {
-  const user = await requireUser();
+  const { user } = await requireOrg();
   const cutoff = new Date(Date.now() - HIDDEN_TTL_MS);
 
   const rows = await db.tradeJobRecipient.findMany({
@@ -508,7 +508,7 @@ export async function listOpenTradeJobs(): Promise<NetworkJobDTO[]> {
 }
 
 export async function getMyTradeJobs(): Promise<OwnPost[]> {
-  const user = await requireUser();
+  const { user } = await requireOrg();
   const jobs = await db.tradeJob.findMany({
     where: { authorId: user.id, ...NOT_DELETED },
     orderBy: { createdAt: "desc" },
@@ -610,7 +610,7 @@ export async function respondToTradeJob(
   jobId: string,
   status: "INTERESTED" | "NOT_INTERESTED",
 ): Promise<{ ok: true }> {
-  const user = await requireUser();
+  const { user } = await requireOrg();
   if (status !== "INTERESTED" && status !== "NOT_INTERESTED") {
     throw new Error("Invalid response");
   }
@@ -656,7 +656,7 @@ export async function respondToTradeJob(
 }
 
 export async function restoreTradeJob(jobId: string): Promise<{ ok: true }> {
-  const user = await requireUser();
+  const { user } = await requireOrg();
   const rec = await db.tradeJobRecipient.findUnique({
     where: { tradeJobId_recipientId: { tradeJobId: jobId, recipientId: user.id } },
     select: { id: true },
@@ -675,7 +675,7 @@ export async function setTradeJobStatus(
   jobId: string,
   status: "FILLED" | "CANCELLED",
 ): Promise<{ ok: true }> {
-  const user = await requireUser();
+  const { user } = await requireOrg();
   if (status !== "FILLED" && status !== "CANCELLED") throw new Error("Invalid status");
   // Authz: only the author can change a job's status.
   const job = await db.tradeJob.findUnique({
@@ -705,7 +705,7 @@ export async function setTradeJobStatus(
 // author-only, checked against the row on the server; the id from the client is
 // never trusted for anything but the lookup.
 //
-// The gate is `requireUser()` + an author check, matching `setTradeJobStatus`
+// The gate is `requireOrg()` (including trial access) + an author check, matching `setTradeJobStatus`
 // rather than `createTradeJob`'s `requireManager()`. Creating a broadcast is a
 // manager act; correcting or withdrawing YOUR OWN broadcast should not stop
 // working because your role changed after you posted it.
@@ -733,7 +733,7 @@ const updateInput = z.object({
  *  and re-broadcasting on every keystroke-level edit is how a network becomes
  *  spam). */
 export async function updateTradeJob(jobId: string, raw: unknown): Promise<OwnPost> {
-  const user = await requireUser();
+  const { user } = await requireOrg();
   const data = updateInput.parse(raw);
 
   const existing = await db.tradeJob.findUnique({
@@ -790,7 +790,7 @@ export async function updateTradeJob(jobId: string, raw: unknown): Promise<OwnPo
 export async function deleteTradeJob(
   jobId: string,
 ): Promise<{ ok: true; hardDeleted: boolean }> {
-  const user = await requireUser();
+  const { user } = await requireOrg();
   const job = await db.tradeJob.findUnique({
     where: { id: jobId },
     select: { authorId: true, status: true, _count: { select: { recipients: true } } },
@@ -828,7 +828,7 @@ function mapMessage(
 }
 
 export async function getTradeConversation(jobId: string): Promise<ChatMessage[]> {
-  const user = await requireUser();
+  const { user } = await requireOrg();
   // Authz: a recipient may only read the conversation tied to their own row.
   const convo = await db.tradeJobConversation.findUnique({
     where: { tradeJobId_recipientId: { tradeJobId: jobId, recipientId: user.id } },
@@ -845,7 +845,7 @@ export async function getTradeConversation(jobId: string): Promise<ChatMessage[]
 }
 
 export async function sendTradeMessage(jobId: string, body: string): Promise<ChatMessage | null> {
-  const user = await requireUser();
+  const { user } = await requireOrg();
   const trimmed = body.trim();
   if (!trimmed) return null;
   // Authz: only a participant (here, the recipient) may post to the thread.
@@ -1050,7 +1050,7 @@ export type InterestedPartyDTO = {
 
 export async function getPostInterest(jobId: string): Promise<HireResult<InterestedPartyDTO[]>> {
   try {
-    const user = await requireUser();
+    const { user } = await requireOrg();
     const job = await db.tradeJob.findUnique({
       where: { id: jobId },
       select: { authorId: true },

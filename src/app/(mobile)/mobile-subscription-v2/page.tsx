@@ -27,7 +27,7 @@
 import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { requireOrg, isOwnerRole } from "@/lib/orgContext";
+import { requireBillingOrg, isOwnerRole } from "@/lib/orgContext";
 import { loadSubscriptionData } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
 import { MobileSubscription } from "@/components/v3/mobile-subscription/mobile-subscription";
 
@@ -56,7 +56,7 @@ export default async function MobileSubscriptionV2Page() {
     redirect(`/auth/login?next=${encodeURIComponent("/mobile-subscription-v2")}`);
   }
 
-  const { organizationId, role } = await requireOrg();
+  const { organizationId, role } = await requireBillingOrg();
   if (!isOwnerRole(role)) redirect("/dashboard");
 
   const data = await loadSubscriptionData(organizationId);

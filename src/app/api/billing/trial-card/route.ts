@@ -4,7 +4,7 @@
 // a server action, so it stays open while the workspace is read-only after
 // the trial (lib/trialLock locks server-action writes only).
 import { NextResponse, after } from "next/server";
-import { requireOwner, UnauthorizedError, NoOrgError } from "@/lib/orgContext";
+import { requireBillingOwner, UnauthorizedError, NoOrgError } from "@/lib/orgContext";
 import { isStripeEnabled } from "@/lib/sdk/stripe";
 import { openCardCheckout } from "@/lib/cardlessTrial";
 import { metaTrialCardCheckout } from "@/lib/metaSignupEvents";
@@ -14,7 +14,7 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   let organizationId: string;
   try {
-    ({ organizationId } = await requireOwner());
+    ({ organizationId } = await requireBillingOwner());
   } catch (err) {
     if (err instanceof UnauthorizedError || err instanceof NoOrgError) {
       return NextResponse.json({ error: "Only the owner can add the card." }, { status: 403 });

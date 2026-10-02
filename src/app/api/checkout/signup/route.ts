@@ -24,9 +24,6 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   // The card checkout is the TRIAL_REQUIRES_CARD=true path; with the flag off
   // the plan step starts the card-less trial instead (lib/cardlessTrial).
-  if (!trialRequiresCard()) {
-    return NextResponse.json({ error: "Start the free trial from the plan step." }, { status: 409 });
-  }
   if (!isStripeEnabled()) {
     return NextResponse.json({ error: "Stripe is not configured." }, { status: 503 });
   }
@@ -48,6 +45,9 @@ export async function POST(req: Request) {
   if (!pending) {
     return NextResponse.json({ error: "That signup expired. Start again." }, { status: 410 });
   }
+  if (pending.experimentVariant === "a" || (!pending.experimentVariant && !trialRequiresCard())) {
+    return NextResponse.json({ error: "Continue from your signup page." }, { status: 409 });
+  }
 
   // Mode-aware from the top: the admin's live/sandbox switch (lib/stripeMode)
   // decides which account this session is created on. The price and the
@@ -61,7 +61,8 @@ export async function POST(req: Request) {
     customPages: pending.customPages,
   });
   if (!priced.ok) return NextResponse.json({ error: priced.error }, { status: priced.status });
-  const { trialDays, planLabel, isCustom } = priced;
+  const { planLabel, isCustom } = priced;
+  const trialDays = pending.experimentVariant === "b" ? 7 : priced.trialDays;
   const lineItem: Stripe.Checkout.SessionCreateParams.LineItem = { price: priced.price, quantity: 1 };
   const discount = await resolveSignupDiscount({ stripe, mode, attribution: pending.attribution, trialDays, where: "checkout/signup" });
   // `discounts` and `allow_promotion_codes` are mutually exclusive at Stripe,
@@ -72,6 +73,7 @@ export async function POST(req: Request) {
   try {
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
+      payment_method_collection: "always",
       customer_email: pending.email,
       client_reference_id: String(token),
       line_items: [lineItem],

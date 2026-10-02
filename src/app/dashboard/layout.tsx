@@ -26,7 +26,7 @@
 // limited-role route gate that its sibling (dashboard)/layout.tsx has had since
 // the RBAC rollout. The blueprint tree is a separate branch of app/, so it never
 // inherited that layout — and the blueprint pages themselves only call
-// requireOrg (authenticated + in an org), never a role guard. That left the
+// requireBillingOrg (authenticated + in an org), never a role guard. That left the
 // middleware as the ONLY thing keeping an installer off /dashboard/financials,
 // and the middleware is fail-OPEN by design: it decodes the JWT and, on any
 // error, lets the request through. Same list, same helpers, same redirect as
@@ -35,7 +35,7 @@
 import { redirect } from "next/navigation";
 import type { Route } from "next";
 import { cookies, headers } from "next/headers";
-import { requireOrg } from "@/lib/orgContext";
+import { requireBillingOrg } from "@/lib/orgContext";
 import { hiddenPagesFor } from "@/lib/earlyAccess";
 import { db } from "@/lib/db";
 import { SETUP_PATH, needsCompanySetup } from "@/lib/orgSetup";
@@ -52,7 +52,7 @@ import { DashboardAnnouncementDismiss } from "@/app/(dashboard)/announcement-dis
 import { TrafficContext } from "@/components/providers/traffic-context";
 import { TrialWatchMount } from "@/components/v3/trial-watch/trial-watch-mount";
 import { trialView, type TrialView } from "@/lib/cardlessTrial";
-import { TrialRibbon } from "@/components/v3/trial-card/trial-card";
+import { TrialAccessProvider } from "@/components/v3/trial-card/trial-access";
 
 /** Membership.role is a raw enum-ish string ("OWNER", "INSTALLER"). The
  *  sidebar shows it to a human, so title-case it. */
@@ -117,7 +117,7 @@ export default async function DashboardBlueprintLayout({
   // other subscription; a failed read costs the ribbon, never the page.
   let trial: TrialView | null = null;
   try {
-    const ctx = await requireOrg();
+    const ctx = await requireBillingOrg();
     role = ctx.role;
     organizationId = ctx.organizationId;
     userId = ctx.user.id;
@@ -132,7 +132,7 @@ export default async function DashboardBlueprintLayout({
         where: { id: ctx.organizationId },
         select: { address: true, tradeTypesJson: true },
       });
-      needsSetup = Boolean(org && needsCompanySetup(org));
+      needsSetup = Boolean(org && needsCompanySetup(org) && !(await db.syncState.findUnique({ where: { key: "signup_trial_v1:org:" + ctx.organizationId } })));
     }
     user = { name, role: humanRole(ctx.role) };
     // SEPARATE awaits, each with its own failure story. Bundled in one
@@ -162,7 +162,7 @@ export default async function DashboardBlueprintLayout({
     const limitState = await getNavLimitState(ctx.organizationId).catch(() => undefined);
     navLimits = limitState?.counters;
     navLimitsExempt = limitState?.exempt ?? false;
-    trial = await trialView(ctx.organizationId).catch(() => null);
+
     plan = await db.subscription
       .findUnique({ where: { organizationId: ctx.organizationId }, select: { plan: true } })
       .then((sub) => sub?.plan ?? "FREE")
@@ -171,6 +171,7 @@ export default async function DashboardBlueprintLayout({
     // Signed out, or no membership yet. The page decides what happens next.
   }
 
+  trial = organizationId ? await trialView(organizationId) : null;
   if (needsSetup) redirect(SETUP_PATH as Route);
 
   // Fail-closed: an unreadable path is not a pass. Only a role WITH a gate is
@@ -214,9 +215,10 @@ export default async function DashboardBlueprintLayout({
   // the wide sidebar on every page load.
   const sidebarFolded = (await cookies()).get(SIDEBAR_FOLD_COOKIE)?.value === "1";
   // Not over the trial's own page, which says the same thing at full size.
-  const onTrialPage = trial ? ((await headers()).get("x-pathname") ?? "").startsWith("/dashboard/trial") : false;
+
 
   return (
+    <TrialAccessProvider view={trial} isOwner={role === "OWNER"}>
     <ResponsiveDashboardShell
       sidebarFolded={sidebarFolded}
       user={user}
@@ -225,14 +227,13 @@ export default async function DashboardBlueprintLayout({
       locked={lockedPages ?? undefined}
       limits={navLimits}
       limitsExempt={navLimitsExempt}
-      handheldBanner={trial && !onTrialPage ? <TrialRibbon view={trial} isOwner={role === "OWNER"} only="dock" /> : null}
     >
       <TrafficContext role={role} plan={plan} organizationId={organizationId} userId={userId} />
       {organizationId && <TrialWatchMount organizationId={organizationId} email={email} />}
-      {trial && !onTrialPage && <TrialRibbon view={trial} isOwner={role === "OWNER"} />}
       {announcements.length > 0 && <DashboardAnnouncementDismiss announcements={announcements} />}
       {customGate ?? children}
       {canHandleLeads ? <LeadOfferPopup /> : null}
     </ResponsiveDashboardShell>
+    </TrialAccessProvider>
   );
 }

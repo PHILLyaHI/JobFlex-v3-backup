@@ -442,3 +442,6 @@
    own opacity at 1 — so the lock dims the row's CONTENT instead, to the
    desk sidebar's 0.48. */
 .sbScroll .sbLink.sbLockd > * { opacity: 0.48; }
+
+.tbar[data-trial-timer] .tbarTxt, .tbar[data-trial-timer] .tbarMarkBox { display: none; }
+.tbar[data-trial-timer] { gap: 6px; }

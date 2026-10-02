@@ -188,3 +188,18 @@
 @media (prefers-reduced-motion: reduce) {
   .button.button { transition: none; }
 }
+
+.navTimer.navTimer { height: 40px; display: flex; flex: 0 1 auto; align-items: center; gap: 12px; padding: 0 8px 0 12px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); color: var(--ink); font: 12px/1.2 var(--font-sans); }
+.navTimer.navTimer span { display: grid; gap: 2px; }
+.navTimer.navTimer small { font-size: 10px; color: var(--ink-muted); }
+.navPay.navPay { display: inline-flex; min-height: 44px; align-items: center; color: var(--accent); font-weight: 800; white-space: nowrap; text-decoration: underline; text-underline-offset: 3px; }
+.navTimer.compact { height: 44px; gap: 6px; padding-inline: 6px; margin-left: auto; font-size: 12px; }
+.navTimer.compact small { display: none; }
+.expiredGate.expiredGate { max-width: 680px; margin: 32px auto; padding: 28px; border: 2px solid var(--ink); background: var(--paper-deep); color: var(--ink); display: grid; gap: 20px; }
+.expiredGate.expiredGate h1 { font: 900 30px/1.15 var(--font-sans); margin: 0; }
+.expiredGate.expiredGate p { font: 15px/1.6 var(--font-sans); color: var(--ink-soft); margin: 0; }
+.expiredGate.expiredGate a { justify-self: start; white-space: normal; }
+
+.mobilePage { --topbar-h: 64px; --pad-x: 12px; --tbar-gap: 6px; --border: 1.5px; --sidebar-w: 280px; --safe-b: env(safe-area-inset-bottom, 0px); position: fixed; inset: 0; display:grid; grid-template-rows:var(--topbar-h) minmax(0,1fr); background:var(--paper); color:var(--ink); }
+.mobileBody { overflow:auto; padding:16px 12px; }
+.mobileBody .expiredGate.expiredGate { margin:16px 0; padding:22px; }

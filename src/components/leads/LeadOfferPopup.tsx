@@ -86,12 +86,15 @@ export function LeadOfferPopup() {
   }, []);
 
   React.useEffect(() => {
-    load();
-    const t = setInterval(load, POLL_MS);
-    const onFocus = () => load();
+    const readyAt = Date.now() + 30_000;
+    const delayed = () => { if (Date.now() >= readyAt) void load(); };
+    const first = setTimeout(delayed, 30_000);
+    const t = setInterval(delayed, POLL_MS);
+    const onFocus = delayed;
     window.addEventListener("focus", onFocus);
     return () => {
       clearInterval(t);
+      clearTimeout(first);
       window.removeEventListener("focus", onFocus);
     };
   }, [load]);

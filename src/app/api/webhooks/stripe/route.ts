@@ -102,6 +102,8 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
     }
     case "invoice.paid": {
       const invoice = event.data.object as Stripe.Invoice;
+      const { recordSignupPayment } = await import("@/lib/signupExperiment");
+      await recordSignupPayment(invoice);
       await accrueForInvoice(invoice, event.id, stripe);
       // Member-referral side: convert PENDING referrals on the referred org's
       // first real payment + apply owed 50%-of-a-month referrer credits.

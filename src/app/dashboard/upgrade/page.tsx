@@ -18,11 +18,14 @@
 // the customer lands here before the event does — same arrangement as the
 // signup flow's completePendingSignup.
 
+import { patchCardlessRecord, readCardlessRecord } from "@/lib/trialState";
+import { recordSignupPayment } from "@/lib/signupExperiment";
+import { isTrialSimulation } from "@/lib/trialSimulation";
 import { redirect } from "next/navigation";
-import { requireOrg } from "@/lib/orgContext";
+import { requireBillingOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getPlanCatalog } from "@/lib/planCatalogServer";
-import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
+import { getStripeClientForOrg, isStripeEnabled, isStripeTestConfigured } from "@/lib/sdk/stripe";
 import { subscriptionPeriodEndDate } from "@/lib/stripeCompat";
 import { getStripeMode } from "@/lib/stripeMode";
 import { isOwnerRole } from "@/lib/orgContext";
@@ -45,16 +48,19 @@ export const dynamic = "force-dynamic";
  *  slug, or null when the session is not this org's or not paid. */
 async function verifyReturn(organizationId: string, sessionId: string): Promise<string | null> {
   try {
-    const { stripe } = await getStripeClient();
+    const { stripe } = await getStripeClientForOrg(organizationId);
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
       expand: ["subscription"],
     });
     if (session.metadata?.organizationId !== organizationId) return null;
-    const paid = session.status === "complete" || session.payment_status === "paid";
-    if (!paid) return null;
+    const priorTrial = await readCardlessRecord(organizationId);
+    const sub = session.subscription;
+    if (!sub || typeof sub === "string") return null;
+    const paid = session.payment_status === "paid" && sub.status === "active";
+    const newCardTrial = !priorTrial && session.payment_status === "no_payment_required" && sub.status === "trialing";
+    if (session.status !== "complete" || (!paid && !newCardTrial)) return null;
     const planSlug = (session.metadata?.planSlug as string | undefined) ?? null;
     if (!planSlug) return null;
-    const sub = session.subscription;
     const subId = typeof sub === "string" ? sub : (sub?.id ?? null);
     const trialEnd = sub && typeof sub !== "string" && sub.trial_end ? new Date(sub.trial_end * 1000) : null;
     const periodEnd = sub && typeof sub !== "string" ? subscriptionPeriodEndDate(sub) : null;
@@ -63,7 +69,7 @@ async function verifyReturn(organizationId: string, sessionId: string): Promise<
     // "active"/"trialing" as LAPSED (free quotas for a paying customer).
     // currentPeriodEnd makes the row self-expiring should the webhook never
     // arrive (e.g. a sandbox-mode checkout the live webhook never sees).
-    const status = trialEnd ? SubscriptionStatus.TRIALING : SubscriptionStatus.ACTIVE;
+    const status = sub.status === "trialing" ? SubscriptionStatus.TRIALING : SubscriptionStatus.ACTIVE;
     /* THE OLD SUBSCRIPTION ENDS HERE. The checkout route names the one this
        purchase replaces; it is cancelled at once, without a proration credit
        (the new plan starts now and was paid in full), so the org never bills
@@ -90,7 +96,11 @@ async function verifyReturn(organizationId: string, sessionId: string): Promise<
     }
     // The write itself lives in lib/subscriptionRecord so the dev simulator
     // records a plan change by the same code rather than a copy of it.
-    return await recordPlanChange({ organizationId, planSlug, status, customerId, subId, trialEnd, periodEnd });
+    const changed = await recordPlanChange({ organizationId, planSlug, status, customerId, subId, trialEnd, periodEnd });
+    if (priorTrial && paid) await patchCardlessRecord(organizationId, { restartedAt: new Date().toISOString(), cardAt: new Date().toISOString() });
+    const invoices = await stripe.invoices.list({ subscription: sub.id, status: "paid", limit: 10 });
+    for (const invoice of invoices.data) await recordSignupPayment(invoice);
+    return changed;
   } catch (err) {
     console.warn("[upgrade] checkout verify failed:", err);
     return null;
@@ -102,9 +112,9 @@ export default async function UpgradePage({
 }: {
   searchParams: Promise<{ session_id?: string; checkout?: string; simulated?: string; dir?: string }>;
 }) {
-  let ctx: Awaited<ReturnType<typeof requireOrg>>;
+  let ctx: Awaited<ReturnType<typeof requireBillingOrg>>;
   try {
-    ctx = await requireOrg();
+    ctx = await requireBillingOrg();
   } catch {
     redirect("/auth/login?next=%2Fdashboard%2Fupgrade");
   }
@@ -112,12 +122,13 @@ export default async function UpgradePage({
   const params = await searchParams;
   // TEMP (2026-09-19): ?simulated=&dir= is the dev simulator's return leg —
   // read ONLY behind the server gate, so on Vercel both parameters are inert.
-  const devSim = isDevSimulationEnabled();
+  const devSim = isDevSimulationEnabled() && !(await isTrialSimulation(ctx.organizationId));
   const upgradedTo = params.session_id
     ? await verifyReturn(ctx.organizationId, params.session_id)
     : devSim && params.simulated
       ? params.simulated
       : null;
+  if (params.session_id && upgradedTo) redirect("/dashboard?subscribed=1");
   // A checkout return is always a step up; only the simulator can say "down".
   const upgradedDirection: "up" | "down" = !params.session_id && devSim && params.dir === "down" ? "down" : "up";
 
@@ -143,6 +154,8 @@ export default async function UpgradePage({
     }
   }
 
+  const previousTrial = await readCardlessRecord(ctx.organizationId);
+  const simulation = await isTrialSimulation(ctx.organizationId);
   const plans: UpgradePlan[] = catalog
     .filter((p) => !p.isFree)
     .map((p) => ({
@@ -151,7 +164,7 @@ export default async function UpgradePage({
       description: p.description,
       priceCents: p.priceCents,
       yearlyPriceCents: p.yearlyPriceCents,
-      trialDays: p.trialDays,
+      trialDays: previousTrial ? 0 : p.trialDays,
       features: p.features,
       highlight: p.highlight,
     }));
@@ -159,11 +172,11 @@ export default async function UpgradePage({
   return (
     <UpgradeResponsive
       plans={plans}
-      currentPlan={sub?.plan ?? null}
+      currentPlan={previousTrial && !previousTrial.cardAt && !previousTrial.restartedAt ? null : sub?.plan ?? null}
       customPages={customPages}
       isOwner={isOwnerRole(ctx.role)}
-      checkoutReady={isStripeEnabled()}
-      sandbox={mode === "test"}
+      checkoutReady={simulation ? isStripeTestConfigured() : isStripeEnabled()}
+      sandbox={simulation || mode === "test"}
       upgradedTo={upgradedTo}
       upgradedDirection={upgradedDirection}
       cancelled={params.checkout === "cancelled"}

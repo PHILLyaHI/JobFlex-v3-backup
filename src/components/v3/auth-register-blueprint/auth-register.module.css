@@ -1577,3 +1577,17 @@
 @media (prefers-reduced-motion: reduce) {
   .bp :global(.s1-form) { animation: none; }
 }
+
+.bp :global(.verification-spinner) { display: inline-block; width: 28px; height: 28px; border: 3px solid var(--ink-line); border-top-color: var(--accent); border-radius: 50%; animation: verify-spin 1s linear infinite; }
+@keyframes verify-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .bp :global(.verification-spinner) { animation: none; } }
+
+.bp form[hidden] { display: none !important; }
+
+@media (max-width: 560px) {
+  .bp :global(.stepper[data-steps="3"]) { gap: 8px; justify-content: space-between; }
+  .bp :global(.stepper[data-steps="3"] .st-line) { display: none; }
+  .bp :global(.stepper[data-steps="3"] .st-item) { gap: 6px; }
+  .bp :global(.stepper[data-steps="3"] .st-h) { display: none; }
+  .bp :global(.stepper[data-steps="3"] .st-t) { font-size: 12px; white-space: nowrap; }
+}

@@ -1,4 +1,5 @@
 "use client";
+import { TrialNavTimer, useTrialTimerVisible } from "@/components/v3/trial-card/trial-access";
 
 // MOBILE NAV — the shared handheld navigation chrome.
 //
@@ -128,6 +129,7 @@ function withHandheldSurfaces(sections: NavSection[]): NavSection[] {
 }
 
 export function MobileNav() {
+  const trialTimer = useTrialTimerVisible();
   const [open, setOpen] = useState(false);
   const navScrollRef = useRef<HTMLElement>(null);
   const indicatorRef = useRef<HTMLDivElement>(null);
@@ -241,7 +243,7 @@ export function MobileNav() {
           which have no session and no NavRoleProvider. */}
       <SupportWidget signedIn={signedIn} />
 
-      <header className={styles.tbar} onClick={press}>
+      <header data-trial-timer={trialTimer || undefined} className={styles.tbar} onClick={press}>
         <button
           className={styles.tbarBtn}
           type="button"
@@ -270,6 +272,7 @@ export function MobileNav() {
           <span className={styles.tbarName}>JOBFLEX</span>
           <span className={styles.tbarSub}>Contractor OS</span>
         </span>
+        <TrialNavTimer compact />
         <div className={styles.tbarRight}>
           {/* New Estimate — the handheld twin of the desktop topbar's button,
               and the only way onto the estimator picker from a phone. An icon

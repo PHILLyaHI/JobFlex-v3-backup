@@ -1,7 +1,8 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { readAdminCookie } from "@/lib/adminAuth";
-import { isServerActionRequest, noteTrialLock } from "@/lib/trialLock";
+import { TrialEndedError, TRIAL_ENDED_MESSAGE } from "@/lib/trialLock";
+import { headers } from "next/headers";
 import { isTrialWriteLocked } from "@/lib/trialState";
 
 export class UnauthorizedError extends Error {
@@ -105,13 +106,17 @@ export async function requireInfluencerSelf(resourceInfluencerId: string) {
   return influencer;
 }
 
-/* PAST A CARD-LESS TRIAL WITH NO CARD (2026-10-01) the organization reads but
-   does not write: a server action that resolves it here is noted, and the
-   database client refuses its writes (lib/trialLock). Page renders are not
-   server actions and are never noted. */
+/** Business reads and writes both stop after a cardless trial ends.
+ * Billing resolves identity separately so a customer can subscribe. */
 async function withTrialGuard<T extends { organizationId: string }>(ctx: T): Promise<T> {
-  if ((await isServerActionRequest()) && (await isTrialWriteLocked(ctx.organizationId))) {
-    await noteTrialLock(ctx.organizationId);
+  if (await isTrialWriteLocked(ctx.organizationId)) {
+    const path = (await headers()).get("x-pathname");
+    // Shell feeds also call business actions on billing pages. Refuse those
+    // calls without redirecting the customer away from the plan picker.
+    if (path && ["/dashboard/trial", "/dashboard/upgrade", "/dashboard/subscription", "/mobile-subscription-v2"].includes(path)) {
+      throw new Error(TRIAL_ENDED_MESSAGE);
+    }
+    throw new TrialEndedError();
   }
   return ctx;
 }
@@ -120,6 +125,13 @@ export async function requireOrg() {
   return withTrialGuard(await resolveOrg());
 }
 
+/** Billing stays reachable after expiry. Never use for business operations. */
+export async function requireBillingOrg() { return resolveOrg(); }
+export async function requireBillingOwner() {
+  const ctx = await resolveOrg();
+  if (!isOwnerRole(ctx.role)) throw new UnauthorizedError("Owner access required");
+  return ctx;
+}
 async function resolveOrg() {
   const user = await requireUser();
   // A soft-deleted org (Settings → Danger zone) is gone from every membership

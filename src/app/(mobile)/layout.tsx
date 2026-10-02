@@ -15,11 +15,13 @@
 // page's own redirect-to-login handles them, exactly as the dashboard layouts
 // do.
 
+import { trialView } from "@/lib/cardlessTrial";
+import { TrialAccessProvider } from "@/components/v3/trial-card/trial-access";
 import type { ReactNode } from "react";
 import type { Route } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { requireOrg } from "@/lib/orgContext";
+import { requireBillingOrg } from "@/lib/orgContext";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 import { getBlockedCustomPages } from "@/lib/customPageAccess";
 import { isCustomBlockedPath } from "@/lib/customPlan";
@@ -79,7 +81,7 @@ export default async function MobileGroupLayout({ children }: { children: ReactN
   let organizationId: string | null = null;
   let email: string | null = null;
   try {
-    const ctx = await requireOrg();
+    const ctx = await requireBillingOrg();
     role = ctx.role;
     organizationId = ctx.organizationId;
     email = ctx.user.email ?? null;
@@ -104,9 +106,9 @@ export default async function MobileGroupLayout({ children }: { children: ReactN
   // The handheld twins render the same org data as /dashboard: same beacon,
   // same watermark (components/v3/trial-watch).
   return (
-    <>
+    <TrialAccessProvider view={organizationId ? await trialView(organizationId) : null} isOwner={role === "OWNER"}>
       {children}
       {organizationId && <TrialWatchMount organizationId={organizationId} email={email} />}
-    </>
+    </TrialAccessProvider>
   );
 }

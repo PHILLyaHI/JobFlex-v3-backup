@@ -48,8 +48,10 @@ import { metaStartTrial } from "@/lib/metaSignupEvents";
 import { sendWelcomeFirstEstimate } from "@/lib/email/welcome";
 import { trackActivation } from "@/lib/activation-events";
 import { trialRequiresCard } from "@/lib/trialPolicy";
+import { readSignupAssignment, assignSignupBrowser, type SignupAssignment } from "@/lib/signupExperiment";
+import { signupEmailVerified } from "@/actions/signupEmailVerification";
 import { createCardlessSubscription, nameOrgOnSubscription } from "@/lib/cardlessTrial";
-import { writeCardlessRecord } from "@/lib/trialState";
+
 import { cardlessTrialRefusal, markCardlessTrialUsed, trialRequestsPerIpHour } from "@/lib/trialGuard";
 import { appBaseUrl } from "@/lib/appUrl";
 import { renderEmail } from "@/lib/email/renderEmail";
@@ -127,6 +129,8 @@ type PendingRecord = z.infer<typeof pendingSchema> extends infer T
       /** Null for a Google-backed signup — the finished account signs in with Google. */
       hashedPassword: string | null;
       viaGoogle?: boolean;
+      experiment?: SignupAssignment;
+      emailVerified?: boolean;
       image?: string | null;
       createdAt: number;
       /** Set by requestCardlessTrial: the plan the card-less trial is for, and
@@ -177,6 +181,7 @@ async function metaContextFor(meta: z.infer<typeof pendingSchema>["meta"]): Prom
 
 export async function startPendingSignup(raw: unknown): Promise<{ ok: true; token: string }> {
   const data = pendingSchema.parse(raw);
+  const experiment = await readSignupAssignment() ?? await assignSignupBrowser();
   await enforceRateLimit(`signup-start:${await clientIp()}`, 5, HOUR, "sign-ups");
 
   // Google-backed: the address is the one Google verified, whatever the form
@@ -190,6 +195,8 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
   } else if (!data.password) {
     throw new Error("Choose a password, or continue with Google.");
   }
+  const emailVerified = Boolean(google) || await signupEmailVerified(data.email);
+  if (experiment?.variant === "a" && !emailVerified) throw new Error("Verify your email before continuing.");
 
   // Same answer as registration gives, at the same point in the flow: you
   // cannot hide that an address is taken when the next step would collide.
@@ -200,6 +207,8 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
 
   const token = randomUUID();
   const record: PendingRecord = {
+    experiment: experiment ?? undefined,
+    emailVerified,
     analytics: data.analytics,
     name: data.name,
     businessName: data.businessName || `${data.name.split(/\s+/)[0]}'s company`,
@@ -252,6 +261,7 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
 
 /** Read a live intent, or null when it is missing or stale. */
 export async function readPendingSignup(token: string): Promise<{
+  experimentVariant?: "a" | "b";
   email: string;
   businessName: string;
   customPages: string[];
@@ -260,6 +270,7 @@ export async function readPendingSignup(token: string): Promise<{
   const rec = await loadPending(token);
   return rec
     ? {
+        experimentVariant: rec.experiment?.variant,
         email: rec.email,
         businessName: rec.businessName,
         customPages: normalizeCustomPages(rec.customPages),
@@ -407,7 +418,7 @@ export async function completePendingSignup(
   if (!sessionId) {
     const skipAllowed =
       process.env.NODE_ENV !== "production" && process.env.SIGNUP_ALLOW_SKIP === "true";
-    if (!skipAllowed) return { ok: false, error: "Choose a plan to finish creating your account." };
+    if (!skipAllowed || rec.experiment) return { ok: false, error: "Choose a plan to finish creating your account." };
   }
 
   let stripeCustomerId: string | null = null;
@@ -509,9 +520,9 @@ export async function requestCardlessTrial(
     }
   | { ok: false; error: string; resendAt?: number }
 > {
-  if (trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account." };
   const rec = await loadPending(token);
   if (!rec) return { ok: false, error: "That signup expired. Start again." };
+  if (rec.experiment?.variant === "b" || (!rec.experiment && trialRequiresCard())) return { ok: false, error: "Choose a plan to finish creating your account." };
   const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
   if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
   // THE BRAKES. A first request counts against the network (trials per IP per
@@ -548,10 +559,10 @@ export async function requestCardlessTrial(
      account are created right here and the browser is signed in with the
      ticket, the address left unverified. SIGNUP_CONFIRM_EMAIL=true brings
      back the emailed link (the code below). */
-  if (!signupConfirmsEmail()) {
+  if (rec.emailVerified || rec.viaGoogle || (!rec.experiment && !signupConfirmsEmail())) {
     const stamped: PendingRecord = { ...rec, cardless: { planSlug, requestedAt: Date.now() } };
     await db.syncState.upsert({ where: { key: key(token) }, update: { cursor: JSON.stringify(stamped) }, create: { key: key(token), cursor: JSON.stringify(stamped) } });
-    const done = await finishCardlessTrial(token, { verified: false });
+    const done = await finishCardlessTrial(token, { verified: Boolean(rec.emailVerified || rec.viaGoogle) });
     if (!done.ok) return { ok: false, error: done.error };
     return { ok: true, email: done.email, resendAt: 0, created: { ticket: done.ticket, registrationEventId: done.registrationEventId, subscriptionId: done.subscriptionId } };
   }
@@ -629,8 +640,8 @@ async function finishCardlessTrial(
   | { ok: true; email: string; ticket: string | null; registrationEventId: string | null; subscriptionId: string | null }
   | { ok: false; error: string; done?: boolean; email?: string }
 > {
-  if (trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account." };
   const rec = await loadPending(token);
+  if (rec?.experiment?.variant === "b" || (!rec?.experiment && trialRequiresCard())) return { ok: false, error: "Choose a plan to finish creating your account." };
   if (!rec?.cardless) {
     const done = await loadDone(token);
     if (done && done.sessionId === CARDLESS_SESSION) {
@@ -685,16 +696,6 @@ async function finishCardlessTrial(
     }
     return created;
   }
-  await writeCardlessRecord(created.orgId, {
-    subId: sub.id,
-    customerId: started.customerId,
-    planSlug: started.planLabel,
-    interval,
-    customPages: started.customPages,
-    mode: started.mode,
-    startedAt: new Date().toISOString(),
-    endsAt: (trialEnd ?? new Date()).toISOString(),
-  });
   // The address is proven — the link was opened from it.
   if (opts.verified) {
     await db.user.update({ where: { id: created.userId }, data: { emailVerified: new Date() } }).catch(() => {});
@@ -706,6 +707,20 @@ async function finishCardlessTrial(
 
 /** The done record's "session" for a card-less trial — there is no Checkout. */
 const CARDLESS_SESSION = "cardless";
+
+/** Variant A deliberately has no plan picker. Start on the catalog's highlighted plan. */
+export async function startDirectTrial(token: string) {
+  const rec = await loadPending(token);
+  const assignment = await readSignupAssignment();
+  if (!rec || rec.experiment?.variant !== "a" || rec.experiment.id !== assignment?.id || !rec.emailVerified) {
+    return { ok: false as const, error: "Verify your email and continue from your signup browser." };
+  }
+  const { getPlanCatalog } = await import("@/lib/planCatalogServer");
+  const plans = (await getPlanCatalog()).filter(p => p.active && !p.isFree);
+  const plan = plans.find(p => p.highlight) ?? plans[0];
+  if (!plan) return { ok: false as const, error: "No trial plan is available. Please contact support." };
+  return requestCardlessTrial(token, plan.slug);
+}
 
 /** What the account is created WITH: the Stripe side of a paid checkout, of
  *  a card-less trial, or nothing at all (the non-production skip). */
@@ -796,6 +811,7 @@ async function createAccountFromPending(
           email: rec.email,
           name: rec.name,
           hashedPassword: rec.hashedPassword,
+          emailVerified: rec.emailVerified || rec.viaGoogle ? new Date() : null,
           image: rec.image ?? null,
           activeOrgId: org.id,
         },
@@ -804,8 +820,27 @@ async function createAccountFromPending(
       await tx.membership.create({
         data: { userId: user.id, organizationId: org.id, role: "OWNER" },
       });
+      if (stripeSubscriptionId || stripeCustomerId) {
+        await tx.subscription.create({ data: {
+          organizationId: org.id, plan: planSlug === CUSTOM_PLAN_SLUG ? "CUSTOM" : (planSlug?.toUpperCase() ?? "PRO"),
+          status: trialEnd ? SubscriptionStatus.TRIALING : SubscriptionStatus.ACTIVE, provider: "STRIPE",
+          externalCustomerId: stripeCustomerId, externalSubId: stripeSubscriptionId, trialEndsAt: trialEnd, currentPeriodEnd: periodEnd,
+        } });
+      }
+      if (billing.flow === "cardless") {
+        if (!stripeSubscriptionId || !stripeCustomerId || !trialEnd) throw new Error("Trial was not initialized.");
+        await tx.syncState.create({ data: {
+          key: "cardlessTrial:" + org.id,
+          cursor: JSON.stringify({ subId: stripeSubscriptionId, customerId: stripeCustomerId, planSlug,
+            interval: "MONTH", customPages: paidCustomPages ?? [], mode: analyticsLive ? "live" : "test",
+            startedAt: new Date().toISOString(), endsAt: trialEnd.toISOString() }),
+        } });
+      }
+      if (rec.experiment) {
+        await tx.syncState.create({ data: { key: `signup_trial_v1:org:${org.id}`, cursor: JSON.stringify({ ...rec.experiment, orgId: org.id, userId: user.id, customerId: stripeCustomerId, registeredAt: Date.now() }) } });
+      }
       return { orgId: org.id, userId: user.id };
-    });
+    }, { maxWait: 10000, timeout: 30000 });
     orgId = created.orgId;
     userId = created.userId;
   } catch (e: unknown) {
@@ -818,42 +853,6 @@ async function createAccountFromPending(
 
   // Sent after the response, so it reads the subscription row written below.
   trackActivation("organization_created", orgId, { flow: billing.flow === "cardless" ? "cardless" : "checkout" });
-
-  // The subscription row, written here rather than by the webhook: at session
-  // creation there was no organization for the webhook's metadata to name.
-  if (stripeSubscriptionId || stripeCustomerId) {
-    const plan =
-      planSlug && planSlug !== CUSTOM_PLAN_SLUG ? await getPlanBySlug(planSlug) : null;
-    await db.subscription
-      .upsert({
-        where: { organizationId: orgId },
-        // Status uses the canonical enum casing — the limits engine compares
-        // against SubscriptionStatus.ACTIVE/TRIALING and treated the old
-        // lowercase values as LAPSED (free quotas for a paying customer until
-        // the webhook happened to overwrite the row). currentPeriodEnd makes
-        // the row self-expiring if the webhook never arrives.
-        update: {
-          plan: planSlug === CUSTOM_PLAN_SLUG ? "CUSTOM" : (plan?.slug.toUpperCase() ?? "PRO"),
-          status: trialEnd ? SubscriptionStatus.TRIALING : SubscriptionStatus.ACTIVE,
-          provider: "STRIPE",
-          externalCustomerId: stripeCustomerId,
-          externalSubId: stripeSubscriptionId,
-          trialEndsAt: trialEnd,
-          currentPeriodEnd: periodEnd,
-        },
-        create: {
-          organizationId: orgId,
-          plan: planSlug === CUSTOM_PLAN_SLUG ? "CUSTOM" : (plan?.slug.toUpperCase() ?? "PRO"),
-          status: trialEnd ? SubscriptionStatus.TRIALING : SubscriptionStatus.ACTIVE,
-          provider: "STRIPE",
-          externalCustomerId: stripeCustomerId,
-          externalSubId: stripeSubscriptionId,
-          trialEndsAt: trialEnd,
-          currentPeriodEnd: periodEnd,
-        },
-      })
-      .catch((err) => console.warn("[signup] subscription record failed:", err));
-  }
 
   // LEAD CENTER ELIGIBILITY. The matcher hard-filters on a geocoded address
   // (lib/leadCenter/matching), so the pin has to be placed by the action that

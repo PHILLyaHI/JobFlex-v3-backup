@@ -9,9 +9,11 @@
 import type { Metadata } from "next";
 import type { Route } from "next";
 import { redirect } from "next/navigation";
-import { requireOrg, isOwnerRole, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { requireBillingOrg, isOwnerRole, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { finishCardCheckout, trialView } from "@/lib/cardlessTrial";
 import { TRIAL_ENDED_MESSAGE } from "@/lib/trialLock";
+import { TrialResponsive } from "@/components/v3/trial-card/trial-responsive";
+import { TrialExpiredGate } from "@/components/v3/trial-card/trial-access";
 import { TrialSheet } from "@/components/v3/trial-card/trial-card";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +27,7 @@ export default async function TrialPage({ searchParams }: { searchParams: Promis
   let organizationId: string;
   let role: string;
   try {
-    ({ organizationId, role } = await requireOrg());
+    ({ organizationId, role } = await requireBillingOrg());
   } catch (err) {
     if (err instanceof UnauthorizedError || err instanceof NoOrgError) redirect("/auth/login?next=%2Fdashboard%2Ftrial" as Route);
     throw err;
@@ -57,5 +59,6 @@ export default async function TrialPage({ searchParams }: { searchParams: Promis
     if (notice?.tone === "ok") redirect("/dashboard?card=added" as Route);
     redirect("/dashboard/subscription" as Route);
   }
-  return <TrialSheet view={view} isOwner={isOwnerRole(role)} notice={notice} />;
+  if (view.kind === "ended") return <TrialResponsive><TrialExpiredGate /></TrialResponsive>;
+  return <TrialResponsive><TrialSheet view={view} isOwner={isOwnerRole(role)} notice={notice} /></TrialResponsive>;
 }

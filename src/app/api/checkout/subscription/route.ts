@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { appBaseUrl } from "@/lib/appUrl";
-import { requireOwner } from "@/lib/orgContext";
-import { trialEndedResponse } from "@/lib/trialState";
+import { requireBillingOwner } from "@/lib/orgContext";
+
+import { readCardlessRecord } from "@/lib/trialState";
+import { isTrialSimulation } from "@/lib/trialSimulation";
 import { db } from "@/lib/db";
-import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
+import { getStripeClientForOrg, isStripeEnabled, isStripeTestConfigured } from "@/lib/sdk/stripe";
 import { INFLUENCER_LIVE_STATUSES, readAttributionCookie, validateAttribution } from "@/lib/attribution";
 import { promotionCodeIdForMode, type PromoForCheckout } from "@/lib/influencerPromoMode";
 import { checkoutDiscount } from "@/lib/checkoutDiscount";
@@ -20,11 +22,12 @@ import { getCustomPlanTrialDays } from "@/lib/customPlanConfig";
 // back off the resulting subscription in the webhook (never from this request).
 // Billing is owner-only: managers run operations, not the money.
 export async function POST(req: Request) {
-  const { organizationId, user } = await requireOwner();
-  // Past a card-less trial the card goes through /dashboard/trial (the same
-  // plan, no new trial) — not a fresh plan checkout from here.
-  const locked = await trialEndedResponse(organizationId);
-  if (locked) return locked;
+  const { organizationId, user } = await requireBillingOwner();
+  const simulation = await isTrialSimulation(organizationId);
+  if (simulation && !isStripeTestConfigured()) {
+    return NextResponse.json({ error: "Stripe test checkout is not configured. Live payments are disabled for this test workspace." }, { status: 503 });
+  }
+
   if (!isStripeEnabled()) {
     return NextResponse.json({ error: "Stripe is not configured." }, { status: 503 });
   }
@@ -83,7 +86,8 @@ export async function POST(req: Request) {
   // Mode-aware: the admin's live/sandbox switch (lib/stripeMode) decides which
   // account this session lands on. Resolved BEFORE the mirror lookup, because
   // only the live path needs a mirror at all.
-  const { stripe, mode } = await getStripeClient();
+  const { stripe, mode } = await getStripeClientForOrg(organizationId);
+  const cardless = await readCardlessRecord(organizationId);
 
   /* The PlanPrice mirror is the LIVE account's price of record; the sandbox
      has no such ids, so test mode prices inline from the catalog row instead —
@@ -235,18 +239,18 @@ export async function POST(req: Request) {
      one (upgrade/page.tsx verifyReturn), so an org never carries two. No
      trial on a replacement — the trial was the first subscription's. */
   const replacesSubId =
-    sub?.externalSubId && (sub.status === "ACTIVE" || sub.status === "TRIALING")
+    !simulation && sub?.externalSubId && (sub.status === "ACTIVE" || sub.status === "TRIALING")
       ? sub.externalSubId
       : null;
   const baseParams = {
     mode: "subscription" as const,
     line_items: [lineItem],
-    ...(sub?.externalCustomerId && mode === "live"
+    ...(sub?.externalCustomerId && (!cardless || cardless.mode === mode)
       ? { customer: sub.externalCustomerId }
       : { customer_email: user.email ?? undefined }),
     subscription_data: {
       metadata: { organizationId },
-      ...(plan.trialDays && !replacesSubId ? { trial_period_days: plan.trialDays } : {}),
+      ...(plan.trialDays && !everSubscribed && !cardless ? { trial_period_days: plan.trialDays } : {}),
     },
     // planSlug/interval ride the session so the upgrade page can verify the
     // return and write the plan change itself — the live webhook cannot see

@@ -41,7 +41,7 @@ import { redirect } from "next/navigation";
 // until the blueprint port is wired to the same loader, which is separate work.
 
 import type { Metadata } from "next";
-import { requireOrg, isOwnerRole, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { requireBillingOrg, isOwnerRole, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { loadSubscriptionData } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
 import { SubscriptionResponsive } from "./subscription-responsive";
 
@@ -59,7 +59,7 @@ export default async function SubscriptionPage() {
   let organizationId: string;
   let role: string;
   try {
-    ({ organizationId, role } = await requireOrg());
+    ({ organizationId, role } = await requireBillingOrg());
   } catch (err) {
     if (err instanceof UnauthorizedError) redirect("/auth/login?next=%2Fdashboard%2Fsubscription");
     if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");

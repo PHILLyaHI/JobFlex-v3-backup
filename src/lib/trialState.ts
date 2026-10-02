@@ -5,8 +5,7 @@
 // trial_settings.end_behavior.missing_payment_method = "cancel". This module
 // reads it back for the app: how many days are left, whether a card is on
 // file, and — once the trial is over with no card — TRIAL_ENDED, in which the
-// workspace reads but nothing writes (lib/trialLock) until a card restarts
-// the same plan.
+// workspace requires a subscription before business pages or actions open.
 //
 // THE RECORD. What Stripe knows is mirrored on the Subscription row (status,
 // trialEndsAt). What only this flow knows — that the trial is card-less, the
@@ -20,6 +19,7 @@ import { db } from "@/lib/db";
 import { SubscriptionStatus } from "@/lib/prismaEnums";
 
 export type CardlessRecord = {
+  simulationPending?: boolean;
   subId: string;
   customerId: string;
   /** The plan the trial runs on: a catalog slug, or "custom". */
@@ -44,13 +44,14 @@ export type CardlessRecord = {
 export const cardlessKey = (orgId: string) => `cardlessTrial:${orgId}`;
 
 export async function readCardlessRecord(orgId: string): Promise<CardlessRecord | null> {
-  const row = await db.syncState.findUnique({ where: { key: cardlessKey(orgId) } }).catch(() => null);
+  const row = await db.syncState.findUnique({ where: { key: cardlessKey(orgId) } });
   if (!row) return null;
   try {
     const rec = JSON.parse(row.cursor) as CardlessRecord;
-    return rec?.subId ? rec : null;
+    if (!rec?.subId || !Number.isFinite(Date.parse(rec.endsAt))) throw new Error("Invalid trial record");
+    return rec;
   } catch {
-    return null;
+    throw new Error("Unable to verify trial access");
   }
 }
 
@@ -86,12 +87,16 @@ export async function cardlessTrialState(orgId: string, now = new Date()): Promi
     where: { organizationId: orgId },
     select: { status: true, trialEndsAt: true, externalSubId: true },
   });
-  if (!sub || sub.externalSubId !== rec.subId) return null;
+  if (!sub || sub.externalSubId !== rec.subId) {
+    if (sub?.status === SubscriptionStatus.ACTIVE && sub.externalSubId) return null;
+    return { kind: "ended", endedAt: new Date(rec.endsAt), record: rec };
+  }
   const endsAt = sub.trialEndsAt ?? new Date(rec.endsAt);
   if (sub.status === SubscriptionStatus.TRIAL_ENDED) {
     return { kind: "ended", endedAt: rec.endedAt ? new Date(rec.endedAt) : endsAt, record: rec };
   }
-  if (sub.status !== SubscriptionStatus.TRIALING) return null;
+  if (sub.status === SubscriptionStatus.ACTIVE) return null;
+  if (sub.status !== SubscriptionStatus.TRIALING) return { kind: "ended", endedAt: endsAt, record: rec };
   const hasCard = Boolean(rec.cardAt);
   if (!hasCard && endsAt.getTime() <= now.getTime()) {
     return { kind: "ended", endedAt: endsAt, record: rec };

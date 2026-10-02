@@ -187,6 +187,7 @@ const PAGE_OWNED_HANDHELD = /^\/dashboard\/(projects|jobs)\/[^/]+$/;
  *    components/v3/client-detail-blueprint/client-detail-viewport-switch.tsx,
  *    which needs the `?client=` row the page's own loader read. */
 const PAGE_OWNED_STATIC = new Set([
+  "/dashboard/trial",
   "/dashboard/subscription",
   // Plans & upgrade: its page-level switch (dashboard/upgrade/upgrade-responsive.tsx)
   // carries the server-read catalog + plan into both editions (2026-09-02).
