@@ -18,13 +18,16 @@ import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { readPendingSignup } from "@/actions/signupCheckout";
 import { resolveSignupDiscount, resolveSignupPrice } from "@/lib/signupPricing";
 import { trialRequiresCard } from "@/lib/trialPolicy";
+import { cardlessTrialsPaused } from "@/lib/trialDailyCap";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   // The card checkout is the TRIAL_REQUIRES_CARD=true path; with the flag off
-  // the plan step starts the card-less trial instead (lib/cardlessTrial).
-  if (!trialRequiresCard()) {
+  // the plan step starts the card-less trial instead (lib/cardlessTrial) —
+  // unless the day's card-less ceiling is reached (lib/trialDailyCap), when
+  // the trial takes a card here exactly as with the flag on.
+  if (!trialRequiresCard() && !(await cardlessTrialsPaused())) {
     return NextResponse.json({ error: "Start the free trial from the plan step." }, { status: 409 });
   }
   if (!isStripeEnabled()) {

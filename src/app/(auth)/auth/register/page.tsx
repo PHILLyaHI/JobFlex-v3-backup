@@ -29,6 +29,8 @@ import { isPlaceholderOrgName, needsCompanySetup } from "@/lib/orgSetup";
 import { readGoogleSignup } from "@/lib/googleSignup";
 import { detectInAppBrowser } from "@/lib/inAppBrowser";
 import { trialRequiresCard } from "@/lib/trialPolicy";
+import { cardlessTrialsPaused } from "@/lib/trialDailyCap";
+import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from "@/lib/disposableEmail";
 import { RegisterResponsive, type GooglePrefill, type SetupPrefill } from "./register-responsive";
 import {
   INDUSTRY_COOKIE,
@@ -86,9 +88,14 @@ export default async function RegisterPage({
      yields null and the normal signup renders. */
   const gsuParam = typeof sp.gsu === "string" ? sp.gsu : null;
   let google: GooglePrefill | null = null;
+  /* A Google address on a throwaway-mail domain comes back as ?gerr=disposable
+     (lib/auth, One Tap): step 1 opens with the reason instead of step 2. */
+  let googleError: string | null = sp.gerr === "disposable" ? DISPOSABLE_EMAIL_MESSAGE : null;
   if (gsuParam) {
     const identity = await readGoogleSignup(gsuParam);
-    if (identity) {
+    if (identity && isDisposableEmail(identity.email)) {
+      googleError = DISPOSABLE_EMAIL_MESSAGE;
+    } else if (identity) {
       google = { handle: gsuParam, email: identity.email, name: identity.name ?? "" };
     }
   }
@@ -133,7 +140,8 @@ export default async function RegisterPage({
   const inAppBrowser = detectInAppBrowser((await headers()).get("user-agent"));
   return (
     <RegisterResponsive
-      requiresCard={trialRequiresCard()}
+      requiresCard={trialRequiresCard() || (await cardlessTrialsPaused())}
+      initialError={googleError}
       setup={setup}
       google={google}
       industry={industry}

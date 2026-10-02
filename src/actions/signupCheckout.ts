@@ -51,6 +51,8 @@ import { trialRequiresCard } from "@/lib/trialPolicy";
 import { createCardlessSubscription, nameOrgOnSubscription } from "@/lib/cardlessTrial";
 import { writeCardlessRecord } from "@/lib/trialState";
 import { cardlessTrialRefusal, markCardlessTrialUsed, trialRequestsPerIpHour } from "@/lib/trialGuard";
+import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from "@/lib/disposableEmail";
+import { cardlessTrialsPaused, noteCardlessTrialStarted, TRIALS_PAUSED_MESSAGE } from "@/lib/trialDailyCap";
 import { appBaseUrl } from "@/lib/appUrl";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { sendEmail } from "@/lib/sdk/resend";
@@ -188,6 +190,8 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
   } else if (!data.password) {
     throw new Error("Choose a password, or continue with Google.");
   }
+  // Step 1 refused a throwaway inbox already; this is the server's own word.
+  if (isDisposableEmail(data.email)) throw new Error(DISPOSABLE_EMAIL_MESSAGE);
 
   // Same answer as registration gives, at the same point in the flow: you
   // cannot hide that an address is taken when the next step would collide.
@@ -497,12 +501,15 @@ export async function completePendingSignup(
 export async function requestCardlessTrial(
   token: string,
   planSlug: string,
-): Promise<{ ok: true; email: string; resendAt: number } | { ok: false; error: string; resendAt?: number }> {
-  if (trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account." };
+): Promise<{ ok: true; email: string; resendAt: number } | { ok: false; error: string; resendAt?: number; requiresCard?: true }> {
+  if (trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account.", requiresCard: true };
   const rec = await loadPending(token);
   if (!rec) return { ok: false, error: "That signup expired. Start again." };
   const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
   if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
+  // THE DAY'S CEILING (lib/trialDailyCap): past it the signup goes on, and
+  // the plan step switches to the card — no brake is spent on this answer.
+  if (await cardlessTrialsPaused()) return { ok: false, error: TRIALS_PAUSED_MESSAGE, requiresCard: true };
   // THE BRAKES. A first request counts against the network (trials per IP per
   // hour); a resend counts against this signup only — RESEND_COOLDOWN_MS
   // between two links, RESEND_MAX in an hour — so asking for the email again
@@ -574,7 +581,7 @@ export async function confirmCardlessTrial(
   secret: string,
 ): Promise<
   | { ok: true; email: string; ticket: string | null; registrationEventId: string | null; subscriptionId: string | null }
-  | { ok: false; error: string; done?: boolean; email?: string }
+  | { ok: false; error: string; done?: boolean; email?: string; cardHref?: string }
 > {
   if (!secret || secret.length > 200) return { ok: false, error: "That link is not valid." };
   const hash = createHash("sha256").update(secret).digest("hex");
@@ -596,7 +603,7 @@ async function finishCardlessTrial(
   token: string,
 ): Promise<
   | { ok: true; email: string; ticket: string | null; registrationEventId: string | null; subscriptionId: string | null }
-  | { ok: false; error: string; done?: boolean; email?: string }
+  | { ok: false; error: string; done?: boolean; email?: string; cardHref?: string }
 > {
   if (trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account." };
   const rec = await loadPending(token);
@@ -611,6 +618,9 @@ async function finishCardlessTrial(
   if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
   const refusal = await cardlessTrialRefusal(rec.email);
   if (refusal) return { ok: false, error: refusal };
+  // The day's ceiling filled while the link sat in the inbox: the same
+  // signup goes on at the plan step, with a card (lib/trialDailyCap).
+  if (await cardlessTrialsPaused()) return { ok: false, error: TRIALS_PAUSED_MESSAGE, cardHref: `/auth/register?signup=${encodeURIComponent(token)}` };
 
   const planSlug = rec.cardless.planSlug;
   const interval = "MONTH" as const;
@@ -667,6 +677,8 @@ async function finishCardlessTrial(
   // The address is proven — the link was opened from it.
   await db.user.update({ where: { id: created.userId }, data: { emailVerified: new Date() } }).catch(() => {});
   await markCardlessTrialUsed(rec.email, created.orgId);
+  // Counted against the day's ceiling; support hears at 80% (lib/trialDailyCap).
+  await noteCardlessTrialStarted(created.orgId);
   after(() => nameOrgOnSubscription(sub.id, created.orgId));
   return { ok: true, email: created.email, ticket: created.ticket, registrationEventId: rec.meta?.registrationEventId ?? null, subscriptionId: sub.id };
 }

@@ -12,7 +12,7 @@ import styles from "@/components/v3/auth-register-blueprint/auth-register.module
 type View =
   | { kind: "working" }
   | { kind: "done"; email: string; signedIn: boolean }
-  | { kind: "error"; text: string; done?: boolean };
+  | { kind: "error"; text: string; done?: boolean; cardHref?: string };
 
 export function ConfirmTrial() {
   const router = useRouter();
@@ -33,7 +33,7 @@ export function ConfirmTrial() {
             router.replace(`/auth/login?${q.toString()}` as Route);
             return;
           }
-          setView({ kind: "error", text: res.error, done: res.done });
+          setView({ kind: "error", text: res.error, done: res.done, cardHref: res.cardHref });
           return;
         }
         // The browser's CompleteRegistration, with the id the server's copy
@@ -74,6 +74,19 @@ export function ConfirmTrial() {
             <div className="pw-confirm-row">
               <Link className="btn pw-go" href={(view.signedIn ? "/dashboard" : "/auth/login?next=%2Fdashboard") as Route}>
                 {view.signedIn ? "Open the dashboard" : "Sign in"}
+              </Link>
+            </div>
+          </>
+        ) : view.cardHref ? (
+          /* The day's card-less trials are taken (lib/trialDailyCap): the same
+             signup goes on at the plan step, where the trial takes a card. */
+          <>
+            <span className="pw-confirm-k">Email confirmed</span>
+            <p className="pw-confirm-h">Add a card to start your trial.</p>
+            <p className="pw-confirm-p">{view.text}</p>
+            <div className="pw-confirm-row">
+              <Link className="btn pw-go" href={view.cardHref as Route}>
+                Continue with a card
               </Link>
             </div>
           </>

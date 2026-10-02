@@ -87,6 +87,7 @@ function RegisterSwitch({
   utm,
   inAppBrowser,
   requiresCard,
+  initialError,
 }: {
   setup: SetupPrefill | null;
   google: GooglePrefill | null;
@@ -94,6 +95,7 @@ function RegisterSwitch({
   utm: UtmParams | null;
   inAppBrowser: InAppBrowser | null;
   requiresCard: boolean;
+  initialError: string | null;
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const params = useSearchParams();
@@ -118,7 +120,7 @@ function RegisterSwitch({
      day the handheld build is ported to the pending-signup flow. */
   void isHandheld;
   void params;
-  return <RegisterContent setup={setup} google={google} industry={industry} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} />;
+  return <RegisterContent setup={setup} google={google} industry={industry} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} initialError={initialError} />;
 }
 
 // The attribution capture under either tree reads the query string, so the
@@ -131,6 +133,7 @@ export function RegisterResponsive({
   utm = null,
   inAppBrowser = null,
   requiresCard = true,
+  initialError = null,
 }: {
   setup?: SetupPrefill | null;
   google?: GooglePrefill | null;
@@ -142,10 +145,12 @@ export function RegisterResponsive({
   inAppBrowser?: InAppBrowser | null;
   /** TRIAL_REQUIRES_CARD, read on the server (lib/trialPolicy). */
   requiresCard?: boolean;
+  /** Step 1's error on arrival — a refused Google address (lib/disposableEmail). */
+  initialError?: string | null;
 }) {
   return (
     <Suspense fallback={null}>
-      <RegisterSwitch setup={setup} google={google} industry={industry} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} />
+      <RegisterSwitch setup={setup} google={google} industry={industry} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} initialError={initialError} />
     </Suspense>
   );
 }

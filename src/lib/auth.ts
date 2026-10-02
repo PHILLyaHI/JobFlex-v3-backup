@@ -236,6 +236,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const verified =
           (profile as { email_verified?: boolean } | undefined)?.email_verified === true;
         if (!verified) return false;
+        /* A throwaway-mail domain behind a Google account (a Workspace on a
+           disposable domain) is refused before it is parked: the register
+           page says why on step 1 (lib/disposableEmail). */
+        const { isDisposableEmail } = await import("@/lib/disposableEmail");
+        if (isDisposableEmail(email)) return "/auth/register?gerr=disposable";
         try {
           const { stashGoogleSignup, googleSignupReturnUrl } = await import("@/lib/googleSignup");
           const handle = await stashGoogleSignup({

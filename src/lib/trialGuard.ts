@@ -15,6 +15,7 @@
 import "server-only";
 import { createHash } from "crypto";
 import { db } from "@/lib/db";
+import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from "@/lib/disposableEmail";
 
 const PUBLIC_MAIL = new Set([
   "gmail.com", "googlemail.com", "yahoo.com", "ymail.com", "rocketmail.com", "outlook.com", "hotmail.com",
@@ -64,6 +65,9 @@ const domainKey = (domain: string) => `trial-domain:${domain}`;
 
 /** Why this address may not start a card-less trial, or null when it may. */
 export async function cardlessTrialRefusal(email: string): Promise<string | null> {
+  // A throwaway inbox (lib/disposableEmail) — also refused at step 1; here for
+  // an intent parked before the list existed.
+  if (isDisposableEmail(email)) return DISPOSABLE_EMAIL_MESSAGE;
   const byEmail = await db.syncState.findUnique({ where: { key: emailKey(email) } }).catch(() => null);
   if (byEmail) return "This email has already had a free trial. Sign in, or start with a card on the plan page.";
   const domain = trialCompanyDomain(email);

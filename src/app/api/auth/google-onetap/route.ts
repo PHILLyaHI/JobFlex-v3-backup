@@ -16,6 +16,7 @@ import { db } from "@/lib/db";
 import { mintSigninTicket } from "@/lib/signinTicket";
 import { googleSignupReturnUrl, stashGoogleSignup } from "@/lib/googleSignup";
 import { clientIp, enforceRateLimit, MINUTE } from "@/lib/rateLimit";
+import { isDisposableEmail } from "@/lib/disposableEmail";
 
 export const runtime = "nodejs";
 
@@ -47,6 +48,8 @@ export async function POST(req: Request) {
 
   const user = await db.user.findUnique({ where: { email }, select: { id: true } });
   if (user) return NextResponse.json({ ticket: await mintSigninTicket(user.id) });
+  // A throwaway-mail domain is not parked; the register page says why.
+  if (isDisposableEmail(email)) return NextResponse.json({ redirect: "/auth/register?gerr=disposable" });
   const handle = await stashGoogleSignup({ email, name, image });
   return NextResponse.json({ redirect: await googleSignupReturnUrl(handle) });
 }

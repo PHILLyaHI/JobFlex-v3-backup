@@ -124,7 +124,8 @@ export function RegisterContent({
   industry = null,
   utm = null,
   inAppBrowser: inAppInitial = null,
-  requiresCard = true,
+  requiresCard: requiresCardInitial = true,
+  initialError = null,
 }: {
   /* TRIAL_REQUIRES_CARD (lib/trialPolicy), read on the server. True: the plan
      step opens Stripe Checkout and the card is taken there, as it always was.
@@ -145,8 +146,15 @@ export function RegisterContent({
      the server. Pre-selects that chip on step 2 — a suggestion the visitor
      can change, never a lock — and rides along into the signup intent. */
   industry?: TradeType | null;
+  /* Step 1's error on arrival: a Google address the server refused (a
+     throwaway-mail domain — lib/disposableEmail). */
+  initialError?: string | null;
 }) {
   const router = useRouter();
+  /* The trial takes a card when the server says so on the first render
+     (TRIAL_REQUIRES_CARD, or the day's card-less trials are taken —
+     lib/trialDailyCap), or when the plan step's request is told so later. */
+  const [requiresCard, setRequiresCard] = React.useState(requiresCardInitial);
   /* IN-APP BROWSERS (2026-10-01): Google refuses its sign-in inside them
      ("403 disallowed_useragent") and One Tap does not render, so step 1 is
      the email form alone, with a quiet "Open in Safari / Chrome for Google
@@ -521,7 +529,7 @@ export function RegisterContent({
   const [countdown, setCountdown] = React.useState(REDIRECT_SECONDS);
 
   const [attribution, setAttribution] = React.useState<RegisterAttribution | null>(null);
-  const [err1, setErr1] = React.useState<string | null>(null);
+  const [err1, setErr1] = React.useState<string | null>(initialError);
   const [err2, setErr2] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [doneNote, setDoneNote] = React.useState("");
@@ -535,7 +543,7 @@ export function RegisterContent({
        nothing to move: the page opened on step 2. This effect is only the
        fallback for a client-side arrival at `?gsu=`, where no server render
        ran for this URL. */
-    if (!gsu || googlePrefill) return;
+    if (!gsu || googlePrefill || initialError) return;
     let live = true;
     void googleSignupIdentity(gsu).then(async (g) => {
       if (!live) return;
@@ -572,7 +580,7 @@ export function RegisterContent({
     return () => {
       live = false;
     };
-  }, [gsu, googlePrefill]);
+  }, [gsu, googlePrefill, initialError]);
 
   /* ADDRESS SUGGESTIONS on the company address (owner, 2026-09-02). The same
      Google Places attach every blueprint page uses; the list is appended to
@@ -775,7 +783,10 @@ export function RegisterContent({
       }
       const res = await requestCardlessTrial(token, slug);
       if (!res.ok) {
-        trackTraffic(TRAFFIC_EVENTS.error, { step: 3, reason: "trial_rejected" });
+        trackTraffic(TRAFFIC_EVENTS.error, { step: 3, reason: res.requiresCard ? "trial_needs_card" : "trial_rejected" });
+        // The day's card-less trials are taken: the same plan step now opens
+        // Stripe Checkout, and the line under it says why.
+        if (res.requiresCard) setRequiresCard(true);
         if (res.resendAt) {
           setResendAt(res.resendAt);
           setNowTick(Date.now());

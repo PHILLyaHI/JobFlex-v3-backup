@@ -10,6 +10,7 @@ import { enforceRateLimit, clientIp, rateLimitShared, HOUR, MINUTE } from "@/lib
 import { requireOwner } from "@/lib/orgContext";
 import { isPlaceholderOrgName } from "@/lib/orgSetup";
 import { trackActivation } from "@/lib/activation-events";
+import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from "@/lib/disposableEmail";
 
 // Public, unauthenticated auth actions: self-serve registration and the
 // forgot/reset-password flow. These run BEFORE the caller has a session, so they
@@ -76,6 +77,7 @@ export async function registerAccount(raw: unknown): Promise<{ ok: true }> {
   }
   const data = registerSchema.parse(raw);
   await enforceRateLimit(`register:${await clientIp()}`, 5, HOUR, "sign-ups");
+  if (isDisposableEmail(data.email)) throw new Error(DISPOSABLE_EMAIL_MESSAGE);
 
   // Registration legitimately can't hide that an email is taken (you can't make a
   // duplicate), so steer them to sign in rather than fail opaquely.
@@ -207,6 +209,9 @@ export async function checkEmailAvailable(
   if (!parsed.success) {
     return { available: false, message: "Enter a valid email address." };
   }
+  // A throwaway inbox is refused here, on step 1, before anything else is
+  // asked (lib/disposableEmail; startPendingSignup refuses it again).
+  if (isDisposableEmail(parsed.data)) return { available: false, message: DISPOSABLE_EMAIL_MESSAGE };
   const existing = await db.user.findUnique({
     where: { email: parsed.data },
     select: { id: true, hashedPassword: true },
