@@ -88,7 +88,7 @@ function trafficParts(f: TrafficFilters) {
       ${prop("verified")} AS verified, ${prop("billing_mode")} AS billing_mode,
       ${prop("intent")} AS intent, ${prop("outcome")} AS outcome
     FROM events
-    WHERE timestamp <= now() AND ${sinceSql(f.fullHistory)} AND (event = '$pageview' OR event IN (${Object.values(E).map(q).join(",")}))
+    WHERE timestamp <= now() AND ${sinceSql(f.fullHistory)} AND (event = '$pageview' OR event IN (${Object.values(E).filter((e) => e !== E.landingSection).map(q).join(",")}))
   ), base AS (
     SELECT *, if(event = ${q(E.step)}, concat('registration:', step), pathname) AS page,
       if(utm_source != '', utm_source, if(referrer IN ('', '$direct') OR referrer = hostname, 'Direct / unknown', referrer)) AS source

@@ -1,6 +1,7 @@
 import type { ExperimentResult, StageVisitor, StageVisitorsReport, TrafficBreakdown, TrafficDaily, TrafficFilters, TrafficReport, TrafficTotals } from "./traffic-contract";
 import { buildExperimentsQuery, buildStageVisitorsQuery, buildTrafficQueries, funnelStages, shiftDate } from "./traffic-query";
 import { CONVERTED_HOURS, buildConvertedQuery, buildLiveQuery, buildLiveTotalsQuery, liveEventFromRow, liveHeadline, liveTotalsFromRow, minutesIntoDay, shapeLive, type FreshSignup, type LiveEvent, type LiveReport, type LiveTotalsPair } from "./traffic-live";
+import { analystSessionFromRow, buildAnalystQuery, type LandingSession } from "./traffic-analyst";
 
 /** The last half hour of events, one PostHog query, shared by every admin
  *  looking for LIVE_CACHE_MS — the query endpoint's budget is small, and the
@@ -34,6 +35,20 @@ export async function fetchConvertedEvents(): Promise<LiveEvent[]> {
   const promise = runTrafficQuery(buildConvertedQuery(), "converted").then((rows) => rows.map(liveEventFromRow).filter((e): e is LiveEvent => !!e));
   promise.catch(() => { if (convertedEvents?.promise === promise) convertedEvents = null; });
   convertedEvents = { at: now, promise };
+  return promise;
+}
+
+/** THE ANALYST's sessions (2026-10-02): the last week of landing visits,
+ *  one row each, read every ten minutes at most — the reading does not
+ *  change by the minute, and the query walks a week of events. */
+const ANALYST_CACHE_MS = 10 * 60_000;
+let analystSessions: { at: number; promise: Promise<LandingSession[]> } | null = null;
+export async function fetchAnalystSessions(force = false): Promise<LandingSession[]> {
+  const now = Date.now();
+  if (!force && analystSessions && now - analystSessions.at < ANALYST_CACHE_MS) return analystSessions.promise;
+  const promise = runTrafficQuery(buildAnalystQuery(), "analyst").then((rows) => rows.map(analystSessionFromRow).filter((s): s is LandingSession => !!s));
+  promise.catch(() => { if (analystSessions?.promise === promise) analystSessions = null; });
+  analystSessions = { at: now, promise };
   return promise;
 }
 

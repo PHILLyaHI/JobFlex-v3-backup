@@ -2,7 +2,8 @@
 
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { getLiveTraffic as liveTraffic, getStageVisitors, getTrafficExperiments, getTrafficReport } from "@/lib/traffic-server";
+import { fetchAnalystSessions, getLiveTraffic as liveTraffic, getStageVisitors, getTrafficExperiments, getTrafficReport, posthogApiConfig } from "@/lib/traffic-server";
+import { analyse, type AnalystReport } from "@/lib/traffic-analyst";
 import { parseTrafficFilters } from "@/lib/traffic-query";
 import { TRAFFIC_SINCE_MS } from "@/lib/traffic-visitor";
 import type { SignupAttribution } from "@/lib/traffic-contract";
@@ -206,6 +207,28 @@ export async function getTrafficExperimentsAction(input: Record<string, unknown>
   await requirePlatformAdmin();
   return getTrafficExperiments(parseTrafficFilters(input));
 }
+
+/** THE ANALYST (2026-10-02): what people do on the landing and where the
+ *  sign-up loses them, over the last week, as findings — with the owner's
+ *  names for the ads. `force` skips the ten-minute cache (the Refresh button). */
+export async function getTrafficAnalyst(input: Record<string, unknown> = {}): Promise<AnalystResult> {
+  await requirePlatformAdmin();
+  const fetchedAt = new Date().toISOString();
+  const timezone = parseTrafficFilters({ timezone: input.timezone }).timezone;
+  try {
+    if (!posthogApiConfig()) return { status: "disabled", message: "Connect a PostHog personal key with query:read and a numeric project ID.", fetchedAt, report: analyse([], { timezone }) };
+    const sessions = await fetchAnalystSessions(input.force === true);
+    const tags = [...new Set(sessions.flatMap((s) => [s.utmCampaign, s.utmContent]).filter((t) => t && t.length <= 120))];
+    const names = tags.length ? await db.syncState.findMany({ where: { key: { in: tags.map(adNameKey) } }, select: { key: true, cursor: true } }).catch(() => []) : [];
+    const adNames: Record<string, string> = {};
+    for (const t of tags) { const row = names.find((r) => r.key === adNameKey(t)); if (row?.cursor) adNames[t] = row.cursor; }
+    return { status: "ok", fetchedAt, report: analyse(sessions, { timezone, adNames }) };
+  } catch (err) {
+    const msg = err instanceof Error && err.name === "TimeoutError" ? "PostHog took too long. Try again shortly." : err instanceof Error ? err.message : "The analyst could not read.";
+    return { status: "error", message: msg, fetchedAt, report: analyse([], { timezone }) };
+  }
+}
+export interface AnalystResult { status: "ok" | "disabled" | "error"; message?: string; fetchedAt: string; report: AnalystReport }
 
 /** Who reached a funnel stage: device, place, source and how far they got. */
 export async function getTrafficStageVisitors(input: Record<string, unknown> = {}, stageId: unknown) {

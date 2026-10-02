@@ -119,6 +119,12 @@ export const TRAFFIC_EVENTS = {
   // picked. Fired by landing-e/hvac-estimator-shot.tsx; always industry "hvac".
   hvacDemoStep: "hvac_demo_step",
   hvacDemoTier: "hvac_demo_tier",
+  // One per landing section the visitor actually reaches (the analyst,
+  // 2026-10-02): section key (lib/landing-sections), its index, seconds since
+  // the page opened, the trade hero shown. Fired by landing-e/section-tracker.
+  // Several per visit, so the report's `raw` CTE leaves it out — only the
+  // analyst's own query reads it (lib/traffic-analyst).
+  landingSection: "landing_section",
 } as const;
 
 /** Signups read from the database by what the landing recorded on them. */

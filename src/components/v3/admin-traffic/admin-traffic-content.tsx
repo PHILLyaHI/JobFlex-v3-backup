@@ -11,6 +11,7 @@ import { TrafficChart } from "./traffic-chart";
 import { TrafficDatePicker } from "./traffic-date-picker";
 import { TRAFFIC_SINCE, TRAFFIC_SINCE_LABEL } from "@/lib/traffic-visitor";
 import { LivePanel } from "./live-panel";
+import { AnalystPanel } from "./analyst-panel";
 import { SignupLedgerPanel } from "./signup-ledger";
 import { AdLinks } from "./ad-links";
 import type { LiveReport, SignupLedger } from "@/lib/traffic-live";
@@ -171,6 +172,8 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
 
     {/* Who is on the site this minute, where from, how far they got (2026-09-28). */}
     {live && <LivePanel initial={live} timezone={filters.timezone} fullHistory={filters.fullHistory}/>}
+    {/* The analyst (2026-10-02): the week's landing visits read as findings, under the live map. */}
+    <AnalystPanel timezone={filters.timezone}/>
     {/* Every signup, kept — the live view above only holds half an hour. */}
     {ledger && <SignupLedgerPanel initial={ledger} timezone={filters.timezone} fullHistory={filters.fullHistory}/>}
     {/* The tagged link for every ad and post, so the cards above tell them apart (2026-09-29). */}

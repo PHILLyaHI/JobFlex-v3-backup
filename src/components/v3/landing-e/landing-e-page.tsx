@@ -28,6 +28,7 @@ import { LandingFaq } from "./landing-faq";
 import { groupContentFor } from "./landing-groups";
 import { LandingPricing } from "./landing-pricing";
 import { CtaTracker } from "./cta-tracker";
+import { SectionTracker } from "./section-tracker";
 import { LazyBg } from "./lazy-bg";
 import { WarmLayout } from "./warm-layout";
 import { Hero } from "./hero";
@@ -145,6 +146,8 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
       <LazyBg />
       <WarmLayout />
       <CtaTracker industry={variant} />
+      {/* Which sections the visitor reaches, for the admin's analyst (2026-10-02). */}
+      <SectionTracker industry={variant} />
       <LandingVariantEffects industry={variant} remember={explicitVariant} utm={utm} />
       {/* Google One Tap (pass A): only when NEXT_PUBLIC_GOOGLE_CLIENT_ID is set;
           loads after the page is idle, so it never competes with the hero. */}
