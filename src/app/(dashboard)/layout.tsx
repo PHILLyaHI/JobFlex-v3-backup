@@ -132,7 +132,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <SessionProvider>
       {/* Role, plan and org id for the error reporter ($exception) — nothing personal. */}
-      <TrafficContext role={activeRole} plan={subscription?.plan ?? null} organizationId={activeOrgId} />
+      <TrafficContext role={activeRole} plan={subscription?.plan ?? null} organizationId={activeOrgId} userId={session.user.id} />
       <div className="flex">
         <Sidebar
           role={activeRole}

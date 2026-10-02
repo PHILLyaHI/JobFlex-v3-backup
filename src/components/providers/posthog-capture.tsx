@@ -91,13 +91,15 @@ function disarmRecording() {
 }
 
 // Preserve attribution, never signup tickets, OAuth handles or Stripe return tokens.
+// The landing's trade (`?industry=roofing`, alias `?trade=`) is kept too: it is
+// which ad they came from, and the admin's live view names the trade by it.
 function safeUrl(value: string): string {
   if (!value || value === "$direct") return value;
   try {
     const url = new URL(value, window.location.origin);
     if (!["http:", "https:"].includes(url.protocol)) return "";
     for (const key of Array.from(url.searchParams.keys())) {
-      if (!/^utm_(source|medium|campaign|content|term)$/.test(key)) url.searchParams.delete(key);
+      if (!/^(utm_(source|medium|campaign|content|term)|industry|trade)$/.test(key)) url.searchParams.delete(key);
     }
     url.hash = "";
     return url.toString();

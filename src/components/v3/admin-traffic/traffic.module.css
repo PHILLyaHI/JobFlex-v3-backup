@@ -435,6 +435,17 @@
 :global(.jf-blueprint) .liveSignup { color:var(--success-dark) !important; }
 :global(.jf-blueprint) .liveSource { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 :global(.jf-blueprint) .liveAd { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1.5px solid var(--live-ad); color:var(--live-ad); font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; font-style:normal; }
+:global(.jf-blueprint) .liveTrade { display:inline-flex; align-items:center; padding:2px 6px; background:var(--ink, #0a0a0a); color:#fff; font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; font-style:normal; }
+:global(.jf-blueprint) .adTag { display:inline-flex; align-items:baseline; gap:6px; flex-wrap:wrap; }
+:global(.jf-blueprint) .adTag b { font-weight:800; }
+:global(.jf-blueprint) .adId { font:600 10px var(--font-mono); color:var(--ink-muted, #555); }
+:global(.jf-blueprint) .adNameBtn { padding:1px 6px; border:1.5px solid currentColor; background:transparent; color:#1854a0; font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; cursor:pointer; }
+:global(.jf-blueprint) .adNameBtn:hover { background:#1854a0; color:#fff; border-color:#1854a0; }
+:global(.jf-blueprint) .adNameEdit { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; margin-left:6px; }
+:global(.jf-blueprint) .adNameEdit input { width:190px; padding:3px 6px; border:1.5px solid var(--ink, #0a0a0a); font:600 12px var(--font); background:#fff; }
+:global(.jf-blueprint) .adNameEdit button { padding:3px 8px; border:1.5px solid var(--ink, #0a0a0a); background:#fff; font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; cursor:pointer; }
+:global(.jf-blueprint) .adNameEdit button:first-of-type { background:#1854a0; border-color:#1854a0; color:#fff; }
+:global(.jf-blueprint) .adNameEdit i { font:600 11px var(--font); color:#b3261e; font-style:normal; }
 :global(.jf-blueprint) .liveLocked { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; border:1.5px solid var(--map-signin); color:#0e7490; font:700 10px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; font-style:normal; }
 /* What they pressed, and the visit in one sentence. */
 :global(.jf-blueprint) .liveClicks { display:inline-flex; align-items:center; gap:5px; font:600 11px/1.5 var(--font-mono); color:var(--blueprint); }

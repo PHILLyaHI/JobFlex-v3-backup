@@ -12,8 +12,10 @@ import { memo } from "react";
 import type { LivePlatform } from "@/lib/traffic-live";
 import s from "./traffic.module.css";
 
+/** A stable empty default, so the memo is not broken by a fresh {} each render. */
+const EMPTY_NAMES: Record<string, string> = {};
 /** Memoised (2026-10-01): a refresh with the same platforms hands down the same array (live-diff), and the cards skip their render. */
-export const LivePlatforms = memo(function LivePlatforms({ platforms, selected, onSelect }: { platforms: LivePlatform[]; selected: string | null; onSelect: (key: string | null) => void }) {
+export const LivePlatforms = memo(function LivePlatforms({ platforms, selected, onSelect, adNames = EMPTY_NAMES }: { platforms: LivePlatform[]; selected: string | null; onSelect: (key: string | null) => void; adNames?: Record<string, string> }) {
   const rate = (a: number, b: number) => (b > 0 ? `${Math.round((a / b) * 100)}%` : "–");
   // A platform with nobody in the window and no signup today has nothing to
   // say, and five such cards — each three zeros deep — were most of the
@@ -44,7 +46,7 @@ export const LivePlatforms = memo(function LivePlatforms({ platforms, selected, 
           </span>
           {p.campaigns.length > 0 ? (
             <span className={s.platformCampaigns}>
-              {p.campaigns.map((c) => <span key={`${c.campaign}|${c.content}`}><b>{c.campaign || "untagged"}</b>{c.content ? ` · ${c.content}` : ""} · {c.visitors}{c.signedUp ? ` · ${c.signedUp} signed up` : ""}</span>)}
+              {p.campaigns.map((c) => <span key={`${c.campaign}|${c.content}`}><b>{adNames[c.campaign] || c.campaign || "untagged"}</b>{c.content ? ` · ${adNames[c.content] || c.content}` : ""} · {c.visitors}{c.signedUp ? ` · ${c.signedUp} signed up` : ""}</span>)}
             </span>
           ) : (
             <span className={s.platformCampaigns}><span>{p.visitors ? "No campaign tag on these visits" : p.ads ? "Nobody yet — tag the ads with the links below" : ""}</span></span>

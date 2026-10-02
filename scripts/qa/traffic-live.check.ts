@@ -3,7 +3,7 @@
 // signups named after the organization the database made. Static imports
 // only (tsx has no top-level await).
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/traffic-live.check.ts
-import { AD_PLATFORM_KEYS, buildLiveQuery, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, liveHeadline, minutesIntoDay, signupLedgerSummary, signupPlanLabel, signupState, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
+import { AD_PLATFORM_KEYS, adTagsOf, buildLiveQuery, isAdId, landingTradeOf, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, liveHeadline, minutesIntoDay, signupLedgerSummary, signupPlanLabel, signupState, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
 
 let bad = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -321,6 +321,20 @@ check("the ledger counts the span by state, and how many came from ads",
   JSON.stringify(led));
 check("an empty span counts zero of everything, not NaN",
   Object.values(signupLedgerSummary([])).every((v) => v === 0));
+
+// ── names for ads, the trade they came for, the member in the app (2026-10-01)
+check("the landing's ?industry= / ?trade= names the trade the ad sent them to",
+  landingTradeOf(["https://jobflex.app/?industry=roofing&utm_source=fb"]) === "Roofing" && landingTradeOf(["https://jobflex.app/?trade=hvac"]) === "HVAC" &&
+  landingTradeOf(["/", "https://jobflex.app/?industry=Kitchen%20%26%20Bath"]) === "Kitchen & Bath" && landingTradeOf(["https://jobflex.app/"]) === "" && landingTradeOf(["https://jobflex.app/?industry=nonsense"]) === "");
+const fenceAd = shapeLive([ev({ person: "p-fence", at: min(2), url: "https://jobflex.app/?industry=fencing&utm_campaign=120248923877540280", utmSource: "fb", utmMedium: "paid", utmCampaign: "120248923877540280" })], [], NOW).visitors[0];
+check("a visit off the fencing landing is labelled Fencing, its campaign id kept as it came", fenceAd.trade === "Fencing" && fenceAd.campaign === "120248923877540280" && fenceAd.fromAd);
+const inApp = shapeLive([ev({ person: "p-mem", at: min(3), pathname: "/dashboard/jobs" }), ev({ person: "p-mem", at: min(1), pathname: "/dashboard/calendar", orgId: "org_1", userId: "user_1" })], [], NOW).visitors[0];
+check("a member's visit carries the organization and user ids its events sent", inApp.stage === "member" && inApp.orgId === "org_1" && inApp.userId === "user_1");
+check("a visitor with no ids is nobody's member", by("p-ana")!.orgId === "" && by("p-ana")!.userId === "");
+const idRow = liveEventFromRow([...row, 32.7767, -96.797, "us", "tx", "", "", "", "org_9", "user_9"]);
+check("the query asks for the member ids and the parser reads them", /jf_org_id/.test(sql) && /jf_user_id/.test(sql) && idRow?.orgId === "org_9" && idRow?.userId === "user_9");
+check("a long run of digits is an ad id worth naming; a written name is not", isAdId("120248923877540280") && !isAdId("roof-40s-v1") && !isAdId("2026"));
+check("the tags to look names up for are every campaign and ad the report shows", adTagsOf(r).includes(ana.campaign) && adTagsOf({ visitors: [fenceAd], platforms: [] }).includes("120248923877540280"));
 
 console.log(bad ? `\n${bad} failing` : "\nall green");
 process.exit(bad ? 1 : 0);

@@ -32,6 +32,7 @@ export function onTrafficReady(callback: () => void): () => void {
 export function trafficReady(instance?: PostHog) {
   if (instance) client = instance;
   if (!client) return;
+  applyMember();
   const first = !available;
   available = true;
   for (const item of queued.splice(0)) deliver(item);
@@ -129,6 +130,23 @@ export function trackTrafficExperiment(experiment: string, variant: string) {
 type ErrorContext = { role: string | null; plan: string | null; organizationId: string | null };
 let errorContext: ErrorContext = { role: null, plan: null, organizationId: null };
 export function setTrafficContext(next: ErrorContext) { errorContext = next; }
+
+/* WHO IS IN THE APP (owner, 2026-10-01: "a member in the app — at least show
+   the company or the name"). The signed-in layouts hand over the organization
+   and user ids; they ride on every later event as super properties, so the
+   admin's live view can tell which company is in the app. Ids only — the
+   names are looked up by the admin's server action, never sent here. */
+let member: { org: string; user: string } | null = null;
+function applyMember() {
+  if (!client || !member) return;
+  try { client.register({ jf_org_id: member.org, jf_user_id: member.user }); } catch { /* analytics never breaks the app */ }
+}
+export function setTrafficMember(organizationId: string | null, userId: string | null) {
+  if (!organizationId || !userId) return;
+  if (member && member.org === organizationId && member.user === userId) return;
+  member = { org: organizationId, user: userId };
+  applyMember();
+}
 
 /** /dashboard/proposals/cmf3k2… → /dashboard/proposals/[id]; portal tokens fold the same way. */
 export function trafficRoute(pathname: string): string {

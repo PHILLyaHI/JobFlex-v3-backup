@@ -29,5 +29,6 @@ export function sameReport(prev: LiveReport, next: LiveReport): LiveReport {
     counts: same(prev.counts, next.counts) ? prev.counts : next.counts,
     totals: same(prev.totals, next.totals) ? prev.totals : next.totals,
     today: same(prev.today, next.today) ? prev.today : next.today,
+    adNames: same(prev.adNames, next.adNames) ? prev.adNames : next.adNames,
   };
 }

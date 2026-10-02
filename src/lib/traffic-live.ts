@@ -27,6 +27,7 @@
 import { TRAFFIC_EVENTS as E, pageLabel } from "./traffic-contract";
 // Who counts and what is "from an ad": one rule for the whole page (2026-10-01).
 import { BROWSER_TYPE_SQL, HOST_SQL, UA_SQL, carriesAdTag, isCountedEvent, sinceSql, visitorRuleSql } from "./traffic-visitor";
+import { resolveLandingVariant, VARIANT_TRADE } from "@/components/v3/landing-e/landing-variants";
 
 export const LIVE_WINDOW_MINUTES = 30;
 export const LIVE_ACTIVE_MINUTES = 5;
@@ -59,6 +60,10 @@ export interface LiveEvent {
   /** cta_click only: where the button sits, and the words on it. */
   placement: string;
   label: string;
+  /** A signed-in member's organization and user ids (lib/traffic-client
+   *  setTrafficMember, 2026-10-01); "" for everyone else. */
+  orgId: string;
+  userId: string;
   step: string;
   outcome: string;
   plan: string;
@@ -187,6 +192,14 @@ export interface LiveVisitor {
   lockedOut: boolean;
   /** One sentence for what this visit is, written from the trail. */
   summary: string;
+  /** The trade the ad sent them to — the landing's `?industry=` ("Roofing",
+   *  "HVAC"…), or the trade the account signed up with; "" when unknown. */
+  trade: string;
+  /** A signed-in member's organization and user ids, from their events. */
+  orgId: string;
+  userId: string;
+  /** Filled in by the admin's server action from orgId / userId. */
+  member?: { orgName: string; userName: string } | null;
 }
 
 export interface LiveCounts {
@@ -265,6 +278,37 @@ export interface LiveReport {
   /** Fresh organizations no live visitor could be tied to (their visit was
    *  before the window, or the browser blocked analytics). */
   otherSignups: Array<{ orgName: string; ownerEmail: string; at: string; source: string; planLabel: string }>;
+  /** Names the owner gave ad and campaign ids (Meta sends {{campaign.id}} /
+   *  {{ad.id}} as numbers), keyed by the id as it arrives. Filled in by the
+   *  admin's server action. */
+  adNames?: Record<string, string>;
+}
+
+/** The SyncState key a name for an ad or campaign id is kept under. */
+export const adNameKey = (id: string) => `adname:${id.trim()}`;
+/** An ad tag worth naming: a bare platform id (a long run of digits). */
+export const isAdId = (value: string) => /^\d{8,}$/.test(value.trim());
+
+/** The trade an ad sent them to: the first `?industry=` / `?trade=` the
+ *  visit's pages carried (kept in the tracked URL since 2026-10-01). */
+export function landingTradeOf(urls: readonly string[]): string {
+  for (const u of urls) {
+    if (!u || !u.includes("?")) continue;
+    try {
+      const q = new URL(u, "https://www.jobflex.app").searchParams;
+      const key = resolveLandingVariant(q.get("industry") ?? q.get("trade"));
+      if (key) return VARIANT_TRADE[key];
+    } catch { /* a malformed URL names no trade */ }
+  }
+  return "";
+}
+
+/** Every ad and campaign tag the report shows — what the server looks names up for. */
+export function adTagsOf(report: Pick<LiveReport, "visitors" | "platforms">): string[] {
+  const out = new Set<string>();
+  for (const v of report.visitors) { if (v.campaign) out.add(v.campaign); if (v.content) out.add(v.content); }
+  for (const p of report.platforms) for (const c of p.campaigns) { if (c.campaign) out.add(c.campaign); if (c.content) out.add(c.content); }
+  return [...out].filter((t) => t.length <= 120);
 }
 
 const AD_MEDIUMS = new Set(["cpc", "ppc", "paid", "paid_social", "paidsocial", "paid-social", "social-paid", "ads", "ad", "display", "retargeting", "remarketing", "cpm", "cpv", "cpa", "sponsored", "promoted", "boost", "boosted", "banner", "video-ad", "lead-ad", "leadgen", "instant-form"]);
@@ -718,6 +762,7 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
     // Tie the signup to the organization the database made minutes later:
     // the closest row in time whose tag agrees, each row claimed once.
     let signup: LiveVisitor["signup"] = null;
+    let signupTrade = "";
     if (stage === "signed-up" && signedUpAt) {
       const at = Date.parse(signedUpAt);
       let best: { s: FreshSignup; d: number } | null = null;
@@ -731,6 +776,7 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
       }
       if (best) {
         claimed.add(best.s.orgId);
+        signupTrade = best.s.landingIndustry ? (VARIANT_TRADE[resolveLandingVariant(best.s.landingIndustry) as keyof typeof VARIANT_TRADE] ?? best.s.landingIndustry) : "";
         signup = { orgName: best.s.orgName, ownerEmail: best.s.ownerEmail, ownerName: best.s.ownerName, at: best.s.createdAt, plan, outcome, planLabel: signupPlanLabel(best.s, now) };
       }
     }
@@ -777,6 +823,9 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
       signedUpAt,
       clicks,
       lockedOut,
+      trade: landingTradeOf(visit.map((e) => e.url)) || signupTrade,
+      orgId: [...list].reverse().find((e) => e.orgId)?.orgId ?? "",
+      userId: [...list].reverse().find((e) => e.userId)?.userId ?? "",
       summary: visitSummary({ stage, lockedOut, views: views.length, trail, clicks, active: last.at >= activeSince, signup, step: furthestStep, fromAd: src.fromAd, source: src.label }),
     });
   }
@@ -881,7 +930,7 @@ export function buildLiveQuery(windowMinutes = LIVE_WINDOW_MINUTES): string {
     toFloat64OrNull(toString(properties.$geoip_latitude)), toFloat64OrNull(toString(properties.$geoip_longitude)),
     ${prop("$geoip_country_code")}, ${prop("$geoip_subdivision_1_code")},
     multiIf(${CLICK_ID_KEYS.map((k) => `${prop(k)} != '', '${k}'`).join(", ")}, ''),
-    ${prop("placement")}, ${prop("label")},
+    ${prop("placement")}, ${prop("label")}, ${prop("jf_org_id")}, ${prop("jf_user_id")},
     ${UA_SQL}, ${BROWSER_TYPE_SQL}
     FROM events
     WHERE timestamp > now() - INTERVAL ${Math.max(5, Math.min(120, Math.round(windowMinutes)))} MINUTE AND event IN (${events})
@@ -986,7 +1035,9 @@ export function liveEventFromRow(row: unknown[]): LiveEvent | null {
     click: CLICK_IDS[str(28).toLowerCase()] ? str(28).toLowerCase() : "",
     placement: str(29),
     label: str(30),
-    ua: str(31),
-    browserType: str(32),
+    orgId: str(31).slice(0, 40),
+    userId: str(32).slice(0, 40),
+    ua: str(33),
+    browserType: str(34),
   };
 }
