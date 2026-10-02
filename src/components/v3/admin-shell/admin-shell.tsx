@@ -31,7 +31,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { initBlueprintShell, type ShellHandle } from "@/components/v3/blueprint-shell/shell-behavior";
+import { initBlueprintShell, READABLE_SCALE, type ShellHandle } from "@/components/v3/blueprint-shell/shell-behavior";
 import { Sprite } from "@/components/v3/blueprint-shell/sprite";
 import { ADMIN_SIDEBAR_FOLD_COOKIE, writeSidebarFold } from "@/components/v3/blueprint-shell/sidebar-fold";
 import proposalStyles from "@/components/v3/proposals-blueprint/proposals.module.css";
@@ -42,11 +42,12 @@ import styles from "./admin-shell.module.css";
 import { AdminSidebar } from "./admin-sidebar";
 import { AdminTopbar, type SignOutMode } from "./admin-topbar";
 
-/** The console reads 7% larger than the dashboard's fluid scale (owner,
- *  2026-10-02: "make font size bigger, it's hard to read, too small — 7%").
- *  One multiplier on the shell's zoom, so every font, control and gap on
- *  every admin page grows together and nothing has to be re-measured. */
-const ADMIN_SCALE = 1.07;
+/** The console reads 7% larger than the dashboard, which itself reads 7%
+ *  larger than the reference composition (owner, 2026-10-02: "make font
+ *  size bigger, it's hard to read, too small — 7%", then "another 7%
+ *  everywhere"). One multiplier on the shell's zoom, so every font, control
+ *  and gap on every admin page grows together and nothing is re-measured. */
+const ADMIN_SCALE = READABLE_SCALE * 1.07;
 
 /** Per-page stylesheets — active page only, keyed by route prefix. */
 const ADMIN_PAGE_STYLES: Record<string, string> = {

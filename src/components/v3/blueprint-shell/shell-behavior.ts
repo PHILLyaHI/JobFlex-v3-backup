@@ -21,12 +21,16 @@ export type ShellHandle = {
   syncIndicator: () => void;
 };
 
+/** READABLE (owner, 2026-10-02: "hard to read, too small — 7%", then
+ *  "another 7% everywhere"): every blueprint shell multiplies its fluid
+ *  scale by this; the admin console doubles it (admin-shell ADMIN_SCALE). */
+export const READABLE_SCALE = 1.07;
+
 export function initBlueprintShell(root: HTMLElement, opts: {
-  /** Multiplies the fluid scale below — the admin console reads 7% larger
-   *  than the dashboard (owner, 2026-10-02: "hard to read, too small"). */
+  /** Multiplies the fluid scale below; READABLE_SCALE unless a shell says otherwise. */
   scale?: number;
 } = {}): ShellHandle {
-  const scale = opts.scale ?? 1;
+  const scale = opts.scale ?? READABLE_SCALE;
   const disposers: Array<() => void> = [];
   const on = (t: EventTarget, ev: string, fn: EventListener, o?: AddEventListenerOptions) => {
     t.addEventListener(ev, fn, o);
