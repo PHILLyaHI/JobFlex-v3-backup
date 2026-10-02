@@ -43,6 +43,9 @@ export type LandingVariant = {
   /** A headline a sentence long (owner, 2026-10-01: HVAC, roofing): set a
    *  size down so it stays two or three lines instead of five. */
   h1Long?: boolean;
+  /** The sub's last line takes more than one word (owner, 2026-10-01:
+   *  fencing's "phone." stood alone at 1440): balanced lines (.lp-sub--even). */
+  subEven?: boolean;
   /** One bold line under the sub (HVAC). */
   subStrong?: string;
   /** The hero's own primary button, when it differs from the top-of-page CTA
@@ -100,6 +103,7 @@ export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> 
     h1: ["Still Driving to the Job Site", "Just to Measure a Fence?"],
     h1Long: true,
     sub: "Enter the project address. JobFlex generates the measurements, materials, labor, pricing, and a complete customer-ready estimate and proposal — in seconds, right from your phone.",
+    subEven: true,
     primaryCta: "Start free — estimate a fence",
     heroCta: "Create My Free Estimate →",
     showcaseSlide: "fence",

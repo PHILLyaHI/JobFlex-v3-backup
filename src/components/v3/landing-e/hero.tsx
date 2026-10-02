@@ -93,7 +93,7 @@ export function Hero({
         {/* The line under the headline exists only on trade variants; the
             default hero never had one and renders nothing here. */}
         {variant.sub && !variant.subStrong && (
-          <p className="lp-enter mx-auto max-w-[38rem] text-[15px] leading-[1.5] text-white/70 sm:text-[17px] lg:max-w-[46rem]" data-entrance="sub">{variant.sub}</p>
+          <p className={`lp-enter mx-auto max-w-[38rem] text-[15px] leading-[1.5] text-white/70 sm:text-[17px] lg:max-w-[46rem]${variant.subEven ? " lp-sub--even" : ""}`} data-entrance="sub">{variant.sub}</p>
         )}
         {/* A sub with a bold line of its own under it (HVAC, 2026-10-01): the
             two arrive together, as the one sub block the entrance moves. */}
